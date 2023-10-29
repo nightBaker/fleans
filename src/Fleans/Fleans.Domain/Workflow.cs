@@ -6,21 +6,39 @@
 
         public Workflow(Guid id,
                         int version,
-                        List<IActivity> activities,
                         Dictionary<string, object> initialContext,
-                        List<IWorkflowConnection> sequences)
+                        IActivity firstActivity)
         {
             Id = id;
             Version = version;
-            Activities = activities;
             _context = new WorkflowContext(initialContext);
-            Sequences = sequences;
+            CurrentActivity = firstActivity;
         }
 
         public Guid Id { get; }
         public int Version { get; }
-        public IReadOnlyCollection<IActivity> Activities { get; }
-        public IReadOnlyCollection<IWorkflowConnection> Sequences { get; }
+        
+        public IActivity CurrentActivity { get; private set; }
         public IReadOnlyDictionary<string, object> Context => _context.Context;
+
+        public async Task Run()
+        {
+            await CurrentActivity.ExecuteAsync(_context);
+            
+            var nextActivites = CurrentActivity.GetNextActivites(_context);
+
+            while (nextActivites.Any())
+            {
+                var nextNextActivities = new List<IActivity>();
+                foreach (var activity in nextActivites)
+                {
+                    await activity.ExecuteAsync(_context);
+                    nextNextActivities.AddRange(activity.GetNextActivites(_context));
+                    CurrentActivity = activity;
+                }
+
+                nextActivites = nextNextActivities.ToArray();
+            }
+        }
     }
 }

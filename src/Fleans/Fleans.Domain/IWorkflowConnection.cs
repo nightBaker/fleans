@@ -1,8 +1,8 @@
 ﻿namespace Fleans.Domain
 {
-    public interface IWorkflowConnection : IDictionary<Guid, Guid>
+    public interface IWorkflowConnection
     {
-        IActivity From { get; }
+        IActivity From { get; internal set; }
         IActivity To { get; }
 
         bool CanExecute(IContext context);

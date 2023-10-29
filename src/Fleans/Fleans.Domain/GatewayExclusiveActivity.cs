@@ -1,8 +1,8 @@
 ﻿namespace Fleans.Domain
 {
-    public record IfActivity : Activity<bool>, IActivity
+    public record GatewayExclusiveActivity : Activity<bool>, IActivity
     {
-        public IfActivity(Guid id, IWorkflowConnection[] connections, IConditionExpressionRunner condition) 
+        public GatewayExclusiveActivity(Guid id, IWorkflowConnection[] connections, IConditionExpressionRunner condition) 
             : base(id, connections)
         {
             Condition = condition;
