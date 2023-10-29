@@ -9,7 +9,7 @@
         private readonly List<ActivityResult<TResult>> _results = new List<ActivityResult<TResult>>();
         public IReadOnlyCollection<ActivityResult<TResult>> GetResults() => _results;
 
-        public bool IsCompleted => Result != null;
+        public bool IsCompleted => Result is not null;
         
         protected Activity(Guid id, IWorkflowConnection[] connections)
         {            
