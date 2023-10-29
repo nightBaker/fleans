@@ -1,4 +1,6 @@
-﻿namespace Fleans.Domain
+﻿using Fleans.Domain.Exceptions;
+
+namespace Fleans.Domain
 {
     public record GatewayExclusiveActivity : Activity<bool>, IActivity
     {
@@ -27,7 +29,7 @@
                     .ToArray();
             }
 
-            throw new InvalidOperationException("Activity is not completed");
+            throw new ActivityNotCompletedException();
         }
     }
 }
