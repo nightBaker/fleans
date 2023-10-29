@@ -1,3 +1,5 @@
+using Fleans.Domain.Exceptions;
+
 namespace Fleans.Domain;
 
 public class ExclusiveGatewayBuilder : ActivityBuilder<bool>
@@ -25,7 +27,7 @@ public class ExclusiveGatewayBuilder : ActivityBuilder<bool>
     }
     public override IActivity Build(Guid id)
     {
-        if (_condition is null) throw new ArgumentNullException("Condition is not specified");
+        if (_condition is null) throw new ConditionNotSpecifiedException();
         
         var exclusiveGatewayActivity = new GatewayExclusiveActivity(id, _connections.ToArray(), _condition.Build());
         foreach (var connection in _connections)

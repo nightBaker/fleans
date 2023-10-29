@@ -1,7 +1,6 @@
-﻿namespace Fleans.Domain
+﻿namespace Fleans.Domain;
+
+public interface IConditionExpressionRunner
 {
-    public interface IConditionExpressionRunner
-    {
-        bool Evaluate(IContext context);
-    }
+    bool Evaluate(IContext context);
 }

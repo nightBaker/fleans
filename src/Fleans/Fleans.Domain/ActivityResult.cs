@@ -1,7 +1,6 @@
-﻿namespace Fleans.Domain
+﻿namespace Fleans.Domain;
+
+public record ActivityResult<T>(T Result)
 {
-    public record ActivityResult<T>(T Result)
-    {
-        public DateTime CreatedAt { get; } = DateTime.UtcNow;
-    }
+    public DateTime CreatedAt { get; } = DateTime.UtcNow;
 }

@@ -1,6 +1,6 @@
 namespace Fleans.Domain.Exceptions;
 
-public class ActivityNotCompletedException: InvalidOperationException
+public class ActivityNotCompletedException : InvalidOperationException
 {
     public ActivityNotCompletedException()
     {
