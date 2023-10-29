@@ -11,6 +11,7 @@ namespace Fleans.Domain
         private readonly List<IActivity> _activities = new List<IActivity>();
         private readonly List<IWorkflowConnection> _sequences = new List<IWorkflowConnection>();
         private Dictionary<string, object> _initialContext = new Dictionary<string, object>();
+        private IActivityBuilder? _firstActivityBuilder;
 
         public WorkflowBuilder StartWith(Dictionary<string, object> initialContext)
         {
@@ -18,34 +19,19 @@ namespace Fleans.Domain
 
             return this;
         }
-        
-        public WorkflowBuilder AddActivity(IActivity activity)
+
+        private WorkflowBuilder AddFirstActivity(IActivityBuilder activityBuilder)
         {
-            _activities.Add(activity);
+            _firstActivityBuilder = activityBuilder;
 
             return this;
         }
 
-        public WorkflowBuilder AddSequence(IWorkflowConnection sequence)
+        public Workflow Build(Guid id, int version)
         {
-            _sequences.Add(sequence);
-
-            return this;
-        }
-
-        public Workflow Build(Guid id, int version) 
-            => new (id, version, _activities, _initialContext, _sequences);
-    }
-
-    public static class WorkflowBuilderExtensions
-    {
-        public void If(this WorkflowBuilder builder, IActivity activity, )
-        {
-            var sequence = new WorkflowSequence(from, to);
-
-            builder.AddSequence(sequence);
-
-            return builder;
+            if (_firstActivityBuilder is null) throw new ArgumentNullException("First activity is not specified");
+            return new Workflow(id, version, _initialContext, _firstActivityBuilder.Build(id));
+            // TODO activity id 
         }
     }
 }
