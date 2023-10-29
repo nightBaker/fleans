@@ -9,7 +9,7 @@ namespace Fleans.Domain
     public class WorkflowBuilder
     {
         private readonly List<IActivity> _activities = new List<IActivity>();
-        private readonly List<IWorkflowSequence> _sequences = new List<IWorkflowSequence>();
+        private readonly List<IWorkflowConnection> _sequences = new List<IWorkflowConnection>();
         private Dictionary<string, object> _initialContext = new Dictionary<string, object>();
 
         public WorkflowBuilder StartWith(Dictionary<string, object> initialContext)
@@ -26,7 +26,7 @@ namespace Fleans.Domain
             return this;
         }
 
-        public WorkflowBuilder AddSequence(IWorkflowSequence sequence)
+        public WorkflowBuilder AddSequence(IWorkflowConnection sequence)
         {
             _sequences.Add(sequence);
 

@@ -1,9 +1,9 @@
 ﻿namespace Fleans.Domain
 {
-    public interface IWorkflowSequence : IDictionary<Guid, Guid>
+    public interface IWorkflowConnection : IDictionary<Guid, Guid>
     {
-        IActivity[] From { get; }
-        IActivity[] To { get; }
+        IActivity From { get; }
+        IActivity To { get; }
 
         bool CanExecute(IContext context);
     }

@@ -8,7 +8,7 @@
                         int version,
                         List<IActivity> activities,
                         Dictionary<string, object> initialContext,
-                        List<IWorkflowSequence> sequences)
+                        List<IWorkflowConnection> sequences)
         {
             Id = id;
             Version = version;
@@ -20,7 +20,7 @@
         public Guid Id { get; }
         public int Version { get; }
         public IReadOnlyCollection<IActivity> Activities { get; }
-        public IReadOnlyCollection<IWorkflowSequence> Sequences { get; }
+        public IReadOnlyCollection<IWorkflowConnection> Sequences { get; }
         public IReadOnlyDictionary<string, object> Context => _context.Context;
     }
 }
