@@ -6,10 +6,10 @@
         public IWorkflowConnection[] Connections { get; }
         public ActivityResult<TResult>? Result { get; private set; }
 
-        private readonly List<ActivityResult<TResult>> _results = new List<ActivityResult<TResult>>();
+        private readonly List<ActivityResult<TResult>> _results = new();
         public IReadOnlyCollection<ActivityResult<TResult>> GetResults() => _results;
 
-        protected bool IsCompleted => Result != null;
+        protected bool IsCompleted => Result is not null;
         
         protected Activity(Guid id, IWorkflowConnection[] connections)
         {            

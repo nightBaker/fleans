@@ -2,6 +2,6 @@
 {
     public record ActivityResult<T>(T result)
     {
-        public DateTime CreatedAt { get; } = DateTime.Now;
+        public DateTime CreatedAt { get; } = DateTime.UtcNow;
     }
 }
