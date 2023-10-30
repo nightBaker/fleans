@@ -5,5 +5,6 @@ namespace Fleans.Domain;
 
 public interface IActivityBuilder
 {
-    IActivity Build(Guid id);
+    IActivityBuilder WithId(Guid id);
+    IActivity Build();
 }

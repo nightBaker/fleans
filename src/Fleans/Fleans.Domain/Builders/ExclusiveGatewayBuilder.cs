@@ -14,22 +14,22 @@ public class ExclusiveGatewayBuilder : ActivityBuilder<bool>
 
     public ExclusiveGatewayBuilder Then(IActivityBuilder builder, Guid activityId)
     {
-        AddConnection(new ExclusiveGatewayCondition(builder.Build(activityId), true));
+        AddConnection(new ExclusiveGatewayCondition(builder.WithId(activityId).Build(), true));
 
         return this;
     }
     
     public ExclusiveGatewayBuilder Else(IActivityBuilder builder, Guid activityId)
     {
-        AddConnection(new ExclusiveGatewayCondition(builder.Build(activityId), false));
+        AddConnection(new ExclusiveGatewayCondition(builder.WithId(activityId).Build(), false));
 
         return this;
     }
-    public override IActivity Build(Guid id)
+    public override IActivity Build()
     {
         if (_condition is null) throw new ConditionNotSpecifiedException();
         
-        var exclusiveGatewayActivity = new GatewayExclusiveActivity(id, _connections.ToArray(), _condition.Build());
+        var exclusiveGatewayActivity = new GatewayExclusiveActivity(Id, _connections.ToArray(), _condition.Build());
         foreach (var connection in _connections)
         {
             connection.From = exclusiveGatewayActivity;

@@ -2,7 +2,7 @@
 
 namespace Fleans.Domain
 {
-    public record GatewayExclusiveActivity : Activity<bool>, IActivity
+    public record GatewayExclusiveActivity : Activity<bool>, IActivity<bool>
     {
         public GatewayExclusiveActivity(Guid id, IWorkflowConnection[] connections, IConditionExpressionRunner condition) 
             : base(id, connections)
@@ -10,7 +10,7 @@ namespace Fleans.Domain
             Condition = condition;
         }
 
-        public IConditionExpressionRunner Condition { get; }
+        public IConditionExpressionRunner Condition { get; }       
 
         public Task ExecuteAsync(IContext context)
         {

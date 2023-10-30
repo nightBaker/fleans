@@ -15,7 +15,7 @@ public class ExclusiveGatewayCondition: IWorkflowConnection
     {
         if (From.IsCompleted && From is IActivity<bool> acitityResult)
         {
-            return acitityResult.ExecutionResult!.Result;
+            return acitityResult.ExecutionResult!.Result == ExecuteCondition;
         }
 
         return false;
