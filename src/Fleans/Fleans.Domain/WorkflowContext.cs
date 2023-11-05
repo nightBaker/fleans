@@ -3,22 +3,38 @@
 public class WorkflowContext : IContext
 {        
     private readonly Dictionary<string, object> _context;
-    private readonly Dictionary<Guid, object> _internalContext;
-    public WorkflowContext(Dictionary<string, object> context)
+    private readonly Queue<IActivity> _nextActivities = new();   
+    public WorkflowContext(Dictionary<string, object> context, IActivity firstActivity)
     {
-        _context = context;
-        _internalContext = new();
+        _context = context;        
+        EnqueueNextActivity(firstActivity);
     }
 
     public IReadOnlyDictionary<string, object> Context => _context;
+    public IActivity? CurrentActivity { get; private set; }
 
-    public void AddActivityResult(Guid activityId, object value)
+    public void EnqueueNextActivity(IActivity activity)
     {
-        _internalContext.Add(activityId, value);
+        _nextActivities.Enqueue(activity);
     }
 
-    public void AddActivityResult(Guid activityId, bool value)
+    public void EnqueueNextActivities( IEnumerable<IActivity> activities)
     {
-        _internalContext.Add(activityId, value);
+        foreach(var activity in activities)
+            _nextActivities.Enqueue(activity);
     }
+
+    public bool GotoNextActivty()
+    {
+        if(_nextActivities.Count == 0)
+            return false;
+
+        if(CurrentActivity is not null && !CurrentActivity.IsCompleted)
+            throw new Exception("CurrentActivity is not completed. Complete current activity to continue execution.");
+
+        CurrentActivity = _nextActivities.Dequeue();
+        return true;
+    }
+
+
 }

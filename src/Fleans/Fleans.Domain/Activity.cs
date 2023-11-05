@@ -2,25 +2,19 @@
 {
     public abstract record Activity<TResult>
     {
-        public Guid Id { get; }
-        public IWorkflowConnection[] Connections { get; }
+        public Guid Id { get; }        
         public ActivityResult<TResult>? ExecutionResult { get; private set; }
 
         private readonly List<ActivityResult<TResult>> _results = new List<ActivityResult<TResult>>();
         public IReadOnlyCollection<ActivityResult<TResult>> GetResults() => _results;
 
-        public bool IsCompleted => ExecutionResult is not null;
-        
-        protected Activity(Guid id, IWorkflowConnection[] connections)
-        {            
-            Id = id;
-            Connections = connections;
-        }
+        public bool IsCompleted => Status == ActivityStatus.Completed;
 
-        protected void AddResult(ActivityResult<TResult> result)
-        {
-            ExecutionResult = result;
-            _results.Add(result);
-        }
+        public ActivityStatus Status { get; protected set; } = ActivityStatus.NotStarted;
+
+        protected Activity(Guid id)
+        {            
+            Id = id;            
+        }        
     }
 }

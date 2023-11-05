@@ -5,6 +5,12 @@ namespace Fleans.Domain;
 public class ExclusiveGatewayBuilder : ActivityBuilder<bool>
 {
     private IConditionBuilder? _condition;
+    private IActivityBuilder? _then;
+    private IActivityBuilder? _else;
+
+    public ExclusiveGatewayBuilder(Guid id) : base(id)
+    {
+    }
 
     public ExclusiveGatewayBuilder Condition(IConditionBuilder conditionBuilder)
     {
@@ -12,29 +18,53 @@ public class ExclusiveGatewayBuilder : ActivityBuilder<bool>
         return this;
     }
 
-    public ExclusiveGatewayBuilder Then(IActivityBuilder builder, Guid activityId)
+    public ExclusiveGatewayBuilder Then(IActivityBuilder builder)
     {
-        AddConnection(new ExclusiveGatewayCondition(builder.WithId(activityId).Build(), true));
+        _then = builder;
 
         return this;
     }
-    
-    public ExclusiveGatewayBuilder Else(IActivityBuilder builder, Guid activityId)
+
+    public ExclusiveGatewayBuilder Else(IActivityBuilder builder)
     {
-        AddConnection(new ExclusiveGatewayCondition(builder.WithId(activityId).Build(), false));
+        _else = builder;
 
         return this;
     }
-    public override IActivity Build()
+    public override ActivityBuilderResult Build()
     {
         if (_condition is null) throw new ConditionNotSpecifiedException();
+        if (_then is null) throw new ArgumentException("Then branch is not specified");
+
+        var exclusiveGatewayActivity = new ExclusiveGatewayActivity(Id, _condition.Build());
         
-        var exclusiveGatewayActivity = new GatewayExclusiveActivity(Id, _connections.ToArray(), _condition.Build());
-        foreach (var connection in _connections)
+        var thenActivity = _then.Build();
+        var elseActivity = _else?.Build();
+
+        var childActivities = new List<IActivity> { thenActivity.Activity };
+
+        childActivities.AddRange(thenActivity.ChildActivities);
+
+        var connections = new List<IWorkflowConnection<IActivity, IActivity>>
         {
-            connection.From = exclusiveGatewayActivity;
+            new ExclusiveGatewayConnection(exclusiveGatewayActivity, thenActivity.Activity, true),            
+        };
+
+        connections.AddRange(thenActivity.Connections);
+
+        if (elseActivity is not null)
+        {
+            childActivities.Add(elseActivity.Activity);
+            childActivities.AddRange(elseActivity.ChildActivities);
+            connections.Add(new ExclusiveGatewayConnection(exclusiveGatewayActivity, elseActivity.Activity, false));
+            connections.AddRange(elseActivity.Connections);
         }
 
-        return exclusiveGatewayActivity;
+        return new ActivityBuilderResult
+        {
+            ChildActivities = childActivities,
+            Activity = exclusiveGatewayActivity,
+            Connections = connections
+        };
     }
 }

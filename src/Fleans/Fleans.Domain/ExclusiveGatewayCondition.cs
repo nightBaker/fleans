@@ -1,21 +1,23 @@
 namespace Fleans.Domain;
 
-public class ExclusiveGatewayCondition: IWorkflowConnection
+public class ExclusiveGatewayConnection: IWorkflowConnection<ExclusiveGatewayActivity, IActivity>
 {
     public bool ExecuteCondition { get; }
-    public ExclusiveGatewayCondition(IActivity to, bool executeCondition )
+    public ExclusiveGatewayActivity From { get; set; }
+    public IActivity To { get; }
+
+    public ExclusiveGatewayConnection(ExclusiveGatewayActivity from, IActivity to, bool executeCondition )
     {
+        From = from;
         To = to;
         ExecuteCondition = executeCondition;
-    }
+    }    
 
-    public IActivity From { get; set; }
-    public IActivity To { get; }
     public bool CanExecute(IContext context)
     {
-        if (From.IsCompleted && From is IActivity<bool> acitityResult)
+        if (From.IsCompleted)
         {
-            return acitityResult.ExecutionResult!.Result == ExecuteCondition;
+            return From.Condition.Result == ExecuteCondition;
         }
 
         return false;
