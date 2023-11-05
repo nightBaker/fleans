@@ -2,5 +2,7 @@
 
 public interface IConditionExpressionRunner
 {
-    bool Evaluate(IContext context);
+    void Evaluate(IContext context);
+
+    bool Result { get; }
 }

@@ -1,6 +1,6 @@
 namespace Fleans.Domain.Exceptions;
 
-public class ConditionNotSpecifiedException : InvalidOperationException
+public class ConditionNotSpecifiedException : ArgumentException
 {
     public ConditionNotSpecifiedException()
     {

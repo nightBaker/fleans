@@ -1,9 +1,8 @@
 ﻿namespace Fleans.Domain;
 
-public interface IWorkflowConnection
+public interface IWorkflowConnection<out FromType, out ToType> where FromType : IActivity where ToType : IActivity
 {
-    IActivity From { get; internal set; }
-    IActivity To { get; }
-
+    FromType From { get; }
+    ToType To { get; }
     bool CanExecute(IContext context);
 }

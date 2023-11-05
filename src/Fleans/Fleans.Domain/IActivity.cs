@@ -2,12 +2,13 @@ namespace Fleans.Domain;
 
 public interface IActivity
 {
-    Task ExecuteAsync(IContext context);
-    IActivity[] GetNextActivites(IContext context);
+    Guid Id { get; }
+    Task<IActivityExecutionResult> ExecuteAsync(IContext context);
     bool IsCompleted { get; }
+    ActivityStatus Status { get; }
 }
 
 public interface IActivity<TResult> : IActivity
 {
-    ActivityResult<TResult>? ExecutionResult { get; }
+    
 }

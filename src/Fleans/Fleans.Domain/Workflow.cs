@@ -1,43 +1,54 @@
 ﻿namespace Fleans.Domain;
 
-public record Workflow
+public partial class Workflow
 {
-    private readonly WorkflowContext _context;
+    private readonly IContext _context;
+    private readonly WorkflowDefinition _definition;
 
     public Workflow(Guid id,
-                    int version,
                     Dictionary<string, object> initialContext,
-                    IActivity firstActivity)
+                    IActivity firstActivity,
+                    WorkflowDefinition definition)
     {
         Id = id;
-        Version = version;
-        _context = new WorkflowContext(initialContext);
-        CurrentActivity = firstActivity;
+        _context = new WorkflowContext(initialContext, firstActivity);
+        _definition = definition;
     }
 
     public Guid Id { get; }
-    public int Version { get; }
-    
-    public IActivity CurrentActivity { get; private set; }
-    public IReadOnlyDictionary<string, object> Context => _context.Context;
+    public WorkflowStatus Status { get; private set; }
 
     public async Task Run()
     {
-        await CurrentActivity.ExecuteAsync(_context);
-        
-        var nextActivities = CurrentActivity.GetNextActivites(_context);
+        Status = WorkflowStatus.Running;
 
-        while (nextActivities.Any())
+        while (_context.GotoNextActivty())
         {
-            var nextNextActivities = new List<IActivity>();
-            foreach (var activity in nextActivities)
+            var activity = _context.CurrentActivity!;
+            var result = await activity.ExecuteAsync(_context);
+
+            if (result.ActivityResultStatus == ActivityResultStatus.Failed
+                && result.ActivityResultStatus == ActivityResultStatus.Waiting)
             {
-                await activity.ExecuteAsync(_context);
-                nextNextActivities.AddRange(activity.GetNextActivites(_context));
-                CurrentActivity = activity;
+                break;
             }
 
-            nextActivities = nextNextActivities.ToArray();
+            if (_definition.Connections.TryGetValue(activity.Id, out var connections))
+            {
+                var nextActivities = connections.Where(x => x.CanExecute(_context)).Select(x => x.To);
+                _context.EnqueueNextActivities(nextActivities);
+            }
         }
+
+        Status = _context.CurrentActivity switch
+        {
+            null => WorkflowStatus.Completed,
+            not null when _context.CurrentActivity.Status == ActivityStatus.Completed => WorkflowStatus.Completed,
+
+            not null when _context.CurrentActivity.Status == ActivityStatus.Failed => WorkflowStatus.Failed,
+            not null when _context.CurrentActivity.Status == ActivityStatus.Waiting => WorkflowStatus.Waiting,
+            _ => throw new Exception("Unexpected current activity state")
+        };
+        
     }
 }

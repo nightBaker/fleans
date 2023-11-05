@@ -1,5 +1,4 @@
-﻿using Fleans.Domain.Exceptions;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -10,21 +9,29 @@ namespace Fleans.Domain
     public class WorkflowBuilder
     {        
         private Dictionary<string, object> _initialContext = new();
-        private IActivityBuilder? _firstActivityBuilder;
+        private WorkflowDefinitionBuilder? _workflowDefinitionBuilder;
 
-        public WorkflowBuilder StartWith(Dictionary<string, object> initialContext, IActivityBuilder activityBuilder)
+        public WorkflowBuilder With(Dictionary<string, object> initialContext)
         {
             _initialContext = initialContext;
-            _firstActivityBuilder = activityBuilder;
+            
+            return this;
+        }
+
+        public WorkflowBuilder With(WorkflowDefinitionBuilder workflowDefinitionBuilder)
+        {
+            _workflowDefinitionBuilder = workflowDefinitionBuilder;
 
             return this;
         }
 
-        public Workflow Build(Guid id, int version)
+        public Workflow Build(Guid id)
         {
-            if (_firstActivityBuilder is null) throw new FirstActivityNotSpecifiedException();
-            return new Workflow(id, version, _initialContext, _firstActivityBuilder.Build());
-            // TODO activity id 
+            if(_workflowDefinitionBuilder is null) throw new ArgumentException("Workflow definition builder is not specified");
+            
+            var workflowDefinition = _workflowDefinitionBuilder.Build();
+
+            return new Workflow(id, _initialContext, workflowDefinition.Activities.First(), workflowDefinition );
         }
     }
 }
