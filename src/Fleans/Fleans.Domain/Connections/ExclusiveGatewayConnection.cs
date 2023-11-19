@@ -1,8 +1,8 @@
-namespace Fleans.Domain;
+namespace Fleans.Domain.Connections;
 
 public class ExclusiveGatewayConnection: IWorkflowConnection<ExclusiveGatewayActivity, IActivity>
 {
-    public bool ExecuteCondition { get; }
+    private bool ExecuteCondition { get; }
     public ExclusiveGatewayActivity From { get; set; }
     public IActivity To { get; }
 
