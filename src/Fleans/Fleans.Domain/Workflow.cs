@@ -27,19 +27,33 @@ public partial class Workflow
         while (_context.GotoNextActivty())
         {
             var activity = _context.CurrentActivity!;
-            var result = await activity.ExecuteAsync(_context);
 
-            if (result.ActivityResultStatus == ActivityResultStatus.Failed
-                && result.ActivityResultStatus == ActivityResultStatus.Waiting)
+            try
             {
-                break;
-            }
+                var result = await activity.ExecuteAsync(_context);
 
-            if (_definition.Connections.TryGetValue(activity.Id, out var connections))
-            {
-                var nextActivities = connections.Where(x => x.CanExecute(_context)).Select(x => x.To);
-                _context.EnqueueNextActivities(nextActivities);
+                if (result.ActivityResultStatus == ActivityResultStatus.Failed
+                    && result.ActivityResultStatus == ActivityResultStatus.Waiting)
+                {
+                    continue;
+                }
+
+                if (_definition.Connections.TryGetValue(activity.Id, out var connections))
+                {
+                    var nextActivities = connections.Where(x => x.CanExecute(_context)).Select(x => x.To);
+                    _context.EnqueueNextActivities(nextActivities);
+                }
             }
+            catch(Exception e)
+            {
+                activity.Fail(e);
+
+                if (_definition.Connections.TryGetValue(activity.Id, out var allConnections))
+                {
+                    var nextActivities = allConnections.Where(x => x.CanExecute(_context)).Select(x => x.To);
+                    _context.EnqueueNextActivities(nextActivities);
+                }
+            }            
         }
 
         Status = _context.CurrentActivity switch
@@ -51,6 +65,6 @@ public partial class Workflow
             not null when _context.CurrentActivity.Status == ActivityStatus.Waiting => WorkflowStatus.Waiting,
             _ => throw new NotSupportedActivityStatusException()
         };
-        
+
     }
 }
