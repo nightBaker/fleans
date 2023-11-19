@@ -1,4 +1,6 @@
-﻿namespace Fleans.Domain;
+﻿using Fleans.Domain.Exceptions;
+
+namespace Fleans.Domain;
 
 public class WorkflowContext : IContext
 {        
@@ -30,7 +32,7 @@ public class WorkflowContext : IContext
             return false;
 
         if(CurrentActivity is not null && !CurrentActivity.IsCompleted)
-            throw new Exception("CurrentActivity is not completed. Complete current activity to continue execution.");
+            throw new CurrentActivityNotCompletedException("Complete current activity to continue execution.");
 
         CurrentActivity = _nextActivities.Dequeue();
         return true;

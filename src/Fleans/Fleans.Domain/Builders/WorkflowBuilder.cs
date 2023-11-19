@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Fleans.Domain.Exceptions;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -27,7 +28,7 @@ namespace Fleans.Domain
 
         public Workflow Build(Guid id)
         {
-            if(_workflowDefinitionBuilder is null) throw new ArgumentException("Workflow definition builder is not specified");
+            if(_workflowDefinitionBuilder is null) throw new WorkflowВefinitionNotSpecifiedException();
             
             var workflowDefinition = _workflowDefinitionBuilder.Build();
 

@@ -1,4 +1,6 @@
-﻿namespace Fleans.Domain;
+﻿using Fleans.Domain.Exceptions;
+
+namespace Fleans.Domain;
 
 public partial class Workflow
 {
@@ -47,7 +49,7 @@ public partial class Workflow
 
             not null when _context.CurrentActivity.Status == ActivityStatus.Failed => WorkflowStatus.Failed,
             not null when _context.CurrentActivity.Status == ActivityStatus.Waiting => WorkflowStatus.Waiting,
-            _ => throw new Exception("Unexpected current activity state")
+            _ => throw new NotSupportedActivityStatusException()
         };
         
     }

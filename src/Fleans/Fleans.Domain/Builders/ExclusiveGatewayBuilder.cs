@@ -34,7 +34,7 @@ public class ExclusiveGatewayBuilder : ActivityBuilder<bool>
     public override ActivityBuilderResult Build()
     {
         if (_condition is null) throw new ConditionNotSpecifiedException();
-        if (_then is null) throw new ArgumentException("Then branch is not specified");
+        if (_then is null) throw new ThenBranchNotSpecifiedException();
 
         var exclusiveGatewayActivity = new ExclusiveGatewayActivity(Id, _condition.Build());
         
