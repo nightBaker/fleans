@@ -1,4 +1,6 @@
 ﻿using Fleans.Domain.Exceptions;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace Fleans.Domain;
 
@@ -44,16 +46,17 @@ public partial class Workflow
                     _context.EnqueueNextActivities(nextActivities);
                 }
             }
-            catch(Exception e)
+            catch (Exception e)
             {
                 activity.Fail(e);
 
                 if (_definition.Connections.TryGetValue(activity.Id, out var allConnections))
                 {
-                    var nextActivities = allConnections.Where(x => x.CanExecute(_context)).Select(x => x.To);
+                    var nextActivities = allConnections.Where(x => x.GetType().GetGenericTypeDefinition() == typeof(IWorkflowErrorConecction<,>))
+                                                    .Where(x => x.CanExecute(_context)).Select(x => x.To);
                     _context.EnqueueNextActivities(nextActivities);
                 }
-            }            
+            }
         }
 
         Status = _context.CurrentActivity switch

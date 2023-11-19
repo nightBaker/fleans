@@ -12,6 +12,13 @@
 
         public ActivityStatus Status { get; protected set; } = ActivityStatus.NotStarted;
 
+        public void Fail(Exception exception)
+        {
+            Status = ActivityStatus.Failed;
+            ExecutionResult = new ErrorActivityResult<TResult>(exception);
+            _results.Add(ExecutionResult);
+        }
+
         protected Activity(Guid id)
         {            
             Id = id;            

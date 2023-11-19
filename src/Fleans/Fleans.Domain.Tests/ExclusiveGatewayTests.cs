@@ -13,8 +13,7 @@ namespace Fleans.Domain.Tests
             var workflowVersion = 1;
 
             var conditionRunner = Substitute.For<IConditionExpressionRunner>();
-            conditionRunner.Evaluate(Arg.Any<IContext>());
-            conditionRunner.Result.Returns(true);
+            conditionRunner.Evaluate(Arg.Any<IContext>()).Returns(true);
 
             var conditionBuilder = Substitute.For<IConditionBuilder>();
             conditionBuilder.Build().Returns(conditionRunner);
@@ -24,9 +23,9 @@ namespace Fleans.Domain.Tests
             activity.ExecuteAsync(Arg.Any<IContext>()).Returns(new ActivityExecutionResult(ActivityResultStatus.Completed));
             activity.Status.Returns(ActivityStatus.Completed);
 
-            var thenActivityBuilder = Substitute.For<IActivityBuilder>();          
-            thenActivityBuilder.Build().Returns(new ActivityBuilderResult 
-            { 
+            var thenActivityBuilder = Substitute.For<IActivityBuilder>();
+            thenActivityBuilder.Build().Returns(new ActivityBuilderResult
+            {
                 Activity = activity,
                 ChildActivities = new List<IActivity>(),
                 Connections = new List<IWorkflowConnection<IActivity, IActivity>>()
@@ -72,8 +71,7 @@ namespace Fleans.Domain.Tests
             var workflowVersion = 1;
 
             var conditionRunner = Substitute.For<IConditionExpressionRunner>();
-            conditionRunner.Evaluate(Arg.Any<IContext>());
-            conditionRunner.Result.Returns(false);
+            conditionRunner.Evaluate(Arg.Any<IContext>()).Returns(false);            
 
             var conditionBuilder = Substitute.For<IConditionBuilder>();
             conditionBuilder.Build().Returns(conditionRunner);
@@ -81,7 +79,7 @@ namespace Fleans.Domain.Tests
             var activity = Substitute.For<IActivity>();
             activity.Id.Returns(Guid.NewGuid());
             activity.ExecuteAsync(Arg.Any<IContext>()).Returns(new ActivityExecutionResult(ActivityResultStatus.Completed));
-            
+
 
             var thenActivityBuilder = Substitute.For<IActivityBuilder>();
             thenActivityBuilder.Build().Returns(new ActivityBuilderResult
