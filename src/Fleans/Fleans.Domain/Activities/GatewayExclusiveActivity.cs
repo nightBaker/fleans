@@ -15,7 +15,7 @@ namespace Fleans.Domain
         public async Task<IActivityExecutionResult> ExecuteAsync(IContext context)
         {       
             Status = ActivityStatus.Running;
-            Condition.Evaluate(context);
+            ExecutionResult = new (Condition.Evaluate(context));
             Status = ActivityStatus.Completed;
             return new ActivityExecutionResult(ActivityResultStatus.Completed);
         }        
