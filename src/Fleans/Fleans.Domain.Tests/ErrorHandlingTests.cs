@@ -9,16 +9,13 @@ namespace Fleans.Domain.Tests
     public class ErrorHandlingTests
     {
         [TestMethod]
-        public async Task ActivityShouldFail_OnException()
+        public async Task WorkflowShouldFail_OnActivityException()
         {
             var activity = Substitute.For<IActivity>();
             activity.Id.Returns(Guid.NewGuid());
             activity.ExecuteAsync(Arg.Any<IContext>()).Throws(new Exception());
             activity.Status.Returns(ActivityStatus.Failed);
-            
-            var conditionExpression = Substitute.For<IConditionExpressionRunner>();
-            conditionExpression.Evaluate(Arg.Any<IContext>(), Arg.Any<Exception>()).Returns(true);
-
+                        
             var workflowDefinition = new WorkflowDefinition(Guid.NewGuid(), 1,
                 new[] { activity },
                 new Dictionary<Guid, IWorkflowConnection<IActivity, IActivity>[]>
@@ -38,7 +35,7 @@ namespace Fleans.Domain.Tests
         }
 
         [TestMethod]
-        public async Task ActivityShouldGoToErrorActivity_OnException()
+        public async Task WorkfflowShouldBeComplete_ByErrorBranch_OnException()
         {
             var firstActivity = Substitute.For<IActivity>();
             firstActivity.Id.Returns(Guid.NewGuid());
