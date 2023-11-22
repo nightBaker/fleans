@@ -28,12 +28,15 @@ public class WorkflowContext : IContext
 
     public bool GotoNextActivty()
     {
-        if(_nextActivities.Count == 0)
+        if (_nextActivities.Count == 0)
+        {
             return false;
-
-        if(CurrentActivity is not null && !CurrentActivity.IsCompleted)
-            throw new CurrentActivityNotCompletedException("Complete current activity to continue execution.");
-
+        }
+        
+        // TODO do we need all acitivies completed before goint to next activity ?
+        // if(CurrentActivity is not null && !CurrentActivity.IsCompleted)
+        //     throw new CurrentActivityNotCompletedException("Complete current activity to continue execution.");
+        
         CurrentActivity = _nextActivities.Dequeue();
         return true;
     }
