@@ -1,3 +1,5 @@
+using Fleans.Domain.Activities;
+
 namespace Fleans.Domain;
 
 public interface IContext

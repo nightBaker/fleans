@@ -1,5 +1,6 @@
 using NSubstitute;
 using System.Diagnostics;
+using Fleans.Domain.Activities;
 
 namespace Fleans.Domain.Tests
 {
@@ -18,7 +19,7 @@ namespace Fleans.Domain.Tests
             var conditionBuilder = Substitute.For<IConditionBuilder>();
             conditionBuilder.Build().Returns(conditionRunner);
 
-            var activity = Substitute.For<IActivity>();
+            var activity = Substitute.For<IExecutableActivity>();
             activity.Id.Returns(Guid.NewGuid());
             activity.ExecuteAsync(Arg.Any<IContext>()).Returns(new ActivityExecutionResult(ActivityResultStatus.Completed));
             activity.Status.Returns(ActivityStatus.Completed);
@@ -31,7 +32,7 @@ namespace Fleans.Domain.Tests
                 Connections = new List<IWorkflowConnection<IActivity, IActivity>>()
             });
 
-            var elseActivity = Substitute.For<IActivity>();
+            var elseActivity = Substitute.For<IExecutableActivity>();
             elseActivity.Id.Returns(Guid.NewGuid());
             elseActivity.ExecuteAsync(Arg.Any<IContext>()).Returns(new ActivityExecutionResult(ActivityResultStatus.Completed));
 
@@ -42,6 +43,7 @@ namespace Fleans.Domain.Tests
                 ChildActivities = new List<IActivity>(),
                 Connections = new List<IWorkflowConnection<IActivity, IActivity>>()
             });
+            
 
             var workflowBuilder = new WorkflowBuilder();
             var workflow = workflowBuilder
@@ -76,7 +78,7 @@ namespace Fleans.Domain.Tests
             var conditionBuilder = Substitute.For<IConditionBuilder>();
             conditionBuilder.Build().Returns(conditionRunner);
 
-            var activity = Substitute.For<IActivity>();
+            var activity = Substitute.For<IExecutableActivity>();
             activity.Id.Returns(Guid.NewGuid());
             activity.ExecuteAsync(Arg.Any<IContext>()).Returns(new ActivityExecutionResult(ActivityResultStatus.Completed));
 
@@ -89,7 +91,7 @@ namespace Fleans.Domain.Tests
                 Connections = new List<IWorkflowConnection<IActivity, IActivity>>()
             });
 
-            var elseActivity = Substitute.For<IActivity>();
+            var elseActivity = Substitute.For<IExecutableActivity>();
             elseActivity.Id.Returns(Guid.NewGuid());
             elseActivity.ExecuteAsync(Arg.Any<IContext>()).Returns(new ActivityExecutionResult(ActivityResultStatus.Completed));
             elseActivity.Status.Returns(ActivityStatus.Completed);

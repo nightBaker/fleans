@@ -1,6 +1,4 @@
-﻿using Fleans.Domain.Exceptions;
-
-namespace Fleans.Domain
+﻿namespace Fleans.Domain.Activities
 {
     public record ExclusiveGatewayActivity : Activity<bool>, IActivity<bool>
     {

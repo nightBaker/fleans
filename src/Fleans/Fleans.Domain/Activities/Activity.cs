@@ -1,4 +1,4 @@
-﻿namespace Fleans.Domain
+﻿namespace Fleans.Domain.Activities
 {
     public abstract record Activity<TResult>
     {

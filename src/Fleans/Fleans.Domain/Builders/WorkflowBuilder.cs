@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Fleans.Domain.Activities;
 
 namespace Fleans.Domain
 {
@@ -11,7 +12,7 @@ namespace Fleans.Domain
     {        
         private Dictionary<string, object> _initialContext = new();
         private WorkflowDefinitionBuilder? _workflowDefinitionBuilder;
-
+        
         public WorkflowBuilder With(Dictionary<string, object> initialContext)
         {
             _initialContext = initialContext;
@@ -32,7 +33,7 @@ namespace Fleans.Domain
             
             var workflowDefinition = _workflowDefinitionBuilder.Build();
 
-            return new Workflow(id, _initialContext, workflowDefinition.Activities.First(), workflowDefinition );
+            return new Workflow(id, _initialContext, workflowDefinition );
         }
     }
 }

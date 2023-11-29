@@ -1,4 +1,6 @@
-﻿namespace Fleans.Domain.Connections;
+﻿using Fleans.Domain.Activities;
+
+namespace Fleans.Domain.Connections;
 
 public class OnErrorConnection : IWorkflowConnection<IActivity, IActivity>, IWorkflowErrorConecction
 {

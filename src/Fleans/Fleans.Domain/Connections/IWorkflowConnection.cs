@@ -1,4 +1,6 @@
-﻿namespace Fleans.Domain;
+﻿using Fleans.Domain.Activities;
+
+namespace Fleans.Domain;
 
 public interface IWorkflowConnection<out FromType, out ToType> where FromType : IActivity where ToType : IActivity
 {

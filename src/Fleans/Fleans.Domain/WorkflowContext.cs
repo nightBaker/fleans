@@ -1,15 +1,15 @@
-﻿using Fleans.Domain.Exceptions;
+﻿using Fleans.Domain.Activities;
+using Fleans.Domain.Exceptions;
 
 namespace Fleans.Domain;
 
 public class WorkflowContext : IContext
 {        
-    private readonly Dictionary<string, object> _context;
+    private readonly dynamic _context;
     private readonly Queue<IActivity> _nextActivities = new();   
-    public WorkflowContext(Dictionary<string, object> context, IActivity firstActivity)
+    public WorkflowContext(Dictionary<string, object> context)
     {
-        _context = context;        
-        EnqueueNextActivity(firstActivity);
+        _context = context;
     }
 
     public IReadOnlyDictionary<string, object> Context => _context;
