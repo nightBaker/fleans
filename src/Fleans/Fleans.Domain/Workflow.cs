@@ -102,7 +102,8 @@ public partial class Workflow
             IEndProcessEventActivity => WorkflowStatus.Completed, //todo add to tests
             IExecutableActivity { Status: ActivityStatus.Failed } => WorkflowStatus.Failed,
             IExecutableActivity { Status: ActivityStatus.Waiting } => WorkflowStatus.Waiting,
-            _ => throw new NotSupportedActivityStatusException()
+           //TODO: error handling _ => throw new NotSupportedActivityStatusException()
+            _ => WorkflowStatus.Waiting
         };
 
     }

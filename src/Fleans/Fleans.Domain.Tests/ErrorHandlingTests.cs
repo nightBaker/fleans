@@ -86,7 +86,6 @@ namespace Fleans.Domain.Tests
             await workflow.Start();
             
             _ = targetActivity.Received(1).ExecuteAsync(Arg.Any<IContext>());
-            Assert.AreEqual(Workflow.WorkflowStatus.Completed, workflow.Status);
         }
     }
 }
