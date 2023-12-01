@@ -98,7 +98,7 @@ public partial class Workflow
         Status = _context.CurrentActivity switch
         {
             null => WorkflowStatus.Completed,
-            IExecutableActivity { Status: ActivityStatus.Completed } => WorkflowStatus.Completed,
+            IEndProcessEventActivity => WorkflowStatus.Completed, //todo add to tests
             IExecutableActivity { Status: ActivityStatus.Failed } => WorkflowStatus.Failed,
             IExecutableActivity { Status: ActivityStatus.Waiting } => WorkflowStatus.Waiting,
             _ => throw new NotSupportedActivityStatusException()

@@ -8,6 +8,7 @@ namespace Fleans.Domain.Tests
     [TestClass]
     public class ExclusiveGatewayTests
     {
+        //todo create end process activity
         [TestMethod]
         public async Task IfStatement_ShouldRun_ThenBranchNotElse()
         {
