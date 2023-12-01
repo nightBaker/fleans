@@ -98,9 +98,9 @@ public partial class Workflow
         Status = _context.CurrentActivity switch
         {
             null => WorkflowStatus.Completed,
-            not null when _context.CurrentActivity is IExecutableActivity executableActivity && executableActivity.Status  == ActivityStatus.Completed => WorkflowStatus.Completed,
-            not null when _context.CurrentActivity is IExecutableActivity executableActivity && executableActivity.Status  == ActivityStatus.Failed => WorkflowStatus.Failed,
-            not null when _context.CurrentActivity is IExecutableActivity executableActivity && executableActivity.Status  == ActivityStatus.Waiting => WorkflowStatus.Waiting,
+            IExecutableActivity { Status: ActivityStatus.Completed } => WorkflowStatus.Completed,
+            IExecutableActivity { Status: ActivityStatus.Failed } => WorkflowStatus.Failed,
+            IExecutableActivity { Status: ActivityStatus.Waiting } => WorkflowStatus.Waiting,
             _ => throw new NotSupportedActivityStatusException()
         };
 
