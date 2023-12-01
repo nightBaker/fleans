@@ -1,3 +1,5 @@
+using Fleans.Domain.Activities;
+
 namespace Fleans.Domain.Connections;
 
 public class ExclusiveGatewayConnection : IWorkflowConnection<ExclusiveGatewayActivity, IActivity>

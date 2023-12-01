@@ -1,6 +1,8 @@
 ﻿using Fleans.Domain.Exceptions;
 using System.Collections.Generic;
 using System.Linq;
+using Fleans.Domain.Activities;
+using Fleans.Domain.Connections;
 
 namespace Fleans.Domain;
 
@@ -8,19 +10,50 @@ public partial class Workflow
 {
     private readonly IContext _context;
     private readonly WorkflowDefinition _definition;
-
+    
     public Workflow(Guid id,
                     Dictionary<string, object> initialContext,
-                    IActivity firstActivity,
                     WorkflowDefinition definition)
     {
         Id = id;
-        _context = new WorkflowContext(initialContext, firstActivity);
+        _context = new WorkflowContext(initialContext);
         _definition = definition;
+        
     }
 
     public Guid Id { get; }
     public WorkflowStatus Status { get; private set; }
+
+    public async Task Start()
+    {
+        var firstStartEvent = _definition.StartEvents.First(x => x.IsDefault);
+        await _startProcess(firstStartEvent);
+    }
+    
+    public async Task Message(IMessage message)
+    {
+        if (Status == WorkflowStatus.Waiting)
+        {
+            //TODO complete message event 
+        }
+        else
+        {
+            //try to start process
+
+            var firstStartEvent = _definition.StartEvents.First(x => x.CorrelationKey == message.CorrelationKey);
+
+            await _startProcess(firstStartEvent);
+        }
+    }
+
+    private async Task _startProcess(IStartProcessEventActivity startEvent)
+    {
+        var connection = _definition.Connections[startEvent.Id].First();
+
+        _context.EnqueueNextActivities(new[] { connection.To });
+
+        await Run();
+    }
 
     public async Task Run()
     {
@@ -30,31 +63,35 @@ public partial class Workflow
         {
             var activity = _context.CurrentActivity!;
 
-            try
+            if (activity is IExecutableActivity executableActivity)
             {
-                var result = await activity.ExecuteAsync(_context);
 
-                if (result.ActivityResultStatus == ActivityResultStatus.Failed
-                    && result.ActivityResultStatus == ActivityResultStatus.Waiting)
+                try
                 {
-                    continue;
+                    var result = await executableActivity.ExecuteAsync(_context);
+
+                    if (result.ActivityResultStatus == ActivityResultStatus.Failed
+                        && result.ActivityResultStatus == ActivityResultStatus.Waiting)
+                    {
+                        continue;
+                    }
+
+                    if (_definition.Connections.TryGetValue(activity.Id, out var connections))
+                    {
+                        var nextActivities = connections.Where(x => x.CanExecute(_context)).Select(x => x.To);
+                        _context.EnqueueNextActivities(nextActivities);
+                    }
                 }
-
-                if (_definition.Connections.TryGetValue(activity.Id, out var connections))
+                catch (Exception e)
                 {
-                    var nextActivities = connections.Where(x => x.CanExecute(_context)).Select(x => x.To);
-                    _context.EnqueueNextActivities(nextActivities);
-                }
-            }
-            catch (Exception e)
-            {
-                activity.Fail(e);
+                    executableActivity.Fail(e);
 
-                if (_definition.Connections.TryGetValue(activity.Id, out var allConnections))
-                {
-                    var nextActivities = allConnections.OfType<IWorkflowErrorConecction>()
-                                                        .Where(x => x.CanExecute(_context, e)).Select(x => x.To);
-                    _context.EnqueueNextActivities(nextActivities);
+                    if (_definition.Connections.TryGetValue(activity.Id, out var allConnections))
+                    {
+                        var nextActivities = allConnections.OfType<IWorkflowErrorConecction>()
+                            .Where(x => x.CanExecute(_context, e)).Select(x => x.To);
+                        _context.EnqueueNextActivities(nextActivities);
+                    }
                 }
             }
         }
@@ -62,11 +99,11 @@ public partial class Workflow
         Status = _context.CurrentActivity switch
         {
             null => WorkflowStatus.Completed,
-            not null when _context.CurrentActivity.Status == ActivityStatus.Completed => WorkflowStatus.Completed,
-
-            not null when _context.CurrentActivity.Status == ActivityStatus.Failed => WorkflowStatus.Failed,
-            not null when _context.CurrentActivity.Status == ActivityStatus.Waiting => WorkflowStatus.Waiting,
-            _ => throw new NotSupportedActivityStatusException()
+            IEndProcessEventActivity => WorkflowStatus.Completed, //todo add to tests
+            IExecutableActivity { Status: ActivityStatus.Failed } => WorkflowStatus.Failed,
+            IExecutableActivity { Status: ActivityStatus.Waiting } => WorkflowStatus.Waiting,
+           //TODO: error handling _ => throw new NotSupportedActivityStatusException()
+            _ => WorkflowStatus.Waiting
         };
 
     }

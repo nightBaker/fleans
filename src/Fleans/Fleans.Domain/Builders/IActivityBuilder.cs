@@ -1,7 +1,4 @@
-using System.Runtime.InteropServices.ComTypes;
-using System.Security.Cryptography;
-
-namespace Fleans.Domain;
+namespace Fleans.Domain.Builders;
 
 public interface IActivityBuilder
 {    

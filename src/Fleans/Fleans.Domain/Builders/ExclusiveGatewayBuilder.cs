@@ -1,7 +1,8 @@
+using Fleans.Domain.Activities;
 using Fleans.Domain.Connections;
 using Fleans.Domain.Exceptions;
 
-namespace Fleans.Domain;
+namespace Fleans.Domain.Builders;
 
 public class ExclusiveGatewayBuilder : ActivityBuilder<bool>
 {

@@ -1,4 +1,4 @@
-namespace Fleans.Domain;
+namespace Fleans.Domain.Builders;
 
 public interface IConditionBuilder
 {

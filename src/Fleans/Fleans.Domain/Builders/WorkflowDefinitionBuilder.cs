@@ -1,6 +1,7 @@
-﻿using Fleans.Domain.Exceptions;
+﻿using Fleans.Domain.Activities;
+using Fleans.Domain.Exceptions;
 
-namespace Fleans.Domain
+namespace Fleans.Domain.Builders
 {
     public class WorkflowDefinitionBuilder
     {
@@ -33,7 +34,9 @@ namespace Fleans.Domain
 
             var connections = firstActivity.Connections.GroupBy(x => x.From.Id).ToDictionary(x => x.Key, x => x.ToArray());
 
-            return new WorkflowDefinition(_id, _version, allActivities.ToArray(), connections);
+          //  return new WorkflowDefinition(_id, _version, allActivities.ToArray(), connections);
+
+          throw new NotImplementedException("Reimagination required");
         }
     }
 }

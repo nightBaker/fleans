@@ -1,4 +1,6 @@
-﻿namespace Fleans.Domain;
+﻿using Fleans.Domain.Activities;
+
+namespace Fleans.Domain.Connections;
 
 public interface IWorkflowErrorConecction
 {

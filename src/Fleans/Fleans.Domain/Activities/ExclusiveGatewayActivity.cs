@@ -1,8 +1,6 @@
-﻿using Fleans.Domain.Exceptions;
-
-namespace Fleans.Domain
+﻿namespace Fleans.Domain.Activities
 {
-    public record ExclusiveGatewayActivity : Activity<bool>, IActivity<bool>
+    public record ExclusiveGatewayActivity : Activity<bool>, IExecutableActivity<bool>
     {
         public ExclusiveGatewayActivity(Guid id, IConditionExpressionRunner condition)
             : base(id)
