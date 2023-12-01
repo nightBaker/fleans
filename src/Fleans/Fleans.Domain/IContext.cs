@@ -8,4 +8,9 @@ public interface IContext
 
     void EnqueueNextActivities(IEnumerable<IActivity> activities);
     bool GotoNextActivty();
+
+    void SetVariable(string name, object value);
+
+    object? GetVariable(string name);
+
 }

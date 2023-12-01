@@ -11,7 +11,6 @@ public class WorkflowContext : IContext
     {
         _context = context;
     }
-
     public IReadOnlyDictionary<string, object> Context => _context;
     public IActivity? CurrentActivity { get; private set; }
 
@@ -41,5 +40,13 @@ public class WorkflowContext : IContext
         return true;
     }
 
+    public void SetVariable(string name, object value)
+    {
+        throw new NotImplementedException();
+    }
 
+    public object? GetVariable(string name)
+    {
+        throw new NotImplementedException();
+    }
 }
