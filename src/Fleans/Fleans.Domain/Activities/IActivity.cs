@@ -13,7 +13,7 @@ public interface IExecutableActivity: IActivity
     ActivityStatus Status { get; }
 }
 
-public interface IActivity<TResult> : IActivity
+public interface IExecutableActivity<TResult> : IExecutableActivity
 {
     
 }

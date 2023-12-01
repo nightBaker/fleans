@@ -61,34 +61,36 @@ public partial class Workflow
         while (_context.GotoNextActivty())
         {
             var activity = _context.CurrentActivity!;
-            
-            if(activity is IExecutableActivity executableActivity)
 
-            try
+            if (activity is IExecutableActivity executableActivity)
             {
-                var result = await executableActivity.ExecuteAsync(_context);
 
-                if (result.ActivityResultStatus == ActivityResultStatus.Failed
-                    && result.ActivityResultStatus == ActivityResultStatus.Waiting)
+                try
                 {
-                    continue;
+                    var result = await executableActivity.ExecuteAsync(_context);
+
+                    if (result.ActivityResultStatus == ActivityResultStatus.Failed
+                        && result.ActivityResultStatus == ActivityResultStatus.Waiting)
+                    {
+                        continue;
+                    }
+
+                    if (_definition.Connections.TryGetValue(activity.Id, out var connections))
+                    {
+                        var nextActivities = connections.Where(x => x.CanExecute(_context)).Select(x => x.To);
+                        _context.EnqueueNextActivities(nextActivities);
+                    }
                 }
-
-                if (_definition.Connections.TryGetValue(activity.Id, out var connections))
+                catch (Exception e)
                 {
-                    var nextActivities = connections.Where(x => x.CanExecute(_context)).Select(x => x.To);
-                    _context.EnqueueNextActivities(nextActivities);
-                }
-            }
-            catch (Exception e)
-            {
-                executableActivity.Fail(e);
+                    executableActivity.Fail(e);
 
-                if (_definition.Connections.TryGetValue(activity.Id, out var allConnections))
-                {
-                    var nextActivities = allConnections.OfType<IWorkflowErrorConecction>()
-                                                        .Where(x => x.CanExecute(_context, e)).Select(x => x.To);
-                    _context.EnqueueNextActivities(nextActivities);
+                    if (_definition.Connections.TryGetValue(activity.Id, out var allConnections))
+                    {
+                        var nextActivities = allConnections.OfType<IWorkflowErrorConecction>()
+                            .Where(x => x.CanExecute(_context, e)).Select(x => x.To);
+                        _context.EnqueueNextActivities(nextActivities);
+                    }
                 }
             }
         }
