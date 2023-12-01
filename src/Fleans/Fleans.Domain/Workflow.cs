@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using Fleans.Domain.Activities;
+using Fleans.Domain.Connections;
 
 namespace Fleans.Domain;
 

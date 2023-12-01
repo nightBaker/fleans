@@ -1,6 +1,7 @@
 using NSubstitute;
 using System.Diagnostics;
 using Fleans.Domain.Activities;
+using Fleans.Domain.Builders;
 using Fleans.Domain.Connections;
 
 namespace Fleans.Domain.Tests
