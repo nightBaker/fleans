@@ -1,6 +1,7 @@
 ﻿using Fleans.Domain.Activities;
+using Fleans.Domain.Connections;
 
-namespace Fleans.Domain;
+namespace Fleans.Domain.Builders;
 
 public record ActivityBuilderResult
 {

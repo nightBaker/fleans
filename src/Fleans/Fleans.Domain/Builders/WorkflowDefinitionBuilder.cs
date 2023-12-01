@@ -1,7 +1,7 @@
 ﻿using Fleans.Domain.Activities;
 using Fleans.Domain.Exceptions;
 
-namespace Fleans.Domain
+namespace Fleans.Domain.Builders
 {
     public class WorkflowDefinitionBuilder
     {
