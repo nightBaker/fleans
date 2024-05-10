@@ -1,27 +1,10 @@
-﻿namespace Fleans.Domain
+﻿
+namespace Fleans.Domain.Activities
 {
-    public abstract record Activity<TResult>
+    public abstract class Activity
     {
-        public Guid Id { get; }        
-        public ActivityResult<TResult>? ExecutionResult { get; protected set; }
-
-        private readonly List<ActivityResult<TResult>> _results = new List<ActivityResult<TResult>>();
-        public IReadOnlyCollection<ActivityResult<TResult>> GetResults() => _results;
-
-        public bool IsCompleted => Status == ActivityStatus.Completed;
-
-        public ActivityStatus Status { get; protected set; } = ActivityStatus.NotStarted;
-
-        public void Fail(Exception exception)
-        {
-            Status = ActivityStatus.Failed;
-            ExecutionResult = new ErrorActivityResult<TResult>(exception);
-            _results.Add(ExecutionResult);
-        }
-
-        protected Activity(Guid id)
-        {            
-            Id = id;            
-        }        
+        public Guid ActivityId { get; protected set; }
+        public abstract void Execute(WorkflowInstance workflowInstance, ActivityState activityState);
+        public abstract List<Activity> GetNextActivities(WorkflowInstance workflowInstance, ActivityState activityState);
     }
 }

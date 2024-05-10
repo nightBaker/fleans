@@ -1,73 +1,101 @@
-﻿using Fleans.Domain.Exceptions;
+﻿using System;
 using System.Collections.Generic;
+
 using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using Fleans.Domain.Activities;
+using Fleans.Domain.Sequences;
 
-namespace Fleans.Domain;
-
-public partial class Workflow
+namespace Fleans.Domain
 {
-    private readonly IContext _context;
-    private readonly WorkflowDefinition _definition;
-
-    public Workflow(Guid id,
-                    Dictionary<string, object> initialContext,
-                    IActivity firstActivity,
-                    WorkflowDefinition definition)
+    public abstract class Workflow
     {
-        Id = id;
-        _context = new WorkflowContext(initialContext, firstActivity);
-        _definition = definition;
+        public Guid WorkflowId { get; set; }
+        public List<Activity> Activities { get; } = new List<Activity>();
+        public List<SequenceFlow> SequenceFlows { get; } = new List<SequenceFlow>();
+
+        public abstract void Define();
     }
 
-    public Guid Id { get; }
-    public WorkflowStatus Status { get; private set; }
-
-    public async Task Run()
+    public class WorkflowEngine
     {
-        Status = WorkflowStatus.Running;
+        private readonly Dictionary<string, Workflow> _workflows = new Dictionary<string, Workflow>();
 
-        while (_context.GotoNextActivty())
+        public void DefineWorkflow(string key, Workflow workflow)
         {
-            var activity = _context.CurrentActivity!;
+            workflow.Define();
+            _workflows[key] = workflow;
+        }
 
-            try
+        public WorkflowInstance CreateWorkflowInstance(string key)
+        {
+            if (!_workflows.ContainsKey(key))
+                throw new ArgumentException("Workflow not found");
+
+            var workflow = _workflows[key];
+            return new WorkflowInstance(workflow);
+        }
+
+        public void ExecuteWorkflow(WorkflowInstance instance)
+        {
+            while (instance.State.ActiveActivities.Any())
             {
-                var result = await activity.ExecuteAsync(_context);
-
-                if (result.ActivityResultStatus == ActivityResultStatus.Failed
-                    && result.ActivityResultStatus == ActivityResultStatus.Waiting)
+                foreach (var activityState in instance.State.ActiveActivities.Where(x => !x.IsExecuting))
                 {
-                    continue;
+                    activityState.CurrentActivity.Execute(instance, activityState);
                 }
 
-                if (_definition.Connections.TryGetValue(activity.Id, out var connections))
-                {
-                    var nextActivities = connections.Where(x => x.CanExecute(_context)).Select(x => x.To);
-                    _context.EnqueueNextActivities(nextActivities);
-                }
-            }
-            catch (Exception e)
-            {
-                activity.Fail(e);
-
-                if (_definition.Connections.TryGetValue(activity.Id, out var allConnections))
-                {
-                    var nextActivities = allConnections.OfType<IWorkflowErrorConecction>()
-                                                        .Where(x => x.CanExecute(_context, e)).Select(x => x.To);
-                    _context.EnqueueNextActivities(nextActivities);
-                }
+                instance.TransitionToNextActivity();
             }
         }
 
-        Status = _context.CurrentActivity switch
+        public void CompleteActivity(WorkflowInstance instance, Guid activityId, Dictionary<string, object> variables)
         {
-            null => WorkflowStatus.Completed,
-            not null when _context.CurrentActivity.Status == ActivityStatus.Completed => WorkflowStatus.Completed,
+            instance.CompleteActivity(activityId, variables);
+            ExecuteWorkflow(instance);
+        }
 
-            not null when _context.CurrentActivity.Status == ActivityStatus.Failed => WorkflowStatus.Failed,
-            not null when _context.CurrentActivity.Status == ActivityStatus.Waiting => WorkflowStatus.Waiting,
-            _ => throw new NotSupportedActivityStatusException()
-        };
+        public void FailActivity(WorkflowInstance instance, Guid activityId, Exception exception)
+        {
+            instance.FailActivity(activityId, exception);
+            ExecuteWorkflow(instance);
+        }
+    }
 
+    public interface ICondition
+    {
+        bool Evaluate();
+    }
+
+    public class SimpleCondition : ICondition
+    {
+        private readonly Func<bool> _condition;
+
+        public SimpleCondition(Func<bool> condition)
+        {
+            _condition = condition;
+        }
+
+        public bool Evaluate()
+        {
+            return _condition();
+        }
+    }
+
+    public class TaskActivityA : Activity
+    {
+        public override void Execute(WorkflowInstance workflowInstance, ActivityState activityState)
+        {
+            activityState.Execute();
+            Console.WriteLine("Executing Task A");
+            activityState.Complete();
+        }
+
+        public override List<Activity> GetNextActivities(WorkflowInstance workflowInstance, ActivityState state)
+        {
+            var nextFlow = workflowInstance.Workflow.SequenceFlows.FirstOrDefault(sf => sf.Source == this);
+            return nextFlow != null ? new List<Activity> { nextFlow.Target } : new List<Activity>();
+        }
     }
 }
