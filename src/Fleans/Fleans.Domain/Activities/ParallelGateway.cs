@@ -11,7 +11,7 @@ namespace Fleans.Domain.Activities
             IsFork = isFork;
         }
 
-        public override void Execute(WorkflowInstance workflowInstance, ActivityState activityState)
+        public override void Execute(WorkflowInstance workflowInstance, ActivityInstance activityState)
         {
             if (IsFork)
             {
@@ -31,7 +31,7 @@ namespace Fleans.Domain.Activities
                 
         }
 
-        public override List<Activity> GetNextActivities(WorkflowInstance workflowInstance, ActivityState state)
+        public override List<Activity> GetNextActivities(WorkflowInstance workflowInstance, ActivityInstance state)
         {
             var nextFlows = workflowInstance.Workflow.SequenceFlows.Where(sf => sf.Source == this)
                                             .Select(flow => flow.Target)

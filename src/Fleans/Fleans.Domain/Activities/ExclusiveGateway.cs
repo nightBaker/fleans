@@ -7,17 +7,22 @@ namespace Fleans.Domain.Activities
     {
         private readonly List<ConditionalSequenceFlow> _flows = new List<ConditionalSequenceFlow>();
 
+        public ExclusiveGateway(string activityId) 
+        { 
+            ActivityId = activityId;
+        }
+
         public void AddConditionalFlow(ConditionalSequenceFlow flow)
         {
             _flows.Add(flow);
         }
 
-        public override void Execute(WorkflowInstance workflowInstance, ActivityState activityState)
+        public override void Execute(WorkflowInstance workflowInstance, ActivityInstance activityInstance)
         {
-            activityState.Complete();            
+            activityInstance.Complete();            
         }
 
-        public override List<Activity> GetNextActivities(WorkflowInstance workflowInstance, ActivityState state)
+        public override List<Activity> GetNextActivities(WorkflowInstance workflowInstance, ActivityInstance state)
         {
             foreach (var flow in _flows)
             {

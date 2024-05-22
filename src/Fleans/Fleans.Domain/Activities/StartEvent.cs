@@ -4,13 +4,18 @@ namespace Fleans.Domain.Activities
 {
     public class StartEvent : Activity
     {
-        public override void Execute(WorkflowInstance workflowInstance, ActivityState activityState)
+        public StartEvent(string activityId)
         {
-            activityState.Complete();
+            ActivityId = activityId;
+        }
+
+        public override void Execute(WorkflowInstance workflowInstance, ActivityInstance activityInstance)
+        {
+            activityInstance.Complete();
             workflowInstance.Start();
         }
 
-        public override List<Activity> GetNextActivities(WorkflowInstance workflowInstance, ActivityState activityState)
+        public override List<Activity> GetNextActivities(WorkflowInstance workflowInstance, ActivityInstance activityInstance)
         {
             var nextFlow = workflowInstance.Workflow.SequenceFlows.FirstOrDefault(sf => sf.Source == this);
             return nextFlow != null ? new List<Activity> { nextFlow.Target } : new List<Activity>();

@@ -4,13 +4,18 @@ namespace Fleans.Domain.Activities
 {
     public class EndEvent : Activity
     {
-        public override void Execute(WorkflowInstance workflowInstance, ActivityState activityState)
+        public EndEvent(string activityId) 
+        { 
+            ActivityId = activityId;
+        }
+
+        public override void Execute(WorkflowInstance workflowInstance, ActivityInstance activityState)
         {
             activityState.Complete();
             workflowInstance.Complete();
         }
 
-        public override List<Activity> GetNextActivities(WorkflowInstance workflowInstance, ActivityState activityState)
+        public override List<Activity> GetNextActivities(WorkflowInstance workflowInstance, ActivityInstance activityState)
         {
             return new List<Activity>();
         }

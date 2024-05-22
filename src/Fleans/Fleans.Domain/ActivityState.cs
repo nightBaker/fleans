@@ -4,7 +4,7 @@ using Fleans.Domain.Errors;
 
 namespace Fleans.Domain
 {
-    public class ActivityState
+    public class ActivityInstance
     {
         public Activity CurrentActivity { get; }
 
@@ -16,7 +16,7 @@ namespace Fleans.Domain
 
         public ActivityErrorState? ErrorState { get; private set; }
 
-        public ActivityState(Activity currentActivity)
+        public ActivityInstance(Activity currentActivity)
         {
             CurrentActivity = currentActivity;
         }

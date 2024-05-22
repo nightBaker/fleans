@@ -1,3 +1,6 @@
+using Fleans.Domain.Activities;
+using Fleans.Domain.Sequences;
+using NSubstitute;
 using System.Diagnostics;
 
 namespace Fleans.Domain.Tests
@@ -9,27 +12,86 @@ namespace Fleans.Domain.Tests
         public async Task IfStatement_ShouldRun_ThenBranchNotElse()
         {
             // Arrange
-            
+            var trueCondition = Substitute.For<ICondition>();
+            trueCondition.Evaluate().Returns(true);
+
+            var falseCondition = Substitute.For<ICondition>();
+            falseCondition.Evaluate().Returns(false);
+
+            var start = new StartEvent("start");
+            var end1 = new EndEvent("end1");
+            var end2 = new EndEvent("end2");
+            var ifActivity = new ExclusiveGateway("if");
+            ifActivity.AddConditionalFlow(new ConditionalSequenceFlow(ifActivity, end1, trueCondition));
+            ifActivity.AddConditionalFlow(new ConditionalSequenceFlow(ifActivity, end2, falseCondition));
+
+            var workflow = Substitute.For<Workflow>();
+            workflow.Activities.Add(start);
+            workflow.Activities.Add(end1);
+            workflow.Activities.Add(end2);
+            workflow.Activities.Add(ifActivity);
+
+            workflow.SequenceFlows.Add(new SequenceFlow(start, ifActivity));
+            workflow.SequenceFlows.Add(new SequenceFlow(ifActivity, end1));
+            workflow.SequenceFlows.Add(new SequenceFlow(ifActivity, end2));
+
+            var workflowEngine = new WorkflowEngine();
+            workflowEngine.DefineWorkflow("testWF", workflow);
+
+            var testWF = workflowEngine.CreateWorkflowInstance("testWF");
 
             // Act
-            //await workflow.Run();
+            workflowEngine.ExecuteWorkflow(testWF);
 
-            //// Assert
-            //_ = activity.Received(1).ExecuteAsync();
-            //_ = elseActivity.Received(0).ExecuteAsync();
+            // Assert           
+            Assert.IsTrue(testWF.State.IsCompleted);
+
+            Assert.IsTrue(testWF.State.CompletedActivities.Any(x => x.CurrentActivity.ActivityId == "end1"));
+            Assert.IsFalse(testWF.State.CompletedActivities.Any(x => x.CurrentActivity.ActivityId == "end2"));
+
         }
 
         [TestMethod]
         public async Task IfStatement_ShouldRun_ElseBranchNotThen()
         {
             // Arrange
-           
-            //// Act
-            //await workflow.Run();
+            var trueCondition = Substitute.For<ICondition>();
+            trueCondition.Evaluate().Returns(true);
 
-            //// Assert
-            //_ = activity.Received(0).ExecuteAsync();
-            //_ = elseActivity.Received(1).ExecuteAsync();
+            var falseCondition = Substitute.For<ICondition>();
+            falseCondition.Evaluate().Returns(false);
+
+            var start = new StartEvent("start");
+            var end1 = new EndEvent("end1");
+            var end2 = new EndEvent("end2");
+            var ifActivity = new ExclusiveGateway("if");
+            ifActivity.AddConditionalFlow(new ConditionalSequenceFlow(ifActivity, end1, falseCondition));
+            ifActivity.AddConditionalFlow(new ConditionalSequenceFlow(ifActivity, end2, trueCondition));
+
+            var workflow = Substitute.For<Workflow>();
+            workflow.Activities.Add(start);
+            workflow.Activities.Add(end1);
+            workflow.Activities.Add(end2);
+            workflow.Activities.Add(ifActivity);
+
+            workflow.SequenceFlows.Add(new SequenceFlow(start, ifActivity));
+            workflow.SequenceFlows.Add(new SequenceFlow(ifActivity, end1));
+            workflow.SequenceFlows.Add(new SequenceFlow(ifActivity, end2));
+
+            var workflowEngine = new WorkflowEngine();
+            workflowEngine.DefineWorkflow("testWF", workflow);
+
+            var testWF = workflowEngine.CreateWorkflowInstance("testWF");
+
+            // Act
+            workflowEngine.ExecuteWorkflow(testWF);
+
+            // Assert           
+            Assert.IsTrue(testWF.State.IsCompleted);
+
+            Assert.IsFalse(testWF.State.CompletedActivities.Any(x => x.CurrentActivity.ActivityId == "end1"));
+            Assert.IsTrue(testWF.State.CompletedActivities.Any(x => x.CurrentActivity.ActivityId == "end2"));
         }
+
     }
 }

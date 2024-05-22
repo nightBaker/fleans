@@ -17,8 +17,8 @@ public class WorkflowInstance
 
     internal void TransitionToNextActivity()
     {
-        var newActiveActivities = new List<ActivityState>();
-        var completedActivities = new List<ActivityState>();
+        var newActiveActivities = new List<ActivityInstance>();
+        var completedActivities = new List<ActivityInstance>();
 
         foreach (var activityState in State.ActiveActivities)
         {
@@ -29,7 +29,7 @@ public class WorkflowInstance
                     continue;
 
                 var nextActivities = currentActivity.GetNextActivities(this, activityState);
-                newActiveActivities.AddRange(nextActivities.Select(activity => new ActivityState(activity)));
+                newActiveActivities.AddRange(nextActivities.Select(activity => new ActivityInstance(activity)));
                 
                 completedActivities.Add(activityState);
             }
@@ -40,7 +40,7 @@ public class WorkflowInstance
         State.CompletedActivities.AddRange(completedActivities);
     }
 
-    internal void CompleteActivity(Guid activityId, Dictionary<string, object> variables)
+    internal void CompleteActivity(string activityId, Dictionary<string, object> variables)
     {
         var activityState = State.ActiveActivities.FirstOrDefault(x => x.CurrentActivity.ActivityId == activityId)
             ?? throw new InvalidOperationException("Active activity not found");
@@ -52,12 +52,12 @@ public class WorkflowInstance
         variablesState.Merge(variables);
     }
 
-    internal void FailActivity(Guid activityId, Exception exception)
+    internal void FailActivity(string activityId, Exception exception)
     {
-        var activityState = State.ActiveActivities.FirstOrDefault(x => x.CurrentActivity.ActivityId == activityId)
+        var activityInstance = State.ActiveActivities.FirstOrDefault(x => x.CurrentActivity.ActivityId == activityId)
             ?? throw new InvalidOperationException("Active activity not found");
 
-        activityState.Fail(exception);
+        activityInstance.Fail(exception);
     }
 
     internal void Start() => State.Start();

@@ -7,14 +7,14 @@ public class WorkflowInstanceState
     public bool IsStarted { get; private set; }
     public bool IsCompleted { get; private set; }
 
-    public List<ActivityState> ActiveActivities { get; } = new List<ActivityState>();
-    public List<ActivityState> CompletedActivities { get; } = new List<ActivityState>();
+    public List<ActivityInstance> ActiveActivities { get; } = new List<ActivityInstance>();
+    public List<ActivityInstance> CompletedActivities { get; } = new List<ActivityInstance>();
 
     public Dictionary<Guid, WorklfowVariablesState> VariableStates { get; } = new();
 
     public WorkflowInstanceState(Activity startActivity)
     {
-        ActiveActivities.Add(new ActivityState(startActivity));
+        ActiveActivities.Add(new ActivityInstance(startActivity));
     }
 
     internal void Start() => IsStarted = true;
