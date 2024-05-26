@@ -10,12 +10,43 @@ public class WorkflowInstance
 
     public WorkflowInstance(Workflow workflow)
     {
-        Workflow = workflow;
+        Workflow = workflow ?? throw new ArgumentNullException(nameof(workflow));
         var startActivity = workflow.Activities.OfType<StartEvent>().First();
         State = new WorkflowInstanceState(startActivity);
     }
 
-    internal void TransitionToNextActivity()
+    public void StartWorkflow()
+    {
+        Start();
+        ExecuteWorkflow();
+    }
+
+    private void ExecuteWorkflow()
+    {
+        while (State.ActiveActivities.Any())
+        {
+            foreach (var activityState in State.ActiveActivities.Where(x => !x.IsExecuting))
+            {
+                activityState.CurrentActivity.Execute(this, activityState);
+            }
+
+            TransitionToNextActivity();
+        }
+    }
+
+    public void CompleteActivity(string activityId, Dictionary<string, object> variables)
+    {
+        CompleteActivityState(activityId, variables);
+        ExecuteWorkflow();
+    }
+
+    public void FailActivity(string activityId, Exception exception)
+    {
+        FailActivityState(activityId, exception);
+        ExecuteWorkflow();
+    }
+
+    private void TransitionToNextActivity()
     {
         var newActiveActivities = new List<ActivityInstance>();
         var completedActivities = new List<ActivityInstance>();
@@ -40,7 +71,7 @@ public class WorkflowInstance
         State.CompletedActivities.AddRange(completedActivities);
     }
 
-    internal void CompleteActivity(string activityId, Dictionary<string, object> variables)
+    private void CompleteActivityState(string activityId, Dictionary<string, object> variables)
     {
         var activityState = State.ActiveActivities.FirstOrDefault(x => x.CurrentActivity.ActivityId == activityId)
             ?? throw new InvalidOperationException("Active activity not found");
@@ -52,7 +83,7 @@ public class WorkflowInstance
         variablesState.Merge(variables);
     }
 
-    internal void FailActivity(string activityId, Exception exception)
+    private void FailActivityState(string activityId, Exception exception)
     {
         var activityInstance = State.ActiveActivities.FirstOrDefault(x => x.CurrentActivity.ActivityId == activityId)
             ?? throw new InvalidOperationException("Active activity not found");

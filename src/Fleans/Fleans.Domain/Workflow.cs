@@ -20,47 +20,14 @@ namespace Fleans.Domain
 
     public class WorkflowEngine
     {
-        private readonly Dictionary<string, Workflow> _workflows = new Dictionary<string, Workflow>();
+        public WorkflowInstance CurrentWorkflowInstance { get; private set; }
 
-        public void DefineWorkflow(string key, Workflow workflow)
+        public WorkflowEngine(Workflow workflow)
         {
-            workflow.Define();
-            _workflows[key] = workflow;
+            CurrentWorkflowInstance = new WorkflowInstance(workflow);
         }
 
-        public WorkflowInstance CreateWorkflowInstance(string key)
-        {
-            if (!_workflows.ContainsKey(key))
-                throw new ArgumentException("Workflow not found");
-
-            var workflow = _workflows[key];
-            return new WorkflowInstance(workflow);
-        }
-
-        public void ExecuteWorkflow(WorkflowInstance instance)
-        {
-            while (instance.State.ActiveActivities.Any())
-            {
-                foreach (var activityState in instance.State.ActiveActivities.Where(x => !x.IsExecuting))
-                {
-                    activityState.CurrentActivity.Execute(instance, activityState);
-                }
-
-                instance.TransitionToNextActivity();
-            }
-        }
-
-        public void CompleteActivity(WorkflowInstance instance, string activityId, Dictionary<string, object> variables)
-        {
-            instance.CompleteActivity(activityId, variables);
-            ExecuteWorkflow(instance);
-        }
-
-        public void FailActivity(WorkflowInstance instance, string activityId, Exception exception)
-        {
-            instance.FailActivity(activityId, exception);
-            ExecuteWorkflow(instance);
-        }
+        
     }
 
     public interface ICondition

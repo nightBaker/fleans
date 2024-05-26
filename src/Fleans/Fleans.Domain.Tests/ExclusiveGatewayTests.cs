@@ -35,13 +35,10 @@ namespace Fleans.Domain.Tests
             workflow.SequenceFlows.Add(new SequenceFlow(ifActivity, end1));
             workflow.SequenceFlows.Add(new SequenceFlow(ifActivity, end2));
 
-            var workflowEngine = new WorkflowEngine();
-            workflowEngine.DefineWorkflow("testWF", workflow);
-
-            var testWF = workflowEngine.CreateWorkflowInstance("testWF");
+            var testWF = new WorkflowInstance(workflow);
 
             // Act
-            workflowEngine.ExecuteWorkflow(testWF);
+            testWF.StartWorkflow();
 
             // Assert           
             Assert.IsTrue(testWF.State.IsCompleted);
@@ -78,13 +75,10 @@ namespace Fleans.Domain.Tests
             workflow.SequenceFlows.Add(new SequenceFlow(ifActivity, end1));
             workflow.SequenceFlows.Add(new SequenceFlow(ifActivity, end2));
 
-            var workflowEngine = new WorkflowEngine();
-            workflowEngine.DefineWorkflow("testWF", workflow);
-
-            var testWF = workflowEngine.CreateWorkflowInstance("testWF");
+            var testWF = new WorkflowInstance(workflow);
 
             // Act
-            workflowEngine.ExecuteWorkflow(testWF);
+            testWF.StartWorkflow();
 
             // Assert           
             Assert.IsTrue(testWF.State.IsCompleted);
