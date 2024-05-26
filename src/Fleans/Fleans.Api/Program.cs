@@ -1,11 +1,19 @@
+using Fleans.Application;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+builder.Host.UseOrleans(static siloBuilder =>
+{
+    siloBuilder.UseLocalhostClustering();
+    siloBuilder.AddMemoryGrainStorage("urls");
+});
 
+// Add services to the container.
 builder.Services.AddControllers();
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddApplication();
 
 var app = builder.Build();
 

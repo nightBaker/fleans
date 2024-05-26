@@ -5,12 +5,11 @@ namespace Fleans.Application;
 public class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFactoryGrain
 {
     private readonly IGrainFactory _grainFactory;
-    private readonly Dictionary<string, Workflow> _workflows;
+    private readonly Dictionary<string, Workflow> _workflows = new();
 
-    public WorkflowInstanceFactoryGrain(IGrainFactory grainFactory, Dictionary<string, Workflow> workflows)
+    public WorkflowInstanceFactoryGrain(IGrainFactory grainFactory)
     {
         _grainFactory = grainFactory;
-        _workflows = workflows;
     }
 
     public Task<IWorkflowInstanceGrain> CreateWorkflowInstance(string workflowId)

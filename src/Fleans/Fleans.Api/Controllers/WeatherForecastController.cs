@@ -1,33 +1,27 @@
+using Fleans.Application;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Fleans.Api.Controllers
 {
     [ApiController]
     [Route("[controller]")]
-    public class WeatherForecastController : ControllerBase
+    public class WorkflowController : ControllerBase
     {
-        private static readonly string[] Summaries = new[]
-        {
-        "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-    };
+        
+        private readonly ILogger<WorkflowController> _logger;
+        private readonly WorkflowEngine _workflowEngine;
 
-        private readonly ILogger<WeatherForecastController> _logger;
-
-        public WeatherForecastController(ILogger<WeatherForecastController> logger)
+        public WorkflowController(ILogger<WorkflowController> logger, WorkflowEngine workflowEngine)
         {
             _logger = logger;
+            _workflowEngine = workflowEngine;
         }
 
-        [HttpGet(Name = "GetWeatherForecast")]
-        public IEnumerable<WeatherForecast> Get()
+        [HttpPost(Name = "Start")]
+        public async Task<IActionResult> StartWorkflow(string workflowId)
         {
-            return Enumerable.Range(1, 5).Select(index => new WeatherForecast
-            {
-                Date = DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-                TemperatureC = Random.Shared.Next(-20, 55),
-                Summary = Summaries[Random.Shared.Next(Summaries.Length)]
-            })
-            .ToArray();
+            await _workflowEngine.StartWorkflow(workflowId);
+            return Ok();
         }
     }
 }
