@@ -8,6 +8,16 @@ public class WorklfowVariablesState
 
     internal void Merge(Dictionary<string, object> variables)
     {
-        throw new NotImplementedException();
+        foreach (var key in variables.Keys)
+        {
+            if (Variables.ContainsKey(key))
+            {
+                Variables[key] = variables[key];
+            }
+            else
+            {
+                Variables.Add(key, variables[key]);
+            }
+        }
     }
 }

@@ -28,6 +28,8 @@ namespace Fleans.Domain.Activities
                     activityState.Execute();
                 }                
             }
+
+            base.Execute(workflowInstance, activityState);
                 
         }
 

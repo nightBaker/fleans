@@ -5,33 +5,29 @@ namespace Fleans.Domain.Activities
 {
     public class ExclusiveGateway : Gateway
     {
-        private readonly List<ConditionalSequenceFlow> _flows = new List<ConditionalSequenceFlow>();
+        public const string NextActivityIdKey = "_NextActivityId";
 
         public ExclusiveGateway(string activityId) 
         { 
             ActivityId = activityId;
         }
+              
+        public override List<Activity> GetNextActivities(WorkflowInstance workflowInstance, ActivityInstance activityInstance)
+        {    
+            var nextActivityIdVariableKey = activityInstance.ActivityInstanceId + NextActivityIdKey;
+            var nextActivityId = workflowInstance.State.VariableStates[activityInstance.VariablesStateId].Variables[nextActivityIdVariableKey] as string;
 
-        public void AddConditionalFlow(ConditionalSequenceFlow flow)
-        {
-            _flows.Add(flow);
-        }
-
-        public override void Execute(WorkflowInstance workflowInstance, ActivityInstance activityInstance)
-        {
-            activityInstance.Complete();            
-        }
-
-        public override List<Activity> GetNextActivities(WorkflowInstance workflowInstance, ActivityInstance state)
-        {
-            foreach (var flow in _flows)
+            if (!string.IsNullOrWhiteSpace(nextActivityId) 
+                && workflowInstance.Workflow.SequenceFlows.Any(sf => sf.Target.ActivityId == nextActivityId))
             {
-                if (flow.Condition.Evaluate())
-                {
-                    return new List<Activity> { flow.Target };
-                }
+                var nextActivity = workflowInstance.Workflow.Activities.First(a => a.ActivityId == nextActivityId);
+
+                return new List<Activity> { nextActivity };
             }
-            return new List<Activity>();
+            else
+            {
+                return new List<Activity>();
+            }
         }
     }
 

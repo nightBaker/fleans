@@ -14,9 +14,23 @@ public class WorkflowInstanceState
 
     public WorkflowInstanceState(Activity startActivity)
     {
-        ActiveActivities.Add(new ActivityInstance(startActivity));
+        var variablesId = Guid.NewGuid();
+        VariableStates.Add(variablesId, new WorklfowVariablesState());
+        ActiveActivities.Add(new ActivityInstance(startActivity, variablesId));        
     }
 
-    internal void Start() => IsStarted = true;
-    internal void Complete() => IsCompleted = true;
+    internal void Start()
+    {
+        if (IsStarted)
+            throw new InvalidOperationException("Workflow is already started");
+
+        IsStarted = true;
+    }
+    internal void Complete()
+    {
+        if (!ActiveActivities.Any())
+            throw new InvalidOperationException("Workflow is already completed");
+
+        IsCompleted = true;
+    }
 }

@@ -11,8 +11,10 @@ namespace Fleans.Domain.Activities
 
         public override void Execute(WorkflowInstance workflowInstance, ActivityInstance activityState)
         {
+            base.Execute(workflowInstance, activityState);
+
             activityState.Complete();
-            workflowInstance.Complete();
+            workflowInstance.Complete();            
         }
 
         public override List<Activity> GetNextActivities(WorkflowInstance workflowInstance, ActivityInstance activityState)

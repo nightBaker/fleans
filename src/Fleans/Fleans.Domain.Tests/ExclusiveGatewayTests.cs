@@ -12,18 +12,12 @@ namespace Fleans.Domain.Tests
         public async Task IfStatement_ShouldRun_ThenBranchNotElse()
         {
             // Arrange
-            var trueCondition = Substitute.For<ICondition>();
-            trueCondition.Evaluate().Returns(true);
-
-            var falseCondition = Substitute.For<ICondition>();
-            falseCondition.Evaluate().Returns(false);
-
+                 
             var start = new StartEvent("start");
             var end1 = new EndEvent("end1");
             var end2 = new EndEvent("end2");
             var ifActivity = new ExclusiveGateway("if");
-            ifActivity.AddConditionalFlow(new ConditionalSequenceFlow(ifActivity, end1, trueCondition));
-            ifActivity.AddConditionalFlow(new ConditionalSequenceFlow(ifActivity, end2, falseCondition));
+            
 
             var workflow = Substitute.For<Workflow>();
             workflow.Activities.Add(start);
@@ -31,14 +25,16 @@ namespace Fleans.Domain.Tests
             workflow.Activities.Add(end2);
             workflow.Activities.Add(ifActivity);
 
-            workflow.SequenceFlows.Add(new SequenceFlow(start, ifActivity));
-            workflow.SequenceFlows.Add(new SequenceFlow(ifActivity, end1));
-            workflow.SequenceFlows.Add(new SequenceFlow(ifActivity, end2));
+            workflow.SequenceFlows.Add(new SequenceFlow(start, ifActivity));            
+            workflow.SequenceFlows.Add(new ConditionalSequenceFlow(ifActivity, end1, "truCondition"));
+            workflow.SequenceFlows.Add(new ConditionalSequenceFlow(ifActivity, end2, "falseCondition"));
 
             var testWF = new WorkflowInstance(workflow);
 
             // Act
             testWF.StartWorkflow();
+            var activityInstance = testWF.State.ActiveActivities.First(x => x.CurrentActivity.ActivityId == "if");
+            testWF.CompleteActivity("if", new Dictionary<string, object> { [activityInstance.ActivityInstanceId + ExclusiveGateway.NextActivityIdKey] = "end1" });
 
             // Assert           
             Assert.IsTrue(testWF.State.IsCompleted);
@@ -52,18 +48,11 @@ namespace Fleans.Domain.Tests
         public async Task IfStatement_ShouldRun_ElseBranchNotThen()
         {
             // Arrange
-            var trueCondition = Substitute.For<ICondition>();
-            trueCondition.Evaluate().Returns(true);
-
-            var falseCondition = Substitute.For<ICondition>();
-            falseCondition.Evaluate().Returns(false);
-
+            
             var start = new StartEvent("start");
             var end1 = new EndEvent("end1");
             var end2 = new EndEvent("end2");
-            var ifActivity = new ExclusiveGateway("if");
-            ifActivity.AddConditionalFlow(new ConditionalSequenceFlow(ifActivity, end1, falseCondition));
-            ifActivity.AddConditionalFlow(new ConditionalSequenceFlow(ifActivity, end2, trueCondition));
+            var ifActivity = new ExclusiveGateway("if");          
 
             var workflow = Substitute.For<Workflow>();
             workflow.Activities.Add(start);
@@ -72,13 +61,17 @@ namespace Fleans.Domain.Tests
             workflow.Activities.Add(ifActivity);
 
             workflow.SequenceFlows.Add(new SequenceFlow(start, ifActivity));
-            workflow.SequenceFlows.Add(new SequenceFlow(ifActivity, end1));
-            workflow.SequenceFlows.Add(new SequenceFlow(ifActivity, end2));
+            workflow.SequenceFlows.Add(new ConditionalSequenceFlow(ifActivity, end1, "trueCondition"));
+            workflow.SequenceFlows.Add(new ConditionalSequenceFlow(ifActivity, end2, "falseCondition"));
 
             var testWF = new WorkflowInstance(workflow);
 
             // Act
             testWF.StartWorkflow();
+
+            var activityInstance = testWF.State.ActiveActivities.First(x=>x.CurrentActivity.ActivityId == "if");
+
+            testWF.CompleteActivity("if", new Dictionary<string, object> { [activityInstance.ActivityInstanceId + ExclusiveGateway.NextActivityIdKey] = "end2" });
 
             // Assert           
             Assert.IsTrue(testWF.State.IsCompleted);

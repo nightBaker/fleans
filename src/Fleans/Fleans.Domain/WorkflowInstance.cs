@@ -1,5 +1,6 @@
 ﻿using Fleans.Domain.Activities;
 using Fleans.Domain.Errors;
+using Fleans.Domain.Events;
 
 namespace Fleans.Domain;
 
@@ -7,6 +8,8 @@ public class WorkflowInstance
 {
     public Workflow Workflow { get; }
     public WorkflowInstanceState State { get; }
+
+    internal Queue<IDomainEvent> Events { get; } = new();
 
     public WorkflowInstance(Workflow workflow)
     {
@@ -16,16 +19,15 @@ public class WorkflowInstance
     }
 
     public void StartWorkflow()
-    {
-        Start();
+    {        
         ExecuteWorkflow();
     }
 
     private void ExecuteWorkflow()
     {
-        while (State.ActiveActivities.Any())
+        while (State.ActiveActivities.Any(x => !x.IsExecuting))
         {
-            foreach (var activityState in State.ActiveActivities.Where(x => !x.IsExecuting))
+            foreach (var activityState in State.ActiveActivities.Where(x => !x.IsExecuting && !x.IsCompleted))
             {
                 activityState.CurrentActivity.Execute(this, activityState);
             }
@@ -60,7 +62,7 @@ public class WorkflowInstance
                     continue;
 
                 var nextActivities = currentActivity.GetNextActivities(this, activityState);
-                newActiveActivities.AddRange(nextActivities.Select(activity => new ActivityInstance(activity)));
+                newActiveActivities.AddRange(nextActivities.Select(activity => new ActivityInstance(activity, activityState.VariablesStateId)));
                 
                 completedActivities.Add(activityState);
             }
@@ -73,12 +75,12 @@ public class WorkflowInstance
 
     private void CompleteActivityState(string activityId, Dictionary<string, object> variables)
     {
-        var activityState = State.ActiveActivities.FirstOrDefault(x => x.CurrentActivity.ActivityId == activityId)
+        var activityInstance = State.ActiveActivities.FirstOrDefault(x => x.CurrentActivity.ActivityId == activityId)
             ?? throw new InvalidOperationException("Active activity not found");
 
-        activityState.Complete();
+        activityInstance.Complete();
 
-        var variablesState = State.VariableStates[activityState.VariablesStateId];
+        var variablesState = State.VariableStates[activityInstance.VariablesStateId];
 
         variablesState.Merge(variables);
     }

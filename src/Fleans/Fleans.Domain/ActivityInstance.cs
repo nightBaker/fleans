@@ -6,6 +6,8 @@ namespace Fleans.Domain
 {
     public class ActivityInstance
     {
+        public Guid ActivityInstanceId { get; } = Guid.NewGuid();
+
         public Activity CurrentActivity { get; }
 
         public bool IsCompleted { get; private set; }
@@ -16,9 +18,10 @@ namespace Fleans.Domain
 
         public ActivityErrorState? ErrorState { get; private set; }
 
-        public ActivityInstance(Activity currentActivity)
+        public ActivityInstance(Activity currentActivity, Guid variablesStateId)
         {
             CurrentActivity = currentActivity;
+            VariablesStateId = variablesStateId;
         }
 
         internal void Complete()
