@@ -6,11 +6,15 @@ namespace Fleans.Domain.Activities
     public abstract class Activity
     {
         public string ActivityId { get; protected set; }
-        public virtual void Execute(WorkflowInstance workflowInstance, ActivityInstance activityInstance)
+        internal virtual void Execute(WorkflowInstance workflowInstance, ActivityInstance activityInstance)
         {
             activityInstance.Execute();
-            workflowInstance.Events.Enqueue(new ActivityExecutedEvent(ActivityId, GetType().Name));
+            workflowInstance.EnqueueEvent(new WorkflowActivityExecutedEvent(workflowInstance.WorkflowInstanceId,
+                                                                            workflowInstance.Workflow.WorkflowId,
+                                                                            activityInstance.ActivityInstanceId,
+                                                                            ActivityId, 
+                                                                            GetType().Name));
         }
-        public abstract List<Activity> GetNextActivities(WorkflowInstance workflowInstance, ActivityInstance activityInstance);
+        internal abstract List<Activity> GetNextActivities(WorkflowInstance workflowInstance, ActivityInstance activityInstance);
     }
 }

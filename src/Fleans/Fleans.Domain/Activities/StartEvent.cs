@@ -9,7 +9,7 @@ namespace Fleans.Domain.Activities
             ActivityId = activityId;
         }
 
-        public override void Execute(WorkflowInstance workflowInstance, ActivityInstance activityInstance)
+        internal override void Execute(WorkflowInstance workflowInstance, ActivityInstance activityInstance)
         {
             base.Execute(workflowInstance, activityInstance);
 
@@ -18,7 +18,7 @@ namespace Fleans.Domain.Activities
             
         }
 
-        public override List<Activity> GetNextActivities(WorkflowInstance workflowInstance, ActivityInstance activityInstance)
+        internal override List<Activity> GetNextActivities(WorkflowInstance workflowInstance, ActivityInstance activityInstance)
         {
             var nextFlow = workflowInstance.Workflow.SequenceFlows.FirstOrDefault(sf => sf.Source == this);
             return nextFlow != null ? new List<Activity> { nextFlow.Target } : new List<Activity>();

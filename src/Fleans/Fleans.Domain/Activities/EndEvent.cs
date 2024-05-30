@@ -9,7 +9,7 @@ namespace Fleans.Domain.Activities
             ActivityId = activityId;
         }
 
-        public override void Execute(WorkflowInstance workflowInstance, ActivityInstance activityState)
+        internal override void Execute(WorkflowInstance workflowInstance, ActivityInstance activityState)
         {
             base.Execute(workflowInstance, activityState);
 
@@ -17,7 +17,7 @@ namespace Fleans.Domain.Activities
             workflowInstance.Complete();            
         }
 
-        public override List<Activity> GetNextActivities(WorkflowInstance workflowInstance, ActivityInstance activityState)
+        internal override List<Activity> GetNextActivities(WorkflowInstance workflowInstance, ActivityInstance activityState)
         {
             return new List<Activity>();
         }

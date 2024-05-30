@@ -6,8 +6,8 @@ namespace Fleans.Domain.Sequences
     {
         public string Condition { get; }
 
-        public ConditionalSequenceFlow(Activity source, Activity target, string condition)
-            : base(source, target)
+        public ConditionalSequenceFlow(string sequencId, Activity source, Activity target, string condition)
+            : base(sequencId, source: source, target: target)
         {
             Condition = condition;
         }

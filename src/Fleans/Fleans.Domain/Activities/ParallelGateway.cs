@@ -1,5 +1,7 @@
 ﻿
 
+using Fleans.Domain.States;
+
 namespace Fleans.Domain.Activities
 {
     public class ParallelGateway : Gateway
@@ -11,7 +13,7 @@ namespace Fleans.Domain.Activities
             IsFork = isFork;
         }
 
-        public override void Execute(WorkflowInstance workflowInstance, ActivityInstance activityState)
+        internal override void Execute(WorkflowInstance workflowInstance, ActivityInstance activityState)
         {
             if (IsFork)
             {
@@ -33,7 +35,7 @@ namespace Fleans.Domain.Activities
                 
         }
 
-        public override List<Activity> GetNextActivities(WorkflowInstance workflowInstance, ActivityInstance state)
+        internal override List<Activity> GetNextActivities(WorkflowInstance workflowInstance, ActivityInstance state)
         {
             var nextFlows = workflowInstance.Workflow.SequenceFlows.Where(sf => sf.Source == this)
                                             .Select(flow => flow.Target)

@@ -1,4 +1,4 @@
-﻿namespace Fleans.Domain;
+﻿namespace Fleans.Domain.States;
 
 public class WorklfowVariablesState
 {
@@ -19,5 +19,9 @@ public class WorklfowVariablesState
                 Variables.Add(key, variables[key]);
             }
         }
+    }
+    internal void CloneFrom(WorklfowVariablesState source)
+    {
+        Merge(source.Variables);
     }
 }

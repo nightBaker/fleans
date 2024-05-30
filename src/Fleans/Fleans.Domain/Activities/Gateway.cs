@@ -3,10 +3,21 @@
 namespace Fleans.Domain.Activities
 {
     public abstract class Gateway : Activity
-    {
-        public override List<Activity> GetNextActivities(WorkflowInstance workflowInstance, ActivityInstance state)
+    {        
+        internal virtual void SetConditionResult(WorkflowInstance workflowInstance, ActivityInstance activityInstance, string conditionSeqenceFlowId, bool result)
         {
-            return new List<Activity>();
+            var sequences = workflowInstance.State.ConditionSequenceStates[activityInstance.ActivityInstanceId];
+
+            var sequence = sequences.FirstOrDefault(s => s.ConditionalSequence.SequenceFlowId == conditionSeqenceFlowId);
+
+            if (sequence != null)
+            {
+                sequence.SetResult(result);
+            }
+            else
+            {
+                throw new Exception("Sequence not found");
+            }
         }
     }
 

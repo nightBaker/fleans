@@ -1,29 +1,33 @@
 ﻿using Fleans.Domain.Activities;
 using Fleans.Domain.Errors;
 using Fleans.Domain.Events;
+using Fleans.Domain.States;
+using System.Security.Cryptography;
 
 namespace Fleans.Domain;
 
 public class WorkflowInstance
 {
+    public Guid WorkflowInstanceId { get; }
     public Workflow Workflow { get; }
     public WorkflowInstanceState State { get; }
 
-    internal Queue<IDomainEvent> Events { get; } = new();
+    private readonly Queue<IDomainEvent> _events = new();
 
-    public WorkflowInstance(Workflow workflow)
+    public WorkflowInstance(Guid workflowInstanceId, Workflow workflow)
     {
+        WorkflowInstanceId = workflowInstanceId;
         Workflow = workflow ?? throw new ArgumentNullException(nameof(workflow));
         var startActivity = workflow.Activities.OfType<StartEvent>().First();
-        State = new WorkflowInstanceState(startActivity);
+        State = new WorkflowInstanceState(startActivity);        
     }
 
-    public void StartWorkflow()
+    public void StartWorkflow(IEventPublisher eventPublisher)
     {        
-        ExecuteWorkflow();
+        ExecuteWorkflow(eventPublisher);
     }
 
-    private void ExecuteWorkflow()
+    private void ExecuteWorkflow(IEventPublisher eventPublisher)
     {
         while (State.ActiveActivities.Any(x => !x.IsExecuting))
         {
@@ -33,19 +37,30 @@ public class WorkflowInstance
             }
 
             TransitionToNextActivity();
+
+            PublishEvents(eventPublisher);
         }
     }
 
-    public void CompleteActivity(string activityId, Dictionary<string, object> variables)
+    private void PublishEvents(IEventPublisher eventPublisher)
     {
-        CompleteActivityState(activityId, variables);
-        ExecuteWorkflow();
+        while (_events.Count > 0)
+        {
+            var domainEvent = _events.Dequeue();
+            eventPublisher.Publish(domainEvent);
+        }
     }
 
-    public void FailActivity(string activityId, Exception exception)
+    public void CompleteActivity(string activityId, Dictionary<string, object> variables, IEventPublisher eventPublisher)
+    {
+        CompleteActivityState(activityId, variables);
+        ExecuteWorkflow(eventPublisher);
+    }
+
+    public void FailActivity(string activityId, Exception exception, IEventPublisher eventPublisher)
     {
         FailActivityState(activityId, exception);
-        ExecuteWorkflow();
+        ExecuteWorkflow(eventPublisher);
     }
 
     private void TransitionToNextActivity()
@@ -96,4 +111,18 @@ public class WorkflowInstance
     internal void Start() => State.Start();
 
     internal void Complete() => State.Complete();
+
+    public void CompleteConditionSequence(string activityId, string conditionSequenceId, bool result)
+    {
+        var activityInstance = State.ActiveActivities.FirstOrDefault(x => x.CurrentActivity.ActivityId == activityId)
+            ?? throw new InvalidOperationException("Active activity not found");
+
+        (activityInstance.CurrentActivity as Gateway ?? throw new Exception("Acitivi is not gateway type"))
+                .SetConditionResult(this, activityInstance, conditionSequenceId, result);        
+    }
+
+    internal void EnqueueEvent(IDomainEvent domainEvent)
+    {
+        _events.Enqueue(domainEvent);
+    }
 }

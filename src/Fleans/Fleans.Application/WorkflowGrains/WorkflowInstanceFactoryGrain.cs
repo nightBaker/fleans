@@ -1,6 +1,6 @@
 ﻿using Fleans.Domain;
 
-namespace Fleans.Application;
+namespace Fleans.Application.WorkflowGrains;
 
 public class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFactoryGrain
 {
@@ -12,8 +12,8 @@ public class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFactoryGrain
         _grainFactory = grainFactory;
     }
 
-    public Task<IWorkflowInstanceGrain> CreateWorkflowInstance(string workflowId)
-    {        
+    public Task<IWorkflowInstanceGrain> CreateWorkflowInstanceGrain(string workflowId)
+    {
         var workflow = _workflows[workflowId] ?? throw new Exception("Workflow not found");
         var workflowInstanceGrain = _grainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         workflowInstanceGrain.SetWorkflow(workflow);

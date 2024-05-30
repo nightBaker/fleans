@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Fleans.Application.WorkflowGrains;
 
 namespace Fleans.Application
 {
@@ -16,19 +17,21 @@ namespace Fleans.Application
             _grainFactory = grainFactory;
         }
 
-        public async Task StartWorkflow(string workflowId)
+        public async Task<Guid> StartWorkflow(string workflowId)
         {
             var workflowInstance = await _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstaceFactorySingletonId)
-                                                    .CreateWorkflowInstance(workflowId);
+                                                    .CreateWorkflowInstanceGrain(workflowId);
             workflowInstance.StartWorkflow();
+
+            return workflowInstance.GetPrimaryKey();
         }
 
         public void CompleteActivity(Guid workflowInstanceId, string activityId, Dictionary<string, object> variables)
         {
 
-           _grainFactory.GetGrain<IWorkflowInstanceGrain>(workflowInstanceId)
-                        .CompleteActivity(activityId, variables);
-            
+            _grainFactory.GetGrain<IWorkflowInstanceGrain>(workflowInstanceId)
+                         .CompleteActivity(activityId, variables);
+
         }
     }
 }
