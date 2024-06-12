@@ -4,9 +4,12 @@ namespace Fleans.Domain.Activities
 {
     public abstract class Gateway : Activity
     {        
-        internal virtual void SetConditionResult(WorkflowInstance workflowInstance, ActivityInstance activityInstance, string conditionSeqenceFlowId, bool result)
+        internal virtual async Task SetConditionResult(WorkflowInstance workflowInstance, ActivityInstance activityInstance, string conditionSeqenceFlowId, bool result)
         {
-            var sequences = workflowInstance.State.ConditionSequenceStates[activityInstance.ActivityInstanceId];
+            var state = await workflowInstance.GetState();
+            var seqState = await state.GetConditionSequenceStates();
+
+            var sequences = seqState[activityInstance.ActivityInstanceId];
 
             var sequence = sequences.FirstOrDefault(s => s.ConditionalSequence.SequenceFlowId == conditionSeqenceFlowId);
 
@@ -16,7 +19,7 @@ namespace Fleans.Domain.Activities
             }
             else
             {
-                throw new Exception("Sequence not found");
+                throw new NullReferenceException("Sequence not found");
             }
         }
     }

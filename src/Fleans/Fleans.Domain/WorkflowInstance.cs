@@ -2,41 +2,35 @@
 using Fleans.Domain.Errors;
 using Fleans.Domain.Events;
 using Fleans.Domain.States;
+using Orleans;
+using Orleans.Runtime;
 using System.Security.Cryptography;
 
 namespace Fleans.Domain;
 
-public class WorkflowInstance
+public class WorkflowInstance : Grain, IWorkflowInstance
 {
-    public Guid WorkflowInstanceId { get; }
-    public Workflow Workflow { get; }
-    public WorkflowInstanceState State { get; }
+    public ValueTask<Guid> GetWorkflowInstanceId() => ValueTask.FromResult(this.GetGrainId().GetGuidKey());
+    public IWorkflowDefinition WorkflowDefinition { get; private set; } = null!;
+    public IWorkflowInstanceState State { get; private set; } = null!;    
 
     private readonly Queue<IDomainEvent> _events = new();
-
-    public WorkflowInstance(Guid workflowInstanceId, Workflow workflow)
+    
+    public async Task StartWorkflow(IEventPublisher eventPublisher)
     {
-        WorkflowInstanceId = workflowInstanceId;
-        Workflow = workflow ?? throw new ArgumentNullException(nameof(workflow));
-        var startActivity = workflow.Activities.OfType<StartEvent>().First();
-        State = new WorkflowInstanceState(startActivity);        
+        await ExecuteWorkflow(eventPublisher);
     }
 
-    public void StartWorkflow(IEventPublisher eventPublisher)
-    {        
-        ExecuteWorkflow(eventPublisher);
-    }
-
-    private void ExecuteWorkflow(IEventPublisher eventPublisher)
+    private async Task ExecuteWorkflow(IEventPublisher eventPublisher)
     {
-        while (State.ActiveActivities.Any(x => !x.IsExecuting))
+        while ((await State.GetActiveActivities()).Any(x => !x.IsExecuting))
         {
-            foreach (var activityState in State.ActiveActivities.Where(x => !x.IsExecuting && !x.IsCompleted))
+            foreach (var activityState in (await State.GetActiveActivities()).Where(x => !x.IsExecuting && !x.IsCompleted))
             {
-                activityState.CurrentActivity.Execute(this, activityState);
+                activityState.CurrentActivity.ExecuteAsync(this, activityState);
             }
 
-            TransitionToNextActivity();
+            await TransitionToNextActivity();
 
             PublishEvents(eventPublisher);
         }
@@ -51,24 +45,24 @@ public class WorkflowInstance
         }
     }
 
-    public void CompleteActivity(string activityId, Dictionary<string, object> variables, IEventPublisher eventPublisher)
+    public async Task CompleteActivity(string activityId, Dictionary<string, object> variables, IEventPublisher eventPublisher)
     {
-        CompleteActivityState(activityId, variables);
-        ExecuteWorkflow(eventPublisher);
+        await CompleteActivityState(activityId, variables);
+        await ExecuteWorkflow(eventPublisher);
     }
 
-    public void FailActivity(string activityId, Exception exception, IEventPublisher eventPublisher)
+    public async Task FailActivity(string activityId, Exception exception, IEventPublisher eventPublisher)
     {
-        FailActivityState(activityId, exception);
-        ExecuteWorkflow(eventPublisher);
+        await FailActivityState(activityId, exception);
+        await ExecuteWorkflow(eventPublisher);
     }
 
-    private void TransitionToNextActivity()
+    private async Task TransitionToNextActivity()
     {
         var newActiveActivities = new List<ActivityInstance>();
         var completedActivities = new List<ActivityInstance>();
 
-        foreach (var activityState in State.ActiveActivities)
+        foreach (var activityState in await State.GetActiveActivities())
         {
             if (activityState.IsCompleted)
             {
@@ -76,53 +70,70 @@ public class WorkflowInstance
                 if (currentActivity == null)
                     continue;
 
-                var nextActivities = currentActivity.GetNextActivities(this, activityState);
+                var nextActivities = await currentActivity.GetNextActivities(this, activityState);
                 newActiveActivities.AddRange(nextActivities.Select(activity => new ActivityInstance(activity, activityState.VariablesStateId)));
-                
+
                 completedActivities.Add(activityState);
             }
         }
 
-        State.ActiveActivities.RemoveAll(completedActivities.Contains);
-        State.ActiveActivities.AddRange(newActiveActivities);
-        State.CompletedActivities.AddRange(completedActivities);
+        State.RemoveActiveActivities(completedActivities);
+        State.AddActiveActivities(newActiveActivities);
+        State.AddCompletedActivities(completedActivities);
     }
 
-    private void CompleteActivityState(string activityId, Dictionary<string, object> variables)
+    private async Task CompleteActivityState(string activityId, Dictionary<string, object> variables)
     {
-        var activityInstance = State.ActiveActivities.FirstOrDefault(x => x.CurrentActivity.ActivityId == activityId)
+        var activityInstance = (await State.GetActiveActivities()).FirstOrDefault(x => x.CurrentActivity.ActivityId == activityId)
             ?? throw new InvalidOperationException("Active activity not found");
 
         activityInstance.Complete();
 
-        var variablesState = State.VariableStates[activityInstance.VariablesStateId];
+        var variablesState = (await State.GetVariableStates())[activityInstance.VariablesStateId];
 
         variablesState.Merge(variables);
     }
 
-    private void FailActivityState(string activityId, Exception exception)
+    private async Task FailActivityState(string activityId, Exception exception)
     {
-        var activityInstance = State.ActiveActivities.FirstOrDefault(x => x.CurrentActivity.ActivityId == activityId)
+        var activityInstance = (await State.GetActiveActivities()).FirstOrDefault(x => x.CurrentActivity.ActivityId == activityId)
             ?? throw new InvalidOperationException("Active activity not found");
 
         activityInstance.Fail(exception);
     }
 
-    internal void Start() => State.Start();
+    public void Start() => State.Start();
 
-    internal void Complete() => State.Complete();
+    public void Complete() => State.Complete();
 
-    public void CompleteConditionSequence(string activityId, string conditionSequenceId, bool result)
+    public async Task CompleteConditionSequence(string activityId, string conditionSequenceId, bool result)
     {
-        var activityInstance = State.ActiveActivities.FirstOrDefault(x => x.CurrentActivity.ActivityId == activityId)
+        var activityInstance = (await State.GetActiveActivities()).FirstOrDefault(x => x.CurrentActivity.ActivityId == activityId)
             ?? throw new InvalidOperationException("Active activity not found");
 
-        (activityInstance.CurrentActivity as Gateway ?? throw new Exception("Acitivi is not gateway type"))
-                .SetConditionResult(this, activityInstance, conditionSequenceId, result);        
+        await (activityInstance.CurrentActivity as Gateway ?? throw new Exception("Acitivi is not gateway type"))
+                .SetConditionResult(this, activityInstance, conditionSequenceId, result);
     }
 
-    internal void EnqueueEvent(IDomainEvent domainEvent)
+    public void EnqueueEvent(IDomainEvent domainEvent)
     {
         _events.Enqueue(domainEvent);
     }
+
+    public Task SetWorkflow(IWorkflowDefinition workflow, IWorkflowInstanceState workflowInstanceState)
+    {
+        if(WorkflowDefinition is not null) throw new ArgumentException("Workflow already set");
+
+        WorkflowDefinition = workflow ?? throw new ArgumentNullException(nameof(workflow));
+        State = workflowInstanceState ?? throw new ArgumentNullException(nameof(workflowInstanceState));
+
+        var startActivity = workflow.Activities.OfType<StartEvent>().First();
+        workflowInstanceState.StartWith(startActivity);
+
+        return Task.CompletedTask;
+    }
+
+    public ValueTask<IWorkflowInstanceState> GetState() => ValueTask.FromResult(State);
+    
+    public ValueTask<IWorkflowDefinition> GetWorkflowDefinition() => ValueTask.FromResult(WorkflowDefinition);
 }

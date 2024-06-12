@@ -1,10 +1,11 @@
 ﻿
 using Fleans.Domain.Activities;
 using Fleans.Domain.Errors;
+using Orleans;
 
 namespace Fleans.Domain
 {
-    public class ActivityInstance
+    public class ActivityInstance : Grain
     {
         public Guid ActivityInstanceId { get; } = Guid.NewGuid();
 

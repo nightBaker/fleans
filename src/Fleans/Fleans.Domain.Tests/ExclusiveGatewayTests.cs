@@ -1,7 +1,9 @@
 using Fleans.Domain.Activities;
 using Fleans.Domain.Events;
 using Fleans.Domain.Sequences;
+using Fleans.Domain.States;
 using NSubstitute;
+using Orleans.TestingHost;
 using System.Diagnostics;
 
 namespace Fleans.Domain.Tests
@@ -9,7 +11,7 @@ namespace Fleans.Domain.Tests
     [TestClass]
     public class ExclusiveGatewayTests
     {
-        private Workflow _workflow = null!;
+        private IWorkflowDefinition _workflow = null!;
 
         [TestInitialize]
         public void Setup()
@@ -20,20 +22,29 @@ namespace Fleans.Domain.Tests
         [TestMethod]
         public async Task IfStatement_ShouldRun_ThenBranchNotElse()
         {
-            // Arrange            
-            var testWF = new WorkflowInstance(Guid.NewGuid(), workflow: _workflow);
+            // Arrange
+            // 
+            var builder = new TestClusterBuilder();
+            var cluster = builder.Build();
+            cluster.Deploy();
+
+            var testWF = cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
 
             // Act
-            testWF.StartWorkflow(Substitute.For<IEventPublisher>());
-            testWF.CompleteConditionSequence("if", "seq2", true);
-            testWF.CompleteConditionSequence("if", "seq3", false);
-            testWF.CompleteActivity("if", new Dictionary<string, object>(), Substitute.For<IEventPublisher>());
+            await testWF.StartWorkflow(Substitute.For<IEventPublisher>());
+            await testWF.CompleteConditionSequence("if", "seq2", true);
+            await testWF.CompleteConditionSequence("if", "seq3", false);
+            await testWF.CompleteActivity("if", new Dictionary<string, object>(), Substitute.For<IEventPublisher>());
 
             // Assert           
-            Assert.IsTrue(testWF.State.IsCompleted);
+            Assert.IsTrue(testWF.GetState().IsCompleted);
 
-            Assert.IsTrue(testWF.State.CompletedActivities.Any(x => x.CurrentActivity.ActivityId == "end1"));
-            Assert.IsFalse(testWF.State.CompletedActivities.Any(x => x.CurrentActivity.ActivityId == "end2"));
+            var completed = await testWF.GetState().Result.GetCompletedActivities();
+
+            Assert.IsTrue(completed.Any(x => x.CurrentActivity.ActivityId == "end1"));
+            Assert.IsFalse(completed.Any(x => x.CurrentActivity.ActivityId == "end2"));
+
+            cluster.StopAllSilos();
 
         }
 
@@ -41,7 +52,8 @@ namespace Fleans.Domain.Tests
         public async Task IfStatement_ShouldRun_ElseBranchNotThen()
         {
             // Arrange                        
-            var testWF = new WorkflowInstance(Guid.NewGuid(), workflow: _workflow);
+            var testWF = new WorkflowInstance();
+            testWF.SetWorkflow(_workflow, new WorkflowInstanceState());
 
             // Act
             testWF.StartWorkflow(Substitute.For<IEventPublisher>());
@@ -50,17 +62,21 @@ namespace Fleans.Domain.Tests
             testWF.CompleteActivity("if", new Dictionary<string, object>(), Substitute.For<IEventPublisher>());
 
             // Assert           
-            Assert.IsTrue(testWF.State.IsCompleted);
+            Assert.IsTrue(await (await testWF.GetState()).IsCompleted());
 
-            Assert.IsFalse(testWF.State.CompletedActivities.Any(x => x.CurrentActivity.ActivityId == "end1"));
-            Assert.IsTrue(testWF.State.CompletedActivities.Any(x => x.CurrentActivity.ActivityId == "end2"));
+            var completed = await testWF.State.GetCompletedActivities();
+
+            Assert.IsFalse(completed.Any(x => x.CurrentActivity.ActivityId == "end1"));
+            Assert.IsTrue(completed.Any(x => x.CurrentActivity.ActivityId == "end2"));
         }
 
         [TestMethod]
         public async Task IfStatement_Should_Publish_Event()
         {
             // Arrange                        
-            var testWF = new WorkflowInstance(Guid.NewGuid(), workflow: _workflow);
+            var testWF = new WorkflowInstance();
+            testWF.SetWorkflow(_workflow, new WorkflowInstanceState());
+
             var eventPublisher = Substitute.For<IEventPublisher>();            
 
             // Act
@@ -74,14 +90,14 @@ namespace Fleans.Domain.Tests
             eventPublisher.Received(2).Publish(Arg.Any<EvaluateConditionEvent>());
         }
 
-        private static Workflow CreateSimpleWorkflowWithExclusiveGateway()
+        private static IWorkflowDefinition CreateSimpleWorkflowWithExclusiveGateway()
         {
             var start = new StartEvent("start");
             var end1 = new EndEvent("end1");
             var end2 = new EndEvent("end2");
             var ifActivity = new ExclusiveGateway("if");
 
-            var workflow = Substitute.For<Workflow>();
+            var workflow = new WorkflowDefinition("workflow1", new List<Activities.Activity>(), new List<SequenceFlow>());
             workflow.Activities.Add(start);
             workflow.Activities.Add(end1);
             workflow.Activities.Add(end2);

@@ -13,7 +13,7 @@ namespace Fleans.Domain.Activities
             IsFork = isFork;
         }
 
-        internal override void Execute(WorkflowInstance workflowInstance, ActivityInstance activityState)
+        internal override async Task ExecuteAsync(IWorkflowInstance workflowInstance, ActivityInstance activityState)
         {
             if (IsFork)
             {
@@ -21,7 +21,7 @@ namespace Fleans.Domain.Activities
             }
             else
             {
-                if (AllIncomingPathsCompleted(workflowInstance.State, workflowInstance.Workflow))
+                if (await AllIncomingPathsCompleted(await workflowInstance.GetState(), await workflowInstance.GetWorkflowDefinition()))
                 {
                     activityState.Complete();
                 }
@@ -31,26 +31,30 @@ namespace Fleans.Domain.Activities
                 }                
             }
 
-            base.Execute(workflowInstance, activityState);
+            await base.ExecuteAsync(workflowInstance, activityState);
                 
         }
 
-        internal override List<Activity> GetNextActivities(WorkflowInstance workflowInstance, ActivityInstance state)
+        internal override async Task<List<Activity>> GetNextActivities(IWorkflowInstance workflowInstance, ActivityInstance state)
         {
-            var nextFlows = workflowInstance.Workflow.SequenceFlows.Where(sf => sf.Source == this)
+            var definition = await workflowInstance.GetWorkflowDefinition();
+            var nextFlows = definition.SequenceFlows.Where(sf => sf.Source == this)
                                             .Select(flow => flow.Target)
                                             .ToList();
             
             return nextFlows;
         }
 
-        private bool AllIncomingPathsCompleted(WorkflowInstanceState state, Workflow workflow)
+        private async Task<bool> AllIncomingPathsCompleted(IWorkflowInstanceState state, IWorkflowDefinition workflow)
         {
             var incomingFlows = workflow.SequenceFlows.Where(sf => sf.Target == this).ToList();
 
-            return incomingFlows.All(flow => state.CompletedActivities.Where(ca => ca.CurrentActivity == flow.Source)
+            var completedActivities = await state.GetCompletedActivities();
+            var activeActivities = await state.GetActiveActivities();
+
+            return incomingFlows.All(flow => completedActivities.Where(ca => ca.CurrentActivity == flow.Source)
                                                                     .All(ca => ca.IsCompleted))
-                && incomingFlows.All(flow => state.ActiveActivities.Any(ca => ca.CurrentActivity == flow.Source));
+                && incomingFlows.All(flow => activeActivities.Any(ca => ca.CurrentActivity == flow.Source));
 
         }
     }

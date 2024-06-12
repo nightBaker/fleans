@@ -1,6 +1,8 @@
 ﻿
 using Fleans.Domain.Events;
 using Fleans.Domain.Sequences;
+using Orleans;
+using Orleans.Runtime;
 
 namespace Fleans.Domain.Activities
 {
@@ -11,30 +13,34 @@ namespace Fleans.Domain.Activities
             ActivityId = activityId;
         }
 
-        internal override void Execute(WorkflowInstance workflowInstance, ActivityInstance activityInstance)
+        internal override async Task ExecuteAsync(IWorkflowInstance workflowInstance, ActivityInstance activityInstance)
         {
-            base.Execute(workflowInstance, activityInstance);
+            await base.ExecuteAsync(workflowInstance, activityInstance);
 
-            var sequences = AddConditionalSequencesToWorkflowInstance(workflowInstance, activityInstance);
+            var sequences = await AddConditionalSequencesToWorkflowInstance(workflowInstance, activityInstance);
 
-            QueueEvaluteConditionEvents(workflowInstance, activityInstance, sequences);
+            await QueueEvaluteConditionEvents(workflowInstance, activityInstance, sequences);
+
         }
 
-        private static IEnumerable<ConditionalSequenceFlow> AddConditionalSequencesToWorkflowInstance(WorkflowInstance workflowInstance, ActivityInstance activityInstance)
+        private static async Task<IEnumerable<ConditionalSequenceFlow>> AddConditionalSequencesToWorkflowInstance(IWorkflowInstance workflowInstance, ActivityInstance activityInstance)
         {
-            var sequences = workflowInstance.Workflow.SequenceFlows.OfType<ConditionalSequenceFlow>()
+            var sequences = (await workflowInstance.GetWorkflowDefinition()).SequenceFlows.OfType<ConditionalSequenceFlow>()
                                     .Where(sf => sf.Source.ActivityId == activityInstance.CurrentActivity.ActivityId);
 
-            workflowInstance.State.AddConditionSequenceStates(activityInstance.ActivityInstanceId, sequences);
+            var state = await workflowInstance.GetState();
+            state.AddConditionSequenceStates(activityInstance.ActivityInstanceId, sequences);
             return sequences;
         }
 
-        private void QueueEvaluteConditionEvents(WorkflowInstance workflowInstance, ActivityInstance activityInstance, IEnumerable<ConditionalSequenceFlow> sequences)
+        private async Task QueueEvaluteConditionEvents(IWorkflowInstance workflowInstance, ActivityInstance activityInstance, IEnumerable<ConditionalSequenceFlow> sequences)
         {
+            var definition = await workflowInstance.GetWorkflowDefinition();
             foreach (var sequence in sequences)
             {
-                workflowInstance.EnqueueEvent(new EvaluateConditionEvent(workflowInstance.WorkflowInstanceId,
-                                                                    workflowInstance.Workflow.WorkflowId,
+                
+                workflowInstance.EnqueueEvent(new EvaluateConditionEvent(workflowInstance.GetGrainId().GetGuidKey(),
+                                                                   definition.WorkflowId,
                                                                     activityInstance.ActivityInstanceId,
                                                                     ActivityId,
                                                                     sequence.SequenceFlowId,
@@ -42,9 +48,11 @@ namespace Fleans.Domain.Activities
             }
         }
 
-        internal override List<Activity> GetNextActivities(WorkflowInstance workflowInstance, ActivityInstance activityInstance)
+        internal override async Task<List<Activity>> GetNextActivities(IWorkflowInstance workflowInstance, ActivityInstance activityInstance)
         {
-            return workflowInstance.State.ConditionSequenceStates[activityInstance.ActivityInstanceId]
+            var state = await workflowInstance.GetState();
+            var sequencesState = await state.GetConditionSequenceStates();
+            return sequencesState[activityInstance.ActivityInstanceId]
                                 .Where(x=>x.Result)
                                 .Select(x=>x.ConditionalSequence.Target)
                                 .ToList();           

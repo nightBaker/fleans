@@ -3,13 +3,17 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using Fleans.Application.WorkflowGrains;
+using Fleans.Application.Events;
+using Fleans.Application.WorkflowFactory;
+using Fleans.Domain;
 
 namespace Fleans.Application
 {
     public class WorkflowEngine
     {
         private const int WorkflowInstaceFactorySingletonId = 0;
+        private const int SingletonEventPublisherGrainId = 0;
+
         private readonly IGrainFactory _grainFactory;
 
         public WorkflowEngine(IGrainFactory grainFactory)
@@ -21,7 +25,10 @@ namespace Fleans.Application
         {
             var workflowInstance = await _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstaceFactorySingletonId)
                                                     .CreateWorkflowInstanceGrain(workflowId);
-            workflowInstance.StartWorkflow();
+
+            var eventsPublisherGrain = _grainFactory.GetGrain<IWorkflowEventsPublisher>(SingletonEventPublisherGrainId);
+
+            workflowInstance.StartWorkflow(eventsPublisherGrain);
 
             return workflowInstance.GetPrimaryKey();
         }
@@ -29,8 +36,10 @@ namespace Fleans.Application
         public void CompleteActivity(Guid workflowInstanceId, string activityId, Dictionary<string, object> variables)
         {
 
-            _grainFactory.GetGrain<IWorkflowInstanceGrain>(workflowInstanceId)
-                         .CompleteActivity(activityId, variables);
+            var eventsPublisherGrain = _grainFactory.GetGrain<IWorkflowEventsPublisher>(SingletonEventPublisherGrainId);
+
+            _grainFactory.GetGrain<IWorkflowInstance>(workflowInstanceId)
+                         .CompleteActivity(activityId, variables, eventsPublisherGrain);
 
         }
     }

@@ -1,19 +1,22 @@
 ﻿
 
+
 namespace Fleans.Domain.Activities
 {
     public class ErrorEvent : Activity
     {
-        internal override void Execute(WorkflowInstance workflowInstance, ActivityInstance activityState)
+        internal override async Task ExecuteAsync(IWorkflowInstance workflowInstance, ActivityInstance activityState)
         {
-            base.Execute(workflowInstance, activityState);
-            activityState.Complete();            
+            await base.ExecuteAsync(workflowInstance, activityState);
+            activityState.Complete();
         }
 
-        internal override List<Activity> GetNextActivities(WorkflowInstance workflowInstance, ActivityInstance activityState)
+        internal override async Task<List<Activity>> GetNextActivities(IWorkflowInstance workflowInstance, ActivityInstance activityState)
         {
-            var nextFlow = workflowInstance.Workflow.SequenceFlows.FirstOrDefault(sf => sf.Source == this);
+            var definition = await workflowInstance.GetWorkflowDefinition();
+            var nextFlow = definition.SequenceFlows.FirstOrDefault(sf => sf.Source == this);
             return nextFlow != null ? new List<Activity> { nextFlow.Target } : new List<Activity>();
+
         }
     }
 }

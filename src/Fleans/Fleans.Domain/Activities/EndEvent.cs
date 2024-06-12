@@ -9,17 +9,17 @@ namespace Fleans.Domain.Activities
             ActivityId = activityId;
         }
 
-        internal override void Execute(WorkflowInstance workflowInstance, ActivityInstance activityState)
+        internal override async Task ExecuteAsync(IWorkflowInstance workflowInstance, ActivityInstance activityState)
         {
-            base.Execute(workflowInstance, activityState);
+            await base.ExecuteAsync(workflowInstance, activityState);
 
             activityState.Complete();
             workflowInstance.Complete();            
         }
 
-        internal override List<Activity> GetNextActivities(WorkflowInstance workflowInstance, ActivityInstance activityState)
+        internal override Task<List<Activity>> GetNextActivities(IWorkflowInstance workflowInstance, ActivityInstance activityState)
         {
-            return new List<Activity>();
+            return Task.FromResult(new List<Activity>());
         }
     }
 }

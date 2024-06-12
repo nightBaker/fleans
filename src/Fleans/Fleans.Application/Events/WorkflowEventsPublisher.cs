@@ -1,5 +1,4 @@
 ﻿using Fleans.Application.Events.Handlers;
-using Fleans.Application.WorkflowGrains;
 using Fleans.Domain.Events;
 using Orleans.Utilities;
 
@@ -10,7 +9,8 @@ public class WorkflowEventsPublisher : Grain, IWorkflowEventsPublisher
     private readonly ObserverManager<IWorkflowEventsHandler> _subsManager;
     private readonly ObserverManager<IWorfklowEvaluateConditionEventHandler> _worfklowEvaluateConditionEventHandlers;
 
-    public WorkflowEventsPublisher(ObserverManager<IWorkflowEventsHandler> subsManager, ObserverManager<IWorfklowEvaluateConditionEventHandler> worfklowEvaluateConditionEventHandlers)
+    public WorkflowEventsPublisher(ObserverManager<IWorkflowEventsHandler> subsManager,
+                                   ObserverManager<IWorfklowEvaluateConditionEventHandler> worfklowEvaluateConditionEventHandlers)
     {
         _subsManager = subsManager;
         _worfklowEvaluateConditionEventHandlers = worfklowEvaluateConditionEventHandlers;

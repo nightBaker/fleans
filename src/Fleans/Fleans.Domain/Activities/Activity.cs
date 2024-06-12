@@ -1,20 +1,23 @@
 ﻿
 using Fleans.Domain.Events;
+using Orleans;
 
 namespace Fleans.Domain.Activities
 {
     public abstract class Activity
     {
         public string ActivityId { get; protected set; }
-        internal virtual void Execute(WorkflowInstance workflowInstance, ActivityInstance activityInstance)
+
+        internal virtual async Task ExecuteAsync(IWorkflowInstance workflowInstance, ActivityInstance activityInstance)
         {
+            var defintion = await workflowInstance.GetWorkflowDefinition();
             activityInstance.Execute();
-            workflowInstance.EnqueueEvent(new WorkflowActivityExecutedEvent(workflowInstance.WorkflowInstanceId,
-                                                                            workflowInstance.Workflow.WorkflowId,
+            workflowInstance.EnqueueEvent(new WorkflowActivityExecutedEvent(await workflowInstance.GetWorkflowInstanceId(),
+                                                                            defintion.WorkflowId,
                                                                             activityInstance.ActivityInstanceId,
                                                                             ActivityId, 
-                                                                            GetType().Name));
+                                                                            GetType().Name));            
         }
-        internal abstract List<Activity> GetNextActivities(WorkflowInstance workflowInstance, ActivityInstance activityInstance);
+        internal abstract Task<List<Activity>> GetNextActivities(IWorkflowInstance workflowInstance, ActivityInstance activityInstance);
     }
 }
