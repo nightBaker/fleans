@@ -10,69 +10,95 @@ namespace Fleans.Domain;
 
 public class WorkflowInstance : Grain, IWorkflowInstance
 {
-    public ValueTask<Guid> GetWorkflowInstanceId() => ValueTask.FromResult(this.GetGrainId().GetGuidKey());
+    public ValueTask<Guid> GetWorkflowInstanceId() => ValueTask.FromResult(this.GetPrimaryKey());
     public IWorkflowDefinition WorkflowDefinition { get; private set; } = null!;
-    public IWorkflowInstanceState State { get; private set; } = null!;    
-
-    private readonly Queue<IDomainEvent> _events = new();
+    public IWorkflowInstanceState State { get; private set; } = null!; 
     
-    public async Task StartWorkflow(IEventPublisher eventPublisher)
+
+    private readonly IGrainFactory _grainFactory;
+    private IEventPublisher _eventPublisher = null!;
+
+    public WorkflowInstance(IGrainFactory grainFactory)
     {
-        await ExecuteWorkflow(eventPublisher);
+        _grainFactory = grainFactory;
     }
 
-    private async Task ExecuteWorkflow(IEventPublisher eventPublisher)
+    private readonly Queue<IDomainEvent> _events = new();
+
+    public override Task OnActivateAsync(CancellationToken cancellationToken)
     {
-        while ((await State.GetActiveActivities()).Any(x => !x.IsExecuting))
+        _eventPublisher = _grainFactory.GetGrain<IEventPublisher>(0);
+        State = _grainFactory.GetGrain<IWorkflowInstanceState>(this.GetPrimaryKey());
+
+        return base.OnActivateAsync(cancellationToken);
+    }
+
+    public async Task StartWorkflow()
+    {
+        await ExecuteWorkflow();
+    }
+
+    private async Task ExecuteWorkflow()
+    {
+        while (await State.AnyNotExecuting())
         {
-            foreach (var activityState in (await State.GetActiveActivities()).Where(x => !x.IsExecuting && !x.IsCompleted))
+            foreach (var activityState in await State.GetNotExecutingNotCompletedActivities())
             {
-                activityState.CurrentActivity.ExecuteAsync(this, activityState);
+                await (await activityState.GetCurrentActivity()).ExecuteAsync(this, activityState);
             }
 
             await TransitionToNextActivity();
 
-            PublishEvents(eventPublisher);
+            PublishEvents();
         }
     }
 
-    private void PublishEvents(IEventPublisher eventPublisher)
+    private void PublishEvents()
     {
         while (_events.Count > 0)
         {
             var domainEvent = _events.Dequeue();
-            eventPublisher.Publish(domainEvent);
+            _eventPublisher.Publish(domainEvent);
         }
     }
 
     public async Task CompleteActivity(string activityId, Dictionary<string, object> variables, IEventPublisher eventPublisher)
     {
         await CompleteActivityState(activityId, variables);
-        await ExecuteWorkflow(eventPublisher);
+        await ExecuteWorkflow();
     }
 
     public async Task FailActivity(string activityId, Exception exception, IEventPublisher eventPublisher)
     {
         await FailActivityState(activityId, exception);
-        await ExecuteWorkflow(eventPublisher);
+        await ExecuteWorkflow();
     }
 
     private async Task TransitionToNextActivity()
     {
-        var newActiveActivities = new List<ActivityInstance>();
-        var completedActivities = new List<ActivityInstance>();
+        var newActiveActivities = new List<IActivityInstance>();
+        var completedActivities = new List<IActivityInstance>();
 
         foreach (var activityState in await State.GetActiveActivities())
         {
-            if (activityState.IsCompleted)
+            if (await activityState.IsCompleted())
             {
-                var currentActivity = activityState.CurrentActivity;
+                var currentActivity = await activityState.GetCurrentActivity();
                 if (currentActivity == null)
                     continue;
 
                 var nextActivities = await currentActivity.GetNextActivities(this, activityState);
-                newActiveActivities.AddRange(nextActivities.Select(activity => new ActivityInstance(activity, activityState.VariablesStateId)));
 
+                foreach(var nextActivity in nextActivities)
+                {
+                    var variablesId = await activityState.GetVariablesStateId();
+                    var activityInstance = _grainFactory.GetGrain<IActivityInstance>(variablesId);
+
+                    activityInstance.SetActivity(nextActivity);
+
+                    newActiveActivities.Add(activityInstance);
+                }
+                
                 completedActivities.Add(activityState);
             }
         }
@@ -84,19 +110,19 @@ public class WorkflowInstance : Grain, IWorkflowInstance
 
     private async Task CompleteActivityState(string activityId, Dictionary<string, object> variables)
     {
-        var activityInstance = (await State.GetActiveActivities()).FirstOrDefault(x => x.CurrentActivity.ActivityId == activityId)
+        var activityInstance = await State.GetFirstActive(activityId)
             ?? throw new InvalidOperationException("Active activity not found");
 
         activityInstance.Complete();
 
-        var variablesState = (await State.GetVariableStates())[activityInstance.VariablesStateId];
+        var variablesState = (await State.GetVariableStates())[await activityInstance.GetVariablesStateId()];
 
         variablesState.Merge(variables);
     }
 
     private async Task FailActivityState(string activityId, Exception exception)
     {
-        var activityInstance = (await State.GetActiveActivities()).FirstOrDefault(x => x.CurrentActivity.ActivityId == activityId)
+        var activityInstance = await State.GetFirstActive(activityId)
             ?? throw new InvalidOperationException("Active activity not found");
 
         activityInstance.Fail(exception);
@@ -108,10 +134,10 @@ public class WorkflowInstance : Grain, IWorkflowInstance
 
     public async Task CompleteConditionSequence(string activityId, string conditionSequenceId, bool result)
     {
-        var activityInstance = (await State.GetActiveActivities()).FirstOrDefault(x => x.CurrentActivity.ActivityId == activityId)
+        var activityInstance = await State.GetFirstActive(activityId)
             ?? throw new InvalidOperationException("Active activity not found");
 
-        await (activityInstance.CurrentActivity as Gateway ?? throw new Exception("Acitivi is not gateway type"))
+        await (await activityInstance.GetCurrentActivity() as Gateway ?? throw new Exception("Acitivity is not gateway type"))
                 .SetConditionResult(this, activityInstance, conditionSequenceId, result);
     }
 
@@ -120,15 +146,15 @@ public class WorkflowInstance : Grain, IWorkflowInstance
         _events.Enqueue(domainEvent);
     }
 
-    public Task SetWorkflow(IWorkflowDefinition workflow, IWorkflowInstanceState workflowInstanceState)
+    public Task SetWorkflow(IWorkflowDefinition workflow)
     {
         if(WorkflowDefinition is not null) throw new ArgumentException("Workflow already set");
 
         WorkflowDefinition = workflow ?? throw new ArgumentNullException(nameof(workflow));
-        State = workflowInstanceState ?? throw new ArgumentNullException(nameof(workflowInstanceState));
+        State = _grainFactory.GetGrain<IWorkflowInstanceState>(this.GetPrimaryKey());
 
         var startActivity = workflow.Activities.OfType<StartEvent>().First();
-        workflowInstanceState.StartWith(startActivity);
+        State.StartWith(startActivity);
 
         return Task.CompletedTask;
     }

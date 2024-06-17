@@ -1,18 +1,6 @@
 ﻿using Fleans.Domain.Activities;
 
-namespace Fleans.Domain.Sequences
-{
-    public class SequenceFlow
-    {
-        public string SequenceFlowId { get; }
-        public Activity Source { get; }
-        public Activity Target { get; }
+namespace Fleans.Domain.Sequences;
 
-        public SequenceFlow(string sequenceFlowId, Activity source, Activity target)
-        {
-            Source = source;
-            Target = target;
-            SequenceFlowId = sequenceFlowId;
-        }
-    }
-}
+[GenerateSerializer]
+public record SequenceFlow(string SequenceFlowId, Activity Source, Activity Target);

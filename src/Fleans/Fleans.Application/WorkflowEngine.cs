@@ -28,7 +28,7 @@ namespace Fleans.Application
 
             var eventsPublisherGrain = _grainFactory.GetGrain<IWorkflowEventsPublisher>(SingletonEventPublisherGrainId);
 
-            workflowInstance.StartWorkflow(eventsPublisherGrain);
+            workflowInstance.StartWorkflow();
 
             return workflowInstance.GetPrimaryKey();
         }

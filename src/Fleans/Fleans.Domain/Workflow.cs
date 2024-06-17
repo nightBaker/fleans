@@ -12,7 +12,7 @@ namespace Fleans.Domain
 {
     public interface IWorkflowDefinition
     {
-        string WorkflowId { get; set; }
+        string WorkflowId { get; }
         List<Activity> Activities { get; }
         List<SequenceFlow> SequenceFlows { get; }
     }
@@ -20,19 +20,18 @@ namespace Fleans.Domain
     public interface ICondition
     {
         bool Evaluate(WorklfowVariablesState worklfowVariablesState);
-    }   
+    }
 
-    public class WorkflowDefinition : IWorkflowDefinition
+    [GenerateSerializer]
+    public record WorkflowDefinition : IWorkflowDefinition
     {
-        public WorkflowDefinition(string workflowId, List<Activity> activities, List<SequenceFlow> sequenceFlows)
-        {
-            WorkflowId = workflowId;
-            Activities = activities;
-            SequenceFlows = sequenceFlows;
-        }
+        [Id(0)]
+        public required string WorkflowId { get; init; }
 
-        public string WorkflowId { get; set; }
-        public List<Activity> Activities { get; }
-        public List<SequenceFlow> SequenceFlows { get; }
+        [Id(1)]
+        public required List<Activity> Activities { get; init; }
+
+        [Id(2)]
+        public required List<SequenceFlow> SequenceFlows { get; init; }
     }
 }

@@ -4,20 +4,19 @@ using Orleans;
 
 namespace Fleans.Domain.Activities
 {
-    public abstract class Activity
-    {
-        public string ActivityId { get; protected set; }
-
-        internal virtual async Task ExecuteAsync(IWorkflowInstance workflowInstance, ActivityInstance activityInstance)
+    [GenerateSerializer]
+    public abstract record Activity(string ActivityId)
+    {                
+        internal virtual async Task ExecuteAsync(IWorkflowInstance workflowInstance, IActivityInstance activityInstance)
         {
             var defintion = await workflowInstance.GetWorkflowDefinition();
             activityInstance.Execute();
             workflowInstance.EnqueueEvent(new WorkflowActivityExecutedEvent(await workflowInstance.GetWorkflowInstanceId(),
                                                                             defintion.WorkflowId,
-                                                                            activityInstance.ActivityInstanceId,
+                                                                            await activityInstance.GetActivityInstanceId(),
                                                                             ActivityId, 
                                                                             GetType().Name));            
         }
-        internal abstract Task<List<Activity>> GetNextActivities(IWorkflowInstance workflowInstance, ActivityInstance activityInstance);
+        internal abstract Task<List<Activity>> GetNextActivities(IWorkflowInstance workflowInstance, IActivityInstance activityInstance);
     }
 }

@@ -1,25 +1,25 @@
 ﻿
 
-namespace Fleans.Domain.Activities
+namespace Fleans.Domain.Activities;
+
+[GenerateSerializer]
+public record EndEvent : Activity
 {
-    public class EndEvent : Activity
+    public EndEvent(string activityId) : base(activityId)
+    { 
+        ActivityId = activityId;
+    }
+
+    internal override async Task ExecuteAsync(IWorkflowInstance workflowInstance, IActivityInstance activityState)
     {
-        public EndEvent(string activityId) 
-        { 
-            ActivityId = activityId;
-        }
+        await base.ExecuteAsync(workflowInstance, activityState);
 
-        internal override async Task ExecuteAsync(IWorkflowInstance workflowInstance, ActivityInstance activityState)
-        {
-            await base.ExecuteAsync(workflowInstance, activityState);
+        activityState.Complete();
+        workflowInstance.Complete();            
+    }
 
-            activityState.Complete();
-            workflowInstance.Complete();            
-        }
-
-        internal override Task<List<Activity>> GetNextActivities(IWorkflowInstance workflowInstance, ActivityInstance activityState)
-        {
-            return Task.FromResult(new List<Activity>());
-        }
+    internal override Task<List<Activity>> GetNextActivities(IWorkflowInstance workflowInstance, IActivityInstance activityState)
+    {
+        return Task.FromResult(new List<Activity>());
     }
 }

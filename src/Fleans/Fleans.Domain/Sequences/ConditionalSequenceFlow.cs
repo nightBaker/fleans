@@ -1,15 +1,17 @@
 ﻿using Fleans.Domain.Activities;
 
-namespace Fleans.Domain.Sequences
-{
-    public class ConditionalSequenceFlow : SequenceFlow
-    {
-        public string Condition { get; }
+namespace Fleans.Domain.Sequences;
 
-        public ConditionalSequenceFlow(string sequencId, Activity source, Activity target, string condition)
-            : base(sequencId, source: source, target: target)
-        {
-            Condition = condition;
-        }
+
+[GenerateSerializer]
+public record ConditionalSequenceFlow : SequenceFlow
+{
+    [Id(3)]
+    public string Condition { get; init; }
+
+    public ConditionalSequenceFlow(string sequencId, Activity source, Activity target, string condition) 
+        : base(sequencId, source, target)
+    {
+        Condition = condition;        
     }
 }

@@ -22,7 +22,7 @@ public class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFactoryGrain
         var guid = Guid.NewGuid();
         var workflowInstanceGrain = _grainFactory.GetGrain<IWorkflowInstance>(guid);
         var workflowInstanceStateGrain = _grainFactory.GetGrain<IWorkflowInstanceState>(guid);
-        workflowInstanceGrain.SetWorkflow(workflow, workflowInstanceStateGrain);
+        workflowInstanceGrain.SetWorkflow(workflow);
         return Task.FromResult(workflowInstanceGrain);
     }
 }

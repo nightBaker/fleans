@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace Fleans.Domain.Events;
 
-public interface IEventPublisher
+public interface IEventPublisher : IGrainWithIntegerKey
 {
     void Publish(IDomainEvent domainEvent);
 }

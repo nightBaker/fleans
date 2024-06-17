@@ -5,54 +5,62 @@ using Orleans;
 
 namespace Fleans.Domain
 {
-    public class ActivityInstance : Grain
+    public class ActivityInstance : Grain, IActivityInstance
     {
-        public Guid ActivityInstanceId { get; } = Guid.NewGuid();
 
-        public Activity CurrentActivity { get; }
+        private Activity _currentActivity;
 
-        public bool IsCompleted { get; private set; }
+        private bool _isCompleted;
+        private bool _isExecuting;        
+        private ActivityErrorState? _errorState;
 
-        public bool IsExecuting { get; private set; }
-
-        public Guid VariablesStateId { get; internal set; }
-
-        public ActivityErrorState? ErrorState { get; private set; }
-
-        public ActivityInstance(Activity currentActivity, Guid variablesStateId)
+        
+        public void Complete()
         {
-            CurrentActivity = currentActivity;
-            VariablesStateId = variablesStateId;
+            _isExecuting = false;
+            _isCompleted = true;
         }
 
-        internal void Complete()
-        {
-            IsExecuting = false;
-            IsCompleted = true;
-        }
-
-        internal void Fail(Exception exception)
+        public void Fail(Exception exception)
         {
             if (exception is ActivityException activityException)
             {
-                ErrorState = activityException.GetActivityErrorState();
+                _errorState = activityException.GetActivityErrorState();
             }
             else
             {
-                ErrorState = new ActivityErrorState(500, exception.Message);
+                _errorState = new ActivityErrorState(500, exception.Message);
             }
 
             Complete();
         }
 
-        internal void Execute()
+        public void Execute()
         {
-            ErrorState = null;
-            IsCompleted = false;
-            IsExecuting = true;
+            _errorState = null;
+            _isCompleted = false;
+            _isExecuting = true;
+        }
+
+        public ValueTask<Guid> GetActivityInstanceId() => ValueTask.FromResult( this.GetPrimaryKey());
+
+        public ValueTask<Activity> GetCurrentActivity() => ValueTask.FromResult(_currentActivity);
+
+        public ValueTask<ActivityErrorState?> GetErrorState() => ValueTask.FromResult(_errorState);
+
+        ValueTask<bool> IActivityInstance.IsCompleted() => ValueTask.FromResult(_isCompleted);
+
+        ValueTask<bool> IActivityInstance.IsExecuting() => ValueTask.FromResult(_isExecuting);
+
+        public ValueTask<Guid> GetVariablesStateId() => ValueTask.FromResult(this.GetPrimaryKey());
+
+        public void SetActivity(Activity nextActivity)
+        {
+            _currentActivity = nextActivity;
         }
     }
 
+    [GenerateSerializer]
     public record ActivityErrorState(int Code, string Message);
 
 
