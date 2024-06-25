@@ -14,5 +14,6 @@ namespace Fleans.Domain
         void Fail(Exception exception);
         void Execute();
         void SetActivity(Activity nextActivity);
+        void SetVariablesId(Guid guid);
     }
 }

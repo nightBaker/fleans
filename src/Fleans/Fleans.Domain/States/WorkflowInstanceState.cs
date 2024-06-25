@@ -41,6 +41,7 @@ public class WorkflowInstanceState : Grain, IWorkflowInstanceState
 
         var activityInstance = _grainFactory.GetGrain<IActivityInstance>(variablesId);
         activityInstance.SetActivity(startActivity);
+        activityInstance.SetVariablesId(variablesId);
 
         _activeActivities.Add(activityInstance);
     }
@@ -72,17 +73,20 @@ public class WorkflowInstanceState : Grain, IWorkflowInstanceState
         return ValueTask.FromResult(newVariableStateId);
     }
 
-    public void AddConditionSequenceStates(Guid activityInstanceId, IEnumerable<ConditionalSequenceFlow> sequences)
+    public void AddConditionSequenceStates(Guid activityInstanceId, ConditionalSequenceFlow[] sequences)
     {
         var sequenceStates = sequences.Select(sequence => new ConditionSequenceState(sequence)).ToArray();
         _conditionSequenceStates.Add(activityInstanceId, sequenceStates);
     }
 
-    public void RemoveActiveActivities(List<IActivityInstance> removeInstances) => _activeActivities.RemoveAll(removeInstances.Contains);
+    public void RemoveActiveActivities(List<IActivityInstance> removeInstances) 
+        => _activeActivities.RemoveAll(removeInstances.Contains);
 
-    public void AddActiveActivities(IEnumerable<IActivityInstance> activities) => _activeActivities.AddRange(activities);
+    public void AddActiveActivities(IEnumerable<IActivityInstance> activities) 
+        => _activeActivities.AddRange(activities);
 
-    public void AddCompletedActivities(IEnumerable<IActivityInstance> activities) => _completedActivities.AddRange(activities);
+    public void AddCompletedActivities(IEnumerable<IActivityInstance> activities) 
+        => _completedActivities.AddRange(activities);
 
     public async ValueTask<IActivityInstance?> GetFirstActive(string activityId)
     {
@@ -120,5 +124,22 @@ public class WorkflowInstanceState : Grain, IWorkflowInstanceState
         }
 
         return result.ToArray();
+    }
+
+    public void SetCondigitionSequencesResult(Guid activityInstanceId, string sequenceId, bool result)
+    {
+
+        var sequences = _conditionSequenceStates[activityInstanceId];
+
+        var sequence = sequences.FirstOrDefault(s => s.ConditionalSequence.SequenceFlowId == sequenceId);
+
+        if (sequence != null)
+        {
+            sequence.SetResult(result);
+        }
+        else
+        {
+            throw new NullReferenceException("Sequence not found");
+        }
     }
 }

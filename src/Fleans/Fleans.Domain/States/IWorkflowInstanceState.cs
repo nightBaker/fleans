@@ -17,7 +17,7 @@ namespace Fleans.Domain.States
         ValueTask<Guid> AddCloneOfVariableState(Guid variableStateId);
         void AddActiveActivities(IEnumerable<IActivityInstance> activities);        
         void AddCompletedActivities(IEnumerable<IActivityInstance> activities);
-        void AddConditionSequenceStates(Guid activityInstanceId, IEnumerable<ConditionalSequenceFlow> sequences);
+        void AddConditionSequenceStates(Guid activityInstanceId, ConditionalSequenceFlow[] sequences);
         void Complete();
         void RemoveActiveActivities(List<IActivityInstance> removeInstances);
         void Start();
@@ -25,5 +25,6 @@ namespace Fleans.Domain.States
         ValueTask<IActivityInstance?> GetFirstActive(string activityId);
         ValueTask<bool> AnyNotExecuting();
         ValueTask<IActivityInstance[]> GetNotExecutingNotCompletedActivities();
+        void SetCondigitionSequencesResult(Guid activityInstanceId, string sequenceId, bool result);
     }
 }

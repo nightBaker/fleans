@@ -13,9 +13,10 @@ public class ConditionSequenceState
     [Id(0)]
     public Guid ConditionSequenceStateId { get; } = Guid.NewGuid();
 
+    [Id(1)]
     public ConditionalSequenceFlow ConditionalSequence { get; set; }
 
-    [Id(1)]
+    [Id(2)]
     public bool Result { get; private set; }
 
     internal void SetResult(bool result)

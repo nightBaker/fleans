@@ -29,21 +29,28 @@ namespace Fleans.Domain.Tests
             cluster.Deploy();
 
             var testWF = cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            var eventPublisher = cluster.GrainFactory.GetGrain<IEventPublisher>(0);
 
             // Act
             await testWF.SetWorkflow(_workflow);
             await testWF.StartWorkflow();
             await testWF.CompleteConditionSequence("if", "seq2", true);
             await testWF.CompleteConditionSequence("if", "seq3", false);
-            await testWF.CompleteActivity("if", new Dictionary<string, object>(), Substitute.For<IEventPublisher>());
+            await testWF.CompleteActivity("if", new Dictionary<string, object>(), eventPublisher);
 
             // Assert           
-            Assert.IsTrue(testWF.GetState().IsCompleted);
+            Assert.IsTrue(await (await testWF.GetState()).IsCompleted());
 
-            var completed = await testWF.GetState().Result.GetCompletedActivities();
+            var completed = await (await testWF.GetState()).GetCompletedActivities();
+            var completedActivities = new List<Activities.Activity>();
+            foreach(var complete in completed)
+            {
+                var activity = await complete.GetCurrentActivity();
+                completedActivities.Add(activity);
+            }
 
-            Assert.IsTrue(completed.Any(x => x.GetCurrentActivity().Result.ActivityId == "end1"));
-            Assert.IsFalse(completed.Any(x => x.GetCurrentActivity().Result.ActivityId == "end2"));
+            Assert.IsTrue(completedActivities.Any(x => x.ActivityId == "end1"));
+            Assert.IsFalse(completedActivities.Any(x => x.ActivityId == "end2"));
 
             cluster.StopAllSilos();
 

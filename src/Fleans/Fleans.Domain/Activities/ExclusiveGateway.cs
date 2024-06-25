@@ -29,7 +29,8 @@ public record ExclusiveGateway : Gateway
         var currentActivity = await activityInstance.GetCurrentActivity();
 
         var sequences = (await workflowInstance.GetWorkflowDefinition()).SequenceFlows.OfType<ConditionalSequenceFlow>()
-                                .Where(sf => sf.Source.ActivityId == currentActivity.ActivityId);
+                                .Where(sf => sf.Source.ActivityId == currentActivity.ActivityId)
+                                .ToArray();
 
         var state = await workflowInstance.GetState();
         state.AddConditionSequenceStates(await activityInstance.GetActivityInstanceId(), sequences);
@@ -55,7 +56,8 @@ public record ExclusiveGateway : Gateway
     {
         var state = await workflowInstance.GetState();
         var sequencesState = await state.GetConditionSequenceStates();
-        return sequencesState[await activityInstance.GetActivityInstanceId()]
+        var activitySequencesState = sequencesState[await activityInstance.GetActivityInstanceId()];
+        return activitySequencesState
                             .Where(x=>x.Result)
                             .Select(x=>x.ConditionalSequence.Target)
                             .ToList();           

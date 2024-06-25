@@ -13,6 +13,7 @@ namespace Fleans.Domain
         private bool _isCompleted;
         private bool _isExecuting;        
         private ActivityErrorState? _errorState;
+        private Guid _variablesId;
 
         
         public void Complete()
@@ -48,11 +49,15 @@ namespace Fleans.Domain
 
         public ValueTask<ActivityErrorState?> GetErrorState() => ValueTask.FromResult(_errorState);
 
-        ValueTask<bool> IActivityInstance.IsCompleted() => ValueTask.FromResult(_isCompleted);
+        ValueTask<bool> IActivityInstance.IsCompleted() 
+            => ValueTask.FromResult(_isCompleted);
 
         ValueTask<bool> IActivityInstance.IsExecuting() => ValueTask.FromResult(_isExecuting);
 
-        public ValueTask<Guid> GetVariablesStateId() => ValueTask.FromResult(this.GetPrimaryKey());
+        public ValueTask<Guid> GetVariablesStateId() 
+            => ValueTask.FromResult(_variablesId);
+
+        public void SetVariablesId(Guid guid) => _variablesId = guid;
 
         public void SetActivity(Activity nextActivity)
         {

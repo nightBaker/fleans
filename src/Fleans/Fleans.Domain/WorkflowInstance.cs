@@ -44,7 +44,8 @@ public class WorkflowInstance : Grain, IWorkflowInstance
         {
             foreach (var activityState in await State.GetNotExecutingNotCompletedActivities())
             {
-                await (await activityState.GetCurrentActivity()).ExecuteAsync(this, activityState);
+                var currentActivity = await activityState.GetCurrentActivity();
+                await currentActivity.ExecuteAsync(this, activityState);
             }
 
             await TransitionToNextActivity();
@@ -92,7 +93,8 @@ public class WorkflowInstance : Grain, IWorkflowInstance
                 foreach(var nextActivity in nextActivities)
                 {
                     var variablesId = await activityState.GetVariablesStateId();
-                    var activityInstance = _grainFactory.GetGrain<IActivityInstance>(variablesId);
+                    var activityInstance = _grainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
+                    activityInstance.SetVariablesId(variablesId);
 
                     activityInstance.SetActivity(nextActivity);
 
@@ -114,8 +116,8 @@ public class WorkflowInstance : Grain, IWorkflowInstance
             ?? throw new InvalidOperationException("Active activity not found");
 
         activityInstance.Complete();
-
-        var variablesState = (await State.GetVariableStates())[await activityInstance.GetVariablesStateId()];
+        var variablesId = await activityInstance.GetVariablesStateId();
+        var variablesState = (await State.GetVariableStates())[variablesId];
 
         variablesState.Merge(variables);
     }
@@ -128,9 +130,11 @@ public class WorkflowInstance : Grain, IWorkflowInstance
         activityInstance.Fail(exception);
     }
 
-    public void Start() => State.Start();
+    public void Start() 
+        => State.Start();
 
-    public void Complete() => State.Complete();
+    public void Complete() 
+        => State.Complete();
 
     public async Task CompleteConditionSequence(string activityId, string conditionSequenceId, bool result)
     {
