@@ -6,6 +6,9 @@ using System.Threading.Tasks;
 using Fleans.Application.Events;
 using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
+using Fleans.Domain.Activities;
+using Fleans.Domain.Events;
+using Fleans.Domain.Sequences;
 
 namespace Fleans.Application
 {
@@ -23,24 +26,45 @@ namespace Fleans.Application
 
         public async Task<Guid> StartWorkflow(string workflowId)
         {
-            var workflowInstance = await _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstaceFactorySingletonId)
-                                                    .CreateWorkflowInstanceGrain(workflowId);
+            //    var workflowInstance = await _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstaceFactorySingletonId)
+            //                                            .CreateWorkflowInstanceGrain(workflowId);
 
-            var eventsPublisherGrain = _grainFactory.GetGrain<IWorkflowEventsPublisher>(SingletonEventPublisherGrainId);
+            //    await workflowInstance.StartWorkflow();
 
-            workflowInstance.StartWorkflow();
+            //    return workflowInstance.GetPrimaryKey();
 
-            return workflowInstance.GetPrimaryKey();
-        }
+            var testWF = _grainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+                        
+            await testWF.SetWorkflow(CreateSimpleWorkflowWithExclusiveGateway());
+            await testWF.StartWorkflow();
+
+            return testWF.GetPrimaryKey();
+    }
 
         public void CompleteActivity(Guid workflowInstanceId, string activityId, Dictionary<string, object> variables)
-        {
-
-            var eventsPublisherGrain = _grainFactory.GetGrain<IWorkflowEventsPublisher>(SingletonEventPublisherGrainId);
-
+        {            
             _grainFactory.GetGrain<IWorkflowInstance>(workflowInstanceId)
-                         .CompleteActivity(activityId, variables, eventsPublisherGrain);
+                         .CompleteActivity(activityId, variables);
 
+        }
+
+        private static IWorkflowDefinition CreateSimpleWorkflowWithExclusiveGateway()
+        {
+            var start = new StartEvent("start");
+            var end1 = new EndEvent("end1");
+            var end2 = new EndEvent("end2");
+            var ifActivity = new ExclusiveGateway("if");
+
+            var workflow = new WorkflowDefinition { WorkflowId = "workflow1", Activities = new List<Domain.Activities.Activity>(), SequenceFlows = new List<SequenceFlow>() };
+            workflow.Activities.Add(start);
+            workflow.Activities.Add(end1);
+            workflow.Activities.Add(end2);
+            workflow.Activities.Add(ifActivity);
+
+            workflow.SequenceFlows.Add(new SequenceFlow("seq1", start, ifActivity));
+            workflow.SequenceFlows.Add(new ConditionalSequenceFlow("seq2", ifActivity, end1, "trueCondition"));
+            workflow.SequenceFlows.Add(new ConditionalSequenceFlow("seq3", ifActivity, end2, "falseCondition"));
+            return workflow;
         }
     }
 }

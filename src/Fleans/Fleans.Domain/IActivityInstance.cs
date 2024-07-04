@@ -1,4 +1,5 @@
 ﻿using Fleans.Domain.Activities;
+using Fleans.Domain.Events;
 
 namespace Fleans.Domain
 {
@@ -15,5 +16,6 @@ namespace Fleans.Domain
         void Execute();
         void SetActivity(Activity nextActivity);
         void SetVariablesId(Guid guid);
+        Task PublishEvent(IDomainEvent domainEvent);
     }
 }

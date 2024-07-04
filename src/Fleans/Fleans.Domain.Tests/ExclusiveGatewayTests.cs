@@ -12,38 +12,35 @@ namespace Fleans.Domain.Tests
     public class ExclusiveGatewayTests
     {
         private IWorkflowDefinition _workflow = null!;
+        private TestCluster _cluster = null!;
 
         [TestInitialize]
         public void Setup()
         {
             _workflow = CreateSimpleWorkflowWithExclusiveGateway();
+            _cluster = CreateCluster();
         }
 
         [TestMethod]
         public async Task IfStatement_ShouldRun_ThenBranchNotElse()
         {
             // Arrange
-            // 
-            var builder = new TestClusterBuilder();
-            var cluster = builder.Build();
-            cluster.Deploy();
-
-            var testWF = cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
-            var eventPublisher = cluster.GrainFactory.GetGrain<IEventPublisher>(0);
+            //             
+            var testWF = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
 
             // Act
             await testWF.SetWorkflow(_workflow);
             await testWF.StartWorkflow();
             await testWF.CompleteConditionSequence("if", "seq2", true);
             await testWF.CompleteConditionSequence("if", "seq3", false);
-            await testWF.CompleteActivity("if", new Dictionary<string, object>(), eventPublisher);
+            await testWF.CompleteActivity("if", new Dictionary<string, object>());
 
             // Assert           
             Assert.IsTrue(await (await testWF.GetState()).IsCompleted());
 
             var completed = await (await testWF.GetState()).GetCompletedActivities();
             var completedActivities = new List<Activities.Activity>();
-            foreach(var complete in completed)
+            foreach (var complete in completed)
             {
                 var activity = await complete.GetCurrentActivity();
                 completedActivities.Add(activity);
@@ -52,62 +49,46 @@ namespace Fleans.Domain.Tests
             Assert.IsTrue(completedActivities.Any(x => x.ActivityId == "end1"));
             Assert.IsFalse(completedActivities.Any(x => x.ActivityId == "end2"));
 
-            cluster.StopAllSilos();
+            _cluster.StopAllSilos();
 
         }
-
+        
         [TestMethod]
         public async Task IfStatement_ShouldRun_ElseBranchNotThen()
         {
             // Arrange                        
-            var builder = new TestClusterBuilder();
-            var cluster = builder.Build();
-            cluster.Deploy();
-
-            var testWF = new WorkflowInstance(cluster.GrainFactory);
-            await testWF.SetWorkflow(_workflow);
+            var testWF = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
 
             // Act
+            await testWF.SetWorkflow(_workflow);
             await testWF.StartWorkflow();
             await testWF.CompleteConditionSequence("if", "seq2", false);
             await testWF.CompleteConditionSequence("if", "seq3", true);
-            await testWF.CompleteActivity("if", new Dictionary<string, object>(), Substitute.For<IEventPublisher>());
+            await testWF.CompleteActivity("if", new Dictionary<string, object>());
 
             // Assert           
             Assert.IsTrue(await (await testWF.GetState()).IsCompleted());
 
-            var completed = await testWF.State.GetCompletedActivities();
+            var completed = await (await testWF.GetState()).GetCompletedActivities();
+            var completedActivities = new List<Activities.Activity>();
+            foreach (var complete in completed)
+            {
+                var activity = await complete.GetCurrentActivity();
+                completedActivities.Add(activity);
+            }
 
-            Assert.IsFalse(completed.Any(x => x.GetCurrentActivity().Result.ActivityId == "end1"));
-            Assert.IsTrue(completed.Any(x => x.GetCurrentActivity().Result.ActivityId == "end2"));
+            Assert.IsTrue(completedActivities.Any(x => x.ActivityId == "end2"));
+            Assert.IsFalse(completedActivities.Any(x => x.ActivityId == "end1"));
 
-            cluster.StopAllSilos();
+            _cluster.StopAllSilos();
         }
 
-        [TestMethod]
-        public async Task IfStatement_Should_Publish_Event()
+        private static TestCluster CreateCluster()
         {
-            // Arrange
             var builder = new TestClusterBuilder();
             var cluster = builder.Build();
             cluster.Deploy();
-
-            var testWF = new WorkflowInstance(cluster.GrainFactory);
-            await testWF.SetWorkflow(_workflow);
-
-            var eventPublisher = Substitute.For<IEventPublisher>();            
-
-            // Act
-            await testWF.StartWorkflow();
-            await testWF.CompleteConditionSequence("if", "seq2", false);
-            await testWF.CompleteConditionSequence("if", "seq3", true);
-            await testWF.CompleteActivity("if", new Dictionary<string, object>(), eventPublisher);
-
-            // Assert           
-            eventPublisher.Received(5).Publish(Arg.Any<IDomainEvent>());
-            eventPublisher.Received(2).Publish(Arg.Any<EvaluateConditionEvent>());
-
-            cluster.StopAllSilos();
+            return cluster;
         }
 
         private static IWorkflowDefinition CreateSimpleWorkflowWithExclusiveGateway()
@@ -132,9 +113,10 @@ namespace Fleans.Domain.Tests
 
     public class EventPublisherMock : Grain, IEventPublisher
     {
-        public void Publish(IDomainEvent domainEvent)
+        public Task Publish(IDomainEvent domainEvent)
         {
             Debug.WriteLine($"Publishing event {domainEvent.GetType().Name}");
+            return Task.CompletedTask;
         }
     }
 }

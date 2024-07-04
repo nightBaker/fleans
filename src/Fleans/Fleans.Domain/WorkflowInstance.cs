@@ -14,9 +14,7 @@ public class WorkflowInstance : Grain, IWorkflowInstance
     public IWorkflowDefinition WorkflowDefinition { get; private set; } = null!;
     public IWorkflowInstanceState State { get; private set; } = null!; 
     
-
-    private readonly IGrainFactory _grainFactory;
-    private IEventPublisher _eventPublisher = null!;
+    private readonly IGrainFactory _grainFactory;    
 
     public WorkflowInstance(IGrainFactory grainFactory)
     {
@@ -27,7 +25,7 @@ public class WorkflowInstance : Grain, IWorkflowInstance
 
     public override Task OnActivateAsync(CancellationToken cancellationToken)
     {
-        _eventPublisher = _grainFactory.GetGrain<IEventPublisher>(0);
+        
         State = _grainFactory.GetGrain<IWorkflowInstanceState>(this.GetPrimaryKey());
 
         return base.OnActivateAsync(cancellationToken);
@@ -48,28 +46,17 @@ public class WorkflowInstance : Grain, IWorkflowInstance
                 await currentActivity.ExecuteAsync(this, activityState);
             }
 
-            await TransitionToNextActivity();
-
-            PublishEvents();
+            await TransitionToNextActivity();            
         }
     }
-
-    private void PublishEvents()
-    {
-        while (_events.Count > 0)
-        {
-            var domainEvent = _events.Dequeue();
-            _eventPublisher.Publish(domainEvent);
-        }
-    }
-
-    public async Task CompleteActivity(string activityId, Dictionary<string, object> variables, IEventPublisher eventPublisher)
+    
+    public async Task CompleteActivity(string activityId, Dictionary<string, object> variables)
     {
         await CompleteActivityState(activityId, variables);
         await ExecuteWorkflow();
     }
 
-    public async Task FailActivity(string activityId, Exception exception, IEventPublisher eventPublisher)
+    public async Task FailActivity(string activityId, Exception exception)
     {
         await FailActivityState(activityId, exception);
         await ExecuteWorkflow();

@@ -1,45 +1,86 @@
 ﻿using Fleans.Application.Events.Handlers;
 using Fleans.Domain.Events;
+using Microsoft.Extensions.Logging;
+using Orleans.Runtime;
+using Orleans.Streams;
 using Orleans.Utilities;
+using System.IO;
 
 namespace Fleans.Application.Events;
 
-public class WorkflowEventsPublisher : Grain, IWorkflowEventsPublisher
+public class WorkflowEventsPublisher : Grain, IEventPublisher
 {
-    private readonly ObserverManager<IWorkflowEventsHandler> _subsManager;
-    private readonly ObserverManager<IWorfklowEvaluateConditionEventHandler> _worfklowEvaluateConditionEventHandlers;
+    private IStreamProvider _streamProvider = null!;
 
-    public WorkflowEventsPublisher(ObserverManager<IWorkflowEventsHandler> subsManager,
-                                   ObserverManager<IWorfklowEvaluateConditionEventHandler> worfklowEvaluateConditionEventHandlers)
+    public const string StreamProvider = "StreamProvider";
+    public const string StreamNameSpace = "events";
+
+    public override Task OnActivateAsync(CancellationToken cancellationToken)
     {
-        _subsManager = subsManager;
-        _worfklowEvaluateConditionEventHandlers = worfklowEvaluateConditionEventHandlers;
+        _streamProvider = this.GetStreamProvider(StreamProvider);
+
+        return base.OnActivateAsync(cancellationToken);
     }
 
-    public void Publish(IDomainEvent domainEvent)
-    {
+    public async Task Publish(IDomainEvent domainEvent)
+    {                                        
         switch (domainEvent)
         {
             case EvaluateConditionEvent evaluateConditionEvent:
-                _worfklowEvaluateConditionEventHandlers.Notify(x => x.Handle(evaluateConditionEvent));
+                
+                var streamId = StreamId.Create(StreamNameSpace, nameof(EvaluateConditionEvent));
+                var stream = _streamProvider.GetStream<EvaluateConditionEvent>(streamId);
+                await stream.OnNextAsync(evaluateConditionEvent);
                 break;
             default:
-                _subsManager.Notify(x => x.Handle(domainEvent));
+                var defaultStreamId = StreamId.Create(StreamNameSpace, nameof(IDomainEvent));
+                var defaultStream = _streamProvider.GetStream<IDomainEvent>(defaultStreamId);
+                await defaultStream.OnNextAsync(domainEvent);
                 break;
         }
+
+    }    
+}
+
+[ImplicitStreamSubscription(WorkflowEventsPublisher.StreamNameSpace)]
+public class ReceiverGrainTest : Grain, IWorkflowEventsHandler
+{
+
+    private readonly ILogger<ReceiverGrainTest> _logger;
+
+    public ReceiverGrainTest(ILogger<ReceiverGrainTest> logger)
+    {
+        _logger = logger;
     }
 
-    public Task Subscribe(IWorkflowEventsHandler observer)
+    public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
-        _subsManager.Subscribe(observer, observer);
+        var streamProvider = this.GetStreamProvider(WorkflowEventsPublisher.StreamProvider);
+        var streamId = StreamId.Create(WorkflowEventsPublisher.StreamNameSpace, nameof(EvaluateConditionEvent));
+        var stream = streamProvider.GetStream<EvaluateConditionEvent>(streamId);
+
+        await stream.SubscribeAsync(OnNextAsync, OnErrorAsync, OnCompletedAsync);
+        _logger.LogInformation("OnCompletedAsync()");
+        await base.OnActivateAsync(cancellationToken);
+    }
+
+    public Task OnNextAsync(EvaluateConditionEvent item, StreamSequenceToken? token = null)
+    {
+        _logger.LogInformation("OnNextAsync({Item}{Token})", item, token != null ? token.ToString() : "null");
 
         return Task.CompletedTask;
     }
 
-    public Task Subscribe(IWorfklowEvaluateConditionEventHandler observer)
+    public Task OnCompletedAsync()
     {
-        _worfklowEvaluateConditionEventHandlers.Subscribe(observer, observer);
-
+        _logger.LogInformation("OnCompletedAsync()");
         return Task.CompletedTask;
     }
+
+    public Task OnErrorAsync(Exception ex)
+    {
+        _logger.LogInformation(ex, "OnErrorAsync()");
+
+        return Task.CompletedTask;
+    }    
 }

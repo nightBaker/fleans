@@ -21,6 +21,7 @@ namespace Fleans.Api.Controllers
         public async Task<IActionResult> StartWorkflow(string workflowId)
         {
             await _workflowEngine.StartWorkflow(workflowId);
+
             return Ok();
         }
     }

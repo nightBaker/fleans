@@ -10,9 +10,9 @@ public interface IWorkflowInstance : IGrainWithGuidKey
     ValueTask<IWorkflowInstanceState> GetState();
     ValueTask<IWorkflowDefinition> GetWorkflowDefinition();
 
-    Task CompleteActivity(string activityId, Dictionary<string, object> variables, IEventPublisher eventPublisher);
+    Task CompleteActivity(string activityId, Dictionary<string, object> variables);
     Task CompleteConditionSequence(string activityId, string conditionSequenceId, bool result);
-    Task FailActivity(string activityId, Exception exception, IEventPublisher eventPublisher);
+    Task FailActivity(string activityId, Exception exception);
     Task StartWorkflow();        
     Task SetWorkflow(IWorkflowDefinition workflow);
     void EnqueueEvent(IDomainEvent domainEvent);

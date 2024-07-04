@@ -43,7 +43,7 @@ public record ExclusiveGateway : Gateway
         foreach (var sequence in sequences)
         {
             
-            workflowInstance.EnqueueEvent(new EvaluateConditionEvent(workflowInstance.GetGrainId().GetGuidKey(),
+            await activityInstance.PublishEvent(new EvaluateConditionEvent(workflowInstance.GetGrainId().GetGuidKey(),
                                                                definition.WorkflowId,
                                                                 await activityInstance.GetActivityInstanceId(),
                                                                 ActivityId,

@@ -3,10 +3,9 @@ using Fleans.Domain.Events;
 
 namespace Fleans.Application.Events;
 
-public interface IWorkflowEventsPublisher : IGrainWithIntegerKey, IEventPublisher
+public interface IWorkflowEventsPublisher : IGrainWithIntegerKey
 {
-    Task Subscribe(IWorkflowEventsHandler observer);
-    Task Subscribe(IWorfklowEvaluateConditionEventHandler observer);
+    Task Publish(IDomainEvent domainEvent);
 }
 
 

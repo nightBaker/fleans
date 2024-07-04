@@ -1,6 +1,7 @@
 ﻿
 using Fleans.Domain.Activities;
 using Fleans.Domain.Errors;
+using Fleans.Domain.Events;
 using Orleans;
 
 namespace Fleans.Domain
@@ -62,6 +63,12 @@ namespace Fleans.Domain
         public void SetActivity(Activity nextActivity)
         {
             _currentActivity = nextActivity;
+        }
+
+        public Task PublishEvent(IDomainEvent domainEvent)
+        {
+            var eventPublisher = GrainFactory.GetGrain<IEventPublisher>(0);
+            return eventPublisher.Publish(domainEvent);
         }
     }
 

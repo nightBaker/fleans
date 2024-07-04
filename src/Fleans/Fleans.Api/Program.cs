@@ -5,7 +5,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseOrleans(static siloBuilder =>
 {
     siloBuilder.UseLocalhostClustering();
-    siloBuilder.AddMemoryGrainStorage("urls");
+    siloBuilder
+        .AddMemoryStreams("StreamProvider")
+        .AddMemoryGrainStorage("grains");
 });
 
 // Add services to the container.

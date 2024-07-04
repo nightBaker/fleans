@@ -1,10 +1,11 @@
 ﻿using Fleans.Domain.Events;
+using Orleans.Streams;
 
 namespace Fleans.Application.Events.Handlers;
 
-public interface IWorkflowEventsHandler : IGrainObserver
+public interface IWorkflowEventsHandler : IGrainWithGuidKey
 {
-    Task Handle(IDomainEvent domainEvent);
+    
 }
 
 

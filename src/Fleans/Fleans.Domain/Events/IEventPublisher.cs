@@ -8,5 +8,5 @@ namespace Fleans.Domain.Events;
 
 public interface IEventPublisher : IGrainWithIntegerKey
 {
-    void Publish(IDomainEvent domainEvent);
+    Task Publish(IDomainEvent domainEvent);
 }
