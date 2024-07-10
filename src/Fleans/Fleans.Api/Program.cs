@@ -1,13 +1,26 @@
 using Fleans.Application;
+using Fleans.Infrastructure;
+using Orleans.Serialization;
+using System.Dynamic;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseOrleans(static siloBuilder =>
 {
-    siloBuilder.UseLocalhostClustering();
-    siloBuilder
-        .AddMemoryStreams("StreamProvider")
-        .AddMemoryGrainStorage("grains");
+    siloBuilder.UseLocalhostClustering()
+            .AddMemoryGrainStorage("PubSubStore")
+            .AddMemoryStreams("StreamProvider");
+    siloBuilder.Services.AddSerializer(serializerBuilder =>
+    {
+        serializerBuilder.AddNewtonsoftJsonSerializer(
+            isSupported: type => type == typeof(ExpandoObject), new Newtonsoft.Json.JsonSerializerSettings
+            {
+                TypeNameHandling = Newtonsoft.Json.TypeNameHandling.All
+            } );
+    });
+    //siloBuilder
+    //    .AddMemoryStreams();
+    //    //.AddMemoryGrainStorageAsDefault();
 });
 
 // Add services to the container.
@@ -16,6 +29,7 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddApplication();
+builder.Services.AddInfrastructure();
 
 var app = builder.Build();
 

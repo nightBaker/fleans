@@ -2,6 +2,7 @@
 using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
 using Orleans;
+using System.Dynamic;
 
 namespace Fleans.Domain.States
 {
@@ -26,5 +27,6 @@ namespace Fleans.Domain.States
         ValueTask<bool> AnyNotExecuting();
         ValueTask<IActivityInstance[]> GetNotExecutingNotCompletedActivities();
         void SetCondigitionSequencesResult(Guid activityInstanceId, string sequenceId, bool result);
+        void MergeState(Guid variablesId, ExpandoObject variables);
     }
 }

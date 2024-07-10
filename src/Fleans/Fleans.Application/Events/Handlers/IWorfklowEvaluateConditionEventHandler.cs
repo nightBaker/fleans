@@ -2,9 +2,9 @@
 
 namespace Fleans.Application.Events.Handlers;
 
-public interface IWorfklowEvaluateConditionEventHandler : IGrainObserver
+public interface IWorfklowEvaluateConditionEventHandler : IGrainWithStringKey
 {
-    Task Handle(EvaluateConditionEvent domainEvent);
+    
 }
 
 

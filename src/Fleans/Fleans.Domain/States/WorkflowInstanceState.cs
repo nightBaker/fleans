@@ -2,6 +2,7 @@
 using Fleans.Domain.Sequences;
 using Orleans;
 using System.Collections.Generic;
+using System.Dynamic;
 
 namespace Fleans.Domain.States;
 
@@ -26,8 +27,10 @@ public class WorkflowInstanceState : Grain, IWorkflowInstanceState
 
     public ValueTask<IReadOnlyList<IActivityInstance>> GetCompletedActivities()
         => ValueTask.FromResult(_completedActivities as IReadOnlyList<IActivityInstance>);
+
     public ValueTask<IReadOnlyDictionary<Guid, WorklfowVariablesState>> GetVariableStates()
         => ValueTask.FromResult(_variableStates as IReadOnlyDictionary<Guid, WorklfowVariablesState>);
+
     public ValueTask<IReadOnlyDictionary<Guid, ConditionSequenceState[]>> GetConditionSequenceStates()
         => ValueTask.FromResult(_conditionSequenceStates as IReadOnlyDictionary<Guid, ConditionSequenceState[]>);
 
@@ -141,5 +144,10 @@ public class WorkflowInstanceState : Grain, IWorkflowInstanceState
         {
             throw new NullReferenceException("Sequence not found");
         }
+    }
+
+    public void MergeState(Guid variablesId, ExpandoObject variables)
+    {
+        _variableStates[variablesId].Merge(variables);
     }
 }

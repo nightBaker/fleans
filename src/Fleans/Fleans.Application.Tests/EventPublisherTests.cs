@@ -31,11 +31,12 @@ namespace Fleans.Application.Tests
             // Arrange
             //             
             var testWF = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
-            //var asd = _cluster.GrainFactory.GetGrain<IWorkflowEventsHandler>(Guid.NewGuid());
                         
             // Act
             await testWF.SetWorkflow(_workflow);
             await testWF.StartWorkflow();
+
+            //TODO test consumer IWorkflowEventsHandler
         }
 
         private static TestCluster CreateCluster()
@@ -83,5 +84,6 @@ namespace Fleans.Application.Tests
         }
     }
 
-   
+  
+
 }

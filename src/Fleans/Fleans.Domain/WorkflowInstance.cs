@@ -4,6 +4,7 @@ using Fleans.Domain.Events;
 using Fleans.Domain.States;
 using Orleans;
 using Orleans.Runtime;
+using System.Dynamic;
 using System.Security.Cryptography;
 
 namespace Fleans.Domain;
@@ -50,7 +51,7 @@ public class WorkflowInstance : Grain, IWorkflowInstance
         }
     }
     
-    public async Task CompleteActivity(string activityId, Dictionary<string, object> variables)
+    public async Task CompleteActivity(string activityId, ExpandoObject variables)
     {
         await CompleteActivityState(activityId, variables);
         await ExecuteWorkflow();
@@ -97,16 +98,15 @@ public class WorkflowInstance : Grain, IWorkflowInstance
         State.AddCompletedActivities(completedActivities);
     }
 
-    private async Task CompleteActivityState(string activityId, Dictionary<string, object> variables)
+    private async Task CompleteActivityState(string activityId, ExpandoObject variables)
     {
         var activityInstance = await State.GetFirstActive(activityId)
             ?? throw new InvalidOperationException("Active activity not found");
 
         activityInstance.Complete();
         var variablesId = await activityInstance.GetVariablesStateId();
-        var variablesState = (await State.GetVariableStates())[variablesId];
 
-        variablesState.Merge(variables);
+        State.MergeState(variablesId, variables);        
     }
 
     private async Task FailActivityState(string activityId, Exception exception)
@@ -153,4 +153,12 @@ public class WorkflowInstance : Grain, IWorkflowInstance
     public ValueTask<IWorkflowInstanceState> GetState() => ValueTask.FromResult(State);
     
     public ValueTask<IWorkflowDefinition> GetWorkflowDefinition() => ValueTask.FromResult(WorkflowDefinition);
+
+    public async ValueTask<ExpandoObject> GetVariables(Guid variablesStateId)
+    {
+        var variablesState = await State.GetVariableStates();
+        var variables = variablesState[variablesStateId].Variables;
+
+        return variables;
+    }
 }

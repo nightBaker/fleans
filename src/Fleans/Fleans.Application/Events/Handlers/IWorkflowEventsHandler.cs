@@ -3,7 +3,7 @@ using Orleans.Streams;
 
 namespace Fleans.Application.Events.Handlers;
 
-public interface IWorkflowEventsHandler : IGrainWithGuidKey
+public interface IWorkflowEventsHandler : IGrainWithStringKey
 {
     
 }
