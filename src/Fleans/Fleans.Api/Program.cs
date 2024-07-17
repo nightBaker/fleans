@@ -6,10 +6,7 @@ using System.Dynamic;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseOrleans(static siloBuilder =>
-{
-    siloBuilder.UseLocalhostClustering()
-            .AddMemoryGrainStorage("PubSubStore")
-            .AddMemoryStreams("StreamProvider");
+{    
     siloBuilder.Services.AddSerializer(serializerBuilder =>
     {
         serializerBuilder.AddNewtonsoftJsonSerializer(
@@ -17,11 +14,14 @@ builder.Host.UseOrleans(static siloBuilder =>
             {
                 TypeNameHandling = Newtonsoft.Json.TypeNameHandling.All
             } );
-    });
-    //siloBuilder
-    //    .AddMemoryStreams();
-    //    //.AddMemoryGrainStorageAsDefault();
+    });  
 });
+
+// Add service defaults & Aspire components.
+builder.AddServiceDefaults();
+
+// Add services to the container.
+builder.Services.AddProblemDetails();
 
 // Add services to the container.
 builder.Services.AddControllers();
