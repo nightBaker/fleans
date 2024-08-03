@@ -61,11 +61,11 @@ For now, next elements are implemented
 
 ### Domain
 
-Workflow is stateless structure definition of business process which is constructred from bpmn.  
-Worfklow instance contains state of running version of business process.  
-Domain activites contain stateless logic how activity changes state of workflow instance.  
-However, activites do not execute any business logic of process.
-Activity instance can publish event to orleans stream, so external (or internal) grains can subscribe and execute business logic and then complete current activity instance.
+A **workflow** is a stateless structure that defines a business process, constructed from BPMN.
+
+* A **workflow instance** contains the state of a running version of the business process.
+* **Domain activities** contain stateless logic that determines how an activity changes the state of the workflow instance. However, these activities do not execute any business logic of the process.
+* **Activity instances** can publish events to an Orleans stream. External or internal grains can subscribe to these events, execute the business logic, and then complete the current activity instance.
 
 ### Application
 
