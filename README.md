@@ -15,10 +15,6 @@ It runs 2 applications :
 ## Bpmn elements 
 For now, next elements are implemented 
 
-### BPMN event types
-
-Here's a Markdown table of BPMN notations with an additional column for "Implemented":
-
 | Notation             | Description                                                                 | Implemented |
 |----------------------|-----------------------------------------------------------------------------|-------------|
 | **Flow Objects**     |                                                                             |             |
