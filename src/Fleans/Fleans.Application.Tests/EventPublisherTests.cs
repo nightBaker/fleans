@@ -2,13 +2,10 @@ using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
 using Fleans.Domain;
 using Orleans.TestingHost;
-using Fleans.Application.Events.Handlers;
 using Fleans.Application.Events;
-using Fleans.Domain.Events;
-using Microsoft.Extensions.Logging;
-using Orleans.Runtime;
-using Orleans.Streams;
 using Microsoft.Extensions.Configuration;
+using Orleans.Serialization;
+using System.Dynamic;
 
 namespace Fleans.Application.Tests
 {
@@ -74,7 +71,16 @@ namespace Fleans.Application.Tests
         {
             public void Configure(ISiloBuilder hostBuilder) =>
                hostBuilder.AddMemoryStreams(WorkflowEventsPublisher.StreamProvider)
-                          .AddMemoryGrainStorage("PubSubStore");
+                          .AddMemoryGrainStorage("PubSubStore")
+                            //.ConfigureServices(services => services.AddSerializer(serializerBuilder =>
+                            //{
+                            //    serializerBuilder.AddNewtonsoftJsonSerializer(
+                            //        isSupported: type => type == typeof(ExpandoObject), new Newtonsoft.Json.JsonSerializerSettings
+                            //        {
+                            //            TypeNameHandling = Newtonsoft.Json.TypeNameHandling.All
+                            //        });
+                            //}))
+                ;
         }
 
         private class ClientConfiguretor : IClientBuilderConfigurator
