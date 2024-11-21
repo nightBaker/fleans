@@ -1,10 +1,10 @@
 using Fleans.Domain.Activities;
 using Fleans.Domain.Events;
 using Fleans.Domain.Sequences;
-using Fleans.Domain.States;
-using NSubstitute;
+using Orleans.Serialization;
 using Orleans.TestingHost;
 using System.Diagnostics;
+using System.Dynamic;
 
 namespace Fleans.Domain.Tests
 {
@@ -33,7 +33,7 @@ namespace Fleans.Domain.Tests
             await testWF.StartWorkflow();
             await testWF.CompleteConditionSequence("if", "seq2", true);
             await testWF.CompleteConditionSequence("if", "seq3", false);
-            await testWF.CompleteActivity("if", new Dictionary<string, object>());
+            await testWF.CompleteActivity("if", new System.Dynamic.ExpandoObject());
 
             // Assert           
             Assert.IsTrue(await (await testWF.GetState()).IsCompleted());
@@ -64,7 +64,7 @@ namespace Fleans.Domain.Tests
             await testWF.StartWorkflow();
             await testWF.CompleteConditionSequence("if", "seq2", false);
             await testWF.CompleteConditionSequence("if", "seq3", true);
-            await testWF.CompleteActivity("if", new Dictionary<string, object>());
+            await testWF.CompleteActivity("if", new System.Dynamic.ExpandoObject());
 
             // Assert           
             Assert.IsTrue(await (await testWF.GetState()).IsCompleted());
@@ -86,7 +86,11 @@ namespace Fleans.Domain.Tests
         private static TestCluster CreateCluster()
         {
             var builder = new TestClusterBuilder();
+
+            builder.AddSiloBuilderConfigurator<SiloConfigurator>();
+
             var cluster = builder.Build();
+            
             cluster.Deploy();
             return cluster;
         }
@@ -119,4 +123,34 @@ namespace Fleans.Domain.Tests
             return Task.CompletedTask;
         }
     }
+
+    class SiloConfigurator : ISiloConfigurator
+    {
+        public void Configure(ISiloBuilder hostBuilder) =>
+           hostBuilder.ConfigureServices(services => services.AddSerializer(serializerBuilder =>
+                        {
+                            serializerBuilder.AddNewtonsoftJsonSerializer(
+                                isSupported: type => type == typeof(ExpandoObject), new Newtonsoft.Json.JsonSerializerSettings
+                                {
+                                    TypeNameHandling = Newtonsoft.Json.TypeNameHandling.All
+                                });
+                        }));
+    }
+
+    //public class SerializationConfig : IConfigureSerialization
+    //{
+    //    public void Configure(ISerializerConfiguration configuration)
+    //    {
+    //        configuration.Register<ExpandoObject, ExpandoObjectSurrogate>(
+    //            expando => new ExpandoObjectSurrogate { Properties = (IDictionary<string, object>)expando },
+    //            surrogate => {
+    //                var expando = new ExpandoObject();
+    //                foreach (var kvp in surrogate.Properties)
+    //                {
+    //                    ((IDictionary<string, object>)expando).Add(kvp);
+    //                }
+    //                return expando;
+    //            });
+    //    }
+    //}
 }

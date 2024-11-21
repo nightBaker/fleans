@@ -1,23 +1,12 @@
 using Fleans.Application;
 using Fleans.Infrastructure;
-using Orleans.Serialization;
-using Fleans.Web.Client.Pages;
+using Fleans.Domain;
 using Fleans.Web.Components;
-using System.Dynamic;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Host.UseOrleans(static siloBuilder =>
-{
-    siloBuilder.Services.AddSerializer(serializerBuilder =>
-    {
-        serializerBuilder.AddNewtonsoftJsonSerializer(
-            isSupported: type => type == typeof(ExpandoObject), new Newtonsoft.Json.JsonSerializerSettings
-            {
-                TypeNameHandling = Newtonsoft.Json.TypeNameHandling.All
-            });
-    });
-});
+builder.Host.AddFleans();
 
 // Add service defaults & Aspire components.
 builder.AddServiceDefaults();
