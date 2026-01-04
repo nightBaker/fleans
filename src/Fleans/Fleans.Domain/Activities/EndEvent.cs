@@ -1,5 +1,8 @@
 ﻿
 
+using System.Runtime.CompilerServices;
+[assembly:InternalsVisibleTo("Fleans.Domain.Tests")]
+
 namespace Fleans.Domain.Activities;
 
 [GenerateSerializer]
@@ -15,7 +18,7 @@ public record EndEvent : Activity
         await base.ExecuteAsync(workflowInstance, activityState);
 
         activityState.Complete();
-        workflowInstance.Complete();            
+        await workflowInstance.Complete();            
     }
 
     internal override Task<List<Activity>> GetNextActivities(IWorkflowInstance workflowInstance, IActivityInstance activityState)

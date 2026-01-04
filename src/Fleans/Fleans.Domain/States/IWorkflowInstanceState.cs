@@ -16,17 +16,17 @@ namespace Fleans.Domain.States
         ValueTask<IReadOnlyDictionary<Guid, WorklfowVariablesState>> GetVariableStates();
 
         ValueTask<Guid> AddCloneOfVariableState(Guid variableStateId);
-        void AddActiveActivities(IEnumerable<IActivityInstance> activities);        
-        void AddCompletedActivities(IEnumerable<IActivityInstance> activities);
-        void AddConditionSequenceStates(Guid activityInstanceId, ConditionalSequenceFlow[] sequences);
-        void Complete();
-        void RemoveActiveActivities(List<IActivityInstance> removeInstances);
-        void Start();
-        void StartWith(Activity startActivity);
+        ValueTask AddActiveActivities(IEnumerable<IActivityInstance> activities);        
+        ValueTask AddCompletedActivities(IEnumerable<IActivityInstance> activities);
+        ValueTask AddConditionSequenceStates(Guid activityInstanceId, ConditionalSequenceFlow[] sequences);
+        ValueTask Complete();
+        ValueTask RemoveActiveActivities(List<IActivityInstance> removeInstances);
+        ValueTask Start();
+        ValueTask StartWith(Activity startActivity);
         ValueTask<IActivityInstance?> GetFirstActive(string activityId);
         ValueTask<bool> AnyNotExecuting();
         ValueTask<IActivityInstance[]> GetNotExecutingNotCompletedActivities();
-        void SetCondigitionSequencesResult(Guid activityInstanceId, string sequenceId, bool result);
-        void MergeState(Guid variablesId, ExpandoObject variables);
+        ValueTask SetCondigitionSequencesResult(Guid activityInstanceId, string sequenceId, bool result);
+        ValueTask MergeState(Guid variablesId, ExpandoObject variables);
     }
 }

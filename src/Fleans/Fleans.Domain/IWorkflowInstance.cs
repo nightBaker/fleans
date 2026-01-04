@@ -18,8 +18,8 @@ public interface IWorkflowInstance : IGrainWithGuidKey
     Task StartWorkflow();        
     Task SetWorkflow(IWorkflowDefinition workflow);
     void EnqueueEvent(IDomainEvent domainEvent);
-    void Start();
-    void Complete();
+    ValueTask Start();
+    ValueTask Complete();
 
     [ReadOnly]
     ValueTask<ExpandoObject> GetVariables(Guid variablesStateId);

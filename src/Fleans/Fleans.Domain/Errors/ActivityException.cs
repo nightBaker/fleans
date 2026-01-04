@@ -1,14 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Runtime.Serialization;
-using System.Text;
-using System.Threading.Tasks;
+﻿namespace Fleans.Domain.Errors;
 
-namespace Fleans.Domain.Errors
+[GenerateSerializer]
+[Alias("Fleans.Domain.Errors.ActivityException")]
+public abstract class ActivityException : Exception
 {
-    public abstract class ActivityException : Exception
-    {
-        public abstract ActivityErrorState GetActivityErrorState();
-    }
+    public abstract ActivityErrorState GetActivityErrorState();
 }

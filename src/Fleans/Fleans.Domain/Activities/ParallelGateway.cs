@@ -1,6 +1,8 @@
 ﻿
 
+using System.Runtime.CompilerServices;
 using Fleans.Domain.States;
+[assembly:InternalsVisibleTo("Fleans.Domain.Tests")]
 
 namespace Fleans.Domain.Activities;
 
@@ -17,6 +19,8 @@ public record ParallelGateway : Gateway
 
     internal override async Task ExecuteAsync(IWorkflowInstance workflowInstance, IActivityInstance activityState)
     {
+        await base.ExecuteAsync(workflowInstance, activityState);
+        
         if (IsFork)
         {
             activityState.Complete();
@@ -33,7 +37,7 @@ public record ParallelGateway : Gateway
             }                
         }
 
-        await base.ExecuteAsync(workflowInstance, activityState);
+        
             
     }
 
@@ -41,8 +45,8 @@ public record ParallelGateway : Gateway
     {
         var definition = await workflowInstance.GetWorkflowDefinition();
         var nextFlows = definition.SequenceFlows.Where(sf => sf.Source == this)
-                                        .Select(flow => flow.Target)
-                                        .ToList();
+            .Select(flow => flow.Target)
+            .ToList();
         
         return nextFlows;
     }

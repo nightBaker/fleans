@@ -33,7 +33,7 @@ public record ExclusiveGateway : Gateway
                                 .ToArray();
 
         var state = await workflowInstance.GetState();
-        state.AddConditionSequenceStates(await activityInstance.GetActivityInstanceId(), sequences);
+        await state.AddConditionSequenceStates(await activityInstance.GetActivityInstanceId(), sequences);
         return sequences;
     }
 

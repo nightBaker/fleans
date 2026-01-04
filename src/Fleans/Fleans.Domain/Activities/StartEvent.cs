@@ -1,5 +1,8 @@
 ﻿
 
+using System.Runtime.CompilerServices;
+[assembly:InternalsVisibleTo("Fleans.Domain.Tests")]
+
 namespace Fleans.Domain.Activities;
 
 [GenerateSerializer]
@@ -14,7 +17,7 @@ public record StartEvent : Activity
         await base.ExecuteAsync(workflowInstance, activityInstance);
 
         activityInstance.Complete();
-        workflowInstance.Start();
+        await workflowInstance.Start();
         
     }
 

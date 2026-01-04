@@ -27,25 +27,13 @@ namespace Fleans.Application
 
         public async Task<Guid> StartWorkflow(string workflowId)
         {
-            //    var workflowInstance = await _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstaceFactorySingletonId)
-            //                                            .CreateWorkflowInstanceGrain(workflowId);
+            var workflowInstance = await _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstaceFactorySingletonId)
+                                                    .CreateWorkflowInstanceGrain(workflowId);
 
-            //    await workflowInstance.StartWorkflow();
+            await workflowInstance.StartWorkflow();
 
-            //    return workflowInstance.GetPrimaryKey();
-
-            var testWF = _grainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
-
-            dynamic variables = new ExpandoObject();
-            variables.x = 5;
-            variables.y = 6;
-
-            await testWF.SetWorkflow(CreateSimpleWorkflowWithExclusiveGateway());            
-            await testWF.StartWorkflow();
-            await testWF.CompleteActivity("task", variables );
-
-            return testWF.GetPrimaryKey();
-    }
+            return await workflowInstance.GetWorkflowInstanceId();
+        }
             
         public void CompleteActivity(Guid workflowInstanceId, string activityId, ExpandoObject variables)
         {            

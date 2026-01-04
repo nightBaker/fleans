@@ -14,6 +14,6 @@ public abstract record Gateway : Activity
         var state = await workflowInstance.GetState();
         var activityInstanceId = await activityInstance.GetActivityInstanceId();
 
-        state.SetCondigitionSequencesResult(activityInstanceId, conditionSeqenceFlowId, result);
+        await state.SetCondigitionSequencesResult(activityInstanceId, conditionSeqenceFlowId, result);
     }
 }

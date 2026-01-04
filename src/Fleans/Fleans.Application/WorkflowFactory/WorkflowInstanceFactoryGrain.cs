@@ -16,13 +16,44 @@ public class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFactoryGrain
         _grainFactory = grainFactory;
     }
     
-    public Task<IWorkflowInstance> CreateWorkflowInstanceGrain(string workflowId)
+    public async Task<IWorkflowInstance> CreateWorkflowInstanceGrain(string workflowId)
     {
-        var workflow = _workflows[workflowId] ?? throw new Exception("Workflow not found");
+        if (!_workflows.TryGetValue(workflowId, out var workflow))
+        {
+            throw new KeyNotFoundException($"Workflow with id '{workflowId}' is not registered. Ensure the workflow is registered before creating instances.");
+        }
+
         var guid = Guid.NewGuid();
         var workflowInstanceGrain = _grainFactory.GetGrain<IWorkflowInstance>(guid);
-        var workflowInstanceStateGrain = _grainFactory.GetGrain<IWorkflowInstanceState>(guid);
-        workflowInstanceGrain.SetWorkflow(workflow);
-        return Task.FromResult(workflowInstanceGrain);
+        
+        await workflowInstanceGrain.SetWorkflow(workflow);
+        
+        return workflowInstanceGrain;
+    }
+
+    public Task RegisterWorkflow(IWorkflowDefinition workflow)
+    {
+        if (workflow == null)
+        {
+            throw new ArgumentNullException(nameof(workflow));
+        }
+
+        if (string.IsNullOrWhiteSpace(workflow.WorkflowId))
+        {
+            throw new ArgumentException("WorkflowId cannot be null or empty.", nameof(workflow));
+        }
+
+        if (_workflows.ContainsKey(workflow.WorkflowId))
+        {
+            throw new InvalidOperationException($"Workflow with id '{workflow.WorkflowId}' is already registered.");
+        }
+
+        _workflows[workflow.WorkflowId] = workflow;
+        return Task.CompletedTask;
+    }
+
+    public Task<bool> IsWorkflowRegistered(string workflowId)
+    {
+        return Task.FromResult(_workflows.ContainsKey(workflowId));
     }
 }

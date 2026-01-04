@@ -70,12 +70,11 @@ public class WorkflowInstance : Grain, IWorkflowInstance
 
         foreach (var activityState in await State.GetActiveActivities())
         {
+           
             if (await activityState.IsCompleted())
             {
                 var currentActivity = await activityState.GetCurrentActivity();
-                if (currentActivity == null)
-                    continue;
-
+                
                 var nextActivities = await currentActivity.GetNextActivities(this, activityState);
 
                 foreach(var nextActivity in nextActivities)
@@ -93,9 +92,9 @@ public class WorkflowInstance : Grain, IWorkflowInstance
             }
         }
 
-        State.RemoveActiveActivities(completedActivities);
-        State.AddActiveActivities(newActiveActivities);
-        State.AddCompletedActivities(completedActivities);
+        await State.RemoveActiveActivities(completedActivities);
+        await State.AddActiveActivities(newActiveActivities);
+        await State.AddCompletedActivities(completedActivities);
     }
 
     private async Task CompleteActivityState(string activityId, ExpandoObject variables)
@@ -106,7 +105,7 @@ public class WorkflowInstance : Grain, IWorkflowInstance
         activityInstance.Complete();
         var variablesId = await activityInstance.GetVariablesStateId();
 
-        State.MergeState(variablesId, variables);        
+        await State.MergeState(variablesId, variables);        
     }
 
     private async Task FailActivityState(string activityId, Exception exception)
@@ -117,10 +116,10 @@ public class WorkflowInstance : Grain, IWorkflowInstance
         activityInstance.Fail(exception);
     }
 
-    public void Start() 
+    public ValueTask Start() 
         => State.Start();
 
-    public void Complete() 
+    public ValueTask Complete() 
         => State.Complete();
 
     public async Task CompleteConditionSequence(string activityId, string conditionSequenceId, bool result)
@@ -137,7 +136,7 @@ public class WorkflowInstance : Grain, IWorkflowInstance
         _events.Enqueue(domainEvent);
     }
 
-    public Task SetWorkflow(IWorkflowDefinition workflow)
+    public async Task SetWorkflow(IWorkflowDefinition workflow)
     {
         if(WorkflowDefinition is not null) throw new ArgumentException("Workflow already set");
 
@@ -145,9 +144,7 @@ public class WorkflowInstance : Grain, IWorkflowInstance
         State = _grainFactory.GetGrain<IWorkflowInstanceState>(this.GetPrimaryKey());
 
         var startActivity = workflow.Activities.OfType<StartEvent>().First();
-        State.StartWith(startActivity);
-
-        return Task.CompletedTask;
+        await State.StartWith(startActivity);
     }
 
     public ValueTask<IWorkflowInstanceState> GetState() => ValueTask.FromResult(State);

@@ -37,7 +37,7 @@ public class WorkflowInstanceState : Grain, IWorkflowInstanceState
     public ValueTask<IReadOnlyList<IActivityInstance>> GetActiveActivities()
         => ValueTask.FromResult(_activeActivities as IReadOnlyList<IActivityInstance>);
 
-    public void StartWith(Activity startActivity)
+    public ValueTask StartWith(Activity startActivity)
     {
         var variablesId = Guid.NewGuid();
         _variableStates.Add(variablesId, new WorklfowVariablesState());
@@ -47,22 +47,25 @@ public class WorkflowInstanceState : Grain, IWorkflowInstanceState
         activityInstance.SetVariablesId(variablesId);
 
         _activeActivities.Add(activityInstance);
+        return ValueTask.CompletedTask;
     }
 
-    public void Start()
+    public ValueTask Start()
     {
         if (_isStarted)
             throw new InvalidOperationException("Workflow is already started");
 
         _isStarted = true;
+        return ValueTask.CompletedTask;
     }
 
-    public void Complete()
+    public ValueTask Complete()
     {
         if (!_activeActivities.Any())
             throw new InvalidOperationException("Workflow is already completed");
 
         _isCompleted = true;
+        return ValueTask.CompletedTask;
     }
 
     public ValueTask<Guid> AddCloneOfVariableState(Guid variableStateId)
@@ -76,20 +79,30 @@ public class WorkflowInstanceState : Grain, IWorkflowInstanceState
         return ValueTask.FromResult(newVariableStateId);
     }
 
-    public void AddConditionSequenceStates(Guid activityInstanceId, ConditionalSequenceFlow[] sequences)
+    public ValueTask AddConditionSequenceStates(Guid activityInstanceId, ConditionalSequenceFlow[] sequences)
     {
         var sequenceStates = sequences.Select(sequence => new ConditionSequenceState(sequence)).ToArray();
         _conditionSequenceStates.Add(activityInstanceId, sequenceStates);
+        return ValueTask.CompletedTask;
     }
 
-    public void RemoveActiveActivities(List<IActivityInstance> removeInstances) 
-        => _activeActivities.RemoveAll(removeInstances.Contains);
+    public ValueTask RemoveActiveActivities(List<IActivityInstance> removeInstances)
+    {
+        _activeActivities.RemoveAll(removeInstances.Contains);
+        return ValueTask.CompletedTask;
+    }
 
-    public void AddActiveActivities(IEnumerable<IActivityInstance> activities) 
-        => _activeActivities.AddRange(activities);
+    public ValueTask AddActiveActivities(IEnumerable<IActivityInstance> activities)
+    {
+        _activeActivities.AddRange(activities);
+        return ValueTask.CompletedTask;
+    }
 
-    public void AddCompletedActivities(IEnumerable<IActivityInstance> activities) 
-        => _completedActivities.AddRange(activities);
+    public ValueTask AddCompletedActivities(IEnumerable<IActivityInstance> activities)
+    {
+        _completedActivities.AddRange(activities);
+        return ValueTask.CompletedTask;
+    }
 
     public async ValueTask<IActivityInstance?> GetFirstActive(string activityId)
     {
@@ -129,9 +142,8 @@ public class WorkflowInstanceState : Grain, IWorkflowInstanceState
         return result.ToArray();
     }
 
-    public void SetCondigitionSequencesResult(Guid activityInstanceId, string sequenceId, bool result)
+    public ValueTask SetCondigitionSequencesResult(Guid activityInstanceId, string sequenceId, bool result)
     {
-
         var sequences = _conditionSequenceStates[activityInstanceId];
 
         var sequence = sequences.FirstOrDefault(s => s.ConditionalSequence.SequenceFlowId == sequenceId);
@@ -144,10 +156,13 @@ public class WorkflowInstanceState : Grain, IWorkflowInstanceState
         {
             throw new NullReferenceException("Sequence not found");
         }
+
+        return ValueTask.CompletedTask;
     }
 
-    public void MergeState(Guid variablesId, ExpandoObject variables)
+    public ValueTask MergeState(Guid variablesId, ExpandoObject variables)
     {
         _variableStates[variablesId].Merge(variables);
+        return ValueTask.CompletedTask;
     }
 }
