@@ -1,5 +1,6 @@
 ﻿using Fleans.Application;
 using Fleans.Application.Conditions;
+using Fleans.Infrastructure.Bpmn;
 using Fleans.Infrastructure.EventHandlers;
 using Microsoft.Extensions.DependencyInjection;
 using System;
@@ -15,6 +16,7 @@ namespace Fleans.Infrastructure
         public static void AddInfrastructure(this IServiceCollection services)
         {
             services.AddSingleton<IConditionExpressionEvaluater, DynamicExperessoConditionExpressionEvaluater>();
+            services.AddSingleton<IBpmnConverter, BpmnConverter>();
         }
     }
 }

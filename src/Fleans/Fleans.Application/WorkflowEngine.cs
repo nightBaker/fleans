@@ -15,7 +15,7 @@ namespace Fleans.Application
 {
     public class WorkflowEngine
     {
-        private const int WorkflowInstaceFactorySingletonId = 0;
+        private const int WorkflowInstanceFactorySingletonId = 0;
         private const int SingletonEventPublisherGrainId = 0;
 
         private readonly IGrainFactory _grainFactory;
@@ -27,7 +27,7 @@ namespace Fleans.Application
 
         public async Task<Guid> StartWorkflow(string workflowId)
         {
-            var workflowInstance = await _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstaceFactorySingletonId)
+            var workflowInstance = await _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstanceFactorySingletonId)
                                                     .CreateWorkflowInstanceGrain(workflowId);
 
             await workflowInstance.StartWorkflow();
@@ -40,6 +40,12 @@ namespace Fleans.Application
             _grainFactory.GetGrain<IWorkflowInstance>(workflowInstanceId)
                          .CompleteActivity(activityId, variables);
 
+        }
+
+        public async Task RegisterWorkflow(IWorkflowDefinition workflow)
+        {
+            var factoryGrain = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstanceFactorySingletonId);
+            await factoryGrain.RegisterWorkflow(workflow);
         }
 
         private static IWorkflowDefinition CreateSimpleWorkflowWithExclusiveGateway()
