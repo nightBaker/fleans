@@ -27,6 +27,23 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents()
     .AddInteractiveWebAssemblyComponents();
 
+// Add HttpClient for API calls (Blazor Server can use the same server)
+// TODO : Verify if this is the best approach
+builder.Services.AddScoped<HttpClient>(sp =>
+{
+    var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
+    var httpClient = httpClientFactory.CreateClient();
+    // Use the same base URL as the server
+    var request = sp.GetRequiredService<IHttpContextAccessor>()?.HttpContext?.Request;
+    if (request != null)
+    {
+        httpClient.BaseAddress = new Uri($"{request.Scheme}://{request.Host}");
+    }
+    return httpClient;
+});
+builder.Services.AddHttpClient();
+builder.Services.AddHttpContextAccessor();
+
 var app = builder.Build();
 
 app.MapDefaultEndpoints();

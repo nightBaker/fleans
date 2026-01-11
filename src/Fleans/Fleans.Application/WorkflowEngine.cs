@@ -48,6 +48,12 @@ namespace Fleans.Application
             await factoryGrain.RegisterWorkflow(workflow);
         }
 
+        public async Task<IReadOnlyList<WorkflowSummary>> GetAllWorkflows()
+        {
+            var factoryGrain = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstanceFactorySingletonId);
+            return await factoryGrain.GetAllWorkflows();
+        }
+
         private static IWorkflowDefinition CreateSimpleWorkflowWithExclusiveGateway()
         {
             var start = new StartEvent("start");

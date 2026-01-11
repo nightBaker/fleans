@@ -56,4 +56,17 @@ public class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFactoryGrain
     {
         return Task.FromResult(_workflows.ContainsKey(workflowId));
     }
+
+    public Task<IReadOnlyList<WorkflowSummary>> GetAllWorkflows()
+    {
+        var summaries = _workflows.Values
+            .Select(w => new WorkflowSummary(
+                w.WorkflowId,
+                w.Activities.Count,
+                w.SequenceFlows.Count))
+            .ToList()
+            .AsReadOnly();
+
+        return Task.FromResult<IReadOnlyList<WorkflowSummary>>(summaries);
+    }
 }

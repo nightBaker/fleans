@@ -1,4 +1,5 @@
 using Fleans.Application;
+using Fleans.ServiceDefaults.DTOs;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Fleans.Web.Controllers
@@ -17,12 +18,38 @@ namespace Fleans.Web.Controllers
             _workflowEngine = workflowEngine;
         }
 
-        [HttpPost(Name = "Start")]
-        public async Task<IActionResult> StartWorkflow(string workflowId)
+        [HttpPost("start", Name = "StartWorkflow")]
+        public async Task<IActionResult> StartWorkflow([FromBody] StartWorkflowRequest request)
         {
-            await _workflowEngine.StartWorkflow(workflowId);
+            if (request == null || string.IsNullOrWhiteSpace(request.WorkflowId))
+            {
+                return BadRequest(new ErrorResponse("WorkflowId is required"));
+            }
 
-            return Ok();
+            try
+            {
+                var instanceId = await _workflowEngine.StartWorkflow(request.WorkflowId);
+                return Ok(new StartWorkflowResponse(instanceId));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new ErrorResponse(ex.Message));
+            }
+        }
+
+        [HttpGet("all", Name = "GetAllWorkflows")]
+        public async Task<IActionResult> GetAllWorkflows()
+        {
+            try
+            {
+                var workflows = await _workflowEngine.GetAllWorkflows();
+                return Ok(workflows);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving workflows");
+                return StatusCode(500, new ErrorResponse("An error occurred while retrieving workflows"));
+            }
         }
     }
 }
