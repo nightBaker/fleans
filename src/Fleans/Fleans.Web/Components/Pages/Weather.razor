@@ -3,40 +3,41 @@
 
 <PageTitle>Weather</PageTitle>
 
-<h1>Weather</h1>
+<FluentStack Orientation="Orientation.Vertical" Gap="20px">
+    <FluentHeading HSize="HeadingSize.H1">Weather</FluentHeading>
+    
+    <FluentBodyText>This component demonstrates showing data.</FluentBodyText>
 
-<p>This component demonstrates showing data.</p>
-
-@if (forecasts == null)
-{
-    <p>
-        <em>Loading...</em>
-    </p>
-}
-else
-{
-    <table class="table">
-        <thead>
-        <tr>
-            <th>Date</th>
-            <th aria-label="Temperature in Celsius">Temp. (C)</th>
-            <th aria-label="Temperature in Fahrenheit">Temp. (F)</th>
-            <th>Summary</th>
-        </tr>
-        </thead>
-        <tbody>
-        @foreach (var forecast in forecasts)
-        {
-            <tr>
-                <td>@forecast.Date.ToShortDateString()</td>
-                <td>@forecast.TemperatureC</td>
-                <td>@forecast.TemperatureF</td>
-                <td>@forecast.Summary</td>
-            </tr>
-        }
-        </tbody>
-    </table>
-}
+    @if (forecasts == null)
+    {
+        <FluentProgressRing />
+        <FluentBodyText><em>Loading...</em></FluentBodyText>
+    }
+    else
+    {
+        <FluentTable Items="@forecasts">
+            <FluentTableHeader>
+                <FluentTableRow>
+                    <FluentTableHeaderCell>Date</FluentTableHeaderCell>
+                    <FluentTableHeaderCell>Temp. (C)</FluentTableHeaderCell>
+                    <FluentTableHeaderCell>Temp. (F)</FluentTableHeaderCell>
+                    <FluentTableHeaderCell>Summary</FluentTableHeaderCell>
+                </FluentTableRow>
+            </FluentTableHeader>
+            <FluentTableBody>
+                @foreach (var forecast in forecasts)
+                {
+                    <FluentTableRow>
+                        <FluentTableCell>@forecast.Date.ToShortDateString()</FluentTableCell>
+                        <FluentTableCell>@forecast.TemperatureC</FluentTableCell>
+                        <FluentTableCell>@forecast.TemperatureF</FluentTableCell>
+                        <FluentTableCell>@forecast.Summary</FluentTableCell>
+                    </FluentTableRow>
+                }
+            </FluentTableBody>
+        </FluentTable>
+    }
+</FluentStack>
 
 @code {
     private WeatherForecast[]? forecasts;

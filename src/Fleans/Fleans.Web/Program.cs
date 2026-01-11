@@ -1,10 +1,15 @@
 using Fleans.Web.Components;
+using Microsoft.FluentUI.AspNetCore.Components;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+
+// Add Fluent UI services
+builder.Services.AddFluentUIComponents();
+
 builder.AddServiceDefaults();
 
 var app = builder.Build();
