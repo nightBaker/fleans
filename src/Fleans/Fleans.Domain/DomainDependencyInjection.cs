@@ -18,6 +18,11 @@ namespace Fleans.Domain
                      //        TypeNameHandling = Newtonsoft.Json.TypeNameHandling.All
                      //    });
                  });
+                 
+                 siloBuilder.UseLocalhostClustering()
+                     .ConfigureEndpoints(
+                         siloPort: 11111,
+                         gatewayPort: 30000);
              });
         }
     }

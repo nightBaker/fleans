@@ -83,6 +83,21 @@ namespace Fleans.Api.Controllers
             }
         }
 
+        [HttpGet("all", Name = "GetAllWorkflows")]
+        public async Task<IActionResult> GetAllWorkflows()
+        {
+            try
+            {
+                var workflows = await _workflowEngine.GetAllWorkflows();
+                return Ok(workflows);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving workflows");
+                return StatusCode(500, new ErrorResponse("An error occurred while retrieving workflows"));
+            }
+        }
+
         [HttpPost("register", Name = "RegisterWorkflow")]
         public async Task<IActionResult> RegisterWorkflow([FromBody] WorkflowDefinition workflow)
         {

@@ -51,7 +51,10 @@ namespace Fleans.Application
         public async Task<IReadOnlyList<WorkflowSummary>> GetAllWorkflows()
         {
             var factoryGrain = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstanceFactorySingletonId);
-            return await factoryGrain.GetAllWorkflows();
+            var workflows = await factoryGrain.GetAllWorkflows();
+            
+            return workflows.Select(wf => new WorkflowSummary(wf.WorkflowId, wf.Activities.Count, wf.SequenceFlows.Count))
+                .ToList().AsReadOnly();
         }
 
         private static IWorkflowDefinition CreateSimpleWorkflowWithExclusiveGateway()

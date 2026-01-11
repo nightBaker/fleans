@@ -1,7 +1,13 @@
+using Fleans.Application;
+using Fleans.Infrastructure;
 using Fleans.Web.Components;
 using Microsoft.FluentUI.AspNetCore.Components;
+using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Add service defaults first (includes service discovery for Aspire)
+builder.AddServiceDefaults();
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
@@ -10,7 +16,32 @@ builder.Services.AddRazorComponents()
 // Add Fluent UI services
 builder.Services.AddFluentUIComponents();
 
-builder.AddServiceDefaults();
+// Add Application and Infrastructure services
+builder.Services.AddApplication();
+builder.Services.AddInfrastructure();
+
+// Add Orleans client
+// When running through Aspire, service discovery automatically provides gateway endpoints
+// The Orleans client will connect to the Redis-clustered Orleans silo
+builder.Host.UseOrleansClient(siloBuilder=> siloBuilder.UseRedisClustering(options =>
+{
+    // Aspire automatically provides the Redis connection string
+    // when .WithReference(redis) is used in Aspire
+    var connectionString = builder.Configuration.GetConnectionString("redis");
+    if (!string.IsNullOrEmpty(connectionString))
+    {
+        // Parse the connection string to extract host:port and other parameters
+        options.ConfigurationOptions = ConfigurationOptions.Parse(connectionString);
+        options.ConfigurationOptions.AbortOnConnectFail = false;
+            
+        // For development: accept untrusted SSL certificates
+        // In production, use proper SSL certificates
+        if (builder.Environment.IsDevelopment())
+        {
+            options.ConfigurationOptions.CertificateValidation += (sender, certificate, chain, errors) => true;
+        }
+    }
+}));
 
 var app = builder.Build();
 

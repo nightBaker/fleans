@@ -1,12 +1,12 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
-var orleans = builder.AddOrleans("default")
-                     .WithDevelopmentClustering()
-                     .WithMemoryGrainStorage("PubSubStore")
-                     .WithMemoryStreaming("StreamProvider");
+// Add Redis for Orleans clustering and storage
+var redis = builder.AddRedis("redis");
 
-var orleansClient = builder.AddOrleans("default")
-                     .WithDevelopmentClustering();
+// Configure Orleans with Redis clustering
+// var orleans = builder.AddOrleans("default")
+//                      .WithRedisGrainStorage("PubSubStore", redis)
+//                      .WithRedisStreaming("StreamProvider", redis);
 
 // Add our server project and reference your 'orleans' resource from it.
 // it can join the Orleans cluster as a service.
@@ -14,11 +14,11 @@ var orleansClient = builder.AddOrleans("default")
 // In this case, that is the 'clusteringTable' resource declared earlier.
 
 builder.AddProject<Projects.Fleans_Api>("fleans")
-       .WithReference(orleans)
+       .WithReference(redis)
        .WithReplicas(1);
 
 builder.AddProject<Projects.Fleans_Web>("fleans-client")
-       .WithReference(orleansClient.AsClient())
+       .WithReference(redis)
        .WithReplicas(1);
 
 // Reference the Orleans resource as a client from the 'frontend'
