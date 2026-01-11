@@ -17,7 +17,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Fleans.Api\Fleans.Api.csproj" />
-    <ProjectReference Include="..\Fleans.Web\Fleans.Web\Fleans.Web.csproj" />
+    <ProjectReference Include="..\Fleans.Web\Fleans.Web.csproj" />
   </ItemGroup>
 
 </Project>
