@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Dynamic;
 using System.Linq;
@@ -34,6 +34,16 @@ namespace Fleans.Application
 
             return await workflowInstance.GetWorkflowInstanceId();
         }
+
+        public async Task<Guid> StartWorkflowByProcessDefinitionId(string processDefinitionId)
+        {
+            var workflowInstance = await _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstanceFactorySingletonId)
+                .CreateWorkflowInstanceGrainByProcessDefinitionId(processDefinitionId);
+
+            await workflowInstance.StartWorkflow();
+
+            return await workflowInstance.GetWorkflowInstanceId();
+        }
             
         public void CompleteActivity(Guid workflowInstanceId, string activityId, ExpandoObject variables)
         {            
@@ -48,6 +58,12 @@ namespace Fleans.Application
             await factoryGrain.RegisterWorkflow(workflow);
         }
 
+        public async Task<ProcessDefinitionSummary> DeployWorkflow(WorkflowDefinition workflow)
+        {
+            var factoryGrain = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstanceFactorySingletonId);
+            return await factoryGrain.DeployWorkflow(workflow);
+        }
+
         public async Task<IReadOnlyList<WorkflowSummary>> GetAllWorkflows()
         {
             var factoryGrain = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstanceFactorySingletonId);
@@ -55,6 +71,12 @@ namespace Fleans.Application
             
             return workflows.Select(wf => new WorkflowSummary(wf.WorkflowId, wf.Activities.Count, wf.SequenceFlows.Count))
                 .ToList().AsReadOnly();
+        }
+
+        public async Task<IReadOnlyList<ProcessDefinitionSummary>> GetAllProcessDefinitions()
+        {
+            var factoryGrain = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstanceFactorySingletonId);
+            return await factoryGrain.GetAllProcessDefinitions();
         }
 
         private static IWorkflowDefinition CreateSimpleWorkflowWithExclusiveGateway()
