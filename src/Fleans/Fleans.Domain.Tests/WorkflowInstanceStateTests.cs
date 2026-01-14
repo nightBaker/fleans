@@ -112,8 +112,8 @@ namespace Fleans.Domain.Tests
             var state = _cluster.GrainFactory.GetGrain<IWorkflowInstanceState>(stateId);
             var activity1 = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
             var activity2 = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
-            activity1.SetActivity(new TaskActivity("task1"));
-            activity2.SetActivity(new TaskActivity("task2"));
+            await activity1.SetActivity(new TaskActivity("task1"));
+            await activity2.SetActivity(new TaskActivity("task2"));
 
             // Act
             await state.AddActiveActivities(new[] { activity1, activity2 });
@@ -131,8 +131,8 @@ namespace Fleans.Domain.Tests
             var state = _cluster.GrainFactory.GetGrain<IWorkflowInstanceState>(stateId);
             var activity1 = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
             var activity2 = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
-            activity1.SetActivity(new TaskActivity("task1"));
-            activity2.SetActivity(new TaskActivity("task2"));
+            await activity1.SetActivity(new TaskActivity("task1"));
+            await activity2.SetActivity(new TaskActivity("task2"));
             
             await state.AddActiveActivities(new[] { activity1, activity2 });
 
@@ -152,8 +152,8 @@ namespace Fleans.Domain.Tests
             var stateId = Guid.NewGuid();
             var state = _cluster.GrainFactory.GetGrain<IWorkflowInstanceState>(stateId);
             var activity = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
-            activity.SetActivity(new TaskActivity("task"));
-            activity.Complete();
+            await activity.SetActivity(new TaskActivity("task"));
+            await activity.Complete();
 
             // Act
             await state.AddCompletedActivities(new[] { activity });
@@ -170,7 +170,7 @@ namespace Fleans.Domain.Tests
             var stateId = Guid.NewGuid();
             var state = _cluster.GrainFactory.GetGrain<IWorkflowInstanceState>(stateId);
             var activity = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
-            activity.SetActivity(new TaskActivity("task1"));
+            await activity.SetActivity(new TaskActivity("task1"));
             await state.AddActiveActivities(new[] { activity });
 
             // Act

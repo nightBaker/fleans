@@ -67,7 +67,7 @@ namespace Fleans.Domain.Tests
             await workflowInstance.SetWorkflow(workflow);
 
             var activityInstance = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
-            activityInstance.SetActivity(start);
+            await activityInstance.SetActivity(start);
 
             // Act
             var nextActivities = await start.GetNextActivities(workflowInstance, activityInstance);
@@ -94,7 +94,7 @@ namespace Fleans.Domain.Tests
             await workflowInstance.SetWorkflow(workflow);
 
             var activityInstance = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
-            activityInstance.SetActivity(start);
+            await activityInstance.SetActivity(start);
 
             // Act
             var nextActivities = await start.GetNextActivities(workflowInstance, activityInstance);

@@ -1,4 +1,4 @@
-﻿
+
 
 using System.Runtime.CompilerServices;
 using Fleans.Domain.States;
@@ -23,17 +23,17 @@ public record ParallelGateway : Gateway
         
         if (IsFork)
         {
-            activityState.Complete();
+            await activityState.Complete();
         }
         else
         {
             if (await AllIncomingPathsCompleted(await workflowInstance.GetState(), await workflowInstance.GetWorkflowDefinition()))
             {
-                activityState.Complete();
+                await activityState.Complete();
             }
             else
             {
-                activityState.Execute();
+                await activityState.Execute();
             }                
         }
 

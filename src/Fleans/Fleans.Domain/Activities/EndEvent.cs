@@ -1,4 +1,4 @@
-﻿
+
 
 using System.Runtime.CompilerServices;
 [assembly:InternalsVisibleTo("Fleans.Domain.Tests")]
@@ -17,7 +17,7 @@ public record EndEvent : Activity
     {
         await base.ExecuteAsync(workflowInstance, activityState);
 
-        activityState.Complete();
+        await activityState.Complete();
         await workflowInstance.Complete();            
     }
 

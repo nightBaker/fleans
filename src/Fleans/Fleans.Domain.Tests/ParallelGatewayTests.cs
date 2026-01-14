@@ -1,4 +1,4 @@
-﻿using Fleans.Domain.Activities;
+using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
 using Orleans.Serialization;
 using Orleans.TestingHost;
@@ -95,7 +95,7 @@ namespace Fleans.Domain.Tests
             await workflowInstance.SetWorkflow(workflow);
             
             var activityInstance = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
-            activityInstance.SetActivity(fork);
+            await activityInstance.SetActivity(fork);
 
             // Act
             var nextActivities = await fork.GetNextActivities(workflowInstance, activityInstance);

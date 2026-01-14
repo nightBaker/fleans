@@ -155,13 +155,13 @@ namespace Fleans.Domain.Tests
         {
             // Arrange
             var activityInstance = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
-            activityInstance.SetActivity(new TaskActivity("task"));
-            activityInstance.Execute();
+            await activityInstance.SetActivity(new TaskActivity("task"));
+            await activityInstance.Execute();
 
             var exception = new Exception("Test error");
 
             // Act
-            activityInstance.Fail(exception);
+            await activityInstance.Fail(exception);
 
             // Assert
             Assert.IsTrue(await activityInstance.IsCompleted());
@@ -177,11 +177,11 @@ namespace Fleans.Domain.Tests
         {
             // Arrange
             var activityInstance = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
-            activityInstance.SetActivity(new TaskActivity("task"));
-            activityInstance.Fail(new Exception("Previous error"));
+            await activityInstance.SetActivity(new TaskActivity("task"));
+            await activityInstance.Fail(new Exception("Previous error"));
 
             // Act
-            activityInstance.Execute();
+            await activityInstance.Execute();
 
             // Assert
             var errorState = await activityInstance.GetErrorState();

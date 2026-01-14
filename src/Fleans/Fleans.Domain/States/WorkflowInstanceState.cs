@@ -1,4 +1,4 @@
-﻿using Fleans.Domain.Activities;
+using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
 using Orleans;
 using System.Collections.Generic;
@@ -37,17 +37,16 @@ public class WorkflowInstanceState : Grain, IWorkflowInstanceState
     public ValueTask<IReadOnlyList<IActivityInstance>> GetActiveActivities()
         => ValueTask.FromResult(_activeActivities as IReadOnlyList<IActivityInstance>);
 
-    public ValueTask StartWith(Activity startActivity)
+    public async ValueTask StartWith(Activity startActivity)
     {
         var variablesId = Guid.NewGuid();
         _variableStates.Add(variablesId, new WorklfowVariablesState());
 
         var activityInstance = _grainFactory.GetGrain<IActivityInstance>(variablesId);
-        activityInstance.SetActivity(startActivity);
-        activityInstance.SetVariablesId(variablesId);
+        await activityInstance.SetActivity(startActivity);
+        await activityInstance.SetVariablesId(variablesId);
 
         _activeActivities.Add(activityInstance);
-        return ValueTask.CompletedTask;
     }
 
     public ValueTask Start()
