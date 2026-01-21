@@ -1,4 +1,4 @@
-﻿using Fleans.Domain.Activities;
+using Fleans.Domain.Activities;
 using Fleans.Domain.Errors;
 using Fleans.Domain.Events;
 using Fleans.Domain.States;
@@ -81,9 +81,9 @@ public class WorkflowInstance : Grain, IWorkflowInstance
                 {
                     var variablesId = await activityState.GetVariablesStateId();
                     var activityInstance = _grainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
-                    activityInstance.SetVariablesId(variablesId);
+                    await activityInstance.SetVariablesId(variablesId);
 
-                    activityInstance.SetActivity(nextActivity);
+                    await activityInstance.SetActivity(nextActivity);
 
                     newActiveActivities.Add(activityInstance);
                 }
@@ -102,7 +102,7 @@ public class WorkflowInstance : Grain, IWorkflowInstance
         var activityInstance = await State.GetFirstActive(activityId)
             ?? throw new InvalidOperationException("Active activity not found");
 
-        activityInstance.Complete();
+        await activityInstance.Complete();
         var variablesId = await activityInstance.GetVariablesStateId();
 
         await State.MergeState(variablesId, variables);        
@@ -113,7 +113,7 @@ public class WorkflowInstance : Grain, IWorkflowInstance
         var activityInstance = await State.GetFirstActive(activityId)
             ?? throw new InvalidOperationException("Active activity not found");
 
-        activityInstance.Fail(exception);
+        await activityInstance.Fail(exception);
     }
 
     public ValueTask Start() 

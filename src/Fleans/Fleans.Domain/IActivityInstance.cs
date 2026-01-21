@@ -1,4 +1,4 @@
-﻿using Fleans.Domain.Activities;
+using Fleans.Domain.Activities;
 using Fleans.Domain.Events;
 using Orleans.Concurrency;
 
@@ -24,11 +24,11 @@ namespace Fleans.Domain
         [ReadOnly]
         ValueTask<Guid> GetVariablesStateId();
 
-        void Complete();
-        void Fail(Exception exception);
-        void Execute();
-        void SetActivity(Activity nextActivity);
-        void SetVariablesId(Guid guid);
+        ValueTask Complete();
+        ValueTask Fail(Exception exception);
+        ValueTask Execute();
+        ValueTask SetActivity(Activity nextActivity);
+        ValueTask SetVariablesId(Guid guid);
         Task PublishEvent(IDomainEvent domainEvent);
     }
 }

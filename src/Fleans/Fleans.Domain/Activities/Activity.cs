@@ -1,4 +1,4 @@
-﻿
+
 using System.Runtime.CompilerServices;
 using Fleans.Domain.Events;
 using Orleans;
@@ -12,7 +12,7 @@ public abstract record Activity(string ActivityId)
     internal virtual async Task ExecuteAsync(IWorkflowInstance workflowInstance, IActivityInstance activityInstance)
     {
         var defintion = await workflowInstance.GetWorkflowDefinition();
-        activityInstance.Execute();
+        await activityInstance.Execute();
         await activityInstance.PublishEvent(new WorkflowActivityExecutedEvent(await workflowInstance.GetWorkflowInstanceId(),
             defintion.WorkflowId,
             await activityInstance.GetActivityInstanceId(),

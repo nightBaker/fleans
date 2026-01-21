@@ -1,4 +1,4 @@
-﻿
+
 
 
 namespace Fleans.Domain.Activities;
@@ -13,7 +13,7 @@ public record ErrorEvent : Activity
     internal override async Task ExecuteAsync(IWorkflowInstance workflowInstance, IActivityInstance activityState)
     {
         await base.ExecuteAsync(workflowInstance, activityState);
-        activityState.Complete();
+        await activityState.Complete();
     }
 
     internal override async Task<List<Activity>> GetNextActivities(IWorkflowInstance workflowInstance, IActivityInstance activityState)

@@ -1,4 +1,4 @@
-﻿
+
 using Fleans.Domain.Activities;
 using Fleans.Domain.Errors;
 using Fleans.Domain.Events;
@@ -17,13 +17,14 @@ namespace Fleans.Domain
         private Guid _variablesId;
 
         
-        public void Complete()
+        public ValueTask Complete()
         {
             _isExecuting = false;
             _isCompleted = true;
+            return ValueTask.CompletedTask;
         }
 
-        public void Fail(Exception exception)
+        public ValueTask Fail(Exception exception)
         {
             if (exception is ActivityException activityException)
             {
@@ -34,14 +35,15 @@ namespace Fleans.Domain
                 _errorState = new ActivityErrorState(500, exception.Message);
             }
 
-            Complete();
+            return Complete();
         }
 
-        public void Execute()
+        public ValueTask Execute()
         {
             _errorState = null;
             _isCompleted = false;
             _isExecuting = true;
+            return ValueTask.CompletedTask;
         }
 
         public ValueTask<Guid> GetActivityInstanceId() => ValueTask.FromResult( this.GetPrimaryKey());
@@ -58,11 +60,16 @@ namespace Fleans.Domain
         public ValueTask<Guid> GetVariablesStateId() 
             => ValueTask.FromResult(_variablesId);
 
-        public void SetVariablesId(Guid guid) => _variablesId = guid;
+        public ValueTask SetVariablesId(Guid guid)
+        {
+            _variablesId = guid;
+            return ValueTask.CompletedTask;
+        }
 
-        public void SetActivity(Activity nextActivity)
+        public ValueTask SetActivity(Activity nextActivity)
         {
             _currentActivity = nextActivity;
+            return ValueTask.CompletedTask;
         }
 
         public Task PublishEvent(IDomainEvent domainEvent)
