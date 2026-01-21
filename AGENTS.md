@@ -29,6 +29,14 @@ Use the `Fleans.Aspire` project as the startup project. It runs:
 - `Fleans.Aspire`: Aspire host for local orchestration
 - `*.Tests`: xUnit test projects per layer
 
+## Agent skills
+- Navigate the solution and explain where changes belong.
+- Update Orleans workflow logic across Domain, Application, Infrastructure.
+- Add or adjust BPMN conversion and condition evaluation behavior.
+- Write or update xUnit tests in the matching `*.Tests` project.
+- Provide build/test commands and triage failures with logs.
+- Update documentation for new behaviors or APIs.
+
 ## Notes for changes
 - Keep updates scoped to the layer you are touching (Domain vs Application vs
   Infrastructure).
