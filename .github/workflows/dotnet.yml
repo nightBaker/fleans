@@ -8,7 +8,11 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
-
+    
+defaults:
+  run:
+    working-directory:  src/Fleans
+    
 jobs:
   build:
 
@@ -20,8 +24,6 @@ jobs:
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: 10.0.x
-    - name: Go to solution folder
-      run: cd src/Fleans
     - name: Restore dependencies
       run: dotnet restore
     - name: Build
