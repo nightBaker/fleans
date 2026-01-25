@@ -1,13 +1,9 @@
 @page "/workflows"
 @rendermode InteractiveServer
 @using Fleans.Application
-@using Fleans.Application.WorkflowFactory
 @using Fleans.Domain
-@using Fleans.Infrastructure.Bpmn
-@using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.FluentUI.AspNetCore.Components
 @inject WorkflowEngine WorkflowEngine
-@inject IBpmnConverter BpmnConverter
 @inject ILogger<Workflows> Logger
 
 <PageTitle>Workflows</PageTitle>
@@ -15,80 +11,7 @@
 <FluentStack Orientation="Orientation.Vertical" Gap="20px">
     <FluentStack Orientation="Orientation.Horizontal" Justify="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
         <FluentHeader HSize="HeadingSize.H1">Registered Workflows</FluentHeader>
-        
-        <FluentStack Orientation="Orientation.Vertical" Gap="20px">
-            <FluentInputFile @ref="@myFileUploader" 
-                             DragDropZoneVisible="false"
-                             Mode="InputFileMode.SaveToTemporaryFolder"
-                             Multiple="false"
-                             AnchorId="MyUploadButton"
-                             MaximumFileSize="@(10 * 1024 * 1024)"
-                             Accept=".bpmn,.xml"
-                             OnProgressChange="@(e =>
-                                               {
-                                                   uploadProgressPercent = e.ProgressPercent; 
-                                                   uploadProgressTitle = e.ProgressTitle;
-                                               })"
-                             OnCompleted="@OnFileUploadCompleted" />
-
-            <FluentProgress Min="0" Max="100" Visible="@(uploadProgressPercent > 0)" Value="@uploadProgressPercent" />
-            @if (!string.IsNullOrEmpty(uploadProgressTitle))
-            {
-                <FluentLabel Alignment="HorizontalAlignment.Center">
-                    @uploadProgressTitle
-                </FluentLabel>
-            }
-
-            <FluentButton Id="MyUploadButton" Appearance="Appearance.Accent" Disabled="@isUploading">
-                <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowUpload())" />
-                <span style="margin-left: 8px;">Select BPMN File</span>
-            </FluentButton>
-
-            @if (uploadedFiles.Any())
-            {
-                <FluentStack Orientation="Orientation.Vertical" Gap="10px">
-                    <FluentHeading HSize="HeadingSize.H4">Selected file:</FluentHeading>
-                    @foreach (var file in uploadedFiles)
-                    {
-                        <FluentBodyText>
-                            <strong>@file.Name</strong> • 
-                            @($"{Decimal.Divide(file.Size, 1024):N} KB") • 
-                            @file.ContentType
-                            @if (!string.IsNullOrEmpty(file.ErrorMessage))
-                            {
-                                <FluentMessageBar Intent="MessageIntent.Error">@file.ErrorMessage</FluentMessageBar>
-                            }
-                        </FluentBodyText>
-                    }
-                    <FluentButton Appearance="Appearance.Accent" @onclick="HandleFileUpload" Disabled="@isUploading">
-                        @if (isUploading)
-                        {
-                            <FluentProgressRing Size="Size.Small" />
-                            <span style="margin-left: 8px;">Uploading...</span>
-                        }
-                        else
-                        {
-                            <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowUpload())" />
-                            <span style="margin-left: 8px;">Deploy workflow</span>
-                        }
-                    </FluentButton>
-                </FluentStack>
-            }
-
-            @if (uploadErrorMessage != null)
-            {
-                <FluentMessageBar Intent="MessageIntent.Error" Dismissible="true" OnDismissed="@(() => uploadErrorMessage = null)">
-                    @uploadErrorMessage
-                </FluentMessageBar>
-            }
-            @if (uploadSuccessMessage != null)
-            {
-                <FluentMessageBar Intent="MessageIntent.Success" Dismissible="true" OnDismissed="@(() => uploadSuccessMessage = null)">
-                    @uploadSuccessMessage
-                </FluentMessageBar>
-            }
-        </FluentStack>
-        
+        <WorkflowUploadPanel OnWorkflowDeployed="HandleWorkflowDeployed" />
     </FluentStack>
 
     @if (isLoading && (workflowGroups.Count == 0))
@@ -135,141 +58,22 @@
         else
         {
             <FluentStack Orientation="Orientation.Horizontal" Gap="24px" Style="align-items: flex-start;">
-                <FluentStack Orientation="Orientation.Vertical" Gap="12px" Style="min-width: 320px; max-width: 420px; flex: 1;">
-                    <FluentTextField Placeholder="Search by process key"
-                                     @bind-Value="SearchQuery" />
+                <WorkflowKeysPanel Groups="filteredWorkflowGroups"
+                                   SelectedGroup="selectedGroup"
+                                   @bind-SearchQuery="SearchQuery"
+                                   OnSelectGroup="SelectGroup"
+                                   OnStartLatest="StartLatestWorkflow"
+                                   IsStarting="isStarting"
+                                   StartingWorkflowKey="startingWorkflowKey" />
 
-                    @if (filteredWorkflowGroups.Count == 0)
-                    {
-                        <FluentMessageBar Intent="MessageIntent.Info">
-                            No keys match "@SearchQuery".
-                        </FluentMessageBar>
-                    }
-                    else
-                    {
-                        <FluentTable Items="@filteredWorkflowGroups">
-                            <FluentTableHeader>
-                                <FluentTableRow>
-                                    <FluentTableHeaderCell>Process Key</FluentTableHeaderCell>
-                                    <FluentTableHeaderCell>Latest Version</FluentTableHeaderCell>
-                                    <FluentTableHeaderCell>Versions</FluentTableHeaderCell>
-                                    <FluentTableHeaderCell>Actions</FluentTableHeaderCell>
-                                </FluentTableRow>
-                            </FluentTableHeader>
-                            <FluentTableBody>
-                                @foreach (var group in filteredWorkflowGroups)
-                                {
-                                    var isSelected = selectedGroup?.ProcessDefinitionKey == group.ProcessDefinitionKey;
-                                    <FluentTableRow @onclick="() => SelectGroup(group)" Style="@GetRowStyle(isSelected)">
-                                        <FluentTableCell>
-                                            <strong>@group.ProcessDefinitionKey</strong>
-                                        </FluentTableCell>
-                                        <FluentTableCell>
-                                            <FluentBadge Color="Color.Accent">v@group.LatestVersion</FluentBadge>
-                                        </FluentTableCell>
-                                        <FluentTableCell>
-                                            <FluentBadge Color="Color.Neutral">@group.TotalVersions</FluentBadge>
-                                        </FluentTableCell>
-                                        <FluentTableCell>
-                                            <FluentButton Appearance="Appearance.Stealth"
-                                                          @onclick="() => StartLatestWorkflow(group.ProcessDefinitionKey)"
-                                                          Disabled="@isStarting">
-                                                @if (isStarting && startingWorkflowKey == group.ProcessDefinitionKey)
-                                                {
-                                                    <FluentProgressRing Size="Size.Small" />
-                                                    <span style="margin-left: 8px;">Starting latest...</span>
-                                                }
-                                                else
-                                                {
-                                                    <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Play())" />
-                                                    <span style="margin-left: 8px;">Start (latest)</span>
-                                                }
-                                            </FluentButton>
-                                        </FluentTableCell>
-                                    </FluentTableRow>
-                                }
-                            </FluentTableBody>
-                        </FluentTable>
-                    }
-                </FluentStack>
-
-                <FluentStack Orientation="Orientation.Vertical" Gap="12px" Style="flex: 2;">
-                    <FluentStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Justify="JustifyContent.SpaceBetween">
-                        <FluentHeading HSize="HeadingSize.H3">
-                            @if (selectedGroup == null)
-                            {
-                                <span>Versions</span>
-                            }
-                            else
-                            {
-                                <span>Versions for @selectedGroup.ProcessDefinitionKey</span>
-                            }
-                        </FluentHeading>
-
-                        <FluentButton Appearance="Appearance.Accent"
-                                      @onclick="StartSelectedVersion"
-                                      Disabled="@(isStarting || string.IsNullOrWhiteSpace(selectedProcessDefinitionId))">
-                            @if (isStarting && startingProcessDefinitionId == selectedProcessDefinitionId)
-                            {
-                                <FluentProgressRing Size="Size.Small" />
-                                <span style="margin-left: 8px;">Starting...</span>
-                            }
-                            else
-                            {
-                                <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Play())" />
-                                <span style="margin-left: 8px;">Start selected version</span>
-                            }
-                        </FluentButton>
-                    </FluentStack>
-
-                    @if (filteredWorkflowGroups.Count == 0)
-                    {
-                        <FluentMessageBar Intent="MessageIntent.Info">
-                            No keys match "@SearchQuery".
-                        </FluentMessageBar>
-                    }
-                    else if (selectedGroup == null)
-                    {
-                        <FluentMessageBar Intent="MessageIntent.Info">
-                            Select a process key to view its versions.
-                        </FluentMessageBar>
-                    }
-                    else if (selectedGroup.Versions.Count == 0)
-                    {
-                        <FluentMessageBar Intent="MessageIntent.Info">
-                            No versions found for this key.
-                        </FluentMessageBar>
-                    }
-                    else
-                    {
-                        <FluentTable Items="@selectedGroup.Versions">
-                            <FluentTableHeader>
-                                <FluentTableRow>
-                                    <FluentTableHeaderCell>Version</FluentTableHeaderCell>
-                                    <FluentTableHeaderCell>Deployed at (UTC)</FluentTableHeaderCell>
-                                    <FluentTableHeaderCell>Process definition id</FluentTableHeaderCell>
-                                </FluentTableRow>
-                            </FluentTableHeader>
-                            <FluentTableBody>
-                                @foreach (var version in selectedGroup.Versions)
-                                {
-                                    var isSelected = selectedProcessDefinitionId == version.ProcessDefinitionId;
-                                    <FluentTableRow @onclick="() => SelectVersion(version)" Style="@GetRowStyle(isSelected)">
-                                        <FluentTableCell>
-                                            <FluentBadge Color="Color.Accent">v@version.Version</FluentBadge>
-                                        </FluentTableCell>
-                                        <FluentTableCell>
-                                            @version.DeployedAt.ToUniversalTime().ToString("u")
-                                        </FluentTableCell>
-                                        <FluentTableCell>
-                                            <FluentBodyText>@version.ProcessDefinitionId</FluentBodyText>
-                                        </FluentTableCell>
-                                    </FluentTableRow>
-                                }
-                            </FluentTableBody>
-                        </FluentTable>
-                    }
-                </FluentStack>
+                <WorkflowVersionsPanel SelectedGroup="selectedGroup"
+                                       HasFilteredKeys="filteredWorkflowGroups.Count > 0"
+                                       SearchQuery="SearchQuery"
+                                       SelectedProcessDefinitionId="selectedProcessDefinitionId"
+                                       OnSelectVersion="SelectVersion"
+                                       OnStartSelected="StartSelectedVersion"
+                                       IsStarting="isStarting"
+                                       StartingProcessDefinitionId="startingProcessDefinitionId" />
             </FluentStack>
 
             <FluentButton Appearance="Appearance.Neutral" @onclick="RefreshWorkflows" Disabled="@isLoading">
@@ -283,14 +87,6 @@
 
 
 @code {
-    private sealed class WorkflowGroupVm
-    {
-        public required string ProcessDefinitionKey { get; init; }
-        public required int LatestVersion { get; init; }
-        public required int TotalVersions { get; init; }
-        public required List<ProcessDefinitionSummary> Versions { get; init; }
-    }
-
     private List<WorkflowGroupVm> workflowGroups = new();
     private List<WorkflowGroupVm> filteredWorkflowGroups = new();
     private WorkflowGroupVm? selectedGroup;
@@ -303,14 +99,6 @@
     private string? startingProcessDefinitionId;
     private string? selectedProcessDefinitionId;
     private string searchQuery = string.Empty;
-    private bool showUploadModal = false;
-    private bool isUploading = false;
-    private FluentInputFile? myFileUploader = default!;
-    private int? uploadProgressPercent;
-    private string? uploadProgressTitle;
-    private FluentInputFileEventArgs[] uploadedFiles = Array.Empty<FluentInputFileEventArgs>();
-    private string? uploadErrorMessage;
-    private string? uploadSuccessMessage;
 
     private string SearchQuery
     {
@@ -382,6 +170,11 @@
         await LoadWorkflows();
     }
 
+    private async Task HandleWorkflowDeployed()
+    {
+        await LoadWorkflows();
+    }
+
     private void ApplyFilter()
     {
         filteredWorkflowGroups = workflowGroups
@@ -427,11 +220,6 @@
     {
         selectedProcessDefinitionId = version.ProcessDefinitionId;
     }
-
-    private static string GetRowStyle(bool isSelected) =>
-        isSelected
-            ? "cursor: pointer; background-color: var(--neutral-layer-2);"
-            : "cursor: pointer;";
 
     private async Task StartLatestWorkflow(string processDefinitionKey)
     {
@@ -502,111 +290,4 @@
         }
     }
 
-    private void ShowUploadDialog()
-    {
-        showUploadModal = true;
-        uploadErrorMessage = null;
-        uploadSuccessMessage = null;
-        uploadedFiles = Array.Empty<FluentInputFileEventArgs>();
-        uploadProgressPercent = null;
-        uploadProgressTitle = null;
-        
-        StateHasChanged();
-    }
-
-    private void HideUploadDialog()
-    {
-        showUploadModal = false;
-        uploadErrorMessage = null;
-        uploadSuccessMessage = null;
-        uploadedFiles = Array.Empty<FluentInputFileEventArgs>();
-        uploadProgressPercent = null;
-        uploadProgressTitle = null;
-        
-        // Clean up temporary files
-        foreach (var file in uploadedFiles)
-        {
-            file.LocalFile?.Delete();
-        }
-    }
-
-    private void OnFileUploadCompleted(IEnumerable<FluentInputFileEventArgs> files)
-    {
-        uploadedFiles = files.ToArray();
-        uploadProgressPercent = myFileUploader?.ProgressPercent;
-        uploadProgressTitle = myFileUploader?.ProgressTitle;
-        
-        // Check for errors in uploaded files
-        var errorFile = uploadedFiles.FirstOrDefault(f => !string.IsNullOrEmpty(f.ErrorMessage));
-        if (errorFile != null)
-        {
-            uploadErrorMessage = errorFile.ErrorMessage;
-        }
-    }
-
-    private async Task HandleFileUpload()
-    {
-        if (!uploadedFiles.Any())
-        {
-            uploadErrorMessage = "Please select a file to upload";
-            return;
-        }
-
-        var file = uploadedFiles.First();
-        
-        if (!string.IsNullOrEmpty(file.ErrorMessage))
-        {
-            uploadErrorMessage = file.ErrorMessage;
-            return;
-        }
-
-        try
-        {
-            isUploading = true;
-            uploadErrorMessage = null;
-            uploadSuccessMessage = null;
-
-            // Validate file extension
-            if (!file.Name.EndsWith(".bpmn", StringComparison.OrdinalIgnoreCase) &&
-                !file.Name.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
-            {
-                uploadErrorMessage = "File must be a BPMN (.bpmn) or XML (.xml) file";
-                return;
-            }
-
-            // Read file from temporary location
-            if (file.LocalFile == null || !file.LocalFile.Exists)
-            {
-                uploadErrorMessage = "File not found. Please select the file again.";
-                return;
-            }
-
-            using var fileStream = file.LocalFile.OpenRead();
-            var workflow = await BpmnConverter.ConvertFromXmlAsync(fileStream);
-            
-            // Deploy workflow (Camunda-like: every deploy creates a new version per BPMN process id)
-            var deployed = await WorkflowEngine.DeployWorkflow(workflow);
-            
-            uploadSuccessMessage = $"BPMN deployed successfully (Key: {deployed.ProcessDefinitionKey}, Version: v{deployed.Version}, Activities: {deployed.ActivitiesCount}, Flows: {deployed.SequenceFlowsCount})";
-            
-            // Refresh the workflow list after successful upload
-            await Task.Delay(1000); // Small delay to show success message
-            await LoadWorkflows();
-            HideUploadDialog();
-        }
-        catch (InvalidOperationException ex)
-        {
-            Logger.LogError(ex, "Invalid BPMN file");
-            uploadErrorMessage = $"Invalid BPMN file: {ex.Message}";
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Error uploading BPMN file");
-            uploadErrorMessage = $"Failed to upload file: {ex.Message}";
-        }
-        finally
-        {
-            isUploading = false;
-        }
-    }
 }
