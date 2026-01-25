@@ -1,0 +1,189 @@
+@using Fleans.Application
+@using Fleans.Infrastructure.Bpmn
+@inject WorkflowEngine WorkflowEngine
+@inject IBpmnConverter BpmnConverter
+@inject ILogger<WorkflowUploadPanel> Logger
+
+<FluentStack Orientation="Orientation.Vertical" Gap="20px">
+    <FluentInputFile @ref="@myFileUploader"
+                     DragDropZoneVisible="false"
+                     Mode="InputFileMode.SaveToTemporaryFolder"
+                     Multiple="false"
+                     AnchorId="MyUploadButton"
+                     MaximumFileSize="@(10 * 1024 * 1024)"
+                     Accept=".bpmn,.xml"
+                     OnProgressChange="@(e =>
+                                       {
+                                           uploadProgressPercent = e.ProgressPercent;
+                                           uploadProgressTitle = e.ProgressTitle;
+                                       })"
+                     OnCompleted="@OnFileUploadCompleted" />
+
+    <FluentProgress Min="0" Max="100" Visible="@(uploadProgressPercent > 0)" Value="@uploadProgressPercent" />
+    @if (!string.IsNullOrEmpty(uploadProgressTitle))
+    {
+        <FluentLabel Alignment="HorizontalAlignment.Center">
+            @uploadProgressTitle
+        </FluentLabel>
+    }
+
+    <FluentButton Id="MyUploadButton" Appearance="Appearance.Accent" Disabled="@isUploading">
+        <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowUpload())" />
+        <span style="margin-left: 8px;">Select BPMN File</span>
+    </FluentButton>
+
+    @if (uploadedFiles.Any())
+    {
+        <FluentStack Orientation="Orientation.Vertical" Gap="10px">
+            <FluentHeading HSize="HeadingSize.H4">Selected file:</FluentHeading>
+            @foreach (var file in uploadedFiles)
+            {
+                <FluentBodyText>
+                    <strong>@file.Name</strong> •
+                    @($"{Decimal.Divide(file.Size, 1024):N} KB") •
+                    @file.ContentType
+                    @if (!string.IsNullOrEmpty(file.ErrorMessage))
+                    {
+                        <FluentMessageBar Intent="MessageIntent.Error">@file.ErrorMessage</FluentMessageBar>
+                    }
+                </FluentBodyText>
+            }
+            <FluentButton Appearance="Appearance.Accent" @onclick="HandleFileUpload" Disabled="@isUploading">
+                @if (isUploading)
+                {
+                    <FluentProgressRing Size="Size.Small" />
+                    <span style="margin-left: 8px;">Uploading...</span>
+                }
+                else
+                {
+                    <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowUpload())" />
+                    <span style="margin-left: 8px;">Deploy workflow</span>
+                }
+            </FluentButton>
+        </FluentStack>
+    }
+
+    @if (uploadErrorMessage != null)
+    {
+        <FluentMessageBar Intent="MessageIntent.Error" Dismissible="true" OnDismissed="@(() => uploadErrorMessage = null)">
+            @uploadErrorMessage
+        </FluentMessageBar>
+    }
+    @if (uploadSuccessMessage != null)
+    {
+        <FluentMessageBar Intent="MessageIntent.Success" Dismissible="true" OnDismissed="@(() => uploadSuccessMessage = null)">
+            @uploadSuccessMessage
+        </FluentMessageBar>
+    }
+</FluentStack>
+
+@code {
+    [Parameter] public EventCallback OnWorkflowDeployed { get; set; }
+
+    private bool isUploading;
+    private FluentInputFile? myFileUploader = default!;
+    private int? uploadProgressPercent;
+    private string? uploadProgressTitle;
+    private FluentInputFileEventArgs[] uploadedFiles = Array.Empty<FluentInputFileEventArgs>();
+    private string? uploadErrorMessage;
+    private string? uploadSuccessMessage;
+
+    private void OnFileUploadCompleted(IEnumerable<FluentInputFileEventArgs> files)
+    {
+        uploadedFiles = files.ToArray();
+        uploadProgressPercent = myFileUploader?.ProgressPercent;
+        uploadProgressTitle = myFileUploader?.ProgressTitle;
+        uploadErrorMessage = null;
+        uploadSuccessMessage = null;
+
+        var errorFile = uploadedFiles.FirstOrDefault(f => !string.IsNullOrEmpty(f.ErrorMessage));
+        if (errorFile != null)
+        {
+            uploadErrorMessage = errorFile.ErrorMessage;
+        }
+    }
+
+    private async Task HandleFileUpload()
+    {
+        if (!uploadedFiles.Any())
+        {
+            uploadErrorMessage = "Please select a file to upload";
+            return;
+        }
+
+        var file = uploadedFiles.First();
+
+        if (!string.IsNullOrEmpty(file.ErrorMessage))
+        {
+            uploadErrorMessage = file.ErrorMessage;
+            return;
+        }
+
+        try
+        {
+            isUploading = true;
+            uploadErrorMessage = null;
+            uploadSuccessMessage = null;
+
+            if (!file.Name.EndsWith(".bpmn", StringComparison.OrdinalIgnoreCase) &&
+                !file.Name.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
+            {
+                uploadErrorMessage = "File must be a BPMN (.bpmn) or XML (.xml) file";
+                return;
+            }
+
+            if (file.LocalFile == null || !file.LocalFile.Exists)
+            {
+                uploadErrorMessage = "File not found. Please select the file again.";
+                return;
+            }
+
+            using var fileStream = file.LocalFile.OpenRead();
+            var workflow = await BpmnConverter.ConvertFromXmlAsync(fileStream);
+
+            var deployed = await WorkflowEngine.DeployWorkflow(workflow);
+
+            uploadSuccessMessage = $"BPMN deployed successfully (Key: {deployed.ProcessDefinitionKey}, Version: v{deployed.Version}, Activities: {deployed.ActivitiesCount}, Flows: {deployed.SequenceFlowsCount})";
+
+            await Task.Delay(1000);
+            if (OnWorkflowDeployed.HasDelegate)
+            {
+                await OnWorkflowDeployed.InvokeAsync();
+            }
+
+            ResetUploadState(clearMessages: true);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Logger.LogError(ex, "Invalid BPMN file");
+            uploadErrorMessage = $"Invalid BPMN file: {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error uploading BPMN file");
+            uploadErrorMessage = $"Failed to upload file: {ex.Message}";
+        }
+        finally
+        {
+            isUploading = false;
+        }
+    }
+
+    private void ResetUploadState(bool clearMessages)
+    {
+        foreach (var file in uploadedFiles)
+        {
+            file.LocalFile?.Delete();
+        }
+
+        uploadedFiles = Array.Empty<FluentInputFileEventArgs>();
+        uploadProgressPercent = null;
+        uploadProgressTitle = null;
+
+        if (clearMessages)
+        {
+            uploadErrorMessage = null;
+            uploadSuccessMessage = null;
+        }
+    }
+}

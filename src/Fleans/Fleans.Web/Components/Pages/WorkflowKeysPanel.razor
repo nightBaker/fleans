@@ -1,0 +1,77 @@
+<FluentStack Orientation="Orientation.Vertical" Gap="12px" Style="min-width: 320px; max-width: 420px; flex: 1;">
+    <FluentTextField Placeholder="Search by process key"
+                     @bind-Value="SearchQuery" />
+
+    @if (Groups.Count == 0)
+    {
+        <FluentMessageBar Intent="MessageIntent.Info">
+            No keys match "@SearchQuery".
+        </FluentMessageBar>
+    }
+    else
+    {
+        <FluentTable Items="@Groups">
+            <FluentTableHeader>
+                <FluentTableRow>
+                    <FluentTableHeaderCell>Process Key</FluentTableHeaderCell>
+                    <FluentTableHeaderCell>Latest Version</FluentTableHeaderCell>
+                    <FluentTableHeaderCell>Versions</FluentTableHeaderCell>
+                    <FluentTableHeaderCell>Actions</FluentTableHeaderCell>
+                </FluentTableRow>
+            </FluentTableHeader>
+            <FluentTableBody>
+                @foreach (var group in Groups)
+                {
+                    var isSelected = SelectedGroup?.ProcessDefinitionKey == group.ProcessDefinitionKey;
+                    <FluentTableRow @onclick="() => SelectGroup(group)" Style="@GetRowStyle(isSelected)">
+                        <FluentTableCell>
+                            <strong>@group.ProcessDefinitionKey</strong>
+                        </FluentTableCell>
+                        <FluentTableCell>
+                            <FluentBadge Color="Color.Accent">v@group.LatestVersion</FluentBadge>
+                        </FluentTableCell>
+                        <FluentTableCell>
+                            <FluentBadge Color="Color.Neutral">@group.TotalVersions</FluentBadge>
+                        </FluentTableCell>
+                        <FluentTableCell>
+                            <FluentButton Appearance="Appearance.Stealth"
+                                          @onclick="() => StartLatest(group.ProcessDefinitionKey)"
+                                          Disabled="@IsStarting">
+                                @if (IsStarting && StartingWorkflowKey == group.ProcessDefinitionKey)
+                                {
+                                    <FluentProgressRing Size="Size.Small" />
+                                    <span style="margin-left: 8px;">Starting latest...</span>
+                                }
+                                else
+                                {
+                                    <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Play())" />
+                                    <span style="margin-left: 8px;">Start (latest)</span>
+                                }
+                            </FluentButton>
+                        </FluentTableCell>
+                    </FluentTableRow>
+                }
+            </FluentTableBody>
+        </FluentTable>
+    }
+</FluentStack>
+
+@code {
+    [Parameter] public IReadOnlyList<WorkflowGroupVm> Groups { get; set; } = Array.Empty<WorkflowGroupVm>();
+    [Parameter] public WorkflowGroupVm? SelectedGroup { get; set; }
+    [Parameter] public string SearchQuery { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> SearchQueryChanged { get; set; }
+    [Parameter] public EventCallback<WorkflowGroupVm> OnSelectGroup { get; set; }
+    [Parameter] public EventCallback<string> OnStartLatest { get; set; }
+    [Parameter] public bool IsStarting { get; set; }
+    [Parameter] public string? StartingWorkflowKey { get; set; }
+
+    private Task SelectGroup(WorkflowGroupVm group) => OnSelectGroup.InvokeAsync(group);
+
+    private Task StartLatest(string processDefinitionKey) => OnStartLatest.InvokeAsync(processDefinitionKey);
+
+    private static string GetRowStyle(bool isSelected) =>
+        isSelected
+            ? "cursor: pointer; background-color: var(--neutral-layer-2);"
+            : "cursor: pointer;";
+}
