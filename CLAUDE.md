@@ -165,4 +165,4 @@ Design plans are in `docs/plans/` and describe architectural decisions:
 - Redis is required for Orleans clustering, grain directory, and persistence (configured via Aspire in dev)
 - The API project (`Fleans.Api`) hosts the Orleans silo; the Web project (`Fleans.Web`) connects as an Orleans client
 - BPMN elements have partial implementation - see the README.md table for current status
-- The README lists dotnet 8 as a prerequisite but the actual SDK requirement is .NET 10.0 (see `global.json` and CI workflow)
+- **Admin UI development:** Large pages should be split into smaller reusable components (see `Workflows.razor` with `WorkflowKeysPanel.razor`, `WorkflowVersionsPanel.razor`, `WorkflowUploadPanel.razor` as an example)
