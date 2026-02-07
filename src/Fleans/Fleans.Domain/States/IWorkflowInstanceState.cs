@@ -28,5 +28,6 @@ namespace Fleans.Domain.States
         ValueTask<IActivityInstance[]> GetNotExecutingNotCompletedActivities();
         ValueTask SetCondigitionSequencesResult(Guid activityInstanceId, string sequenceId, bool result);
         ValueTask MergeState(Guid variablesId, ExpandoObject variables);
+        ValueTask<InstanceStateSnapshot> GetStateSnapshot();
     }
 }

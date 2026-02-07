@@ -1,4 +1,5 @@
 @using Fleans.Domain
+@inject NavigationManager Navigation
 
 <FluentStack Orientation="Orientation.Vertical" Gap="12px" Style="flex: 2;">
     <FluentStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Justify="JustifyContent.SpaceBetween">
@@ -55,6 +56,7 @@
                     <FluentTableHeaderCell>Version</FluentTableHeaderCell>
                     <FluentTableHeaderCell>Deployed at (UTC)</FluentTableHeaderCell>
                     <FluentTableHeaderCell>Process definition id</FluentTableHeaderCell>
+                    <FluentTableHeaderCell>Actions</FluentTableHeaderCell>
                 </FluentTableRow>
             </FluentTableHeader>
             <FluentTableBody>
@@ -70,6 +72,13 @@
                         </FluentTableCell>
                         <FluentTableCell>
                             <FluentBodyText>@version.ProcessDefinitionId</FluentBodyText>
+                        </FluentTableCell>
+                        <FluentTableCell>
+                            <FluentButton Appearance="Appearance.Stealth"
+                                          @onclick="() => ViewInstances(version)">
+                                <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.List())" />
+                                Instances
+                            </FluentButton>
                         </FluentTableCell>
                     </FluentTableRow>
                 }
@@ -91,6 +100,11 @@
     private Task SelectVersion(ProcessDefinitionSummary version) => OnSelectVersion.InvokeAsync(version);
 
     private Task StartSelected() => OnStartSelected.InvokeAsync();
+
+    private void ViewInstances(ProcessDefinitionSummary version)
+    {
+        Navigation.NavigateTo($"/process-instances/{Uri.EscapeDataString(SelectedGroup!.ProcessDefinitionKey)}");
+    }
 
     private static string GetRowStyle(bool isSelected) =>
         isSelected

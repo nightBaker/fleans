@@ -138,10 +138,11 @@
                 return;
             }
 
-            using var fileStream = file.LocalFile.OpenRead();
+            var bpmnXml = await File.ReadAllTextAsync(file.LocalFile.FullName);
+            using var fileStream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(bpmnXml));
             var workflow = await BpmnConverter.ConvertFromXmlAsync(fileStream);
 
-            var deployed = await WorkflowEngine.DeployWorkflow(workflow);
+            var deployed = await WorkflowEngine.DeployWorkflow(workflow, bpmnXml);
 
             uploadSuccessMessage = $"BPMN deployed successfully (Key: {deployed.ProcessDefinitionKey}, Version: v{deployed.Version}, Activities: {deployed.ActivitiesCount}, Flows: {deployed.SequenceFlowsCount})";
 

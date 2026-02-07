@@ -39,3 +39,23 @@ h1:focus {
     .blazor-error-boundary::after {
         content: "An error has occurred."
     }
+
+/* BPMN Viewer Styles */
+.bpmn-container {
+    width: 100%;
+    height: 600px;
+    border: 1px solid var(--neutral-stroke-rest);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.bpmn-completed .djs-visual > :nth-child(1) {
+    stroke: #22c55e !important;
+    fill: rgba(34, 197, 94, 0.15) !important;
+}
+
+.bpmn-active .djs-visual > :nth-child(1) {
+    stroke: #3b82f6 !important;
+    fill: rgba(59, 130, 246, 0.15) !important;
+    stroke-width: 3px !important;
+}

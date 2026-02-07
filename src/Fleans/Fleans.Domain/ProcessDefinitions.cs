@@ -31,6 +31,9 @@ public sealed record ProcessDefinition
 
     [Id(4)]
     public required WorkflowDefinition Workflow { get; init; }
+
+    [Id(5)]
+    public required string BpmnXml { get; init; }
 }
 
 [GenerateSerializer]
@@ -42,3 +45,16 @@ public sealed record ProcessDefinitionSummary(
     [property: Id(4)] int ActivitiesCount,
     [property: Id(5)] int SequenceFlowsCount);
 
+[GenerateSerializer]
+public sealed record InstanceStateSnapshot(
+    [property: Id(0)] List<string> ActiveActivityIds,
+    [property: Id(1)] List<string> CompletedActivityIds,
+    [property: Id(2)] bool IsStarted,
+    [property: Id(3)] bool IsCompleted);
+
+[GenerateSerializer]
+public sealed record WorkflowInstanceInfo(
+    [property: Id(0)] Guid InstanceId,
+    [property: Id(1)] string ProcessDefinitionId,
+    [property: Id(2)] bool IsStarted,
+    [property: Id(3)] bool IsCompleted);

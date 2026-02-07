@@ -164,4 +164,23 @@ public class WorkflowInstanceState : Grain, IWorkflowInstanceState
         _variableStates[variablesId].Merge(variables);
         return ValueTask.CompletedTask;
     }
+
+    public async ValueTask<InstanceStateSnapshot> GetStateSnapshot()
+    {
+        var activeIds = new List<string>();
+        foreach (var activity in _activeActivities)
+        {
+            var current = await activity.GetCurrentActivity();
+            activeIds.Add(current.ActivityId);
+        }
+
+        var completedIds = new List<string>();
+        foreach (var activity in _completedActivities)
+        {
+            var current = await activity.GetCurrentActivity();
+            completedIds.Add(current.ActivityId);
+        }
+
+        return new InstanceStateSnapshot(activeIds, completedIds, _isStarted, _isCompleted);
+    }
 }

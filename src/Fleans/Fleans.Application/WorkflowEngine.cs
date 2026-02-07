@@ -58,10 +58,10 @@ namespace Fleans.Application
             await factoryGrain.RegisterWorkflow(workflow);
         }
 
-        public async Task<ProcessDefinitionSummary> DeployWorkflow(WorkflowDefinition workflow)
+        public async Task<ProcessDefinitionSummary> DeployWorkflow(WorkflowDefinition workflow, string bpmnXml)
         {
             var factoryGrain = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstanceFactorySingletonId);
-            return await factoryGrain.DeployWorkflow(workflow);
+            return await factoryGrain.DeployWorkflow(workflow, bpmnXml);
         }
 
         public async Task<IReadOnlyList<WorkflowSummary>> GetAllWorkflows()
@@ -77,6 +77,25 @@ namespace Fleans.Application
         {
             var factoryGrain = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstanceFactorySingletonId);
             return await factoryGrain.GetAllProcessDefinitions();
+        }
+
+        public async Task<IReadOnlyList<WorkflowInstanceInfo>> GetInstancesByKey(string processDefinitionKey)
+        {
+            var factoryGrain = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstanceFactorySingletonId);
+            return await factoryGrain.GetInstancesByKey(processDefinitionKey);
+        }
+
+        public async Task<InstanceStateSnapshot> GetInstanceDetail(Guid instanceId)
+        {
+            var instance = _grainFactory.GetGrain<IWorkflowInstance>(instanceId);
+            var state = await instance.GetState();
+            return await state.GetStateSnapshot();
+        }
+
+        public async Task<string> GetBpmnXml(Guid instanceId)
+        {
+            var factoryGrain = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstanceFactorySingletonId);
+            return await factoryGrain.GetBpmnXmlByInstanceId(instanceId);
         }
 
         private static IWorkflowDefinition CreateSimpleWorkflowWithExclusiveGateway()

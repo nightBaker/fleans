@@ -1,0 +1,125 @@
+@page "/process-instances/{ProcessDefinitionKey}"
+@rendermode InteractiveServer
+@using Fleans.Application
+@using Fleans.Domain
+@using Microsoft.FluentUI.AspNetCore.Components
+@inject WorkflowEngine WorkflowEngine
+@inject NavigationManager Navigation
+@inject ILogger<ProcessInstances> Logger
+
+<PageTitle>Instances - @ProcessDefinitionKey</PageTitle>
+
+<FluentStack Orientation="Orientation.Vertical" Gap="16px">
+    <FluentStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="12px">
+        <FluentButton Appearance="Appearance.Stealth" @onclick="GoBack">
+            <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowLeft())" />
+            Back to Workflows
+        </FluentButton>
+        <FluentHeader HSize="HeadingSize.H2">Instances for @ProcessDefinitionKey</FluentHeader>
+    </FluentStack>
+
+    @if (isLoading)
+    {
+        <FluentStack Orientation="Orientation.Vertical" AlignItems="AlignItems.Center" Gap="10px">
+            <FluentProgressRing />
+            <FluentBodyText>Loading instances...</FluentBodyText>
+        </FluentStack>
+    }
+    else if (errorMessage != null)
+    {
+        <FluentMessageBar Intent="MessageIntent.Error" Dismissible="true" OnDismissed="@(() => errorMessage = null)">
+            @errorMessage
+        </FluentMessageBar>
+    }
+    else if (instances.Count == 0)
+    {
+        <FluentMessageBar Intent="MessageIntent.Info">
+            No instances found for this process. Start a workflow to create one.
+        </FluentMessageBar>
+    }
+    else
+    {
+        <FluentTable Items="@instances">
+            <FluentTableHeader>
+                <FluentTableRow>
+                    <FluentTableHeaderCell>Instance ID</FluentTableHeaderCell>
+                    <FluentTableHeaderCell>Status</FluentTableHeaderCell>
+                    <FluentTableHeaderCell>Actions</FluentTableHeaderCell>
+                </FluentTableRow>
+            </FluentTableHeader>
+            <FluentTableBody>
+                @foreach (var instance in instances)
+                {
+                    <FluentTableRow>
+                        <FluentTableCell>
+                            <FluentBodyText>@instance.InstanceId.ToString()[..8]...</FluentBodyText>
+                        </FluentTableCell>
+                        <FluentTableCell>
+                            @if (instance.IsCompleted)
+                            {
+                                <FluentBadge Color="Color.Success">Completed</FluentBadge>
+                            }
+                            else if (instance.IsStarted)
+                            {
+                                <FluentBadge Color="Color.Accent">Running</FluentBadge>
+                            }
+                            else
+                            {
+                                <FluentBadge Color="Color.Neutral">Pending</FluentBadge>
+                            }
+                        </FluentTableCell>
+                        <FluentTableCell>
+                            <FluentButton Appearance="Appearance.Stealth" @onclick="() => ViewInstance(instance.InstanceId)">
+                                <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Eye())" />
+                                View
+                            </FluentButton>
+                        </FluentTableCell>
+                    </FluentTableRow>
+                }
+            </FluentTableBody>
+        </FluentTable>
+    }
+</FluentStack>
+
+@code {
+    [Parameter] public string ProcessDefinitionKey { get; set; } = string.Empty;
+
+    private List<WorkflowInstanceInfo> instances = new();
+    private bool isLoading = true;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadInstances();
+    }
+
+    private async Task LoadInstances()
+    {
+        try
+        {
+            isLoading = true;
+            errorMessage = null;
+            var result = await WorkflowEngine.GetInstancesByKey(ProcessDefinitionKey);
+            instances = result.ToList();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading instances for {Key}", ProcessDefinitionKey);
+            errorMessage = $"Failed to load instances: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void ViewInstance(Guid instanceId)
+    {
+        Navigation.NavigateTo($"/process-instance/{instanceId}");
+    }
+
+    private void GoBack()
+    {
+        Navigation.NavigateTo("/workflows");
+    }
+}
