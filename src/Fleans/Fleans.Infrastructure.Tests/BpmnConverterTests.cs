@@ -353,6 +353,21 @@ public class BpmnConverterTests
         Assert.AreEqual("_context.count = _context.count + 1", scriptTask.Script);
     }
 
+    [TestMethod]
+    public async Task ConvertFromXmlAsync_ShouldNotConvertBareVariablesInScript()
+    {
+        // Arrange — script uses _context.var directly, bare identifiers like Math should not be converted
+        var bpmnXml = CreateBpmnWithScriptTask("workflow_script4", "script1", "csharp", "_context.x = 42");
+
+        // Act
+        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
+
+        // Assert — bare variable conversion should NOT be applied to scripts
+        var scriptTask = workflow.Activities.OfType<ScriptTask>().FirstOrDefault();
+        Assert.IsNotNull(scriptTask);
+        Assert.AreEqual("_context.x = 42", scriptTask.Script);
+    }
+
     private static string CreateBpmnWithScriptTask(string processId, string scriptTaskId, string? scriptFormat, string scriptBody)
     {
         var formatAttr = scriptFormat != null ? $@" scriptFormat=""{scriptFormat}""" : "";

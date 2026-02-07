@@ -4,5 +4,5 @@ namespace Fleans.Application.Scripts;
 
 public interface IScriptExpressionExecutor
 {
-    Task<ExpandoObject> Execute(string script, ExpandoObject variables);
+    Task<ExpandoObject> Execute(string script, ExpandoObject variables, string scriptFormat);
 }

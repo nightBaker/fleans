@@ -33,15 +33,24 @@ public class WorkflowExecuteScriptEventHandler : Grain, IWorkflowExecuteScriptEv
     {
         _logger.LogInformation("OnNextAsync({Item}{Token})", item, token != null ? token.ToString() : "null");
 
-        var scriptExecutor = _grainFactory.GetGrain<IScriptExecutorGrain>(0);
         var workflowInstance = _grainFactory.GetGrain<IWorkflowInstance>(item.WorkflowInstanceId);
-        var activityInstance = _grainFactory.GetGrain<IActivityInstance>(item.ActivityInstanceId);
 
-        var variables = await workflowInstance.GetVariables(await activityInstance.GetVariablesStateId());
+        try
+        {
+            var scriptExecutor = _grainFactory.GetGrain<IScriptExecutorGrain>(0);
+            var activityInstance = _grainFactory.GetGrain<IActivityInstance>(item.ActivityInstanceId);
 
-        var result = await scriptExecutor.Execute(item.Script, variables);
+            var variables = await workflowInstance.GetVariables(await activityInstance.GetVariablesStateId());
 
-        await workflowInstance.CompleteActivity(item.ActivityId, result);
+            var result = await scriptExecutor.Execute(item.Script, variables, item.ScriptFormat);
+
+            await workflowInstance.CompleteActivity(item.ActivityId, result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Script execution failed for activity {ActivityId}", item.ActivityId);
+            await workflowInstance.FailActivity(item.ActivityId, ex);
+        }
     }
 
     public Task OnCompletedAsync()

@@ -1,7 +1,4 @@
-using System.Runtime.CompilerServices;
 using Fleans.Domain.Events;
-
-[assembly: InternalsVisibleTo("Fleans.Domain.Tests")]
 
 namespace Fleans.Domain.Activities;
 
@@ -16,6 +13,7 @@ public record ScriptTask : TaskActivity
 
     public ScriptTask(string ActivityId, string Script, string ScriptFormat = "csharp") : base(ActivityId)
     {
+        ArgumentNullException.ThrowIfNull(Script);
         this.Script = Script;
         this.ScriptFormat = ScriptFormat;
     }
@@ -30,6 +28,7 @@ public record ScriptTask : TaskActivity
             definition.WorkflowId,
             await activityInstance.GetActivityInstanceId(),
             ActivityId,
-            Script));
+            Script,
+            ScriptFormat));
     }
 }

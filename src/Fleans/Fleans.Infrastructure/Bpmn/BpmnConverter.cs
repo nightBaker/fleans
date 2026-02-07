@@ -103,7 +103,7 @@ public partial class BpmnConverter : IBpmnConverter
             var scriptFormat = scriptTask.Attribute("scriptFormat")?.Value ?? "csharp";
             var scriptElement = scriptTask.Element(Bpmn + "script");
             var script = scriptElement?.Value.Trim() ?? "";
-            script = ConvertBpmnCondition(script);
+            script = ConvertBpmnVariableReferences(script);
             var activity = new ScriptTask(id, script, scriptFormat);
             activities.Add(activity);
             activityMap[id] = activity;
@@ -181,6 +181,27 @@ public partial class BpmnConverter : IBpmnConverter
     [GeneratedRegex(@"\b([a-zA-Z_][a-zA-Z0-9_]*)\b", RegexOptions.Compiled)]
     private static partial Regex BareVariableRegex();
     
+    private string ConvertBpmnVariableReferences(string expression)
+    {
+        // Only convert ${variable} patterns to _context.variable format.
+        // Does NOT convert bare variable names — scripts use _context.var explicitly
+        // or rely on ${var} BPMN notation.
+        return VarsGeneratedRegex().Replace(
+            expression,
+            match =>
+            {
+                var variableContent = match.Groups[1].Value.Trim();
+
+                if (IsSimpleVariableName(variableContent))
+                {
+                    return $"_context.{variableContent}";
+                }
+
+                return ConvertBpmnVariableReferences(variableContent);
+            }
+        );
+    }
+
     private string ConvertBpmnCondition(string bpmnCondition)
     {
         // BPMN conditions often use ${variable} format

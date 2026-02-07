@@ -36,6 +36,13 @@ public class ScriptTaskTests
     }
 
     [TestMethod]
+    public void ScriptTask_ShouldThrowOnNullScript()
+    {
+        // Act & Assert
+        Assert.ThrowsExactly<ArgumentNullException>(() => new ScriptTask("script1", null!));
+    }
+
+    [TestMethod]
     public void ScriptTask_ShouldDefaultScriptFormatToCsharp()
     {
         // Arrange & Act
@@ -105,14 +112,13 @@ public class ScriptTaskTests
         var activeActivities = await state.GetActiveActivities();
         var taskActivity = activeActivities.FirstOrDefault();
 
-        if (taskActivity != null)
-        {
-            // Act
-            await script.ExecuteAsync(workflowInstance, taskActivity);
+        Assert.IsNotNull(taskActivity, "Workflow should have an active ScriptTask activity instance");
 
-            // Assert
-            Assert.IsTrue(await taskActivity.IsExecuting());
-        }
+        // Act
+        await script.ExecuteAsync(workflowInstance, taskActivity);
+
+        // Assert
+        Assert.IsTrue(await taskActivity.IsExecuting());
     }
 
     private static TestCluster CreateCluster()

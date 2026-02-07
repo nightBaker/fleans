@@ -13,8 +13,8 @@ public class ScriptExecutorGrain : Grain, IScriptExecutorGrain
         _scriptExpressionExecutor = scriptExpressionExecutor;
     }
 
-    public Task<ExpandoObject> Execute(string script, ExpandoObject variables)
+    public Task<ExpandoObject> Execute(string script, ExpandoObject variables, string scriptFormat)
     {
-        return _scriptExpressionExecutor.Execute(script, variables);
+        return _scriptExpressionExecutor.Execute(script, variables, scriptFormat);
     }
 }
