@@ -1,0 +1,324 @@
+@page "/editor"
+@page "/editor/{ProcessDefinitionKey}"
+@rendermode InteractiveServer
+@using Fleans.Application
+@using Fleans.Infrastructure.Bpmn
+@using Microsoft.FluentUI.AspNetCore.Components
+@inject WorkflowEngine WorkflowEngine
+@inject IBpmnConverter BpmnConverter
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject ILogger<Editor> Logger
+@implements IAsyncDisposable
+
+<PageTitle>BPMN Editor</PageTitle>
+
+<div class="editor-page">
+    <div class="editor-toolbar">
+        <FluentButton Appearance="Appearance.Stealth" @onclick="GoBack">
+            <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowLeft())" />
+            Back
+        </FluentButton>
+
+        @if (!string.IsNullOrEmpty(processKey))
+        {
+            <FluentBadge Color="Color.Accent">@processKey</FluentBadge>
+        }
+
+        <div class="toolbar-spacer"></div>
+
+        <FluentInputFile @ref="fileUploader"
+                         DragDropZoneVisible="false"
+                         Mode="InputFileMode.SaveToTemporaryFolder"
+                         Multiple="false"
+                         AnchorId="ImportBpmnButton"
+                         MaximumFileSize="@(10 * 1024 * 1024)"
+                         Accept=".bpmn,.xml"
+                         OnCompleted="@OnImportFileSelected" />
+
+        <FluentButton Id="ImportBpmnButton" Appearance="Appearance.Neutral">
+            <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowUpload())" />
+            Import BPMN
+        </FluentButton>
+
+        <FluentButton Appearance="Appearance.Neutral" @onclick="DownloadXml">
+            <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowDownload())" />
+            Download XML
+        </FluentButton>
+
+        <FluentButton Appearance="Appearance.Accent" @onclick="ShowDeployDialog" Disabled="@isDeploying">
+            @if (isDeploying)
+            {
+                <FluentProgressRing Size="Size.Small" />
+                <span style="margin-left: 4px;">Deploying...</span>
+            }
+            else
+            {
+                <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Rocket())" />
+                <span style="margin-left: 4px;">Deploy</span>
+            }
+        </FluentButton>
+    </div>
+
+    @if (errorMessage != null)
+    {
+        <FluentMessageBar Intent="MessageIntent.Error" Dismissible="true" OnDismissed="@(() => errorMessage = null)"
+                          Style="margin: 8px 16px 0;">
+            @errorMessage
+        </FluentMessageBar>
+    }
+
+    @if (successMessage != null)
+    {
+        <FluentMessageBar Intent="MessageIntent.Success" Dismissible="true" OnDismissed="@(() => successMessage = null)"
+                          Style="margin: 8px 16px 0;">
+            @successMessage
+        </FluentMessageBar>
+    }
+
+    <div class="editor-content">
+        <div id="editor-canvas" class="editor-canvas"></div>
+
+        @if (selectedElement != null)
+        {
+            <ElementPropertiesPanel Element="@selectedElement" OnElementReplaced="OnElementReplaced" />
+        }
+    </div>
+</div>
+
+@if (showDeployDialog)
+{
+    <div class="deploy-overlay" @onclick="CancelDeploy"></div>
+    <div class="deploy-dialog">
+        <FluentStack Orientation="Orientation.Vertical" Gap="16px">
+            <FluentLabel Typo="Typography.PaneHeader">Confirm Deployment</FluentLabel>
+            <p><strong>Process Key:</strong> @deployProcessKey</p>
+            <p><strong>Version:</strong> @deployNextVersion</p>
+            <p>This will deploy a new version of the workflow definition.</p>
+            <FluentStack Orientation="Orientation.Horizontal" Gap="8px" Justify="JustifyContent.FlexEnd">
+                <FluentButton Appearance="Appearance.Neutral" @onclick="CancelDeploy">Cancel</FluentButton>
+                <FluentButton Appearance="Appearance.Accent" @onclick="ConfirmDeploy">Deploy</FluentButton>
+            </FluentStack>
+        </FluentStack>
+    </div>
+}
+
+@code {
+    [Parameter] public string? ProcessDefinitionKey { get; set; }
+
+    private FluentInputFile? fileUploader;
+    private DotNetObjectReference<Editor>? dotNetRef;
+    private bool isDeploying;
+    private bool showDeployDialog;
+    private string? errorMessage;
+    private string? successMessage;
+    private string? processKey;
+    private bool editorInitialized;
+
+    private string? deployProcessKey;
+    private string deployNextVersion = "";
+    private string? pendingBpmnXml;
+    private Domain.WorkflowDefinition? pendingWorkflow;
+
+    private ElementPropertiesPanel.BpmnElementData? selectedElement;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            dotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("bpmnEditor.init", "editor-canvas", dotNetRef);
+            editorInitialized = true;
+
+            if (!string.IsNullOrEmpty(ProcessDefinitionKey))
+            {
+                try
+                {
+                    var bpmnXml = await WorkflowEngine.GetBpmnXmlByKey(ProcessDefinitionKey);
+                    await JS.InvokeVoidAsync("bpmnEditor.loadXml", bpmnXml);
+                    processKey = ProcessDefinitionKey;
+                    StateHasChanged();
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError(ex, "Failed to load BPMN for key {Key}", ProcessDefinitionKey);
+                    errorMessage = $"Failed to load workflow: {ex.Message}";
+                    StateHasChanged();
+                }
+            }
+            else
+            {
+                await JS.InvokeVoidAsync("bpmnEditor.newDiagram");
+            }
+        }
+    }
+
+    [JSInvokable]
+    public void OnElementSelected(ElementPropertiesPanel.BpmnElementData elementData)
+    {
+        selectedElement = elementData;
+        InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public void OnElementDeselected()
+    {
+        selectedElement = null;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnElementReplaced(ElementPropertiesPanel.BpmnElementData newElement)
+    {
+        selectedElement = newElement;
+        StateHasChanged();
+    }
+
+    private async Task OnImportFileSelected(IEnumerable<FluentInputFileEventArgs> files)
+    {
+        var file = files.FirstOrDefault();
+        if (file == null) return;
+
+        try
+        {
+            if (!string.IsNullOrEmpty(file.ErrorMessage))
+            {
+                errorMessage = file.ErrorMessage;
+                return;
+            }
+
+            if (file.LocalFile == null || !file.LocalFile.Exists)
+            {
+                errorMessage = "File not found. Please try again.";
+                return;
+            }
+
+            errorMessage = null;
+            successMessage = null;
+            var bpmnXml = await File.ReadAllTextAsync(file.LocalFile.FullName);
+            await JS.InvokeVoidAsync("bpmnEditor.loadXml", bpmnXml);
+            successMessage = $"Imported {file.Name}";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to import BPMN file");
+            errorMessage = $"Failed to import file: {ex.Message}";
+        }
+        finally
+        {
+            file.LocalFile?.Delete();
+        }
+    }
+
+    private async Task DownloadXml()
+    {
+        if (!editorInitialized) return;
+
+        try
+        {
+            var xml = await JS.InvokeAsync<string>("bpmnEditor.getXml");
+            if (string.IsNullOrEmpty(xml)) return;
+
+            var bytes = System.Text.Encoding.UTF8.GetBytes(xml);
+            var base64 = Convert.ToBase64String(bytes);
+            var filename = !string.IsNullOrEmpty(processKey) ? $"{processKey}.bpmn" : "diagram.bpmn";
+            await JS.InvokeVoidAsync("bpmnEditor.downloadXml", base64, filename);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to download XML");
+            errorMessage = $"Failed to download: {ex.Message}";
+        }
+    }
+
+    private async Task ShowDeployDialog()
+    {
+        if (!editorInitialized) return;
+
+        try
+        {
+            errorMessage = null;
+            successMessage = null;
+
+            var xml = await JS.InvokeAsync<string>("bpmnEditor.getXml");
+            if (string.IsNullOrEmpty(xml))
+            {
+                errorMessage = "No diagram to deploy.";
+                return;
+            }
+
+            using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(xml));
+            var workflow = await BpmnConverter.ConvertFromXmlAsync(stream);
+
+            pendingBpmnXml = xml;
+            pendingWorkflow = workflow;
+            deployProcessKey = workflow.WorkflowId;
+
+            var definitions = await WorkflowEngine.GetAllProcessDefinitions();
+            var existing = definitions
+                .Where(d => d.ProcessDefinitionKey == deployProcessKey)
+                .OrderByDescending(d => d.Version)
+                .FirstOrDefault();
+            var nextVersion = existing != null ? existing.Version + 1 : 1;
+            deployNextVersion = $"v{nextVersion}";
+
+            showDeployDialog = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to prepare deployment");
+            errorMessage = $"Invalid BPMN: {ex.Message}";
+        }
+    }
+
+    private void CancelDeploy()
+    {
+        showDeployDialog = false;
+        pendingBpmnXml = null;
+        pendingWorkflow = null;
+    }
+
+    private async Task ConfirmDeploy()
+    {
+        if (pendingWorkflow == null || pendingBpmnXml == null) return;
+
+        try
+        {
+            isDeploying = true;
+            showDeployDialog = false;
+
+            var deployed = await WorkflowEngine.DeployWorkflow(pendingWorkflow, pendingBpmnXml);
+            processKey = deployed.ProcessDefinitionKey;
+            successMessage = $"Deployed '{deployed.ProcessDefinitionKey}' v{deployed.Version} ({deployed.ActivitiesCount} activities, {deployed.SequenceFlowsCount} flows)";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to deploy workflow");
+            errorMessage = $"Deployment failed: {ex.Message}";
+        }
+        finally
+        {
+            isDeploying = false;
+            pendingBpmnXml = null;
+            pendingWorkflow = null;
+        }
+    }
+
+    private void GoBack()
+    {
+        Navigation.NavigateTo("/workflows");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("bpmnEditor.destroy");
+        }
+        catch
+        {
+            // JS interop may fail during disposal
+        }
+
+        dotNetRef?.Dispose();
+    }
+}

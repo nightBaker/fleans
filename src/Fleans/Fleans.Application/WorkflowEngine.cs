@@ -92,6 +92,12 @@ namespace Fleans.Application
             return await state.GetStateSnapshot();
         }
 
+        public async Task<string> GetBpmnXmlByKey(string processDefinitionKey)
+        {
+            var factoryGrain = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstanceFactorySingletonId);
+            return await factoryGrain.GetBpmnXmlByKey(processDefinitionKey);
+        }
+
         public async Task<string> GetBpmnXml(Guid instanceId)
         {
             var factoryGrain = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstanceFactorySingletonId);

@@ -192,6 +192,12 @@ public class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFactoryGrain
         return Task.FromResult(definition.BpmnXml);
     }
 
+    public Task<string> GetBpmnXmlByKey(string processDefinitionKey)
+    {
+        var definition = GetLatestDefinitionOrThrow(processDefinitionKey);
+        return Task.FromResult(definition.BpmnXml);
+    }
+
     public Task<string> GetBpmnXmlByInstanceId(Guid instanceId)
     {
         if (!_instanceToDefinitionId.TryGetValue(instanceId, out var definitionId))
