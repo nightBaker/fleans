@@ -1,12 +1,10 @@
-﻿using DynamicExpresso;
+﻿using System.Dynamic;
+using DynamicExpresso;
 using Fleans.Application.Conditions;
-using Fleans.Application.Events.Handlers;
-using Fleans.Domain.Events;
-using System.Dynamic;
 
-namespace Fleans.Infrastructure.EventHandlers;
+namespace Fleans.Infrastructure.Conditions;
 
-public class DynamicExperessoConditionExpressionEvaluater : IConditionExpressionEvaluater
+public class DynamicExpressoConditionExpressionEvaluator : IConditionExpressionEvaluator
 {
     public Task<bool> Evaluate(string expression, ExpandoObject variables)
     {

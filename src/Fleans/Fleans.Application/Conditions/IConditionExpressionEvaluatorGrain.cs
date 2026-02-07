@@ -2,7 +2,7 @@
 
 namespace Fleans.Application.Conditions;
 
-public interface IConditionExpressionEvaluaterGrain : IGrainWithIntegerKey
+public interface IConditionExpressionEvaluatorGrain : IGrainWithIntegerKey
 {
     Task<bool> Evaluate(string expression, ExpandoObject variables);
 }

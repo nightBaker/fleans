@@ -3,7 +3,7 @@ Workflow engine based on Orleans
 
 ## Prerequisites
 
-- dotnet 8
+- dotnet 10
 
 ## Running the Application
 

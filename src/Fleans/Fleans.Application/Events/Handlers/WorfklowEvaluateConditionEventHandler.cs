@@ -36,7 +36,7 @@ public class WorfklowEvaluateConditionEventHandler : Grain, IWorfklowEvaluateCon
     {
         _logger.LogInformation("OnNextAsync({Item}{Token})", item, token != null ? token.ToString() : "null");
 
-        var expressionEvaluator = _grainFactory.GetGrain<IConditionExpressionEvaluaterGrain>(0);
+        var expressionEvaluator = _grainFactory.GetGrain<IConditionExpressionEvaluatorGrain>(0);
         var workflowInstance = _grainFactory.GetGrain<IWorkflowInstance>(item.WorkflowInstanceId);
         var activityInstance = _grainFactory.GetGrain<IActivityInstance>(item.ActivityInstanceId);
 
