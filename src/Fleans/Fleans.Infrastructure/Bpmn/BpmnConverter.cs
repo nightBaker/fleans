@@ -8,6 +8,7 @@ namespace Fleans.Infrastructure.Bpmn;
 
 public partial class BpmnConverter : IBpmnConverter
 {
+    private const int MaxConversionDepth = 10;
     private const string BpmnNamespace = "http://www.omg.org/spec/BPMN/20100524/MODEL";
     private const string BpmndiNamespace = "http://www.omg.org/spec/BPMN/20100524/DI";
     private static readonly XNamespace Bpmn = BpmnNamespace;
@@ -96,6 +97,20 @@ public partial class BpmnConverter : IBpmnConverter
             activityMap[id] = activity;
         }
 
+        // Parse script tasks
+        foreach (var scriptTask in process.Descendants(Bpmn + "scriptTask"))
+        {
+            var id = GetId(scriptTask);
+            var scriptFormat = scriptTask.Attribute("scriptFormat")?.Value ?? "csharp";
+            ValidateScriptFormat(id, scriptFormat);
+            var scriptElement = scriptTask.Element(Bpmn + "script");
+            var script = scriptElement?.Value.Trim() ?? "";
+            script = ConvertBpmnVariableReferences(script);
+            var activity = new ScriptTask(id, script, scriptFormat);
+            activities.Add(activity);
+            activityMap[id] = activity;
+        }
+
         // Parse exclusive gateways
         foreach (var gateway in process.Descendants(Bpmn + "exclusiveGateway"))
         {
@@ -168,6 +183,30 @@ public partial class BpmnConverter : IBpmnConverter
     [GeneratedRegex(@"\b([a-zA-Z_][a-zA-Z0-9_]*)\b", RegexOptions.Compiled)]
     private static partial Regex BareVariableRegex();
     
+    private string ConvertBpmnVariableReferences(string expression, int depth = 0)
+    {
+        if (depth > MaxConversionDepth)
+            throw new InvalidOperationException("BPMN variable reference nesting exceeds maximum depth.");
+
+        // Only convert ${variable} patterns to _context.variable format.
+        // Does NOT convert bare variable names — scripts use _context.var explicitly
+        // or rely on ${var} BPMN notation.
+        return VarsGeneratedRegex().Replace(
+            expression,
+            match =>
+            {
+                var variableContent = match.Groups[1].Value.Trim();
+
+                if (IsSimpleVariableName(variableContent))
+                {
+                    return $"_context.{variableContent}";
+                }
+
+                return ConvertBpmnVariableReferences(variableContent, depth + 1);
+            }
+        );
+    }
+
     private string ConvertBpmnCondition(string bpmnCondition)
     {
         // BPMN conditions often use ${variable} format
@@ -203,13 +242,10 @@ public partial class BpmnConverter : IBpmnConverter
 
     private static bool IsSimpleVariableName(string name)
     {
-        // Check if it's a simple variable name (no operators, no complex expressions)
-        return System.Text.RegularExpressions.Regex.IsMatch(name, @"^[a-zA-Z_][a-zA-Z0-9_]*$") &&
-               !name.Contains(">") && !name.Contains("<") && !name.Contains("=") &&
-               !name.Contains("&&") && !name.Contains("||") && !name.Contains("!") &&
-               !name.Contains("+") && !name.Contains("-") && !name.Contains("*") &&
-               !name.Contains("/") && !name.Contains("(") && !name.Contains(")") &&
-               !name.Contains("'") && !name.Contains("\"");
+        // Matches a single identifier: letters, digits, underscores only.
+        // The regex alone is sufficient — it rejects any string containing operators,
+        // quotes, or other non-identifier characters.
+        return System.Text.RegularExpressions.Regex.IsMatch(name, @"^[a-zA-Z_][a-zA-Z0-9_]*$");
     }
 
     private static string ConvertBareVariables(string expression)
@@ -260,6 +296,18 @@ public partial class BpmnConverter : IBpmnConverter
             // Convert bare variable to _context.variable
             return $"_context.{variableName}";
         });
+    }
+
+    private static readonly HashSet<string> SupportedScriptFormats = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "csharp", "c#", ""
+    };
+
+    private static void ValidateScriptFormat(string activityId, string scriptFormat)
+    {
+        if (!SupportedScriptFormats.Contains(scriptFormat))
+            throw new InvalidOperationException(
+                $"ScriptTask '{activityId}' has unsupported scriptFormat '{scriptFormat}'. Supported formats: csharp, c#.");
     }
 
     private string GetId(XElement element)

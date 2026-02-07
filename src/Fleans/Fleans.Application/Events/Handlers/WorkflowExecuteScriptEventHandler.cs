@@ -1,21 +1,18 @@
-﻿using Fleans.Application.Conditions;
-using Fleans.Application.Events;
+using Fleans.Application.Scripts;
 using Fleans.Domain;
 using Fleans.Domain.Events;
 using Microsoft.Extensions.Logging;
-using Orleans.Runtime;
 using Orleans.Streams;
 
 namespace Fleans.Application.Events.Handlers;
 
 [ImplicitStreamSubscription(WorkflowEventsPublisher.StreamNameSpace)]
-public class WorfklowEvaluateConditionEventHandler : Grain, IWorfklowEvaluateConditionEventHandler, IAsyncObserver<EvaluateConditionEvent>
+public class WorkflowExecuteScriptEventHandler : Grain, IWorkflowExecuteScriptEventHandler, IAsyncObserver<ExecuteScriptEvent>
 {
-
-    private readonly ILogger<WorfklowEvaluateConditionEventHandler> _logger;
+    private readonly ILogger<WorkflowExecuteScriptEventHandler> _logger;
     private readonly IGrainFactory _grainFactory;
 
-    public WorfklowEvaluateConditionEventHandler(ILogger<WorfklowEvaluateConditionEventHandler> logger, IGrainFactory grainFactory)
+    public WorkflowExecuteScriptEventHandler(ILogger<WorkflowExecuteScriptEventHandler> logger, IGrainFactory grainFactory)
     {
         _logger = logger;
         _grainFactory = grainFactory;
@@ -24,15 +21,15 @@ public class WorfklowEvaluateConditionEventHandler : Grain, IWorfklowEvaluateCon
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
         var streamProvider = this.GetStreamProvider(WorkflowEventsPublisher.StreamProvider);
-        var streamId = StreamId.Create(WorkflowEventsPublisher.StreamNameSpace, nameof(EvaluateConditionEvent));
-        var stream = streamProvider.GetStream<EvaluateConditionEvent>(streamId);
+        var streamId = StreamId.Create(WorkflowEventsPublisher.StreamNameSpace, nameof(ExecuteScriptEvent));
+        var stream = streamProvider.GetStream<ExecuteScriptEvent>(streamId);
 
         await stream.SubscribeAsync(OnNextAsync, OnErrorAsync, OnCompletedAsync);
 
         await base.OnActivateAsync(cancellationToken);
     }
 
-    public async Task OnNextAsync(EvaluateConditionEvent item, StreamSequenceToken? token = null)
+    public async Task OnNextAsync(ExecuteScriptEvent item, StreamSequenceToken? token = null)
     {
         _logger.LogInformation("OnNextAsync({Item}{Token})", item, token != null ? token.ToString() : "null");
 
@@ -40,18 +37,18 @@ public class WorfklowEvaluateConditionEventHandler : Grain, IWorfklowEvaluateCon
 
         try
         {
-            var expressionEvaluator = _grainFactory.GetGrain<IConditionExpressionEvaluatorGrain>(0);
+            var scriptExecutor = _grainFactory.GetGrain<IScriptExecutorGrain>(0);
             var activityInstance = _grainFactory.GetGrain<IActivityInstance>(item.ActivityInstanceId);
 
             var variables = await workflowInstance.GetVariables(await activityInstance.GetVariablesStateId());
 
-            var result = await expressionEvaluator.Evaluate(item.Condition, variables);
+            var result = await scriptExecutor.Execute(item.Script, variables, item.ScriptFormat);
 
-            await workflowInstance.CompleteConditionSequence(item.ActivityId, item.SequenceFlowId, result);
+            await workflowInstance.CompleteActivity(item.ActivityId, result);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Condition evaluation failed for activity {ActivityId}", item.ActivityId);
+            _logger.LogError(ex, "Script execution failed for activity {ActivityId}", item.ActivityId);
             await workflowInstance.FailActivity(item.ActivityId, ex);
         }
     }
@@ -65,12 +62,6 @@ public class WorfklowEvaluateConditionEventHandler : Grain, IWorfklowEvaluateCon
     public Task OnErrorAsync(Exception ex)
     {
         _logger.LogError(ex, "OnErrorAsync()");
-
         return Task.CompletedTask;
-    }
-
-    public void Ping()
-    {
-
     }
 }

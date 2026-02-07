@@ -32,6 +32,7 @@ For now, next elements are implemented
 | Multiple Event       | Indicates that multiple events can occur.                                    |             |
 | **Activities**       |                                                                             |             |
 | Task                 | A single unit of work.                                                      |             |
+| Script Task          | A task that executes an inline script.                                       |     [x]     |
 | Sub-Process          | A group of tasks that are treated as a single unit.                         |             |
 | Call Activity        | A type of sub-process that calls another process.                            |             |
 | Transaction          | A set of activities that are handled as a single unit.                      |             |
