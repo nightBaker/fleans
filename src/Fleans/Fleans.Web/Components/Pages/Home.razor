@@ -1,8 +1,9 @@
 ﻿@page "/"
+@inject NavigationManager Navigation
 
-<PageTitle>Home</PageTitle>
-
-<FluentStack Orientation="Orientation.Vertical" Gap="20px">
-    <FluentHeading HSize="HeadingSize.H1">Hello, world!</FluentHeading>
-    <FluentBodyText>Welcome to your new app.</FluentBodyText>
-</FluentStack>
+@code {
+    protected override void OnInitialized()
+    {
+        Navigation.NavigateTo("/workflows", replace: true);
+    }
+}
