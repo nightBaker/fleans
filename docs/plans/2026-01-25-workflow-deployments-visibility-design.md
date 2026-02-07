@@ -2,7 +2,14 @@
 
 ### Status
 
-Draft validated via discussion on 2026-01-25.
+**Superseded.** The split-pane master-detail layout described below was replaced
+by a single flat `FluentDataGrid` showing all process definition versions in one
+table (see `feature/workflows-datagrid-ui` branch). The flat grid simplifies
+selection state, removes the `WorkflowGroupVm` view model and two child panel
+components, and uses per-row Start buttons instead of "Start latest" / "Start
+selected version" actions.
+
+Original status: Draft validated via discussion on 2026-01-25.
 
 ### Goal
 
