@@ -96,6 +96,19 @@ public partial class BpmnConverter : IBpmnConverter
             activityMap[id] = activity;
         }
 
+        // Parse script tasks
+        foreach (var scriptTask in process.Descendants(Bpmn + "scriptTask"))
+        {
+            var id = GetId(scriptTask);
+            var scriptFormat = scriptTask.Attribute("scriptFormat")?.Value ?? "csharp";
+            var scriptElement = scriptTask.Element(Bpmn + "script");
+            var script = scriptElement?.Value.Trim() ?? "";
+            script = ConvertBpmnCondition(script);
+            var activity = new ScriptTask(id, script, scriptFormat);
+            activities.Add(activity);
+            activityMap[id] = activity;
+        }
+
         // Parse exclusive gateways
         foreach (var gateway in process.Descendants(Bpmn + "exclusiveGateway"))
         {

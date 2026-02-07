@@ -29,10 +29,16 @@ public class WorkflowEventsPublisher : Grain, IEventPublisher
         switch (domainEvent)
         {
             case EvaluateConditionEvent evaluateConditionEvent:
-                
+
                 var streamId = StreamId.Create(StreamNameSpace, nameof(EvaluateConditionEvent));
                 var stream = _streamProvider.GetStream<EvaluateConditionEvent>(streamId);
                 await stream.OnNextAsync(evaluateConditionEvent);
+                break;
+            case ExecuteScriptEvent executeScriptEvent:
+
+                var scriptStreamId = StreamId.Create(StreamNameSpace, nameof(ExecuteScriptEvent));
+                var scriptStream = _streamProvider.GetStream<ExecuteScriptEvent>(scriptStreamId);
+                await scriptStream.OnNextAsync(executeScriptEvent);
                 break;
             default:
                 var defaultStreamId = StreamId.Create(StreamNameSpace, nameof(IDomainEvent));

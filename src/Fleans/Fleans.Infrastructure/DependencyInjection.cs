@@ -1,13 +1,9 @@
-﻿using Fleans.Application;
-using Fleans.Application.Conditions;
+﻿using Fleans.Application.Conditions;
+using Fleans.Application.Scripts;
 using Fleans.Infrastructure.Bpmn;
-using Microsoft.Extensions.DependencyInjection;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using Fleans.Infrastructure.Conditions;
+using Fleans.Infrastructure.Scripts;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Fleans.Infrastructure
 {
@@ -16,6 +12,7 @@ namespace Fleans.Infrastructure
         public static void AddInfrastructure(this IServiceCollection services)
         {
             services.AddSingleton<IConditionExpressionEvaluator, DynamicExpressoConditionExpressionEvaluator>();
+            services.AddSingleton<IScriptExpressionExecutor, DynamicExpressoScriptExpressionExecutor>();
             services.AddSingleton<IBpmnConverter, BpmnConverter>();
         }
     }
