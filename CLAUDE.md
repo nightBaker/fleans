@@ -37,6 +37,7 @@ Add it to `Fleans.Api/Controllers/WorkflowController.cs`. DTOs go in `Fleans.Ser
 - Follow existing patterns — records for immutable DTOs, `[GenerateSerializer]` on anything crossing grain boundaries
 - ExpandoObject + Newtonsoft.Json for dynamic workflow variable state
 - Tests use MSTest + Orleans.TestingHost, AAA pattern
+- **Admin UI (Fleans.Web) communicates with Orleans grains directly via `WorkflowEngine` service** — not through HTTP API endpoints. The Web app runs as Blazor Server (InteractiveServer), so Razor components execute server-side and can call grains directly. Do not add API endpoints for admin UI functionality.
 
 ## Things to Know
 
