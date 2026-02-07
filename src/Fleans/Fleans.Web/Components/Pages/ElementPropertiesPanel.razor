@@ -1,0 +1,190 @@
+@using Microsoft.FluentUI.AspNetCore.Components
+@inject IJSRuntime JS
+
+<div class="properties-panel">
+    <div class="properties-panel-header">
+        <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">@GetTypeLabel()</FluentLabel>
+    </div>
+
+    <div class="properties-panel-body">
+        <FluentStack Orientation="Orientation.Vertical" Gap="12px">
+            @if (GetReplaceOptions() is { Count: > 1 } options)
+            {
+                <div>
+                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Type</FluentLabel>
+                    <FluentSelect TOption="string" Value="@Element.Type" @onchange="OnTypeChange" Style="width: 100%;">
+                        @foreach (var opt in options)
+                        {
+                            <FluentOption TOption="string" Value="@opt.Key" Selected="@(opt.Key == Element.Type)">@opt.Value</FluentOption>
+                        }
+                    </FluentSelect>
+                </div>
+            }
+
+            <div>
+                <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">ID</FluentLabel>
+                <FluentTextField Value="@elementId" @oninput="OnIdInput" @onchange="OnIdChange" Style="width: 100%;" />
+            </div>
+
+            <div>
+                <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Name</FluentLabel>
+                <FluentTextField Value="@name" @oninput="OnNameInput" @onchange="OnNameChange" Style="width: 100%;" />
+            </div>
+
+            @if (Element.Type == "bpmn:ScriptTask")
+            {
+                <div>
+                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Script Format</FluentLabel>
+                    <FluentTextField Value="@scriptFormat" @oninput="OnScriptFormatInput" @onchange="OnScriptFormatChange"
+                                     Placeholder="e.g. javascript" Style="width: 100%;" />
+                </div>
+
+                <div>
+                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Script</FluentLabel>
+                    <FluentTextArea Value="@script" @oninput="OnScriptInput" @onchange="OnScriptChange"
+                                    Rows="8" Resize="TextAreaResize.Vertical" Style="width: 100%;" />
+                </div>
+            }
+
+            @if (Element.Type == "bpmn:SequenceFlow")
+            {
+                <div>
+                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Condition Expression</FluentLabel>
+                    <FluentTextArea Value="@conditionExpression" @oninput="OnConditionInput" @onchange="OnConditionChange"
+                                    Rows="3" Resize="TextAreaResize.Vertical"
+                                    Placeholder="e.g. ${amount > 100}" Style="width: 100%;" />
+                </div>
+            }
+        </FluentStack>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public BpmnElementData Element { get; set; } = default!;
+    [Parameter] public EventCallback<BpmnElementData> OnElementReplaced { get; set; }
+
+    private string elementId = "";
+    private string name = "";
+    private string scriptFormat = "";
+    private string script = "";
+    private string conditionExpression = "";
+
+    private static readonly Dictionary<string, string> TaskTypes = new()
+    {
+        ["bpmn:Task"] = "Task",
+        ["bpmn:UserTask"] = "User Task",
+        ["bpmn:ServiceTask"] = "Service Task",
+        ["bpmn:ScriptTask"] = "Script Task",
+    };
+
+    private static readonly Dictionary<string, string> GatewayTypes = new()
+    {
+        ["bpmn:ExclusiveGateway"] = "Exclusive Gateway",
+        ["bpmn:ParallelGateway"] = "Parallel Gateway",
+    };
+
+    private static readonly Dictionary<string, string> EventTypes = new()
+    {
+        ["bpmn:StartEvent"] = "Start Event",
+        ["bpmn:EndEvent"] = "End Event",
+        ["bpmn:IntermediateThrowEvent"] = "Intermediate Throw Event",
+        ["bpmn:IntermediateCatchEvent"] = "Intermediate Catch Event",
+    };
+
+    protected override void OnParametersSet()
+    {
+        elementId = Element.Id;
+        name = Element.Name;
+        scriptFormat = Element.ScriptFormat;
+        script = Element.Script;
+        conditionExpression = Element.ConditionExpression;
+    }
+
+    private Dictionary<string, string>? GetReplaceOptions()
+    {
+        if (TaskTypes.ContainsKey(Element.Type)) return TaskTypes;
+        if (GatewayTypes.ContainsKey(Element.Type)) return GatewayTypes;
+        if (EventTypes.ContainsKey(Element.Type)) return EventTypes;
+        return null;
+    }
+
+    private async Task OnTypeChange(ChangeEventArgs e)
+    {
+        var newType = e.Value?.ToString();
+        if (string.IsNullOrEmpty(newType) || newType == Element.Type) return;
+
+        var result = await JS.InvokeAsync<BpmnElementData>("bpmnEditor.replaceElement", Element.Id, newType);
+        if (result != null)
+        {
+            await OnElementReplaced.InvokeAsync(result);
+        }
+    }
+
+    private void OnIdInput(ChangeEventArgs e) => elementId = e.Value?.ToString() ?? "";
+    private async Task OnIdChange(ChangeEventArgs e)
+    {
+        var newId = e.Value?.ToString() ?? "";
+        if (string.IsNullOrWhiteSpace(newId) || newId == Element.Id) return;
+
+        var result = await JS.InvokeAsync<BpmnElementData>("bpmnEditor.updateElementId", Element.Id, newId);
+        if (result != null)
+        {
+            await OnElementReplaced.InvokeAsync(result);
+        }
+    }
+
+    private void OnNameInput(ChangeEventArgs e) => name = e.Value?.ToString() ?? "";
+    private async Task OnNameChange(ChangeEventArgs e)
+    {
+        name = e.Value?.ToString() ?? "";
+        await JS.InvokeVoidAsync("bpmnEditor.updateElementProperty", Element.Id, "name", name);
+    }
+
+    private void OnScriptFormatInput(ChangeEventArgs e) => scriptFormat = e.Value?.ToString() ?? "";
+    private async Task OnScriptFormatChange(ChangeEventArgs e)
+    {
+        scriptFormat = e.Value?.ToString() ?? "";
+        await JS.InvokeVoidAsync("bpmnEditor.updateElementProperty", Element.Id, "scriptFormat", scriptFormat);
+    }
+
+    private void OnScriptInput(ChangeEventArgs e) => script = e.Value?.ToString() ?? "";
+    private async Task OnScriptChange(ChangeEventArgs e)
+    {
+        script = e.Value?.ToString() ?? "";
+        await JS.InvokeVoidAsync("bpmnEditor.updateElementProperty", Element.Id, "script", script);
+    }
+
+    private void OnConditionInput(ChangeEventArgs e) => conditionExpression = e.Value?.ToString() ?? "";
+    private async Task OnConditionChange(ChangeEventArgs e)
+    {
+        conditionExpression = e.Value?.ToString() ?? "";
+        await JS.InvokeVoidAsync("bpmnEditor.updateElementProperty", Element.Id, "conditionExpression", conditionExpression);
+    }
+
+    private string GetTypeLabel() => Element.Type switch
+    {
+        "bpmn:StartEvent" => "Start Event",
+        "bpmn:EndEvent" => "End Event",
+        "bpmn:Task" => "Task",
+        "bpmn:UserTask" => "User Task",
+        "bpmn:ServiceTask" => "Service Task",
+        "bpmn:ScriptTask" => "Script Task",
+        "bpmn:ExclusiveGateway" => "Exclusive Gateway",
+        "bpmn:ParallelGateway" => "Parallel Gateway",
+        "bpmn:SequenceFlow" => "Sequence Flow",
+        "bpmn:Process" => "Process",
+        "bpmn:IntermediateThrowEvent" => "Intermediate Throw Event",
+        "bpmn:IntermediateCatchEvent" => "Intermediate Catch Event",
+        _ => Element.Type.Replace("bpmn:", "")
+    };
+
+    public class BpmnElementData
+    {
+        public string Id { get; set; } = "";
+        public string Type { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string ScriptFormat { get; set; } = "";
+        public string Script { get; set; } = "";
+        public string ConditionExpression { get; set; } = "";
+    }
+}

@@ -13,7 +13,10 @@
     <FluentStack Orientation="Orientation.Horizontal" Justify="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
         <FluentLabel Typo="Typography.PageTitle">Registered Workflows</FluentLabel>
         <FluentStack Orientation="Orientation.Horizontal" Gap="8px" AlignItems="AlignItems.Center">
-            <WorkflowUploadPanel OnWorkflowDeployed="HandleWorkflowDeployed" />
+            <FluentButton Appearance="Appearance.Accent" @onclick="NewWorkflow">
+                <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Add())" />
+                New Workflow
+            </FluentButton>
             <FluentButton Appearance="Appearance.Neutral" @onclick="RefreshWorkflows" Disabled="@isLoading">
                 <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowSync())" />
                 Refresh
@@ -59,7 +62,7 @@
         @if (allDefinitions.Count == 0)
         {
             <FluentMessageBar Intent="MessageIntent.Info">
-                <strong>No workflows found.</strong> Upload a BPMN file to register a workflow.
+                <strong>No workflows found.</strong> Create a new workflow in the <a href="/editor">Editor</a>.
             </FluentMessageBar>
         }
         else
@@ -88,6 +91,11 @@
                     </TemplateColumn>
                     <TemplateColumn Title="Actions">
                         <FluentStack Orientation="Orientation.Horizontal" Gap="4px">
+                            <FluentButton Appearance="Appearance.Stealth"
+                                          @onclick="() => EditWorkflow(context)">
+                                <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Edit())" />
+                                Edit
+                            </FluentButton>
                             <FluentButton Appearance="Appearance.Stealth"
                                           @onclick="() => StartVersion(context)"
                                           Disabled="@isStarting">
@@ -184,9 +192,14 @@
         await LoadWorkflows();
     }
 
-    private async Task HandleWorkflowDeployed()
+    private void NewWorkflow()
     {
-        await LoadWorkflows();
+        Navigation.NavigateTo("/editor");
+    }
+
+    private void EditWorkflow(ProcessDefinitionSummary definition)
+    {
+        Navigation.NavigateTo($"/editor/{Uri.EscapeDataString(definition.ProcessDefinitionKey)}");
     }
 
     private void ApplyFilter()

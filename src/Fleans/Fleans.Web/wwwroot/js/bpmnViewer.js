@@ -9,7 +9,7 @@ window.bpmnViewer = {
             this._viewer.destroy();
         }
 
-        this._viewer = new BpmnJS({ container: container });
+        this._viewer = new BpmnViewer({ container: container });
 
         try {
             await this._viewer.importXML(bpmnXml);

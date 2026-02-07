@@ -13,6 +13,7 @@ public interface IWorkflowInstanceFactoryGrain : IGrainWithIntegerKey
     Task<IReadOnlyList<ProcessDefinitionSummary>> GetAllProcessDefinitions();
     Task<IReadOnlyList<WorkflowInstanceInfo>> GetInstancesByKey(string processDefinitionKey);
     Task<string> GetBpmnXml(string processDefinitionId);
+    Task<string> GetBpmnXmlByKey(string processDefinitionKey);
     Task<string> GetBpmnXmlByInstanceId(Guid instanceId);
 }
 

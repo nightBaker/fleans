@@ -9,6 +9,9 @@
     <link rel="stylesheet" href="@Assets["app.css"]"/>
     <link rel="stylesheet" href="@Assets["Fleans.Web.styles.css"]"/>
     <ImportMap/>
+    <link rel="stylesheet" href="https://unpkg.com/bpmn-js@17.11.1/dist/assets/diagram-js.css"/>
+    <link rel="stylesheet" href="https://unpkg.com/bpmn-js@17.11.1/dist/assets/bpmn-js.css"/>
+    <link rel="stylesheet" href="https://unpkg.com/bpmn-js@17.11.1/dist/assets/bpmn-font/css/bpmn.css"/>
     <link rel="icon" type="image/svg+xml" href="favicon.svg"/>
     <HeadOutlet/>
 </head>
@@ -18,7 +21,11 @@
 <ReconnectModal/>
 <script src="@Assets["_framework/blazor.web.js"]"></script>
 <script src="https://unpkg.com/bpmn-js@17.11.1/dist/bpmn-navigated-viewer.production.min.js"></script>
+<script>window.BpmnViewer = BpmnJS;</script>
 <script src="js/bpmnViewer.js"></script>
+<script src="https://unpkg.com/bpmn-js@17.11.1/dist/bpmn-modeler.production.min.js"></script>
+<script>window.BpmnModeler = BpmnJS;</script>
+<script src="js/bpmnEditor.js"></script>
 </body>
 
 </html>
