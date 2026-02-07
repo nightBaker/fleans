@@ -19,7 +19,9 @@ dotnet run --project Fleans.Aspire
 
 ## Git Workflow
 
-Feature branches off `main`, open a PR, merge back. CI runs build + test on PRs.
+- **Never commit directly to `main`.** Always create a feature branch for any new feature, bug fix, or change.
+- Branch naming: `feature/<short-description>` or `fix/<short-description>`
+- Open a PR from the feature branch to `main`, merge back. CI runs build + test on PRs.
 
 ## How to Add a New BPMN Activity
 
