@@ -39,45 +39,31 @@
     }
     else
     {
-        <FluentTable Items="@instances">
-            <FluentTableHeader>
-                <FluentTableRow>
-                    <FluentTableHeaderCell>Instance ID</FluentTableHeaderCell>
-                    <FluentTableHeaderCell>Status</FluentTableHeaderCell>
-                    <FluentTableHeaderCell>Actions</FluentTableHeaderCell>
-                </FluentTableRow>
-            </FluentTableHeader>
-            <FluentTableBody>
-                @foreach (var instance in instances)
+        <FluentDataGrid Items="@instancesQueryable" TGridItem="WorkflowInstanceInfo">
+            <TemplateColumn Title="Instance ID">
+                <span title="@context.InstanceId">@context.InstanceId.ToString()[..8]...</span>
+            </TemplateColumn>
+            <TemplateColumn Title="Status">
+                @if (context.IsCompleted)
                 {
-                    <FluentTableRow>
-                        <FluentTableCell>
-                            <FluentBodyText>@instance.InstanceId.ToString()[..8]...</FluentBodyText>
-                        </FluentTableCell>
-                        <FluentTableCell>
-                            @if (instance.IsCompleted)
-                            {
-                                <FluentBadge Color="Color.Success">Completed</FluentBadge>
-                            }
-                            else if (instance.IsStarted)
-                            {
-                                <FluentBadge Color="Color.Accent">Running</FluentBadge>
-                            }
-                            else
-                            {
-                                <FluentBadge Color="Color.Neutral">Pending</FluentBadge>
-                            }
-                        </FluentTableCell>
-                        <FluentTableCell>
-                            <FluentButton Appearance="Appearance.Stealth" @onclick="() => ViewInstance(instance.InstanceId)">
-                                <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Eye())" />
-                                View
-                            </FluentButton>
-                        </FluentTableCell>
-                    </FluentTableRow>
+                    <FluentBadge Color="Color.Success">Completed</FluentBadge>
                 }
-            </FluentTableBody>
-        </FluentTable>
+                else if (context.IsStarted)
+                {
+                    <FluentBadge Color="Color.Accent">Running</FluentBadge>
+                }
+                else
+                {
+                    <FluentBadge Color="Color.Neutral">Pending</FluentBadge>
+                }
+            </TemplateColumn>
+            <TemplateColumn Title="Actions">
+                <FluentButton Appearance="Appearance.Stealth" @onclick="() => ViewInstance(context.InstanceId)">
+                    <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Eye())" />
+                    View
+                </FluentButton>
+            </TemplateColumn>
+        </FluentDataGrid>
     }
 </FluentStack>
 
@@ -85,6 +71,7 @@
     [Parameter] public string ProcessDefinitionKey { get; set; } = string.Empty;
 
     private List<WorkflowInstanceInfo> instances = new();
+    private IQueryable<WorkflowInstanceInfo> instancesQueryable = Enumerable.Empty<WorkflowInstanceInfo>().AsQueryable();
     private bool isLoading = true;
     private string? errorMessage;
 
@@ -101,6 +88,7 @@
             errorMessage = null;
             var result = await WorkflowEngine.GetInstancesByKey(ProcessDefinitionKey);
             instances = result.ToList();
+            instancesQueryable = instances.AsQueryable();
         }
         catch (Exception ex)
         {

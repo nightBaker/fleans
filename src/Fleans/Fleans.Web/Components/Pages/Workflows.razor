@@ -4,17 +4,24 @@
 @using Fleans.Domain
 @using Microsoft.FluentUI.AspNetCore.Components
 @inject WorkflowEngine WorkflowEngine
+@inject NavigationManager Navigation
 @inject ILogger<Workflows> Logger
 
 <PageTitle>Workflows</PageTitle>
 
 <FluentStack Orientation="Orientation.Vertical" Gap="20px">
     <FluentStack Orientation="Orientation.Horizontal" Justify="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
-        <FluentHeader HSize="HeadingSize.H1">Registered Workflows</FluentHeader>
-        <WorkflowUploadPanel OnWorkflowDeployed="HandleWorkflowDeployed" />
+        <FluentLabel Typo="Typography.PageTitle">Registered Workflows</FluentLabel>
+        <FluentStack Orientation="Orientation.Horizontal" Gap="8px" AlignItems="AlignItems.Center">
+            <WorkflowUploadPanel OnWorkflowDeployed="HandleWorkflowDeployed" />
+            <FluentButton Appearance="Appearance.Neutral" @onclick="RefreshWorkflows" Disabled="@isLoading">
+                <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowSync())" />
+                Refresh
+            </FluentButton>
+        </FluentStack>
     </FluentStack>
 
-    @if (isLoading && (workflowGroups.Count == 0))
+    @if (isLoading && allDefinitions.Count == 0)
     {
         <FluentStack Orientation="Orientation.Vertical" AlignItems="AlignItems.Center" Gap="10px">
             <FluentProgressRing />
@@ -49,7 +56,7 @@
             </FluentMessageBar>
         }
 
-        @if (workflowGroups.Count == 0)
+        @if (allDefinitions.Count == 0)
         {
             <FluentMessageBar Intent="MessageIntent.Info">
                 <strong>No workflows found.</strong> Upload a BPMN file to register a workflow.
@@ -57,47 +64,67 @@
         }
         else
         {
-            <FluentStack Orientation="Orientation.Horizontal" Gap="24px" Style="align-items: flex-start;">
-                <WorkflowKeysPanel Groups="filteredWorkflowGroups"
-                                   SelectedGroup="selectedGroup"
-                                   @bind-SearchQuery="SearchQuery"
-                                   OnSelectGroup="SelectGroup"
-                                   OnStartLatest="StartLatestWorkflow"
-                                   IsStarting="isStarting"
-                                   StartingWorkflowKey="startingWorkflowKey" />
+            <FluentTextField Placeholder="Search by process key"
+                             @bind-Value="SearchQuery"
+                             Style="max-width: 320px;" />
 
-                <WorkflowVersionsPanel SelectedGroup="selectedGroup"
-                                       HasFilteredKeys="filteredWorkflowGroups.Count > 0"
-                                       SearchQuery="SearchQuery"
-                                       SelectedProcessDefinitionId="selectedProcessDefinitionId"
-                                       OnSelectVersion="SelectVersion"
-                                       OnStartSelected="StartSelectedVersion"
-                                       IsStarting="isStarting"
-                                       StartingProcessDefinitionId="startingProcessDefinitionId" />
-            </FluentStack>
-
-            <FluentButton Appearance="Appearance.Neutral" @onclick="RefreshWorkflows" Disabled="@isLoading">
-                <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowSync())" />
-                Refresh
-            </FluentButton>
+            @if (filteredDefinitions.Count == 0)
+            {
+                <FluentMessageBar Intent="MessageIntent.Info">
+                    No workflows match "@SearchQuery".
+                </FluentMessageBar>
+            }
+            else
+            {
+                <FluentDataGrid Items="@filteredDefinitionsQueryable" TGridItem="ProcessDefinitionSummary">
+                    <TemplateColumn Title="Process Key">
+                        <strong title="@context.ProcessDefinitionId">@context.ProcessDefinitionKey</strong>
+                    </TemplateColumn>
+                    <TemplateColumn Title="Version">
+                        <FluentBadge Color="Color.Accent">v@(context.Version)</FluentBadge>
+                    </TemplateColumn>
+                    <TemplateColumn Title="Deployed at (UTC)">
+                        @context.DeployedAt.ToUniversalTime().ToString("u")
+                    </TemplateColumn>
+                    <TemplateColumn Title="Actions">
+                        <FluentStack Orientation="Orientation.Horizontal" Gap="4px">
+                            <FluentButton Appearance="Appearance.Stealth"
+                                          @onclick="() => StartVersion(context)"
+                                          Disabled="@isStarting">
+                                @if (isStarting && startingProcessDefinitionId == context.ProcessDefinitionId)
+                                {
+                                    <FluentProgressRing Size="Size.Small" />
+                                    <span style="margin-left: 8px;">Starting...</span>
+                                }
+                                else
+                                {
+                                    <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Play())" />
+                                    <span style="margin-left: 8px;">Start</span>
+                                }
+                            </FluentButton>
+                            <FluentButton Appearance="Appearance.Stealth"
+                                          @onclick="() => ViewInstances(context)">
+                                <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.List())" />
+                                Instances
+                            </FluentButton>
+                        </FluentStack>
+                    </TemplateColumn>
+                </FluentDataGrid>
+            }
         }
     }
 </FluentStack>
 
-
-
 @code {
-    private List<WorkflowGroupVm> workflowGroups = new();
-    private List<WorkflowGroupVm> filteredWorkflowGroups = new();
-    private WorkflowGroupVm? selectedGroup;
+    private List<ProcessDefinitionSummary> allDefinitions = new();
+    private List<ProcessDefinitionSummary> filteredDefinitions = new();
+    private IQueryable<ProcessDefinitionSummary> filteredDefinitionsQueryable = Enumerable.Empty<ProcessDefinitionSummary>().AsQueryable();
     private bool isLoading = true;
     private string? loadErrorMessage;
     private string? actionErrorMessage;
     private string? actionSuccessMessage;
     private bool isStarting = false;
-    private string? startingWorkflowKey;
     private string? startingProcessDefinitionId;
-    private string? selectedProcessDefinitionId;
     private string searchQuery = string.Empty;
 
     private string SearchQuery
@@ -129,21 +156,9 @@
 
             var definitions = await WorkflowEngine.GetAllProcessDefinitions();
 
-            workflowGroups = definitions
-                .GroupBy(d => d.ProcessDefinitionKey, StringComparer.Ordinal)
-                .Select(g =>
-                {
-                    var ordered = g.OrderByDescending(d => d.Version).ToList();
-                    var latest = ordered[0];
-                    return new WorkflowGroupVm
-                    {
-                        ProcessDefinitionKey = g.Key,
-                        LatestVersion = latest.Version,
-                        TotalVersions = ordered.Count,
-                        Versions = ordered
-                    };
-                })
-                .OrderBy(g => g.ProcessDefinitionKey, StringComparer.Ordinal)
+            allDefinitions = definitions
+                .OrderBy(d => d.ProcessDefinitionKey, StringComparer.Ordinal)
+                .ThenByDescending(d => d.Version)
                 .ToList();
 
             ApplyFilter();
@@ -152,11 +167,10 @@
         {
             Logger.LogError(ex, "Error loading workflows");
             loadErrorMessage = "Unable to reach workflow engine. Try again.";
-            if (workflowGroups.Count == 0)
+            if (allDefinitions.Count == 0)
             {
-                filteredWorkflowGroups.Clear();
-                selectedGroup = null;
-                selectedProcessDefinitionId = null;
+                filteredDefinitions.Clear();
+                filteredDefinitionsQueryable = filteredDefinitions.AsQueryable();
             }
         }
         finally
@@ -177,110 +191,34 @@
 
     private void ApplyFilter()
     {
-        filteredWorkflowGroups = workflowGroups
-            .Where(g => string.IsNullOrWhiteSpace(SearchQuery)
-                        || g.ProcessDefinitionKey.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase))
-            .OrderBy(g => g.ProcessDefinitionKey, StringComparer.Ordinal)
+        filteredDefinitions = allDefinitions
+            .Where(d => string.IsNullOrWhiteSpace(SearchQuery)
+                        || d.ProcessDefinitionKey.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase))
             .ToList();
-
-        if (filteredWorkflowGroups.Count == 0)
-        {
-            selectedGroup = null;
-            selectedProcessDefinitionId = null;
-            return;
-        }
-
-        if (selectedGroup == null || filteredWorkflowGroups.All(g => g.ProcessDefinitionKey != selectedGroup.ProcessDefinitionKey))
-        {
-            selectedGroup = filteredWorkflowGroups[0];
-            selectedProcessDefinitionId = null;
-            return;
-        }
-
-        selectedGroup = filteredWorkflowGroups.First(g => g.ProcessDefinitionKey == selectedGroup.ProcessDefinitionKey);
-        if (!string.IsNullOrWhiteSpace(selectedProcessDefinitionId)
-            && selectedGroup.Versions.All(v => v.ProcessDefinitionId != selectedProcessDefinitionId))
-        {
-            selectedProcessDefinitionId = null;
-        }
+        filteredDefinitionsQueryable = filteredDefinitions.AsQueryable();
     }
 
-    private void SelectGroup(WorkflowGroupVm group)
-    {
-        if (selectedGroup?.ProcessDefinitionKey == group.ProcessDefinitionKey)
-        {
-            return;
-        }
-
-        selectedGroup = group;
-        selectedProcessDefinitionId = null;
-    }
-
-    private void SelectVersion(ProcessDefinitionSummary version)
-    {
-        selectedProcessDefinitionId = version.ProcessDefinitionId;
-    }
-
-    private async Task StartLatestWorkflow(string processDefinitionKey)
+    private async Task StartVersion(ProcessDefinitionSummary version)
     {
         try
         {
             isStarting = true;
-            startingWorkflowKey = processDefinitionKey;
-            startingProcessDefinitionId = null;
+            startingProcessDefinitionId = version.ProcessDefinitionId;
             actionErrorMessage = null;
             actionSuccessMessage = null;
 
-            var instanceId = await WorkflowEngine.StartWorkflow(processDefinitionKey);
-            Logger.LogInformation("Workflow {ProcessDefinitionKey} (latest) started successfully with instanceId {WorkflowInstanceId}", processDefinitionKey, instanceId);
-            actionSuccessMessage = $"Started '{processDefinitionKey}' (latest). Instance: {instanceId}.";
+            var instanceId = await WorkflowEngine.StartWorkflowByProcessDefinitionId(version.ProcessDefinitionId);
+            Logger.LogInformation("Process definition {ProcessDefinitionId} started successfully with instanceId {WorkflowInstanceId}", version.ProcessDefinitionId, instanceId);
+            actionSuccessMessage = $"Started '{version.ProcessDefinitionKey}' v{version.Version}. Instance: {instanceId}.";
         }
         catch (KeyNotFoundException ex)
         {
-            Logger.LogWarning("Failed to start workflow {ProcessDefinitionKey}: {Error}", processDefinitionKey, ex.Message);
+            Logger.LogWarning("Failed to start process definition {ProcessDefinitionId}: {Error}", version.ProcessDefinitionId, ex.Message);
             actionErrorMessage = $"Failed to start workflow: {ex.Message}";
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error starting workflow {ProcessDefinitionKey}", processDefinitionKey);
-            actionErrorMessage = $"Failed to start workflow: {ex.Message}";
-        }
-        finally
-        {
-            isStarting = false;
-            startingWorkflowKey = null;
-        }
-    }
-
-    private async Task StartSelectedVersion()
-    {
-        if (string.IsNullOrWhiteSpace(selectedProcessDefinitionId))
-        {
-            actionSuccessMessage = null;
-            actionErrorMessage = "Please select a version to start.";
-            return;
-        }
-
-        try
-        {
-            isStarting = true;
-            startingProcessDefinitionId = selectedProcessDefinitionId;
-            startingWorkflowKey = null;
-            actionErrorMessage = null;
-            actionSuccessMessage = null;
-
-            var instanceId = await WorkflowEngine.StartWorkflowByProcessDefinitionId(selectedProcessDefinitionId);
-            Logger.LogInformation("Process definition {ProcessDefinitionId} started successfully with instanceId {WorkflowInstanceId}", selectedProcessDefinitionId, instanceId);
-            actionSuccessMessage = $"Started '{selectedProcessDefinitionId}'. Instance: {instanceId}.";
-        }
-        catch (KeyNotFoundException ex)
-        {
-            Logger.LogWarning("Failed to start process definition {ProcessDefinitionId}: {Error}", selectedProcessDefinitionId, ex.Message);
-            actionErrorMessage = $"Failed to start workflow: {ex.Message}";
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Error starting process definition {ProcessDefinitionId}", selectedProcessDefinitionId);
+            Logger.LogError(ex, "Error starting process definition {ProcessDefinitionId}", version.ProcessDefinitionId);
             actionErrorMessage = $"Failed to start workflow: {ex.Message}";
         }
         finally
@@ -290,4 +228,8 @@
         }
     }
 
+    private void ViewInstances(ProcessDefinitionSummary version)
+    {
+        Navigation.NavigateTo($"/process-instances/{Uri.EscapeDataString(version.ProcessDefinitionKey)}");
+    }
 }
