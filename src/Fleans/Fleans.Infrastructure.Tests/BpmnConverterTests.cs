@@ -368,6 +368,44 @@ public class BpmnConverterTests
         Assert.AreEqual("_context.x = 42", scriptTask.Script);
     }
 
+    [TestMethod]
+    public async Task ConvertFromXmlAsync_ShouldParseScriptTask_WithMissingScriptElement()
+    {
+        // Arrange — scriptTask with no <script> child should produce empty script
+        var bpmnXml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL"">
+  <process id=""workflow_script5"">
+    <startEvent id=""start"" />
+    <scriptTask id=""script1"" />
+    <endEvent id=""end"" />
+    <sequenceFlow id=""flow1"" sourceRef=""start"" targetRef=""script1"" />
+    <sequenceFlow id=""flow2"" sourceRef=""script1"" targetRef=""end"" />
+  </process>
+</definitions>";
+
+        // Act
+        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
+
+        // Assert
+        var scriptTask = workflow.Activities.OfType<ScriptTask>().FirstOrDefault();
+        Assert.IsNotNull(scriptTask);
+        Assert.AreEqual("", scriptTask.Script);
+        Assert.AreEqual("csharp", scriptTask.ScriptFormat);
+    }
+
+    [TestMethod]
+    public async Task ConvertFromXmlAsync_ShouldThrow_WhenScriptTaskHasUnsupportedFormat()
+    {
+        // Arrange
+        var bpmnXml = CreateBpmnWithScriptTask("workflow_script6", "script1", "javascript", "${x} = 1");
+
+        // Act & Assert
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        {
+            await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
+        });
+    }
+
     private static string CreateBpmnWithScriptTask(string processId, string scriptTaskId, string? scriptFormat, string scriptBody)
     {
         var formatAttr = scriptFormat != null ? $@" scriptFormat=""{scriptFormat}""" : "";

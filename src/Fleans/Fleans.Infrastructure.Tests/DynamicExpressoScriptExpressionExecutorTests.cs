@@ -102,6 +102,23 @@ public class DynamicExpressoScriptExpressionExecutorTests
     }
 
     [TestMethod]
+    public async Task Execute_ShouldThrowTimeoutException_WhenScriptExceedsTimeout()
+    {
+        // Arrange
+        var shortTimeoutExecutor = new DynamicExpressoScriptExpressionExecutor(TimeSpan.FromMilliseconds(50));
+        dynamic variables = new ExpandoObject();
+        variables.x = 0;
+
+        // Act & Assert — a script that takes too long should throw TimeoutException
+        // We use a script that calls a slow expression repeatedly
+        // DynamicExpresso doesn't have loops, but we can chain many expensive operations
+        await Assert.ThrowsAsync<TimeoutException>(
+            () => shortTimeoutExecutor.Execute(
+                string.Join("; ", Enumerable.Range(0, 100_000).Select(i => $"_context.x = _context.x + 1")),
+                variables, "csharp"));
+    }
+
+    [TestMethod]
     public void SplitStatements_ShouldSplitOnSemicolonsOutsideQuotes()
     {
         // Act
@@ -125,5 +142,31 @@ public class DynamicExpressoScriptExpressionExecutorTests
         // Assert
         Assert.AreEqual(1, statements.Count);
         Assert.AreEqual("_context.a = 1", statements[0]);
+    }
+
+    [TestMethod]
+    public void SplitStatements_ShouldHandleEscapedQuotesInsideStrings()
+    {
+        // Act — backslash-escaped quotes should not toggle quote state
+        var statements = DynamicExpressoScriptExpressionExecutor.SplitStatements(
+            "_context.msg = \"Hello \\\"World\\\"\"; _context.x = 1").ToList();
+
+        // Assert
+        Assert.AreEqual(2, statements.Count);
+        Assert.AreEqual("_context.msg = \"Hello \\\"World\\\"\"", statements[0]);
+        Assert.AreEqual("_context.x = 1", statements[1]);
+    }
+
+    [TestMethod]
+    public void SplitStatements_ShouldHandleEscapedBackslashBeforeClosingQuote()
+    {
+        // Act — "\\" is an escaped backslash, the next " closes the string
+        var statements = DynamicExpressoScriptExpressionExecutor.SplitStatements(
+            "_context.path = \"C:\\\\\"; _context.x = 1").ToList();
+
+        // Assert
+        Assert.AreEqual(2, statements.Count);
+        Assert.AreEqual("_context.path = \"C:\\\\\"", statements[0]);
+        Assert.AreEqual("_context.x = 1", statements[1]);
     }
 }

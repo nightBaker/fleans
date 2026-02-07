@@ -36,16 +36,24 @@ public class WorfklowEvaluateConditionEventHandler : Grain, IWorfklowEvaluateCon
     {
         _logger.LogInformation("OnNextAsync({Item}{Token})", item, token != null ? token.ToString() : "null");
 
-        var expressionEvaluator = _grainFactory.GetGrain<IConditionExpressionEvaluatorGrain>(0);
         var workflowInstance = _grainFactory.GetGrain<IWorkflowInstance>(item.WorkflowInstanceId);
-        var activityInstance = _grainFactory.GetGrain<IActivityInstance>(item.ActivityInstanceId);
 
-        var variables = await workflowInstance.GetVariables(await activityInstance.GetVariablesStateId());
+        try
+        {
+            var expressionEvaluator = _grainFactory.GetGrain<IConditionExpressionEvaluatorGrain>(0);
+            var activityInstance = _grainFactory.GetGrain<IActivityInstance>(item.ActivityInstanceId);
 
-        var result = await expressionEvaluator.Evaluate(item.Condition, variables);
+            var variables = await workflowInstance.GetVariables(await activityInstance.GetVariablesStateId());
 
-        await workflowInstance.CompleteConditionSequence(item.ActivityId, item.SequenceFlowId, result);
-        
+            var result = await expressionEvaluator.Evaluate(item.Condition, variables);
+
+            await workflowInstance.CompleteConditionSequence(item.ActivityId, item.SequenceFlowId, result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Condition evaluation failed for activity {ActivityId}", item.ActivityId);
+            await workflowInstance.FailActivity(item.ActivityId, ex);
+        }
     }
 
     public Task OnCompletedAsync()
