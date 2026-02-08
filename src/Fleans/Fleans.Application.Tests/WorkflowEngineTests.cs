@@ -3,6 +3,7 @@ using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NSubstitute;
 using Orleans;
@@ -22,7 +23,7 @@ namespace Fleans.Application.Tests
         {
             _grainFactory = Substitute.For<IGrainFactory>();
             _factoryGrain = Substitute.For<IWorkflowInstanceFactoryGrain>();
-            _workflowEngine = new WorkflowEngine(_grainFactory);
+            _workflowEngine = new WorkflowEngine(_grainFactory, NullLogger<WorkflowEngine>.Instance);
         }
 
         [TestMethod]

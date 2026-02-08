@@ -13,6 +13,7 @@ namespace Fleans.Domain
     public interface IWorkflowDefinition
     {
         string WorkflowId { get; }
+        string? ProcessDefinitionId { get; }
         List<Activity> Activities { get; }
         List<SequenceFlow> SequenceFlows { get; }
     }
@@ -33,5 +34,8 @@ namespace Fleans.Domain
 
         [Id(2)]
         public required List<SequenceFlow> SequenceFlows { get; init; }
+
+        [Id(3)]
+        public string? ProcessDefinitionId { get; init; }
     }
 }

@@ -1,5 +1,6 @@
-﻿using Fleans.Application.Conditions;
+using Fleans.Application.Conditions;
 using Fleans.Application.Events;
+using Fleans.Application.Logging;
 using Fleans.Domain;
 using Fleans.Domain.Events;
 using Microsoft.Extensions.Logging;
@@ -9,7 +10,7 @@ using Orleans.Streams;
 namespace Fleans.Application.Events.Handlers;
 
 [ImplicitStreamSubscription(WorkflowEventsPublisher.StreamNameSpace)]
-public class WorfklowEvaluateConditionEventHandler : Grain, IWorfklowEvaluateConditionEventHandler, IAsyncObserver<EvaluateConditionEvent>
+public partial class WorfklowEvaluateConditionEventHandler : Grain, IWorfklowEvaluateConditionEventHandler, IAsyncObserver<EvaluateConditionEvent>
 {
 
     private readonly ILogger<WorfklowEvaluateConditionEventHandler> _logger;
@@ -34,7 +35,10 @@ public class WorfklowEvaluateConditionEventHandler : Grain, IWorfklowEvaluateCon
 
     public async Task OnNextAsync(EvaluateConditionEvent item, StreamSequenceToken? token = null)
     {
-        _logger.LogInformation("OnNextAsync({Item}{Token})", item, token != null ? token.ToString() : "null");
+        using var scope = WorkflowLoggingContext.BeginWorkflowScope(
+            _logger, item.WorkflowId, item.ProcessDefinitionId, item.WorkflowInstanceId, item.ActivityId);
+
+        LogHandlingConditionEvent(item.ActivityId, item.SequenceFlowId);
 
         var workflowInstance = _grainFactory.GetGrain<IWorkflowInstance>(item.WorkflowInstanceId);
 
@@ -48,23 +52,25 @@ public class WorfklowEvaluateConditionEventHandler : Grain, IWorfklowEvaluateCon
             var result = await expressionEvaluator.Evaluate(item.Condition, variables);
 
             await workflowInstance.CompleteConditionSequence(item.ActivityId, item.SequenceFlowId, result);
+
+            LogConditionResult(item.ActivityId, item.SequenceFlowId, result);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Condition evaluation failed for activity {ActivityId}", item.ActivityId);
+            LogConditionEvaluationFailed(ex, item.ActivityId);
             await workflowInstance.FailActivity(item.ActivityId, ex);
         }
     }
 
     public Task OnCompletedAsync()
     {
-        _logger.LogInformation("OnCompletedAsync()");
+        LogStreamCompleted();
         return Task.CompletedTask;
     }
 
     public Task OnErrorAsync(Exception ex)
     {
-        _logger.LogError(ex, "OnErrorAsync()");
+        LogStreamError(ex);
 
         return Task.CompletedTask;
     }
@@ -73,4 +79,19 @@ public class WorfklowEvaluateConditionEventHandler : Grain, IWorfklowEvaluateCon
     {
 
     }
+
+    [LoggerMessage(EventId = 4000, Level = LogLevel.Information, Message = "Handling condition event for activity {ActivityId}, sequence {SequenceFlowId}")]
+    private partial void LogHandlingConditionEvent(string activityId, string sequenceFlowId);
+
+    [LoggerMessage(EventId = 4001, Level = LogLevel.Debug, Message = "Condition evaluation result for activity {ActivityId} and sequence flow {SequenceFlowId}: {Result}")]
+    private partial void LogConditionResult(string activityId, string sequenceFlowId, bool result);
+
+    [LoggerMessage(EventId = 4002, Level = LogLevel.Error, Message = "Condition evaluation failed for activity {ActivityId}")]
+    private partial void LogConditionEvaluationFailed(Exception ex, string activityId);
+
+    [LoggerMessage(EventId = 4003, Level = LogLevel.Information, Message = "Condition event stream completed")]
+    private partial void LogStreamCompleted();
+
+    [LoggerMessage(EventId = 4004, Level = LogLevel.Error, Message = "Condition event stream error")]
+    private partial void LogStreamError(Exception ex);
 }

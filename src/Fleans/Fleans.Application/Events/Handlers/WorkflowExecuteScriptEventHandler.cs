@@ -1,3 +1,4 @@
+using Fleans.Application.Logging;
 using Fleans.Application.Scripts;
 using Fleans.Domain;
 using Fleans.Domain.Events;
@@ -7,7 +8,7 @@ using Orleans.Streams;
 namespace Fleans.Application.Events.Handlers;
 
 [ImplicitStreamSubscription(WorkflowEventsPublisher.StreamNameSpace)]
-public class WorkflowExecuteScriptEventHandler : Grain, IWorkflowExecuteScriptEventHandler, IAsyncObserver<ExecuteScriptEvent>
+public partial class WorkflowExecuteScriptEventHandler : Grain, IWorkflowExecuteScriptEventHandler, IAsyncObserver<ExecuteScriptEvent>
 {
     private readonly ILogger<WorkflowExecuteScriptEventHandler> _logger;
     private readonly IGrainFactory _grainFactory;
@@ -31,7 +32,10 @@ public class WorkflowExecuteScriptEventHandler : Grain, IWorkflowExecuteScriptEv
 
     public async Task OnNextAsync(ExecuteScriptEvent item, StreamSequenceToken? token = null)
     {
-        _logger.LogInformation("OnNextAsync({Item}{Token})", item, token != null ? token.ToString() : "null");
+        using var scope = WorkflowLoggingContext.BeginWorkflowScope(
+            _logger, item.WorkflowId, item.ProcessDefinitionId, item.WorkflowInstanceId, item.ActivityId);
+
+        LogHandlingScriptEvent(item.ActivityId);
 
         var workflowInstance = _grainFactory.GetGrain<IWorkflowInstance>(item.WorkflowInstanceId);
 
@@ -48,20 +52,32 @@ public class WorkflowExecuteScriptEventHandler : Grain, IWorkflowExecuteScriptEv
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Script execution failed for activity {ActivityId}", item.ActivityId);
+            LogScriptExecutionFailed(ex, item.ActivityId);
             await workflowInstance.FailActivity(item.ActivityId, ex);
         }
     }
 
     public Task OnCompletedAsync()
     {
-        _logger.LogInformation("OnCompletedAsync()");
+        LogStreamCompleted();
         return Task.CompletedTask;
     }
 
     public Task OnErrorAsync(Exception ex)
     {
-        _logger.LogError(ex, "OnErrorAsync()");
+        LogStreamError(ex);
         return Task.CompletedTask;
     }
+
+    [LoggerMessage(EventId = 4010, Level = LogLevel.Information, Message = "Handling script event for activity {ActivityId}")]
+    private partial void LogHandlingScriptEvent(string activityId);
+
+    [LoggerMessage(EventId = 4011, Level = LogLevel.Error, Message = "Script execution failed for activity {ActivityId}")]
+    private partial void LogScriptExecutionFailed(Exception ex, string activityId);
+
+    [LoggerMessage(EventId = 4012, Level = LogLevel.Information, Message = "Script event stream completed")]
+    private partial void LogStreamCompleted();
+
+    [LoggerMessage(EventId = 4013, Level = LogLevel.Error, Message = "Script event stream error")]
+    private partial void LogStreamError(Exception ex);
 }
