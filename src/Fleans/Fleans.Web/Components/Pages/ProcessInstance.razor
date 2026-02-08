@@ -12,32 +12,29 @@
 <PageTitle>Instance @InstanceId</PageTitle>
 
 <FluentStack Orientation="Orientation.Vertical" Gap="16px">
-    <FluentStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="12px">
-        <FluentButton Appearance="Appearance.Stealth" @onclick="GoBack">
-            <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowLeft())" />
-            Back
-        </FluentButton>
-        <FluentHeader HSize="HeadingSize.H2">Process Instance</FluentHeader>
-        @if (snapshot != null)
-        {
-            @if (snapshot.IsCompleted)
+    <PageHeader Title="Process Instance" OnGoBack="GoBack">
+        <Actions>
+            @if (snapshot != null)
             {
-                <FluentBadge Color="Color.Success">Completed</FluentBadge>
+                @if (snapshot.IsCompleted)
+                {
+                    <FluentBadge Color="Color.Success">Completed</FluentBadge>
+                }
+                else if (snapshot.IsStarted)
+                {
+                    <FluentBadge Color="Color.Accent">Running</FluentBadge>
+                }
             }
-            else if (snapshot.IsStarted)
-            {
-                <FluentBadge Color="Color.Accent">Running</FluentBadge>
-            }
-        }
-    </FluentStack>
+        </Actions>
+    </PageHeader>
 
-    <FluentBodyText><strong>Instance ID:</strong> @InstanceId</FluentBodyText>
+    <p><strong>Instance ID:</strong> @InstanceId</p>
 
     @if (isLoading)
     {
         <FluentStack Orientation="Orientation.Vertical" AlignItems="AlignItems.Center" Gap="10px">
             <FluentProgressRing />
-            <FluentBodyText>Loading instance...</FluentBodyText>
+            <p>Loading instance...</p>
         </FluentStack>
     }
     else if (errorMessage != null)
@@ -52,10 +49,10 @@
 
         <FluentStack Orientation="Orientation.Horizontal" Gap="24px" Style="align-items: flex-start;">
             <FluentStack Orientation="Orientation.Vertical" Gap="8px" Style="flex: 1;">
-                <FluentHeading HSize="HeadingSize.H4">Completed Activities</FluentHeading>
+                <FluentLabel Typo="Typography.Subject">Completed Activities</FluentLabel>
                 @if (snapshot!.CompletedActivityIds.Count == 0)
                 {
-                    <FluentBodyText>None</FluentBodyText>
+                    <span>None</span>
                 }
                 else
                 {
@@ -63,17 +60,17 @@
                     {
                         <FluentStack Orientation="Orientation.Horizontal" Gap="8px" AlignItems="AlignItems.Center">
                             <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size16.CheckmarkCircle())" Color="Color.Success" />
-                            <FluentBodyText>@id</FluentBodyText>
+                            <span>@id</span>
                         </FluentStack>
                     }
                 }
             </FluentStack>
 
             <FluentStack Orientation="Orientation.Vertical" Gap="8px" Style="flex: 1;">
-                <FluentHeading HSize="HeadingSize.H4">Active Activities</FluentHeading>
+                <FluentLabel Typo="Typography.Subject">Active Activities</FluentLabel>
                 @if (snapshot!.ActiveActivityIds.Count == 0)
                 {
-                    <FluentBodyText>None</FluentBodyText>
+                    <span>None</span>
                 }
                 else
                 {
@@ -81,15 +78,16 @@
                     {
                         <FluentStack Orientation="Orientation.Horizontal" Gap="8px" AlignItems="AlignItems.Center">
                             <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size16.Circle())" Color="Color.Accent" />
-                            <FluentBodyText>@id</FluentBodyText>
+                            <span>@id</span>
                         </FluentStack>
                     }
                 }
             </FluentStack>
         </FluentStack>
 
-        <FluentButton Appearance="Appearance.Neutral" @onclick="Refresh">
-            <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowSync())" />
+        <FluentButton Appearance="Appearance.Neutral"
+                      IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowSync())"
+                      @onclick="Refresh">
             Refresh
         </FluentButton>
     }

@@ -15,8 +15,9 @@
 
 <div class="editor-page">
     <div class="editor-toolbar">
-        <FluentButton Appearance="Appearance.Stealth" @onclick="GoBack">
-            <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowLeft())" />
+        <FluentButton Appearance="Appearance.Stealth"
+                      IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowLeft())"
+                      @onclick="GoBack">
             Back
         </FluentButton>
 
@@ -36,27 +37,23 @@
                          Accept=".bpmn,.xml"
                          OnCompleted="@OnImportFileSelected" />
 
-        <FluentButton Id="ImportBpmnButton" Appearance="Appearance.Neutral">
-            <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowUpload())" />
+        <FluentButton Id="ImportBpmnButton"
+                      Appearance="Appearance.Neutral"
+                      IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowUpload())">
             Import BPMN
         </FluentButton>
 
-        <FluentButton Appearance="Appearance.Neutral" @onclick="DownloadXml">
-            <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowDownload())" />
+        <FluentButton Appearance="Appearance.Neutral"
+                      IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowDownload())"
+                      @onclick="DownloadXml">
             Download XML
         </FluentButton>
 
-        <FluentButton Appearance="Appearance.Accent" @onclick="ShowDeployDialog" Disabled="@isDeploying">
-            @if (isDeploying)
-            {
-                <FluentProgressRing Size="Size.Small" />
-                <span style="margin-left: 4px;">Deploying...</span>
-            }
-            else
-            {
-                <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Rocket())" />
-                <span style="margin-left: 4px;">Deploy</span>
-            }
+        <FluentButton Appearance="Appearance.Accent"
+                      IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Rocket())"
+                      Loading="@isDeploying"
+                      @onclick="ShowDeployDialog">
+            Deploy
         </FluentButton>
     </div>
 

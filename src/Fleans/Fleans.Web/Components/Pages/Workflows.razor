@@ -9,26 +9,28 @@
 
 <PageTitle>Workflows</PageTitle>
 
-<FluentStack Orientation="Orientation.Vertical" Gap="20px">
-    <FluentStack Orientation="Orientation.Horizontal" Justify="JustifyContent.SpaceBetween" AlignItems="AlignItems.Center">
-        <FluentLabel Typo="Typography.PageTitle">Registered Workflows</FluentLabel>
-        <FluentStack Orientation="Orientation.Horizontal" Gap="8px" AlignItems="AlignItems.Center">
-            <FluentButton Appearance="Appearance.Accent" @onclick="NewWorkflow">
-                <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Add())" />
+<FluentStack Orientation="Orientation.Vertical" Gap="20px" >
+    <PageHeader Title="Registered Workflows">
+        <Actions>
+            <FluentButton Appearance="Appearance.Accent"
+                          IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Add())"
+                          @onclick="NewWorkflow">
                 New Workflow
             </FluentButton>
-            <FluentButton Appearance="Appearance.Neutral" @onclick="RefreshWorkflows" Disabled="@isLoading">
-                <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowSync())" />
+            <FluentButton Appearance="Appearance.Neutral"
+                          IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowSync())"
+                          @onclick="RefreshWorkflows"
+                          Disabled="@isLoading">
                 Refresh
             </FluentButton>
-        </FluentStack>
-    </FluentStack>
+        </Actions>
+    </PageHeader>
 
     @if (isLoading && allDefinitions.Count == 0)
     {
         <FluentStack Orientation="Orientation.Vertical" AlignItems="AlignItems.Center" Gap="10px">
             <FluentProgressRing />
-            <FluentBodyText>Loading workflows...</FluentBodyText>
+            <p>Loading workflows...</p>
         </FluentStack>
     }
     else
@@ -92,27 +94,20 @@
                     <TemplateColumn Title="Actions">
                         <FluentStack Orientation="Orientation.Horizontal" Gap="4px">
                             <FluentButton Appearance="Appearance.Stealth"
+                                          IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Edit())"
                                           @onclick="() => EditWorkflow(context)">
-                                <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Edit())" />
                                 Edit
                             </FluentButton>
                             <FluentButton Appearance="Appearance.Stealth"
-                                          @onclick="() => StartVersion(context)"
-                                          Disabled="@isStarting">
-                                @if (isStarting && startingProcessDefinitionId == context.ProcessDefinitionId)
-                                {
-                                    <FluentProgressRing Size="Size.Small" />
-                                    <span style="margin-left: 8px;">Starting...</span>
-                                }
-                                else
-                                {
-                                    <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Play())" />
-                                    <span style="margin-left: 8px;">Start</span>
-                                }
+                                          IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Play())"
+                                          Loading="@(isStarting && startingProcessDefinitionId == context.ProcessDefinitionId)"
+                                          Disabled="@isStarting"
+                                          @onclick="() => StartVersion(context)">
+                                Start
                             </FluentButton>
                             <FluentButton Appearance="Appearance.Stealth"
+                                          IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.List())"
                                           @onclick="() => ViewInstances(context)">
-                                <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.List())" />
                                 Instances
                             </FluentButton>
                         </FluentStack>

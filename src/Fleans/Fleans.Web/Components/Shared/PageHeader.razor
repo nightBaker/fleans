@@ -1,0 +1,50 @@
+@using Microsoft.FluentUI.AspNetCore.Components
+
+<FluentStack Orientation="Orientation.Horizontal" HorizontalAlignment="HorizontalAlignment.SpaceBetween" VerticalAlignment="VerticalAlignment.Center">
+
+    <FluentStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="8px">
+        @if (ShowBackButton)
+        {
+            <FluentButton Appearance="Appearance.Stealth"
+                          IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowLeft())"
+                          Title="Go back"
+                          @onclick="HandleGoBack" />
+        }
+        <FluentLabel Typo="Typography.EmailHeader">@Title</FluentLabel>
+    </FluentStack>
+
+    @if (Actions is not null)
+    {
+        <FluentStack Orientation="Orientation.Horizontal" HorizontalAlignment="HorizontalAlignment.End" Gap="8px" Style="padding-right: 10px">
+            @Actions
+        </FluentStack>
+    }
+
+</FluentStack>
+<FluentDivider Style="width: 100%;" Role="DividerRole.Presentation"></FluentDivider>
+
+@inject NavigationManager Navigation
+
+@code {
+    [Parameter, EditorRequired]
+    public string Title { get; set; } = string.Empty;
+
+    [Parameter]
+    public string? GoBackUrl { get; set; }
+
+    [Parameter]
+    public EventCallback OnGoBack { get; set; }
+
+    [Parameter]
+    public RenderFragment? Actions { get; set; }
+
+    private bool ShowBackButton => GoBackUrl is not null || OnGoBack.HasDelegate;
+
+    private async Task HandleGoBack()
+    {
+        if (OnGoBack.HasDelegate)
+            await OnGoBack.InvokeAsync();
+        else if (GoBackUrl is not null)
+            Navigation.NavigateTo(GoBackUrl);
+    }
+}
