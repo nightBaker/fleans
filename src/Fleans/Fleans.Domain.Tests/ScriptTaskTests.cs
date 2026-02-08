@@ -1,4 +1,5 @@
 using Fleans.Domain.Activities;
+using Fleans.Domain.Errors;
 using Fleans.Domain.Sequences;
 using Orleans.Serialization;
 using Orleans.TestingHost;
@@ -332,6 +333,184 @@ public class ScriptTaskTests
         // Assert — workflow should be completed
         state = await workflowInstance.GetState();
         Assert.IsTrue(await state.IsCompleted());
+    }
+
+    [TestMethod]
+    public async Task FailScriptTask_ShouldSetErrorState_WithCode500()
+    {
+        // Arrange
+        var script = new ScriptTask("script1", "_context.x = 10");
+        var start = new StartEvent("start");
+        var end = new EndEvent("end");
+
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "test-workflow",
+            Activities = new List<Activity> { start, script, end },
+            SequenceFlows = new List<SequenceFlow>
+            {
+                new SequenceFlow("seq1", start, script),
+                new SequenceFlow("seq2", script, end)
+            }
+        };
+
+        var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        await workflowInstance.SetWorkflow(workflow);
+        await workflowInstance.StartWorkflow();
+
+        // Act
+        await workflowInstance.FailActivity("script1", new Exception("Script execution failed"));
+
+        // Assert
+        var state = await workflowInstance.GetState();
+        var completedActivities = await state.GetCompletedActivities();
+
+        IActivityInstance? failedActivity = null;
+        foreach (var activity in completedActivities)
+        {
+            var current = await activity.GetCurrentActivity();
+            if (current.ActivityId == "script1")
+            {
+                failedActivity = activity;
+                break;
+            }
+        }
+
+        Assert.IsNotNull(failedActivity, "Failed ScriptTask should be in completed activities");
+        var errorState = await failedActivity.GetErrorState();
+        Assert.IsNotNull(errorState);
+        Assert.AreEqual(500, errorState.Code);
+        Assert.AreEqual("Script execution failed", errorState.Message);
+    }
+
+    [TestMethod]
+    public async Task FailScriptTask_WithActivityException_ShouldSetCustomErrorCode()
+    {
+        // Arrange
+        var script = new ScriptTask("script1", "_context.x = 10");
+        var start = new StartEvent("start");
+        var end = new EndEvent("end");
+
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "test-workflow",
+            Activities = new List<Activity> { start, script, end },
+            SequenceFlows = new List<SequenceFlow>
+            {
+                new SequenceFlow("seq1", start, script),
+                new SequenceFlow("seq2", script, end)
+            }
+        };
+
+        var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        await workflowInstance.SetWorkflow(workflow);
+        await workflowInstance.StartWorkflow();
+
+        // Act
+        await workflowInstance.FailActivity("script1", new BadRequestActivityException("Invalid script input"));
+
+        // Assert
+        var state = await workflowInstance.GetState();
+        var completedActivities = await state.GetCompletedActivities();
+
+        IActivityInstance? failedActivity = null;
+        foreach (var activity in completedActivities)
+        {
+            var current = await activity.GetCurrentActivity();
+            if (current.ActivityId == "script1")
+            {
+                failedActivity = activity;
+                break;
+            }
+        }
+
+        Assert.IsNotNull(failedActivity, "Failed ScriptTask should be in completed activities");
+        var errorState = await failedActivity.GetErrorState();
+        Assert.IsNotNull(errorState);
+        Assert.AreEqual(400, errorState.Code);
+        Assert.AreEqual("Invalid script input", errorState.Message);
+    }
+
+    [TestMethod]
+    public async Task FailScriptTask_ShouldMarkAsCompleted_AndTransitionToNextActivity()
+    {
+        // Arrange
+        var script = new ScriptTask("script1", "_context.x = 10");
+        var start = new StartEvent("start");
+        var end = new EndEvent("end");
+
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "test-workflow",
+            Activities = new List<Activity> { start, script, end },
+            SequenceFlows = new List<SequenceFlow>
+            {
+                new SequenceFlow("seq1", start, script),
+                new SequenceFlow("seq2", script, end)
+            }
+        };
+
+        var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        await workflowInstance.SetWorkflow(workflow);
+        await workflowInstance.StartWorkflow();
+
+        // Act
+        await workflowInstance.FailActivity("script1", new Exception("Script error"));
+
+        // Assert — workflow should complete (failed activity transitions to end event)
+        var state = await workflowInstance.GetState();
+        Assert.IsTrue(await state.IsCompleted());
+
+        var activeActivities = await state.GetActiveActivities();
+        Assert.HasCount(0, activeActivities);
+
+        var completedActivities = await state.GetCompletedActivities();
+        var completedIds = new List<string>();
+        foreach (var activity in completedActivities)
+        {
+            var current = await activity.GetCurrentActivity();
+            completedIds.Add(current.ActivityId);
+        }
+
+        CollectionAssert.Contains(completedIds, "script1");
+        CollectionAssert.Contains(completedIds, "end");
+    }
+
+    [TestMethod]
+    public async Task FailScriptTask_ShouldNotMergeVariables()
+    {
+        // Arrange
+        var script = new ScriptTask("script1", "_context.x = 10");
+        var start = new StartEvent("start");
+        var end = new EndEvent("end");
+
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "test-workflow",
+            Activities = new List<Activity> { start, script, end },
+            SequenceFlows = new List<SequenceFlow>
+            {
+                new SequenceFlow("seq1", start, script),
+                new SequenceFlow("seq2", script, end)
+            }
+        };
+
+        var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        await workflowInstance.SetWorkflow(workflow);
+        await workflowInstance.StartWorkflow();
+
+        // Act
+        await workflowInstance.FailActivity("script1", new Exception("Script error"));
+
+        // Assert — variables should not have been merged (FailActivity doesn't take variables)
+        var state = await workflowInstance.GetState();
+        var variableStates = await state.GetVariableStates();
+        foreach (var vs in variableStates.Values)
+        {
+            var vars = vs.Variables as IDictionary<string, object>;
+            Assert.IsNotNull(vars);
+            Assert.AreEqual(0, vars.Count, "No variables should be merged on failure");
+        }
     }
 
     private static TestCluster CreateCluster()

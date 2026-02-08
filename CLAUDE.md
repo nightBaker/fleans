@@ -27,7 +27,9 @@ dotnet run --project Fleans.Aspire
 
 1. Create the activity class in `Fleans.Domain/Activities/` — extend the existing `Activity` base class
 2. Register it in `Fleans.Infrastructure/Bpmn/BpmnConverter.cs` so BPMN XML maps to it
-3. Add tests in `Fleans.Domain.Tests/` using Orleans `TestCluster`. **Every activity must have tests that verify workflow state after completing the activity** — check completed activities list, variable merging, active activities cleared, and workflow completion flag. See `ScriptTaskTests.cs` for the pattern.
+3. Add tests in `Fleans.Domain.Tests/` using Orleans `TestCluster`. **Every activity must have tests that verify workflow state after both completion and failure** — see `ScriptTaskTests.cs` and `TaskActivityTests.cs` for the pattern:
+   - **Completion tests:** completed activities list, variable merging (count + values), activity instance marked completed, no active activities remain, sequential chaining
+   - **Fail tests:** error state set with correct code/message (500 for generic Exception, 400 for BadRequestActivityException), failed activity still transitions to next activity, no variables merged on failure
 4. Update the BPMN elements table in `README.md`
 
 ## How to Add a New API Endpoint
@@ -38,7 +40,7 @@ Add it to `Fleans.Api/Controllers/WorkflowController.cs`. DTOs go in `Fleans.Ser
 
 - Follow existing patterns — records for immutable DTOs, `[GenerateSerializer]` on anything crossing grain boundaries
 - ExpandoObject + Newtonsoft.Json for dynamic workflow variable state
-- Tests use MSTest + Orleans.TestingHost, AAA pattern. Activity tests must verify post-completion state (completed activities, merged variables, no stale active activities, workflow completion). Query state via `workflowInstance.GetState()` after completion — never hold grain references from before completion to assert on.
+- Tests use MSTest + Orleans.TestingHost, AAA pattern. Activity tests must verify both post-completion and post-failure state. Query state via `workflowInstance.GetState()` after completion/failure — never hold grain references from before completion to assert on.
 - **Admin UI (Fleans.Web) communicates with Orleans grains directly via `WorkflowEngine` service** — not through HTTP API endpoints. The Web app runs as Blazor Server (InteractiveServer), so Razor components execute server-side and can call grains directly. Do not add API endpoints for admin UI functionality.
 
 ## Things to Know
