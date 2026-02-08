@@ -4,26 +4,27 @@
 <PageTitle>Error</PageTitle>
 
 <FluentStack Orientation="Orientation.Vertical" Gap="20px">
-    <FluentHeading HSize="HeadingSize.H1" ForegroundColor="Color.Error">Error.</FluentHeading>
-    <FluentHeading HSize="HeadingSize.H2" ForegroundColor="Color.Error">An error occurred while processing your request.</FluentHeading>
+    <FluentLabel Typo="Typography.EmailHeader" Color="Color.Error">Error.</FluentLabel>
+    <FluentDivider Style="width: 100%;" Role="DividerRole.Presentation"></FluentDivider>
+    <FluentLabel Typo="Typography.Header" Color="Color.Error">An error occurred while processing your request.</FluentLabel>
 
     @if (ShowRequestId)
     {
-        <FluentBodyText>
+        <p>
             <strong>Request ID:</strong> <code>@RequestId</code>
-        </FluentBodyText>
+        </p>
     }
 
-    <FluentHeading HSize="HeadingSize.H3">Development Mode</FluentHeading>
-    <FluentBodyText>
+    <FluentLabel Typo="Typography.Subject">Development Mode</FluentLabel>
+    <p>
         Swapping to <strong>Development</strong> environment will display more detailed information about the error that occurred.
-    </FluentBodyText>
-    <FluentBodyText>
+    </p>
+    <p>
         <strong>The Development environment shouldn't be enabled for deployed applications.</strong>
         It can result in displaying sensitive information from exceptions to end users.
         For local debugging, enable the <strong>Development</strong> environment by setting the <strong>ASPNETCORE_ENVIRONMENT</strong> environment variable to <strong>Development</strong>
         and restarting the app.
-    </FluentBodyText>
+    </p>
 </FluentStack>
 
 @code{

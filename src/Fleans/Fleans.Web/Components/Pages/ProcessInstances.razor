@@ -10,19 +10,13 @@
 <PageTitle>Instances - @ProcessDefinitionKey</PageTitle>
 
 <FluentStack Orientation="Orientation.Vertical" Gap="16px">
-    <FluentStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="12px">
-        <FluentButton Appearance="Appearance.Stealth" @onclick="GoBack">
-            <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowLeft())" />
-            Back to Workflows
-        </FluentButton>
-        <FluentHeader HSize="HeadingSize.H2">Instances for @ProcessDefinitionKey</FluentHeader>
-    </FluentStack>
+    <PageHeader Title="@($"Instances for {ProcessDefinitionKey}")" GoBackUrl="/workflows" />
 
     @if (isLoading)
     {
         <FluentStack Orientation="Orientation.Vertical" AlignItems="AlignItems.Center" Gap="10px">
             <FluentProgressRing />
-            <FluentBodyText>Loading instances...</FluentBodyText>
+            <p>Loading instances...</p>
         </FluentStack>
     }
     else if (errorMessage != null)
@@ -58,8 +52,9 @@
                 }
             </TemplateColumn>
             <TemplateColumn Title="Actions">
-                <FluentButton Appearance="Appearance.Stealth" @onclick="() => ViewInstance(context.InstanceId)">
-                    <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Eye())" />
+                <FluentButton Appearance="Appearance.Stealth"
+                              IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Eye())"
+                              @onclick="() => ViewInstance(context.InstanceId)">
                     View
                 </FluentButton>
             </TemplateColumn>
@@ -104,10 +99,5 @@
     private void ViewInstance(Guid instanceId)
     {
         Navigation.NavigateTo($"/process-instance/{instanceId}");
-    }
-
-    private void GoBack()
-    {
-        Navigation.NavigateTo("/workflows");
     }
 }
