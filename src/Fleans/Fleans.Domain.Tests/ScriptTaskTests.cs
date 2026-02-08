@@ -90,21 +90,7 @@ public class ScriptTaskTests
     public async Task ExecuteAsync_ShouldMarkActivityAsExecuting()
     {
         // Arrange
-        var script = new ScriptTask("script1", "_context.x = 10");
-        var start = new StartEvent("start");
-        var end = new EndEvent("end");
-
-        var workflow = new WorkflowDefinition
-        {
-            WorkflowId = "test-workflow",
-            Activities = new List<Activity> { start, script, end },
-            SequenceFlows = new List<SequenceFlow>
-            {
-                new SequenceFlow("seq1", start, script),
-                new SequenceFlow("seq2", script, end)
-            }
-        };
-
+        var workflow = CreateSimpleWorkflow();
         var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
@@ -114,6 +100,8 @@ public class ScriptTaskTests
         var taskActivity = activeActivities.FirstOrDefault();
 
         Assert.IsNotNull(taskActivity, "Workflow should have an active ScriptTask activity instance");
+
+        var script = new ScriptTask("script1", "_context.x = 10");
 
         // Act
         await script.ExecuteAsync(workflowInstance, taskActivity);
@@ -126,21 +114,7 @@ public class ScriptTaskTests
     public async Task CompleteScriptTask_ShouldTransitionToEndEvent_AndCompleteWorkflow()
     {
         // Arrange
-        var script = new ScriptTask("script1", "_context.x = 10");
-        var start = new StartEvent("start");
-        var end = new EndEvent("end");
-
-        var workflow = new WorkflowDefinition
-        {
-            WorkflowId = "test-workflow",
-            Activities = new List<Activity> { start, script, end },
-            SequenceFlows = new List<SequenceFlow>
-            {
-                new SequenceFlow("seq1", start, script),
-                new SequenceFlow("seq2", script, end)
-            }
-        };
-
+        var workflow = CreateSimpleWorkflow();
         var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
@@ -172,21 +146,7 @@ public class ScriptTaskTests
     public async Task CompleteScriptTask_ShouldMergeVariablesIntoState()
     {
         // Arrange
-        var script = new ScriptTask("script1", "_context.result = 42");
-        var start = new StartEvent("start");
-        var end = new EndEvent("end");
-
-        var workflow = new WorkflowDefinition
-        {
-            WorkflowId = "test-workflow",
-            Activities = new List<Activity> { start, script, end },
-            SequenceFlows = new List<SequenceFlow>
-            {
-                new SequenceFlow("seq1", start, script),
-                new SequenceFlow("seq2", script, end)
-            }
-        };
-
+        var workflow = CreateSimpleWorkflow();
         var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
@@ -214,21 +174,7 @@ public class ScriptTaskTests
     public async Task CompleteScriptTask_ShouldMarkActivityInstanceAsCompleted()
     {
         // Arrange
-        var script = new ScriptTask("script1", "_context.x = 1");
-        var start = new StartEvent("start");
-        var end = new EndEvent("end");
-
-        var workflow = new WorkflowDefinition
-        {
-            WorkflowId = "test-workflow",
-            Activities = new List<Activity> { start, script, end },
-            SequenceFlows = new List<SequenceFlow>
-            {
-                new SequenceFlow("seq1", start, script),
-                new SequenceFlow("seq2", script, end)
-            }
-        };
-
+        var workflow = CreateSimpleWorkflow();
         var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
@@ -246,6 +192,7 @@ public class ScriptTaskTests
             if (current.ActivityId == "script1")
             {
                 Assert.IsTrue(await activity.IsCompleted());
+                Assert.IsNull(await activity.GetErrorState());
                 completedScriptTask = true;
             }
         }
@@ -257,21 +204,7 @@ public class ScriptTaskTests
     public async Task CompleteScriptTask_ShouldHaveNoActiveActivities_AfterWorkflowCompletes()
     {
         // Arrange
-        var script = new ScriptTask("script1", "_context.x = 1");
-        var start = new StartEvent("start");
-        var end = new EndEvent("end");
-
-        var workflow = new WorkflowDefinition
-        {
-            WorkflowId = "test-workflow",
-            Activities = new List<Activity> { start, script, end },
-            SequenceFlows = new List<SequenceFlow>
-            {
-                new SequenceFlow("seq1", start, script),
-                new SequenceFlow("seq2", script, end)
-            }
-        };
-
+        var workflow = CreateSimpleWorkflow();
         var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
@@ -339,21 +272,7 @@ public class ScriptTaskTests
     public async Task FailScriptTask_ShouldSetErrorState_WithCode500()
     {
         // Arrange
-        var script = new ScriptTask("script1", "_context.x = 10");
-        var start = new StartEvent("start");
-        var end = new EndEvent("end");
-
-        var workflow = new WorkflowDefinition
-        {
-            WorkflowId = "test-workflow",
-            Activities = new List<Activity> { start, script, end },
-            SequenceFlows = new List<SequenceFlow>
-            {
-                new SequenceFlow("seq1", start, script),
-                new SequenceFlow("seq2", script, end)
-            }
-        };
-
+        var workflow = CreateSimpleWorkflow();
         var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
@@ -387,21 +306,7 @@ public class ScriptTaskTests
     public async Task FailScriptTask_WithActivityException_ShouldSetCustomErrorCode()
     {
         // Arrange
-        var script = new ScriptTask("script1", "_context.x = 10");
-        var start = new StartEvent("start");
-        var end = new EndEvent("end");
-
-        var workflow = new WorkflowDefinition
-        {
-            WorkflowId = "test-workflow",
-            Activities = new List<Activity> { start, script, end },
-            SequenceFlows = new List<SequenceFlow>
-            {
-                new SequenceFlow("seq1", start, script),
-                new SequenceFlow("seq2", script, end)
-            }
-        };
-
+        var workflow = CreateSimpleWorkflow();
         var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
@@ -435,21 +340,7 @@ public class ScriptTaskTests
     public async Task FailScriptTask_ShouldMarkAsCompleted_AndTransitionToNextActivity()
     {
         // Arrange
-        var script = new ScriptTask("script1", "_context.x = 10");
-        var start = new StartEvent("start");
-        var end = new EndEvent("end");
-
-        var workflow = new WorkflowDefinition
-        {
-            WorkflowId = "test-workflow",
-            Activities = new List<Activity> { start, script, end },
-            SequenceFlows = new List<SequenceFlow>
-            {
-                new SequenceFlow("seq1", start, script),
-                new SequenceFlow("seq2", script, end)
-            }
-        };
-
+        var workflow = CreateSimpleWorkflow();
         var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
@@ -480,21 +371,7 @@ public class ScriptTaskTests
     public async Task FailScriptTask_ShouldNotMergeVariables()
     {
         // Arrange
-        var script = new ScriptTask("script1", "_context.x = 10");
-        var start = new StartEvent("start");
-        var end = new EndEvent("end");
-
-        var workflow = new WorkflowDefinition
-        {
-            WorkflowId = "test-workflow",
-            Activities = new List<Activity> { start, script, end },
-            SequenceFlows = new List<SequenceFlow>
-            {
-                new SequenceFlow("seq1", start, script),
-                new SequenceFlow("seq2", script, end)
-            }
-        };
-
+        var workflow = CreateSimpleWorkflow();
         var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
@@ -511,6 +388,24 @@ public class ScriptTaskTests
             Assert.IsNotNull(vars);
             Assert.AreEqual(0, vars.Count, "No variables should be merged on failure");
         }
+    }
+
+    private static IWorkflowDefinition CreateSimpleWorkflow()
+    {
+        var start = new StartEvent("start");
+        var script = new ScriptTask("script1", "_context.x = 10");
+        var end = new EndEvent("end");
+
+        return new WorkflowDefinition
+        {
+            WorkflowId = "test-workflow",
+            Activities = new List<Activity> { start, script, end },
+            SequenceFlows = new List<SequenceFlow>
+            {
+                new SequenceFlow("seq1", start, script),
+                new SequenceFlow("seq2", script, end)
+            }
+        };
     }
 
     private static TestCluster CreateCluster()
