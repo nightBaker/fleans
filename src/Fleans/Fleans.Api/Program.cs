@@ -1,4 +1,5 @@
 using Fleans.Application;
+using Fleans.Application.Logging;
 using Fleans.Infrastructure;
 using Fleans.Domain;
 using StackExchange.Redis;
@@ -56,6 +57,9 @@ builder.UseOrleans(siloBuilder =>
 
     // Configure Redis streaming (optional, for pub/sub)
     siloBuilder.AddMemoryStreams("StreamProvider");
+
+    // Structured workflow logging via RequestContext
+    siloBuilder.AddIncomingGrainCallFilter<WorkflowLoggingScopeFilter>();
 });
 
 // Add services to the container.

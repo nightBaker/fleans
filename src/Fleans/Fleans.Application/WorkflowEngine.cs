@@ -10,23 +10,28 @@ using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Events;
 using Fleans.Domain.Sequences;
+using Microsoft.Extensions.Logging;
 
 namespace Fleans.Application
 {
-    public class WorkflowEngine
+    public partial class WorkflowEngine
     {
         private const int WorkflowInstanceFactorySingletonId = 0;
         private const int SingletonEventPublisherGrainId = 0;
 
         private readonly IGrainFactory _grainFactory;
+        private readonly ILogger<WorkflowEngine> _logger;
 
-        public WorkflowEngine(IGrainFactory grainFactory)
+        public WorkflowEngine(IGrainFactory grainFactory, ILogger<WorkflowEngine> logger)
         {
             _grainFactory = grainFactory;
+            _logger = logger;
         }
 
         public async Task<Guid> StartWorkflow(string workflowId)
         {
+            LogStartingWorkflow(workflowId);
+
             var workflowInstance = await _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstanceFactorySingletonId)
                                                     .CreateWorkflowInstanceGrain(workflowId);
 
@@ -37,6 +42,8 @@ namespace Fleans.Application
 
         public async Task<Guid> StartWorkflowByProcessDefinitionId(string processDefinitionId)
         {
+            LogStartingWorkflowByDefinition(processDefinitionId);
+
             var workflowInstance = await _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstanceFactorySingletonId)
                 .CreateWorkflowInstanceGrainByProcessDefinitionId(processDefinitionId);
 
@@ -44,9 +51,11 @@ namespace Fleans.Application
 
             return await workflowInstance.GetWorkflowInstanceId();
         }
-            
+
         public void CompleteActivity(Guid workflowInstanceId, string activityId, ExpandoObject variables)
-        {            
+        {
+            LogCompletingActivity(workflowInstanceId, activityId);
+
             _grainFactory.GetGrain<IWorkflowInstance>(workflowInstanceId)
                          .CompleteActivity(activityId, variables);
 
@@ -60,6 +69,8 @@ namespace Fleans.Application
 
         public async Task<ProcessDefinitionSummary> DeployWorkflow(WorkflowDefinition workflow, string bpmnXml)
         {
+            LogDeployingWorkflow(workflow.WorkflowId);
+
             var factoryGrain = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstanceFactorySingletonId);
             return await factoryGrain.DeployWorkflow(workflow, bpmnXml);
         }
@@ -68,7 +79,7 @@ namespace Fleans.Application
         {
             var factoryGrain = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstanceFactorySingletonId);
             var workflows = await factoryGrain.GetAllWorkflows();
-            
+
             return workflows.Select(wf => new WorkflowSummary(wf.WorkflowId, wf.Activities.Count, wf.SequenceFlows.Count))
                 .ToList().AsReadOnly();
         }
@@ -111,7 +122,7 @@ namespace Fleans.Application
             var end2 = new EndEvent("end2");
             var ifActivity = new ExclusiveGateway("if");
             var taskActivity = new TaskActivity("task");
-            
+
 
             var workflow = new WorkflowDefinition { WorkflowId = "workflow1", Activities = new List<Domain.Activities.Activity>(), SequenceFlows = new List<SequenceFlow>() };
             workflow.Activities.Add(start);
@@ -126,5 +137,17 @@ namespace Fleans.Application
             workflow.SequenceFlows.Add(new ConditionalSequenceFlow("seq3", ifActivity, end2, "_context.x < _context.y"));
             return workflow;
         }
+
+        [LoggerMessage(EventId = 7000, Level = LogLevel.Information, Message = "Starting workflow {WorkflowId}")]
+        private partial void LogStartingWorkflow(string workflowId);
+
+        [LoggerMessage(EventId = 7001, Level = LogLevel.Information, Message = "Starting workflow by process definition {ProcessDefinitionId}")]
+        private partial void LogStartingWorkflowByDefinition(string processDefinitionId);
+
+        [LoggerMessage(EventId = 7002, Level = LogLevel.Information, Message = "Completing activity {ActivityId} for workflow instance {WorkflowInstanceId}")]
+        private partial void LogCompletingActivity(Guid workflowInstanceId, string activityId);
+
+        [LoggerMessage(EventId = 7003, Level = LogLevel.Information, Message = "Deploying workflow {WorkflowId}")]
+        private partial void LogDeployingWorkflow(string workflowId);
     }
 }

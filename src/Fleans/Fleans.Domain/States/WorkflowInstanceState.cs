@@ -1,25 +1,28 @@
 using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
+using Microsoft.Extensions.Logging;
 using Orleans;
 using System.Collections.Generic;
 using System.Dynamic;
 
 namespace Fleans.Domain.States;
 
-public class WorkflowInstanceState : Grain, IWorkflowInstanceState
-{    
-    private readonly List<IActivityInstance> _activeActivities = new();    
-    private readonly List<IActivityInstance> _completedActivities = new();    
+public partial class WorkflowInstanceState : Grain, IWorkflowInstanceState
+{
+    private readonly List<IActivityInstance> _activeActivities = new();
+    private readonly List<IActivityInstance> _completedActivities = new();
     private readonly Dictionary<Guid, WorklfowVariablesState> _variableStates = new();
     private readonly Dictionary<Guid, ConditionSequenceState[]> _conditionSequenceStates = new();
     private bool _isStarted;
     private bool _isCompleted;
 
     private readonly IGrainFactory _grainFactory;
+    private readonly ILogger<WorkflowInstanceState> _logger;
 
-    public WorkflowInstanceState(IGrainFactory grainFactory)
+    public WorkflowInstanceState(IGrainFactory grainFactory, ILogger<WorkflowInstanceState> logger)
     {
         _grainFactory = grainFactory;
+        _logger = logger;
     }
 
     public ValueTask<bool> IsStarted() => ValueTask.FromResult(_isStarted);
@@ -39,6 +42,8 @@ public class WorkflowInstanceState : Grain, IWorkflowInstanceState
 
     public async ValueTask StartWith(Activity startActivity)
     {
+        LogStartWith(startActivity.ActivityId);
+
         var variablesId = Guid.NewGuid();
         _variableStates.Add(variablesId, new WorklfowVariablesState());
 
@@ -55,6 +60,7 @@ public class WorkflowInstanceState : Grain, IWorkflowInstanceState
             throw new InvalidOperationException("Workflow is already started");
 
         _isStarted = true;
+        LogStarted();
         return ValueTask.CompletedTask;
     }
 
@@ -64,6 +70,7 @@ public class WorkflowInstanceState : Grain, IWorkflowInstanceState
             throw new InvalidOperationException("Workflow is already completed");
 
         _isCompleted = true;
+        LogCompleted();
         return ValueTask.CompletedTask;
     }
 
@@ -87,13 +94,16 @@ public class WorkflowInstanceState : Grain, IWorkflowInstanceState
 
     public ValueTask RemoveActiveActivities(List<IActivityInstance> removeInstances)
     {
+        LogRemoveActiveActivities(removeInstances.Count);
         _activeActivities.RemoveAll(removeInstances.Contains);
         return ValueTask.CompletedTask;
     }
 
     public ValueTask AddActiveActivities(IEnumerable<IActivityInstance> activities)
     {
-        _activeActivities.AddRange(activities);
+        var list = activities.ToList();
+        LogAddActiveActivities(list.Count);
+        _activeActivities.AddRange(list);
         return ValueTask.CompletedTask;
     }
 
@@ -125,7 +135,7 @@ public class WorkflowInstanceState : Grain, IWorkflowInstanceState
                 return true;
         }
 
-        return false;        
+        return false;
     }
 
     public async ValueTask<IActivityInstance[]> GetNotExecutingNotCompletedActivities()
@@ -161,6 +171,7 @@ public class WorkflowInstanceState : Grain, IWorkflowInstanceState
 
     public ValueTask MergeState(Guid variablesId, ExpandoObject variables)
     {
+        LogMergeState(variablesId);
         _variableStates[variablesId].Merge(variables);
         return ValueTask.CompletedTask;
     }
@@ -183,4 +194,22 @@ public class WorkflowInstanceState : Grain, IWorkflowInstanceState
 
         return new InstanceStateSnapshot(activeIds, completedIds, _isStarted, _isCompleted);
     }
+
+    [LoggerMessage(EventId = 3000, Level = LogLevel.Information, Message = "Workflow initialized with start activity {ActivityId}")]
+    private partial void LogStartWith(string activityId);
+
+    [LoggerMessage(EventId = 3001, Level = LogLevel.Information, Message = "Workflow started")]
+    private partial void LogStarted();
+
+    [LoggerMessage(EventId = 3002, Level = LogLevel.Information, Message = "Workflow completed")]
+    private partial void LogCompleted();
+
+    [LoggerMessage(EventId = 3003, Level = LogLevel.Debug, Message = "Variables merged for state {VariablesId}")]
+    private partial void LogMergeState(Guid variablesId);
+
+    [LoggerMessage(EventId = 3004, Level = LogLevel.Debug, Message = "Adding {Count} active activities")]
+    private partial void LogAddActiveActivities(int count);
+
+    [LoggerMessage(EventId = 3005, Level = LogLevel.Debug, Message = "Removing {Count} completed activities")]
+    private partial void LogRemoveActiveActivities(int count);
 }

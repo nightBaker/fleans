@@ -45,6 +45,7 @@ public record ExclusiveGateway : Gateway
             
             await activityInstance.PublishEvent(new EvaluateConditionEvent(workflowInstance.GetGrainId().GetGuidKey(),
                                                                definition.WorkflowId,
+                                                                definition.ProcessDefinitionId,
                                                                 await activityInstance.GetActivityInstanceId(),
                                                                 ActivityId,
                                                                 sequence.SequenceFlowId,

@@ -1,13 +1,16 @@
 using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
+using Microsoft.Extensions.Logging;
 using Orleans.Concurrency;
+using Orleans.Runtime;
 
 namespace Fleans.Application.WorkflowFactory;
 
 [Reentrant]
-public class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFactoryGrain
+public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFactoryGrain
 {
     private readonly IGrainFactory _grainFactory;
+    private readonly ILogger<WorkflowInstanceFactoryGrain> _logger;
     // Camunda-like process definitions:
     // - BPMN <process id> is the key
     // - each deploy creates a new immutable version per key
@@ -17,9 +20,10 @@ public class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFactoryGrain
     private readonly Dictionary<string, List<Guid>> _instancesByKey = new(StringComparer.Ordinal);
     private readonly Dictionary<Guid, string> _instanceToDefinitionId = new();
 
-    public WorkflowInstanceFactoryGrain(IGrainFactory grainFactory)
+    public WorkflowInstanceFactoryGrain(IGrainFactory grainFactory, ILogger<WorkflowInstanceFactoryGrain> logger)
     {
         _grainFactory = grainFactory;
+        _logger = logger;
     }
     
     public async Task<IWorkflowInstance> CreateWorkflowInstanceGrain(string workflowId)
@@ -28,8 +32,14 @@ public class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFactoryGrain
         var definition = GetLatestDefinitionOrThrow(workflowId);
 
         var guid = Guid.NewGuid();
+        LogCreatingInstance(workflowId, definition.ProcessDefinitionId, guid);
+
+        RequestContext.Set("WorkflowId", workflowId);
+        RequestContext.Set("ProcessDefinitionId", definition.ProcessDefinitionId);
+        RequestContext.Set("WorkflowInstanceId", guid.ToString());
+
         var workflowInstanceGrain = _grainFactory.GetGrain<IWorkflowInstance>(guid);
-        
+
         await workflowInstanceGrain.SetWorkflow(definition.Workflow);
         TrackInstance(definition.ProcessDefinitionKey, guid, definition.ProcessDefinitionId);
 
@@ -49,8 +59,14 @@ public class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFactoryGrain
         }
 
         var guid = Guid.NewGuid();
+        LogCreatingInstance(definition.ProcessDefinitionKey, processDefinitionId, guid);
+
+        RequestContext.Set("WorkflowId", definition.ProcessDefinitionKey);
+        RequestContext.Set("ProcessDefinitionId", processDefinitionId);
+        RequestContext.Set("WorkflowInstanceId", guid.ToString());
+
         var workflowInstanceGrain = _grainFactory.GetGrain<IWorkflowInstance>(guid);
-        
+
         await workflowInstanceGrain.SetWorkflow(definition.Workflow);
         TrackInstance(definition.ProcessDefinitionKey, guid, definition.ProcessDefinitionId);
 
@@ -81,24 +97,29 @@ public class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFactoryGrain
         var nextVersion = versions.Count == 0 ? 1 : versions[^1].Version + 1;
         var processDefinitionId = GenerateProcessDefinitionId(processDefinitionKey, nextVersion, deployedAt);
 
+        var workflowWithId = workflow with { ProcessDefinitionId = processDefinitionId };
+
         var definition = new ProcessDefinition
         {
             ProcessDefinitionId = processDefinitionId,
             ProcessDefinitionKey = processDefinitionKey,
             Version = nextVersion,
             DeployedAt = deployedAt,
-            Workflow = workflow,
+            Workflow = workflowWithId,
             BpmnXml = bpmnXml
         };
 
         _byId[processDefinitionId] = definition;
         versions.Add(definition);
 
+        LogDeployedWorkflow(processDefinitionKey, processDefinitionId, nextVersion);
+
         return Task.FromResult(ToSummary(definition));
     }
 
     public async Task RegisterWorkflow(IWorkflowDefinition workflow)
     {
+        LogRegisteringWorkflow(workflow?.WorkflowId ?? "null");
         // Back-compat: old API rejected duplicates; keep that behavior by only allowing the first version.
         if (workflow == null)
         {
@@ -244,4 +265,13 @@ public class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFactoryGrain
 
         return candidate;
     }
+
+    [LoggerMessage(EventId = 6000, Level = LogLevel.Information, Message = "Deployed workflow {WorkflowKey} as {ProcessDefinitionId} version {Version}")]
+    private partial void LogDeployedWorkflow(string workflowKey, string processDefinitionId, int version);
+
+    [LoggerMessage(EventId = 6001, Level = LogLevel.Information, Message = "Creating workflow instance for {WorkflowKey} definition {ProcessDefinitionId}, instance {InstanceId}")]
+    private partial void LogCreatingInstance(string workflowKey, string processDefinitionId, Guid instanceId);
+
+    [LoggerMessage(EventId = 6002, Level = LogLevel.Information, Message = "Registering workflow {WorkflowId}")]
+    private partial void LogRegisteringWorkflow(string workflowId);
 }

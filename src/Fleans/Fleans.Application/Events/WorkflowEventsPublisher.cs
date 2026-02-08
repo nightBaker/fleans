@@ -1,4 +1,4 @@
-﻿using Fleans.Application.Events.Handlers;
+using Fleans.Application.Events.Handlers;
 using Fleans.Domain.Events;
 using Microsoft.Extensions.Logging;
 using Orleans.Concurrency;
@@ -10,12 +10,18 @@ using System.IO;
 namespace Fleans.Application.Events;
 
 [StatelessWorker]
-public class WorkflowEventsPublisher : Grain, IEventPublisher
+public partial class WorkflowEventsPublisher : Grain, IEventPublisher
 {
     private IStreamProvider _streamProvider = null!;
+    private readonly ILogger<WorkflowEventsPublisher> _logger;
 
     public const string StreamProvider = "StreamProvider";
     public const string StreamNameSpace = "events";
+
+    public WorkflowEventsPublisher(ILogger<WorkflowEventsPublisher> logger)
+    {
+        _logger = logger;
+    }
 
     public override Task OnActivateAsync(CancellationToken cancellationToken)
     {
@@ -25,7 +31,9 @@ public class WorkflowEventsPublisher : Grain, IEventPublisher
     }
 
     public async Task Publish(IDomainEvent domainEvent)
-    {                                        
+    {
+        LogPublishing(domainEvent.GetType().Name);
+
         switch (domainEvent)
         {
             case EvaluateConditionEvent evaluateConditionEvent:
@@ -47,7 +55,8 @@ public class WorkflowEventsPublisher : Grain, IEventPublisher
                 break;
         }
 
-    }    
+    }
+
+    [LoggerMessage(EventId = 5000, Level = LogLevel.Debug, Message = "Publishing {EventType}")]
+    private partial void LogPublishing(string eventType);
 }
-
-

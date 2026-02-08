@@ -26,6 +26,7 @@ public record ScriptTask : TaskActivity
         await activityInstance.PublishEvent(new ExecuteScriptEvent(
             workflowInstance.GetGrainId().GetGuidKey(),
             definition.WorkflowId,
+            definition.ProcessDefinitionId,
             await activityInstance.GetActivityInstanceId(),
             ActivityId,
             Script,
