@@ -151,3 +151,40 @@ h1:focus {
     z-index: 1001;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
 }
+
+/* Drag Resize Handles */
+.drag-handle-vertical {
+    height: 6px;
+    cursor: row-resize;
+    background: var(--neutral-stroke-rest);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.drag-handle-vertical::after {
+    content: '';
+    width: 40px;
+    height: 2px;
+    background: var(--neutral-foreground-hint);
+    border-radius: 1px;
+}
+
+.drag-handle-horizontal {
+    width: 6px;
+    cursor: col-resize;
+    background: var(--neutral-stroke-rest);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.drag-handle-horizontal::after {
+    content: '';
+    height: 40px;
+    width: 2px;
+    background: var(--neutral-foreground-hint);
+    border-radius: 1px;
+}
