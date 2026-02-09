@@ -19,8 +19,12 @@ public class ConditionSequenceState
     [Id(2)]
     public bool Result { get; private set; }
 
+    [Id(3)]
+    public bool IsEvaluated { get; private set; }
+
     internal void SetResult(bool result)
     {
         Result = result;
+        IsEvaluated = true;
     }
 }
