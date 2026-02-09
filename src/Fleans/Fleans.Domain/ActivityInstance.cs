@@ -15,6 +15,7 @@ namespace Fleans.Domain
 
         private bool _isCompleted;
         private bool _isExecuting;
+        private DateTimeOffset? _completedAt;
         private ActivityErrorState? _errorState;
         private Guid _variablesId;
 
@@ -29,6 +30,7 @@ namespace Fleans.Domain
         {
             _isExecuting = false;
             _isCompleted = true;
+            _completedAt = DateTimeOffset.UtcNow;
             LogCompleted();
             return ValueTask.CompletedTask;
         }
@@ -64,6 +66,19 @@ namespace Fleans.Domain
         public ValueTask<Activity> GetCurrentActivity() => ValueTask.FromResult(_currentActivity);
 
         public ValueTask<ActivityErrorState?> GetErrorState() => ValueTask.FromResult(_errorState);
+
+        public ValueTask<DateTimeOffset?> GetCompletedAt() => ValueTask.FromResult(_completedAt);
+
+        public ValueTask<ActivityInstanceSnapshot> GetSnapshot() => ValueTask.FromResult(
+            new ActivityInstanceSnapshot(
+                this.GetPrimaryKey(),
+                _currentActivity.ActivityId,
+                _currentActivity.GetType().Name,
+                _isCompleted,
+                _isExecuting,
+                _variablesId,
+                _errorState,
+                _completedAt));
 
         ValueTask<bool> IActivityInstance.IsCompleted()
             => ValueTask.FromResult(_isCompleted);

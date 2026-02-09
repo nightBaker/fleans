@@ -50,7 +50,35 @@ public sealed record InstanceStateSnapshot(
     [property: Id(0)] List<string> ActiveActivityIds,
     [property: Id(1)] List<string> CompletedActivityIds,
     [property: Id(2)] bool IsStarted,
-    [property: Id(3)] bool IsCompleted);
+    [property: Id(3)] bool IsCompleted,
+    [property: Id(4)] List<ActivityInstanceSnapshot> ActiveActivities,
+    [property: Id(5)] List<ActivityInstanceSnapshot> CompletedActivities,
+    [property: Id(6)] List<VariableStateSnapshot> VariableStates,
+    [property: Id(7)] List<ConditionSequenceSnapshot> ConditionSequences);
+
+[GenerateSerializer]
+public sealed record ActivityInstanceSnapshot(
+    [property: Id(0)] Guid ActivityInstanceId,
+    [property: Id(1)] string ActivityId,
+    [property: Id(2)] string ActivityType,
+    [property: Id(3)] bool IsCompleted,
+    [property: Id(4)] bool IsExecuting,
+    [property: Id(5)] Guid VariablesStateId,
+    [property: Id(6)] ActivityErrorState? ErrorState,
+    [property: Id(7)] DateTimeOffset? CompletedAt);
+
+[GenerateSerializer]
+public sealed record VariableStateSnapshot(
+    [property: Id(0)] Guid VariablesId,
+    [property: Id(1)] Dictionary<string, string> Variables);
+
+[GenerateSerializer]
+public sealed record ConditionSequenceSnapshot(
+    [property: Id(0)] string SequenceFlowId,
+    [property: Id(1)] string Condition,
+    [property: Id(2)] string SourceActivityId,
+    [property: Id(3)] string TargetActivityId,
+    [property: Id(4)] bool Result);
 
 [GenerateSerializer]
 public sealed record WorkflowInstanceInfo(

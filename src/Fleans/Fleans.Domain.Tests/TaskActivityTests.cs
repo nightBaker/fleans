@@ -388,6 +388,162 @@ namespace Fleans.Domain.Tests
             }
         }
 
+        [TestMethod]
+        public async Task GetCompletedAt_ShouldReturnNull_BeforeCompletion()
+        {
+            // Arrange
+            var activity = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
+            await activity.SetActivity(new TaskActivity("task"));
+
+            // Act
+            var completedAt = await activity.GetCompletedAt();
+
+            // Assert
+            Assert.IsNull(completedAt);
+        }
+
+        [TestMethod]
+        public async Task GetCompletedAt_ShouldReturnTimestamp_AfterCompletion()
+        {
+            // Arrange
+            var workflow = CreateSimpleWorkflow();
+            var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            await workflowInstance.SetWorkflow(workflow);
+            await workflowInstance.StartWorkflow();
+
+            var before = DateTimeOffset.UtcNow;
+            await workflowInstance.CompleteActivity("task", new ExpandoObject());
+            var after = DateTimeOffset.UtcNow;
+
+            // Act
+            var state = await workflowInstance.GetState();
+            var completedActivities = await state.GetCompletedActivities();
+            IActivityInstance? taskActivity = null;
+            foreach (var a in completedActivities)
+            {
+                var current = await a.GetCurrentActivity();
+                if (current.ActivityId == "task")
+                {
+                    taskActivity = a;
+                    break;
+                }
+            }
+            Assert.IsNotNull(taskActivity);
+
+            var completedAt = await taskActivity.GetCompletedAt();
+
+            // Assert
+            Assert.IsNotNull(completedAt);
+            Assert.IsTrue(completedAt >= before, "CompletedAt should be >= test start time");
+            Assert.IsTrue(completedAt <= after, "CompletedAt should be <= test end time");
+        }
+
+        [TestMethod]
+        public async Task GetCompletedAt_ShouldReturnTimestamp_AfterFailure()
+        {
+            // Arrange
+            var workflow = CreateSimpleWorkflow();
+            var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            await workflowInstance.SetWorkflow(workflow);
+            await workflowInstance.StartWorkflow();
+
+            await workflowInstance.FailActivity("task", new Exception("fail"));
+
+            // Act
+            var state = await workflowInstance.GetState();
+            var completedActivities = await state.GetCompletedActivities();
+            IActivityInstance? failedTask = null;
+            foreach (var a in completedActivities)
+            {
+                var current = await a.GetCurrentActivity();
+                if (current.ActivityId == "task")
+                {
+                    failedTask = a;
+                    break;
+                }
+            }
+
+            Assert.IsNotNull(failedTask);
+            var completedAt = await failedTask.GetCompletedAt();
+
+            // Assert
+            Assert.IsNotNull(completedAt, "CompletedAt should be set after failure (Fail calls Complete)");
+        }
+
+        [TestMethod]
+        public async Task GetSnapshot_ShouldReturnAllFieldsInOneCall()
+        {
+            // Arrange
+            var workflow = CreateSimpleWorkflow();
+            var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            await workflowInstance.SetWorkflow(workflow);
+            await workflowInstance.StartWorkflow();
+
+            await workflowInstance.CompleteActivity("task", new ExpandoObject());
+
+            var state = await workflowInstance.GetState();
+            var completedActivities = await state.GetCompletedActivities();
+            IActivityInstance? taskActivity = null;
+            foreach (var a in completedActivities)
+            {
+                var current = await a.GetCurrentActivity();
+                if (current.ActivityId == "task")
+                {
+                    taskActivity = a;
+                    break;
+                }
+            }
+            Assert.IsNotNull(taskActivity);
+
+            // Act
+            var snapshot = await taskActivity.GetSnapshot();
+
+            // Assert
+            Assert.AreEqual("task", snapshot.ActivityId);
+            Assert.AreEqual("TaskActivity", snapshot.ActivityType);
+            Assert.IsTrue(snapshot.IsCompleted);
+            Assert.IsFalse(snapshot.IsExecuting);
+            Assert.IsNull(snapshot.ErrorState);
+            Assert.IsNotNull(snapshot.CompletedAt);
+        }
+
+        [TestMethod]
+        public async Task GetSnapshot_ShouldIncludeErrorState_AfterFailure()
+        {
+            // Arrange
+            var workflow = CreateSimpleWorkflow();
+            var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            await workflowInstance.SetWorkflow(workflow);
+            await workflowInstance.StartWorkflow();
+
+            await workflowInstance.FailActivity("task", new Exception("snapshot error"));
+
+            var state = await workflowInstance.GetState();
+            var completedActivities = await state.GetCompletedActivities();
+            IActivityInstance? failedTask = null;
+            foreach (var a in completedActivities)
+            {
+                var current = await a.GetCurrentActivity();
+                if (current.ActivityId == "task")
+                {
+                    failedTask = a;
+                    break;
+                }
+            }
+            Assert.IsNotNull(failedTask);
+
+            // Act
+            var snapshot = await failedTask.GetSnapshot();
+
+            // Assert
+            Assert.AreEqual("task", snapshot.ActivityId);
+            Assert.IsTrue(snapshot.IsCompleted);
+            Assert.IsNotNull(snapshot.ErrorState);
+            Assert.AreEqual(500, snapshot.ErrorState.Code);
+            Assert.AreEqual("snapshot error", snapshot.ErrorState.Message);
+            Assert.IsNotNull(snapshot.CompletedAt);
+        }
+
         private static TestCluster CreateCluster()
         {
             var builder = new TestClusterBuilder();

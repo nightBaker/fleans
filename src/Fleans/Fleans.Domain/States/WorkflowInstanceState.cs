@@ -178,21 +178,37 @@ public partial class WorkflowInstanceState : Grain, IWorkflowInstanceState
 
     public async ValueTask<InstanceStateSnapshot> GetStateSnapshot()
     {
-        var activeIds = new List<string>();
-        foreach (var activity in _activeActivities)
-        {
-            var current = await activity.GetCurrentActivity();
-            activeIds.Add(current.ActivityId);
-        }
+        var activeTasks = _activeActivities.Select(a => a.GetSnapshot().AsTask());
+        var completedTasks = _completedActivities.Select(a => a.GetSnapshot().AsTask());
+        var allTasks = activeTasks.Concat(completedTasks).ToList();
+        var allSnapshots = await Task.WhenAll(allTasks);
 
-        var completedIds = new List<string>();
-        foreach (var activity in _completedActivities)
-        {
-            var current = await activity.GetCurrentActivity();
-            completedIds.Add(current.ActivityId);
-        }
+        var activeSnapshots = allSnapshots.Take(_activeActivities.Count).ToList();
+        var completedSnapshots = allSnapshots.Skip(_activeActivities.Count).ToList();
 
-        return new InstanceStateSnapshot(activeIds, completedIds, _isStarted, _isCompleted);
+        var activeIds = activeSnapshots.Select(s => s.ActivityId).ToList();
+        var completedIds = completedSnapshots.Select(s => s.ActivityId).ToList();
+
+        var variableStates = _variableStates.Select(kvp =>
+        {
+            var dict = ((IDictionary<string, object>)kvp.Value.Variables)
+                .ToDictionary(e => e.Key, e => e.Value?.ToString() ?? "");
+            return new VariableStateSnapshot(kvp.Key, dict);
+        }).ToList();
+
+        var conditionSequences = _conditionSequenceStates
+            .SelectMany(kvp => kvp.Value.Select(cs => new ConditionSequenceSnapshot(
+                cs.ConditionalSequence.SequenceFlowId,
+                cs.ConditionalSequence.Condition,
+                cs.ConditionalSequence.Source.ActivityId,
+                cs.ConditionalSequence.Target.ActivityId,
+                cs.Result)))
+            .ToList();
+
+        return new InstanceStateSnapshot(
+            activeIds, completedIds, _isStarted, _isCompleted,
+            activeSnapshots, completedSnapshots,
+            variableStates, conditionSequences);
     }
 
     [LoggerMessage(EventId = 3000, Level = LogLevel.Information, Message = "Workflow initialized with start activity {ActivityId}")]
