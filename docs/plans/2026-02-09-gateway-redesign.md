@@ -123,12 +123,17 @@ public async Task CompleteConditionSequence(
 
 No variable merge — gateways are routing decisions, not data producers. Variable state passes through unchanged via `variablesId` propagation in `TransitionToNextActivity`.
 
+### ExclusiveGateway Pass-Through (No Conditions)
+
+If an `ExclusiveGateway` has no `ConditionalSequenceFlow` outgoing flows (only a `DefaultSequenceFlow`), `ExecuteAsync` auto-completes the gateway immediately — no condition evaluation is needed. The workflow continues through the default flow without waiting for any `CompleteConditionSequence` calls.
+
 ### ExclusiveGateway.GetNextActivities
 
 Updated to handle the default flow case:
 
-- Check conditional flows for `true` results. If found, return that target (first match).
-- If none found (all `false`), find the `DefaultSequenceFlow` from outgoing flows and return its target.
+- Check conditional flows for `true` results. If found, return that target (first match only — BPMN XOR semantics).
+- If none found (all `false` or no conditions), find the `DefaultSequenceFlow` from outgoing flows and return its target.
+- If neither exists, throw `InvalidOperationException`.
 
 ### BpmnConverter Changes
 
@@ -146,6 +151,8 @@ New tests:
 - **Short-circuit**: first condition returns `true` → workflow completes immediately without waiting for remaining conditions
 - **Default flow**: all conditions return `false` → workflow takes the default flow path
 - **No default flow, all false**: all conditions `false`, no default → throws `InvalidOperationException`
+- **Pending conditions**: first condition `false`, second not yet evaluated → workflow not completed, gateway still active
+- **Pass-through**: gateway with no conditional flows, only default → workflow completes immediately via default flow
 
 ### ConditionSequenceState Tests
 
@@ -163,16 +170,14 @@ New tests:
 
 All workflow instance state changes must be logged using `[LoggerMessage]` source generators. Every new method or significant state transition introduced by this redesign must have a corresponding log message.
 
-### ConditionalGateway (EventId range: 8000)
+### WorkflowInstance.CompleteConditionSequence (EventId range: 1000)
 
-- **8000** Condition result stored: `"Condition {ConditionSequenceFlowId} evaluated to {Result} for activity {ActivityId}"`
-- **8001** Gateway short-circuited on first true: `"Gateway {ActivityId} short-circuited: condition {ConditionSequenceFlowId} is true"`
-- **8002** All conditions false, taking default flow: `"Gateway {ActivityId} all conditions false, taking default flow"`
-- **8003** All conditions false, no default flow: `"Gateway {ActivityId} all conditions false and no default flow — misconfigured workflow"` (LogLevel.Error, before throwing)
+Logging lives on `WorkflowInstance` (not `ConditionalGateway`) because domain records lack DI-injected loggers.
 
-### WorkflowInstance.CompleteConditionSequence (existing EventId range: 1000)
-
-- **1007** Gateway decision made, auto-completing: `"Gateway {ActivityId} decision made, auto-completing and resuming workflow"`
+- **1007** Gateway decision made, auto-completing: `"Gateway {ActivityId} decision made, auto-completing and resuming workflow"` (Information)
+- **1008** Gateway short-circuited on first true: `"Gateway {ActivityId} short-circuited: condition {ConditionSequenceFlowId} is true"` (Information)
+- **1009** All conditions false, taking default flow: `"Gateway {ActivityId} all conditions false, taking default flow"` (Information)
+- **1010** All conditions false, no default flow: `"Gateway {ActivityId} all conditions false and no default flow — misconfigured workflow"` (Error, before rethrowing)
 
 ### General Rule
 
