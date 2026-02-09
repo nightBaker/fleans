@@ -1,10 +1,10 @@
 # Process Instance Viewer Design
 
-**Status:** Draft (validated 2026-02-07)
+**Status:** Implemented (2026-02-09)
 
 ## Goal
 
-Add a process instance detail page to the Blazor Web app that visualizes a BPMN diagram with highlighted current/completed steps — similar to Camunda Cockpit.
+Add a process instance detail page to the Blazor Web app that visualizes a BPMN diagram with highlighted current/completed steps — similar to Camunda Cockpit. Show full activity details, variable state, condition evaluations, and error information.
 
 ## Navigation Flow
 
@@ -18,116 +18,146 @@ Workflows page → "Instances" button on version row → Instance list → Click
 - **Communication:** Blazor Server calls `WorkflowEngine` directly (no new API endpoints)
 - **BPMN XML:** Stored in `ProcessDefinition` record alongside the parsed `WorkflowDefinition`
 
-## Data Layer Changes
+## Data Layer
 
 ### Store BPMN XML
 
-`ProcessDefinition` record gains a `BpmnXml` field:
-
-```csharp
-record ProcessDefinition(
-    string ProcessDefinitionId,
-    string ProcessDefinitionKey,
-    int Version,
-    DateTimeOffset DeployedAt,
-    WorkflowDefinition Workflow,
-    string BpmnXml);           // NEW
-```
-
-The deploy flow threads the raw XML through:
-- `WorkflowEngine.DeployWorkflow(WorkflowDefinition, string bpmnXml)`
-- `IWorkflowInstanceFactoryGrain.DeployWorkflow(WorkflowDefinition, string bpmnXml)`
-- Stored in the factory grain's `_byId` / `_byKey` dictionaries
+`ProcessDefinition` record has a `BpmnXml` field (Id 5). The deploy flow threads raw XML through `WorkflowEngine.DeployWorkflow` → `IWorkflowInstanceFactoryGrain.DeployWorkflow`.
 
 ### Track Instances Per Process Key
 
-`WorkflowInstanceFactoryGrain` adds:
+`WorkflowInstanceFactoryGrain` tracks:
+- `_instancesByKey`: processDefinitionKey → instance IDs
+- `_instanceToDefinitionId`: instanceId → processDefinitionId
 
-```csharp
-Dictionary<string, List<Guid>> _instancesByKey;   // processDefinitionKey → instance IDs
-Dictionary<Guid, string> _instanceToDefinitionId;  // instanceId → processDefinitionId
-```
+### Expose Instance State — Enriched Snapshot
 
-Populated in `CreateWorkflowInstanceGrain()` / `CreateWorkflowInstanceGrainByProcessDefinitionId()`.
+`IWorkflowInstanceState.GetStateSnapshot()` returns a rich `InstanceStateSnapshot`:
 
-New grain methods:
-- `GetInstancesByKey(string key) → List<WorkflowInstanceInfo>`
-- `GetBpmnXml(string processDefinitionId) → string`
-
-### Expose Instance State
-
-`IWorkflowInstanceState` gets a new method:
-
-```csharp
-ValueTask<InstanceStateSnapshot> GetStateSnapshot();
-```
-
-Returns:
 ```csharp
 record InstanceStateSnapshot(
-    List<string> ActiveActivityIds,
-    List<string> CompletedActivityIds,
-    bool IsStarted,
-    bool IsCompleted);
+    List<string> ActiveActivityIds,           // Id 0 — flat IDs for BPMN diagram JS interop
+    List<string> CompletedActivityIds,        // Id 1
+    bool IsStarted,                           // Id 2
+    bool IsCompleted,                         // Id 3
+    List<ActivityInstanceSnapshot> ActiveActivities,     // Id 4 — detailed snapshots
+    List<ActivityInstanceSnapshot> CompletedActivities,  // Id 5
+    List<VariableStateSnapshot> VariableStates,          // Id 6
+    List<ConditionSequenceSnapshot> ConditionSequences); // Id 7
 ```
 
-`WorkflowEngine` gets new methods:
-- `GetInstancesByKey(string key) → List<WorkflowInstanceInfo>`
-- `GetInstanceDetail(Guid instanceId) → WorkflowInstanceDetail`
-- `GetBpmnXml(Guid instanceId) → string`
+Supporting DTOs:
 
-## UI Layer Changes
+```csharp
+record ActivityInstanceSnapshot(
+    Guid ActivityInstanceId,    // Id 0
+    string ActivityId,          // Id 1
+    string ActivityType,        // Id 2 — e.g. "StartEvent", "TaskActivity", "ScriptTask"
+    bool IsCompleted,           // Id 3
+    bool IsExecuting,           // Id 4
+    Guid VariablesStateId,      // Id 5
+    ActivityErrorState? ErrorState,  // Id 6
+    DateTimeOffset? CompletedAt);    // Id 7
 
-### WorkflowVersionsPanel.razor — Add "Instances" button
+record VariableStateSnapshot(
+    Guid VariablesId,                      // Id 0
+    Dictionary<string, string> Variables); // Id 1 — values serialized via ToString()
 
-Each version row gets an "Instances" button. Clicking it navigates to an instances list or expands inline to show instances for that version.
+record ConditionSequenceSnapshot(
+    string SequenceFlowId,      // Id 0
+    string Condition,           // Id 1
+    string SourceActivityId,    // Id 2
+    string TargetActivityId,    // Id 3
+    bool Result);               // Id 4
+```
 
-### New Page: ProcessInstance.razor — Route: `/process-instance/{instanceId:guid}`
+### Activity Completion Tracking
 
-**Layout:**
-- Header: Instance ID, status badge (Running / Completed), process key, "Back" link
-- Main: bpmn-js canvas rendering the full BPMN diagram
-- Footer/sidebar: Activity timeline (completed activities in order), variables
+`ActivityInstance` records `DateTimeOffset? _completedAt` in `Complete()`. Since `Fail()` delegates to `Complete()`, failed activities also have a completion timestamp.
 
-**bpmn-js integration:**
-- Load bpmn-js via CDN (`<script>` in `App.razor`)
-- `wwwroot/js/bpmnViewer.js` — interop module:
-  - `initViewer(containerId, bpmnXml)` — create viewer, import XML, fit viewport
-  - `highlightActivities(completedIds, activeIds)` — add CSS overlays
-- Colors: green = completed, blue = active, gray = default
-- Called from Blazor via `IJSRuntime.InvokeVoidAsync`
+### GetSnapshot() Batching
 
-### New Page: ProcessInstances.razor — Route: `/process-instances/{processDefinitionKey}`
+`IActivityInstance.GetSnapshot()` returns a full `ActivityInstanceSnapshot` in a single grain call, reading all fields from local grain state. `WorkflowInstanceState.GetStateSnapshot()` fans out `GetSnapshot()` calls to all activity grains via `Task.WhenAll`, reducing grain calls from 7N to N (where N = number of activities).
 
-Lists all instances for a given process key. Table columns:
-- Instance ID
-- Status (Running / Completed)
-- Link to detail page
+### Orleans Concurrency
+
+All read-only methods on `IWorkflowInstanceState` are annotated with `[ReadOnly]` to allow concurrent reads without write locks. This includes `GetStateSnapshot()`, `GetActiveActivities()`, `GetCompletedActivities()`, `IsStarted()`, `IsCompleted()`, etc.
+
+`WorkflowEngine` methods:
+- `GetInstancesByKey(string key)` — lists instances for a process key
+- `GetInstanceDetail(Guid instanceId)` — returns enriched `InstanceStateSnapshot`
+- `GetBpmnXml(Guid instanceId)` — returns BPMN XML for diagram rendering
+
+## UI Layer — ProcessInstance.razor
+
+Route: `/process-instance/{InstanceId:guid}`
+
+### Layout (top to bottom)
+
+1. **PageHeader** with status badge (Completed/Running)
+2. **Instance ID**
+3. **BPMN diagram** — bpmn-js canvas with completed (green) and active (blue) highlighting
+4. **Refresh button** — with `Loading` parameter for loading state, includes error handling
+5. **Error banners** — `FluentMessageBar` per failed activity
+6. **FluentTabs** with 3 tabs:
+
+### Activities Tab
+
+`FluentDataGrid` with columns:
+- **Activity ID** — `PropertyColumn`, sortable, filterable via `FluentSearch`
+- **Type** — `PropertyColumn`, sortable, filterable
+- **Status** — `TemplateColumn` with colored `FluentBadge` (Failed/Completed/Running/Pending), sortable via `GridSort`, filterable
+- **Completed At** — `PropertyColumn`, sortable, formatted `yyyy-MM-dd HH:mm:ss`
+- **Error** — `TemplateColumn` showing `[code] message` or `-`, sortable, filterable
+
+### Variables Tab
+
+Per `VariableStateSnapshot`: label with truncated ID, then `FluentDataGrid` with:
+- **Key** — `PropertyColumn`, sortable
+- **Value** — `PropertyColumn`, sortable
+
+If empty: info message.
+
+### Conditions Tab
+
+`FluentDataGrid` with columns:
+- **Sequence Flow** — `PropertyColumn`, sortable, filterable
+- **Condition** — `PropertyColumn`, sortable, filterable
+- **Path** — `TemplateColumn` showing `source → target`, sortable via `GridSort`, filterable
+- **Result** — `TemplateColumn` with True/False `FluentBadge`, sortable, filterable via `FluentSelect` dropdown (All/True/False)
+
+If empty: info message.
+
+### Filtering Architecture
+
+Filters use `ColumnOptions` child content with `FluentSearch` (text) or `FluentSelect` (dropdown). Filter state is maintained in `@code` fields (`activityIdFilter`, `activityTypeFilter`, etc.). `ApplyActivityFilters()` and `ApplyConditionFilters()` methods rebuild `IQueryable` from the full list on each filter change.
 
 ## File Changes
 
 | File | Change |
 |------|--------|
-| `Fleans.Domain/ProcessDefinitions.cs` | Add `BpmnXml` to `ProcessDefinition`, add `InstanceStateSnapshot` record |
-| `Fleans.Domain/States/IWorkflowInstanceState.cs` | Add `GetStateSnapshot()` |
-| `Fleans.Domain/States/WorkflowInstanceState.cs` | Implement `GetStateSnapshot()` |
-| `Fleans.Domain/IWorkflowInstance.cs` | Add `GetInstanceInfo()` method |
-| `Fleans.Domain/WorkflowInstance.cs` | Implement `GetInstanceInfo()` |
-| `Fleans.Application/WorkflowFactory/IWorkflowInstanceFactoryGrain.cs` | Add `GetInstancesByKey()`, `GetBpmnXml()`, update `DeployWorkflow` signature |
-| `Fleans.Application/WorkflowFactory/WorkflowInstanceFactoryGrain.cs` | Track instances, store XML, implement new methods |
-| `Fleans.Application/WorkflowEngine.cs` | Add `GetInstancesByKey()`, `GetInstanceDetail()`, `GetBpmnXml()`, update `DeployWorkflow()` |
-| `Fleans.Web/Components/Pages/Workflows.razor` | Pass deploy XML through |
-| `Fleans.Web/Components/WorkflowVersionsPanel.razor` | Add "Instances" button |
-| `Fleans.Web/Components/WorkflowUploadPanel.razor` | Thread XML to `DeployWorkflow()` |
-| `Fleans.Web/Components/Pages/ProcessInstances.razor` | **NEW** — Instance list page |
-| `Fleans.Web/Components/Pages/ProcessInstance.razor` | **NEW** — Instance detail with bpmn-js |
-| `Fleans.Web/wwwroot/js/bpmnViewer.js` | **NEW** — JS interop for bpmn-js |
-| `Fleans.Web/Components/Layout/NavMenu.razor` | Add nav link for instances (optional) |
-| `Fleans.Web/Components/App.razor` | Add bpmn-js CDN script tag |
+| `Fleans.Domain/ProcessDefinitions.cs` | `InstanceStateSnapshot` extended with 4 new properties (Id 4-7), 3 new snapshot records |
+| `Fleans.Domain/IActivityInstance.cs` | Added `GetSnapshot()`, `GetCompletedAt()` |
+| `Fleans.Domain/ActivityInstance.cs` | Implemented `GetSnapshot()`, `GetCompletedAt()`, `_completedAt` tracking |
+| `Fleans.Domain/States/IWorkflowInstanceState.cs` | `[ReadOnly]` on all read methods |
+| `Fleans.Domain/States/WorkflowInstanceState.cs` | `GetStateSnapshot()` uses `GetSnapshot()` batching, builds enriched DTOs |
+| `Fleans.Web/Components/Pages/ProcessInstance.razor` | Tabbed UI with FluentDataGrid, sorting, filtering, error banners |
+
+## Test Coverage
+
+### TaskActivityTests (5 tests)
+- `GetCompletedAt` returns null before completion, timestamp after completion, timestamp after failure
+- `GetSnapshot` returns all fields in one call, includes error state after failure
+
+### WorkflowInstanceStateTests (4 tests)
+- `GetStateSnapshot` returns active/completed activity snapshots with correct types and timestamps
+- `GetStateSnapshot` serializes variables to `Dictionary<string, string>`
+- `GetStateSnapshot` returns condition sequences with correct paths and results
+- `GetStateSnapshot` with empty state returns empty lists
 
 ## Not In Scope
 
 - Persistence (state remains in-memory)
 - Real-time updates / auto-refresh
-- Instance filtering/search beyond per-key listing
 - Variable editing from the UI
+- Complex object serialization for variables (uses `ToString()`)

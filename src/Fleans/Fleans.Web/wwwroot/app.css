@@ -1,5 +1,6 @@
 html, body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    --text-100: 60 2.6% 7.6%;
 }
 
 body {
@@ -47,6 +48,8 @@ h1:focus {
     border: 1px solid var(--neutral-stroke-rest);
     border-radius: 4px;
     overflow: hidden;
+    background-image: radial-gradient(circle, hsl(var(--text-100) / 15%) 1px, transparent 1px);
+    background-size: 16px 16px;
 }
 
 .bpmn-completed .djs-visual > :nth-child(1) {
@@ -58,6 +61,16 @@ h1:focus {
     stroke: #3b82f6 !important;
     fill: rgba(59, 130, 246, 0.15) !important;
     stroke-width: 3px !important;
+}
+
+.bpmn-selected .djs-visual > :nth-child(1) {
+    stroke: #f59e0b !important;
+    stroke-width: 3px !important;
+    filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.5));
+}
+
+.activity-row-selected {
+    background: rgba(245, 158, 11, 0.15) !important;
 }
 
 /* BPMN Editor Styles */
@@ -89,6 +102,8 @@ h1:focus {
 .editor-canvas {
     flex: 1;
     min-height: 0;
+    background-image: radial-gradient(circle, hsl(var(--text-100) / 15%) 1px, transparent 1px);
+    background-size: 16px 16px;
 }
 
 /* Properties Panel */

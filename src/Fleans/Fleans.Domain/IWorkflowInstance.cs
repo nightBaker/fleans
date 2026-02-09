@@ -8,8 +8,11 @@ namespace Fleans.Domain;
 
 public interface IWorkflowInstance : IGrainWithGuidKey
 {
+    [ReadOnly]
     ValueTask<Guid> GetWorkflowInstanceId();
+    [ReadOnly]
     ValueTask<IWorkflowInstanceState> GetState();
+    [ReadOnly]
     ValueTask<IWorkflowDefinition> GetWorkflowDefinition();
 
     Task CompleteActivity(string activityId, ExpandoObject variables);

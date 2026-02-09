@@ -3,6 +3,7 @@
 @using Fleans.Application
 @using Fleans.Domain
 @using Microsoft.FluentUI.AspNetCore.Components
+@using Microsoft.JSInterop
 @inject WorkflowEngine WorkflowEngine
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
@@ -47,49 +48,170 @@
     {
         <div id="bpmn-canvas" class="bpmn-container"></div>
 
-        <FluentStack Orientation="Orientation.Horizontal" Gap="24px" Style="align-items: flex-start;">
-            <FluentStack Orientation="Orientation.Vertical" Gap="8px" Style="flex: 1;">
-                <FluentLabel Typo="Typography.Subject">Completed Activities</FluentLabel>
-                @if (snapshot!.CompletedActivityIds.Count == 0)
-                {
-                    <span>None</span>
-                }
-                else
-                {
-                    @foreach (var id in snapshot.CompletedActivityIds)
-                    {
-                        <FluentStack Orientation="Orientation.Horizontal" Gap="8px" AlignItems="AlignItems.Center">
-                            <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size16.CheckmarkCircle())" Color="Color.Success" />
-                            <span>@id</span>
-                        </FluentStack>
-                    }
-                }
-            </FluentStack>
-
-            <FluentStack Orientation="Orientation.Vertical" Gap="8px" Style="flex: 1;">
-                <FluentLabel Typo="Typography.Subject">Active Activities</FluentLabel>
-                @if (snapshot!.ActiveActivityIds.Count == 0)
-                {
-                    <span>None</span>
-                }
-                else
-                {
-                    @foreach (var id in snapshot.ActiveActivityIds)
-                    {
-                        <FluentStack Orientation="Orientation.Horizontal" Gap="8px" AlignItems="AlignItems.Center">
-                            <FluentIcon Value="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size16.Circle())" Color="Color.Accent" />
-                            <span>@id</span>
-                        </FluentStack>
-                    }
-                }
-            </FluentStack>
-        </FluentStack>
-
         <FluentButton Appearance="Appearance.Neutral"
                       IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowSync())"
+                      Loading="@isRefreshing"
                       @onclick="Refresh">
             Refresh
         </FluentButton>
+
+        @if (failedActivities.Count > 0)
+        {
+            @foreach (var failed in failedActivities)
+            {
+                <FluentMessageBar Intent="MessageIntent.Error">
+                    Activity <strong>@failed.ActivityId</strong> failed: [@failed.ErrorState!.Code] @failed.ErrorState.Message
+                </FluentMessageBar>
+            }
+        }
+
+        <FluentTabs>
+            <FluentTab Label="Activities">
+                <FluentDataGrid Items="@filteredActivities" GridTemplateColumns="1fr 1fr 1fr 1fr 2fr"
+                                TGridItem="ActivityInstanceSnapshot"
+                                OnRowClick="@OnActivityRowClick"
+                                RowClass="@GetActivityRowClass">
+                    <PropertyColumn Property="@(a => a.ActivityId)" Title="Activity ID" Sortable="true">
+                        <ColumnOptions>
+                            <FluentSearch @bind-Value="activityIdFilter"
+                                          @bind-Value:after="ApplyActivityFilters"
+                                          Placeholder="Filter..." />
+                        </ColumnOptions>
+                    </PropertyColumn>
+                    <PropertyColumn Property="@(a => a.ActivityType)" Title="Type" Sortable="true">
+                        <ColumnOptions>
+                            <FluentSearch @bind-Value="activityTypeFilter"
+                                          @bind-Value:after="ApplyActivityFilters"
+                                          Placeholder="Filter..." />
+                        </ColumnOptions>
+                    </PropertyColumn>
+                    <TemplateColumn Title="Status" SortBy="@statusSort">
+                        <ColumnOptions>
+                            <FluentSearch @bind-Value="activityStatusFilter"
+                                          @bind-Value:after="ApplyActivityFilters"
+                                          Placeholder="Filter..." />
+                        </ColumnOptions>
+                        <ChildContent>
+                            @if (context.ErrorState != null)
+                            {
+                                <FluentBadge Color="Color.Error">Failed</FluentBadge>
+                            }
+                            else if (context.IsCompleted)
+                            {
+                                <FluentBadge Color="Color.Success">Completed</FluentBadge>
+                            }
+                            else if (context.IsExecuting)
+                            {
+                                <FluentBadge Color="Color.Accent">Running</FluentBadge>
+                            }
+                            else
+                            {
+                                <FluentBadge Color="Color.Lightweight">Pending</FluentBadge>
+                            }
+                        </ChildContent>
+                    </TemplateColumn>
+                    <PropertyColumn Property="@(a => a.CompletedAt)" Title="Completed At" Sortable="true" Format="yyyy-MM-dd HH:mm:ss" />
+                    <TemplateColumn Title="Error" SortBy="@errorSort">
+                        <ColumnOptions>
+                            <FluentSearch @bind-Value="activityErrorFilter"
+                                          @bind-Value:after="ApplyActivityFilters"
+                                          Placeholder="Filter..." />
+                        </ColumnOptions>
+                        <ChildContent>
+                            @if (context.ErrorState != null)
+                            {
+                                <span>[@context.ErrorState.Code] @context.ErrorState.Message</span>
+                            }
+                            else
+                            {
+                                <span>-</span>
+                            }
+                        </ChildContent>
+                    </TemplateColumn>
+                </FluentDataGrid>
+            </FluentTab>
+
+            <FluentTab Label="Variables">
+                @if (snapshot!.VariableStates.Count == 0)
+                {
+                    <FluentMessageBar Intent="MessageIntent.Info">
+                        No variable states recorded.
+                    </FluentMessageBar>
+                }
+                else
+                {
+                    @foreach (var vs in snapshot.VariableStates)
+                    {
+                        var rows = GetVariableRows(vs);
+                        <FluentLabel Typo="Typography.Subject" Style="margin-top: 12px;">
+                            Variables @vs.VariablesId.ToString()[..8]...
+                        </FluentLabel>
+                        <FluentDataGrid Items="@rows" GridTemplateColumns="1fr 2fr">
+                            <PropertyColumn Property="@(v => v.Key)" Title="Key" Sortable="true" />
+                            <PropertyColumn Property="@(v => v.Value)" Title="Value" Sortable="true" />
+                        </FluentDataGrid>
+                    }
+                }
+            </FluentTab>
+
+            <FluentTab Label="Conditions">
+                @if (snapshot!.ConditionSequences.Count == 0)
+                {
+                    <FluentMessageBar Intent="MessageIntent.Info">
+                        No condition evaluations recorded.
+                    </FluentMessageBar>
+                }
+                else
+                {
+                    <FluentDataGrid Items="@filteredConditions" GridTemplateColumns="1fr 2fr 1.5fr 0.5fr">
+                        <PropertyColumn Property="@(c => c.SequenceFlowId)" Title="Sequence Flow" Sortable="true">
+                            <ColumnOptions>
+                                <FluentSearch @bind-Value="conditionFlowFilter"
+                                              @bind-Value:after="ApplyConditionFilters"
+                                              Placeholder="Filter..." />
+                            </ColumnOptions>
+                        </PropertyColumn>
+                        <PropertyColumn Property="@(c => c.Condition)" Title="Condition" Sortable="true">
+                            <ColumnOptions>
+                                <FluentSearch @bind-Value="conditionExprFilter"
+                                              @bind-Value:after="ApplyConditionFilters"
+                                              Placeholder="Filter..." />
+                            </ColumnOptions>
+                        </PropertyColumn>
+                        <TemplateColumn Title="Path" SortBy="@conditionPathSort">
+                            <ColumnOptions>
+                                <FluentSearch @bind-Value="conditionPathFilter"
+                                              @bind-Value:after="ApplyConditionFilters"
+                                              Placeholder="Filter..." />
+                            </ColumnOptions>
+                            <ChildContent>
+                                <span>@context.SourceActivityId → @context.TargetActivityId</span>
+                            </ChildContent>
+                        </TemplateColumn>
+                        <TemplateColumn Title="Result" SortBy="@conditionResultSort">
+                            <ColumnOptions>
+                                <FluentSelect TOption="string" @bind-Value="conditionResultFilter"
+                                              @bind-Value:after="ApplyConditionFilters">
+                                    <FluentOption Value="">All</FluentOption>
+                                    <FluentOption Value="true">True</FluentOption>
+                                    <FluentOption Value="false">False</FluentOption>
+                                </FluentSelect>
+                            </ColumnOptions>
+                            <ChildContent>
+                                @if (context.Result)
+                                {
+                                    <FluentBadge Color="Color.Success">True</FluentBadge>
+                                }
+                                else
+                                {
+                                    <FluentBadge Color="Color.Error">False</FluentBadge>
+                                }
+                            </ChildContent>
+                        </TemplateColumn>
+                    </FluentDataGrid>
+                }
+            </FluentTab>
+        </FluentTabs>
     }
 </FluentStack>
 
@@ -99,7 +221,39 @@
     private InstanceStateSnapshot? snapshot;
     private string? bpmnXml;
     private bool isLoading = true;
+    private bool isRefreshing;
     private string? errorMessage;
+    private string? selectedActivityId;
+    private DotNetObjectReference<ProcessInstance>? dotNetRef;
+
+    // Activities tab
+    private List<ActivityInstanceSnapshot> allActivitiesList = [];
+    private IQueryable<ActivityInstanceSnapshot> filteredActivities = Enumerable.Empty<ActivityInstanceSnapshot>().AsQueryable();
+    private List<ActivityInstanceSnapshot> failedActivities = [];
+    private string? activityIdFilter;
+    private string? activityTypeFilter;
+    private string? activityStatusFilter;
+    private string? activityErrorFilter;
+
+    private readonly GridSort<ActivityInstanceSnapshot> statusSort =
+        GridSort<ActivityInstanceSnapshot>.ByAscending(a => GetStatusLabel(a));
+    private readonly GridSort<ActivityInstanceSnapshot> errorSort =
+        GridSort<ActivityInstanceSnapshot>.ByAscending(a => a.ErrorState != null ? a.ErrorState.Message : "");
+
+    // Conditions tab
+    private List<ConditionSequenceSnapshot> allConditionsList = [];
+    private IQueryable<ConditionSequenceSnapshot> filteredConditions = Enumerable.Empty<ConditionSequenceSnapshot>().AsQueryable();
+    private string? conditionFlowFilter;
+    private string? conditionExprFilter;
+    private string? conditionPathFilter;
+    private string? conditionResultFilter;
+
+    private readonly GridSort<ConditionSequenceSnapshot> conditionPathSort =
+        GridSort<ConditionSequenceSnapshot>.ByAscending(c => c.SourceActivityId).ThenAscending(c => c.TargetActivityId);
+    private readonly GridSort<ConditionSequenceSnapshot> conditionResultSort =
+        GridSort<ConditionSequenceSnapshot>.ByAscending(c => c.Result);
+
+    private record VariableRow(string Key, string Value);
 
     protected override async Task OnInitializedAsync()
     {
@@ -123,6 +277,8 @@
 
             snapshot = await WorkflowEngine.GetInstanceDetail(InstanceId);
             bpmnXml = await WorkflowEngine.GetBpmnXml(InstanceId);
+
+            BuildDerivedState();
         }
         catch (Exception ex)
         {
@@ -135,28 +291,126 @@
         }
     }
 
+    private void BuildDerivedState()
+    {
+        if (snapshot == null) return;
+
+        allActivitiesList = snapshot.CompletedActivities
+            .Concat(snapshot.ActiveActivities)
+            .ToList();
+        failedActivities = allActivitiesList.Where(a => a.ErrorState != null).ToList();
+
+        allConditionsList = snapshot.ConditionSequences;
+
+        ApplyActivityFilters();
+        ApplyConditionFilters();
+    }
+
+    private void ApplyActivityFilters()
+    {
+        IEnumerable<ActivityInstanceSnapshot> result = allActivitiesList;
+
+        if (!string.IsNullOrWhiteSpace(activityIdFilter))
+            result = result.Where(a => a.ActivityId.Contains(activityIdFilter, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrWhiteSpace(activityTypeFilter))
+            result = result.Where(a => a.ActivityType.Contains(activityTypeFilter, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrWhiteSpace(activityStatusFilter))
+            result = result.Where(a => GetStatusLabel(a).Contains(activityStatusFilter, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrWhiteSpace(activityErrorFilter))
+            result = result.Where(a => a.ErrorState != null &&
+                $"[{a.ErrorState.Code}] {a.ErrorState.Message}".Contains(activityErrorFilter, StringComparison.OrdinalIgnoreCase));
+
+        filteredActivities = result.AsQueryable();
+    }
+
+    private void ApplyConditionFilters()
+    {
+        IEnumerable<ConditionSequenceSnapshot> result = allConditionsList;
+
+        if (!string.IsNullOrWhiteSpace(conditionFlowFilter))
+            result = result.Where(c => c.SequenceFlowId.Contains(conditionFlowFilter, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrWhiteSpace(conditionExprFilter))
+            result = result.Where(c => c.Condition.Contains(conditionExprFilter, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrWhiteSpace(conditionPathFilter))
+            result = result.Where(c => $"{c.SourceActivityId} {c.TargetActivityId}".Contains(conditionPathFilter, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrWhiteSpace(conditionResultFilter))
+            result = result.Where(c => c.Result.ToString().Equals(conditionResultFilter, StringComparison.OrdinalIgnoreCase));
+
+        filteredConditions = result.AsQueryable();
+    }
+
     private async Task RenderDiagram()
     {
         if (bpmnXml == null || snapshot == null) return;
 
         await JS.InvokeVoidAsync("bpmnViewer.init", "bpmn-canvas", bpmnXml);
         await JS.InvokeVoidAsync("bpmnViewer.highlight", snapshot.CompletedActivityIds, snapshot.ActiveActivityIds);
+
+        dotNetRef = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("bpmnViewer.registerClickHandler", dotNetRef);
     }
 
     private async Task Refresh()
     {
-        await LoadInstance();
-        StateHasChanged();
-        await Task.Yield();
-        if (snapshot != null)
+        isRefreshing = true;
+        try
         {
-            await JS.InvokeVoidAsync("bpmnViewer.highlight", snapshot.CompletedActivityIds, snapshot.ActiveActivityIds);
+            errorMessage = null;
+            snapshot = await WorkflowEngine.GetInstanceDetail(InstanceId);
+            BuildDerivedState();
+            StateHasChanged();
+            await Task.Yield();
+            if (snapshot != null)
+            {
+                await JS.InvokeVoidAsync("bpmnViewer.highlight", snapshot.CompletedActivityIds, snapshot.ActiveActivityIds);
+                if (selectedActivityId != null)
+                {
+                    await JS.InvokeVoidAsync("bpmnViewer.selectElement", selectedActivityId);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error refreshing instance {InstanceId}", InstanceId);
+            errorMessage = $"Failed to refresh instance: {ex.Message}";
+        }
+        finally
+        {
+            isRefreshing = false;
         }
     }
 
     private async Task GoBack()
     {
         await JS.InvokeVoidAsync("history.back");
+    }
+
+    private static IQueryable<VariableRow> GetVariableRows(VariableStateSnapshot vs)
+        => vs.Variables.Select(kvp => new VariableRow(kvp.Key, kvp.Value)).AsQueryable();
+
+    private async Task OnActivityRowClick(FluentDataGridRow<ActivityInstanceSnapshot> row)
+    {
+        if (row.Item is null) return;
+        selectedActivityId = row.Item.ActivityId;
+        await JS.InvokeVoidAsync("bpmnViewer.selectElement", row.Item.ActivityId);
+    }
+
+    [JSInvokable]
+    public void OnBpmnElementClicked(string elementId)
+    {
+        selectedActivityId = string.IsNullOrEmpty(elementId) ? null : elementId;
+        StateHasChanged();
+    }
+
+    private string? GetActivityRowClass(ActivityInstanceSnapshot item)
+        => selectedActivityId != null && item.ActivityId == selectedActivityId ? "activity-row-selected" : null;
+
+    private static string GetStatusLabel(ActivityInstanceSnapshot a)
+    {
+        if (a.ErrorState != null) return "Failed";
+        if (a.IsCompleted) return "Completed";
+        if (a.IsExecuting) return "Running";
+        return "Pending";
     }
 
     public async ValueTask DisposeAsync()
@@ -169,5 +423,6 @@
         {
             // JS interop may fail during disposal
         }
+        dotNetRef?.Dispose();
     }
 }
