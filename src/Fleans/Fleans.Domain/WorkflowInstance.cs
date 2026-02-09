@@ -15,6 +15,10 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
     public IWorkflowDefinition WorkflowDefinition { get; private set; } = null!;
     public IWorkflowInstanceState State { get; private set; } = null!;
 
+    private DateTimeOffset? _createdAt;
+    private DateTimeOffset? _executionStartedAt;
+    private DateTimeOffset? _completedAt;
+
     private readonly IGrainFactory _grainFactory;
     private readonly ILogger<WorkflowInstance> _logger;
 
@@ -38,6 +42,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
     {
         SetWorkflowRequestContext();
         using var scope = BeginWorkflowScope();
+        _executionStartedAt = DateTimeOffset.UtcNow;
         LogWorkflowStarted();
         await ExecuteWorkflow();
     }
@@ -137,8 +142,11 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
     public ValueTask Start()
         => State.Start();
 
-    public ValueTask Complete()
-        => State.Complete();
+    public async ValueTask Complete()
+    {
+        _completedAt = DateTimeOffset.UtcNow;
+        await State.Complete();
+    }
 
     public async Task CompleteConditionSequence(string activityId, string conditionSequenceId, bool result)
     {
@@ -163,6 +171,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         if(WorkflowDefinition is not null) throw new ArgumentException("Workflow already set");
 
         WorkflowDefinition = workflow ?? throw new ArgumentNullException(nameof(workflow));
+        _createdAt = DateTimeOffset.UtcNow;
         State = _grainFactory.GetGrain<IWorkflowInstanceState>(this.GetPrimaryKey());
 
         SetWorkflowRequestContext();
@@ -171,6 +180,22 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
 
         var startActivity = workflow.Activities.OfType<StartEvent>().First();
         await State.StartWith(startActivity);
+    }
+
+    public ValueTask<DateTimeOffset?> GetCreatedAt() => ValueTask.FromResult(_createdAt);
+
+    public ValueTask<DateTimeOffset?> GetExecutionStartedAt() => ValueTask.FromResult(_executionStartedAt);
+
+    public ValueTask<DateTimeOffset?> GetCompletedAt() => ValueTask.FromResult(_completedAt);
+
+    public async ValueTask<WorkflowInstanceInfo> GetInstanceInfo()
+    {
+        var isStarted = await State.IsStarted();
+        var isCompleted = await State.IsCompleted();
+        var defId = WorkflowDefinition?.ProcessDefinitionId ?? "";
+        return new WorkflowInstanceInfo(
+            this.GetPrimaryKey(), defId, isStarted, isCompleted,
+            _createdAt, _executionStartedAt, _completedAt);
     }
 
     public ValueTask<IWorkflowInstanceState> GetState() => ValueTask.FromResult(State);
