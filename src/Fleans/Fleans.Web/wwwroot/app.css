@@ -206,5 +206,5 @@ h1:focus {
 #instance-properties-panel {
     width: 300px;
     flex-shrink: 0;
-    overflow: hidden;
+    overflow-y: auto;
 }

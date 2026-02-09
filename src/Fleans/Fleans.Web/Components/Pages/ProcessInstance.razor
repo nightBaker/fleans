@@ -367,8 +367,9 @@
         dotNetRef = DotNetObjectReference.Create(this);
         await JS.InvokeVoidAsync("bpmnViewer.registerClickHandler", dotNetRef);
 
-        // Initialize vertical drag handle
-        var maxHeight = 800;
+        // Initialize vertical drag handle — compute max from viewport height
+        var viewportHeight = await JS.InvokeAsync<int>("dragResize.getViewportHeight");
+        var maxHeight = Math.Max(viewportHeight - 200, 400);
         await JS.InvokeVoidAsync("dragResize.initVertical", "vertical-drag-handle", "bpmn-canvas", 200, maxHeight, dotNetRef, "OnCanvasResized");
     }
 
@@ -471,6 +472,7 @@
     [JSInvokable]
     public void OnPanelResized(double newWidth)
     {
+        // Intentionally empty: panel width is managed by JS on the DOM element directly
     }
 
     private string? GetActivityRowClass(ActivityInstanceSnapshot item)

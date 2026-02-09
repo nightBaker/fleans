@@ -8,6 +8,10 @@ window.dragResize = {
      * @param {object} dotNetRef - Blazor .NET reference for callbacks
      * @param {string} callbackMethod - Method name to invoke on drag end with new height
      */
+    getViewportHeight: function () {
+        return window.innerHeight;
+    },
+
     initVertical: function (handleId, topId, minHeight, maxHeight, dotNetRef, callbackMethod) {
         var handle = document.getElementById(handleId);
         var topPanel = document.getElementById(topId);
@@ -43,6 +47,10 @@ window.dragResize = {
             }
         }
 
+        if (handle._dragResizeHandler) {
+            handle.removeEventListener('mousedown', handle._dragResizeHandler);
+        }
+        handle._dragResizeHandler = onMouseDown;
         handle.addEventListener('mousedown', onMouseDown);
     },
 
@@ -91,6 +99,10 @@ window.dragResize = {
             }
         }
 
+        if (handle._dragResizeHandler) {
+            handle.removeEventListener('mousedown', handle._dragResizeHandler);
+        }
+        handle._dragResizeHandler = onMouseDown;
         handle.addEventListener('mousedown', onMouseDown);
     }
 };

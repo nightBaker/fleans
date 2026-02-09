@@ -9,7 +9,7 @@ window.bpmnViewer = {
         'bpmn:StartEvent', 'bpmn:EndEvent', 'bpmn:IntermediateCatchEvent', 'bpmn:IntermediateThrowEvent',
         'bpmn:BoundaryEvent', 'bpmn:ExclusiveGateway', 'bpmn:ParallelGateway',
         'bpmn:InclusiveGateway', 'bpmn:EventBasedGateway', 'bpmn:SubProcess',
-        'bpmn:CallActivity'
+        'bpmn:CallActivity', 'bpmn:SequenceFlow'
     ],
 
     init: async function (containerId, bpmnXml) {

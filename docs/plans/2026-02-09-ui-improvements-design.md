@@ -107,12 +107,10 @@ Each row on the Workflows page represents a specific version. Clicking "Instance
 - Page header: `"Instances — {Key} v{Version}"` when filtered, `"Instances — {Key} (all versions)"` when unfiltered
 - "Instances" button on each Workflows row navigates to `/process-instances/{Key}/{Version}`
 
-**Data model:**
-- `WorkflowInstanceInfo` gains a `Version` field so instances page can display version per instance
-
 ## Out of Scope
 
 - Persisting panel sizes across sessions (localStorage)
 - Dark mode / theme switching
 - Mobile responsive layout
 - Instance version column on the all-versions view
+- Adding a `Version` field to `WorkflowInstanceInfo` (filtering at query level is sufficient)
