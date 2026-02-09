@@ -406,6 +406,44 @@ public class BpmnConverterTests
         });
     }
 
+    [TestMethod]
+    public async Task ConvertFromXmlAsync_ShouldParseDefaultFlow_OnExclusiveGateway()
+    {
+        // Arrange
+        var bpmnXml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL"">
+  <process id=""workflow-default"">
+    <startEvent id=""start"" />
+    <exclusiveGateway id=""gw1"" default=""flowDefault"" />
+    <endEvent id=""end1"" />
+    <endEvent id=""end2"" />
+    <endEvent id=""endDefault"" />
+    <sequenceFlow id=""flow0"" sourceRef=""start"" targetRef=""gw1"" />
+    <sequenceFlow id=""flow1"" sourceRef=""gw1"" targetRef=""end1"">
+      <conditionExpression>${x > 10}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id=""flow2"" sourceRef=""gw1"" targetRef=""end2"">
+      <conditionExpression>${x > 5}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id=""flowDefault"" sourceRef=""gw1"" targetRef=""endDefault"" />
+  </process>
+</definitions>";
+
+        // Act
+        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
+
+        // Assert
+        var defaultFlow = workflow.SequenceFlows.OfType<DefaultSequenceFlow>().FirstOrDefault();
+        Assert.IsNotNull(defaultFlow, "Should have a DefaultSequenceFlow");
+        Assert.AreEqual("flowDefault", defaultFlow.SequenceFlowId);
+        Assert.AreEqual("gw1", defaultFlow.Source.ActivityId);
+        Assert.AreEqual("endDefault", defaultFlow.Target.ActivityId);
+
+        // Conditional flows should still be ConditionalSequenceFlow
+        var conditionalFlows = workflow.SequenceFlows.OfType<ConditionalSequenceFlow>().ToList();
+        Assert.AreEqual(2, conditionalFlows.Count);
+    }
+
     private static string CreateBpmnWithScriptTask(string processId, string scriptTaskId, string? scriptFormat, string scriptBody)
     {
         var formatAttr = scriptFormat != null ? $@" scriptFormat=""{scriptFormat}""" : "";
