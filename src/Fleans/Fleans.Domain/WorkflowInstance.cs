@@ -157,8 +157,32 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         var activityInstance = await State.GetFirstActive(activityId)
             ?? throw new InvalidOperationException("Active activity not found");
 
-        await (await activityInstance.GetCurrentActivity() as Gateway ?? throw new Exception("Acitivity is not gateway type"))
-                .SetConditionResult(this, activityInstance, conditionSequenceId, result);
+        var gateway = await activityInstance.GetCurrentActivity() as ConditionalGateway
+            ?? throw new InvalidOperationException("Activity is not a conditional gateway");
+
+        bool isDecisionMade;
+        try
+        {
+            isDecisionMade = await gateway.SetConditionResult(
+                this, activityInstance, conditionSequenceId, result);
+        }
+        catch (InvalidOperationException)
+        {
+            LogGatewayNoDefaultFlow(activityId);
+            throw;
+        }
+
+        if (isDecisionMade)
+        {
+            if (result)
+                LogGatewayShortCircuited(activityId, conditionSequenceId);
+            else
+                LogGatewayTakingDefaultFlow(activityId);
+
+            LogGatewayAutoCompleting(activityId);
+            await activityInstance.Complete();
+            await ExecuteWorkflow();
+        }
     }
 
     public void EnqueueEvent(IDomainEvent domainEvent)
@@ -255,4 +279,16 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
 
     [LoggerMessage(EventId = 1006, Level = LogLevel.Debug, Message = "Transitioning: {CompletedCount} completed, {NewCount} new")]
     private partial void LogTransition(int completedCount, int newCount);
+
+    [LoggerMessage(EventId = 1007, Level = LogLevel.Information, Message = "Gateway {ActivityId} decision made, auto-completing and resuming workflow")]
+    private partial void LogGatewayAutoCompleting(string activityId);
+
+    [LoggerMessage(EventId = 1008, Level = LogLevel.Information, Message = "Gateway {ActivityId} short-circuited: condition {ConditionSequenceFlowId} is true")]
+    private partial void LogGatewayShortCircuited(string activityId, string conditionSequenceFlowId);
+
+    [LoggerMessage(EventId = 1009, Level = LogLevel.Information, Message = "Gateway {ActivityId} all conditions false, taking default flow")]
+    private partial void LogGatewayTakingDefaultFlow(string activityId);
+
+    [LoggerMessage(EventId = 1010, Level = LogLevel.Error, Message = "Gateway {ActivityId} all conditions false and no default flow — misconfigured workflow")]
+    private partial void LogGatewayNoDefaultFlow(string activityId);
 }

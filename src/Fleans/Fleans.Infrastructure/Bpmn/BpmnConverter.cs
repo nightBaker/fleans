@@ -33,12 +33,13 @@ public partial class BpmnConverter : IBpmnConverter
         var activities = new List<Activity>();
         var sequenceFlows = new List<SequenceFlow>();
         var activityMap = new Dictionary<string, Activity>();
+        var defaultFlowIds = new HashSet<string>();
 
         // Parse activities
-        ParseActivities(process, activities, activityMap);
+        ParseActivities(process, activities, activityMap, defaultFlowIds);
 
         // Parse sequence flows
-        ParseSequenceFlows(process, sequenceFlows, activityMap);
+        ParseSequenceFlows(process, sequenceFlows, activityMap, defaultFlowIds);
 
         var workflow = new WorkflowDefinition
         {
@@ -50,7 +51,7 @@ public partial class BpmnConverter : IBpmnConverter
         return workflow;
     }
 
-    private void ParseActivities(XElement process, List<Activity> activities, Dictionary<string, Activity> activityMap)
+    private void ParseActivities(XElement process, List<Activity> activities, Dictionary<string, Activity> activityMap, HashSet<string> defaultFlowIds)
     {
         // Parse start events
         foreach (var startEvent in process.Descendants(Bpmn + "startEvent"))
@@ -115,6 +116,10 @@ public partial class BpmnConverter : IBpmnConverter
         foreach (var gateway in process.Descendants(Bpmn + "exclusiveGateway"))
         {
             var id = GetId(gateway);
+            var defaultFlowId = gateway.Attribute("default")?.Value;
+            if (defaultFlowId is not null)
+                defaultFlowIds.Add(defaultFlowId);
+
             var activity = new ExclusiveGateway(id);
             activities.Add(activity);
             activityMap[id] = activity;
@@ -141,7 +146,7 @@ public partial class BpmnConverter : IBpmnConverter
         }
     }
 
-    private void ParseSequenceFlows(XElement process, List<SequenceFlow> sequenceFlows, Dictionary<string, Activity> activityMap)
+    private void ParseSequenceFlows(XElement process, List<SequenceFlow> sequenceFlows, Dictionary<string, Activity> activityMap, HashSet<string> defaultFlowIds)
     {
         foreach (var flow in process.Descendants(Bpmn + "sequenceFlow"))
         {
@@ -169,6 +174,10 @@ public partial class BpmnConverter : IBpmnConverter
                 // We might need to convert to "_context.variable > value"
                 condition = ConvertBpmnCondition(condition);
                 sequenceFlows.Add(new ConditionalSequenceFlow(flowId, source, target, condition));
+            }
+            else if (defaultFlowIds.Contains(flowId))
+            {
+                sequenceFlows.Add(new DefaultSequenceFlow(flowId, source, target));
             }
             else
             {

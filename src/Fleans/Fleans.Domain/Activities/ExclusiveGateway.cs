@@ -1,15 +1,13 @@
-﻿
 using Fleans.Domain.Events;
 using Fleans.Domain.Sequences;
-using Orleans;
 using Orleans.Runtime;
 
 namespace Fleans.Domain.Activities;
 
 [GenerateSerializer]
-public record ExclusiveGateway : Gateway
+public record ExclusiveGateway : ConditionalGateway
 {
-    public ExclusiveGateway(string activityId) : base(activityId)      
+    public ExclusiveGateway(string activityId) : base(activityId)
     {
         ActivityId = activityId;
     }
@@ -20,8 +18,13 @@ public record ExclusiveGateway : Gateway
 
         var sequences = await AddConditionalSequencesToWorkflowInstance(workflowInstance, activityInstance);
 
-        await QueueEvaluteConditionEvents(workflowInstance, activityInstance, sequences);
+        if (!sequences.Any())
+        {
+            await activityInstance.Complete();
+            return;
+        }
 
+        await QueueEvaluateConditionEvents(workflowInstance, activityInstance, sequences);
     }
 
     private static async Task<IEnumerable<ConditionalSequenceFlow>> AddConditionalSequencesToWorkflowInstance(IWorkflowInstance workflowInstance, IActivityInstance activityInstance)
@@ -37,12 +40,11 @@ public record ExclusiveGateway : Gateway
         return sequences;
     }
 
-    private async Task QueueEvaluteConditionEvents(IWorkflowInstance workflowInstance, IActivityInstance activityInstance, IEnumerable<ConditionalSequenceFlow> sequences)
+    private async Task QueueEvaluateConditionEvents(IWorkflowInstance workflowInstance, IActivityInstance activityInstance, IEnumerable<ConditionalSequenceFlow> sequences)
     {
         var definition = await workflowInstance.GetWorkflowDefinition();
         foreach (var sequence in sequences)
         {
-            
             await activityInstance.PublishEvent(new EvaluateConditionEvent(workflowInstance.GetGrainId().GetGuidKey(),
                                                                definition.WorkflowId,
                                                                 definition.ProcessDefinitionId,
@@ -58,9 +60,22 @@ public record ExclusiveGateway : Gateway
         var state = await workflowInstance.GetState();
         var sequencesState = await state.GetConditionSequenceStates();
         var activitySequencesState = sequencesState[await activityInstance.GetActivityInstanceId()];
-        return activitySequencesState
-                            .Where(x=>x.Result)
-                            .Select(x=>x.ConditionalSequence.Target)
-                            .ToList();           
+
+        var trueTarget = activitySequencesState
+            .FirstOrDefault(x => x.Result);
+
+        if (trueTarget is not null)
+            return [trueTarget.ConditionalSequence.Target];
+
+        var definition = await workflowInstance.GetWorkflowDefinition();
+        var defaultFlow = definition.SequenceFlows
+            .OfType<DefaultSequenceFlow>()
+            .FirstOrDefault(sf => sf.Source.ActivityId == ActivityId);
+
+        if (defaultFlow is not null)
+            return [defaultFlow.Target];
+
+        throw new InvalidOperationException(
+            $"ExclusiveGateway {ActivityId}: no true condition and no default flow");
     }
 }
