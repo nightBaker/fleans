@@ -197,11 +197,8 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
         foreach (var id in instanceIds)
         {
             var instance = _grainFactory.GetGrain<IWorkflowInstance>(id);
-            var state = await instance.GetState();
-            var isStarted = await state.IsStarted();
-            var isCompleted = await state.IsCompleted();
-            var defId = _instanceToDefinitionId[id];
-            result.Add(new WorkflowInstanceInfo(id, defId, isStarted, isCompleted));
+            var info = await instance.GetInstanceInfo();
+            result.Add(info);
         }
         return result;
     }

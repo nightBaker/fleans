@@ -11,6 +11,14 @@ public interface IWorkflowInstance : IGrainWithGuidKey
     [ReadOnly]
     ValueTask<Guid> GetWorkflowInstanceId();
     [ReadOnly]
+    ValueTask<DateTimeOffset?> GetCreatedAt();
+    [ReadOnly]
+    ValueTask<DateTimeOffset?> GetExecutionStartedAt();
+    [ReadOnly]
+    ValueTask<DateTimeOffset?> GetCompletedAt();
+    [ReadOnly]
+    ValueTask<WorkflowInstanceInfo> GetInstanceInfo();
+    [ReadOnly]
     ValueTask<IWorkflowInstanceState> GetState();
     [ReadOnly]
     ValueTask<IWorkflowDefinition> GetWorkflowDefinition();

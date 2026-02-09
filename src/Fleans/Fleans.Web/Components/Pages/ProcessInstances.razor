@@ -51,6 +51,9 @@
                     <FluentBadge Color="Color.Neutral">Pending</FluentBadge>
                 }
             </TemplateColumn>
+            <PropertyColumn Property="@(i => i.CreatedAt)" Title="Created At" Sortable="true" Format="yyyy-MM-dd HH:mm:ss" />
+            <PropertyColumn Property="@(i => i.ExecutionStartedAt)" Title="Started At" Sortable="true" Format="yyyy-MM-dd HH:mm:ss" />
+            <PropertyColumn Property="@(i => i.CompletedAt)" Title="Completed At" Sortable="true" Format="yyyy-MM-dd HH:mm:ss" />
             <TemplateColumn Title="Actions">
                 <FluentButton Appearance="Appearance.Stealth"
                               IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Eye())"

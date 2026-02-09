@@ -151,6 +151,153 @@ namespace Fleans.Domain.Tests
         }
 
         [TestMethod]
+        public async Task GetCreatedAt_ShouldReturnNull_BeforeSetWorkflow()
+        {
+            // Arrange
+            var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+
+            // Act
+            var createdAt = await workflowInstance.GetCreatedAt();
+
+            // Assert
+            Assert.IsNull(createdAt);
+        }
+
+        [TestMethod]
+        public async Task GetCreatedAt_ShouldReturnTimestamp_AfterSetWorkflow()
+        {
+            // Arrange
+            var workflow = CreateSimpleWorkflow();
+            var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+
+            var before = DateTimeOffset.UtcNow;
+            await workflowInstance.SetWorkflow(workflow);
+            var after = DateTimeOffset.UtcNow;
+
+            // Act
+            var createdAt = await workflowInstance.GetCreatedAt();
+
+            // Assert
+            Assert.IsNotNull(createdAt);
+            Assert.IsTrue(createdAt >= before, "CreatedAt should be >= test start time");
+            Assert.IsTrue(createdAt <= after, "CreatedAt should be <= test end time");
+        }
+
+        [TestMethod]
+        public async Task GetExecutionStartedAt_ShouldReturnNull_BeforeStartWorkflow()
+        {
+            // Arrange
+            var workflow = CreateSimpleWorkflow();
+            var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            await workflowInstance.SetWorkflow(workflow);
+
+            // Act
+            var executionStartedAt = await workflowInstance.GetExecutionStartedAt();
+
+            // Assert
+            Assert.IsNull(executionStartedAt);
+        }
+
+        [TestMethod]
+        public async Task GetExecutionStartedAt_ShouldReturnTimestamp_AfterStartWorkflow()
+        {
+            // Arrange
+            var workflow = CreateSimpleWorkflow();
+            var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            await workflowInstance.SetWorkflow(workflow);
+
+            var before = DateTimeOffset.UtcNow;
+            await workflowInstance.StartWorkflow();
+            var after = DateTimeOffset.UtcNow;
+
+            // Act
+            var executionStartedAt = await workflowInstance.GetExecutionStartedAt();
+
+            // Assert
+            Assert.IsNotNull(executionStartedAt);
+            Assert.IsTrue(executionStartedAt >= before, "ExecutionStartedAt should be >= test start time");
+            Assert.IsTrue(executionStartedAt <= after, "ExecutionStartedAt should be <= test end time");
+        }
+
+        [TestMethod]
+        public async Task GetCreatedAt_ShouldNotChange_AfterStartWorkflow()
+        {
+            // Arrange
+            var workflow = CreateSimpleWorkflow();
+            var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            await workflowInstance.SetWorkflow(workflow);
+
+            var createdAtBefore = await workflowInstance.GetCreatedAt();
+            Assert.IsNotNull(createdAtBefore);
+
+            // Act
+            await workflowInstance.StartWorkflow();
+
+            // Assert
+            var createdAtAfter = await workflowInstance.GetCreatedAt();
+            Assert.AreEqual(createdAtBefore, createdAtAfter, "CreatedAt should not change after StartWorkflow");
+        }
+
+        [TestMethod]
+        public async Task GetCompletedAt_ShouldReturnNull_BeforeCompletion()
+        {
+            // Arrange
+            var workflow = CreateSimpleWorkflow();
+            var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            await workflowInstance.SetWorkflow(workflow);
+            await workflowInstance.StartWorkflow();
+
+            // Act
+            var completedAt = await workflowInstance.GetCompletedAt();
+
+            // Assert
+            Assert.IsNull(completedAt, "CompletedAt should be null while workflow is still running");
+        }
+
+        [TestMethod]
+        public async Task GetCompletedAt_ShouldReturnTimestamp_AfterCompletion()
+        {
+            // Arrange
+            var workflow = CreateSimpleWorkflow();
+            var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            await workflowInstance.SetWorkflow(workflow);
+            await workflowInstance.StartWorkflow();
+
+            var before = DateTimeOffset.UtcNow;
+            await workflowInstance.CompleteActivity("task", new ExpandoObject());
+            var after = DateTimeOffset.UtcNow;
+
+            // Act
+            var completedAt = await workflowInstance.GetCompletedAt();
+
+            // Assert
+            Assert.IsNotNull(completedAt);
+            Assert.IsTrue(completedAt >= before, "CompletedAt should be >= test start time");
+            Assert.IsTrue(completedAt <= after, "CompletedAt should be <= test end time");
+        }
+
+        [TestMethod]
+        public async Task GetInstanceInfo_ShouldReturnAllFields()
+        {
+            // Arrange
+            var workflow = CreateSimpleWorkflow();
+            var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            await workflowInstance.SetWorkflow(workflow);
+            await workflowInstance.StartWorkflow();
+            await workflowInstance.CompleteActivity("task", new ExpandoObject());
+
+            // Act
+            var info = await workflowInstance.GetInstanceInfo();
+
+            // Assert
+            Assert.IsTrue(info.IsStarted);
+            Assert.IsTrue(info.IsCompleted);
+            Assert.IsNotNull(info.CreatedAt);
+            Assert.IsNotNull(info.ExecutionStartedAt);
+            Assert.IsNotNull(info.CompletedAt);
+        }
+
+        [TestMethod]
         public async Task GetWorkflowInstanceId_ShouldReturnCorrectGuid()
         {
             // Arrange
