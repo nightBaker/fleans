@@ -18,6 +18,12 @@ public record ExclusiveGateway : ConditionalGateway
 
         var sequences = await AddConditionalSequencesToWorkflowInstance(workflowInstance, activityInstance);
 
+        if (!sequences.Any())
+        {
+            await activityInstance.Complete();
+            return;
+        }
+
         await QueueEvaluateConditionEvents(workflowInstance, activityInstance, sequences);
     }
 

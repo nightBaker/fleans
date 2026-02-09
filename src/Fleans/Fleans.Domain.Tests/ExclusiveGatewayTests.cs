@@ -144,6 +144,25 @@ public class ExclusiveGatewayTests
     }
 
     [TestMethod]
+    public async Task ExclusiveGateway_ShouldPassThrough_WhenOnlyDefaultFlowExists()
+    {
+        // Arrange — gateway with no conditional flows, only a default flow
+        var workflow = CreateWorkflowWithOnlyDefaultFlow();
+        var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        await workflowInstance.SetWorkflow(workflow);
+
+        // Act — start workflow, gateway should auto-complete immediately
+        await workflowInstance.StartWorkflow();
+
+        // Assert — workflow completed via endDefault
+        var state = await workflowInstance.GetState();
+        Assert.IsTrue(await state.IsCompleted());
+
+        var completedIds = await GetCompletedActivityIds(state);
+        CollectionAssert.Contains(completedIds, "endDefault");
+    }
+
+    [TestMethod]
     public async Task ExclusiveGateway_ShouldNotAutoComplete_WhenConditionsStillPending()
     {
         // Arrange
@@ -198,6 +217,24 @@ public class ExclusiveGatewayTests
                 new SequenceFlow("seq1", start, ifActivity),
                 new ConditionalSequenceFlow("seq2", ifActivity, end1, "trueCondition"),
                 new ConditionalSequenceFlow("seq3", ifActivity, end2, "falseCondition")
+            ]
+        };
+    }
+
+    private static IWorkflowDefinition CreateWorkflowWithOnlyDefaultFlow()
+    {
+        var start = new StartEvent("start");
+        var endDefault = new EndEvent("endDefault");
+        var ifActivity = new ExclusiveGateway("if");
+
+        return new WorkflowDefinition
+        {
+            WorkflowId = "workflow-only-default",
+            Activities = [start, ifActivity, endDefault],
+            SequenceFlows =
+            [
+                new SequenceFlow("seq1", start, ifActivity),
+                new DefaultSequenceFlow("seqDefault", ifActivity, endDefault)
             ]
         };
     }
