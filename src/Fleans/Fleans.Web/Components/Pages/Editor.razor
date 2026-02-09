@@ -1,5 +1,6 @@
 @page "/editor"
 @page "/editor/{ProcessDefinitionKey}"
+@page "/editor/{ProcessDefinitionKey}/{Version:int}"
 @rendermode InteractiveServer
 @using Fleans.Application
 @using Fleans.Infrastructure.Bpmn
@@ -23,7 +24,14 @@
 
         @if (!string.IsNullOrEmpty(processKey))
         {
-            <FluentBadge Color="Color.Accent">@processKey</FluentBadge>
+            @if (Version.HasValue)
+            {
+                <FluentBadge Color="Color.Accent">Editing v@(Version) of @processKey</FluentBadge>
+            }
+            else
+            {
+                <FluentBadge Color="Color.Accent">@processKey</FluentBadge>
+            }
         }
 
         <div class="toolbar-spacer"></div>
@@ -102,6 +110,7 @@
 
 @code {
     [Parameter] public string? ProcessDefinitionKey { get; set; }
+    [Parameter] public int? Version { get; set; }
 
     private FluentInputFile? fileUploader;
     private DotNetObjectReference<Editor>? dotNetRef;
@@ -131,7 +140,15 @@
             {
                 try
                 {
-                    var bpmnXml = await WorkflowEngine.GetBpmnXmlByKey(ProcessDefinitionKey);
+                    string bpmnXml;
+                    if (Version.HasValue)
+                    {
+                        bpmnXml = await WorkflowEngine.GetBpmnXmlByKeyAndVersion(ProcessDefinitionKey, Version.Value);
+                    }
+                    else
+                    {
+                        bpmnXml = await WorkflowEngine.GetBpmnXmlByKey(ProcessDefinitionKey);
+                    }
                     await JS.InvokeVoidAsync("bpmnEditor.loadXml", bpmnXml);
                     processKey = ProcessDefinitionKey;
                     StateHasChanged();

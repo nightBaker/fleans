@@ -194,7 +194,7 @@
 
     private void EditWorkflow(ProcessDefinitionSummary definition)
     {
-        Navigation.NavigateTo($"/editor/{Uri.EscapeDataString(definition.ProcessDefinitionKey)}");
+        Navigation.NavigateTo($"/editor/{Uri.EscapeDataString(definition.ProcessDefinitionKey)}/{definition.Version}");
     }
 
     private void ApplyFilter()
@@ -238,6 +238,6 @@
 
     private void ViewInstances(ProcessDefinitionSummary version)
     {
-        Navigation.NavigateTo($"/process-instances/{Uri.EscapeDataString(version.ProcessDefinitionKey)}");
+        Navigation.NavigateTo($"/process-instances/{Uri.EscapeDataString(version.ProcessDefinitionKey)}/{version.Version}");
     }
 }
