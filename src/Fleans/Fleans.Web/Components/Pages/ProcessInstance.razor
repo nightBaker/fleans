@@ -46,7 +46,9 @@
     }
     else
     {
-        <div id="bpmn-canvas" class="bpmn-container"></div>
+        <div id="bpmn-canvas" class="bpmn-container" style="height: @(canvasHeight)px;"></div>
+
+        <div id="vertical-drag-handle" class="drag-handle-vertical"></div>
 
         <FluentButton Appearance="Appearance.Neutral"
                       IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowSync())"
@@ -226,6 +228,7 @@
     private bool isRefreshing;
     private string? errorMessage;
     private string? selectedActivityId;
+    private int canvasHeight = 400;
     private DotNetObjectReference<ProcessInstance>? dotNetRef;
 
     // Activities tab
@@ -350,6 +353,10 @@
 
         dotNetRef = DotNetObjectReference.Create(this);
         await JS.InvokeVoidAsync("bpmnViewer.registerClickHandler", dotNetRef);
+
+        // Initialize vertical drag handle
+        var maxHeight = 800;
+        await JS.InvokeVoidAsync("dragResize.initVertical", "vertical-drag-handle", "bpmn-canvas", 200, maxHeight, dotNetRef, "OnCanvasResized");
     }
 
     private async Task Refresh()
@@ -402,6 +409,17 @@
     {
         selectedActivityId = string.IsNullOrEmpty(elementId) ? null : elementId;
         StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task OnCanvasResized(double newHeight)
+    {
+        canvasHeight = (int)newHeight;
+        StateHasChanged();
+        if (bpmnXml != null)
+        {
+            await JS.InvokeVoidAsync("bpmnViewer.refit");
+        }
     }
 
     private string? GetActivityRowClass(ActivityInstanceSnapshot item)

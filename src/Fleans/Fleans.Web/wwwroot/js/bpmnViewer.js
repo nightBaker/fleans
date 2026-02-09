@@ -125,6 +125,12 @@ window.bpmnViewer = {
         });
     },
 
+    refit: function () {
+        if (!this._viewer) return;
+        var canvas = this._viewer.get('canvas');
+        canvas.zoom('fit-viewport');
+    },
+
     destroy: function () {
         if (this._viewer) {
             this._viewer.destroy();
