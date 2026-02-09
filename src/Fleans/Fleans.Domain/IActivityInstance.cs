@@ -16,6 +16,12 @@ namespace Fleans.Domain
         ValueTask<ActivityErrorState?> GetErrorState();
 
         [ReadOnly]
+        ValueTask<DateTimeOffset?> GetCreatedAt();
+
+        [ReadOnly]
+        ValueTask<DateTimeOffset?> GetExecutionStartedAt();
+
+        [ReadOnly]
         ValueTask<DateTimeOffset?> GetCompletedAt();
 
         [ReadOnly]

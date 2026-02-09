@@ -65,7 +65,9 @@ public sealed record ActivityInstanceSnapshot(
     [property: Id(4)] bool IsExecuting,
     [property: Id(5)] Guid VariablesStateId,
     [property: Id(6)] ActivityErrorState? ErrorState,
-    [property: Id(7)] DateTimeOffset? CompletedAt);
+    [property: Id(7)] DateTimeOffset? CreatedAt,
+    [property: Id(8)] DateTimeOffset? ExecutionStartedAt,
+    [property: Id(9)] DateTimeOffset? CompletedAt);
 
 [GenerateSerializer]
 public sealed record VariableStateSnapshot(
