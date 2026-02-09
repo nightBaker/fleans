@@ -55,13 +55,11 @@ public record ExclusiveGateway : ConditionalGateway
         var sequencesState = await state.GetConditionSequenceStates();
         var activitySequencesState = sequencesState[await activityInstance.GetActivityInstanceId()];
 
-        var trueTargets = activitySequencesState
-            .Where(x => x.Result)
-            .Select(x => x.ConditionalSequence.Target)
-            .ToList();
+        var trueTarget = activitySequencesState
+            .FirstOrDefault(x => x.Result);
 
-        if (trueTargets.Count > 0)
-            return trueTargets;
+        if (trueTarget is not null)
+            return [trueTarget.ConditionalSequence.Target];
 
         var definition = await workflowInstance.GetWorkflowDefinition();
         var defaultFlow = definition.SequenceFlows

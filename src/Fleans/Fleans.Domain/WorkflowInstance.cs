@@ -160,8 +160,17 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         var gateway = await activityInstance.GetCurrentActivity() as ConditionalGateway
             ?? throw new InvalidOperationException("Activity is not a conditional gateway");
 
-        var isDecisionMade = await gateway.SetConditionResult(
-            this, activityInstance, conditionSequenceId, result);
+        bool isDecisionMade;
+        try
+        {
+            isDecisionMade = await gateway.SetConditionResult(
+                this, activityInstance, conditionSequenceId, result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            LogGatewayNoDefaultFlow(activityId);
+            throw;
+        }
 
         if (isDecisionMade)
         {
@@ -279,4 +288,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
 
     [LoggerMessage(EventId = 1009, Level = LogLevel.Information, Message = "Gateway {ActivityId} all conditions false, taking default flow")]
     private partial void LogGatewayTakingDefaultFlow(string activityId);
+
+    [LoggerMessage(EventId = 1010, Level = LogLevel.Error, Message = "Gateway {ActivityId} all conditions false and no default flow — misconfigured workflow")]
+    private partial void LogGatewayNoDefaultFlow(string activityId);
 }
