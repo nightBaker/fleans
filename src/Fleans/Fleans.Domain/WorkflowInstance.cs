@@ -166,7 +166,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
             isDecisionMade = await gateway.SetConditionResult(
                 this, activityInstance, conditionSequenceId, result);
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException)
         {
             LogGatewayNoDefaultFlow(activityId);
             throw;

@@ -159,7 +159,12 @@ public class ExclusiveGatewayTests
         Assert.IsTrue(await state.IsCompleted());
 
         var completedIds = await GetCompletedActivityIds(state);
+        CollectionAssert.Contains(completedIds, "start");
+        CollectionAssert.Contains(completedIds, "if");
         CollectionAssert.Contains(completedIds, "endDefault");
+
+        var activeActivities = await state.GetActiveActivities();
+        Assert.AreEqual(0, activeActivities.Count);
     }
 
     [TestMethod]
