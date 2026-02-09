@@ -8,7 +8,7 @@
 
     <div class="properties-panel-body">
         <FluentStack Orientation="Orientation.Vertical" Gap="12px">
-            @if (GetReplaceOptions() is { Count: > 1 } options)
+            @if (!ReadOnly && GetReplaceOptions() is { Count: > 1 } options)
             {
                 <div>
                     <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Type</FluentLabel>
@@ -23,12 +23,12 @@
 
             <div>
                 <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">ID</FluentLabel>
-                <FluentTextField Value="@elementId" @oninput="OnIdInput" @onchange="OnIdChange" Style="width: 100%;" />
+                <FluentTextField Value="@elementId" @oninput="OnIdInput" @onchange="OnIdChange" Disabled="@ReadOnly" Style="width: 100%;" />
             </div>
 
             <div>
                 <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Name</FluentLabel>
-                <FluentTextField Value="@name" @oninput="OnNameInput" @onchange="OnNameChange" Style="width: 100%;" />
+                <FluentTextField Value="@name" @oninput="OnNameInput" @onchange="OnNameChange" Disabled="@ReadOnly" Style="width: 100%;" />
             </div>
 
             @if (Element.Type == "bpmn:ScriptTask")
@@ -36,13 +36,13 @@
                 <div>
                     <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Script Format</FluentLabel>
                     <FluentTextField Value="@scriptFormat" @oninput="OnScriptFormatInput" @onchange="OnScriptFormatChange"
-                                     Placeholder="e.g. javascript" Style="width: 100%;" />
+                                     Disabled="@ReadOnly" Placeholder="e.g. javascript" Style="width: 100%;" />
                 </div>
 
                 <div>
                     <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Script</FluentLabel>
                     <FluentTextArea Value="@script" @oninput="OnScriptInput" @onchange="OnScriptChange"
-                                    Rows="8" Resize="TextAreaResize.Vertical" Style="width: 100%;" />
+                                    Disabled="@ReadOnly" Rows="8" Resize="TextAreaResize.Vertical" Style="width: 100%;" />
                 </div>
             }
 
@@ -51,7 +51,7 @@
                 <div>
                     <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Condition Expression</FluentLabel>
                     <FluentTextArea Value="@conditionExpression" @oninput="OnConditionInput" @onchange="OnConditionChange"
-                                    Rows="3" Resize="TextAreaResize.Vertical"
+                                    Disabled="@ReadOnly" Rows="3" Resize="TextAreaResize.Vertical"
                                     Placeholder="e.g. ${amount > 100}" Style="width: 100%;" />
                 </div>
             }
@@ -61,6 +61,7 @@
 
 @code {
     [Parameter, EditorRequired] public BpmnElementData Element { get; set; } = default!;
+    [Parameter] public bool ReadOnly { get; set; }
     [Parameter] public EventCallback<BpmnElementData> OnElementReplaced { get; set; }
 
     private string elementId = "";

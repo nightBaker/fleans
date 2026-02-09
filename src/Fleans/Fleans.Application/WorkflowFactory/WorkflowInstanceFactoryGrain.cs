@@ -223,6 +223,44 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
         return GetBpmnXml(definitionId);
     }
 
+    public Task<string> GetBpmnXmlByKeyAndVersion(string processDefinitionKey, int version)
+    {
+        if (!_byKey.TryGetValue(processDefinitionKey, out var versions) || versions.Count == 0)
+            throw new KeyNotFoundException($"Process definition key '{processDefinitionKey}' not found.");
+
+        var definition = versions.FirstOrDefault(v => v.Version == version)
+            ?? throw new KeyNotFoundException($"Version {version} of '{processDefinitionKey}' not found.");
+
+        return Task.FromResult(definition.BpmnXml);
+    }
+
+    public async Task<IReadOnlyList<WorkflowInstanceInfo>> GetInstancesByKeyAndVersion(string processDefinitionKey, int version)
+    {
+        if (!_byKey.TryGetValue(processDefinitionKey, out var versions) || versions.Count == 0)
+            return Array.Empty<WorkflowInstanceInfo>();
+
+        var definition = versions.FirstOrDefault(v => v.Version == version);
+        if (definition == null)
+            return Array.Empty<WorkflowInstanceInfo>();
+
+        var targetDefinitionId = definition.ProcessDefinitionId;
+
+        if (!_instancesByKey.TryGetValue(processDefinitionKey, out var instanceIds))
+            return Array.Empty<WorkflowInstanceInfo>();
+
+        var result = new List<WorkflowInstanceInfo>();
+        foreach (var id in instanceIds)
+        {
+            if (_instanceToDefinitionId.TryGetValue(id, out var defId) && defId == targetDefinitionId)
+            {
+                var instance = _grainFactory.GetGrain<IWorkflowInstance>(id);
+                var info = await instance.GetInstanceInfo();
+                result.Add(info);
+            }
+        }
+        return result;
+    }
+
     private ProcessDefinition GetLatestDefinitionOrThrow(string processDefinitionKey)
     {
         if (string.IsNullOrWhiteSpace(processDefinitionKey))

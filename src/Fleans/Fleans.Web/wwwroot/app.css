@@ -44,7 +44,6 @@ h1:focus {
 /* BPMN Viewer Styles */
 .bpmn-container {
     width: 100%;
-    height: 600px;
     border: 1px solid var(--neutral-stroke-rest);
     border-radius: 4px;
     overflow: hidden;
@@ -150,4 +149,62 @@ h1:focus {
     min-width: 400px;
     z-index: 1001;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+/* Drag Resize Handles */
+.drag-handle-vertical {
+    height: 6px;
+    cursor: row-resize;
+    background: var(--neutral-stroke-rest);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.drag-handle-vertical::after {
+    content: '';
+    width: 40px;
+    height: 2px;
+    background: var(--neutral-foreground-hint);
+    border-radius: 1px;
+}
+
+.drag-handle-horizontal {
+    width: 6px;
+    cursor: col-resize;
+    background: var(--neutral-stroke-rest);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.drag-handle-horizontal::after {
+    content: '';
+    height: 40px;
+    width: 2px;
+    background: var(--neutral-foreground-hint);
+    border-radius: 1px;
+}
+
+/* Instance Detail Layout */
+.instance-content {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+}
+
+.instance-main {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    gap: 8px;
+}
+
+#instance-properties-panel {
+    width: 300px;
+    flex-shrink: 0;
+    overflow-y: auto;
 }

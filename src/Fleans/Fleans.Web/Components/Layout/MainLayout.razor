@@ -7,9 +7,14 @@
     </FluentHeader>
     
     <FluentStack Orientation="Orientation.Horizontal" Width="100%">
-        <FluentNavMenu Width="250">
-            <NavMenu/>
-        </FluentNavMenu>
+        <FluentAppBar Style="height: calc(100vh - 50px);">
+            <FluentAppBarItem Href="/workflows"
+                              Text="Workflows"
+                              IconRest="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size24.Flow())" />
+            <FluentAppBarItem Href="/editor"
+                              Text="Editor"
+                              IconRest="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size24.DrawShape())" />
+        </FluentAppBar>
 
         <FluentBodyContent Style="padding: calc(var(--design-unit) * 1px) 0">
             @Body

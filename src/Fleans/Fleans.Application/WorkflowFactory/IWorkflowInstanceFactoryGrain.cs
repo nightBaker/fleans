@@ -15,6 +15,8 @@ public interface IWorkflowInstanceFactoryGrain : IGrainWithIntegerKey
     Task<string> GetBpmnXml(string processDefinitionId);
     Task<string> GetBpmnXmlByKey(string processDefinitionKey);
     Task<string> GetBpmnXmlByInstanceId(Guid instanceId);
+    Task<string> GetBpmnXmlByKeyAndVersion(string processDefinitionKey, int version);
+    Task<IReadOnlyList<WorkflowInstanceInfo>> GetInstancesByKeyAndVersion(string processDefinitionKey, int version);
 }
 
 public record WorkflowSummary(string WorkflowId, int ActivitiesCount, int SequenceFlowsCount);

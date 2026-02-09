@@ -9,7 +9,7 @@ window.bpmnViewer = {
         'bpmn:StartEvent', 'bpmn:EndEvent', 'bpmn:IntermediateCatchEvent', 'bpmn:IntermediateThrowEvent',
         'bpmn:BoundaryEvent', 'bpmn:ExclusiveGateway', 'bpmn:ParallelGateway',
         'bpmn:InclusiveGateway', 'bpmn:EventBasedGateway', 'bpmn:SubProcess',
-        'bpmn:CallActivity'
+        'bpmn:CallActivity', 'bpmn:SequenceFlow'
     ],
 
     init: async function (containerId, bpmnXml) {
@@ -123,6 +123,30 @@ window.bpmnViewer = {
             width: currentViewbox.width,
             height: currentViewbox.height
         });
+    },
+
+    refit: function () {
+        if (!this._viewer) return;
+        var canvas = this._viewer.get('canvas');
+        canvas.zoom('fit-viewport');
+    },
+
+    getElementProperties: function (elementId) {
+        if (!this._viewer) return null;
+
+        var elementRegistry = this._viewer.get('elementRegistry');
+        var element = elementRegistry.get(elementId);
+        if (!element) return null;
+
+        var bo = element.businessObject;
+        return {
+            id: bo.id || '',
+            type: element.type || '',
+            name: bo.name || '',
+            scriptFormat: bo.scriptFormat || '',
+            script: bo.script || '',
+            conditionExpression: (bo.conditionExpression && bo.conditionExpression.body) || ''
+        };
     },
 
     destroy: function () {
