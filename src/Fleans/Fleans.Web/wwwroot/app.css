@@ -187,3 +187,24 @@ h1:focus {
     background: var(--neutral-foreground-hint);
     border-radius: 1px;
 }
+
+/* Instance Detail Layout */
+.instance-content {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+}
+
+.instance-main {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    gap: 8px;
+}
+
+#instance-properties-panel {
+    width: 300px;
+    flex-shrink: 0;
+    overflow: hidden;
+}

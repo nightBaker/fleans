@@ -46,176 +46,188 @@
     }
     else
     {
-        <div id="bpmn-canvas" class="bpmn-container" style="height: @(canvasHeight)px;"></div>
+        <div class="instance-content">
+            <div class="instance-main">
+                <div id="bpmn-canvas" class="bpmn-container" style="height: @(canvasHeight)px;"></div>
 
-        <div id="vertical-drag-handle" class="drag-handle-vertical"></div>
+                <div id="vertical-drag-handle" class="drag-handle-vertical"></div>
 
-        <FluentButton Appearance="Appearance.Neutral"
-                      IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowSync())"
-                      Loading="@isRefreshing"
-                      @onclick="Refresh">
-            Refresh
-        </FluentButton>
+                <FluentButton Appearance="Appearance.Neutral"
+                              IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowSync())"
+                              Loading="@isRefreshing"
+                              @onclick="Refresh">
+                    Refresh
+                </FluentButton>
 
-        @if (failedActivities.Count > 0)
-        {
-            @foreach (var failed in failedActivities)
-            {
-                <FluentMessageBar Intent="MessageIntent.Error">
-                    Activity <strong>@failed.ActivityId</strong> failed: [@failed.ErrorState!.Code] @failed.ErrorState.Message
-                </FluentMessageBar>
-            }
-        }
-
-        <FluentTabs>
-            <FluentTab Label="Activities">
-                <FluentDataGrid Items="@filteredActivities" GridTemplateColumns="1fr 1fr 1fr 1fr 1fr 1fr 2fr"
-                                TGridItem="ActivityInstanceSnapshot"
-                                OnRowClick="@OnActivityRowClick"
-                                RowClass="@GetActivityRowClass">
-                    <PropertyColumn Property="@(a => a.ActivityId)" Title="Activity ID" Sortable="true">
-                        <ColumnOptions>
-                            <FluentSearch @bind-Value="activityIdFilter"
-                                          @bind-Value:after="ApplyActivityFilters"
-                                          Placeholder="Filter..." />
-                        </ColumnOptions>
-                    </PropertyColumn>
-                    <PropertyColumn Property="@(a => a.ActivityType)" Title="Type" Sortable="true">
-                        <ColumnOptions>
-                            <FluentSearch @bind-Value="activityTypeFilter"
-                                          @bind-Value:after="ApplyActivityFilters"
-                                          Placeholder="Filter..." />
-                        </ColumnOptions>
-                    </PropertyColumn>
-                    <TemplateColumn Title="Status" SortBy="@statusSort">
-                        <ColumnOptions>
-                            <FluentSearch @bind-Value="activityStatusFilter"
-                                          @bind-Value:after="ApplyActivityFilters"
-                                          Placeholder="Filter..." />
-                        </ColumnOptions>
-                        <ChildContent>
-                            @if (context.ErrorState != null)
-                            {
-                                <FluentBadge Color="Color.Error">Failed</FluentBadge>
-                            }
-                            else if (context.IsCompleted)
-                            {
-                                <FluentBadge Color="Color.Success">Completed</FluentBadge>
-                            }
-                            else if (context.IsExecuting)
-                            {
-                                <FluentBadge Color="Color.Accent">Running</FluentBadge>
-                            }
-                            else
-                            {
-                                <FluentBadge Color="Color.Lightweight">Pending</FluentBadge>
-                            }
-                        </ChildContent>
-                    </TemplateColumn>
-                    <PropertyColumn Property="@(a => a.CreatedAt)" Title="Created At" Sortable="true" Format="yyyy-MM-dd HH:mm:ss" />
-                    <PropertyColumn Property="@(a => a.ExecutionStartedAt)" Title="Started At" Sortable="true" Format="yyyy-MM-dd HH:mm:ss" />
-                    <PropertyColumn Property="@(a => a.CompletedAt)" Title="Completed At" Sortable="true" Format="yyyy-MM-dd HH:mm:ss" />
-                    <TemplateColumn Title="Error" SortBy="@errorSort">
-                        <ColumnOptions>
-                            <FluentSearch @bind-Value="activityErrorFilter"
-                                          @bind-Value:after="ApplyActivityFilters"
-                                          Placeholder="Filter..." />
-                        </ColumnOptions>
-                        <ChildContent>
-                            @if (context.ErrorState != null)
-                            {
-                                <span>[@context.ErrorState.Code] @context.ErrorState.Message</span>
-                            }
-                            else
-                            {
-                                <span>-</span>
-                            }
-                        </ChildContent>
-                    </TemplateColumn>
-                </FluentDataGrid>
-            </FluentTab>
-
-            <FluentTab Label="Variables">
-                @if (snapshot!.VariableStates.Count == 0)
+                @if (failedActivities.Count > 0)
                 {
-                    <FluentMessageBar Intent="MessageIntent.Info">
-                        No variable states recorded.
-                    </FluentMessageBar>
-                }
-                else
-                {
-                    @foreach (var vs in snapshot.VariableStates)
+                    @foreach (var failed in failedActivities)
                     {
-                        var rows = GetVariableRows(vs);
-                        <FluentLabel Typo="Typography.Subject" Style="margin-top: 12px;">
-                            Variables @vs.VariablesId.ToString()[..8]...
-                        </FluentLabel>
-                        <FluentDataGrid Items="@rows" GridTemplateColumns="1fr 2fr">
-                            <PropertyColumn Property="@(v => v.Key)" Title="Key" Sortable="true" />
-                            <PropertyColumn Property="@(v => v.Value)" Title="Value" Sortable="true" />
-                        </FluentDataGrid>
+                        <FluentMessageBar Intent="MessageIntent.Error">
+                            Activity <strong>@failed.ActivityId</strong> failed: [@failed.ErrorState!.Code] @failed.ErrorState.Message
+                        </FluentMessageBar>
                     }
                 }
-            </FluentTab>
 
-            <FluentTab Label="Conditions">
-                @if (snapshot!.ConditionSequences.Count == 0)
-                {
-                    <FluentMessageBar Intent="MessageIntent.Info">
-                        No condition evaluations recorded.
-                    </FluentMessageBar>
-                }
-                else
-                {
-                    <FluentDataGrid Items="@filteredConditions" GridTemplateColumns="1fr 2fr 1.5fr 0.5fr">
-                        <PropertyColumn Property="@(c => c.SequenceFlowId)" Title="Sequence Flow" Sortable="true">
-                            <ColumnOptions>
-                                <FluentSearch @bind-Value="conditionFlowFilter"
-                                              @bind-Value:after="ApplyConditionFilters"
-                                              Placeholder="Filter..." />
-                            </ColumnOptions>
-                        </PropertyColumn>
-                        <PropertyColumn Property="@(c => c.Condition)" Title="Condition" Sortable="true">
-                            <ColumnOptions>
-                                <FluentSearch @bind-Value="conditionExprFilter"
-                                              @bind-Value:after="ApplyConditionFilters"
-                                              Placeholder="Filter..." />
-                            </ColumnOptions>
-                        </PropertyColumn>
-                        <TemplateColumn Title="Path" SortBy="@conditionPathSort">
-                            <ColumnOptions>
-                                <FluentSearch @bind-Value="conditionPathFilter"
-                                              @bind-Value:after="ApplyConditionFilters"
-                                              Placeholder="Filter..." />
-                            </ColumnOptions>
-                            <ChildContent>
-                                <span>@context.SourceActivityId → @context.TargetActivityId</span>
-                            </ChildContent>
-                        </TemplateColumn>
-                        <TemplateColumn Title="Result" SortBy="@conditionResultSort">
-                            <ColumnOptions>
-                                <FluentSelect TOption="string" @bind-Value="conditionResultFilter"
-                                              @bind-Value:after="ApplyConditionFilters">
-                                    <FluentOption Value="">All</FluentOption>
-                                    <FluentOption Value="true">True</FluentOption>
-                                    <FluentOption Value="false">False</FluentOption>
-                                </FluentSelect>
-                            </ColumnOptions>
-                            <ChildContent>
-                                @if (context.Result)
-                                {
-                                    <FluentBadge Color="Color.Success">True</FluentBadge>
-                                }
-                                else
-                                {
-                                    <FluentBadge Color="Color.Error">False</FluentBadge>
-                                }
-                            </ChildContent>
-                        </TemplateColumn>
-                    </FluentDataGrid>
-                }
-            </FluentTab>
-        </FluentTabs>
+                <FluentTabs>
+                    <FluentTab Label="Activities">
+                        <FluentDataGrid Items="@filteredActivities" GridTemplateColumns="1fr 1fr 1fr 1fr 1fr 1fr 2fr"
+                                        TGridItem="ActivityInstanceSnapshot"
+                                        OnRowClick="@OnActivityRowClick"
+                                        RowClass="@GetActivityRowClass">
+                            <PropertyColumn Property="@(a => a.ActivityId)" Title="Activity ID" Sortable="true">
+                                <ColumnOptions>
+                                    <FluentSearch @bind-Value="activityIdFilter"
+                                                  @bind-Value:after="ApplyActivityFilters"
+                                                  Placeholder="Filter..." />
+                                </ColumnOptions>
+                            </PropertyColumn>
+                            <PropertyColumn Property="@(a => a.ActivityType)" Title="Type" Sortable="true">
+                                <ColumnOptions>
+                                    <FluentSearch @bind-Value="activityTypeFilter"
+                                                  @bind-Value:after="ApplyActivityFilters"
+                                                  Placeholder="Filter..." />
+                                </ColumnOptions>
+                            </PropertyColumn>
+                            <TemplateColumn Title="Status" SortBy="@statusSort">
+                                <ColumnOptions>
+                                    <FluentSearch @bind-Value="activityStatusFilter"
+                                                  @bind-Value:after="ApplyActivityFilters"
+                                                  Placeholder="Filter..." />
+                                </ColumnOptions>
+                                <ChildContent>
+                                    @if (context.ErrorState != null)
+                                    {
+                                        <FluentBadge Color="Color.Error">Failed</FluentBadge>
+                                    }
+                                    else if (context.IsCompleted)
+                                    {
+                                        <FluentBadge Color="Color.Success">Completed</FluentBadge>
+                                    }
+                                    else if (context.IsExecuting)
+                                    {
+                                        <FluentBadge Color="Color.Accent">Running</FluentBadge>
+                                    }
+                                    else
+                                    {
+                                        <FluentBadge Color="Color.Lightweight">Pending</FluentBadge>
+                                    }
+                                </ChildContent>
+                            </TemplateColumn>
+                            <PropertyColumn Property="@(a => a.CreatedAt)" Title="Created At" Sortable="true" Format="yyyy-MM-dd HH:mm:ss" />
+                            <PropertyColumn Property="@(a => a.ExecutionStartedAt)" Title="Started At" Sortable="true" Format="yyyy-MM-dd HH:mm:ss" />
+                            <PropertyColumn Property="@(a => a.CompletedAt)" Title="Completed At" Sortable="true" Format="yyyy-MM-dd HH:mm:ss" />
+                            <TemplateColumn Title="Error" SortBy="@errorSort">
+                                <ColumnOptions>
+                                    <FluentSearch @bind-Value="activityErrorFilter"
+                                                  @bind-Value:after="ApplyActivityFilters"
+                                                  Placeholder="Filter..." />
+                                </ColumnOptions>
+                                <ChildContent>
+                                    @if (context.ErrorState != null)
+                                    {
+                                        <span>[@context.ErrorState.Code] @context.ErrorState.Message</span>
+                                    }
+                                    else
+                                    {
+                                        <span>-</span>
+                                    }
+                                </ChildContent>
+                            </TemplateColumn>
+                        </FluentDataGrid>
+                    </FluentTab>
+
+                    <FluentTab Label="Variables">
+                        @if (snapshot!.VariableStates.Count == 0)
+                        {
+                            <FluentMessageBar Intent="MessageIntent.Info">
+                                No variable states recorded.
+                            </FluentMessageBar>
+                        }
+                        else
+                        {
+                            @foreach (var vs in snapshot.VariableStates)
+                            {
+                                var rows = GetVariableRows(vs);
+                                <FluentLabel Typo="Typography.Subject" Style="margin-top: 12px;">
+                                    Variables @vs.VariablesId.ToString()[..8]...
+                                </FluentLabel>
+                                <FluentDataGrid Items="@rows" GridTemplateColumns="1fr 2fr">
+                                    <PropertyColumn Property="@(v => v.Key)" Title="Key" Sortable="true" />
+                                    <PropertyColumn Property="@(v => v.Value)" Title="Value" Sortable="true" />
+                                </FluentDataGrid>
+                            }
+                        }
+                    </FluentTab>
+
+                    <FluentTab Label="Conditions">
+                        @if (snapshot!.ConditionSequences.Count == 0)
+                        {
+                            <FluentMessageBar Intent="MessageIntent.Info">
+                                No condition evaluations recorded.
+                            </FluentMessageBar>
+                        }
+                        else
+                        {
+                            <FluentDataGrid Items="@filteredConditions" GridTemplateColumns="1fr 2fr 1.5fr 0.5fr">
+                                <PropertyColumn Property="@(c => c.SequenceFlowId)" Title="Sequence Flow" Sortable="true">
+                                    <ColumnOptions>
+                                        <FluentSearch @bind-Value="conditionFlowFilter"
+                                                      @bind-Value:after="ApplyConditionFilters"
+                                                      Placeholder="Filter..." />
+                                    </ColumnOptions>
+                                </PropertyColumn>
+                                <PropertyColumn Property="@(c => c.Condition)" Title="Condition" Sortable="true">
+                                    <ColumnOptions>
+                                        <FluentSearch @bind-Value="conditionExprFilter"
+                                                      @bind-Value:after="ApplyConditionFilters"
+                                                      Placeholder="Filter..." />
+                                    </ColumnOptions>
+                                </PropertyColumn>
+                                <TemplateColumn Title="Path" SortBy="@conditionPathSort">
+                                    <ColumnOptions>
+                                        <FluentSearch @bind-Value="conditionPathFilter"
+                                                      @bind-Value:after="ApplyConditionFilters"
+                                                      Placeholder="Filter..." />
+                                    </ColumnOptions>
+                                    <ChildContent>
+                                        <span>@context.SourceActivityId → @context.TargetActivityId</span>
+                                    </ChildContent>
+                                </TemplateColumn>
+                                <TemplateColumn Title="Result" SortBy="@conditionResultSort">
+                                    <ColumnOptions>
+                                        <FluentSelect TOption="string" @bind-Value="conditionResultFilter"
+                                                      @bind-Value:after="ApplyConditionFilters">
+                                            <FluentOption Value="">All</FluentOption>
+                                            <FluentOption Value="true">True</FluentOption>
+                                            <FluentOption Value="false">False</FluentOption>
+                                        </FluentSelect>
+                                    </ColumnOptions>
+                                    <ChildContent>
+                                        @if (context.Result)
+                                        {
+                                            <FluentBadge Color="Color.Success">True</FluentBadge>
+                                        }
+                                        else
+                                        {
+                                            <FluentBadge Color="Color.Error">False</FluentBadge>
+                                        }
+                                    </ChildContent>
+                                </TemplateColumn>
+                            </FluentDataGrid>
+                        }
+                    </FluentTab>
+                </FluentTabs>
+            </div>
+
+            @if (selectedElementData != null)
+            {
+                <div id="horizontal-drag-handle" class="drag-handle-horizontal"></div>
+                <div id="instance-properties-panel">
+                    <ElementPropertiesPanel Element="@selectedElementData" ReadOnly="true" />
+                </div>
+            }
+        </div>
     }
 </FluentStack>
 
@@ -228,6 +240,7 @@
     private bool isRefreshing;
     private string? errorMessage;
     private string? selectedActivityId;
+    private ElementPropertiesPanel.BpmnElementData? selectedElementData;
     private int canvasHeight = 400;
     private DotNetObjectReference<ProcessInstance>? dotNetRef;
 
@@ -402,13 +415,40 @@
         if (row.Item is null) return;
         selectedActivityId = row.Item.ActivityId;
         await JS.InvokeVoidAsync("bpmnViewer.selectElement", row.Item.ActivityId);
+
+        var props = await JS.InvokeAsync<ElementPropertiesPanel.BpmnElementData?>("bpmnViewer.getElementProperties", row.Item.ActivityId);
+        selectedElementData = props;
+        StateHasChanged();
+
+        if (selectedElementData != null)
+        {
+            await Task.Yield();
+            await InitHorizontalResize();
+        }
     }
 
     [JSInvokable]
-    public void OnBpmnElementClicked(string elementId)
+    public async Task OnBpmnElementClicked(string elementId)
     {
         selectedActivityId = string.IsNullOrEmpty(elementId) ? null : elementId;
-        StateHasChanged();
+
+        if (!string.IsNullOrEmpty(elementId))
+        {
+            var props = await JS.InvokeAsync<ElementPropertiesPanel.BpmnElementData?>("bpmnViewer.getElementProperties", elementId);
+            selectedElementData = props;
+        }
+        else
+        {
+            selectedElementData = null;
+        }
+
+        await InvokeAsync(StateHasChanged);
+
+        if (selectedElementData != null)
+        {
+            await Task.Yield();
+            await InitHorizontalResize();
+        }
     }
 
     [JSInvokable]
@@ -420,6 +460,17 @@
         {
             await JS.InvokeVoidAsync("bpmnViewer.refit");
         }
+    }
+
+    private async Task InitHorizontalResize()
+    {
+        if (dotNetRef == null) return;
+        await JS.InvokeVoidAsync("dragResize.initHorizontal", "horizontal-drag-handle", "instance-properties-panel", 200, 600, dotNetRef, "OnPanelResized");
+    }
+
+    [JSInvokable]
+    public void OnPanelResized(double newWidth)
+    {
     }
 
     private string? GetActivityRowClass(ActivityInstanceSnapshot item)

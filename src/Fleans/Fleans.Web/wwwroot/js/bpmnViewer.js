@@ -131,6 +131,24 @@ window.bpmnViewer = {
         canvas.zoom('fit-viewport');
     },
 
+    getElementProperties: function (elementId) {
+        if (!this._viewer) return null;
+
+        var elementRegistry = this._viewer.get('elementRegistry');
+        var element = elementRegistry.get(elementId);
+        if (!element) return null;
+
+        var bo = element.businessObject;
+        return {
+            id: bo.id || '',
+            type: element.type || '',
+            name: bo.name || '',
+            scriptFormat: bo.scriptFormat || '',
+            script: bo.script || '',
+            conditionExpression: (bo.conditionExpression && bo.conditionExpression.body) || ''
+        };
+    },
+
     destroy: function () {
         if (this._viewer) {
             this._viewer.destroy();
