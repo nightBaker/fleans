@@ -67,7 +67,7 @@
 
         <FluentTabs>
             <FluentTab Label="Activities">
-                <FluentDataGrid Items="@filteredActivities" GridTemplateColumns="1fr 1fr 1fr 1fr 2fr"
+                <FluentDataGrid Items="@filteredActivities" GridTemplateColumns="1fr 1fr 1fr 1fr 1fr 1fr 2fr"
                                 TGridItem="ActivityInstanceSnapshot"
                                 OnRowClick="@OnActivityRowClick"
                                 RowClass="@GetActivityRowClass">
@@ -110,6 +110,8 @@
                             }
                         </ChildContent>
                     </TemplateColumn>
+                    <PropertyColumn Property="@(a => a.CreatedAt)" Title="Created At" Sortable="true" Format="yyyy-MM-dd HH:mm:ss" />
+                    <PropertyColumn Property="@(a => a.ExecutionStartedAt)" Title="Started At" Sortable="true" Format="yyyy-MM-dd HH:mm:ss" />
                     <PropertyColumn Property="@(a => a.CompletedAt)" Title="Completed At" Sortable="true" Format="yyyy-MM-dd HH:mm:ss" />
                     <TemplateColumn Title="Error" SortBy="@errorSort">
                         <ColumnOptions>

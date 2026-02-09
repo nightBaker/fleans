@@ -389,6 +389,121 @@ namespace Fleans.Domain.Tests
         }
 
         [TestMethod]
+        public async Task GetCreatedAt_ShouldReturnNull_BeforeSetActivity()
+        {
+            // Arrange
+            var activity = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
+            await activity.SetVariablesId(Guid.NewGuid());
+
+            // Act — grain exists but SetActivity not yet called, so we can only check via snapshot
+            // Note: calling GetCreatedAt before SetActivity would fail since _currentActivity is null for GetSnapshot,
+            // but GetCreatedAt itself works fine
+            var createdAt = await activity.GetCreatedAt();
+
+            // Assert
+            Assert.IsNull(createdAt);
+        }
+
+        [TestMethod]
+        public async Task GetCreatedAt_ShouldReturnTimestamp_AfterSetActivity()
+        {
+            // Arrange
+            var before = DateTimeOffset.UtcNow;
+            var activity = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
+            await activity.SetActivity(new TaskActivity("task"));
+            var after = DateTimeOffset.UtcNow;
+
+            // Act
+            var createdAt = await activity.GetCreatedAt();
+
+            // Assert
+            Assert.IsNotNull(createdAt);
+            Assert.IsTrue(createdAt >= before, "CreatedAt should be >= test start time");
+            Assert.IsTrue(createdAt <= after, "CreatedAt should be <= test end time");
+        }
+
+        [TestMethod]
+        public async Task GetExecutionStartedAt_ShouldReturnNull_BeforeExecution()
+        {
+            // Arrange
+            var activity = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
+            await activity.SetActivity(new TaskActivity("task"));
+
+            // Act
+            var executionStartedAt = await activity.GetExecutionStartedAt();
+
+            // Assert
+            Assert.IsNull(executionStartedAt);
+        }
+
+        [TestMethod]
+        public async Task GetExecutionStartedAt_ShouldReturnTimestamp_AfterExecution()
+        {
+            // Arrange
+            var workflow = CreateSimpleWorkflow();
+            var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            await workflowInstance.SetWorkflow(workflow);
+
+            var before = DateTimeOffset.UtcNow;
+            await workflowInstance.StartWorkflow();
+            var after = DateTimeOffset.UtcNow;
+
+            // Act — task is now active (executed but waiting for completion)
+            var state = await workflowInstance.GetState();
+            var activeActivities = await state.GetActiveActivities();
+            IActivityInstance? taskActivity = null;
+            foreach (var a in activeActivities)
+            {
+                var current = await a.GetCurrentActivity();
+                if (current.ActivityId == "task")
+                {
+                    taskActivity = a;
+                    break;
+                }
+            }
+            Assert.IsNotNull(taskActivity);
+
+            var executionStartedAt = await taskActivity.GetExecutionStartedAt();
+
+            // Assert
+            Assert.IsNotNull(executionStartedAt);
+            Assert.IsTrue(executionStartedAt >= before, "ExecutionStartedAt should be >= test start time");
+            Assert.IsTrue(executionStartedAt <= after, "ExecutionStartedAt should be <= test end time");
+        }
+
+        [TestMethod]
+        public async Task GetExecutionStartedAt_ShouldReturnTimestamp_AfterFailure()
+        {
+            // Arrange
+            var workflow = CreateSimpleWorkflow();
+            var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            await workflowInstance.SetWorkflow(workflow);
+            await workflowInstance.StartWorkflow();
+
+            await workflowInstance.FailActivity("task", new Exception("fail"));
+
+            // Act
+            var state = await workflowInstance.GetState();
+            var completedActivities = await state.GetCompletedActivities();
+            IActivityInstance? failedTask = null;
+            foreach (var a in completedActivities)
+            {
+                var current = await a.GetCurrentActivity();
+                if (current.ActivityId == "task")
+                {
+                    failedTask = a;
+                    break;
+                }
+            }
+
+            Assert.IsNotNull(failedTask);
+            var executionStartedAt = await failedTask.GetExecutionStartedAt();
+
+            // Assert
+            Assert.IsNotNull(executionStartedAt, "ExecutionStartedAt should be set even after failure");
+        }
+
+        [TestMethod]
         public async Task GetCompletedAt_ShouldReturnNull_BeforeCompletion()
         {
             // Arrange
@@ -504,6 +619,8 @@ namespace Fleans.Domain.Tests
             Assert.IsTrue(snapshot.IsCompleted);
             Assert.IsFalse(snapshot.IsExecuting);
             Assert.IsNull(snapshot.ErrorState);
+            Assert.IsNotNull(snapshot.CreatedAt);
+            Assert.IsNotNull(snapshot.ExecutionStartedAt);
             Assert.IsNotNull(snapshot.CompletedAt);
         }
 
@@ -541,6 +658,8 @@ namespace Fleans.Domain.Tests
             Assert.IsNotNull(snapshot.ErrorState);
             Assert.AreEqual(500, snapshot.ErrorState.Code);
             Assert.AreEqual("snapshot error", snapshot.ErrorState.Message);
+            Assert.IsNotNull(snapshot.CreatedAt);
+            Assert.IsNotNull(snapshot.ExecutionStartedAt);
             Assert.IsNotNull(snapshot.CompletedAt);
         }
 
