@@ -165,6 +165,11 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
 
         if (isDecisionMade)
         {
+            if (result)
+                LogGatewayShortCircuited(activityId, conditionSequenceId);
+            else
+                LogGatewayTakingDefaultFlow(activityId);
+
             LogGatewayAutoCompleting(activityId);
             await activityInstance.Complete();
             await ExecuteWorkflow();
@@ -268,4 +273,10 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
 
     [LoggerMessage(EventId = 1007, Level = LogLevel.Information, Message = "Gateway {ActivityId} decision made, auto-completing and resuming workflow")]
     private partial void LogGatewayAutoCompleting(string activityId);
+
+    [LoggerMessage(EventId = 1008, Level = LogLevel.Information, Message = "Gateway {ActivityId} short-circuited: condition {ConditionSequenceFlowId} is true")]
+    private partial void LogGatewayShortCircuited(string activityId, string conditionSequenceFlowId);
+
+    [LoggerMessage(EventId = 1009, Level = LogLevel.Information, Message = "Gateway {ActivityId} all conditions false, taking default flow")]
+    private partial void LogGatewayTakingDefaultFlow(string activityId);
 }
