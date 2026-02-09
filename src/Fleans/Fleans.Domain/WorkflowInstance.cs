@@ -157,8 +157,18 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         var activityInstance = await State.GetFirstActive(activityId)
             ?? throw new InvalidOperationException("Active activity not found");
 
-        await (await activityInstance.GetCurrentActivity() as Gateway ?? throw new Exception("Acitivity is not gateway type"))
-                .SetConditionResult(this, activityInstance, conditionSequenceId, result);
+        var gateway = await activityInstance.GetCurrentActivity() as ConditionalGateway
+            ?? throw new InvalidOperationException("Activity is not a conditional gateway");
+
+        var isDecisionMade = await gateway.SetConditionResult(
+            this, activityInstance, conditionSequenceId, result);
+
+        if (isDecisionMade)
+        {
+            LogGatewayAutoCompleting(activityId);
+            await activityInstance.Complete();
+            await ExecuteWorkflow();
+        }
     }
 
     public void EnqueueEvent(IDomainEvent domainEvent)
@@ -255,4 +265,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
 
     [LoggerMessage(EventId = 1006, Level = LogLevel.Debug, Message = "Transitioning: {CompletedCount} completed, {NewCount} new")]
     private partial void LogTransition(int completedCount, int newCount);
+
+    [LoggerMessage(EventId = 1007, Level = LogLevel.Information, Message = "Gateway {ActivityId} decision made, auto-completing and resuming workflow")]
+    private partial void LogGatewayAutoCompleting(string activityId);
 }
