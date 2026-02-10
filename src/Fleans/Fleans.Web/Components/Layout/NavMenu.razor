@@ -1,1 +1,12 @@
-@* Navigation moved to FluentAppBar in MainLayout *@
+<div class="navmenu">
+    <FluentAppBar>
+        <FluentAppBarItem Href="/workflows"
+                          Text="Workflows"
+                          IconRest="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size24.Flow())"
+                          IconActive="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Filled.Size24.Flow())"/>
+        <FluentAppBarItem Href="/editor"
+                          Text="Editor"
+                          IconRest="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size24.DrawShape())"
+                          IconActive="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Filled.Size24.DrawShape())" />
+    </FluentAppBar>
+</div>
