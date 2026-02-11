@@ -30,7 +30,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         using var scope = BeginWorkflowScope();
         State.ExecutionStartedAt = DateTimeOffset.UtcNow;
         LogWorkflowStarted();
-        await Start();
+        Start();
         await ExecuteWorkflow();
     }
 
@@ -73,7 +73,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         var newActiveActivities = new List<IActivityInstance>();
         var completedActivities = new List<IActivityInstance>();
 
-        foreach (var activityState in await State.GetActiveActivities())
+        foreach (var activityState in State.GetActiveActivities())
         {
 
             if (await activityState.IsCompleted())
@@ -100,10 +100,10 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
 
         LogTransition(completedActivities.Count, newActiveActivities.Count);
         LogStateRemoveActiveActivities(completedActivities.Count);
-        await State.RemoveActiveActivities(completedActivities);
+        State.RemoveActiveActivities(completedActivities);
         LogStateAddActiveActivities(newActiveActivities.Count);
-        await State.AddActiveActivities(newActiveActivities);
-        await State.AddCompletedActivities(completedActivities);
+        State.AddActiveActivities(newActiveActivities);
+        State.AddCompletedActivities(completedActivities);
     }
 
     private async Task CompleteActivityState(string activityId, ExpandoObject variables)
@@ -117,7 +117,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         RequestContext.Set("VariablesId", variablesId.ToString());
 
         LogStateMergeState(variablesId);
-        await State.MergeState(variablesId, variables);
+        State.MergeState(variablesId, variables);
     }
 
     private async Task FailActivityState(string activityId, Exception exception)
@@ -129,17 +129,18 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         await activityInstance.Fail(exception);
     }
 
-    private ValueTask Start()
+    private void Start()
     {
         LogStateStarted();
-        return State.Start();
+        State.Start();
     }
 
-    public async ValueTask Complete()
+    public ValueTask Complete()
     {
-        await State.Complete();
+        State.Complete();
         State.CompletedAt = DateTimeOffset.UtcNow;
         LogStateCompleted();
+        return ValueTask.CompletedTask;
     }
 
     public async Task CompleteConditionSequence(string activityId, string conditionSequenceId, bool result)
@@ -198,7 +199,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         await activityInstance.SetVariablesId(variablesId);
 
         LogStateStartWith(startActivity.ActivityId);
-        await State.StartWith(activityInstance, variablesId);
+        State.StartWith(activityInstance, variablesId);
     }
 
     public ValueTask<DateTimeOffset?> GetCreatedAt() => ValueTask.FromResult(State.CreatedAt);
@@ -207,14 +208,14 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
 
     public ValueTask<DateTimeOffset?> GetCompletedAt() => ValueTask.FromResult(State.CompletedAt);
 
-    public async ValueTask<WorkflowInstanceInfo> GetInstanceInfo()
+    public ValueTask<WorkflowInstanceInfo> GetInstanceInfo()
     {
-        var isStarted = await State.IsStarted();
-        var isCompleted = await State.IsCompleted();
+        var isStarted = State.IsStarted();
+        var isCompleted = State.IsCompleted();
         var defId = WorkflowDefinition?.ProcessDefinitionId ?? "";
-        return new WorkflowInstanceInfo(
+        return ValueTask.FromResult(new WorkflowInstanceInfo(
             this.GetPrimaryKey(), defId, isStarted, isCompleted,
-            State.CreatedAt, State.ExecutionStartedAt, State.CompletedAt);
+            State.CreatedAt, State.ExecutionStartedAt, State.CompletedAt));
     }
 
     public async ValueTask<InstanceStateSnapshot> GetStateSnapshot()
@@ -222,29 +223,35 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
 
     public ValueTask<IWorkflowDefinition> GetWorkflowDefinition() => ValueTask.FromResult(WorkflowDefinition);
 
-    public async ValueTask<ExpandoObject> GetVariables(Guid variablesStateId)
+    public ValueTask<ExpandoObject> GetVariables(Guid variablesStateId)
     {
-        var variablesState = await State.GetVariableStates();
+        var variablesState = State.GetVariableStates();
         var variables = variablesState[variablesStateId].Variables;
 
-        return variables;
+        return ValueTask.FromResult(variables);
     }
 
     // State facade methods — activities access state through these, not directly
     public ValueTask<IReadOnlyList<IActivityInstance>> GetActiveActivities()
-        => State.GetActiveActivities();
+        => ValueTask.FromResult(State.GetActiveActivities());
 
     public ValueTask<IReadOnlyList<IActivityInstance>> GetCompletedActivities()
-        => State.GetCompletedActivities();
+        => ValueTask.FromResult(State.GetCompletedActivities());
 
     public ValueTask<IReadOnlyDictionary<Guid, ConditionSequenceState[]>> GetConditionSequenceStates()
-        => State.GetConditionSequenceStates();
+        => ValueTask.FromResult(State.GetConditionSequenceStates());
 
     public ValueTask AddConditionSequenceStates(Guid activityInstanceId, ConditionalSequenceFlow[] sequences)
-        => State.AddConditionSequenceStates(activityInstanceId, sequences);
+    {
+        State.AddConditionSequenceStates(activityInstanceId, sequences);
+        return ValueTask.CompletedTask;
+    }
 
     public ValueTask SetConditionSequenceResult(Guid activityInstanceId, string sequenceId, bool result)
-        => State.SetConditionSequenceResult(activityInstanceId, sequenceId, result);
+    {
+        State.SetConditionSequenceResult(activityInstanceId, sequenceId, result);
+        return ValueTask.CompletedTask;
+    }
 
     private void SetWorkflowRequestContext()
     {

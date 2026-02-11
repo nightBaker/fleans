@@ -17,47 +17,44 @@ public class WorkflowInstanceState
     public DateTimeOffset? ExecutionStartedAt { get; internal set; }
     public DateTimeOffset? CompletedAt { get; internal set; }
 
-    public ValueTask<bool> IsStarted() => ValueTask.FromResult(_isStarted);
-    public ValueTask<bool> IsCompleted() => ValueTask.FromResult(_isCompleted);
+    public bool IsStarted() => _isStarted;
+    public bool IsCompleted() => _isCompleted;
 
-    public ValueTask<IReadOnlyList<IActivityInstance>> GetCompletedActivities()
-        => ValueTask.FromResult(_completedActivities as IReadOnlyList<IActivityInstance>);
+    public IReadOnlyList<IActivityInstance> GetCompletedActivities()
+        => _completedActivities;
 
-    public ValueTask<IReadOnlyDictionary<Guid, WorklfowVariablesState>> GetVariableStates()
-        => ValueTask.FromResult(_variableStates as IReadOnlyDictionary<Guid, WorklfowVariablesState>);
+    public IReadOnlyDictionary<Guid, WorklfowVariablesState> GetVariableStates()
+        => _variableStates;
 
-    public ValueTask<IReadOnlyDictionary<Guid, ConditionSequenceState[]>> GetConditionSequenceStates()
-        => ValueTask.FromResult(_conditionSequenceStates as IReadOnlyDictionary<Guid, ConditionSequenceState[]>);
+    public IReadOnlyDictionary<Guid, ConditionSequenceState[]> GetConditionSequenceStates()
+        => _conditionSequenceStates;
 
-    public ValueTask<IReadOnlyList<IActivityInstance>> GetActiveActivities()
-        => ValueTask.FromResult(_activeActivities as IReadOnlyList<IActivityInstance>);
+    public IReadOnlyList<IActivityInstance> GetActiveActivities()
+        => _activeActivities;
 
-    public ValueTask StartWith(IActivityInstance activityInstance, Guid variablesId)
+    public void StartWith(IActivityInstance activityInstance, Guid variablesId)
     {
         _variableStates.Add(variablesId, new WorklfowVariablesState());
         _activeActivities.Add(activityInstance);
-        return ValueTask.CompletedTask;
     }
 
-    public ValueTask Start()
+    public void Start()
     {
         if (_isStarted)
             throw new InvalidOperationException("Workflow is already started");
 
         _isStarted = true;
-        return ValueTask.CompletedTask;
     }
 
-    public ValueTask Complete()
+    public void Complete()
     {
         if (_isCompleted)
             throw new InvalidOperationException("Workflow is already completed");
 
         _isCompleted = true;
-        return ValueTask.CompletedTask;
     }
 
-    public ValueTask<Guid> AddCloneOfVariableState(Guid variableStateId)
+    public Guid AddCloneOfVariableState(Guid variableStateId)
     {
         var newVariableStateId = Guid.NewGuid();
 
@@ -65,35 +62,31 @@ public class WorkflowInstanceState
         clonedState.CloneFrom(_variableStates[variableStateId]);
 
         _variableStates.Add(newVariableStateId, clonedState);
-        return ValueTask.FromResult(newVariableStateId);
+        return newVariableStateId;
     }
 
-    public ValueTask AddConditionSequenceStates(Guid activityInstanceId, ConditionalSequenceFlow[] sequences)
+    public void AddConditionSequenceStates(Guid activityInstanceId, ConditionalSequenceFlow[] sequences)
     {
         var sequenceStates = sequences.Select(sequence => new ConditionSequenceState(sequence)).ToArray();
         _conditionSequenceStates.Add(activityInstanceId, sequenceStates);
-        return ValueTask.CompletedTask;
     }
 
-    public ValueTask RemoveActiveActivities(List<IActivityInstance> removeInstances)
+    public void RemoveActiveActivities(List<IActivityInstance> removeInstances)
     {
         _activeActivities.RemoveAll(removeInstances.Contains);
-        return ValueTask.CompletedTask;
     }
 
-    public ValueTask AddActiveActivities(IEnumerable<IActivityInstance> activities)
+    public void AddActiveActivities(IEnumerable<IActivityInstance> activities)
     {
         _activeActivities.AddRange(activities);
-        return ValueTask.CompletedTask;
     }
 
-    public ValueTask AddCompletedActivities(IEnumerable<IActivityInstance> activities)
+    public void AddCompletedActivities(IEnumerable<IActivityInstance> activities)
     {
         _completedActivities.AddRange(activities);
-        return ValueTask.CompletedTask;
     }
 
-    public async ValueTask<IActivityInstance?> GetFirstActive(string activityId)
+    public async Task<IActivityInstance?> GetFirstActive(string activityId)
     {
         foreach (var activeActivity in _activeActivities)
         {
@@ -107,7 +100,7 @@ public class WorkflowInstanceState
         return null;
     }
 
-    public async ValueTask<bool> AnyNotExecuting()
+    public async Task<bool> AnyNotExecuting()
     {
         foreach(var activity in _activeActivities)
         {
@@ -118,7 +111,7 @@ public class WorkflowInstanceState
         return false;
     }
 
-    public async ValueTask<IActivityInstance[]> GetNotExecutingNotCompletedActivities()
+    public async Task<IActivityInstance[]> GetNotExecutingNotCompletedActivities()
     {
         var result = new List<IActivityInstance>();
 
@@ -131,7 +124,7 @@ public class WorkflowInstanceState
         return result.ToArray();
     }
 
-    public ValueTask SetConditionSequenceResult(Guid activityInstanceId, string sequenceId, bool result)
+    public void SetConditionSequenceResult(Guid activityInstanceId, string sequenceId, bool result)
     {
         var sequences = _conditionSequenceStates[activityInstanceId];
 
@@ -145,17 +138,14 @@ public class WorkflowInstanceState
         {
             throw new NullReferenceException("Sequence not found");
         }
-
-        return ValueTask.CompletedTask;
     }
 
-    public ValueTask MergeState(Guid variablesId, ExpandoObject variables)
+    public void MergeState(Guid variablesId, ExpandoObject variables)
     {
         _variableStates[variablesId].Merge(variables);
-        return ValueTask.CompletedTask;
     }
 
-    public async ValueTask<InstanceStateSnapshot> GetStateSnapshot()
+    public async Task<InstanceStateSnapshot> GetStateSnapshot()
     {
         var activeTasks = _activeActivities.Select(a => a.GetSnapshot().AsTask());
         var completedTasks = _completedActivities.Select(a => a.GetSnapshot().AsTask());

@@ -36,10 +36,10 @@ namespace Fleans.Domain.Tests
             await activityInstance.SetVariablesId(variablesId);
 
             // Act
-            await state.StartWith(activityInstance, variablesId);
+            state.StartWith(activityInstance, variablesId);
 
             // Assert
-            var activeActivities = await state.GetActiveActivities();
+            var activeActivities = state.GetActiveActivities();
             Assert.HasCount(1, activeActivities);
 
             var activity = await activeActivities[0].GetCurrentActivity();
@@ -58,37 +58,37 @@ namespace Fleans.Domain.Tests
             await activityInstance.SetVariablesId(variablesId);
 
             // Act
-            await state.StartWith(activityInstance, variablesId);
+            state.StartWith(activityInstance, variablesId);
 
             // Assert
-            var variableStates = await state.GetVariableStates();
+            var variableStates = state.GetVariableStates();
             Assert.HasCount(1, variableStates);
         }
 
         [TestMethod]
-        public async Task Start_ShouldMarkWorkflowAsStarted()
+        public void Start_ShouldMarkWorkflowAsStarted()
         {
             // Arrange
             var state = new WorkflowInstanceState();
 
             // Act
-            await state.Start();
+            state.Start();
 
             // Assert
-            Assert.IsTrue(await state.IsStarted());
+            Assert.IsTrue(state.IsStarted());
         }
 
         [TestMethod]
-        public async Task Start_ShouldThrowException_WhenAlreadyStarted()
+        public void Start_ShouldThrowException_WhenAlreadyStarted()
         {
             // Arrange
             var state = new WorkflowInstanceState();
-            await state.Start();
+            state.Start();
 
             // Act & Assert
             Assert.ThrowsExactly<InvalidOperationException>(() =>
             {
-                state.Start().GetAwaiter().GetResult();
+                state.Start();
             });
         }
 
@@ -102,13 +102,13 @@ namespace Fleans.Domain.Tests
             var activityInstance = _cluster.GrainFactory.GetGrain<IActivityInstance>(variablesId);
             await activityInstance.SetActivity(startActivity);
             await activityInstance.SetVariablesId(variablesId);
-            await state.StartWith(activityInstance, variablesId);
+            state.StartWith(activityInstance, variablesId);
 
             // Act
-            await state.Complete();
+            state.Complete();
 
             // Assert
-            Assert.IsTrue(await state.IsCompleted());
+            Assert.IsTrue(state.IsCompleted());
         }
 
         [TestMethod]
@@ -122,10 +122,10 @@ namespace Fleans.Domain.Tests
             await activity2.SetActivity(new TaskActivity("task2"));
 
             // Act
-            await state.AddActiveActivities(new[] { activity1, activity2 });
+            state.AddActiveActivities(new[] { activity1, activity2 });
 
             // Assert
-            var activeActivities = await state.GetActiveActivities();
+            var activeActivities = state.GetActiveActivities();
             Assert.HasCount(2, activeActivities);
         }
 
@@ -139,13 +139,13 @@ namespace Fleans.Domain.Tests
             await activity1.SetActivity(new TaskActivity("task1"));
             await activity2.SetActivity(new TaskActivity("task2"));
 
-            await state.AddActiveActivities(new[] { activity1, activity2 });
+            state.AddActiveActivities(new[] { activity1, activity2 });
 
             // Act
-            await state.RemoveActiveActivities(new List<IActivityInstance> { activity1 });
+            state.RemoveActiveActivities(new List<IActivityInstance> { activity1 });
 
             // Assert
-            var activeActivities = await state.GetActiveActivities();
+            var activeActivities = state.GetActiveActivities();
             Assert.HasCount(1, activeActivities);
             Assert.AreEqual(activity2, activeActivities[0]);
         }
@@ -160,10 +160,10 @@ namespace Fleans.Domain.Tests
             await activity.Complete();
 
             // Act
-            await state.AddCompletedActivities(new[] { activity });
+            state.AddCompletedActivities(new[] { activity });
 
             // Assert
-            var completedActivities = await state.GetCompletedActivities();
+            var completedActivities = state.GetCompletedActivities();
             Assert.HasCount(1, completedActivities);
         }
 
@@ -174,7 +174,7 @@ namespace Fleans.Domain.Tests
             var state = new WorkflowInstanceState();
             var activity = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
             await activity.SetActivity(new TaskActivity("task1"));
-            await state.AddActiveActivities(new[] { activity });
+            state.AddActiveActivities(new[] { activity });
 
             // Act
             var result = await state.GetFirstActive("task1");
@@ -208,17 +208,17 @@ namespace Fleans.Domain.Tests
             var activityInstance = _cluster.GrainFactory.GetGrain<IActivityInstance>(variablesId);
             await activityInstance.SetActivity(startActivity);
             await activityInstance.SetVariablesId(variablesId);
-            await state.StartWith(activityInstance, variablesId);
+            state.StartWith(activityInstance, variablesId);
 
-            var variableStates = await state.GetVariableStates();
+            var variableStates = state.GetVariableStates();
             var originalId = variableStates.Keys.First();
 
             // Act
-            var clonedId = await state.AddCloneOfVariableState(originalId);
+            var clonedId = state.AddCloneOfVariableState(originalId);
 
             // Assert
             Assert.AreNotEqual(originalId, clonedId);
-            var newVariableStates = await state.GetVariableStates();
+            var newVariableStates = state.GetVariableStates();
             Assert.IsTrue(newVariableStates.ContainsKey(clonedId));
         }
 
@@ -232,9 +232,9 @@ namespace Fleans.Domain.Tests
             var activityInstance = _cluster.GrainFactory.GetGrain<IActivityInstance>(variablesId);
             await activityInstance.SetActivity(startActivity);
             await activityInstance.SetVariablesId(variablesId);
-            await state.StartWith(activityInstance, variablesId);
+            state.StartWith(activityInstance, variablesId);
 
-            var variableStates = await state.GetVariableStates();
+            var variableStates = state.GetVariableStates();
             var existingVariablesId = variableStates.Keys.First();
 
             dynamic newVariables = new ExpandoObject();
@@ -242,10 +242,10 @@ namespace Fleans.Domain.Tests
             ((IDictionary<string, object>)newVariables)["key2"] = 42;
 
             // Act
-            await state.MergeState(existingVariablesId, newVariables);
+            state.MergeState(existingVariablesId, newVariables);
 
             // Assert
-            var updatedStates = await state.GetVariableStates();
+            var updatedStates = state.GetVariableStates();
             var mergedState = updatedStates[existingVariablesId];
             Assert.IsNotNull(mergedState);
         }
@@ -265,9 +265,9 @@ namespace Fleans.Domain.Tests
             await completedActivity.SetVariablesId(Guid.NewGuid());
             await completedActivity.Complete();
 
-            await state.AddActiveActivities(new[] { activeActivity });
-            await state.AddCompletedActivities(new[] { completedActivity });
-            await state.Start();
+            state.AddActiveActivities(new[] { activeActivity });
+            state.AddCompletedActivities(new[] { completedActivity });
+            state.Start();
 
             // Act
             var snapshot = await state.GetStateSnapshot();
@@ -302,15 +302,15 @@ namespace Fleans.Domain.Tests
             var activityInstance = _cluster.GrainFactory.GetGrain<IActivityInstance>(variablesId);
             await activityInstance.SetActivity(new StartEvent("start"));
             await activityInstance.SetVariablesId(variablesId);
-            await state.StartWith(activityInstance, variablesId);
+            state.StartWith(activityInstance, variablesId);
 
-            var variableStates = await state.GetVariableStates();
+            var variableStates = state.GetVariableStates();
             var existingVariablesId = variableStates.Keys.First();
 
             dynamic vars = new ExpandoObject();
             ((IDictionary<string, object>)vars)["name"] = "test";
             ((IDictionary<string, object>)vars)["count"] = 42;
-            await state.MergeState(existingVariablesId, vars);
+            state.MergeState(existingVariablesId, vars);
 
             // Act
             var snapshot = await state.GetStateSnapshot();
@@ -340,9 +340,9 @@ namespace Fleans.Domain.Tests
                 new ConditionalSequenceFlow("seq2", source, targetFalse, "x <= 0")
             };
 
-            await state.AddConditionSequenceStates(activityInstanceId, sequences);
-            await state.SetConditionSequenceResult(activityInstanceId, "seq1", true);
-            await state.SetConditionSequenceResult(activityInstanceId, "seq2", false);
+            state.AddConditionSequenceStates(activityInstanceId, sequences);
+            state.SetConditionSequenceResult(activityInstanceId, "seq1", true);
+            state.SetConditionSequenceResult(activityInstanceId, "seq2", false);
 
             // Act
             var snapshot = await state.GetStateSnapshot();
