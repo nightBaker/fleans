@@ -310,28 +310,22 @@ src/Fleans/
 │   │   └── ActivityInstanceState.cs         # New POCO
 │   └── ActivityInstance.cs                  # Refactor to own ActivityInstanceState
 │
-├── Fleans.Infrastructure/
-│   └── Storage/
-│       ├── WorkflowInstanceGrainStorage.cs  # IGrainStorage (no-op)
-│       ├── ActivityInstanceGrainStorage.cs  # IGrainStorage (no-op)
-│       └── InMemoryProcessDefinitionRepository.cs
+├── Fleans.Persistence.InMemory/            # Separate class library
+│   ├── WorkflowInstanceGrainStorage.cs     # IGrainStorage (no-op)
+│   ├── ActivityInstanceGrainStorage.cs     # IGrainStorage (no-op)
+│   ├── InMemoryProcessDefinitionRepository.cs
+│   └── DependencyInjection.cs              # AddInMemoryPersistence()
 ```
 
 ---
 
-## Implementation Order
+## Known TODOs (for future PRs)
 
-### Task 1: Extract ActivityInstanceState
-Create POCO in `Fleans.Domain/States/`. Refactor `ActivityInstance` grain to delegate to it. Keep `new ActivityInstanceState()` for now (no IPersistentState yet). Update tests. Build + test.
-
-### Task 2: Add IProcessDefinitionRepository
-Create interface in `Fleans.Domain/Persistence/`. Create `InMemoryProcessDefinitionRepository` in `Fleans.Infrastructure/Storage/`. Wire into `WorkflowInstanceFactoryGrain` — add `OnActivateAsync` rehydration + `SaveAsync` on deploy. Register in DI. Build + test.
-
-### Task 3: Add IGrainStorage providers
-Create no-op `WorkflowInstanceGrainStorage` and `ActivityInstanceGrainStorage` in `Fleans.Infrastructure/Storage/`. Register in silo config. Build.
-
-### Task 4: Wire IPersistentState in grains
-Update `WorkflowInstance` and `ActivityInstance` constructors to use `IPersistentState<T>`. Replace `new State()` with `_state.State`. Add `WriteStateAsync()` calls after mutations. Update tests (TestCluster silo config needs storage providers registered). Build + test.
+- `WorkflowInstance.WorkflowDefinition` is not part of persisted state — must move to `WorkflowInstanceState`
+- `_instancesByKey` and `_instanceToDefinitionId` in factory grain are not persisted/rehydrated
+- State classes (`ActivityInstanceState`, `WorkflowInstanceState`) need `[GenerateSerializer]` and `[Id]` attributes
+- Grain reference serialization (`List<IActivityInstance>` in `WorkflowInstanceState`)
+- Concurrency control (ETag/versioning)
 
 ---
 

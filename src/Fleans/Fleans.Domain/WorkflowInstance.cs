@@ -12,6 +12,8 @@ namespace Fleans.Domain;
 public partial class WorkflowInstance : Grain, IWorkflowInstance
 {
     public ValueTask<Guid> GetWorkflowInstanceId() => ValueTask.FromResult(this.GetPrimaryKey());
+    // TODO: Move to WorkflowInstanceState so it survives grain reactivation.
+    // Not a grain reference — WorkflowDefinition has [GenerateSerializer].
     public IWorkflowDefinition WorkflowDefinition { get; private set; } = null!;
 
     private readonly IPersistentState<WorkflowInstanceState> _state;

@@ -34,6 +34,8 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
 
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
+        await base.OnActivateAsync(cancellationToken);
+
         var all = await _repository.GetAllAsync();
         foreach (var def in all)
         {
@@ -45,6 +47,9 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
             }
             versions.Add(def);
         }
+
+        // TODO: Persist and rehydrate _instancesByKey and _instanceToDefinitionId.
+        // Currently instance tracking is lost on grain reactivation.
     }
     
     public async Task<IWorkflowInstance> CreateWorkflowInstanceGrain(string workflowId)

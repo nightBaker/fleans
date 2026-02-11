@@ -35,6 +35,7 @@ namespace Fleans.Domain
             State.Fail(exception);
             var errorState = State.GetErrorState()!;
             LogFailed(errorState.Code, errorState.Message);
+            // Complete() calls WriteStateAsync — both error and completed state persisted atomically
             await Complete();
         }
 
