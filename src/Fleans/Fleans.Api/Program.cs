@@ -1,6 +1,7 @@
 using Fleans.Application;
 using Fleans.Application.Logging;
 using Fleans.Infrastructure;
+using Fleans.Persistence.InMemory;
 using Fleans.Domain;
 using StackExchange.Redis;
 
@@ -72,6 +73,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure();
+builder.Services.AddInMemoryPersistence();
 
 var app = builder.Build();
 

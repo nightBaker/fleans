@@ -12,14 +12,22 @@ namespace Fleans.Domain;
 public partial class WorkflowInstance : Grain, IWorkflowInstance
 {
     public ValueTask<Guid> GetWorkflowInstanceId() => ValueTask.FromResult(this.GetPrimaryKey());
+    // TODO: Move to WorkflowInstanceState so it survives grain reactivation.
+    // Not a grain reference — WorkflowDefinition has [GenerateSerializer].
     public IWorkflowDefinition WorkflowDefinition { get; private set; } = null!;
-    private WorkflowInstanceState State { get; } = new();
 
+    private readonly IPersistentState<WorkflowInstanceState> _state;
     private readonly IGrainFactory _grainFactory;
     private readonly ILogger<WorkflowInstance> _logger;
 
-    public WorkflowInstance(IGrainFactory grainFactory, ILogger<WorkflowInstance> logger)
+    private WorkflowInstanceState State => _state.State;
+
+    public WorkflowInstance(
+        [PersistentState("state", "workflowInstances")] IPersistentState<WorkflowInstanceState> state,
+        IGrainFactory grainFactory,
+        ILogger<WorkflowInstance> logger)
     {
+        _state = state;
         _grainFactory = grainFactory;
         _logger = logger;
     }
@@ -32,6 +40,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         LogWorkflowStarted();
         Start();
         await ExecuteWorkflow();
+        await _state.WriteStateAsync();
     }
 
     private async Task ExecuteWorkflow()
@@ -57,6 +66,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         LogCompletingActivity(activityId);
         await CompleteActivityState(activityId, variables);
         await ExecuteWorkflow();
+        await _state.WriteStateAsync();
     }
 
     public async Task FailActivity(string activityId, Exception exception)
@@ -66,6 +76,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         LogFailingActivity(activityId);
         await FailActivityState(activityId, exception);
         await ExecuteWorkflow();
+        await _state.WriteStateAsync();
     }
 
     private async Task TransitionToNextActivity()
@@ -135,12 +146,12 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         State.Start();
     }
 
-    public ValueTask Complete()
+    public async ValueTask Complete()
     {
         State.Complete();
         State.CompletedAt = DateTimeOffset.UtcNow;
         LogStateCompleted();
-        return ValueTask.CompletedTask;
+        await _state.WriteStateAsync();
     }
 
     public async Task CompleteConditionSequence(string activityId, string conditionSequenceId, bool result)
@@ -178,6 +189,8 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
             await activityInstance.Complete();
             await ExecuteWorkflow();
         }
+
+        await _state.WriteStateAsync();
     }
 
     public async Task SetWorkflow(IWorkflowDefinition workflow)
@@ -200,6 +213,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
 
         LogStateStartWith(startActivity.ActivityId);
         State.StartWith(activityInstance, variablesId);
+        await _state.WriteStateAsync();
     }
 
     public ValueTask<DateTimeOffset?> GetCreatedAt() => ValueTask.FromResult(State.CreatedAt);
@@ -241,16 +255,16 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
     public ValueTask<IReadOnlyDictionary<Guid, ConditionSequenceState[]>> GetConditionSequenceStates()
         => ValueTask.FromResult(State.GetConditionSequenceStates());
 
-    public ValueTask AddConditionSequenceStates(Guid activityInstanceId, ConditionalSequenceFlow[] sequences)
+    public async ValueTask AddConditionSequenceStates(Guid activityInstanceId, ConditionalSequenceFlow[] sequences)
     {
         State.AddConditionSequenceStates(activityInstanceId, sequences);
-        return ValueTask.CompletedTask;
+        await _state.WriteStateAsync();
     }
 
-    public ValueTask SetConditionSequenceResult(Guid activityInstanceId, string sequenceId, bool result)
+    public async ValueTask SetConditionSequenceResult(Guid activityInstanceId, string sequenceId, bool result)
     {
         State.SetConditionSequenceResult(activityInstanceId, sequenceId, result);
-        return ValueTask.CompletedTask;
+        await _state.WriteStateAsync();
     }
 
     private void SetWorkflowRequestContext()

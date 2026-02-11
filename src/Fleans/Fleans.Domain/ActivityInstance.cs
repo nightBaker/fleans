@@ -1,7 +1,7 @@
 
 using Fleans.Domain.Activities;
-using Fleans.Domain.Errors;
 using Fleans.Domain.Events;
+using Fleans.Domain.States;
 using Microsoft.Extensions.Logging;
 using Orleans;
 using Orleans.Runtime;
@@ -10,104 +10,75 @@ namespace Fleans.Domain
 {
     public partial class ActivityInstance : Grain, IActivityInstance
     {
-
-        private Activity _currentActivity;
-
-        private bool _isCompleted;
-        private bool _isExecuting;
-        private DateTimeOffset? _createdAt;
-        private DateTimeOffset? _executionStartedAt;
-        private DateTimeOffset? _completedAt;
-        private ActivityErrorState? _errorState;
-        private Guid _variablesId;
-
+        private readonly IPersistentState<ActivityInstanceState> _state;
         private readonly ILogger<ActivityInstance> _logger;
 
-        public ActivityInstance(ILogger<ActivityInstance> logger)
+        private ActivityInstanceState State => _state.State;
+
+        public ActivityInstance(
+            [PersistentState("state", "activityInstances")] IPersistentState<ActivityInstanceState> state,
+            ILogger<ActivityInstance> logger)
         {
+            _state = state;
             _logger = logger;
         }
 
-        public ValueTask Complete()
+        public async ValueTask Complete()
         {
-            _isExecuting = false;
-            _isCompleted = true;
-            _completedAt = DateTimeOffset.UtcNow;
+            State.Complete();
             LogCompleted();
-            return ValueTask.CompletedTask;
+            await _state.WriteStateAsync();
         }
 
-        public ValueTask Fail(Exception exception)
+        public async ValueTask Fail(Exception exception)
         {
-            if (exception is ActivityException activityException)
-            {
-                _errorState = activityException.GetActivityErrorState();
-            }
-            else
-            {
-                _errorState = new ActivityErrorState(500, exception.Message);
-            }
-
-            LogFailed(_errorState.Code, _errorState.Message);
-
-            return Complete();
+            State.Fail(exception);
+            var errorState = State.GetErrorState()!;
+            LogFailed(errorState.Code, errorState.Message);
+            // Complete() calls WriteStateAsync — both error and completed state persisted atomically
+            await Complete();
         }
 
-        public ValueTask Execute()
+        public async ValueTask Execute()
         {
-            _errorState = null;
-            _isCompleted = false;
-            _isExecuting = true;
-            _executionStartedAt = DateTimeOffset.UtcNow;
-            RequestContext.Set("VariablesId", _variablesId.ToString());
+            State.Execute();
+            RequestContext.Set("VariablesId", State.GetVariablesId().ToString());
             LogExecutionStarted();
-            return ValueTask.CompletedTask;
+            await _state.WriteStateAsync();
         }
 
-        public ValueTask<Guid> GetActivityInstanceId() => ValueTask.FromResult( this.GetPrimaryKey());
+        public ValueTask<Guid> GetActivityInstanceId() => ValueTask.FromResult(this.GetPrimaryKey());
 
-        public ValueTask<Activity> GetCurrentActivity() => ValueTask.FromResult(_currentActivity);
+        public ValueTask<Activity> GetCurrentActivity() => ValueTask.FromResult(State.GetCurrentActivity()!);
 
-        public ValueTask<ActivityErrorState?> GetErrorState() => ValueTask.FromResult(_errorState);
+        public ValueTask<ActivityErrorState?> GetErrorState() => ValueTask.FromResult(State.GetErrorState());
 
-        public ValueTask<DateTimeOffset?> GetCreatedAt() => ValueTask.FromResult(_createdAt);
+        public ValueTask<DateTimeOffset?> GetCreatedAt() => ValueTask.FromResult(State.CreatedAt);
 
-        public ValueTask<DateTimeOffset?> GetExecutionStartedAt() => ValueTask.FromResult(_executionStartedAt);
+        public ValueTask<DateTimeOffset?> GetExecutionStartedAt() => ValueTask.FromResult(State.ExecutionStartedAt);
 
-        public ValueTask<DateTimeOffset?> GetCompletedAt() => ValueTask.FromResult(_completedAt);
+        public ValueTask<DateTimeOffset?> GetCompletedAt() => ValueTask.FromResult(State.CompletedAt);
 
-        public ValueTask<ActivityInstanceSnapshot> GetSnapshot() => ValueTask.FromResult(
-            new ActivityInstanceSnapshot(
-                this.GetPrimaryKey(),
-                _currentActivity.ActivityId,
-                _currentActivity.GetType().Name,
-                _isCompleted,
-                _isExecuting,
-                _variablesId,
-                _errorState,
-                _createdAt,
-                _executionStartedAt,
-                _completedAt));
+        public ValueTask<ActivityInstanceSnapshot> GetSnapshot() => ValueTask.FromResult(State.GetSnapshot(this.GetPrimaryKey()));
 
         ValueTask<bool> IActivityInstance.IsCompleted()
-            => ValueTask.FromResult(_isCompleted);
+            => ValueTask.FromResult(State.IsCompleted());
 
-        ValueTask<bool> IActivityInstance.IsExecuting() => ValueTask.FromResult(_isExecuting);
+        ValueTask<bool> IActivityInstance.IsExecuting() => ValueTask.FromResult(State.IsExecuting());
 
         public ValueTask<Guid> GetVariablesStateId()
-            => ValueTask.FromResult(_variablesId);
+            => ValueTask.FromResult(State.GetVariablesId());
 
-        public ValueTask SetVariablesId(Guid guid)
+        public async ValueTask SetVariablesId(Guid guid)
         {
-            _variablesId = guid;
-            return ValueTask.CompletedTask;
+            State.SetVariablesId(guid);
+            await _state.WriteStateAsync();
         }
 
-        public ValueTask SetActivity(Activity nextActivity)
+        public async ValueTask SetActivity(Activity nextActivity)
         {
-            _currentActivity = nextActivity;
-            _createdAt = DateTimeOffset.UtcNow;
-            return ValueTask.CompletedTask;
+            State.SetActivity(nextActivity);
+            await _state.WriteStateAsync();
         }
 
         public Task PublishEvent(IDomainEvent domainEvent)

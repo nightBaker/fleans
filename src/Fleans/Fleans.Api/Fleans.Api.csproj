@@ -22,6 +22,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Fleans.Application\Fleans.Application.csproj" />
     <ProjectReference Include="..\Fleans.Infrastructure\Fleans.Infrastructure.csproj" />
+    <ProjectReference Include="..\Fleans.Persistence.InMemory\Fleans.Persistence.InMemory.csproj" />
     <ProjectReference Include="..\Fleans.ServiceDefaults\Fleans.ServiceDefaults.csproj" />
   </ItemGroup>
 

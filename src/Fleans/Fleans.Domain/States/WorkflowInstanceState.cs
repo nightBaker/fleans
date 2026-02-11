@@ -4,6 +4,8 @@ using System.Dynamic;
 
 namespace Fleans.Domain.States;
 
+// TODO: Add [GenerateSerializer] and [Id] attributes before implementing real storage.
+// Fields must become public properties for Orleans serialization.
 public class WorkflowInstanceState
 {
     private readonly List<IActivityInstance> _activeActivities = new();

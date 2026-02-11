@@ -72,6 +72,8 @@ namespace Fleans.Application.Tests
             public void Configure(ISiloBuilder hostBuilder) =>
                hostBuilder.AddMemoryStreams(WorkflowEventsPublisher.StreamProvider)
                           .AddMemoryGrainStorage("PubSubStore")
+                          .AddMemoryGrainStorage("workflowInstances")
+                          .AddMemoryGrainStorage("activityInstances")
                             //.ConfigureServices(services => services.AddSerializer(serializerBuilder =>
                             //{
                             //    serializerBuilder.AddNewtonsoftJsonSerializer(
