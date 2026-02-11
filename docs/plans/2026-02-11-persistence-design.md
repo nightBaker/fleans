@@ -1,10 +1,10 @@
-# Persistence Design: ICommandRepository + Orleans IGrainStorage
+# Persistence Design: Orleans IGrainStorage
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Add abstract persistence interfaces and wire grain state through Orleans `IGrainStorage` providers that delegate to `ICommandRepository<T>`.
+**Goal:** Persist grain state through Orleans `IGrainStorage` providers. Extract `ActivityInstanceState` POCO. Persist `ProcessDefinition` separately outside Orleans grain storage.
 
-**Architecture:** Three aggregate roots (`ProcessDefinition`, `WorkflowInstanceState`, `ActivityInstanceState`) each get a dedicated `IGrainStorage` provider. Providers delegate to `ICommandRepository<T>` — no concrete DB implementation yet.
+**Architecture:** Two grains (`WorkflowInstance`, `ActivityInstance`) use `IPersistentState<T>` with custom `IGrainStorage` providers. `ProcessDefinition` is persisted via a dedicated `IProcessDefinitionRepository` — not through Orleans grain storage — because the factory grain holds a collection of definitions, not a single state object.
 
 **Tech Stack:** Orleans 9.2.1 (`IGrainStorage`, `IPersistentState<T>`), .NET 10
 
@@ -12,63 +12,67 @@
 
 ## Design Decisions
 
-**Reuse existing classes as aggregate roots.**
-`ProcessDefinition` and `WorkflowInstanceState` already exist. Add `IAggregateRoot` marker interface. Only `ActivityInstanceState` is new (extracted from `ActivityInstance` grain, same pattern as `WorkflowInstanceState` extraction).
+**No `ICommandRepository<T>`, `IAggregateRoot`, `IUnitOfWork`.**
+`IGrainStorage` is a key-value store (read/write by grain ID). A query-oriented repository pattern doesn't fit. Storage providers implement `IGrainStorage` directly — no intermediate abstraction.
 
-**Domain layer owns interfaces only.**
-`IAggregateRoot`, `IUnitOfWork`, `ICommandRepository<T>` live in `Fleans.Domain/Persistence/`. No database dependencies in Domain.
+**ProcessDefinition persisted separately.**
+`WorkflowInstanceFactoryGrain` is a singleton holding 4 dictionaries of multiple definitions. This doesn't fit `IPersistentState<T>` (one state per grain). Instead, `IProcessDefinitionRepository` is a standalone interface the factory grain calls directly.
 
-**Infrastructure layer owns IGrainStorage implementations.**
-Three providers in `Fleans.Infrastructure/Storage/`, one per aggregate. Each takes `ICommandRepository<T>` via constructor.
+**`WriteStateAsync()` called after every state mutation.**
+Orleans doesn't auto-persist. Every grain method that mutates state must call `await _state.WriteStateAsync()` at the end.
 
-**Orleans `IPersistentState<T>` for grain state.**
-Grains receive state via `[PersistentState("state", "providerName")]` constructor injection. Existing code accesses `State.X` unchanged — only the initialization path changes.
+**Grain reference serialization deferred.**
+`WorkflowInstanceState` holds `List<IActivityInstance>` grain references. These can't be serialized to a database directly. For now, `IGrainStorage` implementations are abstract (no DB). A future PR will address mapping grain references to `Guid` IDs for storage.
+
+**Concurrency control deferred.**
+Orleans `IGrainState<T>` has `ETag` for optimistic concurrency. A future PR will add version fields to state classes.
 
 **No database implementation in this PR.**
-Storage providers compile but aren't wired up. A future PR adds EF Core (or other) `ICommandRepository<T>` implementations.
+Storage providers compile but use in-memory or no-op implementations. A future PR adds EF Core or other concrete storage.
 
 ---
 
-## Aggregate Root Mapping
+## Persistence Mapping
 
-| Grain | Aggregate Root | Approach |
-|-------|---------------|----------|
-| `WorkflowInstanceFactoryGrain` | `ProcessDefinition` | Add `IAggregateRoot` to existing record |
-| `WorkflowInstance` | `WorkflowInstanceState` | Add `IAggregateRoot` to existing class |
-| `ActivityInstance` | `ActivityInstanceState` (new) | Extract state fields into POCO |
+| Grain | State | Persistence Mechanism |
+|-------|-------|----------------------|
+| `WorkflowInstanceFactoryGrain` | Multiple `ProcessDefinition` records | `IProcessDefinitionRepository` (direct call) |
+| `WorkflowInstance` | `WorkflowInstanceState` | `IPersistentState<T>` + `IGrainStorage` |
+| `ActivityInstance` | `ActivityInstanceState` (new) | `IPersistentState<T>` + `IGrainStorage` |
 
 ---
 
-## Interfaces
+## IProcessDefinitionRepository
 
-### IAggregateRoot
-
-```csharp
-// Fleans.Domain/Persistence/IAggregateRoot.cs
-public interface IAggregateRoot { }
-```
-
-### IUnitOfWork
+Dedicated interface for process definition persistence. Called directly by `WorkflowInstanceFactoryGrain`, not through Orleans grain storage.
 
 ```csharp
-// Fleans.Domain/Persistence/IUnitOfWork.cs
-public interface IUnitOfWork : IDisposable
+// Fleans.Domain/Persistence/IProcessDefinitionRepository.cs
+public interface IProcessDefinitionRepository
 {
-    Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+    Task<ProcessDefinition?> GetByIdAsync(string processDefinitionId);
+    Task<List<ProcessDefinition>> GetByKeyAsync(string processDefinitionKey);
+    Task<List<ProcessDefinition>> GetAllAsync();
+    Task SaveAsync(ProcessDefinition definition);
+    Task DeleteAsync(string processDefinitionId);
 }
 ```
 
-### ICommandRepository
-
+The factory grain calls this on deploy:
 ```csharp
-// Fleans.Domain/Persistence/ICommandRepository.cs
-public interface ICommandRepository<T> where T : IAggregateRoot
+await _repository.SaveAsync(definition);
+```
+
+And rehydrates on activation:
+```csharp
+public override async Task OnActivateAsync(CancellationToken ct)
 {
-    IUnitOfWork UnitOfWork { get; }
-    Task<T> GetAsync(Expression<Func<T, bool>> predicate);
-    void Add(T item);
-    T Remove(T item);
-    Task<List<T>> GetListAsync(Expression<Func<T, bool>> predicate);
+    var all = await _repository.GetAllAsync();
+    foreach (var def in all)
+    {
+        _byId[def.ProcessDefinitionId] = def;
+        // ... rebuild other dictionaries
+    }
 }
 ```
 
@@ -76,11 +80,11 @@ public interface ICommandRepository<T> where T : IAggregateRoot
 
 ## ActivityInstanceState Extraction
 
-Extract from `ActivityInstance` grain fields into new POCO:
+Extract from `ActivityInstance` grain fields into new POCO (same pattern as `WorkflowInstanceState`):
 
 ```csharp
 // Fleans.Domain/States/ActivityInstanceState.cs
-public class ActivityInstanceState : IAggregateRoot
+public class ActivityInstanceState
 {
     private Activity? _currentActivity;
     private bool _isExecuting;
@@ -145,10 +149,20 @@ public class ActivityInstanceState : IAggregateRoot
 ```csharp
 public partial class ActivityInstance : Grain, IActivityInstance
 {
-    private ActivityInstanceState State { get; } = new();
+    private readonly IPersistentState<ActivityInstanceState> _state;
     private readonly ILogger<ActivityInstance> _logger;
 
-    // All methods delegate to State
+    public ActivityInstance(
+        [PersistentState("state", "activityInstances")] IPersistentState<ActivityInstanceState> state,
+        ILogger<ActivityInstance> logger)
+    {
+        _state = state;
+        _logger = logger;
+    }
+
+    private ActivityInstanceState State => _state.State;
+
+    // All methods delegate to State, then call _state.WriteStateAsync()
     // RequestContext.Set stays in grain (Orleans infrastructure)
     // PublishEvent stays in grain (needs GrainFactory)
     // Logging stays in grain
@@ -159,44 +173,126 @@ public partial class ActivityInstance : Grain, IActivityInstance
 
 ## IGrainStorage Providers
 
-Three providers in `Fleans.Infrastructure/Storage/`, each delegating to `ICommandRepository<T>`:
+Two abstract providers in `Fleans.Infrastructure/Storage/`:
 
 ```csharp
+// Fleans.Infrastructure/Storage/WorkflowInstanceGrainStorage.cs
 public class WorkflowInstanceGrainStorage : IGrainStorage
 {
-    private readonly ICommandRepository<WorkflowInstanceState> _repository;
+    public Task ReadStateAsync<T>(string stateName, GrainId grainId, IGrainState<T> grainState)
+    {
+        // No-op for now — state starts empty on activation
+        return Task.CompletedTask;
+    }
 
-    public async Task ReadStateAsync<T>(string stateName, GrainId grainId, IGrainState<T> grainState) { ... }
-    public async Task WriteStateAsync<T>(string stateName, GrainId grainId, IGrainState<T> grainState) { ... }
-    public async Task ClearStateAsync<T>(string stateName, GrainId grainId, IGrainState<T> grainState) { ... }
+    public Task WriteStateAsync<T>(string stateName, GrainId grainId, IGrainState<T> grainState)
+    {
+        // No-op for now — future PR adds DB write
+        return Task.CompletedTask;
+    }
+
+    public Task ClearStateAsync<T>(string stateName, GrainId grainId, IGrainState<T> grainState)
+    {
+        // No-op for now
+        return Task.CompletedTask;
+    }
+}
+
+// Fleans.Infrastructure/Storage/ActivityInstanceGrainStorage.cs
+public class ActivityInstanceGrainStorage : IGrainStorage
+{
+    // Same no-op pattern
 }
 ```
 
-Registration:
+Registration in silo config:
 
 ```csharp
 siloBuilder
-    .AddGrainStorage("processDefinitions", (sp, name) =>
-        new ProcessDefinitionGrainStorage(sp.GetRequiredService<ICommandRepository<ProcessDefinition>>()))
-    .AddGrainStorage("workflowInstances", ...)
-    .AddGrainStorage("activityInstances", ...);
+    .AddGrainStorage("workflowInstances", (sp, name) =>
+        new WorkflowInstanceGrainStorage())
+    .AddGrainStorage("activityInstances", (sp, name) =>
+        new ActivityInstanceGrainStorage());
 ```
 
-Grain usage:
+---
+
+## WorkflowInstance Changes
 
 ```csharp
-public class WorkflowInstance : Grain, IWorkflowInstance
+public partial class WorkflowInstance : Grain, IWorkflowInstance
 {
     private readonly IPersistentState<WorkflowInstanceState> _state;
+    private readonly IGrainFactory _grainFactory;
+    private readonly ILogger<WorkflowInstance> _logger;
 
     public WorkflowInstance(
-        [PersistentState("state", "workflowInstances")] IPersistentState<WorkflowInstanceState> state, ...)
+        [PersistentState("state", "workflowInstances")] IPersistentState<WorkflowInstanceState> state,
+        IGrainFactory grainFactory,
+        ILogger<WorkflowInstance> logger)
     {
         _state = state;
+        _grainFactory = grainFactory;
+        _logger = logger;
     }
 
     private WorkflowInstanceState State => _state.State;
-    // All existing State.X calls work unchanged
+
+    // Every mutation method ends with:
+    // await _state.WriteStateAsync();
+}
+```
+
+Example — `CompleteActivity` with `WriteStateAsync`:
+
+```csharp
+public async Task CompleteActivity(string activityId, ExpandoObject variables)
+{
+    SetWorkflowRequestContext();
+    using var scope = BeginWorkflowScope();
+    LogCompletingActivity(activityId);
+    await CompleteActivityState(activityId, variables);
+    await ExecuteWorkflow();
+    await _state.WriteStateAsync();
+}
+```
+
+---
+
+## WorkflowInstanceFactoryGrain Changes
+
+```csharp
+public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFactoryGrain
+{
+    private readonly IProcessDefinitionRepository _repository;
+    // ... existing dictionaries stay
+
+    public WorkflowInstanceFactoryGrain(
+        IProcessDefinitionRepository repository,
+        IGrainFactory grainFactory,
+        ILogger<WorkflowInstanceFactoryGrain> logger)
+    {
+        _repository = repository;
+        // ...
+    }
+
+    public override async Task OnActivateAsync(CancellationToken ct)
+    {
+        var all = await _repository.GetAllAsync();
+        foreach (var def in all)
+        {
+            _byId[def.ProcessDefinitionId] = def;
+            if (!_byKey.TryGetValue(def.ProcessDefinitionKey, out var versions))
+            {
+                versions = new List<ProcessDefinition>();
+                _byKey[def.ProcessDefinitionKey] = versions;
+            }
+            versions.Add(def);
+        }
+    }
+
+    // DeployWorkflow adds to dictionaries AND calls:
+    // await _repository.SaveAsync(definition);
 }
 ```
 
@@ -208,44 +304,41 @@ public class WorkflowInstance : Grain, IWorkflowInstance
 src/Fleans/
 ├── Fleans.Domain/
 │   ├── Persistence/
-│   │   ├── IAggregateRoot.cs
-│   │   ├── IUnitOfWork.cs
-│   │   └── ICommandRepository.cs
+│   │   └── IProcessDefinitionRepository.cs
 │   ├── States/
-│   │   ├── WorkflowInstanceState.cs      # Add : IAggregateRoot
-│   │   └── ActivityInstanceState.cs      # New POCO
-│   ├── ProcessDefinitions.cs             # Add : IAggregateRoot to ProcessDefinition
-│   └── ActivityInstance.cs               # Refactor to own ActivityInstanceState
+│   │   ├── WorkflowInstanceState.cs         # Unchanged
+│   │   └── ActivityInstanceState.cs         # New POCO
+│   └── ActivityInstance.cs                  # Refactor to own ActivityInstanceState
 │
 ├── Fleans.Infrastructure/
 │   └── Storage/
-│       ├── ProcessDefinitionGrainStorage.cs
-│       ├── WorkflowInstanceGrainStorage.cs
-│       └── ActivityInstanceGrainStorage.cs
+│       ├── WorkflowInstanceGrainStorage.cs  # IGrainStorage (no-op)
+│       ├── ActivityInstanceGrainStorage.cs  # IGrainStorage (no-op)
+│       └── InMemoryProcessDefinitionRepository.cs
 ```
 
 ---
 
 ## Implementation Order
 
-### Task 1: Add persistence interfaces
-Create `IAggregateRoot`, `IUnitOfWork`, `ICommandRepository<T>` in `Fleans.Domain/Persistence/`.
+### Task 1: Extract ActivityInstanceState
+Create POCO in `Fleans.Domain/States/`. Refactor `ActivityInstance` grain to delegate to it. Keep `new ActivityInstanceState()` for now (no IPersistentState yet). Update tests. Build + test.
 
-### Task 2: Add IAggregateRoot to existing classes
-Add marker to `ProcessDefinition` and `WorkflowInstanceState`.
+### Task 2: Add IProcessDefinitionRepository
+Create interface in `Fleans.Domain/Persistence/`. Create `InMemoryProcessDefinitionRepository` in `Fleans.Infrastructure/Storage/`. Wire into `WorkflowInstanceFactoryGrain` — add `OnActivateAsync` rehydration + `SaveAsync` on deploy. Register in DI. Build + test.
 
-### Task 3: Extract ActivityInstanceState
-Create POCO, refactor `ActivityInstance` grain to delegate to it. Update tests.
+### Task 3: Add IGrainStorage providers
+Create no-op `WorkflowInstanceGrainStorage` and `ActivityInstanceGrainStorage` in `Fleans.Infrastructure/Storage/`. Register in silo config. Build.
 
-### Task 4: Add IGrainStorage providers
-Create three providers in `Fleans.Infrastructure/Storage/`.
-
-### Task 5: Wire IPersistentState in grains
-Update `WorkflowInstance` and `ActivityInstance` constructors. Update tests.
+### Task 4: Wire IPersistentState in grains
+Update `WorkflowInstance` and `ActivityInstance` constructors to use `IPersistentState<T>`. Replace `new State()` with `_state.State`. Add `WriteStateAsync()` calls after mutations. Update tests (TestCluster silo config needs storage providers registered). Build + test.
 
 ---
 
 ## Not In Scope
+
 - No database implementation (EF Core, SQL, etc.)
-- No concrete `ICommandRepository<T>` implementations
-- Storage providers compile but aren't registered/wired until DB impl exists
+- No grain reference serialization (IActivityInstance lists in WorkflowInstanceState)
+- No concurrency control (ETag/versioning)
+- IGrainStorage providers are no-op placeholders
+- `InMemoryProcessDefinitionRepository` is the only repository implementation
