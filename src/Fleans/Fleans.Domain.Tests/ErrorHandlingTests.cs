@@ -42,30 +42,12 @@ namespace Fleans.Domain.Tests
             await workflowInstance.FailActivity("task", exception);
 
             // Assert
-            var state = await workflowInstance.GetState();
-            var completedActivities = await state.GetCompletedActivities();
-            
-            if (completedActivities.Count > 0)
-            {
-                var failedActivity = null as IActivityInstance;
-                foreach(var activityInstance in completedActivities)
-                {
-                    var activity = await activityInstance.GetCurrentActivity();
-                    if (activity.ActivityId == "task")
-                    {
-                        failedActivity = activityInstance;
-                        break;
-                    }
-                }
-                
-                Assert.IsNotNull(failedActivity);
-                
-                var errorState = await failedActivity.GetErrorState();
-                
-                Assert.IsNotNull(errorState);
-                Assert.AreEqual(500, errorState.Code);
-                Assert.AreEqual("Test error message", errorState.Message);
-            }
+            var snapshot = await workflowInstance.GetStateSnapshot();
+            var failedSnapshot = snapshot.CompletedActivities.FirstOrDefault(a => a.ActivityId == "task");
+            Assert.IsNotNull(failedSnapshot);
+            Assert.IsNotNull(failedSnapshot.ErrorState);
+            Assert.AreEqual(500, failedSnapshot.ErrorState.Code);
+            Assert.AreEqual("Test error message", failedSnapshot.ErrorState.Message);
         }
 
         [TestMethod]
@@ -78,35 +60,17 @@ namespace Fleans.Domain.Tests
             await workflowInstance.StartWorkflow();
 
             var activityException = new BadRequestActivityException("Custom activity error");
-            
+
             // Act
             await workflowInstance.FailActivity("task", activityException);
 
             // Assert
-            var state = await workflowInstance.GetState();
-            var completedActivities = await state.GetCompletedActivities();
-            
-            if (completedActivities.Count > 0)
-            {
-                var failedActivity = null as IActivityInstance;
-                foreach(var activityInstance in completedActivities)
-                {
-                    var activity = await activityInstance.GetCurrentActivity();
-                    if (activity.ActivityId == "task")
-                    {
-                        failedActivity = activityInstance;
-                        break;
-                    }
-                }
-                
-                Assert.IsNotNull(failedActivity);
-                
-                var errorState = await failedActivity.GetErrorState();
-                
-                Assert.IsNotNull(errorState);
-                Assert.AreEqual(400, errorState.Code);
-                Assert.AreEqual("Custom activity error", errorState.Message);
-            }
+            var snapshot = await workflowInstance.GetStateSnapshot();
+            var failedSnapshot = snapshot.CompletedActivities.FirstOrDefault(a => a.ActivityId == "task");
+            Assert.IsNotNull(failedSnapshot);
+            Assert.IsNotNull(failedSnapshot.ErrorState);
+            Assert.AreEqual(400, failedSnapshot.ErrorState.Code);
+            Assert.AreEqual("Custom activity error", failedSnapshot.ErrorState.Message);
         }
 
         [TestMethod]
@@ -124,12 +88,10 @@ namespace Fleans.Domain.Tests
             await workflowInstance.FailActivity("task", exception);
 
             // Assert
-            var state = await workflowInstance.GetState();
-            var completedActivities = await state.GetCompletedActivities();
-            var activeActivities = await state.GetActiveActivities();
-            
+            var snapshot = await workflowInstance.GetStateSnapshot();
+
             // Activity should be moved from active to completed
-            Assert.IsNotEmpty(completedActivities);
+            Assert.IsTrue(snapshot.CompletedActivities.Count > 0);
         }
 
         [TestMethod]
@@ -166,7 +128,7 @@ namespace Fleans.Domain.Tests
             // Assert
             Assert.IsTrue(await activityInstance.IsCompleted());
             Assert.IsFalse(await activityInstance.IsExecuting());
-            
+
             var errorState = await activityInstance.GetErrorState();
             Assert.IsNotNull(errorState);
             Assert.AreEqual(500, errorState.Code);

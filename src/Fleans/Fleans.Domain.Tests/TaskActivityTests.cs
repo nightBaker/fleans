@@ -28,90 +28,71 @@ namespace Fleans.Domain.Tests
         public async Task GetNextActivities_ShouldReturnSingleNextActivity()
         {
             // Arrange
-            var task = new TaskActivity("task1");
-            var nextTask = new TaskActivity("task2");
+            var task1 = new TaskActivity("task1");
+            var task2 = new TaskActivity("task2");
             var end = new EndEvent("end");
             var start = new StartEvent("start");
 
             var workflow = new WorkflowDefinition
             {
                 WorkflowId = "test",
-                Activities = new List<Activity> { start, task, nextTask, end },
+                Activities = new List<Activity> { start, task1, task2, end },
                 SequenceFlows = new List<SequenceFlow>
                 {
-                    new SequenceFlow("seq1", task, nextTask),
-                    new SequenceFlow("seq2", nextTask, end)
+                    new SequenceFlow("seq0", start, task1),
+                    new SequenceFlow("seq1", task1, task2),
+                    new SequenceFlow("seq2", task2, end)
                 }
             };
 
             var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
             await workflowInstance.SetWorkflow(workflow);
+            await workflowInstance.StartWorkflow();
 
-            var activityInstance = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
-            await activityInstance.SetActivity(task);
+            // Act — complete task1 so it transitions to task2
+            await workflowInstance.CompleteActivity("task1", new ExpandoObject());
 
-            // Act
-            var nextActivities = await task.GetNextActivities(workflowInstance, activityInstance);
-
-            // Assert
-            Assert.HasCount(1, nextActivities);
-            Assert.AreEqual("task2", nextActivities[0].ActivityId);
+            // Assert — task2 should now be the active activity
+            var snapshot = await workflowInstance.GetStateSnapshot();
+            Assert.IsFalse(snapshot.IsCompleted);
+            Assert.HasCount(1, snapshot.ActiveActivities);
+            Assert.AreEqual("task2", snapshot.ActiveActivities[0].ActivityId);
         }
 
         [TestMethod]
         public async Task GetNextActivities_ShouldReturnEmptyList_WhenNoNextActivity()
         {
             // Arrange
-            var task = new TaskActivity("task");
-            var end = new EndEvent("end");
-            var start = new StartEvent("start");
-
-            var workflow = new WorkflowDefinition
-            {
-                WorkflowId = "test",
-                Activities = new List<Activity> { start, task, end },
-                SequenceFlows = new List<SequenceFlow>
-                {
-                    new SequenceFlow("seq1", task, end)
-                }
-            };
-
+            var workflow = CreateSimpleWorkflow();
             var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
             await workflowInstance.SetWorkflow(workflow);
+            await workflowInstance.StartWorkflow();
 
-            var activityInstance = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
-            await activityInstance.SetActivity(end);
+            // Act — complete task so end event fires and workflow completes
+            await workflowInstance.CompleteActivity("task", new ExpandoObject());
 
-            // Act
-            var nextActivities = await task.GetNextActivities(workflowInstance, activityInstance);
-
-            // Assert
-            // Should return the end activity, not empty
-            Assert.IsGreaterThanOrEqualTo(0, nextActivities.Count);
+            // Assert — workflow should be completed (end event has no next activities)
+            var snapshot = await workflowInstance.GetStateSnapshot();
+            Assert.IsTrue(snapshot.IsCompleted);
+            Assert.HasCount(0, snapshot.ActiveActivities);
         }
 
         [TestMethod]
         public async Task ExecuteAsync_ShouldMarkActivityAsExecuting()
         {
             // Arrange
-            var task = new TaskActivity("task");
             var workflow = CreateSimpleWorkflow();
             var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
             await workflowInstance.SetWorkflow(workflow);
+
+            // Act
             await workflowInstance.StartWorkflow();
 
-            var state = await workflowInstance.GetState();
-            var activeActivities = await state.GetActiveActivities();
-            var taskActivity = activeActivities.FirstOrDefault();
-
-            if (taskActivity != null)
-            {
-                // Act
-                await task.ExecuteAsync(workflowInstance, taskActivity);
-
-                // Assert
-                Assert.IsTrue(await taskActivity.IsExecuting());
-            }
+            // Assert — after starting, the task should be active
+            var snapshot = await workflowInstance.GetStateSnapshot();
+            Assert.HasCount(1, snapshot.ActiveActivities);
+            Assert.AreEqual("task", snapshot.ActiveActivities[0].ActivityId);
+            Assert.AreEqual("TaskActivity", snapshot.ActiveActivities[0].ActivityType);
         }
 
         [TestMethod]
@@ -130,17 +111,10 @@ namespace Fleans.Domain.Tests
             await workflowInstance.CompleteActivity("task", (ExpandoObject)variables);
 
             // Assert
-            var state = await workflowInstance.GetState();
-            Assert.IsTrue(await state.IsCompleted());
+            var snapshot = await workflowInstance.GetStateSnapshot();
+            Assert.IsTrue(snapshot.IsCompleted);
 
-            var completedActivities = await state.GetCompletedActivities();
-            var completedIds = new List<string>();
-            foreach (var activity in completedActivities)
-            {
-                var current = await activity.GetCurrentActivity();
-                completedIds.Add(current.ActivityId);
-            }
-
+            var completedIds = snapshot.CompletedActivityIds;
             CollectionAssert.Contains(completedIds, "start");
             CollectionAssert.Contains(completedIds, "task");
             CollectionAssert.Contains(completedIds, "end");
@@ -163,15 +137,14 @@ namespace Fleans.Domain.Tests
             await workflowInstance.CompleteActivity("task", (ExpandoObject)variables);
 
             // Assert
-            var state = await workflowInstance.GetState();
-            var variableStates = await state.GetVariableStates();
-            Assert.IsNotEmpty(variableStates);
+            var snapshot = await workflowInstance.GetStateSnapshot();
+            var variableStates = snapshot.VariableStates;
+            Assert.IsTrue(variableStates.Count > 0);
 
-            var mergedVariables = variableStates.Values.First().Variables as IDictionary<string, object>;
-            Assert.IsNotNull(mergedVariables);
-            Assert.AreEqual(2, mergedVariables.Count);
-            Assert.AreEqual("value1", mergedVariables["key1"]);
-            Assert.AreEqual(42, mergedVariables["key2"]);
+            var vars = variableStates.First().Variables;
+            Assert.AreEqual(2, vars.Count);
+            Assert.AreEqual("value1", vars["key1"]);
+            Assert.AreEqual("42", vars["key2"]);
         }
 
         [TestMethod]
@@ -187,21 +160,11 @@ namespace Fleans.Domain.Tests
             await workflowInstance.CompleteActivity("task", new ExpandoObject());
 
             // Assert
-            var state = await workflowInstance.GetState();
-            var completedActivities = await state.GetCompletedActivities();
-            var completedTask = false;
-            foreach (var activity in completedActivities)
-            {
-                var current = await activity.GetCurrentActivity();
-                if (current.ActivityId == "task")
-                {
-                    Assert.IsTrue(await activity.IsCompleted());
-                    Assert.IsNull(await activity.GetErrorState());
-                    completedTask = true;
-                }
-            }
-
-            Assert.IsTrue(completedTask, "TaskActivity should be in completed activities");
+            var snapshot = await workflowInstance.GetStateSnapshot();
+            var completedTask = snapshot.CompletedActivities.FirstOrDefault(a => a.ActivityId == "task");
+            Assert.IsNotNull(completedTask);
+            Assert.IsTrue(completedTask.IsCompleted);
+            Assert.IsNull(completedTask.ErrorState);
         }
 
         [TestMethod]
@@ -217,9 +180,8 @@ namespace Fleans.Domain.Tests
             await workflowInstance.CompleteActivity("task", new ExpandoObject());
 
             // Assert
-            var state = await workflowInstance.GetState();
-            var activeActivities = await state.GetActiveActivities();
-            Assert.HasCount(0, activeActivities);
+            var snapshot = await workflowInstance.GetStateSnapshot();
+            Assert.HasCount(0, snapshot.ActiveActivities);
         }
 
         [TestMethod]
@@ -251,19 +213,17 @@ namespace Fleans.Domain.Tests
             await workflowInstance.CompleteActivity("task1", new ExpandoObject());
 
             // Assert — second task should now be active
-            var state = await workflowInstance.GetState();
-            Assert.IsFalse(await state.IsCompleted());
-            var activeActivities = await state.GetActiveActivities();
-            Assert.HasCount(1, activeActivities);
-            var activeActivity = await activeActivities[0].GetCurrentActivity();
-            Assert.AreEqual("task2", activeActivity.ActivityId);
+            var snapshot = await workflowInstance.GetStateSnapshot();
+            Assert.IsFalse(snapshot.IsCompleted);
+            Assert.HasCount(1, snapshot.ActiveActivities);
+            Assert.AreEqual("task2", snapshot.ActiveActivities[0].ActivityId);
 
             // Act — complete second task
             await workflowInstance.CompleteActivity("task2", new ExpandoObject());
 
             // Assert — workflow should be completed
-            state = await workflowInstance.GetState();
-            Assert.IsTrue(await state.IsCompleted());
+            snapshot = await workflowInstance.GetStateSnapshot();
+            Assert.IsTrue(snapshot.IsCompleted);
         }
 
         [TestMethod]
@@ -279,25 +239,11 @@ namespace Fleans.Domain.Tests
             await workflowInstance.FailActivity("task", new Exception("Task failed"));
 
             // Assert
-            var state = await workflowInstance.GetState();
-            var completedActivities = await state.GetCompletedActivities();
-
-            IActivityInstance? failedActivity = null;
-            foreach (var activity in completedActivities)
-            {
-                var current = await activity.GetCurrentActivity();
-                if (current.ActivityId == "task")
-                {
-                    failedActivity = activity;
-                    break;
-                }
-            }
-
-            Assert.IsNotNull(failedActivity, "Failed task should be in completed activities");
-            var errorState = await failedActivity.GetErrorState();
-            Assert.IsNotNull(errorState);
-            Assert.AreEqual(500, errorState.Code);
-            Assert.AreEqual("Task failed", errorState.Message);
+            var snapshot = await workflowInstance.GetStateSnapshot();
+            var failedSnapshot = snapshot.CompletedActivities.First(a => a.ActivityId == "task");
+            Assert.IsNotNull(failedSnapshot.ErrorState);
+            Assert.AreEqual(500, failedSnapshot.ErrorState.Code);
+            Assert.AreEqual("Task failed", failedSnapshot.ErrorState.Message);
         }
 
         [TestMethod]
@@ -313,25 +259,11 @@ namespace Fleans.Domain.Tests
             await workflowInstance.FailActivity("task", new BadRequestActivityException("Bad input"));
 
             // Assert
-            var state = await workflowInstance.GetState();
-            var completedActivities = await state.GetCompletedActivities();
-
-            IActivityInstance? failedActivity = null;
-            foreach (var activity in completedActivities)
-            {
-                var current = await activity.GetCurrentActivity();
-                if (current.ActivityId == "task")
-                {
-                    failedActivity = activity;
-                    break;
-                }
-            }
-
-            Assert.IsNotNull(failedActivity, "Failed task should be in completed activities");
-            var errorState = await failedActivity.GetErrorState();
-            Assert.IsNotNull(errorState);
-            Assert.AreEqual(400, errorState.Code);
-            Assert.AreEqual("Bad input", errorState.Message);
+            var snapshot = await workflowInstance.GetStateSnapshot();
+            var failedSnapshot = snapshot.CompletedActivities.First(a => a.ActivityId == "task");
+            Assert.IsNotNull(failedSnapshot.ErrorState);
+            Assert.AreEqual(400, failedSnapshot.ErrorState.Code);
+            Assert.AreEqual("Bad input", failedSnapshot.ErrorState.Message);
         }
 
         [TestMethod]
@@ -347,20 +279,11 @@ namespace Fleans.Domain.Tests
             await workflowInstance.FailActivity("task", new Exception("Task error"));
 
             // Assert
-            var state = await workflowInstance.GetState();
-            Assert.IsTrue(await state.IsCompleted());
+            var snapshot = await workflowInstance.GetStateSnapshot();
+            Assert.IsTrue(snapshot.IsCompleted);
+            Assert.HasCount(0, snapshot.ActiveActivities);
 
-            var activeActivities = await state.GetActiveActivities();
-            Assert.HasCount(0, activeActivities);
-
-            var completedActivities = await state.GetCompletedActivities();
-            var completedIds = new List<string>();
-            foreach (var activity in completedActivities)
-            {
-                var current = await activity.GetCurrentActivity();
-                completedIds.Add(current.ActivityId);
-            }
-
+            var completedIds = snapshot.CompletedActivityIds;
             CollectionAssert.Contains(completedIds, "task");
             CollectionAssert.Contains(completedIds, "end");
         }
@@ -378,13 +301,10 @@ namespace Fleans.Domain.Tests
             await workflowInstance.FailActivity("task", new Exception("Task error"));
 
             // Assert
-            var state = await workflowInstance.GetState();
-            var variableStates = await state.GetVariableStates();
-            foreach (var vs in variableStates.Values)
+            var snapshot = await workflowInstance.GetStateSnapshot();
+            foreach (var vs in snapshot.VariableStates)
             {
-                var vars = vs.Variables as IDictionary<string, object>;
-                Assert.IsNotNull(vars);
-                Assert.AreEqual(0, vars.Count, "No variables should be merged on failure");
+                Assert.AreEqual(0, vs.Variables.Count, "No variables should be merged on failure");
             }
         }
 
@@ -449,21 +369,9 @@ namespace Fleans.Domain.Tests
             var after = DateTimeOffset.UtcNow;
 
             // Act — task is now active (executed but waiting for completion)
-            var state = await workflowInstance.GetState();
-            var activeActivities = await state.GetActiveActivities();
-            IActivityInstance? taskActivity = null;
-            foreach (var a in activeActivities)
-            {
-                var current = await a.GetCurrentActivity();
-                if (current.ActivityId == "task")
-                {
-                    taskActivity = a;
-                    break;
-                }
-            }
-            Assert.IsNotNull(taskActivity);
-
-            var executionStartedAt = await taskActivity.GetExecutionStartedAt();
+            var snapshot = await workflowInstance.GetStateSnapshot();
+            var taskSnapshot = snapshot.ActiveActivities.First(a => a.ActivityId == "task");
+            var executionStartedAt = taskSnapshot.ExecutionStartedAt;
 
             // Assert
             Assert.IsNotNull(executionStartedAt);
@@ -483,21 +391,9 @@ namespace Fleans.Domain.Tests
             await workflowInstance.FailActivity("task", new Exception("fail"));
 
             // Act
-            var state = await workflowInstance.GetState();
-            var completedActivities = await state.GetCompletedActivities();
-            IActivityInstance? failedTask = null;
-            foreach (var a in completedActivities)
-            {
-                var current = await a.GetCurrentActivity();
-                if (current.ActivityId == "task")
-                {
-                    failedTask = a;
-                    break;
-                }
-            }
-
-            Assert.IsNotNull(failedTask);
-            var executionStartedAt = await failedTask.GetExecutionStartedAt();
+            var snapshot = await workflowInstance.GetStateSnapshot();
+            var failedTask = snapshot.CompletedActivities.First(a => a.ActivityId == "task");
+            var executionStartedAt = failedTask.ExecutionStartedAt;
 
             // Assert
             Assert.IsNotNull(executionStartedAt, "ExecutionStartedAt should be set even after failure");
@@ -531,21 +427,9 @@ namespace Fleans.Domain.Tests
             var after = DateTimeOffset.UtcNow;
 
             // Act
-            var state = await workflowInstance.GetState();
-            var completedActivities = await state.GetCompletedActivities();
-            IActivityInstance? taskActivity = null;
-            foreach (var a in completedActivities)
-            {
-                var current = await a.GetCurrentActivity();
-                if (current.ActivityId == "task")
-                {
-                    taskActivity = a;
-                    break;
-                }
-            }
-            Assert.IsNotNull(taskActivity);
-
-            var completedAt = await taskActivity.GetCompletedAt();
+            var snapshot = await workflowInstance.GetStateSnapshot();
+            var taskSnapshot = snapshot.CompletedActivities.First(a => a.ActivityId == "task");
+            var completedAt = taskSnapshot.CompletedAt;
 
             // Assert
             Assert.IsNotNull(completedAt);
@@ -565,21 +449,9 @@ namespace Fleans.Domain.Tests
             await workflowInstance.FailActivity("task", new Exception("fail"));
 
             // Act
-            var state = await workflowInstance.GetState();
-            var completedActivities = await state.GetCompletedActivities();
-            IActivityInstance? failedTask = null;
-            foreach (var a in completedActivities)
-            {
-                var current = await a.GetCurrentActivity();
-                if (current.ActivityId == "task")
-                {
-                    failedTask = a;
-                    break;
-                }
-            }
-
-            Assert.IsNotNull(failedTask);
-            var completedAt = await failedTask.GetCompletedAt();
+            var snapshot = await workflowInstance.GetStateSnapshot();
+            var failedTask = snapshot.CompletedActivities.First(a => a.ActivityId == "task");
+            var completedAt = failedTask.CompletedAt;
 
             // Assert
             Assert.IsNotNull(completedAt, "CompletedAt should be set after failure (Fail calls Complete)");
@@ -596,32 +468,18 @@ namespace Fleans.Domain.Tests
 
             await workflowInstance.CompleteActivity("task", new ExpandoObject());
 
-            var state = await workflowInstance.GetState();
-            var completedActivities = await state.GetCompletedActivities();
-            IActivityInstance? taskActivity = null;
-            foreach (var a in completedActivities)
-            {
-                var current = await a.GetCurrentActivity();
-                if (current.ActivityId == "task")
-                {
-                    taskActivity = a;
-                    break;
-                }
-            }
-            Assert.IsNotNull(taskActivity);
-
-            // Act
-            var snapshot = await taskActivity.GetSnapshot();
+            var snapshot = await workflowInstance.GetStateSnapshot();
+            var taskSnapshot = snapshot.CompletedActivities.First(a => a.ActivityId == "task");
 
             // Assert
-            Assert.AreEqual("task", snapshot.ActivityId);
-            Assert.AreEqual("TaskActivity", snapshot.ActivityType);
-            Assert.IsTrue(snapshot.IsCompleted);
-            Assert.IsFalse(snapshot.IsExecuting);
-            Assert.IsNull(snapshot.ErrorState);
-            Assert.IsNotNull(snapshot.CreatedAt);
-            Assert.IsNotNull(snapshot.ExecutionStartedAt);
-            Assert.IsNotNull(snapshot.CompletedAt);
+            Assert.AreEqual("task", taskSnapshot.ActivityId);
+            Assert.AreEqual("TaskActivity", taskSnapshot.ActivityType);
+            Assert.IsTrue(taskSnapshot.IsCompleted);
+            Assert.IsFalse(taskSnapshot.IsExecuting);
+            Assert.IsNull(taskSnapshot.ErrorState);
+            Assert.IsNotNull(taskSnapshot.CreatedAt);
+            Assert.IsNotNull(taskSnapshot.ExecutionStartedAt);
+            Assert.IsNotNull(taskSnapshot.CompletedAt);
         }
 
         [TestMethod]
@@ -635,32 +493,18 @@ namespace Fleans.Domain.Tests
 
             await workflowInstance.FailActivity("task", new Exception("snapshot error"));
 
-            var state = await workflowInstance.GetState();
-            var completedActivities = await state.GetCompletedActivities();
-            IActivityInstance? failedTask = null;
-            foreach (var a in completedActivities)
-            {
-                var current = await a.GetCurrentActivity();
-                if (current.ActivityId == "task")
-                {
-                    failedTask = a;
-                    break;
-                }
-            }
-            Assert.IsNotNull(failedTask);
-
-            // Act
-            var snapshot = await failedTask.GetSnapshot();
+            var snapshot = await workflowInstance.GetStateSnapshot();
+            var taskSnapshot = snapshot.CompletedActivities.First(a => a.ActivityId == "task");
 
             // Assert
-            Assert.AreEqual("task", snapshot.ActivityId);
-            Assert.IsTrue(snapshot.IsCompleted);
-            Assert.IsNotNull(snapshot.ErrorState);
-            Assert.AreEqual(500, snapshot.ErrorState.Code);
-            Assert.AreEqual("snapshot error", snapshot.ErrorState.Message);
-            Assert.IsNotNull(snapshot.CreatedAt);
-            Assert.IsNotNull(snapshot.ExecutionStartedAt);
-            Assert.IsNotNull(snapshot.CompletedAt);
+            Assert.AreEqual("task", taskSnapshot.ActivityId);
+            Assert.IsTrue(taskSnapshot.IsCompleted);
+            Assert.IsNotNull(taskSnapshot.ErrorState);
+            Assert.AreEqual(500, taskSnapshot.ErrorState.Code);
+            Assert.AreEqual("snapshot error", taskSnapshot.ErrorState.Message);
+            Assert.IsNotNull(taskSnapshot.CreatedAt);
+            Assert.IsNotNull(taskSnapshot.ExecutionStartedAt);
+            Assert.IsNotNull(taskSnapshot.CompletedAt);
         }
 
         private static TestCluster CreateCluster()
@@ -705,4 +549,3 @@ namespace Fleans.Domain.Tests
         }
     }
 }
-

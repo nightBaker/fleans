@@ -1,7 +1,6 @@
 using Fleans.Domain.Activities;
 using Fleans.Domain.Events;
 using Fleans.Domain.Sequences;
-using Fleans.Domain.States;
 using Orleans.Serialization;
 using Orleans.TestingHost;
 using System.Dynamic;
@@ -38,12 +37,11 @@ public class ExclusiveGatewayTests
         await workflowInstance.CompleteConditionSequence("if", "seq2", true);
 
         // Assert — workflow completed via end1 (true branch)
-        var state = await workflowInstance.GetState();
-        Assert.IsTrue(await state.IsCompleted());
+        var snapshot = await workflowInstance.GetStateSnapshot();
+        Assert.IsTrue(snapshot.IsCompleted);
 
-        var completedIds = await GetCompletedActivityIds(state);
-        CollectionAssert.Contains(completedIds, "end1");
-        CollectionAssert.DoesNotContain(completedIds, "end2");
+        CollectionAssert.Contains(snapshot.CompletedActivityIds, "end1");
+        CollectionAssert.DoesNotContain(snapshot.CompletedActivityIds, "end2");
     }
 
     [TestMethod]
@@ -60,11 +58,10 @@ public class ExclusiveGatewayTests
         await workflowInstance.CompleteConditionSequence("if", "seq2", true);
 
         // Assert — workflow completed without needing seq3
-        var state = await workflowInstance.GetState();
-        Assert.IsTrue(await state.IsCompleted());
+        var snapshot = await workflowInstance.GetStateSnapshot();
+        Assert.IsTrue(snapshot.IsCompleted);
 
-        var activeActivities = await state.GetActiveActivities();
-        Assert.AreEqual(0, activeActivities.Count);
+        Assert.AreEqual(0, snapshot.ActiveActivities.Count);
     }
 
     [TestMethod]
@@ -81,12 +78,11 @@ public class ExclusiveGatewayTests
         await workflowInstance.CompleteConditionSequence("if", "seq3", true);
 
         // Assert — workflow completed via end2
-        var state = await workflowInstance.GetState();
-        Assert.IsTrue(await state.IsCompleted());
+        var snapshot = await workflowInstance.GetStateSnapshot();
+        Assert.IsTrue(snapshot.IsCompleted);
 
-        var completedIds = await GetCompletedActivityIds(state);
-        CollectionAssert.Contains(completedIds, "end2");
-        CollectionAssert.DoesNotContain(completedIds, "end1");
+        CollectionAssert.Contains(snapshot.CompletedActivityIds, "end2");
+        CollectionAssert.DoesNotContain(snapshot.CompletedActivityIds, "end1");
     }
 
     [TestMethod]
@@ -103,13 +99,12 @@ public class ExclusiveGatewayTests
         await workflowInstance.CompleteConditionSequence("if", "seq3", false);
 
         // Assert — workflow completed via endDefault (default flow)
-        var state = await workflowInstance.GetState();
-        Assert.IsTrue(await state.IsCompleted());
+        var snapshot = await workflowInstance.GetStateSnapshot();
+        Assert.IsTrue(snapshot.IsCompleted);
 
-        var completedIds = await GetCompletedActivityIds(state);
-        CollectionAssert.Contains(completedIds, "endDefault");
-        CollectionAssert.DoesNotContain(completedIds, "end1");
-        CollectionAssert.DoesNotContain(completedIds, "end2");
+        CollectionAssert.Contains(snapshot.CompletedActivityIds, "endDefault");
+        CollectionAssert.DoesNotContain(snapshot.CompletedActivityIds, "end1");
+        CollectionAssert.DoesNotContain(snapshot.CompletedActivityIds, "end2");
     }
 
     [TestMethod]
@@ -155,16 +150,14 @@ public class ExclusiveGatewayTests
         await workflowInstance.StartWorkflow();
 
         // Assert — workflow completed via endDefault
-        var state = await workflowInstance.GetState();
-        Assert.IsTrue(await state.IsCompleted());
+        var snapshot = await workflowInstance.GetStateSnapshot();
+        Assert.IsTrue(snapshot.IsCompleted);
 
-        var completedIds = await GetCompletedActivityIds(state);
-        CollectionAssert.Contains(completedIds, "start");
-        CollectionAssert.Contains(completedIds, "if");
-        CollectionAssert.Contains(completedIds, "endDefault");
+        CollectionAssert.Contains(snapshot.CompletedActivityIds, "start");
+        CollectionAssert.Contains(snapshot.CompletedActivityIds, "if");
+        CollectionAssert.Contains(snapshot.CompletedActivityIds, "endDefault");
 
-        var activeActivities = await state.GetActiveActivities();
-        Assert.AreEqual(0, activeActivities.Count);
+        Assert.AreEqual(0, snapshot.ActiveActivities.Count);
     }
 
     [TestMethod]
@@ -180,11 +173,10 @@ public class ExclusiveGatewayTests
         await workflowInstance.CompleteConditionSequence("if", "seq2", false);
 
         // Assert — workflow not completed, gateway still active
-        var state = await workflowInstance.GetState();
-        Assert.IsFalse(await state.IsCompleted());
+        var snapshot = await workflowInstance.GetStateSnapshot();
+        Assert.IsFalse(snapshot.IsCompleted);
 
-        var activeActivities = await state.GetActiveActivities();
-        Assert.IsTrue(activeActivities.Count > 0);
+        Assert.IsTrue(snapshot.ActiveActivities.Count > 0);
     }
 
     private static Exception GetInnermostException(Exception ex)
@@ -192,18 +184,6 @@ public class ExclusiveGatewayTests
         while (ex.InnerException is not null)
             ex = ex.InnerException;
         return ex;
-    }
-
-    private static async Task<List<string>> GetCompletedActivityIds(IWorkflowInstanceState state)
-    {
-        var completed = await state.GetCompletedActivities();
-        var ids = new List<string>();
-        foreach (var activity in completed)
-        {
-            var current = await activity.GetCurrentActivity();
-            ids.Add(current.ActivityId);
-        }
-        return ids;
     }
 
     private static IWorkflowDefinition CreateWorkflowWithTwoBranches()

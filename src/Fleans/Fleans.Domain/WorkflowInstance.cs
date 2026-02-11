@@ -1,6 +1,6 @@
 using Fleans.Domain.Activities;
 using Fleans.Domain.Errors;
-using Fleans.Domain.Events;
+using Fleans.Domain.Sequences;
 using Fleans.Domain.States;
 using Microsoft.Extensions.Logging;
 using Orleans;
@@ -13,11 +13,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
 {
     public ValueTask<Guid> GetWorkflowInstanceId() => ValueTask.FromResult(this.GetPrimaryKey());
     public IWorkflowDefinition WorkflowDefinition { get; private set; } = null!;
-    public IWorkflowInstanceState State { get; private set; } = null!;
-
-    private DateTimeOffset? _createdAt;
-    private DateTimeOffset? _executionStartedAt;
-    private DateTimeOffset? _completedAt;
+    private WorkflowInstanceState State { get; } = new();
 
     private readonly IGrainFactory _grainFactory;
     private readonly ILogger<WorkflowInstance> _logger;
@@ -28,21 +24,11 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         _logger = logger;
     }
 
-    private readonly Queue<IDomainEvent> _events = new();
-
-    public override Task OnActivateAsync(CancellationToken cancellationToken)
-    {
-
-        State = _grainFactory.GetGrain<IWorkflowInstanceState>(this.GetPrimaryKey());
-
-        return base.OnActivateAsync(cancellationToken);
-    }
-
     public async Task StartWorkflow()
     {
         SetWorkflowRequestContext();
         using var scope = BeginWorkflowScope();
-        _executionStartedAt = DateTimeOffset.UtcNow;
+        State.ExecutionStartedAt = DateTimeOffset.UtcNow;
         LogWorkflowStarted();
         await Start();
         await ExecuteWorkflow();
@@ -113,7 +99,9 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         }
 
         LogTransition(completedActivities.Count, newActiveActivities.Count);
+        LogStateRemoveActiveActivities(completedActivities.Count);
         await State.RemoveActiveActivities(completedActivities);
+        LogStateAddActiveActivities(newActiveActivities.Count);
         await State.AddActiveActivities(newActiveActivities);
         await State.AddCompletedActivities(completedActivities);
     }
@@ -128,6 +116,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         var variablesId = await activityInstance.GetVariablesStateId();
         RequestContext.Set("VariablesId", variablesId.ToString());
 
+        LogStateMergeState(variablesId);
         await State.MergeState(variablesId, variables);
     }
 
@@ -141,12 +130,16 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
     }
 
     private ValueTask Start()
-        => State.Start();
+    {
+        LogStateStarted();
+        return State.Start();
+    }
 
     public async ValueTask Complete()
     {
-        _completedAt = DateTimeOffset.UtcNow;
         await State.Complete();
+        State.CompletedAt = DateTimeOffset.UtcNow;
+        LogStateCompleted();
     }
 
     public async Task CompleteConditionSequence(string activityId, string conditionSequenceId, bool result)
@@ -186,32 +179,33 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         }
     }
 
-    public void EnqueueEvent(IDomainEvent domainEvent)
-    {
-        _events.Enqueue(domainEvent);
-    }
-
     public async Task SetWorkflow(IWorkflowDefinition workflow)
     {
         if(WorkflowDefinition is not null) throw new ArgumentException("Workflow already set");
 
         WorkflowDefinition = workflow ?? throw new ArgumentNullException(nameof(workflow));
-        _createdAt = DateTimeOffset.UtcNow;
-        State = _grainFactory.GetGrain<IWorkflowInstanceState>(this.GetPrimaryKey());
+        State.CreatedAt = DateTimeOffset.UtcNow;
 
         SetWorkflowRequestContext();
         using var scope = BeginWorkflowScope();
         LogWorkflowDefinitionSet();
 
         var startActivity = workflow.Activities.OfType<StartEvent>().First();
-        await State.StartWith(startActivity);
+
+        var variablesId = Guid.NewGuid();
+        var activityInstance = _grainFactory.GetGrain<IActivityInstance>(variablesId);
+        await activityInstance.SetActivity(startActivity);
+        await activityInstance.SetVariablesId(variablesId);
+
+        LogStateStartWith(startActivity.ActivityId);
+        await State.StartWith(activityInstance, variablesId);
     }
 
-    public ValueTask<DateTimeOffset?> GetCreatedAt() => ValueTask.FromResult(_createdAt);
+    public ValueTask<DateTimeOffset?> GetCreatedAt() => ValueTask.FromResult(State.CreatedAt);
 
-    public ValueTask<DateTimeOffset?> GetExecutionStartedAt() => ValueTask.FromResult(_executionStartedAt);
+    public ValueTask<DateTimeOffset?> GetExecutionStartedAt() => ValueTask.FromResult(State.ExecutionStartedAt);
 
-    public ValueTask<DateTimeOffset?> GetCompletedAt() => ValueTask.FromResult(_completedAt);
+    public ValueTask<DateTimeOffset?> GetCompletedAt() => ValueTask.FromResult(State.CompletedAt);
 
     public async ValueTask<WorkflowInstanceInfo> GetInstanceInfo()
     {
@@ -220,10 +214,11 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         var defId = WorkflowDefinition?.ProcessDefinitionId ?? "";
         return new WorkflowInstanceInfo(
             this.GetPrimaryKey(), defId, isStarted, isCompleted,
-            _createdAt, _executionStartedAt, _completedAt);
+            State.CreatedAt, State.ExecutionStartedAt, State.CompletedAt);
     }
 
-    public ValueTask<IWorkflowInstanceState> GetState() => ValueTask.FromResult(State);
+    public async ValueTask<InstanceStateSnapshot> GetStateSnapshot()
+        => await State.GetStateSnapshot();
 
     public ValueTask<IWorkflowDefinition> GetWorkflowDefinition() => ValueTask.FromResult(WorkflowDefinition);
 
@@ -234,6 +229,22 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
 
         return variables;
     }
+
+    // State facade methods — activities access state through these, not directly
+    public ValueTask<IReadOnlyList<IActivityInstance>> GetActiveActivities()
+        => State.GetActiveActivities();
+
+    public ValueTask<IReadOnlyList<IActivityInstance>> GetCompletedActivities()
+        => State.GetCompletedActivities();
+
+    public ValueTask<IReadOnlyDictionary<Guid, ConditionSequenceState[]>> GetConditionSequenceStates()
+        => State.GetConditionSequenceStates();
+
+    public ValueTask AddConditionSequenceStates(Guid activityInstanceId, ConditionalSequenceFlow[] sequences)
+        => State.AddConditionSequenceStates(activityInstanceId, sequences);
+
+    public ValueTask SetConditionSequenceResult(Guid activityInstanceId, string sequenceId, bool result)
+        => State.SetConditionSequenceResult(activityInstanceId, sequenceId, result);
 
     private void SetWorkflowRequestContext()
     {
@@ -292,4 +303,22 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
 
     [LoggerMessage(EventId = 1010, Level = LogLevel.Error, Message = "Gateway {ActivityId} all conditions false and no default flow — misconfigured workflow")]
     private partial void LogGatewayNoDefaultFlow(string activityId);
+
+    [LoggerMessage(EventId = 3000, Level = LogLevel.Information, Message = "Workflow initialized with start activity {ActivityId}")]
+    private partial void LogStateStartWith(string activityId);
+
+    [LoggerMessage(EventId = 3001, Level = LogLevel.Information, Message = "Workflow started")]
+    private partial void LogStateStarted();
+
+    [LoggerMessage(EventId = 3002, Level = LogLevel.Information, Message = "Workflow completed")]
+    private partial void LogStateCompleted();
+
+    [LoggerMessage(EventId = 3003, Level = LogLevel.Debug, Message = "Variables merged for state {VariablesId}")]
+    private partial void LogStateMergeState(Guid variablesId);
+
+    [LoggerMessage(EventId = 3004, Level = LogLevel.Debug, Message = "Adding {Count} active activities")]
+    private partial void LogStateAddActiveActivities(int count);
+
+    [LoggerMessage(EventId = 3005, Level = LogLevel.Debug, Message = "Removing {Count} completed activities")]
+    private partial void LogStateRemoveActiveActivities(int count);
 }

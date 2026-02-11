@@ -30,25 +30,16 @@ namespace Fleans.Domain.Tests
             var workflow = CreateForkJoinWorkflow();
             var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
             await workflowInstance.SetWorkflow(workflow);
-            
+
             // Act - Complete the fork gateway
             await workflowInstance.StartWorkflow();
-            
+
             // Assert - Should have multiple parallel paths active
-            var updatedState = await workflowInstance.GetState();
-            var updatedActiveActivities = await updatedState.GetActiveActivities();
-            
+            var snapshot = await workflowInstance.GetStateSnapshot();
+
             // After fork, should have multiple task activities active
-            var taskActivities = new List<IActivityInstance>();
-            foreach (var activity in updatedActiveActivities)
-            {
-                var act = await activity.GetCurrentActivity();
-                if (act is TaskActivity)
-                {
-                    taskActivities.Add(activity);
-                }
-            }
-            
+            var taskActivities = snapshot.ActiveActivities.Where(a => a.ActivityType == "TaskActivity").ToList();
+
             Assert.IsGreaterThanOrEqualTo(2, taskActivities.Count, "Fork should create multiple parallel paths");
         }
 
@@ -63,7 +54,7 @@ namespace Fleans.Domain.Tests
 
             // This test requires completing the fork and then the parallel tasks
             // The join should only complete when all incoming paths are done
-            
+
             // Act & Assert
             // Implementation depends on completing activities in sequence
             // This is a placeholder for the full test
@@ -72,12 +63,12 @@ namespace Fleans.Domain.Tests
         [TestMethod]
         public async Task GetNextActivities_ShouldReturnAllOutgoingFlows_ForForkGateway()
         {
-            // Arrange
+            // Arrange — workflow: start -> fork -> task1/task2/task3
+            var start = new StartEvent("start");
             var fork = new ParallelGateway("fork", isFork: true);
             var task1 = new TaskActivity("task1");
             var task2 = new TaskActivity("task2");
             var task3 = new TaskActivity("task3");
-            var start = new StartEvent("start");
 
             var workflow = new WorkflowDefinition
             {
@@ -85,6 +76,7 @@ namespace Fleans.Domain.Tests
                 Activities = new List<Activity> { start, fork, task1, task2, task3 },
                 SequenceFlows = new List<SequenceFlow>
                 {
+                    new SequenceFlow("seq0", start, fork),
                     new SequenceFlow("seq1", fork, task1),
                     new SequenceFlow("seq2", fork, task2),
                     new SequenceFlow("seq3", fork, task3)
@@ -93,18 +85,18 @@ namespace Fleans.Domain.Tests
 
             var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
             await workflowInstance.SetWorkflow(workflow);
-            
-            var activityInstance = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
-            await activityInstance.SetActivity(fork);
 
-            // Act
-            var nextActivities = await fork.GetNextActivities(workflowInstance, activityInstance);
+            // Act — start the workflow; start event auto-transitions to fork, fork fans out
+            await workflowInstance.StartWorkflow();
 
-            // Assert
-            Assert.HasCount(3, nextActivities);
-            Assert.IsTrue(nextActivities.Any(a => a.ActivityId == "task1"));
-            Assert.IsTrue(nextActivities.Any(a => a.ActivityId == "task2"));
-            Assert.IsTrue(nextActivities.Any(a => a.ActivityId == "task3"));
+            // Assert — all 3 tasks should be active after the fork
+            var snapshot = await workflowInstance.GetStateSnapshot();
+            var activeTaskActivities = snapshot.ActiveActivities.Where(a => a.ActivityType == "TaskActivity").ToList();
+
+            Assert.HasCount(3, activeTaskActivities);
+            Assert.IsTrue(activeTaskActivities.Any(a => a.ActivityId == "task1"));
+            Assert.IsTrue(activeTaskActivities.Any(a => a.ActivityId == "task2"));
+            Assert.IsTrue(activeTaskActivities.Any(a => a.ActivityId == "task3"));
         }
 
         private static TestCluster CreateCluster()
