@@ -10,36 +10,40 @@ namespace Fleans.Domain
 {
     public partial class ActivityInstance : Grain, IActivityInstance
     {
-        private ActivityInstanceState State { get; } = new();
-
+        private readonly IPersistentState<ActivityInstanceState> _state;
         private readonly ILogger<ActivityInstance> _logger;
 
-        public ActivityInstance(ILogger<ActivityInstance> logger)
+        private ActivityInstanceState State => _state.State;
+
+        public ActivityInstance(
+            [PersistentState("state", "activityInstances")] IPersistentState<ActivityInstanceState> state,
+            ILogger<ActivityInstance> logger)
         {
+            _state = state;
             _logger = logger;
         }
 
-        public ValueTask Complete()
+        public async ValueTask Complete()
         {
             State.Complete();
             LogCompleted();
-            return ValueTask.CompletedTask;
+            await _state.WriteStateAsync();
         }
 
-        public ValueTask Fail(Exception exception)
+        public async ValueTask Fail(Exception exception)
         {
             State.Fail(exception);
             var errorState = State.GetErrorState()!;
             LogFailed(errorState.Code, errorState.Message);
-            return Complete();
+            await Complete();
         }
 
-        public ValueTask Execute()
+        public async ValueTask Execute()
         {
             State.Execute();
             RequestContext.Set("VariablesId", State.GetVariablesId().ToString());
             LogExecutionStarted();
-            return ValueTask.CompletedTask;
+            await _state.WriteStateAsync();
         }
 
         public ValueTask<Guid> GetActivityInstanceId() => ValueTask.FromResult(this.GetPrimaryKey());
@@ -64,16 +68,16 @@ namespace Fleans.Domain
         public ValueTask<Guid> GetVariablesStateId()
             => ValueTask.FromResult(State.GetVariablesId());
 
-        public ValueTask SetVariablesId(Guid guid)
+        public async ValueTask SetVariablesId(Guid guid)
         {
             State.SetVariablesId(guid);
-            return ValueTask.CompletedTask;
+            await _state.WriteStateAsync();
         }
 
-        public ValueTask SetActivity(Activity nextActivity)
+        public async ValueTask SetActivity(Activity nextActivity)
         {
             State.SetActivity(nextActivity);
-            return ValueTask.CompletedTask;
+            await _state.WriteStateAsync();
         }
 
         public Task PublishEvent(IDomainEvent domainEvent)

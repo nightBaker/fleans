@@ -127,14 +127,17 @@ public class StartEventTests
     class SiloConfigurator : ISiloConfigurator
     {
         public void Configure(ISiloBuilder hostBuilder) =>
-            hostBuilder.ConfigureServices(services => services.AddSerializer(serializerBuilder =>
-            {
-                serializerBuilder.AddNewtonsoftJsonSerializer(
-                    isSupported: type => type == typeof(ExpandoObject),
-                    new Newtonsoft.Json.JsonSerializerSettings
-                    {
-                        TypeNameHandling = Newtonsoft.Json.TypeNameHandling.All
-                    });
-            }));
+            hostBuilder
+                .AddMemoryGrainStorage("workflowInstances")
+                .AddMemoryGrainStorage("activityInstances")
+                .ConfigureServices(services => services.AddSerializer(serializerBuilder =>
+                {
+                    serializerBuilder.AddNewtonsoftJsonSerializer(
+                        isSupported: type => type == typeof(ExpandoObject),
+                        new Newtonsoft.Json.JsonSerializerSettings
+                        {
+                            TypeNameHandling = Newtonsoft.Json.TypeNameHandling.All
+                        });
+                }));
     }
 }

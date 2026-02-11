@@ -185,10 +185,13 @@ namespace Fleans.Application.Tests
         private class SiloConfigurator : ISiloConfigurator
         {
             public void Configure(ISiloBuilder hostBuilder) =>
-                hostBuilder.ConfigureServices(services =>
-                {
-                    services.AddSingleton<IProcessDefinitionRepository, InMemoryProcessDefinitionRepository>();
-                });
+                hostBuilder
+                    .AddMemoryGrainStorage("workflowInstances")
+                    .AddMemoryGrainStorage("activityInstances")
+                    .ConfigureServices(services =>
+                    {
+                        services.AddSingleton<IProcessDefinitionRepository, InMemoryProcessDefinitionRepository>();
+                    });
         }
     }
 }
