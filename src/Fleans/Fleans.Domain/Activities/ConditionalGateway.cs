@@ -15,14 +15,13 @@ public abstract record ConditionalGateway : Gateway
         string conditionSequenceFlowId,
         bool result)
     {
-        var state = await workflowInstance.GetState();
         var activityInstanceId = await activityInstance.GetActivityInstanceId();
-        await state.SetCondigitionSequencesResult(activityInstanceId, conditionSequenceFlowId, result);
+        await workflowInstance.SetConditionSequenceResult(activityInstanceId, conditionSequenceFlowId, result);
 
         if (result)
             return true;
 
-        var sequences = await state.GetConditionSequenceStates();
+        var sequences = await workflowInstance.GetConditionSequenceStates();
         var mySequences = sequences[activityInstanceId];
 
         if (mySequences.All(s => s.IsEvaluated))

@@ -24,7 +24,7 @@ public record ScriptTask : TaskActivity
 
         var definition = await workflowInstance.GetWorkflowDefinition();
         await activityInstance.PublishEvent(new ExecuteScriptEvent(
-            workflowInstance.GetGrainId().GetGuidKey(),
+            await workflowInstance.GetWorkflowInstanceId(),
             definition.WorkflowId,
             definition.ProcessDefinitionId,
             await activityInstance.GetActivityInstanceId(),

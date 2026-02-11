@@ -28,17 +28,20 @@ namespace Fleans.Domain.Tests
         public async Task StartWith_ShouldAddStartActivity_ToActiveActivities()
         {
             // Arrange
-            var stateId = Guid.NewGuid();
-            var state = _cluster.GrainFactory.GetGrain<IWorkflowInstanceState>(stateId);
+            var state = new WorkflowInstanceState();
             var startActivity = new StartEvent("start");
+            var variablesId = Guid.NewGuid();
+            var activityInstance = _cluster.GrainFactory.GetGrain<IActivityInstance>(variablesId);
+            await activityInstance.SetActivity(startActivity);
+            await activityInstance.SetVariablesId(variablesId);
 
             // Act
-            await state.StartWith(startActivity);
+            await state.StartWith(activityInstance, variablesId);
 
             // Assert
             var activeActivities = await state.GetActiveActivities();
             Assert.HasCount(1, activeActivities);
-            
+
             var activity = await activeActivities[0].GetCurrentActivity();
             Assert.AreEqual("start", activity.ActivityId);
         }
@@ -47,12 +50,15 @@ namespace Fleans.Domain.Tests
         public async Task StartWith_ShouldCreateInitialVariableState()
         {
             // Arrange
-            var stateId = Guid.NewGuid();
-            var state = _cluster.GrainFactory.GetGrain<IWorkflowInstanceState>(stateId);
+            var state = new WorkflowInstanceState();
             var startActivity = new StartEvent("start");
+            var variablesId = Guid.NewGuid();
+            var activityInstance = _cluster.GrainFactory.GetGrain<IActivityInstance>(variablesId);
+            await activityInstance.SetActivity(startActivity);
+            await activityInstance.SetVariablesId(variablesId);
 
             // Act
-            await state.StartWith(startActivity);
+            await state.StartWith(activityInstance, variablesId);
 
             // Assert
             var variableStates = await state.GetVariableStates();
@@ -63,8 +69,7 @@ namespace Fleans.Domain.Tests
         public async Task Start_ShouldMarkWorkflowAsStarted()
         {
             // Arrange
-            var stateId = Guid.NewGuid();
-            var state = _cluster.GrainFactory.GetGrain<IWorkflowInstanceState>(stateId);
+            var state = new WorkflowInstanceState();
 
             // Act
             await state.Start();
@@ -77,14 +82,13 @@ namespace Fleans.Domain.Tests
         public async Task Start_ShouldThrowException_WhenAlreadyStarted()
         {
             // Arrange
-            var stateId = Guid.NewGuid();
-            var state = _cluster.GrainFactory.GetGrain<IWorkflowInstanceState>(stateId);
+            var state = new WorkflowInstanceState();
             await state.Start();
 
             // Act & Assert
-            await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            Assert.ThrowsExactly<InvalidOperationException>(() =>
             {
-                await state.Start();
+                state.Start().GetAwaiter().GetResult();
             });
         }
 
@@ -92,10 +96,13 @@ namespace Fleans.Domain.Tests
         public async Task Complete_ShouldMarkWorkflowAsCompleted()
         {
             // Arrange
-            var stateId = Guid.NewGuid();
-            var state = _cluster.GrainFactory.GetGrain<IWorkflowInstanceState>(stateId);
+            var state = new WorkflowInstanceState();
             var startActivity = new StartEvent("start");
-            await state.StartWith(startActivity);
+            var variablesId = Guid.NewGuid();
+            var activityInstance = _cluster.GrainFactory.GetGrain<IActivityInstance>(variablesId);
+            await activityInstance.SetActivity(startActivity);
+            await activityInstance.SetVariablesId(variablesId);
+            await state.StartWith(activityInstance, variablesId);
 
             // Act
             await state.Complete();
@@ -108,8 +115,7 @@ namespace Fleans.Domain.Tests
         public async Task AddActiveActivities_ShouldAddActivities_ToActiveList()
         {
             // Arrange
-            var stateId = Guid.NewGuid();
-            var state = _cluster.GrainFactory.GetGrain<IWorkflowInstanceState>(stateId);
+            var state = new WorkflowInstanceState();
             var activity1 = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
             var activity2 = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
             await activity1.SetActivity(new TaskActivity("task1"));
@@ -127,13 +133,12 @@ namespace Fleans.Domain.Tests
         public async Task RemoveActiveActivities_ShouldRemoveActivities_FromActiveList()
         {
             // Arrange
-            var stateId = Guid.NewGuid();
-            var state = _cluster.GrainFactory.GetGrain<IWorkflowInstanceState>(stateId);
+            var state = new WorkflowInstanceState();
             var activity1 = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
             var activity2 = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
             await activity1.SetActivity(new TaskActivity("task1"));
             await activity2.SetActivity(new TaskActivity("task2"));
-            
+
             await state.AddActiveActivities(new[] { activity1, activity2 });
 
             // Act
@@ -149,8 +154,7 @@ namespace Fleans.Domain.Tests
         public async Task AddCompletedActivities_ShouldAddActivities_ToCompletedList()
         {
             // Arrange
-            var stateId = Guid.NewGuid();
-            var state = _cluster.GrainFactory.GetGrain<IWorkflowInstanceState>(stateId);
+            var state = new WorkflowInstanceState();
             var activity = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
             await activity.SetActivity(new TaskActivity("task"));
             await activity.Complete();
@@ -167,8 +171,7 @@ namespace Fleans.Domain.Tests
         public async Task GetFirstActive_ShouldReturnActivity_WhenFound()
         {
             // Arrange
-            var stateId = Guid.NewGuid();
-            var state = _cluster.GrainFactory.GetGrain<IWorkflowInstanceState>(stateId);
+            var state = new WorkflowInstanceState();
             var activity = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
             await activity.SetActivity(new TaskActivity("task1"));
             await state.AddActiveActivities(new[] { activity });
@@ -186,8 +189,7 @@ namespace Fleans.Domain.Tests
         public async Task GetFirstActive_ShouldReturnNull_WhenNotFound()
         {
             // Arrange
-            var stateId = Guid.NewGuid();
-            var state = _cluster.GrainFactory.GetGrain<IWorkflowInstanceState>(stateId);
+            var state = new WorkflowInstanceState();
 
             // Act
             var result = await state.GetFirstActive("non-existent");
@@ -200,11 +202,14 @@ namespace Fleans.Domain.Tests
         public async Task AddCloneOfVariableState_ShouldCreateNewVariableState_WithClonedData()
         {
             // Arrange
-            var stateId = Guid.NewGuid();
-            var state = _cluster.GrainFactory.GetGrain<IWorkflowInstanceState>(stateId);
+            var state = new WorkflowInstanceState();
             var startActivity = new StartEvent("start");
-            await state.StartWith(startActivity);
-            
+            var variablesId = Guid.NewGuid();
+            var activityInstance = _cluster.GrainFactory.GetGrain<IActivityInstance>(variablesId);
+            await activityInstance.SetActivity(startActivity);
+            await activityInstance.SetVariablesId(variablesId);
+            await state.StartWith(activityInstance, variablesId);
+
             var variableStates = await state.GetVariableStates();
             var originalId = variableStates.Keys.First();
 
@@ -221,24 +226,27 @@ namespace Fleans.Domain.Tests
         public async Task MergeState_ShouldMergeVariables_IntoExistingState()
         {
             // Arrange
-            var stateId = Guid.NewGuid();
-            var state = _cluster.GrainFactory.GetGrain<IWorkflowInstanceState>(stateId);
+            var state = new WorkflowInstanceState();
             var startActivity = new StartEvent("start");
-            await state.StartWith(startActivity);
-            
+            var variablesId = Guid.NewGuid();
+            var activityInstance = _cluster.GrainFactory.GetGrain<IActivityInstance>(variablesId);
+            await activityInstance.SetActivity(startActivity);
+            await activityInstance.SetVariablesId(variablesId);
+            await state.StartWith(activityInstance, variablesId);
+
             var variableStates = await state.GetVariableStates();
-            var variablesId = variableStates.Keys.First();
+            var existingVariablesId = variableStates.Keys.First();
 
             dynamic newVariables = new ExpandoObject();
             ((IDictionary<string, object>)newVariables)["key1"] = "value1";
             ((IDictionary<string, object>)newVariables)["key2"] = 42;
 
             // Act
-            await state.MergeState(variablesId, newVariables);
+            await state.MergeState(existingVariablesId, newVariables);
 
             // Assert
             var updatedStates = await state.GetVariableStates();
-            var mergedState = updatedStates[variablesId];
+            var mergedState = updatedStates[existingVariablesId];
             Assert.IsNotNull(mergedState);
         }
 
@@ -246,7 +254,7 @@ namespace Fleans.Domain.Tests
         public async Task GetStateSnapshot_ShouldReturnActiveAndCompletedActivitySnapshots()
         {
             // Arrange
-            var state = _cluster.GrainFactory.GetGrain<IWorkflowInstanceState>(Guid.NewGuid());
+            var state = new WorkflowInstanceState();
 
             var activeActivity = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
             await activeActivity.SetActivity(new TaskActivity("task1"));
@@ -289,16 +297,20 @@ namespace Fleans.Domain.Tests
         public async Task GetStateSnapshot_ShouldSerializeVariablesToStringDictionary()
         {
             // Arrange
-            var state = _cluster.GrainFactory.GetGrain<IWorkflowInstanceState>(Guid.NewGuid());
-            await state.StartWith(new StartEvent("start"));
+            var state = new WorkflowInstanceState();
+            var variablesId = Guid.NewGuid();
+            var activityInstance = _cluster.GrainFactory.GetGrain<IActivityInstance>(variablesId);
+            await activityInstance.SetActivity(new StartEvent("start"));
+            await activityInstance.SetVariablesId(variablesId);
+            await state.StartWith(activityInstance, variablesId);
 
             var variableStates = await state.GetVariableStates();
-            var variablesId = variableStates.Keys.First();
+            var existingVariablesId = variableStates.Keys.First();
 
             dynamic vars = new ExpandoObject();
             ((IDictionary<string, object>)vars)["name"] = "test";
             ((IDictionary<string, object>)vars)["count"] = 42;
-            await state.MergeState(variablesId, vars);
+            await state.MergeState(existingVariablesId, vars);
 
             // Act
             var snapshot = await state.GetStateSnapshot();
@@ -306,7 +318,7 @@ namespace Fleans.Domain.Tests
             // Assert
             Assert.HasCount(1, snapshot.VariableStates);
             var vsSnapshot = snapshot.VariableStates[0];
-            Assert.AreEqual(variablesId, vsSnapshot.VariablesId);
+            Assert.AreEqual(existingVariablesId, vsSnapshot.VariablesId);
             Assert.AreEqual(2, vsSnapshot.Variables.Count);
             Assert.AreEqual("test", vsSnapshot.Variables["name"]);
             Assert.AreEqual("42", vsSnapshot.Variables["count"]);
@@ -316,7 +328,7 @@ namespace Fleans.Domain.Tests
         public async Task GetStateSnapshot_ShouldReturnConditionSequences()
         {
             // Arrange
-            var state = _cluster.GrainFactory.GetGrain<IWorkflowInstanceState>(Guid.NewGuid());
+            var state = new WorkflowInstanceState();
             var source = new TaskActivity("task1");
             var targetTrue = new TaskActivity("task2");
             var targetFalse = new TaskActivity("task3");
@@ -355,7 +367,7 @@ namespace Fleans.Domain.Tests
         public async Task GetStateSnapshot_WithEmptyState_ShouldReturnEmptyLists()
         {
             // Arrange
-            var state = _cluster.GrainFactory.GetGrain<IWorkflowInstanceState>(Guid.NewGuid());
+            var state = new WorkflowInstanceState();
 
             // Act
             var snapshot = await state.GetStateSnapshot();
@@ -395,4 +407,3 @@ namespace Fleans.Domain.Tests
         }
     }
 }
-

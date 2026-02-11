@@ -99,8 +99,7 @@ namespace Fleans.Application
         public async Task<InstanceStateSnapshot> GetInstanceDetail(Guid instanceId)
         {
             var instance = _grainFactory.GetGrain<IWorkflowInstance>(instanceId);
-            var state = await instance.GetState();
-            return await state.GetStateSnapshot();
+            return await instance.GetStateSnapshot();
         }
 
         public async Task<string> GetBpmnXmlByKey(string processDefinitionKey)

@@ -17,7 +17,7 @@ public record StartEvent : Activity
         await base.ExecuteAsync(workflowInstance, activityInstance);
 
         await activityInstance.Complete();
-        
+
     }
 
     internal override async Task<List<Activity>> GetNextActivities(IWorkflowInstance workflowInstance, IActivityInstance activityInstance)

@@ -57,33 +57,21 @@ public class ScriptTaskTests
     public async Task GetNextActivities_ShouldReturnNextActivity()
     {
         // Arrange
-        var script = new ScriptTask("script1", "_context.x = 10");
-        var end = new EndEvent("end");
-        var start = new StartEvent("start");
-
-        var workflow = new WorkflowDefinition
-        {
-            WorkflowId = "test",
-            Activities = new List<Activity> { start, script, end },
-            SequenceFlows = new List<SequenceFlow>
-            {
-                new SequenceFlow("seq1", start, script),
-                new SequenceFlow("seq2", script, end)
-            }
-        };
-
+        var workflow = CreateSimpleWorkflow();
         var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
+        await workflowInstance.StartWorkflow();
 
-        var activityInstance = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
-        await activityInstance.SetActivity(script);
+        dynamic variables = new ExpandoObject();
+        variables.x = 10;
 
-        // Act
-        var nextActivities = await script.GetNextActivities(workflowInstance, activityInstance);
+        // Act — complete script task so it transitions to end event
+        await workflowInstance.CompleteActivity("script1", (ExpandoObject)variables);
 
-        // Assert
-        Assert.HasCount(1, nextActivities);
-        Assert.AreEqual("end", nextActivities[0].ActivityId);
+        // Assert — end event should have been reached (workflow completes)
+        var snapshot = await workflowInstance.GetStateSnapshot();
+        Assert.IsTrue(snapshot.IsCompleted);
+        CollectionAssert.Contains(snapshot.CompletedActivityIds, "end");
     }
 
     [TestMethod]
@@ -93,21 +81,15 @@ public class ScriptTaskTests
         var workflow = CreateSimpleWorkflow();
         var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
-
-        var state = await workflowInstance.GetState();
-        var activeActivities = await state.GetActiveActivities();
-        var taskActivity = activeActivities.FirstOrDefault();
-
-        Assert.IsNotNull(taskActivity, "Workflow should have an active ScriptTask activity instance");
-
-        var script = new ScriptTask("script1", "_context.x = 10");
 
         // Act
-        await script.ExecuteAsync(workflowInstance, taskActivity);
+        await workflowInstance.StartWorkflow();
 
-        // Assert
-        Assert.IsTrue(await taskActivity.IsExecuting());
+        // Assert — after starting, the script task should be active/executing
+        var snapshot = await workflowInstance.GetStateSnapshot();
+        Assert.HasCount(1, snapshot.ActiveActivities);
+        Assert.AreEqual("script1", snapshot.ActiveActivities[0].ActivityId);
+        Assert.AreEqual("ScriptTask", snapshot.ActiveActivities[0].ActivityType);
     }
 
     [TestMethod]
@@ -126,17 +108,10 @@ public class ScriptTaskTests
         await workflowInstance.CompleteActivity("script1", (ExpandoObject)variables);
 
         // Assert
-        var state = await workflowInstance.GetState();
-        Assert.IsTrue(await state.IsCompleted());
+        var snapshot = await workflowInstance.GetStateSnapshot();
+        Assert.IsTrue(snapshot.IsCompleted);
 
-        var completedActivities = await state.GetCompletedActivities();
-        var completedActivityIds = new List<string>();
-        foreach (var activity in completedActivities)
-        {
-            var current = await activity.GetCurrentActivity();
-            completedActivityIds.Add(current.ActivityId);
-        }
-
+        var completedActivityIds = snapshot.CompletedActivityIds;
         CollectionAssert.Contains(completedActivityIds, "start");
         CollectionAssert.Contains(completedActivityIds, "script1");
         CollectionAssert.Contains(completedActivityIds, "end");
@@ -159,15 +134,14 @@ public class ScriptTaskTests
         await workflowInstance.CompleteActivity("script1", (ExpandoObject)variables);
 
         // Assert
-        var state = await workflowInstance.GetState();
-        var variableStates = await state.GetVariableStates();
-        Assert.IsNotEmpty(variableStates);
+        var snapshot = await workflowInstance.GetStateSnapshot();
+        var variableStates = snapshot.VariableStates;
+        Assert.IsTrue(variableStates.Count > 0);
 
-        var mergedVariables = variableStates.Values.First().Variables as IDictionary<string, object>;
-        Assert.IsNotNull(mergedVariables);
-        Assert.AreEqual(2, mergedVariables.Count);
-        Assert.AreEqual(42, mergedVariables["result"]);
-        Assert.AreEqual("done", mergedVariables["message"]);
+        var vars = variableStates.First().Variables;
+        Assert.AreEqual(2, vars.Count);
+        Assert.AreEqual("42", vars["result"]);
+        Assert.AreEqual("done", vars["message"]);
     }
 
     [TestMethod]
@@ -183,21 +157,12 @@ public class ScriptTaskTests
         await workflowInstance.CompleteActivity("script1", new ExpandoObject());
 
         // Assert — script task should appear in completed activities
-        var state = await workflowInstance.GetState();
-        var completedActivities = await state.GetCompletedActivities();
-        var completedScriptTask = false;
-        foreach (var activity in completedActivities)
-        {
-            var current = await activity.GetCurrentActivity();
-            if (current.ActivityId == "script1")
-            {
-                Assert.IsTrue(await activity.IsCompleted());
-                Assert.IsNull(await activity.GetErrorState());
-                completedScriptTask = true;
-            }
-        }
+        var snapshot = await workflowInstance.GetStateSnapshot();
+        var completedScriptTask = snapshot.CompletedActivities.FirstOrDefault(a => a.ActivityId == "script1");
 
-        Assert.IsTrue(completedScriptTask, "ScriptTask should be in completed activities");
+        Assert.IsNotNull(completedScriptTask, "ScriptTask should be in completed activities");
+        Assert.IsTrue(completedScriptTask.IsCompleted);
+        Assert.IsNull(completedScriptTask.ErrorState);
     }
 
     [TestMethod]
@@ -213,9 +178,8 @@ public class ScriptTaskTests
         await workflowInstance.CompleteActivity("script1", new ExpandoObject());
 
         // Assert
-        var state = await workflowInstance.GetState();
-        var activeActivities = await state.GetActiveActivities();
-        Assert.HasCount(0, activeActivities);
+        var snapshot = await workflowInstance.GetStateSnapshot();
+        Assert.HasCount(0, snapshot.ActiveActivities);
     }
 
     [TestMethod]
@@ -250,13 +214,11 @@ public class ScriptTaskTests
         await workflowInstance.CompleteActivity("script1", (ExpandoObject)vars1);
 
         // Assert — second script task should now be active
-        var state = await workflowInstance.GetState();
-        Assert.IsFalse(await state.IsCompleted());
-        var activeActivities = await state.GetActiveActivities();
-        Assert.HasCount(1, activeActivities);
-        var activeActivity = await activeActivities[0].GetCurrentActivity();
-        Assert.IsInstanceOfType(activeActivity, typeof(ScriptTask));
-        Assert.AreEqual("script2", activeActivity.ActivityId);
+        var snapshot = await workflowInstance.GetStateSnapshot();
+        Assert.IsFalse(snapshot.IsCompleted);
+        Assert.HasCount(1, snapshot.ActiveActivities);
+        Assert.AreEqual("ScriptTask", snapshot.ActiveActivities[0].ActivityType);
+        Assert.AreEqual("script2", snapshot.ActiveActivities[0].ActivityId);
 
         // Act — complete second script task
         dynamic vars2 = new ExpandoObject();
@@ -264,8 +226,8 @@ public class ScriptTaskTests
         await workflowInstance.CompleteActivity("script2", (ExpandoObject)vars2);
 
         // Assert — workflow should be completed
-        state = await workflowInstance.GetState();
-        Assert.IsTrue(await state.IsCompleted());
+        snapshot = await workflowInstance.GetStateSnapshot();
+        Assert.IsTrue(snapshot.IsCompleted);
     }
 
     [TestMethod]
@@ -281,25 +243,12 @@ public class ScriptTaskTests
         await workflowInstance.FailActivity("script1", new Exception("Script execution failed"));
 
         // Assert
-        var state = await workflowInstance.GetState();
-        var completedActivities = await state.GetCompletedActivities();
+        var snapshot = await workflowInstance.GetStateSnapshot();
+        var failedSnapshot = snapshot.CompletedActivities.First(a => a.ActivityId == "script1");
 
-        IActivityInstance? failedActivity = null;
-        foreach (var activity in completedActivities)
-        {
-            var current = await activity.GetCurrentActivity();
-            if (current.ActivityId == "script1")
-            {
-                failedActivity = activity;
-                break;
-            }
-        }
-
-        Assert.IsNotNull(failedActivity, "Failed ScriptTask should be in completed activities");
-        var errorState = await failedActivity.GetErrorState();
-        Assert.IsNotNull(errorState);
-        Assert.AreEqual(500, errorState.Code);
-        Assert.AreEqual("Script execution failed", errorState.Message);
+        Assert.IsNotNull(failedSnapshot.ErrorState);
+        Assert.AreEqual(500, failedSnapshot.ErrorState!.Code);
+        Assert.AreEqual("Script execution failed", failedSnapshot.ErrorState.Message);
     }
 
     [TestMethod]
@@ -315,25 +264,12 @@ public class ScriptTaskTests
         await workflowInstance.FailActivity("script1", new BadRequestActivityException("Invalid script input"));
 
         // Assert
-        var state = await workflowInstance.GetState();
-        var completedActivities = await state.GetCompletedActivities();
+        var snapshot = await workflowInstance.GetStateSnapshot();
+        var failedSnapshot = snapshot.CompletedActivities.First(a => a.ActivityId == "script1");
 
-        IActivityInstance? failedActivity = null;
-        foreach (var activity in completedActivities)
-        {
-            var current = await activity.GetCurrentActivity();
-            if (current.ActivityId == "script1")
-            {
-                failedActivity = activity;
-                break;
-            }
-        }
-
-        Assert.IsNotNull(failedActivity, "Failed ScriptTask should be in completed activities");
-        var errorState = await failedActivity.GetErrorState();
-        Assert.IsNotNull(errorState);
-        Assert.AreEqual(400, errorState.Code);
-        Assert.AreEqual("Invalid script input", errorState.Message);
+        Assert.IsNotNull(failedSnapshot.ErrorState);
+        Assert.AreEqual(400, failedSnapshot.ErrorState!.Code);
+        Assert.AreEqual("Invalid script input", failedSnapshot.ErrorState.Message);
     }
 
     [TestMethod]
@@ -349,20 +285,11 @@ public class ScriptTaskTests
         await workflowInstance.FailActivity("script1", new Exception("Script error"));
 
         // Assert — workflow should complete (failed activity transitions to end event)
-        var state = await workflowInstance.GetState();
-        Assert.IsTrue(await state.IsCompleted());
+        var snapshot = await workflowInstance.GetStateSnapshot();
+        Assert.IsTrue(snapshot.IsCompleted);
+        Assert.HasCount(0, snapshot.ActiveActivities);
 
-        var activeActivities = await state.GetActiveActivities();
-        Assert.HasCount(0, activeActivities);
-
-        var completedActivities = await state.GetCompletedActivities();
-        var completedIds = new List<string>();
-        foreach (var activity in completedActivities)
-        {
-            var current = await activity.GetCurrentActivity();
-            completedIds.Add(current.ActivityId);
-        }
-
+        var completedIds = snapshot.CompletedActivityIds;
         CollectionAssert.Contains(completedIds, "script1");
         CollectionAssert.Contains(completedIds, "end");
     }
@@ -380,13 +307,10 @@ public class ScriptTaskTests
         await workflowInstance.FailActivity("script1", new Exception("Script error"));
 
         // Assert — variables should not have been merged (FailActivity doesn't take variables)
-        var state = await workflowInstance.GetState();
-        var variableStates = await state.GetVariableStates();
-        foreach (var vs in variableStates.Values)
+        var snapshot = await workflowInstance.GetStateSnapshot();
+        foreach (var vs in snapshot.VariableStates)
         {
-            var vars = vs.Variables as IDictionary<string, object>;
-            Assert.IsNotNull(vars);
-            Assert.AreEqual(0, vars.Count, "No variables should be merged on failure");
+            Assert.AreEqual(0, vs.Variables.Count, "No variables should be merged on failure");
         }
     }
 

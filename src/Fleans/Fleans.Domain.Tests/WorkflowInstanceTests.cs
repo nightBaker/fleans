@@ -32,19 +32,16 @@ namespace Fleans.Domain.Tests
 
             // Act
             await workflowInstance.SetWorkflow(workflow);
-            var state = await workflowInstance.GetState();
             await workflowInstance.StartWorkflow();
 
             // Assert
             var definition = await workflowInstance.GetWorkflowDefinition();
             Assert.AreEqual(workflow.WorkflowId, definition.WorkflowId);
-            Assert.IsTrue(await state.IsStarted());
-            
-            var completedActivities = await state.GetCompletedActivities();
-            Assert.HasCount(1, completedActivities);
-            
-            var firstActivity = await completedActivities[0].GetCurrentActivity();
-            Assert.IsInstanceOfType(firstActivity, typeof(StartEvent));
+
+            var snapshot = await workflowInstance.GetStateSnapshot();
+            Assert.IsTrue(snapshot.IsStarted);
+            Assert.HasCount(1, snapshot.CompletedActivities);
+            Assert.AreEqual("StartEvent", snapshot.CompletedActivities[0].ActivityType);
         }
 
         [TestMethod]
@@ -74,16 +71,11 @@ namespace Fleans.Domain.Tests
             await workflowInstance.StartWorkflow();
 
             // Assert
-            var state = await workflowInstance.GetState();
-            var activeActivities = await state.GetActiveActivities();
-            
+            var snapshot = await workflowInstance.GetStateSnapshot();
+
             // After start event completes, should transition to task
-            var taskActivity = activeActivities.FirstOrDefault();
-            if (taskActivity != null)
-            {
-                var activity = await taskActivity.GetCurrentActivity();
-                Assert.IsInstanceOfType(activity, typeof(TaskActivity));
-            }
+            Assert.IsTrue(snapshot.ActiveActivities.Count > 0);
+            Assert.AreEqual("TaskActivity", snapshot.ActiveActivities[0].ActivityType);
         }
 
         [TestMethod]
@@ -103,11 +95,10 @@ namespace Fleans.Domain.Tests
             await workflowInstance.CompleteActivity("task", variables);
 
             // Assert
-            var state = await workflowInstance.GetState();
-            var variableStates = await state.GetVariableStates();
-            
+            var snapshot = await workflowInstance.GetStateSnapshot();
+
             // Variables should be merged into state
-            Assert.IsNotEmpty(variableStates);
+            Assert.IsTrue(snapshot.VariableStates.Count > 0);
         }
 
         [TestMethod]
@@ -143,11 +134,10 @@ namespace Fleans.Domain.Tests
             await workflowInstance.FailActivity("task", exception);
 
             // Assert
-            var state = await workflowInstance.GetState();
-            var completedActivities = await state.GetCompletedActivities();
-            
+            var snapshot = await workflowInstance.GetStateSnapshot();
+
             // Activity should be marked as completed (even though it failed)
-            Assert.IsNotEmpty(completedActivities);
+            Assert.IsTrue(snapshot.CompletedActivities.Count > 0);
         }
 
         [TestMethod]
@@ -353,4 +343,3 @@ namespace Fleans.Domain.Tests
         }
     }
 }
-

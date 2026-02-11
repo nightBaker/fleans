@@ -1,33 +1,25 @@
-﻿
+
 using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
-using Orleans;
-using Orleans.Concurrency;
 using System.Dynamic;
 
 namespace Fleans.Domain.States
 {
-    public interface IWorkflowInstanceState : IGrainWithGuidKey
+    public interface IWorkflowInstanceState
     {
-        [ReadOnly]
+        DateTimeOffset? CreatedAt { get; }
+        DateTimeOffset? ExecutionStartedAt { get; }
+        DateTimeOffset? CompletedAt { get; }
+
         ValueTask<IReadOnlyList<IActivityInstance>> GetActiveActivities();
-        [ReadOnly]
         ValueTask<IReadOnlyList<IActivityInstance>> GetCompletedActivities();
-        [ReadOnly]
         ValueTask<IReadOnlyDictionary<Guid, ConditionSequenceState[]>> GetConditionSequenceStates();
-        [ReadOnly]
         ValueTask<bool> IsCompleted();
-        [ReadOnly]
         ValueTask<bool> IsStarted();
-        [ReadOnly]
         ValueTask<IReadOnlyDictionary<Guid, WorklfowVariablesState>> GetVariableStates();
-        [ReadOnly]
         ValueTask<IActivityInstance?> GetFirstActive(string activityId);
-        [ReadOnly]
         ValueTask<bool> AnyNotExecuting();
-        [ReadOnly]
         ValueTask<IActivityInstance[]> GetNotExecutingNotCompletedActivities();
-        [ReadOnly]
         ValueTask<InstanceStateSnapshot> GetStateSnapshot();
 
         ValueTask<Guid> AddCloneOfVariableState(Guid variableStateId);
@@ -37,7 +29,7 @@ namespace Fleans.Domain.States
         ValueTask Complete();
         ValueTask RemoveActiveActivities(List<IActivityInstance> removeInstances);
         ValueTask Start();
-        ValueTask StartWith(Activity startActivity);
+        ValueTask StartWith(IActivityInstance activityInstance, Guid variablesId);
         ValueTask SetCondigitionSequencesResult(Guid activityInstanceId, string sequenceId, bool result);
         ValueTask MergeState(Guid variablesId, ExpandoObject variables);
     }

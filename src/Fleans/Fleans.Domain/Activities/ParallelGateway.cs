@@ -1,7 +1,6 @@
 
 
 using System.Runtime.CompilerServices;
-using Fleans.Domain.States;
 [assembly:InternalsVisibleTo("Fleans.Domain.Tests")]
 
 namespace Fleans.Domain.Activities;
@@ -11,7 +10,7 @@ public record ParallelGateway : Gateway
 {
     [Id(1)]
     public bool IsFork { get; init; }
-    
+
     public ParallelGateway(string ActivityId, bool isFork) : base(ActivityId)
     {
         IsFork = isFork;
@@ -20,25 +19,22 @@ public record ParallelGateway : Gateway
     internal override async Task ExecuteAsync(IWorkflowInstance workflowInstance, IActivityInstance activityState)
     {
         await base.ExecuteAsync(workflowInstance, activityState);
-        
+
         if (IsFork)
         {
             await activityState.Complete();
         }
         else
         {
-            if (await AllIncomingPathsCompleted(await workflowInstance.GetState(), await workflowInstance.GetWorkflowDefinition()))
+            if (await AllIncomingPathsCompleted(workflowInstance, await workflowInstance.GetWorkflowDefinition()))
             {
                 await activityState.Complete();
             }
             else
             {
                 await activityState.Execute();
-            }                
+            }
         }
-
-        
-            
     }
 
     internal override async Task<List<Activity>> GetNextActivities(IWorkflowInstance workflowInstance, IActivityInstance state)
@@ -47,16 +43,16 @@ public record ParallelGateway : Gateway
         var nextFlows = definition.SequenceFlows.Where(sf => sf.Source == this)
             .Select(flow => flow.Target)
             .ToList();
-        
+
         return nextFlows;
     }
 
-    private async Task<bool> AllIncomingPathsCompleted(IWorkflowInstanceState state, IWorkflowDefinition workflow)
+    private async Task<bool> AllIncomingPathsCompleted(IWorkflowInstance workflowInstance, IWorkflowDefinition workflow)
     {
         var incomingFlows = workflow.SequenceFlows.Where(sf => sf.Target == this).ToList();
 
-        var completedActivities = await state.GetCompletedActivities();
-        var activeActivities = await state.GetActiveActivities();
+        var completedActivities = await workflowInstance.GetCompletedActivities();
+        var activeActivities = await workflowInstance.GetActiveActivities();
 
         var any = false;
 
@@ -73,8 +69,6 @@ public record ParallelGateway : Gateway
                 }
             }
 
-            
-
             foreach (var activeActivity in activeActivities)
             {
                 if (await activeActivity.GetCurrentActivity() == incomingFlow.Source)
@@ -85,10 +79,5 @@ public record ParallelGateway : Gateway
         }
 
         return any;
-
-        //return incomingFlows.All(flow => completedActivities.Where(ca => ca.GetCurrentActivity() == flow.Source)
-        //                                                        .All(ca => ca.IsCompleted))
-        //    && incomingFlows.All(flow => activeActivities.Any(ca => ca.GetCurrentActivity == flow.Source));
-
     }
 }

@@ -1,6 +1,5 @@
 using Fleans.Domain.Events;
 using Fleans.Domain.Sequences;
-using Orleans.Runtime;
 
 namespace Fleans.Domain.Activities;
 
@@ -35,8 +34,7 @@ public record ExclusiveGateway : ConditionalGateway
                                 .Where(sf => sf.Source.ActivityId == currentActivity.ActivityId)
                                 .ToArray();
 
-        var state = await workflowInstance.GetState();
-        await state.AddConditionSequenceStates(await activityInstance.GetActivityInstanceId(), sequences);
+        await workflowInstance.AddConditionSequenceStates(await activityInstance.GetActivityInstanceId(), sequences);
         return sequences;
     }
 
@@ -45,7 +43,7 @@ public record ExclusiveGateway : ConditionalGateway
         var definition = await workflowInstance.GetWorkflowDefinition();
         foreach (var sequence in sequences)
         {
-            await activityInstance.PublishEvent(new EvaluateConditionEvent(workflowInstance.GetGrainId().GetGuidKey(),
+            await activityInstance.PublishEvent(new EvaluateConditionEvent(await workflowInstance.GetWorkflowInstanceId(),
                                                                definition.WorkflowId,
                                                                 definition.ProcessDefinitionId,
                                                                 await activityInstance.GetActivityInstanceId(),
@@ -57,8 +55,7 @@ public record ExclusiveGateway : ConditionalGateway
 
     internal override async Task<List<Activity>> GetNextActivities(IWorkflowInstance workflowInstance, IActivityInstance activityInstance)
     {
-        var state = await workflowInstance.GetState();
-        var sequencesState = await state.GetConditionSequenceStates();
+        var sequencesState = await workflowInstance.GetConditionSequenceStates();
         var activitySequencesState = sequencesState[await activityInstance.GetActivityInstanceId()];
 
         var trueTarget = activitySequencesState

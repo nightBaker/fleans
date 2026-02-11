@@ -1,4 +1,6 @@
-﻿using Fleans.Domain.Events;
+using Fleans.Domain.Activities;
+using Fleans.Domain.Events;
+using Fleans.Domain.Sequences;
 using Fleans.Domain.States;
 using Orleans;
 using Orleans.Concurrency;
@@ -19,18 +21,28 @@ public interface IWorkflowInstance : IGrainWithGuidKey
     [ReadOnly]
     ValueTask<WorkflowInstanceInfo> GetInstanceInfo();
     [ReadOnly]
-    ValueTask<IWorkflowInstanceState> GetState();
+    ValueTask<InstanceStateSnapshot> GetStateSnapshot();
     [ReadOnly]
     ValueTask<IWorkflowDefinition> GetWorkflowDefinition();
 
     Task CompleteActivity(string activityId, ExpandoObject variables);
     Task CompleteConditionSequence(string activityId, string conditionSequenceId, bool result);
     Task FailActivity(string activityId, Exception exception);
-    Task StartWorkflow();        
+    Task StartWorkflow();
     Task SetWorkflow(IWorkflowDefinition workflow);
     void EnqueueEvent(IDomainEvent domainEvent);
     ValueTask Complete();
 
     [ReadOnly]
     ValueTask<ExpandoObject> GetVariables(Guid variablesStateId);
+
+    // State facade methods for activities
+    [ReadOnly]
+    ValueTask<IReadOnlyList<IActivityInstance>> GetActiveActivities();
+    [ReadOnly]
+    ValueTask<IReadOnlyList<IActivityInstance>> GetCompletedActivities();
+    [ReadOnly]
+    ValueTask<IReadOnlyDictionary<Guid, ConditionSequenceState[]>> GetConditionSequenceStates();
+    ValueTask AddConditionSequenceStates(Guid activityInstanceId, ConditionalSequenceFlow[] sequences);
+    ValueTask SetConditionSequenceResult(Guid activityInstanceId, string sequenceId, bool result);
 }

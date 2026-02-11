@@ -18,7 +18,7 @@ public record EndEvent : Activity
         await base.ExecuteAsync(workflowInstance, activityState);
 
         await activityState.Complete();
-        await workflowInstance.Complete();            
+        await workflowInstance.Complete();
     }
 
     internal override Task<List<Activity>> GetNextActivities(IWorkflowInstance workflowInstance, IActivityInstance activityState)
