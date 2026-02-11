@@ -17,7 +17,6 @@ public record StartEvent : Activity
         await base.ExecuteAsync(workflowInstance, activityInstance);
 
         await activityInstance.Complete();
-        await workflowInstance.Start();
         
     }
 

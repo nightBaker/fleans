@@ -44,6 +44,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         using var scope = BeginWorkflowScope();
         _executionStartedAt = DateTimeOffset.UtcNow;
         LogWorkflowStarted();
+        await Start();
         await ExecuteWorkflow();
     }
 
@@ -139,7 +140,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         await activityInstance.Fail(exception);
     }
 
-    public ValueTask Start()
+    private ValueTask Start()
         => State.Start();
 
     public async ValueTask Complete()
