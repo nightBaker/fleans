@@ -29,7 +29,6 @@ public interface IWorkflowInstance : IGrainWithGuidKey
     Task StartWorkflow();        
     Task SetWorkflow(IWorkflowDefinition workflow);
     void EnqueueEvent(IDomainEvent domainEvent);
-    ValueTask Start();
     ValueTask Complete();
 
     [ReadOnly]
