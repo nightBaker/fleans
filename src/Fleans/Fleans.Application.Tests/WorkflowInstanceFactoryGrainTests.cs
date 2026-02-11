@@ -3,7 +3,6 @@ using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Persistence;
 using Fleans.Domain.Sequences;
-using Fleans.Persistence.InMemory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Orleans.TestingHost;
@@ -190,8 +189,39 @@ namespace Fleans.Application.Tests
                     .AddMemoryGrainStorage("activityInstances")
                     .ConfigureServices(services =>
                     {
-                        services.AddSingleton<IProcessDefinitionRepository, InMemoryProcessDefinitionRepository>();
+                        services.AddSingleton<IProcessDefinitionRepository, StubProcessDefinitionRepository>();
                     });
+        }
+
+        private class StubProcessDefinitionRepository : IProcessDefinitionRepository
+        {
+            private readonly Dictionary<string, ProcessDefinition> _store = new(StringComparer.Ordinal);
+
+            public Task<ProcessDefinition?> GetByIdAsync(string processDefinitionId)
+            {
+                _store.TryGetValue(processDefinitionId, out var def);
+                return Task.FromResult(def);
+            }
+
+            public Task<List<ProcessDefinition>> GetByKeyAsync(string processDefinitionKey) =>
+                Task.FromResult(_store.Values
+                    .Where(d => d.ProcessDefinitionKey == processDefinitionKey)
+                    .OrderBy(d => d.Version).ToList());
+
+            public Task<List<ProcessDefinition>> GetAllAsync() =>
+                Task.FromResult(_store.Values.ToList());
+
+            public Task SaveAsync(ProcessDefinition definition)
+            {
+                _store[definition.ProcessDefinitionId] = definition;
+                return Task.CompletedTask;
+            }
+
+            public Task DeleteAsync(string processDefinitionId)
+            {
+                _store.Remove(processDefinitionId);
+                return Task.CompletedTask;
+            }
         }
     }
 }
