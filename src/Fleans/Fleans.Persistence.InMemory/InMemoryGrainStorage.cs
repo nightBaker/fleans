@@ -4,6 +4,9 @@ using Orleans.Storage;
 
 namespace Fleans.Persistence.InMemory;
 
+// Note: State is stored by reference. Mutations to the grain's state object
+// are visible in the store without WriteStateAsync. This matches Orleans'
+// built-in MemoryGrainStorage behavior.
 public class InMemoryGrainStorage : IGrainStorage
 {
     private readonly ConcurrentDictionary<string, StoredGrainState> _store = new();
@@ -27,7 +30,13 @@ public class InMemoryGrainStorage : IGrainStorage
         var newETag = Guid.NewGuid().ToString("N");
 
         _store.AddOrUpdate(key,
-            _ => new StoredGrainState(grainState.State!, newETag),
+            _ =>
+            {
+                if (grainState.ETag is not null)
+                    throw new InconsistentStateException(
+                        $"ETag mismatch: expected '{grainState.ETag}', but no record exists");
+                return new StoredGrainState(grainState.State!, newETag);
+            },
             (_, existing) =>
             {
                 if (existing.ETag != grainState.ETag)
@@ -44,6 +53,9 @@ public class InMemoryGrainStorage : IGrainStorage
     public Task ClearStateAsync<T>(string stateName, GrainId grainId, IGrainState<T> grainState)
     {
         var key = MakeKey(stateName, grainId);
+        if (_store.TryGetValue(key, out var existing) && existing.ETag != grainState.ETag)
+            throw new InconsistentStateException(
+                $"ETag mismatch on clear: expected '{grainState.ETag}', stored '{existing.ETag}'");
         _store.TryRemove(key, out _);
         grainState.ETag = null;
         grainState.RecordExists = false;

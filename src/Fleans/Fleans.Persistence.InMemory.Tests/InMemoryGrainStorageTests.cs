@@ -108,6 +108,40 @@ public class InMemoryGrainStorageTests
     }
 
     [TestMethod]
+    public async Task Write_WithStaleETagToNonExistentKey_ThrowsInconsistentStateException()
+    {
+        var state = new TestGrainState<TestState> { State = new TestState("v1") };
+        await _storage.WriteStateAsync(StateName, _grainId, state);
+
+        // Clear the record, then try to write with the old ETag
+        await _storage.ClearStateAsync(StateName, _grainId, state);
+
+        var staleState = new TestGrainState<TestState>
+        {
+            State = new TestState("v2"),
+            ETag = "stale-etag"
+        };
+
+        await Assert.ThrowsExactlyAsync<InconsistentStateException>(
+            () => _storage.WriteStateAsync(StateName, _grainId, staleState));
+    }
+
+    [TestMethod]
+    public async Task Clear_WithStaleETag_ThrowsInconsistentStateException()
+    {
+        var state = new TestGrainState<TestState> { State = new TestState("v1") };
+        await _storage.WriteStateAsync(StateName, _grainId, state);
+
+        // Simulate a concurrent writer updating the state
+        var concurrentState = new TestGrainState<TestState> { State = new TestState("v2"), ETag = state.ETag };
+        await _storage.WriteStateAsync(StateName, _grainId, concurrentState);
+
+        // Original caller tries to clear with stale ETag
+        await Assert.ThrowsExactlyAsync<InconsistentStateException>(
+            () => _storage.ClearStateAsync(StateName, _grainId, state));
+    }
+
+    [TestMethod]
     public async Task DifferentGrainIds_AreIsolated()
     {
         var grainId1 = GrainId.Create("test", "grain1");
