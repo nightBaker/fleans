@@ -325,7 +325,7 @@ src/Fleans/
 - `_instancesByKey` and `_instanceToDefinitionId` in factory grain are not persisted/rehydrated
 - State classes (`ActivityInstanceState`, `WorkflowInstanceState`) need `[GenerateSerializer]` and `[Id]` attributes
 - Grain reference serialization (`List<IActivityInstance>` in `WorkflowInstanceState`)
-- Concurrency control (ETag/versioning)
+- ~~Concurrency control (ETag/versioning)~~ — Done: `InMemoryGrainStorage` checks ETags, throws `InconsistentStateException` on mismatch
 
 ---
 
@@ -333,6 +333,5 @@ src/Fleans/
 
 - No database implementation (EF Core, SQL, etc.)
 - No grain reference serialization (IActivityInstance lists in WorkflowInstanceState)
-- No concurrency control (ETag/versioning)
-- IGrainStorage providers are no-op placeholders
+- IGrainStorage providers are in-memory (no database)
 - `InMemoryProcessDefinitionRepository` is the only repository implementation
