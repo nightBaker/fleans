@@ -50,7 +50,7 @@ public class WorkflowInstanceState
 
     public ValueTask Complete()
     {
-        if (!_activeActivities.Any())
+        if (_isCompleted)
             throw new InvalidOperationException("Workflow is already completed");
 
         _isCompleted = true;
@@ -131,7 +131,7 @@ public class WorkflowInstanceState
         return result.ToArray();
     }
 
-    public ValueTask SetCondigitionSequencesResult(Guid activityInstanceId, string sequenceId, bool result)
+    public ValueTask SetConditionSequenceResult(Guid activityInstanceId, string sequenceId, bool result)
     {
         var sequences = _conditionSequenceStates[activityInstanceId];
 

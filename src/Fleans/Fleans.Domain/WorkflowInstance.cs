@@ -137,9 +137,9 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
 
     public async ValueTask Complete()
     {
-        LogStateCompleted();
         await State.Complete();
         State.CompletedAt = DateTimeOffset.UtcNow;
+        LogStateCompleted();
     }
 
     public async Task CompleteConditionSequence(string activityId, string conditionSequenceId, bool result)
@@ -244,7 +244,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         => State.AddConditionSequenceStates(activityInstanceId, sequences);
 
     public ValueTask SetConditionSequenceResult(Guid activityInstanceId, string sequenceId, bool result)
-        => State.SetCondigitionSequencesResult(activityInstanceId, sequenceId, result);
+        => State.SetConditionSequenceResult(activityInstanceId, sequenceId, result);
 
     private void SetWorkflowRequestContext()
     {

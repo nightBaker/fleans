@@ -341,8 +341,8 @@ namespace Fleans.Domain.Tests
             };
 
             await state.AddConditionSequenceStates(activityInstanceId, sequences);
-            await state.SetCondigitionSequencesResult(activityInstanceId, "seq1", true);
-            await state.SetCondigitionSequencesResult(activityInstanceId, "seq2", false);
+            await state.SetConditionSequenceResult(activityInstanceId, "seq1", true);
+            await state.SetConditionSequenceResult(activityInstanceId, "seq2", false);
 
             // Act
             var snapshot = await state.GetStateSnapshot();
