@@ -39,6 +39,8 @@ Add it to `Fleans.Api/Controllers/WorkflowController.cs`. DTOs go in `Fleans.Ser
 ## Code Conventions
 
 - Follow existing patterns — records for immutable DTOs, `[GenerateSerializer]` on anything crossing grain boundaries
+- **Persistence: use domain models directly** — do not create separate entity/DTO classes for EF Core. Map domain records (`ProcessDefinition`, etc.) directly in the DbContext. EF Core ignores Orleans `[GenerateSerializer]`/`[Id(n)]` attributes.
+- **Repository pattern:** Use generic `ICommandRepository<T>` (writes) and `IQueryRepository<T>` (reads) with `IAggregateRoot` constraint and `IUnitOfWork`. Interfaces live in `Fleans.Domain/Repositories/`, implementations in `Fleans.Persistence/`.
 - ExpandoObject + Newtonsoft.Json for dynamic workflow variable state
 - Tests use MSTest + Orleans.TestingHost, AAA pattern. Activity tests must verify both post-completion and post-failure state. Query state via `workflowInstance.GetState()` after completion/failure — never hold grain references from before completion to assert on.
 - **Admin UI (Fleans.Web) communicates with Orleans grains directly via `WorkflowEngine` service** — not through HTTP API endpoints. The Web app runs as Blazor Server (InteractiveServer), so Razor components execute server-side and can call grains directly. Do not add API endpoints for admin UI functionality.
