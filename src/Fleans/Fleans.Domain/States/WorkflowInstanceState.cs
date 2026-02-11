@@ -4,7 +4,7 @@ using System.Dynamic;
 
 namespace Fleans.Domain.States;
 
-public class WorkflowInstanceState : IWorkflowInstanceState
+public class WorkflowInstanceState
 {
     private readonly List<IActivityInstance> _activeActivities = new();
     private readonly List<IActivityInstance> _completedActivities = new();
