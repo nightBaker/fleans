@@ -1,6 +1,5 @@
 using Fleans.Domain.Activities;
 using Fleans.Domain.Errors;
-using Fleans.Domain.Events;
 using Fleans.Domain.Sequences;
 using Fleans.Domain.States;
 using Microsoft.Extensions.Logging;
@@ -24,8 +23,6 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         _grainFactory = grainFactory;
         _logger = logger;
     }
-
-    private readonly Queue<IDomainEvent> _events = new();
 
     public async Task StartWorkflow()
     {
@@ -180,11 +177,6 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
             await activityInstance.Complete();
             await ExecuteWorkflow();
         }
-    }
-
-    public void EnqueueEvent(IDomainEvent domainEvent)
-    {
-        _events.Enqueue(domainEvent);
     }
 
     public async Task SetWorkflow(IWorkflowDefinition workflow)

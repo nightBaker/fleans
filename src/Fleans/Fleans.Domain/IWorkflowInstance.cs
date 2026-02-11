@@ -1,5 +1,4 @@
 using Fleans.Domain.Activities;
-using Fleans.Domain.Events;
 using Fleans.Domain.Sequences;
 using Fleans.Domain.States;
 using Orleans;
@@ -30,7 +29,6 @@ public interface IWorkflowInstance : IGrainWithGuidKey
     Task FailActivity(string activityId, Exception exception);
     Task StartWorkflow();
     Task SetWorkflow(IWorkflowDefinition workflow);
-    void EnqueueEvent(IDomainEvent domainEvent);
     ValueTask Complete();
 
     [ReadOnly]
