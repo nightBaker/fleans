@@ -13,7 +13,10 @@ public static class InMemoryPersistenceDependencyInjection
     public static void AddInMemoryPersistence(this IServiceCollection services)
     {
         services.AddSingleton<IProcessDefinitionRepository, InMemoryProcessDefinitionRepository>();
-        services.AddKeyedSingleton<IGrainStorage>("workflowInstances", (_, _) => new WorkflowInstanceGrainStorage());
-        services.AddKeyedSingleton<IGrainStorage>("activityInstances", (_, _) => new ActivityInstanceGrainStorage());
+        services.AddSingleton<InMemoryGrainStorage>();
+        services.AddKeyedSingleton<IGrainStorage>("workflowInstances",
+            (sp, _) => sp.GetRequiredService<InMemoryGrainStorage>());
+        services.AddKeyedSingleton<IGrainStorage>("activityInstances",
+            (sp, _) => sp.GetRequiredService<InMemoryGrainStorage>());
     }
 }
