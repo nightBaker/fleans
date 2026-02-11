@@ -259,16 +259,16 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
             WorkflowDefinition.WorkflowId, WorkflowDefinition.ProcessDefinitionId ?? "-", this.GetPrimaryKey().ToString());
     }
 
-    [LoggerMessage(EventId = 1000, Level = LogLevel.Information, Message = "Workflow definition set")]
+    [LoggerMessage(EventId = 1000, Level = LogLevel.Debug, Message = "Workflow definition set")]
     private partial void LogWorkflowDefinitionSet();
 
-    [LoggerMessage(EventId = 1001, Level = LogLevel.Information, Message = "Workflow execution started")]
+    [LoggerMessage(EventId = 1001, Level = LogLevel.Debug, Message = "Workflow execution started")]
     private partial void LogWorkflowStarted();
 
     [LoggerMessage(EventId = 1002, Level = LogLevel.Debug, Message = "Executing activity {ActivityId} ({ActivityType})")]
     private partial void LogExecutingActivity(string activityId, string activityType);
 
-    [LoggerMessage(EventId = 1003, Level = LogLevel.Information, Message = "Completing activity {ActivityId}")]
+    [LoggerMessage(EventId = 1003, Level = LogLevel.Debug, Message = "Completing activity {ActivityId}")]
     private partial void LogCompletingActivity(string activityId);
 
     [LoggerMessage(EventId = 1004, Level = LogLevel.Warning, Message = "Failing activity {ActivityId}")]
@@ -280,13 +280,13 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
     [LoggerMessage(EventId = 1006, Level = LogLevel.Debug, Message = "Transitioning: {CompletedCount} completed, {NewCount} new")]
     private partial void LogTransition(int completedCount, int newCount);
 
-    [LoggerMessage(EventId = 1007, Level = LogLevel.Information, Message = "Gateway {ActivityId} decision made, auto-completing and resuming workflow")]
+    [LoggerMessage(EventId = 1007, Level = LogLevel.Debug, Message = "Gateway {ActivityId} decision made, auto-completing and resuming workflow")]
     private partial void LogGatewayAutoCompleting(string activityId);
 
-    [LoggerMessage(EventId = 1008, Level = LogLevel.Information, Message = "Gateway {ActivityId} short-circuited: condition {ConditionSequenceFlowId} is true")]
+    [LoggerMessage(EventId = 1008, Level = LogLevel.Debug, Message = "Gateway {ActivityId} short-circuited: condition {ConditionSequenceFlowId} is true")]
     private partial void LogGatewayShortCircuited(string activityId, string conditionSequenceFlowId);
 
-    [LoggerMessage(EventId = 1009, Level = LogLevel.Information, Message = "Gateway {ActivityId} all conditions false, taking default flow")]
+    [LoggerMessage(EventId = 1009, Level = LogLevel.Debug, Message = "Gateway {ActivityId} all conditions false, taking default flow")]
     private partial void LogGatewayTakingDefaultFlow(string activityId);
 
     [LoggerMessage(EventId = 1010, Level = LogLevel.Error, Message = "Gateway {ActivityId} all conditions false and no default flow — misconfigured workflow")]
