@@ -1,5 +1,6 @@
 using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
+using Fleans.Domain.Persistence;
 using Microsoft.Extensions.Logging;
 using Orleans.Concurrency;
 using Orleans.Runtime;
@@ -11,6 +12,7 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
 {
     private readonly IGrainFactory _grainFactory;
     private readonly ILogger<WorkflowInstanceFactoryGrain> _logger;
+    private readonly IProcessDefinitionRepository _repository;
     // Camunda-like process definitions:
     // - BPMN <process id> is the key
     // - each deploy creates a new immutable version per key
@@ -20,10 +22,29 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
     private readonly Dictionary<string, List<Guid>> _instancesByKey = new(StringComparer.Ordinal);
     private readonly Dictionary<Guid, string> _instanceToDefinitionId = new();
 
-    public WorkflowInstanceFactoryGrain(IGrainFactory grainFactory, ILogger<WorkflowInstanceFactoryGrain> logger)
+    public WorkflowInstanceFactoryGrain(
+        IGrainFactory grainFactory,
+        ILogger<WorkflowInstanceFactoryGrain> logger,
+        IProcessDefinitionRepository repository)
     {
         _grainFactory = grainFactory;
         _logger = logger;
+        _repository = repository;
+    }
+
+    public override async Task OnActivateAsync(CancellationToken cancellationToken)
+    {
+        var all = await _repository.GetAllAsync();
+        foreach (var def in all)
+        {
+            _byId[def.ProcessDefinitionId] = def;
+            if (!_byKey.TryGetValue(def.ProcessDefinitionKey, out var versions))
+            {
+                versions = new List<ProcessDefinition>();
+                _byKey[def.ProcessDefinitionKey] = versions;
+            }
+            versions.Add(def);
+        }
     }
     
     public async Task<IWorkflowInstance> CreateWorkflowInstanceGrain(string workflowId)
@@ -73,7 +94,7 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
         return workflowInstanceGrain;
     }
 
-    public Task<ProcessDefinitionSummary> DeployWorkflow(WorkflowDefinition workflow, string bpmnXml)
+    public async Task<ProcessDefinitionSummary> DeployWorkflow(WorkflowDefinition workflow, string bpmnXml)
     {
         if (workflow == null)
         {
@@ -111,10 +132,11 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
 
         _byId[processDefinitionId] = definition;
         versions.Add(definition);
+        await _repository.SaveAsync(definition);
 
         LogDeployedWorkflow(processDefinitionKey, processDefinitionId, nextVersion);
 
-        return Task.FromResult(ToSummary(definition));
+        return ToSummary(definition);
     }
 
     public async Task RegisterWorkflow(IWorkflowDefinition workflow)

@@ -1,7 +1,10 @@
 using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
+using Fleans.Domain.Persistence;
 using Fleans.Domain.Sequences;
+using Fleans.Infrastructure.Storage;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Orleans.TestingHost;
 
@@ -16,6 +19,7 @@ namespace Fleans.Application.Tests
         public void Setup()
         {
             var builder = new TestClusterBuilder();
+            builder.AddSiloBuilderConfigurator<SiloConfigurator>();
             _cluster = builder.Build();
             _cluster.Deploy();
         }
@@ -176,6 +180,15 @@ namespace Fleans.Application.Tests
             };
 
             return workflow;
+        }
+
+        private class SiloConfigurator : ISiloConfigurator
+        {
+            public void Configure(ISiloBuilder hostBuilder) =>
+                hostBuilder.ConfigureServices(services =>
+                {
+                    services.AddSingleton<IProcessDefinitionRepository, InMemoryProcessDefinitionRepository>();
+                });
         }
     }
 }
