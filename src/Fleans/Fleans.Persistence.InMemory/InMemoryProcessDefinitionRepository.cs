@@ -1,7 +1,7 @@
 using Fleans.Domain;
 using Fleans.Domain.Persistence;
 
-namespace Fleans.Infrastructure.Storage;
+namespace Fleans.Persistence.InMemory;
 
 public class InMemoryProcessDefinitionRepository : IProcessDefinitionRepository
 {

@@ -3,7 +3,7 @@ using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Persistence;
 using Fleans.Domain.Sequences;
-using Fleans.Infrastructure.Storage;
+using Fleans.Persistence.InMemory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Orleans.TestingHost;

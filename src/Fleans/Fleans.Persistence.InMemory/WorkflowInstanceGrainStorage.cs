@@ -1,7 +1,7 @@
 using Orleans.Runtime;
 using Orleans.Storage;
 
-namespace Fleans.Infrastructure.Storage;
+namespace Fleans.Persistence.InMemory;
 
 public class WorkflowInstanceGrainStorage : IGrainStorage
 {
