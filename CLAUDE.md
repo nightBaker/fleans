@@ -36,6 +36,10 @@ dotnet run --project Fleans.Aspire
 
 Add it to `Fleans.Api/Controllers/WorkflowController.cs`. DTOs go in `Fleans.ServiceDefaults/`.
 
+## Architecture Principles
+
+- **Always respect SOLID, DDD, and Clean Architecture principles.** Keep domain logic in `Fleans.Domain` free of infrastructure concerns. Depend on abstractions, not concretions. Ensure single responsibility across classes and methods. Model the domain with aggregates, value objects, and domain events where appropriate.
+
 ## Code Conventions
 
 - Follow existing patterns — records for immutable DTOs, `[GenerateSerializer]` on anything crossing grain boundaries
