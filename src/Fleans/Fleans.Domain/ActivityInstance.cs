@@ -33,7 +33,7 @@ namespace Fleans.Domain
         public async ValueTask Fail(Exception exception)
         {
             State.Fail(exception);
-            var errorState = State.GetErrorState()!;
+            var errorState = State.ErrorState!;
             LogFailed(errorState.Code, errorState.Message);
             // Complete() calls WriteStateAsync — both error and completed state persisted atomically
             await Complete();
@@ -42,16 +42,16 @@ namespace Fleans.Domain
         public async ValueTask Execute()
         {
             State.Execute();
-            RequestContext.Set("VariablesId", State.GetVariablesId().ToString());
+            RequestContext.Set("VariablesId", State.VariablesId.ToString());
             LogExecutionStarted();
             await _state.WriteStateAsync();
         }
 
         public ValueTask<Guid> GetActivityInstanceId() => ValueTask.FromResult(this.GetPrimaryKey());
 
-        public ValueTask<Activity> GetCurrentActivity() => ValueTask.FromResult(State.GetCurrentActivity()!);
+        public ValueTask<Activity> GetCurrentActivity() => ValueTask.FromResult(State.CurrentActivity!);
 
-        public ValueTask<ActivityErrorState?> GetErrorState() => ValueTask.FromResult(State.GetErrorState());
+        public ValueTask<ActivityErrorState?> GetErrorState() => ValueTask.FromResult(State.ErrorState);
 
         public ValueTask<DateTimeOffset?> GetCreatedAt() => ValueTask.FromResult(State.CreatedAt);
 
@@ -62,12 +62,12 @@ namespace Fleans.Domain
         public ValueTask<ActivityInstanceSnapshot> GetSnapshot() => ValueTask.FromResult(State.GetSnapshot(this.GetPrimaryKey()));
 
         ValueTask<bool> IActivityInstance.IsCompleted()
-            => ValueTask.FromResult(State.IsCompleted());
+            => ValueTask.FromResult(State.IsCompleted);
 
-        ValueTask<bool> IActivityInstance.IsExecuting() => ValueTask.FromResult(State.IsExecuting());
+        ValueTask<bool> IActivityInstance.IsExecuting() => ValueTask.FromResult(State.IsExecuting);
 
         public ValueTask<Guid> GetVariablesStateId()
-            => ValueTask.FromResult(State.GetVariablesId());
+            => ValueTask.FromResult(State.VariablesId);
 
         public async ValueTask SetVariablesId(Guid guid)
         {
