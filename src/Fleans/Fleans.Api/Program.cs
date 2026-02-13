@@ -1,8 +1,11 @@
 using Fleans.Application;
 using Fleans.Application.Logging;
 using Fleans.Infrastructure;
+using Fleans.Persistence;
 using Fleans.Persistence.InMemory;
 using Fleans.Domain;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -75,7 +78,24 @@ builder.Services.AddApplication();
 builder.Services.AddInfrastructure();
 builder.Services.AddInMemoryPersistence();
 
+// EF Core persistence for ActivityInstanceState (SQLite in-memory for dev)
+var sqliteConnection = new SqliteConnection("DataSource=:memory:");
+sqliteConnection.Open();
+builder.Services.AddSingleton(sqliteConnection);
+builder.Services.AddEfCorePersistence(options => options.UseSqlite(sqliteConnection));
+
+// Dispose SQLite connection on shutdown
+builder.Services.AddHostedService<SqliteConnectionLifetime>();
+
 var app = builder.Build();
+
+// Ensure EF Core database is created (dev only — use migrations in production)
+using (var scope = app.Services.CreateScope())
+{
+    var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<GrainStateDbContext>>();
+    using var db = dbFactory.CreateDbContext();
+    db.Database.EnsureCreated();
+}
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
@@ -91,3 +111,10 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+/// <summary>Disposes the SQLite in-memory connection on shutdown.</summary>
+file class SqliteConnectionLifetime(SqliteConnection connection) : IHostedService
+{
+    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task StopAsync(CancellationToken cancellationToken) { connection.Dispose(); return Task.CompletedTask; }
+}

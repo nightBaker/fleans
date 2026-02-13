@@ -16,12 +16,14 @@
     <PackageReference Include="Microsoft.Orleans.Persistence.Redis" Version="9.2.1" />
     <PackageReference Include="Microsoft.Orleans.Server" Version="9.2.1" />
     <PackageReference Include="Microsoft.VisualStudio.Azure.Containers.Tools.Targets" Version="1.22.1" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.1" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="10.1.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Fleans.Application\Fleans.Application.csproj" />
     <ProjectReference Include="..\Fleans.Infrastructure\Fleans.Infrastructure.csproj" />
+    <ProjectReference Include="..\Fleans.Persistence\Fleans.Persistence.csproj" />
     <ProjectReference Include="..\Fleans.Persistence.InMemory\Fleans.Persistence.InMemory.csproj" />
     <ProjectReference Include="..\Fleans.ServiceDefaults\Fleans.ServiceDefaults.csproj" />
   </ItemGroup>
