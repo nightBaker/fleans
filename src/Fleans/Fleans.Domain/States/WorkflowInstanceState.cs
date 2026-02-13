@@ -35,12 +35,6 @@ public class WorkflowInstanceState
     [Id(9)]
     public DateTimeOffset? CompletedAt { get; internal set; }
 
-    [Id(10)]
-    public Guid Id { get; internal set; }
-
-    [Id(11)]
-    public string? ETag { get; internal set; }
-
     public IReadOnlyList<ActivityInstanceEntry> GetCompletedActivities()
         => CompletedActivities;
 

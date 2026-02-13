@@ -88,8 +88,6 @@ public class EfCoreWorkflowInstanceGrainStorage : IGrainStorage
             await db.SaveChangesAsync();
         }
 
-        state.Id = id;
-        state.ETag = newETag;
         grainState.ETag = newETag;
         grainState.RecordExists = true;
     }
@@ -180,9 +178,6 @@ public class EfCoreWorkflowInstanceGrainStorage : IGrainStorage
     {
         var state = new WorkflowInstanceState();
 
-        // Set scalars via internal setters
-        state.Id = entity.Id;
-        state.ETag = entity.ETag;
         state.InstanceId = entity.Id;
         state.CreatedAt = entity.CreatedAt;
         state.ExecutionStartedAt = entity.ExecutionStartedAt;
