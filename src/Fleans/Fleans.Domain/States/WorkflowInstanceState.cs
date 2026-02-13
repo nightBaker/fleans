@@ -58,13 +58,11 @@ public class WorkflowInstanceState
 
     public Guid AddCloneOfVariableState(Guid variableStateId)
     {
-        var newVariableStateId = Guid.NewGuid();
-
         var clonedState = new WorklfowVariablesState();
-        clonedState.CloneFromWithId(newVariableStateId, _variableStates[variableStateId]);
+        clonedState.CloneWithNewIdFrom(_variableStates[variableStateId]);
 
-        _variableStates.Add(newVariableStateId, clonedState);
-        return newVariableStateId;
+        _variableStates.Add(clonedState.Id, clonedState);
+        return clonedState.Id;
     }
 
     public void AddConditionSequenceStates(Guid activityInstanceId, ConditionalSequenceFlow[] sequences)
