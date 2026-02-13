@@ -1,4 +1,6 @@
+using Fleans.Domain;
 using Fleans.Domain.States;
+using Fleans.Persistence.Entities;
 using Microsoft.EntityFrameworkCore;
 using Orleans.Runtime;
 using Orleans.Storage;
@@ -18,12 +20,12 @@ public class EfCoreActivityInstanceGrainStorage : IGrainStorage
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync();
         var id = grainId.GetGuidKey();
-        var entity = await db.ActivityInstances.FindAsync(id);
+        var entity = await db.ActivityInstances.AsNoTracking().FirstOrDefaultAsync(e => e.Id == id);
 
         if (entity is not null)
         {
-            db.Entry(entity).State = EntityState.Detached;
-            grainState.State = (T)(object)entity;
+            var state = MapToDomain(entity);
+            grainState.State = (T)(object)state;
             grainState.ETag = entity.ETag;
             grainState.RecordExists = true;
         }
@@ -44,17 +46,10 @@ public class EfCoreActivityInstanceGrainStorage : IGrainStorage
                 throw new InconsistentStateException(
                     $"ETag mismatch: expected '{grainState.ETag}', but no record exists");
 
-            state.Id = id;
-            state.ETag = newETag;
-            db.ActivityInstances.Add(state);
-            try
-            {
-                await db.SaveChangesAsync();
-            }
-            finally
-            {
-                db.Entry(state).State = EntityState.Detached;
-            }
+            var entity = MapToEntity(state, id);
+            entity.ETag = newETag;
+            db.ActivityInstances.Add(entity);
+            await db.SaveChangesAsync();
         }
         else
         {
@@ -62,10 +57,17 @@ public class EfCoreActivityInstanceGrainStorage : IGrainStorage
                 throw new InconsistentStateException(
                     $"ETag mismatch: expected '{grainState.ETag}', stored '{existing.ETag}'");
 
-            state.Id = id;
-            db.Entry(existing).CurrentValues.SetValues(state);
+            existing.ActivityId = state.ActivityId;
+            existing.ActivityType = state.ActivityType;
+            existing.IsExecuting = state.IsExecuting;
+            existing.IsCompleted = state.IsCompleted;
+            existing.VariablesId = state.VariablesId;
+            existing.ErrorCode = state.ErrorState?.Code;
+            existing.ErrorMessage = state.ErrorState?.Message;
+            existing.CreatedAt = state.CreatedAt;
+            existing.ExecutionStartedAt = state.ExecutionStartedAt;
+            existing.CompletedAt = state.CompletedAt;
             existing.ETag = newETag;
-            db.Entry(existing).Reference(e => e.ErrorState).CurrentValue = state.ErrorState;
             await db.SaveChangesAsync();
         }
 
@@ -91,5 +93,41 @@ public class EfCoreActivityInstanceGrainStorage : IGrainStorage
 
         grainState.ETag = null;
         grainState.RecordExists = false;
+    }
+
+    private static ActivityInstanceEntity MapToEntity(ActivityInstanceState state, Guid id) =>
+        new()
+        {
+            Id = id,
+            ActivityId = state.ActivityId,
+            ActivityType = state.ActivityType,
+            IsExecuting = state.IsExecuting,
+            IsCompleted = state.IsCompleted,
+            VariablesId = state.VariablesId,
+            ErrorCode = state.ErrorState?.Code,
+            ErrorMessage = state.ErrorState?.Message,
+            CreatedAt = state.CreatedAt,
+            ExecutionStartedAt = state.ExecutionStartedAt,
+            CompletedAt = state.CompletedAt,
+        };
+
+    private static ActivityInstanceState MapToDomain(ActivityInstanceEntity entity)
+    {
+        var state = new ActivityInstanceState
+        {
+            ActivityId = entity.ActivityId,
+            ActivityType = entity.ActivityType,
+            IsExecuting = entity.IsExecuting,
+            IsCompleted = entity.IsCompleted,
+            VariablesId = entity.VariablesId,
+            ErrorState = entity.ErrorCode is not null
+                ? new ActivityErrorState(entity.ErrorCode.Value, entity.ErrorMessage!)
+                : null,
+            CreatedAt = entity.CreatedAt,
+            ExecutionStartedAt = entity.ExecutionStartedAt,
+            CompletedAt = entity.CompletedAt,
+        };
+
+        return state;
     }
 }

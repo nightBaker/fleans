@@ -1,5 +1,4 @@
 using System.Dynamic;
-using Fleans.Domain.States;
 using Fleans.Persistence.Entities;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
@@ -8,7 +7,7 @@ namespace Fleans.Persistence;
 
 public class GrainStateDbContext : DbContext
 {
-    public DbSet<ActivityInstanceState> ActivityInstances => Set<ActivityInstanceState>();
+    public DbSet<ActivityInstanceEntity> ActivityInstances => Set<ActivityInstanceEntity>();
     public DbSet<WorkflowInstanceEntity> WorkflowInstances => Set<WorkflowInstanceEntity>();
     public DbSet<ActivityInstanceEntryEntity> WorkflowActivityInstanceEntries => Set<ActivityInstanceEntryEntity>();
     public DbSet<WorkflowVariablesEntity> WorkflowVariableStates => Set<WorkflowVariablesEntity>();
@@ -18,7 +17,7 @@ public class GrainStateDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<ActivityInstanceState>(entity =>
+        modelBuilder.Entity<ActivityInstanceEntity>(entity =>
         {
             entity.ToTable("ActivityInstances");
             entity.HasKey(e => e.Id);
@@ -32,11 +31,8 @@ public class GrainStateDbContext : DbContext
             entity.Property(e => e.ActivityType)
                 .HasMaxLength(256);
 
-            entity.OwnsOne(e => e.ErrorState, error =>
-            {
-                error.Property(e => e.Code).HasColumnName("ErrorCode");
-                error.Property(e => e.Message).HasColumnName("ErrorMessage").HasMaxLength(2000);
-            });
+            entity.Property(e => e.ErrorMessage)
+                .HasMaxLength(2000);
         });
 
         modelBuilder.Entity<WorkflowInstanceEntity>(entity =>
