@@ -35,6 +35,12 @@ public class WorkflowInstanceState
     [Id(9)]
     public DateTimeOffset? CompletedAt { get; internal set; }
 
+    [Id(10)]
+    public Guid Id { get; internal set; }
+
+    [Id(11)]
+    public string? ETag { get; internal set; }
+
     public IReadOnlyList<ActivityInstanceEntry> GetCompletedActivities()
         => CompletedActivities;
 
@@ -72,10 +78,11 @@ public class WorkflowInstanceState
     public Guid AddCloneOfVariableState(Guid variableStateId)
     {
         var clonedState = new WorkflowVariablesState();
-        clonedState.CloneWithNewIdFrom(VariableStates[variableStateId]);
+        clonedState.Merge(VariableStates[variableStateId].Variables);
 
-        VariableStates.Add(clonedState.Id, clonedState);
-        return clonedState.Id;
+        var newId = Guid.NewGuid();
+        VariableStates.Add(newId, clonedState);
+        return newId;
     }
 
     public void AddConditionSequenceStates(Guid activityInstanceId, string[] sequenceFlowIds)

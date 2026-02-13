@@ -78,7 +78,7 @@ builder.Services.AddApplication();
 builder.Services.AddInfrastructure();
 builder.Services.AddInMemoryPersistence();
 
-// EF Core persistence for ActivityInstanceState (SQLite in-memory for dev)
+// EF Core persistence for ActivityInstanceState + WorkflowInstanceState (SQLite in-memory for dev)
 var sqliteConnection = new SqliteConnection("DataSource=:memory:");
 sqliteConnection.Open();
 builder.Services.AddSingleton(sqliteConnection);
