@@ -32,6 +32,12 @@ public class ActivityInstanceState
     [Id(8)]
     public DateTimeOffset? CompletedAt { get; private set; }
 
+    [Id(9)]
+    public Guid Id { get; internal set; }
+
+    [Id(10)]
+    public string? ETag { get; internal set; }
+
     public void Complete()
     {
         IsExecuting = false;
