@@ -57,14 +57,20 @@ public record ExclusiveGateway : ConditionalGateway
     {
         var sequencesState = await workflowInstance.GetConditionSequenceStates();
         var activitySequencesState = sequencesState[await activityInstance.GetActivityInstanceId()];
+        var definition = await workflowInstance.GetWorkflowDefinition();
 
         var trueTarget = activitySequencesState
             .FirstOrDefault(x => x.Result);
 
         if (trueTarget is not null)
-            return [trueTarget.ConditionalSequence.Target];
+        {
+            var flow = definition.SequenceFlows
+                .FirstOrDefault(sf => sf.SequenceFlowId == trueTarget.ConditionalSequenceFlowId)
+                ?? throw new InvalidOperationException(
+                    $"Sequence flow '{trueTarget.ConditionalSequenceFlowId}' not found in workflow definition");
+            return [flow.Target];
+        }
 
-        var definition = await workflowInstance.GetWorkflowDefinition();
         var defaultFlow = definition.SequenceFlows
             .OfType<DefaultSequenceFlow>()
             .FirstOrDefault(sf => sf.Source.ActivityId == ActivityId);

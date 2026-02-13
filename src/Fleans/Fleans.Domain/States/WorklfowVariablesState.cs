@@ -16,9 +16,10 @@ public class WorklfowVariablesState
     {
         Variables = Combine(Variables, variables) ;
     }
-    internal void CloneFrom(WorklfowVariablesState source)
+    internal void CloneWithNewIdFrom(WorklfowVariablesState source)
     {
         Merge(source.Variables);
+        Id = Guid.NewGuid();
     }
 
     static ExpandoObject Combine(dynamic item1, dynamic item2)
