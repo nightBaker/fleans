@@ -1,5 +1,3 @@
-using Fleans.Domain.Activities;
-using Fleans.Domain.Sequences;
 using Fleans.Domain.States;
 using System.Dynamic;
 
@@ -53,7 +51,7 @@ namespace Fleans.Domain.Tests
             state.Start();
 
             // Assert
-            Assert.IsTrue(state.IsStarted());
+            Assert.IsTrue(state.IsStarted);
         }
 
         [TestMethod]
@@ -80,7 +78,7 @@ namespace Fleans.Domain.Tests
             state.Complete();
 
             // Assert
-            Assert.IsTrue(state.IsCompleted());
+            Assert.IsTrue(state.IsCompleted);
         }
 
         [TestMethod]
@@ -210,16 +208,10 @@ namespace Fleans.Domain.Tests
         {
             // Arrange
             var state = new WorkflowInstanceState();
-            var source = new TaskActivity("task1");
-            var target = new TaskActivity("task2");
             var activityInstanceId = Guid.NewGuid();
-            var sequences = new[]
-            {
-                new ConditionalSequenceFlow("seq1", source, target, "x > 0")
-            };
 
             // Act
-            state.AddConditionSequenceStates(activityInstanceId, sequences);
+            state.AddConditionSequenceStates(activityInstanceId, new[] { "seq1" });
 
             // Assert
             var conditionStates = state.GetConditionSequenceStates();
@@ -232,14 +224,8 @@ namespace Fleans.Domain.Tests
         {
             // Arrange
             var state = new WorkflowInstanceState();
-            var source = new TaskActivity("task1");
-            var target = new TaskActivity("task2");
             var activityInstanceId = Guid.NewGuid();
-            var sequences = new[]
-            {
-                new ConditionalSequenceFlow("seq1", source, target, "x > 0")
-            };
-            state.AddConditionSequenceStates(activityInstanceId, sequences);
+            state.AddConditionSequenceStates(activityInstanceId, new[] { "seq1" });
 
             // Act
             state.SetConditionSequenceResult(activityInstanceId, "seq1", true);
@@ -254,17 +240,11 @@ namespace Fleans.Domain.Tests
         {
             // Arrange
             var state = new WorkflowInstanceState();
-            var source = new TaskActivity("task1");
-            var target = new TaskActivity("task2");
             var activityInstanceId = Guid.NewGuid();
-            var sequences = new[]
-            {
-                new ConditionalSequenceFlow("seq1", source, target, "x > 0")
-            };
-            state.AddConditionSequenceStates(activityInstanceId, sequences);
+            state.AddConditionSequenceStates(activityInstanceId, new[] { "seq1" });
 
             // Act & Assert
-            Assert.ThrowsExactly<NullReferenceException>(() =>
+            Assert.ThrowsExactly<InvalidOperationException>(() =>
             {
                 state.SetConditionSequenceResult(activityInstanceId, "non-existent", true);
             });

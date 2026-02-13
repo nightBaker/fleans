@@ -1,5 +1,4 @@
 
-using Fleans.Domain.Activities;
 using Fleans.Domain.Events;
 using Fleans.Domain.States;
 using Microsoft.Extensions.Logging;
@@ -49,7 +48,7 @@ namespace Fleans.Domain
 
         public ValueTask<Guid> GetActivityInstanceId() => ValueTask.FromResult(this.GetPrimaryKey());
 
-        public ValueTask<Activity> GetCurrentActivity() => ValueTask.FromResult(State.CurrentActivity!);
+        public ValueTask<string> GetActivityId() => ValueTask.FromResult(State.ActivityId!);
 
         public ValueTask<ActivityErrorState?> GetErrorState() => ValueTask.FromResult(State.ErrorState);
 
@@ -75,9 +74,9 @@ namespace Fleans.Domain
             await _state.WriteStateAsync();
         }
 
-        public async ValueTask SetActivity(Activity nextActivity)
+        public async ValueTask SetActivity(string activityId, string activityType)
         {
-            State.SetActivity(nextActivity);
+            State.SetActivity(activityId, activityType);
             await _state.WriteStateAsync();
         }
 

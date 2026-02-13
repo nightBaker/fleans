@@ -1,4 +1,3 @@
-using Fleans.Domain.Activities;
 using Fleans.Domain.Events;
 using Orleans.Concurrency;
 
@@ -10,7 +9,7 @@ namespace Fleans.Domain
         ValueTask<Guid> GetActivityInstanceId();
 
         [ReadOnly]
-        ValueTask<Activity> GetCurrentActivity();
+        ValueTask<string> GetActivityId();
 
         [ReadOnly]
         ValueTask<ActivityErrorState?> GetErrorState();
@@ -39,7 +38,7 @@ namespace Fleans.Domain
         ValueTask Complete();
         ValueTask Fail(Exception exception);
         ValueTask Execute();
-        ValueTask SetActivity(Activity nextActivity);
+        ValueTask SetActivity(string activityId, string activityType);
         ValueTask SetVariablesId(Guid guid);
         Task PublishEvent(IDomainEvent domainEvent);
     }

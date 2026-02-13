@@ -16,11 +16,12 @@ namespace Fleans.Domain
         string? ProcessDefinitionId { get; }
         List<Activity> Activities { get; }
         List<SequenceFlow> SequenceFlows { get; }
+        Activity GetActivity(string activityId);
     }
    
     public interface ICondition
     {
-        bool Evaluate(WorklfowVariablesState worklfowVariablesState);
+        bool Evaluate(WorkflowVariablesState worklfowVariablesState);
     }
 
     [GenerateSerializer]
@@ -37,5 +38,8 @@ namespace Fleans.Domain
 
         [Id(3)]
         public string? ProcessDefinitionId { get; init; }
+
+        public Activity GetActivity(string activityId)
+            => Activities.First(a => a.ActivityId == activityId);
     }
 }
