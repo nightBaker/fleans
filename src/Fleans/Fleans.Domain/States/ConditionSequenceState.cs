@@ -1,20 +1,18 @@
-﻿using Fleans.Domain.Sequences;
-
 namespace Fleans.Domain.States;
 
 [GenerateSerializer]
 public class ConditionSequenceState
 {
-    public ConditionSequenceState(ConditionalSequenceFlow conditionalSequence)
+    public ConditionSequenceState(string conditionalSequenceFlowId)
     {
-        ConditionalSequence = conditionalSequence;
+        ConditionalSequenceFlowId = conditionalSequenceFlowId;
     }
 
     [Id(0)]
     public Guid ConditionSequenceStateId { get; } = Guid.NewGuid();
 
     [Id(1)]
-    public ConditionalSequenceFlow ConditionalSequence { get; set; }
+    public string ConditionalSequenceFlowId { get; private set; }
 
     [Id(2)]
     public bool Result { get; private set; }

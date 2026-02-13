@@ -61,7 +61,7 @@ public class WorkflowInstanceState
         var newVariableStateId = Guid.NewGuid();
 
         var clonedState = new WorklfowVariablesState();
-        clonedState.CloneFrom(_variableStates[variableStateId]);
+        clonedState.CloneFromWithId(newVariableStateId, _variableStates[variableStateId]);
 
         _variableStates.Add(newVariableStateId, clonedState);
         return newVariableStateId;
@@ -69,7 +69,7 @@ public class WorkflowInstanceState
 
     public void AddConditionSequenceStates(Guid activityInstanceId, ConditionalSequenceFlow[] sequences)
     {
-        var sequenceStates = sequences.Select(sequence => new ConditionSequenceState(sequence)).ToArray();
+        var sequenceStates = sequences.Select(sequence => new ConditionSequenceState(sequence.SequenceFlowId)).ToArray();
         _conditionSequenceStates.Add(activityInstanceId, sequenceStates);
     }
 
@@ -97,7 +97,7 @@ public class WorkflowInstanceState
     {
         var sequences = _conditionSequenceStates[activityInstanceId];
 
-        var sequence = sequences.FirstOrDefault(s => s.ConditionalSequence.SequenceFlowId == sequenceId);
+        var sequence = sequences.FirstOrDefault(s => s.ConditionalSequenceFlowId == sequenceId);
 
         if (sequence != null)
         {

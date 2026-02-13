@@ -266,12 +266,20 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         }).ToList();
 
         var conditionSequences = State.GetConditionSequenceStates()
-            .SelectMany(kvp => kvp.Value.Select(cs => new ConditionSequenceSnapshot(
-                cs.ConditionalSequence.SequenceFlowId,
-                cs.ConditionalSequence.Condition,
-                cs.ConditionalSequence.Source.ActivityId,
-                cs.ConditionalSequence.Target.ActivityId,
-                cs.Result)))
+            .SelectMany(kvp => kvp.Value.Select(cs =>
+            {
+                var flow = WorkflowDefinition.SequenceFlows
+                    .OfType<ConditionalSequenceFlow>()
+                    .FirstOrDefault(sf => sf.SequenceFlowId == cs.ConditionalSequenceFlowId)
+                    ?? throw new InvalidOperationException(
+                        $"Conditional sequence flow '{cs.ConditionalSequenceFlowId}' not found in workflow definition");
+                return new ConditionSequenceSnapshot(
+                    cs.ConditionalSequenceFlowId,
+                    flow.Condition,
+                    flow.Source.ActivityId,
+                    flow.Target.ActivityId,
+                    cs.Result);
+            }))
             .ToList();
 
         return new InstanceStateSnapshot(
