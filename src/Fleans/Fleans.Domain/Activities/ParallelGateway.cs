@@ -60,7 +60,7 @@ public record ParallelGateway : Gateway
         {
             foreach (var completedActivity in completedActivities)
             {
-                if (await completedActivity.GetCurrentActivity() == incomingFlow.Source)
+                if (await completedActivity.GetActivityId() == incomingFlow.Source.ActivityId)
                 {
                     if(! await completedActivity.IsCompleted())
                     {
@@ -71,7 +71,7 @@ public record ParallelGateway : Gateway
 
             foreach (var activeActivity in activeActivities)
             {
-                if (await activeActivity.GetCurrentActivity() == incomingFlow.Source)
+                if (await activeActivity.GetActivityId() == incomingFlow.Source.ActivityId)
                 {
                     any = true;
                 }

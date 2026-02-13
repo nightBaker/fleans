@@ -330,7 +330,7 @@ namespace Fleans.Domain.Tests
             // Arrange
             var before = DateTimeOffset.UtcNow;
             var activity = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
-            await activity.SetActivity(new TaskActivity("task"));
+            await activity.SetActivity("task", "TaskActivity");
             var after = DateTimeOffset.UtcNow;
 
             // Act
@@ -347,7 +347,7 @@ namespace Fleans.Domain.Tests
         {
             // Arrange
             var activity = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
-            await activity.SetActivity(new TaskActivity("task"));
+            await activity.SetActivity("task", "TaskActivity");
 
             // Act
             var executionStartedAt = await activity.GetExecutionStartedAt();
@@ -404,7 +404,7 @@ namespace Fleans.Domain.Tests
         {
             // Arrange
             var activity = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
-            await activity.SetActivity(new TaskActivity("task"));
+            await activity.SetActivity("task", "TaskActivity");
 
             // Act
             var completedAt = await activity.GetCompletedAt();

@@ -1,5 +1,4 @@
 using Fleans.Domain.Activities;
-using Fleans.Domain.Sequences;
 using Fleans.Domain.States;
 using Orleans;
 using Orleans.Concurrency;
@@ -41,6 +40,6 @@ public interface IWorkflowInstance : IGrainWithGuidKey
     ValueTask<IReadOnlyList<IActivityInstance>> GetCompletedActivities();
     [ReadOnly]
     ValueTask<IReadOnlyDictionary<Guid, ConditionSequenceState[]>> GetConditionSequenceStates();
-    ValueTask AddConditionSequenceStates(Guid activityInstanceId, ConditionalSequenceFlow[] sequences);
+    ValueTask AddConditionSequenceStates(Guid activityInstanceId, string[] sequenceFlowIds);
     ValueTask SetConditionSequenceResult(Guid activityInstanceId, string sequenceId, bool result);
 }

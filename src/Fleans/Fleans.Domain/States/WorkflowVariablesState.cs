@@ -3,7 +3,7 @@
 namespace Fleans.Domain.States;
 
 [GenerateSerializer]
-public class WorklfowVariablesState
+public class WorkflowVariablesState
 {
     [Id(0)]
     public Guid Id { get; private set; }
@@ -16,7 +16,7 @@ public class WorklfowVariablesState
     {
         Variables = Combine(Variables, variables) ;
     }
-    internal void CloneWithNewIdFrom(WorklfowVariablesState source)
+    internal void CloneWithNewIdFrom(WorkflowVariablesState source)
     {
         Merge(source.Variables);
         Id = Guid.NewGuid();

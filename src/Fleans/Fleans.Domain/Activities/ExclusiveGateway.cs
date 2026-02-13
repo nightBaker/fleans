@@ -28,13 +28,14 @@ public record ExclusiveGateway : ConditionalGateway
 
     private static async Task<IEnumerable<ConditionalSequenceFlow>> AddConditionalSequencesToWorkflowInstance(IWorkflowInstance workflowInstance, IActivityInstance activityInstance)
     {
-        var currentActivity = await activityInstance.GetCurrentActivity();
+        var activityId = await activityInstance.GetActivityId();
 
         var sequences = (await workflowInstance.GetWorkflowDefinition()).SequenceFlows.OfType<ConditionalSequenceFlow>()
-                                .Where(sf => sf.Source.ActivityId == currentActivity.ActivityId)
+                                .Where(sf => sf.Source.ActivityId == activityId)
                                 .ToArray();
 
-        await workflowInstance.AddConditionSequenceStates(await activityInstance.GetActivityInstanceId(), sequences);
+        var sequenceFlowIds = sequences.Select(s => s.SequenceFlowId).ToArray();
+        await workflowInstance.AddConditionSequenceStates(await activityInstance.GetActivityInstanceId(), sequenceFlowIds);
         return sequences;
     }
 
