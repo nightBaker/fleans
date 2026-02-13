@@ -6,37 +6,31 @@ namespace Fleans.Domain.States;
 public class ActivityInstanceState
 {
     [Id(0)]
-    public string? ActivityId { get; private set; }
+    public string? ActivityId { get; internal set; }
 
     [Id(1)]
-    public string? ActivityType { get; private set; }
+    public string? ActivityType { get; internal set; }
 
     [Id(2)]
-    public bool IsExecuting { get; private set; }
+    public bool IsExecuting { get; internal set; }
 
     [Id(3)]
-    public bool IsCompleted { get; private set; }
+    public bool IsCompleted { get; internal set; }
 
     [Id(4)]
-    public Guid VariablesId { get; private set; }
+    public Guid VariablesId { get; internal set; }
 
     [Id(5)]
-    public ActivityErrorState? ErrorState { get; private set; }
+    public ActivityErrorState? ErrorState { get; internal set; }
 
     [Id(6)]
-    public DateTimeOffset? CreatedAt { get; private set; }
+    public DateTimeOffset? CreatedAt { get; internal set; }
 
     [Id(7)]
-    public DateTimeOffset? ExecutionStartedAt { get; private set; }
+    public DateTimeOffset? ExecutionStartedAt { get; internal set; }
 
     [Id(8)]
-    public DateTimeOffset? CompletedAt { get; private set; }
-
-    [Id(9)]
-    public Guid Id { get; internal set; }
-
-    [Id(10)]
-    public string? ETag { get; internal set; }
+    public DateTimeOffset? CompletedAt { get; internal set; }
 
     public void Complete()
     {
