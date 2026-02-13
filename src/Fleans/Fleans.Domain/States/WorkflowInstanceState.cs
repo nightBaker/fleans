@@ -1,4 +1,3 @@
-using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
 using System.Dynamic;
 
@@ -8,13 +7,14 @@ namespace Fleans.Domain.States;
 // Fields must become public properties for Orleans serialization.
 public class WorkflowInstanceState
 {
-    private readonly List<IActivityInstance> _activeActivities = new();
-    private readonly List<IActivityInstance> _completedActivities = new();
+    private readonly List<ActivityInstanceEntry> _activeActivities = new();
+    private readonly List<ActivityInstanceEntry> _completedActivities = new();
     private readonly Dictionary<Guid, WorklfowVariablesState> _variableStates = new();
     private readonly Dictionary<Guid, ConditionSequenceState[]> _conditionSequenceStates = new();
     private bool _isStarted;
     private bool _isCompleted;
 
+    public Guid InstanceId { get; internal set; }
     public DateTimeOffset? CreatedAt { get; internal set; }
     public DateTimeOffset? ExecutionStartedAt { get; internal set; }
     public DateTimeOffset? CompletedAt { get; internal set; }
@@ -22,7 +22,7 @@ public class WorkflowInstanceState
     public bool IsStarted() => _isStarted;
     public bool IsCompleted() => _isCompleted;
 
-    public IReadOnlyList<IActivityInstance> GetCompletedActivities()
+    public IReadOnlyList<ActivityInstanceEntry> GetCompletedActivities()
         => _completedActivities;
 
     public IReadOnlyDictionary<Guid, WorklfowVariablesState> GetVariableStates()
@@ -31,13 +31,13 @@ public class WorkflowInstanceState
     public IReadOnlyDictionary<Guid, ConditionSequenceState[]> GetConditionSequenceStates()
         => _conditionSequenceStates;
 
-    public IReadOnlyList<IActivityInstance> GetActiveActivities()
+    public IReadOnlyList<ActivityInstanceEntry> GetActiveActivities()
         => _activeActivities;
 
-    public void StartWith(IActivityInstance activityInstance, Guid variablesId)
+    public void StartWith(ActivityInstanceEntry entry, Guid variablesId)
     {
         _variableStates.Add(variablesId, new WorklfowVariablesState());
-        _activeActivities.Add(activityInstance);
+        _activeActivities.Add(entry);
     }
 
     public void Start()
@@ -73,57 +73,24 @@ public class WorkflowInstanceState
         _conditionSequenceStates.Add(activityInstanceId, sequenceStates);
     }
 
-    public void RemoveActiveActivities(List<IActivityInstance> removeInstances)
+    public void RemoveActiveActivities(List<ActivityInstanceEntry> removeEntries)
     {
-        _activeActivities.RemoveAll(removeInstances.Contains);
+        _activeActivities.RemoveAll(removeEntries.Contains);
     }
 
-    public void AddActiveActivities(IEnumerable<IActivityInstance> activities)
+    public void AddActiveActivities(IEnumerable<ActivityInstanceEntry> entries)
     {
-        _activeActivities.AddRange(activities);
+        _activeActivities.AddRange(entries);
     }
 
-    public void AddCompletedActivities(IEnumerable<IActivityInstance> activities)
+    public void AddCompletedActivities(IEnumerable<ActivityInstanceEntry> entries)
     {
-        _completedActivities.AddRange(activities);
+        _completedActivities.AddRange(entries);
     }
 
-    public async Task<IActivityInstance?> GetFirstActive(string activityId)
+    public ActivityInstanceEntry? GetFirstActive(string activityId)
     {
-        foreach (var activeActivity in _activeActivities)
-        {
-            var currentActivity = await activeActivity.GetCurrentActivity();
-            if (currentActivity.ActivityId == activityId)
-            {
-                return activeActivity;
-            }
-        }
-
-        return null;
-    }
-
-    public async Task<bool> AnyNotExecuting()
-    {
-        foreach(var activity in _activeActivities)
-        {
-            if (!await activity.IsExecuting())
-                return true;
-        }
-
-        return false;
-    }
-
-    public async Task<IActivityInstance[]> GetNotExecutingNotCompletedActivities()
-    {
-        var result = new List<IActivityInstance>();
-
-        foreach(var activity in _activeActivities)
-        {
-            if (!await activity.IsExecuting() && !await activity.IsCompleted())
-                result.Add(activity);
-        }
-
-        return result.ToArray();
+        return _activeActivities.FirstOrDefault(a => a.ActivityId == activityId);
     }
 
     public void SetConditionSequenceResult(Guid activityInstanceId, string sequenceId, bool result)
@@ -145,40 +112,5 @@ public class WorkflowInstanceState
     public void MergeState(Guid variablesId, ExpandoObject variables)
     {
         _variableStates[variablesId].Merge(variables);
-    }
-
-    public async Task<InstanceStateSnapshot> GetStateSnapshot()
-    {
-        var activeTasks = _activeActivities.Select(a => a.GetSnapshot().AsTask());
-        var completedTasks = _completedActivities.Select(a => a.GetSnapshot().AsTask());
-        var allTasks = activeTasks.Concat(completedTasks).ToList();
-        var allSnapshots = await Task.WhenAll(allTasks);
-
-        var activeSnapshots = allSnapshots.Take(_activeActivities.Count).ToList();
-        var completedSnapshots = allSnapshots.Skip(_activeActivities.Count).ToList();
-
-        var activeIds = activeSnapshots.Select(s => s.ActivityId).ToList();
-        var completedIds = completedSnapshots.Select(s => s.ActivityId).ToList();
-
-        var variableStates = _variableStates.Select(kvp =>
-        {
-            var dict = ((IDictionary<string, object>)kvp.Value.Variables)
-                .ToDictionary(e => e.Key, e => e.Value?.ToString() ?? "");
-            return new VariableStateSnapshot(kvp.Key, dict);
-        }).ToList();
-
-        var conditionSequences = _conditionSequenceStates
-            .SelectMany(kvp => kvp.Value.Select(cs => new ConditionSequenceSnapshot(
-                cs.ConditionalSequence.SequenceFlowId,
-                cs.ConditionalSequence.Condition,
-                cs.ConditionalSequence.Source.ActivityId,
-                cs.ConditionalSequence.Target.ActivityId,
-                cs.Result)))
-            .ToList();
-
-        return new InstanceStateSnapshot(
-            activeIds, completedIds, _isStarted, _isCompleted,
-            activeSnapshots, completedSnapshots,
-            variableStates, conditionSequences);
     }
 }

@@ -1,8 +1,6 @@
 using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
 using Fleans.Domain.States;
-using Orleans.Serialization;
-using Orleans.TestingHost;
 using System.Dynamic;
 
 namespace Fleans.Domain.Tests
@@ -10,59 +8,39 @@ namespace Fleans.Domain.Tests
     [TestClass]
     public class WorkflowInstanceStateTests
     {
-        private TestCluster _cluster = null!;
-
-        [TestInitialize]
-        public void Setup()
-        {
-            _cluster = CreateCluster();
-        }
-
-        [TestCleanup]
-        public void Cleanup()
-        {
-            _cluster?.StopAllSilos();
-        }
-
         [TestMethod]
-        public async Task StartWith_ShouldAddStartActivity_ToActiveActivities()
+        public void StartWith_ShouldAddEntry_ToActiveActivities()
         {
             // Arrange
             var state = new WorkflowInstanceState();
-            var startActivity = new StartEvent("start");
             var variablesId = Guid.NewGuid();
-            var activityInstance = _cluster.GrainFactory.GetGrain<IActivityInstance>(variablesId);
-            await activityInstance.SetActivity(startActivity);
-            await activityInstance.SetVariablesId(variablesId);
+            var entry = new ActivityInstanceEntry(variablesId, "start");
 
             // Act
-            state.StartWith(activityInstance, variablesId);
+            state.StartWith(entry, variablesId);
 
             // Assert
             var activeActivities = state.GetActiveActivities();
             Assert.HasCount(1, activeActivities);
-
-            var activity = await activeActivities[0].GetCurrentActivity();
-            Assert.AreEqual("start", activity.ActivityId);
+            Assert.AreEqual("start", activeActivities[0].ActivityId);
+            Assert.AreEqual(variablesId, activeActivities[0].ActivityInstanceId);
         }
 
         [TestMethod]
-        public async Task StartWith_ShouldCreateInitialVariableState()
+        public void StartWith_ShouldCreateInitialVariableState()
         {
             // Arrange
             var state = new WorkflowInstanceState();
-            var startActivity = new StartEvent("start");
             var variablesId = Guid.NewGuid();
-            var activityInstance = _cluster.GrainFactory.GetGrain<IActivityInstance>(variablesId);
-            await activityInstance.SetActivity(startActivity);
-            await activityInstance.SetVariablesId(variablesId);
+            var entry = new ActivityInstanceEntry(variablesId, "start");
 
             // Act
-            state.StartWith(activityInstance, variablesId);
+            state.StartWith(entry, variablesId);
 
             // Assert
             var variableStates = state.GetVariableStates();
             Assert.HasCount(1, variableStates);
+            Assert.IsTrue(variableStates.ContainsKey(variablesId));
         }
 
         [TestMethod]
@@ -93,16 +71,10 @@ namespace Fleans.Domain.Tests
         }
 
         [TestMethod]
-        public async Task Complete_ShouldMarkWorkflowAsCompleted()
+        public void Complete_ShouldMarkWorkflowAsCompleted()
         {
             // Arrange
             var state = new WorkflowInstanceState();
-            var startActivity = new StartEvent("start");
-            var variablesId = Guid.NewGuid();
-            var activityInstance = _cluster.GrainFactory.GetGrain<IActivityInstance>(variablesId);
-            await activityInstance.SetActivity(startActivity);
-            await activityInstance.SetVariablesId(variablesId);
-            state.StartWith(activityInstance, variablesId);
 
             // Act
             state.Complete();
@@ -112,301 +84,190 @@ namespace Fleans.Domain.Tests
         }
 
         [TestMethod]
-        public async Task AddActiveActivities_ShouldAddActivities_ToActiveList()
+        public void AddActiveActivities_ShouldAddEntries_ToActiveList()
         {
             // Arrange
             var state = new WorkflowInstanceState();
-            var activity1 = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
-            var activity2 = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
-            await activity1.SetActivity(new TaskActivity("task1"));
-            await activity2.SetActivity(new TaskActivity("task2"));
+            var entry1 = new ActivityInstanceEntry(Guid.NewGuid(), "task1");
+            var entry2 = new ActivityInstanceEntry(Guid.NewGuid(), "task2");
 
             // Act
-            state.AddActiveActivities(new[] { activity1, activity2 });
+            state.AddActiveActivities(new[] { entry1, entry2 });
 
             // Assert
             var activeActivities = state.GetActiveActivities();
             Assert.HasCount(2, activeActivities);
+            Assert.AreEqual("task1", activeActivities[0].ActivityId);
+            Assert.AreEqual("task2", activeActivities[1].ActivityId);
         }
 
         [TestMethod]
-        public async Task RemoveActiveActivities_ShouldRemoveActivities_FromActiveList()
+        public void RemoveActiveActivities_ShouldRemoveEntries_FromActiveList()
         {
             // Arrange
             var state = new WorkflowInstanceState();
-            var activity1 = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
-            var activity2 = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
-            await activity1.SetActivity(new TaskActivity("task1"));
-            await activity2.SetActivity(new TaskActivity("task2"));
-
-            state.AddActiveActivities(new[] { activity1, activity2 });
+            var entry1 = new ActivityInstanceEntry(Guid.NewGuid(), "task1");
+            var entry2 = new ActivityInstanceEntry(Guid.NewGuid(), "task2");
+            state.AddActiveActivities(new[] { entry1, entry2 });
 
             // Act
-            state.RemoveActiveActivities(new List<IActivityInstance> { activity1 });
+            state.RemoveActiveActivities(new List<ActivityInstanceEntry> { entry1 });
 
             // Assert
             var activeActivities = state.GetActiveActivities();
             Assert.HasCount(1, activeActivities);
-            Assert.AreEqual(activity2, activeActivities[0]);
+            Assert.AreEqual(entry2, activeActivities[0]);
         }
 
         [TestMethod]
-        public async Task AddCompletedActivities_ShouldAddActivities_ToCompletedList()
+        public void AddCompletedActivities_ShouldAddEntries_ToCompletedList()
         {
             // Arrange
             var state = new WorkflowInstanceState();
-            var activity = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
-            await activity.SetActivity(new TaskActivity("task"));
-            await activity.Complete();
+            var entry = new ActivityInstanceEntry(Guid.NewGuid(), "task");
 
             // Act
-            state.AddCompletedActivities(new[] { activity });
+            state.AddCompletedActivities(new[] { entry });
 
             // Assert
             var completedActivities = state.GetCompletedActivities();
             Assert.HasCount(1, completedActivities);
+            Assert.AreEqual("task", completedActivities[0].ActivityId);
         }
 
         [TestMethod]
-        public async Task GetFirstActive_ShouldReturnActivity_WhenFound()
+        public void GetFirstActive_ShouldReturnEntry_WhenFound()
         {
             // Arrange
             var state = new WorkflowInstanceState();
-            var activity = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
-            await activity.SetActivity(new TaskActivity("task1"));
-            state.AddActiveActivities(new[] { activity });
+            var entry = new ActivityInstanceEntry(Guid.NewGuid(), "task1");
+            state.AddActiveActivities(new[] { entry });
 
             // Act
-            var result = await state.GetFirstActive("task1");
+            var result = state.GetFirstActive("task1");
 
             // Assert
             Assert.IsNotNull(result);
-            var foundActivity = await result.GetCurrentActivity();
-            Assert.AreEqual("task1", foundActivity.ActivityId);
+            Assert.AreEqual("task1", result.ActivityId);
+            Assert.AreEqual(entry.ActivityInstanceId, result.ActivityInstanceId);
         }
 
         [TestMethod]
-        public async Task GetFirstActive_ShouldReturnNull_WhenNotFound()
+        public void GetFirstActive_ShouldReturnNull_WhenNotFound()
         {
             // Arrange
             var state = new WorkflowInstanceState();
 
             // Act
-            var result = await state.GetFirstActive("non-existent");
+            var result = state.GetFirstActive("non-existent");
 
             // Assert
             Assert.IsNull(result);
         }
 
         [TestMethod]
-        public async Task AddCloneOfVariableState_ShouldCreateNewVariableState_WithClonedData()
+        public void AddCloneOfVariableState_ShouldCreateNewVariableState_WithClonedData()
         {
             // Arrange
             var state = new WorkflowInstanceState();
-            var startActivity = new StartEvent("start");
             var variablesId = Guid.NewGuid();
-            var activityInstance = _cluster.GrainFactory.GetGrain<IActivityInstance>(variablesId);
-            await activityInstance.SetActivity(startActivity);
-            await activityInstance.SetVariablesId(variablesId);
-            state.StartWith(activityInstance, variablesId);
-
-            var variableStates = state.GetVariableStates();
-            var originalId = variableStates.Keys.First();
+            var entry = new ActivityInstanceEntry(variablesId, "start");
+            state.StartWith(entry, variablesId);
 
             // Act
-            var clonedId = state.AddCloneOfVariableState(originalId);
+            var clonedId = state.AddCloneOfVariableState(variablesId);
 
             // Assert
-            Assert.AreNotEqual(originalId, clonedId);
+            Assert.AreNotEqual(variablesId, clonedId);
             var newVariableStates = state.GetVariableStates();
             Assert.IsTrue(newVariableStates.ContainsKey(clonedId));
         }
 
         [TestMethod]
-        public async Task MergeState_ShouldMergeVariables_IntoExistingState()
+        public void MergeState_ShouldMergeVariables_IntoExistingState()
         {
             // Arrange
             var state = new WorkflowInstanceState();
-            var startActivity = new StartEvent("start");
             var variablesId = Guid.NewGuid();
-            var activityInstance = _cluster.GrainFactory.GetGrain<IActivityInstance>(variablesId);
-            await activityInstance.SetActivity(startActivity);
-            await activityInstance.SetVariablesId(variablesId);
-            state.StartWith(activityInstance, variablesId);
-
-            var variableStates = state.GetVariableStates();
-            var existingVariablesId = variableStates.Keys.First();
+            var entry = new ActivityInstanceEntry(variablesId, "start");
+            state.StartWith(entry, variablesId);
 
             dynamic newVariables = new ExpandoObject();
             ((IDictionary<string, object>)newVariables)["key1"] = "value1";
             ((IDictionary<string, object>)newVariables)["key2"] = 42;
 
             // Act
-            state.MergeState(existingVariablesId, newVariables);
+            state.MergeState(variablesId, newVariables);
 
             // Assert
             var updatedStates = state.GetVariableStates();
-            var mergedState = updatedStates[existingVariablesId];
+            var mergedState = updatedStates[variablesId];
             Assert.IsNotNull(mergedState);
         }
 
         [TestMethod]
-        public async Task GetStateSnapshot_ShouldReturnActiveAndCompletedActivitySnapshots()
-        {
-            // Arrange
-            var state = new WorkflowInstanceState();
-
-            var activeActivity = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
-            await activeActivity.SetActivity(new TaskActivity("task1"));
-            await activeActivity.SetVariablesId(Guid.NewGuid());
-
-            var completedActivity = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
-            await completedActivity.SetActivity(new TaskActivity("task2"));
-            await completedActivity.SetVariablesId(Guid.NewGuid());
-            await completedActivity.Complete();
-
-            state.AddActiveActivities(new[] { activeActivity });
-            state.AddCompletedActivities(new[] { completedActivity });
-            state.Start();
-
-            // Act
-            var snapshot = await state.GetStateSnapshot();
-
-            // Assert
-            Assert.HasCount(1, snapshot.ActiveActivities);
-            Assert.HasCount(1, snapshot.CompletedActivities);
-            Assert.HasCount(1, snapshot.ActiveActivityIds);
-            Assert.HasCount(1, snapshot.CompletedActivityIds);
-
-            Assert.AreEqual("task1", snapshot.ActiveActivities[0].ActivityId);
-            Assert.AreEqual("TaskActivity", snapshot.ActiveActivities[0].ActivityType);
-            Assert.IsFalse(snapshot.ActiveActivities[0].IsCompleted);
-
-            Assert.AreEqual("task2", snapshot.CompletedActivities[0].ActivityId);
-            Assert.IsTrue(snapshot.CompletedActivities[0].IsCompleted);
-            Assert.IsNotNull(snapshot.CompletedActivities[0].CompletedAt);
-
-            Assert.AreEqual("task1", snapshot.ActiveActivityIds[0]);
-            Assert.AreEqual("task2", snapshot.CompletedActivityIds[0]);
-
-            Assert.IsTrue(snapshot.IsStarted);
-            Assert.IsFalse(snapshot.IsCompleted);
-        }
-
-        [TestMethod]
-        public async Task GetStateSnapshot_ShouldSerializeVariablesToStringDictionary()
-        {
-            // Arrange
-            var state = new WorkflowInstanceState();
-            var variablesId = Guid.NewGuid();
-            var activityInstance = _cluster.GrainFactory.GetGrain<IActivityInstance>(variablesId);
-            await activityInstance.SetActivity(new StartEvent("start"));
-            await activityInstance.SetVariablesId(variablesId);
-            state.StartWith(activityInstance, variablesId);
-
-            var variableStates = state.GetVariableStates();
-            var existingVariablesId = variableStates.Keys.First();
-
-            dynamic vars = new ExpandoObject();
-            ((IDictionary<string, object>)vars)["name"] = "test";
-            ((IDictionary<string, object>)vars)["count"] = 42;
-            state.MergeState(existingVariablesId, vars);
-
-            // Act
-            var snapshot = await state.GetStateSnapshot();
-
-            // Assert
-            Assert.HasCount(1, snapshot.VariableStates);
-            var vsSnapshot = snapshot.VariableStates[0];
-            Assert.AreEqual(existingVariablesId, vsSnapshot.VariablesId);
-            Assert.AreEqual(2, vsSnapshot.Variables.Count);
-            Assert.AreEqual("test", vsSnapshot.Variables["name"]);
-            Assert.AreEqual("42", vsSnapshot.Variables["count"]);
-        }
-
-        [TestMethod]
-        public async Task GetStateSnapshot_ShouldReturnConditionSequences()
+        public void AddConditionSequenceStates_ShouldStoreSequences()
         {
             // Arrange
             var state = new WorkflowInstanceState();
             var source = new TaskActivity("task1");
-            var targetTrue = new TaskActivity("task2");
-            var targetFalse = new TaskActivity("task3");
-
+            var target = new TaskActivity("task2");
             var activityInstanceId = Guid.NewGuid();
             var sequences = new[]
             {
-                new ConditionalSequenceFlow("seq1", source, targetTrue, "x > 0"),
-                new ConditionalSequenceFlow("seq2", source, targetFalse, "x <= 0")
+                new ConditionalSequenceFlow("seq1", source, target, "x > 0")
             };
 
-            state.AddConditionSequenceStates(activityInstanceId, sequences);
-            state.SetConditionSequenceResult(activityInstanceId, "seq1", true);
-            state.SetConditionSequenceResult(activityInstanceId, "seq2", false);
-
             // Act
-            var snapshot = await state.GetStateSnapshot();
+            state.AddConditionSequenceStates(activityInstanceId, sequences);
 
             // Assert
-            Assert.HasCount(2, snapshot.ConditionSequences);
-
-            var seq1 = snapshot.ConditionSequences.First(c => c.SequenceFlowId == "seq1");
-            Assert.AreEqual("x > 0", seq1.Condition);
-            Assert.AreEqual("task1", seq1.SourceActivityId);
-            Assert.AreEqual("task2", seq1.TargetActivityId);
-            Assert.IsTrue(seq1.Result);
-
-            var seq2 = snapshot.ConditionSequences.First(c => c.SequenceFlowId == "seq2");
-            Assert.AreEqual("x <= 0", seq2.Condition);
-            Assert.AreEqual("task1", seq2.SourceActivityId);
-            Assert.AreEqual("task3", seq2.TargetActivityId);
-            Assert.IsFalse(seq2.Result);
+            var conditionStates = state.GetConditionSequenceStates();
+            Assert.IsTrue(conditionStates.ContainsKey(activityInstanceId));
+            Assert.HasCount(1, conditionStates[activityInstanceId]);
         }
 
         [TestMethod]
-        public async Task GetStateSnapshot_WithEmptyState_ShouldReturnEmptyLists()
+        public void SetConditionSequenceResult_ShouldUpdateResult()
         {
             // Arrange
             var state = new WorkflowInstanceState();
+            var source = new TaskActivity("task1");
+            var target = new TaskActivity("task2");
+            var activityInstanceId = Guid.NewGuid();
+            var sequences = new[]
+            {
+                new ConditionalSequenceFlow("seq1", source, target, "x > 0")
+            };
+            state.AddConditionSequenceStates(activityInstanceId, sequences);
 
             // Act
-            var snapshot = await state.GetStateSnapshot();
+            state.SetConditionSequenceResult(activityInstanceId, "seq1", true);
 
             // Assert
-            Assert.HasCount(0, snapshot.ActiveActivities);
-            Assert.HasCount(0, snapshot.CompletedActivities);
-            Assert.HasCount(0, snapshot.ActiveActivityIds);
-            Assert.HasCount(0, snapshot.CompletedActivityIds);
-            Assert.HasCount(0, snapshot.VariableStates);
-            Assert.HasCount(0, snapshot.ConditionSequences);
-            Assert.IsFalse(snapshot.IsStarted);
-            Assert.IsFalse(snapshot.IsCompleted);
+            var conditionStates = state.GetConditionSequenceStates();
+            Assert.IsTrue(conditionStates[activityInstanceId][0].Result);
         }
 
-        private static TestCluster CreateCluster()
+        [TestMethod]
+        public void SetConditionSequenceResult_ShouldThrow_WhenSequenceNotFound()
         {
-            var builder = new TestClusterBuilder();
-            builder.AddSiloBuilderConfigurator<SiloConfigurator>();
-            var cluster = builder.Build();
-            cluster.Deploy();
-            return cluster;
-        }
+            // Arrange
+            var state = new WorkflowInstanceState();
+            var source = new TaskActivity("task1");
+            var target = new TaskActivity("task2");
+            var activityInstanceId = Guid.NewGuid();
+            var sequences = new[]
+            {
+                new ConditionalSequenceFlow("seq1", source, target, "x > 0")
+            };
+            state.AddConditionSequenceStates(activityInstanceId, sequences);
 
-        class SiloConfigurator : ISiloConfigurator
-        {
-            public void Configure(ISiloBuilder hostBuilder) =>
-                hostBuilder
-                    .AddMemoryGrainStorage("workflowInstances")
-                    .AddMemoryGrainStorage("activityInstances")
-                    .ConfigureServices(services => services.AddSerializer(serializerBuilder =>
-                    {
-                        serializerBuilder.AddNewtonsoftJsonSerializer(
-                            isSupported: type => type == typeof(ExpandoObject),
-                            new Newtonsoft.Json.JsonSerializerSettings
-                            {
-                                TypeNameHandling = Newtonsoft.Json.TypeNameHandling.All
-                            });
-                    }));
+            // Act & Assert
+            Assert.ThrowsExactly<NullReferenceException>(() =>
+            {
+                state.SetConditionSequenceResult(activityInstanceId, "non-existent", true);
+            });
         }
     }
 }
