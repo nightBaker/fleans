@@ -13,7 +13,5 @@ public static class InMemoryPersistenceDependencyInjection
     public static void AddInMemoryPersistence(this IServiceCollection services)
     {
         services.AddSingleton<IProcessDefinitionRepository, InMemoryProcessDefinitionRepository>();
-        services.AddKeyedSingleton<IGrainStorage>("workflowInstances",
-            (sp, _) => new InMemoryGrainStorage());
     }
 }

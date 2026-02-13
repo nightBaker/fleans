@@ -9,15 +9,12 @@ public class ConditionSequenceState
     }
 
     [Id(0)]
-    public Guid ConditionSequenceStateId { get; } = Guid.NewGuid();
-
-    [Id(1)]
     public string ConditionalSequenceFlowId { get; private set; }
 
-    [Id(2)]
+    [Id(1)]
     public bool Result { get; private set; }
 
-    [Id(3)]
+    [Id(2)]
     public bool IsEvaluated { get; private set; }
 
     internal void SetResult(bool result)

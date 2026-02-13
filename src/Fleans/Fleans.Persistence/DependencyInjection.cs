@@ -13,5 +13,9 @@ public static class EfCorePersistenceDependencyInjection
         services.AddKeyedSingleton<IGrainStorage>("activityInstances",
             (sp, _) => new EfCoreActivityInstanceGrainStorage(
                 sp.GetRequiredService<IDbContextFactory<GrainStateDbContext>>()));
+
+        services.AddKeyedSingleton<IGrainStorage>("workflowInstances",
+            (sp, _) => new EfCoreWorkflowInstanceGrainStorage(
+                sp.GetRequiredService<IDbContextFactory<GrainStateDbContext>>()));
     }
 }

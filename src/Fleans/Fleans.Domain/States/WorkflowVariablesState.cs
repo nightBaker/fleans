@@ -6,20 +6,11 @@ namespace Fleans.Domain.States;
 public class WorkflowVariablesState
 {
     [Id(0)]
-    public Guid Id { get; private set; }
-
-    [Id(1)]
     public ExpandoObject Variables { get; set; } = new();
-    
 
     internal void Merge(ExpandoObject variables)
     {
-        Variables = Combine(Variables, variables) ;
-    }
-    internal void CloneWithNewIdFrom(WorkflowVariablesState source)
-    {
-        Merge(source.Variables);
-        Id = Guid.NewGuid();
+        Variables = Combine(Variables, variables);
     }
 
     static ExpandoObject Combine(dynamic item1, dynamic item2)
