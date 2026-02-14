@@ -2,8 +2,6 @@ using Fleans.Application;
 using Fleans.Application.Logging;
 using Fleans.Infrastructure;
 using Fleans.Persistence;
-using Fleans.Persistence.InMemory;
-using Fleans.Domain;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using StackExchange.Redis;
@@ -76,7 +74,6 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure();
-builder.Services.AddInMemoryPersistence();
 
 // EF Core persistence for ActivityInstanceState + WorkflowInstanceState (SQLite in-memory for dev)
 var sqliteConnection = new SqliteConnection("DataSource=:memory:");
@@ -92,7 +89,7 @@ var app = builder.Build();
 // Ensure EF Core database is created (dev only — use migrations in production)
 using (var scope = app.Services.CreateScope())
 {
-    var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<GrainStateDbContext>>();
+    var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<FleanDbContext>>();
     using var db = dbFactory.CreateDbContext();
     db.Database.EnsureCreated();
 }

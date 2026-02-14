@@ -10,7 +10,7 @@ namespace Fleans.Persistence.Tests;
 public class EfCoreActivityInstanceGrainStorageTests
 {
     private SqliteConnection _connection = null!;
-    private IDbContextFactory<GrainStateDbContext> _dbContextFactory = null!;
+    private IDbContextFactory<FleanDbContext> _dbContextFactory = null!;
     private EfCoreActivityInstanceGrainStorage _storage = null!;
     private const string StateName = "state";
 
@@ -20,7 +20,7 @@ public class EfCoreActivityInstanceGrainStorageTests
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();
 
-        var options = new DbContextOptionsBuilder<GrainStateDbContext>()
+        var options = new DbContextOptionsBuilder<FleanDbContext>()
             .UseSqlite(_connection)
             .Options;
 
@@ -378,18 +378,18 @@ public class EfCoreActivityInstanceGrainStorageTests
         public bool RecordExists { get; set; }
     }
 
-    private class TestDbContextFactory : IDbContextFactory<GrainStateDbContext>
+    private class TestDbContextFactory : IDbContextFactory<FleanDbContext>
     {
-        private readonly DbContextOptions<GrainStateDbContext> _options;
+        private readonly DbContextOptions<FleanDbContext> _options;
 
-        public TestDbContextFactory(DbContextOptions<GrainStateDbContext> options)
+        public TestDbContextFactory(DbContextOptions<FleanDbContext> options)
         {
             _options = options;
         }
 
-        public GrainStateDbContext CreateDbContext() => new(_options);
+        public FleanDbContext CreateDbContext() => new(_options);
 
-        public Task<GrainStateDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
+        public Task<FleanDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(CreateDbContext());
     }
 }

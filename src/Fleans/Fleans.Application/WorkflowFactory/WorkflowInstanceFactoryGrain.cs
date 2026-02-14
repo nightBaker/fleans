@@ -123,7 +123,13 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
         var nextVersion = versions.Count == 0 ? 1 : versions[^1].Version + 1;
         var processDefinitionId = GenerateProcessDefinitionId(processDefinitionKey, nextVersion, deployedAt);
 
-        var workflowWithId = workflow with { ProcessDefinitionId = processDefinitionId };
+        var workflowWithId = new WorkflowDefinition
+        {
+            WorkflowId = workflow.WorkflowId,
+            Activities = workflow.Activities,
+            SequenceFlows = workflow.SequenceFlows,
+            ProcessDefinitionId = processDefinitionId
+        };
 
         var definition = new ProcessDefinition
         {

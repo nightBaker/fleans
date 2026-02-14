@@ -6,7 +6,7 @@ using System.Runtime.CompilerServices;
 namespace Fleans.Domain.Activities;
 
 [GenerateSerializer]
-public record EndEvent : Activity
+public class EndEvent : Activity
 {
     public EndEvent(string activityId) : base(activityId)
     { 

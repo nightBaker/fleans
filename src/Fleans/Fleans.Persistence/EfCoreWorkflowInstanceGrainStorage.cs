@@ -7,9 +7,9 @@ namespace Fleans.Persistence;
 
 public class EfCoreWorkflowInstanceGrainStorage : IGrainStorage
 {
-    private readonly IDbContextFactory<GrainStateDbContext> _dbContextFactory;
+    private readonly IDbContextFactory<FleanDbContext> _dbContextFactory;
 
-    public EfCoreWorkflowInstanceGrainStorage(IDbContextFactory<GrainStateDbContext> dbContextFactory)
+    public EfCoreWorkflowInstanceGrainStorage(IDbContextFactory<FleanDbContext> dbContextFactory)
     {
         _dbContextFactory = dbContextFactory;
     }
@@ -110,7 +110,7 @@ public class EfCoreWorkflowInstanceGrainStorage : IGrainStorage
     }
 
     private static void DiffEntries(
-        GrainStateDbContext db,
+        FleanDbContext db,
         WorkflowInstanceState existing,
         WorkflowInstanceState state,
         Guid workflowInstanceId)
@@ -137,7 +137,7 @@ public class EfCoreWorkflowInstanceGrainStorage : IGrainStorage
     }
 
     private static void DiffVariableStates(
-        GrainStateDbContext db,
+        FleanDbContext db,
         WorkflowInstanceState existing,
         WorkflowInstanceState state,
         Guid workflowInstanceId)
@@ -164,7 +164,7 @@ public class EfCoreWorkflowInstanceGrainStorage : IGrainStorage
     }
 
     private static void DiffConditionSequenceStates(
-        GrainStateDbContext db,
+        FleanDbContext db,
         WorkflowInstanceState existing,
         WorkflowInstanceState state,
         Guid workflowInstanceId)
