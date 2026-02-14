@@ -214,12 +214,13 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
 
         var startActivity = workflow.Activities.OfType<StartEvent>().First();
 
+        var activityInstanceId = Guid.NewGuid();
         var variablesId = Guid.NewGuid();
-        var activityInstance = _grainFactory.GetGrain<IActivityInstance>(variablesId);
+        var activityInstance = _grainFactory.GetGrain<IActivityInstance>(activityInstanceId);
         await activityInstance.SetActivity(startActivity.ActivityId, startActivity.GetType().Name);
         await activityInstance.SetVariablesId(variablesId);
 
-        var entry = new ActivityInstanceEntry(variablesId, startActivity.ActivityId);
+        var entry = new ActivityInstanceEntry(activityInstanceId, startActivity.ActivityId);
         LogStateStartWith(startActivity.ActivityId);
         State.StartWith(entry, variablesId);
         await _state.WriteStateAsync();
