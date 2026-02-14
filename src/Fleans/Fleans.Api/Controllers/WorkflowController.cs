@@ -10,7 +10,15 @@ namespace Fleans.Api.Controllers
     [Route("[controller]")]
     public class WorkflowController : ControllerBase
     {
-        
+        private const long MaxBpmnFileSizeBytes = 10 * 1024 * 1024; // 10 MB
+
+        private static readonly HashSet<string> AllowedContentTypes = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "text/xml",
+            "application/xml",
+            "application/octet-stream"
+        };
+
         private readonly ILogger<WorkflowController> _logger;
         private readonly WorkflowEngine _workflowEngine;
         private readonly IBpmnConverter _bpmnConverter;
@@ -52,7 +60,18 @@ namespace Fleans.Api.Controllers
             {
                 return BadRequest(new ErrorResponse("No file uploaded"));
             }
-//TODO : explicitly validate file content type and size if needed
+
+            if (file.Length > MaxBpmnFileSizeBytes)
+            {
+                return BadRequest(new ErrorResponse("File size exceeds the 10 MB limit"));
+            }
+
+            if (!AllowedContentTypes.Contains(file.ContentType))
+            {
+                return BadRequest(new ErrorResponse(
+                    $"Unsupported content type '{file.ContentType}'. Allowed types: {string.Join(", ", AllowedContentTypes)}"));
+            }
+
             if (!file.FileName.EndsWith(".bpmn", StringComparison.OrdinalIgnoreCase) &&
                 !file.FileName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
             {
