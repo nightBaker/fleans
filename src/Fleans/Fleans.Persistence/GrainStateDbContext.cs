@@ -1,6 +1,5 @@
 using System.Dynamic;
 using Fleans.Domain.States;
-using Fleans.Persistence.Entities;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 
@@ -8,7 +7,7 @@ namespace Fleans.Persistence;
 
 public class GrainStateDbContext : DbContext
 {
-    public DbSet<ActivityInstanceEntity> ActivityInstances => Set<ActivityInstanceEntity>();
+    public DbSet<ActivityInstanceState> ActivityInstances => Set<ActivityInstanceState>();
     public DbSet<WorkflowInstanceState> WorkflowInstances => Set<WorkflowInstanceState>();
     public DbSet<ActivityInstanceEntry> WorkflowActivityInstanceEntries => Set<ActivityInstanceEntry>();
     public DbSet<WorkflowVariablesState> WorkflowVariableStates => Set<WorkflowVariablesState>();
@@ -18,7 +17,7 @@ public class GrainStateDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<ActivityInstanceEntity>(entity =>
+        modelBuilder.Entity<ActivityInstanceState>(entity =>
         {
             entity.ToTable("ActivityInstances");
             entity.HasKey(e => e.Id);
@@ -34,6 +33,8 @@ public class GrainStateDbContext : DbContext
 
             entity.Property(e => e.ErrorMessage)
                 .HasMaxLength(2000);
+
+            entity.Ignore(e => e.ErrorState);
         });
 
         modelBuilder.Entity<WorkflowInstanceState>(entity =>

@@ -1,4 +1,3 @@
-using Fleans.Domain;
 using Fleans.Domain.States;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -86,10 +85,10 @@ public class EfCoreActivityInstanceGrainStorageTests
         state.State.SetActivity("act-1", "ScriptTask");
         await _storage.WriteStateAsync(StateName, grainId, state);
 
-        // Simulate a second writer
+        // Simulate a second writer that loaded state via ReadState (like Orleans does)
         var concurrentState = CreateGrainState();
-        concurrentState.State.SetActivity("act-1", "ScriptTask");
-        concurrentState.ETag = state.ETag;
+        await _storage.ReadStateAsync(StateName, grainId, concurrentState);
+        concurrentState.State.Execute();
         await _storage.WriteStateAsync(StateName, grainId, concurrentState);
 
         // Original writer tries with stale ETag
@@ -172,10 +171,10 @@ public class EfCoreActivityInstanceGrainStorageTests
         state.State.SetActivity("act-1", "ScriptTask");
         await _storage.WriteStateAsync(StateName, grainId, state);
 
-        // Simulate concurrent writer
+        // Simulate concurrent writer that loaded state via ReadState
         var concurrentState = CreateGrainState();
-        concurrentState.State.SetActivity("act-1", "ScriptTask");
-        concurrentState.ETag = state.ETag;
+        await _storage.ReadStateAsync(StateName, grainId, concurrentState);
+        concurrentState.State.Execute();
         await _storage.WriteStateAsync(StateName, grainId, concurrentState);
 
         // Original caller tries to clear with stale ETag
