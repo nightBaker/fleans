@@ -3,7 +3,7 @@ using Fleans.Domain.Sequences;
 namespace Fleans.Domain.Activities;
 
 [GenerateSerializer]
-public abstract record ConditionalGateway : Gateway
+public abstract class ConditionalGateway : Gateway
 {
     protected ConditionalGateway(string ActivityId) : base(ActivityId)
     {

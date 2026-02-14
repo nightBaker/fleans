@@ -4,7 +4,7 @@
 namespace Fleans.Domain.Activities;
 
 [GenerateSerializer]
-public record ErrorEvent : Activity
+public class ErrorEvent : Activity
 {
     public ErrorEvent(string ActivityId) : base(ActivityId)
     {

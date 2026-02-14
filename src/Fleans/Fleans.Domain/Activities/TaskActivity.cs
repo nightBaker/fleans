@@ -6,7 +6,7 @@ using System.Runtime.CompilerServices;
 namespace Fleans.Domain.Activities;
 
 [GenerateSerializer]
-public record TaskActivity : Activity
+public class TaskActivity : Activity
 {
     public TaskActivity(string ActivityId) : base(ActivityId)
     {

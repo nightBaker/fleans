@@ -4,7 +4,7 @@ using Fleans.Domain.Sequences;
 namespace Fleans.Domain.Activities;
 
 [GenerateSerializer]
-public record ExclusiveGateway : ConditionalGateway
+public class ExclusiveGateway : ConditionalGateway
 {
     public ExclusiveGateway(string activityId) : base(activityId)
     {

@@ -6,10 +6,10 @@ using System.Runtime.CompilerServices;
 namespace Fleans.Domain.Activities;
 
 [GenerateSerializer]
-public record ParallelGateway : Gateway
+public class ParallelGateway : Gateway
 {
     [Id(1)]
-    public bool IsFork { get; init; }
+    public bool IsFork { get; set; }
 
     public ParallelGateway(string ActivityId, bool isFork) : base(ActivityId)
     {
