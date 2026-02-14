@@ -135,11 +135,29 @@ public partial class BpmnConverter : IBpmnConverter
             var outgoingCount = process.Descendants(Bpmn + "sequenceFlow")
                 .Count(sf => sf.Attribute("sourceRef")?.Value == id);
             
-            //TODO [nitpick] The determination of whether a parallel gateway is a fork or join uses a simple count comparison,
-            //but this logic may not handle edge cases correctly (e.g., when counts are equal).
-            //Consider documenting the expected behavior when incoming and outgoing counts are equal,
-            //or adding explicit handling for this case to make the logic clearer and more maintainable.
-            var isFork = outgoingCount > incomingCount;
+            bool isFork;
+            if (outgoingCount > incomingCount)
+            {
+                isFork = true;
+            }
+            else if (incomingCount > outgoingCount)
+            {
+                isFork = false;
+            }
+            else if (incomingCount <= 1)
+            {
+                // 1:1 (or 0:0) pass-through — treat as fork for simpler execution
+                isFork = true;
+            }
+            else
+            {
+                // N:N where N > 1 — mixed parallel gateway (both join and fork)
+                // is not supported by the current model which requires fork XOR join.
+                throw new InvalidOperationException(
+                    $"Parallel gateway '{id}' has {incomingCount} incoming and {outgoingCount} outgoing flows. " +
+                    "Mixed parallel gateways (both join and fork) are not supported. " +
+                    "Split into separate join and fork gateways.");
+            }
             var activity = new ParallelGateway(id, isFork);
             activities.Add(activity);
             activityMap[id] = activity;
