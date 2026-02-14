@@ -57,7 +57,9 @@ public record ExclusiveGateway : ConditionalGateway
     internal override async Task<List<Activity>> GetNextActivities(IWorkflowInstance workflowInstance, IActivityInstance activityInstance)
     {
         var sequencesState = await workflowInstance.GetConditionSequenceStates();
-        var activitySequencesState = sequencesState[await activityInstance.GetActivityInstanceId()];
+        var activityInstanceId = await activityInstance.GetActivityInstanceId();
+        if (!sequencesState.TryGetValue(activityInstanceId, out var activitySequencesState))
+            activitySequencesState = [];
         var definition = await workflowInstance.GetWorkflowDefinition();
 
         var trueTarget = activitySequencesState

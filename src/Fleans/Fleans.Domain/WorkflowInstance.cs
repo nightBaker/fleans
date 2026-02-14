@@ -85,7 +85,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         var newActiveEntries = new List<ActivityInstanceEntry>();
         var completedEntries = new List<ActivityInstanceEntry>();
 
-        foreach (var entry in State.GetActiveActivities())
+        foreach (var entry in State.GetActiveActivities().ToList())
         {
             var activityInstance = _grainFactory.GetGrain<IActivityInstance>(entry.ActivityInstanceId);
 
@@ -105,7 +105,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
 
                     await newActivityInstance.SetActivity(nextActivity.ActivityId, nextActivity.GetType().Name);
 
-                    newActiveEntries.Add(new ActivityInstanceEntry(newId, nextActivity.ActivityId));
+                    newActiveEntries.Add(new ActivityInstanceEntry(newId, nextActivity.ActivityId, State.Id));
                 }
 
                 completedEntries.Add(entry);
@@ -113,11 +113,10 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         }
 
         LogTransition(completedEntries.Count, newActiveEntries.Count);
-        LogStateRemoveActiveActivities(completedEntries.Count);
-        State.RemoveActiveActivities(completedEntries);
-        LogStateAddActiveActivities(newActiveEntries.Count);
-        State.AddActiveActivities(newActiveEntries);
-        State.AddCompletedActivities(completedEntries);
+        LogStateCompleteEntries(completedEntries.Count);
+        State.CompleteEntries(completedEntries);
+        LogStateAddEntries(newActiveEntries.Count);
+        State.AddEntries(newActiveEntries);
     }
 
     private async Task CompleteActivityState(string activityId, ExpandoObject variables)
@@ -205,7 +204,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         if(WorkflowDefinition is not null) throw new ArgumentException("Workflow already set");
 
         WorkflowDefinition = workflow ?? throw new ArgumentNullException(nameof(workflow));
-        State.InstanceId = this.GetPrimaryKey();
+        State.Id = this.GetPrimaryKey();
         State.CreatedAt = DateTimeOffset.UtcNow;
 
         SetWorkflowRequestContext();
@@ -220,7 +219,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         await activityInstance.SetActivity(startActivity.ActivityId, startActivity.GetType().Name);
         await activityInstance.SetVariablesId(variablesId);
 
-        var entry = new ActivityInstanceEntry(activityInstanceId, startActivity.ActivityId);
+        var entry = new ActivityInstanceEntry(activityInstanceId, startActivity.ActivityId, State.Id);
         LogStateStartWith(startActivity.ActivityId);
         State.StartWith(entry, variablesId);
         await _state.WriteStateAsync();
@@ -247,8 +246,8 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         if (WorkflowDefinition is null)
             throw new InvalidOperationException("Workflow definition not set");
 
-        var activeEntries = State.GetActiveActivities();
-        var completedEntries = State.GetCompletedActivities();
+        var activeEntries = State.GetActiveActivities().ToList();
+        var completedEntries = State.GetCompletedActivities().ToList();
 
         var activeTasks = activeEntries.Select(e =>
             _grainFactory.GetGrain<IActivityInstance>(e.ActivityInstanceId).GetSnapshot().AsTask());
@@ -263,15 +262,15 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         var activeIds = activeEntries.Select(e => e.ActivityId).ToList();
         var completedIds = completedEntries.Select(e => e.ActivityId).ToList();
 
-        var variableStates = State.GetVariableStates().Select(kvp =>
+        var variableStates = State.VariableStates.Select(vs =>
         {
-            var dict = ((IDictionary<string, object>)kvp.Value.Variables)
+            var dict = ((IDictionary<string, object>)vs.Variables)
                 .ToDictionary(e => e.Key, e => e.Value?.ToString() ?? "");
-            return new VariableStateSnapshot(kvp.Key, dict);
+            return new VariableStateSnapshot(vs.Id, dict);
         }).ToList();
 
-        var conditionSequences = State.GetConditionSequenceStates()
-            .SelectMany(kvp => kvp.Value.Select(cs =>
+        var conditionSequences = State.ConditionSequenceStates
+            .Select(cs =>
             {
                 var flow = WorkflowDefinition.SequenceFlows
                     .OfType<ConditionalSequenceFlow>()
@@ -284,7 +283,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
                     flow.Source.ActivityId,
                     flow.Target.ActivityId,
                     cs.Result);
-            }))
+            })
             .ToList();
 
         return new InstanceStateSnapshot(
@@ -297,8 +296,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
 
     public ValueTask<ExpandoObject> GetVariables(Guid variablesStateId)
     {
-        var variablesState = State.GetVariableStates();
-        var variables = variablesState[variablesStateId].Variables;
+        var variables = State.GetVariableState(variablesStateId).Variables;
 
         return ValueTask.FromResult(variables);
     }
@@ -321,7 +319,12 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
     }
 
     public ValueTask<IReadOnlyDictionary<Guid, ConditionSequenceState[]>> GetConditionSequenceStates()
-        => ValueTask.FromResult(State.GetConditionSequenceStates());
+    {
+        IReadOnlyDictionary<Guid, ConditionSequenceState[]> result = State.ConditionSequenceStates
+            .GroupBy(c => c.GatewayActivityInstanceId)
+            .ToDictionary(g => g.Key, g => g.ToArray());
+        return ValueTask.FromResult(result);
+    }
 
     public async ValueTask AddConditionSequenceStates(Guid activityInstanceId, string[] sequenceFlowIds)
     {
@@ -337,7 +340,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
 
     private async Task<bool> AnyNotExecuting()
     {
-        foreach (var entry in State.GetActiveActivities())
+        foreach (var entry in State.GetActiveActivities().ToList())
         {
             var activityInstance = _grainFactory.GetGrain<IActivityInstance>(entry.ActivityInstanceId);
             if (!await activityInstance.IsExecuting())
@@ -349,7 +352,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
     private async Task<IActivityInstance[]> GetNotExecutingNotCompletedActivities()
     {
         var result = new List<IActivityInstance>();
-        foreach (var entry in State.GetActiveActivities())
+        foreach (var entry in State.GetActiveActivities().ToList())
         {
             var activityInstance = _grainFactory.GetGrain<IActivityInstance>(entry.ActivityInstanceId);
             if (!await activityInstance.IsExecuting() && !await activityInstance.IsCompleted())
@@ -428,9 +431,9 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
     [LoggerMessage(EventId = 3003, Level = LogLevel.Debug, Message = "Variables merged for state {VariablesId}")]
     private partial void LogStateMergeState(Guid variablesId);
 
-    [LoggerMessage(EventId = 3004, Level = LogLevel.Debug, Message = "Adding {Count} active activities")]
-    private partial void LogStateAddActiveActivities(int count);
+    [LoggerMessage(EventId = 3004, Level = LogLevel.Debug, Message = "Adding {Count} entries")]
+    private partial void LogStateAddEntries(int count);
 
-    [LoggerMessage(EventId = 3005, Level = LogLevel.Debug, Message = "Removing {Count} completed activities")]
-    private partial void LogStateRemoveActiveActivities(int count);
+    [LoggerMessage(EventId = 3005, Level = LogLevel.Debug, Message = "Completing {Count} activities")]
+    private partial void LogStateCompleteEntries(int count);
 }
