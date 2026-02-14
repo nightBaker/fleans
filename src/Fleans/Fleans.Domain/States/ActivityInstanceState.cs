@@ -6,31 +6,43 @@ namespace Fleans.Domain.States;
 public class ActivityInstanceState
 {
     [Id(0)]
-    public string? ActivityId { get; internal set; }
+    public Guid Id { get; private set; }
 
     [Id(1)]
-    public string? ActivityType { get; internal set; }
+    public string? ETag { get; private set; }
 
     [Id(2)]
-    public bool IsExecuting { get; internal set; }
+    public string? ActivityId { get; private set; }
 
     [Id(3)]
-    public bool IsCompleted { get; internal set; }
+    public string? ActivityType { get; private set; }
 
     [Id(4)]
-    public Guid VariablesId { get; internal set; }
+    public bool IsExecuting { get; private set; }
 
     [Id(5)]
-    public ActivityErrorState? ErrorState { get; internal set; }
+    public bool IsCompleted { get; private set; }
 
     [Id(6)]
-    public DateTimeOffset? CreatedAt { get; internal set; }
+    public Guid VariablesId { get; private set; }
 
     [Id(7)]
-    public DateTimeOffset? ExecutionStartedAt { get; internal set; }
+    public int? ErrorCode { get; private set; }
 
     [Id(8)]
-    public DateTimeOffset? CompletedAt { get; internal set; }
+    public string? ErrorMessage { get; private set; }
+
+    [Id(9)]
+    public DateTimeOffset? CreatedAt { get; private set; }
+
+    [Id(10)]
+    public DateTimeOffset? ExecutionStartedAt { get; private set; }
+
+    [Id(11)]
+    public DateTimeOffset? CompletedAt { get; private set; }
+
+    public ActivityErrorState? ErrorState =>
+        ErrorCode is not null ? new ActivityErrorState(ErrorCode.Value, ErrorMessage!) : null;
 
     public void Complete()
     {
@@ -42,14 +54,22 @@ public class ActivityInstanceState
     public void Fail(Exception exception)
     {
         if (exception is ActivityException activityException)
-            ErrorState = activityException.GetActivityErrorState();
+        {
+            var errorState = activityException.GetActivityErrorState();
+            ErrorCode = errorState.Code;
+            ErrorMessage = errorState.Message;
+        }
         else
-            ErrorState = new ActivityErrorState(500, exception.Message);
+        {
+            ErrorCode = 500;
+            ErrorMessage = exception.Message;
+        }
     }
 
     public void Execute()
     {
-        ErrorState = null;
+        ErrorCode = null;
+        ErrorMessage = null;
         IsCompleted = false;
         IsExecuting = true;
         ExecutionStartedAt = DateTimeOffset.UtcNow;
