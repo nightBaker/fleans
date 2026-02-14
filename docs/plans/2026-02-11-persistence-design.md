@@ -323,15 +323,19 @@ src/Fleans/
 
 - `WorkflowInstance.WorkflowDefinition` is not part of persisted state — must move to `WorkflowInstanceState`
 - `_instancesByKey` and `_instanceToDefinitionId` in factory grain are not persisted/rehydrated
-- State classes (`ActivityInstanceState`, `WorkflowInstanceState`) need `[GenerateSerializer]` and `[Id]` attributes
+- ~~State classes (`ActivityInstanceState`, `WorkflowInstanceState`) need `[GenerateSerializer]` and `[Id]` attributes~~ — Done: merged with EF Core entities
 - Grain reference serialization (`List<IActivityInstance>` in `WorkflowInstanceState`)
 - ~~Concurrency control (ETag/versioning)~~ — Done: `InMemoryGrainStorage` checks ETags, throws `InconsistentStateException` on mismatch
+- Audit domain properties for `init` vs `set` — Activity, SequenceFlow, WorkflowDefinition, ProcessDefinition were converted from `record`/`init` to `class`/`set` for EF Core. Tighten immutability where `set` isn't truly needed (risk: `sf.Source == this` reference equality breaks if properties are mutated)
+- Fix `ValueComparer` snapshot for `WorkflowDefinition` in `FleanDbContext` — currently returns same reference (`v => v`), so EF Core change tracking won't detect mutations. Replace with deep-clone if `UpdateAsync` is ever added
+- Add EF Core migrations for `ProcessDefinitions` table — currently relies on `EnsureCreated()` (dev only)
+- Extract shared `TestDbContextFactory` — duplicated identically across 3 persistence test files
 
 ---
 
-## Not In Scope
+## Not In Scope (original)
 
-- No database implementation (EF Core, SQL, etc.)
+- ~~No database implementation (EF Core, SQL, etc.)~~ — Done: `EfCoreProcessDefinitionRepository` added (PR #55)
 - No grain reference serialization (IActivityInstance lists in WorkflowInstanceState)
-- IGrainStorage providers are in-memory (no database)
-- `InMemoryProcessDefinitionRepository` is the only repository implementation
+- ~~IGrainStorage providers are in-memory (no database)~~ — Done: EF Core grain storage for `ActivityInstance` and `WorkflowInstance`
+- ~~`InMemoryProcessDefinitionRepository` is the only repository implementation~~ — Done: replaced by `EfCoreProcessDefinitionRepository`, in-memory project removed
