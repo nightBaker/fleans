@@ -22,7 +22,8 @@ public abstract record ConditionalGateway : Gateway
             return true;
 
         var sequences = await workflowInstance.GetConditionSequenceStates();
-        var mySequences = sequences[activityInstanceId];
+        if (!sequences.TryGetValue(activityInstanceId, out var mySequences))
+            return false;
 
         if (mySequences.All(s => s.IsEvaluated))
         {

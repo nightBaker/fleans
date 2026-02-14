@@ -1,4 +1,5 @@
 using System.Dynamic;
+using Fleans.Domain.States;
 using Fleans.Persistence.Entities;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
@@ -8,10 +9,10 @@ namespace Fleans.Persistence;
 public class GrainStateDbContext : DbContext
 {
     public DbSet<ActivityInstanceEntity> ActivityInstances => Set<ActivityInstanceEntity>();
-    public DbSet<WorkflowInstanceEntity> WorkflowInstances => Set<WorkflowInstanceEntity>();
-    public DbSet<ActivityInstanceEntryEntity> WorkflowActivityInstanceEntries => Set<ActivityInstanceEntryEntity>();
-    public DbSet<WorkflowVariablesEntity> WorkflowVariableStates => Set<WorkflowVariablesEntity>();
-    public DbSet<ConditionSequenceEntity> WorkflowConditionSequenceStates => Set<ConditionSequenceEntity>();
+    public DbSet<WorkflowInstanceState> WorkflowInstances => Set<WorkflowInstanceState>();
+    public DbSet<ActivityInstanceEntry> WorkflowActivityInstanceEntries => Set<ActivityInstanceEntry>();
+    public DbSet<WorkflowVariablesState> WorkflowVariableStates => Set<WorkflowVariablesState>();
+    public DbSet<ConditionSequenceState> WorkflowConditionSequenceStates => Set<ConditionSequenceState>();
 
     public GrainStateDbContext(DbContextOptions<GrainStateDbContext> options) : base(options) { }
 
@@ -35,13 +36,12 @@ public class GrainStateDbContext : DbContext
                 .HasMaxLength(2000);
         });
 
-        modelBuilder.Entity<WorkflowInstanceEntity>(entity =>
+        modelBuilder.Entity<WorkflowInstanceState>(entity =>
         {
             entity.ToTable("WorkflowInstances");
             entity.HasKey(e => e.Id);
 
-            entity.Property(e => e.ETag)
-                .HasMaxLength(64);
+            entity.Property(e => e.ETag).HasMaxLength(64);
 
             entity.HasMany(e => e.Entries)
                 .WithOne()
@@ -59,16 +59,15 @@ public class GrainStateDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
-        modelBuilder.Entity<ActivityInstanceEntryEntity>(entity =>
+        modelBuilder.Entity<ActivityInstanceEntry>(entity =>
         {
             entity.ToTable("WorkflowActivityInstanceEntries");
             entity.HasKey(e => e.ActivityInstanceId);
 
-            entity.Property(e => e.ActivityId)
-                .HasMaxLength(256);
+            entity.Property(e => e.ActivityId).HasMaxLength(256);
         });
 
-        modelBuilder.Entity<WorkflowVariablesEntity>(entity =>
+        modelBuilder.Entity<WorkflowVariablesState>(entity =>
         {
             entity.ToTable("WorkflowVariableStates");
             entity.HasKey(e => e.Id);
@@ -80,13 +79,12 @@ public class GrainStateDbContext : DbContext
                     v => JsonConvert.DeserializeObject<ExpandoObject>(v) ?? new ExpandoObject());
         });
 
-        modelBuilder.Entity<ConditionSequenceEntity>(entity =>
+        modelBuilder.Entity<ConditionSequenceState>(entity =>
         {
             entity.ToTable("WorkflowConditionSequenceStates");
             entity.HasKey(e => new { e.GatewayActivityInstanceId, e.ConditionalSequenceFlowId });
 
-            entity.Property(e => e.ConditionalSequenceFlowId)
-                .HasMaxLength(256);
+            entity.Property(e => e.ConditionalSequenceFlowId).HasMaxLength(256);
         });
     }
 }

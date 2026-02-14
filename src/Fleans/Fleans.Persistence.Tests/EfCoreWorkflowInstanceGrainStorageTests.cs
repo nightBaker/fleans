@@ -68,9 +68,9 @@ public class EfCoreWorkflowInstanceGrainStorageTests
         var state = CreateGrainState();
         state.State.Start();
 
-        var entry1 = new ActivityInstanceEntry(Guid.NewGuid(), "act-1");
-        var entry2 = new ActivityInstanceEntry(Guid.NewGuid(), "act-2");
-        state.State.AddActiveActivities([entry1, entry2]);
+        var entry1 = new ActivityInstanceEntry(Guid.NewGuid(), "act-1", Guid.Empty);
+        var entry2 = new ActivityInstanceEntry(Guid.NewGuid(), "act-2", Guid.Empty);
+        state.State.AddEntries([entry1, entry2]);
 
         await _storage.WriteStateAsync(StateName, grainId, state);
 
@@ -78,7 +78,7 @@ public class EfCoreWorkflowInstanceGrainStorageTests
         await _storage.ReadStateAsync(StateName, grainId, readState);
 
         var activeActivities = readState.State.GetActiveActivities();
-        Assert.AreEqual(2, activeActivities.Count);
+        Assert.AreEqual(2, activeActivities.Count());
         Assert.IsTrue(activeActivities.Any(a => a.ActivityId == "act-1"));
         Assert.IsTrue(activeActivities.Any(a => a.ActivityId == "act-2"));
     }
@@ -90,9 +90,10 @@ public class EfCoreWorkflowInstanceGrainStorageTests
         var state = CreateGrainState();
         state.State.Start();
 
-        var entry1 = new ActivityInstanceEntry(Guid.NewGuid(), "act-1");
-        var entry2 = new ActivityInstanceEntry(Guid.NewGuid(), "act-2");
-        state.State.AddCompletedActivities([entry1, entry2]);
+        var entry1 = new ActivityInstanceEntry(Guid.NewGuid(), "act-1", Guid.Empty);
+        var entry2 = new ActivityInstanceEntry(Guid.NewGuid(), "act-2", Guid.Empty);
+        state.State.AddEntries([entry1, entry2]);
+        state.State.CompleteEntries([entry1, entry2]);
 
         await _storage.WriteStateAsync(StateName, grainId, state);
 
@@ -100,7 +101,7 @@ public class EfCoreWorkflowInstanceGrainStorageTests
         await _storage.ReadStateAsync(StateName, grainId, readState);
 
         var completedActivities = readState.State.GetCompletedActivities();
-        Assert.AreEqual(2, completedActivities.Count);
+        Assert.AreEqual(2, completedActivities.Count());
         Assert.IsTrue(completedActivities.Any(a => a.ActivityId == "act-1"));
         Assert.IsTrue(completedActivities.Any(a => a.ActivityId == "act-2"));
     }
@@ -113,7 +114,7 @@ public class EfCoreWorkflowInstanceGrainStorageTests
         state.State.Start();
 
         var variablesId = Guid.NewGuid();
-        state.State.StartWith(new ActivityInstanceEntry(Guid.NewGuid(), "act-1"), variablesId);
+        state.State.StartWith(new ActivityInstanceEntry(Guid.NewGuid(), "act-1", Guid.Empty), variablesId);
 
         var vars = new ExpandoObject();
         var dict = (IDictionary<string, object>)vars;
@@ -126,10 +127,10 @@ public class EfCoreWorkflowInstanceGrainStorageTests
         var readState = CreateGrainState();
         await _storage.ReadStateAsync(StateName, grainId, readState);
 
-        var variableStates = readState.State.GetVariableStates();
+        var variableStates = readState.State.VariableStates;
         Assert.AreEqual(1, variableStates.Count);
 
-        var readVars = variableStates.Values.First();
+        var readVars = variableStates.First();
         var readDict = (IDictionary<string, object>)readVars.Variables;
         Assert.AreEqual("test", readDict["name"]);
         // JSON deserialization may convert int to long or double depending on the JSON parser
@@ -156,7 +157,9 @@ public class EfCoreWorkflowInstanceGrainStorageTests
         var readState = CreateGrainState();
         await _storage.ReadStateAsync(StateName, grainId, readState);
 
-        var conditionStates = readState.State.GetConditionSequenceStates();
+        var conditionStates = readState.State.ConditionSequenceStates
+            .GroupBy(c => c.GatewayActivityInstanceId)
+            .ToDictionary(g => g.Key, g => g.ToArray());
         Assert.AreEqual(2, conditionStates.Count);
 
         // Verify gateway 1 has 2 sequences
@@ -281,7 +284,7 @@ public class EfCoreWorkflowInstanceGrainStorageTests
         state.State.Start();
 
         var variablesId = Guid.NewGuid();
-        state.State.StartWith(new ActivityInstanceEntry(Guid.NewGuid(), "act-1"), variablesId);
+        state.State.StartWith(new ActivityInstanceEntry(Guid.NewGuid(), "act-1", Guid.Empty), variablesId);
         state.State.AddConditionSequenceStates(Guid.NewGuid(), ["seq-1"]);
 
         await _storage.WriteStateAsync(StateName, grainId, state);
@@ -362,17 +365,17 @@ public class EfCoreWorkflowInstanceGrainStorageTests
         var grainId = NewGrainId();
         var state = CreateGrainState();
         state.State.Start();
-        state.State.AddActiveActivities([new ActivityInstanceEntry(Guid.NewGuid(), "act-1")]);
+        state.State.AddEntries([new ActivityInstanceEntry(Guid.NewGuid(), "act-1", Guid.Empty)]);
         await _storage.WriteStateAsync(StateName, grainId, state);
 
         // Add another active activity
-        state.State.AddActiveActivities([new ActivityInstanceEntry(Guid.NewGuid(), "act-2")]);
+        state.State.AddEntries([new ActivityInstanceEntry(Guid.NewGuid(), "act-2", Guid.Empty)]);
         await _storage.WriteStateAsync(StateName, grainId, state);
 
         var readState = CreateGrainState();
         await _storage.ReadStateAsync(StateName, grainId, readState);
 
-        Assert.AreEqual(2, readState.State.GetActiveActivities().Count);
+        Assert.AreEqual(2, readState.State.GetActiveActivities().Count());
         Assert.IsTrue(readState.State.GetActiveActivities().Any(a => a.ActivityId == "act-1"));
         Assert.IsTrue(readState.State.GetActiveActivities().Any(a => a.ActivityId == "act-2"));
     }
@@ -384,21 +387,20 @@ public class EfCoreWorkflowInstanceGrainStorageTests
         var state = CreateGrainState();
         state.State.Start();
 
-        var entry = new ActivityInstanceEntry(Guid.NewGuid(), "act-1");
-        state.State.AddActiveActivities([entry]);
+        var entry = new ActivityInstanceEntry(Guid.NewGuid(), "act-1", Guid.Empty);
+        state.State.AddEntries([entry]);
         await _storage.WriteStateAsync(StateName, grainId, state);
 
         // Move from active to completed
-        state.State.RemoveActiveActivities([entry]);
-        state.State.AddCompletedActivities([entry]);
+        state.State.CompleteEntries([entry]);
         await _storage.WriteStateAsync(StateName, grainId, state);
 
         var readState = CreateGrainState();
         await _storage.ReadStateAsync(StateName, grainId, readState);
 
-        Assert.AreEqual(0, readState.State.GetActiveActivities().Count);
-        Assert.AreEqual(1, readState.State.GetCompletedActivities().Count);
-        Assert.AreEqual("act-1", readState.State.GetCompletedActivities()[0].ActivityId);
+        Assert.AreEqual(0, readState.State.GetActiveActivities().Count());
+        Assert.AreEqual(1, readState.State.GetCompletedActivities().Count());
+        Assert.AreEqual("act-1", readState.State.GetCompletedActivities().First().ActivityId);
     }
 
     [TestMethod]
@@ -408,20 +410,20 @@ public class EfCoreWorkflowInstanceGrainStorageTests
         var state = CreateGrainState();
         state.State.Start();
 
-        var entry1 = new ActivityInstanceEntry(Guid.NewGuid(), "act-1");
-        var entry2 = new ActivityInstanceEntry(Guid.NewGuid(), "act-2");
-        state.State.AddActiveActivities([entry1, entry2]);
+        var entry1 = new ActivityInstanceEntry(Guid.NewGuid(), "act-1", Guid.Empty);
+        var entry2 = new ActivityInstanceEntry(Guid.NewGuid(), "act-2", Guid.Empty);
+        state.State.AddEntries([entry1, entry2]);
         await _storage.WriteStateAsync(StateName, grainId, state);
 
         // Remove one activity
-        state.State.RemoveActiveActivities([entry2]);
+        state.State.Entries.Remove(entry2);
         await _storage.WriteStateAsync(StateName, grainId, state);
 
         var readState = CreateGrainState();
         await _storage.ReadStateAsync(StateName, grainId, readState);
 
-        Assert.AreEqual(1, readState.State.GetActiveActivities().Count);
-        Assert.AreEqual("act-1", readState.State.GetActiveActivities()[0].ActivityId);
+        Assert.AreEqual(1, readState.State.GetActiveActivities().Count());
+        Assert.AreEqual("act-1", readState.State.GetActiveActivities().First().ActivityId);
     }
 
     [TestMethod]
@@ -432,7 +434,7 @@ public class EfCoreWorkflowInstanceGrainStorageTests
         state.State.Start();
 
         var variablesId1 = Guid.NewGuid();
-        state.State.StartWith(new ActivityInstanceEntry(Guid.NewGuid(), "act-1"), variablesId1);
+        state.State.StartWith(new ActivityInstanceEntry(Guid.NewGuid(), "act-1", Guid.Empty), variablesId1);
         await _storage.WriteStateAsync(StateName, grainId, state);
 
         // Add a second variable scope by cloning
@@ -442,7 +444,7 @@ public class EfCoreWorkflowInstanceGrainStorageTests
         var readState = CreateGrainState();
         await _storage.ReadStateAsync(StateName, grainId, readState);
 
-        Assert.AreEqual(2, readState.State.GetVariableStates().Count);
+        Assert.AreEqual(2, readState.State.VariableStates.Count);
     }
 
     [TestMethod]
@@ -453,7 +455,7 @@ public class EfCoreWorkflowInstanceGrainStorageTests
         state.State.Start();
 
         var variablesId = Guid.NewGuid();
-        state.State.StartWith(new ActivityInstanceEntry(Guid.NewGuid(), "act-1"), variablesId);
+        state.State.StartWith(new ActivityInstanceEntry(Guid.NewGuid(), "act-1", Guid.Empty), variablesId);
 
         var vars1 = new ExpandoObject();
         ((IDictionary<string, object>)vars1)["x"] = "hello";
@@ -469,7 +471,7 @@ public class EfCoreWorkflowInstanceGrainStorageTests
         var readState = CreateGrainState();
         await _storage.ReadStateAsync(StateName, grainId, readState);
 
-        var readVars = readState.State.GetVariableStates().Values.First();
+        var readVars = readState.State.VariableStates.First();
         var readDict = (IDictionary<string, object>)readVars.Variables;
         Assert.AreEqual("hello", readDict["x"]);
         Assert.AreEqual("world", readDict["y"]);
@@ -491,7 +493,9 @@ public class EfCoreWorkflowInstanceGrainStorageTests
         var readState = CreateGrainState();
         await _storage.ReadStateAsync(StateName, grainId, readState);
 
-        var conditionStates = readState.State.GetConditionSequenceStates();
+        var conditionStates = readState.State.ConditionSequenceStates
+            .GroupBy(c => c.GatewayActivityInstanceId)
+            .ToDictionary(g => g.Key, g => g.ToArray());
         Assert.AreEqual(1, conditionStates.Count);
         Assert.IsTrue(conditionStates.ContainsKey(gatewayId));
         Assert.AreEqual(2, conditionStates[gatewayId].Length);
@@ -516,7 +520,7 @@ public class EfCoreWorkflowInstanceGrainStorageTests
         var readState = CreateGrainState();
         await _storage.ReadStateAsync(StateName, grainId, readState);
 
-        var sequences = readState.State.GetConditionSequenceStates()[gatewayId];
+        var sequences = readState.State.GetConditionSequenceStatesForGateway(gatewayId).ToArray();
         var seq1 = sequences.First(s => s.ConditionalSequenceFlowId == "seq-1");
         Assert.IsTrue(seq1.IsEvaluated);
         Assert.IsTrue(seq1.Result);
@@ -538,13 +542,13 @@ public class EfCoreWorkflowInstanceGrainStorageTests
         await _storage.WriteStateAsync(StateName, grainId, state);
 
         // Remove the condition states for this gateway
-        state.State.ConditionSequenceStates.Remove(gatewayId);
+        state.State.ConditionSequenceStates.RemoveAll(c => c.GatewayActivityInstanceId == gatewayId);
         await _storage.WriteStateAsync(StateName, grainId, state);
 
         var readState = CreateGrainState();
         await _storage.ReadStateAsync(StateName, grainId, readState);
 
-        Assert.AreEqual(0, readState.State.GetConditionSequenceStates().Count);
+        Assert.AreEqual(0, readState.State.ConditionSequenceStates.Count);
     }
 
     // ───────────────────────────────────────────────
@@ -559,12 +563,14 @@ public class EfCoreWorkflowInstanceGrainStorageTests
 
         var state1 = CreateGrainState();
         state1.State.Start();
-        state1.State.AddActiveActivities([new ActivityInstanceEntry(Guid.NewGuid(), "act-1")]);
+        state1.State.AddEntries([new ActivityInstanceEntry(Guid.NewGuid(), "act-1", Guid.Empty)]);
 
         var state2 = CreateGrainState();
         state2.State.Start();
         state2.State.Complete();
-        state2.State.AddCompletedActivities([new ActivityInstanceEntry(Guid.NewGuid(), "act-2")]);
+        var completedEntry = new ActivityInstanceEntry(Guid.NewGuid(), "act-2", Guid.Empty);
+        state2.State.AddEntries([completedEntry]);
+        state2.State.CompleteEntries([completedEntry]);
 
         await _storage.WriteStateAsync(StateName, grainId1, state1);
         await _storage.WriteStateAsync(StateName, grainId2, state2);
@@ -577,16 +583,16 @@ public class EfCoreWorkflowInstanceGrainStorageTests
         // Grain 1: started, not completed, 1 active activity
         Assert.IsTrue(read1.State.IsStarted);
         Assert.IsFalse(read1.State.IsCompleted);
-        Assert.AreEqual(1, read1.State.GetActiveActivities().Count);
-        Assert.AreEqual("act-1", read1.State.GetActiveActivities()[0].ActivityId);
-        Assert.AreEqual(0, read1.State.GetCompletedActivities().Count);
+        Assert.AreEqual(1, read1.State.GetActiveActivities().Count());
+        Assert.AreEqual("act-1", read1.State.GetActiveActivities().First().ActivityId);
+        Assert.AreEqual(0, read1.State.GetCompletedActivities().Count());
 
         // Grain 2: started and completed, 1 completed activity
         Assert.IsTrue(read2.State.IsStarted);
         Assert.IsTrue(read2.State.IsCompleted);
-        Assert.AreEqual(0, read2.State.GetActiveActivities().Count);
-        Assert.AreEqual(1, read2.State.GetCompletedActivities().Count);
-        Assert.AreEqual("act-2", read2.State.GetCompletedActivities()[0].ActivityId);
+        Assert.AreEqual(0, read2.State.GetActiveActivities().Count());
+        Assert.AreEqual(1, read2.State.GetCompletedActivities().Count());
+        Assert.AreEqual("act-2", read2.State.GetCompletedActivities().First().ActivityId);
     }
 
     // ───────────────────────────────────────────────
@@ -606,12 +612,12 @@ public class EfCoreWorkflowInstanceGrainStorageTests
 
         // Add active activities with a variable scope
         var variablesId = Guid.NewGuid();
-        var entry1 = new ActivityInstanceEntry(Guid.NewGuid(), "startEvent-1");
+        var entry1 = new ActivityInstanceEntry(Guid.NewGuid(), "startEvent-1", Guid.Empty);
         state.State.StartWith(entry1, variablesId);
 
-        var entry2 = new ActivityInstanceEntry(Guid.NewGuid(), "task-1");
-        var entry3 = new ActivityInstanceEntry(Guid.NewGuid(), "gateway-1");
-        state.State.AddActiveActivities([entry2, entry3]);
+        var entry2 = new ActivityInstanceEntry(Guid.NewGuid(), "task-1", Guid.Empty);
+        var entry3 = new ActivityInstanceEntry(Guid.NewGuid(), "gateway-1", Guid.Empty);
+        state.State.AddEntries([entry2, entry3]);
 
         // Set variables
         var vars = new ExpandoObject();
@@ -629,15 +635,13 @@ public class EfCoreWorkflowInstanceGrainStorageTests
         state.State.SetConditionSequenceResult(gatewayInstanceId, "cond-seq-1", true);
 
         // Move startEvent from active to completed
-        state.State.RemoveActiveActivities([entry1]);
-        state.State.AddCompletedActivities([entry1]);
+        state.State.CompleteEntries([entry1]);
 
         // Clone variable state for the gateway branch
         var clonedVarsId = state.State.AddCloneOfVariableState(variablesId);
 
         // Complete the workflow
-        state.State.RemoveActiveActivities([entry2, entry3]);
-        state.State.AddCompletedActivities([entry2, entry3]);
+        state.State.CompleteEntries([entry2, entry3]);
         state.State.Complete();
         state.State.CompletedAt = DateTimeOffset.UtcNow;
 
@@ -656,18 +660,18 @@ public class EfCoreWorkflowInstanceGrainStorageTests
         Assert.IsNotNull(readState.State.CompletedAt);
 
         // Verify activities
-        Assert.AreEqual(0, readState.State.GetActiveActivities().Count);
-        Assert.AreEqual(3, readState.State.GetCompletedActivities().Count);
+        Assert.AreEqual(0, readState.State.GetActiveActivities().Count());
+        Assert.AreEqual(3, readState.State.GetCompletedActivities().Count());
         Assert.IsTrue(readState.State.GetCompletedActivities().Any(a => a.ActivityId == "startEvent-1"));
         Assert.IsTrue(readState.State.GetCompletedActivities().Any(a => a.ActivityId == "task-1"));
         Assert.IsTrue(readState.State.GetCompletedActivities().Any(a => a.ActivityId == "gateway-1"));
 
         // Verify variable states (2 scopes: original + cloned)
-        var readVarStates = readState.State.GetVariableStates();
+        var readVarStates = readState.State.VariableStates;
         Assert.AreEqual(2, readVarStates.Count);
 
         // At least one scope should have our variables
-        var scopeWithVars = readVarStates.Values.First(vs =>
+        var scopeWithVars = readVarStates.First(vs =>
         {
             var d = (IDictionary<string, object>)vs.Variables;
             return d.ContainsKey("processName");
@@ -678,7 +682,9 @@ public class EfCoreWorkflowInstanceGrainStorageTests
         Assert.AreEqual(true, readDict["isActive"]);
 
         // Verify condition sequence states
-        var condStates = readState.State.GetConditionSequenceStates();
+        var condStates = readState.State.ConditionSequenceStates
+            .GroupBy(c => c.GatewayActivityInstanceId)
+            .ToDictionary(g => g.Key, g => g.ToArray());
         Assert.AreEqual(1, condStates.Count);
         Assert.IsTrue(condStates.ContainsKey(gatewayInstanceId));
         var sequences = condStates[gatewayInstanceId];

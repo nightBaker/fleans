@@ -1,5 +1,6 @@
 using Fleans.Domain.States;
 using System.Dynamic;
+using System.Linq;
 
 namespace Fleans.Domain.Tests
 {
@@ -12,16 +13,16 @@ namespace Fleans.Domain.Tests
             // Arrange
             var state = new WorkflowInstanceState();
             var variablesId = Guid.NewGuid();
-            var entry = new ActivityInstanceEntry(variablesId, "start");
+            var entry = new ActivityInstanceEntry(variablesId, "start", Guid.Empty);
 
             // Act
             state.StartWith(entry, variablesId);
 
             // Assert
             var activeActivities = state.GetActiveActivities();
-            Assert.HasCount(1, activeActivities);
-            Assert.AreEqual("start", activeActivities[0].ActivityId);
-            Assert.AreEqual(variablesId, activeActivities[0].ActivityInstanceId);
+            Assert.AreEqual(1, activeActivities.Count());
+            Assert.AreEqual("start", activeActivities.First().ActivityId);
+            Assert.AreEqual(variablesId, activeActivities.First().ActivityInstanceId);
         }
 
         [TestMethod]
@@ -30,15 +31,14 @@ namespace Fleans.Domain.Tests
             // Arrange
             var state = new WorkflowInstanceState();
             var variablesId = Guid.NewGuid();
-            var entry = new ActivityInstanceEntry(variablesId, "start");
+            var entry = new ActivityInstanceEntry(variablesId, "start", Guid.Empty);
 
             // Act
             state.StartWith(entry, variablesId);
 
             // Assert
-            var variableStates = state.GetVariableStates();
-            Assert.HasCount(1, variableStates);
-            Assert.IsTrue(variableStates.ContainsKey(variablesId));
+            Assert.AreEqual(1, state.VariableStates.Count);
+            Assert.IsTrue(state.VariableStates.Any(v => v.Id == variablesId));
         }
 
         [TestMethod]
@@ -82,55 +82,60 @@ namespace Fleans.Domain.Tests
         }
 
         [TestMethod]
-        public void AddActiveActivities_ShouldAddEntries_ToActiveList()
+        public void AddEntries_ShouldAddEntries_ToActiveList()
         {
             // Arrange
             var state = new WorkflowInstanceState();
-            var entry1 = new ActivityInstanceEntry(Guid.NewGuid(), "task1");
-            var entry2 = new ActivityInstanceEntry(Guid.NewGuid(), "task2");
+            var entry1 = new ActivityInstanceEntry(Guid.NewGuid(), "task1", Guid.Empty);
+            var entry2 = new ActivityInstanceEntry(Guid.NewGuid(), "task2", Guid.Empty);
 
             // Act
-            state.AddActiveActivities(new[] { entry1, entry2 });
+            state.AddEntries(new[] { entry1, entry2 });
 
             // Assert
             var activeActivities = state.GetActiveActivities();
-            Assert.HasCount(2, activeActivities);
-            Assert.AreEqual("task1", activeActivities[0].ActivityId);
-            Assert.AreEqual("task2", activeActivities[1].ActivityId);
+            Assert.AreEqual(2, activeActivities.Count());
+            Assert.AreEqual("task1", activeActivities.First().ActivityId);
+            Assert.AreEqual("task2", activeActivities.ElementAt(1).ActivityId);
         }
 
         [TestMethod]
-        public void RemoveActiveActivities_ShouldRemoveEntries_FromActiveList()
+        public void CompleteEntries_ShouldMoveEntries_FromActiveToCompleted()
         {
             // Arrange
             var state = new WorkflowInstanceState();
-            var entry1 = new ActivityInstanceEntry(Guid.NewGuid(), "task1");
-            var entry2 = new ActivityInstanceEntry(Guid.NewGuid(), "task2");
-            state.AddActiveActivities(new[] { entry1, entry2 });
+            var entry1 = new ActivityInstanceEntry(Guid.NewGuid(), "task1", Guid.Empty);
+            var entry2 = new ActivityInstanceEntry(Guid.NewGuid(), "task2", Guid.Empty);
+            state.AddEntries(new[] { entry1, entry2 });
 
             // Act
-            state.RemoveActiveActivities(new List<ActivityInstanceEntry> { entry1 });
+            state.CompleteEntries(new List<ActivityInstanceEntry> { entry1 });
 
             // Assert
             var activeActivities = state.GetActiveActivities();
-            Assert.HasCount(1, activeActivities);
-            Assert.AreEqual(entry2, activeActivities[0]);
+            Assert.AreEqual(1, activeActivities.Count());
+            Assert.AreEqual(entry2.ActivityId, activeActivities.First().ActivityId);
+
+            var completedActivities = state.GetCompletedActivities();
+            Assert.AreEqual(1, completedActivities.Count());
+            Assert.AreEqual(entry1.ActivityId, completedActivities.First().ActivityId);
         }
 
         [TestMethod]
-        public void AddCompletedActivities_ShouldAddEntries_ToCompletedList()
+        public void CompleteEntries_ShouldMarkActiveEntry_AsCompleted()
         {
             // Arrange
             var state = new WorkflowInstanceState();
-            var entry = new ActivityInstanceEntry(Guid.NewGuid(), "task");
+            var entry = new ActivityInstanceEntry(Guid.NewGuid(), "task", Guid.Empty);
+            state.AddEntries(new[] { entry });
 
             // Act
-            state.AddCompletedActivities(new[] { entry });
+            state.CompleteEntries(new List<ActivityInstanceEntry> { entry });
 
             // Assert
             var completedActivities = state.GetCompletedActivities();
-            Assert.HasCount(1, completedActivities);
-            Assert.AreEqual("task", completedActivities[0].ActivityId);
+            Assert.AreEqual(1, completedActivities.Count());
+            Assert.AreEqual("task", completedActivities.First().ActivityId);
         }
 
         [TestMethod]
@@ -138,8 +143,8 @@ namespace Fleans.Domain.Tests
         {
             // Arrange
             var state = new WorkflowInstanceState();
-            var entry = new ActivityInstanceEntry(Guid.NewGuid(), "task1");
-            state.AddActiveActivities(new[] { entry });
+            var entry = new ActivityInstanceEntry(Guid.NewGuid(), "task1", Guid.Empty);
+            state.AddEntries(new[] { entry });
 
             // Act
             var result = state.GetFirstActive("task1");
@@ -169,7 +174,7 @@ namespace Fleans.Domain.Tests
             // Arrange
             var state = new WorkflowInstanceState();
             var variablesId = Guid.NewGuid();
-            var entry = new ActivityInstanceEntry(variablesId, "start");
+            var entry = new ActivityInstanceEntry(variablesId, "start", Guid.Empty);
             state.StartWith(entry, variablesId);
 
             // Act
@@ -177,8 +182,7 @@ namespace Fleans.Domain.Tests
 
             // Assert
             Assert.AreNotEqual(variablesId, clonedId);
-            var newVariableStates = state.GetVariableStates();
-            Assert.IsTrue(newVariableStates.ContainsKey(clonedId));
+            Assert.IsTrue(state.VariableStates.Any(v => v.Id == clonedId));
         }
 
         [TestMethod]
@@ -187,7 +191,7 @@ namespace Fleans.Domain.Tests
             // Arrange
             var state = new WorkflowInstanceState();
             var variablesId = Guid.NewGuid();
-            var entry = new ActivityInstanceEntry(variablesId, "start");
+            var entry = new ActivityInstanceEntry(variablesId, "start", Guid.Empty);
             state.StartWith(entry, variablesId);
 
             dynamic newVariables = new ExpandoObject();
@@ -198,8 +202,7 @@ namespace Fleans.Domain.Tests
             state.MergeState(variablesId, newVariables);
 
             // Assert
-            var updatedStates = state.GetVariableStates();
-            var mergedState = updatedStates[variablesId];
+            var mergedState = state.GetVariableState(variablesId);
             Assert.IsNotNull(mergedState);
         }
 
@@ -214,9 +217,8 @@ namespace Fleans.Domain.Tests
             state.AddConditionSequenceStates(activityInstanceId, new[] { "seq1" });
 
             // Assert
-            var conditionStates = state.GetConditionSequenceStates();
-            Assert.IsTrue(conditionStates.ContainsKey(activityInstanceId));
-            Assert.HasCount(1, conditionStates[activityInstanceId]);
+            Assert.IsTrue(state.ConditionSequenceStates.Any(c => c.GatewayActivityInstanceId == activityInstanceId));
+            Assert.AreEqual(1, state.GetConditionSequenceStatesForGateway(activityInstanceId).Count());
         }
 
         [TestMethod]
@@ -231,8 +233,8 @@ namespace Fleans.Domain.Tests
             state.SetConditionSequenceResult(activityInstanceId, "seq1", true);
 
             // Assert
-            var conditionStates = state.GetConditionSequenceStates();
-            Assert.IsTrue(conditionStates[activityInstanceId][0].Result);
+            var conditionStates = state.GetConditionSequenceStatesForGateway(activityInstanceId).ToArray();
+            Assert.IsTrue(conditionStates[0].Result);
         }
 
         [TestMethod]

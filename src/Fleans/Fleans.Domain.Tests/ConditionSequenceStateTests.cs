@@ -8,7 +8,7 @@ public class ConditionSequenceStateTests
     [TestMethod]
     public void IsEvaluated_ShouldBeFalse_WhenCreated()
     {
-        var state = new ConditionSequenceState("seq1");
+        var state = new ConditionSequenceState("seq1", Guid.Empty, Guid.Empty);
         Assert.IsFalse(state.IsEvaluated);
         Assert.IsFalse(state.Result);
     }
@@ -16,7 +16,7 @@ public class ConditionSequenceStateTests
     [TestMethod]
     public void IsEvaluated_ShouldBeTrue_AfterSetResultTrue()
     {
-        var state = new ConditionSequenceState("seq1");
+        var state = new ConditionSequenceState("seq1", Guid.Empty, Guid.Empty);
         state.SetResult(true);
         Assert.IsTrue(state.IsEvaluated);
         Assert.IsTrue(state.Result);
@@ -25,7 +25,7 @@ public class ConditionSequenceStateTests
     [TestMethod]
     public void IsEvaluated_ShouldBeTrue_AfterSetResultFalse()
     {
-        var state = new ConditionSequenceState("seq1");
+        var state = new ConditionSequenceState("seq1", Guid.Empty, Guid.Empty);
         state.SetResult(false);
         Assert.IsTrue(state.IsEvaluated);
         Assert.IsFalse(state.Result);

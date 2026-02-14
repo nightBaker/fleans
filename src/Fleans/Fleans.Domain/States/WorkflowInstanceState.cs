@@ -6,25 +6,25 @@ namespace Fleans.Domain.States;
 public class WorkflowInstanceState
 {
     [Id(0)]
-    public List<ActivityInstanceEntry> ActiveActivities { get; private set; } = new();
+    public Guid Id { get; internal set; }
 
     [Id(1)]
-    public List<ActivityInstanceEntry> CompletedActivities { get; private set; } = new();
+    public string? ETag { get; private set; }
 
     [Id(2)]
-    public Dictionary<Guid, WorkflowVariablesState> VariableStates { get; private set; } = new();
+    public List<ActivityInstanceEntry> Entries { get; private set; } = new();
 
     [Id(3)]
-    public Dictionary<Guid, ConditionSequenceState[]> ConditionSequenceStates { get; private set; } = new();
+    public List<WorkflowVariablesState> VariableStates { get; private set; } = new();
 
     [Id(4)]
-    public bool IsStarted { get; private set; }
+    public List<ConditionSequenceState> ConditionSequenceStates { get; private set; } = new();
 
     [Id(5)]
-    public bool IsCompleted { get; private set; }
+    public bool IsStarted { get; private set; }
 
     [Id(6)]
-    public Guid InstanceId { get; internal set; }
+    public bool IsCompleted { get; private set; }
 
     [Id(7)]
     public DateTimeOffset? CreatedAt { get; internal set; }
@@ -35,22 +35,26 @@ public class WorkflowInstanceState
     [Id(9)]
     public DateTimeOffset? CompletedAt { get; internal set; }
 
-    public IReadOnlyList<ActivityInstanceEntry> GetCompletedActivities()
-        => CompletedActivities;
+    public IEnumerable<ActivityInstanceEntry> GetActiveActivities()
+        => Entries.Where(e => !e.IsCompleted);
 
-    public IReadOnlyDictionary<Guid, WorkflowVariablesState> GetVariableStates()
-        => VariableStates;
+    public IEnumerable<ActivityInstanceEntry> GetCompletedActivities()
+        => Entries.Where(e => e.IsCompleted);
 
-    public IReadOnlyDictionary<Guid, ConditionSequenceState[]> GetConditionSequenceStates()
-        => ConditionSequenceStates;
+    public ActivityInstanceEntry? GetFirstActive(string activityId)
+        => Entries.FirstOrDefault(a => a.ActivityId == activityId && !a.IsCompleted);
 
-    public IReadOnlyList<ActivityInstanceEntry> GetActiveActivities()
-        => ActiveActivities;
+    public WorkflowVariablesState GetVariableState(Guid id)
+        => VariableStates.FirstOrDefault(v => v.Id == id)
+            ?? throw new InvalidOperationException($"Variable state '{id}' not found");
+
+    public IEnumerable<ConditionSequenceState> GetConditionSequenceStatesForGateway(Guid gatewayActivityInstanceId)
+        => ConditionSequenceStates.Where(c => c.GatewayActivityInstanceId == gatewayActivityInstanceId);
 
     public void StartWith(ActivityInstanceEntry entry, Guid variablesId)
     {
-        VariableStates.Add(variablesId, new WorkflowVariablesState());
-        ActiveActivities.Add(entry);
+        VariableStates.Add(new WorkflowVariablesState(variablesId, Id));
+        Entries.Add(entry);
     }
 
     public void Start()
@@ -71,58 +75,44 @@ public class WorkflowInstanceState
 
     public Guid AddCloneOfVariableState(Guid variableStateId)
     {
-        var clonedState = new WorkflowVariablesState();
-        clonedState.Merge(VariableStates[variableStateId].Variables);
+        var source = VariableStates.First(v => v.Id == variableStateId);
+        var clonedState = new WorkflowVariablesState(Guid.NewGuid(), Id);
+        clonedState.Merge(source.Variables);
 
-        var newId = Guid.NewGuid();
-        VariableStates.Add(newId, clonedState);
-        return newId;
+        VariableStates.Add(clonedState);
+        return clonedState.Id;
     }
 
     public void AddConditionSequenceStates(Guid activityInstanceId, string[] sequenceFlowIds)
     {
-        var sequenceStates = sequenceFlowIds.Select(id => new ConditionSequenceState(id)).ToArray();
-        ConditionSequenceStates.Add(activityInstanceId, sequenceStates);
+        var sequenceStates = sequenceFlowIds.Select(id =>
+            new ConditionSequenceState(id, activityInstanceId, Id));
+        ConditionSequenceStates.AddRange(sequenceStates);
     }
 
-    public void RemoveActiveActivities(List<ActivityInstanceEntry> removeEntries)
+    public void CompleteEntries(List<ActivityInstanceEntry> entries)
     {
-        ActiveActivities.RemoveAll(removeEntries.Contains);
+        foreach (var entry in entries)
+            entry.MarkCompleted();
     }
 
-    public void AddActiveActivities(IEnumerable<ActivityInstanceEntry> entries)
+    public void AddEntries(IEnumerable<ActivityInstanceEntry> entries)
     {
-        ActiveActivities.AddRange(entries);
-    }
-
-    public void AddCompletedActivities(IEnumerable<ActivityInstanceEntry> entries)
-    {
-        CompletedActivities.AddRange(entries);
-    }
-
-    public ActivityInstanceEntry? GetFirstActive(string activityId)
-    {
-        return ActiveActivities.FirstOrDefault(a => a.ActivityId == activityId);
+        Entries.AddRange(entries);
     }
 
     public void SetConditionSequenceResult(Guid activityInstanceId, string sequenceId, bool result)
     {
-        var sequences = ConditionSequenceStates[activityInstanceId];
+        var sequence = ConditionSequenceStates
+            .FirstOrDefault(c => c.GatewayActivityInstanceId == activityInstanceId
+                && c.ConditionalSequenceFlowId == sequenceId)
+            ?? throw new InvalidOperationException("Sequence not found");
 
-        var sequence = sequences.FirstOrDefault(s => s.ConditionalSequenceFlowId == sequenceId);
-
-        if (sequence != null)
-        {
-            sequence.SetResult(result);
-        }
-        else
-        {
-            throw new InvalidOperationException("Sequence not found");
-        }
+        sequence.SetResult(result);
     }
 
     public void MergeState(Guid variablesId, ExpandoObject variables)
     {
-        VariableStates[variablesId].Merge(variables);
+        GetVariableState(variablesId).Merge(variables);
     }
 }

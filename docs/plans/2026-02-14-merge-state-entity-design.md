@@ -1,7 +1,7 @@
 # Merge WorkflowInstanceState with EF Core Entities
 
 **Date:** 2026-02-14
-**Status:** Proposed
+**Status:** Implemented
 
 ## Overview
 
