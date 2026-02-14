@@ -282,20 +282,15 @@ public partial class BpmnConverter : IBpmnConverter
             {
                 return variableName;
             }
-            //TODO optimize: Check if the variable is a number Creating substrings for quote counting is inefficient.
-            //Instead of creating two substring allocations and then counting characters, iterate through the expression once up to matchIndex to count quotes.
-            //This reduces memory allocations and improves performance for condition conversion.
-            
-            // Check if we're inside string literals
-            var beforeMatch = expression.Substring(0, matchIndex);
-            var afterMatch = expression.Substring(matchIndex + match.Length);
-            
-            // Count quotes before and after
-            var singleQuotesBefore = beforeMatch.Count(c => c == '\'');
-            var singleQuotesAfter = afterMatch.Count(c => c == '\'');
-            var doubleQuotesBefore = beforeMatch.Count(c => c == '"');
-            var doubleQuotesAfter = afterMatch.Count(c => c == '"');
-            
+            // Check if we're inside string literals by counting quotes before the match
+            var singleQuotesBefore = 0;
+            var doubleQuotesBefore = 0;
+            for (var i = 0; i < matchIndex; i++)
+            {
+                if (expression[i] == '\'') singleQuotesBefore++;
+                else if (expression[i] == '"') doubleQuotesBefore++;
+            }
+
             // If we're inside quotes (odd number of quotes before means we're inside), don't convert
             if ((singleQuotesBefore % 2 == 1) || (doubleQuotesBefore % 2 == 1))
             {
