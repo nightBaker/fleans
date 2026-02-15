@@ -7,9 +7,9 @@ namespace Fleans.Persistence;
 
 public class EfCoreActivityInstanceGrainStorage : IGrainStorage
 {
-    private readonly IDbContextFactory<FleanDbContext> _dbContextFactory;
+    private readonly IDbContextFactory<FleanCommandDbContext> _dbContextFactory;
 
-    public EfCoreActivityInstanceGrainStorage(IDbContextFactory<FleanDbContext> dbContextFactory)
+    public EfCoreActivityInstanceGrainStorage(IDbContextFactory<FleanCommandDbContext> dbContextFactory)
     {
         _dbContextFactory = dbContextFactory;
     }

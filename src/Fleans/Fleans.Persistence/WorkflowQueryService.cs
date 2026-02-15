@@ -11,7 +11,7 @@ namespace Fleans.Persistence;
 
 public class WorkflowQueryService : IWorkflowQueryService
 {
-    private readonly IDbContextFactory<FleanDbContext> _dbContextFactory;
+    private readonly IDbContextFactory<FleanQueryDbContext> _dbContextFactory;
 
     private static readonly JsonSerializerSettings JsonSettings = new()
     {
@@ -20,7 +20,7 @@ public class WorkflowQueryService : IWorkflowQueryService
         SerializationBinder = new DomainAssemblySerializationBinder()
     };
 
-    public WorkflowQueryService(IDbContextFactory<FleanDbContext> dbContextFactory)
+    public WorkflowQueryService(IDbContextFactory<FleanQueryDbContext> dbContextFactory)
     {
         _dbContextFactory = dbContextFactory;
     }
@@ -33,7 +33,6 @@ public class WorkflowQueryService : IWorkflowQueryService
             .Include(s => s.Entries)
             .Include(s => s.VariableStates)
             .Include(s => s.ConditionSequenceStates)
-            .AsNoTracking()
             .FirstOrDefaultAsync(s => s.Id == workflowInstanceId);
 
         if (state is null)
@@ -42,7 +41,6 @@ public class WorkflowQueryService : IWorkflowQueryService
         // Load activity instance states for all entries
         var activityInstanceIds = state.Entries.Select(e => e.ActivityInstanceId).ToList();
         var activityStates = await db.ActivityInstances
-            .AsNoTracking()
             .Where(a => activityInstanceIds.Contains(a.Id))
             .ToDictionaryAsync(a => a.Id);
 
@@ -51,7 +49,6 @@ public class WorkflowQueryService : IWorkflowQueryService
         if (state.ProcessDefinitionId is not null)
         {
             var processDef = await db.ProcessDefinitions
-                .AsNoTracking()
                 .FirstOrDefaultAsync(p => p.ProcessDefinitionId == state.ProcessDefinitionId);
             workflowDef = processDef?.Workflow;
         }
@@ -93,7 +90,6 @@ public class WorkflowQueryService : IWorkflowQueryService
         await using var db = await _dbContextFactory.CreateDbContextAsync();
 
         var definitions = await db.ProcessDefinitions
-            .AsNoTracking()
             .OrderBy(d => d.ProcessDefinitionKey)
             .ThenBy(d => d.Version)
             .ToListAsync();
@@ -112,13 +108,11 @@ public class WorkflowQueryService : IWorkflowQueryService
         await using var db = await _dbContextFactory.CreateDbContextAsync();
 
         var definitionIds = await db.ProcessDefinitions
-            .AsNoTracking()
             .Where(p => p.ProcessDefinitionKey == processDefinitionKey)
             .Select(p => p.ProcessDefinitionId)
             .ToListAsync();
 
         var instances = await db.WorkflowInstances
-            .AsNoTracking()
             .Where(w => w.ProcessDefinitionId != null && definitionIds.Contains(w.ProcessDefinitionId))
             .ToListAsync();
 
@@ -132,7 +126,6 @@ public class WorkflowQueryService : IWorkflowQueryService
         await using var db = await _dbContextFactory.CreateDbContextAsync();
 
         var definitionId = await db.ProcessDefinitions
-            .AsNoTracking()
             .Where(p => p.ProcessDefinitionKey == key && p.Version == version)
             .Select(p => p.ProcessDefinitionId)
             .FirstOrDefaultAsync();
@@ -141,7 +134,6 @@ public class WorkflowQueryService : IWorkflowQueryService
             return [];
 
         var instances = await db.WorkflowInstances
-            .AsNoTracking()
             .Where(w => w.ProcessDefinitionId == definitionId)
             .ToListAsync();
 
@@ -155,7 +147,6 @@ public class WorkflowQueryService : IWorkflowQueryService
         await using var db = await _dbContextFactory.CreateDbContextAsync();
 
         var processDefinitionId = await db.WorkflowInstances
-            .AsNoTracking()
             .Where(w => w.Id == instanceId)
             .Select(w => w.ProcessDefinitionId)
             .FirstOrDefaultAsync();
@@ -164,7 +155,6 @@ public class WorkflowQueryService : IWorkflowQueryService
             return null;
 
         return await db.ProcessDefinitions
-            .AsNoTracking()
             .Where(p => p.ProcessDefinitionId == processDefinitionId)
             .Select(p => p.BpmnXml)
             .FirstOrDefaultAsync();
@@ -175,7 +165,6 @@ public class WorkflowQueryService : IWorkflowQueryService
         await using var db = await _dbContextFactory.CreateDbContextAsync();
 
         return await db.ProcessDefinitions
-            .AsNoTracking()
             .Where(p => p.ProcessDefinitionKey == processDefinitionKey)
             .OrderByDescending(p => p.Version)
             .Select(p => p.BpmnXml)
@@ -187,7 +176,6 @@ public class WorkflowQueryService : IWorkflowQueryService
         await using var db = await _dbContextFactory.CreateDbContextAsync();
 
         return await db.ProcessDefinitions
-            .AsNoTracking()
             .Where(p => p.ProcessDefinitionKey == key && p.Version == version)
             .Select(p => p.BpmnXml)
             .FirstOrDefaultAsync();

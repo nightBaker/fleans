@@ -1,10 +1,12 @@
 using System.Dynamic;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 using Fleans.Domain;
 using Fleans.Domain.States;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Serialization;
 
 namespace Fleans.Persistence;
 
@@ -120,5 +122,23 @@ internal static class FleanModelConfiguration
                         v => RuntimeHelpers.GetHashCode(v),
                         v => v));
         });
+    }
+}
+
+/// <summary>
+/// Restricts TypeNameHandling deserialization to types from the Fleans.Domain assembly only.
+/// </summary>
+internal sealed class DomainAssemblySerializationBinder : DefaultSerializationBinder
+{
+    private static readonly Assembly DomainAssembly = typeof(WorkflowDefinition).Assembly;
+
+    public override Type BindToType(string? assemblyName, string typeName)
+    {
+        var type = base.BindToType(assemblyName, typeName);
+        if (type.Assembly != DomainAssembly)
+            throw new JsonSerializationException(
+                $"Deserialization of type '{type.FullName}' from assembly '{type.Assembly.FullName}' is not allowed. " +
+                $"Only types from '{DomainAssembly.GetName().Name}' are permitted.");
+        return type;
     }
 }
