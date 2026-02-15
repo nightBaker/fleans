@@ -6,7 +6,6 @@ using System.Text;
 using System.Threading.Tasks;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
-using Fleans.Domain.States;
 
 namespace Fleans.Domain
 {
@@ -19,11 +18,6 @@ namespace Fleans.Domain
         Activity GetActivity(string activityId);
     }
    
-    public interface ICondition
-    {
-        bool Evaluate(WorkflowVariablesState worklfowVariablesState);
-    }
-
     [GenerateSerializer]
     public record WorkflowDefinition : IWorkflowDefinition
     {
