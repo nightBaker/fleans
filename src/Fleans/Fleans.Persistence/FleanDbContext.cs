@@ -64,6 +64,14 @@ public class FleanDbContext : DbContext
                 .WithOne()
                 .HasForeignKey(e => e.WorkflowInstanceId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            entity.Property(e => e.ProcessDefinitionId).HasMaxLength(512);
+
+            entity.HasOne<ProcessDefinition>()
+                .WithMany()
+                .HasForeignKey(e => e.ProcessDefinitionId)
+                .IsRequired(false)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<ActivityInstanceEntry>(entity =>

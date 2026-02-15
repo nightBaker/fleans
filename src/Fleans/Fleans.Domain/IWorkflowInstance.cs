@@ -11,16 +11,6 @@ public interface IWorkflowInstance : IGrainWithGuidKey
     [ReadOnly]
     ValueTask<Guid> GetWorkflowInstanceId();
     [ReadOnly]
-    ValueTask<DateTimeOffset?> GetCreatedAt();
-    [ReadOnly]
-    ValueTask<DateTimeOffset?> GetExecutionStartedAt();
-    [ReadOnly]
-    ValueTask<DateTimeOffset?> GetCompletedAt();
-    [ReadOnly]
-    ValueTask<WorkflowInstanceInfo> GetInstanceInfo();
-    [ReadOnly]
-    ValueTask<InstanceStateSnapshot> GetStateSnapshot();
-    [ReadOnly]
     ValueTask<IWorkflowDefinition> GetWorkflowDefinition();
 
     Task CompleteActivity(string activityId, ExpandoObject variables);

@@ -1,29 +1,15 @@
+using Fleans.Application.QueryModels;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Errors;
 using Fleans.Domain.Sequences;
-using Orleans.Serialization;
-using Orleans.TestingHost;
+using Orleans.Runtime;
 using System.Dynamic;
 
 namespace Fleans.Domain.Tests;
 
 [TestClass]
-public class ScriptTaskTests
+public class ScriptTaskTests : WorkflowTestBase
 {
-    private TestCluster _cluster = null!;
-
-    [TestInitialize]
-    public void Setup()
-    {
-        _cluster = CreateCluster();
-    }
-
-    [TestCleanup]
-    public void Cleanup()
-    {
-        _cluster?.StopAllSilos();
-    }
-
     [TestMethod]
     public void ScriptTask_ShouldHaveCorrectProperties()
     {
@@ -58,7 +44,7 @@ public class ScriptTaskTests
     {
         // Arrange
         var workflow = CreateSimpleWorkflow();
-        var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 
@@ -69,7 +55,9 @@ public class ScriptTaskTests
         await workflowInstance.CompleteActivity("script1", (ExpandoObject)variables);
 
         // Assert — end event should have been reached (workflow completes)
-        var snapshot = await workflowInstance.GetStateSnapshot();
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsNotNull(snapshot);
         Assert.IsTrue(snapshot.IsCompleted);
         CollectionAssert.Contains(snapshot.CompletedActivityIds, "end");
     }
@@ -79,14 +67,16 @@ public class ScriptTaskTests
     {
         // Arrange
         var workflow = CreateSimpleWorkflow();
-        var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
 
         // Act
         await workflowInstance.StartWorkflow();
 
         // Assert — after starting, the script task should be active/executing
-        var snapshot = await workflowInstance.GetStateSnapshot();
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsNotNull(snapshot);
         Assert.HasCount(1, snapshot.ActiveActivities);
         Assert.AreEqual("script1", snapshot.ActiveActivities[0].ActivityId);
         Assert.AreEqual("ScriptTask", snapshot.ActiveActivities[0].ActivityType);
@@ -97,7 +87,7 @@ public class ScriptTaskTests
     {
         // Arrange
         var workflow = CreateSimpleWorkflow();
-        var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 
@@ -108,7 +98,9 @@ public class ScriptTaskTests
         await workflowInstance.CompleteActivity("script1", (ExpandoObject)variables);
 
         // Assert
-        var snapshot = await workflowInstance.GetStateSnapshot();
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsNotNull(snapshot);
         Assert.IsTrue(snapshot.IsCompleted);
 
         var completedActivityIds = snapshot.CompletedActivityIds;
@@ -122,7 +114,7 @@ public class ScriptTaskTests
     {
         // Arrange
         var workflow = CreateSimpleWorkflow();
-        var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 
@@ -134,7 +126,9 @@ public class ScriptTaskTests
         await workflowInstance.CompleteActivity("script1", (ExpandoObject)variables);
 
         // Assert
-        var snapshot = await workflowInstance.GetStateSnapshot();
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsNotNull(snapshot);
         var variableStates = snapshot.VariableStates;
         Assert.IsTrue(variableStates.Count > 0);
 
@@ -149,7 +143,7 @@ public class ScriptTaskTests
     {
         // Arrange
         var workflow = CreateSimpleWorkflow();
-        var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 
@@ -157,7 +151,9 @@ public class ScriptTaskTests
         await workflowInstance.CompleteActivity("script1", new ExpandoObject());
 
         // Assert — script task should appear in completed activities
-        var snapshot = await workflowInstance.GetStateSnapshot();
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsNotNull(snapshot);
         var completedScriptTask = snapshot.CompletedActivities.FirstOrDefault(a => a.ActivityId == "script1");
 
         Assert.IsNotNull(completedScriptTask, "ScriptTask should be in completed activities");
@@ -170,7 +166,7 @@ public class ScriptTaskTests
     {
         // Arrange
         var workflow = CreateSimpleWorkflow();
-        var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 
@@ -178,7 +174,9 @@ public class ScriptTaskTests
         await workflowInstance.CompleteActivity("script1", new ExpandoObject());
 
         // Assert
-        var snapshot = await workflowInstance.GetStateSnapshot();
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsNotNull(snapshot);
         Assert.HasCount(0, snapshot.ActiveActivities);
     }
 
@@ -203,7 +201,7 @@ public class ScriptTaskTests
             }
         };
 
-        var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 
@@ -214,7 +212,9 @@ public class ScriptTaskTests
         await workflowInstance.CompleteActivity("script1", (ExpandoObject)vars1);
 
         // Assert — second script task should now be active
-        var snapshot = await workflowInstance.GetStateSnapshot();
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsNotNull(snapshot);
         Assert.IsFalse(snapshot.IsCompleted);
         Assert.HasCount(1, snapshot.ActiveActivities);
         Assert.AreEqual("ScriptTask", snapshot.ActiveActivities[0].ActivityType);
@@ -226,7 +226,8 @@ public class ScriptTaskTests
         await workflowInstance.CompleteActivity("script2", (ExpandoObject)vars2);
 
         // Assert — workflow should be completed
-        snapshot = await workflowInstance.GetStateSnapshot();
+        snapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsNotNull(snapshot);
         Assert.IsTrue(snapshot.IsCompleted);
     }
 
@@ -235,7 +236,7 @@ public class ScriptTaskTests
     {
         // Arrange
         var workflow = CreateSimpleWorkflow();
-        var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 
@@ -243,7 +244,9 @@ public class ScriptTaskTests
         await workflowInstance.FailActivity("script1", new Exception("Script execution failed"));
 
         // Assert
-        var snapshot = await workflowInstance.GetStateSnapshot();
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsNotNull(snapshot);
         var failedSnapshot = snapshot.CompletedActivities.First(a => a.ActivityId == "script1");
 
         Assert.IsNotNull(failedSnapshot.ErrorState);
@@ -256,7 +259,7 @@ public class ScriptTaskTests
     {
         // Arrange
         var workflow = CreateSimpleWorkflow();
-        var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 
@@ -264,7 +267,9 @@ public class ScriptTaskTests
         await workflowInstance.FailActivity("script1", new BadRequestActivityException("Invalid script input"));
 
         // Assert
-        var snapshot = await workflowInstance.GetStateSnapshot();
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsNotNull(snapshot);
         var failedSnapshot = snapshot.CompletedActivities.First(a => a.ActivityId == "script1");
 
         Assert.IsNotNull(failedSnapshot.ErrorState);
@@ -277,7 +282,7 @@ public class ScriptTaskTests
     {
         // Arrange
         var workflow = CreateSimpleWorkflow();
-        var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 
@@ -285,7 +290,9 @@ public class ScriptTaskTests
         await workflowInstance.FailActivity("script1", new Exception("Script error"));
 
         // Assert — workflow should complete (failed activity transitions to end event)
-        var snapshot = await workflowInstance.GetStateSnapshot();
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsNotNull(snapshot);
         Assert.IsTrue(snapshot.IsCompleted);
         Assert.HasCount(0, snapshot.ActiveActivities);
 
@@ -299,7 +306,7 @@ public class ScriptTaskTests
     {
         // Arrange
         var workflow = CreateSimpleWorkflow();
-        var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 
@@ -307,7 +314,9 @@ public class ScriptTaskTests
         await workflowInstance.FailActivity("script1", new Exception("Script error"));
 
         // Assert — variables should not have been merged (FailActivity doesn't take variables)
-        var snapshot = await workflowInstance.GetStateSnapshot();
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsNotNull(snapshot);
         foreach (var vs in snapshot.VariableStates)
         {
             Assert.AreEqual(0, vs.Variables.Count, "No variables should be merged on failure");
@@ -330,31 +339,5 @@ public class ScriptTaskTests
                 new SequenceFlow("seq2", script, end)
             }
         };
-    }
-
-    private static TestCluster CreateCluster()
-    {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<SiloConfigurator>();
-        var cluster = builder.Build();
-        cluster.Deploy();
-        return cluster;
-    }
-
-    class SiloConfigurator : ISiloConfigurator
-    {
-        public void Configure(ISiloBuilder hostBuilder) =>
-            hostBuilder
-                .AddMemoryGrainStorage("workflowInstances")
-                .AddMemoryGrainStorage("activityInstances")
-                .ConfigureServices(services => services.AddSerializer(serializerBuilder =>
-                {
-                    serializerBuilder.AddNewtonsoftJsonSerializer(
-                        isSupported: type => type == typeof(ExpandoObject),
-                        new Newtonsoft.Json.JsonSerializerSettings
-                        {
-                            TypeNameHandling = Newtonsoft.Json.TypeNameHandling.All
-                        });
-                }));
     }
 }

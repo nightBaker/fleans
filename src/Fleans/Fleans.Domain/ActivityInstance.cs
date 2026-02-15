@@ -50,16 +50,6 @@ namespace Fleans.Domain
 
         public ValueTask<string> GetActivityId() => ValueTask.FromResult(State.ActivityId!);
 
-        public ValueTask<ActivityErrorState?> GetErrorState() => ValueTask.FromResult(State.ErrorState);
-
-        public ValueTask<DateTimeOffset?> GetCreatedAt() => ValueTask.FromResult(State.CreatedAt);
-
-        public ValueTask<DateTimeOffset?> GetExecutionStartedAt() => ValueTask.FromResult(State.ExecutionStartedAt);
-
-        public ValueTask<DateTimeOffset?> GetCompletedAt() => ValueTask.FromResult(State.CompletedAt);
-
-        public ValueTask<ActivityInstanceSnapshot> GetSnapshot() => ValueTask.FromResult(State.GetSnapshot(this.GetPrimaryKey()));
-
         ValueTask<bool> IActivityInstance.IsCompleted()
             => ValueTask.FromResult(State.IsCompleted);
 

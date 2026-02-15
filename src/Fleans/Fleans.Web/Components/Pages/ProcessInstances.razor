@@ -2,9 +2,9 @@
 @page "/process-instances/{ProcessDefinitionKey}/{Version:int}"
 @rendermode InteractiveServer
 @using Fleans.Application
-@using Fleans.Domain
+@using Fleans.Application.QueryModels
 @using Microsoft.FluentUI.AspNetCore.Components
-@inject WorkflowEngine WorkflowEngine
+@inject IWorkflowQueryService QueryService
 @inject NavigationManager Navigation
 @inject ILogger<ProcessInstances> Logger
 
@@ -88,9 +88,9 @@
             errorMessage = null;
             IReadOnlyList<WorkflowInstanceInfo> result;
             if (Version.HasValue)
-                result = await WorkflowEngine.GetInstancesByKeyAndVersion(ProcessDefinitionKey, Version.Value);
+                result = await QueryService.GetInstancesByKeyAndVersion(ProcessDefinitionKey, Version.Value);
             else
-                result = await WorkflowEngine.GetInstancesByKey(ProcessDefinitionKey);
+                result = await QueryService.GetInstancesByKey(ProcessDefinitionKey);
             instances = result.ToList();
             instancesQueryable = instances.AsQueryable();
         }

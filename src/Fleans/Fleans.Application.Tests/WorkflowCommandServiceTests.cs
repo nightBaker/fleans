@@ -12,9 +12,9 @@ using System.Dynamic;
 namespace Fleans.Application.Tests
 {
     [TestClass]
-    public class WorkflowEngineTests
+    public class WorkflowCommandServiceTests
     {
-        private WorkflowEngine _workflowEngine = null!;
+        private WorkflowCommandService _commandService = null!;
         private IGrainFactory _grainFactory = null!;
         private IWorkflowInstanceFactoryGrain _factoryGrain = null!;
 
@@ -23,7 +23,7 @@ namespace Fleans.Application.Tests
         {
             _grainFactory = Substitute.For<IGrainFactory>();
             _factoryGrain = Substitute.For<IWorkflowInstanceFactoryGrain>();
-            _workflowEngine = new WorkflowEngine(_grainFactory, NullLogger<WorkflowEngine>.Instance);
+            _commandService = new WorkflowCommandService(_grainFactory, NullLogger<WorkflowCommandService>.Instance);
         }
 
         [TestMethod]
@@ -45,7 +45,7 @@ namespace Fleans.Application.Tests
             workflowInstance.StartWorkflow().Returns(Task.CompletedTask);
 
             // Act
-            var result = await _workflowEngine.StartWorkflow(workflowId);
+            var result = await _commandService.StartWorkflow(workflowId);
 
             // Assert
             Assert.AreEqual(workflowInstanceId, result);
@@ -70,7 +70,7 @@ namespace Fleans.Application.Tests
                 .Returns(Task.CompletedTask);
 
             // Act
-            _workflowEngine.CompleteActivity(workflowInstanceId, activityId, variables);
+            _commandService.CompleteActivity(workflowInstanceId, activityId, variables);
 
             // Assert
             await workflowInstance.Received(1).CompleteActivity(activityId, variables);
@@ -89,11 +89,10 @@ namespace Fleans.Application.Tests
                 .Returns(workflowInstance);
 
             // Act
-            _workflowEngine.CompleteActivity(workflowInstanceId, activityId, variables);
+            _commandService.CompleteActivity(workflowInstanceId, activityId, variables);
 
             // Assert
             _grainFactory.Received(1).GetGrain<IWorkflowInstance>(workflowInstanceId);
         }
     }
 }
-

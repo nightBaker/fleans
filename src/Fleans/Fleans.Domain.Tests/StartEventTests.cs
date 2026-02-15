@@ -1,41 +1,29 @@
+using Fleans.Application.QueryModels;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
-using Orleans.Serialization;
-using Orleans.TestingHost;
+using Orleans.Runtime;
 using System.Dynamic;
 
 namespace Fleans.Domain.Tests;
 
 [TestClass]
-public class StartEventTests
+public class StartEventTests : WorkflowTestBase
 {
-    private TestCluster _cluster = null!;
-
-    [TestInitialize]
-    public void Setup()
-    {
-        _cluster = CreateCluster();
-    }
-
-    [TestCleanup]
-    public void Cleanup()
-    {
-        _cluster?.StopAllSilos();
-    }
-
     [TestMethod]
     public async Task ExecuteAsync_ShouldCompleteActivity_AndStartWorkflow()
     {
         // Arrange
         var workflow = CreateSimpleWorkflow();
-        var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
 
         // Act
         await workflowInstance.StartWorkflow();
 
         // Assert
-        var snapshot = await workflowInstance.GetStateSnapshot();
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsNotNull(snapshot);
         Assert.IsTrue(snapshot.IsStarted);
         Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "start" && a.IsCompleted));
     }
@@ -59,14 +47,16 @@ public class StartEventTests
             }
         };
 
-        var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
 
         // Act
         await workflowInstance.StartWorkflow();
 
         // Assert — after start event completes, "task" should be the active activity
-        var snapshot = await workflowInstance.GetStateSnapshot();
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsNotNull(snapshot);
         Assert.HasCount(1, snapshot.ActiveActivities);
         Assert.AreEqual("task", snapshot.ActiveActivities[0].ActivityId);
     }
@@ -84,26 +74,19 @@ public class StartEventTests
             SequenceFlows = new List<SequenceFlow>()
         };
 
-        var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
 
         // Act
         await workflowInstance.StartWorkflow();
 
         // Assert — start event completes but no next activity exists (no sequence flow)
-        var snapshot = await workflowInstance.GetStateSnapshot();
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsNotNull(snapshot);
         Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "start"));
         Assert.HasCount(0, snapshot.ActiveActivities);
         Assert.IsFalse(snapshot.IsCompleted);
-    }
-
-    private static TestCluster CreateCluster()
-    {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<SiloConfigurator>();
-        var cluster = builder.Build();
-        cluster.Deploy();
-        return cluster;
     }
 
     private static IWorkflowDefinition CreateSimpleWorkflow()
@@ -122,22 +105,5 @@ public class StartEventTests
                 new SequenceFlow("seq2", task, end)
             }
         };
-    }
-
-    class SiloConfigurator : ISiloConfigurator
-    {
-        public void Configure(ISiloBuilder hostBuilder) =>
-            hostBuilder
-                .AddMemoryGrainStorage("workflowInstances")
-                .AddMemoryGrainStorage("activityInstances")
-                .ConfigureServices(services => services.AddSerializer(serializerBuilder =>
-                {
-                    serializerBuilder.AddNewtonsoftJsonSerializer(
-                        isSupported: type => type == typeof(ExpandoObject),
-                        new Newtonsoft.Json.JsonSerializerSettings
-                        {
-                            TypeNameHandling = Newtonsoft.Json.TypeNameHandling.All
-                        });
-                }));
     }
 }

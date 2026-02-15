@@ -1,3 +1,4 @@
+using Fleans.Application.QueryModels;
 using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
 using Fleans.Domain.Persistence;
@@ -19,8 +20,6 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
     // - "start by key" uses latest version
     private readonly Dictionary<string, ProcessDefinition> _byId = new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<ProcessDefinition>> _byKey = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, List<Guid>> _instancesByKey = new(StringComparer.Ordinal);
-    private readonly Dictionary<Guid, string> _instanceToDefinitionId = new();
 
     public WorkflowInstanceFactoryGrain(
         IGrainFactory grainFactory,
@@ -47,11 +46,8 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
             }
             versions.Add(def);
         }
-
-        // TODO: Persist and rehydrate _instancesByKey and _instanceToDefinitionId.
-        // Currently instance tracking is lost on grain reactivation.
     }
-    
+
     public async Task<IWorkflowInstance> CreateWorkflowInstanceGrain(string workflowId)
     {
         // Back-compat: treat workflowId as process definition key and start the latest version.
@@ -67,7 +63,6 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
         var workflowInstanceGrain = _grainFactory.GetGrain<IWorkflowInstance>(guid);
 
         await workflowInstanceGrain.SetWorkflow(definition.Workflow);
-        TrackInstance(definition.ProcessDefinitionKey, guid, definition.ProcessDefinitionId);
 
         return workflowInstanceGrain;
     }
@@ -94,7 +89,6 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
         var workflowInstanceGrain = _grainFactory.GetGrain<IWorkflowInstance>(guid);
 
         await workflowInstanceGrain.SetWorkflow(definition.Workflow);
-        TrackInstance(definition.ProcessDefinitionKey, guid, definition.ProcessDefinitionId);
 
         return workflowInstanceGrain;
     }
@@ -179,119 +173,10 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
         await DeployWorkflow(def, string.Empty);
     }
 
-    public Task<IReadOnlyList<IWorkflowDefinition>> GetAllWorkflows()
-    {
-        // Back-compat: return latest workflow per key.
-        var latest = _byKey.Values
-            .Where(v => v.Count > 0)
-            .Select(v => (IWorkflowDefinition)v[^1].Workflow)
-            .ToList()
-            .AsReadOnly();
-
-        return Task.FromResult<IReadOnlyList<IWorkflowDefinition>>(latest);
-    }
-
-    public Task<IReadOnlyList<ProcessDefinitionSummary>> GetAllProcessDefinitions()
-    {
-        var all = _byKey.Values
-            .SelectMany(v => v)
-            .OrderBy(d => d.ProcessDefinitionKey, StringComparer.Ordinal)
-            .ThenBy(d => d.Version)
-            .Select(ToSummary)
-            .ToList()
-            .AsReadOnly();
-
-        return Task.FromResult<IReadOnlyList<ProcessDefinitionSummary>>(all);
-    }
-
     public Task<bool> IsWorkflowRegistered(string workflowId)
     {
         // Back-compat: treat as key.
         return Task.FromResult(_byKey.ContainsKey(workflowId));
-    }
-
-    private void TrackInstance(string processDefinitionKey, Guid instanceId, string processDefinitionId)
-    {
-        if (!_instancesByKey.TryGetValue(processDefinitionKey, out var instances))
-        {
-            instances = new List<Guid>();
-            _instancesByKey[processDefinitionKey] = instances;
-        }
-        instances.Add(instanceId);
-        _instanceToDefinitionId[instanceId] = processDefinitionId;
-    }
-
-    public async Task<IReadOnlyList<WorkflowInstanceInfo>> GetInstancesByKey(string processDefinitionKey)
-    {
-        if (!_instancesByKey.TryGetValue(processDefinitionKey, out var instanceIds))
-            return Array.Empty<WorkflowInstanceInfo>();
-
-        var result = new List<WorkflowInstanceInfo>();
-        foreach (var id in instanceIds)
-        {
-            var instance = _grainFactory.GetGrain<IWorkflowInstance>(id);
-            var info = await instance.GetInstanceInfo();
-            result.Add(info);
-        }
-        return result;
-    }
-
-    public Task<string> GetBpmnXml(string processDefinitionId)
-    {
-        if (!_byId.TryGetValue(processDefinitionId, out var definition))
-            throw new KeyNotFoundException($"Process definition '{processDefinitionId}' not found.");
-        return Task.FromResult(definition.BpmnXml);
-    }
-
-    public Task<string> GetBpmnXmlByKey(string processDefinitionKey)
-    {
-        var definition = GetLatestDefinitionOrThrow(processDefinitionKey);
-        return Task.FromResult(definition.BpmnXml);
-    }
-
-    public Task<string> GetBpmnXmlByInstanceId(Guid instanceId)
-    {
-        if (!_instanceToDefinitionId.TryGetValue(instanceId, out var definitionId))
-            throw new KeyNotFoundException($"Instance '{instanceId}' not found.");
-        return GetBpmnXml(definitionId);
-    }
-
-    public Task<string> GetBpmnXmlByKeyAndVersion(string processDefinitionKey, int version)
-    {
-        if (!_byKey.TryGetValue(processDefinitionKey, out var versions) || versions.Count == 0)
-            throw new KeyNotFoundException($"Process definition key '{processDefinitionKey}' not found.");
-
-        var definition = versions.FirstOrDefault(v => v.Version == version)
-            ?? throw new KeyNotFoundException($"Version {version} of '{processDefinitionKey}' not found.");
-
-        return Task.FromResult(definition.BpmnXml);
-    }
-
-    public async Task<IReadOnlyList<WorkflowInstanceInfo>> GetInstancesByKeyAndVersion(string processDefinitionKey, int version)
-    {
-        if (!_byKey.TryGetValue(processDefinitionKey, out var versions) || versions.Count == 0)
-            return Array.Empty<WorkflowInstanceInfo>();
-
-        var definition = versions.FirstOrDefault(v => v.Version == version);
-        if (definition == null)
-            return Array.Empty<WorkflowInstanceInfo>();
-
-        var targetDefinitionId = definition.ProcessDefinitionId;
-
-        if (!_instancesByKey.TryGetValue(processDefinitionKey, out var instanceIds))
-            return Array.Empty<WorkflowInstanceInfo>();
-
-        var result = new List<WorkflowInstanceInfo>();
-        foreach (var id in instanceIds)
-        {
-            if (_instanceToDefinitionId.TryGetValue(id, out var defId) && defId == targetDefinitionId)
-            {
-                var instance = _grainFactory.GetGrain<IWorkflowInstance>(id);
-                var info = await instance.GetInstanceInfo();
-                result.Add(info);
-            }
-        }
-        return result;
     }
 
     private ProcessDefinition GetLatestDefinitionOrThrow(string processDefinitionKey)

@@ -1,41 +1,29 @@
+using Fleans.Application.QueryModels;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
-using Orleans.Serialization;
-using Orleans.TestingHost;
+using Orleans.Runtime;
 using System.Dynamic;
 
 namespace Fleans.Domain.Tests
 {
     [TestClass]
-    public class ParallelGatewayTests
+    public class ParallelGatewayTests : WorkflowTestBase
     {
-        private TestCluster _cluster = null!;
-
-        [TestInitialize]
-        public void Setup()
-        {
-            _cluster = CreateCluster();
-        }
-
-        [TestCleanup]
-        public void Cleanup()
-        {
-            _cluster?.StopAllSilos();
-        }
-
         [TestMethod]
         public async Task ForkGateway_ShouldCreateMultipleParallelPaths()
         {
             // Arrange
             var workflow = CreateForkJoinWorkflow();
-            var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
             await workflowInstance.SetWorkflow(workflow);
 
             // Act - Complete the fork gateway
             await workflowInstance.StartWorkflow();
 
             // Assert - Should have multiple parallel paths active
-            var snapshot = await workflowInstance.GetStateSnapshot();
+            var instanceId = workflowInstance.GetPrimaryKey();
+            var snapshot = await QueryService.GetStateSnapshot(instanceId);
+            Assert.IsNotNull(snapshot);
 
             // After fork, should have multiple task activities active
             var taskActivities = snapshot.ActiveActivities.Where(a => a.ActivityType == "TaskActivity").ToList();
@@ -48,7 +36,7 @@ namespace Fleans.Domain.Tests
         {
             // Arrange
             var workflow = CreateForkJoinWorkflow();
-            var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
             await workflowInstance.SetWorkflow(workflow);
             await workflowInstance.StartWorkflow();
 
@@ -83,29 +71,22 @@ namespace Fleans.Domain.Tests
                 }
             };
 
-            var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
             await workflowInstance.SetWorkflow(workflow);
 
             // Act — start the workflow; start event auto-transitions to fork, fork fans out
             await workflowInstance.StartWorkflow();
 
             // Assert — all 3 tasks should be active after the fork
-            var snapshot = await workflowInstance.GetStateSnapshot();
+            var instanceId = workflowInstance.GetPrimaryKey();
+            var snapshot = await QueryService.GetStateSnapshot(instanceId);
+            Assert.IsNotNull(snapshot);
             var activeTaskActivities = snapshot.ActiveActivities.Where(a => a.ActivityType == "TaskActivity").ToList();
 
             Assert.HasCount(3, activeTaskActivities);
             Assert.IsTrue(activeTaskActivities.Any(a => a.ActivityId == "task1"));
             Assert.IsTrue(activeTaskActivities.Any(a => a.ActivityId == "task2"));
             Assert.IsTrue(activeTaskActivities.Any(a => a.ActivityId == "task3"));
-        }
-
-        private static TestCluster CreateCluster()
-        {
-            var builder = new TestClusterBuilder();
-            builder.AddSiloBuilderConfigurator<SiloConfigurator>();
-            var cluster = builder.Build();
-            cluster.Deploy();
-            return cluster;
         }
 
         private static IWorkflowDefinition CreateForkJoinWorkflow()
@@ -131,23 +112,6 @@ namespace Fleans.Domain.Tests
                     new SequenceFlow("seq6", join, end)
                 }
             };
-        }
-
-        class SiloConfigurator : ISiloConfigurator
-        {
-            public void Configure(ISiloBuilder hostBuilder) =>
-                hostBuilder
-                    .AddMemoryGrainStorage("workflowInstances")
-                    .AddMemoryGrainStorage("activityInstances")
-                    .ConfigureServices(services => services.AddSerializer(serializerBuilder =>
-                    {
-                        serializerBuilder.AddNewtonsoftJsonSerializer(
-                            isSupported: type => type == typeof(ExpandoObject),
-                            new Newtonsoft.Json.JsonSerializerSettings
-                            {
-                                TypeNameHandling = Newtonsoft.Json.TypeNameHandling.All
-                            });
-                    }));
         }
     }
 }
