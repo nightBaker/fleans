@@ -1,6 +1,8 @@
 using Fleans.Application;
 using Fleans.Infrastructure;
+using Fleans.Persistence;
 using Fleans.Web.Components;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.FluentUI.AspNetCore.Components;
 using StackExchange.Redis;
 
@@ -19,6 +21,10 @@ builder.Services.AddFluentUIComponents();
 // Add Application and Infrastructure services
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure();
+
+// EF Core persistence — shared SQLite file with Api silo
+var sqliteConnectionString = builder.Configuration["FLEANS_SQLITE_CONNECTION"] ?? "DataSource=fleans-dev.db";
+builder.Services.AddEfCorePersistence(options => options.UseSqlite(sqliteConnectionString));
 
 // Add Orleans client
 // When running through Aspire, service discovery automatically provides gateway endpoints
@@ -44,6 +50,14 @@ builder.Host.UseOrleansClient(siloBuilder=> siloBuilder.UseRedisClustering(optio
 }));
 
 var app = builder.Build();
+
+// Ensure EF Core database is created (dev only — use migrations in production)
+using (var scope = app.Services.CreateScope())
+{
+    var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<FleanDbContext>>();
+    using var db = dbFactory.CreateDbContext();
+    db.Database.EnsureCreated();
+}
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
