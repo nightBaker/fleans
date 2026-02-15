@@ -158,7 +158,7 @@ public partial class BpmnConverter : IBpmnConverter
                     "Mixed parallel gateways (both join and fork) are not supported. " +
                     "Split into separate join and fork gateways.");
             }
-            var activity = new ParallelGateway(id, isFork);
+            var activity = new ParallelGateway(id, IsFork: isFork);
             activities.Add(activity);
             activityMap[id] = activity;
         }

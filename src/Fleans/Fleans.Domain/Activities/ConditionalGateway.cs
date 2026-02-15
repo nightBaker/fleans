@@ -3,12 +3,8 @@ using Fleans.Domain.Sequences;
 namespace Fleans.Domain.Activities;
 
 [GenerateSerializer]
-public abstract class ConditionalGateway : Gateway
+public abstract record ConditionalGateway(string ActivityId) : Gateway(ActivityId)
 {
-    protected ConditionalGateway(string ActivityId) : base(ActivityId)
-    {
-    }
-
     internal async Task<bool> SetConditionResult(
         IWorkflowInstance workflowInstance,
         IActivityInstance activityInstance,

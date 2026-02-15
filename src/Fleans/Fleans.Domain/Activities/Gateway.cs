@@ -1,9 +1,4 @@
 namespace Fleans.Domain.Activities;
 
 [GenerateSerializer]
-public abstract class Gateway : Activity
-{
-    protected Gateway(string ActivityId) : base(ActivityId)
-    {
-    }
-}
+public abstract record Gateway(string ActivityId) : Activity(ActivityId);
