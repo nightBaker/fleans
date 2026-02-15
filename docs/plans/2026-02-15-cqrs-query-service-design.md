@@ -1,7 +1,7 @@
 # CQRS: WorkflowCommandService + WorkflowQueryService
 
 **Date:** 2026-02-15
-**Status:** Proposed
+**Status:** Implemented (PR #57, merged 2026-02-15)
 
 ## Motivation
 

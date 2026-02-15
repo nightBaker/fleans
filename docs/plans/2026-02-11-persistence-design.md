@@ -330,6 +330,7 @@ src/Fleans/
 - Fix `ValueComparer` snapshot for `WorkflowDefinition` in `FleanDbContext` — currently returns same reference (`v => v`), so EF Core change tracking won't detect mutations. Replace with deep-clone if `UpdateAsync` is ever added
 - Add EF Core migrations for `ProcessDefinitions` table — currently relies on `EnsureCreated()` (dev only)
 - Extract shared `TestDbContextFactory` — duplicated identically across 3 persistence test files
+- ~~CQRS split: replace `WorkflowEngine` with `IWorkflowCommandService` + `IWorkflowQueryService`~~ — Done: PR #57. Query service reads EF Core directly, command service delegates to grains. Snapshot DTOs moved from Domain to Application/QueryModels. Read-only methods removed from grain interfaces. 17 integration tests added for `WorkflowQueryService`.
 
 ---
 
@@ -339,3 +340,4 @@ src/Fleans/
 - No grain reference serialization (IActivityInstance lists in WorkflowInstanceState)
 - ~~IGrainStorage providers are in-memory (no database)~~ — Done: EF Core grain storage for `ActivityInstance` and `WorkflowInstance`
 - ~~`InMemoryProcessDefinitionRepository` is the only repository implementation~~ — Done: replaced by `EfCoreProcessDefinitionRepository`, in-memory project removed
+- ~~No CQRS read/write separation~~ — Done: `WorkflowEngine` replaced by `IWorkflowCommandService` + `IWorkflowQueryService` (PR #57)
