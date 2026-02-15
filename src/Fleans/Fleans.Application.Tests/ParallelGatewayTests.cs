@@ -1,10 +1,12 @@
+using Fleans.Application.Grains;
 using Fleans.Application.QueryModels;
+using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
 using Orleans.Runtime;
 using System.Dynamic;
 
-namespace Fleans.Domain.Tests
+namespace Fleans.Application.Tests
 {
     [TestClass]
     public class ParallelGatewayTests : WorkflowTestBase

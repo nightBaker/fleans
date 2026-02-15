@@ -11,7 +11,7 @@ using Orleans.TestingHost;
 using Orleans.TestingHost.InProcess;
 using System.Dynamic;
 
-namespace Fleans.Domain.Tests;
+namespace Fleans.Application.Tests;
 
 public abstract class WorkflowTestBase
 {
