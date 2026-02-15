@@ -2,6 +2,7 @@ using Fleans.Application.Grains;
 using Fleans.Application.QueryModels;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
+using Fleans.Domain.Errors;
 using Fleans.Domain.Sequences;
 using Orleans.Runtime;
 using System.Dynamic;
@@ -319,6 +320,175 @@ namespace Fleans.Application.Tests
 
             // Assert
             Assert.AreEqual(instanceId, result);
+        }
+
+        [TestMethod]
+        public async Task ActivitySnapshot_ShouldHaveExecutionStartedAt_AfterExecution()
+        {
+            // Arrange
+            var workflow = CreateSimpleWorkflow();
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+            await workflowInstance.SetWorkflow(workflow);
+
+            var before = DateTimeOffset.UtcNow;
+            await workflowInstance.StartWorkflow();
+            var after = DateTimeOffset.UtcNow;
+
+            // Act
+            var instanceId = workflowInstance.GetPrimaryKey();
+            var snapshot = await QueryService.GetStateSnapshot(instanceId);
+            Assert.IsNotNull(snapshot);
+            var taskSnapshot = snapshot.ActiveActivities.First(a => a.ActivityId == "task");
+            var executionStartedAt = taskSnapshot.ExecutionStartedAt;
+
+            // Assert
+            Assert.IsNotNull(executionStartedAt);
+            Assert.IsTrue(executionStartedAt >= before, "ExecutionStartedAt should be >= test start time");
+            Assert.IsTrue(executionStartedAt <= after, "ExecutionStartedAt should be <= test end time");
+        }
+
+        [TestMethod]
+        public async Task ActivitySnapshot_ShouldHaveExecutionStartedAt_AfterFailure()
+        {
+            // Arrange
+            var workflow = CreateSimpleWorkflow();
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+            await workflowInstance.SetWorkflow(workflow);
+            await workflowInstance.StartWorkflow();
+
+            await workflowInstance.FailActivity("task", new Exception("fail"));
+
+            // Act
+            var instanceId = workflowInstance.GetPrimaryKey();
+            var snapshot = await QueryService.GetStateSnapshot(instanceId);
+            Assert.IsNotNull(snapshot);
+            var failedTask = snapshot.CompletedActivities.First(a => a.ActivityId == "task");
+
+            // Assert
+            Assert.IsNotNull(failedTask.ExecutionStartedAt, "ExecutionStartedAt should be set even after failure");
+        }
+
+        [TestMethod]
+        public async Task ActivitySnapshot_ShouldHaveCompletedAt_AfterCompletion()
+        {
+            // Arrange
+            var workflow = CreateSimpleWorkflow();
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+            await workflowInstance.SetWorkflow(workflow);
+            await workflowInstance.StartWorkflow();
+
+            var before = DateTimeOffset.UtcNow;
+            await workflowInstance.CompleteActivity("task", new ExpandoObject());
+            var after = DateTimeOffset.UtcNow;
+
+            // Act
+            var instanceId = workflowInstance.GetPrimaryKey();
+            var snapshot = await QueryService.GetStateSnapshot(instanceId);
+            Assert.IsNotNull(snapshot);
+            var taskSnapshot = snapshot.CompletedActivities.First(a => a.ActivityId == "task");
+            var completedAt = taskSnapshot.CompletedAt;
+
+            // Assert
+            Assert.IsNotNull(completedAt);
+            Assert.IsTrue(completedAt >= before, "CompletedAt should be >= test start time");
+            Assert.IsTrue(completedAt <= after, "CompletedAt should be <= test end time");
+        }
+
+        [TestMethod]
+        public async Task ActivitySnapshot_ShouldHaveCompletedAt_AfterFailure()
+        {
+            // Arrange
+            var workflow = CreateSimpleWorkflow();
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+            await workflowInstance.SetWorkflow(workflow);
+            await workflowInstance.StartWorkflow();
+
+            await workflowInstance.FailActivity("task", new Exception("fail"));
+
+            // Act
+            var instanceId = workflowInstance.GetPrimaryKey();
+            var snapshot = await QueryService.GetStateSnapshot(instanceId);
+            Assert.IsNotNull(snapshot);
+            var failedTask = snapshot.CompletedActivities.First(a => a.ActivityId == "task");
+
+            // Assert
+            Assert.IsNotNull(failedTask.CompletedAt, "CompletedAt should be set after failure");
+        }
+
+        [TestMethod]
+        public async Task ActivitySnapshot_ShouldReturnAllFields_AfterCompletion()
+        {
+            // Arrange
+            var workflow = CreateSimpleWorkflow();
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+            await workflowInstance.SetWorkflow(workflow);
+            await workflowInstance.StartWorkflow();
+            await workflowInstance.CompleteActivity("task", new ExpandoObject());
+
+            var instanceId = workflowInstance.GetPrimaryKey();
+            var snapshot = await QueryService.GetStateSnapshot(instanceId);
+            Assert.IsNotNull(snapshot);
+            var taskSnapshot = snapshot.CompletedActivities.First(a => a.ActivityId == "task");
+
+            // Assert
+            Assert.AreEqual("task", taskSnapshot.ActivityId);
+            Assert.AreEqual("TaskActivity", taskSnapshot.ActivityType);
+            Assert.IsTrue(taskSnapshot.IsCompleted);
+            Assert.IsFalse(taskSnapshot.IsExecuting);
+            Assert.IsNull(taskSnapshot.ErrorState);
+            Assert.IsNotNull(taskSnapshot.CreatedAt);
+            Assert.IsNotNull(taskSnapshot.ExecutionStartedAt);
+            Assert.IsNotNull(taskSnapshot.CompletedAt);
+        }
+
+        [TestMethod]
+        public async Task ActivitySnapshot_ShouldIncludeErrorState_AfterFailure()
+        {
+            // Arrange
+            var workflow = CreateSimpleWorkflow();
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+            await workflowInstance.SetWorkflow(workflow);
+            await workflowInstance.StartWorkflow();
+
+            await workflowInstance.FailActivity("task", new Exception("snapshot error"));
+
+            var instanceId = workflowInstance.GetPrimaryKey();
+            var snapshot = await QueryService.GetStateSnapshot(instanceId);
+            Assert.IsNotNull(snapshot);
+            var taskSnapshot = snapshot.CompletedActivities.First(a => a.ActivityId == "task");
+
+            // Assert
+            Assert.AreEqual("task", taskSnapshot.ActivityId);
+            Assert.IsTrue(taskSnapshot.IsCompleted);
+            Assert.IsNotNull(taskSnapshot.ErrorState);
+            Assert.AreEqual(500, taskSnapshot.ErrorState.Code);
+            Assert.AreEqual("snapshot error", taskSnapshot.ErrorState.Message);
+            Assert.IsNotNull(taskSnapshot.CreatedAt);
+            Assert.IsNotNull(taskSnapshot.ExecutionStartedAt);
+            Assert.IsNotNull(taskSnapshot.CompletedAt);
+        }
+
+        [TestMethod]
+        public async Task ActivitySnapshot_ShouldHaveCustomErrorCode_WhenFailedWithActivityException()
+        {
+            // Arrange
+            var workflow = CreateSimpleWorkflow();
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+            await workflowInstance.SetWorkflow(workflow);
+            await workflowInstance.StartWorkflow();
+
+            await workflowInstance.FailActivity("task", new BadRequestActivityException("Bad input"));
+
+            // Act
+            var instanceId = workflowInstance.GetPrimaryKey();
+            var snapshot = await QueryService.GetStateSnapshot(instanceId);
+            Assert.IsNotNull(snapshot);
+            var taskSnapshot = snapshot.CompletedActivities.First(a => a.ActivityId == "task");
+
+            // Assert
+            Assert.IsNotNull(taskSnapshot.ErrorState);
+            Assert.AreEqual(400, taskSnapshot.ErrorState.Code);
+            Assert.AreEqual("Bad input", taskSnapshot.ErrorState.Message);
         }
 
         private static IWorkflowDefinition CreateSimpleWorkflow()
