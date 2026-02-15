@@ -14,7 +14,7 @@ namespace Fleans.Domain.Tests
         {
             // Arrange
             var workflow = CreateSimpleWorkflow();
-            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
 
             // Act
             await workflowInstance.SetWorkflow(workflow);
@@ -37,7 +37,7 @@ namespace Fleans.Domain.Tests
         {
             // Arrange
             var workflow = CreateSimpleWorkflow();
-            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
             await workflowInstance.SetWorkflow(workflow);
 
             // Act & Assert
@@ -52,7 +52,7 @@ namespace Fleans.Domain.Tests
         {
             // Arrange
             var workflow = CreateSimpleWorkflow();
-            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
             await workflowInstance.SetWorkflow(workflow);
 
             // Act
@@ -73,7 +73,7 @@ namespace Fleans.Domain.Tests
         {
             // Arrange
             var workflow = CreateSimpleWorkflow();
-            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
             await workflowInstance.SetWorkflow(workflow);
             await workflowInstance.StartWorkflow();
 
@@ -98,7 +98,7 @@ namespace Fleans.Domain.Tests
         {
             // Arrange
             var workflow = CreateSimpleWorkflow();
-            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
             await workflowInstance.SetWorkflow(workflow);
             await workflowInstance.StartWorkflow();
 
@@ -116,7 +116,7 @@ namespace Fleans.Domain.Tests
         {
             // Arrange
             var workflow = CreateSimpleWorkflow();
-            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
             await workflowInstance.SetWorkflow(workflow);
             await workflowInstance.StartWorkflow();
 
@@ -138,7 +138,7 @@ namespace Fleans.Domain.Tests
         public async Task GetCreatedAt_ShouldReturnNull_BeforeSetWorkflow()
         {
             // Arrange
-            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
 
             // Act
             var instanceId = workflowInstance.GetPrimaryKey();
@@ -154,7 +154,7 @@ namespace Fleans.Domain.Tests
         {
             // Arrange
             var workflow = CreateSimpleWorkflow();
-            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
 
             var before = DateTimeOffset.UtcNow;
             await workflowInstance.SetWorkflow(workflow);
@@ -177,7 +177,7 @@ namespace Fleans.Domain.Tests
         {
             // Arrange
             var workflow = CreateSimpleWorkflow();
-            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
             await workflowInstance.SetWorkflow(workflow);
 
             // Act
@@ -195,7 +195,7 @@ namespace Fleans.Domain.Tests
         {
             // Arrange
             var workflow = CreateSimpleWorkflow();
-            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
             await workflowInstance.SetWorkflow(workflow);
 
             var before = DateTimeOffset.UtcNow;
@@ -219,7 +219,7 @@ namespace Fleans.Domain.Tests
         {
             // Arrange
             var workflow = CreateSimpleWorkflow();
-            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
             await workflowInstance.SetWorkflow(workflow);
 
             var instanceId = workflowInstance.GetPrimaryKey();
@@ -243,7 +243,7 @@ namespace Fleans.Domain.Tests
         {
             // Arrange
             var workflow = CreateSimpleWorkflow();
-            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
             await workflowInstance.SetWorkflow(workflow);
             await workflowInstance.StartWorkflow();
 
@@ -262,7 +262,7 @@ namespace Fleans.Domain.Tests
         {
             // Arrange
             var workflow = CreateSimpleWorkflow();
-            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
             await workflowInstance.SetWorkflow(workflow);
             await workflowInstance.StartWorkflow();
 
@@ -287,7 +287,7 @@ namespace Fleans.Domain.Tests
         {
             // Arrange
             var workflow = CreateSimpleWorkflow();
-            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
             await workflowInstance.SetWorkflow(workflow);
             await workflowInstance.StartWorkflow();
             await workflowInstance.CompleteActivity("task", new ExpandoObject());
@@ -310,7 +310,7 @@ namespace Fleans.Domain.Tests
         {
             // Arrange
             var instanceId = Guid.NewGuid();
-            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(instanceId);
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
 
             // Act
             var result = await workflowInstance.GetWorkflowInstanceId();

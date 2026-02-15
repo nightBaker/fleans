@@ -6,24 +6,24 @@ namespace Fleans.Domain.Activities;
 public abstract record ConditionalGateway(string ActivityId) : Gateway(ActivityId)
 {
     internal async Task<bool> SetConditionResult(
-        IWorkflowInstance workflowInstance,
-        IActivityInstance activityInstance,
+        IWorkflowExecutionContext workflowContext,
+        IActivityExecutionContext activityContext,
         string conditionSequenceFlowId,
         bool result)
     {
-        var activityInstanceId = await activityInstance.GetActivityInstanceId();
-        await workflowInstance.SetConditionSequenceResult(activityInstanceId, conditionSequenceFlowId, result);
+        var activityInstanceId = await activityContext.GetActivityInstanceId();
+        await workflowContext.SetConditionSequenceResult(activityInstanceId, conditionSequenceFlowId, result);
 
         if (result)
             return true;
 
-        var sequences = await workflowInstance.GetConditionSequenceStates();
+        var sequences = await workflowContext.GetConditionSequenceStates();
         if (!sequences.TryGetValue(activityInstanceId, out var mySequences))
             return false;
 
         if (mySequences.All(s => s.IsEvaluated))
         {
-            var definition = await workflowInstance.GetWorkflowDefinition();
+            var definition = await workflowContext.GetWorkflowDefinition();
             var hasDefault = definition.SequenceFlows
                 .OfType<DefaultSequenceFlow>()
                 .Any(sf => sf.Source.ActivityId == ActivityId);

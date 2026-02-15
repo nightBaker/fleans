@@ -14,7 +14,7 @@ public class ExclusiveGatewayTests : WorkflowTestBase
     {
         // Arrange
         var workflow = CreateWorkflowWithTwoBranches();
-        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 
@@ -36,7 +36,7 @@ public class ExclusiveGatewayTests : WorkflowTestBase
     {
         // Arrange — gateway with two conditional flows, first returns true
         var workflow = CreateWorkflowWithTwoBranches();
-        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 
@@ -58,7 +58,7 @@ public class ExclusiveGatewayTests : WorkflowTestBase
     {
         // Arrange
         var workflow = CreateWorkflowWithTwoBranches();
-        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 
@@ -81,7 +81,7 @@ public class ExclusiveGatewayTests : WorkflowTestBase
     {
         // Arrange
         var workflow = CreateWorkflowWithDefaultFlow();
-        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 
@@ -105,7 +105,7 @@ public class ExclusiveGatewayTests : WorkflowTestBase
     {
         // Arrange
         var workflow = CreateWorkflowWithTwoBranches(); // no default flow
-        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 
@@ -136,7 +136,7 @@ public class ExclusiveGatewayTests : WorkflowTestBase
     {
         // Arrange — gateway with no conditional flows, only a default flow
         var workflow = CreateWorkflowWithOnlyDefaultFlow();
-        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
 
         // Act — start workflow, gateway should auto-complete immediately
@@ -160,7 +160,7 @@ public class ExclusiveGatewayTests : WorkflowTestBase
     {
         // Arrange
         var workflow = CreateWorkflowWithTwoBranches();
-        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 

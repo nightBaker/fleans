@@ -1,6 +1,6 @@
+using Fleans.Application.Grains;
 using Fleans.Application.Logging;
 using Fleans.Application.Scripts;
-using Fleans.Domain;
 using Fleans.Domain.Events;
 using Microsoft.Extensions.Logging;
 using Orleans.Streams;
@@ -37,12 +37,12 @@ public partial class WorkflowExecuteScriptEventHandler : Grain, IWorkflowExecute
 
         LogHandlingScriptEvent(item.ActivityId);
 
-        var workflowInstance = _grainFactory.GetGrain<IWorkflowInstance>(item.WorkflowInstanceId);
+        var workflowInstance = _grainFactory.GetGrain<IWorkflowInstanceGrain>(item.WorkflowInstanceId);
 
         try
         {
             var scriptExecutor = _grainFactory.GetGrain<IScriptExecutorGrain>(0);
-            var activityInstance = _grainFactory.GetGrain<IActivityInstance>(item.ActivityInstanceId);
+            var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(item.ActivityInstanceId);
 
             var variables = await workflowInstance.GetVariables(await activityInstance.GetVariablesStateId());
 

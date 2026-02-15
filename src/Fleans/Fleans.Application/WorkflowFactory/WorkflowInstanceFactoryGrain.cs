@@ -1,3 +1,4 @@
+using Fleans.Application.Grains;
 using Fleans.Application.QueryModels;
 using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
@@ -48,7 +49,7 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
         }
     }
 
-    public async Task<IWorkflowInstance> CreateWorkflowInstanceGrain(string workflowId)
+    public async Task<IWorkflowInstanceGrain> CreateWorkflowInstanceGrain(string workflowId)
     {
         // Back-compat: treat workflowId as process definition key and start the latest version.
         var definition = GetLatestDefinitionOrThrow(workflowId);
@@ -60,14 +61,14 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
         RequestContext.Set("ProcessDefinitionId", definition.ProcessDefinitionId);
         RequestContext.Set("WorkflowInstanceId", guid.ToString());
 
-        var workflowInstanceGrain = _grainFactory.GetGrain<IWorkflowInstance>(guid);
+        var workflowInstanceGrain = _grainFactory.GetGrain<IWorkflowInstanceGrain>(guid);
 
         await workflowInstanceGrain.SetWorkflow(definition.Workflow);
 
         return workflowInstanceGrain;
     }
 
-    public async Task<IWorkflowInstance> CreateWorkflowInstanceGrainByProcessDefinitionId(string processDefinitionId)
+    public async Task<IWorkflowInstanceGrain> CreateWorkflowInstanceGrainByProcessDefinitionId(string processDefinitionId)
     {
         if (string.IsNullOrWhiteSpace(processDefinitionId))
         {
@@ -86,7 +87,7 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
         RequestContext.Set("ProcessDefinitionId", processDefinitionId);
         RequestContext.Set("WorkflowInstanceId", guid.ToString());
 
-        var workflowInstanceGrain = _grainFactory.GetGrain<IWorkflowInstance>(guid);
+        var workflowInstanceGrain = _grainFactory.GetGrain<IWorkflowInstanceGrain>(guid);
 
         await workflowInstanceGrain.SetWorkflow(definition.Workflow);
 

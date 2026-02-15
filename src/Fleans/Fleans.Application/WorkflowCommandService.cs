@@ -1,3 +1,4 @@
+using Fleans.Application.Grains;
 using Fleans.Application.QueryModels;
 using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
@@ -47,7 +48,7 @@ public partial class WorkflowCommandService : IWorkflowCommandService
     {
         LogCompletingActivity(workflowInstanceId, activityId);
 
-        _grainFactory.GetGrain<IWorkflowInstance>(workflowInstanceId)
+        _grainFactory.GetGrain<IWorkflowInstanceGrain>(workflowInstanceId)
                      .CompleteActivity(activityId, variables);
     }
 

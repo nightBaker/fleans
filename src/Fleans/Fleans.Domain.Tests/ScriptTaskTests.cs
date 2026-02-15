@@ -44,7 +44,7 @@ public class ScriptTaskTests : WorkflowTestBase
     {
         // Arrange
         var workflow = CreateSimpleWorkflow();
-        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 
@@ -67,7 +67,7 @@ public class ScriptTaskTests : WorkflowTestBase
     {
         // Arrange
         var workflow = CreateSimpleWorkflow();
-        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
 
         // Act
@@ -87,7 +87,7 @@ public class ScriptTaskTests : WorkflowTestBase
     {
         // Arrange
         var workflow = CreateSimpleWorkflow();
-        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 
@@ -114,7 +114,7 @@ public class ScriptTaskTests : WorkflowTestBase
     {
         // Arrange
         var workflow = CreateSimpleWorkflow();
-        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 
@@ -143,7 +143,7 @@ public class ScriptTaskTests : WorkflowTestBase
     {
         // Arrange
         var workflow = CreateSimpleWorkflow();
-        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 
@@ -166,7 +166,7 @@ public class ScriptTaskTests : WorkflowTestBase
     {
         // Arrange
         var workflow = CreateSimpleWorkflow();
-        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 
@@ -201,7 +201,7 @@ public class ScriptTaskTests : WorkflowTestBase
             }
         };
 
-        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 
@@ -236,7 +236,7 @@ public class ScriptTaskTests : WorkflowTestBase
     {
         // Arrange
         var workflow = CreateSimpleWorkflow();
-        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 
@@ -259,7 +259,7 @@ public class ScriptTaskTests : WorkflowTestBase
     {
         // Arrange
         var workflow = CreateSimpleWorkflow();
-        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 
@@ -282,7 +282,7 @@ public class ScriptTaskTests : WorkflowTestBase
     {
         // Arrange
         var workflow = CreateSimpleWorkflow();
-        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 
@@ -306,7 +306,7 @@ public class ScriptTaskTests : WorkflowTestBase
     {
         // Arrange
         var workflow = CreateSimpleWorkflow();
-        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 

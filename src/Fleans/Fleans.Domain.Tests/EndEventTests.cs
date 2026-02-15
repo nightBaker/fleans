@@ -14,7 +14,7 @@ public class EndEventTests : WorkflowTestBase
     {
         // Arrange
         var workflow = CreateSimpleWorkflow();
-        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 
@@ -38,7 +38,7 @@ public class EndEventTests : WorkflowTestBase
     {
         // Arrange
         var workflow = CreateSimpleWorkflow();
-        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 

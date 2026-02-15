@@ -1,4 +1,4 @@
-using Fleans.Domain;
+using Fleans.Application.Grains;
 using Microsoft.Extensions.Logging;
 using Orleans;
 using Orleans.Runtime;
@@ -17,7 +17,7 @@ public class WorkflowLoggingScopeFilter : IIncomingGrainCallFilter
     public async Task Invoke(IIncomingGrainCallContext context)
     {
         // WorkflowInstance manages its own scope via BeginWorkflowScope() — skip to avoid duplicates
-        if (context.TargetContext.GrainInstance is IWorkflowInstance)
+        if (context.TargetContext.GrainInstance is IWorkflowInstanceGrain)
         {
             await context.Invoke();
             return;

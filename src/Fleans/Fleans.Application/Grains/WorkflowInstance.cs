@@ -1,14 +1,14 @@
+using Fleans.Domain;
 using Fleans.Domain.Activities;
-using Fleans.Domain.Errors;
 using Fleans.Domain.States;
 using Microsoft.Extensions.Logging;
 using Orleans;
 using Orleans.Runtime;
 using System.Dynamic;
 
-namespace Fleans.Domain;
+namespace Fleans.Application.Grains;
 
-public partial class WorkflowInstance : Grain, IWorkflowInstance
+public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
 {
     public ValueTask<Guid> GetWorkflowInstanceId() => ValueTask.FromResult(this.GetPrimaryKey());
     // TODO: Move to WorkflowInstanceState so it survives grain reactivation.
@@ -86,7 +86,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
 
         foreach (var entry in State.GetActiveActivities().ToList())
         {
-            var activityInstance = _grainFactory.GetGrain<IActivityInstance>(entry.ActivityInstanceId);
+            var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(entry.ActivityInstanceId);
 
             if (await activityInstance.IsCompleted())
             {
@@ -99,7 +99,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
                     var variablesId = await activityInstance.GetVariablesStateId();
                     RequestContext.Set("VariablesId", variablesId.ToString());
                     var newId = Guid.NewGuid();
-                    var newActivityInstance = _grainFactory.GetGrain<IActivityInstance>(newId);
+                    var newActivityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(newId);
                     await newActivityInstance.SetVariablesId(variablesId);
 
                     await newActivityInstance.SetActivity(nextActivity.ActivityId, nextActivity.GetType().Name);
@@ -123,7 +123,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         var entry = State.GetFirstActive(activityId)
             ?? throw new InvalidOperationException("Active activity not found");
 
-        var activityInstance = _grainFactory.GetGrain<IActivityInstance>(entry.ActivityInstanceId);
+        var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(entry.ActivityInstanceId);
         SetActivityRequestContext(activityId, activityInstance);
         await activityInstance.Complete();
         var variablesId = await activityInstance.GetVariablesStateId();
@@ -138,7 +138,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         var entry = State.GetFirstActive(activityId)
             ?? throw new InvalidOperationException("Active activity not found");
 
-        var activityInstance = _grainFactory.GetGrain<IActivityInstance>(entry.ActivityInstanceId);
+        var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(entry.ActivityInstanceId);
         SetActivityRequestContext(activityId, activityInstance);
         await activityInstance.Fail(exception);
     }
@@ -166,7 +166,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         var entry = State.GetFirstActive(activityId)
             ?? throw new InvalidOperationException("Active activity not found");
 
-        var activityInstance = _grainFactory.GetGrain<IActivityInstance>(entry.ActivityInstanceId);
+        var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(entry.ActivityInstanceId);
 
         var gateway = WorkflowDefinition.GetActivity(activityId) as ConditionalGateway
             ?? throw new InvalidOperationException("Activity is not a conditional gateway");
@@ -215,7 +215,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
 
         var activityInstanceId = Guid.NewGuid();
         var variablesId = Guid.NewGuid();
-        var activityInstance = _grainFactory.GetGrain<IActivityInstance>(activityInstanceId);
+        var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(activityInstanceId);
         await activityInstance.SetActivity(startActivity.ActivityId, startActivity.GetType().Name);
         await activityInstance.SetVariablesId(variablesId);
 
@@ -235,18 +235,18 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
     }
 
     // State facade methods — activities access state through these, not directly
-    public ValueTask<IReadOnlyList<IActivityInstance>> GetActiveActivities()
+    public ValueTask<IReadOnlyList<IActivityExecutionContext>> GetActiveActivities()
     {
-        IReadOnlyList<IActivityInstance> result = State.GetActiveActivities()
-            .Select(e => _grainFactory.GetGrain<IActivityInstance>(e.ActivityInstanceId))
+        IReadOnlyList<IActivityExecutionContext> result = State.GetActiveActivities()
+            .Select(e => (IActivityExecutionContext)_grainFactory.GetGrain<IActivityInstanceGrain>(e.ActivityInstanceId))
             .ToList().AsReadOnly();
         return ValueTask.FromResult(result);
     }
 
-    public ValueTask<IReadOnlyList<IActivityInstance>> GetCompletedActivities()
+    public ValueTask<IReadOnlyList<IActivityExecutionContext>> GetCompletedActivities()
     {
-        IReadOnlyList<IActivityInstance> result = State.GetCompletedActivities()
-            .Select(e => _grainFactory.GetGrain<IActivityInstance>(e.ActivityInstanceId))
+        IReadOnlyList<IActivityExecutionContext> result = State.GetCompletedActivities()
+            .Select(e => (IActivityExecutionContext)_grainFactory.GetGrain<IActivityInstanceGrain>(e.ActivityInstanceId))
             .ToList().AsReadOnly();
         return ValueTask.FromResult(result);
     }
@@ -271,23 +271,24 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         await _state.WriteStateAsync();
     }
 
+
     private async Task<bool> AnyNotExecuting()
     {
         foreach (var entry in State.GetActiveActivities().ToList())
         {
-            var activityInstance = _grainFactory.GetGrain<IActivityInstance>(entry.ActivityInstanceId);
+            var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(entry.ActivityInstanceId);
             if (!await activityInstance.IsExecuting())
                 return true;
         }
         return false;
     }
 
-    private async Task<IActivityInstance[]> GetNotExecutingNotCompletedActivities()
+    private async Task<IActivityInstanceGrain[]> GetNotExecutingNotCompletedActivities()
     {
-        var result = new List<IActivityInstance>();
+        var result = new List<IActivityInstanceGrain>();
         foreach (var entry in State.GetActiveActivities().ToList())
         {
-            var activityInstance = _grainFactory.GetGrain<IActivityInstance>(entry.ActivityInstanceId);
+            var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(entry.ActivityInstanceId);
             if (!await activityInstance.IsExecuting() && !await activityInstance.IsCompleted())
                 result.Add(activityInstance);
         }
@@ -304,7 +305,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
             RequestContext.Set("ProcessDefinitionId", WorkflowDefinition.ProcessDefinitionId);
     }
 
-    private void SetActivityRequestContext(string activityId, IActivityInstance activityInstance)
+    private void SetActivityRequestContext(string activityId, IActivityInstanceGrain activityInstance)
     {
         RequestContext.Set("ActivityId", activityId);
         RequestContext.Set("ActivityInstanceId", activityInstance.GetPrimaryKey().ToString());

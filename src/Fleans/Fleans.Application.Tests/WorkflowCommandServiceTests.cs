@@ -1,4 +1,5 @@
 using Fleans.Application;
+using Fleans.Application.Grains;
 using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
@@ -32,7 +33,7 @@ namespace Fleans.Application.Tests
             // Arrange
             var workflowId = "test-workflow-1";
             var workflowInstanceId = Guid.NewGuid();
-            var workflowInstance = Substitute.For<IWorkflowInstance>();
+            var workflowInstance = Substitute.For<IWorkflowInstanceGrain>();
 
             _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0)
                 .Returns(_factoryGrain);
@@ -62,8 +63,8 @@ namespace Fleans.Application.Tests
             var variables = new ExpandoObject();
             ((IDictionary<string, object>)variables)["key"] = "value";
 
-            var workflowInstance = Substitute.For<IWorkflowInstance>();
-            _grainFactory.GetGrain<IWorkflowInstance>(workflowInstanceId)
+            var workflowInstance = Substitute.For<IWorkflowInstanceGrain>();
+            _grainFactory.GetGrain<IWorkflowInstanceGrain>(workflowInstanceId)
                 .Returns(workflowInstance);
 
             workflowInstance.CompleteActivity(activityId, variables)
@@ -84,15 +85,15 @@ namespace Fleans.Application.Tests
             var activityId = "task-1";
             var variables = new ExpandoObject();
 
-            var workflowInstance = Substitute.For<IWorkflowInstance>();
-            _grainFactory.GetGrain<IWorkflowInstance>(workflowInstanceId)
+            var workflowInstance = Substitute.For<IWorkflowInstanceGrain>();
+            _grainFactory.GetGrain<IWorkflowInstanceGrain>(workflowInstanceId)
                 .Returns(workflowInstance);
 
             // Act
             _commandService.CompleteActivity(workflowInstanceId, activityId, variables);
 
             // Assert
-            _grainFactory.Received(1).GetGrain<IWorkflowInstance>(workflowInstanceId);
+            _grainFactory.Received(1).GetGrain<IWorkflowInstanceGrain>(workflowInstanceId);
         }
     }
 }
