@@ -1,4 +1,5 @@
 using Fleans.Application;
+using Fleans.Application.QueryModels;
 using Fleans.Domain;
 using Fleans.Infrastructure.Bpmn;
 using Fleans.ServiceDefaults.DTOs;
@@ -20,16 +21,19 @@ namespace Fleans.Api.Controllers
         };
 
         private readonly ILogger<WorkflowController> _logger;
-        private readonly WorkflowEngine _workflowEngine;
+        private readonly IWorkflowCommandService _commandService;
+        private readonly IWorkflowQueryService _queryService;
         private readonly IBpmnConverter _bpmnConverter;
 
         public WorkflowController(
-            ILogger<WorkflowController> logger, 
-            WorkflowEngine workflowEngine,
+            ILogger<WorkflowController> logger,
+            IWorkflowCommandService commandService,
+            IWorkflowQueryService queryService,
             IBpmnConverter bpmnConverter)
         {
             _logger = logger;
-            _workflowEngine = workflowEngine;
+            _commandService = commandService;
+            _queryService = queryService;
             _bpmnConverter = bpmnConverter;
         }
 
@@ -43,7 +47,7 @@ namespace Fleans.Api.Controllers
 
             try
             {
-                var instanceId = await _workflowEngine.StartWorkflow(request.WorkflowId);
+                var instanceId = await _commandService.StartWorkflow(request.WorkflowId);
                 return Ok(new StartWorkflowResponse(instanceId));
             }
             catch (KeyNotFoundException ex)
@@ -82,8 +86,8 @@ namespace Fleans.Api.Controllers
             {
                 using var stream = file.OpenReadStream();
                 var workflow = await _bpmnConverter.ConvertFromXmlAsync(stream);
-                
-                await _workflowEngine.RegisterWorkflow(workflow);
+
+                await _commandService.RegisterWorkflow(workflow);
 
                 return Ok(new UploadBpmnResponse(
                     Message: "BPMN file uploaded and workflow registered successfully",
@@ -107,8 +111,8 @@ namespace Fleans.Api.Controllers
         {
             try
             {
-                var workflows = await _workflowEngine.GetAllWorkflows();
-                return Ok(workflows);
+                var definitions = await _queryService.GetAllProcessDefinitions();
+                return Ok(definitions);
             }
             catch (Exception ex)
             {
@@ -122,7 +126,7 @@ namespace Fleans.Api.Controllers
         {
             try
             {
-                await _workflowEngine.RegisterWorkflow(workflow);
+                await _commandService.RegisterWorkflow(workflow);
                 return Ok(new RegisterWorkflowResponse("Workflow registered successfully", workflow.WorkflowId));
             }
             catch (ArgumentException ex)

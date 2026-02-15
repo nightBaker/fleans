@@ -12,18 +12,6 @@ namespace Fleans.Domain
         ValueTask<string> GetActivityId();
 
         [ReadOnly]
-        ValueTask<ActivityErrorState?> GetErrorState();
-
-        [ReadOnly]
-        ValueTask<DateTimeOffset?> GetCreatedAt();
-
-        [ReadOnly]
-        ValueTask<DateTimeOffset?> GetExecutionStartedAt();
-
-        [ReadOnly]
-        ValueTask<DateTimeOffset?> GetCompletedAt();
-
-        [ReadOnly]
         ValueTask<bool> IsCompleted();
 
         [ReadOnly]
@@ -31,9 +19,6 @@ namespace Fleans.Domain
 
         [ReadOnly]
         ValueTask<Guid> GetVariablesStateId();
-
-        [ReadOnly]
-        ValueTask<ActivityInstanceSnapshot> GetSnapshot();
 
         ValueTask Complete();
         ValueTask Fail(Exception exception);

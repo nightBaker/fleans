@@ -3,9 +3,11 @@
 @page "/editor/{ProcessDefinitionKey}/{Version:int}"
 @rendermode InteractiveServer
 @using Fleans.Application
+@using Fleans.Application.QueryModels
 @using Fleans.Infrastructure.Bpmn
 @using Microsoft.FluentUI.AspNetCore.Components
-@inject WorkflowEngine WorkflowEngine
+@inject IWorkflowQueryService QueryService
+@inject IWorkflowCommandService CommandService
 @inject IBpmnConverter BpmnConverter
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
@@ -143,11 +145,11 @@
                     string bpmnXml;
                     if (Version.HasValue)
                     {
-                        bpmnXml = await WorkflowEngine.GetBpmnXmlByKeyAndVersion(ProcessDefinitionKey, Version.Value);
+                        bpmnXml = await QueryService.GetBpmnXmlByKeyAndVersion(ProcessDefinitionKey, Version.Value);
                     }
                     else
                     {
-                        bpmnXml = await WorkflowEngine.GetBpmnXmlByKey(ProcessDefinitionKey);
+                        bpmnXml = await QueryService.GetBpmnXmlByKey(ProcessDefinitionKey);
                     }
                     await JS.InvokeVoidAsync("bpmnEditor.loadXml", bpmnXml);
                     processKey = ProcessDefinitionKey;
@@ -267,7 +269,7 @@
             pendingWorkflow = workflow;
             deployProcessKey = workflow.WorkflowId;
 
-            var definitions = await WorkflowEngine.GetAllProcessDefinitions();
+            var definitions = await QueryService.GetAllProcessDefinitions();
             var existing = definitions
                 .Where(d => d.ProcessDefinitionKey == deployProcessKey)
                 .OrderByDescending(d => d.Version)
@@ -300,7 +302,7 @@
             isDeploying = true;
             showDeployDialog = false;
 
-            var deployed = await WorkflowEngine.DeployWorkflow(pendingWorkflow, pendingBpmnXml);
+            var deployed = await CommandService.DeployWorkflow(pendingWorkflow, pendingBpmnXml);
             processKey = deployed.ProcessDefinitionKey;
             successMessage = $"Deployed '{deployed.ProcessDefinitionKey}' v{deployed.Version} ({deployed.ActivitiesCount} activities, {deployed.SequenceFlowsCount} flows)";
         }

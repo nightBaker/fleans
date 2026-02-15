@@ -1,38 +1,21 @@
-using System.Collections.Frozen;
+using Fleans.Application.QueryModels;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Errors;
 using Fleans.Domain.Sequences;
-using Orleans.Serialization;
-using Orleans.TestingHost;
+using Orleans.Runtime;
 using System.Dynamic;
-using Microsoft.CodeAnalysis.Operations;
-using NSubstitute;
 
 namespace Fleans.Domain.Tests
 {
     [TestClass]
-    public class ErrorHandlingTests
+    public class ErrorHandlingTests : WorkflowTestBase
     {
-        private TestCluster _cluster = null!;
-
-        [TestInitialize]
-        public void Setup()
-        {
-            _cluster = CreateCluster();
-        }
-
-        [TestCleanup]
-        public void Cleanup()
-        {
-            _cluster?.StopAllSilos();
-        }
-
         [TestMethod]
         public async Task FailActivity_ShouldSetErrorState_OnActivityInstance()
         {
             // Arrange
             var workflow = CreateSimpleWorkflow();
-            var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
             await workflowInstance.SetWorkflow(workflow);
             await workflowInstance.StartWorkflow();
 
@@ -42,7 +25,9 @@ namespace Fleans.Domain.Tests
             await workflowInstance.FailActivity("task", exception);
 
             // Assert
-            var snapshot = await workflowInstance.GetStateSnapshot();
+            var instanceId = workflowInstance.GetPrimaryKey();
+            var snapshot = await QueryService.GetStateSnapshot(instanceId);
+            Assert.IsNotNull(snapshot);
             var failedSnapshot = snapshot.CompletedActivities.FirstOrDefault(a => a.ActivityId == "task");
             Assert.IsNotNull(failedSnapshot);
             Assert.IsNotNull(failedSnapshot.ErrorState);
@@ -55,7 +40,7 @@ namespace Fleans.Domain.Tests
         {
             // Arrange
             var workflow = CreateSimpleWorkflow();
-            var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
             await workflowInstance.SetWorkflow(workflow);
             await workflowInstance.StartWorkflow();
 
@@ -65,7 +50,9 @@ namespace Fleans.Domain.Tests
             await workflowInstance.FailActivity("task", activityException);
 
             // Assert
-            var snapshot = await workflowInstance.GetStateSnapshot();
+            var instanceId = workflowInstance.GetPrimaryKey();
+            var snapshot = await QueryService.GetStateSnapshot(instanceId);
+            Assert.IsNotNull(snapshot);
             var failedSnapshot = snapshot.CompletedActivities.FirstOrDefault(a => a.ActivityId == "task");
             Assert.IsNotNull(failedSnapshot);
             Assert.IsNotNull(failedSnapshot.ErrorState);
@@ -78,7 +65,7 @@ namespace Fleans.Domain.Tests
         {
             // Arrange
             var workflow = CreateSimpleWorkflow();
-            var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
             await workflowInstance.SetWorkflow(workflow);
             await workflowInstance.StartWorkflow();
 
@@ -88,7 +75,9 @@ namespace Fleans.Domain.Tests
             await workflowInstance.FailActivity("task", exception);
 
             // Assert
-            var snapshot = await workflowInstance.GetStateSnapshot();
+            var instanceId = workflowInstance.GetPrimaryKey();
+            var snapshot = await QueryService.GetStateSnapshot(instanceId);
+            Assert.IsNotNull(snapshot);
 
             // Activity should be moved from active to completed
             Assert.IsTrue(snapshot.CompletedActivities.Count > 0);
@@ -99,7 +88,7 @@ namespace Fleans.Domain.Tests
         {
             // Arrange
             var workflow = CreateSimpleWorkflow();
-            var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
             await workflowInstance.SetWorkflow(workflow);
             await workflowInstance.StartWorkflow();
 
@@ -110,55 +99,6 @@ namespace Fleans.Domain.Tests
             {
                 await workflowInstance.FailActivity("non-existent-activity", exception);
             });
-        }
-
-        [TestMethod]
-        public async Task ActivityInstance_Fail_ShouldSetErrorState_AndComplete()
-        {
-            // Arrange
-            var activityInstance = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
-            await activityInstance.SetActivity("task", "TaskActivity");
-            await activityInstance.Execute();
-
-            var exception = new Exception("Test error");
-
-            // Act
-            await activityInstance.Fail(exception);
-
-            // Assert
-            Assert.IsTrue(await activityInstance.IsCompleted());
-            Assert.IsFalse(await activityInstance.IsExecuting());
-
-            var errorState = await activityInstance.GetErrorState();
-            Assert.IsNotNull(errorState);
-            Assert.AreEqual(500, errorState.Code);
-        }
-
-        [TestMethod]
-        public async Task ActivityInstance_Execute_ShouldClearErrorState()
-        {
-            // Arrange
-            var activityInstance = _cluster.GrainFactory.GetGrain<IActivityInstance>(Guid.NewGuid());
-            await activityInstance.SetActivity("task", "TaskActivity");
-            await activityInstance.Fail(new Exception("Previous error"));
-
-            // Act
-            await activityInstance.Execute();
-
-            // Assert
-            var errorState = await activityInstance.GetErrorState();
-            Assert.IsNull(errorState);
-            Assert.IsTrue(await activityInstance.IsExecuting());
-            Assert.IsFalse(await activityInstance.IsCompleted());
-        }
-
-        private static TestCluster CreateCluster()
-        {
-            var builder = new TestClusterBuilder();
-            builder.AddSiloBuilderConfigurator<SiloConfigurator>();
-            var cluster = builder.Build();
-            cluster.Deploy();
-            return cluster;
         }
 
         private static IWorkflowDefinition CreateSimpleWorkflow()
@@ -177,23 +117,6 @@ namespace Fleans.Domain.Tests
                     new SequenceFlow("seq2", task, end)
                 }
             };
-        }
-
-        class SiloConfigurator : ISiloConfigurator
-        {
-            public void Configure(ISiloBuilder hostBuilder) =>
-                hostBuilder
-                    .AddMemoryGrainStorage("workflowInstances")
-                    .AddMemoryGrainStorage("activityInstances")
-                    .ConfigureServices(services => services.AddSerializer(serializerBuilder =>
-                    {
-                        serializerBuilder.AddNewtonsoftJsonSerializer(
-                            isSupported: type => type == typeof(ExpandoObject),
-                            new Newtonsoft.Json.JsonSerializerSettings
-                            {
-                                TypeNameHandling = Newtonsoft.Json.TypeNameHandling.All
-                            });
-                    }));
         }
     }
 }

@@ -1,35 +1,20 @@
+using Fleans.Application.QueryModels;
 using Fleans.Domain.Activities;
-using Fleans.Domain.Events;
 using Fleans.Domain.Sequences;
-using Orleans.Serialization;
-using Orleans.TestingHost;
+using Orleans.Runtime;
 using System.Dynamic;
 
 namespace Fleans.Domain.Tests;
 
 [TestClass]
-public class ExclusiveGatewayTests
+public class ExclusiveGatewayTests : WorkflowTestBase
 {
-    private TestCluster _cluster = null!;
-
-    [TestInitialize]
-    public void Setup()
-    {
-        _cluster = CreateCluster();
-    }
-
-    [TestCleanup]
-    public void Cleanup()
-    {
-        _cluster?.StopAllSilos();
-    }
-
     [TestMethod]
     public async Task ExclusiveGateway_ShouldTakeTrueBranch_WhenFirstConditionIsTrue()
     {
         // Arrange
         var workflow = CreateWorkflowWithTwoBranches();
-        var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 
@@ -37,7 +22,9 @@ public class ExclusiveGatewayTests
         await workflowInstance.CompleteConditionSequence("if", "seq2", true);
 
         // Assert — workflow completed via end1 (true branch)
-        var snapshot = await workflowInstance.GetStateSnapshot();
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsNotNull(snapshot);
         Assert.IsTrue(snapshot.IsCompleted);
 
         CollectionAssert.Contains(snapshot.CompletedActivityIds, "end1");
@@ -49,7 +36,7 @@ public class ExclusiveGatewayTests
     {
         // Arrange — gateway with two conditional flows, first returns true
         var workflow = CreateWorkflowWithTwoBranches();
-        var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 
@@ -58,7 +45,9 @@ public class ExclusiveGatewayTests
         await workflowInstance.CompleteConditionSequence("if", "seq2", true);
 
         // Assert — workflow completed without needing seq3
-        var snapshot = await workflowInstance.GetStateSnapshot();
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsNotNull(snapshot);
         Assert.IsTrue(snapshot.IsCompleted);
 
         Assert.AreEqual(0, snapshot.ActiveActivities.Count);
@@ -69,7 +58,7 @@ public class ExclusiveGatewayTests
     {
         // Arrange
         var workflow = CreateWorkflowWithTwoBranches();
-        var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 
@@ -78,7 +67,9 @@ public class ExclusiveGatewayTests
         await workflowInstance.CompleteConditionSequence("if", "seq3", true);
 
         // Assert — workflow completed via end2
-        var snapshot = await workflowInstance.GetStateSnapshot();
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsNotNull(snapshot);
         Assert.IsTrue(snapshot.IsCompleted);
 
         CollectionAssert.Contains(snapshot.CompletedActivityIds, "end2");
@@ -90,7 +81,7 @@ public class ExclusiveGatewayTests
     {
         // Arrange
         var workflow = CreateWorkflowWithDefaultFlow();
-        var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 
@@ -99,7 +90,9 @@ public class ExclusiveGatewayTests
         await workflowInstance.CompleteConditionSequence("if", "seq3", false);
 
         // Assert — workflow completed via endDefault (default flow)
-        var snapshot = await workflowInstance.GetStateSnapshot();
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsNotNull(snapshot);
         Assert.IsTrue(snapshot.IsCompleted);
 
         CollectionAssert.Contains(snapshot.CompletedActivityIds, "endDefault");
@@ -112,7 +105,7 @@ public class ExclusiveGatewayTests
     {
         // Arrange
         var workflow = CreateWorkflowWithTwoBranches(); // no default flow
-        var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 
@@ -143,14 +136,16 @@ public class ExclusiveGatewayTests
     {
         // Arrange — gateway with no conditional flows, only a default flow
         var workflow = CreateWorkflowWithOnlyDefaultFlow();
-        var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
 
         // Act — start workflow, gateway should auto-complete immediately
         await workflowInstance.StartWorkflow();
 
         // Assert — workflow completed via endDefault
-        var snapshot = await workflowInstance.GetStateSnapshot();
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsNotNull(snapshot);
         Assert.IsTrue(snapshot.IsCompleted);
 
         CollectionAssert.Contains(snapshot.CompletedActivityIds, "start");
@@ -165,7 +160,7 @@ public class ExclusiveGatewayTests
     {
         // Arrange
         var workflow = CreateWorkflowWithTwoBranches();
-        var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 
@@ -173,7 +168,9 @@ public class ExclusiveGatewayTests
         await workflowInstance.CompleteConditionSequence("if", "seq2", false);
 
         // Assert — workflow not completed, gateway still active
-        var snapshot = await workflowInstance.GetStateSnapshot();
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsNotNull(snapshot);
         Assert.IsFalse(snapshot.IsCompleted);
 
         Assert.IsTrue(snapshot.ActiveActivities.Count > 0);
@@ -244,43 +241,5 @@ public class ExclusiveGatewayTests
                 new DefaultSequenceFlow("seqDefault", ifActivity, endDefault)
             ]
         };
-    }
-
-    private static TestCluster CreateCluster()
-    {
-        var builder = new TestClusterBuilder();
-        builder.AddSiloBuilderConfigurator<SiloConfigurator>();
-        var cluster = builder.Build();
-        cluster.Deploy();
-        return cluster;
-    }
-
-    class SiloConfigurator : ISiloConfigurator
-    {
-        public void Configure(ISiloBuilder hostBuilder) =>
-           hostBuilder
-               .AddMemoryGrainStorage("workflowInstances")
-               .AddMemoryGrainStorage("activityInstances")
-               .ConfigureServices(services => services.AddSerializer(serializerBuilder =>
-               {
-                   serializerBuilder.AddNewtonsoftJsonSerializer(
-                       isSupported: type => type == typeof(ExpandoObject),
-                       new Newtonsoft.Json.JsonSerializerSettings
-                       {
-                           TypeNameHandling = Newtonsoft.Json.TypeNameHandling.All
-                       });
-               }));
-    }
-}
-
-/// <summary>
-/// Mock implementation of IEventPublisher used by all Domain.Tests requiring Orleans grain execution.
-/// Orleans auto-discovers this grain implementation from the test assembly.
-/// </summary>
-public class EventPublisherMock : Grain, IEventPublisher
-{
-    public Task Publish(IDomainEvent domainEvent)
-    {
-        return Task.CompletedTask;
     }
 }

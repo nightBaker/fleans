@@ -1,6 +1,6 @@
 using Orleans;
 
-namespace Fleans.Domain;
+namespace Fleans.Application.QueryModels;
 
 [GenerateSerializer]
 public sealed record ProcessDefinitionSummary(

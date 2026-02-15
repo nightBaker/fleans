@@ -1,3 +1,4 @@
+using Fleans.Application.QueryModels;
 using Fleans.Domain;
 
 namespace Fleans.Application.WorkflowFactory;
@@ -9,14 +10,4 @@ public interface IWorkflowInstanceFactoryGrain : IGrainWithIntegerKey
     Task<ProcessDefinitionSummary> DeployWorkflow(WorkflowDefinition workflow, string bpmnXml);
     Task RegisterWorkflow(IWorkflowDefinition workflow);
     Task<bool> IsWorkflowRegistered(string workflowId);
-    Task<IReadOnlyList<IWorkflowDefinition>> GetAllWorkflows();
-    Task<IReadOnlyList<ProcessDefinitionSummary>> GetAllProcessDefinitions();
-    Task<IReadOnlyList<WorkflowInstanceInfo>> GetInstancesByKey(string processDefinitionKey);
-    Task<string> GetBpmnXml(string processDefinitionId);
-    Task<string> GetBpmnXmlByKey(string processDefinitionKey);
-    Task<string> GetBpmnXmlByInstanceId(Guid instanceId);
-    Task<string> GetBpmnXmlByKeyAndVersion(string processDefinitionKey, int version);
-    Task<IReadOnlyList<WorkflowInstanceInfo>> GetInstancesByKeyAndVersion(string processDefinitionKey, int version);
 }
-
-public record WorkflowSummary(string WorkflowId, int ActivitiesCount, int SequenceFlowsCount);

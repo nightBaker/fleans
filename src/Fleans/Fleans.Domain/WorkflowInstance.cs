@@ -1,6 +1,5 @@
 using Fleans.Domain.Activities;
 using Fleans.Domain.Errors;
-using Fleans.Domain.Sequences;
 using Fleans.Domain.States;
 using Microsoft.Extensions.Logging;
 using Orleans;
@@ -206,6 +205,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         WorkflowDefinition = workflow ?? throw new ArgumentNullException(nameof(workflow));
         State.Id = this.GetPrimaryKey();
         State.CreatedAt = DateTimeOffset.UtcNow;
+        State.ProcessDefinitionId = workflow.ProcessDefinitionId;
 
         SetWorkflowRequestContext();
         using var scope = BeginWorkflowScope();
@@ -223,73 +223,6 @@ public partial class WorkflowInstance : Grain, IWorkflowInstance
         LogStateStartWith(startActivity.ActivityId);
         State.StartWith(entry, variablesId);
         await _state.WriteStateAsync();
-    }
-
-    public ValueTask<DateTimeOffset?> GetCreatedAt() => ValueTask.FromResult(State.CreatedAt);
-
-    public ValueTask<DateTimeOffset?> GetExecutionStartedAt() => ValueTask.FromResult(State.ExecutionStartedAt);
-
-    public ValueTask<DateTimeOffset?> GetCompletedAt() => ValueTask.FromResult(State.CompletedAt);
-
-    public ValueTask<WorkflowInstanceInfo> GetInstanceInfo()
-    {
-        var isStarted = State.IsStarted;
-        var isCompleted = State.IsCompleted;
-        var defId = WorkflowDefinition?.ProcessDefinitionId ?? "";
-        return ValueTask.FromResult(new WorkflowInstanceInfo(
-            this.GetPrimaryKey(), defId, isStarted, isCompleted,
-            State.CreatedAt, State.ExecutionStartedAt, State.CompletedAt));
-    }
-
-    public async ValueTask<InstanceStateSnapshot> GetStateSnapshot()
-    {
-        if (WorkflowDefinition is null)
-            throw new InvalidOperationException("Workflow definition not set");
-
-        var activeEntries = State.GetActiveActivities().ToList();
-        var completedEntries = State.GetCompletedActivities().ToList();
-
-        var activeTasks = activeEntries.Select(e =>
-            _grainFactory.GetGrain<IActivityInstance>(e.ActivityInstanceId).GetSnapshot().AsTask());
-        var completedTasks = completedEntries.Select(e =>
-            _grainFactory.GetGrain<IActivityInstance>(e.ActivityInstanceId).GetSnapshot().AsTask());
-        var allTasks = activeTasks.Concat(completedTasks).ToList();
-        var allSnapshots = await Task.WhenAll(allTasks);
-
-        var activeSnapshots = allSnapshots.Take(activeEntries.Count).ToList();
-        var completedSnapshots = allSnapshots.Skip(activeEntries.Count).ToList();
-
-        var activeIds = activeEntries.Select(e => e.ActivityId).ToList();
-        var completedIds = completedEntries.Select(e => e.ActivityId).ToList();
-
-        var variableStates = State.VariableStates.Select(vs =>
-        {
-            var dict = ((IDictionary<string, object>)vs.Variables)
-                .ToDictionary(e => e.Key, e => e.Value?.ToString() ?? "");
-            return new VariableStateSnapshot(vs.Id, dict);
-        }).ToList();
-
-        var conditionSequences = State.ConditionSequenceStates
-            .Select(cs =>
-            {
-                var flow = WorkflowDefinition.SequenceFlows
-                    .OfType<ConditionalSequenceFlow>()
-                    .FirstOrDefault(sf => sf.SequenceFlowId == cs.ConditionalSequenceFlowId)
-                    ?? throw new InvalidOperationException(
-                        $"Conditional sequence flow '{cs.ConditionalSequenceFlowId}' not found in workflow definition");
-                return new ConditionSequenceSnapshot(
-                    cs.ConditionalSequenceFlowId,
-                    flow.Condition,
-                    flow.Source.ActivityId,
-                    flow.Target.ActivityId,
-                    cs.Result);
-            })
-            .ToList();
-
-        return new InstanceStateSnapshot(
-            activeIds, completedIds, State.IsStarted, State.IsCompleted,
-            activeSnapshots, completedSnapshots,
-            variableStates, conditionSequences);
     }
 
     public ValueTask<IWorkflowDefinition> GetWorkflowDefinition() => ValueTask.FromResult(WorkflowDefinition);

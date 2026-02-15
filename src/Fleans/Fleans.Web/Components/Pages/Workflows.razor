@@ -1,9 +1,10 @@
 @page "/workflows"
 @rendermode InteractiveServer
 @using Fleans.Application
-@using Fleans.Domain
+@using Fleans.Application.QueryModels
 @using Microsoft.FluentUI.AspNetCore.Components
-@inject WorkflowEngine WorkflowEngine
+@inject IWorkflowQueryService QueryService
+@inject IWorkflowCommandService CommandService
 @inject NavigationManager Navigation
 @inject ILogger<Workflows> Logger
 
@@ -157,7 +158,7 @@
             isLoading = true;
             loadErrorMessage = null;
 
-            var definitions = await WorkflowEngine.GetAllProcessDefinitions();
+            var definitions = await QueryService.GetAllProcessDefinitions();
 
             allDefinitions = definitions
                 .OrderBy(d => d.ProcessDefinitionKey, StringComparer.Ordinal)
@@ -215,7 +216,7 @@
             actionErrorMessage = null;
             actionSuccessMessage = null;
 
-            var instanceId = await WorkflowEngine.StartWorkflowByProcessDefinitionId(version.ProcessDefinitionId);
+            var instanceId = await CommandService.StartWorkflowByProcessDefinitionId(version.ProcessDefinitionId);
             Logger.LogInformation("Process definition {ProcessDefinitionId} started successfully with instanceId {WorkflowInstanceId}", version.ProcessDefinitionId, instanceId);
             actionSuccessMessage = $"Started '{version.ProcessDefinitionKey}' v{version.Version}. Instance: {instanceId}.";
         }

@@ -1,3 +1,4 @@
+using Fleans.Application;
 using Fleans.Domain.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,5 +21,7 @@ public static class EfCorePersistenceDependencyInjection
                 sp.GetRequiredService<IDbContextFactory<FleanDbContext>>()));
 
         services.AddSingleton<IProcessDefinitionRepository, EfCoreProcessDefinitionRepository>();
+
+        services.AddSingleton<IWorkflowQueryService, WorkflowQueryService>();
     }
 }

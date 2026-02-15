@@ -1,10 +1,11 @@
 @page "/process-instance/{InstanceId:guid}"
 @rendermode InteractiveServer
 @using Fleans.Application
+@using Fleans.Application.QueryModels
 @using Fleans.Domain
 @using Microsoft.FluentUI.AspNetCore.Components
 @using Microsoft.JSInterop
-@inject WorkflowEngine WorkflowEngine
+@inject IWorkflowQueryService QueryService
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 @inject ILogger<ProcessInstance> Logger
@@ -293,8 +294,8 @@
             isLoading = true;
             errorMessage = null;
 
-            snapshot = await WorkflowEngine.GetInstanceDetail(InstanceId);
-            bpmnXml = await WorkflowEngine.GetBpmnXml(InstanceId);
+            snapshot = await QueryService.GetStateSnapshot(InstanceId);
+            bpmnXml = await QueryService.GetBpmnXml(InstanceId);
 
             BuildDerivedState();
         }
@@ -379,7 +380,7 @@
         try
         {
             errorMessage = null;
-            snapshot = await WorkflowEngine.GetInstanceDetail(InstanceId);
+            snapshot = await QueryService.GetStateSnapshot(InstanceId);
             BuildDerivedState();
             StateHasChanged();
             await Task.Yield();

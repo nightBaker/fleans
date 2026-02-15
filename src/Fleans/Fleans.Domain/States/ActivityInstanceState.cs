@@ -83,9 +83,4 @@ public class ActivityInstanceState
     }
 
     public void SetVariablesId(Guid id) => VariablesId = id;
-
-    public ActivityInstanceSnapshot GetSnapshot(Guid grainId) =>
-        new(grainId, ActivityId!, ActivityType!,
-            IsCompleted, IsExecuting, VariablesId, ErrorState,
-            CreatedAt, ExecutionStartedAt, CompletedAt);
 }

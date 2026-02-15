@@ -35,6 +35,9 @@ public class WorkflowInstanceState
     [Id(9)]
     public DateTimeOffset? CompletedAt { get; internal set; }
 
+    [Id(10)]
+    public string? ProcessDefinitionId { get; internal set; }
+
     public IEnumerable<ActivityInstanceEntry> GetActiveActivities()
         => Entries.Where(e => !e.IsCompleted);
 
