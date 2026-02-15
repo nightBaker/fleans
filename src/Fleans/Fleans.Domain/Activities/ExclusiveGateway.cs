@@ -4,13 +4,8 @@ using Fleans.Domain.Sequences;
 namespace Fleans.Domain.Activities;
 
 [GenerateSerializer]
-public class ExclusiveGateway : ConditionalGateway
+public record ExclusiveGateway(string ActivityId) : ConditionalGateway(ActivityId)
 {
-    public ExclusiveGateway(string activityId) : base(activityId)
-    {
-        ActivityId = activityId;
-    }
-
     internal override async Task ExecuteAsync(IWorkflowInstance workflowInstance, IActivityInstance activityInstance)
     {
         await base.ExecuteAsync(workflowInstance, activityInstance);

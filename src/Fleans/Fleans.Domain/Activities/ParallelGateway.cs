@@ -6,16 +6,10 @@ using System.Runtime.CompilerServices;
 namespace Fleans.Domain.Activities;
 
 [GenerateSerializer]
-public class ParallelGateway : Gateway
+public record ParallelGateway(
+    string ActivityId,
+    [property: Id(1)] bool IsFork) : Gateway(ActivityId)
 {
-    [Id(1)]
-    public bool IsFork { get; set; }
-
-    public ParallelGateway(string ActivityId, bool isFork) : base(ActivityId)
-    {
-        IsFork = isFork;
-    }
-
     internal override async Task ExecuteAsync(IWorkflowInstance workflowInstance, IActivityInstance activityState)
     {
         await base.ExecuteAsync(workflowInstance, activityState);

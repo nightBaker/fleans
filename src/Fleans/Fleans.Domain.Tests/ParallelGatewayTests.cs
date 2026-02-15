@@ -65,7 +65,7 @@ namespace Fleans.Domain.Tests
         {
             // Arrange — workflow: start -> fork -> task1/task2/task3
             var start = new StartEvent("start");
-            var fork = new ParallelGateway("fork", isFork: true);
+            var fork = new ParallelGateway("fork", IsFork: true);
             var task1 = new TaskActivity("task1");
             var task2 = new TaskActivity("task2");
             var task3 = new TaskActivity("task3");
@@ -111,10 +111,10 @@ namespace Fleans.Domain.Tests
         private static IWorkflowDefinition CreateForkJoinWorkflow()
         {
             var start = new StartEvent("start");
-            var fork = new ParallelGateway("fork", isFork: true);
+            var fork = new ParallelGateway("fork", IsFork: true);
             var task1 = new TaskActivity("task1");
             var task2 = new TaskActivity("task2");
-            var join = new ParallelGateway("join", isFork: false);
+            var join = new ParallelGateway("join", IsFork: false);
             var end = new EndEvent("end");
 
             return new WorkflowDefinition

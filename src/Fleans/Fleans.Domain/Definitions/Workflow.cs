@@ -25,19 +25,19 @@ namespace Fleans.Domain
     }
 
     [GenerateSerializer]
-    public class WorkflowDefinition : IWorkflowDefinition
+    public record WorkflowDefinition : IWorkflowDefinition
     {
         [Id(0)]
-        public required string WorkflowId { get; set; }
+        public required string WorkflowId { get; init; }
 
         [Id(1)]
-        public required List<Activity> Activities { get; set; }
+        public required List<Activity> Activities { get; init; }
 
         [Id(2)]
-        public required List<SequenceFlow> SequenceFlows { get; set; }
+        public required List<SequenceFlow> SequenceFlows { get; init; }
 
         [Id(3)]
-        public string? ProcessDefinitionId { get; set; }
+        public string? ProcessDefinitionId { get; init; }
 
         public Activity GetActivity(string activityId)
             => Activities.First(a => a.ActivityId == activityId);

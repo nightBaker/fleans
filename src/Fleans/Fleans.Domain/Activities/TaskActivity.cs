@@ -1,4 +1,3 @@
-﻿
 
 using System.Runtime.CompilerServices;
 [assembly:InternalsVisibleTo("Fleans.Domain.Tests")]
@@ -6,12 +5,8 @@ using System.Runtime.CompilerServices;
 namespace Fleans.Domain.Activities;
 
 [GenerateSerializer]
-public class TaskActivity : Activity
+public record TaskActivity(string ActivityId) : Activity(ActivityId)
 {
-    public TaskActivity(string ActivityId) : base(ActivityId)
-    {
-    }
-
     internal override async Task<List<Activity>> GetNextActivities(IWorkflowInstance workflowInstance, IActivityInstance state)
     {
         var definition = await workflowInstance.GetWorkflowDefinition();

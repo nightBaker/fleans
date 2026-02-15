@@ -7,16 +7,8 @@ using Orleans;
 namespace Fleans.Domain.Activities;
 
 [GenerateSerializer]
-public abstract class Activity
+public abstract record Activity([property: Id(0)] string ActivityId)
 {
-    [Id(0)]
-    public string ActivityId { get; set; }
-
-    protected Activity(string activityId)
-    {
-        ActivityId = activityId;
-    }
-
     internal virtual async Task ExecuteAsync(IWorkflowInstance workflowInstance, IActivityInstance activityInstance)
     {
         var defintion = await workflowInstance.GetWorkflowDefinition();

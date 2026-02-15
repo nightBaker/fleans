@@ -6,12 +6,8 @@ using System.Runtime.CompilerServices;
 namespace Fleans.Domain.Activities;
 
 [GenerateSerializer]
-public class StartEvent : Activity
+public record StartEvent(string ActivityId) : Activity(ActivityId)
 {
-    public StartEvent(string activityId): base(activityId)
-    {
-        ActivityId = activityId;
-    }
     internal override async Task ExecuteAsync(IWorkflowInstance workflowInstance, IActivityInstance activityInstance)
     {
         await base.ExecuteAsync(workflowInstance, activityInstance);

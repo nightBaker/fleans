@@ -1,15 +1,8 @@
-
-
-
 namespace Fleans.Domain.Activities;
 
 [GenerateSerializer]
-public class ErrorEvent : Activity
+public record ErrorEvent(string ActivityId) : Activity(ActivityId)
 {
-    public ErrorEvent(string ActivityId) : base(ActivityId)
-    {
-    }
-
     internal override async Task ExecuteAsync(IWorkflowInstance workflowInstance, IActivityInstance activityState)
     {
         await base.ExecuteAsync(workflowInstance, activityState);

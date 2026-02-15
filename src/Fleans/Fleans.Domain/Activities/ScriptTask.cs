@@ -3,13 +3,13 @@ using Fleans.Domain.Events;
 namespace Fleans.Domain.Activities;
 
 [GenerateSerializer]
-public class ScriptTask : TaskActivity
+public record ScriptTask : TaskActivity
 {
-    [Id(0)]
-    public string Script { get; set; }
-
     [Id(1)]
-    public string ScriptFormat { get; set; }
+    public string Script { get; init; }
+
+    [Id(2)]
+    public string ScriptFormat { get; init; }
 
     public ScriptTask(string ActivityId, string Script, string ScriptFormat = "csharp") : base(ActivityId)
     {
