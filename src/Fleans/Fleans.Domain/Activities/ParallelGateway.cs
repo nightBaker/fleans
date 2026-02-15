@@ -10,30 +10,30 @@ public record ParallelGateway(
     string ActivityId,
     [property: Id(1)] bool IsFork) : Gateway(ActivityId)
 {
-    internal override async Task ExecuteAsync(IWorkflowInstance workflowInstance, IActivityInstance activityState)
+    internal override async Task ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext)
     {
-        await base.ExecuteAsync(workflowInstance, activityState);
+        await base.ExecuteAsync(workflowContext, activityContext);
 
         if (IsFork)
         {
-            await activityState.Complete();
+            await activityContext.Complete();
         }
         else
         {
-            if (await AllIncomingPathsCompleted(workflowInstance, await workflowInstance.GetWorkflowDefinition()))
+            if (await AllIncomingPathsCompleted(workflowContext, await workflowContext.GetWorkflowDefinition()))
             {
-                await activityState.Complete();
+                await activityContext.Complete();
             }
             else
             {
-                await activityState.Execute();
+                await activityContext.Execute();
             }
         }
     }
 
-    internal override async Task<List<Activity>> GetNextActivities(IWorkflowInstance workflowInstance, IActivityInstance state)
+    internal override async Task<List<Activity>> GetNextActivities(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext)
     {
-        var definition = await workflowInstance.GetWorkflowDefinition();
+        var definition = await workflowContext.GetWorkflowDefinition();
         var nextFlows = definition.SequenceFlows.Where(sf => sf.Source == this)
             .Select(flow => flow.Target)
             .ToList();
@@ -41,12 +41,12 @@ public record ParallelGateway(
         return nextFlows;
     }
 
-    private async Task<bool> AllIncomingPathsCompleted(IWorkflowInstance workflowInstance, IWorkflowDefinition workflow)
+    private async Task<bool> AllIncomingPathsCompleted(IWorkflowExecutionContext workflowContext, IWorkflowDefinition workflow)
     {
         var incomingFlows = workflow.SequenceFlows.Where(sf => sf.Target == this).ToList();
 
-        var completedActivities = await workflowInstance.GetCompletedActivities();
-        var activeActivities = await workflowInstance.GetActiveActivities();
+        var completedActivities = await workflowContext.GetCompletedActivities();
+        var activeActivities = await workflowContext.GetActiveActivities();
 
         var any = false;
 

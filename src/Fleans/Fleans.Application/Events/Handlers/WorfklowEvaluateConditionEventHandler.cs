@@ -1,7 +1,7 @@
 using Fleans.Application.Conditions;
 using Fleans.Application.Events;
+using Fleans.Application.Grains;
 using Fleans.Application.Logging;
-using Fleans.Domain;
 using Fleans.Domain.Events;
 using Microsoft.Extensions.Logging;
 using Orleans.Runtime;
@@ -40,12 +40,12 @@ public partial class WorfklowEvaluateConditionEventHandler : Grain, IWorfklowEva
 
         LogHandlingConditionEvent(item.ActivityId, item.SequenceFlowId);
 
-        var workflowInstance = _grainFactory.GetGrain<IWorkflowInstance>(item.WorkflowInstanceId);
+        var workflowInstance = _grainFactory.GetGrain<IWorkflowInstanceGrain>(item.WorkflowInstanceId);
 
         try
         {
             var expressionEvaluator = _grainFactory.GetGrain<IConditionExpressionEvaluatorGrain>(0);
-            var activityInstance = _grainFactory.GetGrain<IActivityInstance>(item.ActivityInstanceId);
+            var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(item.ActivityInstanceId);
 
             var variables = await workflowInstance.GetVariables(await activityInstance.GetVariablesStateId());
 

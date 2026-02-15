@@ -14,7 +14,7 @@ namespace Fleans.Domain.Tests
         {
             // Arrange
             var workflow = CreateForkJoinWorkflow();
-            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
             await workflowInstance.SetWorkflow(workflow);
 
             // Act - Complete the fork gateway
@@ -36,7 +36,7 @@ namespace Fleans.Domain.Tests
         {
             // Arrange
             var workflow = CreateForkJoinWorkflow();
-            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
             await workflowInstance.SetWorkflow(workflow);
             await workflowInstance.StartWorkflow();
 
@@ -71,7 +71,7 @@ namespace Fleans.Domain.Tests
                 }
             };
 
-            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
             await workflowInstance.SetWorkflow(workflow);
 
             // Act — start the workflow; start event auto-transitions to fork, fork fans out

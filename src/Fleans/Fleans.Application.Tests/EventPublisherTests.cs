@@ -1,6 +1,7 @@
 using Fleans.Application;
 using Fleans.Application.Conditions;
 using Fleans.Application.Events;
+using Fleans.Application.Grains;
 using Fleans.Application.QueryModels;
 using Fleans.Application.Scripts;
 using Fleans.Domain;
@@ -61,7 +62,7 @@ public class EventPublisherTests
     {
         // Arrange
         var workflow = CreateWorkflowWithExclusiveGateway();
-        var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         var instanceId = workflowInstance.GetPrimaryKey();
 
@@ -83,7 +84,7 @@ public class EventPublisherTests
     {
         // Arrange
         var workflow = CreateWorkflowWithScriptTask();
-        var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstance>(Guid.NewGuid());
+        var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         await workflowInstance.SetWorkflow(workflow);
         var instanceId = workflowInstance.GetPrimaryKey();
 
