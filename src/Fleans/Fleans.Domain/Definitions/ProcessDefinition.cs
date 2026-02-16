@@ -34,4 +34,7 @@ public sealed class ProcessDefinition
 
     [Id(5)]
     public required string BpmnXml { get; set; }
+
+    [Id(6)]
+    public string? ETag { get; set; }
 }

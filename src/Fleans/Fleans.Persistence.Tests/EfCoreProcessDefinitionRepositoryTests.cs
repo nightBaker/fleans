@@ -255,18 +255,4 @@ public class EfCoreProcessDefinitionRepositoryTests
         };
     }
 
-    private class TestDbContextFactory : IDbContextFactory<FleanCommandDbContext>
-    {
-        private readonly DbContextOptions<FleanCommandDbContext> _options;
-
-        public TestDbContextFactory(DbContextOptions<FleanCommandDbContext> options)
-        {
-            _options = options;
-        }
-
-        public FleanCommandDbContext CreateDbContext() => new(_options);
-
-        public Task<FleanCommandDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(CreateDbContext());
-    }
 }

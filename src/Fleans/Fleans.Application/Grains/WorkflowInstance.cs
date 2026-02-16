@@ -11,9 +11,7 @@ namespace Fleans.Application.Grains;
 public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
 {
     public ValueTask<Guid> GetWorkflowInstanceId() => ValueTask.FromResult(this.GetPrimaryKey());
-    // TODO: Move to WorkflowInstanceState so it survives grain reactivation.
-    // Not a grain reference — WorkflowDefinition has [GenerateSerializer].
-    public IWorkflowDefinition WorkflowDefinition { get; private set; } = null!;
+    private IWorkflowDefinition? _workflowDefinition;
 
     private readonly IPersistentState<WorkflowInstanceState> _state;
     private readonly IGrainFactory _grainFactory;
@@ -33,6 +31,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
 
     public async Task StartWorkflow()
     {
+        await EnsureWorkflowDefinitionAsync();
         SetWorkflowRequestContext();
         using var scope = BeginWorkflowScope();
         State.ExecutionStartedAt = DateTimeOffset.UtcNow;
@@ -44,12 +43,13 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
 
     private async Task ExecuteWorkflow()
     {
+        var definition = await GetWorkflowDefinition();
         while (await AnyNotExecuting())
         {
             foreach (var activityState in await GetNotExecutingNotCompletedActivities())
             {
                 var activityId = await activityState.GetActivityId();
-                var currentActivity = WorkflowDefinition.GetActivity(activityId);
+                var currentActivity = definition.GetActivity(activityId);
                 SetActivityRequestContext(activityId, activityState);
                 LogExecutingActivity(activityId, currentActivity.GetType().Name);
                 await currentActivity.ExecuteAsync(this, activityState);
@@ -61,6 +61,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
 
     public async Task CompleteActivity(string activityId, ExpandoObject variables)
     {
+        await EnsureWorkflowDefinitionAsync();
         SetWorkflowRequestContext();
         using var scope = BeginWorkflowScope();
         LogCompletingActivity(activityId);
@@ -71,6 +72,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
 
     public async Task FailActivity(string activityId, Exception exception)
     {
+        await EnsureWorkflowDefinitionAsync();
         SetWorkflowRequestContext();
         using var scope = BeginWorkflowScope();
         LogFailingActivity(activityId);
@@ -81,6 +83,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
 
     private async Task TransitionToNextActivity()
     {
+        var definition = await GetWorkflowDefinition();
         var newActiveEntries = new List<ActivityInstanceEntry>();
         var completedEntries = new List<ActivityInstanceEntry>();
 
@@ -90,7 +93,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
 
             if (await activityInstance.IsCompleted())
             {
-                var currentActivity = WorkflowDefinition.GetActivity(entry.ActivityId);
+                var currentActivity = definition.GetActivity(entry.ActivityId);
 
                 var nextActivities = await currentActivity.GetNextActivities(this, activityInstance);
 
@@ -159,6 +162,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
 
     public async Task CompleteConditionSequence(string activityId, string conditionSequenceId, bool result)
     {
+        await EnsureWorkflowDefinitionAsync();
         SetWorkflowRequestContext();
         using var scope = BeginWorkflowScope();
         LogConditionResult(conditionSequenceId, result);
@@ -168,7 +172,8 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
 
         var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(entry.ActivityInstanceId);
 
-        var gateway = WorkflowDefinition.GetActivity(activityId) as ConditionalGateway
+        var definition = await GetWorkflowDefinition();
+        var gateway = definition.GetActivity(activityId) as ConditionalGateway
             ?? throw new InvalidOperationException("Activity is not a conditional gateway");
 
         bool isDecisionMade;
@@ -200,9 +205,9 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
 
     public async Task SetWorkflow(IWorkflowDefinition workflow)
     {
-        if(WorkflowDefinition is not null) throw new ArgumentException("Workflow already set");
+        if(_workflowDefinition is not null) throw new ArgumentException("Workflow already set");
 
-        WorkflowDefinition = workflow ?? throw new ArgumentNullException(nameof(workflow));
+        _workflowDefinition = workflow ?? throw new ArgumentNullException(nameof(workflow));
         State.Id = this.GetPrimaryKey();
         State.CreatedAt = DateTimeOffset.UtcNow;
         State.ProcessDefinitionId = workflow.ProcessDefinitionId;
@@ -225,7 +230,25 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         await _state.WriteStateAsync();
     }
 
-    public ValueTask<IWorkflowDefinition> GetWorkflowDefinition() => ValueTask.FromResult(WorkflowDefinition);
+    // [ReadOnly] in the interface is safe: WorkflowInstance is not [Reentrant],
+    // so the field write in EnsureWorkflowDefinitionAsync is never concurrent.
+    public async ValueTask<IWorkflowDefinition> GetWorkflowDefinition()
+    {
+        await EnsureWorkflowDefinitionAsync();
+        return _workflowDefinition!;
+    }
+
+    private async ValueTask EnsureWorkflowDefinitionAsync()
+    {
+        if (_workflowDefinition is not null)
+            return;
+
+        var processDefId = State.ProcessDefinitionId
+            ?? throw new InvalidOperationException("ProcessDefinitionId not set — call SetWorkflow first.");
+
+        var grain = _grainFactory.GetGrain<IProcessDefinitionGrain>(processDefId);
+        _workflowDefinition = await grain.GetDefinition();
+    }
 
     public ValueTask<ExpandoObject> GetVariables(Guid variablesStateId)
     {
@@ -297,12 +320,12 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
 
     private void SetWorkflowRequestContext()
     {
-        if (WorkflowDefinition is null) return;
+        if (_workflowDefinition is null) return;
 
-        RequestContext.Set("WorkflowId", WorkflowDefinition.WorkflowId);
+        RequestContext.Set("WorkflowId", _workflowDefinition.WorkflowId);
         RequestContext.Set("WorkflowInstanceId", this.GetPrimaryKey().ToString());
-        if (WorkflowDefinition.ProcessDefinitionId is not null)
-            RequestContext.Set("ProcessDefinitionId", WorkflowDefinition.ProcessDefinitionId);
+        if (_workflowDefinition.ProcessDefinitionId is not null)
+            RequestContext.Set("ProcessDefinitionId", _workflowDefinition.ProcessDefinitionId);
     }
 
     private void SetActivityRequestContext(string activityId, IActivityInstanceGrain activityInstance)
@@ -313,11 +336,11 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
 
     private IDisposable? BeginWorkflowScope()
     {
-        if (WorkflowDefinition is null) return null;
+        if (_workflowDefinition is null) return null;
 
         return _logger.BeginScope(
             "[{WorkflowId}, {ProcessDefinitionId}, {WorkflowInstanceId}]",
-            WorkflowDefinition.WorkflowId, WorkflowDefinition.ProcessDefinitionId ?? "-", this.GetPrimaryKey().ToString());
+            _workflowDefinition.WorkflowId, _workflowDefinition.ProcessDefinitionId ?? "-", this.GetPrimaryKey().ToString());
     }
 
     [LoggerMessage(EventId = 1000, Level = LogLevel.Debug, Message = "Workflow definition set")]

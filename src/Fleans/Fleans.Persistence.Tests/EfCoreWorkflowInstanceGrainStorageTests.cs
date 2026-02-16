@@ -712,26 +712,4 @@ public class EfCoreWorkflowInstanceGrainStorageTests
 
     private static TestGrainState<WorkflowInstanceState> CreateGrainState()
         => new() { State = new WorkflowInstanceState() };
-
-    private class TestGrainState<T> : IGrainState<T> where T : new()
-    {
-        public T State { get; set; } = new();
-        public string? ETag { get; set; }
-        public bool RecordExists { get; set; }
-    }
-
-    private class TestDbContextFactory : IDbContextFactory<FleanCommandDbContext>
-    {
-        private readonly DbContextOptions<FleanCommandDbContext> _options;
-
-        public TestDbContextFactory(DbContextOptions<FleanCommandDbContext> options)
-        {
-            _options = options;
-        }
-
-        public FleanCommandDbContext CreateDbContext() => new(_options);
-
-        public Task<FleanCommandDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(CreateDbContext());
-    }
 }
