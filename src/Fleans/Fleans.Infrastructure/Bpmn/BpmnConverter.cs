@@ -179,14 +179,14 @@ public partial class BpmnConverter : IBpmnConverter
             var extensionElements = callActivityEl.Element(Bpmn + "extensionElements");
             if (extensionElements != null)
             {
-                foreach (var input in extensionElements.Elements("inputMapping"))
+                foreach (var input in extensionElements.Elements().Where(e => e.Name.LocalName == "inputMapping"))
                 {
                     var source = input.Attribute("source")?.Value ?? "";
                     var target = input.Attribute("target")?.Value ?? "";
                     inputMappings.Add(new VariableMapping(source, target));
                 }
 
-                foreach (var output in extensionElements.Elements("outputMapping"))
+                foreach (var output in extensionElements.Elements().Where(e => e.Name.LocalName == "outputMapping"))
                 {
                     var source = output.Attribute("source")?.Value ?? "";
                     var target = output.Attribute("target")?.Value ?? "";
