@@ -10,18 +10,9 @@ using Newtonsoft.Json.Serialization;
 
 namespace Fleans.Persistence;
 
-public class FleanDbContext : DbContext
+internal static class FleanModelConfiguration
 {
-    public DbSet<ActivityInstanceState> ActivityInstances => Set<ActivityInstanceState>();
-    public DbSet<WorkflowInstanceState> WorkflowInstances => Set<WorkflowInstanceState>();
-    public DbSet<ActivityInstanceEntry> WorkflowActivityInstanceEntries => Set<ActivityInstanceEntry>();
-    public DbSet<WorkflowVariablesState> WorkflowVariableStates => Set<WorkflowVariablesState>();
-    public DbSet<ConditionSequenceState> WorkflowConditionSequenceStates => Set<ConditionSequenceState>();
-    public DbSet<ProcessDefinition> ProcessDefinitions => Set<ProcessDefinition>();
-
-    public FleanDbContext(DbContextOptions<FleanDbContext> options) : base(options) { }
-
-    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    public static void Configure(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<ActivityInstanceState>(entity =>
         {

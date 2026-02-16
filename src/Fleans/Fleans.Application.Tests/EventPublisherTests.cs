@@ -172,16 +172,19 @@ public class EventPublisherTests
                 .AddMemoryGrainStorage("PubSubStore")
                 .ConfigureServices(services =>
                 {
-                    services.AddDbContextFactory<FleanDbContext>(options =>
+                    services.AddDbContextFactory<FleanCommandDbContext>(options =>
+                        options.UseSqlite("DataSource=file::memory:?cache=shared"));
+
+                    services.AddDbContextFactory<FleanQueryDbContext>(options =>
                         options.UseSqlite("DataSource=file::memory:?cache=shared"));
 
                     services.AddKeyedSingleton<IGrainStorage>("workflowInstances",
                         (sp, _) => new EfCoreWorkflowInstanceGrainStorage(
-                            sp.GetRequiredService<IDbContextFactory<FleanDbContext>>()));
+                            sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
 
                     services.AddKeyedSingleton<IGrainStorage>("activityInstances",
                         (sp, _) => new EfCoreActivityInstanceGrainStorage(
-                            sp.GetRequiredService<IDbContextFactory<FleanDbContext>>()));
+                            sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
 
                     services.AddSingleton<IProcessDefinitionRepository, EfCoreProcessDefinitionRepository>();
                     services.AddSingleton<IWorkflowQueryService, WorkflowQueryService>();
@@ -200,7 +203,7 @@ public class EventPublisherTests
 
                     // Ensure DB schema is created
                     var sp = services.BuildServiceProvider();
-                    using var db = sp.GetRequiredService<IDbContextFactory<FleanDbContext>>().CreateDbContext();
+                    using var db = sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>().CreateDbContext();
                     db.Database.EnsureCreated();
                 });
     }

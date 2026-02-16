@@ -6,9 +6,9 @@ namespace Fleans.Persistence;
 
 public class EfCoreProcessDefinitionRepository : IProcessDefinitionRepository
 {
-    private readonly IDbContextFactory<FleanDbContext> _dbContextFactory;
+    private readonly IDbContextFactory<FleanCommandDbContext> _dbContextFactory;
 
-    public EfCoreProcessDefinitionRepository(IDbContextFactory<FleanDbContext> dbContextFactory)
+    public EfCoreProcessDefinitionRepository(IDbContextFactory<FleanCommandDbContext> dbContextFactory)
     {
         _dbContextFactory = dbContextFactory;
     }
