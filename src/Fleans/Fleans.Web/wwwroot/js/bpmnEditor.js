@@ -107,6 +107,22 @@ window.bpmnEditor = {
         modeling.updateProperties(element, props);
     },
 
+    getProcessId: function () {
+        if (!this._modeler) return null;
+        var canvas = this._modeler.get('canvas');
+        var rootElement = canvas.getRootElement();
+        return rootElement.businessObject.id;
+    },
+
+    updateProcessId: function (newId) {
+        if (!this._modeler) return false;
+        var canvas = this._modeler.get('canvas');
+        var rootElement = canvas.getRootElement();
+        var modeling = this._modeler.get('modeling');
+        modeling.updateProperties(rootElement, { id: newId });
+        return true;
+    },
+
     replaceElement: function (elementId, newType) {
         if (!this._modeler) return null;
 

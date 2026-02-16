@@ -105,6 +105,19 @@ h1:focus {
     background-size: 16px 16px;
 }
 
+.process-id-toolbar {
+    font-weight: 600;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: background 0.15s;
+}
+
+.process-id-toolbar:hover {
+    background: var(--neutral-fill-stealth-hover);
+    text-decoration: underline;
+}
+
 /* Properties Panel */
 .properties-panel {
     width: 300px;
