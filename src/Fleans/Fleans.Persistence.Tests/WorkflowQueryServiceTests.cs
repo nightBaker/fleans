@@ -15,7 +15,8 @@ namespace Fleans.Persistence.Tests;
 public class WorkflowQueryServiceTests
 {
     private SqliteConnection _connection = null!;
-    private IDbContextFactory<FleanDbContext> _dbContextFactory = null!;
+    private IDbContextFactory<FleanCommandDbContext> _commandDbContextFactory = null!;
+    private IDbContextFactory<FleanQueryDbContext> _queryDbContextFactory = null!;
     private IWorkflowQueryService _service = null!;
 
     [TestInitialize]
@@ -24,14 +25,19 @@ public class WorkflowQueryServiceTests
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();
 
-        var options = new DbContextOptionsBuilder<FleanDbContext>()
+        var commandOptions = new DbContextOptionsBuilder<FleanCommandDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        _dbContextFactory = new TestDbContextFactory(options);
-        _service = new WorkflowQueryService(_dbContextFactory);
+        var queryOptions = new DbContextOptionsBuilder<FleanQueryDbContext>()
+            .UseSqlite(_connection)
+            .Options;
 
-        using var db = _dbContextFactory.CreateDbContext();
+        _commandDbContextFactory = new TestCommandDbContextFactory(commandOptions);
+        _queryDbContextFactory = new TestQueryDbContextFactory(queryOptions);
+        _service = new WorkflowQueryService(_queryDbContextFactory);
+
+        using var db = _commandDbContextFactory.CreateDbContext();
         db.Database.EnsureCreated();
     }
 
@@ -56,7 +62,7 @@ public class WorkflowQueryServiceTests
     [TestMethod]
     public async Task GetStateSnapshot_ReturnsSnapshot_WithActiveAndCompletedActivities()
     {
-        using var db = _dbContextFactory.CreateDbContext();
+        using var db = _commandDbContextFactory.CreateDbContext();
 
         var instanceId = Guid.NewGuid();
         var processDefId = "proc:1:ts";
@@ -99,7 +105,7 @@ public class WorkflowQueryServiceTests
     [TestMethod]
     public async Task GetStateSnapshot_ReturnsSnapshot_WithVariables()
     {
-        using var db = _dbContextFactory.CreateDbContext();
+        using var db = _commandDbContextFactory.CreateDbContext();
 
         var instanceId = Guid.NewGuid();
         await SeedWorkflowInstance(db, instanceId, isStarted: true);
@@ -128,7 +134,7 @@ public class WorkflowQueryServiceTests
     [TestMethod]
     public async Task GetStateSnapshot_ReturnsSnapshot_WithConditionSequences()
     {
-        using var db = _dbContextFactory.CreateDbContext();
+        using var db = _commandDbContextFactory.CreateDbContext();
 
         var instanceId = Guid.NewGuid();
         var processDefId = "proc:1:ts";
@@ -156,7 +162,7 @@ public class WorkflowQueryServiceTests
     [TestMethod]
     public async Task GetStateSnapshot_ReturnsSnapshot_WithProcessDefinitionId()
     {
-        using var db = _dbContextFactory.CreateDbContext();
+        using var db = _commandDbContextFactory.CreateDbContext();
 
         var instanceId = Guid.NewGuid();
         var processDefId = "myproc:1:ts";
@@ -172,7 +178,7 @@ public class WorkflowQueryServiceTests
     [TestMethod]
     public async Task GetStateSnapshot_ReturnsSnapshot_WithTimestamps()
     {
-        using var db = _dbContextFactory.CreateDbContext();
+        using var db = _commandDbContextFactory.CreateDbContext();
 
         var instanceId = Guid.NewGuid();
         var createdAt = new DateTimeOffset(2026, 1, 1, 10, 0, 0, TimeSpan.Zero);
@@ -196,7 +202,7 @@ public class WorkflowQueryServiceTests
     [TestMethod]
     public async Task GetStateSnapshot_ReturnsErrorState_OnFailedActivity()
     {
-        using var db = _dbContextFactory.CreateDbContext();
+        using var db = _commandDbContextFactory.CreateDbContext();
 
         var instanceId = Guid.NewGuid();
         await SeedWorkflowInstance(db, instanceId, isStarted: true);
@@ -227,7 +233,7 @@ public class WorkflowQueryServiceTests
     [TestMethod]
     public async Task GetAllProcessDefinitions_ReturnsAll_OrderedByKeyThenVersion()
     {
-        using var db = _dbContextFactory.CreateDbContext();
+        using var db = _commandDbContextFactory.CreateDbContext();
 
         await SeedProcessDefinition(db, "beta:2:ts", "beta", 2);
         await SeedProcessDefinition(db, "alpha:1:ts", "alpha", 1);
@@ -262,7 +268,7 @@ public class WorkflowQueryServiceTests
     [TestMethod]
     public async Task GetInstancesByKey_ReturnsMatchingInstances()
     {
-        using var db = _dbContextFactory.CreateDbContext();
+        using var db = _commandDbContextFactory.CreateDbContext();
 
         await SeedProcessDefinition(db, "mykey:1:ts", "mykey", 1);
         await SeedProcessDefinition(db, "mykey:2:ts", "mykey", 2);
@@ -287,7 +293,7 @@ public class WorkflowQueryServiceTests
     [TestMethod]
     public async Task GetInstancesByKey_ReturnsEmpty_WhenNoMatch()
     {
-        using var db = _dbContextFactory.CreateDbContext();
+        using var db = _commandDbContextFactory.CreateDbContext();
 
         await SeedProcessDefinition(db, "existing:1:ts", "existing", 1);
         await SeedWorkflowInstance(db, Guid.NewGuid(), processDefinitionId: "existing:1:ts", isStarted: true);
@@ -304,7 +310,7 @@ public class WorkflowQueryServiceTests
     [TestMethod]
     public async Task GetInstancesByKeyAndVersion_ReturnsMatchingInstances()
     {
-        using var db = _dbContextFactory.CreateDbContext();
+        using var db = _commandDbContextFactory.CreateDbContext();
 
         await SeedProcessDefinition(db, "key:1:ts", "key", 1);
         await SeedProcessDefinition(db, "key:2:ts", "key", 2);
@@ -324,7 +330,7 @@ public class WorkflowQueryServiceTests
     [TestMethod]
     public async Task GetInstancesByKeyAndVersion_ReturnsEmpty_WhenVersionNotFound()
     {
-        using var db = _dbContextFactory.CreateDbContext();
+        using var db = _commandDbContextFactory.CreateDbContext();
 
         await SeedProcessDefinition(db, "key:1:ts", "key", 1);
         await SeedWorkflowInstance(db, Guid.NewGuid(), processDefinitionId: "key:1:ts", isStarted: true);
@@ -341,7 +347,7 @@ public class WorkflowQueryServiceTests
     [TestMethod]
     public async Task GetBpmnXml_ReturnsBpmn_WhenInstanceExists()
     {
-        using var db = _dbContextFactory.CreateDbContext();
+        using var db = _commandDbContextFactory.CreateDbContext();
 
         var bpmn = "<bpmn:definitions>full xml here</bpmn:definitions>";
         await SeedProcessDefinition(db, "proc:1:ts", "proc", 1, bpmnXml: bpmn);
@@ -369,7 +375,7 @@ public class WorkflowQueryServiceTests
     [TestMethod]
     public async Task GetBpmnXmlByKey_ReturnsLatestVersion()
     {
-        using var db = _dbContextFactory.CreateDbContext();
+        using var db = _commandDbContextFactory.CreateDbContext();
 
         await SeedProcessDefinition(db, "proc:1:ts", "proc", 1, bpmnXml: "<bpmn>v1</bpmn>");
         await SeedProcessDefinition(db, "proc:2:ts", "proc", 2, bpmnXml: "<bpmn>v2</bpmn>");
@@ -387,7 +393,7 @@ public class WorkflowQueryServiceTests
     [TestMethod]
     public async Task GetBpmnXmlByKeyAndVersion_ReturnsExactVersion()
     {
-        using var db = _dbContextFactory.CreateDbContext();
+        using var db = _commandDbContextFactory.CreateDbContext();
 
         await SeedProcessDefinition(db, "proc:1:ts", "proc", 1, bpmnXml: "<bpmn>v1</bpmn>");
         await SeedProcessDefinition(db, "proc:2:ts", "proc", 2, bpmnXml: "<bpmn>v2</bpmn>");
@@ -444,7 +450,7 @@ public class WorkflowQueryServiceTests
     }
 
     private static async Task SeedProcessDefinition(
-        FleanDbContext db, string id, string key, int version,
+        FleanCommandDbContext db, string id, string key, int version,
         string bpmnXml = "<bpmn/>", bool createConditionalFlow = false)
     {
         var definition = CreateProcessDefinition(id, key, version, bpmnXml, createConditionalFlow);
@@ -453,7 +459,7 @@ public class WorkflowQueryServiceTests
     }
 
     private async Task<WorkflowInstanceState> SeedWorkflowInstance(
-        FleanDbContext db, Guid id, string? processDefinitionId = null,
+        FleanCommandDbContext db, Guid id, string? processDefinitionId = null,
         bool isStarted = true, bool isCompleted = false,
         DateTimeOffset? createdAt = null, DateTimeOffset? executionStartedAt = null,
         DateTimeOffset? completedAt = null)
@@ -473,7 +479,7 @@ public class WorkflowQueryServiceTests
     }
 
     private static async Task SeedActivityInstance(
-        FleanDbContext db, Guid id, string activityId, string activityType,
+        FleanCommandDbContext db, Guid id, string activityId, string activityType,
         bool isCompleted = false, bool isExecuting = false,
         int? errorCode = null, string? errorMessage = null,
         DateTimeOffset? createdAt = null, DateTimeOffset? executionStartedAt = null,
@@ -495,18 +501,33 @@ public class WorkflowQueryServiceTests
         await db.SaveChangesAsync();
     }
 
-    private class TestDbContextFactory : IDbContextFactory<FleanDbContext>
+    private class TestCommandDbContextFactory : IDbContextFactory<FleanCommandDbContext>
     {
-        private readonly DbContextOptions<FleanDbContext> _options;
+        private readonly DbContextOptions<FleanCommandDbContext> _options;
 
-        public TestDbContextFactory(DbContextOptions<FleanDbContext> options)
+        public TestCommandDbContextFactory(DbContextOptions<FleanCommandDbContext> options)
         {
             _options = options;
         }
 
-        public FleanDbContext CreateDbContext() => new(_options);
+        public FleanCommandDbContext CreateDbContext() => new(_options);
 
-        public Task<FleanDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
+        public Task<FleanCommandDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(CreateDbContext());
+    }
+
+    private class TestQueryDbContextFactory : IDbContextFactory<FleanQueryDbContext>
+    {
+        private readonly DbContextOptions<FleanQueryDbContext> _options;
+
+        public TestQueryDbContextFactory(DbContextOptions<FleanQueryDbContext> options)
+        {
+            _options = options;
+        }
+
+        public FleanQueryDbContext CreateDbContext() => new(_options);
+
+        public Task<FleanQueryDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
             => Task.FromResult(CreateDbContext());
     }
 }
