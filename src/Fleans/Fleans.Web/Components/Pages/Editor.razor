@@ -24,15 +24,27 @@
             Back
         </FluentButton>
 
-        @if (!string.IsNullOrEmpty(processKey))
+        @if (isEditingProcessId)
         {
+            <FluentTextField @bind-Value="processIdEdit"
+                             Autofocus="true"
+                             @onkeydown="OnProcessIdKeyDown"
+                             @onblur="ConfirmProcessIdEdit"
+                             Placeholder="Process ID"
+                             Style="width: 200px;" />
+            @if (processIdError != null)
+            {
+                <FluentBadge Color="Color.Error">@processIdError</FluentBadge>
+            }
+        }
+        else if (!string.IsNullOrEmpty(processIdDisplay))
+        {
+            <span class="process-id-toolbar" @onclick="StartProcessIdEdit" title="Click to edit process ID">
+                @processIdDisplay
+            </span>
             @if (Version.HasValue)
             {
-                <FluentBadge Color="Color.Accent">Editing v@(Version) of @processKey</FluentBadge>
-            }
-            else
-            {
-                <FluentBadge Color="Color.Accent">@processKey</FluentBadge>
+                <FluentBadge Color="Color.Accent">v@(Version)</FluentBadge>
             }
         }
 
@@ -84,29 +96,6 @@
     }
 
     <div class="editor-content">
-        <div class="process-id-overlay">
-            @if (isEditingProcessId)
-            {
-                <div class="process-id-edit">
-                    <FluentTextField @bind-Value="processIdEdit"
-                                     Autofocus="true"
-                                     @onkeydown="OnProcessIdKeyDown"
-                                     @onblur="ConfirmProcessIdEdit"
-                                     Placeholder="Process ID"
-                                     Style="width: 220px;" />
-                </div>
-                @if (processIdError != null)
-                {
-                    <span class="process-id-error">@processIdError</span>
-                }
-            }
-            else if (!string.IsNullOrEmpty(processIdDisplay))
-            {
-                <span class="process-id-display" @onclick="StartProcessIdEdit" title="Click to edit process ID">
-                    @processIdDisplay
-                </span>
-            }
-        </div>
         <div id="editor-canvas" class="editor-canvas"></div>
 
         @if (selectedElement != null)
