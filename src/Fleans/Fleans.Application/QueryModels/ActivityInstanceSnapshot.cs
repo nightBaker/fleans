@@ -12,4 +12,5 @@ public sealed record ActivityInstanceSnapshot(
     ActivityErrorState? ErrorState,
     DateTimeOffset? CreatedAt,
     DateTimeOffset? ExecutionStartedAt,
-    DateTimeOffset? CompletedAt);
+    DateTimeOffset? CompletedAt,
+    Guid? ChildWorkflowInstanceId = null);
