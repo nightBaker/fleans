@@ -100,6 +100,7 @@ internal static class FleanModelConfiguration
 
             entity.Property(e => e.ProcessDefinitionId).HasMaxLength(512);
             entity.Property(e => e.ProcessDefinitionKey).HasMaxLength(256);
+            entity.Property(e => e.ETag).HasMaxLength(64);
             entity.Property(e => e.BpmnXml);
 
             entity.HasIndex(e => e.ProcessDefinitionKey);

@@ -50,6 +50,7 @@ public class EfCoreProcessDefinitionRepository : IProcessDefinitionRepository
             throw new InvalidOperationException(
                 $"Process definition '{definition.ProcessDefinitionId}' already exists.");
 
+        definition.ETag ??= Guid.NewGuid().ToString("N");
         db.ProcessDefinitions.Add(definition);
         await db.SaveChangesAsync();
     }

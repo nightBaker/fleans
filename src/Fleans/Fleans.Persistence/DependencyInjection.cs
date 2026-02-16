@@ -24,6 +24,10 @@ public static class EfCorePersistenceDependencyInjection
             (sp, _) => new EfCoreWorkflowInstanceGrainStorage(
                 sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
 
+        services.AddKeyedSingleton<IGrainStorage>("processDefinitions",
+            (sp, _) => new EfCoreProcessDefinitionGrainStorage(
+                sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
+
         services.AddSingleton<IProcessDefinitionRepository, EfCoreProcessDefinitionRepository>();
         services.AddSingleton<IWorkflowQueryService, WorkflowQueryService>();
     }
