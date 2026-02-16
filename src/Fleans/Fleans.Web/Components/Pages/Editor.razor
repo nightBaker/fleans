@@ -84,6 +84,29 @@
     }
 
     <div class="editor-content">
+        <div class="process-id-overlay">
+            @if (isEditingProcessId)
+            {
+                <div class="process-id-edit">
+                    <FluentTextField @bind-Value="processIdEdit"
+                                     Autofocus="true"
+                                     @onkeydown="OnProcessIdKeyDown"
+                                     @onblur="ConfirmProcessIdEdit"
+                                     Placeholder="Process ID"
+                                     Style="width: 220px;" />
+                </div>
+                @if (processIdError != null)
+                {
+                    <span class="process-id-error">@processIdError</span>
+                }
+            }
+            else if (!string.IsNullOrEmpty(processIdDisplay))
+            {
+                <span class="process-id-display" @onclick="StartProcessIdEdit" title="Click to edit process ID">
+                    @processIdDisplay
+                </span>
+            }
+        </div>
         <div id="editor-canvas" class="editor-canvas"></div>
 
         @if (selectedElement != null)
@@ -130,6 +153,11 @@
 
     private ElementPropertiesPanel.BpmnElementData? selectedElement;
 
+    private string processIdDisplay = "";
+    private string processIdEdit = "";
+    private bool isEditingProcessId;
+    private string? processIdError;
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
@@ -152,7 +180,7 @@
                         bpmnXml = await QueryService.GetBpmnXmlByKey(ProcessDefinitionKey);
                     }
                     await JS.InvokeVoidAsync("bpmnEditor.loadXml", bpmnXml);
-                    processKey = ProcessDefinitionKey;
+                    await RefreshProcessId();
                     StateHasChanged();
                 }
                 catch (Exception ex)
@@ -165,6 +193,7 @@
             else
             {
                 await JS.InvokeVoidAsync("bpmnEditor.newDiagram");
+                await RefreshProcessId();
             }
         }
     }
@@ -187,6 +216,72 @@
     {
         selectedElement = newElement;
         StateHasChanged();
+    }
+
+    private void StartProcessIdEdit()
+    {
+        processIdEdit = processIdDisplay;
+        processIdError = null;
+        isEditingProcessId = true;
+    }
+
+    private async Task OnProcessIdKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await ConfirmProcessIdEdit();
+        }
+        else if (e.Key == "Escape")
+        {
+            isEditingProcessId = false;
+            processIdError = null;
+        }
+    }
+
+    private async Task ConfirmProcessIdEdit()
+    {
+        if (!isEditingProcessId) return;
+
+        var newId = processIdEdit.Trim();
+
+        if (string.IsNullOrEmpty(newId))
+        {
+            processIdError = "ID cannot be empty";
+            return;
+        }
+
+        if (newId.Contains(' '))
+        {
+            processIdError = "ID cannot contain spaces";
+            return;
+        }
+
+        if (!System.Text.RegularExpressions.Regex.IsMatch(newId, @"^[a-zA-Z_][\w.\-]*$"))
+        {
+            processIdError = "ID must start with a letter or underscore";
+            return;
+        }
+
+        if (newId != processIdDisplay)
+        {
+            await JS.InvokeAsync<bool>("bpmnEditor.updateProcessId", newId);
+            processIdDisplay = newId;
+            processKey = newId;
+        }
+
+        isEditingProcessId = false;
+        processIdError = null;
+    }
+
+    private async Task RefreshProcessId()
+    {
+        if (!editorInitialized) return;
+        var id = await JS.InvokeAsync<string>("bpmnEditor.getProcessId");
+        if (!string.IsNullOrEmpty(id))
+        {
+            processIdDisplay = id;
+            processKey = id;
+        }
     }
 
     private async Task OnImportFileSelected(IEnumerable<FluentInputFileEventArgs> files)
@@ -212,6 +307,7 @@
             successMessage = null;
             var bpmnXml = await File.ReadAllTextAsync(file.LocalFile.FullName);
             await JS.InvokeVoidAsync("bpmnEditor.loadXml", bpmnXml);
+            await RefreshProcessId();
             successMessage = $"Imported {file.Name}";
         }
         catch (Exception ex)
