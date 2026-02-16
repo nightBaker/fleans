@@ -44,7 +44,9 @@ public record CallActivity(
     string ActivityId,
     [property: Id(1)] string CalledProcessKey,
     [property: Id(2)] List<VariableMapping> InputMappings,
-    [property: Id(3)] List<VariableMapping> OutputMappings) : Activity(ActivityId)
+    [property: Id(3)] List<VariableMapping> OutputMappings,
+    [property: Id(4)] bool PropagateAllParentVariables = true,
+    [property: Id(5)] bool PropagateAllChildVariables = true) : Activity(ActivityId)
 {
     internal override async Task ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext)
     {
@@ -267,7 +269,9 @@ public class CallActivityDomainTests
         // Arrange
         var callActivity = new CallActivity("call1", "childProcess",
             [new VariableMapping("orderId", "orderId")],
-            [new VariableMapping("result", "result")]);
+            [new VariableMapping("result", "result")],
+            propagateAllParentVariables: false,
+            propagateAllChildVariables: false);
         var end = new EndEvent("end");
         var definition = ActivityTestHelper.CreateWorkflowDefinition(
             [callActivity, end],
@@ -564,6 +568,9 @@ foreach (var callActivityEl in process.Descendants(Bpmn + "callActivity"))
     var calledElement = callActivityEl.Attribute("calledElement")?.Value
         ?? throw new InvalidOperationException($"callActivity '{id}' must have a calledElement attribute");
 
+    var propagateAllParent = ParseBoolAttribute(callActivityEl, "propagateAllParentVariables", true);
+    var propagateAllChild = ParseBoolAttribute(callActivityEl, "propagateAllChildVariables", true);
+
     var inputMappings = new List<VariableMapping>();
     var outputMappings = new List<VariableMapping>();
 
@@ -585,9 +592,19 @@ foreach (var callActivityEl in process.Descendants(Bpmn + "callActivity"))
         }
     }
 
-    var activity = new CallActivity(id, calledElement, inputMappings, outputMappings);
+    var activity = new CallActivity(id, calledElement, inputMappings, outputMappings, propagateAllParent, propagateAllChild);
     activities.Add(activity);
     activityMap[id] = activity;
+}
+```
+
+Also add this helper method to BpmnConverter:
+
+```csharp
+private static bool ParseBoolAttribute(XElement element, string attributeName, bool defaultValue)
+{
+    var attr = element.Attribute(attributeName)?.Value;
+    return attr is not null ? bool.Parse(attr) : defaultValue;
 }
 
 // Parse boundary events
@@ -717,7 +734,7 @@ public async ValueTask StartChildWorkflow(Activities.CallActivity callActivity, 
     var activityGrain = _grainFactory.GetGrain<IActivityInstanceGrain>(activityInstanceId);
     var variablesId = await activityGrain.GetVariablesStateId();
     var parentVariables = State.GetVariableState(variablesId).Variables;
-    var childInputVars = ApplyMappings(callActivity.InputMappings, parentVariables);
+    var childInputVars = BuildChildInputVariables(callActivity, parentVariables);
 
     if (((IDictionary<string, object?>)childInputVars).Count > 0)
         await child.SetInitialVariables(childInputVars);
@@ -734,16 +751,49 @@ public async ValueTask StartChildWorkflow(Activities.CallActivity callActivity, 
     await _state.WriteStateAsync();
 }
 
-private static ExpandoObject ApplyMappings(List<VariableMapping> mappings, ExpandoObject source)
+private static ExpandoObject BuildChildInputVariables(Activities.CallActivity callActivity, ExpandoObject parentVariables)
 {
     var result = new ExpandoObject();
-    var sourceDict = (IDictionary<string, object?>)source;
+    var sourceDict = (IDictionary<string, object?>)parentVariables;
     var resultDict = (IDictionary<string, object?>)result;
-    foreach (var mapping in mappings)
+
+    // If propagateAllParentVariables, copy all parent variables first
+    if (callActivity.PropagateAllParentVariables)
+    {
+        foreach (var kvp in sourceDict)
+            resultDict[kvp.Key] = kvp.Value;
+    }
+
+    // Apply input mappings (rename/select specific variables)
+    foreach (var mapping in callActivity.InputMappings)
     {
         if (sourceDict.TryGetValue(mapping.Source, out var value))
             resultDict[mapping.Target] = value;
     }
+
+    return result;
+}
+
+private static ExpandoObject BuildParentOutputVariables(Activities.CallActivity callActivity, ExpandoObject childVariables)
+{
+    var result = new ExpandoObject();
+    var sourceDict = (IDictionary<string, object?>)childVariables;
+    var resultDict = (IDictionary<string, object?>)result;
+
+    // If propagateAllChildVariables, copy all child variables first
+    if (callActivity.PropagateAllChildVariables)
+    {
+        foreach (var kvp in sourceDict)
+            resultDict[kvp.Key] = kvp.Value;
+    }
+
+    // Apply output mappings (rename/select specific variables)
+    foreach (var mapping in callActivity.OutputMappings)
+    {
+        if (sourceDict.TryGetValue(mapping.Source, out var value))
+            resultDict[mapping.Target] = value;
+    }
+
     return result;
 }
 ```
@@ -769,7 +819,7 @@ public async Task OnChildWorkflowCompleted(string parentActivityId, ExpandoObjec
     var callActivity = definition.GetActivity(parentActivityId) as Activities.CallActivity
         ?? throw new InvalidOperationException($"Activity '{parentActivityId}' is not a CallActivity");
 
-    var mappedOutput = ApplyMappings(callActivity.OutputMappings, childVariables);
+    var mappedOutput = BuildParentOutputVariables(callActivity, childVariables);
     await CompleteActivityState(parentActivityId, mappedOutput);
     await ExecuteWorkflow();
     await _state.WriteStateAsync();
@@ -1339,10 +1389,11 @@ public class CallActivityTests : WorkflowTestBase
         var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
         await factory.DeployWorkflow(childWorkflow, "<xml/>");
 
-        // Parent with no mappings
+        // Parent with no mappings AND propagation disabled
         var parentStart = new StartEvent("parentStart");
         var parentTask = new TaskActivity("parentTask");
-        var callActivity = new CallActivity("call1", "childProcess5", [], []);
+        var callActivity = new CallActivity("call1", "childProcess5", [], [],
+            propagateAllParentVariables: false, propagateAllChildVariables: false);
         var parentEnd = new EndEvent("parentEnd");
         var parentWorkflow = new WorkflowDefinition
         {

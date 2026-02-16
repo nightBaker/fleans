@@ -10,7 +10,7 @@ Embedded Sub-Process is out of scope (separate future work).
 
 - **Execution model:** Approach B — grain-level orchestration. Parent `WorkflowInstance` creates child grain directly via `IWorkflowExecutionContext.StartChildWorkflow()`. No domain events for spawning.
 - **Version resolution:** Always resolves to latest deployed version of the called process. No version pinning.
-- **Variable passing:** Explicit mappings only. Only mapped variables cross the parent-child boundary.
+- **Variable passing:** Configurable via `PropagateAllParentVariables` and `PropagateAllChildVariables` flags (both default `true`, Camunda-compatible). Explicit input/output mappings can rename variables. When propagation flags are `false`, only mapped variables cross the boundary.
 - **Error handling:** Child failure auto-fails parent Call Activity. Boundary error events can catch failures and route to alternate paths.
 
 ## Domain Model
@@ -25,11 +25,22 @@ public record CallActivity(
     string ActivityId,
     string CalledProcessKey,
     List<VariableMapping> InputMappings,
-    List<VariableMapping> OutputMappings) : Activity(ActivityId)
+    List<VariableMapping> OutputMappings,
+    bool PropagateAllParentVariables = true,
+    bool PropagateAllChildVariables = true) : Activity(ActivityId)
 ```
 
 - `ExecuteAsync()` calls `workflowContext.StartChildWorkflow(this, activityContext)`
 - `GetNextActivities()` returns single target from outgoing sequence flow (same as TaskActivity)
+
+**Variable propagation flags** (follows [Camunda semantics](https://docs.camunda.io/docs/components/modeler/bpmn/call-activities/)):
+
+| Flag | Default | Behavior |
+|---|---|---|
+| `PropagateAllParentVariables` | `true` | All parent scope variables copied to child on start. Input mappings still applied (can rename). If `false`, only explicitly input-mapped variables reach the child. |
+| `PropagateAllChildVariables` | `true` | All child variables merged back to parent on completion. Output mappings still applied (can rename). If `false`, only explicitly output-mapped variables return to parent. |
+
+**Best practice:** Set both to `false` when the Call Activity is inside a parallel flow to prevent accidental variable overwrites.
 
 **`VariableMapping`** (`Fleans.Domain/VariableMapping.cs`):
 
@@ -73,7 +84,7 @@ Output mappings are NOT stored in state — the parent looks them up from its `C
    - Resolves latest process definition via `WorkflowInstanceFactoryGrain.GetLatestByKey(calledProcessKey)`
    - Creates new `WorkflowInstance` grain with `Guid.NewGuid()`
    - Sets child state: `ParentWorkflowInstanceId`, `ParentActivityId`
-   - Maps input variables using `InputMappings`
+   - Maps input variables: if `PropagateAllParentVariables`, copies all parent variables then applies `InputMappings` (renames); if `false`, applies only `InputMappings`
    - Calls `child.SetWorkflow(definition)` then `child.StartWorkflow()`
    - Stores `ChildWorkflowInstanceId` on the parent's `ActivityInstanceEntry`
    - Call Activity stays in "executing" state — workflow loop stops advancing it
@@ -83,7 +94,7 @@ Output mappings are NOT stored in state — the parent looks them up from its `C
 3. Child reaches `EndEvent` → calls `this.Complete()`
 4. `WorkflowInstance.Complete()` checks `ParentWorkflowInstanceId`:
    - If null → top-level, done (existing behavior)
-   - If set → collects child's final variables, calls `parent.CompleteActivity(parentActivityId, outputVariables)` with output mappings applied from the parent's `CallActivity` definition
+   - If set → collects child's final variables, applies output logic: if `PropagateAllChildVariables`, sends all child variables then applies `OutputMappings` (renames); if `false`, applies only `OutputMappings`. Calls `parent.OnChildWorkflowCompleted(parentActivityId, outputVariables)` via domain event
 
 ### Child Failure Propagation
 
@@ -122,7 +133,9 @@ ValueTask StartChildWorkflow(CallActivity callActivity, IActivityExecutionContex
 ### CallActivity
 
 ```xml
-<callActivity id="call1" calledElement="paymentProcess">
+<callActivity id="call1" calledElement="paymentProcess"
+    propagateAllParentVariables="true"
+    propagateAllChildVariables="false">
   <extensionElements>
     <inputMapping source="orderId" target="orderId"/>
     <outputMapping source="transactionId" target="transactionId"/>
@@ -131,6 +144,8 @@ ValueTask StartChildWorkflow(CallActivity callActivity, IActivityExecutionContex
 ```
 
 - `calledElement` → `CalledProcessKey`
+- `propagateAllParentVariables` → `PropagateAllParentVariables` (default `true`)
+- `propagateAllChildVariables` → `PropagateAllChildVariables` (default `true`)
 - `<inputMapping>` → `InputMappings`
 - `<outputMapping>` → `OutputMappings`
 
@@ -152,7 +167,9 @@ ValueTask StartChildWorkflow(CallActivity callActivity, IActivityExecutionContex
 1. Basic completion: parent → call activity → child completes → parent resumes
 2. Input variable mapping: only mapped variables reach child
 3. Output variable mapping: only mapped variables return to parent
-4. No mappings: full isolation
+4. PropagateAllParentVariables=true: all parent variables reach child
+5. PropagateAllChildVariables=true: all child variables return to parent
+6. Both flags false + no mappings: full isolation
 5. Child failure without boundary event: normal error propagation
 6. Child failure with catch-all boundary event: routes to recovery
 7. Child failure with specific error code boundary event: matches/doesn't match
