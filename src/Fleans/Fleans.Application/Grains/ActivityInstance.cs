@@ -15,7 +15,7 @@ public partial class ActivityInstance : Grain, IActivityInstanceGrain
     private ActivityInstanceState State => _state.State;
 
     public ActivityInstance(
-        [PersistentState("state", "activityInstances")] IPersistentState<ActivityInstanceState> state,
+        [PersistentState("state", GrainStorageNames.ActivityInstances)] IPersistentState<ActivityInstanceState> state,
         ILogger<ActivityInstance> logger)
     {
         _state = state;

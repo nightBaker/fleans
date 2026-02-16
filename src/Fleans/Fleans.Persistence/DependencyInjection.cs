@@ -1,4 +1,5 @@
 using Fleans.Application;
+using Fleans.Domain;
 using Fleans.Domain.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,15 +17,15 @@ public static class EfCorePersistenceDependencyInjection
         services.AddDbContextFactory<FleanCommandDbContext>(configureCommandDb);
         services.AddDbContextFactory<FleanQueryDbContext>(configureQueryDb ?? configureCommandDb);
 
-        services.AddKeyedSingleton<IGrainStorage>("activityInstances",
+        services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.ActivityInstances,
             (sp, _) => new EfCoreActivityInstanceGrainStorage(
                 sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
 
-        services.AddKeyedSingleton<IGrainStorage>("workflowInstances",
+        services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.WorkflowInstances,
             (sp, _) => new EfCoreWorkflowInstanceGrainStorage(
                 sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
 
-        services.AddKeyedSingleton<IGrainStorage>("processDefinitions",
+        services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.ProcessDefinitions,
             (sp, _) => new EfCoreProcessDefinitionGrainStorage(
                 sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
 

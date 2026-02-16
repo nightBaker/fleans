@@ -185,8 +185,8 @@ namespace Fleans.Application.Tests
         {
             public void Configure(ISiloBuilder hostBuilder) =>
                 hostBuilder
-                    .AddMemoryGrainStorage("workflowInstances")
-                    .AddMemoryGrainStorage("activityInstances")
+                    .AddMemoryGrainStorage(GrainStorageNames.WorkflowInstances)
+                    .AddMemoryGrainStorage(GrainStorageNames.ActivityInstances)
                     .ConfigureServices(services =>
                     {
                         services.AddSingleton<IProcessDefinitionRepository, StubProcessDefinitionRepository>();

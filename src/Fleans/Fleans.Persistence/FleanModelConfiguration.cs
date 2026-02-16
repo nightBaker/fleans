@@ -119,9 +119,11 @@ internal static class FleanModelConfiguration
                     v => JsonConvert.DeserializeObject<WorkflowDefinition>(v, jsonSettings)!)
                 .Metadata.SetValueComparer(
                     new ValueComparer<WorkflowDefinition>(
-                        (a, b) => ReferenceEquals(a, b),
-                        v => RuntimeHelpers.GetHashCode(v),
-                        v => v));
+                        (a, b) => JsonConvert.SerializeObject(a, jsonSettings) ==
+                                  JsonConvert.SerializeObject(b, jsonSettings),
+                        v => JsonConvert.SerializeObject(v, jsonSettings).GetHashCode(),
+                        v => JsonConvert.DeserializeObject<WorkflowDefinition>(
+                            JsonConvert.SerializeObject(v, jsonSettings), jsonSettings)!));
         });
     }
 }
