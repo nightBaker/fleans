@@ -20,7 +20,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
     private WorkflowInstanceState State => _state.State;
 
     public WorkflowInstance(
-        [PersistentState("state", "workflowInstances")] IPersistentState<WorkflowInstanceState> state,
+        [PersistentState("state", GrainStorageNames.WorkflowInstances)] IPersistentState<WorkflowInstanceState> state,
         IGrainFactory grainFactory,
         ILogger<WorkflowInstance> logger)
     {

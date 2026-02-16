@@ -1,5 +1,6 @@
 using Fleans.Application;
 using Fleans.Application.Events;
+using Fleans.Domain;
 using Fleans.Domain.Persistence;
 using Fleans.Persistence;
 using Microsoft.Data.Sqlite;
@@ -65,11 +66,11 @@ public abstract class WorkflowTestBase
                     services.AddDbContextFactory<FleanQueryDbContext>(options =>
                         options.UseSqlite("DataSource=file::memory:?cache=shared"));
 
-                    services.AddKeyedSingleton<IGrainStorage>("workflowInstances",
+                    services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.WorkflowInstances,
                         (sp, _) => new EfCoreWorkflowInstanceGrainStorage(
                             sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
 
-                    services.AddKeyedSingleton<IGrainStorage>("activityInstances",
+                    services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.ActivityInstances,
                         (sp, _) => new EfCoreActivityInstanceGrainStorage(
                             sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
 

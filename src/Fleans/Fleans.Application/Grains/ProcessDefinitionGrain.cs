@@ -10,7 +10,7 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
     private readonly ILogger<ProcessDefinitionGrain> _logger;
 
     public ProcessDefinitionGrain(
-        [PersistentState("state", "processDefinitions")] IPersistentState<ProcessDefinition> state,
+        [PersistentState("state", GrainStorageNames.ProcessDefinitions)] IPersistentState<ProcessDefinition> state,
         ILogger<ProcessDefinitionGrain> logger)
     {
         _state = state;
