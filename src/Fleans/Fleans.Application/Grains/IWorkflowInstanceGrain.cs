@@ -31,4 +31,9 @@ public interface IWorkflowInstanceGrain : IGrainWithGuidKey, IWorkflowExecutionC
 
     [ReadOnly]
     ValueTask<ExpandoObject> GetVariables(Guid variablesStateId);
+
+    Task SetParentInfo(Guid parentWorkflowInstanceId, string parentActivityId);
+    Task SetInitialVariables(ExpandoObject variables);
+    Task OnChildWorkflowCompleted(string parentActivityId, ExpandoObject childVariables);
+    Task OnChildWorkflowFailed(string parentActivityId, Exception exception);
 }

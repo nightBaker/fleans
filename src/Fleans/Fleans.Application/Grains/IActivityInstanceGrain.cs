@@ -21,6 +21,9 @@ public interface IActivityInstanceGrain : IGrainWithGuidKey, IActivityExecutionC
     [ReadOnly]
     ValueTask<Guid> GetVariablesStateId();
 
+    [ReadOnly]
+    ValueTask<ActivityErrorState?> GetErrorState();
+
     ValueTask Fail(Exception exception);
     ValueTask SetActivity(string activityId, string activityType);
     ValueTask SetVariablesId(Guid guid);

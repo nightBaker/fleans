@@ -7,6 +7,7 @@ public interface IWorkflowExecutionContext
     ValueTask<Guid> GetWorkflowInstanceId();
     ValueTask<IWorkflowDefinition> GetWorkflowDefinition();
     ValueTask Complete();
+    ValueTask StartChildWorkflow(Activities.CallActivity callActivity, IActivityExecutionContext activityContext);
 
     ValueTask<IReadOnlyDictionary<Guid, ConditionSequenceState[]>> GetConditionSequenceStates();
     ValueTask AddConditionSequenceStates(Guid activityInstanceId, string[] sequenceFlowIds);

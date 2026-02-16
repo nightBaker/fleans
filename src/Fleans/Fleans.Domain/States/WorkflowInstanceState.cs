@@ -38,6 +38,12 @@ public class WorkflowInstanceState
     [Id(10)]
     public string? ProcessDefinitionId { get; internal set; }
 
+    [Id(11)]
+    public Guid? ParentWorkflowInstanceId { get; internal set; }
+
+    [Id(12)]
+    public string? ParentActivityId { get; internal set; }
+
     public IEnumerable<ActivityInstanceEntry> GetActiveActivities()
         => Entries.Where(e => !e.IsCompleted);
 
