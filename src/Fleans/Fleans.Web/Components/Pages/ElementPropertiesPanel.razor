@@ -46,6 +46,73 @@
                 </div>
             }
 
+            @if (Element.Type == "bpmn:CallActivity")
+            {
+                <div>
+                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Called Process Key</FluentLabel>
+                    <FluentTextField Value="@calledElement" @oninput="OnCalledElementInput" @onchange="OnCalledElementChange"
+                                     Disabled="@ReadOnly" Placeholder="e.g. child-process-1" Style="width: 100%;" />
+                </div>
+
+                <div>
+                    <FluentCheckbox Value="@propagateAllParentVariables" @onchange="OnPropagateParentChange"
+                                    Disabled="@ReadOnly" Label="Propagate all parent variables" />
+                </div>
+
+                <div>
+                    <FluentCheckbox Value="@propagateAllChildVariables" @onchange="OnPropagateChildChange"
+                                    Disabled="@ReadOnly" Label="Propagate all child variables" />
+                </div>
+
+                <div>
+                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Input Mappings</FluentLabel>
+                    @for (var i = 0; i < Element.InputMappings.Count; i++)
+                    {
+                        var index = i;
+                        <FluentStack Orientation="Orientation.Horizontal" Gap="4px" Style="align-items: end;">
+                            <FluentTextField Value="@Element.InputMappings[index].Source"
+                                             @onchange="@(e => OnMappingSourceChange(e, "input", index))"
+                                             Disabled="@ReadOnly" Placeholder="Source" Style="flex: 1;" />
+                            <FluentTextField Value="@Element.InputMappings[index].Target"
+                                             @onchange="@(e => OnMappingTargetChange(e, "input", index))"
+                                             Disabled="@ReadOnly" Placeholder="Target" Style="flex: 1;" />
+                            @if (!ReadOnly)
+                            {
+                                <FluentButton Appearance="Appearance.Outline" OnClick="@(() => RemoveMapping("input", index))">Remove</FluentButton>
+                            }
+                        </FluentStack>
+                    }
+                    @if (!ReadOnly)
+                    {
+                        <FluentButton Appearance="Appearance.Outline" OnClick="@(() => AddMapping("input"))">Add Input Mapping</FluentButton>
+                    }
+                </div>
+
+                <div>
+                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Output Mappings</FluentLabel>
+                    @for (var i = 0; i < Element.OutputMappings.Count; i++)
+                    {
+                        var index = i;
+                        <FluentStack Orientation="Orientation.Horizontal" Gap="4px" Style="align-items: end;">
+                            <FluentTextField Value="@Element.OutputMappings[index].Source"
+                                             @onchange="@(e => OnMappingSourceChange(e, "output", index))"
+                                             Disabled="@ReadOnly" Placeholder="Source" Style="flex: 1;" />
+                            <FluentTextField Value="@Element.OutputMappings[index].Target"
+                                             @onchange="@(e => OnMappingTargetChange(e, "output", index))"
+                                             Disabled="@ReadOnly" Placeholder="Target" Style="flex: 1;" />
+                            @if (!ReadOnly)
+                            {
+                                <FluentButton Appearance="Appearance.Outline" OnClick="@(() => RemoveMapping("output", index))">Remove</FluentButton>
+                            }
+                        </FluentStack>
+                    }
+                    @if (!ReadOnly)
+                    {
+                        <FluentButton Appearance="Appearance.Outline" OnClick="@(() => AddMapping("output"))">Add Output Mapping</FluentButton>
+                    }
+                </div>
+            }
+
             @if (Element.Type == "bpmn:SequenceFlow")
             {
                 <div>
@@ -69,6 +136,9 @@
     private string scriptFormat = "";
     private string script = "";
     private string conditionExpression = "";
+    private string calledElement = "";
+    private bool propagateAllParentVariables = true;
+    private bool propagateAllChildVariables = true;
 
     private static readonly Dictionary<string, string> TaskTypes = new()
     {
@@ -76,6 +146,7 @@
         ["bpmn:UserTask"] = "User Task",
         ["bpmn:ServiceTask"] = "Service Task",
         ["bpmn:ScriptTask"] = "Script Task",
+        ["bpmn:CallActivity"] = "Call Activity",
     };
 
     private static readonly Dictionary<string, string> GatewayTypes = new()
@@ -99,6 +170,9 @@
         scriptFormat = Element.ScriptFormat;
         script = Element.Script;
         conditionExpression = Element.ConditionExpression;
+        calledElement = Element.CalledElement;
+        propagateAllParentVariables = Element.PropagateAllParentVariables;
+        propagateAllChildVariables = Element.PropagateAllChildVariables;
     }
 
     private Dictionary<string, string>? GetReplaceOptions()
@@ -162,6 +236,61 @@
         await JS.InvokeVoidAsync("bpmnEditor.updateElementProperty", Element.Id, "conditionExpression", conditionExpression);
     }
 
+    private void OnCalledElementInput(ChangeEventArgs e) => calledElement = e.Value?.ToString() ?? "";
+    private async Task OnCalledElementChange(ChangeEventArgs e)
+    {
+        calledElement = e.Value?.ToString() ?? "";
+        await JS.InvokeVoidAsync("bpmnEditor.updateElementProperty", Element.Id, "calledElement", calledElement);
+    }
+
+    private async Task OnPropagateParentChange(ChangeEventArgs e)
+    {
+        propagateAllParentVariables = bool.TryParse(e.Value?.ToString(), out var v) && v;
+        await JS.InvokeVoidAsync("bpmnEditor.updateElementProperty", Element.Id, "propagateAllParentVariables", propagateAllParentVariables);
+    }
+
+    private async Task OnPropagateChildChange(ChangeEventArgs e)
+    {
+        propagateAllChildVariables = bool.TryParse(e.Value?.ToString(), out var v) && v;
+        await JS.InvokeVoidAsync("bpmnEditor.updateElementProperty", Element.Id, "propagateAllChildVariables", propagateAllChildVariables);
+    }
+
+    private async Task AddMapping(string type)
+    {
+        await JS.InvokeVoidAsync("bpmnEditor.addMapping", Element.Id, type);
+        var list = type == "input" ? Element.InputMappings : Element.OutputMappings;
+        list.Add(new MappingData());
+        StateHasChanged();
+    }
+
+    private async Task RemoveMapping(string type, int index)
+    {
+        await JS.InvokeVoidAsync("bpmnEditor.removeMapping", Element.Id, type, index);
+        var list = type == "input" ? Element.InputMappings : Element.OutputMappings;
+        if (index >= 0 && index < list.Count) list.RemoveAt(index);
+        StateHasChanged();
+    }
+
+    private async Task OnMappingSourceChange(ChangeEventArgs e, string type, int index)
+    {
+        var list = type == "input" ? Element.InputMappings : Element.OutputMappings;
+        if (index >= 0 && index < list.Count)
+        {
+            list[index].Source = e.Value?.ToString() ?? "";
+            await JS.InvokeVoidAsync("bpmnEditor.updateMapping", Element.Id, type, index, list[index].Source, list[index].Target);
+        }
+    }
+
+    private async Task OnMappingTargetChange(ChangeEventArgs e, string type, int index)
+    {
+        var list = type == "input" ? Element.InputMappings : Element.OutputMappings;
+        if (index >= 0 && index < list.Count)
+        {
+            list[index].Target = e.Value?.ToString() ?? "";
+            await JS.InvokeVoidAsync("bpmnEditor.updateMapping", Element.Id, type, index, list[index].Source, list[index].Target);
+        }
+    }
+
     private string GetTypeLabel() => Element.Type switch
     {
         "bpmn:StartEvent" => "Start Event",
@@ -170,6 +299,7 @@
         "bpmn:UserTask" => "User Task",
         "bpmn:ServiceTask" => "Service Task",
         "bpmn:ScriptTask" => "Script Task",
+        "bpmn:CallActivity" => "Call Activity",
         "bpmn:ExclusiveGateway" => "Exclusive Gateway",
         "bpmn:ParallelGateway" => "Parallel Gateway",
         "bpmn:SequenceFlow" => "Sequence Flow",
@@ -187,5 +317,16 @@
         public string ScriptFormat { get; set; } = "";
         public string Script { get; set; } = "";
         public string ConditionExpression { get; set; } = "";
+        public string CalledElement { get; set; } = "";
+        public bool PropagateAllParentVariables { get; set; } = true;
+        public bool PropagateAllChildVariables { get; set; } = true;
+        public List<MappingData> InputMappings { get; set; } = [];
+        public List<MappingData> OutputMappings { get; set; } = [];
+    }
+
+    public class MappingData
+    {
+        public string Source { get; set; } = "";
+        public string Target { get; set; } = "";
     }
 }

@@ -385,7 +385,8 @@ public partial class BpmnConverter : IBpmnConverter
 
     private static bool ParseBoolAttribute(XElement element, string attributeName, bool defaultValue)
     {
-        var attr = element.Attribute(attributeName)?.Value;
+        var attr = element.Attributes()
+            .FirstOrDefault(a => a.Name.LocalName == attributeName)?.Value;
         return attr is not null ? bool.Parse(attr) : defaultValue;
     }
 

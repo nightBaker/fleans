@@ -14,7 +14,10 @@ window.bpmnEditor = {
 
         this._modeler = new BpmnModeler({
             container: container,
-            keyboard: { bindTo: container }
+            keyboard: { bindTo: container },
+            moddleExtensions: window.fleansModdleExtension
+                ? { fleans: window.fleansModdleExtension }
+                : {}
         });
 
         if (dotNetRef) {
@@ -42,7 +45,12 @@ window.bpmnEditor = {
             name: bo.name || '',
             scriptFormat: '',
             script: '',
-            conditionExpression: ''
+            conditionExpression: '',
+            calledElement: '',
+            propagateAllParentVariables: true,
+            propagateAllChildVariables: true,
+            inputMappings: [],
+            outputMappings: []
         };
 
         if (bo.$type === 'bpmn:ScriptTask') {
@@ -52,6 +60,24 @@ window.bpmnEditor = {
 
         if (bo.$type === 'bpmn:SequenceFlow' && bo.conditionExpression) {
             data.conditionExpression = bo.conditionExpression.body || '';
+        }
+
+        if (bo.$type === 'bpmn:CallActivity') {
+            data.calledElement = bo.calledElement || '';
+
+            var attrs = bo.$attrs || {};
+            data.propagateAllParentVariables = attrs['fleans:propagateAllParentVariables'] !== 'false';
+            data.propagateAllChildVariables = attrs['fleans:propagateAllChildVariables'] !== 'false';
+
+            if (bo.extensionElements && bo.extensionElements.values) {
+                bo.extensionElements.values.forEach(function (ext) {
+                    if (ext.$type === 'fleans:InputMapping') {
+                        data.inputMappings.push({ source: ext.source || '', target: ext.target || '' });
+                    } else if (ext.$type === 'fleans:OutputMapping') {
+                        data.outputMappings.push({ source: ext.source || '', target: ext.target || '' });
+                    }
+                });
+            }
         }
 
         return data;
@@ -100,6 +126,11 @@ window.bpmnEditor = {
             } else {
                 props.conditionExpression = undefined;
             }
+        } else if (propertyName === 'propagateAllParentVariables' || propertyName === 'propagateAllChildVariables') {
+            var bo = element.businessObject;
+            if (!bo.$attrs) bo.$attrs = {};
+            bo.$attrs['fleans:' + propertyName] = String(value);
+            return;
         } else {
             props[propertyName] = value;
         }
@@ -137,6 +168,64 @@ window.bpmnEditor = {
         selection.select(newElement);
 
         return this._extractElementData(newElement);
+    },
+
+    addMapping: function (elementId, type) {
+        if (!this._modeler) return;
+
+        var elementRegistry = this._modeler.get('elementRegistry');
+        var moddle = this._modeler.get('moddle');
+        var element = elementRegistry.get(elementId);
+        if (!element) return;
+
+        var bo = element.businessObject;
+        if (!bo.extensionElements) {
+            bo.extensionElements = moddle.create('bpmn:ExtensionElements', { values: [] });
+            bo.extensionElements.$parent = bo;
+        }
+
+        var mappingType = type === 'input' ? 'fleans:InputMapping' : 'fleans:OutputMapping';
+        var mapping = moddle.create(mappingType, { source: '', target: '' });
+        mapping.$parent = bo.extensionElements;
+        bo.extensionElements.values.push(mapping);
+    },
+
+    removeMapping: function (elementId, type, index) {
+        if (!this._modeler) return;
+
+        var elementRegistry = this._modeler.get('elementRegistry');
+        var element = elementRegistry.get(elementId);
+        if (!element) return;
+
+        var bo = element.businessObject;
+        if (!bo.extensionElements || !bo.extensionElements.values) return;
+
+        var mappingType = type === 'input' ? 'fleans:InputMapping' : 'fleans:OutputMapping';
+        var mappings = bo.extensionElements.values.filter(function (v) { return v.$type === mappingType; });
+        if (index >= 0 && index < mappings.length) {
+            var idx = bo.extensionElements.values.indexOf(mappings[index]);
+            if (idx >= 0) {
+                bo.extensionElements.values.splice(idx, 1);
+            }
+        }
+    },
+
+    updateMapping: function (elementId, type, index, source, target) {
+        if (!this._modeler) return;
+
+        var elementRegistry = this._modeler.get('elementRegistry');
+        var element = elementRegistry.get(elementId);
+        if (!element) return;
+
+        var bo = element.businessObject;
+        if (!bo.extensionElements || !bo.extensionElements.values) return;
+
+        var mappingType = type === 'input' ? 'fleans:InputMapping' : 'fleans:OutputMapping';
+        var mappings = bo.extensionElements.values.filter(function (v) { return v.$type === mappingType; });
+        if (index >= 0 && index < mappings.length) {
+            mappings[index].source = source;
+            mappings[index].target = target;
+        }
     },
 
     loadXml: async function (bpmnXml) {
