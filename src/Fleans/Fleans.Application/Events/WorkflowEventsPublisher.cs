@@ -49,6 +49,12 @@ public partial class WorkflowEventsPublisher : Grain, IEventPublisher
                 var scriptStream = _streamProvider.GetStream<ExecuteScriptEvent>(scriptStreamId);
                 await scriptStream.OnNextAsync(executeScriptEvent);
                 break;
+            case ChildWorkflowCompletedEvent childCompletedEvent:
+
+                var childCompletedStreamId = StreamId.Create(StreamNameSpace, nameof(ChildWorkflowCompletedEvent));
+                var childCompletedStream = _streamProvider.GetStream<ChildWorkflowCompletedEvent>(childCompletedStreamId);
+                await childCompletedStream.OnNextAsync(childCompletedEvent);
+                break;
             default:
                 var defaultStreamId = StreamId.Create(StreamNameSpace, nameof(IDomainEvent));
                 var defaultStream = _streamProvider.GetStream<IDomainEvent>(defaultStreamId);
