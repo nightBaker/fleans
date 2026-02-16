@@ -1,6 +1,8 @@
 using Fleans.Domain;
 using Fleans.Domain.Activities;
+using Fleans.Domain.Events;
 using Fleans.Domain.States;
+using Fleans.Application.WorkflowFactory;
 using Microsoft.Extensions.Logging;
 using Orleans;
 using Orleans.Runtime;
@@ -76,8 +78,8 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         SetWorkflowRequestContext();
         using var scope = BeginWorkflowScope();
         LogFailingActivity(activityId);
-        await FailActivityState(activityId, exception);
-        await ExecuteWorkflow();
+
+        await FailActivityWithBoundaryCheck(activityId, exception);
         await _state.WriteStateAsync();
     }
 
@@ -157,6 +159,102 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         State.Complete();
         State.CompletedAt = DateTimeOffset.UtcNow;
         LogStateCompleted();
+        await _state.WriteStateAsync();
+
+        // Notify parent if this is a child workflow
+        if (State.ParentWorkflowInstanceId.HasValue)
+        {
+            var childVariables = State.VariableStates.Count > 0
+                ? State.VariableStates[0].Variables
+                : new ExpandoObject();
+
+            var eventPublisher = _grainFactory.GetGrain<IEventPublisher>(0);
+            await eventPublisher.Publish(new ChildWorkflowCompletedEvent(
+                State.ParentWorkflowInstanceId.Value,
+                State.ParentActivityId!,
+                _workflowDefinition!.WorkflowId,
+                _workflowDefinition.ProcessDefinitionId,
+                childVariables));
+        }
+    }
+
+    public async Task SetParentInfo(Guid parentWorkflowInstanceId, string parentActivityId)
+    {
+        State.ParentWorkflowInstanceId = parentWorkflowInstanceId;
+        State.ParentActivityId = parentActivityId;
+        LogParentInfoSet(parentWorkflowInstanceId, parentActivityId);
+        await _state.WriteStateAsync();
+    }
+
+    public async Task SetInitialVariables(ExpandoObject variables)
+    {
+        if (State.VariableStates.Count == 0)
+            throw new InvalidOperationException("Call SetWorkflow before SetInitialVariables.");
+
+        State.MergeState(State.VariableStates[0].Id, variables);
+        LogInitialVariablesSet();
+        await _state.WriteStateAsync();
+    }
+
+    public async ValueTask StartChildWorkflow(CallActivity callActivity, IActivityExecutionContext activityContext)
+    {
+        var factory = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
+        var childDefinition = await factory.GetLatestWorkflowDefinition(callActivity.CalledProcessKey);
+
+        var childId = Guid.NewGuid();
+        var child = _grainFactory.GetGrain<IWorkflowInstanceGrain>(childId);
+
+        LogStartingChildWorkflow(callActivity.CalledProcessKey, childId);
+
+        await child.SetWorkflow(childDefinition);
+        await child.SetParentInfo(this.GetPrimaryKey(), callActivity.ActivityId);
+
+        // Map input variables
+        var activityInstanceId = await activityContext.GetActivityInstanceId();
+        var activityGrain = _grainFactory.GetGrain<IActivityInstanceGrain>(activityInstanceId);
+        var variablesId = await activityGrain.GetVariablesStateId();
+        var parentVariables = State.GetVariableState(variablesId).Variables;
+        var childInputVars = BuildChildInputVariables(callActivity, parentVariables);
+
+        if (((IDictionary<string, object?>)childInputVars).Count > 0)
+            await child.SetInitialVariables(childInputVars);
+
+        // Record child reference on parent's activity entry
+        var entry = State.GetFirstActive(callActivity.ActivityId)
+            ?? throw new InvalidOperationException($"Active entry not found for '{callActivity.ActivityId}'");
+        entry.ChildWorkflowInstanceId = childId;
+
+        // Start child — completion uses domain events (ChildWorkflowCompletedEvent), not direct grain callbacks
+        await child.StartWorkflow();
+
+        await _state.WriteStateAsync();
+    }
+
+    public async Task OnChildWorkflowCompleted(string parentActivityId, ExpandoObject childVariables)
+    {
+        await EnsureWorkflowDefinitionAsync();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+        LogChildWorkflowCompleted(parentActivityId);
+
+        var definition = await GetWorkflowDefinition();
+        var callActivity = definition.GetActivity(parentActivityId) as CallActivity
+            ?? throw new InvalidOperationException($"Activity '{parentActivityId}' is not a CallActivity");
+
+        var mappedOutput = BuildParentOutputVariables(callActivity, childVariables);
+        await CompleteActivityState(parentActivityId, mappedOutput);
+        await ExecuteWorkflow();
+        await _state.WriteStateAsync();
+    }
+
+    public async Task OnChildWorkflowFailed(string parentActivityId, Exception exception)
+    {
+        await EnsureWorkflowDefinitionAsync();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+        LogChildWorkflowFailed(parentActivityId);
+
+        await FailActivityWithBoundaryCheck(parentActivityId, exception);
         await _state.WriteStateAsync();
     }
 
@@ -318,6 +416,87 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         return result.ToArray();
     }
 
+    private async Task FailActivityWithBoundaryCheck(string activityId, Exception exception)
+    {
+        await FailActivityState(activityId, exception);
+
+        // Check for boundary error event
+        var definition = await GetWorkflowDefinition();
+        var activityEntry = State.GetFirstActive(activityId) ?? State.Entries.Last(e => e.ActivityId == activityId);
+        var activityGrain = _grainFactory.GetGrain<IActivityInstanceGrain>(activityEntry.ActivityInstanceId);
+        var errorState = await activityGrain.GetErrorState();
+
+        if (errorState is not null)
+        {
+            var boundaryEvent = definition.Activities
+                .OfType<BoundaryErrorEvent>()
+                .FirstOrDefault(b => b.AttachedToActivityId == activityId
+                    && (b.ErrorCode == null || b.ErrorCode == errorState.Code.ToString()));
+
+            if (boundaryEvent is not null)
+            {
+                LogBoundaryEventTriggered(boundaryEvent.ActivityId, activityId);
+
+                var boundaryInstanceId = Guid.NewGuid();
+                var boundaryInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(boundaryInstanceId);
+                var variablesId = await activityGrain.GetVariablesStateId();
+                await boundaryInstance.SetActivity(boundaryEvent.ActivityId, boundaryEvent.GetType().Name);
+                await boundaryInstance.SetVariablesId(variablesId);
+
+                var boundaryEntry = new ActivityInstanceEntry(boundaryInstanceId, boundaryEvent.ActivityId, State.Id);
+                State.AddEntries([boundaryEntry]);
+
+                await boundaryEvent.ExecuteAsync(this, boundaryInstance);
+                await TransitionToNextActivity();
+                return;
+            }
+        }
+
+        await ExecuteWorkflow();
+    }
+
+    private static ExpandoObject BuildChildInputVariables(CallActivity callActivity, ExpandoObject parentVariables)
+    {
+        var result = new ExpandoObject();
+        var sourceDict = (IDictionary<string, object?>)parentVariables;
+        var resultDict = (IDictionary<string, object?>)result;
+
+        if (callActivity.PropagateAllParentVariables)
+        {
+            foreach (var kvp in sourceDict)
+                resultDict[kvp.Key] = kvp.Value;
+        }
+
+        foreach (var mapping in callActivity.InputMappings)
+        {
+            if (sourceDict.TryGetValue(mapping.Source, out var value))
+                resultDict[mapping.Target] = value;
+        }
+
+        return result;
+    }
+
+    private static ExpandoObject BuildParentOutputVariables(CallActivity callActivity, ExpandoObject childVariables)
+    {
+        var result = new ExpandoObject();
+        var sourceDict = (IDictionary<string, object?>)childVariables;
+        var resultDict = (IDictionary<string, object?>)result;
+
+        if (callActivity.PropagateAllChildVariables)
+        {
+            foreach (var kvp in sourceDict)
+                resultDict[kvp.Key] = kvp.Value;
+        }
+
+        foreach (var mapping in callActivity.OutputMappings)
+        {
+            if (sourceDict.TryGetValue(mapping.Source, out var value))
+                resultDict[mapping.Target] = value;
+        }
+
+        return result;
+    }
+
     private void SetWorkflowRequestContext()
     {
         if (_workflowDefinition is null) return;
@@ -393,4 +572,22 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
 
     [LoggerMessage(EventId = 3005, Level = LogLevel.Debug, Message = "Completing {Count} activities")]
     private partial void LogStateCompleteEntries(int count);
+
+    [LoggerMessage(EventId = 1011, Level = LogLevel.Information, Message = "Parent info set: ParentWorkflowInstanceId={ParentWorkflowInstanceId}, ParentActivityId={ParentActivityId}")]
+    private partial void LogParentInfoSet(Guid parentWorkflowInstanceId, string parentActivityId);
+
+    [LoggerMessage(EventId = 1012, Level = LogLevel.Debug, Message = "Initial variables set")]
+    private partial void LogInitialVariablesSet();
+
+    [LoggerMessage(EventId = 1013, Level = LogLevel.Information, Message = "Starting child workflow: CalledProcessKey={CalledProcessKey}, ChildId={ChildId}")]
+    private partial void LogStartingChildWorkflow(string calledProcessKey, Guid childId);
+
+    [LoggerMessage(EventId = 1014, Level = LogLevel.Information, Message = "Child workflow completed for CallActivity {ParentActivityId}")]
+    private partial void LogChildWorkflowCompleted(string parentActivityId);
+
+    [LoggerMessage(EventId = 1015, Level = LogLevel.Warning, Message = "Child workflow failed for CallActivity {ParentActivityId}")]
+    private partial void LogChildWorkflowFailed(string parentActivityId);
+
+    [LoggerMessage(EventId = 1016, Level = LogLevel.Information, Message = "Boundary error event {BoundaryEventId} triggered by failed activity {ActivityId}")]
+    private partial void LogBoundaryEventTriggered(string boundaryEventId, string activityId);
 }
