@@ -96,6 +96,7 @@ h1:focus {
     display: flex;
     flex: 1;
     min-height: 0;
+    position: relative;
 }
 
 .editor-canvas {
@@ -103,6 +104,48 @@ h1:focus {
     min-height: 0;
     background-image: radial-gradient(circle, hsl(var(--text-100) / 15%) 1px, transparent 1px);
     background-size: 16px 16px;
+}
+
+.process-id-overlay {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.process-id-display {
+    background: var(--neutral-layer-1);
+    border: 1px solid var(--neutral-stroke-rest);
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: var(--type-ramp-base-font-size);
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+    transition: border-color 0.15s;
+}
+
+.process-id-display:hover {
+    border-color: var(--accent-fill-rest);
+}
+
+.process-id-edit {
+    background: var(--neutral-layer-1);
+    border: 1px solid var(--neutral-stroke-rest);
+    border-radius: 4px;
+    padding: 2px 4px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+}
+
+.process-id-error {
+    color: #e50000;
+    font-size: 12px;
+    background: var(--neutral-layer-1);
+    border-radius: 4px;
+    padding: 2px 6px;
 }
 
 /* Properties Panel */
