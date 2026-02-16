@@ -194,6 +194,7 @@
             {
                 await JS.InvokeVoidAsync("bpmnEditor.newDiagram");
                 await RefreshProcessId();
+                StateHasChanged();
             }
         }
     }

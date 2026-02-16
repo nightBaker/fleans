@@ -117,7 +117,7 @@ h1:focus {
 }
 
 .process-id-display {
-    background: var(--neutral-layer-1);
+    background: rgba(255, 255, 255, 0.85);
     border: 1px solid var(--neutral-stroke-rest);
     border-radius: 4px;
     padding: 4px 10px;
@@ -130,6 +130,7 @@ h1:focus {
 
 .process-id-display:hover {
     border-color: var(--accent-fill-rest);
+    text-decoration: underline;
 }
 
 .process-id-edit {
