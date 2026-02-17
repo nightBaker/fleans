@@ -93,6 +93,16 @@ internal static class FleanModelConfiguration
             entity.Property(e => e.ConditionalSequenceFlowId).HasMaxLength(256);
         });
 
+        modelBuilder.Entity<TimerStartEventSchedulerState>(entity =>
+        {
+            entity.ToTable("TimerSchedulers");
+            entity.HasKey(e => e.Key);
+
+            entity.Property(e => e.Key).HasMaxLength(256);
+            entity.Property(e => e.ETag).HasMaxLength(64);
+            entity.Property(e => e.ProcessDefinitionId).HasMaxLength(512);
+        });
+
         modelBuilder.Entity<ProcessDefinition>(entity =>
         {
             entity.ToTable("ProcessDefinitions");

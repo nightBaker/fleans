@@ -12,6 +12,7 @@ public class FleanCommandDbContext : DbContext
     public DbSet<WorkflowVariablesState> WorkflowVariableStates => Set<WorkflowVariablesState>();
     public DbSet<ConditionSequenceState> WorkflowConditionSequenceStates => Set<ConditionSequenceState>();
     public DbSet<ProcessDefinition> ProcessDefinitions => Set<ProcessDefinition>();
+    public DbSet<TimerStartEventSchedulerState> TimerSchedulers => Set<TimerStartEventSchedulerState>();
 
     public FleanCommandDbContext(DbContextOptions<FleanCommandDbContext> options) : base(options) { }
 
