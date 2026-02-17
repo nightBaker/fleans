@@ -3,12 +3,14 @@
 @implements IDisposable
 
 <FluentDesignTheme @bind-Mode="@_mode"
+                   @bind-Mode:after="SyncModeToService"
                    @bind-OfficeColor="@_officeColor"
+                   @bind-OfficeColor:after="SyncColorToService"
                    StorageName="theme" />
 
 <FluentLayout>
     <FluentHeader>
-        Fleans.Web
+        Fleans Management
         <FluentSpacer />
     </FluentHeader>
 
@@ -43,6 +45,16 @@
         _mode = ThemeService.Mode;
         _officeColor = ThemeService.OfficeColor;
         InvokeAsync(StateHasChanged);
+    }
+
+    private void SyncModeToService()
+    {
+        ThemeService.Mode = _mode;
+    }
+
+    private void SyncColorToService()
+    {
+        ThemeService.OfficeColor = _officeColor;
     }
 
     public void Dispose()
