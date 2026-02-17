@@ -170,15 +170,17 @@
                         }
                         else
                         {
-                            <FluentDataGrid Items="@filteredConditions" GridTemplateColumns="1fr 2fr 1.5fr 0.5fr">
-                                <PropertyColumn Property="@(c => c.SequenceFlowId)" Title="Sequence Flow" Sortable="true">
+                            <FluentDataGrid Items="@filteredConditions" GridTemplateColumns="1fr 2fr 1.5fr 0.5fr"
+                                            TGridItem="IndexedCondition"
+                                            ItemKey="@(c => c.Index)">
+                                <PropertyColumn Property="@(c => c.Condition.SequenceFlowId)" Title="Sequence Flow" Sortable="true">
                                     <ColumnOptions>
                                         <FluentSearch @bind-Value="conditionFlowFilter"
                                                       @bind-Value:after="ApplyConditionFilters"
                                                       Placeholder="Filter..." />
                                     </ColumnOptions>
                                 </PropertyColumn>
-                                <PropertyColumn Property="@(c => c.Condition)" Title="Condition" Sortable="true">
+                                <PropertyColumn Property="@(c => c.Condition.Condition)" Title="Condition" Sortable="true">
                                     <ColumnOptions>
                                         <FluentSearch @bind-Value="conditionExprFilter"
                                                       @bind-Value:after="ApplyConditionFilters"
@@ -192,7 +194,7 @@
                                                       Placeholder="Filter..." />
                                     </ColumnOptions>
                                     <ChildContent>
-                                        <span>@context.SourceActivityId → @context.TargetActivityId</span>
+                                        <span>@context.Condition.SourceActivityId → @context.Condition.TargetActivityId</span>
                                     </ChildContent>
                                 </TemplateColumn>
                                 <TemplateColumn Title="Result" SortBy="@conditionResultSort">
@@ -205,7 +207,7 @@
                                         </FluentSelect>
                                     </ColumnOptions>
                                     <ChildContent>
-                                        @if (context.Result)
+                                        @if (context.Condition.Result)
                                         {
                                             <FluentBadge Color="Color.Success">True</FluentBadge>
                                         }
@@ -260,17 +262,18 @@
         GridSort<ActivityInstanceSnapshot>.ByAscending(a => a.ErrorState != null ? a.ErrorState.Message : "");
 
     // Conditions tab
-    private List<ConditionSequenceSnapshot> allConditionsList = [];
-    private IQueryable<ConditionSequenceSnapshot> filteredConditions = Enumerable.Empty<ConditionSequenceSnapshot>().AsQueryable();
+    private record IndexedCondition(int Index, ConditionSequenceSnapshot Condition);
+    private List<IndexedCondition> allConditionsList = [];
+    private IQueryable<IndexedCondition> filteredConditions = Enumerable.Empty<IndexedCondition>().AsQueryable();
     private string? conditionFlowFilter;
     private string? conditionExprFilter;
     private string? conditionPathFilter;
     private string? conditionResultFilter;
 
-    private readonly GridSort<ConditionSequenceSnapshot> conditionPathSort =
-        GridSort<ConditionSequenceSnapshot>.ByAscending(c => c.SourceActivityId).ThenAscending(c => c.TargetActivityId);
-    private readonly GridSort<ConditionSequenceSnapshot> conditionResultSort =
-        GridSort<ConditionSequenceSnapshot>.ByAscending(c => c.Result);
+    private readonly GridSort<IndexedCondition> conditionPathSort =
+        GridSort<IndexedCondition>.ByAscending(c => c.Condition.SourceActivityId).ThenAscending(c => c.Condition.TargetActivityId);
+    private readonly GridSort<IndexedCondition> conditionResultSort =
+        GridSort<IndexedCondition>.ByAscending(c => c.Condition.Result);
 
     private record VariableRow(string Key, string Value);
 
@@ -319,7 +322,9 @@
             .ToList();
         failedActivities = allActivitiesList.Where(a => a.ErrorState != null).ToList();
 
-        allConditionsList = snapshot.ConditionSequences;
+        allConditionsList = snapshot.ConditionSequences
+            .Select((c, i) => new IndexedCondition(i, c))
+            .ToList();
 
         ApplyActivityFilters();
         ApplyConditionFilters();
@@ -344,18 +349,32 @@
 
     private void ApplyConditionFilters()
     {
-        IEnumerable<ConditionSequenceSnapshot> result = allConditionsList;
+        IEnumerable<IndexedCondition> result = allConditionsList;
 
         if (!string.IsNullOrWhiteSpace(conditionFlowFilter))
-            result = result.Where(c => c.SequenceFlowId.Contains(conditionFlowFilter, StringComparison.OrdinalIgnoreCase));
+            result = result.Where(c => c.Condition.SequenceFlowId.Contains(conditionFlowFilter, StringComparison.OrdinalIgnoreCase));
         if (!string.IsNullOrWhiteSpace(conditionExprFilter))
-            result = result.Where(c => c.Condition.Contains(conditionExprFilter, StringComparison.OrdinalIgnoreCase));
+            result = result.Where(c => c.Condition.Condition.Contains(conditionExprFilter, StringComparison.OrdinalIgnoreCase));
         if (!string.IsNullOrWhiteSpace(conditionPathFilter))
-            result = result.Where(c => $"{c.SourceActivityId} {c.TargetActivityId}".Contains(conditionPathFilter, StringComparison.OrdinalIgnoreCase));
+            result = result.Where(c => $"{c.Condition.SourceActivityId} {c.Condition.TargetActivityId}".Contains(conditionPathFilter, StringComparison.OrdinalIgnoreCase));
         if (!string.IsNullOrWhiteSpace(conditionResultFilter))
-            result = result.Where(c => c.Result.ToString().Equals(conditionResultFilter, StringComparison.OrdinalIgnoreCase));
+            result = result.Where(c => c.Condition.Result.ToString().Equals(conditionResultFilter, StringComparison.OrdinalIgnoreCase));
 
         filteredConditions = result.AsQueryable();
+    }
+
+    private async Task HighlightDiagram()
+    {
+        if (snapshot == null) return;
+
+        await JS.InvokeVoidAsync("bpmnViewer.highlight", snapshot.ActiveActivityIds);
+
+        var orderedActivityIds = snapshot.CompletedActivities
+            .Concat(snapshot.ActiveActivities)
+            .OrderBy(a => a.CreatedAt)
+            .Select(a => a.ActivityId)
+            .ToArray();
+        await JS.InvokeVoidAsync("bpmnViewer.highlightExecutionPath", (object)orderedActivityIds);
     }
 
     private async Task RenderDiagram()
@@ -363,12 +382,11 @@
         if (bpmnXml == null || snapshot == null) return;
 
         await JS.InvokeVoidAsync("bpmnViewer.init", "bpmn-canvas", bpmnXml);
-        await JS.InvokeVoidAsync("bpmnViewer.highlight", snapshot.CompletedActivityIds, snapshot.ActiveActivityIds);
+        await HighlightDiagram();
 
         dotNetRef = DotNetObjectReference.Create(this);
         await JS.InvokeVoidAsync("bpmnViewer.registerClickHandler", dotNetRef);
 
-        // Initialize vertical drag handle — compute max from viewport height
         var viewportHeight = await JS.InvokeAsync<int>("dragResize.getViewportHeight");
         var maxHeight = Math.Max(viewportHeight - 200, 400);
         await JS.InvokeVoidAsync("dragResize.initVertical", "vertical-drag-handle", "bpmn-canvas", 200, maxHeight, dotNetRef, "OnCanvasResized");
@@ -386,7 +404,7 @@
             await Task.Yield();
             if (snapshot != null)
             {
-                await JS.InvokeVoidAsync("bpmnViewer.highlight", snapshot.CompletedActivityIds, snapshot.ActiveActivityIds);
+                await HighlightDiagram();
                 if (selectedActivityId != null)
                 {
                     await JS.InvokeVoidAsync("bpmnViewer.selectElement", selectedActivityId);
