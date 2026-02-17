@@ -1,3 +1,4 @@
+using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
 using Fleans.Infrastructure.Bpmn;
@@ -492,6 +493,164 @@ public class BpmnConverterTests
         // Conditional flows should still be ConditionalSequenceFlow
         var conditionalFlows = workflow.SequenceFlows.OfType<ConditionalSequenceFlow>().ToList();
         Assert.AreEqual(2, conditionalFlows.Count);
+    }
+
+    [TestMethod]
+    public async Task ConvertFromXmlAsync_ShouldParseCallActivity_WithMappings()
+    {
+        // Arrange
+        var bpmnXml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL"">
+  <process id=""parent-process"">
+    <startEvent id=""start"" />
+    <callActivity id=""call1"" calledElement=""childProcess"">
+      <extensionElements>
+        <inputMapping source=""orderId"" target=""orderId"" />
+        <inputMapping source=""amount"" target=""paymentAmount"" />
+        <outputMapping source=""transactionId"" target=""txId"" />
+      </extensionElements>
+    </callActivity>
+    <endEvent id=""end"" />
+    <sequenceFlow id=""flow1"" sourceRef=""start"" targetRef=""call1"" />
+    <sequenceFlow id=""flow2"" sourceRef=""call1"" targetRef=""end"" />
+  </process>
+</definitions>";
+
+        // Act
+        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
+
+        // Assert
+        var callActivity = workflow.Activities.OfType<CallActivity>().FirstOrDefault();
+        Assert.IsNotNull(callActivity);
+        Assert.AreEqual("call1", callActivity.ActivityId);
+        Assert.AreEqual("childProcess", callActivity.CalledProcessKey);
+        Assert.AreEqual(2, callActivity.InputMappings.Count);
+        Assert.AreEqual("orderId", callActivity.InputMappings[0].Source);
+        Assert.AreEqual("orderId", callActivity.InputMappings[0].Target);
+        Assert.AreEqual("amount", callActivity.InputMappings[1].Source);
+        Assert.AreEqual("paymentAmount", callActivity.InputMappings[1].Target);
+        Assert.AreEqual(1, callActivity.OutputMappings.Count);
+        Assert.AreEqual("transactionId", callActivity.OutputMappings[0].Source);
+        Assert.AreEqual("txId", callActivity.OutputMappings[0].Target);
+        // Default propagation flags
+        Assert.IsTrue(callActivity.PropagateAllParentVariables);
+        Assert.IsTrue(callActivity.PropagateAllChildVariables);
+    }
+
+    [TestMethod]
+    public async Task ConvertFromXmlAsync_ShouldParseCallActivity_WithNoMappings()
+    {
+        // Arrange
+        var bpmnXml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL"">
+  <process id=""parent-process"">
+    <startEvent id=""start"" />
+    <callActivity id=""call1"" calledElement=""childProcess"" />
+    <endEvent id=""end"" />
+    <sequenceFlow id=""flow1"" sourceRef=""start"" targetRef=""call1"" />
+    <sequenceFlow id=""flow2"" sourceRef=""call1"" targetRef=""end"" />
+  </process>
+</definitions>";
+
+        // Act
+        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
+
+        // Assert
+        var callActivity = workflow.Activities.OfType<CallActivity>().FirstOrDefault();
+        Assert.IsNotNull(callActivity);
+        Assert.AreEqual("childProcess", callActivity.CalledProcessKey);
+        Assert.AreEqual(0, callActivity.InputMappings.Count);
+        Assert.AreEqual(0, callActivity.OutputMappings.Count);
+    }
+
+    [TestMethod]
+    public async Task ConvertFromXmlAsync_ShouldParseCallActivity_WithPropagationFlags()
+    {
+        // Arrange
+        var bpmnXml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL"">
+  <process id=""parent-process"">
+    <startEvent id=""start"" />
+    <callActivity id=""call1"" calledElement=""childProcess"" propagateAllParentVariables=""false"" propagateAllChildVariables=""false"" />
+    <endEvent id=""end"" />
+    <sequenceFlow id=""flow1"" sourceRef=""start"" targetRef=""call1"" />
+    <sequenceFlow id=""flow2"" sourceRef=""call1"" targetRef=""end"" />
+  </process>
+</definitions>";
+
+        // Act
+        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
+
+        // Assert
+        var callActivity = workflow.Activities.OfType<CallActivity>().FirstOrDefault();
+        Assert.IsNotNull(callActivity);
+        Assert.IsFalse(callActivity.PropagateAllParentVariables);
+        Assert.IsFalse(callActivity.PropagateAllChildVariables);
+    }
+
+    [TestMethod]
+    public async Task ConvertFromXmlAsync_ShouldParseBoundaryErrorEvent_WithErrorCode()
+    {
+        // Arrange
+        var bpmnXml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL"">
+  <process id=""parent-process"">
+    <startEvent id=""start"" />
+    <callActivity id=""call1"" calledElement=""childProcess"" />
+    <endEvent id=""end"" />
+    <endEvent id=""errorEnd"" />
+    <boundaryEvent id=""err1"" attachedToRef=""call1"">
+      <errorEventDefinition errorRef=""PaymentFailed"" />
+    </boundaryEvent>
+    <sequenceFlow id=""flow1"" sourceRef=""start"" targetRef=""call1"" />
+    <sequenceFlow id=""flow2"" sourceRef=""call1"" targetRef=""end"" />
+    <sequenceFlow id=""flow3"" sourceRef=""err1"" targetRef=""errorEnd"" />
+  </process>
+</definitions>";
+
+        // Act
+        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
+
+        // Assert
+        var boundaryEvent = workflow.Activities.OfType<BoundaryErrorEvent>().FirstOrDefault();
+        Assert.IsNotNull(boundaryEvent);
+        Assert.AreEqual("err1", boundaryEvent.ActivityId);
+        Assert.AreEqual("call1", boundaryEvent.AttachedToActivityId);
+        Assert.AreEqual("PaymentFailed", boundaryEvent.ErrorCode);
+
+        // Sequence flow from boundary event to errorEnd
+        var flow = workflow.SequenceFlows.FirstOrDefault(sf => sf.Source == boundaryEvent);
+        Assert.IsNotNull(flow);
+        Assert.AreEqual("errorEnd", flow.Target.ActivityId);
+    }
+
+    [TestMethod]
+    public async Task ConvertFromXmlAsync_ShouldParseBoundaryErrorEvent_CatchAll_WhenNoErrorRef()
+    {
+        // Arrange
+        var bpmnXml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL"">
+  <process id=""parent-process"">
+    <startEvent id=""start"" />
+    <callActivity id=""call1"" calledElement=""childProcess"" />
+    <endEvent id=""end"" />
+    <endEvent id=""errorEnd"" />
+    <boundaryEvent id=""err1"" attachedToRef=""call1"">
+      <errorEventDefinition />
+    </boundaryEvent>
+    <sequenceFlow id=""flow1"" sourceRef=""start"" targetRef=""call1"" />
+    <sequenceFlow id=""flow2"" sourceRef=""call1"" targetRef=""end"" />
+    <sequenceFlow id=""flow3"" sourceRef=""err1"" targetRef=""errorEnd"" />
+  </process>
+</definitions>";
+
+        // Act
+        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
+
+        // Assert
+        var boundaryEvent = workflow.Activities.OfType<BoundaryErrorEvent>().FirstOrDefault();
+        Assert.IsNotNull(boundaryEvent);
+        Assert.IsNull(boundaryEvent.ErrorCode);
     }
 
     private static string CreateBpmnWithScriptTask(string processId, string scriptTaskId, string? scriptFormat, string scriptBody)

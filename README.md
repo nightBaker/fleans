@@ -23,7 +23,7 @@ For now, next elements are implemented
 | End Event            | Indicates where a process will end.                                          |     [x]     |
 | Message Event        | Represents the sending or receiving of a message.                            |             |
 | Timer Event          | Represents a delay or a specific time/date.                                  |             |
-| Error Event          | Indicates an error that needs to be handled.                                 |             |
+| Error Event          | Indicates an error that needs to be handled.                                 |  [x] boundary |
 | Conditional Event    | Represents a condition that will cause a process to start or continue.       |             |
 | Signal Event         | Represents the sending or receiving of a signal.                             |             |
 | Escalation Event     | Used to model situations where escalation is required.                       |             |
@@ -34,7 +34,7 @@ For now, next elements are implemented
 | Task                 | A single unit of work.                                                      |             |
 | Script Task          | A task that executes an inline script.                                       |     [x]     |
 | Sub-Process          | A group of tasks that are treated as a single unit.                         |             |
-| Call Activity        | A type of sub-process that calls another process.                            |             |
+| Call Activity        | A type of sub-process that calls another process.                            |     [x]     |
 | Transaction          | A set of activities that are handled as a single unit.                      |             |
 | Event Sub-Process    | A sub-process that is triggered by an event.                                 |             |
 | **Gateways**         |                                                                             |             |

@@ -20,6 +20,8 @@ internal static class ActivityTestHelper
             .Returns(ValueTask.FromResult<IReadOnlyList<IActivityExecutionContext>>([]));
         context.GetCompletedActivities()
             .Returns(ValueTask.FromResult<IReadOnlyList<IActivityExecutionContext>>([]));
+        context.StartChildWorkflow(Arg.Any<Activities.CallActivity>(), Arg.Any<IActivityExecutionContext>())
+            .Returns(ValueTask.CompletedTask);
         return context;
     }
 

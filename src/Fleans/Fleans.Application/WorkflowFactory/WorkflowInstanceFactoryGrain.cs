@@ -180,6 +180,12 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
         return Task.FromResult(_byKey.ContainsKey(workflowId));
     }
 
+    public Task<IWorkflowDefinition> GetLatestWorkflowDefinition(string processDefinitionKey)
+    {
+        var definition = GetLatestDefinitionOrThrow(processDefinitionKey);
+        return Task.FromResult<IWorkflowDefinition>(definition.Workflow);
+    }
+
     private ProcessDefinition GetLatestDefinitionOrThrow(string processDefinitionKey)
     {
         if (string.IsNullOrWhiteSpace(processDefinitionKey))

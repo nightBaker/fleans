@@ -134,7 +134,7 @@ public partial class BpmnConverter : IBpmnConverter
                 .Count(sf => sf.Attribute("targetRef")?.Value == id);
             var outgoingCount = process.Descendants(Bpmn + "sequenceFlow")
                 .Count(sf => sf.Attribute("sourceRef")?.Value == id);
-            
+
             bool isFork;
             if (outgoingCount > incomingCount)
             {
@@ -159,6 +159,57 @@ public partial class BpmnConverter : IBpmnConverter
                     "Split into separate join and fork gateways.");
             }
             var activity = new ParallelGateway(id, IsFork: isFork);
+            activities.Add(activity);
+            activityMap[id] = activity;
+        }
+
+        // Parse call activities
+        foreach (var callActivityEl in process.Descendants(Bpmn + "callActivity"))
+        {
+            var id = GetId(callActivityEl);
+            var calledElement = callActivityEl.Attribute("calledElement")?.Value
+                ?? throw new InvalidOperationException($"callActivity '{id}' must have a calledElement attribute");
+
+            var propagateAllParent = ParseBoolAttribute(callActivityEl, "propagateAllParentVariables", true);
+            var propagateAllChild = ParseBoolAttribute(callActivityEl, "propagateAllChildVariables", true);
+
+            var inputMappings = new List<VariableMapping>();
+            var outputMappings = new List<VariableMapping>();
+
+            var extensionElements = callActivityEl.Element(Bpmn + "extensionElements");
+            if (extensionElements != null)
+            {
+                foreach (var input in extensionElements.Elements().Where(e => e.Name.LocalName == "inputMapping"))
+                {
+                    var source = input.Attribute("source")?.Value ?? "";
+                    var target = input.Attribute("target")?.Value ?? "";
+                    inputMappings.Add(new VariableMapping(source, target));
+                }
+
+                foreach (var output in extensionElements.Elements().Where(e => e.Name.LocalName == "outputMapping"))
+                {
+                    var source = output.Attribute("source")?.Value ?? "";
+                    var target = output.Attribute("target")?.Value ?? "";
+                    outputMappings.Add(new VariableMapping(source, target));
+                }
+            }
+
+            var activity = new CallActivity(id, calledElement, inputMappings, outputMappings, propagateAllParent, propagateAllChild);
+            activities.Add(activity);
+            activityMap[id] = activity;
+        }
+
+        // Parse boundary events
+        foreach (var boundaryEl in process.Descendants(Bpmn + "boundaryEvent"))
+        {
+            var id = GetId(boundaryEl);
+            var attachedToRef = boundaryEl.Attribute("attachedToRef")?.Value
+                ?? throw new InvalidOperationException($"boundaryEvent '{id}' must have an attachedToRef attribute");
+
+            var errorDef = boundaryEl.Element(Bpmn + "errorEventDefinition");
+            string? errorCode = errorDef?.Attribute("errorRef")?.Value;
+
+            var activity = new BoundaryErrorEvent(id, attachedToRef, errorCode);
             activities.Add(activity);
             activityMap[id] = activity;
         }
@@ -330,6 +381,13 @@ public partial class BpmnConverter : IBpmnConverter
         if (!SupportedScriptFormats.Contains(scriptFormat))
             throw new InvalidOperationException(
                 $"ScriptTask '{activityId}' has unsupported scriptFormat '{scriptFormat}'. Supported formats: csharp, c#.");
+    }
+
+    private static bool ParseBoolAttribute(XElement element, string attributeName, bool defaultValue)
+    {
+        var attr = element.Attributes()
+            .FirstOrDefault(a => a.Name.LocalName == attributeName)?.Value;
+        return attr is not null ? bool.Parse(attr) : defaultValue;
     }
 
     private string GetId(XElement element)
