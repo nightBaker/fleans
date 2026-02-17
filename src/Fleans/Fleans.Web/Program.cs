@@ -2,6 +2,7 @@ using Fleans.Application;
 using Fleans.Infrastructure;
 using Fleans.Persistence;
 using Fleans.Web.Components;
+using Fleans.Web.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.FluentUI.AspNetCore.Components;
 using StackExchange.Redis;
@@ -17,6 +18,7 @@ builder.Services.AddRazorComponents()
 
 // Add Fluent UI services
 builder.Services.AddFluentUIComponents();
+builder.Services.AddScoped<ThemeService>();
 
 // Add Application and Infrastructure services
 builder.Services.AddApplication();
