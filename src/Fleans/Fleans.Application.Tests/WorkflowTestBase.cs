@@ -58,6 +58,7 @@ public abstract class WorkflowTestBase
             hostBuilder
                 .AddMemoryStreams(WorkflowEventsPublisher.StreamProvider)
                 .AddMemoryGrainStorage("PubSubStore")
+                .UseInMemoryReminderService()
                 .ConfigureServices(services =>
                 {
                     services.AddDbContextFactory<FleanCommandDbContext>(options =>
