@@ -1,0 +1,81 @@
+@page "/settings"
+@rendermode InteractiveServer
+@inject Fleans.Web.Services.ThemeService ThemeService
+
+<PageTitle>Settings</PageTitle>
+
+<FluentStack Orientation="Orientation.Vertical" Gap="20px">
+    <PageHeader Title="Settings" />
+
+    <FluentStack Orientation="Orientation.Vertical" Gap="16px" Style="max-width: 400px; padding: 0 16px;">
+        <FluentLabel Typo="Typography.Subject">Appearance</FluentLabel>
+
+        <FluentSelect TOption="DesignThemeModes"
+                      Label="Theme Mode"
+                      Items="@_modeOptions"
+                      OptionValue="@(m => m.ToString())"
+                      OptionText="@(m => m.ToString())"
+                      @bind-SelectedOption="@SelectedMode" />
+
+        <FluentSelect TOption="OfficeColorOption"
+                      Label="Accent Color"
+                      Items="@_colorOptions"
+                      OptionValue="@(o => o.Label)"
+                      OptionText="@(o => o.Label)"
+                      @bind-SelectedOption="@SelectedColor" />
+    </FluentStack>
+</FluentStack>
+
+@code {
+    private record OfficeColorOption(string Label, OfficeColor? Value);
+
+    private static readonly List<DesignThemeModes> _modeOptions =
+    [
+        DesignThemeModes.System,
+        DesignThemeModes.Light,
+        DesignThemeModes.Dark
+    ];
+
+    private static readonly List<OfficeColorOption> _colorOptions = BuildColorOptions();
+
+    private DesignThemeModes _selectedMode;
+    private OfficeColorOption _selectedColor = null!;
+
+    private DesignThemeModes SelectedMode
+    {
+        get => _selectedMode;
+        set
+        {
+            if (_selectedMode == value) return;
+            _selectedMode = value;
+            ThemeService.SetTheme(_selectedMode, _selectedColor.Value);
+        }
+    }
+
+    private OfficeColorOption SelectedColor
+    {
+        get => _selectedColor;
+        set
+        {
+            if (_selectedColor == value) return;
+            _selectedColor = value;
+            ThemeService.SetTheme(_selectedMode, _selectedColor.Value);
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        _selectedMode = ThemeService.Mode;
+        _selectedColor = _colorOptions.First(o => o.Value == ThemeService.OfficeColor);
+    }
+
+    private static List<OfficeColorOption> BuildColorOptions()
+    {
+        var options = new List<OfficeColorOption> { new("Default", null) };
+        foreach (var color in Enum.GetValues<OfficeColor>())
+        {
+            options.Add(new(color.ToString(), color));
+        }
+        return options;
+    }
+}

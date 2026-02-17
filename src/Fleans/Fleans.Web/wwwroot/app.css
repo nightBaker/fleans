@@ -41,13 +41,123 @@ h1:focus {
         content: "An error has occurred."
     }
 
+/* BPMN Theme Adaptation — overrides bpmn.js inline styles with FluentUI tokens */
+.djs-shape .djs-visual > rect,
+.djs-shape .djs-visual > circle,
+.djs-shape .djs-visual > polygon {
+    stroke: var(--neutral-foreground-hint) !important;
+    fill: var(--neutral-fill-rest) !important;
+}
+
+.djs-shape .djs-visual > path,
+.djs-connection .djs-visual > path {
+    stroke: var(--neutral-foreground-hint) !important;
+}
+
+.djs-drag-group {
+    opacity: 0.7;
+}
+
+.djs-drag-group .djs-visual > rect,
+.djs-drag-group .djs-visual > circle,
+.djs-drag-group .djs-visual > polygon {
+    fill: var(--neutral-fill-rest) !important;
+    stroke: var(--neutral-foreground-hint) !important;
+}
+
+.djs-container,
+.djs-container svg {
+    background: transparent !important;
+}
+
+.djs-overlay-container {
+    background: transparent !important;
+}
+
+[class*="djs-create"] {
+    background: transparent !important;
+}
+
+svg defs marker path {
+    fill: var(--neutral-foreground-hint) !important;
+    stroke: var(--neutral-foreground-hint) !important;
+}
+
+marker[id*="sequenceflow"] path,
+marker[id*="association"] path,
+marker[id*="messageflow"] path,
+marker[id*="conditional"] path {
+    fill: var(--neutral-foreground-hint) !important;
+    stroke: var(--neutral-foreground-hint) !important;
+}
+
+.djs-direct-editing-parent {
+    background: var(--neutral-layer-1) !important;
+    color: var(--neutral-foreground-rest) !important;
+    border-color: var(--neutral-stroke-rest) !important;
+}
+
+.djs-direct-editing-content {
+    background: var(--neutral-layer-1) !important;
+    color: var(--neutral-foreground-rest) !important;
+}
+
+.djs-visual text,
+.djs-label text {
+    fill: var(--neutral-foreground-rest) !important;
+}
+
+.djs-palette {
+    background: var(--neutral-layer-2) !important;
+    border-color: var(--neutral-stroke-rest) !important;
+}
+
+.djs-palette .entry {
+    color: var(--neutral-foreground-rest) !important;
+}
+
+.djs-context-pad .entry {
+    background: var(--neutral-layer-1) !important;
+    color: var(--neutral-foreground-rest) !important;
+}
+
+.djs-popup {
+    background: var(--neutral-layer-2) !important;
+    border-color: var(--neutral-stroke-rest) !important;
+    color: var(--neutral-foreground-rest) !important;
+}
+
+.djs-popup .entry,
+.djs-popup .entry span {
+    color: var(--neutral-foreground-rest) !important;
+}
+
+.djs-popup .entry:hover {
+    background: var(--neutral-fill-stealth-hover) !important;
+}
+
+.djs-popup .djs-popup-header {
+    background: var(--neutral-layer-3) !important;
+    border-color: var(--neutral-stroke-rest) !important;
+}
+
+.djs-popup .djs-popup-header .entry {
+    color: var(--neutral-foreground-rest) !important;
+}
+
+.djs-popup input {
+    background: var(--neutral-layer-1) !important;
+    color: var(--neutral-foreground-rest) !important;
+    border-color: var(--neutral-stroke-rest) !important;
+}
+
 /* BPMN Viewer Styles */
 .bpmn-container {
     width: 100%;
     border: 1px solid var(--neutral-stroke-rest);
     border-radius: 4px;
     overflow: hidden;
-    background-image: radial-gradient(circle, hsl(var(--text-100) / 15%) 1px, transparent 1px);
+    background-image: radial-gradient(circle, var(--neutral-stroke-rest) 1px, transparent 1px);
     background-size: 16px 16px;
 }
 
@@ -115,7 +225,7 @@ h1:focus {
 .editor-canvas {
     flex: 1;
     min-height: 0;
-    background-image: radial-gradient(circle, hsl(var(--text-100) / 15%) 1px, transparent 1px);
+    background-image: radial-gradient(circle, var(--neutral-stroke-rest) 1px, transparent 1px);
     background-size: 16px 16px;
 }
 
