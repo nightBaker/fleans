@@ -437,7 +437,8 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IRemindab
         using var scope = BeginWorkflowScope();
         LogWorkflowDefinitionSet();
 
-        var startActivity = workflow.Activities.OfType<StartEvent>().First();
+        var startActivity = workflow.Activities.FirstOrDefault(a => a is StartEvent or TimerStartEvent)
+            ?? throw new InvalidOperationException("Workflow must have a StartEvent or TimerStartEvent");
 
         var activityInstanceId = Guid.NewGuid();
         var variablesId = Guid.NewGuid();
