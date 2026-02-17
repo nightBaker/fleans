@@ -87,6 +87,11 @@ public partial class BpmnConverter : IBpmnConverter
                 activities.Add(activity);
                 activityMap[id] = activity;
             }
+            else
+            {
+                throw new InvalidOperationException(
+                    $"IntermediateCatchEvent '{id}' has an unsupported event definition. Only timerEventDefinition is currently supported.");
+            }
         }
 
         // Parse end events

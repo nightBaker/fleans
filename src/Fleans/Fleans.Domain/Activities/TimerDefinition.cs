@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Xml;
 
 namespace Fleans.Domain.Activities;
@@ -27,7 +28,7 @@ public record TimerDefinition(
 
     private TimeSpan GetDateDueTime()
     {
-        var targetDate = DateTimeOffset.Parse(Expression);
+        var targetDate = DateTimeOffset.Parse(Expression, CultureInfo.InvariantCulture);
         var remaining = targetDate - DateTimeOffset.UtcNow;
         return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
     }
@@ -40,7 +41,7 @@ public record TimerDefinition(
 
         var repeatPart = parts[0];
         int? repeatCount = repeatPart.Length > 1
-            ? int.Parse(repeatPart[1..])
+            ? int.Parse(repeatPart[1..], CultureInfo.InvariantCulture)
             : null;
 
         var interval = XmlConvert.ToTimeSpan(parts[1]);

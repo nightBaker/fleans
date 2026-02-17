@@ -9,4 +9,5 @@ public static class GrainStorageNames
     public const string ActivityInstances = "activityInstances";
     public const string WorkflowInstances = "workflowInstances";
     public const string ProcessDefinitions = "processDefinitions";
+    public const string TimerSchedulers = "timerSchedulers";
 }

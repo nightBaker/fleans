@@ -143,6 +143,11 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IRemindab
         else
         {
             // Intermediate catch timer — just complete the activity
+            // Guard: activity may already be completed by a previous reminder tick
+            var entry = State.GetFirstActive(activityId);
+            if (entry == null)
+                return;
+
             SetWorkflowRequestContext();
             using var scope = BeginWorkflowScope();
             await CompleteActivityState(activityId, new ExpandoObject());
