@@ -1,12 +1,9 @@
-using Fleans.Application.Events.Handlers;
 using Fleans.Application.Grains;
 using Fleans.Domain.Events;
 using Microsoft.Extensions.Logging;
 using Orleans.Concurrency;
 using Orleans.Runtime;
 using Orleans.Streams;
-using Orleans.Utilities;
-using System.IO;
 
 namespace Fleans.Application.Events;
 
@@ -48,12 +45,6 @@ public partial class WorkflowEventsPublisher : Grain, IEventPublisher
                 var scriptStreamId = StreamId.Create(StreamNameSpace, nameof(ExecuteScriptEvent));
                 var scriptStream = _streamProvider.GetStream<ExecuteScriptEvent>(scriptStreamId);
                 await scriptStream.OnNextAsync(executeScriptEvent);
-                break;
-            case ChildWorkflowCompletedEvent childCompletedEvent:
-
-                var childCompletedStreamId = StreamId.Create(StreamNameSpace, nameof(ChildWorkflowCompletedEvent));
-                var childCompletedStream = _streamProvider.GetStream<ChildWorkflowCompletedEvent>(childCompletedStreamId);
-                await childCompletedStream.OnNextAsync(childCompletedEvent);
                 break;
             default:
                 var defaultStreamId = StreamId.Create(StreamNameSpace, nameof(IDomainEvent));

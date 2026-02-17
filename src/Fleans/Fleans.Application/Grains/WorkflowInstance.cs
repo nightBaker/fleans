@@ -1,6 +1,5 @@
 using Fleans.Domain;
 using Fleans.Domain.Activities;
-using Fleans.Domain.Events;
 using Fleans.Domain.States;
 using Fleans.Application.WorkflowFactory;
 using Microsoft.Extensions.Logging;
@@ -168,13 +167,8 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
                 ? State.VariableStates[0].Variables
                 : new ExpandoObject();
 
-            var eventPublisher = _grainFactory.GetGrain<IEventPublisher>(0);
-            await eventPublisher.Publish(new ChildWorkflowCompletedEvent(
-                State.ParentWorkflowInstanceId.Value,
-                State.ParentActivityId!,
-                _workflowDefinition!.WorkflowId,
-                _workflowDefinition.ProcessDefinitionId,
-                childVariables));
+            var parent = _grainFactory.GetGrain<IWorkflowInstanceGrain>(State.ParentWorkflowInstanceId.Value);
+            await parent.OnChildWorkflowCompleted(State.ParentActivityId!, childVariables);
         }
     }
 
@@ -224,7 +218,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
             ?? throw new InvalidOperationException($"Active entry not found for '{callActivity.ActivityId}'");
         entry.ChildWorkflowInstanceId = childId;
 
-        // Start child — completion uses domain events (ChildWorkflowCompletedEvent), not direct grain callbacks
+        // Start child — completion notifies parent via direct grain call
         await child.StartWorkflow();
 
         await _state.WriteStateAsync();

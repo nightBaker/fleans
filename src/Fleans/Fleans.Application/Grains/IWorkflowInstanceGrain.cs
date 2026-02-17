@@ -34,6 +34,8 @@ public interface IWorkflowInstanceGrain : IGrainWithGuidKey, IWorkflowExecutionC
 
     Task SetParentInfo(Guid parentWorkflowInstanceId, string parentActivityId);
     Task SetInitialVariables(ExpandoObject variables);
+    [AlwaysInterleave]
     Task OnChildWorkflowCompleted(string parentActivityId, ExpandoObject childVariables);
+    [AlwaysInterleave]
     Task OnChildWorkflowFailed(string parentActivityId, Exception exception);
 }

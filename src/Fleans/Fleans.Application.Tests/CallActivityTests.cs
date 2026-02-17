@@ -67,9 +67,6 @@ public class CallActivityTests : WorkflowTestBase
         var childInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(childInstanceId);
         await childInstance.CompleteActivity("childTask", new ExpandoObject());
 
-        // Wait for event propagation
-        await Task.Delay(500);
-
         // Assert — parent workflow should be completed
         var finalSnapshot = await QueryService.GetStateSnapshot(parentInstanceId);
         Assert.IsNotNull(finalSnapshot);
@@ -225,9 +222,6 @@ public class CallActivityTests : WorkflowTestBase
         childVars.txId = "TX-123";
         childVars.internalState = "should-not-return";
         await childInstance.CompleteActivity("childTask", (ExpandoObject)childVars);
-
-        // Wait for event propagation
-        await Task.Delay(500);
 
         // Assert — check parent's variable state after child completion
         var finalSnapshot = await QueryService.GetStateSnapshot(parentInstanceId);
@@ -391,9 +385,6 @@ public class CallActivityTests : WorkflowTestBase
         childVars.childSecret = "child-only";
         await childInstance.CompleteActivity("childTask", (ExpandoObject)childVars);
 
-        // Wait for event propagation
-        await Task.Delay(500);
-
         // Assert — parent should NOT have child's variable, and parent should be completed
         var finalSnapshot = await QueryService.GetStateSnapshot(parentInstanceId);
         Assert.IsNotNull(finalSnapshot);
@@ -475,9 +466,6 @@ public class CallActivityTests : WorkflowTestBase
         dynamic childVars = new ExpandoObject();
         childVars.childVar = "world";
         await childInstance.CompleteActivity("childTask", (ExpandoObject)childVars);
-
-        // Wait for event propagation
-        await Task.Delay(500);
 
         // Assert — parent should have both parentVar and childVar, and be completed
         var finalSnapshot = await QueryService.GetStateSnapshot(parentInstanceId);
