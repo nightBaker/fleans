@@ -12,7 +12,7 @@ namespace Fleans.Api.Controllers
 {
     [ApiController]
     [Route("[controller]")]
-    public class WorkflowController : ControllerBase
+    public partial class WorkflowController : ControllerBase
     {
         private const long MaxBpmnFileSizeBytes = 10 * 1024 * 1024; // 10 MB
 
@@ -110,7 +110,7 @@ namespace Fleans.Api.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing BPMN file");
+                LogBpmnUploadError(ex);
                 return StatusCode(500, new ErrorResponse("An error occurred while processing the BPMN file"));
             }
         }
@@ -125,7 +125,7 @@ namespace Fleans.Api.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving workflows");
+                LogGetAllWorkflowsError(ex);
                 return StatusCode(500, new ErrorResponse("An error occurred while retrieving workflows"));
             }
         }
@@ -161,9 +161,18 @@ namespace Fleans.Api.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error delivering message");
+                LogMessageDeliveryError(ex);
                 return StatusCode(500, new ErrorResponse("An error occurred while delivering the message"));
             }
         }
+
+        [LoggerMessage(EventId = 8000, Level = LogLevel.Error, Message = "Error processing BPMN file")]
+        private partial void LogBpmnUploadError(Exception exception);
+
+        [LoggerMessage(EventId = 8001, Level = LogLevel.Error, Message = "Error retrieving workflows")]
+        private partial void LogGetAllWorkflowsError(Exception exception);
+
+        [LoggerMessage(EventId = 8002, Level = LogLevel.Error, Message = "Error delivering message")]
+        private partial void LogMessageDeliveryError(Exception exception);
     }
 }

@@ -172,6 +172,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IRemindab
         var attachedInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(attachedEntry.ActivityInstanceId);
         await attachedInstance.Complete();
         State.CompleteEntries([attachedEntry]);
+        await UnsubscribeBoundaryMessageSubscriptions(attachedActivityId);
         LogBoundaryTimerInterrupted(boundaryTimer.ActivityId, attachedActivityId);
 
         // Create and execute boundary timer event instance
@@ -302,13 +303,23 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IRemindab
 
                 var correlationKey = correlationValue.ToString()!;
                 var correlationGrain = _grainFactory.GetGrain<IMessageCorrelationGrain>(messageDef.Name);
-                await correlationGrain.Subscribe(correlationKey, this.GetPrimaryKey(), boundaryMsg.ActivityId);
+
+                try
+                {
+                    await correlationGrain.Subscribe(correlationKey, this.GetPrimaryKey(), boundaryMsg.ActivityId);
+                }
+                catch (Exception ex)
+                {
+                    LogMessageSubscriptionFailed(boundaryMsg.ActivityId, messageDef.Name, correlationKey, ex);
+                    continue;
+                }
+
                 LogMessageSubscriptionRegistered(boundaryMsg.ActivityId, messageDef.Name, correlationKey);
             }
         }
     }
 
-    private async Task UnsubscribeBoundaryMessageSubscriptions(string activityId)
+    private async Task UnsubscribeBoundaryMessageSubscriptions(string activityId, string? skipMessageName = null)
     {
         if (_workflowDefinition == null) return;
 
@@ -317,6 +328,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IRemindab
         {
             var messageDef = _workflowDefinition.Messages.FirstOrDefault(m => m.Id == boundaryMsg.MessageDefinitionId);
             if (messageDef?.CorrelationKeyExpression is null) continue;
+            if (messageDef.Name == skipMessageName) continue;
 
             var correlationValue = await GetVariable(messageDef.CorrelationKeyExpression);
             if (correlationValue is null) continue;
@@ -768,6 +780,12 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IRemindab
         var attachedInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(attachedEntry.ActivityInstanceId);
         await attachedInstance.Complete();
         State.CompleteEntries([attachedEntry]);
+
+        // Unsubscribe other boundary messages, but skip the one that fired
+        // (its subscription was already removed by DeliverMessage, and calling
+        // back into the same correlation grain would deadlock)
+        var firedMessageDef = definition.Messages.First(m => m.Id == boundaryMessage.MessageDefinitionId);
+        await UnsubscribeBoundaryMessageSubscriptions(boundaryMessage.AttachedToActivityId, skipMessageName: firedMessageDef.Name);
         LogBoundaryMessageInterrupted(boundaryActivityId, boundaryMessage.AttachedToActivityId);
 
         // Create and execute boundary message event instance
