@@ -1,8 +1,5 @@
 using Fleans.Application;
 using Fleans.Application.Grains;
-using Fleans.Application.QueryModels;
-using Fleans.Domain;
-using Fleans.Infrastructure.Bpmn;
 using Fleans.ServiceDefaults.DTOs;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
@@ -14,32 +11,17 @@ namespace Fleans.Api.Controllers
     [Route("[controller]")]
     public partial class WorkflowController : ControllerBase
     {
-        private const long MaxBpmnFileSizeBytes = 10 * 1024 * 1024; // 10 MB
-
-        private static readonly HashSet<string> AllowedContentTypes = new(StringComparer.OrdinalIgnoreCase)
-        {
-            "text/xml",
-            "application/xml",
-            "application/octet-stream"
-        };
-
         private readonly ILogger<WorkflowController> _logger;
         private readonly IWorkflowCommandService _commandService;
-        private readonly IWorkflowQueryService _queryService;
-        private readonly IBpmnConverter _bpmnConverter;
         private readonly IGrainFactory _grainFactory;
 
         public WorkflowController(
             ILogger<WorkflowController> logger,
             IWorkflowCommandService commandService,
-            IWorkflowQueryService queryService,
-            IBpmnConverter bpmnConverter,
             IGrainFactory grainFactory)
         {
             _logger = logger;
             _commandService = commandService;
-            _queryService = queryService;
-            _bpmnConverter = bpmnConverter;
             _grainFactory = grainFactory;
         }
 
@@ -59,74 +41,6 @@ namespace Fleans.Api.Controllers
             catch (KeyNotFoundException ex)
             {
                 return NotFound(new ErrorResponse(ex.Message));
-            }
-        }
-
-        [HttpPost("upload-bpmn", Name = "UploadBpmn")]
-        [Consumes("multipart/form-data")]
-        public async Task<IActionResult> UploadBpmn(IFormFile file)
-        {
-            if (file == null || file.Length == 0)
-            {
-                return BadRequest(new ErrorResponse("No file uploaded"));
-            }
-
-            if (file.Length > MaxBpmnFileSizeBytes)
-            {
-                return BadRequest(new ErrorResponse("File size exceeds the 10 MB limit"));
-            }
-
-            if (!AllowedContentTypes.Contains(file.ContentType))
-            {
-                return BadRequest(new ErrorResponse(
-                    $"Unsupported content type '{file.ContentType}'. Allowed types: {string.Join(", ", AllowedContentTypes)}"));
-            }
-
-            if (!file.FileName.EndsWith(".bpmn", StringComparison.OrdinalIgnoreCase) &&
-                !file.FileName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
-            {
-                return BadRequest(new ErrorResponse("File must be a BPMN (.bpmn) or XML (.xml) file"));
-            }
-
-            try
-            {
-                using var reader = new StreamReader(file.OpenReadStream());
-                var bpmnXml = await reader.ReadToEndAsync();
-
-                using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(bpmnXml));
-                var workflow = await _bpmnConverter.ConvertFromXmlAsync(stream);
-
-                await _commandService.DeployWorkflow(workflow, bpmnXml);
-
-                return Ok(new UploadBpmnResponse(
-                    Message: "BPMN file uploaded and workflow deployed successfully",
-                    WorkflowId: workflow.WorkflowId,
-                    ActivitiesCount: workflow.Activities.Count,
-                    SequenceFlowsCount: workflow.SequenceFlows.Count));
-            }
-            catch (InvalidOperationException ex)
-            {
-                return BadRequest(new ErrorResponse($"Invalid BPMN file: {ex.Message}"));
-            }
-            catch (Exception ex)
-            {
-                LogBpmnUploadError(ex);
-                return StatusCode(500, new ErrorResponse("An error occurred while processing the BPMN file"));
-            }
-        }
-
-        [HttpGet("all", Name = "GetAllWorkflows")]
-        public async Task<IActionResult> GetAllWorkflows()
-        {
-            try
-            {
-                var definitions = await _queryService.GetAllProcessDefinitions();
-                return Ok(definitions);
-            }
-            catch (Exception ex)
-            {
-                LogGetAllWorkflowsError(ex);
-                return StatusCode(500, new ErrorResponse("An error occurred while retrieving workflows"));
             }
         }
 
@@ -165,12 +79,6 @@ namespace Fleans.Api.Controllers
                 return StatusCode(500, new ErrorResponse("An error occurred while delivering the message"));
             }
         }
-
-        [LoggerMessage(EventId = 8000, Level = LogLevel.Error, Message = "Error processing BPMN file")]
-        private partial void LogBpmnUploadError(Exception exception);
-
-        [LoggerMessage(EventId = 8001, Level = LogLevel.Error, Message = "Error retrieving workflows")]
-        private partial void LogGetAllWorkflowsError(Exception exception);
 
         [LoggerMessage(EventId = 8002, Level = LogLevel.Error, Message = "Error delivering message")]
         private partial void LogMessageDeliveryError(Exception exception);
