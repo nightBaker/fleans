@@ -59,6 +59,10 @@ builder.UseOrleans(siloBuilder =>
     // Configure Redis streaming (optional, for pub/sub)
     siloBuilder.AddMemoryStreams("StreamProvider");
 
+    // Reminders (required by TimerStartEventSchedulerGrain and WorkflowInstance timers)
+    // TODO: Replace with persistent reminder storage (Redis/AzureTable) for production
+    siloBuilder.UseInMemoryReminderService();
+
     // Structured workflow logging via RequestContext
     siloBuilder.AddIncomingGrainCallFilter<WorkflowLoggingScopeFilter>();
 });

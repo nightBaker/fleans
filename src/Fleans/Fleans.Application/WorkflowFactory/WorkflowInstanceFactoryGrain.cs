@@ -2,6 +2,7 @@ using Fleans.Application.Grains;
 using Fleans.Application.QueryModels;
 using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
+using Fleans.Domain.Activities;
 using Fleans.Domain.Persistence;
 using Microsoft.Extensions.Logging;
 using Orleans.Concurrency;
@@ -141,6 +142,13 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
         await _repository.SaveAsync(definition);
 
         LogDeployedWorkflow(processDefinitionKey, processDefinitionId, nextVersion);
+
+        // Activate timer scheduler if the workflow contains a TimerStartEvent
+        if (workflowWithId.Activities.OfType<TimerStartEvent>().Any())
+        {
+            var scheduler = _grainFactory.GetGrain<ITimerStartEventSchedulerGrain>(processDefinitionKey);
+            await scheduler.ActivateScheduler(processDefinitionId);
+        }
 
         return ToSummary(definition);
     }

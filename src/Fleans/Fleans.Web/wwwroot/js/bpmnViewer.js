@@ -265,14 +265,39 @@ window.bpmnViewer = {
         if (!element) return null;
 
         var bo = element.businessObject;
-        return {
+        var data = {
             id: bo.id || '',
             type: element.type || '',
             name: bo.name || '',
             scriptFormat: bo.scriptFormat || '',
             script: bo.script || '',
-            conditionExpression: (bo.conditionExpression && bo.conditionExpression.body) || ''
+            conditionExpression: (bo.conditionExpression && bo.conditionExpression.body) || '',
+            timerType: '',
+            timerExpression: '',
+            hasTimerDefinition: false
         };
+
+        if (bo.eventDefinitions && bo.eventDefinitions.length > 0) {
+            for (var i = 0; i < bo.eventDefinitions.length; i++) {
+                if (bo.eventDefinitions[i].$type === 'bpmn:TimerEventDefinition') {
+                    data.hasTimerDefinition = true;
+                    var timerDef = bo.eventDefinitions[i];
+                    if (timerDef.timeDuration) {
+                        data.timerType = 'duration';
+                        data.timerExpression = timerDef.timeDuration.body || '';
+                    } else if (timerDef.timeDate) {
+                        data.timerType = 'date';
+                        data.timerExpression = timerDef.timeDate.body || '';
+                    } else if (timerDef.timeCycle) {
+                        data.timerType = 'cycle';
+                        data.timerExpression = timerDef.timeCycle.body || '';
+                    }
+                    break;
+                }
+            }
+        }
+
+        return data;
     },
 
     destroy: function () {

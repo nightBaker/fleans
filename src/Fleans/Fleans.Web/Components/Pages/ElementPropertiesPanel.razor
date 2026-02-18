@@ -122,6 +122,29 @@
                                     Placeholder="e.g. ${amount > 100}" Style="width: 100%;" />
                 </div>
             }
+
+            @if (HasTimer)
+            {
+                <div>
+                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Timer Type</FluentLabel>
+                    <FluentSelect TOption="string" Value="@timerType" @onchange="OnTimerTypeChange"
+                                  Disabled="@ReadOnly" Style="width: 100%;">
+                        @foreach (var opt in GetTimerTypeOptions())
+                        {
+                            <FluentOption TOption="string" Value="@opt.Key" Selected="@(timerType == opt.Key)">@opt.Value</FluentOption>
+                        }
+                    </FluentSelect>
+                </div>
+
+                <div>
+                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Timer Expression</FluentLabel>
+                    <FluentTextField Value="@timerExpression" @oninput="OnTimerExpressionInput" @onchange="OnTimerExpressionChange"
+                                     Disabled="@ReadOnly" Placeholder="@GetTimerPlaceholder()" Style="width: 100%;" />
+                    <FluentLabel Style="color: var(--neutral-foreground-hint); margin-top: 4px; font-size: 12px;">
+                        @GetTimerHelpText()
+                    </FluentLabel>
+                </div>
+            }
         </FluentStack>
     </div>
 </div>
@@ -139,6 +162,8 @@
     private string calledElement = "";
     private bool propagateAllParentVariables = true;
     private bool propagateAllChildVariables = true;
+    private string timerType = "";
+    private string timerExpression = "";
 
     private static readonly Dictionary<string, string> TaskTypes = new()
     {
@@ -173,6 +198,8 @@
         calledElement = Element.CalledElement;
         propagateAllParentVariables = Element.PropagateAllParentVariables;
         propagateAllChildVariables = Element.PropagateAllChildVariables;
+        timerType = Element.TimerType;
+        timerExpression = Element.TimerExpression;
     }
 
     private Dictionary<string, string>? GetReplaceOptions()
@@ -255,6 +282,55 @@
         await JS.InvokeVoidAsync("bpmnEditor.updateElementProperty", Element.Id, "propagateAllChildVariables", propagateAllChildVariables);
     }
 
+    private bool HasTimer => Element.HasTimerDefinition;
+
+    private static readonly Dictionary<string, string> TimerTypesAll = new()
+    {
+        ["duration"] = "Duration",
+        ["date"] = "Date",
+        ["cycle"] = "Cycle",
+    };
+
+    private static readonly Dictionary<string, string> TimerTypesStartEvent = new()
+    {
+        ["date"] = "Date",
+        ["cycle"] = "Cycle",
+    };
+
+    private Dictionary<string, string> GetTimerTypeOptions() =>
+        Element.Type == "bpmn:StartEvent" ? TimerTypesStartEvent : TimerTypesAll;
+
+    private string GetTimerHelpText() => timerType switch
+    {
+        "duration" => "ISO 8601 duration, e.g. PT5M, PT1H, P1D",
+        "date" => "ISO 8601 date/time, e.g. 2026-03-01T10:00:00Z",
+        "cycle" => "Repeating interval, e.g. R3/PT10M, R/PT1H",
+        _ => ""
+    };
+
+    private string GetTimerPlaceholder() => timerType switch
+    {
+        "duration" => "e.g. PT5M",
+        "date" => "e.g. 2026-03-01T10:00:00Z",
+        "cycle" => "e.g. R3/PT10M",
+        _ => ""
+    };
+
+    private async Task OnTimerTypeChange(ChangeEventArgs e)
+    {
+        timerType = e.Value?.ToString() ?? "";
+        timerExpression = "";
+        await JS.InvokeVoidAsync("bpmnEditor.updateTimerDefinition", Element.Id, timerType, timerExpression);
+    }
+
+    private void OnTimerExpressionInput(ChangeEventArgs e) => timerExpression = e.Value?.ToString() ?? "";
+
+    private async Task OnTimerExpressionChange(ChangeEventArgs e)
+    {
+        timerExpression = e.Value?.ToString() ?? "";
+        await JS.InvokeVoidAsync("bpmnEditor.updateTimerDefinition", Element.Id, timerType, timerExpression);
+    }
+
     private async Task AddMapping(string type)
     {
         await JS.InvokeVoidAsync("bpmnEditor.addMapping", Element.Id, type);
@@ -291,23 +367,37 @@
         }
     }
 
-    private string GetTypeLabel() => Element.Type switch
+    private string GetTypeLabel()
     {
-        "bpmn:StartEvent" => "Start Event",
-        "bpmn:EndEvent" => "End Event",
-        "bpmn:Task" => "Task",
-        "bpmn:UserTask" => "User Task",
-        "bpmn:ServiceTask" => "Service Task",
-        "bpmn:ScriptTask" => "Script Task",
-        "bpmn:CallActivity" => "Call Activity",
-        "bpmn:ExclusiveGateway" => "Exclusive Gateway",
-        "bpmn:ParallelGateway" => "Parallel Gateway",
-        "bpmn:SequenceFlow" => "Sequence Flow",
-        "bpmn:Process" => "Process",
-        "bpmn:IntermediateThrowEvent" => "Intermediate Throw Event",
-        "bpmn:IntermediateCatchEvent" => "Intermediate Catch Event",
-        _ => Element.Type.Replace("bpmn:", "")
-    };
+        if (HasTimer)
+        {
+            return Element.Type switch
+            {
+                "bpmn:StartEvent" => "Timer Start Event",
+                "bpmn:IntermediateCatchEvent" => "Timer Intermediate Catch Event",
+                "bpmn:BoundaryEvent" => "Boundary Timer Event",
+                _ => Element.Type.Replace("bpmn:", "")
+            };
+        }
+        return Element.Type switch
+        {
+            "bpmn:StartEvent" => "Start Event",
+            "bpmn:EndEvent" => "End Event",
+            "bpmn:Task" => "Task",
+            "bpmn:UserTask" => "User Task",
+            "bpmn:ServiceTask" => "Service Task",
+            "bpmn:ScriptTask" => "Script Task",
+            "bpmn:CallActivity" => "Call Activity",
+            "bpmn:ExclusiveGateway" => "Exclusive Gateway",
+            "bpmn:ParallelGateway" => "Parallel Gateway",
+            "bpmn:SequenceFlow" => "Sequence Flow",
+            "bpmn:Process" => "Process",
+            "bpmn:IntermediateThrowEvent" => "Intermediate Throw Event",
+            "bpmn:IntermediateCatchEvent" => "Intermediate Catch Event",
+            "bpmn:BoundaryEvent" => "Boundary Event",
+            _ => Element.Type.Replace("bpmn:", "")
+        };
+    }
 
     public class BpmnElementData
     {
@@ -322,6 +412,9 @@
         public bool PropagateAllChildVariables { get; set; } = true;
         public List<MappingData> InputMappings { get; set; } = [];
         public List<MappingData> OutputMappings { get; set; } = [];
+        public string TimerType { get; set; } = "";
+        public string TimerExpression { get; set; } = "";
+        public bool HasTimerDefinition { get; set; }
     }
 
     public class MappingData

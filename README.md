@@ -22,7 +22,7 @@ For now, next elements are implemented
 | Intermediate Event   | Indicates something that happens between the start and end events.           |             |
 | End Event            | Indicates where a process will end.                                          |     [x]     |
 | Message Event        | Represents the sending or receiving of a message.                            |             |
-| Timer Event          | Represents a delay or a specific time/date.                                  |             |
+| Timer Event          | Represents a delay or a specific time/date.                                  | [x] start, intermediate catch, boundary |
 | Error Event          | Indicates an error that needs to be handled.                                 |  [x] boundary |
 | Conditional Event    | Represents a condition that will cause a process to start or continue.       |             |
 | Signal Event         | Represents the sending or receiving of a signal.                             |             |

@@ -58,6 +58,7 @@ public abstract class WorkflowTestBase
             hostBuilder
                 .AddMemoryStreams(WorkflowEventsPublisher.StreamProvider)
                 .AddMemoryGrainStorage("PubSubStore")
+                .UseInMemoryReminderService()
                 .ConfigureServices(services =>
                 {
                     services.AddDbContextFactory<FleanCommandDbContext>(options =>
@@ -72,6 +73,10 @@ public abstract class WorkflowTestBase
 
                     services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.ActivityInstances,
                         (sp, _) => new EfCoreActivityInstanceGrainStorage(
+                            sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
+
+                    services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.TimerSchedulers,
+                        (sp, _) => new EfCoreTimerSchedulerGrainStorage(
                             sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
 
                     services.AddSingleton<IProcessDefinitionRepository, EfCoreProcessDefinitionRepository>();

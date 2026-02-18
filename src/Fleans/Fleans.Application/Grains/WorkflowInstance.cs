@@ -9,7 +9,7 @@ using System.Dynamic;
 
 namespace Fleans.Application.Grains;
 
-public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
+public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IRemindable
 {
     public ValueTask<Guid> GetWorkflowInstanceId() => ValueTask.FromResult(this.GetPrimaryKey());
     private IWorkflowDefinition? _workflowDefinition;
@@ -58,6 +58,42 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
 
             await TransitionToNextActivity();
         }
+
+        await RegisterTimerReminders();
+    }
+
+    private async Task RegisterTimerReminders()
+    {
+        var definition = await GetWorkflowDefinition();
+
+        foreach (var entry in State.GetActiveActivities().ToList())
+        {
+            var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(entry.ActivityInstanceId);
+            if (!await activityInstance.IsExecuting())
+                continue;
+
+            var activity = definition.GetActivity(entry.ActivityId);
+
+            // Register reminder for intermediate catch timer
+            if (activity is TimerIntermediateCatchEvent timerCatch)
+            {
+                var reminderName = $"timer:{entry.ActivityId}";
+                var dueTime = timerCatch.TimerDefinition.GetDueTime();
+                // Orleans Reminders require minimum 1 minute period
+                await this.RegisterOrUpdateReminder(reminderName, dueTime, TimeSpan.FromMinutes(1));
+                LogTimerReminderRegistered(entry.ActivityId, dueTime);
+            }
+
+            // Register reminders for boundary timers attached to this activity
+            foreach (var boundaryTimer in definition.Activities.OfType<BoundaryTimerEvent>()
+                .Where(bt => bt.AttachedToActivityId == entry.ActivityId))
+            {
+                var reminderName = $"timer:{boundaryTimer.ActivityId}";
+                var dueTime = boundaryTimer.TimerDefinition.GetDueTime();
+                await this.RegisterOrUpdateReminder(reminderName, dueTime, TimeSpan.FromMinutes(1));
+                LogTimerReminderRegistered(boundaryTimer.ActivityId, dueTime);
+            }
+        }
     }
 
     public async Task CompleteActivity(string activityId, ExpandoObject variables)
@@ -79,6 +115,77 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         LogFailingActivity(activityId);
 
         await FailActivityWithBoundaryCheck(activityId, exception);
+        await _state.WriteStateAsync();
+    }
+
+    public async Task ReceiveReminder(string reminderName, TickStatus status)
+    {
+        if (!reminderName.StartsWith("timer:"))
+            return;
+
+        var activityId = reminderName["timer:".Length..];
+        LogTimerReminderFired(activityId);
+
+        // Unregister the reminder first
+        var reminder = await this.GetReminder(reminderName);
+        if (reminder != null)
+            await this.UnregisterReminder(reminder);
+
+        await EnsureWorkflowDefinitionAsync();
+        var definition = await GetWorkflowDefinition();
+
+        // Check if this is a boundary timer
+        var activity = definition.Activities.FirstOrDefault(a => a.ActivityId == activityId);
+        if (activity is BoundaryTimerEvent boundaryTimer)
+        {
+            await HandleBoundaryTimerFired(boundaryTimer);
+        }
+        else
+        {
+            // Intermediate catch timer — just complete the activity
+            // Guard: activity may already be completed by a previous reminder tick
+            var entry = State.GetFirstActive(activityId);
+            if (entry == null)
+                return;
+
+            SetWorkflowRequestContext();
+            using var scope = BeginWorkflowScope();
+            await CompleteActivityState(activityId, new ExpandoObject());
+            await ExecuteWorkflow();
+            await _state.WriteStateAsync();
+        }
+    }
+
+    private async Task HandleBoundaryTimerFired(BoundaryTimerEvent boundaryTimer)
+    {
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+        var attachedActivityId = boundaryTimer.AttachedToActivityId;
+
+        // Check if attached activity is still active
+        var attachedEntry = State.GetFirstActive(attachedActivityId);
+        if (attachedEntry == null)
+            return; // Activity already completed, timer is stale
+
+        // Cancel the attached activity (mark it completed with no variables)
+        var attachedInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(attachedEntry.ActivityInstanceId);
+        await attachedInstance.Complete();
+        State.CompleteEntries([attachedEntry]);
+        LogBoundaryTimerInterrupted(boundaryTimer.ActivityId, attachedActivityId);
+
+        // Create and execute boundary timer event instance
+        var boundaryInstanceId = Guid.NewGuid();
+        var boundaryInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(boundaryInstanceId);
+        var variablesId = await attachedInstance.GetVariablesStateId();
+        await boundaryInstance.SetActivity(boundaryTimer.ActivityId, boundaryTimer.GetType().Name);
+        await boundaryInstance.SetVariablesId(variablesId);
+
+        var boundaryEntry = new ActivityInstanceEntry(boundaryInstanceId, boundaryTimer.ActivityId, State.Id);
+        State.AddEntries([boundaryEntry]);
+
+        await boundaryTimer.ExecuteAsync(this, boundaryInstance);
+        await TransitionToNextActivity();
+        await ExecuteWorkflow();
         await _state.WriteStateAsync();
     }
 
@@ -135,6 +242,33 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
 
         LogStateMergeState(variablesId);
         State.MergeState(variablesId, variables);
+
+        // Unregister any boundary timer reminders attached to this activity
+        await UnregisterBoundaryTimerReminders(activityId);
+    }
+
+    private async Task UnregisterBoundaryTimerReminders(string activityId)
+    {
+        if (_workflowDefinition == null) return;
+
+        foreach (var boundaryTimer in _workflowDefinition.Activities.OfType<BoundaryTimerEvent>()
+            .Where(bt => bt.AttachedToActivityId == activityId))
+        {
+            var reminderName = $"timer:{boundaryTimer.ActivityId}";
+            try
+            {
+                var reminder = await this.GetReminder(reminderName);
+                if (reminder != null)
+                {
+                    await this.UnregisterReminder(reminder);
+                    LogTimerReminderUnregistered(boundaryTimer.ActivityId);
+                }
+            }
+            catch (Exception)
+            {
+                // Reminder may not exist — that's fine
+            }
+        }
     }
 
     private async Task FailActivityState(string activityId, Exception exception)
@@ -308,7 +442,8 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         using var scope = BeginWorkflowScope();
         LogWorkflowDefinitionSet();
 
-        var startActivity = workflow.Activities.OfType<StartEvent>().First();
+        var startActivity = workflow.Activities.FirstOrDefault(a => a is StartEvent or TimerStartEvent)
+            ?? throw new InvalidOperationException("Workflow must have a StartEvent or TimerStartEvent");
 
         var activityInstanceId = Guid.NewGuid();
         var variablesId = Guid.NewGuid();
@@ -584,4 +719,16 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
 
     [LoggerMessage(EventId = 1016, Level = LogLevel.Information, Message = "Boundary error event {BoundaryEventId} triggered by failed activity {ActivityId}")]
     private partial void LogBoundaryEventTriggered(string boundaryEventId, string activityId);
+
+    [LoggerMessage(EventId = 1017, Level = LogLevel.Information, Message = "Timer reminder registered for activity {ActivityId}, due in {DueTime}")]
+    private partial void LogTimerReminderRegistered(string activityId, TimeSpan dueTime);
+
+    [LoggerMessage(EventId = 1018, Level = LogLevel.Information, Message = "Timer reminder fired for activity {ActivityId}")]
+    private partial void LogTimerReminderFired(string activityId);
+
+    [LoggerMessage(EventId = 1019, Level = LogLevel.Information, Message = "Timer reminder unregistered for activity {ActivityId}")]
+    private partial void LogTimerReminderUnregistered(string activityId);
+
+    [LoggerMessage(EventId = 1020, Level = LogLevel.Information, Message = "Boundary timer {BoundaryTimerId} interrupted attached activity {AttachedActivityId}")]
+    private partial void LogBoundaryTimerInterrupted(string boundaryTimerId, string attachedActivityId);
 }

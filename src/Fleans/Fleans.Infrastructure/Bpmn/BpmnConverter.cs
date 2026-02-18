@@ -53,13 +53,45 @@ public partial class BpmnConverter : IBpmnConverter
 
     private void ParseActivities(XElement process, List<Activity> activities, Dictionary<string, Activity> activityMap, HashSet<string> defaultFlowIds)
     {
-        // Parse start events
+        // Parse start events (with optional timer definition)
         foreach (var startEvent in process.Descendants(Bpmn + "startEvent"))
         {
             var id = GetId(startEvent);
-            var activity = new StartEvent(id);
+            var timerDef = startEvent.Element(Bpmn + "timerEventDefinition");
+
+            Activity activity;
+            if (timerDef != null)
+            {
+                var timerDefinition = ParseTimerDefinition(timerDef);
+                activity = new TimerStartEvent(id, timerDefinition);
+            }
+            else
+            {
+                activity = new StartEvent(id);
+            }
+
             activities.Add(activity);
             activityMap[id] = activity;
+        }
+
+        // Parse intermediate catch events (timer)
+        foreach (var catchEvent in process.Descendants(Bpmn + "intermediateCatchEvent"))
+        {
+            var id = GetId(catchEvent);
+            var timerDef = catchEvent.Element(Bpmn + "timerEventDefinition");
+
+            if (timerDef != null)
+            {
+                var timerDefinition = ParseTimerDefinition(timerDef);
+                var activity = new TimerIntermediateCatchEvent(id, timerDefinition);
+                activities.Add(activity);
+                activityMap[id] = activity;
+            }
+            else
+            {
+                throw new InvalidOperationException(
+                    $"IntermediateCatchEvent '{id}' has an unsupported event definition. Only timerEventDefinition is currently supported.");
+            }
         }
 
         // Parse end events
@@ -206,10 +238,21 @@ public partial class BpmnConverter : IBpmnConverter
             var attachedToRef = boundaryEl.Attribute("attachedToRef")?.Value
                 ?? throw new InvalidOperationException($"boundaryEvent '{id}' must have an attachedToRef attribute");
 
+            var timerDef = boundaryEl.Element(Bpmn + "timerEventDefinition");
             var errorDef = boundaryEl.Element(Bpmn + "errorEventDefinition");
-            string? errorCode = errorDef?.Attribute("errorRef")?.Value;
 
-            var activity = new BoundaryErrorEvent(id, attachedToRef, errorCode);
+            Activity activity;
+            if (timerDef != null)
+            {
+                var timerDefinition = ParseTimerDefinition(timerDef);
+                activity = new BoundaryTimerEvent(id, attachedToRef, timerDefinition);
+            }
+            else
+            {
+                string? errorCode = errorDef?.Attribute("errorRef")?.Value;
+                activity = new BoundaryErrorEvent(id, attachedToRef, errorCode);
+            }
+
             activities.Add(activity);
             activityMap[id] = activity;
         }
@@ -394,5 +437,21 @@ public partial class BpmnConverter : IBpmnConverter
     {
         return element.Attribute("id")?.Value
             ?? throw new InvalidOperationException($"Element {element.Name} must have an id attribute");
+    }
+
+    private static TimerDefinition ParseTimerDefinition(XElement timerEventDef)
+    {
+        var timeDuration = timerEventDef.Element(Bpmn + "timeDuration")?.Value;
+        var timeDate = timerEventDef.Element(Bpmn + "timeDate")?.Value;
+        var timeCycle = timerEventDef.Element(Bpmn + "timeCycle")?.Value;
+
+        if (timeDuration != null)
+            return new TimerDefinition(TimerType.Duration, timeDuration.Trim());
+        if (timeDate != null)
+            return new TimerDefinition(TimerType.Date, timeDate.Trim());
+        if (timeCycle != null)
+            return new TimerDefinition(TimerType.Cycle, timeCycle.Trim());
+
+        throw new InvalidOperationException("timerEventDefinition must contain timeDuration, timeDate, or timeCycle");
     }
 }

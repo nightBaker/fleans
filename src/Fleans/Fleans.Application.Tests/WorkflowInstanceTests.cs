@@ -491,6 +491,33 @@ namespace Fleans.Application.Tests
             Assert.AreEqual("Bad input", taskSnapshot.ErrorState.Message);
         }
 
+        [TestMethod]
+        public async Task SetWorkflow_ShouldAcceptTimerStartEvent_AsStartActivity()
+        {
+            // Arrange
+            var timerDef = new TimerDefinition(TimerType.Duration, "PT5M");
+            var timerStart = new TimerStartEvent("timerStart1", timerDef);
+            var end = new EndEvent("end");
+
+            var workflow = new WorkflowDefinition
+            {
+                WorkflowId = "timer-start-workflow",
+                Activities = [timerStart, end],
+                SequenceFlows = [new SequenceFlow("f1", timerStart, end)]
+            };
+
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+
+            // Act & Assert — should not throw
+            await workflowInstance.SetWorkflow(workflow);
+            await workflowInstance.StartWorkflow();
+
+            var instanceId = workflowInstance.GetPrimaryKey();
+            var snapshot = await QueryService.GetStateSnapshot(instanceId);
+            Assert.IsNotNull(snapshot);
+            Assert.IsTrue(snapshot.IsCompleted);
+        }
+
         private static IWorkflowDefinition CreateSimpleWorkflow()
         {
             var start = new StartEvent("start");

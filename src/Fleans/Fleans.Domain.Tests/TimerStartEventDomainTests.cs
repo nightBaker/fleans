@@ -1,0 +1,54 @@
+using Fleans.Domain.Activities;
+using Fleans.Domain.Events;
+using Fleans.Domain.Sequences;
+using NSubstitute;
+
+namespace Fleans.Domain.Tests;
+
+[TestClass]
+public class TimerStartEventDomainTests
+{
+    [TestMethod]
+    public async Task ExecuteAsync_ShouldCompleteImmediately_LikeStartEvent()
+    {
+        // Arrange
+        var timerDef = new TimerDefinition(TimerType.Cycle, "R3/PT10M");
+        var timerStart = new TimerStartEvent("timerStart1", timerDef);
+        var task = new TaskActivity("task1");
+        var definition = ActivityTestHelper.CreateWorkflowDefinition(
+            [timerStart, task],
+            [new SequenceFlow("seq1", timerStart, task)]);
+        var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
+        var (activityContext, publishedEvents) = ActivityTestHelper.CreateActivityContext("timerStart1");
+
+        // Act
+        await timerStart.ExecuteAsync(workflowContext, activityContext);
+
+        // Assert
+        await activityContext.Received(1).Execute();
+        await activityContext.Received(1).Complete();
+        var executedEvent = publishedEvents.OfType<WorkflowActivityExecutedEvent>().Single();
+        Assert.AreEqual("timerStart1", executedEvent.activityId);
+    }
+
+    [TestMethod]
+    public async Task GetNextActivities_ShouldReturnTarget_ViaSequenceFlow()
+    {
+        // Arrange
+        var timerDef = new TimerDefinition(TimerType.Cycle, "R3/PT10M");
+        var timerStart = new TimerStartEvent("timerStart1", timerDef);
+        var task = new TaskActivity("task1");
+        var definition = ActivityTestHelper.CreateWorkflowDefinition(
+            [timerStart, task],
+            [new SequenceFlow("seq1", timerStart, task)]);
+        var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
+        var (activityContext, _) = ActivityTestHelper.CreateActivityContext("timerStart1");
+
+        // Act
+        var nextActivities = await timerStart.GetNextActivities(workflowContext, activityContext);
+
+        // Assert
+        Assert.HasCount(1, nextActivities);
+        Assert.AreEqual("task1", nextActivities[0].ActivityId);
+    }
+}

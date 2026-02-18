@@ -50,7 +50,10 @@ window.bpmnEditor = {
             propagateAllParentVariables: true,
             propagateAllChildVariables: true,
             inputMappings: [],
-            outputMappings: []
+            outputMappings: [],
+            timerType: '',
+            timerExpression: '',
+            hasTimerDefinition: false
         };
 
         if (bo.$type === 'bpmn:ScriptTask') {
@@ -77,6 +80,26 @@ window.bpmnEditor = {
                         data.outputMappings.push({ source: ext.source || '', target: ext.target || '' });
                     }
                 });
+            }
+        }
+
+        if (bo.eventDefinitions && bo.eventDefinitions.length > 0) {
+            for (var i = 0; i < bo.eventDefinitions.length; i++) {
+                if (bo.eventDefinitions[i].$type === 'bpmn:TimerEventDefinition') {
+                    data.hasTimerDefinition = true;
+                    var timerDef = bo.eventDefinitions[i];
+                    if (timerDef.timeDuration) {
+                        data.timerType = 'duration';
+                        data.timerExpression = timerDef.timeDuration.body || '';
+                    } else if (timerDef.timeDate) {
+                        data.timerType = 'date';
+                        data.timerExpression = timerDef.timeDate.body || '';
+                    } else if (timerDef.timeCycle) {
+                        data.timerType = 'cycle';
+                        data.timerExpression = timerDef.timeCycle.body || '';
+                    }
+                    break;
+                }
             }
         }
 
@@ -136,6 +159,43 @@ window.bpmnEditor = {
         }
 
         modeling.updateProperties(element, props);
+    },
+
+    updateTimerDefinition: function (elementId, timerType, expression) {
+        if (!this._modeler) return;
+        var elementRegistry = this._modeler.get('elementRegistry');
+        var modeling = this._modeler.get('modeling');
+        var moddle = this._modeler.get('moddle');
+        var element = elementRegistry.get(elementId);
+        if (!element) return;
+
+        var bo = element.businessObject;
+        if (!bo.eventDefinitions || bo.eventDefinitions.length === 0) return;
+
+        var timerDef = null;
+        for (var i = 0; i < bo.eventDefinitions.length; i++) {
+            if (bo.eventDefinitions[i].$type === 'bpmn:TimerEventDefinition') {
+                timerDef = bo.eventDefinitions[i];
+                break;
+            }
+        }
+        if (!timerDef) return;
+
+        var newProps = {
+            timeDuration: undefined,
+            timeDate: undefined,
+            timeCycle: undefined
+        };
+
+        if (expression) {
+            var formalExpr = moddle.create('bpmn:FormalExpression', { body: expression });
+            formalExpr.$parent = timerDef;
+            if (timerType === 'duration') newProps.timeDuration = formalExpr;
+            else if (timerType === 'date') newProps.timeDate = formalExpr;
+            else if (timerType === 'cycle') newProps.timeCycle = formalExpr;
+        }
+
+        modeling.updateModdleProperties(element, timerDef, newProps);
     },
 
     getProcessId: function () {
