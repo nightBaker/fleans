@@ -15,6 +15,7 @@ namespace Fleans.Domain
         string? ProcessDefinitionId { get; }
         List<Activity> Activities { get; }
         List<SequenceFlow> SequenceFlows { get; }
+        List<MessageDefinition> Messages { get; }
         Activity GetActivity(string activityId);
     }
    
@@ -32,6 +33,9 @@ namespace Fleans.Domain
 
         [Id(3)]
         public string? ProcessDefinitionId { get; init; }
+
+        [Id(4)]
+        public List<MessageDefinition> Messages { get; init; } = [];
 
         public Activity GetActivity(string activityId)
             => Activities.First(a => a.ActivityId == activityId);

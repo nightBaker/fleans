@@ -1,0 +1,29 @@
+using System.Runtime.CompilerServices;
+
+[assembly: InternalsVisibleTo("Fleans.Domain.Tests")]
+
+namespace Fleans.Domain.Activities;
+
+[GenerateSerializer]
+public record MessageIntermediateCatchEvent(
+    string ActivityId,
+    [property: Id(1)] string MessageDefinitionId) : Activity(ActivityId)
+{
+    internal override async Task ExecuteAsync(
+        IWorkflowExecutionContext workflowContext,
+        IActivityExecutionContext activityContext)
+    {
+        await base.ExecuteAsync(workflowContext, activityContext);
+        await workflowContext.RegisterMessageSubscription(MessageDefinitionId, ActivityId);
+        // Do NOT call activityContext.Complete() — the correlation grain will do that
+    }
+
+    internal override async Task<List<Activity>> GetNextActivities(
+        IWorkflowExecutionContext workflowContext,
+        IActivityExecutionContext activityContext)
+    {
+        var definition = await workflowContext.GetWorkflowDefinition();
+        var nextFlow = definition.SequenceFlows.FirstOrDefault(sf => sf.Source == this);
+        return nextFlow != null ? [nextFlow.Target] : [];
+    }
+}

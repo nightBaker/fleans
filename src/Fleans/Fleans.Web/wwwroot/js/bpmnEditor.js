@@ -53,7 +53,10 @@ window.bpmnEditor = {
             outputMappings: [],
             timerType: '',
             timerExpression: '',
-            hasTimerDefinition: false
+            hasTimerDefinition: false,
+            hasMessageDefinition: false,
+            messageName: '',
+            correlationKey: ''
         };
 
         if (bo.$type === 'bpmn:ScriptTask') {
@@ -97,6 +100,20 @@ window.bpmnEditor = {
                     } else if (timerDef.timeCycle) {
                         data.timerType = 'cycle';
                         data.timerExpression = timerDef.timeCycle.body || '';
+                    }
+                    break;
+                }
+                if (bo.eventDefinitions[i].$type === 'bpmn:MessageEventDefinition') {
+                    data.hasMessageDefinition = true;
+                    var msgDef = bo.eventDefinitions[i];
+                    if (msgDef.messageRef) {
+                        data.messageName = msgDef.messageRef.name || '';
+                    }
+                    var attrs = bo.$attrs || {};
+                    data.correlationKey = attrs['fleans:correlationKey'] || '';
+                    if (!data.correlationKey) {
+                        var zeebeKey = attrs['zeebe:correlationKey'] || '';
+                        if (zeebeKey) data.correlationKey = zeebeKey;
                     }
                     break;
                 }
@@ -196,6 +213,60 @@ window.bpmnEditor = {
         }
 
         modeling.updateModdleProperties(element, timerDef, newProps);
+    },
+
+    updateMessageDefinition: function (elementId, messageName, correlationKey) {
+        if (!this._modeler) return;
+        var elementRegistry = this._modeler.get('elementRegistry');
+        var modeling = this._modeler.get('modeling');
+        var moddle = this._modeler.get('moddle');
+        var element = elementRegistry.get(elementId);
+        if (!element) return;
+
+        var bo = element.businessObject;
+        if (!bo.eventDefinitions || bo.eventDefinitions.length === 0) return;
+
+        var msgDef = null;
+        for (var i = 0; i < bo.eventDefinitions.length; i++) {
+            if (bo.eventDefinitions[i].$type === 'bpmn:MessageEventDefinition') {
+                msgDef = bo.eventDefinitions[i];
+                break;
+            }
+        }
+        if (!msgDef) return;
+
+        var canvas = this._modeler.get('canvas');
+        var definitions = canvas.getRootElement().businessObject.$parent;
+
+        if (messageName) {
+            var messageEl = msgDef.messageRef;
+
+            if (!messageEl) {
+                // Create new <message> element at <definitions> level
+                var msgId = 'Message_' + elementId;
+                messageEl = moddle.create('bpmn:Message', { id: msgId, name: messageName });
+                messageEl.$parent = definitions;
+
+                // Use get() to access the moddle collection properly
+                var rootElements = definitions.get('rootElements');
+                rootElements.push(messageEl);
+
+                // Register the ID so bpmn-js knows about it
+                moddle.ids.claim(msgId, messageEl);
+            } else {
+                messageEl.name = messageName;
+            }
+
+            modeling.updateModdleProperties(element, msgDef, { messageRef: messageEl });
+        }
+
+        // Store correlation key as fleans:correlationKey attribute on the event element
+        if (!bo.$attrs) bo.$attrs = {};
+        if (correlationKey) {
+            bo.$attrs['fleans:correlationKey'] = correlationKey;
+        } else {
+            delete bo.$attrs['fleans:correlationKey'];
+        }
     },
 
     getProcessId: function () {

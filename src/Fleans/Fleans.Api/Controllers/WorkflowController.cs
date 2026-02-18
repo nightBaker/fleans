@@ -1,15 +1,18 @@
 using Fleans.Application;
+using Fleans.Application.Grains;
 using Fleans.Application.QueryModels;
 using Fleans.Domain;
 using Fleans.Infrastructure.Bpmn;
 using Fleans.ServiceDefaults.DTOs;
 using Microsoft.AspNetCore.Mvc;
+using Newtonsoft.Json;
+using System.Dynamic;
 
 namespace Fleans.Api.Controllers
 {
     [ApiController]
     [Route("[controller]")]
-    public class WorkflowController : ControllerBase
+    public partial class WorkflowController : ControllerBase
     {
         private const long MaxBpmnFileSizeBytes = 10 * 1024 * 1024; // 10 MB
 
@@ -24,17 +27,20 @@ namespace Fleans.Api.Controllers
         private readonly IWorkflowCommandService _commandService;
         private readonly IWorkflowQueryService _queryService;
         private readonly IBpmnConverter _bpmnConverter;
+        private readonly IGrainFactory _grainFactory;
 
         public WorkflowController(
             ILogger<WorkflowController> logger,
             IWorkflowCommandService commandService,
             IWorkflowQueryService queryService,
-            IBpmnConverter bpmnConverter)
+            IBpmnConverter bpmnConverter,
+            IGrainFactory grainFactory)
         {
             _logger = logger;
             _commandService = commandService;
             _queryService = queryService;
             _bpmnConverter = bpmnConverter;
+            _grainFactory = grainFactory;
         }
 
         [HttpPost("start", Name = "StartWorkflow")]
@@ -84,13 +90,16 @@ namespace Fleans.Api.Controllers
 
             try
             {
-                using var stream = file.OpenReadStream();
+                using var reader = new StreamReader(file.OpenReadStream());
+                var bpmnXml = await reader.ReadToEndAsync();
+
+                using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(bpmnXml));
                 var workflow = await _bpmnConverter.ConvertFromXmlAsync(stream);
 
-                await _commandService.RegisterWorkflow(workflow);
+                await _commandService.DeployWorkflow(workflow, bpmnXml);
 
                 return Ok(new UploadBpmnResponse(
-                    Message: "BPMN file uploaded and workflow registered successfully",
+                    Message: "BPMN file uploaded and workflow deployed successfully",
                     WorkflowId: workflow.WorkflowId,
                     ActivitiesCount: workflow.Activities.Count,
                     SequenceFlowsCount: workflow.SequenceFlows.Count));
@@ -101,7 +110,7 @@ namespace Fleans.Api.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing BPMN file");
+                LogBpmnUploadError(ex);
                 return StatusCode(500, new ErrorResponse("An error occurred while processing the BPMN file"));
             }
         }
@@ -116,27 +125,54 @@ namespace Fleans.Api.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving workflows");
+                LogGetAllWorkflowsError(ex);
                 return StatusCode(500, new ErrorResponse("An error occurred while retrieving workflows"));
             }
         }
 
-        [HttpPost("register", Name = "RegisterWorkflow")]
-        public async Task<IActionResult> RegisterWorkflow([FromBody] WorkflowDefinition workflow)
+        [HttpPost("message", Name = "SendMessage")]
+        public async Task<IActionResult> SendMessage([FromBody] SendMessageRequest request)
         {
+            if (request == null || string.IsNullOrWhiteSpace(request.MessageName))
+                return BadRequest(new ErrorResponse("MessageName is required"));
+
+            if (string.IsNullOrWhiteSpace(request.CorrelationKey))
+                return BadRequest(new ErrorResponse("CorrelationKey is required"));
+
             try
             {
-                await _commandService.RegisterWorkflow(workflow);
-                return Ok(new RegisterWorkflowResponse("Workflow registered successfully", workflow.WorkflowId));
+                // System.Text.Json deserializes ExpandoObject values as JsonElement,
+                // which Orleans cannot serialize. Re-parse via Newtonsoft to get proper .NET primitives.
+                var variables = request.Variables != null
+                    ? JsonConvert.DeserializeObject<ExpandoObject>(
+                        System.Text.Json.JsonSerializer.Serialize(request.Variables))!
+                    : new ExpandoObject();
+
+                var correlationGrain = _grainFactory.GetGrain<IMessageCorrelationGrain>(request.MessageName);
+                var delivered = await correlationGrain.DeliverMessage(
+                    request.CorrelationKey,
+                    variables);
+
+                if (!delivered)
+                    return NotFound(new ErrorResponse(
+                        $"No subscription found for message '{request.MessageName}' with correlationKey '{request.CorrelationKey}'"));
+
+                return Ok(new SendMessageResponse(Delivered: true));
             }
-            catch (ArgumentException ex)
+            catch (Exception ex)
             {
-                return BadRequest(new ErrorResponse(ex.Message));
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Conflict(new ErrorResponse(ex.Message));
+                LogMessageDeliveryError(ex);
+                return StatusCode(500, new ErrorResponse("An error occurred while delivering the message"));
             }
         }
+
+        [LoggerMessage(EventId = 8000, Level = LogLevel.Error, Message = "Error processing BPMN file")]
+        private partial void LogBpmnUploadError(Exception exception);
+
+        [LoggerMessage(EventId = 8001, Level = LogLevel.Error, Message = "Error retrieving workflows")]
+        private partial void LogGetAllWorkflowsError(Exception exception);
+
+        [LoggerMessage(EventId = 8002, Level = LogLevel.Error, Message = "Error delivering message")]
+        private partial void LogMessageDeliveryError(Exception exception);
     }
 }

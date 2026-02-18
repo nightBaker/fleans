@@ -103,6 +103,22 @@ internal static class FleanModelConfiguration
             entity.Property(e => e.ProcessDefinitionId).HasMaxLength(512);
         });
 
+        modelBuilder.Entity<MessageCorrelationState>(entity =>
+        {
+            entity.ToTable("MessageCorrelations");
+            entity.HasKey(e => e.Key);
+
+            entity.Property(e => e.Key).HasMaxLength(512);
+            entity.Property(e => e.ETag).HasMaxLength(64);
+
+            entity.Property(e => e.Subscriptions)
+                .HasColumnName("Subscriptions")
+                .HasConversion(
+                    v => JsonConvert.SerializeObject(v),
+                    v => JsonConvert.DeserializeObject<Dictionary<string, MessageSubscription>>(v)
+                        ?? new Dictionary<string, MessageSubscription>());
+        });
+
         modelBuilder.Entity<ProcessDefinition>(entity =>
         {
             entity.ToTable("ProcessDefinitions");

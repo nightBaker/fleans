@@ -30,14 +30,14 @@ namespace Fleans.Application.Tests
         }
 
         [TestMethod]
-        public async Task CreateWorkflowInstanceGrain_ShouldCreateNewInstance_WithRegisteredWorkflow()
+        public async Task CreateWorkflowInstanceGrain_ShouldCreateNewInstance_WithDeployedWorkflow()
         {
             // Arrange
             var workflowId = "test-workflow-1";
             var factoryGrain = _cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
             var workflow = CreateSimpleWorkflow(workflowId);
-            
-            await factoryGrain.RegisterWorkflow(workflow);
+
+            await factoryGrain.DeployWorkflow(workflow, "<bpmn/>");
 
             // Act
             var instance = await factoryGrain.CreateWorkflowInstanceGrain(workflowId);
@@ -55,8 +55,8 @@ namespace Fleans.Application.Tests
             var workflowId = "test-workflow-1";
             var factoryGrain = _cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
             var workflow = CreateSimpleWorkflow(workflowId);
-            
-            await factoryGrain.RegisterWorkflow(workflow);
+
+            await factoryGrain.DeployWorkflow(workflow, "<bpmn/>");
 
             // Act
             var instance = await factoryGrain.CreateWorkflowInstanceGrain(workflowId);
@@ -83,91 +83,52 @@ namespace Fleans.Application.Tests
         }
 
         [TestMethod]
-        public async Task RegisterWorkflow_ShouldStoreWorkflow_ForLaterRetrieval()
+        public async Task DeployWorkflow_ShouldPreserveMessages_WhenWorkflowHasMessageDefinitions()
         {
             // Arrange
-            var workflowId = "test-workflow-2";
+            var processKey = "msg-workflow";
             var factoryGrain = _cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-            var workflow = CreateSimpleWorkflow(workflowId);
 
-            // Act
-            await factoryGrain.RegisterWorkflow(workflow);
-
-            // Assert
-            var isRegistered = await factoryGrain.IsWorkflowRegistered(workflowId);
-            Assert.IsTrue(isRegistered);
-        }
-
-        [TestMethod]
-        public async Task RegisterWorkflow_ShouldThrowException_WhenWorkflowIdIsNull()
-        {
-            // Arrange
-            var factoryGrain = _cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
+            var start = new StartEvent("start");
+            var end = new EndEvent("end");
             var workflow = new WorkflowDefinition
             {
-                WorkflowId = null!,
-                Activities = new List<Domain.Activities.Activity>(),
-                SequenceFlows = new List<SequenceFlow>()
+                WorkflowId = processKey,
+                Activities = new List<Activity> { start, end },
+                SequenceFlows = new List<SequenceFlow>
+                {
+                    new SequenceFlow("seq1", start, end)
+                },
+                Messages =
+                [
+                    new MessageDefinition("msg1", "paymentReceived", "orderId"),
+                    new MessageDefinition("msg2", "cancellation", null)
+                ]
             };
 
-            // Act & Assert
-            await Assert.ThrowsAsync<ArgumentException>(async () =>
-            {
-                await factoryGrain.RegisterWorkflow(workflow);
-            });
-        }
-
-        [TestMethod]
-        public async Task RegisterWorkflow_ShouldThrowException_WhenWorkflowIsNull()
-        {
-            // Arrange
-            var factoryGrain = _cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-
-            // Act & Assert
-            await Assert.ThrowsAsync<ArgumentNullException>(async () =>
-            {
-                await factoryGrain.RegisterWorkflow(null!);
-            });
-        }
-
-        [TestMethod]
-        public async Task RegisterWorkflow_ShouldThrowException_WhenWorkflowAlreadyRegistered()
-        {
-            // Arrange
-            var workflowId = "duplicate-workflow";
-            var factoryGrain = _cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-            var workflow = CreateSimpleWorkflow(workflowId);
-            
-            await factoryGrain.RegisterWorkflow(workflow);
-
-            // Act & Assert
-            await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            {
-                await factoryGrain.RegisterWorkflow(workflow);
-            });
-        }
-
-        [TestMethod]
-        public async Task IsWorkflowRegistered_ShouldReturnFalse_WhenWorkflowNotRegistered()
-        {
-            // Arrange
-            var workflowId = "non-existent";
-            var factoryGrain = _cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-
             // Act
-            var isRegistered = await factoryGrain.IsWorkflowRegistered(workflowId);
+            await factoryGrain.DeployWorkflow(workflow, "<bpmn/>");
+            var retrieved = await factoryGrain.GetLatestWorkflowDefinition(processKey);
 
             // Assert
-            Assert.IsFalse(isRegistered);
+            Assert.AreEqual(2, retrieved.Messages.Count);
+
+            Assert.AreEqual("msg1", retrieved.Messages[0].Id);
+            Assert.AreEqual("paymentReceived", retrieved.Messages[0].Name);
+            Assert.AreEqual("orderId", retrieved.Messages[0].CorrelationKeyExpression);
+
+            Assert.AreEqual("msg2", retrieved.Messages[1].Id);
+            Assert.AreEqual("cancellation", retrieved.Messages[1].Name);
+            Assert.IsNull(retrieved.Messages[1].CorrelationKeyExpression);
         }
 
-        private static IWorkflowDefinition CreateSimpleWorkflow(string workflowId)
+        private static WorkflowDefinition CreateSimpleWorkflow(string workflowId)
         {
             var start = new StartEvent("start");
             var task = new TaskActivity("task");
             var end = new EndEvent("end");
 
-            var workflow = new WorkflowDefinition
+            return new WorkflowDefinition
             {
                 WorkflowId = workflowId,
                 Activities = new List<Activity> { start, task, end },
@@ -177,8 +138,6 @@ namespace Fleans.Application.Tests
                     new SequenceFlow("seq2", task, end)
                 }
             };
-
-            return workflow;
         }
 
         private class SiloConfigurator : ISiloConfigurator
@@ -187,6 +146,7 @@ namespace Fleans.Application.Tests
                 hostBuilder
                     .AddMemoryGrainStorage(GrainStorageNames.WorkflowInstances)
                     .AddMemoryGrainStorage(GrainStorageNames.ActivityInstances)
+                    .AddMemoryGrainStorage(GrainStorageNames.ProcessDefinitions)
                     .ConfigureServices(services =>
                     {
                         services.AddSingleton<IProcessDefinitionRepository, StubProcessDefinitionRepository>();
@@ -225,4 +185,3 @@ namespace Fleans.Application.Tests
         }
     }
 }
-
