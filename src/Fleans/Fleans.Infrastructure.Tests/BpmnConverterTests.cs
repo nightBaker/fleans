@@ -1045,5 +1045,174 @@ public class BpmnConverterTests
   </process>
 </definitions>";
     }
+
+    // ── Message Event Tests ────────────────────────────────────────
+
+    [TestMethod]
+    public async Task ConvertFromXmlAsync_ShouldParseMessageIntermediateCatchEvent()
+    {
+        var bpmnXml = CreateBpmnWithMessageCatchEvent("msg-process", "msg1", "paymentReceived");
+        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
+
+        var msgCatch = workflow.Activities.OfType<MessageIntermediateCatchEvent>().SingleOrDefault();
+        Assert.IsNotNull(msgCatch);
+        Assert.AreEqual("waitPayment", msgCatch.ActivityId);
+        Assert.AreEqual("msg1", msgCatch.MessageDefinitionId);
+    }
+
+    [TestMethod]
+    public async Task ConvertFromXmlAsync_ShouldParseMessageBoundaryEvent()
+    {
+        var bpmnXml = CreateBpmnWithMessageBoundaryEvent("msg-boundary-process", "msg1", "cancelOrder");
+        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
+
+        var boundaryMsg = workflow.Activities.OfType<MessageBoundaryEvent>().SingleOrDefault();
+        Assert.IsNotNull(boundaryMsg);
+        Assert.AreEqual("bmsg1", boundaryMsg.ActivityId);
+        Assert.AreEqual("task1", boundaryMsg.AttachedToActivityId);
+        Assert.AreEqual("msg1", boundaryMsg.MessageDefinitionId);
+    }
+
+    [TestMethod]
+    public async Task ConvertFromXmlAsync_ShouldParseZeebeCorrelationKey()
+    {
+        var bpmnXml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL""
+             xmlns:zeebe=""http://camunda.org/schema/zeebe/1.0"">
+  <message id=""msg1"" name=""paymentReceived"">
+    <extensionElements>
+      <zeebe:subscription correlationKey=""= orderId"" />
+    </extensionElements>
+  </message>
+  <process id=""proc1"">
+    <startEvent id=""start"" />
+    <intermediateCatchEvent id=""waitPayment"">
+      <messageEventDefinition messageRef=""msg1"" />
+    </intermediateCatchEvent>
+    <endEvent id=""end"" />
+    <sequenceFlow id=""f1"" sourceRef=""start"" targetRef=""waitPayment"" />
+    <sequenceFlow id=""f2"" sourceRef=""waitPayment"" targetRef=""end"" />
+  </process>
+</definitions>";
+
+        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
+
+        Assert.AreEqual(1, workflow.Messages.Count);
+        Assert.AreEqual("orderId", workflow.Messages[0].CorrelationKeyExpression);
+        Assert.AreEqual("paymentReceived", workflow.Messages[0].Name);
+    }
+
+    [TestMethod]
+    public async Task ConvertFromXmlAsync_ShouldParseFleansCorrelationKey()
+    {
+        var bpmnXml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL""
+             xmlns:fleans=""http://fleans.io/schema/1.0"">
+  <message id=""msg1"" name=""paymentReceived"">
+    <extensionElements>
+      <fleans:subscription correlationKey=""orderId"" />
+    </extensionElements>
+  </message>
+  <process id=""proc1"">
+    <startEvent id=""start"" />
+    <intermediateCatchEvent id=""waitPayment"">
+      <messageEventDefinition messageRef=""msg1"" />
+    </intermediateCatchEvent>
+    <endEvent id=""end"" />
+    <sequenceFlow id=""f1"" sourceRef=""start"" targetRef=""waitPayment"" />
+    <sequenceFlow id=""f2"" sourceRef=""waitPayment"" targetRef=""end"" />
+  </process>
+</definitions>";
+
+        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
+
+        Assert.AreEqual(1, workflow.Messages.Count);
+        Assert.AreEqual("orderId", workflow.Messages[0].CorrelationKeyExpression);
+    }
+
+    [TestMethod]
+    public async Task ConvertFromXmlAsync_ShouldParseMessageWithNoCorrelationKey()
+    {
+        var bpmnXml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL"">
+  <message id=""msg1"" name=""paymentReceived"" />
+  <process id=""proc1"">
+    <startEvent id=""start"" />
+    <intermediateCatchEvent id=""waitPayment"">
+      <messageEventDefinition messageRef=""msg1"" />
+    </intermediateCatchEvent>
+    <endEvent id=""end"" />
+    <sequenceFlow id=""f1"" sourceRef=""start"" targetRef=""waitPayment"" />
+    <sequenceFlow id=""f2"" sourceRef=""waitPayment"" targetRef=""end"" />
+  </process>
+</definitions>";
+
+        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
+
+        Assert.AreEqual(1, workflow.Messages.Count);
+        Assert.IsNull(workflow.Messages[0].CorrelationKeyExpression);
+    }
+
+    [TestMethod]
+    public async Task ConvertFromXmlAsync_ShouldPopulateMessagesOnDefinition()
+    {
+        var bpmnXml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL"">
+  <message id=""msg1"" name=""payment"" />
+  <message id=""msg2"" name=""cancellation"" />
+  <process id=""proc1"">
+    <startEvent id=""start"" />
+    <endEvent id=""end"" />
+    <sequenceFlow id=""f1"" sourceRef=""start"" targetRef=""end"" />
+  </process>
+</definitions>";
+
+        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
+
+        Assert.AreEqual(2, workflow.Messages.Count);
+        Assert.AreEqual("msg1", workflow.Messages[0].Id);
+        Assert.AreEqual("payment", workflow.Messages[0].Name);
+        Assert.AreEqual("msg2", workflow.Messages[1].Id);
+        Assert.AreEqual("cancellation", workflow.Messages[1].Name);
+    }
+
+    // ── Message Event Helper Methods ───────────────────────────────
+
+    private static string CreateBpmnWithMessageCatchEvent(string processId, string messageId, string messageName)
+    {
+        return $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL"">
+  <message id=""{messageId}"" name=""{messageName}"" />
+  <process id=""{processId}"">
+    <startEvent id=""start"" />
+    <intermediateCatchEvent id=""waitPayment"">
+      <messageEventDefinition messageRef=""{messageId}"" />
+    </intermediateCatchEvent>
+    <endEvent id=""end"" />
+    <sequenceFlow id=""f1"" sourceRef=""start"" targetRef=""waitPayment"" />
+    <sequenceFlow id=""f2"" sourceRef=""waitPayment"" targetRef=""end"" />
+  </process>
+</definitions>";
+    }
+
+    private static string CreateBpmnWithMessageBoundaryEvent(string processId, string messageId, string messageName)
+    {
+        return $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL"">
+  <message id=""{messageId}"" name=""{messageName}"" />
+  <process id=""{processId}"">
+    <startEvent id=""start"" />
+    <task id=""task1"" />
+    <boundaryEvent id=""bmsg1"" attachedToRef=""task1"">
+      <messageEventDefinition messageRef=""{messageId}"" />
+    </boundaryEvent>
+    <endEvent id=""end"" />
+    <endEvent id=""msgEnd"" />
+    <sequenceFlow id=""f1"" sourceRef=""start"" targetRef=""task1"" />
+    <sequenceFlow id=""f2"" sourceRef=""task1"" targetRef=""end"" />
+    <sequenceFlow id=""f3"" sourceRef=""bmsg1"" targetRef=""msgEnd"" />
+  </process>
+</definitions>";
+    }
 }
 

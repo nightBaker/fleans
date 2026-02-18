@@ -60,6 +60,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IRemindab
         }
 
         await RegisterTimerReminders();
+        await RegisterBoundaryMessageSubscriptions();
     }
 
     private async Task RegisterTimerReminders()
@@ -245,6 +246,9 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IRemindab
 
         // Unregister any boundary timer reminders attached to this activity
         await UnregisterBoundaryTimerReminders(activityId);
+
+        // Unsubscribe any boundary message subscriptions attached to this activity
+        await UnsubscribeBoundaryMessageSubscriptions(activityId);
     }
 
     private async Task UnregisterBoundaryTimerReminders(string activityId)
@@ -268,6 +272,53 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IRemindab
             {
                 // Reminder may not exist — that's fine
             }
+        }
+    }
+
+    private async Task RegisterBoundaryMessageSubscriptions()
+    {
+        var definition = await GetWorkflowDefinition();
+
+        foreach (var entry in State.GetActiveActivities().ToList())
+        {
+            var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(entry.ActivityInstanceId);
+            if (!await activityInstance.IsExecuting())
+                continue;
+
+            foreach (var boundaryMsg in definition.Activities.OfType<MessageBoundaryEvent>()
+                .Where(bm => bm.AttachedToActivityId == entry.ActivityId))
+            {
+                var messageDef = definition.Messages.First(m => m.Id == boundaryMsg.MessageDefinitionId);
+                if (messageDef.CorrelationKeyExpression is null)
+                    continue;
+
+                var correlationValue = await GetVariable(messageDef.CorrelationKeyExpression);
+                if (correlationValue is null)
+                    continue;
+
+                var correlationKey = correlationValue.ToString()!;
+                var correlationGrain = _grainFactory.GetGrain<IMessageCorrelationGrain>(messageDef.Name);
+                await correlationGrain.Subscribe(correlationKey, this.GetPrimaryKey(), boundaryMsg.ActivityId);
+                LogMessageSubscriptionRegistered(boundaryMsg.ActivityId, messageDef.Name, correlationKey);
+            }
+        }
+    }
+
+    private async Task UnsubscribeBoundaryMessageSubscriptions(string activityId)
+    {
+        if (_workflowDefinition == null) return;
+
+        foreach (var boundaryMsg in _workflowDefinition.Activities.OfType<MessageBoundaryEvent>()
+            .Where(bm => bm.AttachedToActivityId == activityId))
+        {
+            var messageDef = _workflowDefinition.Messages.FirstOrDefault(m => m.Id == boundaryMsg.MessageDefinitionId);
+            if (messageDef?.CorrelationKeyExpression is null) continue;
+
+            var correlationValue = await GetVariable(messageDef.CorrelationKeyExpression);
+            if (correlationValue is null) continue;
+
+            var correlationGrain = _grainFactory.GetGrain<IMessageCorrelationGrain>(messageDef.Name);
+            await correlationGrain.Unsubscribe(correlationValue.ToString()!);
         }
     }
 
@@ -651,6 +702,74 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IRemindab
             _workflowDefinition.WorkflowId, _workflowDefinition.ProcessDefinitionId ?? "-", this.GetPrimaryKey().ToString());
     }
 
+    public ValueTask<object?> GetVariable(string variableName)
+    {
+        for (var i = State.VariableStates.Count - 1; i >= 0; i--)
+        {
+            var dict = (IDictionary<string, object?>)State.VariableStates[i].Variables;
+            if (dict.TryGetValue(variableName, out var value))
+                return ValueTask.FromResult(value);
+        }
+        return ValueTask.FromResult<object?>(null);
+    }
+
+    public async ValueTask RegisterMessageSubscription(string messageDefinitionId, string activityId)
+    {
+        var definition = await GetWorkflowDefinition();
+        var messageDef = definition.Messages.First(m => m.Id == messageDefinitionId);
+
+        if (messageDef.CorrelationKeyExpression is null)
+            throw new InvalidOperationException(
+                $"Message '{messageDef.Name}' has no correlationKeyExpression — cannot auto-subscribe.");
+
+        var correlationValue = await GetVariable(messageDef.CorrelationKeyExpression);
+        var correlationKey = correlationValue?.ToString()
+            ?? throw new InvalidOperationException(
+                $"Correlation variable '{messageDef.CorrelationKeyExpression}' is null for message '{messageDef.Name}'.");
+
+        await _state.WriteStateAsync();
+
+        var correlationGrain = _grainFactory.GetGrain<IMessageCorrelationGrain>(messageDef.Name);
+        await correlationGrain.Subscribe(correlationKey, this.GetPrimaryKey(), activityId);
+        LogMessageSubscriptionRegistered(activityId, messageDef.Name, correlationKey);
+    }
+
+    public async Task HandleBoundaryMessageFired(string boundaryActivityId)
+    {
+        await EnsureWorkflowDefinitionAsync();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+
+        var definition = await GetWorkflowDefinition();
+        var boundaryMessage = definition.GetActivity(boundaryActivityId) as MessageBoundaryEvent
+            ?? throw new InvalidOperationException($"Activity '{boundaryActivityId}' is not a MessageBoundaryEvent");
+
+        var attachedEntry = State.GetFirstActive(boundaryMessage.AttachedToActivityId);
+        if (attachedEntry == null)
+            return; // Activity already completed, message is stale
+
+        // Cancel attached activity
+        var attachedInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(attachedEntry.ActivityInstanceId);
+        await attachedInstance.Complete();
+        State.CompleteEntries([attachedEntry]);
+        LogBoundaryMessageInterrupted(boundaryActivityId, boundaryMessage.AttachedToActivityId);
+
+        // Create and execute boundary message event instance
+        var boundaryInstanceId = Guid.NewGuid();
+        var boundaryInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(boundaryInstanceId);
+        var variablesId = await attachedInstance.GetVariablesStateId();
+        await boundaryInstance.SetActivity(boundaryMessage.ActivityId, boundaryMessage.GetType().Name);
+        await boundaryInstance.SetVariablesId(variablesId);
+
+        var boundaryEntry = new ActivityInstanceEntry(boundaryInstanceId, boundaryMessage.ActivityId, State.Id);
+        State.AddEntries([boundaryEntry]);
+
+        await boundaryMessage.ExecuteAsync(this, boundaryInstance);
+        await TransitionToNextActivity();
+        await ExecuteWorkflow();
+        await _state.WriteStateAsync();
+    }
+
     [LoggerMessage(EventId = 1000, Level = LogLevel.Debug, Message = "Workflow definition set")]
     private partial void LogWorkflowDefinitionSet();
 
@@ -731,4 +850,12 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IRemindab
 
     [LoggerMessage(EventId = 1020, Level = LogLevel.Information, Message = "Boundary timer {BoundaryTimerId} interrupted attached activity {AttachedActivityId}")]
     private partial void LogBoundaryTimerInterrupted(string boundaryTimerId, string attachedActivityId);
+
+    [LoggerMessage(EventId = 1021, Level = LogLevel.Information,
+        Message = "Message subscription registered for activity {ActivityId}: messageName={MessageName}, correlationKey={CorrelationKey}")]
+    private partial void LogMessageSubscriptionRegistered(string activityId, string messageName, string correlationKey);
+
+    [LoggerMessage(EventId = 1022, Level = LogLevel.Information,
+        Message = "Boundary message {BoundaryMessageId} interrupted attached activity {AttachedActivityId}")]
+    private partial void LogBoundaryMessageInterrupted(string boundaryMessageId, string attachedActivityId);
 }

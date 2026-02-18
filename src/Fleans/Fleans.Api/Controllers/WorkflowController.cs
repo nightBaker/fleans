@@ -1,9 +1,11 @@
 using Fleans.Application;
+using Fleans.Application.Grains;
 using Fleans.Application.QueryModels;
 using Fleans.Domain;
 using Fleans.Infrastructure.Bpmn;
 using Fleans.ServiceDefaults.DTOs;
 using Microsoft.AspNetCore.Mvc;
+using System.Dynamic;
 
 namespace Fleans.Api.Controllers
 {
@@ -24,17 +26,20 @@ namespace Fleans.Api.Controllers
         private readonly IWorkflowCommandService _commandService;
         private readonly IWorkflowQueryService _queryService;
         private readonly IBpmnConverter _bpmnConverter;
+        private readonly IGrainFactory _grainFactory;
 
         public WorkflowController(
             ILogger<WorkflowController> logger,
             IWorkflowCommandService commandService,
             IWorkflowQueryService queryService,
-            IBpmnConverter bpmnConverter)
+            IBpmnConverter bpmnConverter,
+            IGrainFactory grainFactory)
         {
             _logger = logger;
             _commandService = commandService;
             _queryService = queryService;
             _bpmnConverter = bpmnConverter;
+            _grainFactory = grainFactory;
         }
 
         [HttpPost("start", Name = "StartWorkflow")]
@@ -136,6 +141,35 @@ namespace Fleans.Api.Controllers
             catch (InvalidOperationException ex)
             {
                 return Conflict(new ErrorResponse(ex.Message));
+            }
+        }
+
+        [HttpPost("message", Name = "SendMessage")]
+        public async Task<IActionResult> SendMessage([FromBody] SendMessageRequest request)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.MessageName))
+                return BadRequest(new ErrorResponse("MessageName is required"));
+
+            if (string.IsNullOrWhiteSpace(request.CorrelationKey))
+                return BadRequest(new ErrorResponse("CorrelationKey is required"));
+
+            try
+            {
+                var correlationGrain = _grainFactory.GetGrain<IMessageCorrelationGrain>(request.MessageName);
+                var delivered = await correlationGrain.DeliverMessage(
+                    request.CorrelationKey,
+                    request.Variables ?? new ExpandoObject());
+
+                if (!delivered)
+                    return NotFound(new ErrorResponse(
+                        $"No subscription found for message '{request.MessageName}' with correlationKey '{request.CorrelationKey}'"));
+
+                return Ok(new SendMessageResponse(Delivered: true));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error delivering message");
+                return StatusCode(500, new ErrorResponse("An error occurred while delivering the message"));
             }
         }
     }

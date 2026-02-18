@@ -11,8 +11,12 @@ public partial class BpmnConverter : IBpmnConverter
     private const int MaxConversionDepth = 10;
     private const string BpmnNamespace = "http://www.omg.org/spec/BPMN/20100524/MODEL";
     private const string BpmndiNamespace = "http://www.omg.org/spec/BPMN/20100524/DI";
+    private const string ZeebeNamespace = "http://camunda.org/schema/zeebe/1.0";
+    private const string FleansNamespace = "http://fleans.io/schema/1.0";
     private static readonly XNamespace Bpmn = BpmnNamespace;
     private static readonly XNamespace Bpmndi = BpmndiNamespace;
+    private static readonly XNamespace Zeebe = ZeebeNamespace;
+    private static readonly XNamespace Fleans = FleansNamespace;
 
     public async Task<WorkflowDefinition> ConvertFromXmlAsync(Stream bpmnXmlStream)
     {
@@ -35,6 +39,9 @@ public partial class BpmnConverter : IBpmnConverter
         var activityMap = new Dictionary<string, Activity>();
         var defaultFlowIds = new HashSet<string>();
 
+        // Parse message definitions at <definitions> level
+        var messages = ParseMessages(doc);
+
         // Parse activities
         ParseActivities(process, activities, activityMap, defaultFlowIds);
 
@@ -45,7 +52,8 @@ public partial class BpmnConverter : IBpmnConverter
         {
             WorkflowId = workflowId,
             Activities = activities,
-            SequenceFlows = sequenceFlows
+            SequenceFlows = sequenceFlows,
+            Messages = messages
         };
 
         return workflow;
@@ -74,11 +82,12 @@ public partial class BpmnConverter : IBpmnConverter
             activityMap[id] = activity;
         }
 
-        // Parse intermediate catch events (timer)
+        // Parse intermediate catch events (timer, message)
         foreach (var catchEvent in process.Descendants(Bpmn + "intermediateCatchEvent"))
         {
             var id = GetId(catchEvent);
             var timerDef = catchEvent.Element(Bpmn + "timerEventDefinition");
+            var messageDef = catchEvent.Element(Bpmn + "messageEventDefinition");
 
             if (timerDef != null)
             {
@@ -87,10 +96,19 @@ public partial class BpmnConverter : IBpmnConverter
                 activities.Add(activity);
                 activityMap[id] = activity;
             }
+            else if (messageDef != null)
+            {
+                var messageRef = messageDef.Attribute("messageRef")?.Value
+                    ?? throw new InvalidOperationException(
+                        $"IntermediateCatchEvent '{id}' messageEventDefinition must have a messageRef attribute");
+                var activity = new MessageIntermediateCatchEvent(id, messageRef);
+                activities.Add(activity);
+                activityMap[id] = activity;
+            }
             else
             {
                 throw new InvalidOperationException(
-                    $"IntermediateCatchEvent '{id}' has an unsupported event definition. Only timerEventDefinition is currently supported.");
+                    $"IntermediateCatchEvent '{id}' has an unsupported event definition.");
             }
         }
 
@@ -240,12 +258,20 @@ public partial class BpmnConverter : IBpmnConverter
 
             var timerDef = boundaryEl.Element(Bpmn + "timerEventDefinition");
             var errorDef = boundaryEl.Element(Bpmn + "errorEventDefinition");
+            var messageDef = boundaryEl.Element(Bpmn + "messageEventDefinition");
 
             Activity activity;
             if (timerDef != null)
             {
                 var timerDefinition = ParseTimerDefinition(timerDef);
                 activity = new BoundaryTimerEvent(id, attachedToRef, timerDefinition);
+            }
+            else if (messageDef != null)
+            {
+                var messageRef = messageDef.Attribute("messageRef")?.Value
+                    ?? throw new InvalidOperationException(
+                        $"boundaryEvent '{id}' messageEventDefinition must have a messageRef attribute");
+                activity = new MessageBoundaryEvent(id, attachedToRef, messageRef);
             }
             else
             {
@@ -296,6 +322,42 @@ public partial class BpmnConverter : IBpmnConverter
                 sequenceFlows.Add(new SequenceFlow(flowId, source, target));
             }
         }
+    }
+
+    private List<MessageDefinition> ParseMessages(XDocument doc)
+    {
+        var messages = new List<MessageDefinition>();
+        foreach (var msgEl in doc.Root!.Elements(Bpmn + "message"))
+        {
+            var id = GetId(msgEl);
+            var name = msgEl.Attribute("name")?.Value
+                ?? throw new InvalidOperationException($"message '{id}' must have a name attribute");
+
+            string? correlationKey = null;
+            var extensions = msgEl.Element(Bpmn + "extensionElements");
+            if (extensions != null)
+            {
+                // Camunda 8 (zeebe:subscription)
+                var zeebeSubscription = extensions.Element(Zeebe + "subscription");
+                if (zeebeSubscription != null)
+                {
+                    correlationKey = zeebeSubscription.Attribute("correlationKey")?.Value?.TrimStart('=', ' ');
+                }
+
+                // Fleans namespace fallback
+                if (correlationKey == null)
+                {
+                    var fleansSubscription = extensions.Element(Fleans + "subscription");
+                    if (fleansSubscription != null)
+                    {
+                        correlationKey = fleansSubscription.Attribute("correlationKey")?.Value?.TrimStart('=', ' ');
+                    }
+                }
+            }
+
+            messages.Add(new MessageDefinition(id, name, correlationKey));
+        }
+        return messages;
     }
 
     [GeneratedRegex(@"\$\{([^}]+)\}", RegexOptions.Compiled)]

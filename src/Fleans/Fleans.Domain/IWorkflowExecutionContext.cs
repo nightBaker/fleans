@@ -15,4 +15,7 @@ public interface IWorkflowExecutionContext
 
     ValueTask<IReadOnlyList<IActivityExecutionContext>> GetActiveActivities();
     ValueTask<IReadOnlyList<IActivityExecutionContext>> GetCompletedActivities();
+
+    ValueTask<object?> GetVariable(string variableName);
+    ValueTask RegisterMessageSubscription(string messageDefinitionId, string activityId);
 }

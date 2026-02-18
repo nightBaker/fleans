@@ -38,4 +38,6 @@ public interface IWorkflowInstanceGrain : IGrainWithGuidKey, IWorkflowExecutionC
     Task OnChildWorkflowCompleted(string parentActivityId, ExpandoObject childVariables);
     [AlwaysInterleave]
     Task OnChildWorkflowFailed(string parentActivityId, Exception exception);
+
+    Task HandleBoundaryMessageFired(string boundaryActivityId);
 }
