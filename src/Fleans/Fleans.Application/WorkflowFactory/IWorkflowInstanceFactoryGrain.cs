@@ -10,8 +10,6 @@ public interface IWorkflowInstanceFactoryGrain : IGrainWithIntegerKey
     Task<IWorkflowInstanceGrain> CreateWorkflowInstanceGrain(string workflowId);
     Task<IWorkflowInstanceGrain> CreateWorkflowInstanceGrainByProcessDefinitionId(string processDefinitionId);
     Task<ProcessDefinitionSummary> DeployWorkflow(WorkflowDefinition workflow, string bpmnXml);
-    Task RegisterWorkflow(IWorkflowDefinition workflow);
-    Task<bool> IsWorkflowRegistered(string workflowId);
 
     [ReadOnly]
     Task<IWorkflowDefinition> GetLatestWorkflowDefinition(string processDefinitionKey);

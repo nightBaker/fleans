@@ -52,12 +52,6 @@ public partial class WorkflowCommandService : IWorkflowCommandService
                      .CompleteActivity(activityId, variables);
     }
 
-    public async Task RegisterWorkflow(IWorkflowDefinition workflow)
-    {
-        var factoryGrain = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstanceFactorySingletonId);
-        await factoryGrain.RegisterWorkflow(workflow);
-    }
-
     public async Task<ProcessDefinitionSummary> DeployWorkflow(WorkflowDefinition workflow, string bpmnXml)
     {
         LogDeployingWorkflow(workflow.WorkflowId);

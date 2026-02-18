@@ -90,13 +90,16 @@ namespace Fleans.Api.Controllers
 
             try
             {
-                using var stream = file.OpenReadStream();
+                using var reader = new StreamReader(file.OpenReadStream());
+                var bpmnXml = await reader.ReadToEndAsync();
+
+                using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(bpmnXml));
                 var workflow = await _bpmnConverter.ConvertFromXmlAsync(stream);
 
-                await _commandService.RegisterWorkflow(workflow);
+                await _commandService.DeployWorkflow(workflow, bpmnXml);
 
                 return Ok(new UploadBpmnResponse(
-                    Message: "BPMN file uploaded and workflow registered successfully",
+                    Message: "BPMN file uploaded and workflow deployed successfully",
                     WorkflowId: workflow.WorkflowId,
                     ActivitiesCount: workflow.Activities.Count,
                     SequenceFlowsCount: workflow.SequenceFlows.Count));
@@ -124,24 +127,6 @@ namespace Fleans.Api.Controllers
             {
                 _logger.LogError(ex, "Error retrieving workflows");
                 return StatusCode(500, new ErrorResponse("An error occurred while retrieving workflows"));
-            }
-        }
-
-        [HttpPost("register", Name = "RegisterWorkflow")]
-        public async Task<IActionResult> RegisterWorkflow([FromBody] WorkflowDefinition workflow)
-        {
-            try
-            {
-                await _commandService.RegisterWorkflow(workflow);
-                return Ok(new RegisterWorkflowResponse("Workflow registered successfully", workflow.WorkflowId));
-            }
-            catch (ArgumentException ex)
-            {
-                return BadRequest(new ErrorResponse(ex.Message));
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Conflict(new ErrorResponse(ex.Message));
             }
         }
 

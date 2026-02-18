@@ -154,41 +154,6 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
         return ToSummary(definition);
     }
 
-    public async Task RegisterWorkflow(IWorkflowDefinition workflow)
-    {
-        LogRegisteringWorkflow(workflow?.WorkflowId ?? "null");
-        // Back-compat: old API rejected duplicates; keep that behavior by only allowing the first version.
-        if (workflow == null)
-        {
-            throw new ArgumentNullException(nameof(workflow));
-        }
-
-        if (string.IsNullOrWhiteSpace(workflow.WorkflowId))
-        {
-            throw new ArgumentException("WorkflowId cannot be null or empty.", nameof(workflow));
-        }
-
-        if (_byKey.ContainsKey(workflow.WorkflowId))
-        {
-            throw new InvalidOperationException($"Workflow with id '{workflow.WorkflowId}' is already registered.");
-        }
-
-        var def = new WorkflowDefinition
-        {
-            WorkflowId = workflow.WorkflowId,
-            Activities = workflow.Activities,
-            SequenceFlows = workflow.SequenceFlows
-        };
-
-        await DeployWorkflow(def, string.Empty);
-    }
-
-    public Task<bool> IsWorkflowRegistered(string workflowId)
-    {
-        // Back-compat: treat as key.
-        return Task.FromResult(_byKey.ContainsKey(workflowId));
-    }
-
     public Task<IWorkflowDefinition> GetLatestWorkflowDefinition(string processDefinitionKey)
     {
         var definition = GetLatestDefinitionOrThrow(processDefinitionKey);
@@ -240,7 +205,4 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
 
     [LoggerMessage(EventId = 6001, Level = LogLevel.Information, Message = "Creating workflow instance for {WorkflowKey} definition {ProcessDefinitionId}, instance {InstanceId}")]
     private partial void LogCreatingInstance(string workflowKey, string processDefinitionId, Guid instanceId);
-
-    [LoggerMessage(EventId = 6002, Level = LogLevel.Information, Message = "Registering workflow {WorkflowId}")]
-    private partial void LogRegisteringWorkflow(string workflowId);
 }
