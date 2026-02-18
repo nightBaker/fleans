@@ -19,9 +19,9 @@ For now, next elements are implemented
 |----------------------|-----------------------------------------------------------------------------|-------------|
 | **Flow Objects**     |                                                                             |             |
 | Start Event          | Indicates where a process will start.                                        |     [x]     |
-| Intermediate Event   | Indicates something that happens between the start and end events.           |             |
+| Intermediate Event   | Indicates something that happens between the start and end events.           |     [x]     |
 | End Event            | Indicates where a process will end.                                          |     [x]     |
-| Message Event        | Represents the sending or receiving of a message.                            |             |
+| Message Event        | Represents the sending or receiving of a message.                            | [x] intermediate catch, boundary |
 | Timer Event          | Represents a delay or a specific time/date.                                  | [x] start, intermediate catch, boundary |
 | Error Event          | Indicates an error that needs to be handled.                                 |  [x] boundary |
 | Conditional Event    | Represents a condition that will cause a process to start or continue.       |             |
@@ -31,7 +31,7 @@ For now, next elements are implemented
 | Compensation Event   | Represents a process that is performed to compensate for an error.           |             |
 | Multiple Event       | Indicates that multiple events can occur.                                    |             |
 | **Activities**       |                                                                             |             |
-| Task                 | A single unit of work.                                                      |             |
+| Task                 | A single unit of work.                                                      |     [x]     |
 | Script Task          | A task that executes an inline script.                                       |     [x]     |
 | Sub-Process          | A group of tasks that are treated as a single unit.                         |             |
 | Call Activity        | A type of sub-process that calls another process.                            |     [x]     |
@@ -40,7 +40,7 @@ For now, next elements are implemented
 | **Gateways**         |                                                                             |             |
 | Exclusive Gateway    | Indicates a decision point where only one path can be taken.                 |    [x]      |
 | Inclusive Gateway    | Indicates a decision point where one or more paths can be taken.             |             |
-| Parallel Gateway     | Indicates that all paths are taken in parallel.                              |             |
+| Parallel Gateway     | Indicates that all paths are taken in parallel.                              |    [x]      |
 | Complex Gateway      | Indicates a complex decision point with conditions.                          |             |
 | Event-Based Gateway  | Indicates that the process flow is determined by an event.                   |             |
 | **Connecting Objects**|                                                                            |             |
