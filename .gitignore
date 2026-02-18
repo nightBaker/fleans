@@ -400,3 +400,8 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+# SQLite dev databases
+*.db
+*.db-shm
+*.db-wal

@@ -367,7 +367,12 @@
     {
         if (snapshot == null) return;
 
-        await JS.InvokeVoidAsync("bpmnViewer.highlight", snapshot.ActiveActivityIds);
+        var errorActivityIds = failedActivities.Select(a => a.ActivityId).ToArray();
+        var lastActivity = allActivitiesList
+            .OrderByDescending(a => a.CompletedAt ?? a.ExecutionStartedAt ?? a.CreatedAt)
+            .FirstOrDefault();
+        var lastErrorId = lastActivity?.ErrorState != null ? lastActivity.ActivityId : null;
+        await JS.InvokeVoidAsync("bpmnViewer.highlight", snapshot.ActiveActivityIds, errorActivityIds, lastErrorId);
 
         var orderedActivityIds = snapshot.CompletedActivities
             .Concat(snapshot.ActiveActivities)

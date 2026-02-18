@@ -172,6 +172,22 @@ marker[id*="conditional"] path {
     50% { stroke-opacity: 0.4; }
 }
 
+.bpmn-error .djs-visual > :nth-child(1) {
+    stroke: #dc2626 !important;
+    stroke-width: 3px !important;
+}
+
+.bpmn-error-pulse .djs-visual > :nth-child(1) {
+    stroke: #dc2626 !important;
+    stroke-width: 3px !important;
+    animation: pulse-error 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-error {
+    0%, 100% { stroke-opacity: 1; filter: drop-shadow(0 0 4px rgba(220, 38, 38, 0.6)); }
+    50% { stroke-opacity: 0.5; filter: drop-shadow(0 0 8px rgba(220, 38, 38, 0.9)); }
+}
+
 /* Execution path overlay lines */
 .execution-path-line {
     stroke: var(--accent-fill-rest);

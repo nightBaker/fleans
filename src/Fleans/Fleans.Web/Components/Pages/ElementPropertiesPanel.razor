@@ -145,6 +145,27 @@
                     </FluentLabel>
                 </div>
             }
+
+            @if (HasMessage)
+            {
+                <div>
+                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Message Name</FluentLabel>
+                    <FluentTextField Value="@messageName" @oninput="OnMessageNameInput" @onchange="OnMessageNameChange"
+                                     Disabled="@ReadOnly" Placeholder="e.g. cancelOrder" Style="width: 100%;" />
+                </div>
+
+                @if (Element.Type != "bpmn:StartEvent")
+                {
+                    <div>
+                        <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Correlation Key</FluentLabel>
+                        <FluentTextField Value="@correlationKey" @oninput="OnCorrelationKeyInput" @onchange="OnCorrelationKeyChange"
+                                         Disabled="@ReadOnly" Placeholder="e.g. orderId" Style="width: 100%;" />
+                        <FluentLabel Style="color: var(--neutral-foreground-hint); margin-top: 4px; font-size: 12px;">
+                            Variable name used to correlate incoming messages to this workflow instance
+                        </FluentLabel>
+                    </div>
+                }
+            }
         </FluentStack>
     </div>
 </div>
@@ -164,6 +185,8 @@
     private bool propagateAllChildVariables = true;
     private string timerType = "";
     private string timerExpression = "";
+    private string messageName = "";
+    private string correlationKey = "";
 
     private static readonly Dictionary<string, string> TaskTypes = new()
     {
@@ -200,6 +223,8 @@
         propagateAllChildVariables = Element.PropagateAllChildVariables;
         timerType = Element.TimerType;
         timerExpression = Element.TimerExpression;
+        messageName = Element.MessageName;
+        correlationKey = Element.CorrelationKey;
     }
 
     private Dictionary<string, string>? GetReplaceOptions()
@@ -283,6 +308,7 @@
     }
 
     private bool HasTimer => Element.HasTimerDefinition;
+    private bool HasMessage => Element.HasMessageDefinition;
 
     private static readonly Dictionary<string, string> TimerTypesAll = new()
     {
@@ -329,6 +355,20 @@
     {
         timerExpression = e.Value?.ToString() ?? "";
         await JS.InvokeVoidAsync("bpmnEditor.updateTimerDefinition", Element.Id, timerType, timerExpression);
+    }
+
+    private void OnMessageNameInput(ChangeEventArgs e) => messageName = e.Value?.ToString() ?? "";
+    private async Task OnMessageNameChange(ChangeEventArgs e)
+    {
+        messageName = e.Value?.ToString() ?? "";
+        await JS.InvokeVoidAsync("bpmnEditor.updateMessageDefinition", Element.Id, messageName, correlationKey);
+    }
+
+    private void OnCorrelationKeyInput(ChangeEventArgs e) => correlationKey = e.Value?.ToString() ?? "";
+    private async Task OnCorrelationKeyChange(ChangeEventArgs e)
+    {
+        correlationKey = e.Value?.ToString() ?? "";
+        await JS.InvokeVoidAsync("bpmnEditor.updateMessageDefinition", Element.Id, messageName, correlationKey);
     }
 
     private async Task AddMapping(string type)
@@ -379,6 +419,15 @@
                 _ => Element.Type.Replace("bpmn:", "")
             };
         }
+        if (HasMessage)
+        {
+            return Element.Type switch
+            {
+                "bpmn:IntermediateCatchEvent" => "Message Intermediate Catch Event",
+                "bpmn:BoundaryEvent" => "Message Boundary Event",
+                _ => Element.Type.Replace("bpmn:", "")
+            };
+        }
         return Element.Type switch
         {
             "bpmn:StartEvent" => "Start Event",
@@ -415,6 +464,9 @@
         public string TimerType { get; set; } = "";
         public string TimerExpression { get; set; } = "";
         public bool HasTimerDefinition { get; set; }
+        public bool HasMessageDefinition { get; set; }
+        public string MessageName { get; set; } = "";
+        public string CorrelationKey { get; set; } = "";
     }
 
     public class MappingData

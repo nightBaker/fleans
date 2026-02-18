@@ -33,6 +33,10 @@ public static class EfCorePersistenceDependencyInjection
             (sp, _) => new EfCoreTimerSchedulerGrainStorage(
                 sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
 
+        services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.MessageCorrelations,
+            (sp, _) => new EfCoreMessageCorrelationGrainStorage(
+                sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
+
         services.AddSingleton<IProcessDefinitionRepository, EfCoreProcessDefinitionRepository>();
         services.AddSingleton<IWorkflowQueryService, WorkflowQueryService>();
     }

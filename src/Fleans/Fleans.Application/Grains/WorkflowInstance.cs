@@ -202,6 +202,12 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IRemindab
 
             if (await activityInstance.IsCompleted())
             {
+                completedEntries.Add(entry);
+
+                // Failed activities don't transition to next activities
+                if (await activityInstance.GetErrorState() is not null)
+                    continue;
+
                 var currentActivity = definition.GetActivity(entry.ActivityId);
 
                 var nextActivities = await currentActivity.GetNextActivities(this, activityInstance);
@@ -218,8 +224,6 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IRemindab
 
                     newActiveEntries.Add(new ActivityInstanceEntry(newId, nextActivity.ActivityId, State.Id));
                 }
-
-                completedEntries.Add(entry);
             }
         }
 
@@ -730,7 +734,19 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IRemindab
         await _state.WriteStateAsync();
 
         var correlationGrain = _grainFactory.GetGrain<IMessageCorrelationGrain>(messageDef.Name);
-        await correlationGrain.Subscribe(correlationKey, this.GetPrimaryKey(), activityId);
+
+        try
+        {
+            await correlationGrain.Subscribe(correlationKey, this.GetPrimaryKey(), activityId);
+        }
+        catch (Exception ex)
+        {
+            LogMessageSubscriptionFailed(activityId, messageDef.Name, correlationKey, ex);
+            await FailActivityWithBoundaryCheck(activityId, ex);
+            await _state.WriteStateAsync();
+            return;
+        }
+
         LogMessageSubscriptionRegistered(activityId, messageDef.Name, correlationKey);
     }
 
@@ -858,4 +874,8 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IRemindab
     [LoggerMessage(EventId = 1022, Level = LogLevel.Information,
         Message = "Boundary message {BoundaryMessageId} interrupted attached activity {AttachedActivityId}")]
     private partial void LogBoundaryMessageInterrupted(string boundaryMessageId, string attachedActivityId);
+
+    [LoggerMessage(EventId = 1023, Level = LogLevel.Warning,
+        Message = "Message subscription failed for activity {ActivityId}: messageName={MessageName}, correlationKey={CorrelationKey}")]
+    private partial void LogMessageSubscriptionFailed(string activityId, string messageName, string correlationKey, Exception exception);
 }

@@ -12,7 +12,7 @@ public partial class BpmnConverter : IBpmnConverter
     private const string BpmnNamespace = "http://www.omg.org/spec/BPMN/20100524/MODEL";
     private const string BpmndiNamespace = "http://www.omg.org/spec/BPMN/20100524/DI";
     private const string ZeebeNamespace = "http://camunda.org/schema/zeebe/1.0";
-    private const string FleansNamespace = "http://fleans.io/schema/1.0";
+    private const string FleansNamespace = "http://fleans.io/schema/bpmn/fleans";
     private static readonly XNamespace Bpmn = BpmnNamespace;
     private static readonly XNamespace Bpmndi = BpmndiNamespace;
     private static readonly XNamespace Zeebe = ZeebeNamespace;
@@ -326,6 +326,7 @@ public partial class BpmnConverter : IBpmnConverter
 
     private List<MessageDefinition> ParseMessages(XDocument doc)
     {
+        var process = doc.Descendants(Bpmn + "process").FirstOrDefault();
         var messages = new List<MessageDefinition>();
         foreach (var msgEl in doc.Root!.Elements(Bpmn + "message"))
         {
@@ -334,17 +335,17 @@ public partial class BpmnConverter : IBpmnConverter
                 ?? throw new InvalidOperationException($"message '{id}' must have a name attribute");
 
             string? correlationKey = null;
+
+            // 1. Check <message> extension elements (Camunda 8 zeebe:subscription, fleans:subscription)
             var extensions = msgEl.Element(Bpmn + "extensionElements");
             if (extensions != null)
             {
-                // Camunda 8 (zeebe:subscription)
                 var zeebeSubscription = extensions.Element(Zeebe + "subscription");
                 if (zeebeSubscription != null)
                 {
                     correlationKey = zeebeSubscription.Attribute("correlationKey")?.Value?.TrimStart('=', ' ');
                 }
 
-                // Fleans namespace fallback
                 if (correlationKey == null)
                 {
                     var fleansSubscription = extensions.Element(Fleans + "subscription");
@@ -355,9 +356,33 @@ public partial class BpmnConverter : IBpmnConverter
                 }
             }
 
+            // 2. Fallback: check event elements that reference this message for fleans:correlationKey attribute
+            if (correlationKey == null && process != null)
+            {
+                correlationKey = FindCorrelationKeyOnEventElement(process, id);
+            }
+
             messages.Add(new MessageDefinition(id, name, correlationKey));
         }
         return messages;
+    }
+
+    private static string? FindCorrelationKeyOnEventElement(XElement process, string messageId)
+    {
+        // Search intermediateCatchEvent and boundaryEvent elements for fleans:correlationKey
+        var eventElements = process.Descendants(Bpmn + "intermediateCatchEvent")
+            .Concat(process.Descendants(Bpmn + "boundaryEvent"));
+
+        foreach (var eventEl in eventElements)
+        {
+            var msgDef = eventEl.Element(Bpmn + "messageEventDefinition");
+            if (msgDef?.Attribute("messageRef")?.Value == messageId)
+            {
+                var key = eventEl.Attribute(Fleans + "correlationKey")?.Value;
+                if (key != null) return key;
+            }
+        }
+        return null;
     }
 
     [GeneratedRegex(@"\$\{([^}]+)\}", RegexOptions.Compiled)]

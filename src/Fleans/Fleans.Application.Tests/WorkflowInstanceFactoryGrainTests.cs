@@ -161,6 +161,46 @@ namespace Fleans.Application.Tests
             Assert.IsFalse(isRegistered);
         }
 
+        [TestMethod]
+        public async Task DeployWorkflow_ShouldPreserveMessages_WhenWorkflowHasMessageDefinitions()
+        {
+            // Arrange
+            var processKey = "msg-workflow";
+            var factoryGrain = _cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
+
+            var start = new StartEvent("start");
+            var end = new EndEvent("end");
+            var workflow = new WorkflowDefinition
+            {
+                WorkflowId = processKey,
+                Activities = new List<Activity> { start, end },
+                SequenceFlows = new List<SequenceFlow>
+                {
+                    new SequenceFlow("seq1", start, end)
+                },
+                Messages =
+                [
+                    new MessageDefinition("msg1", "paymentReceived", "orderId"),
+                    new MessageDefinition("msg2", "cancellation", null)
+                ]
+            };
+
+            // Act
+            await factoryGrain.DeployWorkflow(workflow, "<bpmn/>");
+            var retrieved = await factoryGrain.GetLatestWorkflowDefinition(processKey);
+
+            // Assert
+            Assert.AreEqual(2, retrieved.Messages.Count);
+
+            Assert.AreEqual("msg1", retrieved.Messages[0].Id);
+            Assert.AreEqual("paymentReceived", retrieved.Messages[0].Name);
+            Assert.AreEqual("orderId", retrieved.Messages[0].CorrelationKeyExpression);
+
+            Assert.AreEqual("msg2", retrieved.Messages[1].Id);
+            Assert.AreEqual("cancellation", retrieved.Messages[1].Name);
+            Assert.IsNull(retrieved.Messages[1].CorrelationKeyExpression);
+        }
+
         private static IWorkflowDefinition CreateSimpleWorkflow(string workflowId)
         {
             var start = new StartEvent("start");
@@ -187,6 +227,7 @@ namespace Fleans.Application.Tests
                 hostBuilder
                     .AddMemoryGrainStorage(GrainStorageNames.WorkflowInstances)
                     .AddMemoryGrainStorage(GrainStorageNames.ActivityInstances)
+                    .AddMemoryGrainStorage(GrainStorageNames.ProcessDefinitions)
                     .ConfigureServices(services =>
                     {
                         services.AddSingleton<IProcessDefinitionRepository, StubProcessDefinitionRepository>();

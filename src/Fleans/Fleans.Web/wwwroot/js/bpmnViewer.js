@@ -51,7 +51,7 @@ window.bpmnViewer = {
         });
     },
 
-    highlight: function (activeIds) {
+    highlight: function (activeIds, errorIds, lastErrorId) {
         if (!this._viewer) return;
 
         const canvas = this._viewer.get('canvas');
@@ -60,6 +60,8 @@ window.bpmnViewer = {
         elementRegistry.forEach(function (element) {
             canvas.removeMarker(element.id, 'bpmn-completed');
             canvas.removeMarker(element.id, 'bpmn-active');
+            canvas.removeMarker(element.id, 'bpmn-error');
+            canvas.removeMarker(element.id, 'bpmn-error-pulse');
             canvas.removeMarker(element.id, 'bpmn-selected');
         });
 
@@ -67,6 +69,14 @@ window.bpmnViewer = {
             activeIds.forEach(function (id) {
                 if (elementRegistry.get(id)) {
                     canvas.addMarker(id, 'bpmn-active');
+                }
+            });
+        }
+
+        if (errorIds) {
+            errorIds.forEach(function (id) {
+                if (elementRegistry.get(id)) {
+                    canvas.addMarker(id, id === lastErrorId ? 'bpmn-error-pulse' : 'bpmn-error');
                 }
             });
         }
@@ -274,7 +284,10 @@ window.bpmnViewer = {
             conditionExpression: (bo.conditionExpression && bo.conditionExpression.body) || '',
             timerType: '',
             timerExpression: '',
-            hasTimerDefinition: false
+            hasTimerDefinition: false,
+            hasMessageDefinition: false,
+            messageName: '',
+            correlationKey: ''
         };
 
         if (bo.eventDefinitions && bo.eventDefinitions.length > 0) {
@@ -292,6 +305,16 @@ window.bpmnViewer = {
                         data.timerType = 'cycle';
                         data.timerExpression = timerDef.timeCycle.body || '';
                     }
+                    break;
+                }
+                if (bo.eventDefinitions[i].$type === 'bpmn:MessageEventDefinition') {
+                    data.hasMessageDefinition = true;
+                    var msgDef = bo.eventDefinitions[i];
+                    if (msgDef.messageRef) {
+                        data.messageName = msgDef.messageRef.name || '';
+                    }
+                    var attrs = bo.$attrs || {};
+                    data.correlationKey = attrs['fleans:correlationKey'] || attrs['zeebe:correlationKey'] || '';
                     break;
                 }
             }

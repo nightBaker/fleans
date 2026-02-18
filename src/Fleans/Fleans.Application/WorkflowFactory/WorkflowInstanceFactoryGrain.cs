@@ -124,6 +124,7 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
             WorkflowId = workflow.WorkflowId,
             Activities = workflow.Activities,
             SequenceFlows = workflow.SequenceFlows,
+            Messages = workflow.Messages,
             ProcessDefinitionId = processDefinitionId
         };
 

@@ -5,6 +5,7 @@ using Fleans.Domain;
 using Fleans.Infrastructure.Bpmn;
 using Fleans.ServiceDefaults.DTOs;
 using Microsoft.AspNetCore.Mvc;
+using Newtonsoft.Json;
 using System.Dynamic;
 
 namespace Fleans.Api.Controllers
@@ -155,10 +156,17 @@ namespace Fleans.Api.Controllers
 
             try
             {
+                // System.Text.Json deserializes ExpandoObject values as JsonElement,
+                // which Orleans cannot serialize. Re-parse via Newtonsoft to get proper .NET primitives.
+                var variables = request.Variables != null
+                    ? JsonConvert.DeserializeObject<ExpandoObject>(
+                        System.Text.Json.JsonSerializer.Serialize(request.Variables))!
+                    : new ExpandoObject();
+
                 var correlationGrain = _grainFactory.GetGrain<IMessageCorrelationGrain>(request.MessageName);
                 var delivered = await correlationGrain.DeliverMessage(
                     request.CorrelationKey,
-                    request.Variables ?? new ExpandoObject());
+                    variables);
 
                 if (!delivered)
                     return NotFound(new ErrorResponse(
