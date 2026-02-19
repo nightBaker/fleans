@@ -119,4 +119,40 @@ public class TimerIntermediateCatchEventTests : WorkflowTestBase
         Assert.IsTrue(snapshot.IsCompleted);
         Assert.IsTrue(snapshot.VariableStates.Count > 0, "Variables should be preserved across timer");
     }
+
+    [TestMethod]
+    public async Task TimerIntermediateCatch_HandleTimerFired_ShouldCompleteWorkflow()
+    {
+        // Arrange — Start → Timer(PT5M) → End
+        var start = new StartEvent("start");
+        var timerDef = new TimerDefinition(TimerType.Duration, "PT5M");
+        var timer = new TimerIntermediateCatchEvent("timer1", timerDef);
+        var end = new EndEvent("end");
+
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "timer-handle-fired-test",
+            Activities = [start, timer, end],
+            SequenceFlows =
+            [
+                new SequenceFlow("f1", start, timer),
+                new SequenceFlow("f2", timer, end)
+            ]
+        };
+
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await workflowInstance.SetWorkflow(workflow);
+        await workflowInstance.StartWorkflow();
+
+        // Act — simulate timer callback via HandleTimerFired
+        await workflowInstance.HandleTimerFired("timer1");
+
+        // Assert — workflow should now be completed
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsNotNull(snapshot);
+        Assert.IsTrue(snapshot.IsCompleted, "Workflow should be completed after HandleTimerFired");
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "end"),
+            "Should complete via end event");
+    }
 }
