@@ -66,10 +66,11 @@ public class EfCoreMessageCorrelationGrainStorageTests
     public async Task WriteAndRead_RoundTrip_PreservesSubscriptionDetails()
     {
         var instanceId = Guid.NewGuid();
+        var hostActivityInstanceId = Guid.NewGuid();
         var grainId = NewGrainId("orderCancelled");
         var state = CreateGrainState(new Dictionary<string, MessageSubscription>
         {
-            ["corr-key-1"] = new(instanceId, "activity-1", Guid.NewGuid())
+            ["corr-key-1"] = new(instanceId, "activity-1", hostActivityInstanceId)
         });
 
         await _storage.WriteStateAsync(StateName, grainId, state);
@@ -80,6 +81,7 @@ public class EfCoreMessageCorrelationGrainStorageTests
         var sub = readState.State.Subscriptions["corr-key-1"];
         Assert.AreEqual(instanceId, sub.WorkflowInstanceId);
         Assert.AreEqual("activity-1", sub.ActivityId);
+        Assert.AreEqual(hostActivityInstanceId, sub.HostActivityInstanceId);
     }
 
     [TestMethod]
