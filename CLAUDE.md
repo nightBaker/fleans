@@ -52,7 +52,7 @@ Add it to `Fleans.Api/Controllers/WorkflowController.cs`. DTOs go in `Fleans.Ser
 
 ## Design Constraints
 
-- **Each activity instance executes at most once** — every non-boundary activity runs exactly once per workflow path (completes or fails). The engine does not support looping back to a previously executed activity. `GetFirstActive(activityId)` and `TimerCallbackGrain` keying rely on this invariant.
+- **Each activity instance executes at most once** — every non-boundary activity instance runs exactly once (completes or fails). An activity definition can be visited multiple times (e.g., in a loop), creating a new instance each time. `TimerCallbackGrain` keying uses `hostActivityInstanceId` to distinguish instances of the same activity.
 
 ## Things to Know
 
