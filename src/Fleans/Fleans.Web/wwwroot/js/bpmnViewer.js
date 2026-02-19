@@ -51,7 +51,7 @@ window.bpmnViewer = {
         });
     },
 
-    highlight: function (activeIds, errorIds, lastErrorId) {
+    highlight: function (activeIds, errorIds, lastErrorId, cancelledIds) {
         if (!this._viewer) return;
 
         const canvas = this._viewer.get('canvas');
@@ -62,6 +62,7 @@ window.bpmnViewer = {
             canvas.removeMarker(element.id, 'bpmn-active');
             canvas.removeMarker(element.id, 'bpmn-error');
             canvas.removeMarker(element.id, 'bpmn-error-pulse');
+            canvas.removeMarker(element.id, 'bpmn-cancelled');
             canvas.removeMarker(element.id, 'bpmn-selected');
         });
 
@@ -77,6 +78,14 @@ window.bpmnViewer = {
             errorIds.forEach(function (id) {
                 if (elementRegistry.get(id)) {
                     canvas.addMarker(id, id === lastErrorId ? 'bpmn-error-pulse' : 'bpmn-error');
+                }
+            });
+        }
+
+        if (cancelledIds) {
+            cancelledIds.forEach(function (id) {
+                if (elementRegistry.get(id)) {
+                    canvas.addMarker(id, 'bpmn-cancelled');
                 }
             });
         }

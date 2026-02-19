@@ -32,7 +32,7 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
 
         // Interrupt the attached activity
         var attachedInstance = _accessor.GrainFactory.GetGrain<IActivityInstanceGrain>(attachedEntry.ActivityInstanceId);
-        await attachedInstance.Complete();
+        await attachedInstance.Cancel($"Interrupted by boundary timer event '{boundaryTimer.ActivityId}'");
         _accessor.State.CompleteEntries([attachedEntry]);
 
         // Timer fired, so only unsubscribe message boundaries
@@ -59,7 +59,7 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
 
         // Interrupt the attached activity
         var attachedInstance = _accessor.GrainFactory.GetGrain<IActivityInstanceGrain>(attachedEntry.ActivityInstanceId);
-        await attachedInstance.Complete();
+        await attachedInstance.Cancel($"Interrupted by boundary message event '{boundaryMessage.ActivityId}'");
         _accessor.State.CompleteEntries([attachedEntry]);
 
         // Clean up all boundary events for the interrupted activity

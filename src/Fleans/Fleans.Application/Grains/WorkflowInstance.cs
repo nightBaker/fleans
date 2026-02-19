@@ -156,8 +156,11 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
             {
                 completedEntries.Add(entry);
 
-                // Failed activities don't transition to next activities
+                // Failed or cancelled activities don't transition to next activities
                 if (await activityInstance.GetErrorState() is not null)
+                    continue;
+
+                if (await activityInstance.IsCancelled())
                     continue;
 
                 var currentActivity = definition.GetActivity(entry.ActivityId);

@@ -188,6 +188,12 @@ marker[id*="conditional"] path {
     50% { stroke-opacity: 0.5; filter: drop-shadow(0 0 8px rgba(220, 38, 38, 0.9)); }
 }
 
+.bpmn-cancelled .djs-visual > :nth-child(1) {
+    stroke: #f59e0b !important;
+    stroke-width: 3px !important;
+    stroke-dasharray: 6, 4 !important;
+}
+
 /* Execution path overlay lines */
 .execution-path-line {
     stroke: var(--accent-fill-rest);

@@ -101,6 +101,10 @@
                                     {
                                         <FluentBadge Color="Color.Error">Failed</FluentBadge>
                                     }
+                                    else if (context.IsCancelled)
+                                    {
+                                        <FluentBadge Color="Color.Warning">Cancelled</FluentBadge>
+                                    }
                                     else if (context.IsCompleted)
                                     {
                                         <FluentBadge Color="Color.Success">Completed</FluentBadge>
@@ -251,6 +255,7 @@
     private List<ActivityInstanceSnapshot> allActivitiesList = [];
     private IQueryable<ActivityInstanceSnapshot> filteredActivities = Enumerable.Empty<ActivityInstanceSnapshot>().AsQueryable();
     private List<ActivityInstanceSnapshot> failedActivities = [];
+    private List<ActivityInstanceSnapshot> cancelledActivities = [];
     private string? activityIdFilter;
     private string? activityTypeFilter;
     private string? activityStatusFilter;
@@ -321,6 +326,7 @@
             .Concat(snapshot.ActiveActivities)
             .ToList();
         failedActivities = allActivitiesList.Where(a => a.ErrorState != null).ToList();
+        cancelledActivities = allActivitiesList.Where(a => a.IsCancelled).ToList();
 
         allConditionsList = snapshot.ConditionSequences
             .Select((c, i) => new IndexedCondition(i, c))
@@ -368,11 +374,12 @@
         if (snapshot == null) return;
 
         var errorActivityIds = failedActivities.Select(a => a.ActivityId).ToArray();
+        var cancelledActivityIds = cancelledActivities.Select(a => a.ActivityId).ToArray();
         var lastActivity = allActivitiesList
             .OrderByDescending(a => a.CompletedAt ?? a.ExecutionStartedAt ?? a.CreatedAt)
             .FirstOrDefault();
         var lastErrorId = lastActivity?.ErrorState != null ? lastActivity.ActivityId : null;
-        await JS.InvokeVoidAsync("bpmnViewer.highlight", snapshot.ActiveActivityIds, errorActivityIds, lastErrorId);
+        await JS.InvokeVoidAsync("bpmnViewer.highlight", snapshot.ActiveActivityIds, errorActivityIds, lastErrorId, cancelledActivityIds);
 
         var orderedActivityIds = snapshot.CompletedActivities
             .Concat(snapshot.ActiveActivities)
@@ -505,6 +512,7 @@
     private static string GetStatusLabel(ActivityInstanceSnapshot a)
     {
         if (a.ErrorState != null) return "Failed";
+        if (a.IsCancelled) return "Cancelled";
         if (a.IsCompleted) return "Completed";
         if (a.IsExecuting) return "Running";
         return "Pending";

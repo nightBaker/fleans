@@ -41,6 +41,12 @@ public class ActivityInstanceState
     [Id(11)]
     public DateTimeOffset? CompletedAt { get; private set; }
 
+    [Id(12)]
+    public bool IsCancelled { get; private set; }
+
+    [Id(13)]
+    public string? CancellationReason { get; private set; }
+
     public ActivityErrorState? ErrorState =>
         ErrorCode is not null ? new ActivityErrorState(ErrorCode.Value, ErrorMessage!) : null;
 
@@ -54,6 +60,8 @@ public class ActivityInstanceState
         CompletedAt = DateTimeOffset.UtcNow;
     }
 
+    // TODO: Make Fail() self-contained like Cancel() — set IsCompleted/IsExecuting/CompletedAt
+    // here instead of relying on the grain calling Complete() after Fail().
     public void Fail(Exception exception)
     {
         if (IsCompleted)
@@ -70,6 +78,18 @@ public class ActivityInstanceState
             ErrorCode = 500;
             ErrorMessage = exception.Message;
         }
+    }
+
+    public void Cancel(string reason)
+    {
+        if (IsCompleted)
+            throw new InvalidOperationException($"Activity '{ActivityId}' is already completed — cannot cancel.");
+
+        IsCancelled = true;
+        CancellationReason = reason;
+        IsExecuting = false;
+        IsCompleted = true;
+        CompletedAt = DateTimeOffset.UtcNow;
     }
 
     public void Execute()
