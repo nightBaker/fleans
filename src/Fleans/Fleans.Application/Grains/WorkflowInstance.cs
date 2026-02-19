@@ -658,10 +658,12 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         await _state.WriteStateAsync();
 
         var correlationGrain = _grainFactory.GetGrain<IMessageCorrelationGrain>(messageDef.Name);
+        var entry = State.GetFirstActive(activityId)
+            ?? throw new InvalidOperationException($"Active entry not found for '{activityId}'");
 
         try
         {
-            await correlationGrain.Subscribe(correlationKey, this.GetPrimaryKey(), activityId);
+            await correlationGrain.Subscribe(correlationKey, this.GetPrimaryKey(), activityId, entry.ActivityInstanceId);
         }
         catch (Exception ex)
         {
@@ -682,7 +684,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         LogTimerReminderRegistered(timerActivityId, dueTime);
     }
 
-    public async ValueTask RegisterBoundaryMessageSubscription(string boundaryActivityId, string messageDefinitionId)
+    public async ValueTask RegisterBoundaryMessageSubscription(Guid hostActivityInstanceId, string boundaryActivityId, string messageDefinitionId)
     {
         var definition = await GetWorkflowDefinition();
         var messageDef = definition.Messages.First(m => m.Id == messageDefinitionId);
@@ -699,7 +701,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
 
         try
         {
-            await correlationGrain.Subscribe(correlationKey, this.GetPrimaryKey(), boundaryActivityId);
+            await correlationGrain.Subscribe(correlationKey, this.GetPrimaryKey(), boundaryActivityId, hostActivityInstanceId);
         }
         catch (Exception ex)
         {
@@ -710,7 +712,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         LogMessageSubscriptionRegistered(boundaryActivityId, messageDef.Name, correlationKey);
     }
 
-    public async Task HandleBoundaryMessageFired(string boundaryActivityId)
+    public async Task HandleBoundaryMessageFired(string boundaryActivityId, Guid hostActivityInstanceId)
     {
         await EnsureWorkflowDefinitionAsync();
         SetWorkflowRequestContext();
@@ -720,7 +722,9 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         var boundaryMessage = definition.GetActivity(boundaryActivityId) as MessageBoundaryEvent
             ?? throw new InvalidOperationException($"Activity '{boundaryActivityId}' is not a MessageBoundaryEvent");
 
-        var attachedEntry = State.GetFirstActive(boundaryMessage.AttachedToActivityId);
+        // Check if attached activity is still active (lookup by instance ID)
+        var attachedEntry = State.Entries.FirstOrDefault(e =>
+            e.ActivityInstanceId == hostActivityInstanceId && !e.IsCompleted);
         if (attachedEntry == null)
             return; // Activity already completed, message is stale
 

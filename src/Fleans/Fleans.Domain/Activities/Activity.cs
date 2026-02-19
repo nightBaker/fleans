@@ -30,7 +30,7 @@ public abstract record Activity([property: Id(0)] string ActivityId)
         foreach (var boundaryMsg in definition.Activities.OfType<MessageBoundaryEvent>()
             .Where(bm => bm.AttachedToActivityId == ActivityId))
         {
-            await workflowContext.RegisterBoundaryMessageSubscription(boundaryMsg.ActivityId, boundaryMsg.MessageDefinitionId);
+            await workflowContext.RegisterBoundaryMessageSubscription(hostInstanceId, boundaryMsg.ActivityId, boundaryMsg.MessageDefinitionId);
         }
     }
     internal abstract Task<List<Activity>> GetNextActivities(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext);

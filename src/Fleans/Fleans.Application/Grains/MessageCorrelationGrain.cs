@@ -24,7 +24,7 @@ public partial class MessageCorrelationGrain : Grain, IMessageCorrelationGrain
         _logger = logger;
     }
 
-    public async ValueTask Subscribe(string correlationKey, Guid workflowInstanceId, string activityId)
+    public async ValueTask Subscribe(string correlationKey, Guid workflowInstanceId, string activityId, Guid hostActivityInstanceId)
     {
         var messageName = this.GetPrimaryKeyString();
 
@@ -32,7 +32,7 @@ public partial class MessageCorrelationGrain : Grain, IMessageCorrelationGrain
             throw new InvalidOperationException(
                 $"Duplicate subscription: message '{messageName}' with correlationKey '{correlationKey}' already has a subscriber.");
 
-        _state.State.Subscriptions[correlationKey] = new MessageSubscription(workflowInstanceId, activityId);
+        _state.State.Subscriptions[correlationKey] = new MessageSubscription(workflowInstanceId, activityId, hostActivityInstanceId);
         await _state.WriteStateAsync();
         LogSubscribed(messageName, correlationKey, workflowInstanceId, activityId);
     }
@@ -69,7 +69,7 @@ public partial class MessageCorrelationGrain : Grain, IMessageCorrelationGrain
         if (activity is MessageBoundaryEvent)
         {
             LogDeliveryBoundary(messageName, correlationKey, subscription.WorkflowInstanceId, subscription.ActivityId);
-            await workflowInstance.HandleBoundaryMessageFired(subscription.ActivityId);
+            await workflowInstance.HandleBoundaryMessageFired(subscription.ActivityId, subscription.HostActivityInstanceId);
         }
         else
         {

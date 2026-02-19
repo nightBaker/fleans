@@ -11,4 +11,5 @@ public class MessageCorrelationState
 [GenerateSerializer]
 public record MessageSubscription(
     [property: Id(0)] Guid WorkflowInstanceId,
-    [property: Id(1)] string ActivityId);
+    [property: Id(1)] string ActivityId,
+    [property: Id(2)] Guid HostActivityInstanceId);
