@@ -50,6 +50,10 @@ Add it to `Fleans.Api/Controllers/WorkflowController.cs`. DTOs go in `Fleans.Ser
 - **Log all workflow instance state changes.** Every grain method that mutates state (adds/removes activities, changes condition results, completes/fails instances) must have a `[LoggerMessage]` log call. No silent state mutations.
 - **Fluent UI Blazor (Fleans.Web)**: Only use components that exist in the library (https://www.fluentui-blazor.net/). Use `IconStart`/`IconEnd` parameters on `FluentButton` — never place `<FluentIcon>` as child content. Use the `Loading` parameter for buttons with loading states.
 
+## Design Constraints
+
+- **Each activity instance executes at most once** — every non-boundary activity runs exactly once per workflow path (completes or fails). The engine does not support looping back to a previously executed activity. `GetFirstActive(activityId)` and `TimerCallbackGrain` keying rely on this invariant.
+
 ## Things to Know
 
 - **Aspire is the startup project**, not Api or Web
