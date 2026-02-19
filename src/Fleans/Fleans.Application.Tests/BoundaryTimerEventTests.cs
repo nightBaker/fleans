@@ -85,7 +85,8 @@ public class BoundaryTimerEventTests : WorkflowTestBase
         Assert.IsTrue(preSnapshot!.ActiveActivities.Any(a => a.ActivityId == "task1"));
 
         // Act — simulate boundary timer firing via HandleTimerFired
-        await workflowInstance.HandleTimerFired("bt1");
+        var hostInstanceId = preSnapshot.ActiveActivities.First(a => a.ActivityId == "task1").ActivityInstanceId;
+        await workflowInstance.HandleTimerFired("bt1", hostInstanceId);
 
         // Assert — should follow boundary path, task1 should be interrupted
         var snapshot = await QueryService.GetStateSnapshot(instanceId);

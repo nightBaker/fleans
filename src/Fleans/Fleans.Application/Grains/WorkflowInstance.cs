@@ -82,7 +82,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         await _state.WriteStateAsync();
     }
 
-    public async Task HandleTimerFired(string timerActivityId)
+    public async Task HandleTimerFired(string timerActivityId, Guid hostActivityInstanceId)
     {
         await EnsureWorkflowDefinitionAsync();
         var definition = await GetWorkflowDefinition();
@@ -93,7 +93,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         {
             // HandleBoundaryTimerFired sets up its own RequestContext/scope
             LogTimerReminderFired(timerActivityId);
-            await HandleBoundaryTimerFired(boundaryTimer);
+            await HandleBoundaryTimerFired(boundaryTimer, hostActivityInstanceId);
         }
         else
         {
@@ -103,7 +103,8 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
 
             // Intermediate catch timer — just complete the activity
             // Guard: activity may already be completed by a previous reminder tick
-            var entry = State.GetFirstActive(timerActivityId);
+            var entry = State.Entries.FirstOrDefault(e =>
+                e.ActivityInstanceId == hostActivityInstanceId && !e.IsCompleted);
             if (entry == null)
             {
                 LogStaleTimerIgnored(timerActivityId);
@@ -116,14 +117,15 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         }
     }
 
-    private async Task HandleBoundaryTimerFired(BoundaryTimerEvent boundaryTimer)
+    private async Task HandleBoundaryTimerFired(BoundaryTimerEvent boundaryTimer, Guid hostActivityInstanceId)
     {
         SetWorkflowRequestContext();
         using var scope = BeginWorkflowScope();
         var attachedActivityId = boundaryTimer.AttachedToActivityId;
 
-        // Check if attached activity is still active
-        var attachedEntry = State.GetFirstActive(attachedActivityId);
+        // Check if attached activity is still active (lookup by instance ID)
+        var attachedEntry = State.Entries.FirstOrDefault(e =>
+            e.ActivityInstanceId == hostActivityInstanceId && !e.IsCompleted);
         if (attachedEntry == null)
             return; // Activity already completed, timer is stale
 

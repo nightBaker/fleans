@@ -145,10 +145,10 @@ public class TimerIntermediateCatchEventTests : WorkflowTestBase
         await workflowInstance.StartWorkflow();
 
         // Act — simulate timer callback via HandleTimerFired
-        await workflowInstance.HandleTimerFired("timer1");
-
-        // Assert — workflow should now be completed
         var instanceId = workflowInstance.GetPrimaryKey();
+        var preSnapshot = await QueryService.GetStateSnapshot(instanceId);
+        var timerInstanceId = preSnapshot!.ActiveActivities.First(a => a.ActivityId == "timer1").ActivityInstanceId;
+        await workflowInstance.HandleTimerFired("timer1", timerInstanceId);
         var snapshot = await QueryService.GetStateSnapshot(instanceId);
         Assert.IsNotNull(snapshot);
         Assert.IsTrue(snapshot.IsCompleted, "Workflow should be completed after HandleTimerFired");

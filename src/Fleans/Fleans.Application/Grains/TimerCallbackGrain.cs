@@ -16,14 +16,14 @@ public partial class TimerCallbackGrain : Grain, ITimerCallbackGrain, IRemindabl
 
     public async Task Activate(TimeSpan dueTime)
     {
-        var (workflowInstanceId, timerActivityId) = ParseKey();
+        var (workflowInstanceId, _, timerActivityId) = ParseKey();
         LogActivating(workflowInstanceId, timerActivityId, dueTime);
         await this.RegisterOrUpdateReminder(ReminderName, dueTime, TimeSpan.FromMinutes(1));
     }
 
     public async Task Cancel()
     {
-        var (workflowInstanceId, timerActivityId) = ParseKey();
+        var (workflowInstanceId, _, timerActivityId) = ParseKey();
         try
         {
             var reminder = await this.GetReminder(ReminderName);
@@ -45,14 +45,14 @@ public partial class TimerCallbackGrain : Grain, ITimerCallbackGrain, IRemindabl
         if (reminderName != ReminderName)
             return;
 
-        var (workflowInstanceId, timerActivityId) = ParseKey();
+        var (workflowInstanceId, hostActivityInstanceId, timerActivityId) = ParseKey();
         LogReminderFired(workflowInstanceId, timerActivityId);
 
         // Call back to WorkflowInstance first — if this fails, the periodic
         // reminder will fire again and retry. HandleTimerFired is idempotent
         // (stale-timer guards check if the activity is still active).
         var workflowInstance = GrainFactory.GetGrain<IWorkflowInstanceGrain>(workflowInstanceId);
-        await workflowInstance.HandleTimerFired(timerActivityId);
+        await workflowInstance.HandleTimerFired(timerActivityId, hostActivityInstanceId);
 
         // Unregister only after successful callback
         try
@@ -73,12 +73,13 @@ public partial class TimerCallbackGrain : Grain, ITimerCallbackGrain, IRemindabl
     /// Parses the compound key. Guid = workflowInstanceId,
     /// string = "{hostActivityInstanceId}:{timerActivityId}".
     /// </summary>
-    private (Guid WorkflowInstanceId, string TimerActivityId) ParseKey()
+    private (Guid WorkflowInstanceId, Guid HostActivityInstanceId, string TimerActivityId) ParseKey()
     {
         var workflowInstanceId = this.GetPrimaryKey(out var keyString);
         // hostActivityInstanceId Guid is always 36 chars, followed by ':'
-        var timerActivityId = keyString![37..];
-        return (workflowInstanceId, timerActivityId);
+        var hostActivityInstanceId = Guid.Parse(keyString!.AsSpan(0, 36));
+        var timerActivityId = keyString[37..];
+        return (workflowInstanceId, hostActivityInstanceId, timerActivityId);
     }
 
     [LoggerMessage(EventId = 10000, Level = LogLevel.Information,
