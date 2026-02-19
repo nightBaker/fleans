@@ -38,6 +38,13 @@ public partial class ActivityInstance : Grain, IActivityInstanceGrain
         await Complete();
     }
 
+    public async ValueTask Cancel(string reason)
+    {
+        State.Cancel(reason);
+        LogCancelled(reason);
+        await _state.WriteStateAsync();
+    }
+
     public async ValueTask Execute()
     {
         State.Execute();
@@ -54,6 +61,8 @@ public partial class ActivityInstance : Grain, IActivityInstanceGrain
         => ValueTask.FromResult(State.IsCompleted);
 
     public ValueTask<bool> IsExecuting() => ValueTask.FromResult(State.IsExecuting);
+
+    public ValueTask<bool> IsCancelled() => ValueTask.FromResult(State.IsCancelled);
 
     public ValueTask<Guid> GetVariablesStateId()
         => ValueTask.FromResult(State.VariablesId);
@@ -91,4 +100,7 @@ public partial class ActivityInstance : Grain, IActivityInstanceGrain
 
     [LoggerMessage(EventId = 2003, Level = LogLevel.Debug, Message = "Publishing event {EventType}")]
     private partial void LogPublishingEvent(string eventType);
+
+    [LoggerMessage(EventId = 2004, Level = LogLevel.Information, Message = "Activity cancelled: {Reason}")]
+    private partial void LogCancelled(string reason);
 }

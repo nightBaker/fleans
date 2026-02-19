@@ -56,8 +56,11 @@ public class MessageBoundaryEventTests : WorkflowTestBase
         Assert.IsTrue(delivered, "Message should be delivered");
         var snapshot = await QueryService.GetStateSnapshot(instanceId);
         Assert.IsFalse(snapshot!.IsCompleted, "Workflow should NOT be completed yet — recovery pending");
-        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "task1"),
-            "Original task should be completed (interrupted)");
+        var interruptedTask = snapshot.CompletedActivities.FirstOrDefault(a => a.ActivityId == "task1");
+        Assert.IsNotNull(interruptedTask, "Original task should be completed (interrupted)");
+        Assert.IsTrue(interruptedTask.IsCancelled, "Interrupted task should be cancelled");
+        Assert.IsNotNull(interruptedTask.CancellationReason, "Cancelled task should have a reason");
+        Assert.IsNull(interruptedTask.ErrorState, "Cancelled task should not have error state");
         Assert.IsTrue(snapshot.ActiveActivities.Any(a => a.ActivityId == "recovery"),
             "Recovery task should be active");
 

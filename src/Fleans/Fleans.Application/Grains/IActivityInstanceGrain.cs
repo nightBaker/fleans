@@ -24,7 +24,11 @@ public interface IActivityInstanceGrain : IGrainWithGuidKey, IActivityExecutionC
     [ReadOnly]
     ValueTask<ActivityErrorState?> GetErrorState();
 
+    [ReadOnly]
+    ValueTask<bool> IsCancelled();
+
     ValueTask Fail(Exception exception);
+    ValueTask Cancel(string reason);
     ValueTask SetActivity(string activityId, string activityType);
     ValueTask SetVariablesId(Guid guid);
 }

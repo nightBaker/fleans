@@ -189,8 +189,8 @@ public class WorkflowQueryService : IWorkflowQueryService
         {
             return new ActivityInstanceSnapshot(
                 actState.Id, actState.ActivityId ?? entry.ActivityId, actState.ActivityType ?? "",
-                actState.IsCompleted, actState.IsExecuting, actState.VariablesId,
-                actState.ErrorState,
+                actState.IsCompleted, actState.IsExecuting, actState.IsCancelled, actState.VariablesId,
+                actState.ErrorState, actState.CancellationReason,
                 actState.CreatedAt, actState.ExecutionStartedAt, actState.CompletedAt,
                 entry.ChildWorkflowInstanceId);
         }
@@ -198,7 +198,7 @@ public class WorkflowQueryService : IWorkflowQueryService
         // Fallback if activity instance state not found in DB
         return new ActivityInstanceSnapshot(
             entry.ActivityInstanceId, entry.ActivityId, "",
-            entry.IsCompleted, false, Guid.Empty, null,
+            entry.IsCompleted, false, false, Guid.Empty, null, null,
             null, null, null,
             entry.ChildWorkflowInstanceId);
     }

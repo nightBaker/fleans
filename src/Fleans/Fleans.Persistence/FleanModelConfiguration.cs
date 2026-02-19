@@ -14,6 +14,8 @@ internal static class FleanModelConfiguration
 {
     public static void Configure(ModelBuilder modelBuilder)
     {
+        // TODO: When switching to EF Core migrations, add a migration for IsCancelled/CancellationReason columns.
+        // Currently EnsureCreated() handles schema — existing databases need to be recreated.
         modelBuilder.Entity<ActivityInstanceState>(entity =>
         {
             entity.ToTable("ActivityInstances");
@@ -29,6 +31,9 @@ internal static class FleanModelConfiguration
                 .HasMaxLength(256);
 
             entity.Property(e => e.ErrorMessage)
+                .HasMaxLength(2000);
+
+            entity.Property(e => e.CancellationReason)
                 .HasMaxLength(2000);
 
             entity.Ignore(e => e.ErrorState);

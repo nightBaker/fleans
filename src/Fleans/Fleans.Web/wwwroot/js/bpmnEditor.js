@@ -17,7 +17,10 @@ window.bpmnEditor = {
             keyboard: { bindTo: container },
             moddleExtensions: window.fleansModdleExtension
                 ? { fleans: window.fleansModdleExtension }
-                : {}
+                : {},
+            additionalModules: window.boundaryEventContextPadModule
+                ? [window.boundaryEventContextPadModule]
+                : []
         });
 
         if (dotNetRef) {

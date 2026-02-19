@@ -222,6 +222,10 @@
         propagateAllParentVariables = Element.PropagateAllParentVariables;
         propagateAllChildVariables = Element.PropagateAllChildVariables;
         timerType = Element.TimerType;
+        if (Element.HasTimerDefinition && string.IsNullOrEmpty(timerType))
+        {
+            timerType = Element.Type == "bpmn:StartEvent" ? "cycle" : "duration";
+        }
         timerExpression = Element.TimerExpression;
         messageName = Element.MessageName;
         correlationKey = Element.CorrelationKey;
