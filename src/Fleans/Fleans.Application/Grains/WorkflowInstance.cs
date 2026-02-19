@@ -209,20 +209,21 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         State.MergeState(variablesId, variables);
 
         // Unregister any boundary timer reminders attached to this activity
-        await UnregisterBoundaryTimerReminders(activityId);
+        await UnregisterBoundaryTimerReminders(activityId, entry.ActivityInstanceId);
 
         // Unsubscribe any boundary message subscriptions attached to this activity
         await UnsubscribeBoundaryMessageSubscriptions(activityId);
     }
 
-    private async Task UnregisterBoundaryTimerReminders(string activityId)
+    private async Task UnregisterBoundaryTimerReminders(string activityId, Guid hostActivityInstanceId)
     {
         if (_workflowDefinition == null) return;
 
         foreach (var boundaryTimer in _workflowDefinition.Activities.OfType<BoundaryTimerEvent>()
             .Where(bt => bt.AttachedToActivityId == activityId))
         {
-            var callbackGrain = _grainFactory.GetGrain<ITimerCallbackGrain>(this.GetPrimaryKey(), boundaryTimer.ActivityId);
+            var callbackGrain = _grainFactory.GetGrain<ITimerCallbackGrain>(
+                this.GetPrimaryKey(), $"{hostActivityInstanceId}:{boundaryTimer.ActivityId}");
             await callbackGrain.Cancel();
             LogTimerReminderUnregistered(boundaryTimer.ActivityId);
         }
@@ -671,9 +672,10 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         LogMessageSubscriptionRegistered(activityId, messageDef.Name, correlationKey);
     }
 
-    public async ValueTask RegisterTimerReminder(string activityId, TimeSpan dueTime)
+    public async ValueTask RegisterTimerReminder(Guid activityInstanceId, string activityId, TimeSpan dueTime)
     {
-        var callbackGrain = _grainFactory.GetGrain<ITimerCallbackGrain>(this.GetPrimaryKey(), activityId);
+        var callbackGrain = _grainFactory.GetGrain<ITimerCallbackGrain>(
+            this.GetPrimaryKey(), $"{activityInstanceId}:{activityId}");
         await callbackGrain.Activate(dueTime);
         LogTimerReminderRegistered(activityId, dueTime);
     }
@@ -726,7 +728,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         State.CompleteEntries([attachedEntry]);
 
         // Clean up all boundary events for the interrupted activity
-        await UnregisterBoundaryTimerReminders(boundaryMessage.AttachedToActivityId);
+        await UnregisterBoundaryTimerReminders(boundaryMessage.AttachedToActivityId, attachedEntry.ActivityInstanceId);
         // Unsubscribe other boundary messages, but skip the one that fired
         // (its subscription was already removed by DeliverMessage, and calling
         // back into the same correlation grain would deadlock)

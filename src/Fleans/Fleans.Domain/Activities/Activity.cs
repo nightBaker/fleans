@@ -20,10 +20,11 @@ public abstract record Activity([property: Id(0)] string ActivityId)
             GetType().Name));
 
         // Register boundary events attached to this activity
+        var hostInstanceId = await activityContext.GetActivityInstanceId();
         foreach (var boundaryTimer in definition.Activities.OfType<BoundaryTimerEvent>()
             .Where(bt => bt.AttachedToActivityId == ActivityId))
         {
-            await workflowContext.RegisterTimerReminder(boundaryTimer.ActivityId, boundaryTimer.TimerDefinition.GetDueTime());
+            await workflowContext.RegisterTimerReminder(hostInstanceId, boundaryTimer.ActivityId, boundaryTimer.TimerDefinition.GetDueTime());
         }
 
         foreach (var boundaryMsg in definition.Activities.OfType<MessageBoundaryEvent>()
