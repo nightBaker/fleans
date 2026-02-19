@@ -19,5 +19,6 @@ public abstract record Activity([property: Id(0)] string ActivityId)
             ActivityId,
             GetType().Name));
     }
+
     internal abstract Task<List<Activity>> GetNextActivities(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext);
 }
