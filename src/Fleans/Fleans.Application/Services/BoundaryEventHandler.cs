@@ -126,10 +126,10 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
         await _accessor.ExecuteWorkflow();
     }
 
-    [LoggerMessage(EventId = 1016, Level = LogLevel.Information, Message = "Boundary event {BoundaryEventId} triggered on activity {ActivityId}")]
+    [LoggerMessage(EventId = 1016, Level = LogLevel.Information, Message = "Boundary error event {BoundaryEventId} triggered by failed activity {ActivityId}")]
     private partial void LogBoundaryEventTriggered(string boundaryEventId, string activityId);
 
-    [LoggerMessage(EventId = 1019, Level = LogLevel.Information, Message = "Timer reminder unregistered for {TimerActivityId}")]
+    [LoggerMessage(EventId = 1019, Level = LogLevel.Information, Message = "Timer reminder unregistered for activity {TimerActivityId}")]
     private partial void LogTimerReminderUnregistered(string timerActivityId);
 
     [LoggerMessage(EventId = 1020, Level = LogLevel.Information, Message = "Boundary timer {BoundaryTimerId} interrupted attached activity {AttachedActivityId}")]
