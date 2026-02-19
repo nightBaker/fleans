@@ -1,5 +1,6 @@
 using Fleans.Application;
 using Fleans.Application.Events;
+using Fleans.Application.Services;
 using Fleans.Domain;
 using Fleans.Domain.Persistence;
 using Fleans.Persistence;
@@ -82,6 +83,7 @@ public abstract class WorkflowTestBase
 
                     services.AddSingleton<IProcessDefinitionRepository, EfCoreProcessDefinitionRepository>();
                     services.AddSingleton<IWorkflowQueryService, WorkflowQueryService>();
+                    services.AddTransient<IBoundaryEventHandler, BoundaryEventHandler>();
 
                     services.AddSerializer(serializerBuilder =>
                     {
