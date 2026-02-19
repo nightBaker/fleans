@@ -1,6 +1,7 @@
 using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.States;
+using Fleans.Application.Services;
 using Fleans.Application.WorkflowFactory;
 using Microsoft.Extensions.Logging;
 using Orleans;
@@ -9,7 +10,7 @@ using System.Dynamic;
 
 namespace Fleans.Application.Grains;
 
-public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
+public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundaryEventStateAccessor
 {
     public ValueTask<Guid> GetWorkflowInstanceId() => ValueTask.FromResult(this.GetPrimaryKey());
     private IWorkflowDefinition? _workflowDefinition;
@@ -17,17 +18,32 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
     private readonly IPersistentState<WorkflowInstanceState> _state;
     private readonly IGrainFactory _grainFactory;
     private readonly ILogger<WorkflowInstance> _logger;
+    private readonly IBoundaryEventHandler _boundaryHandler;
 
     private WorkflowInstanceState State => _state.State;
+
+    // IBoundaryEventStateAccessor
+    WorkflowInstanceState IBoundaryEventStateAccessor.State => State;
+    IGrainFactory IBoundaryEventStateAccessor.GrainFactory => _grainFactory;
+    ILogger IBoundaryEventStateAccessor.Logger => _logger;
+    IWorkflowExecutionContext IBoundaryEventStateAccessor.WorkflowExecutionContext => this;
+
+    async ValueTask<IWorkflowDefinition> IBoundaryEventStateAccessor.GetWorkflowDefinition() => await GetWorkflowDefinition();
+    async ValueTask<object?> IBoundaryEventStateAccessor.GetVariable(string variableName) => await GetVariable(variableName);
+    async Task IBoundaryEventStateAccessor.TransitionToNextActivity() => await TransitionToNextActivity();
+    async Task IBoundaryEventStateAccessor.ExecuteWorkflow() => await ExecuteWorkflow();
 
     public WorkflowInstance(
         [PersistentState("state", GrainStorageNames.WorkflowInstances)] IPersistentState<WorkflowInstanceState> state,
         IGrainFactory grainFactory,
-        ILogger<WorkflowInstance> logger)
+        ILogger<WorkflowInstance> logger,
+        IBoundaryEventHandler boundaryHandler)
     {
         _state = state;
         _grainFactory = grainFactory;
         _logger = logger;
+        _boundaryHandler = boundaryHandler;
+        _boundaryHandler.Initialize(this);
     }
 
     public async Task StartWorkflow()
@@ -95,9 +111,11 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         var activity = definition.Activities.FirstOrDefault(a => a.ActivityId == timerActivityId);
         if (activity is BoundaryTimerEvent boundaryTimer)
         {
-            // HandleBoundaryTimerFired sets up its own RequestContext/scope
+            SetWorkflowRequestContext();
+            using var scope = BeginWorkflowScope();
             LogTimerReminderFired(timerActivityId);
             await HandleBoundaryTimerFired(boundaryTimer, hostActivityInstanceId);
+            await _state.WriteStateAsync();
         }
         else
         {
@@ -121,40 +139,8 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         }
     }
 
-    private async Task HandleBoundaryTimerFired(BoundaryTimerEvent boundaryTimer, Guid hostActivityInstanceId)
-    {
-        SetWorkflowRequestContext();
-        using var scope = BeginWorkflowScope();
-        var attachedActivityId = boundaryTimer.AttachedToActivityId;
-
-        // Check if attached activity is still active (lookup by instance ID)
-        var attachedEntry = State.Entries.FirstOrDefault(e =>
-            e.ActivityInstanceId == hostActivityInstanceId && !e.IsCompleted);
-        if (attachedEntry == null)
-            return; // Activity already completed, timer is stale
-
-        // Cancel the attached activity (mark it completed with no variables)
-        var attachedInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(attachedEntry.ActivityInstanceId);
-        await attachedInstance.Complete();
-        State.CompleteEntries([attachedEntry]);
-        await UnsubscribeBoundaryMessageSubscriptions(attachedActivityId);
-        LogBoundaryTimerInterrupted(boundaryTimer.ActivityId, attachedActivityId);
-
-        // Create and execute boundary timer event instance
-        var boundaryInstanceId = Guid.NewGuid();
-        var boundaryInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(boundaryInstanceId);
-        var variablesId = await attachedInstance.GetVariablesStateId();
-        await boundaryInstance.SetActivity(boundaryTimer.ActivityId, boundaryTimer.GetType().Name);
-        await boundaryInstance.SetVariablesId(variablesId);
-
-        var boundaryEntry = new ActivityInstanceEntry(boundaryInstanceId, boundaryTimer.ActivityId, State.Id);
-        State.AddEntries([boundaryEntry]);
-
-        await boundaryTimer.ExecuteAsync(this, boundaryInstance);
-        await TransitionToNextActivity();
-        await ExecuteWorkflow();
-        await _state.WriteStateAsync();
-    }
+    private Task HandleBoundaryTimerFired(BoundaryTimerEvent boundaryTimer, Guid hostActivityInstanceId)
+        => _boundaryHandler.HandleBoundaryTimerFiredAsync(boundaryTimer, hostActivityInstanceId);
 
     private async Task TransitionToNextActivity()
     {
@@ -215,43 +201,10 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         State.MergeState(variablesId, variables);
 
         // Unregister any boundary timer reminders attached to this activity
-        await UnregisterBoundaryTimerReminders(activityId, entry.ActivityInstanceId);
+        await _boundaryHandler.UnregisterBoundaryTimerRemindersAsync(activityId, entry.ActivityInstanceId);
 
         // Unsubscribe any boundary message subscriptions attached to this activity
-        await UnsubscribeBoundaryMessageSubscriptions(activityId);
-    }
-
-    private async Task UnregisterBoundaryTimerReminders(string activityId, Guid hostActivityInstanceId)
-    {
-        if (_workflowDefinition == null) return;
-
-        foreach (var boundaryTimer in _workflowDefinition.Activities.OfType<BoundaryTimerEvent>()
-            .Where(bt => bt.AttachedToActivityId == activityId))
-        {
-            var callbackGrain = _grainFactory.GetGrain<ITimerCallbackGrain>(
-                this.GetPrimaryKey(), $"{hostActivityInstanceId}:{boundaryTimer.ActivityId}");
-            await callbackGrain.Cancel();
-            LogTimerReminderUnregistered(boundaryTimer.ActivityId);
-        }
-    }
-
-    private async Task UnsubscribeBoundaryMessageSubscriptions(string activityId, string? skipMessageName = null)
-    {
-        if (_workflowDefinition == null) return;
-
-        foreach (var boundaryMsg in _workflowDefinition.Activities.OfType<MessageBoundaryEvent>()
-            .Where(bm => bm.AttachedToActivityId == activityId))
-        {
-            var messageDef = _workflowDefinition.Messages.FirstOrDefault(m => m.Id == boundaryMsg.MessageDefinitionId);
-            if (messageDef?.CorrelationKeyExpression is null) continue;
-            if (messageDef.Name == skipMessageName) continue;
-
-            var correlationValue = await GetVariable(messageDef.CorrelationKeyExpression);
-            if (correlationValue is null) continue;
-
-            var correlationGrain = _grainFactory.GetGrain<IMessageCorrelationGrain>(messageDef.Name);
-            await correlationGrain.Unsubscribe(correlationValue.ToString()!);
-        }
+        await _boundaryHandler.UnsubscribeBoundaryMessageSubscriptionsAsync(activityId);
     }
 
     private async Task FailActivityState(string activityId, Exception exception)
@@ -547,19 +500,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
 
             if (boundaryEvent is not null)
             {
-                LogBoundaryEventTriggered(boundaryEvent.ActivityId, activityId);
-
-                var boundaryInstanceId = Guid.NewGuid();
-                var boundaryInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(boundaryInstanceId);
-                var variablesId = await activityGrain.GetVariablesStateId();
-                await boundaryInstance.SetActivity(boundaryEvent.ActivityId, boundaryEvent.GetType().Name);
-                await boundaryInstance.SetVariablesId(variablesId);
-
-                var boundaryEntry = new ActivityInstanceEntry(boundaryInstanceId, boundaryEvent.ActivityId, State.Id);
-                State.AddEntries([boundaryEntry]);
-
-                await boundaryEvent.ExecuteAsync(this, boundaryInstance);
-                await TransitionToNextActivity();
+                await _boundaryHandler.HandleBoundaryErrorAsync(activityId, boundaryEvent, activityEntry.ActivityInstanceId);
                 return;
             }
         }
@@ -726,39 +667,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         var boundaryMessage = definition.GetActivity(boundaryActivityId) as MessageBoundaryEvent
             ?? throw new InvalidOperationException($"Activity '{boundaryActivityId}' is not a MessageBoundaryEvent");
 
-        // Check if attached activity is still active (lookup by instance ID)
-        var attachedEntry = State.Entries.FirstOrDefault(e =>
-            e.ActivityInstanceId == hostActivityInstanceId && !e.IsCompleted);
-        if (attachedEntry == null)
-            return; // Activity already completed, message is stale
-
-        // Cancel attached activity
-        var attachedInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(attachedEntry.ActivityInstanceId);
-        await attachedInstance.Complete();
-        State.CompleteEntries([attachedEntry]);
-
-        // Clean up all boundary events for the interrupted activity
-        await UnregisterBoundaryTimerReminders(boundaryMessage.AttachedToActivityId, attachedEntry.ActivityInstanceId);
-        // Unsubscribe other boundary messages, but skip the one that fired
-        // (its subscription was already removed by DeliverMessage, and calling
-        // back into the same correlation grain would deadlock)
-        var firedMessageDef = definition.Messages.First(m => m.Id == boundaryMessage.MessageDefinitionId);
-        await UnsubscribeBoundaryMessageSubscriptions(boundaryMessage.AttachedToActivityId, skipMessageName: firedMessageDef.Name);
-        LogBoundaryMessageInterrupted(boundaryActivityId, boundaryMessage.AttachedToActivityId);
-
-        // Create and execute boundary message event instance
-        var boundaryInstanceId = Guid.NewGuid();
-        var boundaryInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(boundaryInstanceId);
-        var variablesId = await attachedInstance.GetVariablesStateId();
-        await boundaryInstance.SetActivity(boundaryMessage.ActivityId, boundaryMessage.GetType().Name);
-        await boundaryInstance.SetVariablesId(variablesId);
-
-        var boundaryEntry = new ActivityInstanceEntry(boundaryInstanceId, boundaryMessage.ActivityId, State.Id);
-        State.AddEntries([boundaryEntry]);
-
-        await boundaryMessage.ExecuteAsync(this, boundaryInstance);
-        await TransitionToNextActivity();
-        await ExecuteWorkflow();
+        await _boundaryHandler.HandleBoundaryMessageFiredAsync(boundaryMessage, hostActivityInstanceId);
         await _state.WriteStateAsync();
     }
 
@@ -828,28 +737,15 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
     [LoggerMessage(EventId = 1015, Level = LogLevel.Warning, Message = "Child workflow failed for CallActivity {ParentActivityId}")]
     private partial void LogChildWorkflowFailed(string parentActivityId);
 
-    [LoggerMessage(EventId = 1016, Level = LogLevel.Information, Message = "Boundary error event {BoundaryEventId} triggered by failed activity {ActivityId}")]
-    private partial void LogBoundaryEventTriggered(string boundaryEventId, string activityId);
-
     [LoggerMessage(EventId = 1017, Level = LogLevel.Information, Message = "Timer reminder registered for activity {TimerActivityId}, due in {DueTime}")]
     private partial void LogTimerReminderRegistered(string timerActivityId, TimeSpan dueTime);
 
     [LoggerMessage(EventId = 1018, Level = LogLevel.Information, Message = "Timer reminder fired for activity {TimerActivityId}")]
     private partial void LogTimerReminderFired(string timerActivityId);
 
-    [LoggerMessage(EventId = 1019, Level = LogLevel.Information, Message = "Timer reminder unregistered for activity {TimerActivityId}")]
-    private partial void LogTimerReminderUnregistered(string timerActivityId);
-
-    [LoggerMessage(EventId = 1020, Level = LogLevel.Information, Message = "Boundary timer {BoundaryTimerId} interrupted attached activity {AttachedActivityId}")]
-    private partial void LogBoundaryTimerInterrupted(string boundaryTimerId, string attachedActivityId);
-
     [LoggerMessage(EventId = 1021, Level = LogLevel.Information,
         Message = "Message subscription registered for activity {ActivityId}: messageName={MessageName}, correlationKey={CorrelationKey}")]
     private partial void LogMessageSubscriptionRegistered(string activityId, string messageName, string correlationKey);
-
-    [LoggerMessage(EventId = 1022, Level = LogLevel.Information,
-        Message = "Boundary message {BoundaryMessageId} interrupted attached activity {AttachedActivityId}")]
-    private partial void LogBoundaryMessageInterrupted(string boundaryMessageId, string attachedActivityId);
 
     [LoggerMessage(EventId = 1023, Level = LogLevel.Warning,
         Message = "Message subscription failed for activity {ActivityId}: messageName={MessageName}, correlationKey={CorrelationKey}")]

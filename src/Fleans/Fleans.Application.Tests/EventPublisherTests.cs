@@ -1,6 +1,7 @@
 using Fleans.Application;
 using Fleans.Application.Conditions;
 using Fleans.Application.Events;
+using Fleans.Application.Services;
 using Fleans.Application.Grains;
 using Fleans.Application.QueryModels;
 using Fleans.Application.Scripts;
@@ -188,6 +189,7 @@ public class EventPublisherTests
 
                     services.AddSingleton<IProcessDefinitionRepository, EfCoreProcessDefinitionRepository>();
                     services.AddSingleton<IWorkflowQueryService, WorkflowQueryService>();
+                    services.AddTransient<IBoundaryEventHandler, BoundaryEventHandler>();
 
                     services.AddSingleton<IConditionExpressionEvaluator, SimpleConditionEvaluator>();
                     services.AddSingleton<IScriptExpressionExecutor, SimpleScriptExecutor>();

@@ -1,3 +1,4 @@
+using Fleans.Application.Services;
 using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
@@ -150,6 +151,7 @@ namespace Fleans.Application.Tests
                     .ConfigureServices(services =>
                     {
                         services.AddSingleton<IProcessDefinitionRepository, StubProcessDefinitionRepository>();
+                        services.AddTransient<IBoundaryEventHandler, BoundaryEventHandler>();
                     });
         }
 
