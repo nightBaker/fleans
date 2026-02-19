@@ -18,20 +18,7 @@ public abstract record Activity([property: Id(0)] string ActivityId)
             await activityContext.GetActivityInstanceId(),
             ActivityId,
             GetType().Name));
-
-        // Register boundary events attached to this activity
-        var hostInstanceId = await activityContext.GetActivityInstanceId();
-        foreach (var boundaryTimer in definition.Activities.OfType<BoundaryTimerEvent>()
-            .Where(bt => bt.AttachedToActivityId == ActivityId))
-        {
-            await workflowContext.RegisterTimerReminder(hostInstanceId, boundaryTimer.ActivityId, boundaryTimer.TimerDefinition.GetDueTime());
-        }
-
-        foreach (var boundaryMsg in definition.Activities.OfType<MessageBoundaryEvent>()
-            .Where(bm => bm.AttachedToActivityId == ActivityId))
-        {
-            await workflowContext.RegisterBoundaryMessageSubscription(hostInstanceId, boundaryMsg.ActivityId, boundaryMsg.MessageDefinitionId);
-        }
     }
+
     internal abstract Task<List<Activity>> GetNextActivities(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext);
 }

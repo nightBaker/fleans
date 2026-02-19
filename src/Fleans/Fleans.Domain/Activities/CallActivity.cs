@@ -7,7 +7,7 @@ public record CallActivity(
     [property: Id(2)] List<VariableMapping> InputMappings,
     [property: Id(3)] List<VariableMapping> OutputMappings,
     [property: Id(4)] bool PropagateAllParentVariables = true,
-    [property: Id(5)] bool PropagateAllChildVariables = true) : Activity(ActivityId)
+    [property: Id(5)] bool PropagateAllChildVariables = true) : BoundarableActivity(ActivityId)
 {
     internal override async Task ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext)
     {
