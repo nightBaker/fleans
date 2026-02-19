@@ -54,6 +54,10 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
                 SetActivityRequestContext(activityId, activityState);
                 LogExecutingActivity(activityId, currentActivity.GetType().Name);
                 await currentActivity.ExecuteAsync(this, activityState);
+                if (currentActivity is IBoundarableActivity boundarable)
+                {
+                    await boundarable.RegisterBoundaryEventsAsync(this, activityState);
+                }
             }
 
             await TransitionToNextActivity();
