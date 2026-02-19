@@ -16,27 +16,27 @@ public partial class TimerCallbackGrain : Grain, ITimerCallbackGrain, IRemindabl
 
     public async Task Activate(TimeSpan dueTime)
     {
-        var (workflowInstanceId, activityId) = ParseKey();
-        LogActivating(workflowInstanceId, activityId, dueTime);
+        var (workflowInstanceId, timerActivityId) = ParseKey();
+        LogActivating(workflowInstanceId, timerActivityId, dueTime);
         await this.RegisterOrUpdateReminder(ReminderName, dueTime, TimeSpan.FromMinutes(1));
     }
 
     public async Task Cancel()
     {
-        var (workflowInstanceId, activityId) = ParseKey();
+        var (workflowInstanceId, timerActivityId) = ParseKey();
         try
         {
             var reminder = await this.GetReminder(ReminderName);
             if (reminder != null)
             {
                 await this.UnregisterReminder(reminder);
-                LogCancelled(workflowInstanceId, activityId);
+                LogCancelled(workflowInstanceId, timerActivityId);
             }
         }
         catch (Exception ex)
         {
             // Reminder may not exist — that's fine
-            LogCancelFailed(workflowInstanceId, activityId, ex);
+            LogCancelFailed(workflowInstanceId, timerActivityId, ex);
         }
     }
 
@@ -45,14 +45,14 @@ public partial class TimerCallbackGrain : Grain, ITimerCallbackGrain, IRemindabl
         if (reminderName != ReminderName)
             return;
 
-        var (workflowInstanceId, activityId) = ParseKey();
-        LogReminderFired(workflowInstanceId, activityId);
+        var (workflowInstanceId, timerActivityId) = ParseKey();
+        LogReminderFired(workflowInstanceId, timerActivityId);
 
         // Call back to WorkflowInstance first — if this fails, the periodic
         // reminder will fire again and retry. HandleTimerFired is idempotent
         // (stale-timer guards check if the activity is still active).
         var workflowInstance = GrainFactory.GetGrain<IWorkflowInstanceGrain>(workflowInstanceId);
-        await workflowInstance.HandleTimerFired(activityId);
+        await workflowInstance.HandleTimerFired(timerActivityId);
 
         // Unregister only after successful callback
         try
@@ -65,39 +65,39 @@ public partial class TimerCallbackGrain : Grain, ITimerCallbackGrain, IRemindabl
         {
             // If unregister fails, the next periodic tick will retry —
             // HandleTimerFired is idempotent so this is safe.
-            LogReminderUnregisterFailed(workflowInstanceId, activityId, ex);
+            LogReminderUnregisterFailed(workflowInstanceId, timerActivityId, ex);
         }
     }
 
     /// <summary>
     /// Parses the compound key. Guid = workflowInstanceId,
-    /// string = "{activityInstanceId}:{activityId}".
+    /// string = "{hostActivityInstanceId}:{timerActivityId}".
     /// </summary>
-    private (Guid WorkflowInstanceId, string ActivityId) ParseKey()
+    private (Guid WorkflowInstanceId, string TimerActivityId) ParseKey()
     {
         var workflowInstanceId = this.GetPrimaryKey(out var keyString);
-        // activityInstanceId Guid is always 36 chars, followed by ':'
-        var activityId = keyString![37..];
-        return (workflowInstanceId, activityId);
+        // hostActivityInstanceId Guid is always 36 chars, followed by ':'
+        var timerActivityId = keyString![37..];
+        return (workflowInstanceId, timerActivityId);
     }
 
     [LoggerMessage(EventId = 10000, Level = LogLevel.Information,
-        Message = "Timer callback activating for workflow {WorkflowInstanceId}, activity {ActivityId}, due in {DueTime}")]
-    private partial void LogActivating(Guid workflowInstanceId, string activityId, TimeSpan dueTime);
+        Message = "Timer callback activating for workflow {WorkflowInstanceId}, activity {TimerActivityId}, due in {DueTime}")]
+    private partial void LogActivating(Guid workflowInstanceId, string timerActivityId, TimeSpan dueTime);
 
     [LoggerMessage(EventId = 10001, Level = LogLevel.Information,
-        Message = "Timer callback cancelled for workflow {WorkflowInstanceId}, activity {ActivityId}")]
-    private partial void LogCancelled(Guid workflowInstanceId, string activityId);
+        Message = "Timer callback cancelled for workflow {WorkflowInstanceId}, activity {TimerActivityId}")]
+    private partial void LogCancelled(Guid workflowInstanceId, string timerActivityId);
 
     [LoggerMessage(EventId = 10002, Level = LogLevel.Information,
-        Message = "Timer callback reminder fired for workflow {WorkflowInstanceId}, activity {ActivityId}")]
-    private partial void LogReminderFired(Guid workflowInstanceId, string activityId);
+        Message = "Timer callback reminder fired for workflow {WorkflowInstanceId}, activity {TimerActivityId}")]
+    private partial void LogReminderFired(Guid workflowInstanceId, string timerActivityId);
 
     [LoggerMessage(EventId = 10003, Level = LogLevel.Debug,
-        Message = "Timer callback cancel failed for workflow {WorkflowInstanceId}, activity {ActivityId} — reminder may not exist")]
-    private partial void LogCancelFailed(Guid workflowInstanceId, string activityId, Exception exception);
+        Message = "Timer callback cancel failed for workflow {WorkflowInstanceId}, activity {TimerActivityId} — reminder may not exist")]
+    private partial void LogCancelFailed(Guid workflowInstanceId, string timerActivityId, Exception exception);
 
     [LoggerMessage(EventId = 10004, Level = LogLevel.Debug,
-        Message = "Timer callback reminder unregister failed for workflow {WorkflowInstanceId}, activity {ActivityId}")]
-    private partial void LogReminderUnregisterFailed(Guid workflowInstanceId, string activityId, Exception exception);
+        Message = "Timer callback reminder unregister failed for workflow {WorkflowInstanceId}, activity {TimerActivityId}")]
+    private partial void LogReminderUnregisterFailed(Guid workflowInstanceId, string timerActivityId, Exception exception);
 }

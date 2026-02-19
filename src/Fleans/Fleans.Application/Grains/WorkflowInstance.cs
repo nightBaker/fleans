@@ -82,35 +82,35 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         await _state.WriteStateAsync();
     }
 
-    public async Task HandleTimerFired(string activityId)
+    public async Task HandleTimerFired(string timerActivityId)
     {
         await EnsureWorkflowDefinitionAsync();
         var definition = await GetWorkflowDefinition();
 
         // Check if this is a boundary timer
-        var activity = definition.Activities.FirstOrDefault(a => a.ActivityId == activityId);
+        var activity = definition.Activities.FirstOrDefault(a => a.ActivityId == timerActivityId);
         if (activity is BoundaryTimerEvent boundaryTimer)
         {
             // HandleBoundaryTimerFired sets up its own RequestContext/scope
-            LogTimerReminderFired(activityId);
+            LogTimerReminderFired(timerActivityId);
             await HandleBoundaryTimerFired(boundaryTimer);
         }
         else
         {
             SetWorkflowRequestContext();
             using var scope = BeginWorkflowScope();
-            LogTimerReminderFired(activityId);
+            LogTimerReminderFired(timerActivityId);
 
             // Intermediate catch timer — just complete the activity
             // Guard: activity may already be completed by a previous reminder tick
-            var entry = State.GetFirstActive(activityId);
+            var entry = State.GetFirstActive(timerActivityId);
             if (entry == null)
             {
-                LogStaleTimerIgnored(activityId);
+                LogStaleTimerIgnored(timerActivityId);
                 return;
             }
 
-            await CompleteActivityState(activityId, new ExpandoObject());
+            await CompleteActivityState(timerActivityId, new ExpandoObject());
             await ExecuteWorkflow();
             await _state.WriteStateAsync();
         }
@@ -821,14 +821,14 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
     [LoggerMessage(EventId = 1016, Level = LogLevel.Information, Message = "Boundary error event {BoundaryEventId} triggered by failed activity {ActivityId}")]
     private partial void LogBoundaryEventTriggered(string boundaryEventId, string activityId);
 
-    [LoggerMessage(EventId = 1017, Level = LogLevel.Information, Message = "Timer reminder registered for activity {ActivityId}, due in {DueTime}")]
-    private partial void LogTimerReminderRegistered(string activityId, TimeSpan dueTime);
+    [LoggerMessage(EventId = 1017, Level = LogLevel.Information, Message = "Timer reminder registered for activity {TimerActivityId}, due in {DueTime}")]
+    private partial void LogTimerReminderRegistered(string timerActivityId, TimeSpan dueTime);
 
-    [LoggerMessage(EventId = 1018, Level = LogLevel.Information, Message = "Timer reminder fired for activity {ActivityId}")]
-    private partial void LogTimerReminderFired(string activityId);
+    [LoggerMessage(EventId = 1018, Level = LogLevel.Information, Message = "Timer reminder fired for activity {TimerActivityId}")]
+    private partial void LogTimerReminderFired(string timerActivityId);
 
-    [LoggerMessage(EventId = 1019, Level = LogLevel.Information, Message = "Timer reminder unregistered for activity {ActivityId}")]
-    private partial void LogTimerReminderUnregistered(string activityId);
+    [LoggerMessage(EventId = 1019, Level = LogLevel.Information, Message = "Timer reminder unregistered for activity {TimerActivityId}")]
+    private partial void LogTimerReminderUnregistered(string timerActivityId);
 
     [LoggerMessage(EventId = 1020, Level = LogLevel.Information, Message = "Boundary timer {BoundaryTimerId} interrupted attached activity {AttachedActivityId}")]
     private partial void LogBoundaryTimerInterrupted(string boundaryTimerId, string attachedActivityId);
@@ -845,6 +845,6 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         Message = "Message subscription failed for activity {ActivityId}: messageName={MessageName}, correlationKey={CorrelationKey}")]
     private partial void LogMessageSubscriptionFailed(string activityId, string messageName, string correlationKey, Exception exception);
 
-    [LoggerMessage(EventId = 1024, Level = LogLevel.Debug, Message = "Stale timer ignored for activity {ActivityId} — activity no longer active")]
-    private partial void LogStaleTimerIgnored(string activityId);
+    [LoggerMessage(EventId = 1024, Level = LogLevel.Debug, Message = "Stale timer ignored for activity {TimerActivityId} — activity no longer active")]
+    private partial void LogStaleTimerIgnored(string timerActivityId);
 }
