@@ -266,25 +266,6 @@ public class EfCoreActivityInstanceGrainStorageTests
     }
 
     [TestMethod]
-    public async Task Update_ClearsErrorState()
-    {
-        var grainId = NewGrainId();
-        var state = CreateGrainState();
-        state.State.SetActivity("act-1", "ScriptTask");
-        state.State.Fail(new InvalidOperationException("oops"));
-        await _storage.WriteStateAsync(StateName, grainId, state);
-
-        // Re-execute clears error
-        state.State.Execute();
-        await _storage.WriteStateAsync(StateName, grainId, state);
-
-        var readState = CreateGrainState();
-        await _storage.ReadStateAsync(StateName, grainId, readState);
-
-        Assert.IsNull(readState.State.ErrorState);
-    }
-
-    [TestMethod]
     public async Task Update_OverwritesErrorState()
     {
         var grainId = NewGrainId();

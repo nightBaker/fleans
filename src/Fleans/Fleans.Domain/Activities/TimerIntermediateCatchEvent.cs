@@ -13,6 +13,8 @@ public record TimerIntermediateCatchEvent(
         IActivityExecutionContext activityContext)
     {
         await base.ExecuteAsync(workflowContext, activityContext);
+        var hostInstanceId = await activityContext.GetActivityInstanceId();
+        await workflowContext.RegisterTimerReminder(hostInstanceId, ActivityId, TimerDefinition.GetDueTime());
         // Do NOT call activityContext.Complete() — the reminder will do that
     }
 

@@ -39,5 +39,6 @@ public interface IWorkflowInstanceGrain : IGrainWithGuidKey, IWorkflowExecutionC
     [AlwaysInterleave]
     Task OnChildWorkflowFailed(string parentActivityId, Exception exception);
 
-    Task HandleBoundaryMessageFired(string boundaryActivityId);
+    Task HandleBoundaryMessageFired(string boundaryActivityId, Guid hostActivityInstanceId);
+    Task HandleTimerFired(string timerActivityId, Guid hostActivityInstanceId);
 }

@@ -2,7 +2,6 @@ using Fleans.Application.Grains;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
-using Orleans.Runtime;
 using System.Dynamic;
 
 namespace Fleans.Application.Tests;
@@ -85,9 +84,9 @@ public class BoundaryTimerEventTests : WorkflowTestBase
         var preSnapshot = await QueryService.GetStateSnapshot(instanceId);
         Assert.IsTrue(preSnapshot!.ActiveActivities.Any(a => a.ActivityId == "task1"));
 
-        // Act — simulate boundary timer firing via ReceiveReminder
-        var remindable = workflowInstance.AsReference<IRemindable>();
-        await remindable.ReceiveReminder("timer:bt1", default);
+        // Act — simulate boundary timer firing via HandleTimerFired
+        var hostInstanceId = preSnapshot.ActiveActivities.First(a => a.ActivityId == "task1").ActivityInstanceId;
+        await workflowInstance.HandleTimerFired("bt1", hostInstanceId);
 
         // Assert — should follow boundary path, task1 should be interrupted
         var snapshot = await QueryService.GetStateSnapshot(instanceId);

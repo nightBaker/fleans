@@ -117,4 +117,57 @@ public class MessageBoundaryEventTests : WorkflowTestBase
         var delivered = await correlationGrain.DeliverMessage("order-789", new ExpandoObject());
         Assert.IsFalse(delivered, "Subscription should have been cleaned up");
     }
+
+    [TestMethod]
+    public async Task BoundaryMessage_DirectCallAfterCompletion_ShouldBeSilentlyIgnored()
+    {
+        // Arrange — Start → Task(+BoundaryMessage) → End, BoundaryMessage → MsgEnd
+        var start = new StartEvent("start");
+        var task = new TaskActivity("task1");
+        var msgDef = new MessageDefinition("msg1", "cancelOrder", "orderId");
+        var boundaryMsg = new MessageBoundaryEvent("bmsg1", "task1", "msg1");
+        var end = new EndEvent("end");
+        var msgEnd = new EndEvent("msgEnd");
+
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "boundary-msg-stale",
+            Activities = [start, task, boundaryMsg, end, msgEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("f1", start, task),
+                new SequenceFlow("f2", task, end),
+                new SequenceFlow("f3", boundaryMsg, msgEnd)
+            ],
+            Messages = [msgDef]
+        };
+
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await workflowInstance.SetWorkflow(workflow);
+        dynamic initVars = new ExpandoObject();
+        initVars.orderId = "order-stale";
+        await workflowInstance.SetInitialVariables(initVars);
+        await workflowInstance.StartWorkflow();
+
+        // Get the host activity instance ID before completing
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var preSnapshot = await QueryService.GetStateSnapshot(instanceId);
+        var hostInstanceId = preSnapshot!.ActiveActivities.First(a => a.ActivityId == "task1").ActivityInstanceId;
+
+        // Complete task normally — host activity is now done
+        await workflowInstance.CompleteActivity("task1", new ExpandoObject());
+
+        var midSnapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsTrue(midSnapshot!.IsCompleted, "Workflow should be completed via normal flow");
+
+        // Act — simulate stale boundary message with the old hostActivityInstanceId
+        // This should be silently ignored (no error, no state change)
+        await workflowInstance.HandleBoundaryMessageFired("bmsg1", hostInstanceId);
+
+        // Assert — workflow is still completed, no crash
+        var finalSnapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsTrue(finalSnapshot!.IsCompleted, "Workflow should still be completed after stale message");
+        Assert.IsTrue(finalSnapshot.CompletedActivities.Any(a => a.ActivityId == "end"),
+            "Should still be completed via normal end event");
+    }
 }

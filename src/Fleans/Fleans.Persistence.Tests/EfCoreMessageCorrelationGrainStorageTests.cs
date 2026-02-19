@@ -43,8 +43,8 @@ public class EfCoreMessageCorrelationGrainStorageTests
         var grainId = NewGrainId("paymentReceived");
         var state = CreateGrainState(new Dictionary<string, MessageSubscription>
         {
-            ["order-123"] = new(Guid.NewGuid(), "waitPayment"),
-            ["order-456"] = new(Guid.NewGuid(), "waitConfirm")
+            ["order-123"] = new(Guid.NewGuid(), "waitPayment", Guid.NewGuid()),
+            ["order-456"] = new(Guid.NewGuid(), "waitConfirm", Guid.NewGuid())
         });
 
         await _storage.WriteStateAsync(StateName, grainId, state);
@@ -66,10 +66,11 @@ public class EfCoreMessageCorrelationGrainStorageTests
     public async Task WriteAndRead_RoundTrip_PreservesSubscriptionDetails()
     {
         var instanceId = Guid.NewGuid();
+        var hostActivityInstanceId = Guid.NewGuid();
         var grainId = NewGrainId("orderCancelled");
         var state = CreateGrainState(new Dictionary<string, MessageSubscription>
         {
-            ["corr-key-1"] = new(instanceId, "activity-1")
+            ["corr-key-1"] = new(instanceId, "activity-1", hostActivityInstanceId)
         });
 
         await _storage.WriteStateAsync(StateName, grainId, state);
@@ -80,6 +81,7 @@ public class EfCoreMessageCorrelationGrainStorageTests
         var sub = readState.State.Subscriptions["corr-key-1"];
         Assert.AreEqual(instanceId, sub.WorkflowInstanceId);
         Assert.AreEqual("activity-1", sub.ActivityId);
+        Assert.AreEqual(hostActivityInstanceId, sub.HostActivityInstanceId);
     }
 
     [TestMethod]
@@ -88,12 +90,12 @@ public class EfCoreMessageCorrelationGrainStorageTests
         var grainId = NewGrainId("msg1");
         var state = CreateGrainState(new Dictionary<string, MessageSubscription>
         {
-            ["key1"] = new(Guid.NewGuid(), "act1")
+            ["key1"] = new(Guid.NewGuid(), "act1", Guid.NewGuid())
         });
         await _storage.WriteStateAsync(StateName, grainId, state);
         var firstETag = state.ETag;
 
-        state.State.Subscriptions["key2"] = new(Guid.NewGuid(), "act2");
+        state.State.Subscriptions["key2"] = new(Guid.NewGuid(), "act2", Guid.NewGuid());
         await _storage.WriteStateAsync(StateName, grainId, state);
 
         Assert.AreNotEqual(firstETag, state.ETag);
@@ -109,16 +111,16 @@ public class EfCoreMessageCorrelationGrainStorageTests
         var grainId = NewGrainId("staleMsg");
         var state = CreateGrainState(new Dictionary<string, MessageSubscription>
         {
-            ["key1"] = new(Guid.NewGuid(), "act1")
+            ["key1"] = new(Guid.NewGuid(), "act1", Guid.NewGuid())
         });
         await _storage.WriteStateAsync(StateName, grainId, state);
 
         var concurrentState = CreateEmptyGrainState();
         await _storage.ReadStateAsync(StateName, grainId, concurrentState);
-        concurrentState.State.Subscriptions["key2"] = new(Guid.NewGuid(), "act2");
+        concurrentState.State.Subscriptions["key2"] = new(Guid.NewGuid(), "act2", Guid.NewGuid());
         await _storage.WriteStateAsync(StateName, grainId, concurrentState);
 
-        state.State.Subscriptions["key3"] = new(Guid.NewGuid(), "act3");
+        state.State.Subscriptions["key3"] = new(Guid.NewGuid(), "act3", Guid.NewGuid());
         await Assert.ThrowsExactlyAsync<InconsistentStateException>(
             () => _storage.WriteStateAsync(StateName, grainId, state));
     }
@@ -129,7 +131,7 @@ public class EfCoreMessageCorrelationGrainStorageTests
         var grainId = NewGrainId("clearMsg");
         var state = CreateGrainState(new Dictionary<string, MessageSubscription>
         {
-            ["key1"] = new(Guid.NewGuid(), "act1")
+            ["key1"] = new(Guid.NewGuid(), "act1", Guid.NewGuid())
         });
         await _storage.WriteStateAsync(StateName, grainId, state);
 
@@ -149,13 +151,13 @@ public class EfCoreMessageCorrelationGrainStorageTests
         var grainId = NewGrainId("clearStale");
         var state = CreateGrainState(new Dictionary<string, MessageSubscription>
         {
-            ["key1"] = new(Guid.NewGuid(), "act1")
+            ["key1"] = new(Guid.NewGuid(), "act1", Guid.NewGuid())
         });
         await _storage.WriteStateAsync(StateName, grainId, state);
 
         var concurrentState = CreateEmptyGrainState();
         await _storage.ReadStateAsync(StateName, grainId, concurrentState);
-        concurrentState.State.Subscriptions["key2"] = new(Guid.NewGuid(), "act2");
+        concurrentState.State.Subscriptions["key2"] = new(Guid.NewGuid(), "act2", Guid.NewGuid());
         await _storage.WriteStateAsync(StateName, grainId, concurrentState);
 
         await Assert.ThrowsExactlyAsync<InconsistentStateException>(
@@ -197,11 +199,11 @@ public class EfCoreMessageCorrelationGrainStorageTests
 
         var state1 = CreateGrainState(new Dictionary<string, MessageSubscription>
         {
-            ["keyA"] = new(id1, "actA")
+            ["keyA"] = new(id1, "actA", Guid.NewGuid())
         });
         var state2 = CreateGrainState(new Dictionary<string, MessageSubscription>
         {
-            ["keyB"] = new(id2, "actB")
+            ["keyB"] = new(id2, "actB", Guid.NewGuid())
         });
 
         await _storage.WriteStateAsync(StateName, grainId1, state1);
@@ -224,7 +226,7 @@ public class EfCoreMessageCorrelationGrainStorageTests
         var grainId = NewGrainId("recreate");
         var state = CreateGrainState(new Dictionary<string, MessageSubscription>
         {
-            ["key1"] = new(Guid.NewGuid(), "act1")
+            ["key1"] = new(Guid.NewGuid(), "act1", Guid.NewGuid())
         });
         await _storage.WriteStateAsync(StateName, grainId, state);
 
@@ -232,7 +234,7 @@ public class EfCoreMessageCorrelationGrainStorageTests
 
         var newState = CreateGrainState(new Dictionary<string, MessageSubscription>
         {
-            ["key2"] = new(Guid.NewGuid(), "act2")
+            ["key2"] = new(Guid.NewGuid(), "act2", Guid.NewGuid())
         });
         await _storage.WriteStateAsync(StateName, grainId, newState);
 
