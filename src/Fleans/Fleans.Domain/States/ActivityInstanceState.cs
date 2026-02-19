@@ -46,6 +46,9 @@ public class ActivityInstanceState
 
     public void Complete()
     {
+        if (IsCompleted)
+            throw new InvalidOperationException($"Activity '{ActivityId}' is already completed.");
+
         IsExecuting = false;
         IsCompleted = true;
         CompletedAt = DateTimeOffset.UtcNow;
@@ -53,6 +56,9 @@ public class ActivityInstanceState
 
     public void Fail(Exception exception)
     {
+        if (IsCompleted)
+            throw new InvalidOperationException($"Activity '{ActivityId}' is already completed — cannot fail.");
+
         if (exception is ActivityException activityException)
         {
             var errorState = activityException.GetActivityErrorState();
@@ -68,9 +74,11 @@ public class ActivityInstanceState
 
     public void Execute()
     {
-        ErrorCode = null;
-        ErrorMessage = null;
-        IsCompleted = false;
+        if (IsExecuting)
+            throw new InvalidOperationException($"Activity '{ActivityId}' is already executing.");
+        if (IsCompleted)
+            throw new InvalidOperationException($"Activity '{ActivityId}' is already completed — cannot execute again.");
+
         IsExecuting = true;
         ExecutionStartedAt = DateTimeOffset.UtcNow;
     }
