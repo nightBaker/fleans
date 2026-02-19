@@ -25,7 +25,10 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
         var attachedEntry = _accessor.State.Entries.FirstOrDefault(e =>
             e.ActivityInstanceId == hostActivityInstanceId && !e.IsCompleted);
         if (attachedEntry == null)
-            return; // Activity already completed, timer is stale
+        {
+            LogStaleBoundaryTimerIgnored(boundaryTimer.ActivityId, hostActivityInstanceId);
+            return;
+        }
 
         // Interrupt the attached activity
         var attachedInstance = _accessor.GrainFactory.GetGrain<IActivityInstanceGrain>(attachedEntry.ActivityInstanceId);
@@ -49,7 +52,10 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
         var attachedEntry = _accessor.State.Entries.FirstOrDefault(e =>
             e.ActivityInstanceId == hostActivityInstanceId && !e.IsCompleted);
         if (attachedEntry == null)
-            return; // Activity already completed, message is stale
+        {
+            LogStaleBoundaryMessageIgnored(boundaryMessage.ActivityId, hostActivityInstanceId);
+            return;
+        }
 
         // Interrupt the attached activity
         var attachedInstance = _accessor.GrainFactory.GetGrain<IActivityInstanceGrain>(attachedEntry.ActivityInstanceId);
@@ -125,6 +131,12 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
         await _accessor.TransitionToNextActivity();
         await _accessor.ExecuteWorkflow();
     }
+
+    [LoggerMessage(EventId = 1025, Level = LogLevel.Warning, Message = "Stale boundary timer {TimerActivityId} ignored — host activity instance {HostActivityInstanceId} already completed")]
+    private partial void LogStaleBoundaryTimerIgnored(string timerActivityId, Guid hostActivityInstanceId);
+
+    [LoggerMessage(EventId = 1026, Level = LogLevel.Warning, Message = "Stale boundary message {MessageActivityId} ignored — host activity instance {HostActivityInstanceId} already completed")]
+    private partial void LogStaleBoundaryMessageIgnored(string messageActivityId, Guid hostActivityInstanceId);
 
     [LoggerMessage(EventId = 1016, Level = LogLevel.Information, Message = "Boundary error event {BoundaryEventId} triggered by failed activity {ActivityId}")]
     private partial void LogBoundaryEventTriggered(string boundaryEventId, string activityId);
