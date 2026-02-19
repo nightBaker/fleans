@@ -5,7 +5,7 @@ using System.Runtime.CompilerServices;
 namespace Fleans.Domain.Activities;
 
 [GenerateSerializer]
-public record TaskActivity(string ActivityId) : Activity(ActivityId)
+public record TaskActivity(string ActivityId) : BoundarableActivity(ActivityId)
 {
     internal override async Task<List<Activity>> GetNextActivities(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext)
     {
