@@ -18,6 +18,6 @@ public interface IWorkflowExecutionContext
 
     ValueTask<object?> GetVariable(string variableName);
     ValueTask RegisterMessageSubscription(string messageDefinitionId, string activityId);
-    ValueTask RegisterTimerReminder(Guid activityInstanceId, string activityId, TimeSpan dueTime);
+    ValueTask RegisterTimerReminder(Guid hostActivityInstanceId, string timerActivityId, TimeSpan dueTime);
     ValueTask RegisterBoundaryMessageSubscription(string boundaryActivityId, string messageDefinitionId);
 }

@@ -672,12 +672,12 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         LogMessageSubscriptionRegistered(activityId, messageDef.Name, correlationKey);
     }
 
-    public async ValueTask RegisterTimerReminder(Guid activityInstanceId, string activityId, TimeSpan dueTime)
+    public async ValueTask RegisterTimerReminder(Guid hostActivityInstanceId, string timerActivityId, TimeSpan dueTime)
     {
         var callbackGrain = _grainFactory.GetGrain<ITimerCallbackGrain>(
-            this.GetPrimaryKey(), $"{activityInstanceId}:{activityId}");
+            this.GetPrimaryKey(), $"{hostActivityInstanceId}:{timerActivityId}");
         await callbackGrain.Activate(dueTime);
-        LogTimerReminderRegistered(activityId, dueTime);
+        LogTimerReminderRegistered(timerActivityId, dueTime);
     }
 
     public async ValueTask RegisterBoundaryMessageSubscription(string boundaryActivityId, string messageDefinitionId)
