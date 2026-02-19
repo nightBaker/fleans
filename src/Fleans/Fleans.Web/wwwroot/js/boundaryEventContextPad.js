@@ -71,7 +71,7 @@
 
         var boundaryEvent = bpmnFactory.create('bpmn:BoundaryEvent', {
             attachedToRef: host.businessObject,
-            cancelActivity: eventDefinitionType !== 'bpmn:ErrorEventDefinition',
+            cancelActivity: true,
             eventDefinitions: [eventDefinition]
         });
 
