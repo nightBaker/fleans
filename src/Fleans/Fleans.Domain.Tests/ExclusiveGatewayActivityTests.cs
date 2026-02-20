@@ -42,7 +42,7 @@ public class ExclusiveGatewayActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("if", activityInstanceId);
 
         // Act
-        var nextActivities = await gateway.GetNextActivities(workflowContext, activityContext);
+        var nextActivities = await gateway.GetNextActivities(workflowContext, activityContext, definition);
 
         // Assert
         Assert.HasCount(1, nextActivities);
@@ -81,7 +81,7 @@ public class ExclusiveGatewayActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("if", activityInstanceId);
 
         // Act
-        var nextActivities = await gateway.GetNextActivities(workflowContext, activityContext);
+        var nextActivities = await gateway.GetNextActivities(workflowContext, activityContext, definition);
 
         // Assert
         Assert.HasCount(1, nextActivities);
@@ -117,7 +117,7 @@ public class ExclusiveGatewayActivityTests
 
         // Act & Assert
         await Assert.ThrowsExactlyAsync<InvalidOperationException>(
-            () => gateway.GetNextActivities(workflowContext, activityContext));
+            () => gateway.GetNextActivities(workflowContext, activityContext, definition));
     }
 
     [TestMethod]
@@ -140,7 +140,7 @@ public class ExclusiveGatewayActivityTests
         var (activityContext, publishedEvents) = ActivityTestHelper.CreateActivityContext("if", activityInstanceId);
 
         // Act
-        await gateway.ExecuteAsync(workflowContext, activityContext);
+        await gateway.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert — should have added condition sequences to workflow
         await workflowContext.Received(1).AddConditionSequenceStates(
@@ -169,7 +169,7 @@ public class ExclusiveGatewayActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("if");
 
         // Act
-        await gateway.ExecuteAsync(workflowContext, activityContext);
+        await gateway.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert — should auto-complete since no conditions to evaluate
         await activityContext.Received(1).Complete();

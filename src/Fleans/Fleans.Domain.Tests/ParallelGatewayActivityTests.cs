@@ -24,7 +24,7 @@ public class ParallelGatewayActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("fork");
 
         // Act
-        await fork.ExecuteAsync(workflowContext, activityContext);
+        await fork.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert
         await activityContext.Received(1).Complete();
@@ -49,7 +49,7 @@ public class ParallelGatewayActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("fork");
 
         // Act
-        var nextActivities = await fork.GetNextActivities(workflowContext, activityContext);
+        var nextActivities = await fork.GetNextActivities(workflowContext, activityContext, definition);
 
         // Assert
         Assert.HasCount(3, nextActivities);
@@ -77,7 +77,7 @@ public class ParallelGatewayActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("join");
 
         // Act
-        var nextActivities = await join.GetNextActivities(workflowContext, activityContext);
+        var nextActivities = await join.GetNextActivities(workflowContext, activityContext, definition);
 
         // Assert
         Assert.HasCount(1, nextActivities);
@@ -122,7 +122,7 @@ public class ParallelGatewayActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("join");
 
         // Act
-        await join.ExecuteAsync(workflowContext, activityContext);
+        await join.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert — join calls Complete because all paths are done
         await activityContext.Received(1).Complete();
@@ -165,7 +165,7 @@ public class ParallelGatewayActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("join");
 
         // Act
-        await join.ExecuteAsync(workflowContext, activityContext);
+        await join.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert — join calls Execute (not Complete) because not all paths are done
         await activityContext.Received().Execute();

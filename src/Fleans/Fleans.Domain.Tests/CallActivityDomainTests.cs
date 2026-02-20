@@ -25,7 +25,7 @@ public class CallActivityDomainTests
         var (activityContext, publishedEvents) = ActivityTestHelper.CreateActivityContext("call1");
 
         // Act
-        await callActivity.ExecuteAsync(workflowContext, activityContext);
+        await callActivity.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert
         await activityContext.Received(1).Execute();
@@ -48,7 +48,7 @@ public class CallActivityDomainTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("call1");
 
         // Act
-        var nextActivities = await callActivity.GetNextActivities(workflowContext, activityContext);
+        var nextActivities = await callActivity.GetNextActivities(workflowContext, activityContext, definition);
 
         // Assert
         Assert.HasCount(1, nextActivities);
@@ -65,7 +65,7 @@ public class CallActivityDomainTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("call1");
 
         // Act
-        var nextActivities = await callActivity.GetNextActivities(workflowContext, activityContext);
+        var nextActivities = await callActivity.GetNextActivities(workflowContext, activityContext, definition);
 
         // Assert
         Assert.HasCount(0, nextActivities);

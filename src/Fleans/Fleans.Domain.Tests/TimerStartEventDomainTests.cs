@@ -22,7 +22,7 @@ public class TimerStartEventDomainTests
         var (activityContext, publishedEvents) = ActivityTestHelper.CreateActivityContext("timerStart1");
 
         // Act
-        await timerStart.ExecuteAsync(workflowContext, activityContext);
+        await timerStart.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert
         await activityContext.Received(1).Execute();
@@ -45,7 +45,7 @@ public class TimerStartEventDomainTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("timerStart1");
 
         // Act
-        var nextActivities = await timerStart.GetNextActivities(workflowContext, activityContext);
+        var nextActivities = await timerStart.GetNextActivities(workflowContext, activityContext, definition);
 
         // Assert
         Assert.HasCount(1, nextActivities);

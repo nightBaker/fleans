@@ -21,7 +21,7 @@ public class TaskActivityDomainTests
         var (activityContext, publishedEvents) = ActivityTestHelper.CreateActivityContext("task1");
 
         // Act
-        await task.ExecuteAsync(workflowContext, activityContext);
+        await task.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert
         await activityContext.Received(1).Execute();
@@ -43,7 +43,7 @@ public class TaskActivityDomainTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("task1");
 
         // Act
-        var nextActivities = await task.GetNextActivities(workflowContext, activityContext);
+        var nextActivities = await task.GetNextActivities(workflowContext, activityContext, definition);
 
         // Assert
         Assert.HasCount(1, nextActivities);
@@ -62,7 +62,7 @@ public class TaskActivityDomainTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("task1");
 
         // Act
-        var nextActivities = await task.GetNextActivities(workflowContext, activityContext);
+        var nextActivities = await task.GetNextActivities(workflowContext, activityContext, definition);
 
         // Assert
         Assert.HasCount(0, nextActivities);

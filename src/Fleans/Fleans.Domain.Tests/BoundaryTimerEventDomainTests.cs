@@ -22,7 +22,7 @@ public class BoundaryTimerEventDomainTests
         var (activityContext, publishedEvents) = ActivityTestHelper.CreateActivityContext("bt1");
 
         // Act
-        await boundaryTimer.ExecuteAsync(workflowContext, activityContext);
+        await boundaryTimer.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert
         await activityContext.Received(1).Execute();
@@ -45,7 +45,7 @@ public class BoundaryTimerEventDomainTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("bt1");
 
         // Act
-        var nextActivities = await boundaryTimer.GetNextActivities(workflowContext, activityContext);
+        var nextActivities = await boundaryTimer.GetNextActivities(workflowContext, activityContext, definition);
 
         // Assert
         Assert.HasCount(1, nextActivities);

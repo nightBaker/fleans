@@ -21,7 +21,7 @@ public class ScriptTaskActivityTests
         var (activityContext, publishedEvents) = ActivityTestHelper.CreateActivityContext("script1");
 
         // Act
-        await script.ExecuteAsync(workflowContext, activityContext);
+        await script.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert
         var scriptEvent = publishedEvents.OfType<ExecuteScriptEvent>().Single();
@@ -48,7 +48,7 @@ public class ScriptTaskActivityTests
             ActivityTestHelper.CreateActivityContext("script1", activityInstanceId);
 
         // Act
-        await script.ExecuteAsync(workflowContext, activityContext);
+        await script.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert
         var scriptEvent = publishedEvents.OfType<ExecuteScriptEvent>().Single();

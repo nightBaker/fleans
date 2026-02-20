@@ -42,9 +42,10 @@ public class BoundaryEventHandlerTests
         var timerDef = new TimerDefinition(TimerType.Duration, "PT10M");
         var boundaryTimer = new BoundaryTimerEvent("bt1", "task1", timerDef);
         var hostInstanceId = Guid.NewGuid();
+        var definition = Substitute.For<IWorkflowDefinition>();
 
         // Act
-        await _handler.HandleBoundaryTimerFiredAsync(boundaryTimer, hostInstanceId);
+        await _handler.HandleBoundaryTimerFiredAsync(boundaryTimer, hostInstanceId, definition);
 
         // Assert — no transition or execution happened
         await _accessor.DidNotReceive().TransitionToNextActivity();
@@ -60,10 +61,9 @@ public class BoundaryEventHandlerTests
 
         var definition = Substitute.For<IWorkflowDefinition>();
         definition.Activities.Returns(new List<Activity> { boundaryMsg });
-        _accessor.GetWorkflowDefinition().Returns(ValueTask.FromResult(definition));
 
         // Act
-        await _handler.HandleBoundaryMessageFiredAsync(boundaryMsg, hostInstanceId);
+        await _handler.HandleBoundaryMessageFiredAsync(boundaryMsg, hostInstanceId, definition);
 
         // Assert
         await _accessor.DidNotReceive().TransitionToNextActivity();

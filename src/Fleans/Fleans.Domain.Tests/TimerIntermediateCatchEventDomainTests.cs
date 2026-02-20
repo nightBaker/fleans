@@ -22,7 +22,7 @@ public class TimerIntermediateCatchEventDomainTests
         var (activityContext, publishedEvents) = ActivityTestHelper.CreateActivityContext("timer1");
 
         // Act
-        await timerEvent.ExecuteAsync(workflowContext, activityContext);
+        await timerEvent.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert — should execute but NOT complete (waits for reminder)
         await activityContext.Received(1).Execute();
@@ -46,7 +46,7 @@ public class TimerIntermediateCatchEventDomainTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("timer1");
 
         // Act
-        var nextActivities = await timerEvent.GetNextActivities(workflowContext, activityContext);
+        var nextActivities = await timerEvent.GetNextActivities(workflowContext, activityContext, definition);
 
         // Assert
         Assert.HasCount(1, nextActivities);
