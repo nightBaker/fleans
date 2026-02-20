@@ -12,7 +12,7 @@ public interface IWorkflowInstanceGrain : IGrainWithGuidKey, IWorkflowExecutionC
     new ValueTask<Guid> GetWorkflowInstanceId();
 
     [ReadOnly]
-    new ValueTask<IWorkflowDefinition> GetWorkflowDefinition();
+    ValueTask<IWorkflowDefinition> GetWorkflowDefinition();
 
     [ReadOnly]
     new ValueTask<IReadOnlyDictionary<Guid, ConditionSequenceState[]>> GetConditionSequenceStates();
