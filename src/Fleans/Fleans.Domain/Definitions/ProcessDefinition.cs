@@ -12,28 +12,28 @@ public sealed class ProcessDefinition
     /// Unique identifier for a deployed definition (e.g. "&lt;key&gt;:&lt;version&gt;:&lt;timestamp&gt;").
     /// </summary>
     [Id(0)]
-    public required string ProcessDefinitionId { get; set; }
+    public required string ProcessDefinitionId { get; init; }
 
     /// <summary>
     /// BPMN process id (Camunda "process definition key").
     /// </summary>
     [Id(1)]
-    public required string ProcessDefinitionKey { get; set; }
+    public required string ProcessDefinitionKey { get; init; }
 
     /// <summary>
     /// Monotonically increasing version per key (1,2,3...).
     /// </summary>
     [Id(2)]
-    public required int Version { get; set; }
+    public required int Version { get; init; }
 
     [Id(3)]
-    public required DateTimeOffset DeployedAt { get; set; }
+    public required DateTimeOffset DeployedAt { get; init; }
 
     [Id(4)]
-    public required WorkflowDefinition Workflow { get; set; }
+    public required WorkflowDefinition Workflow { get; init; }
 
     [Id(5)]
-    public required string BpmnXml { get; set; }
+    public required string BpmnXml { get; init; }
 
     [Id(6)]
     public string? ETag { get; set; }

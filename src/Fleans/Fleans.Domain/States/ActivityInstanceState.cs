@@ -60,8 +60,6 @@ public class ActivityInstanceState
         CompletedAt = DateTimeOffset.UtcNow;
     }
 
-    // TODO: Make Fail() self-contained like Cancel() — set IsCompleted/IsExecuting/CompletedAt
-    // here instead of relying on the grain calling Complete() after Fail().
     public void Fail(Exception exception)
     {
         if (IsCompleted)
@@ -78,6 +76,10 @@ public class ActivityInstanceState
             ErrorCode = 500;
             ErrorMessage = exception.Message;
         }
+
+        IsExecuting = false;
+        IsCompleted = true;
+        CompletedAt = DateTimeOffset.UtcNow;
     }
 
     public void Cancel(string reason)

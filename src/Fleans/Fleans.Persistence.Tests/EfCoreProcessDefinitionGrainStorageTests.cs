@@ -96,7 +96,7 @@ public class EfCoreProcessDefinitionGrainStorageTests
         await _storage.WriteStateAsync(StateName, grainId, state);
         var firstETag = state.ETag;
 
-        state.State.BpmnXml = "<bpmn updated/>";
+        state.State = WithBpmnXml(state.State, "<bpmn updated/>");
         await _storage.WriteStateAsync(StateName, grainId, state);
 
         Assert.AreNotEqual(firstETag, state.ETag);
@@ -116,10 +116,10 @@ public class EfCoreProcessDefinitionGrainStorageTests
 
         var concurrentState = CreateEmptyGrainState();
         await _storage.ReadStateAsync(StateName, grainId, concurrentState);
-        concurrentState.State.BpmnXml = "<concurrent/>";
+        concurrentState.State = WithBpmnXml(concurrentState.State, "<concurrent/>");
         await _storage.WriteStateAsync(StateName, grainId, concurrentState);
 
-        state.State.BpmnXml = "<stale/>";
+        state.State = WithBpmnXml(state.State, "<stale/>");
         await Assert.ThrowsExactlyAsync<InconsistentStateException>(
             () => _storage.WriteStateAsync(StateName, grainId, state));
     }
@@ -177,7 +177,7 @@ public class EfCoreProcessDefinitionGrainStorageTests
 
         var concurrentState = CreateEmptyGrainState();
         await _storage.ReadStateAsync(StateName, grainId, concurrentState);
-        concurrentState.State.BpmnXml = "<concurrent/>";
+        concurrentState.State = WithBpmnXml(concurrentState.State, "<concurrent/>");
         await _storage.WriteStateAsync(StateName, grainId, concurrentState);
 
         await Assert.ThrowsExactlyAsync<InconsistentStateException>(
@@ -253,6 +253,16 @@ public class EfCoreProcessDefinitionGrainStorageTests
         Assert.AreEqual(2, readState.State.Version);
         Assert.IsTrue(readState.RecordExists);
     }
+
+    private static ProcessDefinition WithBpmnXml(ProcessDefinition source, string bpmnXml) => new()
+    {
+        ProcessDefinitionId = source.ProcessDefinitionId,
+        ProcessDefinitionKey = source.ProcessDefinitionKey,
+        Version = source.Version,
+        DeployedAt = source.DeployedAt,
+        Workflow = source.Workflow,
+        BpmnXml = bpmnXml
+    };
 
     private static GrainId NewGrainId(string key)
         => GrainId.Create("processDefinition", key);

@@ -16,7 +16,7 @@ namespace Fleans.Domain.Tests
             var entry = new ActivityInstanceEntry(variablesId, "start", Guid.Empty);
 
             // Act
-            state.StartWith(entry, variablesId);
+            state.StartWith(Guid.NewGuid(), "test-process", entry, variablesId);
 
             // Assert
             var activeActivities = state.GetActiveActivities();
@@ -34,11 +34,29 @@ namespace Fleans.Domain.Tests
             var entry = new ActivityInstanceEntry(variablesId, "start", Guid.Empty);
 
             // Act
-            state.StartWith(entry, variablesId);
+            state.StartWith(Guid.NewGuid(), "test-process", entry, variablesId);
 
             // Assert
             Assert.AreEqual(1, state.VariableStates.Count);
             Assert.IsTrue(state.VariableStates.Any(v => v.Id == variablesId));
+        }
+
+        [TestMethod]
+        public void StartWith_ShouldSetIdAndProcessDefinitionIdAndCreatedAt()
+        {
+            // Arrange
+            var state = new WorkflowInstanceState();
+            var id = Guid.NewGuid();
+            var variablesId = Guid.NewGuid();
+            var entry = new ActivityInstanceEntry(variablesId, "start", id);
+
+            // Act
+            state.StartWith(id, "my-process", entry, variablesId);
+
+            // Assert
+            Assert.AreEqual(id, state.Id);
+            Assert.AreEqual("my-process", state.ProcessDefinitionId);
+            Assert.IsNotNull(state.CreatedAt);
         }
 
         [TestMethod]
@@ -52,6 +70,7 @@ namespace Fleans.Domain.Tests
 
             // Assert
             Assert.IsTrue(state.IsStarted);
+            Assert.IsNotNull(state.ExecutionStartedAt);
         }
 
         [TestMethod]
@@ -79,6 +98,7 @@ namespace Fleans.Domain.Tests
 
             // Assert
             Assert.IsTrue(state.IsCompleted);
+            Assert.IsNotNull(state.CompletedAt);
         }
 
         [TestMethod]
@@ -175,7 +195,7 @@ namespace Fleans.Domain.Tests
             var state = new WorkflowInstanceState();
             var variablesId = Guid.NewGuid();
             var entry = new ActivityInstanceEntry(variablesId, "start", Guid.Empty);
-            state.StartWith(entry, variablesId);
+            state.StartWith(Guid.NewGuid(), "test-process", entry, variablesId);
 
             // Act
             var clonedId = state.AddCloneOfVariableState(variablesId);
@@ -192,7 +212,7 @@ namespace Fleans.Domain.Tests
             var state = new WorkflowInstanceState();
             var variablesId = Guid.NewGuid();
             var entry = new ActivityInstanceEntry(variablesId, "start", Guid.Empty);
-            state.StartWith(entry, variablesId);
+            state.StartWith(Guid.NewGuid(), "test-process", entry, variablesId);
 
             dynamic newVariables = new ExpandoObject();
             ((IDictionary<string, object>)newVariables)["key1"] = "value1";

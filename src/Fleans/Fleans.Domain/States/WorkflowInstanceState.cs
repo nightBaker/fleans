@@ -6,7 +6,7 @@ namespace Fleans.Domain.States;
 public class WorkflowInstanceState
 {
     [Id(0)]
-    public Guid Id { get; internal set; }
+    public Guid Id { get; private set; }
 
     [Id(1)]
     public string? ETag { get; private set; }
@@ -27,22 +27,22 @@ public class WorkflowInstanceState
     public bool IsCompleted { get; private set; }
 
     [Id(7)]
-    public DateTimeOffset? CreatedAt { get; internal set; }
+    public DateTimeOffset? CreatedAt { get; private set; }
 
     [Id(8)]
-    public DateTimeOffset? ExecutionStartedAt { get; internal set; }
+    public DateTimeOffset? ExecutionStartedAt { get; private set; }
 
     [Id(9)]
-    public DateTimeOffset? CompletedAt { get; internal set; }
+    public DateTimeOffset? CompletedAt { get; private set; }
 
     [Id(10)]
-    public string? ProcessDefinitionId { get; internal set; }
+    public string? ProcessDefinitionId { get; private set; }
 
     [Id(11)]
-    public Guid? ParentWorkflowInstanceId { get; internal set; }
+    public Guid? ParentWorkflowInstanceId { get; private set; }
 
     [Id(12)]
-    public string? ParentActivityId { get; internal set; }
+    public string? ParentActivityId { get; private set; }
 
     public IEnumerable<ActivityInstanceEntry> GetActiveActivities()
         => Entries.Where(e => !e.IsCompleted);
@@ -60,17 +60,27 @@ public class WorkflowInstanceState
     public IEnumerable<ConditionSequenceState> GetConditionSequenceStatesForGateway(Guid gatewayActivityInstanceId)
         => ConditionSequenceStates.Where(c => c.GatewayActivityInstanceId == gatewayActivityInstanceId);
 
-    public void StartWith(ActivityInstanceEntry entry, Guid variablesId)
+    public void StartWith(Guid id, string? processDefinitionId, ActivityInstanceEntry entry, Guid variablesId)
     {
-        VariableStates.Add(new WorkflowVariablesState(variablesId, Id));
+        Id = id;
+        ProcessDefinitionId = processDefinitionId;
+        CreatedAt = DateTimeOffset.UtcNow;
+        VariableStates.Add(new WorkflowVariablesState(variablesId, id));
         Entries.Add(entry);
+    }
+
+    public void SetParentInfo(Guid parentWorkflowInstanceId, string parentActivityId)
+    {
+        ParentWorkflowInstanceId = parentWorkflowInstanceId;
+        ParentActivityId = parentActivityId;
     }
 
     public void Start()
     {
         if (IsStarted)
             throw new InvalidOperationException("Workflow is already started");
-
+        
+        ExecutionStartedAt = DateTimeOffset.UtcNow;
         IsStarted = true;
     }
 
@@ -79,6 +89,7 @@ public class WorkflowInstanceState
         if (IsCompleted)
             throw new InvalidOperationException("Workflow is already completed");
 
+        CompletedAt = DateTimeOffset.UtcNow;
         IsCompleted = true;
     }
 
