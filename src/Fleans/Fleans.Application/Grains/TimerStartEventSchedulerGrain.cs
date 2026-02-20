@@ -27,8 +27,6 @@ public partial class TimerStartEventSchedulerGrain : Grain, ITimerStartEventSche
 
     public async Task ActivateScheduler(string processDefinitionId)
     {
-        State.ProcessDefinitionId = processDefinitionId;
-
         var factory = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
         var definition = await factory.GetLatestWorkflowDefinition(this.GetPrimaryKeyString());
         var timerStart = definition.Activities.OfType<TimerStartEvent>().FirstOrDefault()
@@ -39,12 +37,12 @@ public partial class TimerStartEventSchedulerGrain : Grain, ITimerStartEventSche
         if (timerStart.TimerDefinition.Type == TimerType.Cycle)
         {
             var (repeatCount, interval) = timerStart.TimerDefinition.ParseCycle();
-            State.MaxFireCount = repeatCount;
+            State.Activate(processDefinitionId, repeatCount);
             await this.RegisterOrUpdateReminder("timer-start", dueTime, interval);
         }
         else
         {
-            State.MaxFireCount = 1;
+            State.Activate(processDefinitionId, 1);
             await this.RegisterOrUpdateReminder("timer-start", dueTime, TimeSpan.FromMinutes(1));
         }
 
@@ -79,7 +77,7 @@ public partial class TimerStartEventSchedulerGrain : Grain, ITimerStartEventSche
         await child.SetWorkflow(definition);
         await child.StartWorkflow();
 
-        State.FireCount++;
+        State.IncrementFireCount();
         await _state.WriteStateAsync();
         LogTimerStartEventFired(processKey, childId, State.FireCount);
 

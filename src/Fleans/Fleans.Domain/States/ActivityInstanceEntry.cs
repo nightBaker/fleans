@@ -27,7 +27,9 @@ public class ActivityInstanceEntry
     public bool IsCompleted { get; private set; }
 
     [Id(4)]
-    public Guid? ChildWorkflowInstanceId { get; internal set; }
+    public Guid? ChildWorkflowInstanceId { get; private set; }
+
+    public void SetChildWorkflowInstanceId(Guid childId) => ChildWorkflowInstanceId = childId;
 
     internal void MarkCompleted() => IsCompleted = true;
 }

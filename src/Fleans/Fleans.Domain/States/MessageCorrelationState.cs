@@ -5,7 +5,7 @@ public class MessageCorrelationState
 {
     [Id(0)] public string Key { get; set; } = string.Empty;
     [Id(1)] public string? ETag { get; set; }
-    [Id(2)] public Dictionary<string, MessageSubscription> Subscriptions { get; set; } = new();
+    [Id(2)] public Dictionary<string, MessageSubscription> Subscriptions { get; private set; } = new();
 }
 
 [GenerateSerializer]

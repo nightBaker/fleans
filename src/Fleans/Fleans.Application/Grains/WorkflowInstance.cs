@@ -280,7 +280,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         // Record child reference on parent's activity entry
         var entry = State.GetFirstActive(callActivity.ActivityId)
             ?? throw new InvalidOperationException($"Active entry not found for '{callActivity.ActivityId}'");
-        entry.ChildWorkflowInstanceId = childId;
+        entry.SetChildWorkflowInstanceId(childId);
 
         // Start child — completion notifies parent via direct grain call
         await child.StartWorkflow();

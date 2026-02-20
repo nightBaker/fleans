@@ -251,10 +251,12 @@ public class EfCoreMessageCorrelationGrainStorageTests
 
     private static TestGrainState<MessageCorrelationState> CreateGrainState(
         Dictionary<string, MessageSubscription> subscriptions)
-        => new()
-        {
-            State = new MessageCorrelationState { Subscriptions = subscriptions }
-        };
+    {
+        var state = new TestGrainState<MessageCorrelationState> { State = new MessageCorrelationState() };
+        foreach (var kvp in subscriptions)
+            state.State.Subscriptions[kvp.Key] = kvp.Value;
+        return state;
+    }
 
     private static TestGrainState<MessageCorrelationState> CreateEmptyGrainState()
         => new()
