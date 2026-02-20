@@ -8,18 +8,53 @@
         'bpmn:SubProcess'
     ];
 
-    function BoundaryEventContextPadProvider(contextPad, modeling, elementFactory, bpmnFactory, selection) {
+    function BoundaryEventContextPadProvider(contextPad, modeling, elementFactory, bpmnFactory, selection, popupMenu) {
         contextPad.registerProvider(600, this);
 
         this._modeling = modeling;
         this._elementFactory = elementFactory;
         this._bpmnFactory = bpmnFactory;
         this._selection = selection;
+        this._popupMenu = popupMenu;
+
+        this._registerPopupMenuProvider();
     }
 
     BoundaryEventContextPadProvider.$inject = [
-        'contextPad', 'modeling', 'elementFactory', 'bpmnFactory', 'selection'
+        'contextPad', 'modeling', 'elementFactory', 'bpmnFactory', 'selection', 'popupMenu'
     ];
+
+    BoundaryEventContextPadProvider.prototype._registerPopupMenuProvider = function () {
+        var self = this;
+
+        this._popupMenu.registerProvider('boundary-event', {
+            getPopupMenuEntries: function (target) {
+                return {
+                    'attach-boundary-timer': {
+                        label: 'Timer Boundary Event',
+                        className: 'bpmn-icon-intermediate-event-catch-timer',
+                        action: function () {
+                            self._createBoundaryEvent(target, 'bpmn:TimerEventDefinition');
+                        }
+                    },
+                    'attach-boundary-message': {
+                        label: 'Message Boundary Event',
+                        className: 'bpmn-icon-intermediate-event-catch-message',
+                        action: function () {
+                            self._createBoundaryEvent(target, 'bpmn:MessageEventDefinition');
+                        }
+                    },
+                    'attach-boundary-error': {
+                        label: 'Error Boundary Event',
+                        className: 'bpmn-icon-intermediate-event-catch-error',
+                        action: function () {
+                            self._createBoundaryEvent(target, 'bpmn:ErrorEventDefinition');
+                        }
+                    }
+                };
+            }
+        });
+    };
 
     BoundaryEventContextPadProvider.prototype.getContextPadEntries = function (element) {
         var bo = element.businessObject;
@@ -28,33 +63,16 @@
         var self = this;
 
         return {
-            'attach-boundary-timer': {
+            'attach-boundary-event': {
                 group: 'attach',
-                className: 'bpmn-icon-intermediate-event-catch-timer',
-                title: 'Attach Timer Boundary Event',
+                className: 'bpmn-icon-boundary-more',
+                title: 'Attach Boundary Event',
                 action: {
                     click: function (event, element) {
-                        self._createBoundaryEvent(element, 'bpmn:TimerEventDefinition');
-                    }
-                }
-            },
-            'attach-boundary-message': {
-                group: 'attach',
-                className: 'bpmn-icon-intermediate-event-catch-message',
-                title: 'Attach Message Boundary Event',
-                action: {
-                    click: function (event, element) {
-                        self._createBoundaryEvent(element, 'bpmn:MessageEventDefinition');
-                    }
-                }
-            },
-            'attach-boundary-error': {
-                group: 'attach',
-                className: 'bpmn-icon-intermediate-event-catch-error',
-                title: 'Attach Error Boundary Event',
-                action: {
-                    click: function (event, element) {
-                        self._createBoundaryEvent(element, 'bpmn:ErrorEventDefinition');
+                        self._popupMenu.open(element, 'boundary-event', {
+                            x: event.x,
+                            y: event.y
+                        });
                     }
                 }
             }
