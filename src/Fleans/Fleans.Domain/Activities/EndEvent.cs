@@ -8,9 +8,9 @@ namespace Fleans.Domain.Activities;
 [GenerateSerializer]
 public record EndEvent(string ActivityId) : Activity(ActivityId)
 {
-    internal override async Task ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext)
+    internal override async Task ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, Guid workflowInstanceId)
     {
-        await base.ExecuteAsync(workflowContext, activityContext);
+        await base.ExecuteAsync(workflowContext, activityContext, workflowInstanceId);
 
         await activityContext.Complete();
         await workflowContext.Complete();

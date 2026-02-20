@@ -9,9 +9,6 @@ public interface IWorkflowInstanceGrain : IGrainWithGuidKey, IWorkflowExecutionC
 {
     // Re-declare inherited read-only methods with [ReadOnly] for Orleans concurrency optimization
     [ReadOnly]
-    new ValueTask<Guid> GetWorkflowInstanceId();
-
-    [ReadOnly]
     new ValueTask<IWorkflowDefinition> GetWorkflowDefinition();
 
     [ReadOnly]

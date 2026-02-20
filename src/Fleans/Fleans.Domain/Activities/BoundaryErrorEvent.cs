@@ -6,9 +6,9 @@ public record BoundaryErrorEvent(
     [property: Id(1)] string AttachedToActivityId,
     [property: Id(2)] string? ErrorCode) : Activity(ActivityId)
 {
-    internal override async Task ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext)
+    internal override async Task ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, Guid workflowInstanceId)
     {
-        await base.ExecuteAsync(workflowContext, activityContext);
+        await base.ExecuteAsync(workflowContext, activityContext, workflowInstanceId);
         await activityContext.Complete();
     }
 

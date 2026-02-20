@@ -9,9 +9,9 @@ public record CallActivity(
     [property: Id(4)] bool PropagateAllParentVariables = true,
     [property: Id(5)] bool PropagateAllChildVariables = true) : BoundarableActivity(ActivityId)
 {
-    internal override async Task ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext)
+    internal override async Task ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, Guid workflowInstanceId)
     {
-        await base.ExecuteAsync(workflowContext, activityContext);
+        await base.ExecuteAsync(workflowContext, activityContext, workflowInstanceId);
         await workflowContext.StartChildWorkflow(this, activityContext);
     }
 

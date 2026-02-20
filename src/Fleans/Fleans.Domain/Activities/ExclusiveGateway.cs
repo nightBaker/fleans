@@ -6,9 +6,9 @@ namespace Fleans.Domain.Activities;
 [GenerateSerializer]
 public record ExclusiveGateway(string ActivityId) : ConditionalGateway(ActivityId)
 {
-    internal override async Task ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext)
+    internal override async Task ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, Guid workflowInstanceId)
     {
-        await base.ExecuteAsync(workflowContext, activityContext);
+        await base.ExecuteAsync(workflowContext, activityContext, workflowInstanceId);
 
         var sequences = await AddConditionalSequencesToWorkflowInstance(workflowContext, activityContext);
 
@@ -18,7 +18,7 @@ public record ExclusiveGateway(string ActivityId) : ConditionalGateway(ActivityI
             return;
         }
 
-        await QueueEvaluateConditionEvents(workflowContext, activityContext, sequences);
+        await QueueEvaluateConditionEvents(workflowContext, activityContext, sequences, workflowInstanceId);
     }
 
     private static async Task<IEnumerable<ConditionalSequenceFlow>> AddConditionalSequencesToWorkflowInstance(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext)
@@ -34,12 +34,12 @@ public record ExclusiveGateway(string ActivityId) : ConditionalGateway(ActivityI
         return sequences;
     }
 
-    private async Task QueueEvaluateConditionEvents(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IEnumerable<ConditionalSequenceFlow> sequences)
+    private async Task QueueEvaluateConditionEvents(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IEnumerable<ConditionalSequenceFlow> sequences, Guid workflowInstanceId)
     {
         var definition = await workflowContext.GetWorkflowDefinition();
         foreach (var sequence in sequences)
         {
-            await activityContext.PublishEvent(new EvaluateConditionEvent(await workflowContext.GetWorkflowInstanceId(),
+            await activityContext.PublishEvent(new EvaluateConditionEvent(workflowInstanceId,
                                                                definition.WorkflowId,
                                                                 definition.ProcessDefinitionId,
                                                                 await activityContext.GetActivityInstanceId(),

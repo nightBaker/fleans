@@ -11,9 +11,10 @@ public record MessageIntermediateCatchEvent(
 {
     internal override async Task ExecuteAsync(
         IWorkflowExecutionContext workflowContext,
-        IActivityExecutionContext activityContext)
+        IActivityExecutionContext activityContext,
+        Guid workflowInstanceId)
     {
-        await base.ExecuteAsync(workflowContext, activityContext);
+        await base.ExecuteAsync(workflowContext, activityContext, workflowInstanceId);
         await workflowContext.RegisterMessageSubscription(MessageDefinitionId, ActivityId);
         // Do NOT call activityContext.Complete() — the correlation grain will do that
     }

@@ -14,9 +14,10 @@ public record MessageBoundaryEvent(
 {
     internal override async Task ExecuteAsync(
         IWorkflowExecutionContext workflowContext,
-        IActivityExecutionContext activityContext)
+        IActivityExecutionContext activityContext,
+        Guid workflowInstanceId)
     {
-        await base.ExecuteAsync(workflowContext, activityContext);
+        await base.ExecuteAsync(workflowContext, activityContext, workflowInstanceId);
         await activityContext.Complete();
     }
 

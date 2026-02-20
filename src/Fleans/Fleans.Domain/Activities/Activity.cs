@@ -9,11 +9,11 @@ namespace Fleans.Domain.Activities;
 [GenerateSerializer]
 public abstract record Activity([property: Id(0)] string ActivityId)
 {
-    internal virtual async Task ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext)
+    internal virtual async Task ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, Guid workflowInstanceId)
     {
         var definition = await workflowContext.GetWorkflowDefinition();
         await activityContext.Execute();
-        await activityContext.PublishEvent(new WorkflowActivityExecutedEvent(await workflowContext.GetWorkflowInstanceId(),
+        await activityContext.PublishEvent(new WorkflowActivityExecutedEvent(workflowInstanceId,
             definition.WorkflowId,
             await activityContext.GetActivityInstanceId(),
             ActivityId,
