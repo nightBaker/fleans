@@ -21,7 +21,7 @@ internal static class ActivityTestHelper
             .Returns(ValueTask.FromResult<IReadOnlyList<IActivityExecutionContext>>([]));
         context.StartChildWorkflow(Arg.Any<Activities.CallActivity>(), Arg.Any<IActivityExecutionContext>())
             .Returns(ValueTask.CompletedTask);
-        context.GetVariable(Arg.Any<string>())
+        context.GetVariable(Arg.Any<Guid>(), Arg.Any<string>())
             .Returns(ValueTask.FromResult<object?>(null));
         context.RegisterMessageSubscription(Arg.Any<string>(), Arg.Any<string>())
             .Returns(ValueTask.CompletedTask);
