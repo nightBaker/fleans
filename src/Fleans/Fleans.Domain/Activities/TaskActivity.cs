@@ -7,10 +7,9 @@ namespace Fleans.Domain.Activities;
 [GenerateSerializer]
 public record TaskActivity(string ActivityId) : BoundarableActivity(ActivityId)
 {
-    internal override async Task<List<Activity>> GetNextActivities(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext)
+    internal override Task<List<Activity>> GetNextActivities(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
     {
-        var definition = await workflowContext.GetWorkflowDefinition();
         var nextFlow = definition.SequenceFlows.FirstOrDefault(sf => sf.Source == this);
-        return nextFlow != null ? new List<Activity> { nextFlow.Target } : new List<Activity>();
+        return Task.FromResult(nextFlow != null ? new List<Activity> { nextFlow.Target } : new List<Activity>());
     }
 }

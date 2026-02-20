@@ -11,19 +11,20 @@ public record MessageIntermediateCatchEvent(
 {
     internal override async Task ExecuteAsync(
         IWorkflowExecutionContext workflowContext,
-        IActivityExecutionContext activityContext)
+        IActivityExecutionContext activityContext,
+        IWorkflowDefinition definition)
     {
-        await base.ExecuteAsync(workflowContext, activityContext);
+        await base.ExecuteAsync(workflowContext, activityContext, definition);
         await workflowContext.RegisterMessageSubscription(MessageDefinitionId, ActivityId);
         // Do NOT call activityContext.Complete() — the correlation grain will do that
     }
 
-    internal override async Task<List<Activity>> GetNextActivities(
+    internal override Task<List<Activity>> GetNextActivities(
         IWorkflowExecutionContext workflowContext,
-        IActivityExecutionContext activityContext)
+        IActivityExecutionContext activityContext,
+        IWorkflowDefinition definition)
     {
-        var definition = await workflowContext.GetWorkflowDefinition();
         var nextFlow = definition.SequenceFlows.FirstOrDefault(sf => sf.Source == this);
-        return nextFlow != null ? [nextFlow.Target] : [];
+        return Task.FromResult(nextFlow != null ? [nextFlow.Target] : new List<Activity>());
     }
 }

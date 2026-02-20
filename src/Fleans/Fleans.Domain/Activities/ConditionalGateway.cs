@@ -9,7 +9,8 @@ public abstract record ConditionalGateway(string ActivityId) : Gateway(ActivityI
         IWorkflowExecutionContext workflowContext,
         IActivityExecutionContext activityContext,
         string conditionSequenceFlowId,
-        bool result)
+        bool result,
+        IWorkflowDefinition definition)
     {
         var activityInstanceId = await activityContext.GetActivityInstanceId();
         await workflowContext.SetConditionSequenceResult(activityInstanceId, conditionSequenceFlowId, result);
@@ -23,7 +24,6 @@ public abstract record ConditionalGateway(string ActivityId) : Gateway(ActivityI
 
         if (mySequences.All(s => s.IsEvaluated))
         {
-            var definition = await workflowContext.GetWorkflowDefinition();
             var hasDefault = definition.SequenceFlows
                 .OfType<DefaultSequenceFlow>()
                 .Any(sf => sf.Source.ActivityId == ActivityId);

@@ -14,18 +14,19 @@ public record BoundaryTimerEvent(
 {
     internal override async Task ExecuteAsync(
         IWorkflowExecutionContext workflowContext,
-        IActivityExecutionContext activityContext)
+        IActivityExecutionContext activityContext,
+        IWorkflowDefinition definition)
     {
-        await base.ExecuteAsync(workflowContext, activityContext);
+        await base.ExecuteAsync(workflowContext, activityContext, definition);
         await activityContext.Complete();
     }
 
-    internal override async Task<List<Activity>> GetNextActivities(
+    internal override Task<List<Activity>> GetNextActivities(
         IWorkflowExecutionContext workflowContext,
-        IActivityExecutionContext activityContext)
+        IActivityExecutionContext activityContext,
+        IWorkflowDefinition definition)
     {
-        var definition = await workflowContext.GetWorkflowDefinition();
         var nextFlow = definition.SequenceFlows.FirstOrDefault(sf => sf.Source == this);
-        return nextFlow != null ? new List<Activity> { nextFlow.Target } : new List<Activity>();
+        return Task.FromResult(nextFlow != null ? new List<Activity> { nextFlow.Target } : new List<Activity>());
     }
 }

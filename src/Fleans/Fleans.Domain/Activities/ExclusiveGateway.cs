@@ -6,11 +6,11 @@ namespace Fleans.Domain.Activities;
 [GenerateSerializer]
 public record ExclusiveGateway(string ActivityId) : ConditionalGateway(ActivityId)
 {
-    internal override async Task ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext)
+    internal override async Task ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
     {
-        await base.ExecuteAsync(workflowContext, activityContext);
+        await base.ExecuteAsync(workflowContext, activityContext, definition);
 
-        var sequences = await AddConditionalSequencesToWorkflowInstance(workflowContext, activityContext);
+        var sequences = await AddConditionalSequencesToWorkflowInstance(workflowContext, activityContext, definition);
 
         if (!sequences.Any())
         {
@@ -18,14 +18,14 @@ public record ExclusiveGateway(string ActivityId) : ConditionalGateway(ActivityI
             return;
         }
 
-        await QueueEvaluateConditionEvents(workflowContext, activityContext, sequences);
+        await QueueEvaluateConditionEvents(workflowContext, activityContext, sequences, definition);
     }
 
-    private static async Task<IEnumerable<ConditionalSequenceFlow>> AddConditionalSequencesToWorkflowInstance(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext)
+    private static async Task<IEnumerable<ConditionalSequenceFlow>> AddConditionalSequencesToWorkflowInstance(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
     {
         var activityId = await activityContext.GetActivityId();
 
-        var sequences = (await workflowContext.GetWorkflowDefinition()).SequenceFlows.OfType<ConditionalSequenceFlow>()
+        var sequences = definition.SequenceFlows.OfType<ConditionalSequenceFlow>()
                                 .Where(sf => sf.Source.ActivityId == activityId)
                                 .ToArray();
 
@@ -34,9 +34,8 @@ public record ExclusiveGateway(string ActivityId) : ConditionalGateway(ActivityI
         return sequences;
     }
 
-    private async Task QueueEvaluateConditionEvents(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IEnumerable<ConditionalSequenceFlow> sequences)
+    private async Task QueueEvaluateConditionEvents(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IEnumerable<ConditionalSequenceFlow> sequences, IWorkflowDefinition definition)
     {
-        var definition = await workflowContext.GetWorkflowDefinition();
         foreach (var sequence in sequences)
         {
             await activityContext.PublishEvent(new EvaluateConditionEvent(await workflowContext.GetWorkflowInstanceId(),
@@ -49,13 +48,12 @@ public record ExclusiveGateway(string ActivityId) : ConditionalGateway(ActivityI
         }
     }
 
-    internal override async Task<List<Activity>> GetNextActivities(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext)
+    internal override async Task<List<Activity>> GetNextActivities(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
     {
         var sequencesState = await workflowContext.GetConditionSequenceStates();
         var activityInstanceId = await activityContext.GetActivityInstanceId();
         if (!sequencesState.TryGetValue(activityInstanceId, out var activitySequencesState))
             activitySequencesState = [];
-        var definition = await workflowContext.GetWorkflowDefinition();
 
         var trueTarget = activitySequencesState
             .FirstOrDefault(x => x.Result);

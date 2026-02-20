@@ -18,11 +18,10 @@ public record ScriptTask : TaskActivity
         this.ScriptFormat = ScriptFormat;
     }
 
-    internal override async Task ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext)
+    internal override async Task ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
     {
-        await base.ExecuteAsync(workflowContext, activityContext);
+        await base.ExecuteAsync(workflowContext, activityContext, definition);
 
-        var definition = await workflowContext.GetWorkflowDefinition();
         await activityContext.PublishEvent(new ExecuteScriptEvent(
             await workflowContext.GetWorkflowInstanceId(),
             definition.WorkflowId,
