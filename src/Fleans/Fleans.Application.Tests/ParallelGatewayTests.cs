@@ -8,6 +8,8 @@ using System.Dynamic;
 
 namespace Fleans.Application.Tests
 {
+    // TODO: Add tests for: 3+ parallel branches joining, failed branch reaching join,
+    // variable merging at join point
     [TestClass]
     public class ParallelGatewayTests : WorkflowTestBase
     {

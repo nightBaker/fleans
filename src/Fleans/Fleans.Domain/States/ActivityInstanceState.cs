@@ -107,6 +107,9 @@ public class ActivityInstanceState
 
     public void ResetExecuting()
     {
+        if (!IsExecuting)
+            return;
+
         IsExecuting = false;
     }
 
