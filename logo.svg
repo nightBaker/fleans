@@ -1,19 +1,47 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <marker id="arr-r" viewBox="0 0 8 6" refX="8" refY="3"
+            markerWidth="5" markerHeight="4" orient="auto">
+      <path d="M 0 0 L 8 3 L 0 6 Z" fill="white"/>
+    </marker>
+  </defs>
+
   <!-- Teal hexagon (pointy-top) -->
   <polygon points="256,36 446,146 446,366 256,476 66,366 66,146"
            fill="#4EB5A6"/>
 
-  <!-- Bold white "F" letter -->
-  <path d="M 168 131
-           L 353 131
-           L 353 183
-           L 220 183
-           L 220 230
-           L 310 230
-           L 310 282
-           L 220 282
-           L 220 381
-           L 168 381
-           Z"
-        fill="white"/>
+  <!-- === Task activities forming "F" shape === -->
+
+  <!-- Top bar (row 0, cols 0-3) -->
+  <rect x="125" y="135" width="52" height="34" rx="6" fill="white"/>
+  <rect x="195" y="135" width="52" height="34" rx="6" fill="white"/>
+  <rect x="265" y="135" width="52" height="34" rx="6" fill="white"/>
+  <rect x="335" y="135" width="52" height="34" rx="6" fill="white"/>
+
+  <!-- Vertical stem (rows 1-4, col 0) -->
+  <rect x="125" y="187" width="52" height="34" rx="6" fill="white"/>
+  <rect x="125" y="239" width="52" height="34" rx="6" fill="white"/>
+  <rect x="125" y="291" width="52" height="34" rx="6" fill="white"/>
+  <rect x="125" y="343" width="52" height="34" rx="6" fill="white"/>
+
+  <!-- Middle bar (row 2, cols 1-2) -->
+  <rect x="195" y="239" width="52" height="34" rx="6" fill="white"/>
+  <rect x="265" y="239" width="52" height="34" rx="6" fill="white"/>
+
+  <!-- === Sequence flows with arrowheads === -->
+
+  <!-- Top bar: horizontal flows (y = 135 + 17 = 152) -->
+  <line x1="177" y1="152" x2="195" y2="152" stroke="white" stroke-width="3" marker-end="url(#arr-r)"/>
+  <line x1="247" y1="152" x2="265" y2="152" stroke="white" stroke-width="3" marker-end="url(#arr-r)"/>
+  <line x1="317" y1="152" x2="335" y2="152" stroke="white" stroke-width="3" marker-end="url(#arr-r)"/>
+
+  <!-- Middle bar: horizontal flows (y = 239 + 17 = 256) -->
+  <line x1="177" y1="256" x2="195" y2="256" stroke="white" stroke-width="3" marker-end="url(#arr-r)"/>
+  <line x1="247" y1="256" x2="265" y2="256" stroke="white" stroke-width="3" marker-end="url(#arr-r)"/>
+
+  <!-- Vertical stem: downward flows (x = 125 + 26 = 151) -->
+  <line x1="151" y1="169" x2="151" y2="187" stroke="white" stroke-width="3" marker-end="url(#arr-r)"/>
+  <line x1="151" y1="221" x2="151" y2="239" stroke="white" stroke-width="3" marker-end="url(#arr-r)"/>
+  <line x1="151" y1="273" x2="151" y2="291" stroke="white" stroke-width="3" marker-end="url(#arr-r)"/>
+  <line x1="151" y1="325" x2="151" y2="343" stroke="white" stroke-width="3" marker-end="url(#arr-r)"/>
 </svg>
