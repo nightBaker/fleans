@@ -20,7 +20,7 @@ public class StartEventActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("start");
 
         // Act
-        await startEvent.ExecuteAsync(workflowContext, activityContext);
+        await startEvent.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert
         await activityContext.Received(1).Execute();
@@ -40,7 +40,7 @@ public class StartEventActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("start");
 
         // Act
-        var nextActivities = await startEvent.GetNextActivities(workflowContext, activityContext);
+        var nextActivities = await startEvent.GetNextActivities(workflowContext, activityContext, definition);
 
         // Assert
         Assert.HasCount(1, nextActivities);
@@ -59,7 +59,7 @@ public class StartEventActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("start");
 
         // Act
-        var nextActivities = await startEvent.GetNextActivities(workflowContext, activityContext);
+        var nextActivities = await startEvent.GetNextActivities(workflowContext, activityContext, definition);
 
         // Assert
         Assert.HasCount(0, nextActivities);

@@ -10,9 +10,9 @@ public record ParallelGateway(
     string ActivityId,
     [property: Id(1)] bool IsFork) : Gateway(ActivityId)
 {
-    internal override async Task ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext)
+    internal override async Task ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
     {
-        await base.ExecuteAsync(workflowContext, activityContext);
+        await base.ExecuteAsync(workflowContext, activityContext, definition);
 
         if (IsFork)
         {
@@ -20,7 +20,7 @@ public record ParallelGateway(
         }
         else
         {
-            if (await AllIncomingPathsCompleted(workflowContext, await workflowContext.GetWorkflowDefinition()))
+            if (await AllIncomingPathsCompleted(workflowContext, definition))
             {
                 await activityContext.Complete();
             }
@@ -31,14 +31,13 @@ public record ParallelGateway(
         }
     }
 
-    internal override async Task<List<Activity>> GetNextActivities(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext)
+    internal override Task<List<Activity>> GetNextActivities(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
     {
-        var definition = await workflowContext.GetWorkflowDefinition();
         var nextFlows = definition.SequenceFlows.Where(sf => sf.Source == this)
             .Select(flow => flow.Target)
             .ToList();
 
-        return nextFlows;
+        return Task.FromResult(nextFlows);
     }
 
     private async Task<bool> AllIncomingPathsCompleted(IWorkflowExecutionContext workflowContext, IWorkflowDefinition workflow)

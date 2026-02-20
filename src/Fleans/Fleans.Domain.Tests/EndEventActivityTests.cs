@@ -19,7 +19,7 @@ public class EndEventActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("end");
 
         // Act
-        await endEvent.ExecuteAsync(workflowContext, activityContext);
+        await endEvent.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert
         await activityContext.Received(1).Complete();
@@ -38,7 +38,7 @@ public class EndEventActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("end");
 
         // Act
-        var nextActivities = await endEvent.GetNextActivities(workflowContext, activityContext);
+        var nextActivities = await endEvent.GetNextActivities(workflowContext, activityContext, definition);
 
         // Assert
         Assert.HasCount(0, nextActivities);

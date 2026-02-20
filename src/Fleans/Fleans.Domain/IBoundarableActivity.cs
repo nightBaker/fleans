@@ -4,5 +4,6 @@ public interface IBoundarableActivity
 {
     Task RegisterBoundaryEventsAsync(
         IWorkflowExecutionContext workflowContext,
-        IActivityExecutionContext activityContext);
+        IActivityExecutionContext activityContext,
+        IWorkflowDefinition definition);
 }

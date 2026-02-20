@@ -19,7 +19,7 @@ public class ErrorEventActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("error1");
 
         // Act
-        await errorEvent.ExecuteAsync(workflowContext, activityContext);
+        await errorEvent.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert
         await activityContext.Received(1).Execute();
@@ -39,7 +39,7 @@ public class ErrorEventActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("error1");
 
         // Act
-        var nextActivities = await errorEvent.GetNextActivities(workflowContext, activityContext);
+        var nextActivities = await errorEvent.GetNextActivities(workflowContext, activityContext, definition);
 
         // Assert
         Assert.HasCount(1, nextActivities);
@@ -58,7 +58,7 @@ public class ErrorEventActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("error1");
 
         // Act
-        var nextActivities = await errorEvent.GetNextActivities(workflowContext, activityContext);
+        var nextActivities = await errorEvent.GetNextActivities(workflowContext, activityContext, definition);
 
         // Assert
         Assert.HasCount(0, nextActivities);

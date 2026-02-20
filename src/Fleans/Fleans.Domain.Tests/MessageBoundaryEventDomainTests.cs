@@ -21,7 +21,7 @@ public class MessageBoundaryEventDomainTests
         var (activityContext, publishedEvents) = ActivityTestHelper.CreateActivityContext("bmsg1");
 
         // Act
-        await boundary.ExecuteAsync(workflowContext, activityContext);
+        await boundary.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert — boundary completes immediately
         await activityContext.Received(1).Execute();
@@ -43,7 +43,7 @@ public class MessageBoundaryEventDomainTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("bmsg1");
 
         // Act
-        var nextActivities = await boundary.GetNextActivities(workflowContext, activityContext);
+        var nextActivities = await boundary.GetNextActivities(workflowContext, activityContext, definition);
 
         // Assert
         Assert.AreEqual(1, nextActivities.Count);

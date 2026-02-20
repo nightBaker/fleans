@@ -11,7 +11,6 @@ internal static class ActivityTestHelper
     public static IWorkflowExecutionContext CreateWorkflowContext(IWorkflowDefinition definition)
     {
         var context = Substitute.For<IWorkflowExecutionContext>();
-        context.GetWorkflowDefinition().Returns(ValueTask.FromResult(definition));
         context.GetWorkflowInstanceId().Returns(ValueTask.FromResult(Guid.NewGuid()));
         context.GetConditionSequenceStates()
             .Returns(ValueTask.FromResult<IReadOnlyDictionary<Guid, ConditionSequenceState[]>>(

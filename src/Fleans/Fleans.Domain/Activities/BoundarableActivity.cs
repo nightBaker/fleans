@@ -8,9 +8,9 @@ public abstract record BoundarableActivity(string ActivityId)
 {
     public async Task RegisterBoundaryEventsAsync(
         IWorkflowExecutionContext workflowContext,
-        IActivityExecutionContext activityContext)
+        IActivityExecutionContext activityContext,
+        IWorkflowDefinition definition)
     {
-        var definition = await workflowContext.GetWorkflowDefinition();
         var hostInstanceId = await activityContext.GetActivityInstanceId();
 
         foreach (var boundaryTimer in definition.Activities.OfType<BoundaryTimerEvent>()

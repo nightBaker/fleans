@@ -9,16 +9,15 @@ public record CallActivity(
     [property: Id(4)] bool PropagateAllParentVariables = true,
     [property: Id(5)] bool PropagateAllChildVariables = true) : BoundarableActivity(ActivityId)
 {
-    internal override async Task ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext)
+    internal override async Task ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
     {
-        await base.ExecuteAsync(workflowContext, activityContext);
+        await base.ExecuteAsync(workflowContext, activityContext, definition);
         await workflowContext.StartChildWorkflow(this, activityContext);
     }
 
-    internal override async Task<List<Activity>> GetNextActivities(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext)
+    internal override Task<List<Activity>> GetNextActivities(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
     {
-        var definition = await workflowContext.GetWorkflowDefinition();
         var nextFlow = definition.SequenceFlows.FirstOrDefault(sf => sf.Source == this);
-        return nextFlow != null ? new List<Activity> { nextFlow.Target } : new List<Activity>();
+        return Task.FromResult(nextFlow != null ? new List<Activity> { nextFlow.Target } : new List<Activity>());
     }
 }

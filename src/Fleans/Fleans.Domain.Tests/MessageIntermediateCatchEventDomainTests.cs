@@ -21,7 +21,7 @@ public class MessageIntermediateCatchEventDomainTests
         var (activityContext, publishedEvents) = ActivityTestHelper.CreateActivityContext("msgCatch1");
 
         // Act
-        await msgEvent.ExecuteAsync(workflowContext, activityContext);
+        await msgEvent.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert — should execute and register, but NOT complete
         await activityContext.Received(1).Execute();
@@ -45,7 +45,7 @@ public class MessageIntermediateCatchEventDomainTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("msgCatch1");
 
         // Act
-        var nextActivities = await msgEvent.GetNextActivities(workflowContext, activityContext);
+        var nextActivities = await msgEvent.GetNextActivities(workflowContext, activityContext, definition);
 
         // Assert
         Assert.AreEqual(1, nextActivities.Count);

@@ -11,7 +11,6 @@ public interface IBoundaryEventStateAccessor
     IGrainFactory GrainFactory { get; }
     ILogger Logger { get; }
     IWorkflowExecutionContext WorkflowExecutionContext { get; }
-    ValueTask<IWorkflowDefinition> GetWorkflowDefinition();
     ValueTask<object?> GetVariable(string variableName);
     Task TransitionToNextActivity();
     Task ExecuteWorkflow();
