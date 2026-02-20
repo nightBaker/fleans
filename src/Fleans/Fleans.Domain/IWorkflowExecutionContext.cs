@@ -5,7 +5,6 @@ namespace Fleans.Domain;
 public interface IWorkflowExecutionContext
 {
     ValueTask<Guid> GetWorkflowInstanceId();
-    ValueTask<IWorkflowDefinition> GetWorkflowDefinition();
     ValueTask Complete();
     ValueTask StartChildWorkflow(Activities.CallActivity callActivity, IActivityExecutionContext activityContext);
 
