@@ -168,8 +168,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
                 foreach(var nextActivity in nextActivities)
                 {
                     // For join gateways, reuse the existing active entry instead of creating a duplicate
-                    // TODO: Consider abstracting this type check to a base class property like Activity.IsJoinGateway
-                    if (nextActivity is ParallelGateway { IsFork: false })
+                    if (nextActivity.IsJoinGateway)
                     {
                         var existingEntry = State.GetActiveActivities()
                             .FirstOrDefault(e => e.ActivityId == nextActivity.ActivityId);

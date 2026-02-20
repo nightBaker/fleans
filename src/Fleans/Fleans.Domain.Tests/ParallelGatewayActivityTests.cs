@@ -157,5 +157,6 @@ public class ParallelGatewayActivityTests
 
         // Assert — join calls Execute (not Complete) because not all paths are done
         await activityContext.Received().Execute();
+        await activityContext.DidNotReceive().Complete();
     }
 }

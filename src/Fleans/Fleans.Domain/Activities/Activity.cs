@@ -9,6 +9,8 @@ namespace Fleans.Domain.Activities;
 [GenerateSerializer]
 public abstract record Activity([property: Id(0)] string ActivityId)
 {
+    internal virtual bool IsJoinGateway => false;
+
     internal virtual async Task ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
     {
         await activityContext.Execute();
