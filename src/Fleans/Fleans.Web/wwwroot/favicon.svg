@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
-    <marker id="arr-r" viewBox="0 0 8 6" refX="8" refY="3"
+    <marker id="arr" viewBox="0 0 8 6" refX="8" refY="3"
             markerWidth="5" markerHeight="4" orient="auto">
       <path d="M 0 0 L 8 3 L 0 6 Z" fill="white"/>
     </marker>
@@ -10,38 +10,34 @@
   <polygon points="256,36 446,146 446,366 256,476 66,366 66,146"
            fill="#4EB5A6"/>
 
-  <!-- === Task activities forming "F" shape === -->
+  <!-- === Task activities forming "F" shape (8 tasks) === -->
 
-  <!-- Top bar (row 0, cols 0-3) -->
-  <rect x="125" y="135" width="52" height="34" rx="6" fill="white"/>
-  <rect x="195" y="135" width="52" height="34" rx="6" fill="white"/>
-  <rect x="265" y="135" width="52" height="34" rx="6" fill="white"/>
-  <rect x="335" y="135" width="52" height="34" rx="6" fill="white"/>
+  <!-- Top bar (row 0, cols 0-2) -->
+  <rect x="146" y="116" width="60" height="40" rx="7" fill="white"/>
+  <rect x="226" y="116" width="60" height="40" rx="7" fill="white"/>
+  <rect x="306" y="116" width="60" height="40" rx="7" fill="white"/>
 
   <!-- Vertical stem (rows 1-4, col 0) -->
-  <rect x="125" y="187" width="52" height="34" rx="6" fill="white"/>
-  <rect x="125" y="239" width="52" height="34" rx="6" fill="white"/>
-  <rect x="125" y="291" width="52" height="34" rx="6" fill="white"/>
-  <rect x="125" y="343" width="52" height="34" rx="6" fill="white"/>
+  <rect x="146" y="176" width="60" height="40" rx="7" fill="white"/>
+  <rect x="146" y="236" width="60" height="40" rx="7" fill="white"/>
+  <rect x="146" y="296" width="60" height="40" rx="7" fill="white"/>
+  <rect x="146" y="356" width="60" height="40" rx="7" fill="white"/>
 
-  <!-- Middle bar (row 2, cols 1-2) -->
-  <rect x="195" y="239" width="52" height="34" rx="6" fill="white"/>
-  <rect x="265" y="239" width="52" height="34" rx="6" fill="white"/>
+  <!-- Middle bar (row 2, col 1) -->
+  <rect x="226" y="236" width="60" height="40" rx="7" fill="white"/>
 
-  <!-- === Sequence flows with arrowheads === -->
+  <!-- === Sequence flows === -->
 
-  <!-- Top bar: horizontal flows (y = 152) -->
-  <line x1="177" y1="152" x2="195" y2="152" stroke="white" stroke-width="3" marker-end="url(#arr-r)"/>
-  <line x1="247" y1="152" x2="265" y2="152" stroke="white" stroke-width="3" marker-end="url(#arr-r)"/>
-  <line x1="317" y1="152" x2="335" y2="152" stroke="white" stroke-width="3" marker-end="url(#arr-r)"/>
+  <!-- Top bar: horizontal (y = 136) -->
+  <line x1="206" y1="136" x2="226" y2="136" stroke="white" stroke-width="3" marker-end="url(#arr)"/>
+  <line x1="286" y1="136" x2="306" y2="136" stroke="white" stroke-width="3" marker-end="url(#arr)"/>
 
-  <!-- Middle bar: horizontal flows (y = 256) -->
-  <line x1="177" y1="256" x2="195" y2="256" stroke="white" stroke-width="3" marker-end="url(#arr-r)"/>
-  <line x1="247" y1="256" x2="265" y2="256" stroke="white" stroke-width="3" marker-end="url(#arr-r)"/>
+  <!-- Middle bar: horizontal (y = 256) -->
+  <line x1="206" y1="256" x2="226" y2="256" stroke="white" stroke-width="3" marker-end="url(#arr)"/>
 
-  <!-- Vertical stem: downward flows (x = 151) -->
-  <line x1="151" y1="169" x2="151" y2="187" stroke="white" stroke-width="3" marker-end="url(#arr-r)"/>
-  <line x1="151" y1="221" x2="151" y2="239" stroke="white" stroke-width="3" marker-end="url(#arr-r)"/>
-  <line x1="151" y1="273" x2="151" y2="291" stroke="white" stroke-width="3" marker-end="url(#arr-r)"/>
-  <line x1="151" y1="325" x2="151" y2="343" stroke="white" stroke-width="3" marker-end="url(#arr-r)"/>
+  <!-- Vertical stem: downward (x = 176) -->
+  <line x1="176" y1="156" x2="176" y2="176" stroke="white" stroke-width="3" marker-end="url(#arr)"/>
+  <line x1="176" y1="216" x2="176" y2="236" stroke="white" stroke-width="3" marker-end="url(#arr)"/>
+  <line x1="176" y1="276" x2="176" y2="296" stroke="white" stroke-width="3" marker-end="url(#arr)"/>
+  <line x1="176" y1="336" x2="176" y2="356" stroke="white" stroke-width="3" marker-end="url(#arr)"/>
 </svg>
