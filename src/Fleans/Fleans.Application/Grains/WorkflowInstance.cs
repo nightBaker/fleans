@@ -384,9 +384,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         await _state.WriteStateAsync();
     }
 
-    // [ReadOnly] in the interface is safe: WorkflowInstance is not [Reentrant],
-    // so the field write in EnsureWorkflowDefinitionAsync is never concurrent.
-    public async ValueTask<IWorkflowDefinition> GetWorkflowDefinition()
+    private async ValueTask<IWorkflowDefinition> GetWorkflowDefinition()
     {
         await EnsureWorkflowDefinitionAsync();
         return _workflowDefinition!;
@@ -648,6 +646,30 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         LogMessageSubscriptionRegistered(boundaryActivityId, messageDef.Name, correlationKey);
     }
 
+    public async Task HandleMessageDelivery(string activityId, Guid hostActivityInstanceId, ExpandoObject variables)
+    {
+        await EnsureWorkflowDefinitionAsync();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+
+        var definition = await GetWorkflowDefinition();
+        var activity = definition.GetActivity(activityId);
+
+        if (activity is MessageBoundaryEvent boundaryMessage)
+        {
+            LogMessageDeliveryBoundary(activityId);
+            await _boundaryHandler.HandleBoundaryMessageFiredAsync(boundaryMessage, hostActivityInstanceId, definition);
+        }
+        else
+        {
+            LogMessageDeliveryComplete(activityId);
+            await CompleteActivityState(activityId, variables);
+            await ExecuteWorkflow();
+        }
+
+        await _state.WriteStateAsync();
+    }
+
     public async Task HandleBoundaryMessageFired(string boundaryActivityId, Guid hostActivityInstanceId)
     {
         await EnsureWorkflowDefinitionAsync();
@@ -740,4 +762,10 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
     [LoggerMessage(EventId = 1024, Level = LogLevel.Debug, Message = "Stale timer ignored for activity {TimerActivityId} — activity no longer active")]
     private partial void LogStaleTimerIgnored(string timerActivityId);
+
+    [LoggerMessage(EventId = 1025, Level = LogLevel.Information, Message = "Message delivered as boundary event for activity {ActivityId}")]
+    private partial void LogMessageDeliveryBoundary(string activityId);
+
+    [LoggerMessage(EventId = 1026, Level = LogLevel.Information, Message = "Message delivered, completing activity {ActivityId}")]
+    private partial void LogMessageDeliveryComplete(string activityId);
 }

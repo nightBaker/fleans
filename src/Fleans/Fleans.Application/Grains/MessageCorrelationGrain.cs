@@ -1,5 +1,4 @@
 using Fleans.Domain;
-using Fleans.Domain.Activities;
 using Fleans.Domain.States;
 using Microsoft.Extensions.Logging;
 using Orleans.Runtime;
@@ -63,19 +62,8 @@ public partial class MessageCorrelationGrain : Grain, IMessageCorrelationGrain
         await _state.WriteStateAsync();
 
         var workflowInstance = _grainFactory.GetGrain<IWorkflowInstanceGrain>(subscription.WorkflowInstanceId);
-        var definition = await workflowInstance.GetWorkflowDefinition();
-        var activity = definition.GetActivity(subscription.ActivityId);
-
-        if (activity is MessageBoundaryEvent)
-        {
-            LogDeliveryBoundary(messageName, correlationKey, subscription.WorkflowInstanceId, subscription.ActivityId);
-            await workflowInstance.HandleBoundaryMessageFired(subscription.ActivityId, subscription.HostActivityInstanceId);
-        }
-        else
-        {
-            LogDelivery(messageName, correlationKey, subscription.WorkflowInstanceId, subscription.ActivityId);
-            await workflowInstance.CompleteActivity(subscription.ActivityId, variables);
-        }
+        LogDelivery(messageName, correlationKey, subscription.WorkflowInstanceId, subscription.ActivityId);
+        await workflowInstance.HandleMessageDelivery(subscription.ActivityId, subscription.HostActivityInstanceId, variables);
 
         return true;
     }
@@ -91,10 +79,6 @@ public partial class MessageCorrelationGrain : Grain, IMessageCorrelationGrain
     [LoggerMessage(EventId = 9002, Level = LogLevel.Information,
         Message = "Message '{MessageName}' delivered: correlationKey='{CorrelationKey}' -> workflowInstanceId={WorkflowInstanceId}, activityId={ActivityId}")]
     private partial void LogDelivery(string messageName, string correlationKey, Guid workflowInstanceId, string activityId);
-
-    [LoggerMessage(EventId = 9003, Level = LogLevel.Information,
-        Message = "Message '{MessageName}' delivered as boundary: correlationKey='{CorrelationKey}' -> workflowInstanceId={WorkflowInstanceId}, activityId={ActivityId}")]
-    private partial void LogDeliveryBoundary(string messageName, string correlationKey, Guid workflowInstanceId, string activityId);
 
     [LoggerMessage(EventId = 9004, Level = LogLevel.Debug,
         Message = "Message '{MessageName}' delivery failed: no subscription for correlationKey='{CorrelationKey}'")]
