@@ -21,7 +21,7 @@ public class TaskActivityDomainTests
         var (activityContext, publishedEvents) = ActivityTestHelper.CreateActivityContext("task1");
 
         // Act
-        await task.ExecuteAsync(workflowContext, activityContext);
+        await task.ExecuteAsync(workflowContext, activityContext, Guid.NewGuid());
 
         // Assert
         await activityContext.Received(1).Execute();

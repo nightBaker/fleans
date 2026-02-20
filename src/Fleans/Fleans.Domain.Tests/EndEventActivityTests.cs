@@ -19,7 +19,7 @@ public class EndEventActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("end");
 
         // Act
-        await endEvent.ExecuteAsync(workflowContext, activityContext);
+        await endEvent.ExecuteAsync(workflowContext, activityContext, Guid.NewGuid());
 
         // Assert
         await activityContext.Received(1).Complete();

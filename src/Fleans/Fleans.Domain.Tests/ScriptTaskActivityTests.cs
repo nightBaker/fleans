@@ -21,7 +21,7 @@ public class ScriptTaskActivityTests
         var (activityContext, publishedEvents) = ActivityTestHelper.CreateActivityContext("script1");
 
         // Act
-        await script.ExecuteAsync(workflowContext, activityContext);
+        await script.ExecuteAsync(workflowContext, activityContext, Guid.NewGuid());
 
         // Assert
         var scriptEvent = publishedEvents.OfType<ExecuteScriptEvent>().Single();
@@ -43,12 +43,11 @@ public class ScriptTaskActivityTests
             workflowId: "wf1",
             processDefinitionId: "pd1");
         var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
-        workflowContext.GetWorkflowInstanceId().Returns(ValueTask.FromResult(workflowInstanceId));
         var (activityContext, publishedEvents) =
             ActivityTestHelper.CreateActivityContext("script1", activityInstanceId);
 
         // Act
-        await script.ExecuteAsync(workflowContext, activityContext);
+        await script.ExecuteAsync(workflowContext, activityContext, workflowInstanceId);
 
         // Assert
         var scriptEvent = publishedEvents.OfType<ExecuteScriptEvent>().Single();

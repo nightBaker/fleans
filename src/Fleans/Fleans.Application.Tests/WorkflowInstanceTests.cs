@@ -309,20 +309,6 @@ namespace Fleans.Application.Tests
         }
 
         [TestMethod]
-        public async Task GetWorkflowInstanceId_ShouldReturnCorrectGuid()
-        {
-            // Arrange
-            var instanceId = Guid.NewGuid();
-            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
-
-            // Act
-            var result = await workflowInstance.GetWorkflowInstanceId();
-
-            // Assert
-            Assert.AreEqual(instanceId, result);
-        }
-
-        [TestMethod]
         public async Task ActivitySnapshot_ShouldHaveExecutionStartedAt_AfterExecution()
         {
             // Arrange

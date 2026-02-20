@@ -22,7 +22,7 @@ public class BoundaryTimerEventDomainTests
         var (activityContext, publishedEvents) = ActivityTestHelper.CreateActivityContext("bt1");
 
         // Act
-        await boundaryTimer.ExecuteAsync(workflowContext, activityContext);
+        await boundaryTimer.ExecuteAsync(workflowContext, activityContext, Guid.NewGuid());
 
         // Assert
         await activityContext.Received(1).Execute();

@@ -22,7 +22,7 @@ public class TimerIntermediateCatchEventDomainTests
         var (activityContext, publishedEvents) = ActivityTestHelper.CreateActivityContext("timer1");
 
         // Act
-        await timerEvent.ExecuteAsync(workflowContext, activityContext);
+        await timerEvent.ExecuteAsync(workflowContext, activityContext, Guid.NewGuid());
 
         // Assert — should execute but NOT complete (waits for reminder)
         await activityContext.Received(1).Execute();

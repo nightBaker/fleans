@@ -45,7 +45,7 @@ namespace Fleans.Application.Tests
 
             // Assert
             Assert.IsNotNull(instance);
-            var instanceId = await instance.GetWorkflowInstanceId();
+            var instanceId = instance.GetPrimaryKey();
             Assert.AreNotEqual(Guid.Empty, instanceId);
         }
 

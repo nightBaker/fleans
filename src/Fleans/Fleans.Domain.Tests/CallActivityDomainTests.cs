@@ -25,7 +25,7 @@ public class CallActivityDomainTests
         var (activityContext, publishedEvents) = ActivityTestHelper.CreateActivityContext("call1");
 
         // Act
-        await callActivity.ExecuteAsync(workflowContext, activityContext);
+        await callActivity.ExecuteAsync(workflowContext, activityContext, Guid.NewGuid());
 
         // Assert
         await activityContext.Received(1).Execute();

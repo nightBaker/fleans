@@ -20,7 +20,7 @@ public class StartEventActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("start");
 
         // Act
-        await startEvent.ExecuteAsync(workflowContext, activityContext);
+        await startEvent.ExecuteAsync(workflowContext, activityContext, Guid.NewGuid());
 
         // Assert
         await activityContext.Received(1).Execute();

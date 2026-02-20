@@ -21,7 +21,7 @@ public class BoundaryErrorEventDomainTests
         var (activityContext, publishedEvents) = ActivityTestHelper.CreateActivityContext("err1");
 
         // Act
-        await boundaryEvent.ExecuteAsync(workflowContext, activityContext);
+        await boundaryEvent.ExecuteAsync(workflowContext, activityContext, Guid.NewGuid());
 
         // Assert
         await activityContext.Received(1).Execute();

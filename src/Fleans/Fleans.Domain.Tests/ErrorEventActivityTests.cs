@@ -19,7 +19,7 @@ public class ErrorEventActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("error1");
 
         // Act
-        await errorEvent.ExecuteAsync(workflowContext, activityContext);
+        await errorEvent.ExecuteAsync(workflowContext, activityContext, Guid.NewGuid());
 
         // Assert
         await activityContext.Received(1).Execute();

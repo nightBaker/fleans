@@ -21,7 +21,7 @@ public class MessageIntermediateCatchEventDomainTests
         var (activityContext, publishedEvents) = ActivityTestHelper.CreateActivityContext("msgCatch1");
 
         // Act
-        await msgEvent.ExecuteAsync(workflowContext, activityContext);
+        await msgEvent.ExecuteAsync(workflowContext, activityContext, Guid.NewGuid());
 
         // Assert — should execute and register, but NOT complete
         await activityContext.Received(1).Execute();
