@@ -51,9 +51,8 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         await EnsureWorkflowDefinitionAsync();
         SetWorkflowRequestContext();
         using var scope = BeginWorkflowScope();
-        State.ExecutionStartedAt = DateTimeOffset.UtcNow;
         LogWorkflowStarted();
-        Start();
+        State.Start();
         await ExecuteWorkflow();
         await _state.WriteStateAsync();
     }
@@ -219,17 +218,10 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         SetActivityRequestContext(activityId, activityInstance);
         await activityInstance.Fail(exception);
     }
-
-    private void Start()
-    {
-        LogStateStarted();
-        State.Start();
-    }
-
+    
     public async ValueTask Complete()
     {
         State.Complete();
-        State.CompletedAt = DateTimeOffset.UtcNow;
         LogStateCompleted();
         await _state.WriteStateAsync();
 
@@ -247,8 +239,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
     public async Task SetParentInfo(Guid parentWorkflowInstanceId, string parentActivityId)
     {
-        State.ParentWorkflowInstanceId = parentWorkflowInstanceId;
-        State.ParentActivityId = parentActivityId;
+        State.SetParentInfo(parentWorkflowInstanceId, parentActivityId);
         LogParentInfoSet(parentWorkflowInstanceId, parentActivityId);
         await _state.WriteStateAsync();
     }
@@ -373,9 +364,6 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         if(_workflowDefinition is not null) throw new ArgumentException("Workflow already set");
 
         _workflowDefinition = workflow ?? throw new ArgumentNullException(nameof(workflow));
-        State.Id = this.GetPrimaryKey();
-        State.CreatedAt = DateTimeOffset.UtcNow;
-        State.ProcessDefinitionId = workflow.ProcessDefinitionId;
 
         SetWorkflowRequestContext();
         using var scope = BeginWorkflowScope();
@@ -390,9 +378,9 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         await activityInstance.SetActivity(startActivity.ActivityId, startActivity.GetType().Name);
         await activityInstance.SetVariablesId(variablesId);
 
-        var entry = new ActivityInstanceEntry(activityInstanceId, startActivity.ActivityId, State.Id);
+        var entry = new ActivityInstanceEntry(activityInstanceId, startActivity.ActivityId, this.GetPrimaryKey());
         LogStateStartWith(startActivity.ActivityId);
-        State.StartWith(entry, variablesId);
+        State.StartWith(this.GetPrimaryKey(), workflow.ProcessDefinitionId, entry, variablesId);
         await _state.WriteStateAsync();
     }
 
@@ -709,10 +697,6 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
     [LoggerMessage(EventId = 3000, Level = LogLevel.Information, Message = "Workflow initialized with start activity {ActivityId}")]
     private partial void LogStateStartWith(string activityId);
-
-    [LoggerMessage(EventId = 3001, Level = LogLevel.Information, Message = "Workflow started")]
-    private partial void LogStateStarted();
-
     [LoggerMessage(EventId = 3002, Level = LogLevel.Information, Message = "Workflow completed")]
     private partial void LogStateCompleted();
 

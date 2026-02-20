@@ -266,7 +266,7 @@ public class EfCoreActivityInstanceGrainStorageTests
     }
 
     [TestMethod]
-    public async Task Update_OverwritesErrorState()
+    public async Task Fail_CompletesActivity_SecondFailThrows()
     {
         var grainId = NewGrainId();
         var state = CreateGrainState();
@@ -274,16 +274,18 @@ public class EfCoreActivityInstanceGrainStorageTests
         state.State.Fail(new InvalidOperationException("first error"));
         await _storage.WriteStateAsync(StateName, grainId, state);
 
-        // Overwrite with a different error
-        state.State.Fail(new ArgumentException("second error"));
-        await _storage.WriteStateAsync(StateName, grainId, state);
+        // Fail() now completes the activity, so a second Fail() should throw
+        Assert.ThrowsExactly<InvalidOperationException>(() =>
+            state.State.Fail(new ArgumentException("second error")));
 
+        // Verify the original error is preserved
         var readState = CreateGrainState();
         await _storage.ReadStateAsync(StateName, grainId, readState);
 
         Assert.IsNotNull(readState.State.ErrorState);
         Assert.AreEqual(500, readState.State.ErrorState.Code);
-        Assert.AreEqual("second error", readState.State.ErrorState.Message);
+        Assert.AreEqual("first error", readState.State.ErrorState.Message);
+        Assert.IsTrue(readState.State.IsCompleted);
     }
 
     [TestMethod]

@@ -109,12 +109,12 @@ public class EfCoreWorkflowInstanceGrainStorageTests
     [TestMethod]
     public async Task WriteAndRead_WithVariableStates_Preserves()
     {
-        var grainId = NewGrainId();
+        var (grainId, id) = NewGrainIdWithGuid();
         var state = CreateGrainState();
-        state.State.Start();
 
         var variablesId = Guid.NewGuid();
-        state.State.StartWith(new ActivityInstanceEntry(Guid.NewGuid(), "act-1", Guid.Empty), variablesId);
+        state.State.StartWith(id, null, new ActivityInstanceEntry(Guid.NewGuid(), "act-1", id), variablesId);
+        state.State.Start();
 
         var vars = new ExpandoObject();
         var dict = (IDictionary<string, object>)vars;
@@ -186,12 +186,13 @@ public class EfCoreWorkflowInstanceGrainStorageTests
     [TestMethod]
     public async Task Timestamps_ArePreserved()
     {
-        var grainId = NewGrainId();
+        var (grainId, id) = NewGrainIdWithGuid();
         var state = CreateGrainState();
+        var variablesId = Guid.NewGuid();
+        state.State.StartWith(id, null,
+            new ActivityInstanceEntry(Guid.NewGuid(), "act-1", id), variablesId);
         state.State.Start();
-        state.State.CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-10);
-        state.State.ExecutionStartedAt = DateTimeOffset.UtcNow.AddMinutes(-5);
-        state.State.CompletedAt = DateTimeOffset.UtcNow;
+        state.State.Complete();
 
         await _storage.WriteStateAsync(StateName, grainId, state);
 
@@ -279,12 +280,12 @@ public class EfCoreWorkflowInstanceGrainStorageTests
     [TestMethod]
     public async Task Clear_RemovesState_SubsequentReadReturnsDefault()
     {
-        var grainId = NewGrainId();
+        var (grainId, id) = NewGrainIdWithGuid();
         var state = CreateGrainState();
-        state.State.Start();
 
         var variablesId = Guid.NewGuid();
-        state.State.StartWith(new ActivityInstanceEntry(Guid.NewGuid(), "act-1", Guid.Empty), variablesId);
+        state.State.StartWith(id, null, new ActivityInstanceEntry(Guid.NewGuid(), "act-1", id), variablesId);
+        state.State.Start();
         state.State.AddConditionSequenceStates(Guid.NewGuid(), ["seq-1"]);
 
         await _storage.WriteStateAsync(StateName, grainId, state);
@@ -429,12 +430,12 @@ public class EfCoreWorkflowInstanceGrainStorageTests
     [TestMethod]
     public async Task Update_AddsVariableState()
     {
-        var grainId = NewGrainId();
+        var (grainId, id) = NewGrainIdWithGuid();
         var state = CreateGrainState();
-        state.State.Start();
 
         var variablesId1 = Guid.NewGuid();
-        state.State.StartWith(new ActivityInstanceEntry(Guid.NewGuid(), "act-1", Guid.Empty), variablesId1);
+        state.State.StartWith(id, null, new ActivityInstanceEntry(Guid.NewGuid(), "act-1", id), variablesId1);
+        state.State.Start();
         await _storage.WriteStateAsync(StateName, grainId, state);
 
         // Add a second variable scope by cloning
@@ -450,12 +451,12 @@ public class EfCoreWorkflowInstanceGrainStorageTests
     [TestMethod]
     public async Task Update_UpdatesVariableValues()
     {
-        var grainId = NewGrainId();
+        var (grainId, id) = NewGrainIdWithGuid();
         var state = CreateGrainState();
-        state.State.Start();
 
         var variablesId = Guid.NewGuid();
-        state.State.StartWith(new ActivityInstanceEntry(Guid.NewGuid(), "act-1", Guid.Empty), variablesId);
+        state.State.StartWith(id, null, new ActivityInstanceEntry(Guid.NewGuid(), "act-1", id), variablesId);
+        state.State.Start();
 
         var vars1 = new ExpandoObject();
         ((IDictionary<string, object>)vars1)["x"] = "hello";
@@ -602,21 +603,17 @@ public class EfCoreWorkflowInstanceGrainStorageTests
     [TestMethod]
     public async Task FullWorkflowLifecycle_RoundTrip()
     {
-        var grainId = NewGrainId();
+        var (grainId, id) = NewGrainIdWithGuid();
         var state = CreateGrainState();
 
         // Start the workflow
-        state.State.Start();
-        state.State.CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-10);
-        state.State.ExecutionStartedAt = DateTimeOffset.UtcNow.AddMinutes(-5);
-
-        // Add active activities with a variable scope
         var variablesId = Guid.NewGuid();
-        var entry1 = new ActivityInstanceEntry(Guid.NewGuid(), "startEvent-1", Guid.Empty);
-        state.State.StartWith(entry1, variablesId);
+        var entry1 = new ActivityInstanceEntry(Guid.NewGuid(), "startEvent-1", id);
+        state.State.StartWith(id, null, entry1, variablesId);
+        state.State.Start();
 
-        var entry2 = new ActivityInstanceEntry(Guid.NewGuid(), "task-1", Guid.Empty);
-        var entry3 = new ActivityInstanceEntry(Guid.NewGuid(), "gateway-1", Guid.Empty);
+        var entry2 = new ActivityInstanceEntry(Guid.NewGuid(), "task-1", id);
+        var entry3 = new ActivityInstanceEntry(Guid.NewGuid(), "gateway-1", id);
         state.State.AddEntries([entry2, entry3]);
 
         // Set variables
@@ -643,7 +640,6 @@ public class EfCoreWorkflowInstanceGrainStorageTests
         // Complete the workflow
         state.State.CompleteEntries([entry2, entry3]);
         state.State.Complete();
-        state.State.CompletedAt = DateTimeOffset.UtcNow;
 
         // Write the full state
         await _storage.WriteStateAsync(StateName, grainId, state);
@@ -709,6 +705,12 @@ public class EfCoreWorkflowInstanceGrainStorageTests
 
     private static GrainId NewGrainId()
         => GrainId.Create("workflowInstance", Guid.NewGuid().ToString("N"));
+
+    private static (GrainId grainId, Guid id) NewGrainIdWithGuid()
+    {
+        var id = Guid.NewGuid();
+        return (GrainId.Create("workflowInstance", id.ToString("N")), id);
+    }
 
     private static TestGrainState<WorkflowInstanceState> CreateGrainState()
         => new() { State = new WorkflowInstanceState() };

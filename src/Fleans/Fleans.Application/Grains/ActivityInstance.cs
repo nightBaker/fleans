@@ -34,8 +34,7 @@ public partial class ActivityInstance : Grain, IActivityInstanceGrain
         State.Fail(exception);
         var errorState = State.ErrorState!;
         LogFailed(errorState.Code, errorState.Message);
-        // Complete() calls WriteStateAsync — both error and completed state persisted atomically
-        await Complete();
+        await _state.WriteStateAsync();
     }
 
     public async ValueTask Cancel(string reason)
