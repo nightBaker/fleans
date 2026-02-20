@@ -24,10 +24,7 @@ public record ParallelGateway(
             {
                 await activityContext.Complete();
             }
-            else
-            {
-                await activityContext.Execute();
-            }
+            // Otherwise stay active — base.ExecuteAsync already called Execute()
         }
     }
 
@@ -43,34 +40,24 @@ public record ParallelGateway(
     private async Task<bool> AllIncomingPathsCompleted(IWorkflowExecutionContext workflowContext, IWorkflowDefinition workflow)
     {
         var incomingFlows = workflow.SequenceFlows.Where(sf => sf.Target == this).ToList();
-
         var completedActivities = await workflowContext.GetCompletedActivities();
-        var activeActivities = await workflowContext.GetActiveActivities();
-
-        var any = false;
 
         foreach (var incomingFlow in incomingFlows)
         {
+            var sourceCompleted = false;
             foreach (var completedActivity in completedActivities)
             {
                 if (await completedActivity.GetActivityId() == incomingFlow.Source.ActivityId)
                 {
-                    if(! await completedActivity.IsCompleted())
-                    {
-                        return false;
-                    }
+                    sourceCompleted = true;
+                    break;
                 }
             }
 
-            foreach (var activeActivity in activeActivities)
-            {
-                if (await activeActivity.GetActivityId() == incomingFlow.Source.ActivityId)
-                {
-                    any = true;
-                }
-            }
+            if (!sourceCompleted)
+                return false;
         }
 
-        return any;
+        return true;
     }
 }

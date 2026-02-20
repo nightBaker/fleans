@@ -29,6 +29,7 @@ public interface IActivityInstanceGrain : IGrainWithGuidKey, IActivityExecutionC
 
     ValueTask Fail(Exception exception);
     ValueTask Cancel(string reason);
+    ValueTask ResetExecuting();
     ValueTask SetActivity(string activityId, string activityType);
     ValueTask SetVariablesId(Guid guid);
 }

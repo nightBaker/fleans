@@ -105,6 +105,11 @@ public class ActivityInstanceState
         ExecutionStartedAt = DateTimeOffset.UtcNow;
     }
 
+    public void ResetExecuting()
+    {
+        IsExecuting = false;
+    }
+
     public void SetActivity(string activityId, string activityType)
     {
         ActivityId = activityId;

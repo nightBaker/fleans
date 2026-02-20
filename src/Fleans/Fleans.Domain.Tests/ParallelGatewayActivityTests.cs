@@ -106,16 +106,11 @@ public class ParallelGatewayActivityTests
         // Both incoming tasks are completed
         var task1Context = Substitute.For<IActivityExecutionContext>();
         task1Context.GetActivityId().Returns(ValueTask.FromResult("task1"));
-        task1Context.IsCompleted().Returns(ValueTask.FromResult(true));
 
         var task2Context = Substitute.For<IActivityExecutionContext>();
         task2Context.GetActivityId().Returns(ValueTask.FromResult("task2"));
-        task2Context.IsCompleted().Returns(ValueTask.FromResult(true));
 
         workflowContext.GetCompletedActivities()
-            .Returns(ValueTask.FromResult<IReadOnlyList<IActivityExecutionContext>>(
-                new List<IActivityExecutionContext> { task1Context, task2Context }));
-        workflowContext.GetActiveActivities()
             .Returns(ValueTask.FromResult<IReadOnlyList<IActivityExecutionContext>>(
                 new List<IActivityExecutionContext> { task1Context, task2Context }));
 
@@ -147,18 +142,11 @@ public class ParallelGatewayActivityTests
 
         var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
 
-        // task1 is completed but task2 is still active
+        // task1 is completed but task2 is still active — only task1 in completed list
         var task1Context = Substitute.For<IActivityExecutionContext>();
         task1Context.GetActivityId().Returns(ValueTask.FromResult("task1"));
-        task1Context.IsCompleted().Returns(ValueTask.FromResult(false));
-
-        var task2Context = Substitute.For<IActivityExecutionContext>();
-        task2Context.GetActivityId().Returns(ValueTask.FromResult("task2"));
-        task2Context.IsCompleted().Returns(ValueTask.FromResult(false));
 
         workflowContext.GetCompletedActivities()
-            .Returns(ValueTask.FromResult<IReadOnlyList<IActivityExecutionContext>>([]));
-        workflowContext.GetActiveActivities()
             .Returns(ValueTask.FromResult<IReadOnlyList<IActivityExecutionContext>>(
                 new List<IActivityExecutionContext> { task1Context }));
 

@@ -34,7 +34,7 @@ namespace Fleans.Application.Tests
         }
 
         [TestMethod]
-        public async Task JoinGateway_ShouldWaitForAllIncomingPaths_ToComplete()
+        public async Task JoinGateway_ShouldNotComplete_WhenOnlyOnePathDone()
         {
             // Arrange
             var workflow = CreateForkJoinWorkflow();
@@ -42,12 +42,40 @@ namespace Fleans.Application.Tests
             await workflowInstance.SetWorkflow(workflow);
             await workflowInstance.StartWorkflow();
 
-            // This test requires completing the fork and then the parallel tasks
-            // The join should only complete when all incoming paths are done
+            // Act — complete only task1
+            await workflowInstance.CompleteActivity("task1", new ExpandoObject());
 
-            // Act & Assert
-            // Implementation depends on completing activities in sequence
-            // This is a placeholder for the full test
+            // Assert — join should NOT have completed, task2 is still active
+            var instanceId = workflowInstance.GetPrimaryKey();
+            var snapshot = await QueryService.GetStateSnapshot(instanceId);
+            Assert.IsNotNull(snapshot);
+            Assert.IsFalse(snapshot.IsCompleted, "Workflow should NOT be completed — task2 still pending");
+            Assert.IsTrue(snapshot.ActiveActivities.Any(a => a.ActivityId == "task2"),
+                "task2 should still be active");
+            Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId == "end"),
+                "End event should NOT have been reached");
+        }
+
+        [TestMethod]
+        public async Task JoinGateway_ShouldComplete_WhenAllPathsDone()
+        {
+            // Arrange
+            var workflow = CreateForkJoinWorkflow();
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+            await workflowInstance.SetWorkflow(workflow);
+            await workflowInstance.StartWorkflow();
+
+            // Act — complete both tasks
+            await workflowInstance.CompleteActivity("task1", new ExpandoObject());
+            await workflowInstance.CompleteActivity("task2", new ExpandoObject());
+
+            // Assert — join should have completed, workflow finished
+            var instanceId = workflowInstance.GetPrimaryKey();
+            var snapshot = await QueryService.GetStateSnapshot(instanceId);
+            Assert.IsNotNull(snapshot);
+            Assert.IsTrue(snapshot.IsCompleted, "Workflow should be completed after both paths done");
+            Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "end"),
+                "End event should have been reached");
         }
 
         [TestMethod]

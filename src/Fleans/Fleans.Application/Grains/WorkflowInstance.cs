@@ -167,6 +167,19 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
                 foreach(var nextActivity in nextActivities)
                 {
+                    // For join gateways, reuse the existing active entry instead of creating a duplicate
+                    if (nextActivity is ParallelGateway { IsFork: false })
+                    {
+                        var existingEntry = State.GetActiveActivities()
+                            .FirstOrDefault(e => e.ActivityId == nextActivity.ActivityId);
+                        if (existingEntry != null)
+                        {
+                            var existingInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(existingEntry.ActivityInstanceId);
+                            await existingInstance.ResetExecuting();
+                            continue;
+                        }
+                    }
+
                     var variablesId = await activityInstance.GetVariablesStateId();
                     RequestContext.Set("VariablesId", variablesId.ToString());
                     var newId = Guid.NewGuid();

@@ -69,6 +69,12 @@ public partial class ActivityInstance : Grain, IActivityInstanceGrain
     public ValueTask<ActivityErrorState?> GetErrorState()
         => ValueTask.FromResult(State.ErrorState);
 
+    public async ValueTask ResetExecuting()
+    {
+        State.ResetExecuting();
+        await _state.WriteStateAsync();
+    }
+
     public async ValueTask SetVariablesId(Guid guid)
     {
         State.SetVariablesId(guid);
