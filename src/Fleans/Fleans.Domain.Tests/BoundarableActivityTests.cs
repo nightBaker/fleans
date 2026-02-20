@@ -20,7 +20,7 @@ public class BoundarableActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("task1", activityInstanceId);
 
         // Act
-        await task.RegisterBoundaryEventsAsync(workflowContext, activityContext);
+        await task.RegisterBoundaryEventsAsync(workflowContext, activityContext, definition);
 
         // Assert
         await workflowContext.Received(1).RegisterTimerReminder(
@@ -40,7 +40,7 @@ public class BoundarableActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("task1", activityInstanceId);
 
         // Act
-        await task.RegisterBoundaryEventsAsync(workflowContext, activityContext);
+        await task.RegisterBoundaryEventsAsync(workflowContext, activityContext, definition);
 
         // Assert
         await workflowContext.Received(1).RegisterBoundaryMessageSubscription(
@@ -57,7 +57,7 @@ public class BoundarableActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("task1");
 
         // Act
-        await task.RegisterBoundaryEventsAsync(workflowContext, activityContext);
+        await task.RegisterBoundaryEventsAsync(workflowContext, activityContext, definition);
 
         // Assert
         await workflowContext.DidNotReceive().RegisterTimerReminder(
@@ -81,7 +81,7 @@ public class BoundarableActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("task1");
 
         // Act
-        await task1.RegisterBoundaryEventsAsync(workflowContext, activityContext);
+        await task1.RegisterBoundaryEventsAsync(workflowContext, activityContext, definition);
 
         // Assert
         await workflowContext.Received(1).RegisterTimerReminder(
@@ -104,7 +104,7 @@ public class BoundarableActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("call1", activityInstanceId);
 
         // Act
-        await callActivity.RegisterBoundaryEventsAsync(workflowContext, activityContext);
+        await callActivity.RegisterBoundaryEventsAsync(workflowContext, activityContext, definition);
 
         // Assert
         await workflowContext.Received(1).RegisterTimerReminder(

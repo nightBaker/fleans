@@ -23,7 +23,7 @@ public class ConditionalGatewayActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("if", activityInstanceId);
 
         // Act
-        var result = await gateway.SetConditionResult(workflowContext, activityContext, "seq1", true);
+        var result = await gateway.SetConditionResult(workflowContext, activityContext, "seq1", true, definition);
 
         // Assert
         Assert.IsTrue(result);
@@ -62,7 +62,7 @@ public class ConditionalGatewayActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("if", activityInstanceId);
 
         // Act
-        var result = await gateway.SetConditionResult(workflowContext, activityContext, "seq1", false);
+        var result = await gateway.SetConditionResult(workflowContext, activityContext, "seq1", false, definition);
 
         // Assert
         Assert.IsFalse(result);
@@ -100,7 +100,7 @@ public class ConditionalGatewayActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("if", activityInstanceId);
 
         // Act
-        var result = await gateway.SetConditionResult(workflowContext, activityContext, "seq1", false);
+        var result = await gateway.SetConditionResult(workflowContext, activityContext, "seq1", false, definition);
 
         // Assert
         Assert.IsTrue(result);
@@ -135,6 +135,6 @@ public class ConditionalGatewayActivityTests
 
         // Act & Assert
         await Assert.ThrowsExactlyAsync<InvalidOperationException>(
-            () => gateway.SetConditionResult(workflowContext, activityContext, "seq1", false));
+            () => gateway.SetConditionResult(workflowContext, activityContext, "seq1", false, definition));
     }
 }
