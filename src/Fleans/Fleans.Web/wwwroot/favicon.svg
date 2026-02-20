@@ -1,28 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#818cf8"/>
-      <stop offset="100%" stop-color="#4338ca"/>
-    </linearGradient>
-  </defs>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Teal hexagon (pointy-top) -->
+  <polygon points="256,36 446,146 446,366 256,476 66,366 66,146"
+           fill="#4EB5A6"/>
 
-  <!-- Background rounded square -->
-  <rect width="32" height="32" rx="6" fill="url(#bg)"/>
-
-  <!-- Start event (circle) -->
-  <circle cx="6" cy="16" r="3" fill="none" stroke="#fff" stroke-width="1.5"/>
-
-  <!-- Arrow from start to gateway -->
-  <line x1="9" y1="16" x2="12" y2="16" stroke="#fff" stroke-width="1.2"/>
-
-  <!-- Gateway diamond -->
-  <polygon points="16,11 21,16 16,21 11,16" fill="none" stroke="#fff" stroke-width="1.5"/>
-
-  <!-- Upper branch: gateway → task -->
-  <line x1="19" y1="13.5" x2="23" y2="10" stroke="#fff" stroke-width="1.2"/>
-  <rect x="23" y="7.5" width="5" height="5" rx="1" fill="#fff" opacity="0.95"/>
-
-  <!-- Lower branch: gateway → task -->
-  <line x1="19" y1="18.5" x2="23" y2="22" stroke="#fff" stroke-width="1.2"/>
-  <rect x="23" y="19.5" width="5" height="5" rx="1" fill="#fff" opacity="0.95"/>
+  <!-- Bold white "F" letter -->
+  <path d="M 168 131
+           L 353 131
+           L 353 183
+           L 220 183
+           L 220 230
+           L 310 230
+           L 310 282
+           L 220 282
+           L 220 381
+           L 168 381
+           Z"
+        fill="white"/>
 </svg>
