@@ -12,9 +12,6 @@ public interface IWorkflowInstanceGrain : IGrainWithGuidKey, IWorkflowExecutionC
     new ValueTask<Guid> GetWorkflowInstanceId();
 
     [ReadOnly]
-    ValueTask<IWorkflowDefinition> GetWorkflowDefinition();
-
-    [ReadOnly]
     new ValueTask<IReadOnlyDictionary<Guid, ConditionSequenceState[]>> GetConditionSequenceStates();
 
     [ReadOnly]
@@ -39,6 +36,7 @@ public interface IWorkflowInstanceGrain : IGrainWithGuidKey, IWorkflowExecutionC
     [AlwaysInterleave]
     Task OnChildWorkflowFailed(string parentActivityId, Exception exception);
 
+    Task HandleMessageDelivery(string activityId, Guid hostActivityInstanceId, ExpandoObject variables);
     Task HandleBoundaryMessageFired(string boundaryActivityId, Guid hostActivityInstanceId);
     Task HandleTimerFired(string timerActivityId, Guid hostActivityInstanceId);
 }

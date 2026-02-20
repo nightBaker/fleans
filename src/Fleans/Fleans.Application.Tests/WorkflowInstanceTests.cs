@@ -24,9 +24,6 @@ namespace Fleans.Application.Tests
             await workflowInstance.StartWorkflow();
 
             // Assert
-            var definition = await workflowInstance.GetWorkflowDefinition();
-            Assert.AreEqual(workflow.WorkflowId, definition.WorkflowId);
-
             var instanceId = workflowInstance.GetPrimaryKey();
             var snapshot = await QueryService.GetStateSnapshot(instanceId);
             Assert.IsNotNull(snapshot);

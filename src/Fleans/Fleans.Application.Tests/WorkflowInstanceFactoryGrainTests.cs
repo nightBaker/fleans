@@ -61,12 +61,10 @@ namespace Fleans.Application.Tests
 
             // Act
             var instance = await factoryGrain.CreateWorkflowInstanceGrain(workflowId);
-            var definition = await instance.GetWorkflowDefinition();
 
-            // Assert
-            Assert.AreEqual(workflowId, definition.WorkflowId);
-            Assert.AreEqual(workflow.Activities.Count, definition.Activities.Count);
-            Assert.AreEqual(workflow.SequenceFlows.Count, definition.SequenceFlows.Count);
+            // Assert — workflow was set correctly: instance has an active start activity
+            var activeActivities = await instance.GetActiveActivities();
+            Assert.HasCount(1, activeActivities);
         }
 
         [TestMethod]
