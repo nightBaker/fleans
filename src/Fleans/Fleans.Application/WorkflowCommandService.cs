@@ -29,7 +29,7 @@ public partial class WorkflowCommandService : IWorkflowCommandService
 
         await workflowInstance.StartWorkflow();
 
-        return await workflowInstance.GetWorkflowInstanceId();
+        return workflowInstance.GetPrimaryKey();
     }
 
     public async Task<Guid> StartWorkflowByProcessDefinitionId(string processDefinitionId)
@@ -41,7 +41,7 @@ public partial class WorkflowCommandService : IWorkflowCommandService
 
         await workflowInstance.StartWorkflow();
 
-        return await workflowInstance.GetWorkflowInstanceId();
+        return workflowInstance.GetPrimaryKey();
     }
 
     public void CompleteActivity(Guid workflowInstanceId, string activityId, ExpandoObject variables)

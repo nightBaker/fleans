@@ -12,7 +12,6 @@ namespace Fleans.Application.Grains;
 
 public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundaryEventStateAccessor
 {
-    public ValueTask<Guid> GetWorkflowInstanceId() => ValueTask.FromResult(this.GetPrimaryKey());
     private IWorkflowDefinition? _workflowDefinition;
 
     private readonly IPersistentState<WorkflowInstanceState> _state;
@@ -69,7 +68,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
                 var currentActivity = definition.GetActivity(activityId);
                 SetActivityRequestContext(activityId, activityState);
                 LogExecutingActivity(activityId, currentActivity.GetType().Name);
-                await currentActivity.ExecuteAsync(this, activityState);
+                await currentActivity.ExecuteAsync(this, activityState, this.GetPrimaryKey());
                 if (currentActivity is IBoundarableActivity boundarable)
                 {
                     await boundarable.RegisterBoundaryEventsAsync(this, activityState);

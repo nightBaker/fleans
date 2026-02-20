@@ -127,7 +127,7 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
         var boundaryEntry = new ActivityInstanceEntry(boundaryInstanceId, boundaryActivity.ActivityId, _accessor.State.Id);
         _accessor.State.AddEntries([boundaryEntry]);
 
-        await boundaryActivity.ExecuteAsync(_accessor.WorkflowExecutionContext, boundaryInstance);
+        await boundaryActivity.ExecuteAsync(_accessor.WorkflowExecutionContext, boundaryInstance, _accessor.State.Id);
         await _accessor.TransitionToNextActivity();
         await _accessor.ExecuteWorkflow();
     }
