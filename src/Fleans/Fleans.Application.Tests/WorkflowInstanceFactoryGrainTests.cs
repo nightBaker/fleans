@@ -1,3 +1,4 @@
+using Fleans.Application.Grains;
 using Fleans.Application.Services;
 using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
@@ -41,11 +42,9 @@ namespace Fleans.Application.Tests
             await factoryGrain.DeployWorkflow(workflow, "<bpmn/>");
 
             // Act
-            var instance = await factoryGrain.CreateWorkflowInstanceGrain(workflowId);
+            var instanceId = await factoryGrain.CreateWorkflowInstanceGrain(workflowId);
 
             // Assert
-            Assert.IsNotNull(instance);
-            var instanceId = instance.GetPrimaryKey();
             Assert.AreNotEqual(Guid.Empty, instanceId);
         }
 
@@ -60,7 +59,8 @@ namespace Fleans.Application.Tests
             await factoryGrain.DeployWorkflow(workflow, "<bpmn/>");
 
             // Act
-            var instance = await factoryGrain.CreateWorkflowInstanceGrain(workflowId);
+            var instanceId = await factoryGrain.CreateWorkflowInstanceGrain(workflowId);
+            var instance = _cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
             var definition = await instance.GetWorkflowDefinition();
 
             // Assert

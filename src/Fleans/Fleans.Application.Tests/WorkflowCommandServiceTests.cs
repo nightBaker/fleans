@@ -32,12 +32,16 @@ namespace Fleans.Application.Tests
         {
             // Arrange
             var workflowId = "test-workflow-1";
+            var instanceId = Guid.NewGuid();
             var workflowInstance = Substitute.For<IWorkflowInstanceGrain>();
 
             _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0)
                 .Returns(_factoryGrain);
 
             _factoryGrain.CreateWorkflowInstanceGrain(workflowId)
+                .Returns(instanceId);
+
+            _grainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId)
                 .Returns(workflowInstance);
 
             workflowInstance.StartWorkflow().Returns(Task.CompletedTask);
@@ -45,8 +49,8 @@ namespace Fleans.Application.Tests
             // Act
             var result = await _commandService.StartWorkflow(workflowId);
 
-            // Assert — GetPrimaryKey() is an extension method on the grain reference,
-            // so we can only verify the workflow was created and started.
+            // Assert
+            Assert.AreEqual(instanceId, result);
             await _factoryGrain.Received(1).CreateWorkflowInstanceGrain(workflowId);
             await workflowInstance.Received(1).StartWorkflow();
         }

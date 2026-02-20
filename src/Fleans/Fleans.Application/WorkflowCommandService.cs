@@ -24,24 +24,24 @@ public partial class WorkflowCommandService : IWorkflowCommandService
     {
         LogStartingWorkflow(workflowId);
 
-        var workflowInstance = await _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstanceFactorySingletonId)
-                                                .CreateWorkflowInstanceGrain(workflowId);
+        var instanceId = await _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstanceFactorySingletonId)
+                                            .CreateWorkflowInstanceGrain(workflowId);
 
-        await workflowInstance.StartWorkflow();
+        await _grainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId).StartWorkflow();
 
-        return workflowInstance.GetPrimaryKey();
+        return instanceId;
     }
 
     public async Task<Guid> StartWorkflowByProcessDefinitionId(string processDefinitionId)
     {
         LogStartingWorkflowByDefinition(processDefinitionId);
 
-        var workflowInstance = await _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstanceFactorySingletonId)
+        var instanceId = await _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstanceFactorySingletonId)
             .CreateWorkflowInstanceGrainByProcessDefinitionId(processDefinitionId);
 
-        await workflowInstance.StartWorkflow();
+        await _grainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId).StartWorkflow();
 
-        return workflowInstance.GetPrimaryKey();
+        return instanceId;
     }
 
     public void CompleteActivity(Guid workflowInstanceId, string activityId, ExpandoObject variables)

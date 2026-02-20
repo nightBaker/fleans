@@ -50,7 +50,7 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
         }
     }
 
-    public async Task<IWorkflowInstanceGrain> CreateWorkflowInstanceGrain(string workflowId)
+    public async Task<Guid> CreateWorkflowInstanceGrain(string workflowId)
     {
         // Back-compat: treat workflowId as process definition key and start the latest version.
         var definition = GetLatestDefinitionOrThrow(workflowId);
@@ -66,10 +66,10 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
 
         await workflowInstanceGrain.SetWorkflow(definition.Workflow);
 
-        return workflowInstanceGrain;
+        return guid;
     }
 
-    public async Task<IWorkflowInstanceGrain> CreateWorkflowInstanceGrainByProcessDefinitionId(string processDefinitionId)
+    public async Task<Guid> CreateWorkflowInstanceGrainByProcessDefinitionId(string processDefinitionId)
     {
         if (string.IsNullOrWhiteSpace(processDefinitionId))
         {
@@ -92,7 +92,7 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
 
         await workflowInstanceGrain.SetWorkflow(definition.Workflow);
 
-        return workflowInstanceGrain;
+        return guid;
     }
 
     public async Task<ProcessDefinitionSummary> DeployWorkflow(WorkflowDefinition workflow, string bpmnXml)
