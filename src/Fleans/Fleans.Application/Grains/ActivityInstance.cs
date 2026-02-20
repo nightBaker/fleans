@@ -69,6 +69,13 @@ public partial class ActivityInstance : Grain, IActivityInstanceGrain
     public ValueTask<ActivityErrorState?> GetErrorState()
         => ValueTask.FromResult(State.ErrorState);
 
+    public async ValueTask ResetExecuting()
+    {
+        State.ResetExecuting();
+        LogResetExecuting();
+        await _state.WriteStateAsync();
+    }
+
     public async ValueTask SetVariablesId(Guid guid)
     {
         State.SetVariablesId(guid);
@@ -102,4 +109,7 @@ public partial class ActivityInstance : Grain, IActivityInstanceGrain
 
     [LoggerMessage(EventId = 2004, Level = LogLevel.Information, Message = "Activity cancelled: {Reason}")]
     private partial void LogCancelled(string reason);
+
+    [LoggerMessage(EventId = 2005, Level = LogLevel.Information, Message = "Activity reset to non-executing (join gateway re-entry)")]
+    private partial void LogResetExecuting();
 }

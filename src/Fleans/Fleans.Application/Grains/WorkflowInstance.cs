@@ -167,6 +167,20 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
                 foreach(var nextActivity in nextActivities)
                 {
+                    // For join gateways, reuse the existing active entry instead of creating a duplicate
+                    if (nextActivity.IsJoinGateway)
+                    {
+                        var existingEntry = State.GetActiveActivities()
+                            .FirstOrDefault(e => e.ActivityId == nextActivity.ActivityId);
+                        if (existingEntry != null)
+                        {
+                            LogJoinGatewayDeduplication(nextActivity.ActivityId, existingEntry.ActivityInstanceId);
+                            var existingInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(existingEntry.ActivityInstanceId);
+                            await existingInstance.ResetExecuting();
+                            continue;
+                        }
+                    }
+
                     var variablesId = await activityInstance.GetVariablesStateId();
                     RequestContext.Set("VariablesId", variablesId.ToString());
                     var newId = Guid.NewGuid();
@@ -768,4 +782,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
     [LoggerMessage(EventId = 1026, Level = LogLevel.Information, Message = "Message delivered, completing activity {ActivityId}")]
     private partial void LogMessageDeliveryComplete(string activityId);
+
+    [LoggerMessage(EventId = 1027, Level = LogLevel.Debug, Message = "Join gateway {ActivityId} already active ({ActivityInstanceId}), reusing entry instead of creating duplicate")]
+    private partial void LogJoinGatewayDeduplication(string activityId, Guid activityInstanceId);
 }
