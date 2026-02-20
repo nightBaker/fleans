@@ -28,7 +28,6 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
     ILogger IBoundaryEventStateAccessor.Logger => _logger;
     IWorkflowExecutionContext IBoundaryEventStateAccessor.WorkflowExecutionContext => this;
 
-    async ValueTask<IWorkflowDefinition> IBoundaryEventStateAccessor.GetWorkflowDefinition() => await GetWorkflowDefinition();
     async ValueTask<object?> IBoundaryEventStateAccessor.GetVariable(string variableName) => await GetVariable(variableName);
     async Task IBoundaryEventStateAccessor.TransitionToNextActivity() => await TransitionToNextActivity();
     async Task IBoundaryEventStateAccessor.ExecuteWorkflow() => await ExecuteWorkflow();
@@ -69,10 +68,10 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
                 var currentActivity = definition.GetActivity(activityId);
                 SetActivityRequestContext(activityId, activityState);
                 LogExecutingActivity(activityId, currentActivity.GetType().Name);
-                await currentActivity.ExecuteAsync(this, activityState);
+                await currentActivity.ExecuteAsync(this, activityState, definition);
                 if (currentActivity is IBoundarableActivity boundarable)
                 {
-                    await boundarable.RegisterBoundaryEventsAsync(this, activityState);
+                    await boundarable.RegisterBoundaryEventsAsync(this, activityState, definition);
                 }
             }
 
@@ -140,7 +139,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
     }
 
     private Task HandleBoundaryTimerFired(BoundaryTimerEvent boundaryTimer, Guid hostActivityInstanceId)
-        => _boundaryHandler.HandleBoundaryTimerFiredAsync(boundaryTimer, hostActivityInstanceId);
+        => _boundaryHandler.HandleBoundaryTimerFiredAsync(boundaryTimer, hostActivityInstanceId, _workflowDefinition!);
 
     private async Task TransitionToNextActivity()
     {
@@ -165,7 +164,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
                 var currentActivity = definition.GetActivity(entry.ActivityId);
 
-                var nextActivities = await currentActivity.GetNextActivities(this, activityInstance);
+                var nextActivities = await currentActivity.GetNextActivities(this, activityInstance, definition);
 
                 foreach(var nextActivity in nextActivities)
                 {
@@ -204,10 +203,11 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         State.MergeState(variablesId, variables);
 
         // Unregister any boundary timer reminders attached to this activity
-        await _boundaryHandler.UnregisterBoundaryTimerRemindersAsync(activityId, entry.ActivityInstanceId);
+        var definition = await GetWorkflowDefinition();
+        await _boundaryHandler.UnregisterBoundaryTimerRemindersAsync(activityId, entry.ActivityInstanceId, definition);
 
         // Unsubscribe any boundary message subscriptions attached to this activity
-        await _boundaryHandler.UnsubscribeBoundaryMessageSubscriptionsAsync(activityId);
+        await _boundaryHandler.UnsubscribeBoundaryMessageSubscriptionsAsync(activityId, definition);
     }
 
     private async Task FailActivityState(string activityId, Exception exception)
@@ -345,7 +345,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         try
         {
             isDecisionMade = await gateway.SetConditionResult(
-                this, activityInstance, conditionSequenceId, result);
+                this, activityInstance, conditionSequenceId, result, definition);
         }
         catch (InvalidOperationException)
         {
@@ -503,7 +503,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
             if (boundaryEvent is not null)
             {
-                await _boundaryHandler.HandleBoundaryErrorAsync(activityId, boundaryEvent, activityEntry.ActivityInstanceId);
+                await _boundaryHandler.HandleBoundaryErrorAsync(activityId, boundaryEvent, activityEntry.ActivityInstanceId, definition);
                 return;
             }
         }
@@ -670,7 +670,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         var boundaryMessage = definition.GetActivity(boundaryActivityId) as MessageBoundaryEvent
             ?? throw new InvalidOperationException($"Activity '{boundaryActivityId}' is not a MessageBoundaryEvent");
 
-        await _boundaryHandler.HandleBoundaryMessageFiredAsync(boundaryMessage, hostActivityInstanceId);
+        await _boundaryHandler.HandleBoundaryMessageFiredAsync(boundaryMessage, hostActivityInstanceId, definition);
         await _state.WriteStateAsync();
     }
 
