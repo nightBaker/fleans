@@ -5,7 +5,6 @@ using Fleans.Web.Components;
 using Fleans.Web.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.FluentUI.AspNetCore.Components;
-using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -28,28 +27,11 @@ builder.Services.AddInfrastructure();
 var sqliteConnectionString = builder.Configuration["FLEANS_SQLITE_CONNECTION"] ?? "DataSource=fleans-dev.db";
 builder.Services.AddEfCorePersistence(options => options.UseSqlite(sqliteConnectionString));
 
-// Add Orleans client
-// When running through Aspire, service discovery automatically provides gateway endpoints
-// The Orleans client will connect to the Redis-clustered Orleans silo
-builder.Host.UseOrleansClient(siloBuilder=> siloBuilder.UseRedisClustering(options =>
-{
-    // Aspire automatically provides the Redis connection string
-    // when .WithReference(redis) is used in Aspire
-    var connectionString = builder.Configuration.GetConnectionString("redis");
-    if (!string.IsNullOrEmpty(connectionString))
-    {
-        // Parse the connection string to extract host:port and other parameters
-        options.ConfigurationOptions = ConfigurationOptions.Parse(connectionString);
-        options.ConfigurationOptions.AbortOnConnectFail = false;
-            
-        // For development: accept untrusted SSL certificates
-        // In production, use proper SSL certificates
-        if (builder.Environment.IsDevelopment())
-        {
-            options.ConfigurationOptions.CertificateValidation += (sender, certificate, chain, errors) => true;
-        }
-    }
-}));
+// Register Redis client for Aspire-managed Orleans
+builder.AddKeyedRedisClient("redis");
+
+// Orleans client — Aspire injects clustering config automatically
+builder.UseOrleansClient();
 
 var app = builder.Build();
 

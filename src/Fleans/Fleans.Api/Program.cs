@@ -3,7 +3,6 @@ using Fleans.Application.Logging;
 using Fleans.Infrastructure;
 using Fleans.Persistence;
 using Microsoft.EntityFrameworkCore;
-using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -11,58 +10,13 @@ var builder = WebApplication.CreateBuilder(args);
 // This must be called before UseOrleans when running through Aspire
 builder.AddServiceDefaults();
 
-// Orleans silo configuration with Redis
-// When running through Aspire, Redis connection string is automatically injected
+// Register Redis client for Aspire-managed Orleans
+builder.AddKeyedRedisClient("redis");
+
+// Orleans silo configuration
+// Infrastructure (clustering, storage, streaming, reminders) is managed by Aspire AppHost
 builder.UseOrleans(siloBuilder =>
 {
-    // Configure Redis clustering
-    // Aspire injects the Redis connection string via configuration
-    siloBuilder.UseRedisClustering(options =>
-    {
-        // Aspire automatically provides the Redis connection string
-        // when .WithReference(redis) is used in Aspire
-        var connectionString = builder.Configuration.GetConnectionString("redis");
-        if (!string.IsNullOrEmpty(connectionString))
-        {
-            // Parse the connection string to extract host:port and other parameters
-            options.ConfigurationOptions = ConfigurationOptions.Parse(connectionString);
-            options.ConfigurationOptions.AbortOnConnectFail = false;
-            
-            // For development: accept untrusted SSL certificates
-            // In production, use proper SSL certificates
-            if (builder.Environment.IsDevelopment())
-            {
-                options.ConfigurationOptions.CertificateValidation += (sender, certificate, chain, errors) => true;
-            }
-        }
-    });
-
-    // Configure Redis grain storage
-    siloBuilder.AddRedisGrainStorage("PubSubStore", options =>
-    {
-        var connectionString = builder.Configuration.GetConnectionString("redis");
-        if (!string.IsNullOrEmpty(connectionString))
-        {
-            // Parse the full connection string (includes password, SSL, etc.)
-            options.ConfigurationOptions = ConfigurationOptions.Parse(connectionString);
-            options.ConfigurationOptions.AbortOnConnectFail = false;
-            
-            // For development: accept untrusted SSL certificates
-            // In production, use proper SSL certificates
-            if (builder.Environment.IsDevelopment())
-            {
-                options.ConfigurationOptions.CertificateValidation += (sender, certificate, chain, errors) => true;
-            }
-        }
-    });
-
-    // Configure Redis streaming (optional, for pub/sub)
-    siloBuilder.AddMemoryStreams("StreamProvider");
-
-    // Reminders (required by TimerStartEventSchedulerGrain and WorkflowInstance timers)
-    // TODO: Replace with persistent reminder storage (Redis/AzureTable) for production
-    siloBuilder.UseInMemoryReminderService();
-
     // Structured workflow logging via RequestContext
     siloBuilder.AddIncomingGrainCallFilter<WorkflowLoggingScopeFilter>();
 });

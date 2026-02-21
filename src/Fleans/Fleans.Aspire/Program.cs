@@ -7,34 +7,26 @@ var sqliteConnectionString = $"DataSource={sqliteDbPath}";
 // Add Redis for Orleans clustering and storage
 var redis = builder.AddRedis("redis");
 
-// Configure Orleans with Redis clustering
-// var orleans = builder.AddOrleans("default")
-//                      .WithRedisGrainStorage("PubSubStore", redis)
-//                      .WithRedisStreaming("StreamProvider", redis);
+// Centralized Orleans configuration
+var orleans = builder.AddOrleans("cluster")
+    .WithClustering(redis)
+    .WithGrainStorage("PubSubStore", redis)
+    .WithMemoryStreaming("StreamProvider")
+    .WithMemoryReminders();
 
-// Add our server project and reference your 'orleans' resource from it.
-// it can join the Orleans cluster as a service.
-// This implicitly add references to the required resources.
-// In this case, that is the 'clusteringTable' resource declared earlier.
-
+// Api = Orleans silo
 builder.AddProject<Projects.Fleans_Api>("fleans")
-       .WithReference(redis)
-       .WithEnvironment("FLEANS_SQLITE_CONNECTION", sqliteConnectionString)
-       .WithReplicas(1);
+    .WithReference(orleans)
+    .WaitFor(redis)
+    .WithEnvironment("FLEANS_SQLITE_CONNECTION", sqliteConnectionString)
+    .WithReplicas(1);
 
+// Web = Orleans client
 builder.AddProject<Projects.Fleans_Web>("fleans-client")
-       .WithReference(redis)
-       .WithEnvironment("FLEANS_SQLITE_CONNECTION", sqliteConnectionString)
-       .WithReplicas(1);
+    .WithReference(orleans.AsClient())
+    .WaitFor(redis)
+    .WithEnvironment("FLEANS_SQLITE_CONNECTION", sqliteConnectionString)
+    .WithReplicas(1);
 
-// Reference the Orleans resource as a client from the 'frontend'
-// project so that it can connect to the Orleans cluster.
-//builder.AddProject<Projects.OrleansClient>("frontend")
-//       .WithReference(orleans.AsClient())
-//       .WithExternalHttpEndpoints()
-//       .WithReplicas(3);
-
-// Build and run the application.
 using var app = builder.Build();
 await app.RunAsync();
-
