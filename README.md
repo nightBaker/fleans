@@ -29,7 +29,7 @@ For now, next elements are implemented
 | Timer Event          | Represents a delay or a specific time/date.                                  | [x] start, intermediate catch, boundary |
 | Error Event          | Indicates an error that needs to be handled.                                 |  [x] boundary |
 | Conditional Event    | Represents a condition that will cause a process to start or continue.       |             |
-| Signal Event         | Represents the sending or receiving of a signal.                             |             |
+| Signal Event         | Represents the sending or receiving of a signal.                             | [x] intermediate catch, intermediate throw, boundary |
 | Escalation Event     | Used to model situations where escalation is required.                       |             |
 | Cancel Event         | Indicates cancellation of a process.                                         |             |
 | Compensation Event   | Represents a process that is performed to compensate for an error.           |             |
