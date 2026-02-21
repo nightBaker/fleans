@@ -3,6 +3,7 @@ using Fleans.Application.Logging;
 using Fleans.Infrastructure;
 using Fleans.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Orleans.Dashboard;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -17,6 +18,9 @@ builder.AddKeyedRedisClient("redis");
 // Infrastructure (clustering, storage, streaming, reminders) is managed by Aspire AppHost
 builder.UseOrleans(siloBuilder =>
 {
+    // Dashboard data collection (UI served from Web project)
+    siloBuilder.AddDashboard();
+
     // Structured workflow logging via RequestContext
     siloBuilder.AddIncomingGrainCallFilter<WorkflowLoggingScopeFilter>();
 });

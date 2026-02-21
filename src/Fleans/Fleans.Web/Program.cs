@@ -5,6 +5,7 @@ using Fleans.Web.Components;
 using Fleans.Web.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.FluentUI.AspNetCore.Components;
+using Orleans.Dashboard;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -30,8 +31,11 @@ builder.Services.AddEfCorePersistence(options => options.UseSqlite(sqliteConnect
 // Register Redis client for Aspire-managed Orleans
 builder.AddKeyedRedisClient("redis");
 
-// Orleans client — Aspire injects clustering config automatically
-builder.UseOrleansClient();
+// Orleans client with Dashboard UI
+builder.UseOrleansClient(clientBuilder =>
+{
+    clientBuilder.AddDashboard();
+});
 
 var app = builder.Build();
 
@@ -59,5 +63,8 @@ app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
+
+// Orleans Dashboard at /dashboard
+app.MapOrleansDashboard(routePrefix: "/dashboard");
 
 app.Run();
