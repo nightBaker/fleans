@@ -698,6 +698,101 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         await _state.WriteStateAsync();
     }
 
+    public async ValueTask RegisterSignalSubscription(string signalDefinitionId, string activityId)
+    {
+        var definition = await GetWorkflowDefinition();
+        var signalDef = definition.Signals.First(s => s.Id == signalDefinitionId);
+
+        var entry = State.GetFirstActive(activityId)
+            ?? throw new InvalidOperationException($"Active entry not found for '{activityId}'");
+
+        await _state.WriteStateAsync();
+
+        var signalGrain = _grainFactory.GetGrain<ISignalCorrelationGrain>(signalDef.Name);
+
+        try
+        {
+            await signalGrain.Subscribe(this.GetPrimaryKey(), activityId, entry.ActivityInstanceId);
+        }
+        catch (Exception ex)
+        {
+            LogSignalSubscriptionFailed(activityId, signalDef.Name, ex);
+            await FailActivityWithBoundaryCheck(activityId, ex);
+            await _state.WriteStateAsync();
+            return;
+        }
+
+        LogSignalSubscriptionRegistered(activityId, signalDef.Name);
+    }
+
+    public async ValueTask RegisterBoundarySignalSubscription(Guid hostActivityInstanceId, string boundaryActivityId, string signalDefinitionId)
+    {
+        var definition = await GetWorkflowDefinition();
+        var signalDef = definition.Signals.First(s => s.Id == signalDefinitionId);
+
+        var signalGrain = _grainFactory.GetGrain<ISignalCorrelationGrain>(signalDef.Name);
+
+        try
+        {
+            await signalGrain.Subscribe(this.GetPrimaryKey(), boundaryActivityId, hostActivityInstanceId);
+        }
+        catch (Exception ex)
+        {
+            LogSignalSubscriptionFailed(boundaryActivityId, signalDef.Name, ex);
+            return;
+        }
+
+        LogSignalSubscriptionRegistered(boundaryActivityId, signalDef.Name);
+    }
+
+    public async ValueTask ThrowSignal(string signalDefinitionId)
+    {
+        var definition = await GetWorkflowDefinition();
+        var signalDef = definition.Signals.First(s => s.Id == signalDefinitionId);
+
+        var signalGrain = _grainFactory.GetGrain<ISignalCorrelationGrain>(signalDef.Name);
+        var deliveredCount = await signalGrain.BroadcastSignal();
+        LogSignalThrown(signalDef.Name, deliveredCount);
+    }
+
+    public async Task HandleSignalDelivery(string activityId, Guid hostActivityInstanceId)
+    {
+        await EnsureWorkflowDefinitionAsync();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+
+        var definition = await GetWorkflowDefinition();
+        var activity = definition.GetActivity(activityId);
+
+        if (activity is SignalBoundaryEvent boundarySignal)
+        {
+            LogSignalDeliveryBoundary(activityId);
+            await _boundaryHandler.HandleBoundarySignalFiredAsync(boundarySignal, hostActivityInstanceId, definition);
+        }
+        else
+        {
+            LogSignalDeliveryComplete(activityId);
+            await CompleteActivityState(activityId, new ExpandoObject());
+            await ExecuteWorkflow();
+        }
+
+        await _state.WriteStateAsync();
+    }
+
+    public async Task HandleBoundarySignalFired(string boundaryActivityId, Guid hostActivityInstanceId)
+    {
+        await EnsureWorkflowDefinitionAsync();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+
+        var definition = await GetWorkflowDefinition();
+        var boundarySignal = definition.GetActivity(boundaryActivityId) as SignalBoundaryEvent
+            ?? throw new InvalidOperationException($"Activity '{boundaryActivityId}' is not a SignalBoundaryEvent");
+
+        await _boundaryHandler.HandleBoundarySignalFiredAsync(boundarySignal, hostActivityInstanceId, definition);
+        await _state.WriteStateAsync();
+    }
+
     [LoggerMessage(EventId = 1000, Level = LogLevel.Debug, Message = "Workflow definition set")]
     private partial void LogWorkflowDefinitionSet();
 
@@ -785,4 +880,22 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
     [LoggerMessage(EventId = 1027, Level = LogLevel.Debug, Message = "Join gateway {ActivityId} already active ({ActivityInstanceId}), reusing entry instead of creating duplicate")]
     private partial void LogJoinGatewayDeduplication(string activityId, Guid activityInstanceId);
+
+    [LoggerMessage(EventId = 1028, Level = LogLevel.Information,
+        Message = "Signal subscription registered for activity {ActivityId}: signalName={SignalName}")]
+    private partial void LogSignalSubscriptionRegistered(string activityId, string signalName);
+
+    [LoggerMessage(EventId = 1029, Level = LogLevel.Warning,
+        Message = "Signal subscription failed for activity {ActivityId}: signalName={SignalName}")]
+    private partial void LogSignalSubscriptionFailed(string activityId, string signalName, Exception exception);
+
+    [LoggerMessage(EventId = 1030, Level = LogLevel.Information,
+        Message = "Signal thrown: signalName={SignalName}, deliveredTo={DeliveredCount} subscribers")]
+    private partial void LogSignalThrown(string signalName, int deliveredCount);
+
+    [LoggerMessage(EventId = 1031, Level = LogLevel.Information, Message = "Signal delivered as boundary event for activity {ActivityId}")]
+    private partial void LogSignalDeliveryBoundary(string activityId);
+
+    [LoggerMessage(EventId = 1032, Level = LogLevel.Information, Message = "Signal delivered, completing activity {ActivityId}")]
+    private partial void LogSignalDeliveryComplete(string activityId);
 }
