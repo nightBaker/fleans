@@ -124,6 +124,20 @@ internal static class FleanModelConfiguration
                         ?? new Dictionary<string, MessageSubscription>());
         });
 
+        modelBuilder.Entity<SignalCorrelationState>(entity =>
+        {
+            entity.ToTable("SignalCorrelations");
+            entity.HasKey(e => e.Key);
+            entity.Property(e => e.Key).HasMaxLength(512);
+            entity.Property(e => e.ETag).HasMaxLength(64);
+            entity.Property(e => e.Subscriptions)
+                .HasColumnName("Subscriptions")
+                .HasConversion(
+                    v => JsonConvert.SerializeObject(v),
+                    v => JsonConvert.DeserializeObject<List<SignalSubscription>>(v)
+                        ?? new List<SignalSubscription>());
+        });
+
         modelBuilder.Entity<ProcessDefinition>(entity =>
         {
             entity.ToTable("ProcessDefinitions");
