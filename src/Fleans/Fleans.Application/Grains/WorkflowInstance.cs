@@ -585,7 +585,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         return ValueTask.FromResult(dict.TryGetValue(variableName, out var value) ? value : null);
     }
 
-    public async ValueTask RegisterMessageSubscription(string messageDefinitionId, string activityId)
+    public async ValueTask RegisterMessageSubscription(Guid variablesId, string messageDefinitionId, string activityId)
     {
         var definition = await GetWorkflowDefinition();
         var messageDef = definition.Messages.First(m => m.Id == messageDefinitionId);
@@ -596,9 +596,6 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
         var entry = State.GetFirstActive(activityId)
             ?? throw new InvalidOperationException($"Active entry not found for '{activityId}'");
-
-        var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(entry.ActivityInstanceId);
-        var variablesId = await activityInstance.GetVariablesStateId();
 
         var correlationValue = await GetVariable(variablesId, messageDef.CorrelationKeyExpression);
         var correlationKey = correlationValue?.ToString()

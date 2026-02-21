@@ -23,7 +23,7 @@ internal static class ActivityTestHelper
             .Returns(ValueTask.CompletedTask);
         context.GetVariable(Arg.Any<Guid>(), Arg.Any<string>())
             .Returns(ValueTask.FromResult<object?>(null));
-        context.RegisterMessageSubscription(Arg.Any<string>(), Arg.Any<string>())
+        context.RegisterMessageSubscription(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>())
             .Returns(ValueTask.CompletedTask);
         context.RegisterBoundaryMessageSubscription(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>())
             .Returns(ValueTask.CompletedTask);
@@ -39,6 +39,7 @@ internal static class ActivityTestHelper
         var id = instanceId ?? Guid.NewGuid();
         context.GetActivityInstanceId().Returns(ValueTask.FromResult(id));
         context.GetActivityId().Returns(ValueTask.FromResult(activityId));
+        context.GetVariablesStateId().Returns(ValueTask.FromResult(Guid.NewGuid()));
         context.IsCompleted().Returns(ValueTask.FromResult(false));
 
         var publishedEvents = new List<IDomainEvent>();

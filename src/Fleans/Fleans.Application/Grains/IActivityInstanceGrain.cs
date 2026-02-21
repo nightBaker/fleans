@@ -19,7 +19,7 @@ public interface IActivityInstanceGrain : IGrainWithGuidKey, IActivityExecutionC
     ValueTask<bool> IsExecuting();
 
     [ReadOnly]
-    ValueTask<Guid> GetVariablesStateId();
+    new ValueTask<Guid> GetVariablesStateId();
 
     [ReadOnly]
     ValueTask<ActivityErrorState?> GetErrorState();
