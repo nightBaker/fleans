@@ -8,23 +8,23 @@
 
   <!-- Teal hexagon (pointy-top, outline only) -->
   <polygon points="256,36 446,146 446,366 256,476 66,366 66,146"
-           fill="none" stroke="#4EB5A6" stroke-width="10"/>
+           fill="none" stroke="#4EB5A6" stroke-width="18"/>
 
   <!-- === Task activities forming smaller "F" shape === -->
 
   <!-- Top bar (row 0, cols 0-2) -->
-  <rect x="176" y="158" width="44" height="28" rx="5" fill="none" stroke="#4EB5A6" stroke-width="3"/>
-  <rect x="234" y="158" width="44" height="28" rx="5" fill="none" stroke="#4EB5A6" stroke-width="3"/>
-  <rect x="292" y="158" width="44" height="28" rx="5" fill="none" stroke="#4EB5A6" stroke-width="3"/>
+  <rect x="176" y="158" width="44" height="28" rx="5" fill="#4EB5A6" stroke="none"/>
+  <rect x="234" y="158" width="44" height="28" rx="5" fill="#4EB5A6" stroke="none"/>
+  <rect x="292" y="158" width="44" height="28" rx="5" fill="#4EB5A6" stroke="none"/>
 
   <!-- Vertical stem (rows 1-4, col 0) -->
-  <rect x="176" y="200" width="44" height="28" rx="5" fill="none" stroke="#4EB5A6" stroke-width="3"/>
-  <rect x="176" y="242" width="44" height="28" rx="5" fill="none" stroke="#4EB5A6" stroke-width="3"/>
-  <rect x="176" y="284" width="44" height="28" rx="5" fill="none" stroke="#4EB5A6" stroke-width="3"/>
-  <rect x="176" y="326" width="44" height="28" rx="5" fill="none" stroke="#4EB5A6" stroke-width="3"/>
+  <rect x="176" y="200" width="44" height="28" rx="5" fill="#4EB5A6" stroke="none"/>
+  <rect x="176" y="242" width="44" height="28" rx="5" fill="#4EB5A6" stroke="none"/>
+  <rect x="176" y="284" width="44" height="28" rx="5" fill="#4EB5A6" stroke="none"/>
+  <rect x="176" y="326" width="44" height="28" rx="5" fill="#4EB5A6" stroke="none"/>
 
   <!-- Middle bar (row 2, col 1) -->
-  <rect x="234" y="242" width="44" height="28" rx="5" fill="none" stroke="#4EB5A6" stroke-width="3"/>
+  <rect x="234" y="242" width="44" height="28" rx="5" fill="#4EB5A6" stroke="none"/>
 
   <!-- === Sequence flows === -->
 
