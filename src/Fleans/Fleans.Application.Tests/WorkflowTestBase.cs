@@ -60,6 +60,7 @@ public abstract class WorkflowTestBase
                 .AddMemoryStreams(WorkflowEventsPublisher.StreamProvider)
                 .AddMemoryGrainStorage("PubSubStore")
                 .AddMemoryGrainStorage(GrainStorageNames.MessageCorrelations)
+                .AddMemoryGrainStorage(GrainStorageNames.SignalCorrelations)
                 .UseInMemoryReminderService()
                 .ConfigureServices(services =>
                 {
