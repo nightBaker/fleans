@@ -405,3 +405,6 @@ FodyWeavers.xsd
 *.db
 *.db-shm
 *.db-wal
+
+# Git worktrees
+.worktrees/
