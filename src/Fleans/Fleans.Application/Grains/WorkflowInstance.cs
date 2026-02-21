@@ -181,7 +181,10 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
                         }
                     }
 
-                    var variablesId = await activityInstance.GetVariablesStateId();
+                    var sourceVariablesId = await activityInstance.GetVariablesStateId();
+                    var variablesId = currentActivity is ParallelGateway { IsFork: true }
+                        ? State.AddCloneOfVariableState(sourceVariablesId)
+                        : sourceVariablesId;
                     RequestContext.Set("VariablesId", variablesId.ToString());
                     var newId = Guid.NewGuid();
                     var newActivityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(newId);

@@ -121,6 +121,59 @@ namespace Fleans.Application.Tests
             Assert.IsTrue(activeTaskActivities.Any(a => a.ActivityId == "task3"));
         }
 
+        [TestMethod]
+        public async Task ParallelBranches_ShouldHaveIsolatedVariableScopes()
+        {
+            // Arrange — fork into two branches, complete each with different values for the same variable
+            var workflow = CreateForkJoinWorkflow();
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+            await workflowInstance.SetWorkflow(workflow);
+            await workflowInstance.StartWorkflow();
+
+            var instanceId = workflowInstance.GetPrimaryKey();
+            var snapshot = await QueryService.GetStateSnapshot(instanceId);
+            Assert.IsNotNull(snapshot);
+
+            // Verify the two branches have different variable scope IDs
+            var task1Activity = snapshot.ActiveActivities.First(a => a.ActivityId == "task1");
+            var task2Activity = snapshot.ActiveActivities.First(a => a.ActivityId == "task2");
+            Assert.AreNotEqual(task1Activity.VariablesStateId, task2Activity.VariablesStateId,
+                "Parallel branches should have different variable scope IDs");
+
+            // Act — complete task1 with x="from-branch-1"
+            dynamic vars1 = new ExpandoObject();
+            vars1.x = "from-branch-1";
+            await workflowInstance.CompleteActivity("task1", vars1);
+
+            // Assert — task1's scope has x, task2's scope does not
+            var midSnapshot = await QueryService.GetStateSnapshot(instanceId);
+            Assert.IsNotNull(midSnapshot);
+
+            var task1Scope = midSnapshot.VariableStates.First(v => v.VariablesId == task1Activity.VariablesStateId);
+            Assert.IsTrue(task1Scope.Variables.ContainsKey("x"),
+                "Branch 1 scope should contain variable 'x' after completion");
+            Assert.AreEqual("from-branch-1", task1Scope.Variables["x"]);
+
+            var task2Scope = midSnapshot.VariableStates.First(v => v.VariablesId == task2Activity.VariablesStateId);
+            Assert.IsFalse(task2Scope.Variables.ContainsKey("x"),
+                "Branch 2 scope should NOT contain variable 'x' — scopes are isolated");
+
+            // Act — complete task2 with x="from-branch-2"
+            dynamic vars2 = new ExpandoObject();
+            vars2.x = "from-branch-2";
+            await workflowInstance.CompleteActivity("task2", vars2);
+
+            // Assert — workflow completed, both scopes have their own value
+            var finalSnapshot = await QueryService.GetStateSnapshot(instanceId);
+            Assert.IsNotNull(finalSnapshot);
+            Assert.IsTrue(finalSnapshot.IsCompleted);
+
+            var finalScope1 = finalSnapshot.VariableStates.First(v => v.VariablesId == task1Activity.VariablesStateId);
+            var finalScope2 = finalSnapshot.VariableStates.First(v => v.VariablesId == task2Activity.VariablesStateId);
+            Assert.AreEqual("from-branch-1", finalScope1.Variables["x"]);
+            Assert.AreEqual("from-branch-2", finalScope2.Variables["x"]);
+        }
+
         private static IWorkflowDefinition CreateForkJoinWorkflow()
         {
             var start = new StartEvent("start");
