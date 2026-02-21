@@ -28,7 +28,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
     ILogger IBoundaryEventStateAccessor.Logger => _logger;
     IWorkflowExecutionContext IBoundaryEventStateAccessor.WorkflowExecutionContext => this;
 
-    async ValueTask<object?> IBoundaryEventStateAccessor.GetVariable(string variableName) => await GetVariable(variableName);
+    async ValueTask<object?> IBoundaryEventStateAccessor.GetVariable(Guid variablesId, string variableName) => await GetVariable(variablesId, variableName);
     async Task IBoundaryEventStateAccessor.TransitionToNextActivity() => await TransitionToNextActivity();
     async Task IBoundaryEventStateAccessor.ExecuteWorkflow() => await ExecuteWorkflow();
 
@@ -181,7 +181,10 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
                         }
                     }
 
-                    var variablesId = await activityInstance.GetVariablesStateId();
+                    var sourceVariablesId = await activityInstance.GetVariablesStateId();
+                    var variablesId = currentActivity is ParallelGateway { IsFork: true }
+                        ? State.AddCloneOfVariableState(sourceVariablesId)
+                        : sourceVariablesId;
                     RequestContext.Set("VariablesId", variablesId.ToString());
                     var newId = Guid.NewGuid();
                     var newActivityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(newId);
@@ -220,7 +223,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         await _boundaryHandler.UnregisterBoundaryTimerRemindersAsync(activityId, entry.ActivityInstanceId, definition);
 
         // Unsubscribe any boundary message subscriptions attached to this activity
-        await _boundaryHandler.UnsubscribeBoundaryMessageSubscriptionsAsync(activityId, definition);
+        await _boundaryHandler.UnsubscribeBoundaryMessageSubscriptionsAsync(activityId, variablesId, definition);
     }
 
     private async Task FailActivityState(string activityId, Exception exception)
@@ -578,18 +581,14 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
             _workflowDefinition.WorkflowId, _workflowDefinition.ProcessDefinitionId ?? "-", this.GetPrimaryKey().ToString());
     }
 
-    public ValueTask<object?> GetVariable(string variableName)
+    public ValueTask<object?> GetVariable(Guid variablesId, string variableName)
     {
-        for (var i = State.VariableStates.Count - 1; i >= 0; i--)
-        {
-            var dict = (IDictionary<string, object?>)State.VariableStates[i].Variables;
-            if (dict.TryGetValue(variableName, out var value))
-                return ValueTask.FromResult(value);
-        }
-        return ValueTask.FromResult<object?>(null);
+        var variableState = State.GetVariableState(variablesId);
+        var dict = (IDictionary<string, object?>)variableState.Variables;
+        return ValueTask.FromResult(dict.TryGetValue(variableName, out var value) ? value : null);
     }
 
-    public async ValueTask RegisterMessageSubscription(string messageDefinitionId, string activityId)
+    public async ValueTask RegisterMessageSubscription(Guid variablesId, string messageDefinitionId, string activityId)
     {
         var definition = await GetWorkflowDefinition();
         var messageDef = definition.Messages.First(m => m.Id == messageDefinitionId);
@@ -598,7 +597,10 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
             throw new InvalidOperationException(
                 $"Message '{messageDef.Name}' has no correlationKeyExpression — cannot auto-subscribe.");
 
-        var correlationValue = await GetVariable(messageDef.CorrelationKeyExpression);
+        var entry = State.GetFirstActive(activityId)
+            ?? throw new InvalidOperationException($"Active entry not found for '{activityId}'");
+
+        var correlationValue = await GetVariable(variablesId, messageDef.CorrelationKeyExpression);
         var correlationKey = correlationValue?.ToString()
             ?? throw new InvalidOperationException(
                 $"Correlation variable '{messageDef.CorrelationKeyExpression}' is null for message '{messageDef.Name}'.");
@@ -606,8 +608,6 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         await _state.WriteStateAsync();
 
         var correlationGrain = _grainFactory.GetGrain<IMessageCorrelationGrain>(messageDef.Name);
-        var entry = State.GetFirstActive(activityId)
-            ?? throw new InvalidOperationException($"Active entry not found for '{activityId}'");
 
         try
         {
@@ -632,7 +632,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         LogTimerReminderRegistered(timerActivityId, dueTime);
     }
 
-    public async ValueTask RegisterBoundaryMessageSubscription(Guid hostActivityInstanceId, string boundaryActivityId, string messageDefinitionId)
+    public async ValueTask RegisterBoundaryMessageSubscription(Guid variablesId, Guid hostActivityInstanceId, string boundaryActivityId, string messageDefinitionId)
     {
         var definition = await GetWorkflowDefinition();
         var messageDef = definition.Messages.First(m => m.Id == messageDefinitionId);
@@ -640,7 +640,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         if (messageDef.CorrelationKeyExpression is null)
             return;
 
-        var correlationValue = await GetVariable(messageDef.CorrelationKeyExpression);
+        var correlationValue = await GetVariable(variablesId, messageDef.CorrelationKeyExpression);
         if (correlationValue is null)
             return;
 

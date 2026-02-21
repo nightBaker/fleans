@@ -15,7 +15,8 @@ public record MessageIntermediateCatchEvent(
         IWorkflowDefinition definition)
     {
         await base.ExecuteAsync(workflowContext, activityContext, definition);
-        await workflowContext.RegisterMessageSubscription(MessageDefinitionId, ActivityId);
+        var variablesId = await activityContext.GetVariablesStateId();
+        await workflowContext.RegisterMessageSubscription(variablesId, MessageDefinitionId, ActivityId);
         // Do NOT call activityContext.Complete() — the correlation grain will do that
     }
 

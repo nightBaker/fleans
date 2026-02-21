@@ -36,7 +36,8 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
         _accessor.State.CompleteEntries([attachedEntry]);
 
         // Timer fired, so only unsubscribe message boundaries
-        await UnsubscribeBoundaryMessageSubscriptionsAsync(attachedActivityId, definition);
+        var variablesId = await attachedInstance.GetVariablesStateId();
+        await UnsubscribeBoundaryMessageSubscriptionsAsync(attachedActivityId, variablesId, definition);
         LogBoundaryTimerInterrupted(boundaryTimer.ActivityId, attachedActivityId);
 
         // Create and execute boundary timer event instance
@@ -67,7 +68,8 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
         // (its subscription was already removed by DeliverMessage, and calling
         // back into the same correlation grain would deadlock)
         var firedMessageDef = definition.Messages.First(m => m.Id == boundaryMessage.MessageDefinitionId);
-        await UnsubscribeBoundaryMessageSubscriptionsAsync(attachedActivityId, definition, skipMessageName: firedMessageDef.Name);
+        var variablesId = await attachedInstance.GetVariablesStateId();
+        await UnsubscribeBoundaryMessageSubscriptionsAsync(attachedActivityId, variablesId, definition, skipMessageName: firedMessageDef.Name);
         LogBoundaryMessageInterrupted(boundaryMessage.ActivityId, attachedActivityId);
 
         // Create and execute boundary message event instance
@@ -94,7 +96,7 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
         }
     }
 
-    public async Task UnsubscribeBoundaryMessageSubscriptionsAsync(string activityId, IWorkflowDefinition definition, string? skipMessageName = null)
+    public async Task UnsubscribeBoundaryMessageSubscriptionsAsync(string activityId, Guid variablesId, IWorkflowDefinition definition, string? skipMessageName = null)
     {
         foreach (var boundaryMsg in definition.Activities.OfType<MessageBoundaryEvent>()
             .Where(bm => bm.AttachedToActivityId == activityId))
@@ -103,7 +105,7 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
             if (messageDef?.CorrelationKeyExpression is null) continue;
             if (messageDef.Name == skipMessageName) continue;
 
-            var correlationValue = await _accessor.GetVariable(messageDef.CorrelationKeyExpression);
+            var correlationValue = await _accessor.GetVariable(variablesId, messageDef.CorrelationKeyExpression);
             if (correlationValue is null) continue;
 
             var correlationGrain = _accessor.GrainFactory.GetGrain<IMessageCorrelationGrain>(messageDef.Name);

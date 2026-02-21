@@ -26,7 +26,7 @@ public class MessageIntermediateCatchEventDomainTests
         // Assert — should execute and register, but NOT complete
         await activityContext.Received(1).Execute();
         await activityContext.DidNotReceive().Complete();
-        await workflowContext.Received(1).RegisterMessageSubscription("msg_payment", "msgCatch1");
+        await workflowContext.Received(1).RegisterMessageSubscription(Arg.Any<Guid>(), "msg_payment", "msgCatch1");
         var executedEvent = publishedEvents.OfType<WorkflowActivityExecutedEvent>().Single();
         Assert.AreEqual("msgCatch1", executedEvent.activityId);
         Assert.AreEqual("MessageIntermediateCatchEvent", executedEvent.TypeName);

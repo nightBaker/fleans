@@ -20,6 +20,9 @@ public interface IWorkflowInstanceGrain : IGrainWithGuidKey, IWorkflowExecutionC
     [ReadOnly]
     new ValueTask<IReadOnlyList<IActivityExecutionContext>> GetCompletedActivities();
 
+    [ReadOnly]
+    new ValueTask<object?> GetVariable(Guid variablesId, string variableName);
+
     Task CompleteActivity(string activityId, ExpandoObject variables);
     Task CompleteConditionSequence(string activityId, string conditionSequenceId, bool result);
     Task FailActivity(string activityId, Exception exception);
