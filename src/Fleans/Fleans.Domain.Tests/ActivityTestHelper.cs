@@ -25,7 +25,7 @@ internal static class ActivityTestHelper
             .Returns(ValueTask.FromResult<object?>(null));
         context.RegisterMessageSubscription(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>())
             .Returns(ValueTask.CompletedTask);
-        context.RegisterBoundaryMessageSubscription(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>())
+        context.RegisterBoundaryMessageSubscription(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>())
             .Returns(ValueTask.CompletedTask);
         context.RegisterTimerReminder(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<TimeSpan>())
             .Returns(ValueTask.CompletedTask);

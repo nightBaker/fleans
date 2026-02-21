@@ -44,7 +44,7 @@ public class BoundarableActivityTests
 
         // Assert
         await workflowContext.Received(1).RegisterBoundaryMessageSubscription(
-            activityInstanceId, "bm1", "msg-def-1");
+            Arg.Any<Guid>(), activityInstanceId, "bm1", "msg-def-1");
     }
 
     [TestMethod]
@@ -63,7 +63,7 @@ public class BoundarableActivityTests
         await workflowContext.DidNotReceive().RegisterTimerReminder(
             Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<TimeSpan>());
         await workflowContext.DidNotReceive().RegisterBoundaryMessageSubscription(
-            Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>());
+            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>());
     }
 
     [TestMethod]

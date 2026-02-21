@@ -19,10 +19,11 @@ public abstract record BoundarableActivity(string ActivityId)
             await workflowContext.RegisterTimerReminder(hostInstanceId, boundaryTimer.ActivityId, boundaryTimer.TimerDefinition.GetDueTime());
         }
 
+        var variablesId = await activityContext.GetVariablesStateId();
         foreach (var boundaryMsg in definition.Activities.OfType<MessageBoundaryEvent>()
             .Where(bm => bm.AttachedToActivityId == ActivityId))
         {
-            await workflowContext.RegisterBoundaryMessageSubscription(hostInstanceId, boundaryMsg.ActivityId, boundaryMsg.MessageDefinitionId);
+            await workflowContext.RegisterBoundaryMessageSubscription(variablesId, hostInstanceId, boundaryMsg.ActivityId, boundaryMsg.MessageDefinitionId);
         }
     }
 }

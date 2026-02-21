@@ -629,16 +629,13 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         LogTimerReminderRegistered(timerActivityId, dueTime);
     }
 
-    public async ValueTask RegisterBoundaryMessageSubscription(Guid hostActivityInstanceId, string boundaryActivityId, string messageDefinitionId)
+    public async ValueTask RegisterBoundaryMessageSubscription(Guid variablesId, Guid hostActivityInstanceId, string boundaryActivityId, string messageDefinitionId)
     {
         var definition = await GetWorkflowDefinition();
         var messageDef = definition.Messages.First(m => m.Id == messageDefinitionId);
 
         if (messageDef.CorrelationKeyExpression is null)
             return;
-
-        var hostInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(hostActivityInstanceId);
-        var variablesId = await hostInstance.GetVariablesStateId();
 
         var correlationValue = await GetVariable(variablesId, messageDef.CorrelationKeyExpression);
         if (correlationValue is null)
