@@ -10,13 +10,15 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Aspire.StackExchange.Redis" Version="13.1.1" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.1" />
-    <PackageReference Include="Microsoft.Orleans.Clustering.Redis" Version="9.2.1" />
-    <PackageReference Include="Microsoft.Orleans.GrainDirectory.Redis" Version="9.2.1" />
-    <PackageReference Include="Microsoft.Orleans.Persistence.Redis" Version="9.2.1" />
-    <PackageReference Include="Microsoft.Orleans.Server" Version="9.2.1" />
-    <PackageReference Include="Microsoft.VisualStudio.Azure.Containers.Tools.Targets" Version="1.22.1" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Orleans.Clustering.Redis" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Orleans.Dashboard" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Orleans.GrainDirectory.Redis" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Orleans.Persistence.Redis" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Orleans.Server" Version="10.0.1" />
+    <PackageReference Include="Microsoft.VisualStudio.Azure.Containers.Tools.Targets" Version="1.22.1" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="10.1.0" />
   </ItemGroup>
 
