@@ -16,6 +16,7 @@ namespace Fleans.Domain
         List<Activity> Activities { get; }
         List<SequenceFlow> SequenceFlows { get; }
         List<MessageDefinition> Messages { get; }
+        List<SignalDefinition> Signals { get; }
         Activity GetActivity(string activityId);
     }
    
@@ -36,6 +37,9 @@ namespace Fleans.Domain
 
         [Id(4)]
         public List<MessageDefinition> Messages { get; init; } = [];
+
+        [Id(5)]
+        public List<SignalDefinition> Signals { get; init; } = [];
 
         public Activity GetActivity(string activityId)
             => Activities.First(a => a.ActivityId == activityId);

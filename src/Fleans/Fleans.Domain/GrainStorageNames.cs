@@ -11,4 +11,5 @@ public static class GrainStorageNames
     public const string ProcessDefinitions = "processDefinitions";
     public const string TimerSchedulers = "timerSchedulers";
     public const string MessageCorrelations = "messageCorrelations";
+    public const string SignalCorrelations = "signalCorrelations";
 }
