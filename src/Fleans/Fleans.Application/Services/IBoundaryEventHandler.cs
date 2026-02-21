@@ -11,4 +11,6 @@ public interface IBoundaryEventHandler
     Task HandleBoundaryErrorAsync(string activityId, BoundaryErrorEvent boundaryError, Guid activityInstanceId, IWorkflowDefinition definition);
     Task UnregisterBoundaryTimerRemindersAsync(string activityId, Guid hostActivityInstanceId, IWorkflowDefinition definition);
     Task UnsubscribeBoundaryMessageSubscriptionsAsync(string activityId, Guid variablesId, IWorkflowDefinition definition, string? skipMessageName = null);
+    Task HandleBoundarySignalFiredAsync(SignalBoundaryEvent boundarySignal, Guid hostActivityInstanceId, IWorkflowDefinition definition);
+    Task UnsubscribeBoundarySignalSubscriptionsAsync(string activityId, IWorkflowDefinition definition, string? skipSignalName = null);
 }

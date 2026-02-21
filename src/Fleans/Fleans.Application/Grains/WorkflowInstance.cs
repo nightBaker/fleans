@@ -224,6 +224,9 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
         // Unsubscribe any boundary message subscriptions attached to this activity
         await _boundaryHandler.UnsubscribeBoundaryMessageSubscriptionsAsync(activityId, variablesId, definition);
+
+        // Unsubscribe any boundary signal subscriptions attached to this activity
+        await _boundaryHandler.UnsubscribeBoundarySignalSubscriptionsAsync(activityId, definition);
     }
 
     private async Task FailActivityState(string activityId, Exception exception)
