@@ -29,7 +29,8 @@ public abstract record BoundarableActivity(string ActivityId)
         foreach (var boundarySignal in definition.Activities.OfType<SignalBoundaryEvent>()
             .Where(bs => bs.AttachedToActivityId == ActivityId))
         {
-            await workflowContext.RegisterBoundarySignalSubscription(hostInstanceId, boundarySignal.ActivityId, boundarySignal.SignalDefinitionId);
+            var signalDef = definition.Signals.First(s => s.Id == boundarySignal.SignalDefinitionId);
+            await workflowContext.RegisterBoundarySignalSubscription(hostInstanceId, boundarySignal.ActivityId, signalDef.Name);
         }
     }
 }

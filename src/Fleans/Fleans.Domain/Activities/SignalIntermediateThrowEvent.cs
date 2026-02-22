@@ -15,7 +15,8 @@ public record SignalIntermediateThrowEvent(
         IWorkflowDefinition definition)
     {
         await base.ExecuteAsync(workflowContext, activityContext, definition);
-        await workflowContext.ThrowSignal(SignalDefinitionId);
+        var signalDef = definition.Signals.First(s => s.Id == SignalDefinitionId);
+        await workflowContext.ThrowSignal(signalDef.Name);
         await activityContext.Complete();
     }
 

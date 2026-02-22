@@ -701,17 +701,14 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         await _state.WriteStateAsync();
     }
 
-    public async ValueTask RegisterSignalSubscription(string signalDefinitionId, string activityId)
+    public async ValueTask RegisterSignalSubscription(string signalName, string activityId)
     {
-        var definition = await GetWorkflowDefinition();
-        var signalDef = definition.Signals.First(s => s.Id == signalDefinitionId);
-
         var entry = State.GetFirstActive(activityId)
             ?? throw new InvalidOperationException($"Active entry not found for '{activityId}'");
 
         await _state.WriteStateAsync();
 
-        var signalGrain = _grainFactory.GetGrain<ISignalCorrelationGrain>(signalDef.Name);
+        var signalGrain = _grainFactory.GetGrain<ISignalCorrelationGrain>(signalName);
 
         try
         {
@@ -719,21 +716,18 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         }
         catch (Exception ex)
         {
-            LogSignalSubscriptionFailed(activityId, signalDef.Name, ex);
+            LogSignalSubscriptionFailed(activityId, signalName, ex);
             await FailActivityWithBoundaryCheck(activityId, ex);
             await _state.WriteStateAsync();
             return;
         }
 
-        LogSignalSubscriptionRegistered(activityId, signalDef.Name);
+        LogSignalSubscriptionRegistered(activityId, signalName);
     }
 
-    public async ValueTask RegisterBoundarySignalSubscription(Guid hostActivityInstanceId, string boundaryActivityId, string signalDefinitionId)
+    public async ValueTask RegisterBoundarySignalSubscription(Guid hostActivityInstanceId, string boundaryActivityId, string signalName)
     {
-        var definition = await GetWorkflowDefinition();
-        var signalDef = definition.Signals.First(s => s.Id == signalDefinitionId);
-
-        var signalGrain = _grainFactory.GetGrain<ISignalCorrelationGrain>(signalDef.Name);
+        var signalGrain = _grainFactory.GetGrain<ISignalCorrelationGrain>(signalName);
 
         try
         {
@@ -741,21 +735,18 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         }
         catch (Exception ex)
         {
-            LogSignalSubscriptionFailed(boundaryActivityId, signalDef.Name, ex);
+            LogSignalSubscriptionFailed(boundaryActivityId, signalName, ex);
             return;
         }
 
-        LogSignalSubscriptionRegistered(boundaryActivityId, signalDef.Name);
+        LogSignalSubscriptionRegistered(boundaryActivityId, signalName);
     }
 
-    public async ValueTask ThrowSignal(string signalDefinitionId)
+    public async ValueTask ThrowSignal(string signalName)
     {
-        var definition = await GetWorkflowDefinition();
-        var signalDef = definition.Signals.First(s => s.Id == signalDefinitionId);
-
-        var signalGrain = _grainFactory.GetGrain<ISignalCorrelationGrain>(signalDef.Name);
+        var signalGrain = _grainFactory.GetGrain<ISignalCorrelationGrain>(signalName);
         var deliveredCount = await signalGrain.BroadcastSignal();
-        LogSignalThrown(signalDef.Name, deliveredCount);
+        LogSignalThrown(signalName, deliveredCount);
     }
 
     public async Task HandleSignalDelivery(string activityId, Guid hostActivityInstanceId)

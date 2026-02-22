@@ -19,7 +19,7 @@ public interface IWorkflowExecutionContext
     ValueTask RegisterMessageSubscription(Guid variablesId, string messageDefinitionId, string activityId);
     ValueTask RegisterTimerReminder(Guid hostActivityInstanceId, string timerActivityId, TimeSpan dueTime);
     ValueTask RegisterBoundaryMessageSubscription(Guid variablesId, Guid hostActivityInstanceId, string boundaryActivityId, string messageDefinitionId);
-    ValueTask RegisterSignalSubscription(string signalDefinitionId, string activityId);
-    ValueTask RegisterBoundarySignalSubscription(Guid hostActivityInstanceId, string boundaryActivityId, string signalDefinitionId);
-    ValueTask ThrowSignal(string signalDefinitionId);
+    ValueTask RegisterSignalSubscription(string signalName, string activityId);
+    ValueTask RegisterBoundarySignalSubscription(Guid hostActivityInstanceId, string boundaryActivityId, string signalName);
+    ValueTask ThrowSignal(string signalName);
 }
