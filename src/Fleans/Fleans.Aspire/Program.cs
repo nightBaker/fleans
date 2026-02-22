@@ -5,8 +5,7 @@ var sqliteDbPath = Path.Combine(Path.GetTempPath(), "fleans-dev.db");
 var sqliteConnectionString = $"DataSource={sqliteDbPath}";
 
 // Add Redis for Orleans clustering and storage
-var redis = builder.AddRedis("redis")
-    .WithoutHttpsCertificate();
+var redis = builder.AddRedis("redis");
 
 // Centralized Orleans configuration
 var orleans = builder.AddOrleans("cluster")

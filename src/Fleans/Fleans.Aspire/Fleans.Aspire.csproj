@@ -8,7 +8,6 @@
     <IsAspireHost>true</IsAspireHost>
     <UserSecretsId>ff0e8e3a-bda5-4f3a-b2df-b3d21b4e974a</UserSecretsId>
     <LangVersion>14</LangVersion>
-    <NoWarn>$(NoWarn);ASPIRECERTIFICATES001</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
