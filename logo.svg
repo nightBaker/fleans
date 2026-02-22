@@ -8,7 +8,7 @@
 
   <!-- Teal hexagon (pointy-top, outline only) -->
   <polygon points="256,36 446,146 446,366 256,476 66,366 66,146"
-           fill="none" stroke="#4EB5A6" stroke-width="36"/>
+           fill="none" stroke="#4EB5A6" stroke-width="64"/>
 
   <!-- === Task activities forming smaller "F" shape === -->
 
