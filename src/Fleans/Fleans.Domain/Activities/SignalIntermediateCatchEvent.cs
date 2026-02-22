@@ -16,7 +16,8 @@ public record SignalIntermediateCatchEvent(
     {
         await base.ExecuteAsync(workflowContext, activityContext, definition);
         var signalDef = definition.Signals.First(s => s.Id == SignalDefinitionId);
-        await workflowContext.RegisterSignalSubscription(signalDef.Name, ActivityId);
+        var activityInstanceId = await activityContext.GetActivityInstanceId();
+        await workflowContext.RegisterSignalSubscription(signalDef.Name, ActivityId, activityInstanceId);
         // Do NOT call activityContext.Complete() — the signal grain will do that
     }
 

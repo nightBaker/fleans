@@ -701,18 +701,15 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         await _state.WriteStateAsync();
     }
 
-    public async ValueTask RegisterSignalSubscription(string signalName, string activityId)
+    public async ValueTask RegisterSignalSubscription(string signalName, string activityId, Guid activityInstanceId)
     {
-        var entry = State.GetFirstActive(activityId)
-            ?? throw new InvalidOperationException($"Active entry not found for '{activityId}'");
-
         await _state.WriteStateAsync();
 
         var signalGrain = _grainFactory.GetGrain<ISignalCorrelationGrain>(signalName);
 
         try
         {
-            await signalGrain.Subscribe(this.GetPrimaryKey(), activityId, entry.ActivityInstanceId);
+            await signalGrain.Subscribe(this.GetPrimaryKey(), activityId, activityInstanceId);
         }
         catch (Exception ex)
         {
