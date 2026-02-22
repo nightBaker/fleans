@@ -32,8 +32,10 @@ builder.Services.AddEfCorePersistence(options => options.UseSqlite(sqliteConnect
 builder.AddKeyedRedisClient("redis");
 
 // Orleans client with Dashboard UI
+// UseRedisClustering registers the provider type; Aspire overrides connection details via env vars
 builder.UseOrleansClient(clientBuilder =>
 {
+    clientBuilder.UseRedisClustering(options => { });
     clientBuilder.AddDashboard();
 });
 

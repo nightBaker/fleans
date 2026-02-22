@@ -15,9 +15,13 @@ builder.AddServiceDefaults();
 builder.AddKeyedRedisClient("redis");
 
 // Orleans silo configuration
-// Infrastructure (clustering, storage, streaming, reminders) is managed by Aspire AppHost
+// Infrastructure config (connection strings, cluster ID) is injected by Aspire via env vars
 builder.UseOrleans(siloBuilder =>
 {
+    // Register Redis providers — Aspire overrides connection details via env vars
+    siloBuilder.UseRedisClustering(options => { });
+    siloBuilder.AddRedisGrainStorage("PubSubStore", options => { });
+
     // Dashboard data collection (UI served from Web project)
     siloBuilder.AddDashboard();
 

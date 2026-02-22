@@ -21,6 +21,7 @@
       <PackageReference Include="Microsoft.FluentUI.AspNetCore.Components.Emoji" Version="4.13.2" />
       <PackageReference Include="Microsoft.FluentUI.AspNetCore.Components.Icons" Version="4.13.2" />
       <PackageReference Include="Microsoft.Orleans.Client" Version="10.0.1" />
+      <PackageReference Include="Microsoft.Orleans.Clustering.Redis" Version="10.0.1" />
       <PackageReference Include="Microsoft.Orleans.Dashboard" Version="10.0.1" />
     </ItemGroup>
 
