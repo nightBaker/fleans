@@ -14,7 +14,9 @@ public class FleanCommandDbContext : DbContext
     public DbSet<ProcessDefinition> ProcessDefinitions => Set<ProcessDefinition>();
     public DbSet<TimerStartEventSchedulerState> TimerSchedulers => Set<TimerStartEventSchedulerState>();
     public DbSet<MessageCorrelationState> MessageCorrelations => Set<MessageCorrelationState>();
+    public DbSet<MessageSubscription> MessageSubscriptions => Set<MessageSubscription>();
     public DbSet<SignalCorrelationState> SignalCorrelations => Set<SignalCorrelationState>();
+    public DbSet<SignalSubscription> SignalSubscriptions => Set<SignalSubscription>();
 
     public FleanCommandDbContext(DbContextOptions<FleanCommandDbContext> options) : base(options) { }
 

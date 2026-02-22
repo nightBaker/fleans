@@ -27,11 +27,12 @@ public partial class MessageCorrelationGrain : Grain, IMessageCorrelationGrain
     {
         var messageName = this.GetPrimaryKeyString();
 
-        if (_state.State.Subscriptions.ContainsKey(correlationKey))
+        if (_state.State.Subscriptions.Any(s => s.CorrelationKey == correlationKey))
             throw new InvalidOperationException(
                 $"Duplicate subscription: message '{messageName}' with correlationKey '{correlationKey}' already has a subscriber.");
 
-        _state.State.Subscriptions[correlationKey] = new MessageSubscription(workflowInstanceId, activityId, hostActivityInstanceId);
+        _state.State.Subscriptions.Add(new MessageSubscription(workflowInstanceId, activityId, hostActivityInstanceId, correlationKey)
+            { MessageName = messageName });
         await _state.WriteStateAsync();
         LogSubscribed(messageName, correlationKey, workflowInstanceId, activityId);
     }
@@ -40,8 +41,10 @@ public partial class MessageCorrelationGrain : Grain, IMessageCorrelationGrain
     {
         var messageName = this.GetPrimaryKeyString();
 
-        if (_state.State.Subscriptions.Remove(correlationKey))
+        var subscription = _state.State.Subscriptions.FirstOrDefault(s => s.CorrelationKey == correlationKey);
+        if (subscription is not null)
         {
+            _state.State.Subscriptions.Remove(subscription);
             await _state.WriteStateAsync();
             LogUnsubscribed(messageName, correlationKey);
         }
@@ -51,14 +54,15 @@ public partial class MessageCorrelationGrain : Grain, IMessageCorrelationGrain
     {
         var messageName = this.GetPrimaryKeyString();
 
-        if (!_state.State.Subscriptions.TryGetValue(correlationKey, out var subscription))
+        var subscription = _state.State.Subscriptions.FirstOrDefault(s => s.CorrelationKey == correlationKey);
+        if (subscription is null)
         {
             LogDeliveryNoMatch(messageName, correlationKey);
             return false;
         }
 
         // Remove subscription before delivering (at-most-once)
-        _state.State.Subscriptions.Remove(correlationKey);
+        _state.State.Subscriptions.Remove(subscription);
         await _state.WriteStateAsync();
 
         var workflowInstance = _grainFactory.GetGrain<IWorkflowInstanceGrain>(subscription.WorkflowInstanceId);

@@ -34,7 +34,8 @@ public partial class SignalCorrelationGrain : Grain, ISignalCorrelationGrain
             return;
         }
 
-        _state.State.Subscriptions.Add(new SignalSubscription(workflowInstanceId, activityId, hostActivityInstanceId));
+        _state.State.Subscriptions.Add(new SignalSubscription(workflowInstanceId, activityId, hostActivityInstanceId)
+            { SignalName = signalName });
         await _state.WriteStateAsync();
         LogSubscribed(signalName, workflowInstanceId, activityId);
     }

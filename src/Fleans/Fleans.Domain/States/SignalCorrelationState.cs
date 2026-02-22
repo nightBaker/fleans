@@ -12,4 +12,7 @@ public class SignalCorrelationState
 public record SignalSubscription(
     [property: Id(0)] Guid WorkflowInstanceId,
     [property: Id(1)] string ActivityId,
-    [property: Id(2)] Guid HostActivityInstanceId);
+    [property: Id(2)] Guid HostActivityInstanceId)
+{
+    [Id(3)] public string SignalName { get; init; } = string.Empty;
+}
