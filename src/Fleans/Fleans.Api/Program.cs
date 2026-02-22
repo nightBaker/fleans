@@ -12,7 +12,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
 
 // Register Redis client for Aspire-managed Orleans
-builder.AddKeyedRedisClient("redis");
+builder.AddKeyedRedisClient("orleans-redis");
 
 // Orleans silo configuration
 // Infrastructure (clustering, storage, streaming, reminders) is managed by Aspire AppHost

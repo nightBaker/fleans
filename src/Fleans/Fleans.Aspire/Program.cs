@@ -4,8 +4,10 @@ var builder = DistributedApplication.CreateBuilder(args);
 var sqliteDbPath = Path.Combine(Path.GetTempPath(), "fleans-dev.db");
 var sqliteConnectionString = $"DataSource={sqliteDbPath}";
 
-// Add Redis for Orleans clustering and storage
-var redis = builder.AddRedis("redis");
+// Add Redis for Orleans clustering and storage.
+// Aspire 13.1+ auto-configures TLS for Redis containers, but the Orleans Redis
+// provider doesn't negotiate TLS. Disable to avoid health check failures (dotnet/aspire#13612).
+var redis = builder.AddRedis("orleans-redis").WithoutHttpsCertificate();
 
 // Centralized Orleans configuration
 var orleans = builder.AddOrleans("cluster")
@@ -15,16 +17,16 @@ var orleans = builder.AddOrleans("cluster")
     .WithMemoryReminders();
 
 // Api = Orleans silo
-builder.AddProject<Projects.Fleans_Api>("fleans")
+var fleansSilo = builder.AddProject<Projects.Fleans_Api>("fleans-core")
     .WithReference(orleans)
     .WaitFor(redis)
     .WithEnvironment("FLEANS_SQLITE_CONNECTION", sqliteConnectionString)
     .WithReplicas(1);
 
 // Web = Orleans client
-builder.AddProject<Projects.Fleans_Web>("fleans-client")
+builder.AddProject<Projects.Fleans_Web>("fleans-management")
     .WithReference(orleans.AsClient())
-    .WaitFor(redis)
+    .WaitFor(fleansSilo)
     .WithEnvironment("FLEANS_SQLITE_CONNECTION", sqliteConnectionString)
     .WithReplicas(1);
 

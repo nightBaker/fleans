@@ -23,10 +23,9 @@ All Orleans packages across the solution updated to 10.0.1:
 | Fleans.Domain | `Microsoft.Orleans.Sdk` |
 | Fleans.Application | `Microsoft.Orleans.Sdk`, `Microsoft.Orleans.Reminders`, `Microsoft.Orleans.Streaming` |
 | Fleans.Api | `Microsoft.Orleans.Server`, `Microsoft.Orleans.Clustering.Redis`, `Microsoft.Orleans.GrainDirectory.Redis`, `Microsoft.Orleans.Persistence.Redis` |
-| Fleans.Web | `Microsoft.Orleans.Client`, `Microsoft.Orleans.Clustering.Redis`, `Microsoft.Orleans.GrainDirectory.Redis`, `Microsoft.Orleans.Persistence.Redis` |
+| Fleans.Web | `Microsoft.Orleans.Client`, `Microsoft.Orleans.Clustering.Redis`, `Microsoft.Orleans.Sdk` |
 | Fleans.Persistence | `Microsoft.Orleans.Sdk` |
 | Fleans.ServiceDefaults | `Microsoft.Orleans.Sdk` |
-| Fleans.Aspire | `Microsoft.Orleans.Clustering.Redis` |
 | Fleans.Application.Tests | `Microsoft.Orleans.TestingHost`, `Microsoft.Orleans.Serialization.NewtonsoftJson` |
 
 New packages to add:
@@ -39,7 +38,9 @@ New packages to add:
 **Fleans.Aspire/Program.cs** becomes the single source of truth for Orleans infrastructure:
 
 ```csharp
-var redis = builder.AddRedis("redis");
+// Aspire 13.1+ auto-configures TLS for Redis containers, but the Orleans Redis
+// provider doesn't negotiate TLS. Disable to avoid health check failures (dotnet/aspire#13612).
+var redis = builder.AddRedis("orleans-redis").WithoutHttpsCertificate();
 
 var orleans = builder.AddOrleans("cluster")
     .WithClustering(redis)
@@ -47,15 +48,16 @@ var orleans = builder.AddOrleans("cluster")
     .WithMemoryStreaming("StreamProvider")
     .WithMemoryReminders();
 
-builder.AddProject<Projects.Fleans_Api>("fleans")
+var fleansSilo = builder.AddProject<Projects.Fleans_Api>("fleans-core")
     .WithReference(orleans)
     .WaitFor(redis)
     .WithEnvironment("FLEANS_SQLITE_CONNECTION", sqliteConnectionString)
     .WithReplicas(1);
 
-builder.AddProject<Projects.Fleans_Web>("fleans-client")
+// Web waits for the silo (not just Redis) — client can't connect until the silo is up
+builder.AddProject<Projects.Fleans_Web>("fleans-management")
     .WithReference(orleans.AsClient())
-    .WaitFor(redis)
+    .WaitFor(fleansSilo)
     .WithEnvironment("FLEANS_SQLITE_CONNECTION", sqliteConnectionString)
     .WithReplicas(1);
 ```
@@ -65,7 +67,7 @@ builder.AddProject<Projects.Fleans_Web>("fleans-client")
 Remove all manual Redis `ConfigurationOptions.Parse` and clustering config. Keep only app-specific configuration:
 
 ```csharp
-builder.AddKeyedRedisClient("redis");
+builder.AddKeyedRedisClient("orleans-redis");
 
 builder.UseOrleans(siloBuilder =>
 {
@@ -79,7 +81,7 @@ builder.UseOrleans(siloBuilder =>
 Replace `builder.Host.UseOrleansClient(siloBuilder => siloBuilder.UseRedisClustering(...))` with:
 
 ```csharp
-builder.AddKeyedRedisClient("redis");
+builder.AddKeyedRedisClient("orleans-redis");
 
 builder.UseOrleansClient(clientBuilder =>
 {
@@ -89,6 +91,10 @@ builder.UseOrleansClient(clientBuilder =>
 // After app.Build():
 app.MapOrleansDashboard(routePrefix: "/dashboard");
 ```
+
+> **Note:** `Microsoft.Orleans.Clustering.Redis` must remain in the Web project even though
+> Aspire centralizes Orleans config. The Orleans client needs the Redis clustering provider
+> package at runtime to resolve the clustering implementation from Aspire's configuration.
 
 ### 5. Test Project — No Aspire Changes
 

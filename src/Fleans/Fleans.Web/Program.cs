@@ -29,7 +29,7 @@ var sqliteConnectionString = builder.Configuration["FLEANS_SQLITE_CONNECTION"] ?
 builder.Services.AddEfCorePersistence(options => options.UseSqlite(sqliteConnectionString));
 
 // Register Redis client for Aspire-managed Orleans
-builder.AddKeyedRedisClient("redis");
+builder.AddKeyedRedisClient("orleans-redis");
 
 // Orleans client with Dashboard UI
 builder.UseOrleansClient(clientBuilder =>
