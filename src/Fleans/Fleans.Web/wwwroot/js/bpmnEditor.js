@@ -59,7 +59,9 @@ window.bpmnEditor = {
             hasTimerDefinition: false,
             hasMessageDefinition: false,
             messageName: '',
-            correlationKey: ''
+            correlationKey: '',
+            hasSignalDefinition: false,
+            signalName: ''
         };
 
         if (bo.$type === 'bpmn:ScriptTask') {
@@ -117,6 +119,14 @@ window.bpmnEditor = {
                     if (!data.correlationKey) {
                         var zeebeKey = attrs['zeebe:correlationKey'] || '';
                         if (zeebeKey) data.correlationKey = zeebeKey;
+                    }
+                    break;
+                }
+                if (bo.eventDefinitions[i].$type === 'bpmn:SignalEventDefinition') {
+                    data.hasSignalDefinition = true;
+                    var sigDef = bo.eventDefinitions[i];
+                    if (sigDef.signalRef) {
+                        data.signalName = sigDef.signalRef.name || '';
                     }
                     break;
                 }
@@ -269,6 +279,51 @@ window.bpmnEditor = {
             bo.$attrs['fleans:correlationKey'] = correlationKey;
         } else {
             delete bo.$attrs['fleans:correlationKey'];
+        }
+    },
+
+    updateSignalDefinition: function (elementId, signalName) {
+        if (!this._modeler) return;
+        var elementRegistry = this._modeler.get('elementRegistry');
+        var modeling = this._modeler.get('modeling');
+        var moddle = this._modeler.get('moddle');
+        var element = elementRegistry.get(elementId);
+        if (!element) return;
+
+        var bo = element.businessObject;
+        if (!bo.eventDefinitions || bo.eventDefinitions.length === 0) return;
+
+        var sigDef = null;
+        for (var i = 0; i < bo.eventDefinitions.length; i++) {
+            if (bo.eventDefinitions[i].$type === 'bpmn:SignalEventDefinition') {
+                sigDef = bo.eventDefinitions[i];
+                break;
+            }
+        }
+        if (!sigDef) return;
+
+        var canvas = this._modeler.get('canvas');
+        var definitions = canvas.getRootElement().businessObject.$parent;
+
+        if (signalName) {
+            var signalEl = sigDef.signalRef;
+
+            if (!signalEl) {
+                var sigId = 'Signal_' + elementId;
+                signalEl = moddle.create('bpmn:Signal', { id: sigId, name: signalName });
+                signalEl.$parent = definitions;
+
+                var rootElements = definitions.get('rootElements');
+                rootElements.push(signalEl);
+
+                moddle.ids.claim(sigId, signalEl);
+            } else {
+                signalEl.name = signalName;
+            }
+
+            modeling.updateModdleProperties(element, sigDef, { signalRef: signalEl });
+        } else {
+            modeling.updateModdleProperties(element, sigDef, { signalRef: undefined });
         }
     },
 

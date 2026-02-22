@@ -42,6 +42,9 @@ public partial class BpmnConverter : IBpmnConverter
         // Parse message definitions at <definitions> level
         var messages = ParseMessages(doc);
 
+        // Parse signal definitions at <definitions> level
+        var signals = ParseSignals(doc);
+
         // Parse activities
         ParseActivities(process, activities, activityMap, defaultFlowIds);
 
@@ -53,7 +56,8 @@ public partial class BpmnConverter : IBpmnConverter
             WorkflowId = workflowId,
             Activities = activities,
             SequenceFlows = sequenceFlows,
-            Messages = messages
+            Messages = messages,
+            Signals = signals
         };
 
         return workflow;
@@ -107,8 +111,42 @@ public partial class BpmnConverter : IBpmnConverter
             }
             else
             {
+                var signalDef = catchEvent.Element(Bpmn + "signalEventDefinition");
+                if (signalDef != null)
+                {
+                    var signalRef = signalDef.Attribute("signalRef")?.Value
+                        ?? throw new InvalidOperationException(
+                            $"IntermediateCatchEvent '{id}' signalEventDefinition must have a signalRef attribute");
+                    var activity = new SignalIntermediateCatchEvent(id, signalRef);
+                    activities.Add(activity);
+                    activityMap[id] = activity;
+                }
+                else
+                {
+                    throw new InvalidOperationException(
+                        $"IntermediateCatchEvent '{id}' has an unsupported event definition.");
+                }
+            }
+        }
+
+        // Parse intermediate throw events (signal)
+        foreach (var throwEvent in process.Descendants(Bpmn + "intermediateThrowEvent"))
+        {
+            var id = GetId(throwEvent);
+            var signalDef = throwEvent.Element(Bpmn + "signalEventDefinition");
+            if (signalDef != null)
+            {
+                var signalRef = signalDef.Attribute("signalRef")?.Value
+                    ?? throw new InvalidOperationException(
+                        $"IntermediateThrowEvent '{id}' signalEventDefinition must have a signalRef attribute");
+                var activity = new SignalIntermediateThrowEvent(id, signalRef);
+                activities.Add(activity);
+                activityMap[id] = activity;
+            }
+            else
+            {
                 throw new InvalidOperationException(
-                    $"IntermediateCatchEvent '{id}' has an unsupported event definition.");
+                    $"IntermediateThrowEvent '{id}' has an unsupported event definition.");
             }
         }
 
@@ -259,6 +297,7 @@ public partial class BpmnConverter : IBpmnConverter
             var timerDef = boundaryEl.Element(Bpmn + "timerEventDefinition");
             var errorDef = boundaryEl.Element(Bpmn + "errorEventDefinition");
             var messageDef = boundaryEl.Element(Bpmn + "messageEventDefinition");
+            var signalDef = boundaryEl.Element(Bpmn + "signalEventDefinition");
 
             Activity activity;
             if (timerDef != null)
@@ -272,6 +311,13 @@ public partial class BpmnConverter : IBpmnConverter
                     ?? throw new InvalidOperationException(
                         $"boundaryEvent '{id}' messageEventDefinition must have a messageRef attribute");
                 activity = new MessageBoundaryEvent(id, attachedToRef, messageRef);
+            }
+            else if (signalDef != null)
+            {
+                var signalRef = signalDef.Attribute("signalRef")?.Value
+                    ?? throw new InvalidOperationException(
+                        $"boundaryEvent '{id}' signalEventDefinition must have a signalRef attribute");
+                activity = new SignalBoundaryEvent(id, attachedToRef, signalRef);
             }
             else
             {
@@ -365,6 +411,20 @@ public partial class BpmnConverter : IBpmnConverter
             messages.Add(new MessageDefinition(id, name, correlationKey));
         }
         return messages;
+    }
+
+    private static List<SignalDefinition> ParseSignals(XDocument doc)
+    {
+        var signals = new List<SignalDefinition>();
+        foreach (var signalEl in doc.Root!.Elements(Bpmn + "signal"))
+        {
+            var id = signalEl.Attribute("id")?.Value
+                ?? throw new InvalidOperationException("signal element must have an id attribute");
+            var name = signalEl.Attribute("name")?.Value
+                ?? throw new InvalidOperationException($"signal '{id}' must have a name attribute");
+            signals.Add(new SignalDefinition(id, name));
+        }
+        return signals;
     }
 
     private static string? FindCorrelationKeyOnEventElement(XElement process, string messageId)

@@ -166,6 +166,15 @@
                     </div>
                 }
             }
+
+            @if (HasSignal)
+            {
+                <div>
+                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Signal Name</FluentLabel>
+                    <FluentTextField Value="@signalName" @oninput="OnSignalNameInput" @onchange="OnSignalNameChange"
+                                     Disabled="@ReadOnly" Placeholder="e.g. approvalGranted" Style="width: 100%;" />
+                </div>
+            }
         </FluentStack>
     </div>
 </div>
@@ -187,6 +196,7 @@
     private string timerExpression = "";
     private string messageName = "";
     private string correlationKey = "";
+    private string signalName = "";
 
     private static readonly Dictionary<string, string> TaskTypes = new()
     {
@@ -229,6 +239,7 @@
         timerExpression = Element.TimerExpression;
         messageName = Element.MessageName;
         correlationKey = Element.CorrelationKey;
+        signalName = Element.SignalName;
     }
 
     private Dictionary<string, string>? GetReplaceOptions()
@@ -313,6 +324,7 @@
 
     private bool HasTimer => Element.HasTimerDefinition;
     private bool HasMessage => Element.HasMessageDefinition;
+    private bool HasSignal => Element.HasSignalDefinition;
 
     private static readonly Dictionary<string, string> TimerTypesAll = new()
     {
@@ -375,6 +387,13 @@
         await JS.InvokeVoidAsync("bpmnEditor.updateMessageDefinition", Element.Id, messageName, correlationKey);
     }
 
+    private void OnSignalNameInput(ChangeEventArgs e) => signalName = e.Value?.ToString() ?? "";
+    private async Task OnSignalNameChange(ChangeEventArgs e)
+    {
+        signalName = e.Value?.ToString() ?? "";
+        await JS.InvokeVoidAsync("bpmnEditor.updateSignalDefinition", Element.Id, signalName);
+    }
+
     private async Task AddMapping(string type)
     {
         await JS.InvokeVoidAsync("bpmnEditor.addMapping", Element.Id, type);
@@ -432,6 +451,16 @@
                 _ => Element.Type.Replace("bpmn:", "")
             };
         }
+        if (HasSignal)
+        {
+            return Element.Type switch
+            {
+                "bpmn:IntermediateCatchEvent" => "Signal Intermediate Catch Event",
+                "bpmn:IntermediateThrowEvent" => "Signal Intermediate Throw Event",
+                "bpmn:BoundaryEvent" => "Signal Boundary Event",
+                _ => Element.Type.Replace("bpmn:", "")
+            };
+        }
         return Element.Type switch
         {
             "bpmn:StartEvent" => "Start Event",
@@ -471,6 +500,8 @@
         public bool HasMessageDefinition { get; set; }
         public string MessageName { get; set; } = "";
         public string CorrelationKey { get; set; } = "";
+        public bool HasSignalDefinition { get; set; }
+        public string SignalName { get; set; } = "";
     }
 
     public class MappingData

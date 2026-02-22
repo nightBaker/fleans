@@ -116,12 +116,40 @@ internal static class FleanModelConfiguration
             entity.Property(e => e.Key).HasMaxLength(512);
             entity.Property(e => e.ETag).HasMaxLength(64);
 
-            entity.Property(e => e.Subscriptions)
-                .HasColumnName("Subscriptions")
-                .HasConversion(
-                    v => JsonConvert.SerializeObject(v),
-                    v => JsonConvert.DeserializeObject<Dictionary<string, MessageSubscription>>(v)
-                        ?? new Dictionary<string, MessageSubscription>());
+            entity.HasMany(e => e.Subscriptions)
+                .WithOne()
+                .HasForeignKey(s => s.MessageName)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<MessageSubscription>(sub =>
+        {
+            sub.ToTable("MessageSubscriptions");
+            sub.HasKey(s => new { s.MessageName, s.CorrelationKey });
+            sub.Property(s => s.MessageName).HasMaxLength(512);
+            sub.Property(s => s.CorrelationKey).HasMaxLength(512);
+            sub.Property(s => s.ActivityId).HasMaxLength(256);
+        });
+
+        modelBuilder.Entity<SignalCorrelationState>(entity =>
+        {
+            entity.ToTable("SignalCorrelations");
+            entity.HasKey(e => e.Key);
+            entity.Property(e => e.Key).HasMaxLength(512);
+            entity.Property(e => e.ETag).HasMaxLength(64);
+
+            entity.HasMany(e => e.Subscriptions)
+                .WithOne()
+                .HasForeignKey(s => s.SignalName)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<SignalSubscription>(sub =>
+        {
+            sub.ToTable("SignalSubscriptions");
+            sub.HasKey(s => new { s.SignalName, s.WorkflowInstanceId, s.ActivityId });
+            sub.Property(s => s.SignalName).HasMaxLength(512);
+            sub.Property(s => s.ActivityId).HasMaxLength(256);
         });
 
         modelBuilder.Entity<ProcessDefinition>(entity =>

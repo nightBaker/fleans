@@ -28,7 +28,16 @@ public partial class WorfklowEvaluateConditionEventHandler : Grain, IWorfklowEva
         var streamId = StreamId.Create(WorkflowEventsPublisher.StreamNameSpace, nameof(EvaluateConditionEvent));
         var stream = streamProvider.GetStream<EvaluateConditionEvent>(streamId);
 
-        await stream.SubscribeAsync(OnNextAsync, OnErrorAsync, OnCompletedAsync);
+        var handles = await stream.GetAllSubscriptionHandles();
+        if (handles is { Count: > 0 })
+        {
+            foreach (var handle in handles)
+                await handle.ResumeAsync(OnNextAsync, OnErrorAsync, OnCompletedAsync);
+        }
+        else
+        {
+            await stream.SubscribeAsync(OnNextAsync, OnErrorAsync, OnCompletedAsync);
+        }
 
         await base.OnActivateAsync(cancellationToken);
     }

@@ -25,7 +25,16 @@ public partial class WorkflowExecuteScriptEventHandler : Grain, IWorkflowExecute
         var streamId = StreamId.Create(WorkflowEventsPublisher.StreamNameSpace, nameof(ExecuteScriptEvent));
         var stream = streamProvider.GetStream<ExecuteScriptEvent>(streamId);
 
-        await stream.SubscribeAsync(OnNextAsync, OnErrorAsync, OnCompletedAsync);
+        var handles = await stream.GetAllSubscriptionHandles();
+        if (handles is { Count: > 0 })
+        {
+            foreach (var handle in handles)
+                await handle.ResumeAsync(OnNextAsync, OnErrorAsync, OnCompletedAsync);
+        }
+        else
+        {
+            await stream.SubscribeAsync(OnNextAsync, OnErrorAsync, OnCompletedAsync);
+        }
 
         await base.OnActivateAsync(cancellationToken);
     }

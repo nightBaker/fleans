@@ -5,11 +5,11 @@ using Orleans.Storage;
 
 namespace Fleans.Persistence;
 
-public class EfCoreMessageCorrelationGrainStorage : IGrainStorage
+public class EfCoreSignalCorrelationGrainStorage : IGrainStorage
 {
     private readonly IDbContextFactory<FleanCommandDbContext> _dbContextFactory;
 
-    public EfCoreMessageCorrelationGrainStorage(IDbContextFactory<FleanCommandDbContext> dbContextFactory)
+    public EfCoreSignalCorrelationGrainStorage(IDbContextFactory<FleanCommandDbContext> dbContextFactory)
     {
         _dbContextFactory = dbContextFactory;
     }
@@ -18,12 +18,10 @@ public class EfCoreMessageCorrelationGrainStorage : IGrainStorage
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync();
         var id = grainId.Key.ToString();
-
-        var state = await db.MessageCorrelations
+        var state = await db.SignalCorrelations
             .Include(e => e.Subscriptions)
             .AsNoTracking()
             .FirstOrDefaultAsync(e => e.Key == id);
-
         if (state is not null)
         {
             grainState.State = (T)(object)state;
@@ -36,10 +34,10 @@ public class EfCoreMessageCorrelationGrainStorage : IGrainStorage
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync();
         var id = grainId.Key.ToString();
-        var state = (MessageCorrelationState)(object)grainState.State!;
+        var state = (SignalCorrelationState)(object)grainState.State!;
         var newETag = Guid.NewGuid().ToString("N");
 
-        var existing = await db.MessageCorrelations
+        var existing = await db.SignalCorrelations
             .Include(e => e.Subscriptions)
             .FirstOrDefaultAsync(e => e.Key == id);
 
@@ -47,9 +45,9 @@ public class EfCoreMessageCorrelationGrainStorage : IGrainStorage
         {
             state.Key = id;
             state.ETag = newETag;
-            db.MessageCorrelations.Add(state);
+            db.SignalCorrelations.Add(state);
             foreach (var sub in state.Subscriptions)
-                db.Entry(sub).Property(s => s.MessageName).CurrentValue = id;
+                db.Entry(sub).Property(s => s.SignalName).CurrentValue = id;
         }
         else
         {
@@ -65,7 +63,6 @@ public class EfCoreMessageCorrelationGrainStorage : IGrainStorage
         }
 
         await db.SaveChangesAsync();
-
         grainState.ETag = newETag;
         grainState.RecordExists = true;
     }
@@ -74,49 +71,46 @@ public class EfCoreMessageCorrelationGrainStorage : IGrainStorage
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync();
         var id = grainId.Key.ToString();
-        var existing = await db.MessageCorrelations.FindAsync(id);
-
+        var existing = await db.SignalCorrelations.FindAsync(id);
         if (existing is not null)
         {
             if (existing.ETag != grainState.ETag)
                 throw new InconsistentStateException(
                     $"ETag mismatch on clear: expected '{grainState.ETag}', stored '{existing.ETag}'");
-
-            db.MessageCorrelations.Remove(existing);
+            db.SignalCorrelations.Remove(existing);
             await db.SaveChangesAsync();
         }
-
         grainState.ETag = null;
         grainState.RecordExists = false;
     }
 
     private static void DiffSubscriptions(
         FleanCommandDbContext db,
-        MessageCorrelationState existing,
-        MessageCorrelationState state,
-        string messageName)
+        SignalCorrelationState existing,
+        SignalCorrelationState state,
+        string signalName)
     {
         var existingByKey = existing.Subscriptions
-            .ToDictionary(s => s.CorrelationKey);
+            .ToDictionary(s => (s.WorkflowInstanceId, s.ActivityId));
         var newKeys = state.Subscriptions
-            .Select(s => s.CorrelationKey)
+            .Select(s => (s.WorkflowInstanceId, s.ActivityId))
             .ToHashSet();
 
-        foreach (var sub in existing.Subscriptions.Where(s => !newKeys.Contains(s.CorrelationKey)).ToList())
-            db.MessageSubscriptions.Remove(sub);
+        foreach (var sub in existing.Subscriptions.Where(s => !newKeys.Contains((s.WorkflowInstanceId, s.ActivityId))).ToList())
+            db.SignalSubscriptions.Remove(sub);
 
         foreach (var sub in state.Subscriptions)
         {
-            if (existingByKey.TryGetValue(sub.CorrelationKey, out var existingSub))
+            var key = (sub.WorkflowInstanceId, sub.ActivityId);
+            if (existingByKey.TryGetValue(key, out var existingSub))
             {
                 db.Entry(existingSub).CurrentValues.SetValues(sub);
-                db.Entry(existingSub).Property(s => s.MessageName).IsModified = false;
-                db.Entry(existingSub).Property(s => s.CorrelationKey).IsModified = false;
+                db.Entry(existingSub).Property(s => s.SignalName).IsModified = false;
             }
             else
             {
-                db.MessageSubscriptions.Add(sub);
-                db.Entry(sub).Property(s => s.MessageName).CurrentValue = messageName;
+                db.SignalSubscriptions.Add(sub);
+                db.Entry(sub).Property(s => s.SignalName).CurrentValue = signalName;
             }
         }
     }

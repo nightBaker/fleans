@@ -37,6 +37,10 @@ public static class EfCorePersistenceDependencyInjection
             (sp, _) => new EfCoreMessageCorrelationGrainStorage(
                 sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
 
+        services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.SignalCorrelations,
+            (sp, _) => new EfCoreSignalCorrelationGrainStorage(
+                sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
+
         services.AddSingleton<IProcessDefinitionRepository, EfCoreProcessDefinitionRepository>();
         services.AddSingleton<IWorkflowQueryService, WorkflowQueryService>();
     }

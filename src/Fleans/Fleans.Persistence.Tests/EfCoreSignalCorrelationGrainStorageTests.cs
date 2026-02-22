@@ -7,11 +7,11 @@ using Orleans.Storage;
 namespace Fleans.Persistence.Tests;
 
 [TestClass]
-public class EfCoreMessageCorrelationGrainStorageTests
+public class EfCoreSignalCorrelationGrainStorageTests
 {
     private SqliteConnection _connection = null!;
     private IDbContextFactory<FleanCommandDbContext> _dbContextFactory = null!;
-    private EfCoreMessageCorrelationGrainStorage _storage = null!;
+    private EfCoreSignalCorrelationGrainStorage _storage = null!;
     private const string StateName = "state";
 
     [TestInitialize]
@@ -25,7 +25,7 @@ public class EfCoreMessageCorrelationGrainStorageTests
             .Options;
 
         _dbContextFactory = new TestDbContextFactory(options);
-        _storage = new EfCoreMessageCorrelationGrainStorage(_dbContextFactory);
+        _storage = new EfCoreSignalCorrelationGrainStorage(_dbContextFactory);
 
         using var db = _dbContextFactory.CreateDbContext();
         db.Database.EnsureCreated();
@@ -40,10 +40,10 @@ public class EfCoreMessageCorrelationGrainStorageTests
     [TestMethod]
     public async Task WriteAndRead_RoundTrip_ReturnsStoredState()
     {
-        var grainId = NewGrainId("paymentReceived");
-        var state = CreateGrainState(
-            new MessageSubscription(Guid.NewGuid(), "waitPayment", Guid.NewGuid(), "order-123"),
-            new MessageSubscription(Guid.NewGuid(), "waitConfirm", Guid.NewGuid(), "order-456"));
+        var grainId = NewGrainId("approvalSignal");
+        var sub1 = new SignalSubscription(Guid.NewGuid(), "waitApproval", Guid.NewGuid());
+        var sub2 = new SignalSubscription(Guid.NewGuid(), "waitConfirm", Guid.NewGuid());
+        var state = CreateGrainState(sub1, sub2);
 
         await _storage.WriteStateAsync(StateName, grainId, state);
         Assert.IsNotNull(state.ETag);
@@ -53,9 +53,8 @@ public class EfCoreMessageCorrelationGrainStorageTests
         await _storage.ReadStateAsync(StateName, grainId, readState);
 
         Assert.AreEqual(2, readState.State.Subscriptions.Count);
-        Assert.IsTrue(readState.State.Subscriptions.Any(s => s.CorrelationKey == "order-123"));
-        Assert.IsTrue(readState.State.Subscriptions.Any(s => s.CorrelationKey == "order-456"));
-        Assert.AreEqual("waitPayment", readState.State.Subscriptions.First(s => s.CorrelationKey == "order-123").ActivityId);
+        Assert.IsTrue(readState.State.Subscriptions.Any(s => s.ActivityId == "waitApproval"));
+        Assert.IsTrue(readState.State.Subscriptions.Any(s => s.ActivityId == "waitConfirm"));
         Assert.AreEqual(state.ETag, readState.ETag);
         Assert.IsTrue(readState.RecordExists);
     }
@@ -64,33 +63,33 @@ public class EfCoreMessageCorrelationGrainStorageTests
     public async Task WriteAndRead_RoundTrip_PreservesSubscriptionDetails()
     {
         var instanceId = Guid.NewGuid();
-        var hostActivityInstanceId = Guid.NewGuid();
-        var grainId = NewGrainId("orderCancelled");
+        var hostId = Guid.NewGuid();
+        var grainId = NewGrainId("detailSignal");
         var state = CreateGrainState(
-            new MessageSubscription(instanceId, "activity-1", hostActivityInstanceId, "corr-key-1"));
+            new SignalSubscription(instanceId, "activity-1", hostId));
 
         await _storage.WriteStateAsync(StateName, grainId, state);
 
         var readState = CreateEmptyGrainState();
         await _storage.ReadStateAsync(StateName, grainId, readState);
 
-        var sub = readState.State.Subscriptions.First(s => s.CorrelationKey == "corr-key-1");
+        var sub = readState.State.Subscriptions[0];
         Assert.AreEqual(instanceId, sub.WorkflowInstanceId);
         Assert.AreEqual("activity-1", sub.ActivityId);
-        Assert.AreEqual(hostActivityInstanceId, sub.HostActivityInstanceId);
-        Assert.AreEqual("orderCancelled", sub.MessageName);
+        Assert.AreEqual(hostId, sub.HostActivityInstanceId);
+        Assert.AreEqual("detailSignal", sub.SignalName);
     }
 
     [TestMethod]
     public async Task Write_WithCorrectETag_Succeeds()
     {
-        var grainId = NewGrainId("msg1");
+        var grainId = NewGrainId("sig1");
         var state = CreateGrainState(
-            new MessageSubscription(Guid.NewGuid(), "act1", Guid.NewGuid(), "key1"));
+            new SignalSubscription(Guid.NewGuid(), "act1", Guid.NewGuid()));
         await _storage.WriteStateAsync(StateName, grainId, state);
         var firstETag = state.ETag;
 
-        state.State.Subscriptions.Add(new MessageSubscription(Guid.NewGuid(), "act2", Guid.NewGuid(), "key2"));
+        state.State.Subscriptions.Add(new SignalSubscription(Guid.NewGuid(), "act2", Guid.NewGuid()));
         await _storage.WriteStateAsync(StateName, grainId, state);
 
         Assert.AreNotEqual(firstETag, state.ETag);
@@ -103,17 +102,17 @@ public class EfCoreMessageCorrelationGrainStorageTests
     [TestMethod]
     public async Task Write_WithStaleETag_ThrowsInconsistentStateException()
     {
-        var grainId = NewGrainId("staleMsg");
+        var grainId = NewGrainId("staleSig");
         var state = CreateGrainState(
-            new MessageSubscription(Guid.NewGuid(), "act1", Guid.NewGuid(), "key1"));
+            new SignalSubscription(Guid.NewGuid(), "act1", Guid.NewGuid()));
         await _storage.WriteStateAsync(StateName, grainId, state);
 
         var concurrentState = CreateEmptyGrainState();
         await _storage.ReadStateAsync(StateName, grainId, concurrentState);
-        concurrentState.State.Subscriptions.Add(new MessageSubscription(Guid.NewGuid(), "act2", Guid.NewGuid(), "key2"));
+        concurrentState.State.Subscriptions.Add(new SignalSubscription(Guid.NewGuid(), "act2", Guid.NewGuid()));
         await _storage.WriteStateAsync(StateName, grainId, concurrentState);
 
-        state.State.Subscriptions.Add(new MessageSubscription(Guid.NewGuid(), "act3", Guid.NewGuid(), "key3"));
+        state.State.Subscriptions.Add(new SignalSubscription(Guid.NewGuid(), "act3", Guid.NewGuid()));
         await Assert.ThrowsExactlyAsync<InconsistentStateException>(
             () => _storage.WriteStateAsync(StateName, grainId, state));
     }
@@ -122,27 +121,26 @@ public class EfCoreMessageCorrelationGrainStorageTests
     public async Task Write_DiffRemovesSubscription()
     {
         var grainId = NewGrainId("diffRemove");
-        var state = CreateGrainState(
-            new MessageSubscription(Guid.NewGuid(), "act1", Guid.NewGuid(), "key1"),
-            new MessageSubscription(Guid.NewGuid(), "act2", Guid.NewGuid(), "key2"));
+        var sub1 = new SignalSubscription(Guid.NewGuid(), "act1", Guid.NewGuid());
+        var sub2 = new SignalSubscription(Guid.NewGuid(), "act2", Guid.NewGuid());
+        var state = CreateGrainState(sub1, sub2);
         await _storage.WriteStateAsync(StateName, grainId, state);
 
-        var sub = state.State.Subscriptions.First(s => s.CorrelationKey == "key1");
-        state.State.Subscriptions.Remove(sub);
+        state.State.Subscriptions.Remove(sub1);
         await _storage.WriteStateAsync(StateName, grainId, state);
 
         var readState = CreateEmptyGrainState();
         await _storage.ReadStateAsync(StateName, grainId, readState);
         Assert.AreEqual(1, readState.State.Subscriptions.Count);
-        Assert.AreEqual("key2", readState.State.Subscriptions[0].CorrelationKey);
+        Assert.AreEqual("act2", readState.State.Subscriptions[0].ActivityId);
     }
 
     [TestMethod]
     public async Task Clear_RemovesState_SubsequentReadReturnsDefault()
     {
-        var grainId = NewGrainId("clearMsg");
+        var grainId = NewGrainId("clearSig");
         var state = CreateGrainState(
-            new MessageSubscription(Guid.NewGuid(), "act1", Guid.NewGuid(), "key1"));
+            new SignalSubscription(Guid.NewGuid(), "act1", Guid.NewGuid()));
         await _storage.WriteStateAsync(StateName, grainId, state);
 
         await _storage.ClearStateAsync(StateName, grainId, state);
@@ -160,12 +158,12 @@ public class EfCoreMessageCorrelationGrainStorageTests
     {
         var grainId = NewGrainId("clearStale");
         var state = CreateGrainState(
-            new MessageSubscription(Guid.NewGuid(), "act1", Guid.NewGuid(), "key1"));
+            new SignalSubscription(Guid.NewGuid(), "act1", Guid.NewGuid()));
         await _storage.WriteStateAsync(StateName, grainId, state);
 
         var concurrentState = CreateEmptyGrainState();
         await _storage.ReadStateAsync(StateName, grainId, concurrentState);
-        concurrentState.State.Subscriptions.Add(new MessageSubscription(Guid.NewGuid(), "act2", Guid.NewGuid(), "key2"));
+        concurrentState.State.Subscriptions.Add(new SignalSubscription(Guid.NewGuid(), "act2", Guid.NewGuid()));
         await _storage.WriteStateAsync(StateName, grainId, concurrentState);
 
         await Assert.ThrowsExactlyAsync<InconsistentStateException>(
@@ -199,16 +197,16 @@ public class EfCoreMessageCorrelationGrainStorageTests
     [TestMethod]
     public async Task DifferentGrainIds_AreIsolated()
     {
-        var grainId1 = NewGrainId("msgA");
-        var grainId2 = NewGrainId("msgB");
+        var grainId1 = NewGrainId("sigA");
+        var grainId2 = NewGrainId("sigB");
 
         var id1 = Guid.NewGuid();
         var id2 = Guid.NewGuid();
 
         var state1 = CreateGrainState(
-            new MessageSubscription(id1, "actA", Guid.NewGuid(), "keyA"));
+            new SignalSubscription(id1, "actA", Guid.NewGuid()));
         var state2 = CreateGrainState(
-            new MessageSubscription(id2, "actB", Guid.NewGuid(), "keyB"));
+            new SignalSubscription(id2, "actB", Guid.NewGuid()));
 
         await _storage.WriteStateAsync(StateName, grainId1, state1);
         await _storage.WriteStateAsync(StateName, grainId2, state2);
@@ -219,9 +217,9 @@ public class EfCoreMessageCorrelationGrainStorageTests
         await _storage.ReadStateAsync(StateName, grainId2, read2);
 
         Assert.AreEqual(1, read1.State.Subscriptions.Count);
-        Assert.AreEqual(id1, read1.State.Subscriptions.First(s => s.CorrelationKey == "keyA").WorkflowInstanceId);
+        Assert.AreEqual(id1, read1.State.Subscriptions[0].WorkflowInstanceId);
         Assert.AreEqual(1, read2.State.Subscriptions.Count);
-        Assert.AreEqual(id2, read2.State.Subscriptions.First(s => s.CorrelationKey == "keyB").WorkflowInstanceId);
+        Assert.AreEqual(id2, read2.State.Subscriptions[0].WorkflowInstanceId);
     }
 
     [TestMethod]
@@ -229,38 +227,38 @@ public class EfCoreMessageCorrelationGrainStorageTests
     {
         var grainId = NewGrainId("recreate");
         var state = CreateGrainState(
-            new MessageSubscription(Guid.NewGuid(), "act1", Guid.NewGuid(), "key1"));
+            new SignalSubscription(Guid.NewGuid(), "act1", Guid.NewGuid()));
         await _storage.WriteStateAsync(StateName, grainId, state);
 
         await _storage.ClearStateAsync(StateName, grainId, state);
 
         var newState = CreateGrainState(
-            new MessageSubscription(Guid.NewGuid(), "act2", Guid.NewGuid(), "key2"));
+            new SignalSubscription(Guid.NewGuid(), "act2", Guid.NewGuid()));
         await _storage.WriteStateAsync(StateName, grainId, newState);
 
         var readState = CreateEmptyGrainState();
         await _storage.ReadStateAsync(StateName, grainId, readState);
 
         Assert.AreEqual(1, readState.State.Subscriptions.Count);
-        Assert.IsTrue(readState.State.Subscriptions.Any(s => s.CorrelationKey == "key2"));
+        Assert.AreEqual("act2", readState.State.Subscriptions[0].ActivityId);
         Assert.IsTrue(readState.RecordExists);
     }
 
     private static GrainId NewGrainId(string key)
-        => GrainId.Create("messagecorrelation", key);
+        => GrainId.Create("signalcorrelation", key);
 
-    private static TestGrainState<MessageCorrelationState> CreateGrainState(
-        params MessageSubscription[] subscriptions)
+    private static TestGrainState<SignalCorrelationState> CreateGrainState(
+        params SignalSubscription[] subscriptions)
     {
-        var state = new TestGrainState<MessageCorrelationState> { State = new MessageCorrelationState() };
+        var state = new TestGrainState<SignalCorrelationState> { State = new SignalCorrelationState() };
         foreach (var sub in subscriptions)
             state.State.Subscriptions.Add(sub);
         return state;
     }
 
-    private static TestGrainState<MessageCorrelationState> CreateEmptyGrainState()
+    private static TestGrainState<SignalCorrelationState> CreateEmptyGrainState()
         => new()
         {
-            State = new MessageCorrelationState()
+            State = new SignalCorrelationState()
         };
 }

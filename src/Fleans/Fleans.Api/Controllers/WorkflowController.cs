@@ -82,5 +82,27 @@ namespace Fleans.Api.Controllers
 
         [LoggerMessage(EventId = 8002, Level = LogLevel.Error, Message = "Error delivering message")]
         private partial void LogMessageDeliveryError(Exception exception);
+
+        [HttpPost("signal", Name = "SendSignal")]
+        public async Task<IActionResult> SendSignal([FromBody] SendSignalRequest request)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.SignalName))
+                return BadRequest(new ErrorResponse("SignalName is required"));
+
+            try
+            {
+                var signalGrain = _grainFactory.GetGrain<ISignalCorrelationGrain>(request.SignalName);
+                var deliveredCount = await signalGrain.BroadcastSignal();
+                return Ok(new SendSignalResponse(DeliveredCount: deliveredCount));
+            }
+            catch (Exception ex)
+            {
+                LogSignalDeliveryError(ex);
+                return StatusCode(500, new ErrorResponse("An error occurred while broadcasting the signal"));
+            }
+        }
+
+        [LoggerMessage(EventId = 8003, Level = LogLevel.Error, Message = "Error broadcasting signal")]
+        private partial void LogSignalDeliveryError(Exception exception);
     }
 }
