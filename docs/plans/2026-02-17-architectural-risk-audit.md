@@ -144,7 +144,7 @@ Each item solves exactly one problem. Items within a phase may depend on earlier
 - [x] **1.4 — Message Event (intermediate catch, boundary)**: Activity registers in correlation grain, waits. Message delivery triggers completion. *Done.*
 - [x] **1.5 — Signal broadcast mechanism**: `SignalCorrelationGrain` maintains `signalName` → subscriber set. Broadcast delivers to all. *Done.*
 - [x] **1.6 — Signal Event (intermediate catch/throw, boundary)**: Activity subscribes to signal grain, waits. Signal throw completes all listeners. *Done.*
-- [ ] **1.7 — Event-Based Gateway**: Register for multiple events (timer + message + signal), first one to fire completes the gateway, cancel the others. *Problem solved: race-condition event selection.*
+- [x] **1.7 — Event-Based Gateway**: Register for multiple events (timer + message + signal), first one to fire completes the gateway, cancel the others. *Done.*
 
 ### Phase 2: Nested Scopes (A2 + A5)
 
