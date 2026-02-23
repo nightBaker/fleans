@@ -138,13 +138,13 @@ Each item solves exactly one problem. Items within a phase may depend on earlier
 
 ### Phase 1: Suspend/Resume Foundation (A1)
 
-- [ ] **1.1 — Workflow suspension model**: Add `Suspended` state to `WorkflowInstanceState`. A suspended workflow persists its state and stops the execution loop. Resume rehydrates and continues. *Problem solved: workflows can pause mid-execution.*
-- [ ] **1.2 — Timer Event (boundary, intermediate catch)**: Use Orleans Reminders to schedule wake-ups. When timer fires, call `CompleteActivity()` on the waiting activity. *Problem solved: time-based workflow resumption.*
-- [ ] **1.3 — Message correlation registry**: A grain that maps `(messageType, correlationKey)` to `(workflowInstanceId, activityId)`. When a message arrives, look up the target and call `CompleteActivity()`. *Problem solved: external messages can find and resume the right workflow.*
-- [ ] **1.4 — Message Event (intermediate catch, boundary)**: Activity registers in the correlation registry, suspends. Message arrival triggers completion. *Problem solved: workflows can wait for specific external messages.*
-- [ ] **1.5 — Signal broadcast mechanism**: A grain that maintains `signalName` to `Set<(workflowInstanceId, activityId)>`. Signal throw delivers to all registered listeners. *Problem solved: one-to-many event delivery across workflows.*
-- [ ] **1.6 — Signal Event (intermediate catch/throw, boundary)**: Activity subscribes to signal grain, suspends. Signal throw completes all listeners. *Problem solved: workflows can wait for and emit broadcast signals.*
-- [ ] **1.7 — Event-Based Gateway**: Register for multiple events (timer + message + signal), first one to fire completes the gateway, cancel the others. *Problem solved: race-condition event selection.*
+- [x] **1.1 — Workflow suspension model**: Activities that wait for external events (timer, message, signal) exit the execution loop naturally. Resume via `CompleteActivity()` or event handler. *Done.*
+- [x] **1.2 — Timer Event (boundary, intermediate catch)**: Orleans Reminders schedule wake-ups via `TimerCallbackGrain`. *Done.*
+- [x] **1.3 — Message correlation registry**: `MessageCorrelationGrain` maps `(messageName, correlationKey)` to workflow subscriptions. *Done.*
+- [x] **1.4 — Message Event (intermediate catch, boundary)**: Activity registers in correlation grain, waits. Message delivery triggers completion. *Done.*
+- [x] **1.5 — Signal broadcast mechanism**: `SignalCorrelationGrain` maintains `signalName` → subscriber set. Broadcast delivers to all. *Done.*
+- [x] **1.6 — Signal Event (intermediate catch/throw, boundary)**: Activity subscribes to signal grain, waits. Signal throw completes all listeners. *Done.*
+- [x] **1.7 — Event-Based Gateway**: Register for multiple events (timer + message + signal), first one to fire completes the gateway, cancel the others. *Done.*
 
 ### Phase 2: Nested Scopes (A2 + A5)
 

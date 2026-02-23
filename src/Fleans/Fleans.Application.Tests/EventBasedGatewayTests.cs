@@ -81,6 +81,8 @@ public class EventBasedGatewayTests : WorkflowTestBase
         // endMsg should be reached (message path), endTimer should NOT
         Assert.IsTrue(finalSnapshot.CompletedActivities.Any(a => a.ActivityId == "endMsg"),
             "Message end event should be reached");
+        Assert.IsFalse(finalSnapshot.CompletedActivities.Any(a => a.ActivityId == "endTimer"),
+            "Timer end event should NOT be reached");
     }
 
     [TestMethod]
@@ -140,6 +142,8 @@ public class EventBasedGatewayTests : WorkflowTestBase
 
         Assert.IsTrue(finalSnapshot.CompletedActivities.Any(a => a.ActivityId == "endSignal"),
             "Signal end event should be reached");
+        Assert.IsFalse(finalSnapshot.CompletedActivities.Any(a => a.ActivityId == "endTimer"),
+            "Timer end event should NOT be reached");
     }
 
     [TestMethod]
@@ -208,5 +212,9 @@ public class EventBasedGatewayTests : WorkflowTestBase
 
         Assert.IsTrue(finalSnapshot.CompletedActivities.Any(a => a.ActivityId == "endMsg"),
             "Message end event should be reached");
+        Assert.IsFalse(finalSnapshot.CompletedActivities.Any(a => a.ActivityId == "endTimer"),
+            "Timer end event should NOT be reached");
+        Assert.IsFalse(finalSnapshot.CompletedActivities.Any(a => a.ActivityId == "endSignal"),
+            "Signal end event should NOT be reached");
     }
 }
