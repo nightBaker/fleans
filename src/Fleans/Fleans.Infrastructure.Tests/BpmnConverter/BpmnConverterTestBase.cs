@@ -270,4 +270,29 @@ public abstract class BpmnConverterTestBase
   </process>
 </definitions>";
     }
+
+    protected static string CreateBpmnWithEventBasedGateway(string processId, string gatewayId)
+    {
+        return $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL"">
+  <message id=""msg1"" name=""paymentReceived"" />
+  <process id=""{processId}"">
+    <startEvent id=""start"" />
+    <eventBasedGateway id=""{gatewayId}"" />
+    <intermediateCatchEvent id=""timerCatch"">
+      <timerEventDefinition><timeDuration>PT1H</timeDuration></timerEventDefinition>
+    </intermediateCatchEvent>
+    <intermediateCatchEvent id=""msgCatch"">
+      <messageEventDefinition messageRef=""msg1"" />
+    </intermediateCatchEvent>
+    <endEvent id=""end1"" />
+    <endEvent id=""end2"" />
+    <sequenceFlow id=""f1"" sourceRef=""start"" targetRef=""{gatewayId}"" />
+    <sequenceFlow id=""f2"" sourceRef=""{gatewayId}"" targetRef=""timerCatch"" />
+    <sequenceFlow id=""f3"" sourceRef=""{gatewayId}"" targetRef=""msgCatch"" />
+    <sequenceFlow id=""f4"" sourceRef=""timerCatch"" targetRef=""end1"" />
+    <sequenceFlow id=""f5"" sourceRef=""msgCatch"" targetRef=""end2"" />
+  </process>
+</definitions>";
+    }
 }
