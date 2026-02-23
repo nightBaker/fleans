@@ -229,6 +229,66 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
         // Unsubscribe any boundary signal subscriptions attached to this activity
         await _boundaryHandler.UnsubscribeBoundarySignalSubscriptionsAsync(activityId, definition);
+
+        // Cancel sibling catch events if this activity is after an Event-Based Gateway
+        await CancelEventBasedGatewaySiblings(activityId, definition);
+    }
+
+    private async Task CancelEventBasedGatewaySiblings(string completedActivityId, IWorkflowDefinition definition)
+    {
+        // Check if this activity is after an Event-Based Gateway
+        var gatewayFlow = definition.SequenceFlows
+            .Where(sf => sf.Target.ActivityId == completedActivityId)
+            .FirstOrDefault(sf => sf.Source is EventBasedGateway);
+        if (gatewayFlow?.Source is not EventBasedGateway gateway) return;
+
+        // Find all sibling catch events (other outgoing flows from the same gateway)
+        var siblingActivityIds = definition.SequenceFlows
+            .Where(sf => sf.Source == gateway && sf.Target.ActivityId != completedActivityId)
+            .Select(sf => sf.Target.ActivityId)
+            .ToHashSet();
+
+        foreach (var siblingId in siblingActivityIds)
+        {
+            var entry = State.GetFirstActive(siblingId);
+            if (entry is null) continue;
+
+            var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(entry.ActivityInstanceId);
+            var siblingActivity = definition.GetActivity(siblingId);
+
+            // Unsubscribe based on event type
+            switch (siblingActivity)
+            {
+                case TimerIntermediateCatchEvent:
+                    var callbackGrain = _grainFactory.GetGrain<ITimerCallbackGrain>(
+                        this.GetPrimaryKey(), $"{entry.ActivityInstanceId}:{siblingId}");
+                    await callbackGrain.Cancel();
+                    break;
+
+                case MessageIntermediateCatchEvent msgCatch:
+                    var variablesId = await activityInstance.GetVariablesStateId();
+                    var msgDef = definition.Messages.First(m => m.Id == msgCatch.MessageDefinitionId);
+                    if (msgDef.CorrelationKeyExpression is not null)
+                    {
+                        var corrValue = await GetVariable(variablesId, msgDef.CorrelationKeyExpression);
+                        if (corrValue is not null)
+                        {
+                            var corrGrain = _grainFactory.GetGrain<IMessageCorrelationGrain>(msgDef.Name);
+                            await corrGrain.Unsubscribe(corrValue.ToString()!);
+                        }
+                    }
+                    break;
+
+                case SignalIntermediateCatchEvent sigCatch:
+                    var sigDef = definition.Signals.First(s => s.Id == sigCatch.SignalDefinitionId);
+                    var sigGrain = _grainFactory.GetGrain<ISignalCorrelationGrain>(sigDef.Name);
+                    await sigGrain.Unsubscribe(this.GetPrimaryKey(), siblingId);
+                    break;
+            }
+
+            await activityInstance.Cancel("Event-based gateway: sibling event completed");
+            LogEventBasedGatewaySiblingCancelled(siblingId, completedActivityId);
+        }
     }
 
     private async Task FailActivityState(string activityId, Exception exception)
@@ -894,4 +954,8 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
     [LoggerMessage(EventId = 1032, Level = LogLevel.Information, Message = "Signal delivered, completing activity {ActivityId}")]
     private partial void LogSignalDeliveryComplete(string activityId);
+
+    [LoggerMessage(EventId = 1033, Level = LogLevel.Information,
+        Message = "Event-based gateway: cancelled sibling {CancelledActivityId} because {WinningActivityId} completed first")]
+    private partial void LogEventBasedGatewaySiblingCancelled(string cancelledActivityId, string winningActivityId);
 }

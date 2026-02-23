@@ -251,6 +251,15 @@ public partial class BpmnConverter : IBpmnConverter
             activityMap[id] = activity;
         }
 
+        // Parse event-based gateways
+        foreach (var gateway in process.Descendants(Bpmn + "eventBasedGateway"))
+        {
+            var id = GetId(gateway);
+            var activity = new EventBasedGateway(id);
+            activities.Add(activity);
+            activityMap[id] = activity;
+        }
+
         // Parse call activities
         foreach (var callActivityEl in process.Descendants(Bpmn + "callActivity"))
         {
