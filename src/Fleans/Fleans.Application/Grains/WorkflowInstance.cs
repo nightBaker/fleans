@@ -75,6 +75,8 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
             }
 
             await TransitionToNextActivity();
+            LogStatePersistedAfterTransition();
+            await _state.WriteStateAsync();
         }
     }
 
@@ -830,6 +832,9 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
     [LoggerMessage(EventId = 3005, Level = LogLevel.Debug, Message = "Completing {Count} activities")]
     private partial void LogStateCompleteEntries(int count);
+
+    [LoggerMessage(EventId = 3006, Level = LogLevel.Debug, Message = "State persisted after transition")]
+    private partial void LogStatePersistedAfterTransition();
 
     [LoggerMessage(EventId = 1011, Level = LogLevel.Information, Message = "Parent info set: ParentWorkflowInstanceId={ParentWorkflowInstanceId}, ParentActivityId={ParentActivityId}")]
     private partial void LogParentInfoSet(Guid parentWorkflowInstanceId, string parentActivityId);
