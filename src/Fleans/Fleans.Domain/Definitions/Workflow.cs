@@ -17,6 +17,7 @@ namespace Fleans.Domain
         List<SequenceFlow> SequenceFlows { get; }
         List<MessageDefinition> Messages { get; }
         List<SignalDefinition> Signals { get; }
+        bool IsRootScope { get; }
         Activity GetActivity(string activityId);
 
         /// <summary>
@@ -73,6 +74,8 @@ namespace Fleans.Domain
 
         [Id(5)]
         public List<SignalDefinition> Signals { get; init; } = [];
+
+        public bool IsRootScope => true;
 
         public Activity GetActivity(string activityId)
             => Activities.First(a => a.ActivityId == activityId);

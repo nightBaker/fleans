@@ -15,6 +15,7 @@ public record SubProcess(string ActivityId) : BoundarableActivity(ActivityId), I
 
     public string WorkflowId => ActivityId;
     public string? ProcessDefinitionId => null;
+    public bool IsRootScope => false;
 
     [Id(3)]
     public List<MessageDefinition> Messages { get; init; } = [];
