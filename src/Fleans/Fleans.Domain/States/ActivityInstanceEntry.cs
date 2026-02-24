@@ -10,6 +10,12 @@ public class ActivityInstanceEntry
         WorkflowInstanceId = workflowInstanceId;
     }
 
+    public ActivityInstanceEntry(Guid activityInstanceId, string activityId, Guid workflowInstanceId, Guid scopeId)
+        : this(activityInstanceId, activityId, workflowInstanceId)
+    {
+        ScopeId = scopeId;
+    }
+
     private ActivityInstanceEntry()
     {
     }
@@ -28,6 +34,9 @@ public class ActivityInstanceEntry
 
     [Id(4)]
     public Guid? ChildWorkflowInstanceId { get; private set; }
+
+    [Id(5)]
+    public Guid? ScopeId { get; private set; }
 
     public void SetChildWorkflowInstanceId(Guid childId) => ChildWorkflowInstanceId = childId;
 

@@ -33,6 +33,7 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
         // Interrupt the attached activity
         var attachedInstance = _accessor.GrainFactory.GetGrain<IActivityInstanceGrain>(attachedEntry.ActivityInstanceId);
         await attachedInstance.Cancel($"Interrupted by boundary timer event '{boundaryTimer.ActivityId}'");
+        await _accessor.CancelScopeChildren(attachedEntry.ActivityInstanceId);
         _accessor.State.CompleteEntries([attachedEntry]);
 
         // Timer fired, so unsubscribe message and signal boundaries
@@ -61,6 +62,7 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
         // Interrupt the attached activity
         var attachedInstance = _accessor.GrainFactory.GetGrain<IActivityInstanceGrain>(attachedEntry.ActivityInstanceId);
         await attachedInstance.Cancel($"Interrupted by boundary message event '{boundaryMessage.ActivityId}'");
+        await _accessor.CancelScopeChildren(attachedEntry.ActivityInstanceId);
         _accessor.State.CompleteEntries([attachedEntry]);
 
         // Clean up all boundary events for the interrupted activity
@@ -92,6 +94,7 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
 
         var attachedInstance = _accessor.GrainFactory.GetGrain<IActivityInstanceGrain>(attachedEntry.ActivityInstanceId);
         await attachedInstance.Cancel($"Interrupted by boundary signal event '{boundarySignal.ActivityId}'");
+        await _accessor.CancelScopeChildren(attachedEntry.ActivityInstanceId);
         _accessor.State.CompleteEntries([attachedEntry]);
 
         await UnregisterBoundaryTimerRemindersAsync(attachedActivityId, attachedEntry.ActivityInstanceId, definition);
@@ -107,6 +110,8 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
     public async Task HandleBoundaryErrorAsync(string activityId, BoundaryErrorEvent boundaryError, Guid activityInstanceId, IWorkflowDefinition definition)
     {
         LogBoundaryEventTriggered(boundaryError.ActivityId, activityId);
+
+        await _accessor.CancelScopeChildren(activityInstanceId);
 
         var activityGrain = _accessor.GrainFactory.GetGrain<IActivityInstanceGrain>(activityInstanceId);
         await CreateAndExecuteBoundaryInstanceAsync(boundaryError, activityGrain, definition);

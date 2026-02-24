@@ -37,7 +37,7 @@ For now, next elements are implemented
 | **Activities**       |                                                                             |             |
 | Task                 | A single unit of work.                                                      |     [x]     |
 | Script Task          | A task that executes an inline script.                                       |     [x]     |
-| Sub-Process          | A group of tasks that are treated as a single unit.                         |             |
+| Sub-Process          | A group of tasks that are treated as a single unit.                         |     [x]     |
 | Call Activity        | A type of sub-process that calls another process.                            |     [x]     |
 | Transaction          | A set of activities that are handled as a single unit.                      |             |
 | Event Sub-Process    | A sub-process that is triggered by an event.                                 |             |

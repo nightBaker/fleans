@@ -96,11 +96,26 @@ public class WorkflowInstanceState
     public Guid AddCloneOfVariableState(Guid variableStateId)
     {
         var source = VariableStates.First(v => v.Id == variableStateId);
-        var clonedState = new WorkflowVariablesState(Guid.NewGuid(), Id);
+        WorkflowVariablesState clonedState;
+        if (source.ParentVariablesId.HasValue)
+        {
+            clonedState = new WorkflowVariablesState(Guid.NewGuid(), Id, source.ParentVariablesId.Value);
+        }
+        else
+        {
+            clonedState = new WorkflowVariablesState(Guid.NewGuid(), Id);
+        }
         clonedState.Merge(source.Variables);
 
         VariableStates.Add(clonedState);
         return clonedState.Id;
+    }
+
+    public Guid AddChildVariableState(Guid parentVariablesId)
+    {
+        var childState = new WorkflowVariablesState(Guid.NewGuid(), Id, parentVariablesId);
+        VariableStates.Add(childState);
+        return childState.Id;
     }
 
     public void AddConditionSequenceStates(Guid activityInstanceId, string[] sequenceFlowIds)
