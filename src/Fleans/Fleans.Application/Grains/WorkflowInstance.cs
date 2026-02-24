@@ -151,6 +151,9 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         var rootDefinition = await GetWorkflowDefinition();
         var newActiveEntries = new List<ActivityInstanceEntry>();
         var completedEntries = new List<ActivityInstanceEntry>();
+        // Track which scope IDs had a child fail without being handled; we must NOT
+        // complete those scopes (they remain stuck until explicit error handling).
+        var scopesWithUnhandledFailure = new HashSet<Guid>();
 
         foreach (var entry in State.GetActiveActivities().ToList())
         {
@@ -162,7 +165,12 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
                 // Failed or cancelled activities don't transition to next activities
                 if (await activityInstance.GetErrorState() is not null)
+                {
+                    // Record scope failure so we don't complete the scope normally
+                    if (entry.ScopeId.HasValue)
+                        scopesWithUnhandledFailure.Add(entry.ScopeId.Value);
                     continue;
+                }
 
                 if (await activityInstance.IsCancelled())
                     continue;
@@ -226,7 +234,8 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         State.AddEntries(newActiveEntries);
 
         // After all tracking is settled, complete scopes that have no remaining children
-        await CompleteFinishedScopes(rootDefinition);
+        // but skip scopes that had an unhandled child failure (those remain stuck).
+        await CompleteFinishedScopes(rootDefinition, scopesWithUnhandledFailure);
     }
 
     private async Task CompleteActivityState(string activityId, ExpandoObject variables)
@@ -509,9 +518,34 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
     public ValueTask<ExpandoObject> GetVariables(Guid variablesStateId)
     {
-        var variables = State.GetVariableState(variablesStateId).Variables;
+        return ValueTask.FromResult(GetVariablesMergedChain(variablesStateId));
+    }
 
-        return ValueTask.FromResult(variables);
+    /// <summary>
+    /// Returns a merged ExpandoObject containing all variables visible at the given scope:
+    /// parent scope variables first, then local scope variables override (shadowing).
+    /// Scripts see the complete inherited + local view.
+    /// </summary>
+    private ExpandoObject GetVariablesMergedChain(Guid variablesStateId)
+    {
+        var variableState = State.VariableStates.FirstOrDefault(v => v.Id == variablesStateId);
+        if (variableState is null) return new ExpandoObject();
+
+        if (!variableState.ParentVariablesId.HasValue)
+            return variableState.Variables;
+
+        // Build merged view: parent first, then local overrides (shadowing semantics)
+        var merged = new ExpandoObject();
+        var mergedDict = (IDictionary<string, object?>)merged;
+
+        var parentMerged = GetVariablesMergedChain(variableState.ParentVariablesId.Value);
+        foreach (var kvp in (IDictionary<string, object?>)parentMerged)
+            mergedDict[kvp.Key] = kvp.Value;
+
+        foreach (var kvp in (IDictionary<string, object?>)variableState.Variables)
+            mergedDict[kvp.Key] = kvp.Value;
+
+        return merged;
     }
 
     // State facade methods — activities access state through these, not directly
@@ -633,8 +667,10 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         foreach (var childId in childInstanceIds)
         {
             var childEntry = State.GetActiveEntryByInstanceId(childId);
-            if (childEntry is null) continue;
+            if (childEntry is null) continue; // already completed (e.g., failed task)
             var childInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(childId);
+            // Guard: activity may already be in a completed state (failed/cancelled)
+            if (await childInstance.IsCompleted()) continue;
             await childInstance.Cancel("Scope cancelled due to error propagation");
             State.CompleteEntries([childEntry]);
         }
@@ -678,12 +714,16 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
     /// <summary>
     /// Marks the sub-process activity instances as complete for all scopes that have
     /// no remaining active children (O(1) detection via the scope aggregate).
+    /// Scopes with unhandled child failures are skipped — they remain stuck.
     /// </summary>
-    private async Task CompleteFinishedScopes(IWorkflowDefinition rootDefinition)
+    private async Task CompleteFinishedScopes(IWorkflowDefinition rootDefinition, HashSet<Guid>? failedScopeIds = null)
     {
         foreach (var scope in State.Scopes.ToList())
         {
             if (!scope.IsComplete) continue;
+
+            // Don't complete a scope that had an unhandled child failure
+            if (failedScopeIds != null && failedScopeIds.Contains(scope.ScopeId)) continue;
 
             LogSubProcessScopeCompleted(scope.SubProcessActivityId, scope.ScopeId);
 

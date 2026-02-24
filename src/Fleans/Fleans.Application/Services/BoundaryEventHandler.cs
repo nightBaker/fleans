@@ -189,6 +189,7 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
             var childEntry = _accessor.State.GetActiveEntryByInstanceId(childId);
             if (childEntry is null) continue;
             var childInstance = _accessor.GrainFactory.GetGrain<IActivityInstanceGrain>(childId);
+            if (await childInstance.IsCompleted()) continue;
             await childInstance.Cancel("Scope cancelled by boundary event");
             _accessor.State.CompleteEntries([childEntry]);
         }

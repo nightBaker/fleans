@@ -20,6 +20,7 @@ public record SubProcess(string ActivityId) : BoundarableActivity(ActivityId), I
     // IWorkflowDefinition — re-use existing execution infrastructure unchanged
     string IWorkflowDefinition.WorkflowId => ActivityId;
     string? IWorkflowDefinition.ProcessDefinitionId => null;
+    bool IWorkflowDefinition.IsRootProcess => false;
     List<Activity> IWorkflowDefinition.Activities => Activities;
     List<SequenceFlow> IWorkflowDefinition.SequenceFlows => SequenceFlows;
     List<MessageDefinition> IWorkflowDefinition.Messages => [];
