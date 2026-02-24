@@ -74,4 +74,24 @@ public class SubProcessActivityTests
         Assert.AreEqual(2, def.SequenceFlows.Count);
         Assert.AreEqual("sub_task", def.GetActivity("sub_task").ActivityId);
     }
+
+    [TestMethod]
+    public async Task ExecuteAsync_WhenExecuteFails_ShouldPropagateException()
+    {
+        var innerStart = new StartEvent("sub_start");
+        var innerEnd = new EndEvent("sub_end");
+        var subProcess = new SubProcess("sub1")
+        {
+            Activities = [innerStart, innerEnd],
+            SequenceFlows = [new SequenceFlow("sf1", innerStart, innerEnd)]
+        };
+
+        var definition = ActivityTestHelper.CreateWorkflowDefinition([subProcess], []);
+        var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
+        var (activityContext, _) = ActivityTestHelper.CreateActivityContext("sub1");
+        activityContext.Execute().Returns(ValueTask.FromException(new InvalidOperationException("exec failed")));
+
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => subProcess.ExecuteAsync(workflowContext, activityContext, definition));
+    }
 }
