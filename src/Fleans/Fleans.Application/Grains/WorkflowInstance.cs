@@ -224,9 +224,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
                     await newActivityInstance.SetActivity(nextActivity.ActivityId, nextActivity.GetType().Name);
 
-                    newActiveEntries.Add(entry.ScopeId.HasValue
-                        ? new ActivityInstanceEntry(newId, nextActivity.ActivityId, State.Id, entry.ScopeId.Value)
-                        : new ActivityInstanceEntry(newId, nextActivity.ActivityId, State.Id));
+                    newActiveEntries.Add(new ActivityInstanceEntry(newId, nextActivity.ActivityId, State.Id, entry.ScopeId));
                 }
             }
         }
@@ -280,9 +278,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
                     await newInstance.SetVariablesId(sourceVariablesId);
                     await newInstance.SetActivity(nextActivity.ActivityId, nextActivity.GetType().Name);
 
-                    newEntries.Add(entry.ScopeId.HasValue
-                        ? new ActivityInstanceEntry(newId, nextActivity.ActivityId, State.Id, entry.ScopeId.Value)
-                        : new ActivityInstanceEntry(newId, nextActivity.ActivityId, State.Id));
+                    newEntries.Add(new ActivityInstanceEntry(newId, nextActivity.ActivityId, State.Id, entry.ScopeId));
                 }
 
                 State.CompleteEntries(completedEntries);

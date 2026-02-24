@@ -3,16 +3,11 @@ namespace Fleans.Domain.States;
 [GenerateSerializer]
 public class ActivityInstanceEntry
 {
-    public ActivityInstanceEntry(Guid activityInstanceId, string activityId, Guid workflowInstanceId)
+    public ActivityInstanceEntry(Guid activityInstanceId, string activityId, Guid workflowInstanceId, Guid? scopeId = null)
     {
         ActivityInstanceId = activityInstanceId;
         ActivityId = activityId;
         WorkflowInstanceId = workflowInstanceId;
-    }
-
-    public ActivityInstanceEntry(Guid activityInstanceId, string activityId, Guid workflowInstanceId, Guid scopeId)
-        : this(activityInstanceId, activityId, workflowInstanceId)
-    {
         ScopeId = scopeId;
     }
 
