@@ -584,30 +584,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
     }
 
     public ValueTask<ExpandoObject> GetVariables(Guid variablesStateId)
-    {
-        // Collect scopes from current up to root
-        var scopes = new List<ExpandoObject>();
-        var current = State.GetVariableState(variablesStateId);
-        while (current is not null)
-        {
-            scopes.Add(current.Variables);
-            current = current.ParentVariablesId.HasValue
-                ? State.GetVariableState(current.ParentVariablesId.Value)
-                : null;
-        }
-
-        // Merge from root to leaf — child values shadow parent values
-        var merged = new ExpandoObject();
-        var mergedDict = (IDictionary<string, object?>)merged;
-        for (var i = scopes.Count - 1; i >= 0; i--)
-        {
-            var dict = (IDictionary<string, object?>)scopes[i];
-            foreach (var kvp in dict)
-                mergedDict[kvp.Key] = kvp.Value;
-        }
-
-        return ValueTask.FromResult(merged);
-    }
+        => ValueTask.FromResult(State.GetMergedVariables(variablesStateId));
 
     // State facade methods — activities access state through these, not directly
     public ValueTask<IReadOnlyList<IActivityExecutionContext>> GetActiveActivities()
@@ -794,20 +771,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
     }
 
     public ValueTask<object?> GetVariable(Guid variablesId, string variableName)
-    {
-        var current = State.GetVariableState(variablesId);
-        while (current is not null)
-        {
-            var dict = (IDictionary<string, object?>)current.Variables;
-            if (dict.TryGetValue(variableName, out var value))
-                return ValueTask.FromResult(value);
-
-            current = current.ParentVariablesId.HasValue
-                ? State.GetVariableState(current.ParentVariablesId.Value)
-                : null;
-        }
-        return ValueTask.FromResult<object?>(null);
-    }
+        => ValueTask.FromResult(State.GetVariable(variablesId, variableName));
 
     public async ValueTask RegisterMessageSubscription(Guid variablesId, string messageDefinitionId, string activityId)
     {

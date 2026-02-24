@@ -142,4 +142,43 @@ public class WorkflowInstanceState
     {
         GetVariableState(variablesId).Merge(variables);
     }
+
+    public ExpandoObject GetMergedVariables(Guid variablesStateId)
+    {
+        var scopes = new List<ExpandoObject>();
+        var current = GetVariableState(variablesStateId);
+        while (current is not null)
+        {
+            scopes.Add(current.Variables);
+            current = current.ParentVariablesId.HasValue
+                ? GetVariableState(current.ParentVariablesId.Value)
+                : null;
+        }
+
+        var merged = new ExpandoObject();
+        var mergedDict = (IDictionary<string, object?>)merged;
+        for (var i = scopes.Count - 1; i >= 0; i--)
+        {
+            var dict = (IDictionary<string, object?>)scopes[i];
+            foreach (var kvp in dict)
+                mergedDict[kvp.Key] = kvp.Value;
+        }
+        return merged;
+    }
+
+    public object? GetVariable(Guid variablesStateId, string variableName)
+    {
+        var current = GetVariableState(variablesStateId);
+        while (current is not null)
+        {
+            var dict = (IDictionary<string, object?>)current.Variables;
+            if (dict.TryGetValue(variableName, out var value))
+                return value;
+
+            current = current.ParentVariablesId.HasValue
+                ? GetVariableState(current.ParentVariablesId.Value)
+                : null;
+        }
+        return null;
+    }
 }
