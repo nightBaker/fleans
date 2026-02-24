@@ -63,10 +63,10 @@ public partial class BpmnConverter : IBpmnConverter
         return workflow;
     }
 
-    private void ParseActivities(XElement process, List<Activity> activities, Dictionary<string, Activity> activityMap, HashSet<string> defaultFlowIds)
+    private void ParseActivities(XElement scopeElement, List<Activity> activities, Dictionary<string, Activity> activityMap, HashSet<string> defaultFlowIds)
     {
         // Parse start events (with optional timer definition)
-        foreach (var startEvent in process.Descendants(Bpmn + "startEvent"))
+        foreach (var startEvent in scopeElement.Elements(Bpmn + "startEvent"))
         {
             var id = GetId(startEvent);
             var timerDef = startEvent.Element(Bpmn + "timerEventDefinition");
@@ -87,7 +87,7 @@ public partial class BpmnConverter : IBpmnConverter
         }
 
         // Parse intermediate catch events (timer, message)
-        foreach (var catchEvent in process.Descendants(Bpmn + "intermediateCatchEvent"))
+        foreach (var catchEvent in scopeElement.Elements(Bpmn + "intermediateCatchEvent"))
         {
             var id = GetId(catchEvent);
             var timerDef = catchEvent.Element(Bpmn + "timerEventDefinition");
@@ -130,7 +130,7 @@ public partial class BpmnConverter : IBpmnConverter
         }
 
         // Parse intermediate throw events (signal)
-        foreach (var throwEvent in process.Descendants(Bpmn + "intermediateThrowEvent"))
+        foreach (var throwEvent in scopeElement.Elements(Bpmn + "intermediateThrowEvent"))
         {
             var id = GetId(throwEvent);
             var signalDef = throwEvent.Element(Bpmn + "signalEventDefinition");
@@ -151,7 +151,7 @@ public partial class BpmnConverter : IBpmnConverter
         }
 
         // Parse end events
-        foreach (var endEvent in process.Descendants(Bpmn + "endEvent"))
+        foreach (var endEvent in scopeElement.Elements(Bpmn + "endEvent"))
         {
             var id = GetId(endEvent);
             var activity = new EndEvent(id);
@@ -160,7 +160,7 @@ public partial class BpmnConverter : IBpmnConverter
         }
 
         // Parse tasks
-        foreach (var task in process.Descendants(Bpmn + "task"))
+        foreach (var task in scopeElement.Elements(Bpmn + "task"))
         {
             var id = GetId(task);
             var activity = new TaskActivity(id);
@@ -169,7 +169,7 @@ public partial class BpmnConverter : IBpmnConverter
         }
 
         // Parse user tasks
-        foreach (var userTask in process.Descendants(Bpmn + "userTask"))
+        foreach (var userTask in scopeElement.Elements(Bpmn + "userTask"))
         {
             var id = GetId(userTask);
             var activity = new TaskActivity(id);
@@ -178,7 +178,7 @@ public partial class BpmnConverter : IBpmnConverter
         }
 
         // Parse service tasks
-        foreach (var serviceTask in process.Descendants(Bpmn + "serviceTask"))
+        foreach (var serviceTask in scopeElement.Elements(Bpmn + "serviceTask"))
         {
             var id = GetId(serviceTask);
             var activity = new TaskActivity(id);
@@ -187,7 +187,7 @@ public partial class BpmnConverter : IBpmnConverter
         }
 
         // Parse script tasks
-        foreach (var scriptTask in process.Descendants(Bpmn + "scriptTask"))
+        foreach (var scriptTask in scopeElement.Elements(Bpmn + "scriptTask"))
         {
             var id = GetId(scriptTask);
             var scriptFormat = scriptTask.Attribute("scriptFormat")?.Value ?? "csharp";
@@ -201,7 +201,7 @@ public partial class BpmnConverter : IBpmnConverter
         }
 
         // Parse exclusive gateways
-        foreach (var gateway in process.Descendants(Bpmn + "exclusiveGateway"))
+        foreach (var gateway in scopeElement.Elements(Bpmn + "exclusiveGateway"))
         {
             var id = GetId(gateway);
             var defaultFlowId = gateway.Attribute("default")?.Value;
@@ -214,13 +214,13 @@ public partial class BpmnConverter : IBpmnConverter
         }
 
         // Parse parallel gateways (fork)
-        foreach (var gateway in process.Descendants(Bpmn + "parallelGateway"))
+        foreach (var gateway in scopeElement.Elements(Bpmn + "parallelGateway"))
         {
             var id = GetId(gateway);
             // Determine if it's a fork or join by checking incoming/outgoing flows
-            var incomingCount = process.Descendants(Bpmn + "sequenceFlow")
+            var incomingCount = scopeElement.Elements(Bpmn + "sequenceFlow")
                 .Count(sf => sf.Attribute("targetRef")?.Value == id);
-            var outgoingCount = process.Descendants(Bpmn + "sequenceFlow")
+            var outgoingCount = scopeElement.Elements(Bpmn + "sequenceFlow")
                 .Count(sf => sf.Attribute("sourceRef")?.Value == id);
 
             bool isFork;
@@ -252,7 +252,7 @@ public partial class BpmnConverter : IBpmnConverter
         }
 
         // Parse event-based gateways
-        foreach (var gateway in process.Descendants(Bpmn + "eventBasedGateway"))
+        foreach (var gateway in scopeElement.Elements(Bpmn + "eventBasedGateway"))
         {
             var id = GetId(gateway);
             var activity = new EventBasedGateway(id);
@@ -260,8 +260,29 @@ public partial class BpmnConverter : IBpmnConverter
             activityMap[id] = activity;
         }
 
+        // Parse sub-processes (recursive — child activities are scoped to their container)
+        foreach (var subProcessEl in scopeElement.Elements(Bpmn + "subProcess"))
+        {
+            var id = GetId(subProcessEl);
+            var childActivities = new List<Activity>();
+            var childDefaultFlowIds = new HashSet<string>();
+            // activityMap is shared so IDs are globally unique across nesting levels
+            ParseActivities(subProcessEl, childActivities, activityMap, childDefaultFlowIds);
+
+            var childSequenceFlows = new List<SequenceFlow>();
+            ParseSequenceFlows(subProcessEl, childSequenceFlows, activityMap, childDefaultFlowIds);
+
+            var activity = new SubProcess(id)
+            {
+                Activities = childActivities,
+                SequenceFlows = childSequenceFlows
+            };
+            activities.Add(activity);
+            activityMap[id] = activity;
+        }
+
         // Parse call activities
-        foreach (var callActivityEl in process.Descendants(Bpmn + "callActivity"))
+        foreach (var callActivityEl in scopeElement.Elements(Bpmn + "callActivity"))
         {
             var id = GetId(callActivityEl);
             var calledElement = callActivityEl.Attribute("calledElement")?.Value
@@ -296,8 +317,8 @@ public partial class BpmnConverter : IBpmnConverter
             activityMap[id] = activity;
         }
 
-        // Parse boundary events
-        foreach (var boundaryEl in process.Descendants(Bpmn + "boundaryEvent"))
+        // Parse boundary events (only direct children to avoid leaking nested scope events)
+        foreach (var boundaryEl in scopeElement.Elements(Bpmn + "boundaryEvent"))
         {
             var id = GetId(boundaryEl);
             var attachedToRef = boundaryEl.Attribute("attachedToRef")?.Value
@@ -339,9 +360,9 @@ public partial class BpmnConverter : IBpmnConverter
         }
     }
 
-    private void ParseSequenceFlows(XElement process, List<SequenceFlow> sequenceFlows, Dictionary<string, Activity> activityMap, HashSet<string> defaultFlowIds)
+    private void ParseSequenceFlows(XElement scopeElement, List<SequenceFlow> sequenceFlows, Dictionary<string, Activity> activityMap, HashSet<string> defaultFlowIds)
     {
-        foreach (var flow in process.Descendants(Bpmn + "sequenceFlow"))
+        foreach (var flow in scopeElement.Elements(Bpmn + "sequenceFlow"))
         {
             var flowId = GetId(flow);
             var sourceRef = flow.Attribute("sourceRef")?.Value;
@@ -357,14 +378,11 @@ public partial class BpmnConverter : IBpmnConverter
             }
 
             // Check for condition expression
-            var conditionExpression = flow.Descendants(Bpmn + "conditionExpression").FirstOrDefault();
+            var conditionExpression = flow.Elements(Bpmn + "conditionExpression").FirstOrDefault();
             
             if (conditionExpression != null)
             {
                 var condition = conditionExpression.Value.Trim();
-                // Convert BPMN condition format to our format if needed
-                // BPMN typically uses expressions like "${variable > value}"
-                // We might need to convert to "_context.variable > value"
                 condition = ConvertBpmnCondition(condition);
                 sequenceFlows.Add(new ConditionalSequenceFlow(flowId, source, target, condition));
             }

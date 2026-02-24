@@ -12,8 +12,29 @@ namespace Fleans.Persistence;
 
 internal static class FleanModelConfiguration
 {
+    private static readonly JsonSerializerSettings ScopesJsonSettings = new()
+    {
+        ConstructorHandling = ConstructorHandling.AllowNonPublicDefaultConstructor,
+        ContractResolver = new PrivateSetterContractResolver()
+    };
+
+    private sealed class PrivateSetterContractResolver : DefaultContractResolver
+    {
+        protected override JsonProperty CreateProperty(
+            System.Reflection.MemberInfo member,
+            MemberSerialization memberSerialization)
+        {
+            var prop = base.CreateProperty(member, memberSerialization);
+            if (!prop.Writable && member is System.Reflection.PropertyInfo pi)
+                prop.Writable = pi.GetSetMethod(nonPublic: true) != null;
+            return prop;
+        }
+    }
     public static void Configure(ModelBuilder modelBuilder)
     {
+        // WorkflowScopeState is stored as JSON inside WorkflowInstances — not a separate entity
+        modelBuilder.Ignore<WorkflowScopeState>();
+
         // TODO: When switching to EF Core migrations, add a migration for IsCancelled/CancellationReason columns.
         // Currently EnsureCreated() handles schema — existing databases need to be recreated.
         modelBuilder.Entity<ActivityInstanceState>(entity =>
@@ -68,6 +89,20 @@ internal static class FleanModelConfiguration
                 .HasForeignKey(e => e.ProcessDefinitionId)
                 .IsRequired(false)
                 .OnDelete(DeleteBehavior.SetNull);
+
+            // Scopes are ephemeral (removed on scope completion) — store as JSON column
+            entity.Property(e => e.Scopes)
+                .HasColumnName("Scopes")
+                .HasConversion(
+                    v => JsonConvert.SerializeObject(v, ScopesJsonSettings),
+                    v => JsonConvert.DeserializeObject<List<WorkflowScopeState>>(v, ScopesJsonSettings)
+                         ?? new List<WorkflowScopeState>())
+                .Metadata.SetValueComparer(new ValueComparer<List<WorkflowScopeState>>(
+                    (a, b) => JsonConvert.SerializeObject(a, ScopesJsonSettings) ==
+                              JsonConvert.SerializeObject(b, ScopesJsonSettings),
+                    v => JsonConvert.SerializeObject(v, ScopesJsonSettings).GetHashCode(),
+                    v => JsonConvert.DeserializeObject<List<WorkflowScopeState>>(
+                        JsonConvert.SerializeObject(v, ScopesJsonSettings), ScopesJsonSettings)!));
         });
 
         modelBuilder.Entity<ActivityInstanceEntry>(entity =>

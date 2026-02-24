@@ -35,6 +35,9 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
         await attachedInstance.Cancel($"Interrupted by boundary timer event '{boundaryTimer.ActivityId}'");
         _accessor.State.CompleteEntries([attachedEntry]);
 
+        // If the interrupted activity is a sub-process, cancel all of its scope children
+        await CancelSubProcessScopeIfNeededAsync(hostActivityInstanceId);
+
         // Timer fired, so unsubscribe message and signal boundaries
         var variablesId = await attachedInstance.GetVariablesStateId();
         await UnsubscribeBoundaryMessageSubscriptionsAsync(attachedActivityId, variablesId, definition);
@@ -171,6 +174,28 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
         await _accessor.ExecuteWorkflow();
     }
 
+    /// <summary>
+    /// If <paramref name="activityInstanceId"/> is a sub-process activity instance that
+    /// owns a scope, cancels all active children in that scope deterministically.
+    /// </summary>
+    private async Task CancelSubProcessScopeIfNeededAsync(Guid activityInstanceId)
+    {
+        var scope = _accessor.State.GetScopeBySubProcessInstance(activityInstanceId);
+        if (scope is null) return;
+
+        var childInstanceIds = _accessor.State.CancelScope(scope.ScopeId);
+        foreach (var childId in childInstanceIds)
+        {
+            var childEntry = _accessor.State.GetActiveEntryByInstanceId(childId);
+            if (childEntry is null) continue;
+            var childInstance = _accessor.GrainFactory.GetGrain<IActivityInstanceGrain>(childId);
+            await childInstance.Cancel("Scope cancelled by boundary event");
+            _accessor.State.CompleteEntries([childEntry]);
+        }
+
+        LogSubProcessScopeCancelled(scope.SubProcessActivityId, scope.ScopeId);
+    }
+
     [LoggerMessage(EventId = 1025, Level = LogLevel.Warning, Message = "Stale boundary timer {TimerActivityId} ignored — host activity instance {HostActivityInstanceId} already completed")]
     private partial void LogStaleBoundaryTimerIgnored(string timerActivityId, Guid hostActivityInstanceId);
 
@@ -194,4 +219,8 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
 
     [LoggerMessage(EventId = 1034, Level = LogLevel.Information, Message = "Boundary signal {BoundarySignalId} interrupted attached activity {AttachedActivityId}")]
     private partial void LogBoundarySignalInterrupted(string boundarySignalId, string attachedActivityId);
+
+    [LoggerMessage(EventId = 1035, Level = LogLevel.Information,
+        Message = "SubProcess scope cancelled by boundary event: subProcessId={SubProcessActivityId}, scopeId={ScopeId}")]
+    private partial void LogSubProcessScopeCancelled(string subProcessActivityId, Guid scopeId);
 }

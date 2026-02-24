@@ -22,4 +22,11 @@ public interface IWorkflowExecutionContext
     ValueTask RegisterSignalSubscription(string signalName, string activityId, Guid activityInstanceId);
     ValueTask RegisterBoundarySignalSubscription(Guid hostActivityInstanceId, string boundaryActivityId, string signalName);
     ValueTask ThrowSignal(string signalName);
+
+    /// <summary>
+    /// Opens a new sub-process scope, creates a child variable scope, and spawns the
+    /// sub-process's start event. The sub-process activity instance completes
+    /// automatically when all child activities in the scope have finished.
+    /// </summary>
+    ValueTask OpenSubProcessScope(Guid subProcessInstanceId, Activities.SubProcess subProcess, Guid parentVariablesId);
 }
