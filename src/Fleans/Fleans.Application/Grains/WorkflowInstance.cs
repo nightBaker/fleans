@@ -221,7 +221,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
                     if (nextActivity.IsJoinGateway)
                     {
                         var existingEntry = State.GetActiveActivities()
-                            .FirstOrDefault(e => e.ActivityId == nextActivity.ActivityId);
+                            .FirstOrDefault(e => e.ActivityId == nextActivity.ActivityId && e.ScopeId == entry.ScopeId);
                         if (existingEntry != null)
                         {
                             LogJoinGatewayDeduplication(nextActivity.ActivityId, existingEntry.ActivityInstanceId);
