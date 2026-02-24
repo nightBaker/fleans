@@ -176,27 +176,27 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
         await _accessor.ExecuteWorkflow();
     }
 
-    [LoggerMessage(EventId = 1025, Level = LogLevel.Warning, Message = "Stale boundary timer {TimerActivityId} ignored — host activity instance {HostActivityInstanceId} already completed")]
+    [LoggerMessage(EventId = 4000, Level = LogLevel.Warning, Message = "Stale boundary timer {TimerActivityId} ignored — host activity instance {HostActivityInstanceId} already completed")]
     private partial void LogStaleBoundaryTimerIgnored(string timerActivityId, Guid hostActivityInstanceId);
 
-    [LoggerMessage(EventId = 1026, Level = LogLevel.Warning, Message = "Stale boundary message {MessageActivityId} ignored — host activity instance {HostActivityInstanceId} already completed")]
+    [LoggerMessage(EventId = 4001, Level = LogLevel.Warning, Message = "Stale boundary message {MessageActivityId} ignored — host activity instance {HostActivityInstanceId} already completed")]
     private partial void LogStaleBoundaryMessageIgnored(string messageActivityId, Guid hostActivityInstanceId);
 
-    [LoggerMessage(EventId = 1016, Level = LogLevel.Information, Message = "Boundary error event {BoundaryEventId} triggered by failed activity {ActivityId}")]
+    [LoggerMessage(EventId = 4002, Level = LogLevel.Information, Message = "Boundary error event {BoundaryEventId} triggered by failed activity {ActivityId}")]
     private partial void LogBoundaryEventTriggered(string boundaryEventId, string activityId);
 
-    [LoggerMessage(EventId = 1019, Level = LogLevel.Information, Message = "Timer reminder unregistered for activity {TimerActivityId}")]
+    [LoggerMessage(EventId = 4003, Level = LogLevel.Information, Message = "Timer reminder unregistered for activity {TimerActivityId}")]
     private partial void LogTimerReminderUnregistered(string timerActivityId);
 
-    [LoggerMessage(EventId = 1020, Level = LogLevel.Information, Message = "Boundary timer {BoundaryTimerId} interrupted attached activity {AttachedActivityId}")]
+    [LoggerMessage(EventId = 4004, Level = LogLevel.Information, Message = "Boundary timer {BoundaryTimerId} interrupted attached activity {AttachedActivityId}")]
     private partial void LogBoundaryTimerInterrupted(string boundaryTimerId, string attachedActivityId);
 
-    [LoggerMessage(EventId = 1022, Level = LogLevel.Information, Message = "Boundary message {BoundaryMessageId} interrupted attached activity {AttachedActivityId}")]
+    [LoggerMessage(EventId = 4005, Level = LogLevel.Information, Message = "Boundary message {BoundaryMessageId} interrupted attached activity {AttachedActivityId}")]
     private partial void LogBoundaryMessageInterrupted(string boundaryMessageId, string attachedActivityId);
 
-    [LoggerMessage(EventId = 1033, Level = LogLevel.Warning, Message = "Stale boundary signal {SignalActivityId} ignored — host activity instance {HostActivityInstanceId} already completed")]
+    [LoggerMessage(EventId = 4006, Level = LogLevel.Warning, Message = "Stale boundary signal {SignalActivityId} ignored — host activity instance {HostActivityInstanceId} already completed")]
     private partial void LogStaleBoundarySignalIgnored(string signalActivityId, Guid hostActivityInstanceId);
 
-    [LoggerMessage(EventId = 1034, Level = LogLevel.Information, Message = "Boundary signal {BoundarySignalId} interrupted attached activity {AttachedActivityId}")]
+    [LoggerMessage(EventId = 4007, Level = LogLevel.Information, Message = "Boundary signal {BoundarySignalId} interrupted attached activity {AttachedActivityId}")]
     private partial void LogBoundarySignalInterrupted(string boundarySignalId, string attachedActivityId);
 }
