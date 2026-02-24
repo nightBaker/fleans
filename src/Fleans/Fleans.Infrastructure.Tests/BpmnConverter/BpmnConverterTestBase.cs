@@ -295,4 +295,50 @@ public abstract class BpmnConverterTestBase
   </process>
 </definitions>";
     }
+
+    protected static string CreateBpmnWithSubProcess(string processId, string subProcessId)
+    {
+        return $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL"">
+  <process id=""{processId}"">
+    <startEvent id=""start"" />
+    <subProcess id=""{subProcessId}"">
+      <startEvent id=""{subProcessId}_start"" />
+      <task id=""{subProcessId}_task"" />
+      <endEvent id=""{subProcessId}_end"" />
+      <sequenceFlow id=""inner_f1"" sourceRef=""{subProcessId}_start"" targetRef=""{subProcessId}_task"" />
+      <sequenceFlow id=""inner_f2"" sourceRef=""{subProcessId}_task"" targetRef=""{subProcessId}_end"" />
+    </subProcess>
+    <endEvent id=""end"" />
+    <sequenceFlow id=""f1"" sourceRef=""start"" targetRef=""{subProcessId}"" />
+    <sequenceFlow id=""f2"" sourceRef=""{subProcessId}"" targetRef=""end"" />
+  </process>
+</definitions>";
+    }
+
+    protected static string CreateBpmnWithNestedSubProcess(string processId)
+    {
+        return $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL"">
+  <process id=""{processId}"">
+    <startEvent id=""start"" />
+    <subProcess id=""outer"">
+      <startEvent id=""outer_start"" />
+      <subProcess id=""inner"">
+        <startEvent id=""inner_start"" />
+        <task id=""inner_task"" />
+        <endEvent id=""inner_end"" />
+        <sequenceFlow id=""inner_f1"" sourceRef=""inner_start"" targetRef=""inner_task"" />
+        <sequenceFlow id=""inner_f2"" sourceRef=""inner_task"" targetRef=""inner_end"" />
+      </subProcess>
+      <endEvent id=""outer_end"" />
+      <sequenceFlow id=""outer_f1"" sourceRef=""outer_start"" targetRef=""inner"" />
+      <sequenceFlow id=""outer_f2"" sourceRef=""inner"" targetRef=""outer_end"" />
+    </subProcess>
+    <endEvent id=""end"" />
+    <sequenceFlow id=""f1"" sourceRef=""start"" targetRef=""outer"" />
+    <sequenceFlow id=""f2"" sourceRef=""outer"" targetRef=""end"" />
+  </process>
+</definitions>";
+    }
 }
