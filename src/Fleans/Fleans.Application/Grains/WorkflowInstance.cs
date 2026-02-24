@@ -292,6 +292,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
     public async Task CancelScopeChildren(Guid scopeId)
     {
+        var cancelledEntries = new List<ActivityInstanceEntry>();
         foreach (var entry in State.GetActiveActivities().Where(e => e.ScopeId == scopeId).ToList())
         {
             // Recursively cancel nested sub-process children
@@ -302,9 +303,10 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
             var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(entry.ActivityInstanceId);
             await activityInstance.Cancel("Sub-process scope cancelled by boundary event");
-            entry.MarkCompleted();
+            cancelledEntries.Add(entry);
             LogScopeChildCancelled(entry.ActivityId, scopeId);
         }
+        State.CompleteEntries(cancelledEntries);
     }
 
     private async Task CompleteActivityState(string activityId, ExpandoObject variables)
