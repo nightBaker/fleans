@@ -26,6 +26,8 @@ public class SubProcessActivityTests
 
         await activityContext.Received(1).Execute();
         await activityContext.DidNotReceive().Complete();
+        await workflowContext.Received(1).OpenSubProcessScope(
+            Arg.Any<Guid>(), subProcess, Arg.Any<Guid>());
     }
 
     [TestMethod]

@@ -16,6 +16,7 @@ public interface IWorkflowExecutionContext
     ValueTask<IReadOnlyList<IActivityExecutionContext>> GetCompletedActivities();
 
     ValueTask<object?> GetVariable(Guid variablesId, string variableName);
+    ValueTask OpenSubProcessScope(Guid subProcessInstanceId, Activities.SubProcess subProcess, Guid parentVariablesId);
     ValueTask RegisterMessageSubscription(Guid variablesId, string messageDefinitionId, string activityId);
     ValueTask RegisterTimerReminder(Guid hostActivityInstanceId, string timerActivityId, TimeSpan dueTime);
     ValueTask RegisterBoundaryMessageSubscription(Guid variablesId, Guid hostActivityInstanceId, string boundaryActivityId, string messageDefinitionId);
