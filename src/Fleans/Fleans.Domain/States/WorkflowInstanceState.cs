@@ -96,15 +96,7 @@ public class WorkflowInstanceState
     public Guid AddCloneOfVariableState(Guid variableStateId)
     {
         var source = VariableStates.First(v => v.Id == variableStateId);
-        WorkflowVariablesState clonedState;
-        if (source.ParentVariablesId.HasValue)
-        {
-            clonedState = new WorkflowVariablesState(Guid.NewGuid(), Id, source.ParentVariablesId.Value);
-        }
-        else
-        {
-            clonedState = new WorkflowVariablesState(Guid.NewGuid(), Id);
-        }
+        var clonedState = new WorkflowVariablesState(Guid.NewGuid(), Id, source.ParentVariablesId);
         clonedState.Merge(source.Variables);
 
         VariableStates.Add(clonedState);

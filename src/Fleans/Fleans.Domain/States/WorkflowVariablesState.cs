@@ -5,13 +5,7 @@ namespace Fleans.Domain.States;
 [GenerateSerializer]
 public class WorkflowVariablesState
 {
-    public WorkflowVariablesState(Guid id, Guid workflowInstanceId)
-    {
-        Id = id;
-        WorkflowInstanceId = workflowInstanceId;
-    }
-
-    public WorkflowVariablesState(Guid id, Guid workflowInstanceId, Guid parentVariablesId)
+    public WorkflowVariablesState(Guid id, Guid workflowInstanceId, Guid? parentVariablesId = null)
     {
         Id = id;
         WorkflowInstanceId = workflowInstanceId;
