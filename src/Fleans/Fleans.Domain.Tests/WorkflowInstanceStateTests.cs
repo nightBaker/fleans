@@ -271,5 +271,122 @@ namespace Fleans.Domain.Tests
                 state.SetConditionSequenceResult(activityInstanceId, "non-existent", true);
             });
         }
+
+        [TestMethod]
+        public void OpenScope_ShouldAddScope_WithCorrectProperties()
+        {
+            // Arrange
+            var state = new WorkflowInstanceState();
+            var scopeId = Guid.NewGuid();
+            var variablesId = Guid.NewGuid();
+            var spInstanceId = Guid.NewGuid();
+
+            // Act
+            var scope = state.OpenScope(scopeId, null, variablesId, "sp1", spInstanceId);
+
+            // Assert
+            Assert.AreEqual(1, state.Scopes.Count);
+            Assert.AreEqual(scopeId, scope.ScopeId);
+            Assert.IsNull(scope.ParentScopeId);
+            Assert.AreEqual(variablesId, scope.VariablesId);
+            Assert.AreEqual("sp1", scope.SubProcessActivityId);
+            Assert.AreEqual(spInstanceId, scope.SubProcessActivityInstanceId);
+        }
+
+        [TestMethod]
+        public void GetScope_ShouldReturnCorrectScope()
+        {
+            // Arrange
+            var state = new WorkflowInstanceState();
+            var scopeId = Guid.NewGuid();
+            state.OpenScope(scopeId, null, Guid.NewGuid(), "sp1", Guid.NewGuid());
+
+            // Act
+            var found = state.GetScope(scopeId);
+
+            // Assert
+            Assert.IsNotNull(found);
+            Assert.AreEqual(scopeId, found.ScopeId);
+        }
+
+        [TestMethod]
+        public void CloseScope_ShouldRemoveScope()
+        {
+            // Arrange
+            var state = new WorkflowInstanceState();
+            var scopeId = Guid.NewGuid();
+            state.OpenScope(scopeId, null, Guid.NewGuid(), "sp1", Guid.NewGuid());
+
+            // Act
+            state.CloseScope(scopeId);
+
+            // Assert
+            Assert.AreEqual(0, state.Scopes.Count);
+        }
+
+        [TestMethod]
+        public void CancelScope_ShouldDrainChildrenAndRemoveScope()
+        {
+            // Arrange
+            var state = new WorkflowInstanceState();
+            var scopeId = Guid.NewGuid();
+            var scope = state.OpenScope(scopeId, null, Guid.NewGuid(), "sp1", Guid.NewGuid());
+            var child1 = Guid.NewGuid();
+            var child2 = Guid.NewGuid();
+            scope.TrackChild(child1);
+            scope.TrackChild(child2);
+
+            // Act
+            var cancelled = state.CancelScope(scopeId);
+
+            // Assert
+            Assert.HasCount(2, cancelled);
+            Assert.IsTrue(cancelled.Contains(child1));
+            Assert.IsTrue(cancelled.Contains(child2));
+            Assert.AreEqual(0, state.Scopes.Count);
+        }
+
+        [TestMethod]
+        public void CancelScope_ShouldRecursivelyDrainNestedScopes()
+        {
+            // Arrange
+            var state = new WorkflowInstanceState();
+            var outerScopeId = Guid.NewGuid();
+            var innerScopeId = Guid.NewGuid();
+            var outerChild = Guid.NewGuid();
+            var innerChild = Guid.NewGuid();
+
+            var outerScope = state.OpenScope(outerScopeId, null, Guid.NewGuid(), "outer-sp", Guid.NewGuid());
+            outerScope.TrackChild(outerChild);
+
+            var innerScope = state.OpenScope(innerScopeId, outerScopeId, Guid.NewGuid(), "inner-sp", Guid.NewGuid());
+            innerScope.TrackChild(innerChild);
+
+            // Act
+            var cancelled = state.CancelScope(outerScopeId);
+
+            // Assert
+            Assert.HasCount(2, cancelled);
+            Assert.IsTrue(cancelled.Contains(outerChild));
+            Assert.IsTrue(cancelled.Contains(innerChild));
+            Assert.AreEqual(0, state.Scopes.Count);
+        }
+
+        [TestMethod]
+        public void CreateChildVariableScope_ShouldCreateScopeWithParentPointer()
+        {
+            // Arrange
+            var state = new WorkflowInstanceState();
+            var rootVariablesId = Guid.NewGuid();
+            state.StartWith(Guid.NewGuid(), null, new ActivityInstanceEntry(Guid.NewGuid(), "start", Guid.Empty), rootVariablesId);
+
+            // Act
+            var childId = state.CreateChildVariableScope(rootVariablesId);
+
+            // Assert
+            var child = state.GetVariableState(childId);
+            Assert.IsNotNull(child);
+            Assert.AreEqual(rootVariablesId, child.ParentVariablesId);
+        }
     }
 }

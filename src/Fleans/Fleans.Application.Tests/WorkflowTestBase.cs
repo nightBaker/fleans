@@ -1,5 +1,6 @@
 using Fleans.Application;
 using Fleans.Application.Events;
+using Fleans.Application.QueryModels;
 using Fleans.Application.Services;
 using Fleans.Domain;
 using Fleans.Domain.Persistence;
@@ -101,5 +102,20 @@ public abstract class WorkflowTestBase
                     using var db = sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>().CreateDbContext();
                     db.Database.EnsureCreated();
                 });
+    }
+
+    /// <summary>Polls the query service until the workflow is completed or the timeout elapses.</summary>
+    protected async Task<InstanceStateSnapshot?> PollForCompletion(Guid instanceId, int timeoutMs = 10000)
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+        while (DateTime.UtcNow < deadline)
+        {
+            var snapshot = await QueryService.GetStateSnapshot(instanceId);
+            if (snapshot is not null && snapshot.IsCompleted)
+                return snapshot;
+            await Task.Delay(100);
+        }
+
+        return await QueryService.GetStateSnapshot(instanceId);
     }
 }

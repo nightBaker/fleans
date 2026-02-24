@@ -58,19 +58,23 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
     private async Task ExecuteWorkflow()
     {
-        var definition = await GetWorkflowDefinition();
+        var rootDefinition = await GetWorkflowDefinition();
         while (await AnyNotExecuting())
         {
-            foreach (var activityState in await GetNotExecutingNotCompletedActivities())
+            foreach (var entry in await GetNotExecutingNotCompletedEntries())
             {
-                var activityId = await activityState.GetActivityId();
-                var currentActivity = definition.GetActivity(activityId);
+                var activityState = _grainFactory.GetGrain<IActivityInstanceGrain>(entry.ActivityInstanceId);
+                var activityId = entry.ActivityId;
+                var entryDefinition = GetDefinitionForEntry(entry, rootDefinition);
+                var currentActivity = entryDefinition.GetActivity(activityId);
                 SetActivityRequestContext(activityId, activityState);
                 LogExecutingActivity(activityId, currentActivity.GetType().Name);
-                await currentActivity.ExecuteAsync(this, activityState, definition);
+                await currentActivity.ExecuteAsync(this, activityState, entryDefinition);
                 if (currentActivity is IBoundarableActivity boundarable)
                 {
-                    await boundarable.RegisterBoundaryEventsAsync(this, activityState, definition);
+                    // Use the definition that contains this activity so boundary event lookups
+                    // are correctly scoped (root for sub-process, sub-process for inner activities).
+                    await boundarable.RegisterBoundaryEventsAsync(this, activityState, entryDefinition);
                 }
             }
 
@@ -144,9 +148,12 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
     private async Task TransitionToNextActivity()
     {
-        var definition = await GetWorkflowDefinition();
+        var rootDefinition = await GetWorkflowDefinition();
         var newActiveEntries = new List<ActivityInstanceEntry>();
         var completedEntries = new List<ActivityInstanceEntry>();
+        // Track which scope IDs had a child fail without being handled; we must NOT
+        // complete those scopes (they remain stuck until explicit error handling).
+        var scopesWithUnhandledFailure = new HashSet<Guid>();
 
         foreach (var entry in State.GetActiveActivities().ToList())
         {
@@ -158,22 +165,28 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
                 // Failed or cancelled activities don't transition to next activities
                 if (await activityInstance.GetErrorState() is not null)
+                {
+                    // Record scope failure so we don't complete the scope normally
+                    if (entry.ScopeId.HasValue)
+                        scopesWithUnhandledFailure.Add(entry.ScopeId.Value);
                     continue;
+                }
 
                 if (await activityInstance.IsCancelled())
                     continue;
 
-                var currentActivity = definition.GetActivity(entry.ActivityId);
+                var entryDefinition = GetDefinitionForEntry(entry, rootDefinition);
+                var currentActivity = entryDefinition.GetActivity(entry.ActivityId);
 
-                var nextActivities = await currentActivity.GetNextActivities(this, activityInstance, definition);
+                var nextActivities = await currentActivity.GetNextActivities(this, activityInstance, entryDefinition);
 
-                foreach(var nextActivity in nextActivities)
+                foreach (var nextActivity in nextActivities)
                 {
-                    // For join gateways, reuse the existing active entry instead of creating a duplicate
+                    // For join gateways, reuse the existing active entry within the same scope
                     if (nextActivity.IsJoinGateway)
                     {
                         var existingEntry = State.GetActiveActivities()
-                            .FirstOrDefault(e => e.ActivityId == nextActivity.ActivityId);
+                            .FirstOrDefault(e => e.ActivityId == nextActivity.ActivityId && e.ScopeId == entry.ScopeId);
                         if (existingEntry != null)
                         {
                             LogJoinGatewayDeduplication(nextActivity.ActivityId, existingEntry.ActivityInstanceId);
@@ -194,9 +207,24 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
                     await newActivityInstance.SetActivity(nextActivity.ActivityId, nextActivity.GetType().Name);
 
-                    newActiveEntries.Add(new ActivityInstanceEntry(newId, nextActivity.ActivityId, State.Id));
+                    // New activities inherit the scope of their predecessor
+                    newActiveEntries.Add(new ActivityInstanceEntry(newId, nextActivity.ActivityId, State.Id, entry.ScopeId));
                 }
             }
+        }
+
+        // Update scope tracking: untrack completed children, then track newly added ones.
+        // Order matters — do both before checking completion so the net delta is correct.
+        foreach (var completed in completedEntries)
+        {
+            if (completed.ScopeId.HasValue)
+                State.GetScope(completed.ScopeId.Value)?.UntrackChild(completed.ActivityInstanceId);
+        }
+
+        foreach (var newEntry in newActiveEntries)
+        {
+            if (newEntry.ScopeId.HasValue)
+                State.GetScope(newEntry.ScopeId.Value)?.TrackChild(newEntry.ActivityInstanceId);
         }
 
         LogTransition(completedEntries.Count, newActiveEntries.Count);
@@ -204,6 +232,10 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         State.CompleteEntries(completedEntries);
         LogStateAddEntries(newActiveEntries.Count);
         State.AddEntries(newActiveEntries);
+
+        // After all tracking is settled, complete scopes that have no remaining children
+        // but skip scopes that had an unhandled child failure (those remain stuck).
+        await CompleteFinishedScopes(rootDefinition, scopesWithUnhandledFailure);
     }
 
     private async Task CompleteActivityState(string activityId, ExpandoObject variables)
@@ -486,9 +518,41 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
     public ValueTask<ExpandoObject> GetVariables(Guid variablesStateId)
     {
-        var variables = State.GetVariableState(variablesStateId).Variables;
+        return ValueTask.FromResult(GetVariablesMergedChain(variablesStateId));
+    }
 
-        return ValueTask.FromResult(variables);
+    /// <summary>
+    /// Returns a merged ExpandoObject containing all variables visible at the given scope:
+    /// parent scope variables first, then local scope variables override (shadowing).
+    /// Scripts see the complete inherited + local view. Uses an iterative chain walk.
+    /// </summary>
+    private ExpandoObject GetVariablesMergedChain(Guid variablesStateId)
+    {
+        // Collect the chain from innermost to outermost
+        var chain = new List<WorkflowVariablesState>();
+        var currentId = (Guid?)variablesStateId;
+        while (currentId.HasValue)
+        {
+            var state = State.VariableStates.FirstOrDefault(v => v.Id == currentId.Value);
+            if (state is null) break;
+            chain.Add(state);
+            currentId = state.ParentVariablesId;
+        }
+
+        if (chain.Count == 0) return new ExpandoObject();
+        if (chain.Count == 1) return chain[0].Variables;
+
+        // Merge from outermost (root) to innermost (local), so local overrides parent
+        var merged = new ExpandoObject();
+        var mergedDict = (IDictionary<string, object?>)merged;
+
+        for (var i = chain.Count - 1; i >= 0; i--)
+        {
+            foreach (var kvp in (IDictionary<string, object?>)chain[i].Variables)
+                mergedDict[kvp.Key] = kvp.Value;
+        }
+
+        return merged;
     }
 
     // State facade methods — activities access state through these, not directly
@@ -540,43 +604,176 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         return false;
     }
 
-    private async Task<IActivityInstanceGrain[]> GetNotExecutingNotCompletedActivities()
+    private async Task<IReadOnlyList<ActivityInstanceEntry>> GetNotExecutingNotCompletedEntries()
     {
-        var result = new List<IActivityInstanceGrain>();
+        var result = new List<ActivityInstanceEntry>();
         foreach (var entry in State.GetActiveActivities().ToList())
         {
             var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(entry.ActivityInstanceId);
             if (!await activityInstance.IsExecuting() && !await activityInstance.IsCompleted())
-                result.Add(activityInstance);
+                result.Add(entry);
         }
-        return result.ToArray();
+        return result;
     }
 
     private async Task FailActivityWithBoundaryCheck(string activityId, Exception exception)
     {
         await FailActivityState(activityId, exception);
 
-        // Check for boundary error event
-        var definition = await GetWorkflowDefinition();
+        var rootDefinition = await GetWorkflowDefinition();
         var activityEntry = State.GetFirstActive(activityId) ?? State.Entries.Last(e => e.ActivityId == activityId);
         var activityGrain = _grainFactory.GetGrain<IActivityInstanceGrain>(activityEntry.ActivityInstanceId);
         var errorState = await activityGrain.GetErrorState();
 
         if (errorState is not null)
         {
-            var boundaryEvent = definition.Activities
+            // Check for a boundary error event in the activity's own scope
+            var entryDefinition = GetDefinitionForEntry(activityEntry, rootDefinition);
+            var boundaryEvent = entryDefinition.Activities
                 .OfType<BoundaryErrorEvent>()
                 .FirstOrDefault(b => b.AttachedToActivityId == activityId
                     && (b.ErrorCode == null || b.ErrorCode == errorState.Code.ToString()));
 
             if (boundaryEvent is not null)
             {
-                await _boundaryHandler.HandleBoundaryErrorAsync(activityId, boundaryEvent, activityEntry.ActivityInstanceId, definition);
+                await _boundaryHandler.HandleBoundaryErrorAsync(activityId, boundaryEvent, activityEntry.ActivityInstanceId, entryDefinition);
                 return;
+            }
+
+            // If the failed activity is inside a sub-process scope, propagate error upward:
+            // check whether the sub-process itself has a matching boundary error event.
+            if (activityEntry.ScopeId.HasValue)
+            {
+                var scope = State.GetScope(activityEntry.ScopeId.Value);
+                if (scope != null)
+                {
+                    var subProcessBoundaryEvent = rootDefinition.Activities
+                        .OfType<BoundaryErrorEvent>()
+                        .FirstOrDefault(b => b.AttachedToActivityId == scope.SubProcessActivityId
+                            && (b.ErrorCode == null || b.ErrorCode == errorState.Code.ToString()));
+
+                    if (subProcessBoundaryEvent is not null)
+                    {
+                        // Cancel all remaining children in the scope before firing the boundary event
+                        await CancelScopeChildrenAsync(scope);
+                        await _boundaryHandler.HandleBoundaryErrorAsync(
+                            scope.SubProcessActivityId, subProcessBoundaryEvent,
+                            scope.SubProcessActivityInstanceId, rootDefinition);
+                        return;
+                    }
+                }
             }
         }
 
         await ExecuteWorkflow();
+    }
+
+    private async Task CancelScopeChildrenAsync(WorkflowScopeState scope)
+    {
+        var childInstanceIds = State.CancelScope(scope.ScopeId);
+        foreach (var childId in childInstanceIds)
+        {
+            var childEntry = State.GetActiveEntryByInstanceId(childId);
+            if (childEntry is null) continue; // already completed (e.g., failed task)
+            var childInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(childId);
+            // Guard: activity may already be in a completed state (failed/cancelled)
+            if (await childInstance.IsCompleted()) continue;
+            await childInstance.Cancel("Scope cancelled due to error propagation");
+            State.CompleteEntries([childEntry]);
+        }
+
+        LogScopeCancelled(scope.SubProcessActivityId, scope.ScopeId);
+    }
+
+    /// <summary>
+    /// Opens a new sub-process scope: creates a child variable scope, registers the
+    /// scope aggregate, and spawns the sub-process's start event as the first child.
+    /// </summary>
+    public async ValueTask OpenSubProcessScope(Guid subProcessInstanceId, SubProcess subProcess, Guid parentVariablesId)
+    {
+        // Determine parent scope (when sub-process is itself inside another scope)
+        var spEntry = State.GetActiveEntryByInstanceId(subProcessInstanceId);
+        var parentScopeId = spEntry?.ScopeId;
+
+        // Child variable scope: reads fall back to parent, writes stay local (shadowing)
+        var scopeId = Guid.NewGuid();
+        var childVariablesId = State.CreateChildVariableScope(parentVariablesId);
+
+        var scope = State.OpenScope(scopeId, parentScopeId, childVariablesId,
+            subProcess.ActivityId, subProcessInstanceId);
+
+        // Spawn the sub-process's start event as the first tracked child
+        var startActivity = subProcess.Activities.OfType<StartEvent>().FirstOrDefault()
+            ?? throw new InvalidOperationException($"SubProcess '{subProcess.ActivityId}' has no StartEvent.");
+
+        var startInstanceId = Guid.NewGuid();
+        var startInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(startInstanceId);
+        await startInstance.SetActivity(startActivity.ActivityId, startActivity.GetType().Name);
+        await startInstance.SetVariablesId(childVariablesId);
+
+        var startEntry = new ActivityInstanceEntry(startInstanceId, startActivity.ActivityId, State.Id, scopeId);
+        State.AddEntries([startEntry]);
+        scope.TrackChild(startInstanceId);
+
+        LogSubProcessScopeOpened(subProcess.ActivityId, scopeId);
+    }
+
+    /// <summary>
+    /// Marks the sub-process activity instances as complete for all scopes that have
+    /// no remaining active children (O(1) detection via the scope aggregate).
+    /// Scopes with unhandled child failures are skipped — they remain stuck.
+    /// </summary>
+    private async Task CompleteFinishedScopes(IWorkflowDefinition rootDefinition, HashSet<Guid>? failedScopeIds = null)
+    {
+        foreach (var scope in State.Scopes.ToList())
+        {
+            if (!scope.IsComplete) continue;
+
+            // Don't complete a scope that had an unhandled child failure
+            if (failedScopeIds != null && failedScopeIds.Contains(scope.ScopeId)) continue;
+
+            LogSubProcessScopeCompleted(scope.SubProcessActivityId, scope.ScopeId);
+
+            // Mark the sub-process activity instance as complete so the next
+            // TransitionToNextActivity pass will advance the parent workflow.
+            var spInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(scope.SubProcessActivityInstanceId);
+            await spInstance.Complete();
+
+            State.CloseScope(scope.ScopeId);
+        }
+    }
+
+    // ── Scope-aware definition resolution ────────────────────────────────────
+
+    /// <summary>
+    /// Returns the <see cref="IWorkflowDefinition"/> that owns the activity in
+    /// <paramref name="entry"/>. Root-level entries use the root definition;
+    /// scoped entries resolve through the scope tree iteratively.
+    /// </summary>
+    private IWorkflowDefinition GetDefinitionForEntry(ActivityInstanceEntry? entry, IWorkflowDefinition rootDefinition)
+        => GetDefinitionForScope(entry?.ScopeId, rootDefinition);
+
+    private IWorkflowDefinition GetDefinitionForScope(Guid? scopeId, IWorkflowDefinition rootDefinition)
+    {
+        if (!scopeId.HasValue) return rootDefinition;
+
+        // Build the scope chain from innermost to outermost (skip root-level scopes)
+        var chain = new List<WorkflowScopeState>();
+        var current = scopeId;
+        while (current.HasValue)
+        {
+            var scope = State.GetScope(current.Value);
+            if (scope is null) break;
+            chain.Add(scope);
+            current = scope.ParentScopeId;
+        }
+
+        // Walk from outermost to innermost to resolve the definition
+        var definition = rootDefinition;
+        for (var i = chain.Count - 1; i >= 0; i--)
+            definition = (SubProcess)definition.GetActivity(chain[i].SubProcessActivityId);
+
+        return definition;
     }
 
     private static ExpandoObject BuildChildInputVariables(CallActivity callActivity, ExpandoObject parentVariables)
@@ -648,9 +845,27 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
     public ValueTask<object?> GetVariable(Guid variablesId, string variableName)
     {
-        var variableState = State.GetVariableState(variablesId);
-        var dict = (IDictionary<string, object?>)variableState.Variables;
-        return ValueTask.FromResult(dict.TryGetValue(variableName, out var value) ? value : null);
+        return ValueTask.FromResult(GetVariableWalkingChain(variablesId, variableName));
+    }
+
+    /// <summary>
+    /// Reads a variable by walking up the variable scope chain iteratively.
+    /// Local scope is checked first; unresolved reads fall back to the parent scope.
+    /// </summary>
+    private object? GetVariableWalkingChain(Guid variablesId, string variableName)
+    {
+        var currentId = (Guid?)variablesId;
+        while (currentId.HasValue)
+        {
+            var variableState = State.VariableStates.FirstOrDefault(v => v.Id == currentId.Value);
+            if (variableState is null) return null;
+
+            var dict = (IDictionary<string, object?>)variableState.Variables;
+            if (dict.TryGetValue(variableName, out var value)) return value;
+
+            currentId = variableState.ParentVariablesId;
+        }
+        return null;
     }
 
     public async ValueTask RegisterMessageSubscription(Guid variablesId, string messageDefinitionId, string activityId)
@@ -958,4 +1173,16 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
     [LoggerMessage(EventId = 1033, Level = LogLevel.Information,
         Message = "Event-based gateway: cancelled sibling {CancelledActivityId} because {WinningActivityId} completed first")]
     private partial void LogEventBasedGatewaySiblingCancelled(string cancelledActivityId, string winningActivityId);
+
+    [LoggerMessage(EventId = 1034, Level = LogLevel.Information,
+        Message = "SubProcess scope opened: subProcessId={SubProcessActivityId}, scopeId={ScopeId}")]
+    private partial void LogSubProcessScopeOpened(string subProcessActivityId, Guid scopeId);
+
+    [LoggerMessage(EventId = 1035, Level = LogLevel.Information,
+        Message = "SubProcess scope completed: subProcessId={SubProcessActivityId}, scopeId={ScopeId}")]
+    private partial void LogSubProcessScopeCompleted(string subProcessActivityId, Guid scopeId);
+
+    [LoggerMessage(EventId = 1036, Level = LogLevel.Information,
+        Message = "Scope cancelled: subProcessId={SubProcessActivityId}, scopeId={ScopeId}")]
+    private partial void LogScopeCancelled(string subProcessActivityId, Guid scopeId);
 }

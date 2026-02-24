@@ -18,6 +18,12 @@ namespace Fleans.Domain
         List<MessageDefinition> Messages { get; }
         List<SignalDefinition> Signals { get; }
         Activity GetActivity(string activityId);
+
+        /// <summary>
+        /// True for the root process definition; false for embedded sub-process scopes.
+        /// Used by EndEvent to decide whether to complete the whole workflow instance.
+        /// </summary>
+        bool IsRootProcess => true;
     }
    
     [GenerateSerializer]

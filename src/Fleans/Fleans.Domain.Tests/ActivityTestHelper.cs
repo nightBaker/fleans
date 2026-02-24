@@ -29,6 +29,8 @@ internal static class ActivityTestHelper
             .Returns(ValueTask.CompletedTask);
         context.RegisterTimerReminder(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<TimeSpan>())
             .Returns(ValueTask.CompletedTask);
+        context.OpenSubProcessScope(Arg.Any<Guid>(), Arg.Any<Activities.SubProcess>(), Arg.Any<Guid>())
+            .Returns(ValueTask.CompletedTask);
         return context;
     }
 

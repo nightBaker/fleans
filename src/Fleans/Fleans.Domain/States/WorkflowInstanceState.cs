@@ -44,6 +44,10 @@ public class WorkflowInstanceState
     [Id(12)]
     public string? ParentActivityId { get; private set; }
 
+    /// <summary>Active sub-process scopes, keyed by ScopeId.</summary>
+    [Id(13)]
+    public List<WorkflowScopeState> Scopes { get; private set; } = new();
+
     public IEnumerable<ActivityInstanceEntry> GetActiveActivities()
         => Entries.Where(e => !e.IsCompleted);
 
@@ -52,6 +56,9 @@ public class WorkflowInstanceState
 
     public ActivityInstanceEntry? GetFirstActive(string activityId)
         => Entries.FirstOrDefault(a => a.ActivityId == activityId && !a.IsCompleted);
+
+    public ActivityInstanceEntry? GetActiveEntryByInstanceId(Guid activityInstanceId)
+        => Entries.FirstOrDefault(e => e.ActivityInstanceId == activityInstanceId && !e.IsCompleted);
 
     public WorkflowVariablesState GetVariableState(Guid id)
         => VariableStates.FirstOrDefault(v => v.Id == id)
@@ -79,7 +86,7 @@ public class WorkflowInstanceState
     {
         if (IsStarted)
             throw new InvalidOperationException("Workflow is already started");
-        
+
         ExecutionStartedAt = DateTimeOffset.UtcNow;
         IsStarted = true;
     }
@@ -101,6 +108,17 @@ public class WorkflowInstanceState
 
         VariableStates.Add(clonedState);
         return clonedState.Id;
+    }
+
+    /// <summary>
+    /// Creates a new child variable scope whose reads fall back to the parent scope.
+    /// Writes in the child scope shadow the parent (local scope only).
+    /// </summary>
+    public Guid CreateChildVariableScope(Guid parentVariablesId)
+    {
+        var childState = new WorkflowVariablesState(Guid.NewGuid(), Id, parentVariablesId);
+        VariableStates.Add(childState);
+        return childState.Id;
     }
 
     public void AddConditionSequenceStates(Guid activityInstanceId, string[] sequenceFlowIds)
@@ -134,5 +152,62 @@ public class WorkflowInstanceState
     public void MergeState(Guid variablesId, ExpandoObject variables)
     {
         GetVariableState(variablesId).Merge(variables);
+    }
+
+    // ── Scope management ─────────────────────────────────────────────────────
+
+    /// <summary>Opens a new sub-process scope and returns it.</summary>
+    public WorkflowScopeState OpenScope(
+        Guid scopeId,
+        Guid? parentScopeId,
+        Guid variablesId,
+        string subProcessActivityId,
+        Guid subProcessActivityInstanceId)
+    {
+        var scope = new WorkflowScopeState(
+            scopeId, parentScopeId, variablesId,
+            subProcessActivityId, subProcessActivityInstanceId);
+        Scopes.Add(scope);
+        return scope;
+    }
+
+    /// <summary>Returns the scope with the given id, or null if not found.</summary>
+    public WorkflowScopeState? GetScope(Guid scopeId)
+        => Scopes.FirstOrDefault(s => s.ScopeId == scopeId);
+
+    /// <summary>Returns the scope created by the given sub-process activity instance, or null.</summary>
+    public WorkflowScopeState? GetScopeBySubProcessInstance(Guid subProcessActivityInstanceId)
+        => Scopes.FirstOrDefault(s => s.SubProcessActivityInstanceId == subProcessActivityInstanceId);
+
+    /// <summary>Closes the scope on normal completion (no cancellation).</summary>
+    public void CloseScope(Guid scopeId)
+        => Scopes.RemoveAll(s => s.ScopeId == scopeId);
+
+    /// <summary>
+    /// Cancels the scope: drains all active children (including from nested scopes) and
+    /// removes the scope. Returns the collected child instance ids so the caller can
+    /// cancel the activity grains.
+    /// </summary>
+    public IReadOnlyList<Guid> CancelScope(Guid scopeId)
+    {
+        var scope = GetScope(scopeId);
+        if (scope is null) return [];
+
+        var allChildren = new List<Guid>();
+        CollectAndRemoveScope(scope, allChildren);
+        return allChildren;
+    }
+
+    private void CollectAndRemoveScope(WorkflowScopeState scope, List<Guid> collected)
+    {
+        // Recursively drain any nested scopes first
+        foreach (var nested in Scopes.Where(s => s.ParentScopeId == scope.ScopeId).ToList())
+        {
+            CollectAndRemoveScope(nested, collected);
+            Scopes.Remove(nested);
+        }
+
+        collected.AddRange(scope.DrainActiveChildren());
+        Scopes.Remove(scope);
     }
 }
