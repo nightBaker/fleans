@@ -98,9 +98,10 @@ internal static class FleanModelConfiguration
                     v => JsonConvert.DeserializeObject<List<WorkflowScopeState>>(v, ScopesJsonSettings)
                          ?? new List<WorkflowScopeState>())
                 .Metadata.SetValueComparer(new ValueComparer<List<WorkflowScopeState>>(
-                    (a, b) => JsonConvert.SerializeObject(a, ScopesJsonSettings) ==
-                              JsonConvert.SerializeObject(b, ScopesJsonSettings),
-                    v => JsonConvert.SerializeObject(v, ScopesJsonSettings).GetHashCode(),
+                    // Lightweight comparison: same count and same scope IDs in order
+                    (a, b) => a != null && b != null && a.Count == b.Count
+                              && a.Select(s => s.ScopeId).SequenceEqual(b.Select(s => s.ScopeId)),
+                    v => v.Aggregate(0, (h, s) => HashCode.Combine(h, s.ScopeId)),
                     v => JsonConvert.DeserializeObject<List<WorkflowScopeState>>(
                         JsonConvert.SerializeObject(v, ScopesJsonSettings), ScopesJsonSettings)!));
         });

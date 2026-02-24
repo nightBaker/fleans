@@ -524,26 +524,33 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
     /// <summary>
     /// Returns a merged ExpandoObject containing all variables visible at the given scope:
     /// parent scope variables first, then local scope variables override (shadowing).
-    /// Scripts see the complete inherited + local view.
+    /// Scripts see the complete inherited + local view. Uses an iterative chain walk.
     /// </summary>
     private ExpandoObject GetVariablesMergedChain(Guid variablesStateId)
     {
-        var variableState = State.VariableStates.FirstOrDefault(v => v.Id == variablesStateId);
-        if (variableState is null) return new ExpandoObject();
+        // Collect the chain from innermost to outermost
+        var chain = new List<WorkflowVariablesState>();
+        var currentId = (Guid?)variablesStateId;
+        while (currentId.HasValue)
+        {
+            var state = State.VariableStates.FirstOrDefault(v => v.Id == currentId.Value);
+            if (state is null) break;
+            chain.Add(state);
+            currentId = state.ParentVariablesId;
+        }
 
-        if (!variableState.ParentVariablesId.HasValue)
-            return variableState.Variables;
+        if (chain.Count == 0) return new ExpandoObject();
+        if (chain.Count == 1) return chain[0].Variables;
 
-        // Build merged view: parent first, then local overrides (shadowing semantics)
+        // Merge from outermost (root) to innermost (local), so local overrides parent
         var merged = new ExpandoObject();
         var mergedDict = (IDictionary<string, object?>)merged;
 
-        var parentMerged = GetVariablesMergedChain(variableState.ParentVariablesId.Value);
-        foreach (var kvp in (IDictionary<string, object?>)parentMerged)
-            mergedDict[kvp.Key] = kvp.Value;
-
-        foreach (var kvp in (IDictionary<string, object?>)variableState.Variables)
-            mergedDict[kvp.Key] = kvp.Value;
+        for (var i = chain.Count - 1; i >= 0; i--)
+        {
+            foreach (var kvp in (IDictionary<string, object?>)chain[i].Variables)
+                mergedDict[kvp.Key] = kvp.Value;
+        }
 
         return merged;
     }
@@ -741,7 +748,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
     /// <summary>
     /// Returns the <see cref="IWorkflowDefinition"/> that owns the activity in
     /// <paramref name="entry"/>. Root-level entries use the root definition;
-    /// scoped entries resolve through the scope tree recursively.
+    /// scoped entries resolve through the scope tree iteratively.
     /// </summary>
     private IWorkflowDefinition GetDefinitionForEntry(ActivityInstanceEntry? entry, IWorkflowDefinition rootDefinition)
         => GetDefinitionForScope(entry?.ScopeId, rootDefinition);
@@ -750,12 +757,23 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
     {
         if (!scopeId.HasValue) return rootDefinition;
 
-        var scope = State.GetScope(scopeId.Value);
-        if (scope is null) return rootDefinition;
+        // Build the scope chain from innermost to outermost (skip root-level scopes)
+        var chain = new List<WorkflowScopeState>();
+        var current = scopeId;
+        while (current.HasValue)
+        {
+            var scope = State.GetScope(current.Value);
+            if (scope is null) break;
+            chain.Add(scope);
+            current = scope.ParentScopeId;
+        }
 
-        // Walk up the scope tree to reach the definition that contains the sub-process activity
-        var parentDefinition = GetDefinitionForScope(scope.ParentScopeId, rootDefinition);
-        return (SubProcess)parentDefinition.GetActivity(scope.SubProcessActivityId);
+        // Walk from outermost to innermost to resolve the definition
+        var definition = rootDefinition;
+        for (var i = chain.Count - 1; i >= 0; i--)
+            definition = (SubProcess)definition.GetActivity(chain[i].SubProcessActivityId);
+
+        return definition;
     }
 
     private static ExpandoObject BuildChildInputVariables(CallActivity callActivity, ExpandoObject parentVariables)
@@ -831,21 +849,22 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
     }
 
     /// <summary>
-    /// Reads a variable by walking up the variable scope chain.
+    /// Reads a variable by walking up the variable scope chain iteratively.
     /// Local scope is checked first; unresolved reads fall back to the parent scope.
     /// </summary>
     private object? GetVariableWalkingChain(Guid variablesId, string variableName)
     {
-        var variableState = State.VariableStates.FirstOrDefault(v => v.Id == variablesId);
-        if (variableState is null) return null;
+        var currentId = (Guid?)variablesId;
+        while (currentId.HasValue)
+        {
+            var variableState = State.VariableStates.FirstOrDefault(v => v.Id == currentId.Value);
+            if (variableState is null) return null;
 
-        var dict = (IDictionary<string, object?>)variableState.Variables;
-        if (dict.TryGetValue(variableName, out var value)) return value;
+            var dict = (IDictionary<string, object?>)variableState.Variables;
+            if (dict.TryGetValue(variableName, out var value)) return value;
 
-        // Not found locally — recurse up to the parent scope
-        if (variableState.ParentVariablesId.HasValue)
-            return GetVariableWalkingChain(variableState.ParentVariablesId.Value, variableName);
-
+            currentId = variableState.ParentVariablesId;
+        }
         return null;
     }
 
