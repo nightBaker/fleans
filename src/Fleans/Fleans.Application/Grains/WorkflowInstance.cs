@@ -340,13 +340,14 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
     private async Task CancelEventBasedGatewaySiblings(string completedActivityId, IWorkflowDefinition definition)
     {
         // Check if this activity is after an Event-Based Gateway
-        var gatewayFlow = definition.SequenceFlows
+        var activityScope = definition.FindScopeForActivity(completedActivityId) ?? definition;
+        var gatewayFlow = activityScope.SequenceFlows
             .Where(sf => sf.Target.ActivityId == completedActivityId)
             .FirstOrDefault(sf => sf.Source is EventBasedGateway);
         if (gatewayFlow?.Source is not EventBasedGateway gateway) return;
 
         // Find all sibling catch events (other outgoing flows from the same gateway)
-        var siblingActivityIds = definition.SequenceFlows
+        var siblingActivityIds = activityScope.SequenceFlows
             .Where(sf => sf.Source == gateway && sf.Target.ActivityId != completedActivityId)
             .Select(sf => sf.Target.ActivityId)
             .ToHashSet();

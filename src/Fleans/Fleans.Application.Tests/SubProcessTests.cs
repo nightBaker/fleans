@@ -392,4 +392,146 @@ public class SubProcessTests : WorkflowTestBase
         var retrievedValue = await workflowInstance.GetVariable(innerTaskSnapshot.VariablesStateId, "rootColor");
         Assert.AreEqual("red", retrievedValue);
     }
+
+    [TestMethod]
+    public async Task SubProcess_EventBasedGateway_TimerWins_ShouldCancelSiblingTimer()
+    {
+        // Arrange: start -> subProcess(sub_start -> EBG -> [timerA(1h), timerB(2h)] -> sub_end) -> end
+        // When timerA fires, timerB (the sibling inside the sub-process scope) should be cancelled.
+        var sub_start = new StartEvent("sub_start");
+        var ebg = new EventBasedGateway("sub_ebg");
+        var timerA = new TimerIntermediateCatchEvent("sub_timerA",
+            new TimerDefinition(TimerType.Duration, "PT1H"));
+        var timerB = new TimerIntermediateCatchEvent("sub_timerB",
+            new TimerDefinition(TimerType.Duration, "PT2H"));
+        var sub_endA = new EndEvent("sub_endA");
+        var sub_endB = new EndEvent("sub_endB");
+        var subProcess = new SubProcess("sub1")
+        {
+            Activities = [sub_start, ebg, timerA, timerB, sub_endA, sub_endB],
+            SequenceFlows =
+            [
+                new SequenceFlow("sf1", sub_start, ebg),
+                new SequenceFlow("sf2", ebg, timerA),
+                new SequenceFlow("sf3", ebg, timerB),
+                new SequenceFlow("sf4", timerA, sub_endA),
+                new SequenceFlow("sf5", timerB, sub_endB)
+            ]
+        };
+        var start = new StartEvent("start");
+        var end = new EndEvent("end");
+
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "sub-ebg-timer-wins",
+            Activities = [start, subProcess, end],
+            SequenceFlows =
+            [
+                new SequenceFlow("f1", start, subProcess),
+                new SequenceFlow("f2", subProcess, end)
+            ]
+        };
+
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await workflowInstance.SetWorkflow(workflow);
+        await workflowInstance.StartWorkflow();
+
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsFalse(snapshot!.IsCompleted);
+        Assert.IsTrue(snapshot.ActiveActivities.Any(a => a.ActivityId == "sub_timerA"),
+            "TimerA should be active inside sub-process");
+        Assert.IsTrue(snapshot.ActiveActivities.Any(a => a.ActivityId == "sub_timerB"),
+            "TimerB should be active inside sub-process");
+
+        // Act — timerA fires (wins the race)
+        var timerAEntry = snapshot.ActiveActivities.First(a => a.ActivityId == "sub_timerA");
+        await workflowInstance.HandleTimerFired("sub_timerA", timerAEntry.ActivityInstanceId);
+
+        var finalSnapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsTrue(finalSnapshot!.IsCompleted, "Workflow should complete after timerA");
+
+        // TimerB sibling inside sub-process should be cancelled
+        var timerBActivity = finalSnapshot.CompletedActivities.FirstOrDefault(a => a.ActivityId == "sub_timerB");
+        Assert.IsNotNull(timerBActivity, "TimerB should be in completed list");
+        Assert.IsTrue(timerBActivity.IsCancelled,
+            "TimerB should be cancelled when sibling timerA wins inside sub-process");
+
+        // TimerA should NOT be cancelled
+        var timerAActivity = finalSnapshot.CompletedActivities.FirstOrDefault(a => a.ActivityId == "sub_timerA");
+        Assert.IsNotNull(timerAActivity, "TimerA should be in completed list");
+        Assert.IsFalse(timerAActivity.IsCancelled, "TimerA should NOT be cancelled");
+
+        Assert.IsTrue(finalSnapshot.CompletedActivities.Any(a => a.ActivityId == "end"),
+            "End event should be reached");
+    }
+
+    [TestMethod]
+    public async Task SubProcess_BoundaryTimerOnChildTask_CompletesNormally_ShouldNotInterruptWorkflow()
+    {
+        // Arrange: start -> subProcess(sub_start -> sub_task[+bt1(PT1H)] -> sub_end) -> end
+        // The boundary timer is on a task *inside* the sub-process.
+        // When the task completes normally, the timer should be unregistered (scope-aware lookup).
+        // If not unregistered, a stale timer fire would be a no-op but the timer grain keeps firing.
+        var sub_start = new StartEvent("sub_start");
+        var sub_task = new TaskActivity("sub_task");
+        var sub_end = new EndEvent("sub_end");
+        var boundaryTimer = new BoundaryTimerEvent("sub_bt1", "sub_task",
+            new TimerDefinition(TimerType.Duration, "PT1H"));
+        var sub_endBoundary = new EndEvent("sub_endBoundary");
+
+        var subProcess = new SubProcess("sub1")
+        {
+            Activities = [sub_start, sub_task, boundaryTimer, sub_end, sub_endBoundary],
+            SequenceFlows =
+            [
+                new SequenceFlow("sf1", sub_start, sub_task),
+                new SequenceFlow("sf2", sub_task, sub_end),
+                new SequenceFlow("sf3", boundaryTimer, sub_endBoundary)
+            ]
+        };
+        var start = new StartEvent("start");
+        var end = new EndEvent("end");
+
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "sub-child-task-boundary-timer",
+            Activities = [start, subProcess, end],
+            SequenceFlows =
+            [
+                new SequenceFlow("f1", start, subProcess),
+                new SequenceFlow("f2", subProcess, end)
+            ]
+        };
+
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await workflowInstance.SetWorkflow(workflow);
+        await workflowInstance.StartWorkflow();
+
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsFalse(snapshot!.IsCompleted);
+        Assert.IsTrue(snapshot.ActiveActivities.Any(a => a.ActivityId == "sub_task"));
+
+        // Record the sub_task instance ID for boundary timer simulation
+        var subTaskEntry = snapshot.ActiveActivities.First(a => a.ActivityId == "sub_task");
+
+        // Act — complete sub_task normally (not via boundary timer)
+        await workflowInstance.CompleteActivity("sub_task", new ExpandoObject());
+
+        var finalSnapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsTrue(finalSnapshot!.IsCompleted, "Workflow should complete via normal path");
+        Assert.IsTrue(finalSnapshot.CompletedActivities.Any(a => a.ActivityId == "end"),
+            "Normal end should be reached");
+        Assert.IsFalse(finalSnapshot.CompletedActivities.Any(a => a.ActivityId == "sub_endBoundary"),
+            "Boundary path should NOT be taken");
+
+        // Simulate stale boundary timer firing — it should be a no-op (activity already completed)
+        await workflowInstance.HandleTimerFired("sub_bt1", subTaskEntry.ActivityInstanceId);
+
+        var afterStaleSnapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsTrue(afterStaleSnapshot!.IsCompleted, "Workflow should still be completed after stale timer");
+        Assert.IsFalse(afterStaleSnapshot.CompletedActivities.Any(a => a.ActivityId == "sub_endBoundary"),
+            "Boundary path should NOT be taken even after stale timer fire");
+    }
 }

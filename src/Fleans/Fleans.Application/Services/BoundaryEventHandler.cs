@@ -119,7 +119,8 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
 
     public async Task UnregisterBoundaryTimerRemindersAsync(string activityId, Guid hostActivityInstanceId, IWorkflowDefinition definition)
     {
-        foreach (var boundaryTimer in definition.Activities.OfType<BoundaryTimerEvent>()
+        var scopeActivities = (definition.FindScopeForActivity(activityId) ?? definition).Activities;
+        foreach (var boundaryTimer in scopeActivities.OfType<BoundaryTimerEvent>()
             .Where(bt => bt.AttachedToActivityId == activityId))
         {
             var callbackGrain = _accessor.GrainFactory.GetGrain<ITimerCallbackGrain>(
@@ -131,7 +132,8 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
 
     public async Task UnsubscribeBoundaryMessageSubscriptionsAsync(string activityId, Guid variablesId, IWorkflowDefinition definition, string? skipMessageName = null)
     {
-        foreach (var boundaryMsg in definition.Activities.OfType<MessageBoundaryEvent>()
+        var scopeActivities = (definition.FindScopeForActivity(activityId) ?? definition).Activities;
+        foreach (var boundaryMsg in scopeActivities.OfType<MessageBoundaryEvent>()
             .Where(bm => bm.AttachedToActivityId == activityId))
         {
             var messageDef = definition.Messages.FirstOrDefault(m => m.Id == boundaryMsg.MessageDefinitionId);
@@ -148,7 +150,8 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
 
     public async Task UnsubscribeBoundarySignalSubscriptionsAsync(string activityId, IWorkflowDefinition definition, string? skipSignalName = null)
     {
-        foreach (var boundarySignal in definition.Activities.OfType<SignalBoundaryEvent>()
+        var scopeActivities = (definition.FindScopeForActivity(activityId) ?? definition).Activities;
+        foreach (var boundarySignal in scopeActivities.OfType<SignalBoundaryEvent>()
             .Where(bs => bs.AttachedToActivityId == activityId))
         {
             var signalDef = definition.Signals.FirstOrDefault(s => s.Id == boundarySignal.SignalDefinitionId);

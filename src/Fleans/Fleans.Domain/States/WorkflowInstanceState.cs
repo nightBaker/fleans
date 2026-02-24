@@ -96,6 +96,8 @@ public class WorkflowInstanceState
     public Guid AddCloneOfVariableState(Guid variableStateId)
     {
         var source = VariableStates.First(v => v.Id == variableStateId);
+        // Preserve ParentVariablesId so the clone continues to walk up the scope chain
+        // (e.g., a parallel fork inside a sub-process still resolves parent-scope variables).
         var clonedState = new WorkflowVariablesState(Guid.NewGuid(), Id, source.ParentVariablesId);
         clonedState.Merge(source.Variables);
 
