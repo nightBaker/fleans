@@ -18,6 +18,39 @@ namespace Fleans.Domain
         List<MessageDefinition> Messages { get; }
         List<SignalDefinition> Signals { get; }
         Activity GetActivity(string activityId);
+
+        /// <summary>
+        /// Recursively searches this definition and nested SubProcess scopes
+        /// for the scope that directly contains the given activity.
+        /// Returns null if not found.
+        /// </summary>
+        IWorkflowDefinition? FindScopeForActivity(string activityId)
+        {
+            if (Activities.Any(a => a.ActivityId == activityId))
+                return this;
+
+            foreach (var subProcess in Activities.OfType<SubProcess>())
+            {
+                var result = ((IWorkflowDefinition)subProcess).FindScopeForActivity(activityId);
+                if (result is not null)
+                    return result;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Same as <see cref="FindScopeForActivity"/> but throws if the activity is not found.
+        /// </summary>
+        IWorkflowDefinition GetScopeForActivity(string activityId)
+            => FindScopeForActivity(activityId)
+                ?? throw new InvalidOperationException($"Activity '{activityId}' not found in any definition scope");
+
+        /// <summary>
+        /// Finds the activity by searching all scopes recursively.
+        /// </summary>
+        Activity GetActivityAcrossScopes(string activityId)
+            => GetScopeForActivity(activityId).GetActivity(activityId);
     }
    
     [GenerateSerializer]
