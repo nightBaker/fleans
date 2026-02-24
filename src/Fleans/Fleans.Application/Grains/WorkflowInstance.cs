@@ -266,7 +266,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
                 await activityInstance.Complete();
                 LogSubProcessCompleted(entry.ActivityId);
 
-                var parentDefinition = GetParentDefinition(entry.ActivityId, definition);
+                var parentDefinition = GetDefinitionForActivity(entry.ActivityId, definition);
                 var nextActivities = await activity.GetNextActivities(this, activityInstance, parentDefinition);
 
                 var sourceVariablesId = await activityInstance.GetVariablesStateId();
@@ -357,7 +357,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
             if (entry is null) continue;
 
             var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(entry.ActivityInstanceId);
-            var siblingActivity = definition.GetActivity(siblingId);
+            var siblingActivity = GetDefinitionForActivity(siblingId, definition).GetActivity(siblingId);
 
             // Unsubscribe based on event type
             switch (siblingActivity)
@@ -481,7 +481,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         LogChildWorkflowCompleted(parentActivityId);
 
         var definition = await GetWorkflowDefinition();
-        var callActivity = definition.GetActivity(parentActivityId) as CallActivity
+        var callActivity = GetDefinitionForActivity(parentActivityId, definition).GetActivity(parentActivityId) as CallActivity
             ?? throw new InvalidOperationException($"Activity '{parentActivityId}' is not a CallActivity");
 
         var mappedOutput = BuildParentOutputVariables(callActivity, childVariables);
@@ -514,7 +514,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(entry.ActivityInstanceId);
 
         var definition = await GetWorkflowDefinition();
-        var gateway = definition.GetActivity(activityId) as ConditionalGateway
+        var gateway = GetDefinitionForActivity(activityId, definition).GetActivity(activityId) as ConditionalGateway
             ?? throw new InvalidOperationException("Activity is not a conditional gateway");
 
         bool isDecisionMade;
@@ -605,25 +605,6 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
     private static IWorkflowDefinition GetDefinitionForActivity(string activityId, IWorkflowDefinition rootDefinition)
         => FindDefinitionForActivity(activityId, rootDefinition)
             ?? throw new InvalidOperationException($"Activity '{activityId}' not found in any definition scope");
-
-    private static IWorkflowDefinition? FindParentDefinition(string activityId, IWorkflowDefinition definition)
-    {
-        if (definition.Activities.Any(a => a.ActivityId == activityId))
-            return definition;
-
-        foreach (var subProcess in definition.Activities.OfType<SubProcess>())
-        {
-            var result = FindParentDefinition(activityId, subProcess);
-            if (result is not null)
-                return result;
-        }
-
-        return null;
-    }
-
-    private static IWorkflowDefinition GetParentDefinition(string activityId, IWorkflowDefinition rootDefinition)
-        => FindParentDefinition(activityId, rootDefinition)
-            ?? throw new InvalidOperationException($"Parent definition not found for activity '{activityId}'");
 
     public ValueTask<ExpandoObject> GetVariables(Guid variablesStateId)
     {
@@ -743,7 +724,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
             while (currentScopeId.HasValue)
             {
                 var scopeEntry = State.Entries.First(e => e.ActivityInstanceId == currentScopeId.Value);
-                var scopeParentDef = GetParentDefinition(scopeEntry.ActivityId, definition);
+                var scopeParentDef = GetDefinitionForActivity(scopeEntry.ActivityId, definition);
                 var scopeErrorState = await activityGrain.GetErrorState();
 
                 var subProcessBoundary = scopeParentDef.Activities
@@ -955,7 +936,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         using var scope = BeginWorkflowScope();
 
         var definition = await GetWorkflowDefinition();
-        var boundaryMessage = definition.GetActivity(boundaryActivityId) as MessageBoundaryEvent
+        var boundaryMessage = GetDefinitionForActivity(boundaryActivityId, definition).GetActivity(boundaryActivityId) as MessageBoundaryEvent
             ?? throw new InvalidOperationException($"Activity '{boundaryActivityId}' is not a MessageBoundaryEvent");
 
         await _boundaryHandler.HandleBoundaryMessageFiredAsync(boundaryMessage, hostActivityInstanceId, definition);
@@ -1039,7 +1020,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         using var scope = BeginWorkflowScope();
 
         var definition = await GetWorkflowDefinition();
-        var boundarySignal = definition.GetActivity(boundaryActivityId) as SignalBoundaryEvent
+        var boundarySignal = GetDefinitionForActivity(boundaryActivityId, definition).GetActivity(boundaryActivityId) as SignalBoundaryEvent
             ?? throw new InvalidOperationException($"Activity '{boundaryActivityId}' is not a SignalBoundaryEvent");
 
         await _boundaryHandler.HandleBoundarySignalFiredAsync(boundarySignal, hostActivityInstanceId, definition);
