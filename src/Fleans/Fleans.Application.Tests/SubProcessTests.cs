@@ -329,4 +329,67 @@ public class SubProcessTests : WorkflowTestBase
         Assert.IsFalse(finalSnapshot.CompletedActivities.Any(a => a.ActivityId == "end"),
             "Should NOT follow normal path");
     }
+
+    [TestMethod]
+    public async Task SubProcess_NestedSubProcess_ShouldInheritVariablesAcrossThreeLevels()
+    {
+        // Arrange: start -> task1 -> outer_sub(outer_start -> inner_sub(inner_start -> inner_task -> inner_end) -> outer_end) -> end
+        var innerStart = new StartEvent("inner_start");
+        var innerTask = new TaskActivity("inner_task");
+        var innerEnd = new EndEvent("inner_end");
+        var innerSub = new SubProcess("inner_sub")
+        {
+            Activities = [innerStart, innerTask, innerEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("isf1", innerStart, innerTask),
+                new SequenceFlow("isf2", innerTask, innerEnd)
+            ]
+        };
+
+        var outerStart = new StartEvent("outer_start");
+        var outerEnd = new EndEvent("outer_end");
+        var outerSub = new SubProcess("outer_sub")
+        {
+            Activities = [outerStart, innerSub, outerEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("osf1", outerStart, innerSub),
+                new SequenceFlow("osf2", innerSub, outerEnd)
+            ]
+        };
+
+        var start = new StartEvent("start");
+        var task1 = new TaskActivity("task1");
+        var end = new EndEvent("end");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "nested-var-test",
+            Activities = [start, task1, outerSub, end],
+            SequenceFlows =
+            [
+                new SequenceFlow("f1", start, task1),
+                new SequenceFlow("f2", task1, outerSub),
+                new SequenceFlow("f3", outerSub, end)
+            ]
+        };
+
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await workflowInstance.SetWorkflow(workflow);
+        await workflowInstance.StartWorkflow();
+
+        // Act: complete task1 with a variable
+        dynamic vars = new ExpandoObject();
+        vars.rootColor = "red";
+        await workflowInstance.CompleteActivity("task1", vars);
+
+        // Assert: inner_task should be active, and rootColor should be accessible
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        var innerTaskSnapshot = snapshot!.ActiveActivities.First(a => a.ActivityId == "inner_task");
+
+        // Walk up from innermost scope should find root variable
+        var retrievedValue = await workflowInstance.GetVariable(innerTaskSnapshot.VariablesStateId, "rootColor");
+        Assert.AreEqual("red", retrievedValue);
+    }
 }
