@@ -171,6 +171,24 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
     private Task HandleBoundaryTimerFired(BoundaryTimerEvent boundaryTimer, Guid hostActivityInstanceId)
         => _boundaryHandler.HandleBoundaryTimerFiredAsync(boundaryTimer, hostActivityInstanceId, _workflowDefinition!);
 
+    private async Task<ActivityInstanceEntry> CreateNextActivityEntry(
+        Activity sourceActivity, IActivityInstanceGrain sourceInstance,
+        Activity nextActivity, Guid? scopeId)
+    {
+        var sourceVariablesId = await sourceInstance.GetVariablesStateId();
+        var variablesId = sourceActivity is ParallelGateway { IsFork: true }
+            ? State.AddCloneOfVariableState(sourceVariablesId)
+            : sourceVariablesId;
+        RequestContext.Set("VariablesId", variablesId.ToString());
+
+        var newId = Guid.NewGuid();
+        var newInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(newId);
+        await newInstance.SetVariablesId(variablesId);
+        await newInstance.SetActivity(nextActivity.ActivityId, nextActivity.GetType().Name);
+
+        return new ActivityInstanceEntry(newId, nextActivity.ActivityId, State.Id, scopeId);
+    }
+
     private async Task TransitionToNextActivity()
     {
         var definition = await GetWorkflowDefinition();
@@ -213,18 +231,8 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
                         }
                     }
 
-                    var sourceVariablesId = await activityInstance.GetVariablesStateId();
-                    var variablesId = currentActivity is ParallelGateway { IsFork: true }
-                        ? State.AddCloneOfVariableState(sourceVariablesId)
-                        : sourceVariablesId;
-                    RequestContext.Set("VariablesId", variablesId.ToString());
-                    var newId = Guid.NewGuid();
-                    var newActivityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(newId);
-                    await newActivityInstance.SetVariablesId(variablesId);
-
-                    await newActivityInstance.SetActivity(nextActivity.ActivityId, nextActivity.GetType().Name);
-
-                    newActiveEntries.Add(new ActivityInstanceEntry(newId, nextActivity.ActivityId, State.Id, entry.ScopeId));
+                    var newEntry = await CreateNextActivityEntry(currentActivity, activityInstance, nextActivity, entry.ScopeId);
+                    newActiveEntries.Add(newEntry);
                 }
             }
         }
@@ -264,21 +272,15 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
                 await activityInstance.Complete();
                 LogSubProcessCompleted(entry.ActivityId);
 
-                var parentDefinition = definition.GetScopeForActivity(entry.ActivityId);
-                var nextActivities = await activity.GetNextActivities(this, activityInstance, parentDefinition);
+                var nextActivities = await activity.GetNextActivities(this, activityInstance, scopeDefinition);
 
-                var sourceVariablesId = await activityInstance.GetVariablesStateId();
                 var completedEntries = new List<ActivityInstanceEntry> { entry };
                 var newEntries = new List<ActivityInstanceEntry>();
 
                 foreach (var nextActivity in nextActivities)
                 {
-                    var newId = Guid.NewGuid();
-                    var newInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(newId);
-                    await newInstance.SetVariablesId(sourceVariablesId);
-                    await newInstance.SetActivity(nextActivity.ActivityId, nextActivity.GetType().Name);
-
-                    newEntries.Add(new ActivityInstanceEntry(newId, nextActivity.ActivityId, State.Id, entry.ScopeId));
+                    var newEntry = await CreateNextActivityEntry(activity, activityInstance, nextActivity, entry.ScopeId);
+                    newEntries.Add(newEntry);
                 }
 
                 State.CompleteEntries(completedEntries);
