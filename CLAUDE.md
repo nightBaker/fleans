@@ -55,6 +55,15 @@ Add it to `Fleans.Api/Controllers/WorkflowController.cs`. DTOs go in `Fleans.Ser
 
 - **Each activity instance executes at most once** — every non-boundary activity instance runs exactly once (completes or fails). An activity definition can be visited multiple times (e.g., in a loop), creating a new instance each time. `TimerCallbackGrain` keying uses `hostActivityInstanceId` to distinguish instances of the same activity.
 
+## Manual Test Plans
+
+- **Every new feature must have a manual test plan.** After writing the design doc and implementation plan, create a manual test folder in `tests/manual/` with:
+  1. `.bpmn` fixture file(s) that exercise the feature
+  2. `test-plan.md` with scenario description, prerequisites, numbered steps (deploy, start, trigger events, verify), and a checklist of expected outcomes
+- Follow the folder naming convention: `NN-feature-name/` (numbered for ordering)
+- Test plans are verified via Chrome (Web UI) + curl (API calls for messages/signals)
+- See `docs/plans/2026-02-25-manual-test-plan-design.md` for the template and full design
+
 ## Things to Know
 
 - **Aspire is the startup project**, not Api or Web
