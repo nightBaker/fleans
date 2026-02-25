@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL">
-  <process id="parallel-gateway-test">
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI">
+  <process id="parallel-gateway-test" isExecutable="true">
     <startEvent id="start" />
     <parallelGateway id="fork" />
     <scriptTask id="branchA" scriptFormat="csharp">
@@ -22,4 +25,61 @@
     <sequenceFlow id="f6" sourceRef="join" targetRef="afterJoin" />
     <sequenceFlow id="f7" sourceRef="afterJoin" targetRef="end" />
   </process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="parallel-gateway-test">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="180" y="182" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="fork_di" bpmnElement="fork">
+        <dc:Bounds x="280" y="175" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="branchA_di" bpmnElement="branchA">
+        <dc:Bounds x="400" y="60" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="branchB_di" bpmnElement="branchB">
+        <dc:Bounds x="400" y="260" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="join_di" bpmnElement="join">
+        <dc:Bounds x="570" y="175" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="afterJoin_di" bpmnElement="afterJoin">
+        <dc:Bounds x="690" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_di" bpmnElement="end">
+        <dc:Bounds x="852" y="182" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="216" y="200" />
+        <di:waypoint x="280" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="305" y="175" />
+        <di:waypoint x="305" y="100" />
+        <di:waypoint x="400" y="100" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="305" y="225" />
+        <di:waypoint x="305" y="300" />
+        <di:waypoint x="400" y="300" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f4_di" bpmnElement="f4">
+        <di:waypoint x="500" y="100" />
+        <di:waypoint x="595" y="100" />
+        <di:waypoint x="595" y="175" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f5_di" bpmnElement="f5">
+        <di:waypoint x="500" y="300" />
+        <di:waypoint x="595" y="300" />
+        <di:waypoint x="595" y="225" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f6_di" bpmnElement="f6">
+        <di:waypoint x="620" y="200" />
+        <di:waypoint x="690" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f7_di" bpmnElement="f7">
+        <di:waypoint x="790" y="200" />
+        <di:waypoint x="852" y="200" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
 </definitions>

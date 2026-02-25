@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL">
-  <process id="timer-catch-test">
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI">
+  <process id="timer-catch-test" isExecutable="true">
     <startEvent id="start" />
     <intermediateCatchEvent id="waitTimer">
       <timerEventDefinition>
@@ -15,4 +18,32 @@
     <sequenceFlow id="f2" sourceRef="waitTimer" targetRef="afterTimer" />
     <sequenceFlow id="f3" sourceRef="afterTimer" targetRef="end" />
   </process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="timer-catch-test">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="180" y="182" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="waitTimer_di" bpmnElement="waitTimer">
+        <dc:Bounds x="282" y="182" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="afterTimer_di" bpmnElement="afterTimer">
+        <dc:Bounds x="380" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_di" bpmnElement="end">
+        <dc:Bounds x="542" y="182" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="216" y="200" />
+        <di:waypoint x="282" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="318" y="200" />
+        <di:waypoint x="380" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="480" y="200" />
+        <di:waypoint x="542" y="200" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
 </definitions>

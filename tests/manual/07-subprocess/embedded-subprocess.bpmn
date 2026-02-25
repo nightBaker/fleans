@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL">
-  <process id="subprocess-test">
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI">
+  <process id="subprocess-test" isExecutable="true">
     <startEvent id="start" />
     <subProcess id="sub1">
       <startEvent id="subStart" />
@@ -19,4 +22,49 @@
     <sequenceFlow id="f2" sourceRef="sub1" targetRef="afterSub" />
     <sequenceFlow id="f3" sourceRef="afterSub" targetRef="end" />
   </process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="subprocess-test">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="180" y="182" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="sub1_di" bpmnElement="sub1" isExpanded="true">
+        <dc:Bounds x="280" y="120" width="350" height="160" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="subStart_di" bpmnElement="subStart">
+        <dc:Bounds x="310" y="182" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="subScript_di" bpmnElement="subScript">
+        <dc:Bounds x="400" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="subEnd_di" bpmnElement="subEnd">
+        <dc:Bounds x="560" y="182" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="afterSub_di" bpmnElement="afterSub">
+        <dc:Bounds x="700" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_di" bpmnElement="end">
+        <dc:Bounds x="862" y="182" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="216" y="200" />
+        <di:waypoint x="280" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf1_di" bpmnElement="sf1">
+        <di:waypoint x="346" y="200" />
+        <di:waypoint x="400" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf2_di" bpmnElement="sf2">
+        <di:waypoint x="500" y="200" />
+        <di:waypoint x="560" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="630" y="200" />
+        <di:waypoint x="700" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="800" y="200" />
+        <di:waypoint x="862" y="200" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
 </definitions>
