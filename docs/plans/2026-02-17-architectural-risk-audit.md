@@ -148,9 +148,9 @@ Each item solves exactly one problem. Items within a phase may depend on earlier
 
 ### Phase 2: Nested Scopes (A2 + A5)
 
-- [ ] **2.1 — Tree-structured WorkflowDefinition**: Activities can contain child activities. `WorkflowDefinition.Activities` becomes a tree. Parse `<subProcess>` BPMN elements into nested containers. *Problem solved: activity containment.*
-- [ ] **2.2 — Variable scope chain**: Replace flat variable list with a scope tree. Each scope has a parent. Variable resolution walks up the chain. Sub-process pushes a new scope on entry, pops on exit. *Problem solved: variable isolation between nesting levels.*
-- [ ] **2.3 — Embedded Sub-Process**: Execute child activities within a sub-process scope. Boundary events can attach to the sub-process. When boundary fires, cancel all child activities. *Problem solved: grouped activity execution with scoped error handling.*
+- [x] **2.1 — Tree-structured WorkflowDefinition**: SubProcess holds child Activities and SequenceFlows, implements IWorkflowDefinition. Recursive BpmnConverter parsing. *Done.*
+- [x] **2.2 — Variable scope chain**: WorkflowVariablesState.ParentVariablesId chains scopes. GetVariable walks up. Writes go to local scope. *Done.*
+- [x] **2.3 — Embedded Sub-Process**: SubProcess executes within same WorkflowInstance grain. ScopeId on ActivityInstanceEntry tracks nesting. Scope completion detection and boundary event cancellation. *Done.*
 - [ ] **2.4 — Multi-Instance Activity (parallel)**: Single activity definition spawns N `ActivityInstance` grains, each with its own variable scope. Completion waits for all N. Results aggregated back. *Problem solved: parallel execution of same activity over a collection.*
 - [ ] **2.5 — Multi-Instance Activity (sequential)**: Same as 2.4 but instances run one at a time. Loop variable tracks progress. *Problem solved: sequential iteration over a collection.*
 

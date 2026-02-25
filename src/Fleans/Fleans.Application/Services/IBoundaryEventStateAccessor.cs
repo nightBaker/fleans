@@ -14,4 +14,5 @@ public interface IBoundaryEventStateAccessor
     ValueTask<object?> GetVariable(Guid variablesId, string variableName);
     Task TransitionToNextActivity();
     Task ExecuteWorkflow();
+    Task CancelScopeChildren(Guid scopeId);
 }

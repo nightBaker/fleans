@@ -57,4 +57,20 @@ public class EventBasedGatewayActivityTests
         Assert.IsTrue(nextActivities.Any(a => a.ActivityId == "msg1"));
         Assert.IsTrue(nextActivities.Any(a => a.ActivityId == "sig1"));
     }
+
+    [TestMethod]
+    public async Task ExecuteAsync_WhenCompleteFails_ShouldPropagateException()
+    {
+        var gateway = new EventBasedGateway("ebg1");
+        var timerCatch = new TimerIntermediateCatchEvent("timer1", new TimerDefinition(TimerType.Duration, "PT1H"));
+        var definition = ActivityTestHelper.CreateWorkflowDefinition(
+            [gateway, timerCatch],
+            [new SequenceFlow("f1", gateway, timerCatch)]);
+        var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
+        var (activityContext, _) = ActivityTestHelper.CreateActivityContext("ebg1");
+        activityContext.Complete().Returns(ValueTask.FromException(new InvalidOperationException("complete failed")));
+
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => gateway.ExecuteAsync(workflowContext, activityContext, definition));
+    }
 }

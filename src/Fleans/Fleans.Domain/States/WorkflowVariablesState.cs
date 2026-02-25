@@ -5,10 +5,11 @@ namespace Fleans.Domain.States;
 [GenerateSerializer]
 public class WorkflowVariablesState
 {
-    public WorkflowVariablesState(Guid id, Guid workflowInstanceId)
+    public WorkflowVariablesState(Guid id, Guid workflowInstanceId, Guid? parentVariablesId = null)
     {
         Id = id;
         WorkflowInstanceId = workflowInstanceId;
+        ParentVariablesId = parentVariablesId;
     }
 
     private WorkflowVariablesState()
@@ -23,6 +24,9 @@ public class WorkflowVariablesState
 
     [Id(2)]
     public ExpandoObject Variables { get; private set; } = new();
+
+    [Id(3)]
+    public Guid? ParentVariablesId { get; private set; }
 
     internal void Merge(ExpandoObject variables)
     {
