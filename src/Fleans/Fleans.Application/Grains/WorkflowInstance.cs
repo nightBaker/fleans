@@ -633,56 +633,60 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
     {
         await FailActivityState(activityId, exception);
 
-        // Check for boundary error event
         var definition = await GetWorkflowDefinition();
         var activityEntry = State.GetFirstActive(activityId) ?? State.Entries.Last(e => e.ActivityId == activityId);
         var activityGrain = _grainFactory.GetGrain<IActivityInstanceGrain>(activityEntry.ActivityInstanceId);
         var errorState = await activityGrain.GetErrorState();
 
-        if (errorState is not null)
+        if (errorState is null)
         {
-            var activityScopeDef = definition.GetScopeForActivity(activityId);
-            var boundaryEvent = activityScopeDef.Activities
-                .OfType<BoundaryErrorEvent>()
-                .FirstOrDefault(b => b.AttachedToActivityId == activityId
-                    && (b.ErrorCode == null || b.ErrorCode == errorState.Code.ToString()));
+            await ExecuteWorkflow();
+            return;
+        }
 
-            if (boundaryEvent is not null)
-            {
-                await _boundaryHandler.HandleBoundaryErrorAsync(activityId, boundaryEvent, activityEntry.ActivityInstanceId, definition);
-                return;
-            }
-
-            // Bubble error up through sub-process scopes
+        var match = definition.FindBoundaryErrorHandler(activityId, errorState.Code.ToString());
+        if (match is null)
+        {
+            // No boundary handler — complete the failed entry so the parent scope stays active
+            // (its executing SubProcess grain prevents ExecuteWorkflow from auto-completing)
             var failedEntry = State.Entries.Last(e => e.ActivityId == activityId);
-            State.CompleteEntries([failedEntry]); // Mark failed entry completed before scope cancellation
+            State.CompleteEntries([failedEntry]);
+            await ExecuteWorkflow();
+            return;
+        }
+
+        var (boundaryEvent, scopeDefinition, attachedToActivityId) = match.Value;
+
+        if (attachedToActivityId == activityId)
+        {
+            // Direct match — boundary is on the failed activity itself
+            await _boundaryHandler.HandleBoundaryErrorAsync(activityId, boundaryEvent, activityEntry.ActivityInstanceId, scopeDefinition);
+        }
+        else
+        {
+            // Bubbled up — cancel intermediate scopes between failed activity and matched SubProcess
+            var failedEntry = State.Entries.Last(e => e.ActivityId == activityId);
+            State.CompleteEntries([failedEntry]);
+
             var currentScopeId = failedEntry.ScopeId;
             while (currentScopeId.HasValue)
             {
                 var scopeEntry = State.Entries.First(e => e.ActivityInstanceId == currentScopeId.Value);
-                var scopeParentDef = definition.GetScopeForActivity(scopeEntry.ActivityId);
-                var scopeErrorState = await activityGrain.GetErrorState();
 
-                var subProcessBoundary = scopeParentDef.Activities
-                    .OfType<BoundaryErrorEvent>()
-                    .FirstOrDefault(b => b.AttachedToActivityId == scopeEntry.ActivityId
-                        && (b.ErrorCode == null || (scopeErrorState is not null && b.ErrorCode == scopeErrorState.Code.ToString())));
-
-                if (subProcessBoundary is not null)
+                if (scopeEntry.ActivityId == attachedToActivityId)
                 {
+                    // Found the SubProcess the boundary is attached to — cancel and handle
                     await CancelScopeChildren(currentScopeId.Value);
                     var scopeInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(scopeEntry.ActivityInstanceId);
                     await scopeInstance.Cancel("Sub-process interrupted by error boundary");
                     State.CompleteEntries([scopeEntry]);
-                    await _boundaryHandler.HandleBoundaryErrorAsync(scopeEntry.ActivityId, subProcessBoundary, scopeEntry.ActivityInstanceId, scopeParentDef);
+                    await _boundaryHandler.HandleBoundaryErrorAsync(scopeEntry.ActivityId, boundaryEvent, scopeEntry.ActivityInstanceId, scopeDefinition);
                     return;
                 }
 
                 currentScopeId = scopeEntry.ScopeId;
             }
         }
-
-        await ExecuteWorkflow();
     }
 
     private void SetWorkflowRequestContext()

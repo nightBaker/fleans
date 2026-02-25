@@ -54,6 +54,42 @@ namespace Fleans.Domain
             => GetScopeForActivity(activityId).GetActivity(activityId);
 
         /// <summary>
+        /// Finds the matching BoundaryErrorEvent for a failed activity, searching the activity's
+        /// scope and walking up parent SubProcess scopes if not found.
+        /// Specific error code matches take priority over catch-all (null ErrorCode) boundaries.
+        /// </summary>
+        (BoundaryErrorEvent BoundaryEvent, IWorkflowDefinition Scope, string AttachedToActivityId)?
+            FindBoundaryErrorHandler(string failedActivityId, string? errorCode)
+        {
+            var targetActivityId = failedActivityId;
+
+            while (true)
+            {
+                var scope = FindScopeForActivity(targetActivityId);
+                if (scope is null) return null;
+
+                var candidates = scope.Activities
+                    .OfType<BoundaryErrorEvent>()
+                    .Where(b => b.AttachedToActivityId == targetActivityId
+                        && (b.ErrorCode == null || b.ErrorCode == errorCode))
+                    .ToList();
+
+                // Prefer specific error code match over catch-all
+                var match = candidates.FirstOrDefault(b => b.ErrorCode == errorCode)
+                            ?? candidates.FirstOrDefault(b => b.ErrorCode == null);
+
+                if (match is not null)
+                    return (match, scope, targetActivityId);
+
+                // Bubble up: if scope is a SubProcess, check its parent for boundary on the SubProcess
+                if (scope is SubProcess subProcess)
+                    targetActivityId = subProcess.ActivityId;
+                else
+                    return null; // at root scope, no match found
+            }
+        }
+
+        /// <summary>
         /// Returns activity IDs of sibling catch events that compete with the given activity
         /// after an EventBasedGateway. Returns empty set if the activity is not downstream
         /// of an EventBasedGateway.
