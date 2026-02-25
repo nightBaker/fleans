@@ -39,6 +39,10 @@ public record SubProcess(string ActivityId) : BoundarableActivity(ActivityId), I
             await activityContext.GetActivityInstanceId(),
             ActivityId,
             GetType().Name));
+
+        var instanceId = await activityContext.GetActivityInstanceId();
+        var variablesId = await activityContext.GetVariablesStateId();
+        await workflowContext.OpenSubProcessScope(instanceId, this, variablesId);
     }
 
     internal override Task<List<Activity>> GetNextActivities(

@@ -392,4 +392,97 @@ public class SubProcessTests : WorkflowTestBase
         var retrievedValue = await workflowInstance.GetVariable(innerTaskSnapshot.VariablesStateId, "rootColor");
         Assert.AreEqual("red", retrievedValue);
     }
+
+    [TestMethod]
+    public async Task SubProcess_FollowedByTask_ShouldActivateNextTask()
+    {
+        var start = new StartEvent("start");
+        var innerStart = new StartEvent("sub_start");
+        var innerTask = new TaskActivity("sub_task");
+        var innerEnd = new EndEvent("sub_end");
+        var subProcess = new SubProcess("sub1")
+        {
+            Activities = [innerStart, innerTask, innerEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("inner_f1", innerStart, innerTask),
+                new SequenceFlow("inner_f2", innerTask, innerEnd)
+            ]
+        };
+        var taskAfter = new TaskActivity("task_after");
+        var end = new EndEvent("end");
+
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "sp-chain",
+            Activities = [start, subProcess, taskAfter, end],
+            SequenceFlows =
+            [
+                new SequenceFlow("f1", start, subProcess),
+                new SequenceFlow("f2", subProcess, taskAfter),
+                new SequenceFlow("f3", taskAfter, end)
+            ]
+        };
+
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await workflowInstance.SetWorkflow(workflow);
+        await workflowInstance.StartWorkflow();
+
+        await workflowInstance.CompleteActivity("sub_task", new ExpandoObject());
+
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var midSnapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsFalse(midSnapshot!.IsCompleted);
+        Assert.IsTrue(midSnapshot.ActiveActivities.Any(a => a.ActivityId == "task_after"),
+            "task_after should be active after sub-process completes");
+
+        await workflowInstance.CompleteActivity("task_after", new ExpandoObject());
+
+        var finalSnapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsTrue(finalSnapshot!.IsCompleted);
+    }
+
+    [TestMethod]
+    public async Task SubProcess_NoBoundaryError_FailedInnerTask_ShouldNotCompleteWorkflow()
+    {
+        var start = new StartEvent("start");
+        var innerStart = new StartEvent("sub_start");
+        var innerTask = new TaskActivity("sub_task");
+        var innerEnd = new EndEvent("sub_end");
+        var subProcess = new SubProcess("sub1")
+        {
+            Activities = [innerStart, innerTask, innerEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("inner_f1", innerStart, innerTask),
+                new SequenceFlow("inner_f2", innerTask, innerEnd)
+            ]
+        };
+        var end = new EndEvent("end");
+
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "sp-fail-no-boundary",
+            Activities = [start, subProcess, end],
+            SequenceFlows =
+            [
+                new SequenceFlow("f1", start, subProcess),
+                new SequenceFlow("f2", subProcess, end)
+            ]
+        };
+
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await workflowInstance.SetWorkflow(workflow);
+        await workflowInstance.StartWorkflow();
+
+        await workflowInstance.FailActivity("sub_task", new Exception("failure"));
+
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsFalse(snapshot!.IsCompleted, "Workflow should not complete when inner task fails without boundary error");
+
+        var failedEntry = snapshot.CompletedActivities.FirstOrDefault(a => a.ActivityId == "sub_task");
+        Assert.IsNotNull(failedEntry, "sub_task should be in completed list");
+        Assert.IsNotNull(failedEntry.ErrorState, "sub_task should have error state");
+    }
 }

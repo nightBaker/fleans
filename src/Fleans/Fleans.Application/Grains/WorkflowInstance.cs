@@ -71,11 +71,6 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
                 LogExecutingActivity(activityId, currentActivity.GetType().Name);
                 await currentActivity.ExecuteAsync(this, activityState, scopeDefinition);
 
-                if (currentActivity is SubProcess subProcess)
-                {
-                    await InitializeSubProcessChildren(subProcess, activityState);
-                }
-
                 if (currentActivity is IBoundarableActivity boundarable)
                 {
                     await boundarable.RegisterBoundaryEventsAsync(this, activityState, scopeDefinition);
@@ -88,11 +83,8 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         }
     }
 
-    private async Task InitializeSubProcessChildren(SubProcess subProcess, IActivityInstanceGrain subProcessInstance)
+    public async ValueTask OpenSubProcessScope(Guid subProcessInstanceId, SubProcess subProcess, Guid parentVariablesId)
     {
-        var subProcessInstanceId = await subProcessInstance.GetActivityInstanceId();
-        var parentVariablesId = await subProcessInstance.GetVariablesStateId();
-
         var childVariablesId = State.AddChildVariableState(parentVariablesId);
         LogSubProcessInitialized(subProcess.ActivityId, childVariablesId);
 
@@ -221,7 +213,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
                     if (nextActivity.IsJoinGateway)
                     {
                         var existingEntry = State.GetActiveActivities()
-                            .FirstOrDefault(e => e.ActivityId == nextActivity.ActivityId);
+                            .FirstOrDefault(e => e.ActivityId == nextActivity.ActivityId && e.ScopeId == entry.ScopeId);
                         if (existingEntry != null)
                         {
                             LogJoinGatewayDeduplication(nextActivity.ActivityId, existingEntry.ActivityInstanceId);
