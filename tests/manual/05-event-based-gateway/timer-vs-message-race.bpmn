@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:zeebe="http://camunda.org/schema/zeebe/1.0">
+  <message id="msg1" name="continueProcess">
+    <extensionElements>
+      <zeebe:subscription correlationKey="= orderId" />
+    </extensionElements>
+  </message>
+  <process id="event-based-gateway-test" isExecutable="true">
+    <startEvent id="start" />
+    <scriptTask id="setCorrelation" scriptFormat="csharp">
+      <script>_context.orderId = "order-123"</script>
+    </scriptTask>
+    <eventBasedGateway id="ebg" />
+    <intermediateCatchEvent id="timerCatch">
+      <timerEventDefinition>
+        <timeDuration>PT30S</timeDuration>
+      </timerEventDefinition>
+    </intermediateCatchEvent>
+    <intermediateCatchEvent id="msgCatch">
+      <messageEventDefinition messageRef="msg1" />
+    </intermediateCatchEvent>
+    <scriptTask id="timerPath" scriptFormat="csharp">
+      <script>_context.path = "timer"</script>
+    </scriptTask>
+    <scriptTask id="msgPath" scriptFormat="csharp">
+      <script>_context.path = "message"</script>
+    </scriptTask>
+    <endEvent id="timerEnd" />
+    <endEvent id="msgEnd" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="setCorrelation" />
+    <sequenceFlow id="f2" sourceRef="setCorrelation" targetRef="ebg" />
+    <sequenceFlow id="f3" sourceRef="ebg" targetRef="timerCatch" />
+    <sequenceFlow id="f4" sourceRef="ebg" targetRef="msgCatch" />
+    <sequenceFlow id="f5" sourceRef="timerCatch" targetRef="timerPath" />
+    <sequenceFlow id="f6" sourceRef="msgCatch" targetRef="msgPath" />
+    <sequenceFlow id="f7" sourceRef="timerPath" targetRef="timerEnd" />
+    <sequenceFlow id="f8" sourceRef="msgPath" targetRef="msgEnd" />
+  </process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="event-based-gateway-test">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="180" y="182" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="setCorrelation_di" bpmnElement="setCorrelation">
+        <dc:Bounds x="280" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ebg_di" bpmnElement="ebg">
+        <dc:Bounds x="445" y="175" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="timerCatch_di" bpmnElement="timerCatch">
+        <dc:Bounds x="562" y="82" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="msgCatch_di" bpmnElement="msgCatch">
+        <dc:Bounds x="562" y="282" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="timerPath_di" bpmnElement="timerPath">
+        <dc:Bounds x="660" y="60" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="msgPath_di" bpmnElement="msgPath">
+        <dc:Bounds x="660" y="260" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="timerEnd_di" bpmnElement="timerEnd">
+        <dc:Bounds x="822" y="82" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="msgEnd_di" bpmnElement="msgEnd">
+        <dc:Bounds x="822" y="282" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="216" y="200" />
+        <di:waypoint x="280" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="380" y="200" />
+        <di:waypoint x="445" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="470" y="175" />
+        <di:waypoint x="470" y="100" />
+        <di:waypoint x="562" y="100" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f4_di" bpmnElement="f4">
+        <di:waypoint x="470" y="225" />
+        <di:waypoint x="470" y="300" />
+        <di:waypoint x="562" y="300" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f5_di" bpmnElement="f5">
+        <di:waypoint x="598" y="100" />
+        <di:waypoint x="660" y="100" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f6_di" bpmnElement="f6">
+        <di:waypoint x="598" y="300" />
+        <di:waypoint x="660" y="300" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f7_di" bpmnElement="f7">
+        <di:waypoint x="760" y="100" />
+        <di:waypoint x="822" y="100" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f8_di" bpmnElement="f8">
+        <di:waypoint x="760" y="300" />
+        <di:waypoint x="822" y="300" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>
