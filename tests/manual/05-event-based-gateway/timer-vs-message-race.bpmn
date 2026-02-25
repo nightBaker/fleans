@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:zeebe="http://camunda.org/schema/zeebe/1.0">
+  <message id="msg1" name="continueProcess">
+    <extensionElements>
+      <zeebe:subscription correlationKey="= orderId" />
+    </extensionElements>
+  </message>
+  <process id="event-based-gateway-test">
+    <startEvent id="start" />
+    <scriptTask id="setCorrelation" scriptFormat="csharp">
+      <script>_context.orderId = "order-123"</script>
+    </scriptTask>
+    <eventBasedGateway id="ebg" />
+    <intermediateCatchEvent id="timerCatch">
+      <timerEventDefinition>
+        <timeDuration>PT30S</timeDuration>
+      </timerEventDefinition>
+    </intermediateCatchEvent>
+    <intermediateCatchEvent id="msgCatch">
+      <messageEventDefinition messageRef="msg1" />
+    </intermediateCatchEvent>
+    <task id="timerPath" />
+    <task id="msgPath" />
+    <endEvent id="timerEnd" />
+    <endEvent id="msgEnd" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="setCorrelation" />
+    <sequenceFlow id="f2" sourceRef="setCorrelation" targetRef="ebg" />
+    <sequenceFlow id="f3" sourceRef="ebg" targetRef="timerCatch" />
+    <sequenceFlow id="f4" sourceRef="ebg" targetRef="msgCatch" />
+    <sequenceFlow id="f5" sourceRef="timerCatch" targetRef="timerPath" />
+    <sequenceFlow id="f6" sourceRef="msgCatch" targetRef="msgPath" />
+    <sequenceFlow id="f7" sourceRef="timerPath" targetRef="timerEnd" />
+    <sequenceFlow id="f8" sourceRef="msgPath" targetRef="msgEnd" />
+  </process>
+</definitions>

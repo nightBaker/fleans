@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL">
+  <process id="subprocess-test">
+    <startEvent id="start" />
+    <subProcess id="sub1">
+      <startEvent id="subStart" />
+      <scriptTask id="subScript" scriptFormat="csharp">
+        <script>_context.subVar = "from-subprocess"</script>
+      </scriptTask>
+      <endEvent id="subEnd" />
+      <sequenceFlow id="sf1" sourceRef="subStart" targetRef="subScript" />
+      <sequenceFlow id="sf2" sourceRef="subScript" targetRef="subEnd" />
+    </subProcess>
+    <task id="afterSub" />
+    <endEvent id="end" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="sub1" />
+    <sequenceFlow id="f2" sourceRef="sub1" targetRef="afterSub" />
+    <sequenceFlow id="f3" sourceRef="afterSub" targetRef="end" />
+  </process>
+</definitions>

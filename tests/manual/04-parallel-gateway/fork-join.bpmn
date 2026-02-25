@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL">
+  <process id="parallel-gateway-test">
+    <startEvent id="start" />
+    <parallelGateway id="fork" />
+    <scriptTask id="branchA" scriptFormat="csharp">
+      <script>_context.a = "done"</script>
+    </scriptTask>
+    <scriptTask id="branchB" scriptFormat="csharp">
+      <script>_context.b = "done"</script>
+    </scriptTask>
+    <parallelGateway id="join" />
+    <task id="afterJoin" />
+    <endEvent id="end" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="fork" />
+    <sequenceFlow id="f2" sourceRef="fork" targetRef="branchA" />
+    <sequenceFlow id="f3" sourceRef="fork" targetRef="branchB" />
+    <sequenceFlow id="f4" sourceRef="branchA" targetRef="join" />
+    <sequenceFlow id="f5" sourceRef="branchB" targetRef="join" />
+    <sequenceFlow id="f6" sourceRef="join" targetRef="afterJoin" />
+    <sequenceFlow id="f7" sourceRef="afterJoin" targetRef="end" />
+  </process>
+</definitions>

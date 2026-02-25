@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL">
+  <process id="child-that-fails">
+    <startEvent id="childStart" />
+    <scriptTask id="failingScript" scriptFormat="csharp">
+      <script>throw new System.Exception("Something went wrong")</script>
+    </scriptTask>
+    <endEvent id="childEnd" />
+    <sequenceFlow id="cf1" sourceRef="childStart" targetRef="failingScript" />
+    <sequenceFlow id="cf2" sourceRef="failingScript" targetRef="childEnd" />
+  </process>
+</definitions>

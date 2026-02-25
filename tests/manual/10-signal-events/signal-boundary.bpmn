@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL">
+  <signal id="Signal_2" name="emergencyStop" />
+  <process id="signal-boundary-test">
+    <startEvent id="start" />
+    <intermediateCatchEvent id="longWait">
+      <timerEventDefinition>
+        <timeDuration>PT60S</timeDuration>
+      </timerEventDefinition>
+    </intermediateCatchEvent>
+    <boundaryEvent id="signalBoundary" attachedToRef="longWait">
+      <signalEventDefinition signalRef="Signal_2" />
+    </boundaryEvent>
+    <task id="normalPath" />
+    <scriptTask id="emergencyPath" scriptFormat="csharp">
+      <script>_context.emergency = true</script>
+    </scriptTask>
+    <endEvent id="end1" />
+    <endEvent id="end2" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="longWait" />
+    <sequenceFlow id="f2" sourceRef="longWait" targetRef="normalPath" />
+    <sequenceFlow id="f3" sourceRef="signalBoundary" targetRef="emergencyPath" />
+    <sequenceFlow id="f4" sourceRef="normalPath" targetRef="end1" />
+    <sequenceFlow id="f5" sourceRef="emergencyPath" targetRef="end2" />
+  </process>
+</definitions>

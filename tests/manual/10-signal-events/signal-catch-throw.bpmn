@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL">
+  <signal id="Signal_1" name="globalAlert" />
+  <process id="signal-catch-test">
+    <startEvent id="start" />
+    <intermediateCatchEvent id="waitSignal">
+      <signalEventDefinition signalRef="Signal_1" />
+    </intermediateCatchEvent>
+    <scriptTask id="afterSignal" scriptFormat="csharp">
+      <script>_context.signalReceived = true</script>
+    </scriptTask>
+    <endEvent id="end" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="waitSignal" />
+    <sequenceFlow id="f2" sourceRef="waitSignal" targetRef="afterSignal" />
+    <sequenceFlow id="f3" sourceRef="afterSignal" targetRef="end" />
+  </process>
+</definitions>

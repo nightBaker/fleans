@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL">
+  <process id="timer-catch-test">
+    <startEvent id="start" />
+    <intermediateCatchEvent id="waitTimer">
+      <timerEventDefinition>
+        <timeDuration>PT5S</timeDuration>
+      </timerEventDefinition>
+    </intermediateCatchEvent>
+    <scriptTask id="afterTimer" scriptFormat="csharp">
+      <script>_context.timerFired = true</script>
+    </scriptTask>
+    <endEvent id="end" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="waitTimer" />
+    <sequenceFlow id="f2" sourceRef="waitTimer" targetRef="afterTimer" />
+    <sequenceFlow id="f3" sourceRef="afterTimer" targetRef="end" />
+  </process>
+</definitions>

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL">
+  <process id="exclusive-gateway-test">
+    <startEvent id="start" />
+    <scriptTask id="setX" scriptFormat="csharp">
+      <script>_context.x = 7</script>
+    </scriptTask>
+    <exclusiveGateway id="gateway" default="defaultFlow" />
+    <task id="highTask" />
+    <task id="lowTask" />
+    <endEvent id="highEnd" />
+    <endEvent id="lowEnd" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="setX" />
+    <sequenceFlow id="f2" sourceRef="setX" targetRef="gateway" />
+    <sequenceFlow id="conditionalFlow" sourceRef="gateway" targetRef="highTask">
+      <conditionExpression>${x &gt; 5}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="defaultFlow" sourceRef="gateway" targetRef="lowTask" />
+    <sequenceFlow id="f3" sourceRef="highTask" targetRef="highEnd" />
+    <sequenceFlow id="f4" sourceRef="lowTask" targetRef="lowEnd" />
+  </process>
+</definitions>

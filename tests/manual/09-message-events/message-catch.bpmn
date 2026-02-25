@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:zeebe="http://camunda.org/schema/zeebe/1.0">
+  <message id="msg1" name="approvalReceived">
+    <extensionElements>
+      <zeebe:subscription correlationKey="= requestId" />
+    </extensionElements>
+  </message>
+  <process id="message-catch-test">
+    <startEvent id="start" />
+    <scriptTask id="setCorrelation" scriptFormat="csharp">
+      <script>_context.requestId = "req-456"</script>
+    </scriptTask>
+    <intermediateCatchEvent id="waitApproval">
+      <messageEventDefinition messageRef="msg1" />
+    </intermediateCatchEvent>
+    <task id="afterApproval" />
+    <endEvent id="end" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="setCorrelation" />
+    <sequenceFlow id="f2" sourceRef="setCorrelation" targetRef="waitApproval" />
+    <sequenceFlow id="f3" sourceRef="waitApproval" targetRef="afterApproval" />
+    <sequenceFlow id="f4" sourceRef="afterApproval" targetRef="end" />
+  </process>
+</definitions>

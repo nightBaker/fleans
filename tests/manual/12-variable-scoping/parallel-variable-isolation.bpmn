@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL">
+  <process id="variable-scoping-test">
+    <startEvent id="start" />
+    <scriptTask id="initVar" scriptFormat="csharp">
+      <script>_context.shared = "original"</script>
+    </scriptTask>
+    <parallelGateway id="fork" />
+    <scriptTask id="branchA" scriptFormat="csharp">
+      <script>_context.shared = "from-branch-A"</script>
+    </scriptTask>
+    <scriptTask id="branchB" scriptFormat="csharp">
+      <script>_context.shared = "from-branch-B"</script>
+    </scriptTask>
+    <parallelGateway id="join" />
+    <endEvent id="end" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="initVar" />
+    <sequenceFlow id="f2" sourceRef="initVar" targetRef="fork" />
+    <sequenceFlow id="f3" sourceRef="fork" targetRef="branchA" />
+    <sequenceFlow id="f4" sourceRef="fork" targetRef="branchB" />
+    <sequenceFlow id="f5" sourceRef="branchA" targetRef="join" />
+    <sequenceFlow id="f6" sourceRef="branchB" targetRef="join" />
+    <sequenceFlow id="f7" sourceRef="join" targetRef="end" />
+  </process>
+</definitions>

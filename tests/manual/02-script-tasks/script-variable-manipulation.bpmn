@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL">
+  <process id="script-variables">
+    <startEvent id="start" />
+    <scriptTask id="setVar" scriptFormat="csharp">
+      <script>_context.x = 10</script>
+    </scriptTask>
+    <scriptTask id="incrementVar" scriptFormat="csharp">
+      <script>_context.x = _context.x + 5</script>
+    </scriptTask>
+    <scriptTask id="createSecondVar" scriptFormat="csharp">
+      <script>_context.greeting = "hello"</script>
+    </scriptTask>
+    <endEvent id="end" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="setVar" />
+    <sequenceFlow id="f2" sourceRef="setVar" targetRef="incrementVar" />
+    <sequenceFlow id="f3" sourceRef="incrementVar" targetRef="createSecondVar" />
+    <sequenceFlow id="f4" sourceRef="createSecondVar" targetRef="end" />
+  </process>
+</definitions>

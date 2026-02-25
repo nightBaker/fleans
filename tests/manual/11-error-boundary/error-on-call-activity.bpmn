@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL">
+  <process id="error-boundary-test">
+    <startEvent id="start" />
+    <callActivity id="callFailing" calledElement="child-that-fails" />
+    <boundaryEvent id="errorBoundary" attachedToRef="callFailing">
+      <errorEventDefinition />
+    </boundaryEvent>
+    <task id="happyEnd" />
+    <scriptTask id="errorHandler" scriptFormat="csharp">
+      <script>_context.errorHandled = true</script>
+    </scriptTask>
+    <endEvent id="end1" />
+    <endEvent id="end2" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="callFailing" />
+    <sequenceFlow id="f2" sourceRef="callFailing" targetRef="happyEnd" />
+    <sequenceFlow id="f3" sourceRef="errorBoundary" targetRef="errorHandler" />
+    <sequenceFlow id="f4" sourceRef="happyEnd" targetRef="end1" />
+    <sequenceFlow id="f5" sourceRef="errorHandler" targetRef="end2" />
+  </process>
+</definitions>

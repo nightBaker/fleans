@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:zeebe="http://camunda.org/schema/zeebe/1.0">
+  <message id="cancelMsg" name="cancelRequest">
+    <extensionElements>
+      <zeebe:subscription correlationKey="= requestId" />
+    </extensionElements>
+  </message>
+  <process id="message-boundary-test">
+    <startEvent id="start" />
+    <scriptTask id="setCorrelation" scriptFormat="csharp">
+      <script>_context.requestId = "req-789"</script>
+    </scriptTask>
+    <intermediateCatchEvent id="longWait">
+      <timerEventDefinition>
+        <timeDuration>PT60S</timeDuration>
+      </timerEventDefinition>
+    </intermediateCatchEvent>
+    <boundaryEvent id="cancelBoundary" attachedToRef="longWait">
+      <messageEventDefinition messageRef="cancelMsg" />
+    </boundaryEvent>
+    <task id="normalPath" />
+    <scriptTask id="cancelPath" scriptFormat="csharp">
+      <script>_context.cancelled = true</script>
+    </scriptTask>
+    <endEvent id="end1" />
+    <endEvent id="end2" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="setCorrelation" />
+    <sequenceFlow id="f2" sourceRef="setCorrelation" targetRef="longWait" />
+    <sequenceFlow id="f3" sourceRef="longWait" targetRef="normalPath" />
+    <sequenceFlow id="f4" sourceRef="cancelBoundary" targetRef="cancelPath" />
+    <sequenceFlow id="f5" sourceRef="normalPath" targetRef="end1" />
+    <sequenceFlow id="f6" sourceRef="cancelPath" targetRef="end2" />
+  </process>
+</definitions>

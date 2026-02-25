@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL">
+  <process id="parent-process">
+    <startEvent id="parentStart" />
+    <scriptTask id="setInput" scriptFormat="csharp">
+      <script>_context.input = 21</script>
+    </scriptTask>
+    <callActivity id="callChild" calledElement="child-process">
+      <extensionElements>
+        <inputMapping source="input" target="input" />
+        <outputMapping source="result" target="result" />
+      </extensionElements>
+    </callActivity>
+    <endEvent id="parentEnd" />
+    <sequenceFlow id="pf1" sourceRef="parentStart" targetRef="setInput" />
+    <sequenceFlow id="pf2" sourceRef="setInput" targetRef="callChild" />
+    <sequenceFlow id="pf3" sourceRef="callChild" targetRef="parentEnd" />
+  </process>
+</definitions>

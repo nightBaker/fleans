@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL">
+  <process id="child-process">
+    <startEvent id="childStart" />
+    <scriptTask id="childScript" scriptFormat="csharp">
+      <script>_context.result = _context.input * 2</script>
+    </scriptTask>
+    <endEvent id="childEnd" />
+    <sequenceFlow id="cf1" sourceRef="childStart" targetRef="childScript" />
+    <sequenceFlow id="cf2" sourceRef="childScript" targetRef="childEnd" />
+  </process>
+</definitions>
