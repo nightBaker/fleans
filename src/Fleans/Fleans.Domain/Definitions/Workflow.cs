@@ -52,6 +52,29 @@ namespace Fleans.Domain
         /// </summary>
         Activity GetActivityAcrossScopes(string activityId)
             => GetScopeForActivity(activityId).GetActivity(activityId);
+
+        /// <summary>
+        /// Returns activity IDs of sibling catch events that compete with the given activity
+        /// after an EventBasedGateway. Returns empty set if the activity is not downstream
+        /// of an EventBasedGateway.
+        /// </summary>
+        IReadOnlySet<string> GetEventBasedGatewaySiblings(string completedActivityId)
+        {
+            var scope = FindScopeForActivity(completedActivityId);
+            if (scope is null) return new HashSet<string>();
+
+            var gatewayFlow = scope.SequenceFlows
+                .Where(sf => sf.Target.ActivityId == completedActivityId)
+                .FirstOrDefault(sf => sf.Source is EventBasedGateway);
+
+            if (gatewayFlow?.Source is not EventBasedGateway gateway)
+                return new HashSet<string>();
+
+            return scope.SequenceFlows
+                .Where(sf => sf.Source == gateway && sf.Target.ActivityId != completedActivityId)
+                .Select(sf => sf.Target.ActivityId)
+                .ToHashSet();
+        }
     }
    
     [GenerateSerializer]
