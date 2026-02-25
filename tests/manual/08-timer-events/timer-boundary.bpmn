@@ -2,10 +2,18 @@
 <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
              xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
              xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
-             xmlns:di="http://www.omg.org/spec/DD/20100524/DI">
-  <message id="msg1" name="neverArrives" />
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:zeebe="http://camunda.org/schema/zeebe/1.0">
+  <message id="msg1" name="neverArrives">
+    <extensionElements>
+      <zeebe:subscription correlationKey="= corrKey" />
+    </extensionElements>
+  </message>
   <process id="timer-boundary-test" isExecutable="true">
     <startEvent id="start" />
+    <scriptTask id="setCorr" scriptFormat="csharp">
+      <script>_context.corrKey = "never-match"</script>
+    </scriptTask>
     <intermediateCatchEvent id="blockingWait">
       <messageEventDefinition messageRef="msg1" />
     </intermediateCatchEvent>
@@ -22,7 +30,8 @@
     </scriptTask>
     <endEvent id="end1" />
     <endEvent id="end2" />
-    <sequenceFlow id="f1" sourceRef="start" targetRef="blockingWait" />
+    <sequenceFlow id="f0" sourceRef="start" targetRef="setCorr" />
+    <sequenceFlow id="f1" sourceRef="setCorr" targetRef="blockingWait" />
     <sequenceFlow id="f2" sourceRef="blockingWait" targetRef="normalEnd" />
     <sequenceFlow id="f3" sourceRef="boundaryTimer" targetRef="timeoutPath" />
     <sequenceFlow id="f4" sourceRef="normalEnd" targetRef="end1" />
@@ -33,46 +42,53 @@
       <bpmndi:BPMNShape id="start_di" bpmnElement="start">
         <dc:Bounds x="180" y="182" width="36" height="36" />
       </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="setCorr_di" bpmnElement="setCorr">
+        <dc:Bounds x="260" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="blockingWait_di" bpmnElement="blockingWait">
-        <dc:Bounds x="282" y="182" width="36" height="36" />
+        <dc:Bounds x="412" y="182" width="36" height="36" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="boundaryTimer_di" bpmnElement="boundaryTimer">
-        <dc:Bounds x="282" y="200" width="36" height="36" />
+        <dc:Bounds x="412" y="200" width="36" height="36" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="normalEnd_di" bpmnElement="normalEnd">
-        <dc:Bounds x="400" y="80" width="100" height="80" />
+        <dc:Bounds x="520" y="80" width="100" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="timeoutPath_di" bpmnElement="timeoutPath">
-        <dc:Bounds x="400" y="280" width="100" height="80" />
+        <dc:Bounds x="520" y="280" width="100" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="end1_di" bpmnElement="end1">
-        <dc:Bounds x="562" y="102" width="36" height="36" />
+        <dc:Bounds x="682" y="102" width="36" height="36" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="end2_di" bpmnElement="end2">
-        <dc:Bounds x="562" y="302" width="36" height="36" />
+        <dc:Bounds x="682" y="302" width="36" height="36" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+      <bpmndi:BPMNEdge id="f0_di" bpmnElement="f0">
         <di:waypoint x="216" y="200" />
-        <di:waypoint x="282" y="200" />
+        <di:waypoint x="260" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="360" y="200" />
+        <di:waypoint x="412" y="200" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
-        <di:waypoint x="318" y="200" />
-        <di:waypoint x="350" y="200" />
-        <di:waypoint x="350" y="120" />
-        <di:waypoint x="400" y="120" />
+        <di:waypoint x="448" y="200" />
+        <di:waypoint x="480" y="200" />
+        <di:waypoint x="480" y="120" />
+        <di:waypoint x="520" y="120" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
-        <di:waypoint x="300" y="236" />
-        <di:waypoint x="300" y="320" />
-        <di:waypoint x="400" y="320" />
+        <di:waypoint x="430" y="236" />
+        <di:waypoint x="430" y="320" />
+        <di:waypoint x="520" y="320" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="f4_di" bpmnElement="f4">
-        <di:waypoint x="500" y="120" />
-        <di:waypoint x="562" y="120" />
+        <di:waypoint x="620" y="120" />
+        <di:waypoint x="682" y="120" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="f5_di" bpmnElement="f5">
-        <di:waypoint x="500" y="320" />
-        <di:waypoint x="562" y="320" />
+        <di:waypoint x="620" y="320" />
+        <di:waypoint x="682" y="320" />
       </bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>
