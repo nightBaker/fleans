@@ -7,7 +7,7 @@ namespace Fleans.Domain.Tests;
 public class BoundarableActivityTests
 {
     [TestMethod]
-    public async Task RegisterBoundaryEventsAsync_ShouldRegisterTimerReminder_WhenBoundaryTimerAttached()
+    public async Task ExecuteAsync_ShouldRegisterTimerReminder_WhenBoundaryTimerAttached()
     {
         // Arrange
         var task = new TaskActivity("task1");
@@ -20,7 +20,7 @@ public class BoundarableActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("task1", activityInstanceId);
 
         // Act
-        await task.RegisterBoundaryEventsAsync(workflowContext, activityContext, definition);
+        await task.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert
         await workflowContext.Received(1).RegisterTimerReminder(
@@ -28,7 +28,7 @@ public class BoundarableActivityTests
     }
 
     [TestMethod]
-    public async Task RegisterBoundaryEventsAsync_ShouldRegisterMessageSubscription_WhenMessageBoundaryAttached()
+    public async Task ExecuteAsync_ShouldRegisterMessageSubscription_WhenMessageBoundaryAttached()
     {
         // Arrange
         var task = new TaskActivity("task1");
@@ -40,7 +40,7 @@ public class BoundarableActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("task1", activityInstanceId);
 
         // Act
-        await task.RegisterBoundaryEventsAsync(workflowContext, activityContext, definition);
+        await task.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert
         await workflowContext.Received(1).RegisterBoundaryMessageSubscription(
@@ -48,7 +48,7 @@ public class BoundarableActivityTests
     }
 
     [TestMethod]
-    public async Task RegisterBoundaryEventsAsync_ShouldNotRegister_WhenNoBoundariesAttached()
+    public async Task ExecuteAsync_ShouldNotRegister_WhenNoBoundariesAttached()
     {
         // Arrange
         var task = new TaskActivity("task1");
@@ -57,7 +57,7 @@ public class BoundarableActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("task1");
 
         // Act
-        await task.RegisterBoundaryEventsAsync(workflowContext, activityContext, definition);
+        await task.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert
         await workflowContext.DidNotReceive().RegisterTimerReminder(
@@ -67,7 +67,7 @@ public class BoundarableActivityTests
     }
 
     [TestMethod]
-    public async Task RegisterBoundaryEventsAsync_ShouldOnlyRegisterMatchingBoundaries()
+    public async Task ExecuteAsync_ShouldOnlyRegisterMatchingBoundaries()
     {
         // Arrange
         var task1 = new TaskActivity("task1");
@@ -81,7 +81,7 @@ public class BoundarableActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("task1");
 
         // Act
-        await task1.RegisterBoundaryEventsAsync(workflowContext, activityContext, definition);
+        await task1.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert
         await workflowContext.Received(1).RegisterTimerReminder(
@@ -91,7 +91,7 @@ public class BoundarableActivityTests
     }
 
     [TestMethod]
-    public async Task RegisterBoundaryEventsAsync_CallActivity_ShouldRegisterBoundaryTimer()
+    public async Task ExecuteAsync_CallActivity_ShouldRegisterBoundaryTimer()
     {
         // Arrange
         var callActivity = new CallActivity("call1", "sub-process", [], []);
@@ -104,7 +104,7 @@ public class BoundarableActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("call1", activityInstanceId);
 
         // Act
-        await callActivity.RegisterBoundaryEventsAsync(workflowContext, activityContext, definition);
+        await callActivity.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert
         await workflowContext.Received(1).RegisterTimerReminder(

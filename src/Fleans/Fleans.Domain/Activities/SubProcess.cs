@@ -31,15 +31,7 @@ public record SubProcess(string ActivityId) : BoundarableActivity(ActivityId), I
         IActivityExecutionContext activityContext,
         IWorkflowDefinition definition)
     {
-        // Publish executed event but do NOT call Complete — sub-process waits for children.
-        await activityContext.Execute();
-        await activityContext.PublishEvent(new Events.WorkflowActivityExecutedEvent(
-            await workflowContext.GetWorkflowInstanceId(),
-            definition.WorkflowId,
-            await activityContext.GetActivityInstanceId(),
-            ActivityId,
-            GetType().Name));
-
+        await base.ExecuteAsync(workflowContext, activityContext, definition);
         var instanceId = await activityContext.GetActivityInstanceId();
         var variablesId = await activityContext.GetVariablesStateId();
         await workflowContext.OpenSubProcessScope(instanceId, this, variablesId);
