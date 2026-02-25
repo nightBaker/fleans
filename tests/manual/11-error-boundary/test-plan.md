@@ -9,6 +9,8 @@ A parent process calls a child that throws an exception. An error boundary event
 
 ## Steps
 
+> **KNOWN BUG:** Child process errors don't propagate to parent error boundary on CallActivity. The CallActivity stays Running indefinitely. See `docs/plans/2026-02-25-manual-test-results.md`.
+
 ### 1. Deploy child process
 - Import `child-that-fails.bpmn`, deploy
 

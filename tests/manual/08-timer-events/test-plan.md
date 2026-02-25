@@ -25,6 +25,8 @@ A blocking activity (message catch that never receives a message) has a 5s bound
 
 ## Steps — Scenario B (timer-boundary.bpmn)
 
+> **KNOWN BUG:** Boundary events on IntermediateCatchEvents don't register subscriptions. The timer boundary will not fire. See `docs/plans/2026-02-25-manual-test-results.md`.
+
 ### 1. Deploy and start
 - Import `timer-boundary.bpmn`, deploy, start `timer-boundary-test`
 

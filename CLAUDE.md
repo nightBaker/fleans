@@ -61,8 +61,23 @@ Add it to `Fleans.Api/Controllers/WorkflowController.cs`. DTOs go in `Fleans.Ser
   1. `.bpmn` fixture file(s) that exercise the feature
   2. `test-plan.md` with scenario description, prerequisites, numbered steps (deploy, start, trigger events, verify), and a checklist of expected outcomes
 - Follow the folder naming convention: `NN-feature-name/` (numbered for ordering)
-- Test plans are verified via Chrome (Web UI) + curl (API calls for messages/signals)
+- Test plans are verified via Chrome (Web UI) + API calls for messages/signals
 - See `docs/plans/2026-02-25-manual-test-plan-design.md` for the template and full design
+
+### BPMN Fixture Authoring Rules
+- **Always use `<scriptTask>` with `scriptFormat="csharp"`** — never bare `<task>`. The engine does not recognize `<task>` elements.
+- **Message events require the Zeebe namespace** — add `xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"` to `<definitions>` and include `<zeebe:subscription correlationKey="= varName" />` inside the `<message>` element.
+- **Every fixture must include a `<bpmndi:BPMNDiagram>` section** — the BPMN editor requires diagram info to render. Without it, the import silently produces a blank canvas.
+- **Use short timer durations** for test fixtures (PT5S–PT10S) so tests complete quickly.
+
+### API Endpoints for Manual Tests
+- Start instance: `POST https://localhost:7140/Workflow/start` — body: `{"WorkflowId":"process-id"}`
+- Send message: `POST https://localhost:7140/Workflow/message` — body: `{"MessageName":"...", "CorrelationKey":"...", "Variables":{}}`
+- Send signal: `POST https://localhost:7140/Workflow/signal` — body: `{"SignalName":"..."}`
+
+### Known Bugs (see `docs/plans/2026-02-25-manual-test-results.md`)
+- Boundary events on IntermediateCatchEvents don't register subscriptions (affects timer/message/signal boundaries)
+- Child process errors don't propagate to parent error boundary on CallActivity
 
 ## Things to Know
 

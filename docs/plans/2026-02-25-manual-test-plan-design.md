@@ -116,9 +116,14 @@ curl -X POST http://localhost:<port>/workflow/message \
 - Use curl from terminal for API calls (messages, signals)
 - Verify outcomes visually in the Instance Viewer
 
-## BPMN Fixture Notes
+## BPMN Fixture Authoring Rules
 
-- Timers use short durations (PT5S–PT10S) so tests complete quickly
-- Error scenarios use ScriptTask with intentionally failing scripts
-- Message events include correlationKey definitions for targeted delivery
-- All fixtures use the BPMN 2.0 namespace `http://www.omg.org/spec/BPMN/20100524/MODEL`
+These rules were validated during the first full test run. Violating them causes silent failures.
+
+1. **Always use `<scriptTask scriptFormat="csharp">`** — never bare `<task>`. The engine only recognizes `scriptTask`, `callActivity`, and other specific element types. A `<task>` element will cause the workflow to silently fail to complete.
+2. **Message events require the Zeebe namespace** — add `xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"` to `<definitions>` and wrap a `<zeebe:subscription correlationKey="= varName" />` inside each `<message>` element. Without this, message correlation fails with "No subscription found".
+3. **Every fixture must include a `<bpmndi:BPMNDiagram>` section** — the bpmn-js editor requires diagram layout info. Without it, the import produces a blank canvas with no visible elements.
+4. **Timers use short durations** (PT5S–PT10S) so tests complete quickly.
+5. **Error scenarios use ScriptTask** with intentionally failing scripts (`throw new System.Exception(...)`).
+6. **All fixtures use the BPMN 2.0 namespace** `http://www.omg.org/spec/BPMN/20100524/MODEL`.
+7. **Set correlation variables before the catch event** — add a `<scriptTask>` that sets `_context.varName = "value"` upstream of any message/signal catch that uses correlation.

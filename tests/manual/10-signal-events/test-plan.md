@@ -31,6 +31,8 @@ Expected: `{"deliveredCount": 1}`
 
 ## Steps — Scenario B (signal-boundary.bpmn)
 
+> **KNOWN BUG:** Boundary events on IntermediateCatchEvents don't register subscriptions. The signal boundary will not fire. See `docs/plans/2026-02-25-manual-test-results.md`.
+
 ### 1. Deploy and start
 - Import `signal-boundary.bpmn`, deploy, start `signal-boundary-test`
 - Instance **Running** with `longWait` active
