@@ -43,4 +43,25 @@ public record CallActivity(
 
         return result;
     }
+
+    public ExpandoObject BuildParentOutputVariables(ExpandoObject childVariables)
+    {
+        var result = new ExpandoObject();
+        var sourceDict = (IDictionary<string, object?>)childVariables;
+        var resultDict = (IDictionary<string, object?>)result;
+
+        if (PropagateAllChildVariables)
+        {
+            foreach (var kvp in sourceDict)
+                resultDict[kvp.Key] = kvp.Value;
+        }
+
+        foreach (var mapping in OutputMappings)
+        {
+            if (sourceDict.TryGetValue(mapping.Source, out var value))
+                resultDict[mapping.Target] = value;
+        }
+
+        return result;
+    }
 }

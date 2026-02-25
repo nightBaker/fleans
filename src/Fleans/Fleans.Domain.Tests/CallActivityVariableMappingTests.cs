@@ -80,4 +80,59 @@ public class CallActivityVariableMappingTests
         var dict = (IDictionary<string, object?>)result;
         Assert.AreEqual(0, dict.Count);
     }
+
+    [TestMethod]
+    public void BuildParentOutputVariables_PropagateAll_CopiesAllChildVariables()
+    {
+        // Arrange
+        var callActivity = new CallActivity("call1", "sub", [], [], PropagateAllChildVariables: true);
+        var child = new ExpandoObject();
+        ((IDictionary<string, object?>)child)["a"] = 10;
+        ((IDictionary<string, object?>)child)["b"] = "world";
+
+        // Act
+        var result = callActivity.BuildParentOutputVariables(child);
+
+        // Assert
+        var dict = (IDictionary<string, object?>)result;
+        Assert.AreEqual(2, dict.Count);
+        Assert.AreEqual(10, dict["a"]);
+        Assert.AreEqual("world", dict["b"]);
+    }
+
+    [TestMethod]
+    public void BuildParentOutputVariables_NoPropagation_OnlyMappedVariables()
+    {
+        // Arrange
+        var callActivity = new CallActivity("call1", "sub", [],
+            [new VariableMapping("a", "mapped_a")],
+            PropagateAllChildVariables: false);
+        var child = new ExpandoObject();
+        ((IDictionary<string, object?>)child)["a"] = 99;
+        ((IDictionary<string, object?>)child)["b"] = "skipped";
+
+        // Act
+        var result = callActivity.BuildParentOutputVariables(child);
+
+        // Assert
+        var dict = (IDictionary<string, object?>)result;
+        Assert.AreEqual(1, dict.Count);
+        Assert.AreEqual(99, dict["mapped_a"]);
+    }
+
+    [TestMethod]
+    public void BuildParentOutputVariables_EmptyChildVars_ReturnsEmpty()
+    {
+        // Arrange
+        var callActivity = new CallActivity("call1", "sub", [], [],
+            PropagateAllChildVariables: true);
+        var child = new ExpandoObject();
+
+        // Act
+        var result = callActivity.BuildParentOutputVariables(child);
+
+        // Assert
+        var dict = (IDictionary<string, object?>)result;
+        Assert.AreEqual(0, dict.Count);
+    }
 }
