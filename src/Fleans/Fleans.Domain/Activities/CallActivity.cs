@@ -1,3 +1,5 @@
+using System.Dynamic;
+
 namespace Fleans.Domain.Activities;
 
 [GenerateSerializer]
@@ -19,5 +21,47 @@ public record CallActivity(
     {
         var nextFlow = definition.SequenceFlows.FirstOrDefault(sf => sf.Source == this);
         return Task.FromResult(nextFlow != null ? new List<Activity> { nextFlow.Target } : new List<Activity>());
+    }
+
+    public ExpandoObject BuildChildInputVariables(ExpandoObject parentVariables)
+    {
+        var result = new ExpandoObject();
+        var sourceDict = (IDictionary<string, object?>)parentVariables;
+        var resultDict = (IDictionary<string, object?>)result;
+
+        if (PropagateAllParentVariables)
+        {
+            foreach (var kvp in sourceDict)
+                resultDict[kvp.Key] = kvp.Value;
+        }
+
+        foreach (var mapping in InputMappings)
+        {
+            if (sourceDict.TryGetValue(mapping.Source, out var value))
+                resultDict[mapping.Target] = value;
+        }
+
+        return result;
+    }
+
+    public ExpandoObject BuildParentOutputVariables(ExpandoObject childVariables)
+    {
+        var result = new ExpandoObject();
+        var sourceDict = (IDictionary<string, object?>)childVariables;
+        var resultDict = (IDictionary<string, object?>)result;
+
+        if (PropagateAllChildVariables)
+        {
+            foreach (var kvp in sourceDict)
+                resultDict[kvp.Key] = kvp.Value;
+        }
+
+        foreach (var mapping in OutputMappings)
+        {
+            if (sourceDict.TryGetValue(mapping.Source, out var value))
+                resultDict[mapping.Target] = value;
+        }
+
+        return result;
     }
 }

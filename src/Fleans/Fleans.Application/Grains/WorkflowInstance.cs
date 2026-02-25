@@ -444,7 +444,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         var activityGrain = _grainFactory.GetGrain<IActivityInstanceGrain>(activityInstanceId);
         var variablesId = await activityGrain.GetVariablesStateId();
         var parentVariables = State.GetVariableState(variablesId).Variables;
-        var childInputVars = BuildChildInputVariables(callActivity, parentVariables);
+        var childInputVars = callActivity.BuildChildInputVariables(parentVariables);
 
         if (((IDictionary<string, object?>)childInputVars).Count > 0)
             await child.SetInitialVariables(childInputVars);
@@ -471,7 +471,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         var callActivity = definition.GetActivityAcrossScopes(parentActivityId) as CallActivity
             ?? throw new InvalidOperationException($"Activity '{parentActivityId}' is not a CallActivity");
 
-        var mappedOutput = BuildParentOutputVariables(callActivity, childVariables);
+        var mappedOutput = callActivity.BuildParentOutputVariables(childVariables);
         await CompleteActivityState(parentActivityId, mappedOutput);
         await ExecuteWorkflow();
         await _state.WriteStateAsync();
@@ -692,48 +692,6 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         }
 
         await ExecuteWorkflow();
-    }
-
-    private static ExpandoObject BuildChildInputVariables(CallActivity callActivity, ExpandoObject parentVariables)
-    {
-        var result = new ExpandoObject();
-        var sourceDict = (IDictionary<string, object?>)parentVariables;
-        var resultDict = (IDictionary<string, object?>)result;
-
-        if (callActivity.PropagateAllParentVariables)
-        {
-            foreach (var kvp in sourceDict)
-                resultDict[kvp.Key] = kvp.Value;
-        }
-
-        foreach (var mapping in callActivity.InputMappings)
-        {
-            if (sourceDict.TryGetValue(mapping.Source, out var value))
-                resultDict[mapping.Target] = value;
-        }
-
-        return result;
-    }
-
-    private static ExpandoObject BuildParentOutputVariables(CallActivity callActivity, ExpandoObject childVariables)
-    {
-        var result = new ExpandoObject();
-        var sourceDict = (IDictionary<string, object?>)childVariables;
-        var resultDict = (IDictionary<string, object?>)result;
-
-        if (callActivity.PropagateAllChildVariables)
-        {
-            foreach (var kvp in sourceDict)
-                resultDict[kvp.Key] = kvp.Value;
-        }
-
-        foreach (var mapping in callActivity.OutputMappings)
-        {
-            if (sourceDict.TryGetValue(mapping.Source, out var value))
-                resultDict[mapping.Target] = value;
-        }
-
-        return result;
     }
 
     private void SetWorkflowRequestContext()
