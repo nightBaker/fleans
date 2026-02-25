@@ -19,7 +19,9 @@
     <boundaryEvent id="cancelBoundary" attachedToRef="longWait">
       <messageEventDefinition messageRef="cancelMsg" />
     </boundaryEvent>
-    <task id="normalPath" />
+    <scriptTask id="normalPath" scriptFormat="csharp">
+      <script>_context.normalPath = true</script>
+    </scriptTask>
     <scriptTask id="cancelPath" scriptFormat="csharp">
       <script>_context.cancelled = true</script>
     </scriptTask>

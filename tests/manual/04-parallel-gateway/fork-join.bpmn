@@ -10,7 +10,9 @@
       <script>_context.b = "done"</script>
     </scriptTask>
     <parallelGateway id="join" />
-    <task id="afterJoin" />
+    <scriptTask id="afterJoin" scriptFormat="csharp">
+      <script>_context.joined = true</script>
+    </scriptTask>
     <endEvent id="end" />
     <sequenceFlow id="f1" sourceRef="start" targetRef="fork" />
     <sequenceFlow id="f2" sourceRef="fork" targetRef="branchA" />

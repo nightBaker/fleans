@@ -11,7 +11,9 @@
         <timeDuration>PT5S</timeDuration>
       </timerEventDefinition>
     </boundaryEvent>
-    <task id="normalEnd" />
+    <scriptTask id="normalEnd" scriptFormat="csharp">
+      <script>_context.normalEnd = true</script>
+    </scriptTask>
     <scriptTask id="timeoutPath" scriptFormat="csharp">
       <script>_context.timedOut = true</script>
     </scriptTask>

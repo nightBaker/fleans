@@ -6,8 +6,12 @@
       <script>_context.x = 7</script>
     </scriptTask>
     <exclusiveGateway id="gateway" default="defaultFlow" />
-    <task id="highTask" />
-    <task id="lowTask" />
+    <scriptTask id="highTask" scriptFormat="csharp">
+      <script>_context.path = "high"</script>
+    </scriptTask>
+    <scriptTask id="lowTask" scriptFormat="csharp">
+      <script>_context.path = "low"</script>
+    </scriptTask>
     <endEvent id="highEnd" />
     <endEvent id="lowEnd" />
     <sequenceFlow id="f1" sourceRef="start" targetRef="setX" />

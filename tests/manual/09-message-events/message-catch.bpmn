@@ -14,7 +14,9 @@
     <intermediateCatchEvent id="waitApproval">
       <messageEventDefinition messageRef="msg1" />
     </intermediateCatchEvent>
-    <task id="afterApproval" />
+    <scriptTask id="afterApproval" scriptFormat="csharp">
+      <script>_context.approved = true</script>
+    </scriptTask>
     <endEvent id="end" />
     <sequenceFlow id="f1" sourceRef="start" targetRef="setCorrelation" />
     <sequenceFlow id="f2" sourceRef="setCorrelation" targetRef="waitApproval" />

@@ -6,7 +6,9 @@
     <boundaryEvent id="errorBoundary" attachedToRef="callFailing">
       <errorEventDefinition />
     </boundaryEvent>
-    <task id="happyEnd" />
+    <scriptTask id="happyEnd" scriptFormat="csharp">
+      <script>_context.happyEnd = true</script>
+    </scriptTask>
     <scriptTask id="errorHandler" scriptFormat="csharp">
       <script>_context.errorHandled = true</script>
     </scriptTask>

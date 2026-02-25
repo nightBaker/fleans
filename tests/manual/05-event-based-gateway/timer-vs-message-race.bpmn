@@ -20,8 +20,12 @@
     <intermediateCatchEvent id="msgCatch">
       <messageEventDefinition messageRef="msg1" />
     </intermediateCatchEvent>
-    <task id="timerPath" />
-    <task id="msgPath" />
+    <scriptTask id="timerPath" scriptFormat="csharp">
+      <script>_context.path = "timer"</script>
+    </scriptTask>
+    <scriptTask id="msgPath" scriptFormat="csharp">
+      <script>_context.path = "message"</script>
+    </scriptTask>
     <endEvent id="timerEnd" />
     <endEvent id="msgEnd" />
     <sequenceFlow id="f1" sourceRef="start" targetRef="setCorrelation" />

@@ -11,7 +11,9 @@
     <boundaryEvent id="signalBoundary" attachedToRef="longWait">
       <signalEventDefinition signalRef="Signal_2" />
     </boundaryEvent>
-    <task id="normalPath" />
+    <scriptTask id="normalPath" scriptFormat="csharp">
+      <script>_context.normalPath = true</script>
+    </scriptTask>
     <scriptTask id="emergencyPath" scriptFormat="csharp">
       <script>_context.emergency = true</script>
     </scriptTask>

@@ -11,7 +11,9 @@
       <sequenceFlow id="sf1" sourceRef="subStart" targetRef="subScript" />
       <sequenceFlow id="sf2" sourceRef="subScript" targetRef="subEnd" />
     </subProcess>
-    <task id="afterSub" />
+    <scriptTask id="afterSub" scriptFormat="csharp">
+      <script>_context.afterSub = true</script>
+    </scriptTask>
     <endEvent id="end" />
     <sequenceFlow id="f1" sourceRef="start" targetRef="sub1" />
     <sequenceFlow id="f2" sourceRef="sub1" targetRef="afterSub" />
