@@ -4,9 +4,18 @@ namespace Fleans.Domain.Activities;
 
 [GenerateSerializer]
 public abstract record BoundarableActivity(string ActivityId)
-    : Activity(ActivityId), IBoundarableActivity
+    : Activity(ActivityId)
 {
-    public async Task RegisterBoundaryEventsAsync(
+    internal override async Task ExecuteAsync(
+        IWorkflowExecutionContext workflowContext,
+        IActivityExecutionContext activityContext,
+        IWorkflowDefinition definition)
+    {
+        await base.ExecuteAsync(workflowContext, activityContext, definition);
+        await RegisterBoundaryEventsAsync(workflowContext, activityContext, definition);
+    }
+
+    private async Task RegisterBoundaryEventsAsync(
         IWorkflowExecutionContext workflowContext,
         IActivityExecutionContext activityContext,
         IWorkflowDefinition definition)
