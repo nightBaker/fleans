@@ -71,13 +71,13 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
                 LogExecutingActivity(activityId, currentActivity.GetType().Name);
 
                 // Check if this is a multi-instance host (not an iteration)
-                var entryForActivity = State.GetFirstActive(activityId);
+                var activityInstanceId = activityState.GetPrimaryKey();
+                var entryForActivity = State.Entries.FirstOrDefault(e => e.ActivityInstanceId == activityInstanceId);
                 if (currentActivity.LoopCharacteristics is { IsSequential: false } && entryForActivity?.MultiInstanceIndex is null)
                 {
-                    var instanceId = await activityState.GetActivityInstanceId();
                     var variablesId = await activityState.GetVariablesStateId();
                     await activityState.Execute(); // Mark as executing
-                    await OpenMultiInstanceScope(instanceId, currentActivity, variablesId);
+                    await OpenMultiInstanceScope(activityInstanceId, currentActivity, variablesId);
                 }
                 else
                 {
@@ -274,6 +274,11 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
                 if (await activityInstance.IsCancelled())
                     continue;
 
+                // Multi-instance iterations don't transition directly — their host
+                // is completed via CompleteFinishedSubProcessScopes when all iterations finish
+                if (entry.MultiInstanceIndex.HasValue)
+                    continue;
+
                 var scopeDefinition = definition.GetScopeForActivity(entry.ActivityId);
                 var currentActivity = scopeDefinition.GetActivity(entry.ActivityId);
 
@@ -325,16 +330,64 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
             {
                 var scopeDefinition = definition.GetScopeForActivity(entry.ActivityId);
                 var activity = scopeDefinition.GetActivity(entry.ActivityId);
-                if (activity is not SubProcess) continue;
+
+                var isSubProcess = activity is SubProcess;
+                var isMultiInstanceHost = activity.LoopCharacteristics is not null
+                    && entry.MultiInstanceIndex is null;
+
+                if (!isSubProcess && !isMultiInstanceHost) continue;
 
                 var scopeEntries = State.Entries.Where(e => e.ScopeId == entry.ActivityInstanceId).ToList();
                 if (scopeEntries.Count == 0) continue;
                 if (!scopeEntries.All(e => e.IsCompleted)) continue;
 
-                // All scope children are done — complete the sub-process
+                // All scope children are done — complete the host
                 var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(entry.ActivityInstanceId);
+
+                if (isMultiInstanceHost)
+                {
+                    // Aggregate output variables if configured
+                    var loopChars = activity.LoopCharacteristics!;
+                    if (loopChars.OutputDataItem is not null && loopChars.OutputCollection is not null)
+                    {
+                        var iterationEntries = State.Entries
+                            .Where(e => e.ScopeId == entry.ActivityInstanceId && e.MultiInstanceIndex.HasValue)
+                            .OrderBy(e => e.MultiInstanceIndex!.Value)
+                            .ToList();
+
+                        var outputList = new List<object?>();
+                        foreach (var iterEntry in iterationEntries)
+                        {
+                            var iterGrain = _grainFactory.GetGrain<IActivityInstanceGrain>(iterEntry.ActivityInstanceId);
+                            var iterVarId = await iterGrain.GetVariablesStateId();
+                            var outputValue = State.GetVariable(iterVarId, loopChars.OutputDataItem);
+                            outputList.Add(outputValue);
+                        }
+
+                        // Set aggregated output on host's variable scope
+                        var hostGrain = _grainFactory.GetGrain<IActivityInstanceGrain>(entry.ActivityInstanceId);
+                        var hostVarId = await hostGrain.GetVariablesStateId();
+                        dynamic outputVars = new ExpandoObject();
+                        ((IDictionary<string, object?>)outputVars)[loopChars.OutputCollection] = outputList;
+                        State.MergeState(hostVarId, (ExpandoObject)outputVars);
+                    }
+
+                    // Clean up child variable scopes
+                    var childVarIds = new List<Guid>();
+                    foreach (var iterEntry in State.Entries.Where(e => e.ScopeId == entry.ActivityInstanceId && e.MultiInstanceIndex.HasValue))
+                    {
+                        var iterGrain = _grainFactory.GetGrain<IActivityInstanceGrain>(iterEntry.ActivityInstanceId);
+                        childVarIds.Add(await iterGrain.GetVariablesStateId());
+                    }
+                    State.RemoveVariableStates(childVarIds);
+                    LogMultiInstanceScopeCompleted(entry.ActivityId);
+                }
+                else
+                {
+                    LogSubProcessCompleted(entry.ActivityId);
+                }
+
                 await activityInstance.Complete();
-                LogSubProcessCompleted(entry.ActivityId);
 
                 var nextActivities = await activity.GetNextActivities(this, activityInstance, scopeDefinition);
 
@@ -375,7 +428,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
     private async Task CompleteActivityState(string activityId, ExpandoObject variables)
     {
-        var entry = State.GetFirstActive(activityId)
+        var entry = State.GetFirstActivePreferIteration(activityId)
             ?? throw new InvalidOperationException("Active activity not found");
 
         var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(entry.ActivityInstanceId);
@@ -451,7 +504,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
     private async Task FailActivityState(string activityId, Exception exception)
     {
-        var entry = State.GetFirstActive(activityId)
+        var entry = State.GetFirstActivePreferIteration(activityId)
             ?? throw new InvalidOperationException("Active activity not found");
 
         var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(entry.ActivityInstanceId);
@@ -1123,6 +1176,10 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
     [LoggerMessage(EventId = 1040, Level = LogLevel.Information,
         Message = "Multi-instance scope opened for activity {ActivityId} with {IterationCount} iterations")]
     private partial void LogMultiInstanceScopeOpened(string activityId, int iterationCount);
+
+    [LoggerMessage(EventId = 1041, Level = LogLevel.Information,
+        Message = "Multi-instance scope completed for activity {ActivityId}")]
+    private partial void LogMultiInstanceScopeCompleted(string activityId);
 
     [LoggerMessage(EventId = 1038, Level = LogLevel.Information,
         Message = "Sub-process {ActivityId} completed — all child activities done")]

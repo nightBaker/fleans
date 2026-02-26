@@ -53,6 +53,23 @@ public class WorkflowInstanceState
     public ActivityInstanceEntry? GetFirstActive(string activityId)
         => Entries.FirstOrDefault(a => a.ActivityId == activityId && !a.IsCompleted);
 
+    /// <summary>
+    /// Returns the first active iteration entry (MultiInstanceIndex not null) for the given
+    /// activityId, or falls back to the first active entry. This ensures multi-instance
+    /// iteration entries are completed before the host entry.
+    /// </summary>
+    public ActivityInstanceEntry? GetFirstActivePreferIteration(string activityId)
+    {
+        ActivityInstanceEntry? fallback = null;
+        foreach (var entry in Entries)
+        {
+            if (entry.ActivityId != activityId || entry.IsCompleted) continue;
+            if (entry.MultiInstanceIndex.HasValue) return entry;
+            fallback ??= entry;
+        }
+        return fallback;
+    }
+
     public WorkflowVariablesState GetVariableState(Guid id)
         => VariableStates.FirstOrDefault(v => v.Id == id)
             ?? throw new InvalidOperationException($"Variable state '{id}' not found");
