@@ -9,6 +9,9 @@ namespace Fleans.Domain.Activities;
 [GenerateSerializer]
 public abstract record Activity([property: Id(0)] string ActivityId)
 {
+    [Id(1)]
+    public MultiInstanceLoopCharacteristics? LoopCharacteristics { get; init; }
+
     internal virtual bool IsJoinGateway => false;
 
     internal virtual async Task ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
