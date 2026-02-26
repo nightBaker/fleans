@@ -138,6 +138,12 @@ public class WorkflowInstanceState
         sequence.SetResult(result);
     }
 
+    public void RemoveVariableStates(IEnumerable<Guid> variableStateIds)
+    {
+        var idsToRemove = new HashSet<Guid>(variableStateIds);
+        VariableStates.RemoveAll(vs => idsToRemove.Contains(vs.Id));
+    }
+
     public void MergeState(Guid variablesId, ExpandoObject variables)
     {
         GetVariableState(variablesId).Merge(variables);
