@@ -6,7 +6,7 @@ namespace Fleans.Domain.Activities;
 [GenerateSerializer]
 public record TimerIntermediateCatchEvent(
     string ActivityId,
-    [property: Id(1)] TimerDefinition TimerDefinition) : Activity(ActivityId)
+    [property: Id(1)] TimerDefinition TimerDefinition) : BoundarableActivity(ActivityId)
 {
     internal override async Task ExecuteAsync(
         IWorkflowExecutionContext workflowContext,

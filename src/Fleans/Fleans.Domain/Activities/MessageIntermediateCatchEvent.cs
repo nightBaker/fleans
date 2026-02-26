@@ -7,7 +7,7 @@ namespace Fleans.Domain.Activities;
 [GenerateSerializer]
 public record MessageIntermediateCatchEvent(
     string ActivityId,
-    [property: Id(1)] string MessageDefinitionId) : Activity(ActivityId)
+    [property: Id(1)] string MessageDefinitionId) : BoundarableActivity(ActivityId)
 {
     internal override async Task ExecuteAsync(
         IWorkflowExecutionContext workflowContext,
