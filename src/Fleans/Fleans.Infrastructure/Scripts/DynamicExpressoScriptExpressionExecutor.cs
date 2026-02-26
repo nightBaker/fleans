@@ -13,6 +13,16 @@ public class DynamicExpressoScriptExpressionExecutor : IScriptExpressionExecutor
         "csharp", "c#", ""
     };
 
+    /// <summary>
+    /// Maps fully-qualified type name prefixes to empty string so that DynamicExpresso
+    /// can resolve referenced types by their short names.
+    /// </summary>
+    private static readonly (string Prefix, Type Type)[] NamespaceMappings =
+    [
+        ("System.Collections.Generic.", typeof(List<>)),
+        ("System.Collections.Generic.", typeof(Dictionary<,>)),
+    ];
+
     public DynamicExpressoScriptExpressionExecutor()
         : this(TimeSpan.FromSeconds(10))
     {
@@ -31,15 +41,22 @@ public class DynamicExpressoScriptExpressionExecutor : IScriptExpressionExecutor
         if (string.IsNullOrWhiteSpace(script))
             return variables;
 
+        // DynamicExpresso doesn't support fully-qualified type names (e.g. System.Collections.Generic.List<T>).
+        // Strip known namespace prefixes so types resolve by their short names.
+        var processedScript = StripNamespacePrefixes(script);
+
         // Note: Task.Run + WaitAsync provides a timeout for the caller, but the thread pool
         // thread continues running if the script hangs (DynamicExpresso.Eval is synchronous
         // and does not support cancellation). This is a known limitation — true isolation
         // would require running scripts in a separate process.
         var task = Task.Run(() =>
         {
-            var interpreter = new Interpreter().SetVariable("_context", variables);
+            var interpreter = new Interpreter()
+                .Reference(typeof(List<>))
+                .Reference(typeof(Dictionary<,>))
+                .SetVariable("_context", variables);
 
-            foreach (var statement in SplitStatements(script))
+            foreach (var statement in SplitStatements(processedScript))
             {
                 interpreter.Eval(statement);
             }
@@ -48,6 +65,16 @@ public class DynamicExpressoScriptExpressionExecutor : IScriptExpressionExecutor
         await task.WaitAsync(_scriptTimeout);
 
         return variables;
+    }
+
+    internal static string StripNamespacePrefixes(string script)
+    {
+        var result = script;
+        foreach (var (prefix, _) in NamespaceMappings)
+        {
+            result = result.Replace(prefix, "");
+        }
+        return result;
     }
 
     internal static IEnumerable<string> SplitStatements(string script)

@@ -1,8 +1,10 @@
 using Fleans.Application;
 using Fleans.Application.Events;
+using Fleans.Application.QueryModels;
 using Fleans.Application.Services;
 using Fleans.Domain;
 using Fleans.Domain.Persistence;
+using Fleans.Infrastructure;
 using Fleans.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -53,6 +55,21 @@ public abstract class WorkflowTestBase
         }
     }
 
+    protected async Task<InstanceStateSnapshot?> PollForCompletion(
+        Guid instanceId, int timeoutMs = 10000)
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+        while (DateTime.UtcNow < deadline)
+        {
+            var snapshot = await QueryService.GetStateSnapshot(instanceId);
+            if (snapshot is not null && snapshot.IsCompleted)
+                return snapshot;
+            await Task.Delay(100);
+        }
+
+        return await QueryService.GetStateSnapshot(instanceId);
+    }
+
     private class EfCoreSiloConfigurator : ISiloConfigurator
     {
         public void Configure(ISiloBuilder hostBuilder) =>
@@ -85,6 +102,7 @@ public abstract class WorkflowTestBase
                     services.AddSingleton<IProcessDefinitionRepository, EfCoreProcessDefinitionRepository>();
                     services.AddSingleton<IWorkflowQueryService, WorkflowQueryService>();
                     services.AddTransient<IBoundaryEventHandler, BoundaryEventHandler>();
+                    services.AddInfrastructure();
 
                     services.AddSerializer(serializerBuilder =>
                     {

@@ -502,7 +502,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         }
     }
 
-    private async Task FailActivityState(string activityId, Exception exception)
+    private async Task<ActivityInstanceEntry> FailActivityState(string activityId, Exception exception)
     {
         var entry = State.GetFirstActivePreferIteration(activityId)
             ?? throw new InvalidOperationException("Active activity not found");
@@ -510,6 +510,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(entry.ActivityInstanceId);
         SetActivityRequestContext(activityId, activityInstance);
         await activityInstance.Fail(exception);
+        return entry;
     }
     
     public async ValueTask Complete()
@@ -761,12 +762,11 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
     private async Task FailActivityWithBoundaryCheck(string activityId, Exception exception)
     {
-        await FailActivityState(activityId, exception);
+        var failedEntry = await FailActivityState(activityId, exception);
 
         var definition = await GetWorkflowDefinition();
-        var activityEntry = State.GetFirstActive(activityId) ?? State.Entries.Last(e => e.ActivityId == activityId);
-        var activityGrain = _grainFactory.GetGrain<IActivityInstanceGrain>(activityEntry.ActivityInstanceId);
-        var errorState = await activityGrain.GetErrorState();
+        var failedGrain = _grainFactory.GetGrain<IActivityInstanceGrain>(failedEntry.ActivityInstanceId);
+        var errorState = await failedGrain.GetErrorState();
 
         if (errorState is null)
         {
@@ -780,7 +780,6 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         {
             // No boundary handler — complete the failed entry so the parent scope stays active
             // (its executing SubProcess grain prevents ExecuteWorkflow from auto-completing)
-            var failedEntry = State.Entries.Last(e => e.ActivityId == activityId);
             State.CompleteEntries([failedEntry]);
             await ExecuteWorkflow();
 
@@ -800,13 +799,28 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
         if (attachedToActivityId == activityId)
         {
-            // Direct match — boundary is on the failed activity itself
-            await _boundaryHandler.HandleBoundaryErrorAsync(activityId, boundaryEvent, activityEntry.ActivityInstanceId, scopeDefinition);
+            // When the failed entry is a multi-instance iteration, the boundary is attached
+            // to the host activity — cancel the host scope (all iterations) and trigger boundary.
+            if (failedEntry.MultiInstanceIndex.HasValue)
+            {
+                State.CompleteEntries([failedEntry]);
+                var hostEntry = State.Entries.First(e =>
+                    e.ActivityInstanceId == failedEntry.ScopeId!.Value);
+                await CancelScopeChildren(hostEntry.ActivityInstanceId);
+                var hostGrain = _grainFactory.GetGrain<IActivityInstanceGrain>(hostEntry.ActivityInstanceId);
+                await hostGrain.Cancel("Multi-instance iteration failed — error boundary triggered");
+                State.CompleteEntries([hostEntry]);
+                await _boundaryHandler.HandleBoundaryErrorAsync(activityId, boundaryEvent, hostEntry.ActivityInstanceId, scopeDefinition);
+            }
+            else
+            {
+                // Direct match — boundary is on the failed activity itself
+                await _boundaryHandler.HandleBoundaryErrorAsync(activityId, boundaryEvent, failedEntry.ActivityInstanceId, scopeDefinition);
+            }
         }
         else
         {
             // Bubbled up — cancel intermediate scopes between failed activity and matched SubProcess
-            var failedEntry = State.Entries.Last(e => e.ActivityId == activityId);
             State.CompleteEntries([failedEntry]);
 
             var currentScopeId = failedEntry.ScopeId;
