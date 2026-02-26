@@ -195,7 +195,10 @@ public partial class BpmnConverter : IBpmnConverter
             var scriptElement = scriptTask.Element(Bpmn + "script");
             var script = scriptElement?.Value.Trim() ?? "";
             script = ConvertBpmnVariableReferences(script);
-            var activity = new ScriptTask(id, script, scriptFormat);
+            var activity = new ScriptTask(id, script, scriptFormat)
+            {
+                LoopCharacteristics = ParseMultiInstanceLoopCharacteristics(scriptTask)
+            };
             activities.Add(activity);
             activityMap[id] = activity;
         }
@@ -274,7 +277,8 @@ public partial class BpmnConverter : IBpmnConverter
             var activity = new SubProcess(id)
             {
                 Activities = childActivities,
-                SequenceFlows = childSequenceFlows
+                SequenceFlows = childSequenceFlows,
+                LoopCharacteristics = ParseMultiInstanceLoopCharacteristics(subProcessEl)
             };
             activities.Add(activity);
             activityMap[id] = activity;
@@ -312,6 +316,9 @@ public partial class BpmnConverter : IBpmnConverter
             }
 
             var activity = new CallActivity(id, calledElement, inputMappings, outputMappings, propagateAllParent, propagateAllChild);
+            var miChars = ParseMultiInstanceLoopCharacteristics(callActivityEl);
+            if (miChars is not null)
+                activity = activity with { LoopCharacteristics = miChars };
             activities.Add(activity);
             activityMap[id] = activity;
         }
@@ -613,6 +620,35 @@ public partial class BpmnConverter : IBpmnConverter
     {
         return element.Attribute("id")?.Value
             ?? throw new InvalidOperationException($"Element {element.Name} must have an id attribute");
+    }
+
+    private static MultiInstanceLoopCharacteristics? ParseMultiInstanceLoopCharacteristics(XElement activityElement)
+    {
+        var miElement = activityElement.Element(Bpmn + "multiInstanceLoopCharacteristics");
+        if (miElement is null) return null;
+
+        var isSequential = bool.TryParse(miElement.Attribute("isSequential")?.Value, out var seq) && seq;
+
+        // Parse loopCardinality
+        int? loopCardinality = null;
+        var cardinalityEl = miElement.Element(Bpmn + "loopCardinality");
+        if (cardinalityEl is not null && int.TryParse(cardinalityEl.Value.Trim(), out var card))
+            loopCardinality = card;
+
+        // Parse collection — Zeebe/Camunda extension attributes
+        var inputCollection = miElement.Attribute(Zeebe + "collection")?.Value
+            ?? miElement.Attribute("collection")?.Value;
+        var inputDataItem = miElement.Attribute(Zeebe + "elementVariable")?.Value
+            ?? miElement.Attribute("elementVariable")?.Value;
+
+        // Parse output — Zeebe/Camunda extension attributes
+        var outputCollection = miElement.Attribute(Zeebe + "outputCollection")?.Value
+            ?? miElement.Attribute("outputCollection")?.Value;
+        var outputDataItem = miElement.Attribute(Zeebe + "outputElement")?.Value
+            ?? miElement.Attribute("outputElement")?.Value;
+
+        return new MultiInstanceLoopCharacteristics(
+            isSequential, loopCardinality, inputCollection, inputDataItem, outputCollection, outputDataItem);
     }
 
     private static TimerDefinition ParseTimerDefinition(XElement timerEventDef)
