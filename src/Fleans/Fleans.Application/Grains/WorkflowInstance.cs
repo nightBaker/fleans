@@ -69,7 +69,20 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
                 var currentActivity = scopeDefinition.GetActivity(activityId);
                 SetActivityRequestContext(activityId, activityState);
                 LogExecutingActivity(activityId, currentActivity.GetType().Name);
-                await currentActivity.ExecuteAsync(this, activityState, scopeDefinition);
+
+                // Check if this is a multi-instance host (not an iteration)
+                var entryForActivity = State.GetFirstActive(activityId);
+                if (currentActivity.LoopCharacteristics is { IsSequential: false } && entryForActivity?.MultiInstanceIndex is null)
+                {
+                    var instanceId = await activityState.GetActivityInstanceId();
+                    var variablesId = await activityState.GetVariablesStateId();
+                    await activityState.Execute(); // Mark as executing
+                    await OpenMultiInstanceScope(instanceId, currentActivity, variablesId);
+                }
+                else
+                {
+                    await currentActivity.ExecuteAsync(this, activityState, scopeDefinition);
+                }
             }
 
             await TransitionToNextActivity();
@@ -93,6 +106,70 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
         var startEntry = new ActivityInstanceEntry(startInstanceId, startActivity.ActivityId, State.Id, subProcessInstanceId);
         State.AddEntries([startEntry]);
+    }
+
+    public async ValueTask OpenMultiInstanceScope(Guid hostInstanceId, Activity activity, Guid parentVariablesId)
+    {
+        var loopChars = activity.LoopCharacteristics!;
+
+        // Resolve iteration count
+        int count;
+        object[]? collectionItems = null;
+        if (loopChars.LoopCardinality.HasValue)
+        {
+            count = loopChars.LoopCardinality.Value;
+        }
+        else if (loopChars.InputCollection is not null)
+        {
+            var collectionVar = await GetVariable(parentVariablesId, loopChars.InputCollection);
+            if (collectionVar is IEnumerable<object> enumerable)
+            {
+                collectionItems = enumerable.ToArray();
+                count = collectionItems.Length;
+            }
+            else
+            {
+                throw new InvalidOperationException(
+                    $"Multi-instance inputCollection '{loopChars.InputCollection}' must be a list/array");
+            }
+        }
+        else
+        {
+            throw new InvalidOperationException(
+                "Multi-instance must have either LoopCardinality or InputCollection");
+        }
+
+        LogMultiInstanceScopeOpened(activity.ActivityId, count);
+
+        var newEntries = new List<ActivityInstanceEntry>();
+        for (var i = 0; i < count; i++)
+        {
+            var childVariablesId = State.AddChildVariableState(parentVariablesId);
+
+            // Set loopCounter
+            dynamic loopVars = new ExpandoObject();
+            loopVars.loopCounter = i;
+            State.MergeState(childVariablesId, (ExpandoObject)loopVars);
+
+            // Set inputDataItem if collection-driven
+            if (collectionItems is not null && loopChars.InputDataItem is not null)
+            {
+                dynamic itemVars = new ExpandoObject();
+                ((IDictionary<string, object?>)itemVars)[loopChars.InputDataItem] = collectionItems[i];
+                State.MergeState(childVariablesId, (ExpandoObject)itemVars);
+            }
+
+            var iterationInstanceId = Guid.NewGuid();
+            var iterationGrain = _grainFactory.GetGrain<IActivityInstanceGrain>(iterationInstanceId);
+            await iterationGrain.SetActivity(activity.ActivityId, activity.GetType().Name);
+            await iterationGrain.SetVariablesId(childVariablesId);
+
+            var iterationEntry = new ActivityInstanceEntry(
+                iterationInstanceId, activity.ActivityId, State.Id, hostInstanceId, i);
+            newEntries.Add(iterationEntry);
+        }
+
+        State.AddEntries(newEntries);
     }
 
     public async Task CompleteActivity(string activityId, ExpandoObject variables)
@@ -1042,6 +1119,10 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
     [LoggerMessage(EventId = 1037, Level = LogLevel.Information,
         Message = "Sub-process {ActivityId} initialized with child variable scope {ChildVariablesId}")]
     private partial void LogSubProcessInitialized(string activityId, Guid childVariablesId);
+
+    [LoggerMessage(EventId = 1040, Level = LogLevel.Information,
+        Message = "Multi-instance scope opened for activity {ActivityId} with {IterationCount} iterations")]
+    private partial void LogMultiInstanceScopeOpened(string activityId, int iterationCount);
 
     [LoggerMessage(EventId = 1038, Level = LogLevel.Information,
         Message = "Sub-process {ActivityId} completed — all child activities done")]
