@@ -151,7 +151,7 @@ Each item solves exactly one problem. Items within a phase may depend on earlier
 - [x] **2.1 — Tree-structured WorkflowDefinition**: SubProcess holds child Activities and SequenceFlows, implements IWorkflowDefinition. Recursive BpmnConverter parsing. *Done.*
 - [x] **2.2 — Variable scope chain**: WorkflowVariablesState.ParentVariablesId chains scopes. GetVariable walks up. Writes go to local scope. *Done.*
 - [x] **2.3 — Embedded Sub-Process**: SubProcess executes within same WorkflowInstance grain. ScopeId on ActivityInstanceEntry tracks nesting. Scope completion detection and boundary event cancellation. *Done.*
-- [ ] **2.4 — Multi-Instance Activity (parallel)**: Single activity definition spawns N `ActivityInstance` grains, each with its own variable scope. Completion waits for all N. Results aggregated back. *Problem solved: parallel execution of same activity over a collection.*
+- [x] **2.4 — Multi-Instance Activity (parallel)**: Single activity definition spawns N `ActivityInstance` grains, each with its own variable scope. Completion waits for all N. Results aggregated back. *Problem solved: parallel execution of same activity over a collection.*
 - [ ] **2.5 — Multi-Instance Activity (sequential)**: Same as 2.4 but instances run one at a time. Loop variable tracks progress. *Problem solved: sequential iteration over a collection.*
 
 ### Phase 3: Dynamic Join Counting (A3)
