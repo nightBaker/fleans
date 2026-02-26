@@ -2,7 +2,7 @@
 
 ## Summary
 
-**11 passed, 4 bugs found** across 15 test scenarios covering all implemented BPMN features.
+**14 passed, 1 bug remaining** across 15 test scenarios covering all implemented BPMN features. Bug 1 fixed in PR #105, Bug 2 fixed in `fix/error-boundary-on-call-activity`.
 
 ## Results
 
@@ -16,17 +16,19 @@
 | 06 | Call Activity | `06-call-activity/{parent,child}-process.bpmn` | PASSED |
 | 07 | SubProcess (Embedded) | `07-subprocess/embedded-subprocess.bpmn` | PASSED |
 | 08a | Timer Intermediate Catch | `08-timer-events/timer-catch.bpmn` | PASSED |
-| 08b | Timer Boundary on Message Catch | `08-timer-events/timer-boundary.bpmn` | **BUG** |
+| 08b | Timer Boundary on Message Catch | `08-timer-events/timer-boundary.bpmn` | PASSED (fixed PR #105) |
 | 09a | Message Intermediate Catch | `09-message-events/message-catch.bpmn` | PASSED |
-| 09b | Message Boundary on Timer Catch | `09-message-events/message-boundary.bpmn` | **BUG** |
+| 09b | Message Boundary on Timer Catch | `09-message-events/message-boundary.bpmn` | PASSED (fixed PR #105) |
 | 10a | Signal Intermediate Catch | `10-signal-events/signal-catch-throw.bpmn` | PASSED |
-| 10b | Signal Boundary on Timer Catch | `10-signal-events/signal-boundary.bpmn` | **BUG** |
-| 11 | Error Boundary on Call Activity | `11-error-boundary/error-on-call-activity.bpmn` | **BUG** |
+| 10b | Signal Boundary on Timer Catch | `10-signal-events/signal-boundary.bpmn` | PASSED (fixed PR #105) |
+| 11 | Error Boundary on Call Activity | `11-error-boundary/error-on-call-activity.bpmn` | PASSED (fixed) |
 | 12 | Variable Scoping (Parallel Isolation) | `12-variable-scoping/parallel-variable-isolation.bpmn` | PASSED |
 
 ---
 
-## Bug 1: Boundary events on IntermediateCatchEvents don't register subscriptions
+## Bug 1: Boundary events on IntermediateCatchEvents don't register subscriptions ✓ FIXED
+
+**Status:** Fixed in PR #105 (commit 0009d9f)
 
 **Affects:** Tests 08b, 09b, 10b
 
@@ -42,7 +44,9 @@
 
 ---
 
-## Bug 2: Child process errors don't propagate to parent error boundary
+## Bug 2: Child process errors don't propagate to parent error boundary ✓ FIXED
+
+**Status:** Fixed in branch `fix/error-boundary-on-call-activity`
 
 **Affects:** Test 11
 
@@ -60,14 +64,12 @@
 
 ## Common Pattern
 
-All 4 bugs involve boundary events that fail to activate. The boundary event registration and triggering mechanism works for some host activity types but not others:
+All 4 bugs involved boundary events that failed to activate. Both have been fixed:
 
-| Host Activity Type | Boundary Type | Works? |
+| Host Activity Type | Boundary Type | Status |
 |---|---|---|
 | Task / ScriptTask | Timer | Not tested (no fixture) |
-| IntermediateCatchEvent (Message) | Timer | **No** (Bug 1) |
-| IntermediateCatchEvent (Timer) | Message | **No** (Bug 1) |
-| IntermediateCatchEvent (Timer) | Signal | **No** (Bug 1) |
-| CallActivity | Error | **No** (Bug 2) |
-
-The systemic issue is that boundary event subscriptions are only registered for certain host activity types. IntermediateCatchEvents and CallActivities (for error propagation) are missing this registration.
+| IntermediateCatchEvent (Message) | Timer | Fixed (PR #105) |
+| IntermediateCatchEvent (Timer) | Message | Fixed (PR #105) |
+| IntermediateCatchEvent (Timer) | Signal | Fixed (PR #105) |
+| CallActivity | Error | Fixed |

@@ -309,6 +309,88 @@ public class CallActivityTests : WorkflowTestBase
     }
 
     [TestMethod]
+    public async Task CallActivity_ChildFails_ShouldPropagateErrorToParentBoundary()
+    {
+        // Arrange — deploy child workflow: start → childTask → end
+        var childStart = new StartEvent("childStart");
+        var childTask = new TaskActivity("childTask");
+        var childEnd = new EndEvent("childEnd");
+
+        var childWorkflow = new WorkflowDefinition
+        {
+            WorkflowId = "childThatFails",
+            Activities = [childStart, childTask, childEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("cs1", childStart, childTask),
+                new SequenceFlow("cs2", childTask, childEnd)
+            ]
+        };
+
+        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
+        await factory.DeployWorkflow(childWorkflow, "<xml/>");
+
+        // Arrange — parent workflow: start → callFailing → happyEnd
+        //   with errorBoundary on callFailing → errorHandler → end2
+        var parentStart = new StartEvent("start");
+        var callFailing = new CallActivity("callFailing", "childThatFails", [], []);
+        var happyEnd = new EndEvent("happyEnd");
+        var errorBoundary = new BoundaryErrorEvent("errorBoundary", "callFailing", null);
+        var errorHandler = new TaskActivity("errorHandler");
+        var end2 = new EndEvent("end2");
+
+        var parentWorkflow = new WorkflowDefinition
+        {
+            WorkflowId = "errorBoundaryTest",
+            Activities = [parentStart, callFailing, happyEnd, errorBoundary, errorHandler, end2],
+            SequenceFlows =
+            [
+                new SequenceFlow("ps1", parentStart, callFailing),
+                new SequenceFlow("ps2", callFailing, happyEnd),
+                new SequenceFlow("ps3", errorBoundary, errorHandler),
+                new SequenceFlow("ps4", errorHandler, end2)
+            ]
+        };
+
+        await factory.DeployWorkflow(parentWorkflow, "<xml/>");
+
+        var parentInstance = await factory.CreateWorkflowInstanceGrain("errorBoundaryTest");
+        var parentInstanceId = parentInstance.GetPrimaryKey();
+
+        // Act — start parent (spawns child), then fail the child's task
+        await parentInstance.StartWorkflow();
+
+        var parentSnapshot = await QueryService.GetStateSnapshot(parentInstanceId);
+        Assert.IsNotNull(parentSnapshot);
+        var callActivitySnapshot = parentSnapshot.ActiveActivities.First(a => a.ActivityId == "callFailing");
+        Assert.IsNotNull(callActivitySnapshot.ChildWorkflowInstanceId, "Child workflow should have been spawned");
+        var childInstanceId = callActivitySnapshot.ChildWorkflowInstanceId.Value;
+
+        var childInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(childInstanceId);
+        await childInstance.FailActivity("childTask", new Exception("Something went wrong"));
+
+        // Assert — error boundary should have fired, routing to errorHandler
+        var finalSnapshot = await QueryService.GetStateSnapshot(parentInstanceId);
+        Assert.IsNotNull(finalSnapshot);
+
+        Assert.IsTrue(
+            finalSnapshot.ActiveActivities.Any(a => a.ActivityId == "errorHandler"),
+            "Error handler should be active after child failure propagates");
+
+        Assert.IsTrue(
+            finalSnapshot.CompletedActivities.Any(a => a.ActivityId == "errorBoundary"),
+            "Error boundary event should be completed");
+
+        // Complete the error handler to finish the parent
+        await parentInstance.CompleteActivity("errorHandler", new ExpandoObject());
+
+        var completedSnapshot = await QueryService.GetStateSnapshot(parentInstanceId);
+        Assert.IsNotNull(completedSnapshot);
+        Assert.IsTrue(completedSnapshot.IsCompleted, "Parent should be completed after error handler finishes");
+        CollectionAssert.Contains(completedSnapshot.CompletedActivityIds, "end2");
+    }
+
+    [TestMethod]
     public async Task CallActivity_WithNoMappings_ShouldIsolateVariables()
     {
         // Arrange — deploy child workflow

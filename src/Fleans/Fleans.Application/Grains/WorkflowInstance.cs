@@ -640,6 +640,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
         if (errorState is null)
         {
+            // errorState is never null after FailActivityState — defensive guard only
             await ExecuteWorkflow();
             return;
         }
@@ -652,6 +653,16 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
             var failedEntry = State.Entries.Last(e => e.ActivityId == activityId);
             State.CompleteEntries([failedEntry]);
             await ExecuteWorkflow();
+
+            // If this is a child workflow with no remaining active activities,
+            // propagate the failure to the parent (mirrors Complete() success path)
+            if (State.ParentWorkflowInstanceId.HasValue && !State.GetActiveActivities().Any())
+            {
+                LogChildFailurePropagatedToParent(State.ParentActivityId!);
+                var parent = _grainFactory.GetGrain<IWorkflowInstanceGrain>(State.ParentWorkflowInstanceId.Value);
+                await parent.OnChildWorkflowFailed(State.ParentActivityId!, exception);
+            }
+
             return;
         }
 
@@ -976,6 +987,9 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
     [LoggerMessage(EventId = 1015, Level = LogLevel.Warning, Message = "Child workflow failed for CallActivity {ParentActivityId}")]
     private partial void LogChildWorkflowFailed(string parentActivityId);
+
+    [LoggerMessage(EventId = 1020, Level = LogLevel.Information, Message = "Child workflow failed with no boundary handler, propagating error to parent. ParentActivityId={ParentActivityId}")]
+    private partial void LogChildFailurePropagatedToParent(string parentActivityId);
 
     [LoggerMessage(EventId = 1017, Level = LogLevel.Information, Message = "Timer reminder registered for activity {TimerActivityId}, due in {DueTime}")]
     private partial void LogTimerReminderRegistered(string timerActivityId, TimeSpan dueTime);
