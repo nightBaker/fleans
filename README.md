@@ -39,6 +39,7 @@ For now, next elements are implemented
 | Script Task          | A task that executes an inline script.                                       |     [x]     |
 | Sub-Process          | A group of tasks that are treated as a single unit.                         |     [x]     |
 | Call Activity        | A type of sub-process that calls another process.                            |     [x]     |
+| Multi-Instance Activity (Parallel) | A single activity spawns N parallel instances over a collection or count. |     [x]     |
 | Transaction          | A set of activities that are handled as a single unit.                      |             |
 | Event Sub-Process    | A sub-process that is triggered by an event.                                 |             |
 | **Gateways**         |                                                                             |             |
