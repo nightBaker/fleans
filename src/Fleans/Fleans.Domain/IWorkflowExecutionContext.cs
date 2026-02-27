@@ -5,7 +5,6 @@ namespace Fleans.Domain;
 public interface IWorkflowExecutionContext
 {
     ValueTask<Guid> GetWorkflowInstanceId();
-    ValueTask Complete();
 
     ValueTask<IReadOnlyDictionary<Guid, ConditionSequenceState[]>> GetConditionSequenceStates();
     ValueTask SetConditionSequenceResult(Guid activityInstanceId, string sequenceId, bool result);

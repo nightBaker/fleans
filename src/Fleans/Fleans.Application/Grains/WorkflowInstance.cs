@@ -71,8 +71,9 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
                 SetActivityRequestContext(activityId, activityState);
                 LogExecutingActivity(activityId, currentActivity.GetType().Name);
                 var commands = await currentActivity.ExecuteAsync(this, activityState, scopeDefinition);
+                var activityInstanceId = activityState.GetPrimaryKey();
                 var currentEntry = State.GetActiveActivities()
-                    .First(e => e.ActivityId == activityId && !e.IsCompleted);
+                    .First(e => e.ActivityInstanceId == activityInstanceId);
                 await ProcessCommands(commands, currentEntry, activityState);
             }
 
@@ -153,6 +154,10 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
                 case ThrowSignalCommand sig:
                     await ThrowSignal(sig.SignalName);
+                    break;
+
+                case CompleteWorkflowCommand:
+                    await Complete();
                     break;
             }
         }
@@ -462,7 +467,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         await activityInstance.Fail(exception);
     }
     
-    public async ValueTask Complete()
+    private async Task Complete()
     {
         State.Complete();
         LogStateCompleted();

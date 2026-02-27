@@ -25,7 +25,7 @@ public class EndEventScopeTests
         var commands = await innerEnd.ExecuteAsync(workflowContext, activityContext, scopeDefinition);
 
         Assert.IsTrue(commands.OfType<CompleteCommand>().Any());
-        await workflowContext.DidNotReceive().Complete();
+        Assert.IsFalse(commands.OfType<CompleteWorkflowCommand>().Any());
     }
 
     [TestMethod]
@@ -41,6 +41,6 @@ public class EndEventScopeTests
         var commands = await end.ExecuteAsync(workflowContext, activityContext, definition);
 
         Assert.IsTrue(commands.OfType<CompleteCommand>().Any());
-        await workflowContext.Received(1).Complete();
+        Assert.IsTrue(commands.OfType<CompleteWorkflowCommand>().Any());
     }
 }

@@ -15,7 +15,7 @@ public record EndEvent(string ActivityId) : Activity(ActivityId)
 
         // Only complete the workflow if this is a top-level EndEvent
         if (definition.IsRootScope)
-            await workflowContext.Complete();
+            commands.Add(new CompleteWorkflowCommand());
 
         return commands;
     }

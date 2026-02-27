@@ -23,7 +23,7 @@ public class EndEventActivityTests
 
         // Assert
         Assert.IsTrue(commands.OfType<CompleteCommand>().Any());
-        await workflowContext.Received(1).Complete();
+        Assert.IsTrue(commands.OfType<CompleteWorkflowCommand>().Any());
     }
 
     [TestMethod]

@@ -54,3 +54,6 @@ public record ConditionEvaluation(
 [GenerateSerializer]
 public record ThrowSignalCommand(
     [property: Id(0)] string SignalName) : IExecutionCommand;
+
+[GenerateSerializer]
+public record CompleteWorkflowCommand() : IExecutionCommand;
