@@ -71,9 +71,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
                 SetActivityRequestContext(activityId, activityState);
                 LogExecutingActivity(activityId, currentActivity.GetType().Name);
                 var commands = await currentActivity.ExecuteAsync(this, activityState, scopeDefinition);
-                var activityInstanceId = activityState.GetPrimaryKey();
-                var currentEntry = State.GetActiveActivities()
-                    .First(e => e.ActivityInstanceId == activityInstanceId);
+                var currentEntry = State.GetActiveEntry(activityState.GetPrimaryKey());
                 await ProcessCommands(commands, currentEntry, activityState);
             }
 
