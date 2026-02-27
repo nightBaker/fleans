@@ -22,6 +22,17 @@ public partial class WorkflowInstance
         await _state.WriteStateAsync();
     }
 
+    public async Task CompleteActivity(string activityId, Guid activityInstanceId, ExpandoObject variables)
+    {
+        await EnsureWorkflowDefinitionAsync();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+        LogCompletingActivity(activityId);
+        await CompleteActivityState(activityId, variables, activityInstanceId);
+        await ExecuteWorkflow();
+        await _state.WriteStateAsync();
+    }
+
     public async Task FailActivity(string activityId, Exception exception)
     {
         await EnsureWorkflowDefinitionAsync();
@@ -33,10 +44,22 @@ public partial class WorkflowInstance
         await _state.WriteStateAsync();
     }
 
-    private async Task CompleteActivityState(string activityId, ExpandoObject variables)
+    public async Task FailActivity(string activityId, Guid activityInstanceId, Exception exception)
     {
-        var entry = State.GetFirstActive(activityId)
-            ?? throw new InvalidOperationException("Active activity not found");
+        await EnsureWorkflowDefinitionAsync();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+        LogFailingActivity(activityId);
+        await FailActivityWithBoundaryCheck(activityId, exception, activityInstanceId);
+        await _state.WriteStateAsync();
+    }
+
+    private async Task CompleteActivityState(string activityId, ExpandoObject variables, Guid? activityInstanceId = null)
+    {
+        var entry = activityInstanceId.HasValue
+            ? State.GetActiveEntry(activityInstanceId.Value)
+            : State.GetFirstActive(activityId)
+                ?? throw new InvalidOperationException("Active activity not found");
 
         var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(entry.ActivityInstanceId);
         SetActivityRequestContext(activityId, activityInstance);
@@ -109,10 +132,12 @@ public partial class WorkflowInstance
         }
     }
 
-    private async Task FailActivityState(string activityId, Exception exception)
+    private async Task FailActivityState(string activityId, Exception exception, Guid? activityInstanceId = null)
     {
-        var entry = State.GetFirstActive(activityId)
-            ?? throw new InvalidOperationException("Active activity not found");
+        var entry = activityInstanceId.HasValue
+            ? State.GetActiveEntry(activityInstanceId.Value)
+            : State.GetFirstActive(activityId)
+                ?? throw new InvalidOperationException("Active activity not found");
 
         var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(entry.ActivityInstanceId);
         SetActivityRequestContext(activityId, activityInstance);
@@ -259,9 +284,9 @@ public partial class WorkflowInstance
         await _state.WriteStateAsync();
     }
 
-    private async Task FailActivityWithBoundaryCheck(string activityId, Exception exception)
+    private async Task FailActivityWithBoundaryCheck(string activityId, Exception exception, Guid? activityInstanceId = null)
     {
-        await FailActivityState(activityId, exception);
+        await FailActivityState(activityId, exception, activityInstanceId);
 
         var definition = await GetWorkflowDefinition();
         var activityEntry = State.GetFirstActive(activityId) ?? State.Entries.Last(e => e.ActivityId == activityId);

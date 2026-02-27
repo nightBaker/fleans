@@ -24,8 +24,10 @@ public interface IWorkflowInstanceGrain : IGrainWithGuidKey, IWorkflowExecutionC
     new ValueTask<object?> GetVariable(Guid variablesId, string variableName);
 
     Task CompleteActivity(string activityId, ExpandoObject variables);
+    Task CompleteActivity(string activityId, Guid activityInstanceId, ExpandoObject variables);
     Task CompleteConditionSequence(string activityId, string conditionSequenceId, bool result);
     Task FailActivity(string activityId, Exception exception);
+    Task FailActivity(string activityId, Guid activityInstanceId, Exception exception);
     Task StartWorkflow();
     Task SetWorkflow(IWorkflowDefinition workflow);
 
