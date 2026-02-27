@@ -4,7 +4,7 @@ using System.Runtime.CompilerServices;
 namespace Fleans.Domain.Activities;
 
 [GenerateSerializer]
-public record MultiInstanceActivity : Activity
+public record MultiInstanceActivity : BoundarableActivity
 {
     [Id(1)] public Activity InnerActivity { get; init; }
     [Id(2)] public bool IsSequential { get; init; }
@@ -24,6 +24,11 @@ public record MultiInstanceActivity : Activity
         string? OutputCollection = null,
         string? OutputDataItem = null) : base(ActivityId)
     {
+        if (LoopCardinality is null && InputCollection is null)
+            throw new ArgumentException("MultiInstanceActivity must have either LoopCardinality or InputCollection");
+        if (LoopCardinality.HasValue && LoopCardinality.Value < 0)
+            throw new ArgumentOutOfRangeException(nameof(LoopCardinality), "LoopCardinality must be non-negative");
+
         this.InnerActivity = InnerActivity;
         this.IsSequential = IsSequential;
         this.LoopCardinality = LoopCardinality;

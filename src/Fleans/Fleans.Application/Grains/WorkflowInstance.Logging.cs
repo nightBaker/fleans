@@ -143,4 +143,8 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1042, Level = LogLevel.Debug,
         Message = "Multi-instance sequential: spawned next iteration {Index} for activity {ActivityId}")]
     private partial void LogMultiInstanceNextIteration(int index, string activityId);
+
+    [LoggerMessage(EventId = 1043, Level = LogLevel.Debug,
+        Message = "Multi-instance iteration {Index} completed for activity {ActivityId}")]
+    private partial void LogMultiInstanceIterationCompleted(int index, string activityId);
 }

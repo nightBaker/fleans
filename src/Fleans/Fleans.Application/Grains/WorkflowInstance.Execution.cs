@@ -256,18 +256,13 @@ public partial class WorkflowInstance
         {
             var childVariablesId = State.AddChildVariableState(parentVariablesId);
 
-            // Set loopCounter
-            dynamic loopVars = new System.Dynamic.ExpandoObject();
-            ((IDictionary<string, object?>)loopVars)["loopCounter"] = i;
-            State.MergeState(childVariablesId, (System.Dynamic.ExpandoObject)loopVars);
-
-            // Set inputDataItem if collection-driven
+            // Set iteration variables (loopCounter + optional inputDataItem)
+            dynamic iterVars = new System.Dynamic.ExpandoObject();
+            var iterDict = (IDictionary<string, object?>)iterVars;
+            iterDict["loopCounter"] = i;
             if (collectionItems is not null && mi.InputDataItem is not null)
-            {
-                dynamic itemVars = new System.Dynamic.ExpandoObject();
-                ((IDictionary<string, object?>)itemVars)[mi.InputDataItem] = collectionItems[i];
-                State.MergeState(childVariablesId, (System.Dynamic.ExpandoObject)itemVars);
-            }
+                iterDict[mi.InputDataItem] = collectionItems[i];
+            State.MergeState(childVariablesId, (System.Dynamic.ExpandoObject)iterVars);
 
             var iterationInstanceId = Guid.NewGuid();
             var iterationGrain = _grainFactory.GetGrain<IActivityInstanceGrain>(iterationInstanceId);
@@ -323,7 +318,10 @@ public partial class WorkflowInstance
 
                 // MI iterations don't transition to next activities — handled by scope completion
                 if (entry.MultiInstanceIndex is not null)
+                {
+                    LogMultiInstanceIterationCompleted(entry.MultiInstanceIndex.Value, entry.ActivityId);
                     continue;
+                }
 
                 var scopeDefinition = definition.GetScopeForActivity(entry.ActivityId);
                 var currentActivity = scopeDefinition.GetActivity(entry.ActivityId);
@@ -473,7 +471,10 @@ public partial class WorkflowInstance
             {
                 var iterGrain = _grainFactory.GetGrain<IActivityInstanceGrain>(iterEntry.ActivityInstanceId);
                 var iterVarId = await iterGrain.GetVariablesStateId();
-                var outputValue = State.GetVariable(iterVarId, mi.OutputDataItem);
+                var iterVarState = State.VariableStates.FirstOrDefault(v => v.Id == iterVarId);
+                var outputValue = iterVarState is not null
+                    ? State.GetVariable(iterVarId, mi.OutputDataItem)
+                    : null;
                 outputList.Add(outputValue);
             }
 

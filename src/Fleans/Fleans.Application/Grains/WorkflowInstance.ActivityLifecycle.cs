@@ -289,7 +289,10 @@ public partial class WorkflowInstance
         await FailActivityState(activityId, exception, activityInstanceId);
 
         var definition = await GetWorkflowDefinition();
-        var activityEntry = State.GetFirstActive(activityId) ?? State.Entries.Last(e => e.ActivityId == activityId);
+        var activityEntry = activityInstanceId.HasValue
+            ? (State.GetActiveActivities().FirstOrDefault(e => e.ActivityInstanceId == activityInstanceId.Value)
+               ?? State.Entries.Last(e => e.ActivityInstanceId == activityInstanceId.Value))
+            : State.GetFirstActive(activityId) ?? State.Entries.Last(e => e.ActivityId == activityId);
         var activityGrain = _grainFactory.GetGrain<IActivityInstanceGrain>(activityEntry.ActivityInstanceId);
         var errorState = await activityGrain.GetErrorState();
 
@@ -303,10 +306,17 @@ public partial class WorkflowInstance
         var match = definition.FindBoundaryErrorHandler(activityId, errorState.Code.ToString());
         if (match is null)
         {
-            // No boundary handler — complete the failed entry so the parent scope stays active
-            // (its executing SubProcess grain prevents ExecuteWorkflow from auto-completing)
-            var failedEntry = State.Entries.Last(e => e.ActivityId == activityId);
-            State.CompleteEntries([failedEntry]);
+            // For MI iterations, do NOT manually complete the entry — let ExecuteWorkflow
+            // handle it via TransitionToNextActivity so CompleteFinishedSubProcessScopes runs.
+            // For non-MI entries, complete the failed entry so the parent scope stays active.
+            if (activityEntry.MultiInstanceIndex is null)
+            {
+                var failedEntry = activityInstanceId.HasValue
+                    ? State.Entries.Last(e => e.ActivityInstanceId == activityInstanceId.Value)
+                    : State.Entries.Last(e => e.ActivityId == activityId);
+                State.CompleteEntries([failedEntry]);
+            }
+
             await ExecuteWorkflow();
 
             // If this is a child workflow with no remaining active activities,
@@ -331,7 +341,9 @@ public partial class WorkflowInstance
         else
         {
             // Bubbled up — cancel intermediate scopes between failed activity and matched SubProcess
-            var failedEntry = State.Entries.Last(e => e.ActivityId == activityId);
+            var failedEntry = activityInstanceId.HasValue
+                ? State.Entries.Last(e => e.ActivityInstanceId == activityInstanceId.Value)
+                : State.Entries.Last(e => e.ActivityId == activityId);
             State.CompleteEntries([failedEntry]);
 
             var currentScopeId = failedEntry.ScopeId;
