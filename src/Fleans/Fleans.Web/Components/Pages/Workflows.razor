@@ -27,7 +27,7 @@
         </Actions>
     </PageHeader>
 
-    @if (isLoading && allDefinitions.Count == 0)
+    @if (isLoading && allRows.Count == 0)
     {
         <FluentStack Orientation="Orientation.Vertical" AlignItems="AlignItems.Center" Gap="10px">
             <FluentProgressRing />
@@ -62,7 +62,7 @@
             </FluentMessageBar>
         }
 
-        @if (allDefinitions.Count == 0)
+        @if (allRows.Count == 0)
         {
             <FluentMessageBar Intent="MessageIntent.Info">
                 <strong>No workflows found.</strong> Create a new workflow in the <a href="/editor">Editor</a>.
@@ -74,7 +74,7 @@
                              @bind-Value="SearchQuery"
                              Style="max-width: 320px;" />
 
-            @if (filteredDefinitions.Count == 0)
+            @if (filteredRows.Count == 0)
             {
                 <FluentMessageBar Intent="MessageIntent.Info">
                     No workflows match "@SearchQuery".
@@ -82,33 +82,33 @@
             }
             else
             {
-                <FluentDataGrid Items="@filteredDefinitionsQueryable" TGridItem="ProcessDefinitionSummary">
-                    <TemplateColumn Title="Process Key">
-                        <strong title="@context.ProcessDefinitionId">@context.ProcessDefinitionKey</strong>
+                <FluentDataGrid Items="@filteredRowsQueryable" TGridItem="ProcessDefinitionRow">
+                    <TemplateColumn Title="Process Key" HierarchicalToggle="true">
+                        <strong title="@context.Summary.ProcessDefinitionId">@context.Summary.ProcessDefinitionKey</strong>
                     </TemplateColumn>
                     <TemplateColumn Title="Version">
-                        <FluentBadge Color="Color.Accent">v@(context.Version)</FluentBadge>
+                        <FluentBadge Color="Color.Accent">v@(context.Summary.Version)</FluentBadge>
                     </TemplateColumn>
                     <TemplateColumn Title="Deployed at (UTC)">
-                        @context.DeployedAt.ToUniversalTime().ToString("u")
+                        @context.Summary.DeployedAt.ToUniversalTime().ToString("u")
                     </TemplateColumn>
                     <TemplateColumn Title="Actions">
                         <FluentStack Orientation="Orientation.Horizontal" Gap="4px">
                             <FluentButton Appearance="Appearance.Stealth"
                                           IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Edit())"
-                                          @onclick="() => EditWorkflow(context)">
+                                          @onclick="() => EditWorkflow(context.Summary)">
                                 Edit
                             </FluentButton>
                             <FluentButton Appearance="Appearance.Stealth"
                                           IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Play())"
-                                          Loading="@(isStarting && startingProcessDefinitionId == context.ProcessDefinitionId)"
+                                          Loading="@(isStarting && startingProcessDefinitionId == context.Summary.ProcessDefinitionId)"
                                           Disabled="@isStarting"
-                                          @onclick="() => StartVersion(context)">
+                                          @onclick="() => StartVersion(context.Summary)">
                                 Start
                             </FluentButton>
                             <FluentButton Appearance="Appearance.Stealth"
                                           IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.List())"
-                                          @onclick="() => ViewInstances(context)">
+                                          @onclick="() => ViewInstances(context.Summary)">
                                 Instances
                             </FluentButton>
                         </FluentStack>
@@ -120,9 +120,18 @@
 </FluentStack>
 
 @code {
-    private List<ProcessDefinitionSummary> allDefinitions = new();
-    private List<ProcessDefinitionSummary> filteredDefinitions = new();
-    private IQueryable<ProcessDefinitionSummary> filteredDefinitionsQueryable = Enumerable.Empty<ProcessDefinitionSummary>().AsQueryable();
+    private sealed class ProcessDefinitionRow : IHierarchicalGridItem
+    {
+        public required ProcessDefinitionSummary Summary { get; init; }
+        public required int Depth { get; set; }
+        public required bool HasChildren { get; set; }
+        public bool IsCollapsed { get; set; } = true;
+        public bool IsHidden { get; set; }
+    }
+
+    private List<ProcessDefinitionRow> allRows = [];
+    private List<ProcessDefinitionRow> filteredRows = [];
+    private IQueryable<ProcessDefinitionRow> filteredRowsQueryable = Enumerable.Empty<ProcessDefinitionRow>().AsQueryable();
     private bool isLoading = true;
     private string? loadErrorMessage;
     private string? actionErrorMessage;
@@ -160,9 +169,31 @@
 
             var definitions = await QueryService.GetAllProcessDefinitions();
 
-            allDefinitions = definitions
-                .OrderBy(d => d.ProcessDefinitionKey, StringComparer.Ordinal)
-                .ThenByDescending(d => d.Version)
+            allRows = definitions
+                .GroupBy(d => d.ProcessDefinitionKey)
+                .OrderBy(g => g.Key, StringComparer.Ordinal)
+                .SelectMany(group =>
+                {
+                    var versions = group.OrderByDescending(d => d.Version).ToList();
+                    var children = versions.Skip(1)
+                        .Select(d => new ProcessDefinitionRow
+                        {
+                            Summary = d,
+                            Depth = 1,
+                            HasChildren = false,
+                            IsHidden = true,
+                        })
+                        .ToList();
+
+                    var parent = new ProcessDefinitionRow
+                    {
+                        Summary = versions[0],
+                        Depth = 0,
+                        HasChildren = children.Count > 0,
+                    };
+
+                    return new[] { parent }.Concat(children);
+                })
                 .ToList();
 
             ApplyFilter();
@@ -171,10 +202,10 @@
         {
             Logger.LogError(ex, "Error loading workflows");
             loadErrorMessage = "Unable to reach workflow engine. Try again.";
-            if (allDefinitions.Count == 0)
+            if (allRows.Count == 0)
             {
-                filteredDefinitions.Clear();
-                filteredDefinitionsQueryable = filteredDefinitions.AsQueryable();
+                filteredRows = [];
+                filteredRowsQueryable = filteredRows.AsQueryable();
             }
         }
         finally
@@ -200,11 +231,25 @@
 
     private void ApplyFilter()
     {
-        filteredDefinitions = allDefinitions
-            .Where(d => string.IsNullOrWhiteSpace(SearchQuery)
-                        || d.ProcessDefinitionKey.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase))
-            .ToList();
-        filteredDefinitionsQueryable = filteredDefinitions.AsQueryable();
+        if (string.IsNullOrWhiteSpace(SearchQuery))
+        {
+            filteredRows = allRows;
+        }
+        else
+        {
+            // Include parent + its children when key matches
+            var matchingKeys = allRows
+                .Where(r => r.Depth == 0
+                    && r.Summary.ProcessDefinitionKey.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase))
+                .Select(r => r.Summary.ProcessDefinitionKey)
+                .ToHashSet(StringComparer.Ordinal);
+
+            filteredRows = allRows
+                .Where(r => matchingKeys.Contains(r.Summary.ProcessDefinitionKey))
+                .ToList();
+        }
+
+        filteredRowsQueryable = filteredRows.AsQueryable();
     }
 
     private async Task StartVersion(ProcessDefinitionSummary version)
