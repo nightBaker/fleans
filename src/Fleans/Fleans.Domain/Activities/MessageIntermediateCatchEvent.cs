@@ -9,15 +9,15 @@ public record MessageIntermediateCatchEvent(
     string ActivityId,
     [property: Id(1)] string MessageDefinitionId) : BoundarableActivity(ActivityId)
 {
-    internal override async Task ExecuteAsync(
+    internal override async Task<List<IExecutionCommand>> ExecuteAsync(
         IWorkflowExecutionContext workflowContext,
         IActivityExecutionContext activityContext,
         IWorkflowDefinition definition)
     {
-        await base.ExecuteAsync(workflowContext, activityContext, definition);
+        var commands = await base.ExecuteAsync(workflowContext, activityContext, definition);
         var variablesId = await activityContext.GetVariablesStateId();
-        await workflowContext.RegisterMessageSubscription(variablesId, MessageDefinitionId, ActivityId);
-        // Do NOT call activityContext.Complete() — the correlation grain will do that
+        commands.Add(new RegisterMessageCommand(variablesId, MessageDefinitionId, ActivityId, IsBoundary: false));
+        return commands;
     }
 
     internal override Task<List<Activity>> GetNextActivities(

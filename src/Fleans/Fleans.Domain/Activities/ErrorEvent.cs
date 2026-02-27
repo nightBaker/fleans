@@ -3,10 +3,11 @@ namespace Fleans.Domain.Activities;
 [GenerateSerializer]
 public record ErrorEvent(string ActivityId) : Activity(ActivityId)
 {
-    internal override async Task ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
+    internal override async Task<List<IExecutionCommand>> ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
     {
-        await base.ExecuteAsync(workflowContext, activityContext, definition);
+        var commands = await base.ExecuteAsync(workflowContext, activityContext, definition);
         await activityContext.Complete();
+        return commands;
     }
 
     internal override Task<List<Activity>> GetNextActivities(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)

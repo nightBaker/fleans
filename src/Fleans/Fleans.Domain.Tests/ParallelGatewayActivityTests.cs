@@ -24,7 +24,7 @@ public class ParallelGatewayActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("fork");
 
         // Act
-        await fork.ExecuteAsync(workflowContext, activityContext, definition);
+        var commands = await fork.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert
         await activityContext.Received(1).Complete();
@@ -117,7 +117,7 @@ public class ParallelGatewayActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("join");
 
         // Act
-        await join.ExecuteAsync(workflowContext, activityContext, definition);
+        var commands = await join.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert — join calls Complete because all paths are done
         await activityContext.Received(1).Complete();
@@ -153,7 +153,7 @@ public class ParallelGatewayActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("join");
 
         // Act
-        await join.ExecuteAsync(workflowContext, activityContext, definition);
+        var commands = await join.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert — join calls Execute (not Complete) because not all paths are done
         await activityContext.Received().Execute();

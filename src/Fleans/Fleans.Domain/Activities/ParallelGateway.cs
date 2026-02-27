@@ -11,9 +11,9 @@ public record ParallelGateway(
     [property: Id(1)] bool IsFork) : Gateway(ActivityId)
 {
     internal override bool IsJoinGateway => !IsFork;
-    internal override async Task ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
+    internal override async Task<List<IExecutionCommand>> ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
     {
-        await base.ExecuteAsync(workflowContext, activityContext, definition);
+        var commands = await base.ExecuteAsync(workflowContext, activityContext, definition);
 
         if (IsFork)
         {
@@ -27,6 +27,8 @@ public record ParallelGateway(
             }
             // Otherwise stay active — base.ExecuteAsync already called Execute()
         }
+
+        return commands;
     }
 
     internal override Task<List<Activity>> GetNextActivities(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)

@@ -19,11 +19,11 @@ public class EndEventActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("end");
 
         // Act
-        await endEvent.ExecuteAsync(workflowContext, activityContext, definition);
+        var commands = await endEvent.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert
         await activityContext.Received(1).Complete();
-        await workflowContext.Received(1).Complete();
+        Assert.IsTrue(commands.OfType<CompleteWorkflowCommand>().Any());
     }
 
     [TestMethod]

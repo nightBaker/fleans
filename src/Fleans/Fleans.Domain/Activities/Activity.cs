@@ -11,7 +11,7 @@ public abstract record Activity([property: Id(0)] string ActivityId)
 {
     internal virtual bool IsJoinGateway => false;
 
-    internal virtual async Task ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
+    internal virtual async Task<List<IExecutionCommand>> ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
     {
         await activityContext.Execute();
         await activityContext.PublishEvent(new WorkflowActivityExecutedEvent(await workflowContext.GetWorkflowInstanceId(),
@@ -19,6 +19,7 @@ public abstract record Activity([property: Id(0)] string ActivityId)
             await activityContext.GetActivityInstanceId(),
             ActivityId,
             GetType().Name));
+        return [];
     }
 
     internal abstract Task<List<Activity>> GetNextActivities(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition);

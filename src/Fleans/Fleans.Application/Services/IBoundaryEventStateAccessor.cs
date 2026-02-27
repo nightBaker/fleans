@@ -15,4 +15,5 @@ public interface IBoundaryEventStateAccessor
     Task TransitionToNextActivity();
     Task ExecuteWorkflow();
     Task CancelScopeChildren(Guid scopeId);
+    Task ProcessCommands(IReadOnlyList<IExecutionCommand> commands, ActivityInstanceEntry entry, IActivityExecutionContext activityContext);
 }

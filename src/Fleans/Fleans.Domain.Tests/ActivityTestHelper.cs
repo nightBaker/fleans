@@ -19,18 +19,8 @@ internal static class ActivityTestHelper
             .Returns(ValueTask.FromResult<IReadOnlyList<IActivityExecutionContext>>([]));
         context.GetCompletedActivities()
             .Returns(ValueTask.FromResult<IReadOnlyList<IActivityExecutionContext>>([]));
-        context.StartChildWorkflow(Arg.Any<Activities.CallActivity>(), Arg.Any<IActivityExecutionContext>())
-            .Returns(ValueTask.CompletedTask);
-        context.OpenSubProcessScope(Arg.Any<Guid>(), Arg.Any<Activities.SubProcess>(), Arg.Any<Guid>())
-            .Returns(ValueTask.CompletedTask);
         context.GetVariable(Arg.Any<Guid>(), Arg.Any<string>())
             .Returns(ValueTask.FromResult<object?>(null));
-        context.RegisterMessageSubscription(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>())
-            .Returns(ValueTask.CompletedTask);
-        context.RegisterBoundaryMessageSubscription(Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>())
-            .Returns(ValueTask.CompletedTask);
-        context.RegisterTimerReminder(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<TimeSpan>())
-            .Returns(ValueTask.CompletedTask);
         return context;
     }
 

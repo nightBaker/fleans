@@ -21,12 +21,15 @@ public class MessageIntermediateCatchEventDomainTests
         var (activityContext, publishedEvents) = ActivityTestHelper.CreateActivityContext("msgCatch1");
 
         // Act
-        await msgEvent.ExecuteAsync(workflowContext, activityContext, definition);
+        var commands = await msgEvent.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert — should execute and register, but NOT complete
         await activityContext.Received(1).Execute();
         await activityContext.DidNotReceive().Complete();
-        await workflowContext.Received(1).RegisterMessageSubscription(Arg.Any<Guid>(), "msg_payment", "msgCatch1");
+        var msgCmd = commands.OfType<RegisterMessageCommand>().Single();
+        Assert.AreEqual("msg_payment", msgCmd.MessageDefinitionId);
+        Assert.AreEqual("msgCatch1", msgCmd.ActivityId);
+        Assert.IsFalse(msgCmd.IsBoundary);
         var executedEvent = publishedEvents.OfType<WorkflowActivityExecutedEvent>().Single();
         Assert.AreEqual("msgCatch1", executedEvent.activityId);
         Assert.AreEqual("MessageIntermediateCatchEvent", executedEvent.TypeName);

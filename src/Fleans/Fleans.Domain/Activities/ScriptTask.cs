@@ -18,9 +18,9 @@ public record ScriptTask : TaskActivity
         this.ScriptFormat = ScriptFormat;
     }
 
-    internal override async Task ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
+    internal override async Task<List<IExecutionCommand>> ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
     {
-        await base.ExecuteAsync(workflowContext, activityContext, definition);
+        var commands = await base.ExecuteAsync(workflowContext, activityContext, definition);
 
         await activityContext.PublishEvent(new ExecuteScriptEvent(
             await workflowContext.GetWorkflowInstanceId(),
@@ -30,5 +30,7 @@ public record ScriptTask : TaskActivity
             ActivityId,
             Script,
             ScriptFormat));
+
+        return commands;
     }
 }

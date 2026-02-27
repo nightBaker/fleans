@@ -22,7 +22,7 @@ public class TimerStartEventDomainTests
         var (activityContext, publishedEvents) = ActivityTestHelper.CreateActivityContext("timerStart1");
 
         // Act
-        await timerStart.ExecuteAsync(workflowContext, activityContext, definition);
+        var commands = await timerStart.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert
         await activityContext.Received(1).Execute();

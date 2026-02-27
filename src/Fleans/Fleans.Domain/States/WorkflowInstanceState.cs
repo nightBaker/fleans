@@ -53,6 +53,10 @@ public class WorkflowInstanceState
     public ActivityInstanceEntry? GetFirstActive(string activityId)
         => Entries.FirstOrDefault(a => a.ActivityId == activityId && !a.IsCompleted);
 
+    public ActivityInstanceEntry GetActiveEntry(Guid activityInstanceId)
+        => Entries.FirstOrDefault(e => e.ActivityInstanceId == activityInstanceId && !e.IsCompleted)
+            ?? throw new InvalidOperationException($"Active entry for activity instance '{activityInstanceId}' not found");
+
     public WorkflowVariablesState GetVariableState(Guid id)
         => VariableStates.FirstOrDefault(v => v.Id == id)
             ?? throw new InvalidOperationException($"Variable state '{id}' not found");

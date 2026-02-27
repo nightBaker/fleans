@@ -21,7 +21,7 @@ public class MessageBoundaryEventDomainTests
         var (activityContext, publishedEvents) = ActivityTestHelper.CreateActivityContext("bmsg1");
 
         // Act
-        await boundary.ExecuteAsync(workflowContext, activityContext, definition);
+        var commands = await boundary.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert — boundary completes immediately
         await activityContext.Received(1).Execute();

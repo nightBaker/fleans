@@ -9,16 +9,15 @@ public record SignalIntermediateCatchEvent(
     string ActivityId,
     [property: Id(1)] string SignalDefinitionId) : BoundarableActivity(ActivityId)
 {
-    internal override async Task ExecuteAsync(
+    internal override async Task<List<IExecutionCommand>> ExecuteAsync(
         IWorkflowExecutionContext workflowContext,
         IActivityExecutionContext activityContext,
         IWorkflowDefinition definition)
     {
-        await base.ExecuteAsync(workflowContext, activityContext, definition);
+        var commands = await base.ExecuteAsync(workflowContext, activityContext, definition);
         var signalDef = definition.Signals.First(s => s.Id == SignalDefinitionId);
-        var activityInstanceId = await activityContext.GetActivityInstanceId();
-        await workflowContext.RegisterSignalSubscription(signalDef.Name, ActivityId, activityInstanceId);
-        // Do NOT call activityContext.Complete() — the signal grain will do that
+        commands.Add(new RegisterSignalCommand(signalDef.Name, ActivityId, IsBoundary: false));
+        return commands;
     }
 
     internal override Task<List<Activity>> GetNextActivities(

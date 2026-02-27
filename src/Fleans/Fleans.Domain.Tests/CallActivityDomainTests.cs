@@ -25,11 +25,11 @@ public class CallActivityDomainTests
         var (activityContext, publishedEvents) = ActivityTestHelper.CreateActivityContext("call1");
 
         // Act
-        await callActivity.ExecuteAsync(workflowContext, activityContext, definition);
+        var commands = await callActivity.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert
         await activityContext.Received(1).Execute();
-        await workflowContext.Received(1).StartChildWorkflow(callActivity, activityContext);
+        Assert.IsTrue(commands.OfType<StartChildWorkflowCommand>().Any(c => c.CallActivity == callActivity));
         var executedEvent = publishedEvents.OfType<WorkflowActivityExecutedEvent>().Single();
         Assert.AreEqual("call1", executedEvent.activityId);
         Assert.AreEqual("CallActivity", executedEvent.TypeName);
