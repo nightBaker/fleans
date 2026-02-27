@@ -12,13 +12,14 @@ public record SignalBoundaryEvent(
     [property: Id(1)] string AttachedToActivityId,
     [property: Id(2)] string SignalDefinitionId) : Activity(ActivityId)
 {
-    internal override async Task ExecuteAsync(
+    internal override async Task<IReadOnlyList<IExecutionCommand>> ExecuteAsync(
         IWorkflowExecutionContext workflowContext,
         IActivityExecutionContext activityContext,
         IWorkflowDefinition definition)
     {
-        await base.ExecuteAsync(workflowContext, activityContext, definition);
-        await activityContext.Complete();
+        var commands = (await base.ExecuteAsync(workflowContext, activityContext, definition)).ToList();
+        commands.Add(new CompleteCommand());
+        return commands;
     }
 
     internal override Task<List<Activity>> GetNextActivities(

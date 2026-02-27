@@ -11,22 +11,24 @@ public record ParallelGateway(
     [property: Id(1)] bool IsFork) : Gateway(ActivityId)
 {
     internal override bool IsJoinGateway => !IsFork;
-    internal override async Task ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
+    internal override async Task<IReadOnlyList<IExecutionCommand>> ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
     {
-        await base.ExecuteAsync(workflowContext, activityContext, definition);
+        var commands = (await base.ExecuteAsync(workflowContext, activityContext, definition)).ToList();
 
         if (IsFork)
         {
-            await activityContext.Complete();
+            commands.Add(new CompleteCommand());
         }
         else
         {
             if (await AllIncomingPathsCompleted(workflowContext, definition))
             {
-                await activityContext.Complete();
+                commands.Add(new CompleteCommand());
             }
             // Otherwise stay active — base.ExecuteAsync already called Execute()
         }
+
+        return commands;
     }
 
     internal override Task<List<Activity>> GetNextActivities(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)

@@ -9,15 +9,16 @@ public record SignalIntermediateThrowEvent(
     string ActivityId,
     [property: Id(1)] string SignalDefinitionId) : Activity(ActivityId)
 {
-    internal override async Task ExecuteAsync(
+    internal override async Task<IReadOnlyList<IExecutionCommand>> ExecuteAsync(
         IWorkflowExecutionContext workflowContext,
         IActivityExecutionContext activityContext,
         IWorkflowDefinition definition)
     {
-        await base.ExecuteAsync(workflowContext, activityContext, definition);
+        var commands = (await base.ExecuteAsync(workflowContext, activityContext, definition)).ToList();
         var signalDef = definition.Signals.First(s => s.Id == SignalDefinitionId);
-        await workflowContext.ThrowSignal(signalDef.Name);
-        await activityContext.Complete();
+        commands.Add(new ThrowSignalCommand(signalDef.Name));
+        commands.Add(new CompleteCommand());
+        return commands;
     }
 
     internal override Task<List<Activity>> GetNextActivities(

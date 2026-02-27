@@ -8,15 +8,14 @@ public record TimerIntermediateCatchEvent(
     string ActivityId,
     [property: Id(1)] TimerDefinition TimerDefinition) : BoundarableActivity(ActivityId)
 {
-    internal override async Task ExecuteAsync(
+    internal override async Task<IReadOnlyList<IExecutionCommand>> ExecuteAsync(
         IWorkflowExecutionContext workflowContext,
         IActivityExecutionContext activityContext,
         IWorkflowDefinition definition)
     {
-        await base.ExecuteAsync(workflowContext, activityContext, definition);
-        var hostInstanceId = await activityContext.GetActivityInstanceId();
-        await workflowContext.RegisterTimerReminder(hostInstanceId, ActivityId, TimerDefinition.GetDueTime());
-        // Do NOT call activityContext.Complete() — the reminder will do that
+        var commands = (await base.ExecuteAsync(workflowContext, activityContext, definition)).ToList();
+        commands.Add(new RegisterTimerCommand(ActivityId, TimerDefinition.GetDueTime(), IsBoundary: false));
+        return commands;
     }
 
     internal override Task<List<Activity>> GetNextActivities(

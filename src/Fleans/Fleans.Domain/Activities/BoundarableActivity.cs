@@ -6,40 +6,45 @@ namespace Fleans.Domain.Activities;
 public abstract record BoundarableActivity(string ActivityId)
     : Activity(ActivityId)
 {
-    internal override async Task ExecuteAsync(
+    internal override async Task<IReadOnlyList<IExecutionCommand>> ExecuteAsync(
         IWorkflowExecutionContext workflowContext,
         IActivityExecutionContext activityContext,
         IWorkflowDefinition definition)
     {
-        await base.ExecuteAsync(workflowContext, activityContext, definition);
-        await RegisterBoundaryEventsAsync(workflowContext, activityContext, definition);
+        var commands = (await base.ExecuteAsync(workflowContext, activityContext, definition)).ToList();
+        commands.AddRange(await BuildBoundaryRegistrationCommands(activityContext, definition));
+        return commands;
     }
 
-    private async Task RegisterBoundaryEventsAsync(
-        IWorkflowExecutionContext workflowContext,
+    private async Task<List<IExecutionCommand>> BuildBoundaryRegistrationCommands(
         IActivityExecutionContext activityContext,
         IWorkflowDefinition definition)
     {
-        var hostInstanceId = await activityContext.GetActivityInstanceId();
+        var commands = new List<IExecutionCommand>();
 
         foreach (var boundaryTimer in definition.Activities.OfType<BoundaryTimerEvent>()
             .Where(bt => bt.AttachedToActivityId == ActivityId))
         {
-            await workflowContext.RegisterTimerReminder(hostInstanceId, boundaryTimer.ActivityId, boundaryTimer.TimerDefinition.GetDueTime());
+            commands.Add(new RegisterTimerCommand(boundaryTimer.ActivityId,
+                boundaryTimer.TimerDefinition.GetDueTime(), IsBoundary: true));
         }
 
         var variablesId = await activityContext.GetVariablesStateId();
         foreach (var boundaryMsg in definition.Activities.OfType<MessageBoundaryEvent>()
             .Where(bm => bm.AttachedToActivityId == ActivityId))
         {
-            await workflowContext.RegisterBoundaryMessageSubscription(variablesId, hostInstanceId, boundaryMsg.ActivityId, boundaryMsg.MessageDefinitionId);
+            commands.Add(new RegisterMessageCommand(variablesId, boundaryMsg.MessageDefinitionId,
+                boundaryMsg.ActivityId, IsBoundary: true));
         }
 
         foreach (var boundarySignal in definition.Activities.OfType<SignalBoundaryEvent>()
             .Where(bs => bs.AttachedToActivityId == ActivityId))
         {
             var signalDef = definition.Signals.First(s => s.Id == boundarySignal.SignalDefinitionId);
-            await workflowContext.RegisterBoundarySignalSubscription(hostInstanceId, boundarySignal.ActivityId, signalDef.Name);
+            commands.Add(new RegisterSignalCommand(signalDef.Name,
+                boundarySignal.ActivityId, IsBoundary: true));
         }
+
+        return commands;
     }
 }

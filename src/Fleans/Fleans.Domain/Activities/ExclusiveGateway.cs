@@ -6,46 +6,26 @@ namespace Fleans.Domain.Activities;
 [GenerateSerializer]
 public record ExclusiveGateway(string ActivityId) : ConditionalGateway(ActivityId)
 {
-    internal override async Task ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
+    internal override async Task<IReadOnlyList<IExecutionCommand>> ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
     {
-        await base.ExecuteAsync(workflowContext, activityContext, definition);
+        var commands = (await base.ExecuteAsync(workflowContext, activityContext, definition)).ToList();
 
-        var sequences = await AddConditionalSequencesToWorkflowInstance(workflowContext, activityContext, definition);
-
-        if (!sequences.Any())
-        {
-            await activityContext.Complete();
-            return;
-        }
-
-        await QueueEvaluateConditionEvents(workflowContext, activityContext, sequences, definition);
-    }
-
-    private static async Task<IEnumerable<ConditionalSequenceFlow>> AddConditionalSequencesToWorkflowInstance(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
-    {
         var activityId = await activityContext.GetActivityId();
-
         var sequences = definition.SequenceFlows.OfType<ConditionalSequenceFlow>()
-                                .Where(sf => sf.Source.ActivityId == activityId)
-                                .ToArray();
+            .Where(sf => sf.Source.ActivityId == activityId)
+            .ToArray();
+
+        if (sequences.Length == 0)
+        {
+            commands.Add(new CompleteCommand());
+            return commands;
+        }
 
         var sequenceFlowIds = sequences.Select(s => s.SequenceFlowId).ToArray();
-        await workflowContext.AddConditionSequenceStates(await activityContext.GetActivityInstanceId(), sequenceFlowIds);
-        return sequences;
-    }
+        var evaluations = sequences.Select(s => new ConditionEvaluation(s.SequenceFlowId, s.Condition)).ToList();
+        commands.Add(new AddConditionsCommand(sequenceFlowIds, evaluations));
 
-    private async Task QueueEvaluateConditionEvents(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IEnumerable<ConditionalSequenceFlow> sequences, IWorkflowDefinition definition)
-    {
-        foreach (var sequence in sequences)
-        {
-            await activityContext.PublishEvent(new EvaluateConditionEvent(await workflowContext.GetWorkflowInstanceId(),
-                                                               definition.WorkflowId,
-                                                                definition.ProcessDefinitionId,
-                                                                await activityContext.GetActivityInstanceId(),
-                                                                ActivityId,
-                                                                sequence.SequenceFlowId,
-                                                                sequence.Condition));
-        }
+        return commands;
     }
 
     internal override async Task<List<Activity>> GetNextActivities(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)

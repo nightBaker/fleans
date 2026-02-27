@@ -8,14 +8,16 @@ namespace Fleans.Domain.Activities;
 [GenerateSerializer]
 public record EndEvent(string ActivityId) : Activity(ActivityId)
 {
-    internal override async Task ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
+    internal override async Task<IReadOnlyList<IExecutionCommand>> ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
     {
-        await base.ExecuteAsync(workflowContext, activityContext, definition);
-        await activityContext.Complete();
+        var commands = (await base.ExecuteAsync(workflowContext, activityContext, definition)).ToList();
+        commands.Add(new CompleteCommand());
 
         // Only complete the workflow if this is a top-level EndEvent
         if (definition.IsRootScope)
             await workflowContext.Complete();
+
+        return commands;
     }
 
     internal override Task<List<Activity>> GetNextActivities(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
