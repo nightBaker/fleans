@@ -12,12 +12,12 @@ public record BoundaryTimerEvent(
     [property: Id(1)] string AttachedToActivityId,
     [property: Id(2)] TimerDefinition TimerDefinition) : Activity(ActivityId)
 {
-    internal override async Task<IReadOnlyList<IExecutionCommand>> ExecuteAsync(
+    internal override async Task<List<IExecutionCommand>> ExecuteAsync(
         IWorkflowExecutionContext workflowContext,
         IActivityExecutionContext activityContext,
         IWorkflowDefinition definition)
     {
-        var commands = (await base.ExecuteAsync(workflowContext, activityContext, definition)).ToList();
+        var commands = await base.ExecuteAsync(workflowContext, activityContext, definition);
         commands.Add(new CompleteCommand());
         return commands;
     }

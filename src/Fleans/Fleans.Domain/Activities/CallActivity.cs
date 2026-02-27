@@ -11,9 +11,9 @@ public record CallActivity(
     [property: Id(4)] bool PropagateAllParentVariables = true,
     [property: Id(5)] bool PropagateAllChildVariables = true) : BoundarableActivity(ActivityId)
 {
-    internal override async Task<IReadOnlyList<IExecutionCommand>> ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
+    internal override async Task<List<IExecutionCommand>> ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
     {
-        var commands = (await base.ExecuteAsync(workflowContext, activityContext, definition)).ToList();
+        var commands = await base.ExecuteAsync(workflowContext, activityContext, definition);
         commands.Add(new StartChildWorkflowCommand(this));
         return commands;
     }

@@ -6,9 +6,9 @@ namespace Fleans.Domain.Activities;
 [GenerateSerializer]
 public record ExclusiveGateway(string ActivityId) : ConditionalGateway(ActivityId)
 {
-    internal override async Task<IReadOnlyList<IExecutionCommand>> ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
+    internal override async Task<List<IExecutionCommand>> ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
     {
-        var commands = (await base.ExecuteAsync(workflowContext, activityContext, definition)).ToList();
+        var commands = await base.ExecuteAsync(workflowContext, activityContext, definition);
 
         var activityId = await activityContext.GetActivityId();
         var sequences = definition.SequenceFlows.OfType<ConditionalSequenceFlow>()

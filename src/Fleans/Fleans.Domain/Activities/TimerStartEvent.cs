@@ -8,12 +8,12 @@ public record TimerStartEvent(
     string ActivityId,
     [property: Id(1)] TimerDefinition TimerDefinition) : Activity(ActivityId)
 {
-    internal override async Task<IReadOnlyList<IExecutionCommand>> ExecuteAsync(
+    internal override async Task<List<IExecutionCommand>> ExecuteAsync(
         IWorkflowExecutionContext workflowContext,
         IActivityExecutionContext activityContext,
         IWorkflowDefinition definition)
     {
-        var commands = (await base.ExecuteAsync(workflowContext, activityContext, definition)).ToList();
+        var commands = await base.ExecuteAsync(workflowContext, activityContext, definition);
         commands.Add(new CompleteCommand());
         return commands;
     }

@@ -26,12 +26,12 @@ public record SubProcess(string ActivityId) : BoundarableActivity(ActivityId), I
     public Activity GetActivity(string activityId)
         => Activities.First(a => a.ActivityId == activityId);
 
-    internal override async Task<IReadOnlyList<IExecutionCommand>> ExecuteAsync(
+    internal override async Task<List<IExecutionCommand>> ExecuteAsync(
         IWorkflowExecutionContext workflowContext,
         IActivityExecutionContext activityContext,
         IWorkflowDefinition definition)
     {
-        var commands = (await base.ExecuteAsync(workflowContext, activityContext, definition)).ToList();
+        var commands = await base.ExecuteAsync(workflowContext, activityContext, definition);
         var variablesId = await activityContext.GetVariablesStateId();
         commands.Add(new OpenSubProcessCommand(this, variablesId));
         return commands;

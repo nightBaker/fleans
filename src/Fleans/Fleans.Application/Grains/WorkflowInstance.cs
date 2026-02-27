@@ -136,12 +136,14 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
 
                 case AddConditionsCommand cond:
                     await AddConditionSequenceStates(entry.ActivityInstanceId, cond.SequenceFlowIds);
+                    var condDef = await GetWorkflowDefinition();
+                    var condInstanceId = await GetWorkflowInstanceId();
                     foreach (var eval in cond.Evaluations)
                     {
                         await activityContext.PublishEvent(new Domain.Events.EvaluateConditionEvent(
-                            await GetWorkflowInstanceId(),
-                            (await GetWorkflowDefinition()).WorkflowId,
-                            (await GetWorkflowDefinition()).ProcessDefinitionId,
+                            condInstanceId,
+                            condDef.WorkflowId,
+                            condDef.ProcessDefinitionId,
                             entry.ActivityInstanceId,
                             entry.ActivityId,
                             eval.SequenceFlowId,
