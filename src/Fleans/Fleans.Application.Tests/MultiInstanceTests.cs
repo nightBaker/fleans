@@ -42,8 +42,8 @@ public class MultiInstanceTests : WorkflowTestBase
         // Act
         await instance.StartWorkflow();
 
-        // Assert
-        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        // Assert — poll for completion (script execution is async via stream events)
+        var snapshot = await PollForCompletion(instanceId);
         Assert.IsNotNull(snapshot);
         Assert.IsTrue(snapshot.IsCompleted, "Workflow should be completed");
         Assert.AreEqual(0, snapshot.ActiveActivities.Count, "No active activities should remain");
@@ -51,5 +51,19 @@ public class MultiInstanceTests : WorkflowTestBase
         // Script should appear 3 times in completed (iterations) + 1 time for host = check >=3
         var scriptCompletions = snapshot.CompletedActivities.Count(a => a.ActivityId == "script");
         Assert.IsTrue(scriptCompletions >= 3, $"Script should have completed at least 3 times, got {scriptCompletions}");
+    }
+
+    private async Task<Application.QueryModels.InstanceStateSnapshot?> PollForCompletion(
+        Guid instanceId, int timeoutMs = 10000)
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+        while (DateTime.UtcNow < deadline)
+        {
+            var snapshot = await QueryService.GetStateSnapshot(instanceId);
+            if (snapshot is not null && snapshot.IsCompleted)
+                return snapshot;
+            await Task.Delay(100);
+        }
+        return await QueryService.GetStateSnapshot(instanceId);
     }
 }

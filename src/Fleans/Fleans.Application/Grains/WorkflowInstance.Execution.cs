@@ -31,8 +31,30 @@ public partial class WorkflowInstance
                 var scopeDefinition = definition.GetScopeForActivity(activityId);
                 var currentActivity = scopeDefinition.GetActivity(activityId);
                 SetActivityRequestContext(activityId, activityState);
-                LogExecutingActivity(activityId, currentActivity.GetType().Name);
-                var commands = await currentActivity.ExecuteAsync(this, activityState, scopeDefinition);
+
+                // For MI iterations, execute the inner activity instead of the wrapper
+                Activity activityToExecute = currentActivity;
+                if (currentActivity is MultiInstanceActivity mi)
+                {
+                    var entryBeforeExec = State.GetActiveEntry(activityState.GetPrimaryKey());
+                    if (entryBeforeExec.MultiInstanceIndex is not null)
+                        activityToExecute = mi.InnerActivity;
+                }
+
+                LogExecutingActivity(activityId, activityToExecute.GetType().Name);
+                var commands = await activityToExecute.ExecuteAsync(this, activityState, scopeDefinition);
+
+                // For MI iterations, filter out boundary registration commands
+                // (boundaries apply to the host, not individual iterations)
+                if (activityToExecute != currentActivity)
+                {
+                    commands = commands
+                        .Where(c => c is not RegisterTimerCommand { IsBoundary: true }
+                            and not RegisterMessageCommand { IsBoundary: true }
+                            and not RegisterSignalCommand { IsBoundary: true })
+                        .ToList();
+                }
+
                 var currentEntry = State.GetActiveEntry(activityState.GetPrimaryKey());
                 await ProcessCommands(commands, currentEntry, activityState);
             }
@@ -86,6 +108,10 @@ public partial class WorkflowInstance
 
                 case CompleteWorkflowCommand:
                     await Complete();
+                    break;
+
+                case OpenMultiInstanceCommand mi:
+                    await OpenMultiInstanceScope(entry.ActivityInstanceId, mi.MultiInstanceActivity, mi.ParentVariablesId);
                     break;
             }
         }
@@ -154,6 +180,108 @@ public partial class WorkflowInstance
         State.AddEntries([startEntry]);
     }
 
+    private async Task OpenMultiInstanceScope(Guid hostInstanceId, MultiInstanceActivity mi, Guid parentVariablesId)
+    {
+        // Resolve iteration count and collection items
+        int count;
+        IList<object>? collectionItems = null;
+
+        if (mi.LoopCardinality.HasValue)
+        {
+            count = mi.LoopCardinality.Value;
+        }
+        else if (mi.InputCollection is not null)
+        {
+            var collectionVar = await GetVariable(parentVariablesId, mi.InputCollection);
+            if (collectionVar is IList<object> list)
+            {
+                collectionItems = list;
+                count = list.Count;
+            }
+            else if (collectionVar is System.Collections.IEnumerable enumerable and not string)
+            {
+                collectionItems = enumerable.Cast<object>().ToList();
+                count = collectionItems.Count;
+            }
+            else
+            {
+                throw new InvalidOperationException(
+                    $"Multi-instance inputCollection '{mi.InputCollection}' must resolve to a list/array, got: {collectionVar?.GetType().Name ?? "null"}");
+            }
+        }
+        else
+        {
+            throw new InvalidOperationException(
+                "Multi-instance must have either LoopCardinality or InputCollection");
+        }
+
+        // Set total on host entry
+        var hostEntry = State.GetActiveEntry(hostInstanceId);
+        hostEntry.SetMultiInstanceTotal(count);
+
+        LogMultiInstanceScopeOpened(mi.ActivityId, count, mi.IsSequential);
+
+        // Handle empty collection — complete host immediately
+        if (count == 0)
+        {
+            if (mi.OutputCollection is not null)
+            {
+                var hostGrain = _grainFactory.GetGrain<IActivityInstanceGrain>(hostInstanceId);
+                var hostVarId = await hostGrain.GetVariablesStateId();
+                dynamic emptyOutput = new System.Dynamic.ExpandoObject();
+                ((IDictionary<string, object?>)emptyOutput)[mi.OutputCollection] = new List<object?>();
+                State.MergeState(hostVarId, (System.Dynamic.ExpandoObject)emptyOutput);
+            }
+            var hostGrainForComplete = _grainFactory.GetGrain<IActivityInstanceGrain>(hostInstanceId);
+            await hostGrainForComplete.Complete();
+            return;
+        }
+
+        // Spawn iterations
+        var iterationsToSpawn = mi.IsSequential ? 1 : count;
+        await SpawnMultiInstanceIterations(hostInstanceId, mi, parentVariablesId, collectionItems, 0, iterationsToSpawn);
+    }
+
+    private async Task SpawnMultiInstanceIterations(
+        Guid hostInstanceId,
+        MultiInstanceActivity mi,
+        Guid parentVariablesId,
+        IList<object>? collectionItems,
+        int startIndex,
+        int count)
+    {
+        var newEntries = new List<ActivityInstanceEntry>();
+
+        for (var i = startIndex; i < startIndex + count; i++)
+        {
+            var childVariablesId = State.AddChildVariableState(parentVariablesId);
+
+            // Set loopCounter
+            dynamic loopVars = new System.Dynamic.ExpandoObject();
+            ((IDictionary<string, object?>)loopVars)["loopCounter"] = i;
+            State.MergeState(childVariablesId, (System.Dynamic.ExpandoObject)loopVars);
+
+            // Set inputDataItem if collection-driven
+            if (collectionItems is not null && mi.InputDataItem is not null)
+            {
+                dynamic itemVars = new System.Dynamic.ExpandoObject();
+                ((IDictionary<string, object?>)itemVars)[mi.InputDataItem] = collectionItems[i];
+                State.MergeState(childVariablesId, (System.Dynamic.ExpandoObject)itemVars);
+            }
+
+            var iterationInstanceId = Guid.NewGuid();
+            var iterationGrain = _grainFactory.GetGrain<IActivityInstanceGrain>(iterationInstanceId);
+            await iterationGrain.SetActivity(mi.ActivityId, mi.InnerActivity.GetType().Name);
+            await iterationGrain.SetVariablesId(childVariablesId);
+
+            var iterationEntry = new ActivityInstanceEntry(
+                iterationInstanceId, mi.ActivityId, State.Id, hostInstanceId, i);
+            newEntries.Add(iterationEntry);
+        }
+
+        State.AddEntries(newEntries);
+    }
+
     private async Task<ActivityInstanceEntry> CreateNextActivityEntry(
         Activity sourceActivity, IActivityInstanceGrain sourceInstance,
         Activity nextActivity, Guid? scopeId)
@@ -191,6 +319,10 @@ public partial class WorkflowInstance
                     continue;
 
                 if (await activityInstance.IsCancelled())
+                    continue;
+
+                // MI iterations don't transition to next activities — handled by scope completion
+                if (entry.MultiInstanceIndex is not null)
                     continue;
 
                 var scopeDefinition = definition.GetScopeForActivity(entry.ActivityId);
@@ -244,10 +376,25 @@ public partial class WorkflowInstance
             {
                 var scopeDefinition = definition.GetScopeForActivity(entry.ActivityId);
                 var activity = scopeDefinition.GetActivity(entry.ActivityId);
-                if (activity is not SubProcess) continue;
+
+                var isSubProcess = activity is SubProcess;
+                var isMultiInstanceHost = activity is MultiInstanceActivity
+                    && entry.MultiInstanceIndex is null;
+
+                if (!isSubProcess && !isMultiInstanceHost) continue;
 
                 var scopeEntries = State.Entries.Where(e => e.ScopeId == entry.ActivityInstanceId).ToList();
                 if (scopeEntries.Count == 0) continue;
+
+                if (isMultiInstanceHost)
+                {
+                    var completedMiResult = await TryCompleteMultiInstanceHost(
+                        entry, (MultiInstanceActivity)activity, scopeDefinition, scopeEntries);
+                    if (completedMiResult)
+                        anyCompleted = true;
+                    continue;
+                }
+
                 if (!scopeEntries.All(e => e.IsCompleted)) continue;
 
                 // All scope children are done — complete the sub-process
@@ -271,6 +418,100 @@ public partial class WorkflowInstance
                 anyCompleted = true;
             }
         } while (anyCompleted);
+    }
+
+    private async Task<bool> TryCompleteMultiInstanceHost(
+        ActivityInstanceEntry hostEntry,
+        MultiInstanceActivity mi,
+        IWorkflowDefinition scopeDefinition,
+        List<ActivityInstanceEntry> scopeEntries)
+    {
+        var completedIterations = scopeEntries.Where(e => e.IsCompleted).ToList();
+        var activeIterations = scopeEntries.Where(e => !e.IsCompleted).ToList();
+        var total = hostEntry.MultiInstanceTotal
+            ?? throw new InvalidOperationException("MI host entry missing MultiInstanceTotal");
+
+        // If there are active iterations, wait for them
+        if (activeIterations.Count > 0)
+            return false;
+
+        // All spawned iterations are done
+        if (completedIterations.Count < total)
+        {
+            // Sequential mode: spawn next iteration
+            var nextIndex = completedIterations.Count;
+            LogMultiInstanceNextIteration(nextIndex, mi.ActivityId);
+
+            var hostGrain = _grainFactory.GetGrain<IActivityInstanceGrain>(hostEntry.ActivityInstanceId);
+            var parentVariablesId = await hostGrain.GetVariablesStateId();
+
+            // Re-read collection for the next item
+            IList<object>? collectionItems = null;
+            if (mi.InputCollection is not null)
+            {
+                var collectionVar = await GetVariable(parentVariablesId, mi.InputCollection);
+                if (collectionVar is IList<object> list)
+                    collectionItems = list;
+                else if (collectionVar is System.Collections.IEnumerable enumerable and not string)
+                    collectionItems = enumerable.Cast<object>().ToList();
+            }
+
+            await SpawnMultiInstanceIterations(hostEntry.ActivityInstanceId, mi, parentVariablesId, collectionItems, nextIndex, 1);
+            return false; // host not completed yet
+        }
+
+        // All iterations done — aggregate output
+        if (mi.OutputDataItem is not null && mi.OutputCollection is not null)
+        {
+            var iterationEntries = scopeEntries
+                .Where(e => e.MultiInstanceIndex.HasValue)
+                .OrderBy(e => e.MultiInstanceIndex!.Value)
+                .ToList();
+
+            var outputList = new List<object?>();
+            foreach (var iterEntry in iterationEntries)
+            {
+                var iterGrain = _grainFactory.GetGrain<IActivityInstanceGrain>(iterEntry.ActivityInstanceId);
+                var iterVarId = await iterGrain.GetVariablesStateId();
+                var outputValue = State.GetVariable(iterVarId, mi.OutputDataItem);
+                outputList.Add(outputValue);
+            }
+
+            var hostGrain = _grainFactory.GetGrain<IActivityInstanceGrain>(hostEntry.ActivityInstanceId);
+            var hostVarId = await hostGrain.GetVariablesStateId();
+            dynamic outputVars = new System.Dynamic.ExpandoObject();
+            ((IDictionary<string, object?>)outputVars)[mi.OutputCollection] = outputList;
+            State.MergeState(hostVarId, (System.Dynamic.ExpandoObject)outputVars);
+        }
+
+        // Clean up child variable scopes
+        var childVarIds = new List<Guid>();
+        foreach (var iterEntry in scopeEntries.Where(e => e.MultiInstanceIndex.HasValue))
+        {
+            var iterGrain = _grainFactory.GetGrain<IActivityInstanceGrain>(iterEntry.ActivityInstanceId);
+            childVarIds.Add(await iterGrain.GetVariablesStateId());
+        }
+        State.RemoveVariableStates(childVarIds);
+
+        // Complete host
+        var hostGrainForComplete = _grainFactory.GetGrain<IActivityInstanceGrain>(hostEntry.ActivityInstanceId);
+        await hostGrainForComplete.Complete();
+        LogMultiInstanceScopeCompleted(mi.ActivityId);
+
+        var nextActivities = await mi.GetNextActivities(this, hostGrainForComplete, scopeDefinition);
+
+        var completedEntries = new List<ActivityInstanceEntry> { hostEntry };
+        var newEntries = new List<ActivityInstanceEntry>();
+
+        foreach (var nextActivity in nextActivities)
+        {
+            var newEntry = await CreateNextActivityEntry(mi, hostGrainForComplete, nextActivity, hostEntry.ScopeId);
+            newEntries.Add(newEntry);
+        }
+
+        State.CompleteEntries(completedEntries);
+        State.AddEntries(newEntries);
+        return true;
     }
 
     public async Task CancelScopeChildren(Guid scopeId)
