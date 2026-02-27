@@ -5,10 +5,6 @@
 # fleans
 Workflow engine based on Orleans
 
-## Social Preview Image
-
-The social preview image is versioned in this repository. To update the GitHub repository social preview, upload [`assets/social-preview.png`](assets/social-preview.png) in **Settings → Social preview**. The editable SVG source is at [`assets/social-preview.svg`](assets/social-preview.svg).
-
 ## Prerequisites
 
 - dotnet 10
