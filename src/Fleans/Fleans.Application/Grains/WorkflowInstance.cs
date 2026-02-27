@@ -155,7 +155,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         }
     }
 
-    public async ValueTask OpenSubProcessScope(Guid subProcessInstanceId, SubProcess subProcess, Guid parentVariablesId)
+    private async Task OpenSubProcessScope(Guid subProcessInstanceId, SubProcess subProcess, Guid parentVariablesId)
     {
         var childVariablesId = State.AddChildVariableState(parentVariablesId);
         LogSubProcessInitialized(subProcess.ActivityId, childVariablesId);
@@ -494,7 +494,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         await _state.WriteStateAsync();
     }
 
-    public async ValueTask StartChildWorkflow(CallActivity callActivity, IActivityExecutionContext activityContext)
+    private async Task StartChildWorkflow(CallActivity callActivity, IActivityExecutionContext activityContext)
     {
         var factory = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
         var childDefinition = await factory.GetLatestWorkflowDefinition(callActivity.CalledProcessKey);
@@ -670,7 +670,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         return ValueTask.FromResult(result);
     }
 
-    public async ValueTask AddConditionSequenceStates(Guid activityInstanceId, string[] sequenceFlowIds)
+    private async Task AddConditionSequenceStates(Guid activityInstanceId, string[] sequenceFlowIds)
     {
         State.AddConditionSequenceStates(activityInstanceId, sequenceFlowIds);
         await _state.WriteStateAsync();
@@ -805,7 +805,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
     public ValueTask<object?> GetVariable(Guid variablesId, string variableName)
         => ValueTask.FromResult(State.GetVariable(variablesId, variableName));
 
-    public async ValueTask RegisterMessageSubscription(Guid variablesId, string messageDefinitionId, string activityId)
+    private async Task RegisterMessageSubscription(Guid variablesId, string messageDefinitionId, string activityId)
     {
         var definition = await GetWorkflowDefinition();
         var messageDef = definition.Messages.First(m => m.Id == messageDefinitionId);
@@ -841,7 +841,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         LogMessageSubscriptionRegistered(activityId, messageDef.Name, correlationKey);
     }
 
-    public async ValueTask RegisterTimerReminder(Guid hostActivityInstanceId, string timerActivityId, TimeSpan dueTime)
+    private async Task RegisterTimerReminder(Guid hostActivityInstanceId, string timerActivityId, TimeSpan dueTime)
     {
         var callbackGrain = _grainFactory.GetGrain<ITimerCallbackGrain>(
             this.GetPrimaryKey(), $"{hostActivityInstanceId}:{timerActivityId}");
@@ -849,7 +849,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         LogTimerReminderRegistered(timerActivityId, dueTime);
     }
 
-    public async ValueTask RegisterBoundaryMessageSubscription(Guid variablesId, Guid hostActivityInstanceId, string boundaryActivityId, string messageDefinitionId)
+    private async Task RegisterBoundaryMessageSubscription(Guid variablesId, Guid hostActivityInstanceId, string boundaryActivityId, string messageDefinitionId)
     {
         var definition = await GetWorkflowDefinition();
         var messageDef = definition.Messages.First(m => m.Id == messageDefinitionId);
@@ -916,7 +916,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         await _state.WriteStateAsync();
     }
 
-    public async ValueTask RegisterSignalSubscription(string signalName, string activityId, Guid activityInstanceId)
+    private async Task RegisterSignalSubscription(string signalName, string activityId, Guid activityInstanceId)
     {
         await _state.WriteStateAsync();
 
@@ -937,7 +937,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         LogSignalSubscriptionRegistered(activityId, signalName);
     }
 
-    public async ValueTask RegisterBoundarySignalSubscription(Guid hostActivityInstanceId, string boundaryActivityId, string signalName)
+    private async Task RegisterBoundarySignalSubscription(Guid hostActivityInstanceId, string boundaryActivityId, string signalName)
     {
         var signalGrain = _grainFactory.GetGrain<ISignalCorrelationGrain>(signalName);
 
@@ -954,7 +954,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         LogSignalSubscriptionRegistered(boundaryActivityId, signalName);
     }
 
-    public async ValueTask ThrowSignal(string signalName)
+    private async Task ThrowSignal(string signalName)
     {
         var signalGrain = _grainFactory.GetGrain<ISignalCorrelationGrain>(signalName);
         var deliveredCount = await signalGrain.BroadcastSignal();
