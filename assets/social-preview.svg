@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+     viewBox="0 0 1280 640" width="1280" height="640">
+  <defs>
+    <!-- Arrowhead marker for logo flows -->
+    <marker id="arr" viewBox="0 0 8 6" refX="8" refY="3"
+            markerWidth="5" markerHeight="4" orient="auto">
+      <path d="M 0 0 L 8 3 L 0 6 Z" fill="#4EB5A6"/>
+    </marker>
+    <!-- Arrowhead marker for motif flows -->
+    <marker id="arr-faint" viewBox="0 0 8 6" refX="8" refY="3"
+            markerWidth="5" markerHeight="4" orient="auto">
+      <path d="M 0 0 L 8 3 L 0 6 Z" fill="#B2DED9"/>
+    </marker>
+  </defs>
+
+  <!-- ─── Background ─── -->
+  <rect width="1280" height="640" fill="#F6FAFA"/>
+
+  <!-- ─── Subtle background hex motif (top-right corner area) ─── -->
+  <!-- Large faint hex -->
+  <polygon points="980,40 1130,126 1130,300 980,386 830,300 830,126"
+           fill="none" stroke="#C8EEEA" stroke-width="2.5"/>
+  <!-- Medium faint hex -->
+  <polygon points="1100,200 1200,258 1200,374 1100,432 1000,374 1000,258"
+           fill="none" stroke="#C8EEEA" stroke-width="2"/>
+  <!-- Small faint hex top-right -->
+  <polygon points="1195,50 1255,84 1255,154 1195,188 1135,154 1135,84"
+           fill="none" stroke="#D6F0ED" stroke-width="1.5"/>
+
+  <!-- ─── Subtle node/actor network motif (bottom-right) ─── -->
+  <!-- Nodes -->
+  <circle cx="850" cy="480" r="9" fill="none" stroke="#B2DED9" stroke-width="2"/>
+  <circle cx="950" cy="540" r="9" fill="none" stroke="#B2DED9" stroke-width="2"/>
+  <circle cx="1060" cy="500" r="9" fill="none" stroke="#B2DED9" stroke-width="2"/>
+  <circle cx="1160" cy="560" r="9" fill="none" stroke="#B2DED9" stroke-width="2"/>
+  <circle cx="1050" cy="600" r="9" fill="none" stroke="#B2DED9" stroke-width="2"/>
+  <circle cx="900"  cy="590" r="9" fill="none" stroke="#B2DED9" stroke-width="2"/>
+  <!-- Connecting lines -->
+  <line x1="859" y1="480" x2="941" y2="540" stroke="#B2DED9" stroke-width="1.5" marker-end="url(#arr-faint)"/>
+  <line x1="959" y1="540" x2="1051" y2="500" stroke="#B2DED9" stroke-width="1.5" marker-end="url(#arr-faint)"/>
+  <line x1="1069" y1="500" x2="1151" y2="560" stroke="#B2DED9" stroke-width="1.5" marker-end="url(#arr-faint)"/>
+  <line x1="1155" y1="568" x2="1059" y2="592" stroke="#B2DED9" stroke-width="1.5" marker-end="url(#arr-faint)"/>
+  <line x1="1041" y1="600" x2="909"  y2="590" stroke="#B2DED9" stroke-width="1.5" marker-end="url(#arr-faint)"/>
+  <line x1="893"  y1="587" x2="859"  y2="487" stroke="#B2DED9" stroke-width="1.5" marker-end="url(#arr-faint)"/>
+
+  <!-- ─── Logo embedded (centered vertically in left half) ─── -->
+  <!-- Logo viewBox 0 0 512 512, rendered at 220×220, centered at x=160,y=210 -->
+  <g transform="translate(50, 210) scale(0.43)">
+    <!-- Teal hexagon outline -->
+    <polygon points="256,36 446,146 446,366 256,476 66,366 66,146"
+             fill="none" stroke="#4EB5A6" stroke-width="64"/>
+    <!-- Task activities forming "F" shape -->
+    <rect x="176" y="158" width="44" height="28" rx="5" fill="#4EB5A6"/>
+    <rect x="234" y="158" width="44" height="28" rx="5" fill="#4EB5A6"/>
+    <rect x="292" y="158" width="44" height="28" rx="5" fill="#4EB5A6"/>
+    <rect x="176" y="200" width="44" height="28" rx="5" fill="#4EB5A6"/>
+    <rect x="176" y="242" width="44" height="28" rx="5" fill="#4EB5A6"/>
+    <rect x="176" y="284" width="44" height="28" rx="5" fill="#4EB5A6"/>
+    <rect x="176" y="326" width="44" height="28" rx="5" fill="#4EB5A6"/>
+    <rect x="234" y="242" width="44" height="28" rx="5" fill="#4EB5A6"/>
+    <!-- Sequence flows -->
+    <line x1="220" y1="172" x2="234" y2="172" stroke="#4EB5A6" stroke-width="2.5" marker-end="url(#arr)"/>
+    <line x1="278" y1="172" x2="292" y2="172" stroke="#4EB5A6" stroke-width="2.5" marker-end="url(#arr)"/>
+    <line x1="220" y1="256" x2="234" y2="256" stroke="#4EB5A6" stroke-width="2.5" marker-end="url(#arr)"/>
+    <line x1="198" y1="186" x2="198" y2="200" stroke="#4EB5A6" stroke-width="2.5" marker-end="url(#arr)"/>
+    <line x1="198" y1="228" x2="198" y2="242" stroke="#4EB5A6" stroke-width="2.5" marker-end="url(#arr)"/>
+    <line x1="198" y1="270" x2="198" y2="284" stroke="#4EB5A6" stroke-width="2.5" marker-end="url(#arr)"/>
+    <line x1="198" y1="312" x2="198" y2="326" stroke="#4EB5A6" stroke-width="2.5" marker-end="url(#arr)"/>
+  </g>
+
+  <!-- ─── Thin vertical divider ─── -->
+  <line x1="340" y1="80" x2="340" y2="560" stroke="#D0EBEA" stroke-width="1.5"/>
+
+  <!-- ─── Title: Fleans ─── -->
+  <text x="400" y="270"
+        font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
+        font-size="120" font-weight="700" letter-spacing="-2"
+        fill="#1A3A3A">Fleans</text>
+
+  <!-- ─── Teal accent bar under title ─── -->
+  <rect x="400" y="290" width="440" height="6" rx="3" fill="#4EB5A6"/>
+
+  <!-- ─── Subtitle ─── -->
+  <text x="400" y="360"
+        font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
+        font-size="36" font-weight="400" letter-spacing="0.5"
+        fill="#3D7070">BPMN workflow engine on Orleans</text>
+
+</svg>
