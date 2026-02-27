@@ -91,13 +91,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
             switch (command)
             {
                 case SpawnActivityCommand spawn:
-                    var spawnId = Guid.NewGuid();
-                    var spawnInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(spawnId);
-                    await spawnInstance.SetActivity(spawn.Activity.ActivityId, spawn.Activity.GetType().Name);
-                    var spawnVarsId = await activityContext.GetVariablesStateId();
-                    await spawnInstance.SetVariablesId(spawnVarsId);
-                    var spawnEntry = new ActivityInstanceEntry(spawnId, spawn.Activity.ActivityId, State.Id, spawn.ScopeId);
-                    State.AddEntries([spawnEntry]);
+                    await SpawnActivity(spawn, activityContext);
                     break;
 
                 case OpenSubProcessCommand sub:
@@ -109,20 +103,11 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
                     break;
 
                 case RegisterMessageCommand msg:
-                    if (msg.IsBoundary)
-                        await RegisterBoundaryMessageSubscription(msg.VariablesId,
-                            entry.ActivityInstanceId, msg.ActivityId, msg.MessageDefinitionId);
-                    else
-                        await RegisterMessageSubscription(msg.VariablesId, msg.MessageDefinitionId, msg.ActivityId);
+                    await HandleRegisterMessage(msg, entry.ActivityInstanceId);
                     break;
 
                 case RegisterSignalCommand sig:
-                    if (sig.IsBoundary)
-                        await RegisterBoundarySignalSubscription(
-                            entry.ActivityInstanceId, sig.ActivityId, sig.SignalName);
-                    else
-                        await RegisterSignalSubscription(sig.SignalName, sig.ActivityId,
-                            entry.ActivityInstanceId);
+                    await HandleRegisterSignal(sig, entry.ActivityInstanceId);
                     break;
 
                 case StartChildWorkflowCommand child:
@@ -130,20 +115,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
                     break;
 
                 case AddConditionsCommand cond:
-                    await AddConditionSequenceStates(entry.ActivityInstanceId, cond.SequenceFlowIds);
-                    var condDef = await GetWorkflowDefinition();
-                    var condInstanceId = await GetWorkflowInstanceId();
-                    foreach (var eval in cond.Evaluations)
-                    {
-                        await activityContext.PublishEvent(new Domain.Events.EvaluateConditionEvent(
-                            condInstanceId,
-                            condDef.WorkflowId,
-                            condDef.ProcessDefinitionId,
-                            entry.ActivityInstanceId,
-                            entry.ActivityId,
-                            eval.SequenceFlowId,
-                            eval.Condition));
-                    }
+                    await HandleAddConditions(cond, entry, activityContext);
                     break;
 
                 case ThrowSignalCommand sig:
@@ -154,6 +126,52 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
                     await Complete();
                     break;
             }
+        }
+    }
+
+    private async Task SpawnActivity(SpawnActivityCommand spawn, IActivityExecutionContext activityContext)
+    {
+        var spawnId = Guid.NewGuid();
+        var spawnInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(spawnId);
+        await spawnInstance.SetActivity(spawn.Activity.ActivityId, spawn.Activity.GetType().Name);
+        var spawnVarsId = await activityContext.GetVariablesStateId();
+        await spawnInstance.SetVariablesId(spawnVarsId);
+        var spawnEntry = new ActivityInstanceEntry(spawnId, spawn.Activity.ActivityId, State.Id, spawn.ScopeId);
+        State.AddEntries([spawnEntry]);
+    }
+
+    private async Task HandleRegisterMessage(RegisterMessageCommand msg, Guid activityInstanceId)
+    {
+        if (msg.IsBoundary)
+            await RegisterBoundaryMessageSubscription(msg.VariablesId,
+                activityInstanceId, msg.ActivityId, msg.MessageDefinitionId);
+        else
+            await RegisterMessageSubscription(msg.VariablesId, msg.MessageDefinitionId, msg.ActivityId);
+    }
+
+    private async Task HandleRegisterSignal(RegisterSignalCommand sig, Guid activityInstanceId)
+    {
+        if (sig.IsBoundary)
+            await RegisterBoundarySignalSubscription(activityInstanceId, sig.ActivityId, sig.SignalName);
+        else
+            await RegisterSignalSubscription(sig.SignalName, sig.ActivityId, activityInstanceId);
+    }
+
+    private async Task HandleAddConditions(AddConditionsCommand cond, ActivityInstanceEntry entry, IActivityExecutionContext activityContext)
+    {
+        await AddConditionSequenceStates(entry.ActivityInstanceId, cond.SequenceFlowIds);
+        var definition = await GetWorkflowDefinition();
+        var instanceId = await GetWorkflowInstanceId();
+        foreach (var eval in cond.Evaluations)
+        {
+            await activityContext.PublishEvent(new Domain.Events.EvaluateConditionEvent(
+                instanceId,
+                definition.WorkflowId,
+                definition.ProcessDefinitionId,
+                entry.ActivityInstanceId,
+                entry.ActivityId,
+                eval.SequenceFlowId,
+                eval.Condition));
         }
     }
 
