@@ -32,6 +32,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
     async Task IBoundaryEventStateAccessor.TransitionToNextActivity() => await TransitionToNextActivity();
     async Task IBoundaryEventStateAccessor.ExecuteWorkflow() => await ExecuteWorkflow();
     async Task IBoundaryEventStateAccessor.CancelScopeChildren(Guid scopeId) => await CancelScopeChildren(scopeId);
+    async Task IBoundaryEventStateAccessor.ProcessCommands(IReadOnlyList<IExecutionCommand> commands, ActivityInstanceEntry entry, IActivityExecutionContext activityContext) => await ProcessCommands(commands, entry, activityContext);
 
     public WorkflowInstance(
         [PersistentState("state", GrainStorageNames.WorkflowInstances)] IPersistentState<WorkflowInstanceState> state,

@@ -59,7 +59,7 @@ public class EventBasedGatewayActivityTests
     }
 
     [TestMethod]
-    public async Task ExecuteAsync_WhenCompleteFails_ShouldPropagateException()
+    public async Task ExecuteAsync_ShouldReturnCompleteCommand_NotCallCompleteDirectly()
     {
         var gateway = new EventBasedGateway("ebg1");
         var timerCatch = new TimerIntermediateCatchEvent("timer1", new TimerDefinition(TimerType.Duration, "PT1H"));
@@ -68,9 +68,10 @@ public class EventBasedGatewayActivityTests
             [new SequenceFlow("f1", gateway, timerCatch)]);
         var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("ebg1");
-        activityContext.Complete().Returns(ValueTask.FromException(new InvalidOperationException("complete failed")));
 
-        await Assert.ThrowsExactlyAsync<InvalidOperationException>(
-            () => gateway.ExecuteAsync(workflowContext, activityContext, definition));
+        var commands = await gateway.ExecuteAsync(workflowContext, activityContext, definition);
+
+        // Activities return CompleteCommand instead of calling Complete() directly
+        Assert.IsTrue(commands.OfType<CompleteCommand>().Any());
     }
 }
