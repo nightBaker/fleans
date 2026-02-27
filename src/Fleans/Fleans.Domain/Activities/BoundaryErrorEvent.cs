@@ -9,7 +9,7 @@ public record BoundaryErrorEvent(
     internal override async Task<List<IExecutionCommand>> ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
     {
         var commands = await base.ExecuteAsync(workflowContext, activityContext, definition);
-        commands.Add(new CompleteCommand());
+        await activityContext.Complete();
         return commands;
     }
 

@@ -14,7 +14,7 @@ public record TimerStartEvent(
         IWorkflowDefinition definition)
     {
         var commands = await base.ExecuteAsync(workflowContext, activityContext, definition);
-        commands.Add(new CompleteCommand());
+        await activityContext.Complete();
         return commands;
     }
 

@@ -26,7 +26,7 @@ public class TimerIntermediateCatchEventDomainTests
 
         // Assert — should execute but NOT complete (waits for reminder)
         await activityContext.Received(1).Execute();
-        Assert.IsFalse(commands.OfType<CompleteCommand>().Any());
+        await activityContext.DidNotReceive().Complete();
         var executedEvent = publishedEvents.OfType<WorkflowActivityExecutedEvent>().Single();
         Assert.AreEqual("timer1", executedEvent.activityId);
         Assert.AreEqual("TimerIntermediateCatchEvent", executedEvent.TypeName);

@@ -27,7 +27,7 @@ public class ParallelGatewayActivityTests
         var commands = await fork.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert
-        Assert.IsTrue(commands.OfType<CompleteCommand>().Any());
+        await activityContext.Received(1).Complete();
     }
 
     [TestMethod]
@@ -120,7 +120,7 @@ public class ParallelGatewayActivityTests
         var commands = await join.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert — join calls Complete because all paths are done
-        Assert.IsTrue(commands.OfType<CompleteCommand>().Any());
+        await activityContext.Received(1).Complete();
     }
 
     [TestMethod]
@@ -157,6 +157,6 @@ public class ParallelGatewayActivityTests
 
         // Assert — join calls Execute (not Complete) because not all paths are done
         await activityContext.Received().Execute();
-        Assert.IsFalse(commands.OfType<CompleteCommand>().Any());
+        await activityContext.DidNotReceive().Complete();
     }
 }

@@ -25,7 +25,7 @@ public class MessageBoundaryEventDomainTests
 
         // Assert — boundary completes immediately
         await activityContext.Received(1).Execute();
-        Assert.IsTrue(commands.OfType<CompleteCommand>().Any());
+        await activityContext.Received(1).Complete();
         var executedEvent = publishedEvents.OfType<WorkflowActivityExecutedEvent>().Single();
         Assert.AreEqual("bmsg1", executedEvent.activityId);
     }

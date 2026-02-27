@@ -25,7 +25,7 @@ public class SubProcessActivityTests
         var commands = await subProcess.ExecuteAsync(workflowContext, activityContext, definition);
 
         await activityContext.Received(1).Execute();
-        Assert.IsFalse(commands.OfType<CompleteCommand>().Any());
+        await activityContext.DidNotReceive().Complete();
         var subCmd = commands.OfType<OpenSubProcessCommand>().Single();
         Assert.AreEqual(subProcess, subCmd.SubProcess);
     }

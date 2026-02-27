@@ -22,7 +22,7 @@ public class EndEventActivityTests
         var commands = await endEvent.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert
-        Assert.IsTrue(commands.OfType<CompleteCommand>().Any());
+        await activityContext.Received(1).Complete();
         Assert.IsTrue(commands.OfType<CompleteWorkflowCommand>().Any());
     }
 

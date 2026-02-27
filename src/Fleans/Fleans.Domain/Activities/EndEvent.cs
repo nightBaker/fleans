@@ -11,7 +11,7 @@ public record EndEvent(string ActivityId) : Activity(ActivityId)
     internal override async Task<List<IExecutionCommand>> ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
     {
         var commands = await base.ExecuteAsync(workflowContext, activityContext, definition);
-        commands.Add(new CompleteCommand());
+        await activityContext.Complete();
 
         // Only complete the workflow if this is a top-level EndEvent
         if (definition.IsRootScope)

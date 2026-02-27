@@ -24,7 +24,7 @@ public class StartEventActivityTests
 
         // Assert
         await activityContext.Received(1).Execute();
-        Assert.IsTrue(commands.OfType<CompleteCommand>().Any());
+        await activityContext.Received(1).Complete();
     }
 
     [TestMethod]

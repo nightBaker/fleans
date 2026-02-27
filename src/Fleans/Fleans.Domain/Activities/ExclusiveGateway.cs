@@ -17,7 +17,7 @@ public record ExclusiveGateway(string ActivityId) : ConditionalGateway(ActivityI
 
         if (sequences.Length == 0)
         {
-            commands.Add(new CompleteCommand());
+            await activityContext.Complete();
             return commands;
         }
 

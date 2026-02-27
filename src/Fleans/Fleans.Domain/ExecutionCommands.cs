@@ -5,9 +5,6 @@ namespace Fleans.Domain;
 public interface IExecutionCommand { }
 
 [GenerateSerializer]
-public record CompleteCommand() : IExecutionCommand;
-
-[GenerateSerializer]
 public record SpawnActivityCommand(
     [property: Id(0)] Activity Activity,
     [property: Id(1)] Guid? ScopeId,

@@ -17,7 +17,7 @@ public record SignalIntermediateThrowEvent(
         var commands = await base.ExecuteAsync(workflowContext, activityContext, definition);
         var signalDef = definition.Signals.First(s => s.Id == SignalDefinitionId);
         commands.Add(new ThrowSignalCommand(signalDef.Name));
-        commands.Add(new CompleteCommand());
+        await activityContext.Complete();
         return commands;
     }
 

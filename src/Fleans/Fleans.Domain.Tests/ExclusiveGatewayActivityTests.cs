@@ -170,7 +170,7 @@ public class ExclusiveGatewayActivityTests
         var commands = await gateway.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert — should auto-complete since no conditions to evaluate
-        Assert.IsTrue(commands.OfType<CompleteCommand>().Any());
+        await activityContext.Received(1).Complete();
     }
 
     private static ConditionSequenceState CreateEvaluatedConditionState(

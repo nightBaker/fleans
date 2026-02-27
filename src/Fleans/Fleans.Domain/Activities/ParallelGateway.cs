@@ -17,13 +17,13 @@ public record ParallelGateway(
 
         if (IsFork)
         {
-            commands.Add(new CompleteCommand());
+            await activityContext.Complete();
         }
         else
         {
             if (await AllIncomingPathsCompleted(workflowContext, definition))
             {
-                commands.Add(new CompleteCommand());
+                await activityContext.Complete();
             }
             // Otherwise stay active — base.ExecuteAsync already called Execute()
         }

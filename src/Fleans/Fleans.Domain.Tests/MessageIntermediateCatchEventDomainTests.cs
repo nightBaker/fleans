@@ -25,7 +25,7 @@ public class MessageIntermediateCatchEventDomainTests
 
         // Assert — should execute and register, but NOT complete
         await activityContext.Received(1).Execute();
-        Assert.IsFalse(commands.OfType<CompleteCommand>().Any());
+        await activityContext.DidNotReceive().Complete();
         var msgCmd = commands.OfType<RegisterMessageCommand>().Single();
         Assert.AreEqual("msg_payment", msgCmd.MessageDefinitionId);
         Assert.AreEqual("msgCatch1", msgCmd.ActivityId);

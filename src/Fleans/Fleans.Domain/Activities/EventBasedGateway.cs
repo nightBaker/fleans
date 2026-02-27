@@ -9,7 +9,7 @@ public record EventBasedGateway(string ActivityId) : Gateway(ActivityId)
         IWorkflowDefinition definition)
     {
         var commands = await base.ExecuteAsync(workflowContext, activityContext, definition);
-        commands.Add(new CompleteCommand());
+        await activityContext.Complete();
         return commands;
     }
 

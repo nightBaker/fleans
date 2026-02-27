@@ -90,10 +90,6 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         {
             switch (command)
             {
-                case CompleteCommand:
-                    await activityContext.Complete();
-                    break;
-
                 case SpawnActivityCommand spawn:
                     var spawnId = Guid.NewGuid();
                     var spawnInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(spawnId);
