@@ -22,12 +22,12 @@ public class SubProcessActivityTests
         var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("sub1");
 
-        await subProcess.ExecuteAsync(workflowContext, activityContext, definition);
+        var commands = await subProcess.ExecuteAsync(workflowContext, activityContext, definition);
 
         await activityContext.Received(1).Execute();
-        await activityContext.DidNotReceive().Complete();
-        await workflowContext.Received(1).OpenSubProcessScope(
-            Arg.Any<Guid>(), subProcess, Arg.Any<Guid>());
+        Assert.IsFalse(commands.OfType<CompleteCommand>().Any());
+        var subCmd = commands.OfType<OpenSubProcessCommand>().Single();
+        Assert.AreEqual(subProcess, subCmd.SubProcess);
     }
 
     [TestMethod]

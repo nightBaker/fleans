@@ -22,9 +22,9 @@ public class EndEventScopeTests
         var workflowContext = ActivityTestHelper.CreateWorkflowContext(scopeDefinition);
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("sub_end");
 
-        await innerEnd.ExecuteAsync(workflowContext, activityContext, scopeDefinition);
+        var commands = await innerEnd.ExecuteAsync(workflowContext, activityContext, scopeDefinition);
 
-        await activityContext.Received(1).Complete();
+        Assert.IsTrue(commands.OfType<CompleteCommand>().Any());
         await workflowContext.DidNotReceive().Complete();
     }
 
@@ -38,9 +38,9 @@ public class EndEventScopeTests
         var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("end");
 
-        await end.ExecuteAsync(workflowContext, activityContext, definition);
+        var commands = await end.ExecuteAsync(workflowContext, activityContext, definition);
 
-        await activityContext.Received(1).Complete();
+        Assert.IsTrue(commands.OfType<CompleteCommand>().Any());
         await workflowContext.Received(1).Complete();
     }
 }

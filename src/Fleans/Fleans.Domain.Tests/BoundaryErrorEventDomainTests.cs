@@ -21,11 +21,11 @@ public class BoundaryErrorEventDomainTests
         var (activityContext, publishedEvents) = ActivityTestHelper.CreateActivityContext("err1");
 
         // Act
-        await boundaryEvent.ExecuteAsync(workflowContext, activityContext, definition);
+        var commands = await boundaryEvent.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert
         await activityContext.Received(1).Execute();
-        await activityContext.Received(1).Complete();
+        Assert.IsTrue(commands.OfType<CompleteCommand>().Any());
         var executedEvent = publishedEvents.OfType<WorkflowActivityExecutedEvent>().Single();
         Assert.AreEqual("err1", executedEvent.activityId);
     }

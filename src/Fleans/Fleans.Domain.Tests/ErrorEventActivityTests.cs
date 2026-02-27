@@ -19,11 +19,11 @@ public class ErrorEventActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("error1");
 
         // Act
-        await errorEvent.ExecuteAsync(workflowContext, activityContext, definition);
+        var commands = await errorEvent.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert
         await activityContext.Received(1).Execute();
-        await activityContext.Received(1).Complete();
+        Assert.IsTrue(commands.OfType<CompleteCommand>().Any());
     }
 
     [TestMethod]

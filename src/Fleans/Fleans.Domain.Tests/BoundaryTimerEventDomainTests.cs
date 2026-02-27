@@ -22,11 +22,11 @@ public class BoundaryTimerEventDomainTests
         var (activityContext, publishedEvents) = ActivityTestHelper.CreateActivityContext("bt1");
 
         // Act
-        await boundaryTimer.ExecuteAsync(workflowContext, activityContext, definition);
+        var commands = await boundaryTimer.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert
         await activityContext.Received(1).Execute();
-        await activityContext.Received(1).Complete();
+        Assert.IsTrue(commands.OfType<CompleteCommand>().Any());
         var executedEvent = publishedEvents.OfType<WorkflowActivityExecutedEvent>().Single();
         Assert.AreEqual("bt1", executedEvent.activityId);
     }

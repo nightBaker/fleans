@@ -24,10 +24,10 @@ public class EventBasedGatewayActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("ebg1");
 
         // Act
-        await gateway.ExecuteAsync(workflowContext, activityContext, definition);
+        var commands = await gateway.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert
-        await activityContext.Received(1).Complete();
+        Assert.IsTrue(commands.OfType<CompleteCommand>().Any());
     }
 
     [TestMethod]

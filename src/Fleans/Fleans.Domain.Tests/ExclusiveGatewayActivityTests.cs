@@ -140,18 +140,16 @@ public class ExclusiveGatewayActivityTests
         var (activityContext, publishedEvents) = ActivityTestHelper.CreateActivityContext("if", activityInstanceId);
 
         // Act
-        await gateway.ExecuteAsync(workflowContext, activityContext, definition);
+        var commands = await gateway.ExecuteAsync(workflowContext, activityContext, definition);
 
-        // Assert — should have added condition sequences to workflow
-        await workflowContext.Received(1).AddConditionSequenceStates(
-            activityInstanceId,
-            Arg.Is<string[]>(ids => ids.Length == 2 && ids.Contains("seq1") && ids.Contains("seq2")));
-
-        // Should have published evaluate events (plus one WorkflowActivityExecutedEvent from base)
-        var evaluateEvents = publishedEvents.OfType<EvaluateConditionEvent>().ToList();
-        Assert.HasCount(2, evaluateEvents);
-        Assert.IsTrue(evaluateEvents.Any(e => e.SequenceFlowId == "seq1" && e.Condition == "x > 0"));
-        Assert.IsTrue(evaluateEvents.Any(e => e.SequenceFlowId == "seq2" && e.Condition == "x < 0"));
+        // Assert — should return AddConditionsCommand with correct sequence flow ids and evaluations
+        var condCmd = commands.OfType<AddConditionsCommand>().Single();
+        Assert.AreEqual(2, condCmd.SequenceFlowIds.Length);
+        Assert.IsTrue(condCmd.SequenceFlowIds.Contains("seq1"));
+        Assert.IsTrue(condCmd.SequenceFlowIds.Contains("seq2"));
+        Assert.AreEqual(2, condCmd.Evaluations.Count);
+        Assert.IsTrue(condCmd.Evaluations.Any(e => e.SequenceFlowId == "seq1" && e.Condition == "x > 0"));
+        Assert.IsTrue(condCmd.Evaluations.Any(e => e.SequenceFlowId == "seq2" && e.Condition == "x < 0"));
     }
 
     [TestMethod]
@@ -169,10 +167,10 @@ public class ExclusiveGatewayActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("if");
 
         // Act
-        await gateway.ExecuteAsync(workflowContext, activityContext, definition);
+        var commands = await gateway.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert — should auto-complete since no conditions to evaluate
-        await activityContext.Received(1).Complete();
+        Assert.IsTrue(commands.OfType<CompleteCommand>().Any());
     }
 
     private static ConditionSequenceState CreateEvaluatedConditionState(

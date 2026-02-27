@@ -1,5 +1,4 @@
 using Fleans.Domain.Activities;
-using NSubstitute;
 
 namespace Fleans.Domain.Tests;
 
@@ -7,7 +6,7 @@ namespace Fleans.Domain.Tests;
 public class BoundarableActivityTests
 {
     [TestMethod]
-    public async Task ExecuteAsync_ShouldRegisterTimerReminder_WhenBoundaryTimerAttached()
+    public async Task ExecuteAsync_ShouldReturnRegisterTimerCommand_WhenBoundaryTimerAttached()
     {
         // Arrange
         var task = new TaskActivity("task1");
@@ -20,15 +19,17 @@ public class BoundarableActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("task1", activityInstanceId);
 
         // Act
-        await task.ExecuteAsync(workflowContext, activityContext, definition);
+        var commands = await task.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert
-        await workflowContext.Received(1).RegisterTimerReminder(
-            activityInstanceId, "bt1", TimeSpan.FromMinutes(10));
+        var timerCmd = commands.OfType<RegisterTimerCommand>().Single();
+        Assert.AreEqual("bt1", timerCmd.TimerActivityId);
+        Assert.AreEqual(TimeSpan.FromMinutes(10), timerCmd.DueTime);
+        Assert.IsTrue(timerCmd.IsBoundary);
     }
 
     [TestMethod]
-    public async Task ExecuteAsync_ShouldRegisterMessageSubscription_WhenMessageBoundaryAttached()
+    public async Task ExecuteAsync_ShouldReturnRegisterMessageCommand_WhenMessageBoundaryAttached()
     {
         // Arrange
         var task = new TaskActivity("task1");
@@ -40,15 +41,17 @@ public class BoundarableActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("task1", activityInstanceId);
 
         // Act
-        await task.ExecuteAsync(workflowContext, activityContext, definition);
+        var commands = await task.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert
-        await workflowContext.Received(1).RegisterBoundaryMessageSubscription(
-            Arg.Any<Guid>(), activityInstanceId, "bm1", "msg-def-1");
+        var msgCmd = commands.OfType<RegisterMessageCommand>().Single();
+        Assert.AreEqual("bm1", msgCmd.ActivityId);
+        Assert.AreEqual("msg-def-1", msgCmd.MessageDefinitionId);
+        Assert.IsTrue(msgCmd.IsBoundary);
     }
 
     [TestMethod]
-    public async Task ExecuteAsync_ShouldNotRegister_WhenNoBoundariesAttached()
+    public async Task ExecuteAsync_ShouldNotReturnBoundaryCommands_WhenNoBoundariesAttached()
     {
         // Arrange
         var task = new TaskActivity("task1");
@@ -57,17 +60,15 @@ public class BoundarableActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("task1");
 
         // Act
-        await task.ExecuteAsync(workflowContext, activityContext, definition);
+        var commands = await task.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert
-        await workflowContext.DidNotReceive().RegisterTimerReminder(
-            Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<TimeSpan>());
-        await workflowContext.DidNotReceive().RegisterBoundaryMessageSubscription(
-            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<string>());
+        Assert.IsFalse(commands.OfType<RegisterTimerCommand>().Any());
+        Assert.IsFalse(commands.OfType<RegisterMessageCommand>().Any());
     }
 
     [TestMethod]
-    public async Task ExecuteAsync_ShouldOnlyRegisterMatchingBoundaries()
+    public async Task ExecuteAsync_ShouldOnlyReturnMatchingBoundaryCommands()
     {
         // Arrange
         var task1 = new TaskActivity("task1");
@@ -81,17 +82,16 @@ public class BoundarableActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("task1");
 
         // Act
-        await task1.ExecuteAsync(workflowContext, activityContext, definition);
+        var commands = await task1.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert
-        await workflowContext.Received(1).RegisterTimerReminder(
-            Arg.Any<Guid>(), "bt1", Arg.Any<TimeSpan>());
-        await workflowContext.DidNotReceive().RegisterTimerReminder(
-            Arg.Any<Guid>(), "bt2", Arg.Any<TimeSpan>());
+        var timerCmds = commands.OfType<RegisterTimerCommand>().ToList();
+        Assert.HasCount(1, timerCmds);
+        Assert.AreEqual("bt1", timerCmds[0].TimerActivityId);
     }
 
     [TestMethod]
-    public async Task ExecuteAsync_CallActivity_ShouldRegisterBoundaryTimer()
+    public async Task ExecuteAsync_CallActivity_ShouldReturnRegisterTimerCommand()
     {
         // Arrange
         var callActivity = new CallActivity("call1", "sub-process", [], []);
@@ -104,10 +104,12 @@ public class BoundarableActivityTests
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("call1", activityInstanceId);
 
         // Act
-        await callActivity.ExecuteAsync(workflowContext, activityContext, definition);
+        var commands = await callActivity.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert
-        await workflowContext.Received(1).RegisterTimerReminder(
-            activityInstanceId, "bt1", TimeSpan.FromMinutes(15));
+        var timerCmd = commands.OfType<RegisterTimerCommand>().Single();
+        Assert.AreEqual("bt1", timerCmd.TimerActivityId);
+        Assert.AreEqual(TimeSpan.FromMinutes(15), timerCmd.DueTime);
+        Assert.IsTrue(timerCmd.IsBoundary);
     }
 }

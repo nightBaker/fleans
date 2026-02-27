@@ -21,11 +21,11 @@ public class MessageBoundaryEventDomainTests
         var (activityContext, publishedEvents) = ActivityTestHelper.CreateActivityContext("bmsg1");
 
         // Act
-        await boundary.ExecuteAsync(workflowContext, activityContext, definition);
+        var commands = await boundary.ExecuteAsync(workflowContext, activityContext, definition);
 
         // Assert — boundary completes immediately
         await activityContext.Received(1).Execute();
-        await activityContext.Received(1).Complete();
+        Assert.IsTrue(commands.OfType<CompleteCommand>().Any());
         var executedEvent = publishedEvents.OfType<WorkflowActivityExecutedEvent>().Single();
         Assert.AreEqual("bmsg1", executedEvent.activityId);
     }
