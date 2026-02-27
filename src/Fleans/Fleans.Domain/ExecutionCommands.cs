@@ -54,3 +54,8 @@ public record ThrowSignalCommand(
 
 [GenerateSerializer]
 public record CompleteWorkflowCommand() : IExecutionCommand;
+
+[GenerateSerializer]
+public record OpenMultiInstanceCommand(
+    [property: Id(0)] MultiInstanceActivity MultiInstanceActivity,
+    [property: Id(1)] Guid ParentVariablesId) : IExecutionCommand;
