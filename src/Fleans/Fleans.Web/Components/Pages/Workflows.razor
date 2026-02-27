@@ -82,33 +82,33 @@
             }
             else
             {
-                <FluentDataGrid Items="@filteredRowsQueryable" TGridItem="ProcessDefinitionRow">
+                <FluentDataGrid Items="@filteredRows.Where(r => !r.IsHidden).AsQueryable()" TGridItem="ProcessDefinitionRow">
                     <TemplateColumn Title="Process Key" HierarchicalToggle="true">
-                        <strong title="@context.Summary.ProcessDefinitionId">@context.Summary.ProcessDefinitionKey</strong>
+                        <strong title="@context.Item.ProcessDefinitionId">@context.Item.ProcessDefinitionKey</strong>
                     </TemplateColumn>
                     <TemplateColumn Title="Version">
-                        <FluentBadge Color="Color.Accent">v@(context.Summary.Version)</FluentBadge>
+                        <FluentBadge Color="Color.Accent">v@(context.Item.Version)</FluentBadge>
                     </TemplateColumn>
                     <TemplateColumn Title="Deployed at (UTC)">
-                        @context.Summary.DeployedAt.ToUniversalTime().ToString("u")
+                        @context.Item.DeployedAt.ToUniversalTime().ToString("u")
                     </TemplateColumn>
                     <TemplateColumn Title="Actions">
                         <FluentStack Orientation="Orientation.Horizontal" Gap="4px">
                             <FluentButton Appearance="Appearance.Stealth"
                                           IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Edit())"
-                                          @onclick="() => EditWorkflow(context.Summary)">
+                                          @onclick="() => EditWorkflow(context.Item)">
                                 Edit
                             </FluentButton>
                             <FluentButton Appearance="Appearance.Stealth"
                                           IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Play())"
-                                          Loading="@(isStarting && startingProcessDefinitionId == context.Summary.ProcessDefinitionId)"
+                                          Loading="@(isStarting && startingProcessDefinitionId == context.Item.ProcessDefinitionId)"
                                           Disabled="@isStarting"
-                                          @onclick="() => StartVersion(context.Summary)">
+                                          @onclick="() => StartVersion(context.Item)">
                                 Start
                             </FluentButton>
                             <FluentButton Appearance="Appearance.Stealth"
                                           IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.List())"
-                                          @onclick="() => ViewInstances(context.Summary)">
+                                          @onclick="() => ViewInstances(context.Item)">
                                 Instances
                             </FluentButton>
                         </FluentStack>
@@ -120,18 +120,12 @@
 </FluentStack>
 
 @code {
-    private sealed class ProcessDefinitionRow : IHierarchicalGridItem
+    private sealed class ProcessDefinitionRow : HierarchicalGridItem<ProcessDefinitionSummary, ProcessDefinitionRow>
     {
-        public required ProcessDefinitionSummary Summary { get; init; }
-        public required int Depth { get; set; }
-        public required bool HasChildren { get; set; }
-        public bool IsCollapsed { get; set; } = true;
-        public bool IsHidden { get; set; }
     }
 
     private List<ProcessDefinitionRow> allRows = [];
     private List<ProcessDefinitionRow> filteredRows = [];
-    private IQueryable<ProcessDefinitionRow> filteredRowsQueryable = Enumerable.Empty<ProcessDefinitionRow>().AsQueryable();
     private bool isLoading = true;
     private string? loadErrorMessage;
     private string? actionErrorMessage;
@@ -175,22 +169,26 @@
                 .SelectMany(group =>
                 {
                     var versions = group.OrderByDescending(d => d.Version).ToList();
+
+                    var parent = new ProcessDefinitionRow
+                    {
+                        Item = versions[0],
+                        IsCollapsed = true,
+                    };
+
                     var children = versions.Skip(1)
                         .Select(d => new ProcessDefinitionRow
                         {
-                            Summary = d,
+                            Item = d,
                             Depth = 1,
-                            HasChildren = false,
                             IsHidden = true,
                         })
                         .ToList();
 
-                    var parent = new ProcessDefinitionRow
+                    foreach (var child in children)
                     {
-                        Summary = versions[0],
-                        Depth = 0,
-                        HasChildren = children.Count > 0,
-                    };
+                        parent.Children.Add(child);
+                    }
 
                     return new[] { parent }.Concat(children);
                 })
@@ -205,7 +203,6 @@
             if (allRows.Count == 0)
             {
                 filteredRows = [];
-                filteredRowsQueryable = filteredRows.AsQueryable();
             }
         }
         finally
@@ -240,16 +237,15 @@
             // Include parent + its children when key matches
             var matchingKeys = allRows
                 .Where(r => r.Depth == 0
-                    && r.Summary.ProcessDefinitionKey.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase))
-                .Select(r => r.Summary.ProcessDefinitionKey)
+                    && r.Item.ProcessDefinitionKey.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase))
+                .Select(r => r.Item.ProcessDefinitionKey)
                 .ToHashSet(StringComparer.Ordinal);
 
             filteredRows = allRows
-                .Where(r => matchingKeys.Contains(r.Summary.ProcessDefinitionKey))
+                .Where(r => matchingKeys.Contains(r.Item.ProcessDefinitionKey))
                 .ToList();
         }
 
-        filteredRowsQueryable = filteredRows.AsQueryable();
     }
 
     private async Task StartVersion(ProcessDefinitionSummary version)
