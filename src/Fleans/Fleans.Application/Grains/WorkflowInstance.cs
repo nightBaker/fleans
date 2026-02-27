@@ -69,12 +69,89 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
                 var currentActivity = scopeDefinition.GetActivity(activityId);
                 SetActivityRequestContext(activityId, activityState);
                 LogExecutingActivity(activityId, currentActivity.GetType().Name);
-                await currentActivity.ExecuteAsync(this, activityState, scopeDefinition);
+                var commands = await currentActivity.ExecuteAsync(this, activityState, scopeDefinition);
+                var currentEntry = State.GetActiveActivities()
+                    .First(e => e.ActivityId == activityId && !e.IsCompleted);
+                await ProcessCommands(commands, currentEntry, activityState);
             }
 
             await TransitionToNextActivity();
             LogStatePersistedAfterTransition();
             await _state.WriteStateAsync();
+        }
+    }
+
+    private async Task ProcessCommands(
+        IReadOnlyList<IExecutionCommand> commands,
+        ActivityInstanceEntry entry,
+        IActivityExecutionContext activityContext)
+    {
+        foreach (var command in commands)
+        {
+            switch (command)
+            {
+                case CompleteCommand:
+                    await activityContext.Complete();
+                    break;
+
+                case SpawnActivityCommand spawn:
+                    var spawnId = Guid.NewGuid();
+                    var spawnInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(spawnId);
+                    await spawnInstance.SetActivity(spawn.Activity.ActivityId, spawn.Activity.GetType().Name);
+                    var spawnVarsId = await activityContext.GetVariablesStateId();
+                    await spawnInstance.SetVariablesId(spawnVarsId);
+                    var spawnEntry = new ActivityInstanceEntry(spawnId, spawn.Activity.ActivityId, State.Id, spawn.ScopeId);
+                    State.AddEntries([spawnEntry]);
+                    break;
+
+                case OpenSubProcessCommand sub:
+                    await OpenSubProcessScope(entry.ActivityInstanceId, sub.SubProcess, sub.ParentVariablesId);
+                    break;
+
+                case RegisterTimerCommand timer:
+                    await RegisterTimerReminder(entry.ActivityInstanceId, timer.TimerActivityId, timer.DueTime);
+                    break;
+
+                case RegisterMessageCommand msg:
+                    if (msg.IsBoundary)
+                        await RegisterBoundaryMessageSubscription(msg.VariablesId,
+                            entry.ActivityInstanceId, msg.ActivityId, msg.MessageDefinitionId);
+                    else
+                        await RegisterMessageSubscription(msg.VariablesId, msg.MessageDefinitionId, msg.ActivityId);
+                    break;
+
+                case RegisterSignalCommand sig:
+                    if (sig.IsBoundary)
+                        await RegisterBoundarySignalSubscription(
+                            entry.ActivityInstanceId, sig.ActivityId, sig.SignalName);
+                    else
+                        await RegisterSignalSubscription(sig.SignalName, sig.ActivityId,
+                            entry.ActivityInstanceId);
+                    break;
+
+                case StartChildWorkflowCommand child:
+                    await StartChildWorkflow(child.CallActivity, activityContext);
+                    break;
+
+                case AddConditionsCommand cond:
+                    await AddConditionSequenceStates(entry.ActivityInstanceId, cond.SequenceFlowIds);
+                    foreach (var eval in cond.Evaluations)
+                    {
+                        await activityContext.PublishEvent(new Domain.Events.EvaluateConditionEvent(
+                            await GetWorkflowInstanceId(),
+                            (await GetWorkflowDefinition()).WorkflowId,
+                            (await GetWorkflowDefinition()).ProcessDefinitionId,
+                            entry.ActivityInstanceId,
+                            entry.ActivityId,
+                            eval.SequenceFlowId,
+                            eval.Condition));
+                    }
+                    break;
+
+                case ThrowSignalCommand sig:
+                    await ThrowSignal(sig.SignalName);
+                    break;
+            }
         }
     }
 
