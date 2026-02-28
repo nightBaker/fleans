@@ -67,7 +67,7 @@ public partial class WorfklowEvaluateConditionEventHandler : Grain, IWorfklowEva
         catch (Exception ex)
         {
             LogConditionEvaluationFailed(ex, item.ActivityId);
-            await workflowInstance.FailActivity(item.ActivityId, ex);
+            await workflowInstance.FailActivity(item.ActivityId, item.ActivityInstanceId, ex);
         }
     }
 

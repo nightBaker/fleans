@@ -131,4 +131,20 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1039, Level = LogLevel.Information,
         Message = "Scope child {ActivityId} cancelled (scope {ScopeId})")]
     private partial void LogScopeChildCancelled(string activityId, Guid scopeId);
+
+    [LoggerMessage(EventId = 1040, Level = LogLevel.Information,
+        Message = "Multi-instance scope opened for activity {ActivityId}: {IterationCount} iterations, sequential={IsSequential}")]
+    private partial void LogMultiInstanceScopeOpened(string activityId, int iterationCount, bool isSequential);
+
+    [LoggerMessage(EventId = 1041, Level = LogLevel.Information,
+        Message = "Multi-instance scope completed for activity {ActivityId}")]
+    private partial void LogMultiInstanceScopeCompleted(string activityId);
+
+    [LoggerMessage(EventId = 1042, Level = LogLevel.Debug,
+        Message = "Multi-instance sequential: spawned next iteration {Index} for activity {ActivityId}")]
+    private partial void LogMultiInstanceNextIteration(int index, string activityId);
+
+    [LoggerMessage(EventId = 1043, Level = LogLevel.Debug,
+        Message = "Multi-instance iteration {Index} completed for activity {ActivityId}")]
+    private partial void LogMultiInstanceIterationCompleted(int index, string activityId);
 }
