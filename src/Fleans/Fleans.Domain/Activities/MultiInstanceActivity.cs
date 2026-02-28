@@ -45,7 +45,62 @@ public record MultiInstanceActivity : BoundarableActivity
     {
         var commands = await base.ExecuteAsync(workflowContext, activityContext, definition);
         var variablesId = await activityContext.GetVariablesStateId();
-        commands.Add(new OpenMultiInstanceCommand(this, variablesId));
+        var hostInstanceId = await activityContext.GetActivityInstanceId();
+
+        // Resolve iteration count and collection items
+        int count;
+        IList<object>? collectionItems = null;
+
+        if (LoopCardinality.HasValue)
+        {
+            count = LoopCardinality.Value;
+        }
+        else if (InputCollection is not null)
+        {
+            var collectionVar = await workflowContext.GetVariable(variablesId, InputCollection);
+            if (collectionVar is IList<object> list)
+            {
+                collectionItems = list;
+                count = list.Count;
+            }
+            else if (collectionVar is System.Collections.IEnumerable enumerable and not string)
+            {
+                collectionItems = enumerable.Cast<object>().ToList();
+                count = collectionItems.Count;
+            }
+            else
+            {
+                throw new InvalidOperationException(
+                    $"Multi-instance inputCollection '{InputCollection}' must resolve to a list/array, got: {collectionVar?.GetType().Name ?? "null"}");
+            }
+        }
+        else
+        {
+            throw new InvalidOperationException(
+                "Multi-instance must have either LoopCardinality or InputCollection");
+        }
+
+        // For empty collection — complete the host immediately
+        if (count == 0)
+        {
+            await activityContext.Complete();
+            return commands;
+        }
+
+        // Spawn iteration commands
+        var iterationsToSpawn = IsSequential ? Math.Min(1, count) : count;
+        for (var i = 0; i < iterationsToSpawn; i++)
+        {
+            commands.Add(new SpawnActivityCommand(InnerActivity, hostInstanceId, hostInstanceId)
+            {
+                MultiInstanceIndex = i,
+                MultiInstanceTotal = count,
+                ParentVariablesId = variablesId,
+                IterationItem = collectionItems is not null && InputDataItem is not null ? collectionItems[i] : null,
+                IterationItemName = InputDataItem
+            });
+        }
+
         return commands;
     }
 
