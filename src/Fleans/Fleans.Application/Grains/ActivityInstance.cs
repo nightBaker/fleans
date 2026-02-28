@@ -66,6 +66,9 @@ public partial class ActivityInstance : Grain, IActivityInstanceGrain
     public ValueTask<Guid> GetVariablesStateId()
         => ValueTask.FromResult(State.VariablesId);
 
+    public ValueTask<int?> GetMultiInstanceIndex()
+        => ValueTask.FromResult(State.MultiInstanceIndex);
+
     public ValueTask<ActivityErrorState?> GetErrorState()
         => ValueTask.FromResult(State.ErrorState);
 
@@ -85,6 +88,12 @@ public partial class ActivityInstance : Grain, IActivityInstanceGrain
     public async ValueTask SetActivity(string activityId, string activityType)
     {
         State.SetActivity(activityId, activityType);
+        await _state.WriteStateAsync();
+    }
+
+    public async ValueTask SetMultiInstanceIndex(int index)
+    {
+        State.SetMultiInstanceIndex(index);
         await _state.WriteStateAsync();
     }
 

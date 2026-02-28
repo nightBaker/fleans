@@ -43,6 +43,12 @@ public record MultiInstanceActivity : BoundarableActivity
         IActivityExecutionContext activityContext,
         IWorkflowDefinition definition)
     {
+        // MI iteration: delegate directly to the inner activity (no boundary registration)
+        var miIndex = await activityContext.GetMultiInstanceIndex();
+        if (miIndex is not null)
+            return await InnerActivity.ExecuteAsync(workflowContext, activityContext, definition);
+
+        // MI host: register boundaries and spawn iterations
         var commands = await base.ExecuteAsync(workflowContext, activityContext, definition);
         var variablesId = await activityContext.GetVariablesStateId();
         var hostInstanceId = await activityContext.GetActivityInstanceId();

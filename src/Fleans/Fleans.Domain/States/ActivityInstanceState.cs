@@ -47,6 +47,9 @@ public class ActivityInstanceState
     [Id(13)]
     public string? CancellationReason { get; private set; }
 
+    [Id(14)]
+    public int? MultiInstanceIndex { get; private set; }
+
     public ActivityErrorState? ErrorState =>
         ErrorCode is not null ? new ActivityErrorState(ErrorCode.Value, ErrorMessage!) : null;
 
@@ -121,4 +124,6 @@ public class ActivityInstanceState
     }
 
     public void SetVariablesId(Guid id) => VariablesId = id;
+
+    public void SetMultiInstanceIndex(int index) => MultiInstanceIndex = index;
 }

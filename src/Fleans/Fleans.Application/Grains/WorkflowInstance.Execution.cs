@@ -32,28 +32,8 @@ public partial class WorkflowInstance
                 var currentActivity = scopeDefinition.GetActivity(activityId);
                 SetActivityRequestContext(activityId, activityState);
 
-                // For MI iterations, execute the inner activity instead of the wrapper
-                Activity activityToExecute = currentActivity;
-                if (currentActivity is MultiInstanceActivity mi)
-                {
-                    var entryBeforeExec = State.GetActiveEntry(activityState.GetPrimaryKey());
-                    if (entryBeforeExec.MultiInstanceIndex is not null)
-                        activityToExecute = mi.InnerActivity;
-                }
-
-                LogExecutingActivity(activityId, activityToExecute.GetType().Name);
-                var commands = await activityToExecute.ExecuteAsync(this, activityState, scopeDefinition);
-
-                // For MI iterations, filter out boundary registration commands
-                // (boundaries apply to the host, not individual iterations)
-                if (activityToExecute != currentActivity)
-                {
-                    commands = commands
-                        .Where(c => c is not RegisterTimerCommand { IsBoundary: true }
-                            and not RegisterMessageCommand { IsBoundary: true }
-                            and not RegisterSignalCommand { IsBoundary: true })
-                        .ToList();
-                }
+                LogExecutingActivity(activityId, currentActivity.GetType().Name);
+                var commands = await currentActivity.ExecuteAsync(this, activityState, scopeDefinition);
 
                 var currentEntry = State.GetActiveEntry(activityState.GetPrimaryKey());
                 await ProcessCommands(commands, currentEntry, activityState);
@@ -149,6 +129,7 @@ public partial class WorkflowInstance
             State.MergeState(childVariablesId, (System.Dynamic.ExpandoObject)iterVars);
 
             await spawnInstance.SetVariablesId(childVariablesId);
+            await spawnInstance.SetMultiInstanceIndex(spawn.MultiInstanceIndex.Value);
             spawnEntry = new ActivityInstanceEntry(
                 spawnId, spawn.Activity.ActivityId, State.Id, spawn.ScopeId, spawn.MultiInstanceIndex.Value);
         }
@@ -415,6 +396,7 @@ public partial class WorkflowInstance
             var iterationGrain = _grainFactory.GetGrain<IActivityInstanceGrain>(iterationInstanceId);
             await iterationGrain.SetActivity(mi.ActivityId, mi.InnerActivity.GetType().Name);
             await iterationGrain.SetVariablesId(childVariablesId);
+            await iterationGrain.SetMultiInstanceIndex(nextIndex);
 
             var iterationEntry = new ActivityInstanceEntry(
                 iterationInstanceId, mi.ActivityId, State.Id, hostEntry.ActivityInstanceId, nextIndex);

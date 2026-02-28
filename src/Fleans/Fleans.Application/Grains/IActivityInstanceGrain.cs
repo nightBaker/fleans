@@ -13,6 +13,9 @@ public interface IActivityInstanceGrain : IGrainWithGuidKey, IActivityExecutionC
     new ValueTask<string> GetActivityId();
 
     [ReadOnly]
+    new ValueTask<int?> GetMultiInstanceIndex();
+
+    [ReadOnly]
     new ValueTask<bool> IsCompleted();
 
     [ReadOnly]
@@ -32,4 +35,5 @@ public interface IActivityInstanceGrain : IGrainWithGuidKey, IActivityExecutionC
     ValueTask ResetExecuting();
     ValueTask SetActivity(string activityId, string activityType);
     ValueTask SetVariablesId(Guid guid);
+    ValueTask SetMultiInstanceIndex(int index);
 }
