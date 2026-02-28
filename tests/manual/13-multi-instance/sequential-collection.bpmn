@@ -8,7 +8,7 @@
   <process id="sequential-collection-test" isExecutable="true">
     <startEvent id="start" />
     <scriptTask id="setItems" scriptFormat="csharp">
-      <script>_context.items = new System.Collections.Generic.List&lt;object&gt; { "X", "Y", "Z" }</script>
+      <script>_context.items = new List&lt;object&gt; { "X", "Y", "Z" }</script>
     </scriptTask>
     <scriptTask id="processItem" scriptFormat="csharp">
       <script>_context.result = "seq-" + _context.item</script>

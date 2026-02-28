@@ -8,7 +8,7 @@
   <process id="parallel-collection-test" isExecutable="true">
     <startEvent id="start" />
     <scriptTask id="setItems" scriptFormat="csharp">
-      <script>_context.items = new System.Collections.Generic.List&lt;object&gt; { "A", "B", "C" }</script>
+      <script>_context.items = new List&lt;object&gt; { "A", "B", "C" }</script>
     </scriptTask>
     <scriptTask id="processItem" scriptFormat="csharp">
       <script>_context.result = "processed-" + _context.item</script>
