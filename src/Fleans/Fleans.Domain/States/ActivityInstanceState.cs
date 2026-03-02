@@ -50,6 +50,9 @@ public class ActivityInstanceState
     [Id(14)]
     public int? MultiInstanceIndex { get; private set; }
 
+    [Id(15)]
+    public int? MultiInstanceTotal { get; private set; }
+
     public ActivityErrorState? ErrorState =>
         ErrorCode is not null ? new ActivityErrorState(ErrorCode.Value, ErrorMessage!) : null;
 
@@ -126,4 +129,6 @@ public class ActivityInstanceState
     public void SetVariablesId(Guid id) => VariablesId = id;
 
     public void SetMultiInstanceIndex(int index) => MultiInstanceIndex = index;
+
+    public void SetMultiInstanceTotal(int total) => MultiInstanceTotal = total;
 }

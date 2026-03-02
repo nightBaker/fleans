@@ -36,9 +36,6 @@ public class ActivityInstanceEntry
     [Id(6)]
     public int? MultiInstanceIndex { get; private set; }
 
-    [Id(7)]
-    public int? MultiInstanceTotal { get; private set; }
-
     public ActivityInstanceEntry(Guid activityInstanceId, string activityId, Guid workflowInstanceId, Guid? scopeId, int multiInstanceIndex)
         : this(activityInstanceId, activityId, workflowInstanceId, scopeId)
     {
@@ -48,6 +45,4 @@ public class ActivityInstanceEntry
     public void SetChildWorkflowInstanceId(Guid childId) => ChildWorkflowInstanceId = childId;
 
     internal void MarkCompleted() => IsCompleted = true;
-
-    internal void SetMultiInstanceTotal(int total) => MultiInstanceTotal = total;
 }

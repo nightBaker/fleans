@@ -86,6 +86,9 @@ public record MultiInstanceActivity : BoundarableActivity
                 "Multi-instance must have either LoopCardinality or InputCollection");
         }
 
+        // Store total on the activity instance
+        await activityContext.SetMultiInstanceTotal(count);
+
         // For empty collection — complete the host immediately
         if (count == 0)
         {
@@ -100,7 +103,6 @@ public record MultiInstanceActivity : BoundarableActivity
             commands.Add(new SpawnActivityCommand(InnerActivity, hostInstanceId, hostInstanceId)
             {
                 MultiInstanceIndex = i,
-                MultiInstanceTotal = count,
                 ParentVariablesId = variablesId,
                 IterationItem = collectionItems is not null && InputDataItem is not null ? collectionItems[i] : null,
                 IterationItemName = InputDataItem
@@ -110,15 +112,20 @@ public record MultiInstanceActivity : BoundarableActivity
         return commands;
     }
 
-    internal override Task<List<Activity>> GetNextActivities(
+    internal override async Task<List<Activity>> GetNextActivities(
         IWorkflowExecutionContext workflowContext,
         IActivityExecutionContext activityContext,
         IWorkflowDefinition definition)
     {
+        // MI iterations don't transition — handled by scope completion
+        var miIndex = await activityContext.GetMultiInstanceIndex();
+        if (miIndex is not null)
+            return [];
+
         var nextFlows = definition.SequenceFlows
             .Where(sf => sf.Source == this)
             .Select(flow => flow.Target)
             .ToList();
-        return Task.FromResult(nextFlows);
+        return nextFlows;
     }
 }

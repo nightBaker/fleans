@@ -97,6 +97,15 @@ public partial class ActivityInstance : Grain, IActivityInstanceGrain
         await _state.WriteStateAsync();
     }
 
+    public ValueTask<int?> GetMultiInstanceTotal()
+        => ValueTask.FromResult(State.MultiInstanceTotal);
+
+    public async ValueTask SetMultiInstanceTotal(int total)
+    {
+        State.SetMultiInstanceTotal(total);
+        await _state.WriteStateAsync();
+    }
+
     public ValueTask PublishEvent(IDomainEvent domainEvent)
     {
         LogPublishingEvent(domainEvent.GetType().Name);

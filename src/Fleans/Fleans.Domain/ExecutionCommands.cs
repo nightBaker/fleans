@@ -11,10 +11,11 @@ public record SpawnActivityCommand(
     [property: Id(2)] Guid? HostActivityInstanceId) : IExecutionCommand
 {
     [Id(3)] public int? MultiInstanceIndex { get; init; }
-    [Id(4)] public int? MultiInstanceTotal { get; init; }
     [Id(5)] public Guid? ParentVariablesId { get; init; }
     [Id(6)] public object? IterationItem { get; init; }
     [Id(7)] public string? IterationItemName { get; init; }
+
+    public bool IsMultiInstanceIteration => MultiInstanceIndex is not null && ParentVariablesId is not null;
 }
 
 [GenerateSerializer]
