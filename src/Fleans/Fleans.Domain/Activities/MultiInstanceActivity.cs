@@ -89,13 +89,6 @@ public record MultiInstanceActivity : BoundarableActivity
         // Store total on the activity instance
         await activityContext.SetMultiInstanceTotal(count);
 
-        // For empty collection — complete the host immediately
-        if (count == 0)
-        {
-            await activityContext.Complete();
-            return commands;
-        }
-
         // Spawn iteration commands
         var iterationsToSpawn = IsSequential ? Math.Min(1, count) : count;
         for (var i = 0; i < iterationsToSpawn; i++)

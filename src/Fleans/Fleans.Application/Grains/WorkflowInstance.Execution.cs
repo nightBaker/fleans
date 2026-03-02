@@ -223,18 +223,6 @@ public partial class WorkflowInstance
                 var scopeDefinition = definition.GetScopeForActivity(entry.ActivityId);
                 var currentActivity = scopeDefinition.GetActivity(entry.ActivityId);
 
-                // MI host completed with empty collection — set empty output variable
-                var miTotal = await activityInstance.GetMultiInstanceTotal();
-                if (currentActivity is MultiInstanceActivity miEmpty
-                    && miTotal == 0
-                    && miEmpty.OutputCollection is not null)
-                {
-                    var hostVarId = await activityInstance.GetVariablesStateId();
-                    dynamic emptyOutput = new System.Dynamic.ExpandoObject();
-                    ((IDictionary<string, object?>)emptyOutput)[miEmpty.OutputCollection] = new List<object?>();
-                    State.MergeState(hostVarId, (System.Dynamic.ExpandoObject)emptyOutput);
-                }
-
                 var nextActivities = await currentActivity.GetNextActivities(this, activityInstance, scopeDefinition);
 
                 foreach(var nextActivity in nextActivities)
@@ -291,7 +279,7 @@ public partial class WorkflowInstance
                 if (!isSubProcess && !isMultiInstanceHost) continue;
 
                 var scopeEntries = State.Entries.Where(e => e.ScopeId == entry.ActivityInstanceId).ToList();
-                if (scopeEntries.Count == 0) continue;
+                if (scopeEntries.Count == 0 && !isMultiInstanceHost) continue;
 
                 if (isMultiInstanceHost)
                 {
@@ -336,8 +324,9 @@ public partial class WorkflowInstance
         var completedIterations = scopeEntries.Where(e => e.IsCompleted).ToList();
         var activeIterations = scopeEntries.Where(e => !e.IsCompleted).ToList();
         var hostGrain = _grainFactory.GetGrain<IActivityInstanceGrain>(hostEntry.ActivityInstanceId);
-        var total = await hostGrain.GetMultiInstanceTotal()
-            ?? throw new InvalidOperationException("MI host missing MultiInstanceTotal");
+        var total = await hostGrain.GetMultiInstanceTotal();
+        if (total is null)
+            return false; // Host not yet executed
 
         // If there are active iterations, wait for them
         if (activeIterations.Count > 0)
