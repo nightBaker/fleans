@@ -73,6 +73,47 @@ public class MultiInstanceParsingTests
     }
 
     [TestMethod]
+    public async Task Parse_SubProcess_WithMultiInstance()
+    {
+        var bpmn = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL""
+             id=""def1"" targetNamespace=""test"">
+  <process id=""proc1"" isExecutable=""true"">
+    <startEvent id=""start"" />
+    <subProcess id=""sub1"">
+      <multiInstanceLoopCharacteristics isSequential=""true"">
+        <loopCardinality>3</loopCardinality>
+      </multiInstanceLoopCharacteristics>
+      <startEvent id=""subStart"" />
+      <scriptTask id=""subScript"" scriptFormat=""csharp"">
+        <script>_context.x = 1</script>
+      </scriptTask>
+      <endEvent id=""subEnd"" />
+      <sequenceFlow id=""sf1"" sourceRef=""subStart"" targetRef=""subScript"" />
+      <sequenceFlow id=""sf2"" sourceRef=""subScript"" targetRef=""subEnd"" />
+    </subProcess>
+    <endEvent id=""end"" />
+    <sequenceFlow id=""f1"" sourceRef=""start"" targetRef=""sub1"" />
+    <sequenceFlow id=""f2"" sourceRef=""sub1"" targetRef=""end"" />
+  </process>
+</definitions>";
+
+        var converter = new Fleans.Infrastructure.Bpmn.BpmnConverter();
+        var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(bpmn));
+        var workflow = await converter.ConvertFromXmlAsync(stream);
+
+        var miActivity = workflow.Activities.OfType<MultiInstanceActivity>().FirstOrDefault();
+        Assert.IsNotNull(miActivity, "Should have a MultiInstanceActivity wrapping the SubProcess");
+        Assert.AreEqual("sub1", miActivity.ActivityId);
+        Assert.IsTrue(miActivity.IsSequential);
+        Assert.AreEqual(3, miActivity.LoopCardinality);
+        Assert.IsInstanceOfType(miActivity.InnerActivity, typeof(SubProcess));
+
+        var innerSubProcess = (SubProcess)miActivity.InnerActivity;
+        Assert.AreEqual(3, innerSubProcess.Activities.Count, "SubProcess should contain 3 activities");
+    }
+
+    [TestMethod]
     public async Task Parse_TaskWithoutMultiInstance_ShouldNotWrap()
     {
         var bpmn = @"<?xml version=""1.0"" encoding=""UTF-8""?>

@@ -24,6 +24,13 @@ public partial class WorkflowInstance
 
     public async Task CompleteActivity(string activityId, Guid activityInstanceId, ExpandoObject variables)
     {
+        // Stale callback guard: iteration may have been cancelled by MI host failure
+        if (!State.Entries.Any(e => e.ActivityInstanceId == activityInstanceId && !e.IsCompleted))
+        {
+            LogStaleCallbackIgnored(activityId, activityInstanceId, "CompleteActivity");
+            return;
+        }
+
         await EnsureWorkflowDefinitionAsync();
         SetWorkflowRequestContext();
         using var scope = BeginWorkflowScope();
@@ -46,6 +53,13 @@ public partial class WorkflowInstance
 
     public async Task FailActivity(string activityId, Guid activityInstanceId, Exception exception)
     {
+        // Stale callback guard: iteration may have been cancelled by MI host failure
+        if (!State.Entries.Any(e => e.ActivityInstanceId == activityInstanceId && !e.IsCompleted))
+        {
+            LogStaleCallbackIgnored(activityId, activityInstanceId, "FailActivity");
+            return;
+        }
+
         await EnsureWorkflowDefinitionAsync();
         SetWorkflowRequestContext();
         using var scope = BeginWorkflowScope();
@@ -132,6 +146,8 @@ public partial class WorkflowInstance
         }
     }
 
+    // Invariant: caller must ensure the entry is active before calling. For the
+    // activityInstanceId overload, FailActivity's stale-callback guard checks this.
     private async Task FailActivityState(string activityId, Exception exception, Guid? activityInstanceId = null)
     {
         var entry = activityInstanceId.HasValue
@@ -284,6 +300,21 @@ public partial class WorkflowInstance
         await _state.WriteStateAsync();
     }
 
+    // Called from FailActivityWithBoundaryCheck; caller handles ExecuteWorkflow() and WriteStateAsync().
+    private async Task FailMultiInstanceHost(ActivityInstanceEntry failedIterationEntry, ActivityErrorState errorState)
+    {
+        var hostInstanceId = failedIterationEntry.ScopeId!.Value;
+        var hostEntry = State.Entries.First(e => e.ActivityInstanceId == hostInstanceId);
+        State.CompleteEntries([failedIterationEntry]);
+        await CancelScopeChildren(hostInstanceId);
+        var scopeEntries = State.Entries.Where(e => e.ScopeId == hostInstanceId).ToList();
+        await CleanupMultiInstanceChildScopes(scopeEntries);
+        var hostGrain = _grainFactory.GetGrain<IActivityInstanceGrain>(hostInstanceId);
+        await hostGrain.Fail(new Exception(errorState.Message));
+        LogMultiInstanceHostFailed(hostEntry.ActivityId, errorState.Message);
+        State.CompleteEntries([hostEntry]);
+    }
+
     private async Task FailActivityWithBoundaryCheck(string activityId, Exception exception, Guid? activityInstanceId = null)
     {
         await FailActivityState(activityId, exception, activityInstanceId);
@@ -306,10 +337,12 @@ public partial class WorkflowInstance
         var match = definition.FindBoundaryErrorHandler(activityId, errorState.Code.ToString());
         if (match is null)
         {
-            // For MI iterations, do NOT manually complete the entry — let ExecuteWorkflow
-            // handle it via TransitionToNextActivity so CompleteFinishedSubProcessScopes runs.
-            // For non-MI entries, complete the failed entry so the parent scope stays active.
-            if (activityEntry.MultiInstanceIndex is null)
+            if (activityEntry.MultiInstanceIndex is not null)
+            {
+                // MI iteration failed — cancel siblings and fail host
+                await FailMultiInstanceHost(activityEntry, errorState);
+            }
+            else
             {
                 var failedEntry = activityInstanceId.HasValue
                     ? State.Entries.Last(e => e.ActivityInstanceId == activityInstanceId.Value)

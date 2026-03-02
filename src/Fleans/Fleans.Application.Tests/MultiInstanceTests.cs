@@ -240,13 +240,13 @@ public class MultiInstanceTests : WorkflowTestBase
     }
 
     [TestMethod]
-    public async Task ParallelCardinality_WhenIterationFails_ShouldSetErrorState()
+    public async Task ParallelCardinality_WhenIterationFails_ShouldFailHostAndCancelSiblings()
     {
-        // Arrange — workflow: start → script (MI x3, one throws) → end
+        // Arrange — workflow: start → script (MI x3, iteration 1 divides by zero) → end
         var start = new StartEvent("start");
         var script = new MultiInstanceActivity(
             "script",
-            new ScriptTask("script", "if (_context.loopCounter == 1) throw new System.Exception(\"iteration failed\"); _context.result = \"ok\""),
+            new ScriptTask("script", "_context.result = 1 / (_context.loopCounter - 1)"),
             IsSequential: false,
             LoopCardinality: 3);
         var end = new EndEvent("end");
@@ -271,18 +271,80 @@ public class MultiInstanceTests : WorkflowTestBase
         // Act
         await instance.StartWorkflow();
 
-        // Assert — poll for activity completion (some iterations succeed, one fails)
-        var snapshot = await PollForActivityCompletion(instanceId, "script", expectedCount: 3);
+        // Assert — poll until no active activities remain (host fails, siblings cancelled)
+        var snapshot = await PollForNoActiveActivities(instanceId);
         Assert.IsNotNull(snapshot);
 
-        // At least one completed activity should have an error state
-        var failedActivities = snapshot.CompletedActivities
+        // The failed iteration should have an error state
+        var failedIterations = snapshot.CompletedActivities
             .Where(a => a.ActivityId == "script" && a.ErrorState is not null)
             .ToList();
-        Assert.IsTrue(failedActivities.Count >= 1, $"At least one script iteration should have failed, got {failedActivities.Count}");
+        Assert.IsTrue(failedIterations.Count >= 1, $"At least one script iteration should have failed, got {failedIterations.Count}");
 
-        var errorState = failedActivities.First().ErrorState!;
+        var errorState = failedIterations.First().ErrorState!;
         Assert.AreEqual(500, errorState.Code, "Generic exception should produce error code 500");
+
+        // The MI host should also be completed (failed) — host + iterations = 4 total
+        var scriptCompletions = snapshot.CompletedActivities.Count(a => a.ActivityId == "script");
+        Assert.AreEqual(4, scriptCompletions, "All 3 iterations + host should be in completed list");
+
+        // Siblings should be cancelled
+        var cancelledSiblings = snapshot.CompletedActivities
+            .Where(a => a.ActivityId == "script" && a.IsCancelled)
+            .ToList();
+        Assert.IsTrue(cancelledSiblings.Count >= 1, $"At least one sibling should be cancelled, got {cancelledSiblings.Count}");
+    }
+
+    [TestMethod]
+    public async Task SequentialCollection_ShouldIterateAndAggregateOutputInOrder()
+    {
+        // Arrange — workflow: start → script (sequential MI over items) → end
+        var start = new StartEvent("start");
+        var script = new MultiInstanceActivity(
+            "script",
+            new ScriptTask("script", "_context.result = \"processed-\" + _context.item"),
+            IsSequential: true,
+            InputCollection: "items",
+            InputDataItem: "item",
+            OutputCollection: "results",
+            OutputDataItem: "result");
+        var end = new EndEvent("end");
+
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "mi-seq-collection-test",
+            Activities = [start, script, end],
+            SequenceFlows =
+            [
+                new SequenceFlow("s1", start, script),
+                new SequenceFlow("s2", script, end)
+            ]
+        };
+
+        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
+        await factory.DeployWorkflow(workflow, "<xml/>");
+
+        var instance = await factory.CreateWorkflowInstanceGrain("mi-seq-collection-test");
+        var instanceId = instance.GetPrimaryKey();
+
+        dynamic initVars = new ExpandoObject();
+        initVars.items = new List<object> { "X", "Y", "Z" };
+        await instance.SetInitialVariables(initVars);
+
+        // Act
+        await instance.StartWorkflow();
+
+        // Assert
+        var snapshot = await PollForCompletion(instanceId);
+        Assert.IsNotNull(snapshot);
+        Assert.IsTrue(snapshot.IsCompleted, "Workflow should be completed");
+
+        var scriptCompletions = snapshot.CompletedActivities.Count(a => a.ActivityId == "script");
+        Assert.AreEqual(4, scriptCompletions, "Script should have completed 4 times (3 iterations + 1 host)");
+
+        var rootVars = snapshot.VariableStates.FirstOrDefault();
+        Assert.IsNotNull(rootVars, "Root variable state should exist");
+        Assert.IsTrue(rootVars.Variables.ContainsKey("results"), "Output collection 'results' should be present");
     }
 
     private async Task<Application.QueryModels.InstanceStateSnapshot?> PollForCompletion(
@@ -299,21 +361,18 @@ public class MultiInstanceTests : WorkflowTestBase
         return await QueryService.GetStateSnapshot(instanceId);
     }
 
-    private async Task<Application.QueryModels.InstanceStateSnapshot?> PollForActivityCompletion(
-        Guid instanceId, string activityId, int expectedCount, int timeoutMs = 10000)
+    private async Task<Application.QueryModels.InstanceStateSnapshot?> PollForNoActiveActivities(
+        Guid instanceId, int timeoutMs = 10000)
     {
         var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
         while (DateTime.UtcNow < deadline)
         {
             var snapshot = await QueryService.GetStateSnapshot(instanceId);
-            if (snapshot is not null)
-            {
-                var completedCount = snapshot.CompletedActivities.Count(a => a.ActivityId == activityId);
-                if (completedCount >= expectedCount || snapshot.IsCompleted)
-                    return snapshot;
-            }
+            if (snapshot is not null && snapshot.ActiveActivities.Count == 0)
+                return snapshot;
             await Task.Delay(100);
         }
         return await QueryService.GetStateSnapshot(instanceId);
     }
+
 }

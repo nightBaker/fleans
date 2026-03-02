@@ -26,6 +26,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Fleans.Application\Fleans.Application.csproj" />
+    <ProjectReference Include="..\Fleans.Infrastructure\Fleans.Infrastructure.csproj" />
     <ProjectReference Include="..\Fleans.Persistence\Fleans.Persistence.csproj" />
   </ItemGroup>
 

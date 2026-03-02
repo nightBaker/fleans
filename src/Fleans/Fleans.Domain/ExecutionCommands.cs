@@ -11,7 +11,7 @@ public record SpawnActivityCommand(
     [property: Id(2)] Guid? HostActivityInstanceId) : IExecutionCommand
 {
     [Id(3)] public int? MultiInstanceIndex { get; init; }
-    [Id(5)] public Guid? ParentVariablesId { get; init; }
+    [Id(5)] public Guid? ParentVariablesId { get; init; } // Id(4) intentionally skipped
     [Id(6)] public object? IterationItem { get; init; }
     [Id(7)] public string? IterationItemName { get; init; }
 

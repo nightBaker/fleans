@@ -1,8 +1,12 @@
 using Fleans.Application;
 using Fleans.Application.Events;
+using Fleans.Application.Scripts;
 using Fleans.Application.Services;
+using Fleans.Application.Conditions;
 using Fleans.Domain;
 using Fleans.Domain.Persistence;
+using Fleans.Infrastructure.Scripts;
+using Fleans.Infrastructure.Conditions;
 using Fleans.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -85,6 +89,8 @@ public abstract class WorkflowTestBase
                     services.AddSingleton<IProcessDefinitionRepository, EfCoreProcessDefinitionRepository>();
                     services.AddSingleton<IWorkflowQueryService, WorkflowQueryService>();
                     services.AddTransient<IBoundaryEventHandler, BoundaryEventHandler>();
+                    services.AddSingleton<IScriptExpressionExecutor, DynamicExpressoScriptExpressionExecutor>();
+                    services.AddSingleton<IConditionExpressionEvaluator, DynamicExpressoConditionExpressionEvaluator>();
 
                     services.AddSerializer(serializerBuilder =>
                     {
