@@ -242,11 +242,11 @@ public class MultiInstanceTests : WorkflowTestBase
     [TestMethod]
     public async Task ParallelCardinality_WhenIterationFails_ShouldFailHostAndCancelSiblings()
     {
-        // Arrange — workflow: start → script (MI x3, iteration 1 divides by zero) → end
+        // Arrange — workflow: start → script (MI x3, all iterations fail via FAIL marker) → end
         var start = new StartEvent("start");
         var script = new MultiInstanceActivity(
             "script",
-            new ScriptTask("script", "_context.result = 1 / (_context.loopCounter - 1)"),
+            new ScriptTask("script", "FAIL"),
             IsSequential: false,
             LoopCardinality: 3);
         var end = new EndEvent("end");
