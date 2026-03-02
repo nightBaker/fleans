@@ -38,6 +38,7 @@ public class DynamicExpressoScriptExpressionExecutor : IScriptExpressionExecutor
         var task = Task.Run(() =>
         {
             var interpreter = new Interpreter().SetVariable("_context", variables);
+            interpreter.Reference(typeof(List<>));
 
             foreach (var statement in SplitStatements(script))
             {

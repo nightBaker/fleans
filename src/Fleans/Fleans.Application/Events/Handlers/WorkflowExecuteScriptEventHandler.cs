@@ -57,12 +57,12 @@ public partial class WorkflowExecuteScriptEventHandler : Grain, IWorkflowExecute
 
             var result = await scriptExecutor.Execute(item.Script, variables, item.ScriptFormat);
 
-            await workflowInstance.CompleteActivity(item.ActivityId, result);
+            await workflowInstance.CompleteActivity(item.ActivityId, item.ActivityInstanceId, result);
         }
         catch (Exception ex)
         {
             LogScriptExecutionFailed(ex, item.ActivityId);
-            await workflowInstance.FailActivity(item.ActivityId, ex);
+            await workflowInstance.FailActivity(item.ActivityId, item.ActivityInstanceId, ex);
         }
     }
 

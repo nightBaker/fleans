@@ -7,6 +7,9 @@ public interface IActivityExecutionContext
     ValueTask<Guid> GetActivityInstanceId();
     ValueTask<string> GetActivityId();
     ValueTask<Guid> GetVariablesStateId();
+    ValueTask<int?> GetMultiInstanceIndex();
+    ValueTask<int?> GetMultiInstanceTotal();
+    ValueTask SetMultiInstanceTotal(int total);
     ValueTask<bool> IsCompleted();
     ValueTask Complete();
     ValueTask Execute();

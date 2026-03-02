@@ -131,4 +131,28 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1039, Level = LogLevel.Information,
         Message = "Scope child {ActivityId} cancelled (scope {ScopeId})")]
     private partial void LogScopeChildCancelled(string activityId, Guid scopeId);
+
+    [LoggerMessage(EventId = 1041, Level = LogLevel.Information,
+        Message = "Multi-instance scope completed for activity {ActivityId}")]
+    private partial void LogMultiInstanceScopeCompleted(string activityId);
+
+    [LoggerMessage(EventId = 1042, Level = LogLevel.Debug,
+        Message = "Multi-instance sequential: spawned next iteration {Index} for activity {ActivityId}")]
+    private partial void LogMultiInstanceNextIteration(int index, string activityId);
+
+    [LoggerMessage(EventId = 1043, Level = LogLevel.Warning,
+        Message = "Multi-instance host failed for activity {ActivityId}: {ErrorMessage}")]
+    private partial void LogMultiInstanceHostFailed(string activityId, string errorMessage);
+
+    [LoggerMessage(EventId = 1044, Level = LogLevel.Debug,
+        Message = "Multi-instance parallel: spawned iteration {Index} for activity {ActivityId}")]
+    private partial void LogMultiInstanceIterationSpawned(int index, string activityId);
+
+    [LoggerMessage(EventId = 1045, Level = LogLevel.Debug,
+        Message = "Multi-instance output aggregated for activity {ActivityId}: {OutputCollection} ({Count} items)")]
+    private partial void LogMultiInstanceOutputAggregated(string activityId, string outputCollection, int count);
+
+    [LoggerMessage(EventId = 1046, Level = LogLevel.Debug,
+        Message = "Stale callback ignored for activity {ActivityId} ({ActivityInstanceId}) — {CallbackType} arrived after entry was already completed")]
+    private partial void LogStaleCallbackIgnored(string activityId, Guid activityInstanceId, string callbackType);
 }

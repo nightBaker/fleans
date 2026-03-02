@@ -1,6 +1,8 @@
 using Fleans.Application;
 using Fleans.Application.Events;
+using Fleans.Application.Scripts;
 using Fleans.Application.Services;
+using Fleans.Application.Conditions;
 using Fleans.Domain;
 using Fleans.Domain.Persistence;
 using Fleans.Persistence;
@@ -53,6 +55,24 @@ public abstract class WorkflowTestBase
         }
     }
 
+    private class SimpleScriptExecutor : IScriptExpressionExecutor
+    {
+        public Task<ExpandoObject> Execute(string script, ExpandoObject variables, string scriptFormat)
+        {
+            if (script == "FAIL")
+                throw new Exception("Simulated script failure");
+            return Task.FromResult(variables);
+        }
+    }
+
+    private class SimpleConditionEvaluator : IConditionExpressionEvaluator
+    {
+        public Task<bool> Evaluate(string expression, ExpandoObject variables)
+        {
+            return Task.FromResult(string.Equals(expression, "true", StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
     private class EfCoreSiloConfigurator : ISiloConfigurator
     {
         public void Configure(ISiloBuilder hostBuilder) =>
@@ -85,6 +105,8 @@ public abstract class WorkflowTestBase
                     services.AddSingleton<IProcessDefinitionRepository, EfCoreProcessDefinitionRepository>();
                     services.AddSingleton<IWorkflowQueryService, WorkflowQueryService>();
                     services.AddTransient<IBoundaryEventHandler, BoundaryEventHandler>();
+                    services.AddSingleton<IScriptExpressionExecutor, SimpleScriptExecutor>();
+                    services.AddSingleton<IConditionExpressionEvaluator, SimpleConditionEvaluator>();
 
                     services.AddSerializer(serializerBuilder =>
                     {

@@ -37,6 +37,16 @@ namespace Fleans.Domain
                     return result;
             }
 
+            foreach (var mi in Activities.OfType<MultiInstanceActivity>())
+            {
+                if (mi.InnerActivity is IWorkflowDefinition innerScope)
+                {
+                    var result = innerScope.FindScopeForActivity(activityId);
+                    if (result is not null)
+                        return result;
+                }
+            }
+
             return null;
         }
 

@@ -163,7 +163,8 @@ public partial class BpmnConverter : IBpmnConverter
         foreach (var task in scopeElement.Elements(Bpmn + "task"))
         {
             var id = GetId(task);
-            var activity = new TaskActivity(id);
+            Activity activity = new TaskActivity(id);
+            activity = TryWrapMultiInstance(task, activity) ?? activity;
             activities.Add(activity);
             activityMap[id] = activity;
         }
@@ -172,7 +173,8 @@ public partial class BpmnConverter : IBpmnConverter
         foreach (var userTask in scopeElement.Elements(Bpmn + "userTask"))
         {
             var id = GetId(userTask);
-            var activity = new TaskActivity(id);
+            Activity activity = new TaskActivity(id);
+            activity = TryWrapMultiInstance(userTask, activity) ?? activity;
             activities.Add(activity);
             activityMap[id] = activity;
         }
@@ -181,7 +183,8 @@ public partial class BpmnConverter : IBpmnConverter
         foreach (var serviceTask in scopeElement.Elements(Bpmn + "serviceTask"))
         {
             var id = GetId(serviceTask);
-            var activity = new TaskActivity(id);
+            Activity activity = new TaskActivity(id);
+            activity = TryWrapMultiInstance(serviceTask, activity) ?? activity;
             activities.Add(activity);
             activityMap[id] = activity;
         }
@@ -195,7 +198,8 @@ public partial class BpmnConverter : IBpmnConverter
             var scriptElement = scriptTask.Element(Bpmn + "script");
             var script = scriptElement?.Value.Trim() ?? "";
             script = ConvertBpmnVariableReferences(script);
-            var activity = new ScriptTask(id, script, scriptFormat);
+            Activity activity = new ScriptTask(id, script, scriptFormat);
+            activity = TryWrapMultiInstance(scriptTask, activity) ?? activity;
             activities.Add(activity);
             activityMap[id] = activity;
         }
@@ -271,11 +275,12 @@ public partial class BpmnConverter : IBpmnConverter
             var childSequenceFlows = new List<SequenceFlow>();
             ParseSequenceFlows(subProcessEl, childSequenceFlows, activityMap, childDefaultFlowIds);
 
-            var activity = new SubProcess(id)
+            Activity activity = new SubProcess(id)
             {
                 Activities = childActivities,
                 SequenceFlows = childSequenceFlows
             };
+            activity = TryWrapMultiInstance(subProcessEl, activity) ?? activity;
             activities.Add(activity);
             activityMap[id] = activity;
         }
@@ -311,7 +316,8 @@ public partial class BpmnConverter : IBpmnConverter
                 }
             }
 
-            var activity = new CallActivity(id, calledElement, inputMappings, outputMappings, propagateAllParent, propagateAllChild);
+            Activity activity = new CallActivity(id, calledElement, inputMappings, outputMappings, propagateAllParent, propagateAllChild);
+            activity = TryWrapMultiInstance(callActivityEl, activity) ?? activity;
             activities.Add(activity);
             activityMap[id] = activity;
         }
@@ -607,6 +613,38 @@ public partial class BpmnConverter : IBpmnConverter
         var attr = element.Attributes()
             .FirstOrDefault(a => a.Name.LocalName == attributeName)?.Value;
         return attr is not null ? bool.Parse(attr) : defaultValue;
+    }
+
+    private static MultiInstanceActivity? TryWrapMultiInstance(XElement activityElement, Activity innerActivity)
+    {
+        var miElement = activityElement.Element(Bpmn + "multiInstanceLoopCharacteristics");
+        if (miElement is null) return null;
+
+        var isSequential = bool.TryParse(miElement.Attribute("isSequential")?.Value, out var seq) && seq;
+
+        int? loopCardinality = null;
+        var cardinalityEl = miElement.Element(Bpmn + "loopCardinality");
+        if (cardinalityEl is not null && int.TryParse(cardinalityEl.Value.Trim(), out var card))
+            loopCardinality = card;
+
+        var inputCollection = miElement.Attribute(Zeebe + "collection")?.Value
+            ?? miElement.Attribute("collection")?.Value;
+        var inputDataItem = miElement.Attribute(Zeebe + "elementVariable")?.Value
+            ?? miElement.Attribute("elementVariable")?.Value;
+        var outputCollection = miElement.Attribute(Zeebe + "outputCollection")?.Value
+            ?? miElement.Attribute("outputCollection")?.Value;
+        var outputDataItem = miElement.Attribute(Zeebe + "outputElement")?.Value
+            ?? miElement.Attribute("outputElement")?.Value;
+
+        return new MultiInstanceActivity(
+            innerActivity.ActivityId,
+            innerActivity,
+            isSequential,
+            loopCardinality,
+            inputCollection,
+            inputDataItem,
+            outputCollection,
+            outputDataItem);
     }
 
     private string GetId(XElement element)

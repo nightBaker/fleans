@@ -22,6 +22,24 @@ public partial class WorkflowInstance
         await _state.WriteStateAsync();
     }
 
+    public async Task CompleteActivity(string activityId, Guid activityInstanceId, ExpandoObject variables)
+    {
+        // Stale callback guard: iteration may have been cancelled by MI host failure
+        if (!State.Entries.Any(e => e.ActivityInstanceId == activityInstanceId && !e.IsCompleted))
+        {
+            LogStaleCallbackIgnored(activityId, activityInstanceId, "CompleteActivity");
+            return;
+        }
+
+        await EnsureWorkflowDefinitionAsync();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+        LogCompletingActivity(activityId);
+        await CompleteActivityState(activityId, variables, activityInstanceId);
+        await ExecuteWorkflow();
+        await _state.WriteStateAsync();
+    }
+
     public async Task FailActivity(string activityId, Exception exception)
     {
         await EnsureWorkflowDefinitionAsync();
@@ -33,10 +51,29 @@ public partial class WorkflowInstance
         await _state.WriteStateAsync();
     }
 
-    private async Task CompleteActivityState(string activityId, ExpandoObject variables)
+    public async Task FailActivity(string activityId, Guid activityInstanceId, Exception exception)
     {
-        var entry = State.GetFirstActive(activityId)
-            ?? throw new InvalidOperationException("Active activity not found");
+        // Stale callback guard: iteration may have been cancelled by MI host failure
+        if (!State.Entries.Any(e => e.ActivityInstanceId == activityInstanceId && !e.IsCompleted))
+        {
+            LogStaleCallbackIgnored(activityId, activityInstanceId, "FailActivity");
+            return;
+        }
+
+        await EnsureWorkflowDefinitionAsync();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+        LogFailingActivity(activityId);
+        await FailActivityWithBoundaryCheck(activityId, exception, activityInstanceId);
+        await _state.WriteStateAsync();
+    }
+
+    private async Task CompleteActivityState(string activityId, ExpandoObject variables, Guid? activityInstanceId = null)
+    {
+        var entry = activityInstanceId.HasValue
+            ? State.GetActiveEntry(activityInstanceId.Value)
+            : State.GetFirstActive(activityId)
+                ?? throw new InvalidOperationException("Active activity not found");
 
         var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(entry.ActivityInstanceId);
         SetActivityRequestContext(activityId, activityInstance);
@@ -109,10 +146,14 @@ public partial class WorkflowInstance
         }
     }
 
-    private async Task FailActivityState(string activityId, Exception exception)
+    // Invariant: caller must ensure the entry is active before calling. For the
+    // activityInstanceId overload, FailActivity's stale-callback guard checks this.
+    private async Task FailActivityState(string activityId, Exception exception, Guid? activityInstanceId = null)
     {
-        var entry = State.GetFirstActive(activityId)
-            ?? throw new InvalidOperationException("Active activity not found");
+        var entry = activityInstanceId.HasValue
+            ? State.GetActiveEntry(activityInstanceId.Value)
+            : State.GetFirstActive(activityId)
+                ?? throw new InvalidOperationException("Active activity not found");
 
         var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(entry.ActivityInstanceId);
         SetActivityRequestContext(activityId, activityInstance);
@@ -259,12 +300,30 @@ public partial class WorkflowInstance
         await _state.WriteStateAsync();
     }
 
-    private async Task FailActivityWithBoundaryCheck(string activityId, Exception exception)
+    // Called from FailActivityWithBoundaryCheck; caller handles ExecuteWorkflow() and WriteStateAsync().
+    private async Task FailMultiInstanceHost(ActivityInstanceEntry failedIterationEntry, ActivityErrorState errorState)
     {
-        await FailActivityState(activityId, exception);
+        var hostInstanceId = failedIterationEntry.ScopeId!.Value;
+        var hostEntry = State.Entries.First(e => e.ActivityInstanceId == hostInstanceId);
+        State.CompleteEntries([failedIterationEntry]);
+        await CancelScopeChildren(hostInstanceId);
+        var scopeEntries = State.Entries.Where(e => e.ScopeId == hostInstanceId).ToList();
+        await CleanupMultiInstanceChildScopes(scopeEntries);
+        var hostGrain = _grainFactory.GetGrain<IActivityInstanceGrain>(hostInstanceId);
+        await hostGrain.Fail(new Exception(errorState.Message));
+        LogMultiInstanceHostFailed(hostEntry.ActivityId, errorState.Message);
+        State.CompleteEntries([hostEntry]);
+    }
+
+    private async Task FailActivityWithBoundaryCheck(string activityId, Exception exception, Guid? activityInstanceId = null)
+    {
+        await FailActivityState(activityId, exception, activityInstanceId);
 
         var definition = await GetWorkflowDefinition();
-        var activityEntry = State.GetFirstActive(activityId) ?? State.Entries.Last(e => e.ActivityId == activityId);
+        var activityEntry = activityInstanceId.HasValue
+            ? (State.GetActiveActivities().FirstOrDefault(e => e.ActivityInstanceId == activityInstanceId.Value)
+               ?? State.Entries.Last(e => e.ActivityInstanceId == activityInstanceId.Value))
+            : State.GetFirstActive(activityId) ?? State.Entries.Last(e => e.ActivityId == activityId);
         var activityGrain = _grainFactory.GetGrain<IActivityInstanceGrain>(activityEntry.ActivityInstanceId);
         var errorState = await activityGrain.GetErrorState();
 
@@ -278,10 +337,19 @@ public partial class WorkflowInstance
         var match = definition.FindBoundaryErrorHandler(activityId, errorState.Code.ToString());
         if (match is null)
         {
-            // No boundary handler — complete the failed entry so the parent scope stays active
-            // (its executing SubProcess grain prevents ExecuteWorkflow from auto-completing)
-            var failedEntry = State.Entries.Last(e => e.ActivityId == activityId);
-            State.CompleteEntries([failedEntry]);
+            if (activityEntry.MultiInstanceIndex is not null)
+            {
+                // MI iteration failed — cancel siblings and fail host
+                await FailMultiInstanceHost(activityEntry, errorState);
+            }
+            else
+            {
+                var failedEntry = activityInstanceId.HasValue
+                    ? State.Entries.Last(e => e.ActivityInstanceId == activityInstanceId.Value)
+                    : State.Entries.Last(e => e.ActivityId == activityId);
+                State.CompleteEntries([failedEntry]);
+            }
+
             await ExecuteWorkflow();
 
             // If this is a child workflow with no remaining active activities,
@@ -306,7 +374,9 @@ public partial class WorkflowInstance
         else
         {
             // Bubbled up — cancel intermediate scopes between failed activity and matched SubProcess
-            var failedEntry = State.Entries.Last(e => e.ActivityId == activityId);
+            var failedEntry = activityInstanceId.HasValue
+                ? State.Entries.Last(e => e.ActivityInstanceId == activityInstanceId.Value)
+                : State.Entries.Last(e => e.ActivityId == activityId);
             State.CompleteEntries([failedEntry]);
 
             var currentScopeId = failedEntry.ScopeId;
