@@ -8,7 +8,8 @@
     <startEvent id="start" />
     <scriptTask id="repeatTask" scriptFormat="csharp">
       <script>_context.result = "iter-" + _context.loopCounter</script>
-      <multiInstanceLoopCharacteristics isSequential="false">
+      <multiInstanceLoopCharacteristics isSequential="false"
+        outputCollection="results" outputElement="result">
         <loopCardinality>3</loopCardinality>
       </multiInstanceLoopCharacteristics>
     </scriptTask>

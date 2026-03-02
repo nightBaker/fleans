@@ -32,6 +32,7 @@ Tests parallel multi-instance with fixed loop count.
 ### Expected
 - [ ] Instance status: Completed
 - [ ] Completed activities: start, repeatTask (3 iterations), end
+- [ ] Variables: `results` contains `["iter-0","iter-1","iter-2"]`
 
 ---
 

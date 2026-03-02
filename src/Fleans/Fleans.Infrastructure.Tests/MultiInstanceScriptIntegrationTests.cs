@@ -72,7 +72,9 @@ public class MultiInstanceScriptIntegrationTests
             "script",
             new ScriptTask("script", "_context.result = \"done-\" + _context.loopCounter"),
             IsSequential: false,
-            LoopCardinality: 3);
+            LoopCardinality: 3,
+            OutputCollection: "results",
+            OutputDataItem: "result");
         var end = new EndEvent("end");
 
         var workflow = new WorkflowDefinition
@@ -102,6 +104,19 @@ public class MultiInstanceScriptIntegrationTests
 
         var scriptCompletions = snapshot.CompletedActivities.Count(a => a.ActivityId == "script");
         Assert.AreEqual(4, scriptCompletions, "3 iterations + 1 host");
+
+        // Verify output aggregation via grain API
+        var rootVarsSnapshot = snapshot.VariableStates.FirstOrDefault();
+        Assert.IsNotNull(rootVarsSnapshot, "Root variable state should exist");
+
+        var resultsObj = await instance.GetVariable(rootVarsSnapshot.VariablesId, "results");
+        Assert.IsNotNull(resultsObj, "Output collection 'results' should be present");
+
+        var results = ((IEnumerable<object?>)resultsObj).Select(v => v?.ToString()).ToList();
+        Assert.AreEqual(3, results.Count, "Should have 3 output items");
+        CollectionAssert.Contains(results, "done-0", "Should contain done-0");
+        CollectionAssert.Contains(results, "done-1", "Should contain done-1");
+        CollectionAssert.Contains(results, "done-2", "Should contain done-2");
     }
 
     [TestMethod]
@@ -230,7 +245,9 @@ public class MultiInstanceScriptIntegrationTests
             "script",
             new ScriptTask("script", "_context.result = 1 / (_context.loopCounter - 1)"),
             IsSequential: false,
-            LoopCardinality: 3);
+            LoopCardinality: 3,
+            OutputCollection: "results",
+            OutputDataItem: "result");
         var end = new EndEvent("end");
 
         var workflow = new WorkflowDefinition
