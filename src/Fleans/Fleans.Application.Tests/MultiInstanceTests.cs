@@ -13,13 +13,15 @@ public class MultiInstanceTests : WorkflowTestBase
     [TestMethod]
     public async Task ParallelCardinality_ShouldExecuteNTimes()
     {
-        // Arrange — workflow: start → script (MI x3) → end
+        // Arrange — workflow: start → script (MI x3 with output aggregation) → end
         var start = new StartEvent("start");
         var script = new MultiInstanceActivity(
             "script",
             new ScriptTask("script", "_context.result = \"done-\" + _context.loopCounter"),
             IsSequential: false,
-            LoopCardinality: 3);
+            LoopCardinality: 3,
+            OutputCollection: "results",
+            OutputDataItem: "result");
         var end = new EndEvent("end");
 
         var workflow = new WorkflowDefinition
@@ -51,6 +53,11 @@ public class MultiInstanceTests : WorkflowTestBase
         // Script should appear 3 times in completed (iterations) + 1 time for host = 4
         var scriptCompletions = snapshot.CompletedActivities.Count(a => a.ActivityId == "script");
         Assert.AreEqual(4, scriptCompletions, "Script should have completed 4 times (3 iterations + 1 host)");
+
+        // Verify output aggregation
+        var rootVars = snapshot.VariableStates.FirstOrDefault();
+        Assert.IsNotNull(rootVars, "Root variable state should exist");
+        Assert.IsTrue(rootVars.Variables.ContainsKey("results"), "Output collection 'results' should be present");
     }
 
     [TestMethod]
@@ -118,7 +125,9 @@ public class MultiInstanceTests : WorkflowTestBase
             "script",
             new ScriptTask("script", "_context.result = \"done-\" + _context.loopCounter"),
             IsSequential: true,
-            LoopCardinality: 3);
+            LoopCardinality: 3,
+            OutputCollection: "results",
+            OutputDataItem: "result");
         var end = new EndEvent("end");
 
         var workflow = new WorkflowDefinition
@@ -159,7 +168,9 @@ public class MultiInstanceTests : WorkflowTestBase
             "script",
             new ScriptTask("script", "_context.iterResult = \"val\""),
             IsSequential: false,
-            LoopCardinality: 3);
+            LoopCardinality: 3,
+            OutputCollection: "results",
+            OutputDataItem: "iterResult");
         var end = new EndEvent("end");
 
         var workflow = new WorkflowDefinition
@@ -248,7 +259,9 @@ public class MultiInstanceTests : WorkflowTestBase
             "script",
             new ScriptTask("script", "FAIL"),
             IsSequential: false,
-            LoopCardinality: 3);
+            LoopCardinality: 3,
+            OutputCollection: "results",
+            OutputDataItem: "result");
         var end = new EndEvent("end");
 
         var workflow = new WorkflowDefinition
