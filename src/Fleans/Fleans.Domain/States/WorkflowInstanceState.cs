@@ -44,6 +44,9 @@ public class WorkflowInstanceState
     [Id(12)]
     public string? ParentActivityId { get; private set; }
 
+    [Id(13)]
+    public List<GatewayForkState> GatewayForks { get; private set; } = [];
+
     public IEnumerable<ActivityInstanceEntry> GetActiveActivities()
         => Entries.Where(e => !e.IsCompleted);
 
@@ -191,4 +194,17 @@ public class WorkflowInstanceState
         }
         return null;
     }
+
+    public GatewayForkState CreateGatewayFork(Guid forkInstanceId, Guid? consumedTokenId)
+    {
+        var fork = new GatewayForkState(forkInstanceId, consumedTokenId);
+        GatewayForks.Add(fork);
+        return fork;
+    }
+
+    public GatewayForkState? FindForkByToken(Guid tokenId)
+        => GatewayForks.FirstOrDefault(f => f.CreatedTokenIds.Contains(tokenId));
+
+    public void RemoveGatewayFork(Guid forkInstanceId)
+        => GatewayForks.RemoveAll(f => f.ForkInstanceId == forkInstanceId);
 }

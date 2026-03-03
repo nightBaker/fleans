@@ -106,6 +106,14 @@ public partial class ActivityInstance : Grain, IActivityInstanceGrain
         await _state.WriteStateAsync();
     }
 
+    public ValueTask<Guid?> GetTokenId() => ValueTask.FromResult(State.TokenId);
+
+    public async ValueTask SetTokenId(Guid id)
+    {
+        State.SetTokenId(id);
+        await _state.WriteStateAsync();
+    }
+
     public ValueTask PublishEvent(IDomainEvent domainEvent)
     {
         LogPublishingEvent(domainEvent.GetType().Name);

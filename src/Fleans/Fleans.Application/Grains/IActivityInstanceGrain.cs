@@ -41,4 +41,9 @@ public interface IActivityInstanceGrain : IGrainWithGuidKey, IActivityExecutionC
     new ValueTask<int?> GetMultiInstanceTotal();
 
     ValueTask SetMultiInstanceTotal(int total);
+
+    [ReadOnly]
+    new ValueTask<Guid?> GetTokenId();
+
+    ValueTask SetTokenId(Guid id);
 }

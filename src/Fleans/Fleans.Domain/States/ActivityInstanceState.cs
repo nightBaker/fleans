@@ -131,4 +131,9 @@ public class ActivityInstanceState
     public void SetMultiInstanceIndex(int index) => MultiInstanceIndex = index;
 
     public void SetMultiInstanceTotal(int total) => MultiInstanceTotal = total;
+
+    [Id(16)]
+    public Guid? TokenId { get; private set; }
+
+    public void SetTokenId(Guid id) => TokenId = id;
 }

@@ -11,6 +11,7 @@ public interface IActivityExecutionContext
     ValueTask<int?> GetMultiInstanceTotal();
     ValueTask SetMultiInstanceTotal(int total);
     ValueTask<bool> IsCompleted();
+    ValueTask<Guid?> GetTokenId();
     ValueTask Complete();
     ValueTask Execute();
     ValueTask PublishEvent(IDomainEvent domainEvent);

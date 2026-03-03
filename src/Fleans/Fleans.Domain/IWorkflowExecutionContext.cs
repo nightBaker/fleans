@@ -13,4 +13,6 @@ public interface IWorkflowExecutionContext
     ValueTask<IReadOnlyList<IActivityExecutionContext>> GetCompletedActivities();
 
     ValueTask<object?> GetVariable(Guid variablesId, string variableName);
+
+    ValueTask<GatewayForkState?> FindForkByToken(Guid tokenId);
 }

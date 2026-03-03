@@ -49,4 +49,7 @@ public partial class WorkflowInstance
         State.SetConditionSequenceResult(activityInstanceId, sequenceId, result);
         await _state.WriteStateAsync();
     }
+
+    public ValueTask<GatewayForkState?> FindForkByToken(Guid tokenId)
+        => ValueTask.FromResult(State.FindForkByToken(tokenId));
 }
