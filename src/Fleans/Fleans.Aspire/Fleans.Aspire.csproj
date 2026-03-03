@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Fleans.Api\Fleans.Api.csproj" />
+    <ProjectReference Include="..\Fleans.Mcp\Fleans.Mcp.csproj" />
     <ProjectReference Include="..\Fleans.Web\Fleans.Web.csproj" />
   </ItemGroup>
 
