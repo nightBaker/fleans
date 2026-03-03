@@ -51,7 +51,7 @@ Create `src/Fleans/Fleans.Mcp/Fleans.Mcp.csproj`:
 </Project>
 ```
 
-**Step 2: Create the minimal Program.cs**
+**Step 2: Create Program.cs**
 
 Create `src/Fleans/Fleans.Mcp/Program.cs`:
 
@@ -69,7 +69,9 @@ builder.AddServiceDefaults();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure();
 
-// EF Core persistence — shared SQLite file with Api silo
+// EF Core persistence — shared SQLite file with Api silo.
+// Note: grain storage registrations from AddEfCorePersistence are unused in this
+// Orleans client, but splitting the registration is a future refactor.
 var sqliteConnectionString = builder.Configuration["FLEANS_SQLITE_CONNECTION"] ?? "DataSource=fleans-dev.db";
 builder.Services.AddEfCorePersistence(options => options.UseSqlite(sqliteConnectionString));
 
@@ -86,6 +88,17 @@ builder.Services.AddMcpServer()
 
 var app = builder.Build();
 
+// Ensure EF Core database exists (dev only — use migrations in production).
+// Wrapped in try-catch: Api silo may have already created the tables in the shared SQLite file.
+using (var scope = app.Services.CreateScope())
+{
+    var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>();
+    using var db = dbFactory.CreateDbContext();
+    try { db.Database.EnsureCreated(); }
+    catch (Microsoft.Data.Sqlite.SqliteException) { /* tables already created by Api */ }
+}
+
+app.MapDefaultEndpoints();
 app.MapMcp();
 
 app.Run();
@@ -143,8 +156,8 @@ using System.ComponentModel;
 using System.Text;
 using System.Text.Json;
 using Fleans.Application;
-using Fleans.Application.QueryModels;
 using Fleans.Infrastructure.Bpmn;
+using ModelContextProtocol;
 using ModelContextProtocol.Server;
 
 namespace Fleans.Mcp.Tools;
@@ -152,16 +165,29 @@ namespace Fleans.Mcp.Tools;
 [McpServerToolType]
 public static class WorkflowTools
 {
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+
     [McpServerTool, Description("Deploy a BPMN XML workflow definition to the engine. Returns the process definition ID, key, version, and activity/flow counts.")]
     public static async Task<string> DeployWorkflow(
         IBpmnConverter bpmnConverter,
         IWorkflowCommandService commandService,
         [Description("The complete BPMN 2.0 XML string to deploy")] string bpmnXml)
     {
-        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml));
-        var workflow = await bpmnConverter.ConvertFromXmlAsync(stream);
-        var summary = await commandService.DeployWorkflow(workflow, bpmnXml);
-        return JsonSerializer.Serialize(summary, new JsonSerializerOptions { WriteIndented = true });
+        try
+        {
+            using var stream = new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml));
+            var workflow = await bpmnConverter.ConvertFromXmlAsync(stream);
+            var summary = await commandService.DeployWorkflow(workflow, bpmnXml);
+            return JsonSerializer.Serialize(summary, JsonOptions);
+        }
+        catch (McpException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw new McpException($"Failed to deploy workflow: {ex.Message}", ex);
+        }
     }
 
     [McpServerTool, Description("List all deployed process definitions. Returns an array of definitions with their IDs, keys, versions, and activity counts.")]
@@ -169,7 +195,7 @@ public static class WorkflowTools
         IWorkflowQueryService queryService)
     {
         var definitions = await queryService.GetAllProcessDefinitions();
-        return JsonSerializer.Serialize(definitions, new JsonSerializerOptions { WriteIndented = true });
+        return JsonSerializer.Serialize(definitions, JsonOptions);
     }
 }
 ```
@@ -201,7 +227,7 @@ Create `src/Fleans/Fleans.Mcp/Tools/InstanceTools.cs`:
 using System.ComponentModel;
 using System.Text.Json;
 using Fleans.Application;
-using Fleans.Application.QueryModels;
+using ModelContextProtocol;
 using ModelContextProtocol.Server;
 
 namespace Fleans.Mcp.Tools;
@@ -209,19 +235,21 @@ namespace Fleans.Mcp.Tools;
 [McpServerToolType]
 public static class InstanceTools
 {
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+
     [McpServerTool, Description("Get the full state snapshot of a workflow instance including active/completed activities, variables, condition sequences, and timestamps.")]
     public static async Task<string> GetInstanceState(
         IWorkflowQueryService queryService,
         [Description("The workflow instance ID (GUID format)")] string instanceId)
     {
         if (!Guid.TryParse(instanceId, out var id))
-            throw new ArgumentException($"Invalid GUID format: {instanceId}");
+            throw new McpException($"Invalid GUID format: {instanceId}");
 
         var snapshot = await queryService.GetStateSnapshot(id);
         if (snapshot is null)
-            throw new ArgumentException($"Workflow instance not found: {instanceId}");
+            throw new McpException($"Workflow instance not found: {instanceId}");
 
-        return JsonSerializer.Serialize(snapshot, new JsonSerializerOptions { WriteIndented = true });
+        return JsonSerializer.Serialize(snapshot, JsonOptions);
     }
 
     [McpServerTool, Description("List all workflow instances for a given process definition key. Returns instance IDs, status, and timestamps.")]
@@ -230,7 +258,7 @@ public static class InstanceTools
         [Description("The process definition key (human-readable identifier, e.g. 'my-process')")] string processDefinitionKey)
     {
         var instances = await queryService.GetInstancesByKey(processDefinitionKey);
-        return JsonSerializer.Serialize(instances, new JsonSerializerOptions { WriteIndented = true });
+        return JsonSerializer.Serialize(instances, JsonOptions);
     }
 }
 ```
@@ -249,7 +277,133 @@ git commit -m "feat: add get_instance_state and list_instances MCP tools"
 
 ---
 
-### Task 4: Build, verify with Aspire, and configure Claude Code
+### Task 4: Add integration tests for MCP tool discovery and DI wiring
+
+**Files:**
+- Create: `src/Fleans/Fleans.Mcp.Tests/Fleans.Mcp.Tests.csproj`
+- Create: `src/Fleans/Fleans.Mcp.Tests/McpToolRegistrationTests.cs`
+- Modify: `src/Fleans/Fleans.sln`
+
+**Step 1: Create the test project**
+
+Create `src/Fleans/Fleans.Mcp.Tests/Fleans.Mcp.Tests.csproj`:
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.0" />
+    <PackageReference Include="MSTest.TestAdapter" Version="3.8.3" />
+    <PackageReference Include="MSTest.TestFramework" Version="3.8.3" />
+    <PackageReference Include="NSubstitute" Version="5.3.0" />
+    <PackageReference Include="ModelContextProtocol" Version="1.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Fleans.Mcp\Fleans.Mcp.csproj" />
+  </ItemGroup>
+
+</Project>
+```
+
+Note: Check existing test projects for the exact MSTest / NSubstitute versions in use and match them. The versions above are placeholders — use whatever the existing test projects use.
+
+**Step 2: Create the test class**
+
+Create `src/Fleans/Fleans.Mcp.Tests/McpToolRegistrationTests.cs`:
+
+```csharp
+using Fleans.Mcp.Tools;
+using ModelContextProtocol.Server;
+using System.Reflection;
+
+namespace Fleans.Mcp.Tests;
+
+[TestClass]
+public class McpToolRegistrationTests
+{
+    [TestMethod]
+    public void AllToolClasses_HaveMcpServerToolTypeAttribute()
+    {
+        var toolTypes = typeof(WorkflowTools).Assembly
+            .GetTypes()
+            .Where(t => t.GetCustomAttribute<McpServerToolTypeAttribute>() is not null)
+            .ToList();
+
+        Assert.IsTrue(toolTypes.Count >= 2, $"Expected at least 2 tool classes, found {toolTypes.Count}");
+        CollectionAssert.Contains(toolTypes, typeof(WorkflowTools));
+        CollectionAssert.Contains(toolTypes, typeof(InstanceTools));
+    }
+
+    [TestMethod]
+    public void WorkflowTools_ExposesExpectedTools()
+    {
+        var tools = typeof(WorkflowTools)
+            .GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Where(m => m.GetCustomAttribute<McpServerToolAttribute>() is not null)
+            .Select(m => m.Name)
+            .ToList();
+
+        Assert.AreEqual(2, tools.Count, $"Expected 2 tools, found: {string.Join(", ", tools)}");
+        CollectionAssert.Contains(tools, nameof(WorkflowTools.DeployWorkflow));
+        CollectionAssert.Contains(tools, nameof(WorkflowTools.ListDefinitions));
+    }
+
+    [TestMethod]
+    public void InstanceTools_ExposesExpectedTools()
+    {
+        var tools = typeof(InstanceTools)
+            .GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Where(m => m.GetCustomAttribute<McpServerToolAttribute>() is not null)
+            .Select(m => m.Name)
+            .ToList();
+
+        Assert.AreEqual(2, tools.Count, $"Expected 2 tools, found: {string.Join(", ", tools)}");
+        CollectionAssert.Contains(tools, nameof(InstanceTools.GetInstanceState));
+        CollectionAssert.Contains(tools, nameof(InstanceTools.ListInstances));
+    }
+
+    [TestMethod]
+    public void GetInstanceState_ThrowsMcpException_ForInvalidGuid()
+    {
+        var ex = Assert.ThrowsExceptionAsync<ModelContextProtocol.McpException>(
+            () => InstanceTools.GetInstanceState(null!, "not-a-guid"));
+
+        Assert.IsTrue(ex.Result.Message.Contains("Invalid GUID format"));
+    }
+}
+```
+
+**Step 3: Add test project to solution**
+
+Run from `src/Fleans/`:
+```bash
+dotnet sln add Fleans.Mcp.Tests/Fleans.Mcp.Tests.csproj
+```
+
+**Step 4: Run tests**
+
+Run: `dotnet test src/Fleans/Fleans.Mcp.Tests/`
+Expected: All 4 tests pass.
+
+**Step 5: Commit**
+
+```bash
+git add src/Fleans/Fleans.Mcp.Tests/ src/Fleans/Fleans.sln
+git commit -m "test: add MCP tool registration and validation tests"
+```
+
+---
+
+### Task 5: Build, verify with Aspire, and configure Claude Code
 
 **Files:**
 - Modify: `.claude/settings.local.json`
@@ -262,7 +416,15 @@ dotnet build
 ```
 Expected: Build succeeds with 0 errors.
 
-**Step 2: Run Aspire to verify MCP server starts**
+**Step 2: Run all tests**
+
+Run from `src/Fleans/`:
+```bash
+dotnet test
+```
+Expected: All tests pass (including the new MCP tests).
+
+**Step 3: Run Aspire to verify MCP server starts**
 
 Run from `src/Fleans/`:
 ```bash
@@ -275,7 +437,7 @@ Check the Aspire dashboard (typically `http://localhost:15139`). Verify:
 
 Stop Aspire with Ctrl+C.
 
-**Step 3: Configure Claude Code MCP settings**
+**Step 4: Configure Claude Code MCP settings**
 
 Find the port Aspire assigned to the MCP project and update `.claude/settings.local.json` to add the `mcpServers` section. The URL will be something like `http://localhost:{port}/mcp` where `{port}` is the port Aspire assigned.
 
@@ -290,7 +452,7 @@ Add to `.claude/settings.local.json`:
 }
 ```
 
-**Step 4: Commit**
+**Step 5: Commit**
 
 ```bash
 git add .claude/settings.local.json

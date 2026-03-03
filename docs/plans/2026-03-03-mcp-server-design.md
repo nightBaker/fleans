@@ -32,8 +32,11 @@ src/Fleans/Fleans.Mcp/
 
 **Aspire registration:**
 ```csharp
-var mcp = builder.AddProject<Projects.Fleans_Mcp>("mcp")
-    .WithReference(redis);
+builder.AddProject<Projects.Fleans_Mcp>("fleans-mcp")
+    .WithReference(orleans.AsClient())
+    .WaitFor(fleansSilo)
+    .WithEnvironment("FLEANS_SQLITE_CONNECTION", sqliteConnectionString)
+    .WithReplicas(1);
 ```
 
 **Claude Code configuration** (`.claude/settings.local.json`):
@@ -83,7 +86,7 @@ Lists workflow instances for a given process definition key.
 
 ## Error Handling
 
-All tools catch exceptions and return structured error messages. The MCP SDK handles serialization and transport-level errors.
+Tools throw `McpException` (from `ModelContextProtocol` namespace) for user-facing errors — the MCP SDK preserves these messages in the error response sent to Claude Code. Other exception types are caught and re-wrapped as `McpException` to prevent generic error messages. The SDK handles serialization and transport-level errors.
 
 ## Future Extensions
 
