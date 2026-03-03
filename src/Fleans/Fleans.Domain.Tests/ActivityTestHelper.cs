@@ -8,6 +8,29 @@ namespace Fleans.Domain.Tests;
 
 internal static class ActivityTestHelper
 {
+    public static ConditionSequenceState CreateEvaluatedConditionState(
+        string sequenceFlowId, Guid gatewayInstanceId, bool result)
+    {
+        var state = new ConditionSequenceState(sequenceFlowId, gatewayInstanceId, Guid.Empty);
+        state.SetResult(result);
+        return state;
+    }
+
+    public static WorkflowDefinition CreateDefinitionWithSignal(
+        List<Activity> activities,
+        List<SequenceFlow> sequenceFlows,
+        string signalId = "sig1",
+        string signalName = "order_shipped")
+    {
+        return new WorkflowDefinition
+        {
+            WorkflowId = "test-workflow",
+            Activities = activities,
+            SequenceFlows = sequenceFlows,
+            Signals = [new SignalDefinition(signalId, signalName)]
+        };
+    }
+
     public static IWorkflowExecutionContext CreateWorkflowContext(IWorkflowDefinition definition)
     {
         var context = Substitute.For<IWorkflowExecutionContext>();

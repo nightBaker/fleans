@@ -8,28 +8,13 @@ namespace Fleans.Domain.Tests;
 [TestClass]
 public class SignalIntermediateCatchEventDomainTests
 {
-    private static WorkflowDefinition CreateDefinitionWithSignal(
-        List<Activity> activities,
-        List<SequenceFlow> sequenceFlows,
-        string signalId = "sig1",
-        string signalName = "order_shipped")
-    {
-        return new WorkflowDefinition
-        {
-            WorkflowId = "test-workflow",
-            Activities = activities,
-            SequenceFlows = sequenceFlows,
-            Signals = [new SignalDefinition(signalId, signalName)]
-        };
-    }
-
     [TestMethod]
     public async Task ExecuteAsync_ShouldCallExecute_RegisterSignalCommand_AndNotComplete()
     {
         // Arrange
         var sigCatch = new SignalIntermediateCatchEvent("sigCatch1", "sig1");
         var end = new EndEvent("end");
-        var definition = CreateDefinitionWithSignal(
+        var definition = ActivityTestHelper.CreateDefinitionWithSignal(
             [sigCatch, end],
             [new SequenceFlow("seq1", sigCatch, end)]);
         var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
@@ -56,7 +41,7 @@ public class SignalIntermediateCatchEventDomainTests
         // Arrange
         var sigCatch = new SignalIntermediateCatchEvent("sigCatch1", "sig1");
         var end = new EndEvent("end");
-        var definition = CreateDefinitionWithSignal(
+        var definition = ActivityTestHelper.CreateDefinitionWithSignal(
             [sigCatch, end],
             [new SequenceFlow("seq1", sigCatch, end)]);
         var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
@@ -75,7 +60,7 @@ public class SignalIntermediateCatchEventDomainTests
     {
         // Arrange
         var sigCatch = new SignalIntermediateCatchEvent("sigCatch1", "sig1");
-        var definition = CreateDefinitionWithSignal([sigCatch], []);
+        var definition = ActivityTestHelper.CreateDefinitionWithSignal([sigCatch], []);
         var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("sigCatch1");
 

@@ -112,9 +112,9 @@ public class InclusiveGatewayActivityTests
         {
             [activityInstanceId] =
             [
-                CreateEvaluatedConditionState("seq1", activityInstanceId, true),
-                CreateEvaluatedConditionState("seq2", activityInstanceId, true),
-                CreateEvaluatedConditionState("seq3", activityInstanceId, false)
+                ActivityTestHelper.CreateEvaluatedConditionState("seq1", activityInstanceId, true),
+                ActivityTestHelper.CreateEvaluatedConditionState("seq2", activityInstanceId, true),
+                ActivityTestHelper.CreateEvaluatedConditionState("seq3", activityInstanceId, false)
             ]
         };
         workflowContext.GetConditionSequenceStates()
@@ -154,7 +154,7 @@ public class InclusiveGatewayActivityTests
         {
             [activityInstanceId] =
             [
-                CreateEvaluatedConditionState("seq1", activityInstanceId, false)
+                ActivityTestHelper.CreateEvaluatedConditionState("seq1", activityInstanceId, false)
             ]
         };
         workflowContext.GetConditionSequenceStates()
@@ -188,7 +188,7 @@ public class InclusiveGatewayActivityTests
         {
             [activityInstanceId] =
             [
-                CreateEvaluatedConditionState("seq1", activityInstanceId, false)
+                ActivityTestHelper.CreateEvaluatedConditionState("seq1", activityInstanceId, false)
             ]
         };
         workflowContext.GetConditionSequenceStates()
@@ -343,13 +343,5 @@ public class InclusiveGatewayActivityTests
         // Assert
         Assert.AreEqual(1, nextActivities.Count);
         Assert.AreEqual("end1", nextActivities[0].NextActivity.ActivityId);
-    }
-
-    private static ConditionSequenceState CreateEvaluatedConditionState(
-        string sequenceFlowId, Guid gatewayInstanceId, bool result)
-    {
-        var state = new ConditionSequenceState(sequenceFlowId, gatewayInstanceId, Guid.Empty);
-        state.SetResult(result);
-        return state;
     }
 }

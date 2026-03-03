@@ -32,8 +32,8 @@ public class ExclusiveGatewayActivityTests
         {
             [activityInstanceId] =
             [
-                CreateEvaluatedConditionState("seq1", activityInstanceId, true),
-                CreateEvaluatedConditionState("seq2", activityInstanceId, false)
+                ActivityTestHelper.CreateEvaluatedConditionState("seq1", activityInstanceId, true),
+                ActivityTestHelper.CreateEvaluatedConditionState("seq2", activityInstanceId, false)
             ]
         };
         workflowContext.GetConditionSequenceStates()
@@ -72,7 +72,7 @@ public class ExclusiveGatewayActivityTests
         {
             [activityInstanceId] =
             [
-                CreateEvaluatedConditionState("seq1", activityInstanceId, false)
+                ActivityTestHelper.CreateEvaluatedConditionState("seq1", activityInstanceId, false)
             ]
         };
         workflowContext.GetConditionSequenceStates()
@@ -107,7 +107,7 @@ public class ExclusiveGatewayActivityTests
         {
             [activityInstanceId] =
             [
-                CreateEvaluatedConditionState("seq1", activityInstanceId, false)
+                ActivityTestHelper.CreateEvaluatedConditionState("seq1", activityInstanceId, false)
             ]
         };
         workflowContext.GetConditionSequenceStates()
@@ -171,13 +171,5 @@ public class ExclusiveGatewayActivityTests
 
         // Assert — should auto-complete since no conditions to evaluate
         await activityContext.Received(1).Complete();
-    }
-
-    private static ConditionSequenceState CreateEvaluatedConditionState(
-        string sequenceFlowId, Guid gatewayInstanceId, bool result)
-    {
-        var state = new ConditionSequenceState(sequenceFlowId, gatewayInstanceId, Guid.Empty);
-        state.SetResult(result);
-        return state;
     }
 }
