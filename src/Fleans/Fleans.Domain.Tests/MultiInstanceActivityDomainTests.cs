@@ -215,7 +215,7 @@ public class MultiInstanceActivityDomainTests
 
         // Assert
         Assert.HasCount(1, nextActivities);
-        Assert.AreEqual("end", nextActivities[0].ActivityId);
+        Assert.AreEqual("end", nextActivities[0].NextActivity.ActivityId);
     }
 
     [TestMethod]
