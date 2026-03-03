@@ -181,7 +181,7 @@ public partial class WorkflowInstance
         Activity nextActivity, Guid? scopeId)
     {
         var sourceVariablesId = await sourceInstance.GetVariablesStateId();
-        var variablesId = sourceActivity is ParallelGateway { IsFork: true }
+        var variablesId = sourceActivity is Gateway { ClonesVariablesOnFork: true }
             ? State.AddCloneOfVariableState(sourceVariablesId)
             : sourceVariablesId;
         RequestContext.Set("VariablesId", variablesId.ToString());
