@@ -127,8 +127,8 @@ public class InclusiveGatewayActivityTests
 
         // Assert — should return both true targets, not just the first
         Assert.AreEqual(2, nextActivities.Count);
-        Assert.IsTrue(nextActivities.Any(a => a.ActivityId == "end1"));
-        Assert.IsTrue(nextActivities.Any(a => a.ActivityId == "end2"));
+        Assert.IsTrue(nextActivities.Any(a => a.NextActivity.ActivityId == "end1"));
+        Assert.IsTrue(nextActivities.Any(a => a.NextActivity.ActivityId == "end2"));
     }
 
     [TestMethod]
@@ -167,7 +167,7 @@ public class InclusiveGatewayActivityTests
 
         // Assert
         Assert.AreEqual(1, nextActivities.Count);
-        Assert.AreEqual("endDefault", nextActivities[0].ActivityId);
+        Assert.AreEqual("endDefault", nextActivities[0].NextActivity.ActivityId);
     }
 
     [TestMethod]
@@ -342,7 +342,7 @@ public class InclusiveGatewayActivityTests
 
         // Assert
         Assert.AreEqual(1, nextActivities.Count);
-        Assert.AreEqual("end1", nextActivities[0].ActivityId);
+        Assert.AreEqual("end1", nextActivities[0].NextActivity.ActivityId);
     }
 
     private static ConditionSequenceState CreateEvaluatedConditionState(

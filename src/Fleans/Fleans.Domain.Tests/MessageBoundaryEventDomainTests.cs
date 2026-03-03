@@ -47,7 +47,7 @@ public class MessageBoundaryEventDomainTests
 
         // Assert
         Assert.AreEqual(1, nextActivities.Count);
-        Assert.AreEqual("recovery", nextActivities[0].ActivityId);
+        Assert.AreEqual("recovery", nextActivities[0].NextActivity.ActivityId);
     }
 
     [TestMethod]

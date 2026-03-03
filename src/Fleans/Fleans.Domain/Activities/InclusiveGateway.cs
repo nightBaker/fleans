@@ -1,5 +1,4 @@
 using Fleans.Domain.Sequences;
-using Fleans.Domain.States;
 
 namespace Fleans.Domain.Activities;
 
@@ -10,8 +9,6 @@ public record InclusiveGateway(
 ) : ConditionalGateway(ActivityId)
 {
     internal override bool IsJoinGateway => !IsFork;
-    internal override bool CreatesNewTokensOnFork => IsFork;
-    internal override bool ClonesVariablesOnFork => IsFork;
 
     internal override async Task<List<IExecutionCommand>> ExecuteAsync(
         IWorkflowExecutionContext workflowContext,
@@ -81,20 +78,20 @@ public record InclusiveGateway(
         return true;
     }
 
-    internal override async Task<List<Activity>> GetNextActivities(
+    internal override async Task<List<ActivityTransition>> GetNextActivities(
         IWorkflowExecutionContext workflowContext,
         IActivityExecutionContext activityContext,
         IWorkflowDefinition definition)
     {
         if (!IsFork)
         {
-            // Join: return all outgoing flows
+            // Join: return all outgoing flows, restore parent token
             return definition.SequenceFlows.Where(sf => sf.Source == this)
-                .Select(flow => flow.Target)
+                .Select(flow => new ActivityTransition(flow.Target, Token: TokenAction.RestoreParent))
                 .ToList();
         }
 
-        // Fork: return all flows where condition was true
+        // Fork: return all flows where condition was true, clone variables + create new tokens
         var sequencesState = await workflowContext.GetConditionSequenceStates();
         var activityInstanceId = await activityContext.GetActivityInstanceId();
         if (!sequencesState.TryGetValue(activityInstanceId, out var activitySequencesState))
@@ -104,6 +101,7 @@ public record InclusiveGateway(
             .Where(x => x.Result)
             .Select(x => definition.SequenceFlows
                 .First(sf => sf.SequenceFlowId == x.ConditionalSequenceFlowId).Target)
+            .Select(target => new ActivityTransition(target, CloneVariables: true, Token: TokenAction.CreateNew))
             .ToList();
 
         if (trueTargets.Count > 0)
@@ -114,14 +112,11 @@ public record InclusiveGateway(
             .FirstOrDefault(sf => sf.Source.ActivityId == ActivityId);
 
         if (defaultFlow is not null)
-            return [defaultFlow.Target];
+            return [new ActivityTransition(defaultFlow.Target, CloneVariables: true, Token: TokenAction.CreateNew)];
 
         throw new InvalidOperationException(
             $"InclusiveGateway {ActivityId}: no true condition and no default flow");
     }
-
-    internal override Guid? GetRestoredTokenAfterJoin(GatewayForkState? forkState)
-        => forkState?.ConsumedTokenId;
 
     private async Task<bool> AllExpectedTokensArrived(
         IWorkflowExecutionContext workflowContext, IWorkflowDefinition definition)

@@ -105,7 +105,7 @@ public record MultiInstanceActivity : BoundarableActivity
         return commands;
     }
 
-    internal override async Task<List<Activity>> GetNextActivities(
+    internal override async Task<List<ActivityTransition>> GetNextActivities(
         IWorkflowExecutionContext workflowContext,
         IActivityExecutionContext activityContext,
         IWorkflowDefinition definition)
@@ -120,7 +120,7 @@ public record MultiInstanceActivity : BoundarableActivity
         // matches on ActivityId + all properties, which works here.
         var nextFlows = definition.SequenceFlows
             .Where(sf => sf.Source == this)
-            .Select(flow => flow.Target)
+            .Select(flow => new ActivityTransition(flow.Target))
             .ToList();
         return nextFlows;
     }

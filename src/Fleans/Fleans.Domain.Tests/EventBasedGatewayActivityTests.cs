@@ -53,9 +53,9 @@ public class EventBasedGatewayActivityTests
 
         // Assert
         Assert.HasCount(3, nextActivities);
-        Assert.IsTrue(nextActivities.Any(a => a.ActivityId == "timer1"));
-        Assert.IsTrue(nextActivities.Any(a => a.ActivityId == "msg1"));
-        Assert.IsTrue(nextActivities.Any(a => a.ActivityId == "sig1"));
+        Assert.IsTrue(nextActivities.Any(a => a.NextActivity.ActivityId == "timer1"));
+        Assert.IsTrue(nextActivities.Any(a => a.NextActivity.ActivityId == "msg1"));
+        Assert.IsTrue(nextActivities.Any(a => a.NextActivity.ActivityId == "sig1"));
     }
 
 }

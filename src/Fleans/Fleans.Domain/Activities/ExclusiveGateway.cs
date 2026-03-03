@@ -28,7 +28,7 @@ public record ExclusiveGateway(string ActivityId) : ConditionalGateway(ActivityI
         return commands;
     }
 
-    internal override async Task<List<Activity>> GetNextActivities(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
+    internal override async Task<List<ActivityTransition>> GetNextActivities(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
     {
         var sequencesState = await workflowContext.GetConditionSequenceStates();
         var activityInstanceId = await activityContext.GetActivityInstanceId();
@@ -44,7 +44,7 @@ public record ExclusiveGateway(string ActivityId) : ConditionalGateway(ActivityI
                 .FirstOrDefault(sf => sf.SequenceFlowId == trueTarget.ConditionalSequenceFlowId)
                 ?? throw new InvalidOperationException(
                     $"Sequence flow '{trueTarget.ConditionalSequenceFlowId}' not found in workflow definition");
-            return [flow.Target];
+            return [new ActivityTransition(flow.Target)];
         }
 
         var defaultFlow = definition.SequenceFlows
@@ -52,7 +52,7 @@ public record ExclusiveGateway(string ActivityId) : ConditionalGateway(ActivityI
             .FirstOrDefault(sf => sf.Source.ActivityId == ActivityId);
 
         if (defaultFlow is not null)
-            return [defaultFlow.Target];
+            return [new ActivityTransition(defaultFlow.Target)];
 
         throw new InvalidOperationException(
             $"ExclusiveGateway {ActivityId}: no true condition and no default flow");
