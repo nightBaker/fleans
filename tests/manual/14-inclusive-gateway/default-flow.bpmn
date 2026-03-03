@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI">
+  <process id="inclusive-gateway-default-flow" isExecutable="true">
+    <startEvent id="start" />
+    <scriptTask id="setup" scriptFormat="csharp">
+      <script>_context.x = 1</script>
+    </scriptTask>
+    <inclusiveGateway id="fork" default="defaultFlow" />
+    <scriptTask id="highTask" scriptFormat="csharp">
+      <script>_context.path = "high"</script>
+    </scriptTask>
+    <scriptTask id="lowTask" scriptFormat="csharp">
+      <script>_context.path = "low"</script>
+    </scriptTask>
+    <scriptTask id="defaultTask" scriptFormat="csharp">
+      <script>_context.path = "default"</script>
+    </scriptTask>
+    <endEvent id="highEnd" />
+    <endEvent id="lowEnd" />
+    <endEvent id="defaultEnd" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="setup" />
+    <sequenceFlow id="f2" sourceRef="setup" targetRef="fork" />
+    <sequenceFlow id="condHigh" sourceRef="fork" targetRef="highTask">
+      <conditionExpression>${x &gt; 100}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="condLow" sourceRef="fork" targetRef="lowTask">
+      <conditionExpression>${x &lt; 0}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="defaultFlow" sourceRef="fork" targetRef="defaultTask" />
+    <sequenceFlow id="f3" sourceRef="highTask" targetRef="highEnd" />
+    <sequenceFlow id="f4" sourceRef="lowTask" targetRef="lowEnd" />
+    <sequenceFlow id="f5" sourceRef="defaultTask" targetRef="defaultEnd" />
+  </process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="inclusive-gateway-default-flow">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="180" y="282" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="setup_di" bpmnElement="setup">
+        <dc:Bounds x="280" y="260" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="fork_di" bpmnElement="fork">
+        <dc:Bounds x="445" y="275" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="highTask_di" bpmnElement="highTask">
+        <dc:Bounds x="570" y="60" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="lowTask_di" bpmnElement="lowTask">
+        <dc:Bounds x="570" y="260" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="defaultTask_di" bpmnElement="defaultTask">
+        <dc:Bounds x="570" y="460" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="highEnd_di" bpmnElement="highEnd">
+        <dc:Bounds x="742" y="82" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="lowEnd_di" bpmnElement="lowEnd">
+        <dc:Bounds x="742" y="282" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="defaultEnd_di" bpmnElement="defaultEnd">
+        <dc:Bounds x="742" y="482" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="216" y="300" />
+        <di:waypoint x="280" y="300" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="380" y="300" />
+        <di:waypoint x="445" y="300" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="condHigh_di" bpmnElement="condHigh">
+        <di:waypoint x="470" y="275" />
+        <di:waypoint x="470" y="100" />
+        <di:waypoint x="570" y="100" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="condLow_di" bpmnElement="condLow">
+        <di:waypoint x="495" y="300" />
+        <di:waypoint x="570" y="300" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="defaultFlow_di" bpmnElement="defaultFlow">
+        <di:waypoint x="470" y="325" />
+        <di:waypoint x="470" y="500" />
+        <di:waypoint x="570" y="500" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="670" y="100" />
+        <di:waypoint x="742" y="100" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f4_di" bpmnElement="f4">
+        <di:waypoint x="670" y="300" />
+        <di:waypoint x="742" y="300" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f5_di" bpmnElement="f5">
+        <di:waypoint x="670" y="500" />
+        <di:waypoint x="742" y="500" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>
