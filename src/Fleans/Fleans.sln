@@ -29,6 +29,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Fleans.Persistence", "Flean
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Fleans.Persistence.Tests", "Fleans.Persistence.Tests\Fleans.Persistence.Tests.csproj", "{F9C84F85-EC9D-4636-8917-714C46624BFE}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Fleans.Mcp", "Fleans.Mcp\Fleans.Mcp.csproj", "{7239129B-0F17-4376-BE4E-6A84D15B1B68}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -183,6 +185,18 @@ Global
 		{F9C84F85-EC9D-4636-8917-714C46624BFE}.Release|x64.Build.0 = Release|Any CPU
 		{F9C84F85-EC9D-4636-8917-714C46624BFE}.Release|x86.ActiveCfg = Release|Any CPU
 		{F9C84F85-EC9D-4636-8917-714C46624BFE}.Release|x86.Build.0 = Release|Any CPU
+		{7239129B-0F17-4376-BE4E-6A84D15B1B68}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7239129B-0F17-4376-BE4E-6A84D15B1B68}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7239129B-0F17-4376-BE4E-6A84D15B1B68}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{7239129B-0F17-4376-BE4E-6A84D15B1B68}.Debug|x64.Build.0 = Debug|Any CPU
+		{7239129B-0F17-4376-BE4E-6A84D15B1B68}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{7239129B-0F17-4376-BE4E-6A84D15B1B68}.Debug|x86.Build.0 = Debug|Any CPU
+		{7239129B-0F17-4376-BE4E-6A84D15B1B68}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7239129B-0F17-4376-BE4E-6A84D15B1B68}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7239129B-0F17-4376-BE4E-6A84D15B1B68}.Release|x64.ActiveCfg = Release|Any CPU
+		{7239129B-0F17-4376-BE4E-6A84D15B1B68}.Release|x64.Build.0 = Release|Any CPU
+		{7239129B-0F17-4376-BE4E-6A84D15B1B68}.Release|x86.ActiveCfg = Release|Any CPU
+		{7239129B-0F17-4376-BE4E-6A84D15B1B68}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

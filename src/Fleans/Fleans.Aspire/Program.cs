@@ -30,5 +30,12 @@ builder.AddProject<Projects.Fleans_Web>("fleans-management")
     .WithEnvironment("FLEANS_SQLITE_CONNECTION", sqliteConnectionString)
     .WithReplicas(1);
 
+// MCP = Orleans client (for Claude Code)
+builder.AddProject<Projects.Fleans_Mcp>("fleans-mcp")
+    .WithReference(orleans.AsClient())
+    .WaitFor(fleansSilo)
+    .WithEnvironment("FLEANS_SQLITE_CONNECTION", sqliteConnectionString)
+    .WithReplicas(1);
+
 using var app = builder.Build();
 await app.RunAsync();
