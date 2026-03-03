@@ -151,13 +151,13 @@ Each item solves exactly one problem. Items within a phase may depend on earlier
 - [x] **2.1 — Tree-structured WorkflowDefinition**: SubProcess holds child Activities and SequenceFlows, implements IWorkflowDefinition. Recursive BpmnConverter parsing. *Done.*
 - [x] **2.2 — Variable scope chain**: WorkflowVariablesState.ParentVariablesId chains scopes. GetVariable walks up. Writes go to local scope. *Done.*
 - [x] **2.3 — Embedded Sub-Process**: SubProcess executes within same WorkflowInstance grain. ScopeId on ActivityInstanceEntry tracks nesting. Scope completion detection and boundary event cancellation. *Done.*
-- [ ] **2.4 — Multi-Instance Activity (parallel)**: Single activity definition spawns N `ActivityInstance` grains, each with its own variable scope. Completion waits for all N. Results aggregated back. *Problem solved: parallel execution of same activity over a collection.*
-- [ ] **2.5 — Multi-Instance Activity (sequential)**: Same as 2.4 but instances run one at a time. Loop variable tracks progress. *Problem solved: sequential iteration over a collection.*
+- [x] **2.4 — Multi-Instance Activity (parallel)**: Single activity definition spawns N `ActivityInstance` grains, each with its own variable scope. Completion waits for all N. Results aggregated back. *Done.*
+- [x] **2.5 — Multi-Instance Activity (sequential)**: Same as 2.4 but instances run one at a time. Loop variable tracks progress. *Done.*
 
 ### Phase 3: Dynamic Join Counting (A3)
 
-- [ ] **3.1 — Token propagation**: Add a `TokenId` concept to `ActivityInstanceEntry`. When a gateway forks, it assigns token IDs to each branch. Join gateway counts arrived tokens. *Problem solved: runtime knowledge of active branches.*
-- [ ] **3.2 — Inclusive Gateway**: Fork evaluates all conditions, activates 1..N matching flows (each with a token). Join waits for exactly the number of tokens that were actually created. *Problem solved: variable-count parallel branching.*
+- [x] **3.1 — Token propagation**: Add a `TokenId` concept to `ActivityInstanceEntry`. When a gateway forks, it assigns token IDs to each branch. Join gateway counts arrived tokens. *Done.*
+- [x] **3.2 — Inclusive Gateway**: Fork evaluates all conditions, activates 1..N matching flows (each with a token). Join waits for exactly the number of tokens that were actually created. *Done.*
 
 ### Phase 4: Non-Interrupting & Compensation (A4)
 

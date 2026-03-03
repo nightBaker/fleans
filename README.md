@@ -44,7 +44,7 @@ For now, next elements are implemented
 | Event Sub-Process    | A sub-process that is triggered by an event.                                 |             |
 | **Gateways**         |                                                                             |             |
 | Exclusive Gateway    | Indicates a decision point where only one path can be taken.                 |    [x]      |
-| Inclusive Gateway    | Indicates a decision point where one or more paths can be taken.             |             |
+| Inclusive Gateway    | Indicates a decision point where one or more paths can be taken.             |    [x]      |
 | Parallel Gateway     | Indicates that all paths are taken in parallel.                              |    [x]      |
 | Complex Gateway      | Indicates a complex decision point with conditions.                          |             |
 | Event-Based Gateway  | Indicates that the process flow is determined by an event.                   |     [x]     |
