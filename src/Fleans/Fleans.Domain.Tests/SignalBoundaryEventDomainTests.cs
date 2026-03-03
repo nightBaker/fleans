@@ -47,7 +47,7 @@ public class SignalBoundaryEventDomainTests
 
         // Assert
         Assert.HasCount(1, nextActivities);
-        Assert.AreEqual("recovery", nextActivities[0].ActivityId);
+        Assert.AreEqual("recovery", nextActivities[0].NextActivity.ActivityId);
     }
 
     [TestMethod]
