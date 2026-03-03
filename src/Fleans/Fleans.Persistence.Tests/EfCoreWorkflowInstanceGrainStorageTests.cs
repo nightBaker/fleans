@@ -553,6 +553,112 @@ public class EfCoreWorkflowInstanceGrainStorageTests
     }
 
     // ───────────────────────────────────────────────
+    // 4b. GatewayFork diffing tests
+    // ───────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task WriteAndRead_WithGatewayForks_Preserves()
+    {
+        var grainId = NewGrainId();
+        var state = CreateGrainState();
+        state.State.Start();
+
+        var forkInstanceId = Guid.NewGuid();
+        var consumedTokenId = Guid.NewGuid();
+        var fork = state.State.CreateGatewayFork(forkInstanceId, consumedTokenId);
+        var createdToken1 = Guid.NewGuid();
+        var createdToken2 = Guid.NewGuid();
+        fork.CreatedTokenIds.Add(createdToken1);
+        fork.CreatedTokenIds.Add(createdToken2);
+
+        await _storage.WriteStateAsync(StateName, grainId, state);
+
+        var readState = CreateGrainState();
+        await _storage.ReadStateAsync(StateName, grainId, readState);
+
+        Assert.AreEqual(1, readState.State.GatewayForks.Count);
+        var readFork = readState.State.GatewayForks[0];
+        Assert.AreEqual(forkInstanceId, readFork.ForkInstanceId);
+        Assert.AreEqual(consumedTokenId, readFork.ConsumedTokenId);
+        Assert.AreEqual(2, readFork.CreatedTokenIds.Count);
+        CollectionAssert.AreEquivalent(
+            new List<Guid> { createdToken1, createdToken2 },
+            readFork.CreatedTokenIds);
+    }
+
+    [TestMethod]
+    public async Task Update_AddsGatewayFork()
+    {
+        var grainId = NewGrainId();
+        var state = CreateGrainState();
+        state.State.Start();
+        await _storage.WriteStateAsync(StateName, grainId, state);
+
+        // Add fork on update
+        var forkInstanceId = Guid.NewGuid();
+        var consumedTokenId = Guid.NewGuid();
+        state.State.CreateGatewayFork(forkInstanceId, consumedTokenId);
+        await _storage.WriteStateAsync(StateName, grainId, state);
+
+        var readState = CreateGrainState();
+        await _storage.ReadStateAsync(StateName, grainId, readState);
+
+        Assert.AreEqual(1, readState.State.GatewayForks.Count);
+        Assert.AreEqual(forkInstanceId, readState.State.GatewayForks[0].ForkInstanceId);
+        Assert.AreEqual(consumedTokenId, readState.State.GatewayForks[0].ConsumedTokenId);
+    }
+
+    [TestMethod]
+    public async Task Update_UpdatesGatewayForkCreatedTokens()
+    {
+        var grainId = NewGrainId();
+        var state = CreateGrainState();
+        state.State.Start();
+
+        var forkInstanceId = Guid.NewGuid();
+        var consumedTokenId = Guid.NewGuid();
+        var fork = state.State.CreateGatewayFork(forkInstanceId, consumedTokenId);
+        var token1 = Guid.NewGuid();
+        fork.CreatedTokenIds.Add(token1);
+        await _storage.WriteStateAsync(StateName, grainId, state);
+
+        // Add another created token
+        var token2 = Guid.NewGuid();
+        fork.CreatedTokenIds.Add(token2);
+        await _storage.WriteStateAsync(StateName, grainId, state);
+
+        var readState = CreateGrainState();
+        await _storage.ReadStateAsync(StateName, grainId, readState);
+
+        Assert.AreEqual(1, readState.State.GatewayForks.Count);
+        Assert.AreEqual(2, readState.State.GatewayForks[0].CreatedTokenIds.Count);
+        CollectionAssert.AreEquivalent(
+            new List<Guid> { token1, token2 },
+            readState.State.GatewayForks[0].CreatedTokenIds);
+    }
+
+    [TestMethod]
+    public async Task Update_RemovesGatewayFork()
+    {
+        var grainId = NewGrainId();
+        var state = CreateGrainState();
+        state.State.Start();
+
+        var forkInstanceId = Guid.NewGuid();
+        state.State.CreateGatewayFork(forkInstanceId, Guid.NewGuid());
+        await _storage.WriteStateAsync(StateName, grainId, state);
+
+        // Remove the fork
+        state.State.RemoveGatewayFork(forkInstanceId);
+        await _storage.WriteStateAsync(StateName, grainId, state);
+
+        var readState = CreateGrainState();
+        await _storage.ReadStateAsync(StateName, grainId, readState);
+
+        Assert.AreEqual(0, readState.State.GatewayForks.Count);
+    }
+
+    // ───────────────────────────────────────────────
     // 5. Isolation test
     // ───────────────────────────────────────────────
 
