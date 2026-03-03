@@ -192,7 +192,16 @@ public partial class WorkflowInstance
         await newInstance.SetVariablesId(variablesId);
         await newInstance.SetActivity(transition.NextActivity.ActivityId, transition.NextActivity.GetType().Name);
 
-        // Token propagation driven by transition metadata
+        await PropagateToken(transition, sourceActivity, sourceInstance, newInstance, sourceActivityInstanceId);
+
+        return new ActivityInstanceEntry(newId, transition.NextActivity.ActivityId, State.Id, scopeId);
+    }
+
+    private async Task PropagateToken(
+        ActivityTransition transition, Activity sourceActivity,
+        IActivityInstanceGrain sourceInstance, IActivityInstanceGrain newInstance,
+        Guid sourceActivityInstanceId)
+    {
         switch (transition.Token)
         {
             case TokenAction.CreateNew:
@@ -240,8 +249,6 @@ public partial class WorkflowInstance
                 }
                 break;
         }
-
-        return new ActivityInstanceEntry(newId, transition.NextActivity.ActivityId, State.Id, scopeId);
     }
 
     private async Task TransitionToNextActivity()
