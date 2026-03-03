@@ -5,7 +5,7 @@ namespace Fleans.Domain.Activities;
 [GenerateSerializer]
 public abstract record ConditionalGateway(string ActivityId) : Gateway(ActivityId)
 {
-    internal async Task<bool> SetConditionResult(
+    internal virtual async Task<bool> SetConditionResult(
         IWorkflowExecutionContext workflowContext,
         IActivityExecutionContext activityContext,
         string conditionSequenceFlowId,
