@@ -53,9 +53,9 @@ public class ParallelGatewayActivityTests
 
         // Assert
         Assert.HasCount(3, nextActivities);
-        Assert.IsTrue(nextActivities.Any(a => a.ActivityId == "task1"));
-        Assert.IsTrue(nextActivities.Any(a => a.ActivityId == "task2"));
-        Assert.IsTrue(nextActivities.Any(a => a.ActivityId == "task3"));
+        Assert.IsTrue(nextActivities.Any(a => a.NextActivity.ActivityId == "task1"));
+        Assert.IsTrue(nextActivities.Any(a => a.NextActivity.ActivityId == "task2"));
+        Assert.IsTrue(nextActivities.Any(a => a.NextActivity.ActivityId == "task3"));
     }
 
     [TestMethod]
@@ -81,7 +81,7 @@ public class ParallelGatewayActivityTests
 
         // Assert
         Assert.HasCount(1, nextActivities);
-        Assert.AreEqual("end", nextActivities[0].ActivityId);
+        Assert.AreEqual("end", nextActivities[0].NextActivity.ActivityId);
     }
 
     [TestMethod]

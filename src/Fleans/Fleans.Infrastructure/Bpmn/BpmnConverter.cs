@@ -255,6 +255,45 @@ public partial class BpmnConverter : IBpmnConverter
             activityMap[id] = activity;
         }
 
+        // Parse inclusive gateways
+        foreach (var gateway in scopeElement.Elements(Bpmn + "inclusiveGateway"))
+        {
+            var id = GetId(gateway);
+            var defaultFlowId = gateway.Attribute("default")?.Value;
+            if (defaultFlowId is not null)
+                defaultFlowIds.Add(defaultFlowId);
+
+            var incomingCount = scopeElement.Elements(Bpmn + "sequenceFlow")
+                .Count(sf => sf.Attribute("targetRef")?.Value == id);
+            var outgoingCount = scopeElement.Elements(Bpmn + "sequenceFlow")
+                .Count(sf => sf.Attribute("sourceRef")?.Value == id);
+
+            bool isFork;
+            if (outgoingCount > incomingCount)
+            {
+                isFork = true;
+            }
+            else if (incomingCount > outgoingCount)
+            {
+                isFork = false;
+            }
+            else if (incomingCount <= 1)
+            {
+                isFork = true;
+            }
+            else
+            {
+                throw new InvalidOperationException(
+                    $"Inclusive gateway '{id}' has {incomingCount} incoming and {outgoingCount} outgoing flows. " +
+                    "Mixed inclusive gateways (both join and fork) are not supported. " +
+                    "Split into separate join and fork gateways.");
+            }
+
+            var activity = new InclusiveGateway(id, IsFork: isFork);
+            activities.Add(activity);
+            activityMap[id] = activity;
+        }
+
         // Parse event-based gateways
         foreach (var gateway in scopeElement.Elements(Bpmn + "eventBasedGateway"))
         {

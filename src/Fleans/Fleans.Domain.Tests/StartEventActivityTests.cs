@@ -44,7 +44,7 @@ public class StartEventActivityTests
 
         // Assert
         Assert.HasCount(1, nextActivities);
-        Assert.AreEqual("task1", nextActivities[0].ActivityId);
+        Assert.AreEqual("task1", nextActivities[0].NextActivity.ActivityId);
     }
 
     [TestMethod]

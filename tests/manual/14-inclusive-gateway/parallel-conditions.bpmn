@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI">
+  <process id="inclusive-gateway-parallel-conditions" isExecutable="true">
+    <startEvent id="start" />
+    <scriptTask id="setup" scriptFormat="csharp">
+      <script>_context.a = 10; _context.b = 3</script>
+    </scriptTask>
+    <inclusiveGateway id="fork" />
+    <scriptTask id="branch1" scriptFormat="csharp">
+      <script>_context.path1 = "taken"</script>
+    </scriptTask>
+    <scriptTask id="branch2" scriptFormat="csharp">
+      <script>_context.path2 = "taken"</script>
+    </scriptTask>
+    <scriptTask id="branch3" scriptFormat="csharp">
+      <script>_context.path3 = "taken"</script>
+    </scriptTask>
+    <inclusiveGateway id="join" />
+    <scriptTask id="afterJoin" scriptFormat="csharp">
+      <script>_context.joined = true</script>
+    </scriptTask>
+    <endEvent id="end" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="setup" />
+    <sequenceFlow id="f2" sourceRef="setup" targetRef="fork" />
+    <sequenceFlow id="cond1" sourceRef="fork" targetRef="branch1">
+      <conditionExpression>${a &gt; 5}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="cond2" sourceRef="fork" targetRef="branch2">
+      <conditionExpression>${b &lt; 5}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="cond3" sourceRef="fork" targetRef="branch3">
+      <conditionExpression>${a &lt; 5}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="f3" sourceRef="branch1" targetRef="join" />
+    <sequenceFlow id="f4" sourceRef="branch2" targetRef="join" />
+    <sequenceFlow id="f5" sourceRef="branch3" targetRef="join" />
+    <sequenceFlow id="f6" sourceRef="join" targetRef="afterJoin" />
+    <sequenceFlow id="f7" sourceRef="afterJoin" targetRef="end" />
+  </process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="inclusive-gateway-parallel-conditions">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="180" y="282" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="setup_di" bpmnElement="setup">
+        <dc:Bounds x="280" y="260" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="fork_di" bpmnElement="fork">
+        <dc:Bounds x="445" y="275" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="branch1_di" bpmnElement="branch1">
+        <dc:Bounds x="570" y="60" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="branch2_di" bpmnElement="branch2">
+        <dc:Bounds x="570" y="260" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="branch3_di" bpmnElement="branch3">
+        <dc:Bounds x="570" y="460" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="join_di" bpmnElement="join">
+        <dc:Bounds x="745" y="275" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="afterJoin_di" bpmnElement="afterJoin">
+        <dc:Bounds x="870" y="260" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_di" bpmnElement="end">
+        <dc:Bounds x="1042" y="282" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="216" y="300" />
+        <di:waypoint x="280" y="300" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="380" y="300" />
+        <di:waypoint x="445" y="300" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="cond1_di" bpmnElement="cond1">
+        <di:waypoint x="470" y="275" />
+        <di:waypoint x="470" y="100" />
+        <di:waypoint x="570" y="100" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="cond2_di" bpmnElement="cond2">
+        <di:waypoint x="495" y="300" />
+        <di:waypoint x="570" y="300" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="cond3_di" bpmnElement="cond3">
+        <di:waypoint x="470" y="325" />
+        <di:waypoint x="470" y="500" />
+        <di:waypoint x="570" y="500" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="670" y="100" />
+        <di:waypoint x="770" y="100" />
+        <di:waypoint x="770" y="275" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f4_di" bpmnElement="f4">
+        <di:waypoint x="670" y="300" />
+        <di:waypoint x="745" y="300" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f5_di" bpmnElement="f5">
+        <di:waypoint x="670" y="500" />
+        <di:waypoint x="770" y="500" />
+        <di:waypoint x="770" y="325" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f6_di" bpmnElement="f6">
+        <di:waypoint x="795" y="300" />
+        <di:waypoint x="870" y="300" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f7_di" bpmnElement="f7">
+        <di:waypoint x="970" y="300" />
+        <di:waypoint x="1042" y="300" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

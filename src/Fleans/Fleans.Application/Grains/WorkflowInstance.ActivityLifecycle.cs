@@ -287,11 +287,6 @@ public partial class WorkflowInstance
 
         if (isDecisionMade)
         {
-            if (result)
-                LogGatewayShortCircuited(activityId, conditionSequenceId);
-            else
-                LogGatewayTakingDefaultFlow(activityId);
-
             LogGatewayAutoCompleting(activityId);
             await activityInstance.Complete();
             await ExecuteWorkflow();

@@ -22,5 +22,5 @@ public abstract record Activity([property: Id(0)] string ActivityId)
         return [];
     }
 
-    internal abstract Task<List<Activity>> GetNextActivities(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition);
+    internal abstract Task<List<ActivityTransition>> GetNextActivities(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition);
 }

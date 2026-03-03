@@ -51,7 +51,7 @@ public class SubProcessActivityTests
         var nextActivities = await subProcess.GetNextActivities(workflowContext, activityContext, definition);
 
         Assert.AreEqual(1, nextActivities.Count);
-        Assert.AreEqual("end", nextActivities[0].ActivityId);
+        Assert.AreEqual("end", nextActivities[0].NextActivity.ActivityId);
     }
 
     [TestMethod]

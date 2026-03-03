@@ -46,7 +46,7 @@ public class ExclusiveGatewayActivityTests
 
         // Assert
         Assert.HasCount(1, nextActivities);
-        Assert.AreEqual("end1", nextActivities[0].ActivityId);
+        Assert.AreEqual("end1", nextActivities[0].NextActivity.ActivityId);
     }
 
     [TestMethod]
@@ -85,7 +85,7 @@ public class ExclusiveGatewayActivityTests
 
         // Assert
         Assert.HasCount(1, nextActivities);
-        Assert.AreEqual("endDefault", nextActivities[0].ActivityId);
+        Assert.AreEqual("endDefault", nextActivities[0].NextActivity.ActivityId);
     }
 
     [TestMethod]

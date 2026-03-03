@@ -44,6 +44,9 @@ public class WorkflowInstanceState
     [Id(12)]
     public string? ParentActivityId { get; private set; }
 
+    [Id(13)]
+    public List<GatewayForkState> GatewayForks { get; private set; } = [];
+
     public IEnumerable<ActivityInstanceEntry> GetActiveActivities()
         => Entries.Where(e => !e.IsCompleted);
 
@@ -93,6 +96,7 @@ public class WorkflowInstanceState
         if (IsCompleted)
             throw new InvalidOperationException("Workflow is already completed");
 
+        GatewayForks.Clear();
         CompletedAt = DateTimeOffset.UtcNow;
         IsCompleted = true;
     }
@@ -191,4 +195,17 @@ public class WorkflowInstanceState
         }
         return null;
     }
+
+    public GatewayForkState CreateGatewayFork(Guid forkInstanceId, Guid? consumedTokenId)
+    {
+        var fork = new GatewayForkState(forkInstanceId, consumedTokenId, Id);
+        GatewayForks.Add(fork);
+        return fork;
+    }
+
+    public GatewayForkState? FindForkByToken(Guid tokenId)
+        => GatewayForks.FirstOrDefault(f => f.CreatedTokenIds.Contains(tokenId));
+
+    public void RemoveGatewayFork(Guid forkInstanceId)
+        => GatewayForks.RemoveAll(f => f.ForkInstanceId == forkInstanceId);
 }

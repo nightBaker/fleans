@@ -20,8 +20,8 @@ public record EndEvent(string ActivityId) : Activity(ActivityId)
         return commands;
     }
 
-    internal override Task<List<Activity>> GetNextActivities(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
+    internal override Task<List<ActivityTransition>> GetNextActivities(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
     {
-        return Task.FromResult(new List<Activity>());
+        return Task.FromResult(new List<ActivityTransition>());
     }
 }

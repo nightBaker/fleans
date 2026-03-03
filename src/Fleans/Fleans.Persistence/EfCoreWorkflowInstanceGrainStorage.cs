@@ -23,6 +23,7 @@ public class EfCoreWorkflowInstanceGrainStorage : IGrainStorage
             .Include(s => s.Entries)
             .Include(s => s.VariableStates)
             .Include(s => s.ConditionSequenceStates)
+            .Include(s => s.GatewayForks)
             .AsNoTracking()
             .FirstOrDefaultAsync(s => s.Id == id);
 
@@ -45,6 +46,7 @@ public class EfCoreWorkflowInstanceGrainStorage : IGrainStorage
             .Include(e => e.Entries)
             .Include(e => e.VariableStates)
             .Include(e => e.ConditionSequenceStates)
+            .Include(e => e.GatewayForks)
             .FirstOrDefaultAsync(e => e.Id == id);
 
         if (existing is null)
@@ -65,6 +67,8 @@ public class EfCoreWorkflowInstanceGrainStorage : IGrainStorage
                 db.Entry(vs).Property(v => v.WorkflowInstanceId).CurrentValue = id;
             foreach (var cs in state.ConditionSequenceStates)
                 db.Entry(cs).Property(c => c.WorkflowInstanceId).CurrentValue = id;
+            foreach (var gf in state.GatewayForks)
+                db.Entry(gf).Property(g => g.WorkflowInstanceId).CurrentValue = id;
         }
         else
         {
@@ -81,6 +85,7 @@ public class EfCoreWorkflowInstanceGrainStorage : IGrainStorage
             DiffEntries(db, existing, state, id);
             DiffVariableStates(db, existing, state, id);
             DiffConditionSequenceStates(db, existing, state, id);
+            DiffGatewayForks(db, existing, state, id);
         }
 
         await db.SaveChangesAsync();
@@ -192,6 +197,33 @@ public class EfCoreWorkflowInstanceGrainStorage : IGrainStorage
             {
                 db.WorkflowConditionSequenceStates.Add(cs);
                 db.Entry(cs).Property(c => c.WorkflowInstanceId).CurrentValue = workflowInstanceId;
+            }
+        }
+    }
+
+    private static void DiffGatewayForks(
+        FleanCommandDbContext db,
+        WorkflowInstanceState existing,
+        WorkflowInstanceState state,
+        Guid workflowInstanceId)
+    {
+        var existingById = existing.GatewayForks.ToDictionary(g => g.ForkInstanceId);
+        var newIds = state.GatewayForks.Select(g => g.ForkInstanceId).ToHashSet();
+
+        foreach (var gf in existing.GatewayForks.Where(g => !newIds.Contains(g.ForkInstanceId)).ToList())
+            db.GatewayForks.Remove(gf);
+
+        foreach (var gf in state.GatewayForks)
+        {
+            if (existingById.TryGetValue(gf.ForkInstanceId, out var existingGf))
+            {
+                db.Entry(existingGf).CurrentValues.SetValues(gf);
+                db.Entry(existingGf).Property(g => g.WorkflowInstanceId).IsModified = false;
+            }
+            else
+            {
+                db.GatewayForks.Add(gf);
+                db.Entry(gf).Property(g => g.WorkflowInstanceId).CurrentValue = workflowInstanceId;
             }
         }
     }

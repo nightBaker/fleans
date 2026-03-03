@@ -178,10 +178,11 @@ public partial class WorkflowInstance
 
     private async Task<ActivityInstanceEntry> CreateNextActivityEntry(
         Activity sourceActivity, IActivityInstanceGrain sourceInstance,
-        Activity nextActivity, Guid? scopeId)
+        ActivityTransition transition, Guid? scopeId, Guid sourceActivityInstanceId)
     {
         var sourceVariablesId = await sourceInstance.GetVariablesStateId();
-        var variablesId = sourceActivity is ParallelGateway { IsFork: true }
+
+        var variablesId = transition.CloneVariables
             ? State.AddCloneOfVariableState(sourceVariablesId)
             : sourceVariablesId;
         RequestContext.Set("VariablesId", variablesId.ToString());
@@ -189,9 +190,65 @@ public partial class WorkflowInstance
         var newId = Guid.NewGuid();
         var newInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(newId);
         await newInstance.SetVariablesId(variablesId);
-        await newInstance.SetActivity(nextActivity.ActivityId, nextActivity.GetType().Name);
+        await newInstance.SetActivity(transition.NextActivity.ActivityId, transition.NextActivity.GetType().Name);
 
-        return new ActivityInstanceEntry(newId, nextActivity.ActivityId, State.Id, scopeId);
+        await PropagateToken(transition, sourceActivity, sourceInstance, newInstance, sourceActivityInstanceId);
+
+        return new ActivityInstanceEntry(newId, transition.NextActivity.ActivityId, State.Id, scopeId);
+    }
+
+    private async Task PropagateToken(
+        ActivityTransition transition, Activity sourceActivity,
+        IActivityInstanceGrain sourceInstance, IActivityInstanceGrain newInstance,
+        Guid sourceActivityInstanceId)
+    {
+        switch (transition.Token)
+        {
+            case TokenAction.CreateNew:
+                var sourceTokenId = await sourceInstance.GetTokenId();
+                var newTokenId = Guid.NewGuid();
+                await newInstance.SetTokenId(newTokenId);
+
+                var forkState = State.GatewayForks.FirstOrDefault(
+                    f => f.ForkInstanceId == sourceActivityInstanceId);
+                if (forkState == null)
+                {
+                    forkState = State.CreateGatewayFork(sourceActivityInstanceId, sourceTokenId);
+                    LogGatewayForkStateCreated(sourceActivityInstanceId, sourceTokenId);
+                }
+                forkState.CreatedTokenIds.Add(newTokenId);
+                LogTokenCreated(sourceActivity.ActivityId, newTokenId);
+                break;
+
+            case TokenAction.RestoreParent:
+                var inheritedToken = await sourceInstance.GetTokenId();
+                if (inheritedToken.HasValue)
+                {
+                    var fork = State.FindForkByToken(inheritedToken.Value);
+                    if (fork?.ConsumedTokenId.HasValue == true)
+                    {
+                        await newInstance.SetTokenId(fork.ConsumedTokenId.Value);
+                        State.RemoveGatewayFork(fork.ForkInstanceId);
+                        LogTokenRestored(fork.ConsumedTokenId.Value, transition.NextActivity.ActivityId, fork.ForkInstanceId);
+                        LogGatewayForkStateRemoved(fork.ForkInstanceId);
+                    }
+                    else
+                    {
+                        await newInstance.SetTokenId(inheritedToken.Value);
+                        LogTokenInherited(inheritedToken.Value, transition.NextActivity.ActivityId);
+                    }
+                }
+                break;
+
+            default: // TokenAction.Inherit
+                var token = await sourceInstance.GetTokenId();
+                if (token.HasValue)
+                {
+                    await newInstance.SetTokenId(token.Value);
+                    LogTokenInherited(token.Value, transition.NextActivity.ActivityId);
+                }
+                break;
+        }
     }
 
     private async Task TransitionToNextActivity()
@@ -218,25 +275,25 @@ public partial class WorkflowInstance
                 var scopeDefinition = definition.GetScopeForActivity(entry.ActivityId);
                 var currentActivity = scopeDefinition.GetActivity(entry.ActivityId);
 
-                var nextActivities = await currentActivity.GetNextActivities(this, activityInstance, scopeDefinition);
+                var nextTransitions = await currentActivity.GetNextActivities(this, activityInstance, scopeDefinition);
 
-                foreach(var nextActivity in nextActivities)
+                foreach(var transition in nextTransitions)
                 {
                     // For join gateways, reuse the existing active entry instead of creating a duplicate
-                    if (nextActivity.IsJoinGateway)
+                    if (transition.NextActivity.IsJoinGateway)
                     {
                         var existingEntry = State.GetActiveActivities()
-                            .FirstOrDefault(e => e.ActivityId == nextActivity.ActivityId && e.ScopeId == entry.ScopeId);
+                            .FirstOrDefault(e => e.ActivityId == transition.NextActivity.ActivityId && e.ScopeId == entry.ScopeId);
                         if (existingEntry != null)
                         {
-                            LogJoinGatewayDeduplication(nextActivity.ActivityId, existingEntry.ActivityInstanceId);
+                            LogJoinGatewayDeduplication(transition.NextActivity.ActivityId, existingEntry.ActivityInstanceId);
                             var existingInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(existingEntry.ActivityInstanceId);
                             await existingInstance.ResetExecuting();
                             continue;
                         }
                     }
 
-                    var newEntry = await CreateNextActivityEntry(currentActivity, activityInstance, nextActivity, entry.ScopeId);
+                    var newEntry = await CreateNextActivityEntry(currentActivity, activityInstance, transition, entry.ScopeId, entry.ActivityInstanceId);
                     newActiveEntries.Add(newEntry);
                 }
             }
@@ -292,14 +349,14 @@ public partial class WorkflowInstance
                 await activityInstance.Complete();
                 LogSubProcessCompleted(entry.ActivityId);
 
-                var nextActivities = await activity.GetNextActivities(this, activityInstance, scopeDefinition);
+                var nextTransitions = await activity.GetNextActivities(this, activityInstance, scopeDefinition);
 
                 var completedEntries = new List<ActivityInstanceEntry> { entry };
                 var newEntries = new List<ActivityInstanceEntry>();
 
-                foreach (var nextActivity in nextActivities)
+                foreach (var transition in nextTransitions)
                 {
-                    var newEntry = await CreateNextActivityEntry(activity, activityInstance, nextActivity, entry.ScopeId);
+                    var newEntry = await CreateNextActivityEntry(activity, activityInstance, transition, entry.ScopeId, entry.ActivityInstanceId);
                     newEntries.Add(newEntry);
                 }
 
@@ -397,14 +454,14 @@ public partial class WorkflowInstance
         await hostGrain.Complete();
         LogMultiInstanceScopeCompleted(mi.ActivityId);
 
-        var nextActivities = await mi.GetNextActivities(this, hostGrain, scopeDefinition);
+        var nextTransitions = await mi.GetNextActivities(this, hostGrain, scopeDefinition);
 
         var completedEntries = new List<ActivityInstanceEntry> { hostEntry };
         var newEntries = new List<ActivityInstanceEntry>();
 
-        foreach (var nextActivity in nextActivities)
+        foreach (var transition in nextTransitions)
         {
-            var newEntry = await CreateNextActivityEntry(mi, hostGrain, nextActivity, hostEntry.ScopeId);
+            var newEntry = await CreateNextActivityEntry(mi, hostGrain, transition, hostEntry.ScopeId, hostEntry.ActivityInstanceId);
             newEntries.Add(newEntry);
         }
 

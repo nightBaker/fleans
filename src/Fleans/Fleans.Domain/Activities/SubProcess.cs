@@ -37,14 +37,14 @@ public record SubProcess(string ActivityId) : BoundarableActivity(ActivityId), I
         return commands;
     }
 
-    internal override Task<List<Activity>> GetNextActivities(
+    internal override Task<List<ActivityTransition>> GetNextActivities(
         IWorkflowExecutionContext workflowContext,
         IActivityExecutionContext activityContext,
         IWorkflowDefinition definition)
     {
         var nextFlows = definition.SequenceFlows
             .Where(sf => sf.Source == this)
-            .Select(flow => flow.Target)
+            .Select(flow => new ActivityTransition(flow.Target))
             .ToList();
         return Task.FromResult(nextFlows);
     }

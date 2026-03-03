@@ -22,12 +22,12 @@ public record MessageBoundaryEvent(
         return commands;
     }
 
-    internal override Task<List<Activity>> GetNextActivities(
+    internal override Task<List<ActivityTransition>> GetNextActivities(
         IWorkflowExecutionContext workflowContext,
         IActivityExecutionContext activityContext,
         IWorkflowDefinition definition)
     {
         var nextFlow = definition.SequenceFlows.FirstOrDefault(sf => sf.Source == this);
-        return Task.FromResult(nextFlow != null ? [nextFlow.Target] : new List<Activity>());
+        return Task.FromResult(nextFlow != null ? new List<ActivityTransition> { new(nextFlow.Target) } : new List<ActivityTransition>());
     }
 }

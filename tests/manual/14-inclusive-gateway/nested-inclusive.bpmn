@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI">
+  <process id="nested-inclusive-gateway" isExecutable="true">
+    <startEvent id="start" />
+    <scriptTask id="setup" scriptFormat="csharp">
+      <script>_context.x = 10</script>
+    </scriptTask>
+    <inclusiveGateway id="outerFork" />
+
+    <!-- Branch A: inner inclusive gateway -->
+    <inclusiveGateway id="innerFork" />
+    <scriptTask id="branchA1" scriptFormat="csharp">
+      <script>_context.a1 = "taken"</script>
+    </scriptTask>
+    <scriptTask id="branchA2" scriptFormat="csharp">
+      <script>_context.a2 = "taken"</script>
+    </scriptTask>
+    <inclusiveGateway id="innerJoin" />
+    <scriptTask id="afterInnerJoin" scriptFormat="csharp">
+      <script>_context.innerDone = true</script>
+    </scriptTask>
+
+    <!-- Branch B: single scriptTask -->
+    <scriptTask id="branchB" scriptFormat="csharp">
+      <script>_context.b = "taken"</script>
+    </scriptTask>
+
+    <inclusiveGateway id="outerJoin" />
+    <endEvent id="end" />
+
+    <!-- start -> setup -> outerFork -->
+    <sequenceFlow id="f1" sourceRef="start" targetRef="setup" />
+    <sequenceFlow id="f2" sourceRef="setup" targetRef="outerFork" />
+
+    <!-- outerFork -> Branch A (innerFork) -->
+    <sequenceFlow id="outerCondA" sourceRef="outerFork" targetRef="innerFork">
+      <conditionExpression>${x &gt; 0}</conditionExpression>
+    </sequenceFlow>
+    <!-- outerFork -> Branch B -->
+    <sequenceFlow id="outerCondB" sourceRef="outerFork" targetRef="branchB">
+      <conditionExpression>${x &gt; 0}</conditionExpression>
+    </sequenceFlow>
+
+    <!-- innerFork -> branchA1, branchA2 -->
+    <sequenceFlow id="innerCondA1" sourceRef="innerFork" targetRef="branchA1">
+      <conditionExpression>${x &gt; 0}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="innerCondA2" sourceRef="innerFork" targetRef="branchA2">
+      <conditionExpression>${x &gt; 0}</conditionExpression>
+    </sequenceFlow>
+
+    <!-- branchA1, branchA2 -> innerJoin -->
+    <sequenceFlow id="f3" sourceRef="branchA1" targetRef="innerJoin" />
+    <sequenceFlow id="f4" sourceRef="branchA2" targetRef="innerJoin" />
+
+    <!-- innerJoin -> afterInnerJoin -->
+    <sequenceFlow id="f5" sourceRef="innerJoin" targetRef="afterInnerJoin" />
+
+    <!-- afterInnerJoin -> outerJoin -->
+    <sequenceFlow id="f6" sourceRef="afterInnerJoin" targetRef="outerJoin" />
+
+    <!-- branchB -> outerJoin -->
+    <sequenceFlow id="f7" sourceRef="branchB" targetRef="outerJoin" />
+
+    <!-- outerJoin -> end -->
+    <sequenceFlow id="f8" sourceRef="outerJoin" targetRef="end" />
+  </process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="nested-inclusive-gateway">
+      <!-- start -->
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="100" y="332" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <!-- setup -->
+      <bpmndi:BPMNShape id="setup_di" bpmnElement="setup">
+        <dc:Bounds x="200" y="310" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <!-- outerFork -->
+      <bpmndi:BPMNShape id="outerFork_di" bpmnElement="outerFork">
+        <dc:Bounds x="370" y="325" width="50" height="50" />
+      </bpmndi:BPMNShape>
+
+      <!-- Branch A: innerFork (upper area, y ~150) -->
+      <bpmndi:BPMNShape id="innerFork_di" bpmnElement="innerFork">
+        <dc:Bounds x="510" y="175" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <!-- branchA1 (top) -->
+      <bpmndi:BPMNShape id="branchA1_di" bpmnElement="branchA1">
+        <dc:Bounds x="640" y="60" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <!-- branchA2 (middle-upper) -->
+      <bpmndi:BPMNShape id="branchA2_di" bpmnElement="branchA2">
+        <dc:Bounds x="640" y="260" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <!-- innerJoin -->
+      <bpmndi:BPMNShape id="innerJoin_di" bpmnElement="innerJoin">
+        <dc:Bounds x="810" y="175" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <!-- afterInnerJoin -->
+      <bpmndi:BPMNShape id="afterInnerJoin_di" bpmnElement="afterInnerJoin">
+        <dc:Bounds x="920" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- Branch B (lower area, y ~500) -->
+      <bpmndi:BPMNShape id="branchB_di" bpmnElement="branchB">
+        <dc:Bounds x="640" y="460" width="100" height="80" />
+      </bpmndi:BPMNShape>
+
+      <!-- outerJoin -->
+      <bpmndi:BPMNShape id="outerJoin_di" bpmnElement="outerJoin">
+        <dc:Bounds x="1090" y="325" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <!-- end -->
+      <bpmndi:BPMNShape id="end_di" bpmnElement="end">
+        <dc:Bounds x="1210" y="332" width="36" height="36" />
+      </bpmndi:BPMNShape>
+
+      <!-- Edges -->
+      <!-- f1: start -> setup -->
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="136" y="350" />
+        <di:waypoint x="200" y="350" />
+      </bpmndi:BPMNEdge>
+      <!-- f2: setup -> outerFork -->
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="300" y="350" />
+        <di:waypoint x="370" y="350" />
+      </bpmndi:BPMNEdge>
+      <!-- outerCondA: outerFork -> innerFork (up) -->
+      <bpmndi:BPMNEdge id="outerCondA_di" bpmnElement="outerCondA">
+        <di:waypoint x="395" y="325" />
+        <di:waypoint x="395" y="200" />
+        <di:waypoint x="510" y="200" />
+      </bpmndi:BPMNEdge>
+      <!-- outerCondB: outerFork -> branchB (down) -->
+      <bpmndi:BPMNEdge id="outerCondB_di" bpmnElement="outerCondB">
+        <di:waypoint x="395" y="375" />
+        <di:waypoint x="395" y="500" />
+        <di:waypoint x="640" y="500" />
+      </bpmndi:BPMNEdge>
+      <!-- innerCondA1: innerFork -> branchA1 (up) -->
+      <bpmndi:BPMNEdge id="innerCondA1_di" bpmnElement="innerCondA1">
+        <di:waypoint x="535" y="175" />
+        <di:waypoint x="535" y="100" />
+        <di:waypoint x="640" y="100" />
+      </bpmndi:BPMNEdge>
+      <!-- innerCondA2: innerFork -> branchA2 (down) -->
+      <bpmndi:BPMNEdge id="innerCondA2_di" bpmnElement="innerCondA2">
+        <di:waypoint x="535" y="225" />
+        <di:waypoint x="535" y="300" />
+        <di:waypoint x="640" y="300" />
+      </bpmndi:BPMNEdge>
+      <!-- f3: branchA1 -> innerJoin -->
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="740" y="100" />
+        <di:waypoint x="835" y="100" />
+        <di:waypoint x="835" y="175" />
+      </bpmndi:BPMNEdge>
+      <!-- f4: branchA2 -> innerJoin -->
+      <bpmndi:BPMNEdge id="f4_di" bpmnElement="f4">
+        <di:waypoint x="740" y="300" />
+        <di:waypoint x="835" y="300" />
+        <di:waypoint x="835" y="225" />
+      </bpmndi:BPMNEdge>
+      <!-- f5: innerJoin -> afterInnerJoin -->
+      <bpmndi:BPMNEdge id="f5_di" bpmnElement="f5">
+        <di:waypoint x="860" y="200" />
+        <di:waypoint x="920" y="200" />
+      </bpmndi:BPMNEdge>
+      <!-- f6: afterInnerJoin -> outerJoin -->
+      <bpmndi:BPMNEdge id="f6_di" bpmnElement="f6">
+        <di:waypoint x="1020" y="200" />
+        <di:waypoint x="1115" y="200" />
+        <di:waypoint x="1115" y="325" />
+      </bpmndi:BPMNEdge>
+      <!-- f7: branchB -> outerJoin -->
+      <bpmndi:BPMNEdge id="f7_di" bpmnElement="f7">
+        <di:waypoint x="740" y="500" />
+        <di:waypoint x="1115" y="500" />
+        <di:waypoint x="1115" y="375" />
+      </bpmndi:BPMNEdge>
+      <!-- f8: outerJoin -> end -->
+      <bpmndi:BPMNEdge id="f8_di" bpmnElement="f8">
+        <di:waypoint x="1140" y="350" />
+        <di:waypoint x="1210" y="350" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>
