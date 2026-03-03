@@ -35,6 +35,7 @@ builder.AddProject<Projects.Fleans_Mcp>("fleans-mcp")
     .WithReference(orleans.AsClient())
     .WaitFor(fleansSilo)
     .WithEnvironment("FLEANS_SQLITE_CONNECTION", sqliteConnectionString)
+    .WithHttpEndpoint(port: 5200, name: "mcp")
     .WithReplicas(1);
 
 using var app = builder.Build();
