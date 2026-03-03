@@ -287,10 +287,24 @@ public partial class WorkflowInstance
 
         if (isDecisionMade)
         {
-            if (result)
-                LogGatewayShortCircuited(activityId, conditionSequenceId);
+            if (gateway is InclusiveGateway)
+            {
+                var sequences = await GetConditionSequenceStates();
+                var instanceId = entry.ActivityInstanceId;
+                var trueCount = sequences.TryGetValue(instanceId, out var seqs)
+                    ? seqs.Count(s => s.Result) : 0;
+                if (trueCount > 0)
+                    LogInclusiveGatewayAllConditionsEvaluated(activityId, trueCount);
+                else
+                    LogGatewayTakingDefaultFlow(activityId);
+            }
             else
-                LogGatewayTakingDefaultFlow(activityId);
+            {
+                if (result)
+                    LogGatewayShortCircuited(activityId, conditionSequenceId);
+                else
+                    LogGatewayTakingDefaultFlow(activityId);
+            }
 
             LogGatewayAutoCompleting(activityId);
             await activityInstance.Complete();

@@ -38,3 +38,23 @@ Tests that when all conditions evaluate to false, the default flow is taken and 
 - [ ] `highTask` and `lowTask` do NOT appear in completed activities
 - [ ] Variables: `path` = `"default"`
 - [ ] BPMN canvas highlights the default flow path
+
+---
+
+## Scenario 14c: Nested inclusive gateways (nested-inclusive.bpmn)
+
+Tests that an inner inclusive fork/join pair inside an outer inclusive branch correctly propagates and restores tokens across nesting levels.
+
+### Prerequisites
+- Aspire stack running
+
+### Steps
+1. Deploy `nested-inclusive.bpmn`
+2. Start an instance of `nested-inclusive-gateway`
+
+### Expected
+- [ ] Instance status: **Completed**
+- [ ] Completed activities include: start, setup, outerFork, innerFork, branchA1, branchA2, innerJoin, afterInnerJoin, branchB, outerJoin, end
+- [ ] Inner join waits for both inner branches before proceeding to afterInnerJoin
+- [ ] Outer join waits for both outer branches (afterInnerJoin + branchB) before proceeding to end
+- [ ] BPMN canvas highlights all paths through both gateway levels

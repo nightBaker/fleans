@@ -127,40 +127,6 @@ public class InclusiveGatewayTests : WorkflowTestBase
     }
 
     [TestMethod]
-    public async Task InclusiveGateway_NoShortCircuit_WaitsForAllConditions()
-    {
-        // Arrange — use non-"true" expressions so auto-evaluator returns false for all
-        // Then manually evaluate one as true — gateway should NOT complete
-        var workflow = CreateInclusiveWorkflow(
-            task1Condition: "pending1", task2Condition: "pending2", task3Condition: "pending3");
-        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
-
-        // Wait for auto-evaluator to process all conditions (all evaluate to false → all evaluated)
-        var instanceId = workflowInstance.GetPrimaryKey();
-        var snapshot = await WaitForCondition(instanceId,
-            s => !s.ActiveActivities.Any(a => a.ActivityId == "fork"));
-
-        // Assert — since all conditions are false, the gateway should have completed
-        // via the all-false path. But there's no default flow, so it should have thrown.
-        // Let's use a different approach: manually evaluate just one condition and verify
-        // the gateway doesn't short-circuit like ExclusiveGateway would.
-
-        // Actually, the auto-evaluator will evaluate all 3 as false and try to complete.
-        // Without a default flow, it will throw an exception (caught by handler, which fails the activity).
-        // This test is better verified by the domain unit tests (which already test SetConditionResult).
-        // Let's verify the behavior differently: use 2 "true" + 1 "false" and confirm
-        // the fork doesn't complete until all conditions are evaluated.
-
-        // This behavior is already proven by the 2-of-3 test above (handler evaluates all 3 conditions
-        // before the gateway transitions). The domain-level unit test
-        // SetConditionResult_ShouldNotShortCircuit_WhenFirstConditionIsTrue explicitly verifies this.
-        // Mark this test as confirming the domain behavior at integration level.
-        Assert.IsTrue(true, "No-short-circuit behavior verified by domain tests and 2-of-3 integration test");
-    }
-
-    [TestMethod]
     public async Task InclusiveGateway_Nested_InnerForkJoinInsideOuterBranch()
     {
         // Arrange: start → outerFork → [branchA: innerFork → t1/t2 → innerJoin → taskA] / [branchB: taskB] → outerJoin → end

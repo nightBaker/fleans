@@ -198,7 +198,7 @@ public class WorkflowInstanceState
 
     public GatewayForkState CreateGatewayFork(Guid forkInstanceId, Guid? consumedTokenId)
     {
-        var fork = new GatewayForkState(forkInstanceId, consumedTokenId);
+        var fork = new GatewayForkState(forkInstanceId, consumedTokenId, Id);
         GatewayForks.Add(fork);
         return fork;
     }

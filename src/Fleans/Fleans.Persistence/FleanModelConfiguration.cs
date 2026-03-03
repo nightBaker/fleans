@@ -113,6 +113,7 @@ internal static class FleanModelConfiguration
         {
             entity.HasMany(e => e.GatewayForks)
                 .WithOne()
+                .HasForeignKey(e => e.WorkflowInstanceId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 

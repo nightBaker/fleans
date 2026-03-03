@@ -28,8 +28,11 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1007, Level = LogLevel.Debug, Message = "Gateway {ActivityId} decision made, auto-completing and resuming workflow")]
     private partial void LogGatewayAutoCompleting(string activityId);
 
-    [LoggerMessage(EventId = 1008, Level = LogLevel.Debug, Message = "Gateway {ActivityId} short-circuited: condition {ConditionSequenceFlowId} is true")]
+    [LoggerMessage(EventId = 1008, Level = LogLevel.Debug, Message = "Exclusive gateway {ActivityId} short-circuited: condition {ConditionSequenceFlowId} is true")]
     private partial void LogGatewayShortCircuited(string activityId, string conditionSequenceFlowId);
+
+    [LoggerMessage(EventId = 1052, Level = LogLevel.Debug, Message = "Inclusive gateway {ActivityId} all conditions evaluated, proceeding with {TrueCount} active branch(es)")]
+    private partial void LogInclusiveGatewayAllConditionsEvaluated(string activityId, int trueCount);
 
     [LoggerMessage(EventId = 1009, Level = LogLevel.Debug, Message = "Gateway {ActivityId} all conditions false, taking default flow")]
     private partial void LogGatewayTakingDefaultFlow(string activityId);
