@@ -360,6 +360,7 @@ marker[id*="conditional"] path {
     display: flex;
     flex: 1;
     min-height: 0;
+    width: 100%;
 }
 
 .instance-main {
