@@ -96,6 +96,7 @@ public class WorkflowInstanceState
         if (IsCompleted)
             throw new InvalidOperationException("Workflow is already completed");
 
+        GatewayForks.Clear();
         CompletedAt = DateTimeOffset.UtcNow;
         IsCompleted = true;
     }
