@@ -155,4 +155,24 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1046, Level = LogLevel.Debug,
         Message = "Stale callback ignored for activity {ActivityId} ({ActivityInstanceId}) — {CallbackType} arrived after entry was already completed")]
     private partial void LogStaleCallbackIgnored(string activityId, Guid activityInstanceId, string callbackType);
+
+    [LoggerMessage(EventId = 1047, Level = LogLevel.Information,
+        Message = "Inclusive fork '{ActivityId}': created token {TokenId} for branch")]
+    private partial void LogTokenCreated(string activityId, Guid tokenId);
+
+    [LoggerMessage(EventId = 1048, Level = LogLevel.Debug,
+        Message = "Token {TokenId} inherited by activity '{ActivityId}'")]
+    private partial void LogTokenInherited(Guid tokenId, string activityId);
+
+    [LoggerMessage(EventId = 1049, Level = LogLevel.Information,
+        Message = "Token {TokenId} restored after join '{ActivityId}' (from fork {ForkInstanceId})")]
+    private partial void LogTokenRestored(Guid tokenId, string activityId, Guid forkInstanceId);
+
+    [LoggerMessage(EventId = 1050, Level = LogLevel.Information,
+        Message = "Gateway fork state created: forkInstanceId={ForkInstanceId}, consumedToken={ConsumedTokenId}")]
+    private partial void LogGatewayForkStateCreated(Guid forkInstanceId, Guid? consumedTokenId);
+
+    [LoggerMessage(EventId = 1051, Level = LogLevel.Information,
+        Message = "Gateway fork state removed: forkInstanceId={ForkInstanceId}")]
+    private partial void LogGatewayForkStateRemoved(Guid forkInstanceId);
 }

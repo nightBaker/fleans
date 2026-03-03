@@ -178,9 +178,11 @@ public partial class WorkflowInstance
 
     private async Task<ActivityInstanceEntry> CreateNextActivityEntry(
         Activity sourceActivity, IActivityInstanceGrain sourceInstance,
-        Activity nextActivity, Guid? scopeId)
+        Activity nextActivity, Guid? scopeId, Guid sourceActivityInstanceId)
     {
         var sourceVariablesId = await sourceInstance.GetVariablesStateId();
+
+        // Domain decides variable cloning behavior
         var variablesId = sourceActivity is Gateway { ClonesVariablesOnFork: true }
             ? State.AddCloneOfVariableState(sourceVariablesId)
             : sourceVariablesId;
@@ -190,6 +192,50 @@ public partial class WorkflowInstance
         var newInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(newId);
         await newInstance.SetVariablesId(variablesId);
         await newInstance.SetActivity(nextActivity.ActivityId, nextActivity.GetType().Name);
+
+        // Token propagation
+        if (sourceActivity is Gateway { CreatesNewTokensOnFork: true })
+        {
+            var sourceTokenId = await sourceInstance.GetTokenId();
+            var newTokenId = Guid.NewGuid();
+            await newInstance.SetTokenId(newTokenId);
+
+            var forkState = State.GatewayForks.FirstOrDefault(
+                f => f.ForkInstanceId == sourceActivityInstanceId);
+            if (forkState == null)
+            {
+                forkState = State.CreateGatewayFork(sourceActivityInstanceId, sourceTokenId);
+                LogGatewayForkStateCreated(sourceActivityInstanceId, sourceTokenId);
+            }
+            forkState.CreatedTokenIds.Add(newTokenId);
+            LogTokenCreated(sourceActivity.ActivityId, newTokenId);
+        }
+        else
+        {
+            // Inherit source's token
+            var sourceTokenId = await sourceInstance.GetTokenId();
+            if (sourceTokenId.HasValue)
+            {
+                await newInstance.SetTokenId(sourceTokenId.Value);
+                LogTokenInherited(sourceTokenId.Value, nextActivity.ActivityId);
+            }
+
+            // Restore parent token after join completion
+            if (sourceActivity is Gateway gw)
+            {
+                var forkState = sourceTokenId.HasValue
+                    ? State.FindForkByToken(sourceTokenId.Value)
+                    : null;
+                var restoredToken = gw.GetRestoredTokenAfterJoin(forkState);
+                if (restoredToken.HasValue)
+                {
+                    await newInstance.SetTokenId(restoredToken.Value);
+                    State.RemoveGatewayFork(forkState!.ForkInstanceId);
+                    LogTokenRestored(restoredToken.Value, nextActivity.ActivityId, forkState.ForkInstanceId);
+                    LogGatewayForkStateRemoved(forkState.ForkInstanceId);
+                }
+            }
+        }
 
         return new ActivityInstanceEntry(newId, nextActivity.ActivityId, State.Id, scopeId);
     }
@@ -236,7 +282,7 @@ public partial class WorkflowInstance
                         }
                     }
 
-                    var newEntry = await CreateNextActivityEntry(currentActivity, activityInstance, nextActivity, entry.ScopeId);
+                    var newEntry = await CreateNextActivityEntry(currentActivity, activityInstance, nextActivity, entry.ScopeId, entry.ActivityInstanceId);
                     newActiveEntries.Add(newEntry);
                 }
             }
@@ -299,7 +345,7 @@ public partial class WorkflowInstance
 
                 foreach (var nextActivity in nextActivities)
                 {
-                    var newEntry = await CreateNextActivityEntry(activity, activityInstance, nextActivity, entry.ScopeId);
+                    var newEntry = await CreateNextActivityEntry(activity, activityInstance, nextActivity, entry.ScopeId, entry.ActivityInstanceId);
                     newEntries.Add(newEntry);
                 }
 
@@ -404,7 +450,7 @@ public partial class WorkflowInstance
 
         foreach (var nextActivity in nextActivities)
         {
-            var newEntry = await CreateNextActivityEntry(mi, hostGrain, nextActivity, hostEntry.ScopeId);
+            var newEntry = await CreateNextActivityEntry(mi, hostGrain, nextActivity, hostEntry.ScopeId, hostEntry.ActivityInstanceId);
             newEntries.Add(newEntry);
         }
 
