@@ -8,28 +8,13 @@ namespace Fleans.Domain.Tests;
 [TestClass]
 public class SignalIntermediateThrowEventDomainTests
 {
-    private static WorkflowDefinition CreateDefinitionWithSignal(
-        List<Activity> activities,
-        List<SequenceFlow> sequenceFlows,
-        string signalId = "sig1",
-        string signalName = "order_shipped")
-    {
-        return new WorkflowDefinition
-        {
-            WorkflowId = "test-workflow",
-            Activities = activities,
-            SequenceFlows = sequenceFlows,
-            Signals = [new SignalDefinition(signalId, signalName)]
-        };
-    }
-
     [TestMethod]
     public async Task ExecuteAsync_ShouldThrowSignalCommand_AndComplete()
     {
         // Arrange
         var sigThrow = new SignalIntermediateThrowEvent("sigThrow1", "sig1");
         var end = new EndEvent("end");
-        var definition = CreateDefinitionWithSignal(
+        var definition = ActivityTestHelper.CreateDefinitionWithSignal(
             [sigThrow, end],
             [new SequenceFlow("seq1", sigThrow, end)]);
         var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
@@ -54,7 +39,7 @@ public class SignalIntermediateThrowEventDomainTests
         // Arrange
         var sigThrow = new SignalIntermediateThrowEvent("sigThrow1", "sig1");
         var end = new EndEvent("end");
-        var definition = CreateDefinitionWithSignal(
+        var definition = ActivityTestHelper.CreateDefinitionWithSignal(
             [sigThrow, end],
             [new SequenceFlow("seq1", sigThrow, end)]);
         var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
@@ -73,7 +58,7 @@ public class SignalIntermediateThrowEventDomainTests
     {
         // Arrange
         var sigThrow = new SignalIntermediateThrowEvent("sigThrow1", "sig1");
-        var definition = CreateDefinitionWithSignal([sigThrow], []);
+        var definition = ActivityTestHelper.CreateDefinitionWithSignal([sigThrow], []);
         var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("sigThrow1");
 
