@@ -98,6 +98,24 @@ internal static class FleanModelConfiguration
             entity.Property(e => e.ConditionalSequenceFlowId).HasMaxLength(256);
         });
 
+        modelBuilder.Entity<GatewayForkState>(entity =>
+        {
+            entity.ToTable("GatewayForks");
+            entity.HasKey(e => e.ForkInstanceId);
+
+            entity.Property(e => e.CreatedTokenIds)
+                .HasConversion(
+                    v => JsonConvert.SerializeObject(v),
+                    v => JsonConvert.DeserializeObject<List<Guid>>(v) ?? new List<Guid>());
+        });
+
+        modelBuilder.Entity<WorkflowInstanceState>(entity =>
+        {
+            entity.HasMany(e => e.GatewayForks)
+                .WithOne()
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
         modelBuilder.Entity<TimerStartEventSchedulerState>(entity =>
         {
             entity.ToTable("TimerSchedulers");
