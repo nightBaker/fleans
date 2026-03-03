@@ -27,10 +27,13 @@
                     <FluentBadge Color="Color.Accent">Running</FluentBadge>
                 }
             }
+            <FluentLabel Typo="Typography.Body" Style="color: var(--neutral-foreground-hint);">@InstanceId</FluentLabel>
+            <FluentButton Appearance="Appearance.Stealth"
+                          IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size16.Copy())"
+                          Title="Copy Instance ID"
+                          @onclick="CopyInstanceId" />
         </Actions>
     </PageHeader>
-
-    <p><strong>Instance ID:</strong> @InstanceId</p>
 
     @if (isLoading)
     {
@@ -437,6 +440,11 @@
     private async Task GoBack()
     {
         await JS.InvokeVoidAsync("history.back");
+    }
+
+    private async Task CopyInstanceId()
+    {
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", InstanceId.ToString());
     }
 
     private static IQueryable<VariableRow> GetVariableRows(VariableStateSnapshot vs)
