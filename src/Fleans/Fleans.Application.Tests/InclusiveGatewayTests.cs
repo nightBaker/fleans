@@ -160,6 +160,73 @@ public class InclusiveGatewayTests : WorkflowTestBase
         Assert.IsTrue(true, "No-short-circuit behavior verified by domain tests and 2-of-3 integration test");
     }
 
+    [TestMethod]
+    public async Task InclusiveGateway_Nested_InnerForkJoinInsideOuterBranch()
+    {
+        // Arrange: start → outerFork → [branchA: innerFork → t1/t2 → innerJoin → taskA] / [branchB: taskB] → outerJoin → end
+        var start = new StartEvent("start");
+        var outerFork = new InclusiveGateway("outerFork", IsFork: true);
+        var innerFork = new InclusiveGateway("innerFork", IsFork: true);
+        var t1 = new TaskActivity("t1");
+        var t2 = new TaskActivity("t2");
+        var innerJoin = new InclusiveGateway("innerJoin", IsFork: false);
+        var taskA = new TaskActivity("taskA");
+        var taskB = new TaskActivity("taskB");
+        var outerJoin = new InclusiveGateway("outerJoin", IsFork: false);
+        var end = new EndEvent("end");
+
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "nested-inclusive-test",
+            Activities = [start, outerFork, innerFork, t1, t2, innerJoin, taskA, taskB, outerJoin, end],
+            SequenceFlows =
+            [
+                new SequenceFlow("s0", start, outerFork),
+                new ConditionalSequenceFlow("s_branchA", outerFork, innerFork, "true"),
+                new ConditionalSequenceFlow("s_branchB", outerFork, taskB, "true"),
+                new ConditionalSequenceFlow("s_t1", innerFork, t1, "true"),
+                new ConditionalSequenceFlow("s_t2", innerFork, t2, "true"),
+                new SequenceFlow("s_ij1", t1, innerJoin),
+                new SequenceFlow("s_ij2", t2, innerJoin),
+                new SequenceFlow("s_taskA", innerJoin, taskA),
+                new SequenceFlow("s_oj1", taskA, outerJoin),
+                new SequenceFlow("s_oj2", taskB, outerJoin),
+                new SequenceFlow("s_end", outerJoin, end)
+            ]
+        };
+
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await workflowInstance.SetWorkflow(workflow);
+        await workflowInstance.StartWorkflow();
+
+        var instanceId = workflowInstance.GetPrimaryKey();
+
+        // Wait for inner fork + outer branch tasks to become active
+        // We expect t1, t2 (inner fork branches) and taskB (outer branch)
+        var snapshot = await WaitForCondition(instanceId,
+            s => s.ActiveActivities.Count(a => a.ActivityType == "TaskActivity") >= 3);
+
+        Assert.IsTrue(snapshot.ActiveActivities.Any(a => a.ActivityId == "t1"));
+        Assert.IsTrue(snapshot.ActiveActivities.Any(a => a.ActivityId == "t2"));
+        Assert.IsTrue(snapshot.ActiveActivities.Any(a => a.ActivityId == "taskB"));
+
+        // Complete inner tasks — inner join should complete, taskA becomes active
+        await workflowInstance.CompleteActivity("t1", new ExpandoObject());
+        await workflowInstance.CompleteActivity("t2", new ExpandoObject());
+
+        snapshot = await WaitForCondition(instanceId,
+            s => s.ActiveActivities.Any(a => a.ActivityId == "taskA"));
+
+        // Complete taskA and taskB
+        await workflowInstance.CompleteActivity("taskA", new ExpandoObject());
+        await workflowInstance.CompleteActivity("taskB", new ExpandoObject());
+
+        // Outer join should complete, workflow finishes
+        snapshot = await WaitForCondition(instanceId, s => s.IsCompleted);
+        Assert.IsTrue(snapshot.IsCompleted);
+        CollectionAssert.Contains(snapshot.CompletedActivityIds, "end");
+    }
+
     // --- Helper methods ---
 
     /// <summary>
