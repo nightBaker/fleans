@@ -69,7 +69,7 @@ public class WorkflowQueryService : IWorkflowQueryService
         var variableStates = state.VariableStates.Select(vs =>
         {
             var dict = ((IDictionary<string, object>)vs.Variables)
-                .ToDictionary(e => e.Key, e => e.Value?.ToString() ?? "");
+                .ToDictionary(e => e.Key, e => FormatVariableValue(e.Value));
             return new VariableStateSnapshot(vs.Id, dict);
         }).ToList();
 
@@ -202,6 +202,14 @@ public class WorkflowQueryService : IWorkflowQueryService
             null, null, null,
             entry.ChildWorkflowInstanceId);
     }
+
+    private static string FormatVariableValue(object? value) => value switch
+    {
+        null => "",
+        string s => s,
+        IList<object> or IDictionary<string, object> => JsonConvert.SerializeObject(value, Formatting.None),
+        _ => value.ToString() ?? ""
+    };
 
     private static ConditionSequenceSnapshot ToConditionSnapshot(
         ConditionSequenceState cs,
