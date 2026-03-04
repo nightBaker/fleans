@@ -5,12 +5,11 @@ using System.Runtime.CompilerServices;
 namespace Fleans.Domain.Activities;
 
 [GenerateSerializer]
-// TODO: Support non-interrupting boundary timer events (cancelActivity=false).
-// Requires keeping the host activity active and running the boundary path in parallel.
 public record BoundaryTimerEvent(
     string ActivityId,
     [property: Id(1)] string AttachedToActivityId,
-    [property: Id(2)] TimerDefinition TimerDefinition) : Activity(ActivityId)
+    [property: Id(2)] TimerDefinition TimerDefinition,
+    [property: Id(3)] bool IsInterrupting = true) : Activity(ActivityId)
 {
     internal override async Task<List<IExecutionCommand>> ExecuteAsync(
         IWorkflowExecutionContext workflowContext,
