@@ -59,4 +59,18 @@ public class SignalBoundaryEventDomainTests
         Assert.AreEqual("task1", boundary.AttachedToActivityId);
         Assert.AreEqual("sig_order", boundary.SignalDefinitionId);
     }
+
+    [TestMethod]
+    public void SignalBoundaryEvent_IsInterrupting_DefaultsToTrue()
+    {
+        var boundary = new SignalBoundaryEvent("bsig1", "task1", "sig1");
+        Assert.IsTrue(boundary.IsInterrupting);
+    }
+
+    [TestMethod]
+    public void SignalBoundaryEvent_IsInterrupting_CanBeSetToFalse()
+    {
+        var boundary = new SignalBoundaryEvent("bsig1", "task1", "sig1", IsInterrupting: false);
+        Assert.IsFalse(boundary.IsInterrupting);
+    }
 }
