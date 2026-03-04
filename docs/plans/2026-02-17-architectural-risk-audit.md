@@ -158,6 +158,7 @@ Each item solves exactly one problem. Items within a phase may depend on earlier
 
 - [x] **3.1 — Token propagation**: Add a `TokenId` concept to `ActivityInstanceEntry`. When a gateway forks, it assigns token IDs to each branch. Join gateway counts arrived tokens. *Done.*
 - [x] **3.2 — Inclusive Gateway**: Fork evaluates all conditions, activates 1..N matching flows (each with a token). Join waits for exactly the number of tokens that were actually created. *Done.*
+- [x] **3.3 — ParallelGateway token migration**: ParallelGateway migrated from static graph-analysis join (`AllIncomingPathsCompleted`) to token-based join (`AllExpectedTokensArrived`) via shared `ForkJoinGateway` base class. *Done.*
 
 ### Phase 4: Non-Interrupting & Compensation (A4)
 
