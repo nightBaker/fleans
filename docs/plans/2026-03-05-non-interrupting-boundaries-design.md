@@ -108,6 +108,30 @@ fire → DO NOT cancel → DO NOT unregister others → clone variable scope →
 ### Manual test fixtures:
 Add BPMN files and test plans to `tests/manual/15-non-interrupting-boundaries/`.
 
+## Web UI Changes (Fleans.Web)
+
+The management Web UI needs to support `IsInterrupting` and timer cycle for boundary events.
+
+### BPMN Editor (`bpmnEditor.js`)
+
+1. `_extractElementData()` — add `isInterrupting` field. For boundary events, read `bo.cancelActivity` (default `true`).
+2. `updateElementProperty()` — add `cancelActivity` case that uses `modeling.updateProperties(element, { cancelActivity: value })`.
+
+### Boundary Event Context Pad (`boundaryEventContextPad.js`)
+
+Currently hardcodes `cancelActivity: true` on line 92. No change needed here — new boundary events default to interrupting, which is correct. The user toggles it via the properties panel after creation.
+
+### Element Properties Panel (`ElementPropertiesPanel.razor`)
+
+1. Add `bool IsInterrupting` property to `BpmnElementData` class (default `true`).
+2. Add `isInterrupting` local field and sync in `SyncFromElement()`.
+3. Add `FluentCheckbox` for "Interrupting" when element type is `bpmn:BoundaryEvent`. Display before the timer/message/signal sections.
+4. On change, call `bpmnEditor.updateElementProperty(elementId, "cancelActivity", value)`.
+
+### BPMN Viewer (`bpmnViewer.js`)
+
+`getElementProperties()` — add `isInterrupting` field. For boundary events, read `bo.cancelActivity` (default `true`).
+
 ## Files to Modify
 
 - `Fleans.Domain/Activities/BoundaryTimerEvent.cs` — add `IsInterrupting`
@@ -120,3 +144,6 @@ Add BPMN files and test plans to `tests/manual/15-non-interrupting-boundaries/`.
 - `Fleans.Application/Grains/TimerCallbackGrain.cs` — cycle timer re-registration
 - `Fleans.Domain.Tests/` — new test classes for non-interrupting boundaries
 - `tests/manual/15-non-interrupting-boundaries/` — BPMN fixtures and test plan
+- `Fleans.Web/wwwroot/js/bpmnEditor.js` — extract and update `cancelActivity`
+- `Fleans.Web/wwwroot/js/bpmnViewer.js` — extract `cancelActivity` for read-only view
+- `Fleans.Web/Components/Pages/ElementPropertiesPanel.razor` — IsInterrupting checkbox UI

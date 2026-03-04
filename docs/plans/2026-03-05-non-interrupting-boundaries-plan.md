@@ -721,7 +721,121 @@ git commit -m "test: manual test fixtures for non-interrupting boundary events"
 
 ---
 
-### Task 9: Update architecture audit
+### Task 9: Web UI support for IsInterrupting
+
+**Files:**
+- Modify: `src/Fleans/Fleans.Web/wwwroot/js/bpmnEditor.js`
+- Modify: `src/Fleans/Fleans.Web/wwwroot/js/bpmnViewer.js`
+- Modify: `src/Fleans/Fleans.Web/Components/Pages/ElementPropertiesPanel.razor`
+
+**Step 1: Add `isInterrupting` to `_extractElementData` in `bpmnEditor.js`**
+
+In the `data` object initialization (line 45-64), add `isInterrupting` field. Then after the existing event definition parsing block, add boundary event detection:
+
+```javascript
+// Add to initial data object:
+isInterrupting: true,
+
+// After the event definitions parsing block (after line 134), add:
+if (bo.$type === 'bpmn:BoundaryEvent') {
+    data.isInterrupting = bo.cancelActivity !== false;
+}
+```
+
+**Step 2: Add `cancelActivity` case to `updateElementProperty` in `bpmnEditor.js`**
+
+In the `updateElementProperty` function (line 165), add a case for `cancelActivity` before the `else` block:
+
+```javascript
+} else if (propertyName === 'cancelActivity') {
+    props.cancelActivity = value;
+```
+
+**Step 3: Add `isInterrupting` to `getElementProperties` in `bpmnViewer.js`**
+
+In the `data` object initialization (line 287-300), add:
+
+```javascript
+isInterrupting: true,
+```
+
+After the event definitions parsing block (after line 330), add:
+
+```javascript
+if (bo.$type === 'bpmn:BoundaryEvent') {
+    data.isInterrupting = bo.cancelActivity !== false;
+}
+```
+
+**Step 4: Add `IsInterrupting` to `BpmnElementData` in `ElementPropertiesPanel.razor`**
+
+Add property to the class (after line 504):
+
+```csharp
+public bool IsInterrupting { get; set; } = true;
+```
+
+**Step 5: Add local field and sync in `ElementPropertiesPanel.razor`**
+
+Add field with the other local fields (after `private string signalName`):
+
+```csharp
+private bool isInterrupting = true;
+```
+
+In `SyncFromElement()`, add:
+
+```csharp
+isInterrupting = Element.IsInterrupting;
+```
+
+**Step 6: Add IsInterrupting checkbox UI in `ElementPropertiesPanel.razor`**
+
+Add before the `@if (HasTimer)` block (before line 126):
+
+```razor
+@if (IsBoundaryEvent)
+{
+    <div>
+        <FluentCheckbox Value="@isInterrupting" @onchange="OnIsInterruptingChange"
+                        Disabled="@ReadOnly" Label="Interrupting (cancels attached activity)" />
+    </div>
+}
+```
+
+**Step 7: Add helper property and change handler**
+
+Add with the other helper properties:
+
+```csharp
+private bool IsBoundaryEvent => Element.Type == "bpmn:BoundaryEvent";
+```
+
+Add change handler method:
+
+```csharp
+private async Task OnIsInterruptingChange(ChangeEventArgs e)
+{
+    isInterrupting = bool.TryParse(e.Value?.ToString(), out var v) && v;
+    await JS.InvokeVoidAsync("bpmnEditor.updateElementProperty", Element.Id, "cancelActivity", isInterrupting);
+}
+```
+
+**Step 8: Build and verify**
+
+Run: `dotnet build` from `src/Fleans/`
+Expected: Build succeeds
+
+**Step 9: Commit**
+
+```bash
+git add src/Fleans/Fleans.Web/wwwroot/js/bpmnEditor.js src/Fleans/Fleans.Web/wwwroot/js/bpmnViewer.js src/Fleans/Fleans.Web/Components/Pages/ElementPropertiesPanel.razor
+git commit -m "feat: Web UI support for IsInterrupting on boundary events"
+```
+
+---
+
+### Task 10: Update architecture audit
 
 **Files:**
 - Modify: `docs/plans/2026-02-17-architectural-risk-audit.md`
@@ -730,7 +844,7 @@ git commit -m "test: manual test fixtures for non-interrupting boundary events"
 
 Change the checklist item:
 ```markdown
-- [x] **4.1 — Non-interrupting boundary events**: Added `IsInterrupting` flag to boundary events. Non-interrupting boundaries skip cancellation, clone variable scope, and spawn parallel branch. Timer cycle support for repeating non-interrupting timers. *Done.*
+- [x] **4.1 — Non-interrupting boundary events**: Added `IsInterrupting` flag to boundary events. Non-interrupting boundaries skip cancellation, clone variable scope, and spawn parallel branch. Timer cycle support for repeating non-interrupting timers. Web UI support for IsInterrupting toggle. *Done.*
 ```
 
 **Step 2: Commit**
