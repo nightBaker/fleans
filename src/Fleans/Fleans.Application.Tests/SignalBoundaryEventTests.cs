@@ -116,6 +116,67 @@ public class SignalBoundaryEventTests : WorkflowTestBase
     }
 
     [TestMethod]
+    public async Task NonInterruptingBoundarySignal_AttachedActivityContinues()
+    {
+        // Arrange — Start → Task(+NonInterruptingBoundarySignal) → End, BoundarySignal → afterSig → SigEnd
+        var start = new StartEvent("start");
+        var task = new TaskActivity("task1");
+        var signalDef = new SignalDefinition("sig1", "cancelOrder");
+        var boundarySignal = new SignalBoundaryEvent("bsig1", "task1", "sig1", IsInterrupting: false);
+        var end = new EndEvent("end");
+        var afterSig = new TaskActivity("afterSig");
+        var sigEnd = new EndEvent("sigEnd");
+
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "ni-signal-boundary-test",
+            Activities = [start, task, boundarySignal, end, afterSig, sigEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("f1", start, task),
+                new SequenceFlow("f2", task, end),
+                new SequenceFlow("f3", boundarySignal, afterSig),
+                new SequenceFlow("f4", afterSig, sigEnd)
+            ],
+            Signals = [signalDef]
+        };
+
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await workflowInstance.SetWorkflow(workflow);
+        await workflowInstance.StartWorkflow();
+
+        // Verify task is active
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var preSnapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsTrue(preSnapshot!.ActiveActivities.Any(a => a.ActivityId == "task1"),
+            "Task should be active");
+
+        // Act — broadcast signal (non-interrupting)
+        var signalGrain = Cluster.GrainFactory.GetGrain<ISignalCorrelationGrain>("cancelOrder");
+        var deliveredCount = await signalGrain.BroadcastSignal();
+
+        // Assert — task1 should still be active (NOT cancelled)
+        Assert.AreEqual(1, deliveredCount, "Signal should be delivered to one subscriber");
+        var midSnapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsFalse(midSnapshot!.IsCompleted, "Workflow should not be completed yet");
+        Assert.IsTrue(midSnapshot.ActiveActivities.Any(a => a.ActivityId == "task1"),
+            "task1 should still be active after non-interrupting signal");
+        Assert.IsTrue(midSnapshot.ActiveActivities.Any(a => a.ActivityId == "afterSig"),
+            "afterSig should be active on boundary path");
+        Assert.IsFalse(midSnapshot.CompletedActivities.Any(a => a.ActivityId == "task1" && a.IsCancelled),
+            "task1 should NOT be cancelled");
+
+        // Complete the attached activity normally
+        await workflowInstance.CompleteActivity("task1", new ExpandoObject());
+
+        // Assert: workflow completed
+        var finalSnapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsTrue(finalSnapshot!.IsCompleted, "Workflow should be completed");
+        var task1Entry = finalSnapshot.CompletedActivities.First(a => a.ActivityId == "task1");
+        Assert.IsFalse(task1Entry.IsCancelled, "task1 should NOT be cancelled");
+    }
+
+    [TestMethod]
     public async Task BoundarySignal_StaleSignal_ShouldBeSilentlyIgnored()
     {
         // Arrange — Start → Task(+BoundarySignal) → End, BoundarySignal → SigEnd

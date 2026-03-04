@@ -122,6 +122,70 @@ public class MessageBoundaryEventTests : WorkflowTestBase
     }
 
     [TestMethod]
+    public async Task NonInterruptingBoundaryMessage_AttachedActivityContinues()
+    {
+        // Arrange — Start → Task(+NonInterruptingBoundaryMessage) → End, BoundaryMsg → afterMsg → MsgEnd
+        var start = new StartEvent("start");
+        var task = new TaskActivity("task1");
+        var msgDef = new MessageDefinition("msg1", "cancelOrder", "orderId");
+        var boundaryMsg = new MessageBoundaryEvent("bmsg1", "task1", "msg1", IsInterrupting: false);
+        var end = new EndEvent("end");
+        var afterMsg = new TaskActivity("afterMsg");
+        var msgEnd = new EndEvent("msgEnd");
+
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "ni-msg-boundary-test",
+            Activities = [start, task, boundaryMsg, end, afterMsg, msgEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("f1", start, task),
+                new SequenceFlow("f2", task, end),
+                new SequenceFlow("f3", boundaryMsg, afterMsg),
+                new SequenceFlow("f4", afterMsg, msgEnd)
+            ],
+            Messages = [msgDef]
+        };
+
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await workflowInstance.SetWorkflow(workflow);
+        dynamic initVars = new ExpandoObject();
+        initVars.orderId = "order-ni-msg";
+        await workflowInstance.SetInitialVariables(initVars);
+        await workflowInstance.StartWorkflow();
+
+        // Verify task is active
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var preSnapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsTrue(preSnapshot!.ActiveActivities.Any(a => a.ActivityId == "task1"),
+            "Task should be active");
+
+        // Act — deliver boundary message (non-interrupting)
+        var correlationGrain = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>("cancelOrder");
+        var delivered = await correlationGrain.DeliverMessage("order-ni-msg", new ExpandoObject());
+
+        // Assert — task1 should still be active (NOT cancelled)
+        Assert.IsTrue(delivered, "Message should be delivered");
+        var midSnapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsFalse(midSnapshot!.IsCompleted, "Workflow should not be completed yet");
+        Assert.IsTrue(midSnapshot.ActiveActivities.Any(a => a.ActivityId == "task1"),
+            "task1 should still be active after non-interrupting message");
+        Assert.IsTrue(midSnapshot.ActiveActivities.Any(a => a.ActivityId == "afterMsg"),
+            "afterMsg should be active on boundary path");
+        Assert.IsFalse(midSnapshot.CompletedActivities.Any(a => a.ActivityId == "task1" && a.IsCancelled),
+            "task1 should NOT be cancelled");
+
+        // Complete the attached activity normally
+        await workflowInstance.CompleteActivity("task1", new ExpandoObject());
+
+        // Workflow may now be completed (task1 → end)
+        var finalSnapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsTrue(finalSnapshot!.IsCompleted, "Workflow should be completed");
+        var task1Entry = finalSnapshot.CompletedActivities.First(a => a.ActivityId == "task1");
+        Assert.IsFalse(task1Entry.IsCancelled, "task1 should NOT be cancelled");
+    }
+
+    [TestMethod]
     public async Task BoundaryMessage_DirectCallAfterCompletion_ShouldBeSilentlyIgnored()
     {
         // Arrange — Start → Task(+BoundaryMessage) → End, BoundaryMessage → MsgEnd
