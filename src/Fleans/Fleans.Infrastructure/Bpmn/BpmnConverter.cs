@@ -370,7 +370,20 @@ public partial class BpmnConverter : IBpmnConverter
 
             // BPMN spec: cancelActivity defaults to true when absent
             var cancelActivityAttr = boundaryEl.Attribute("cancelActivity")?.Value;
-            var isInterrupting = cancelActivityAttr == null || !bool.TryParse(cancelActivityAttr, out var cancelVal) || cancelVal;
+            bool isInterrupting;
+            if (cancelActivityAttr == null)
+            {
+                isInterrupting = true;
+            }
+            else if (!bool.TryParse(cancelActivityAttr, out var cancelVal))
+            {
+                throw new InvalidOperationException(
+                    $"boundaryEvent '{id}' has invalid cancelActivity value '{cancelActivityAttr}', expected 'true' or 'false'");
+            }
+            else
+            {
+                isInterrupting = cancelVal;
+            }
 
             var timerDef = boundaryEl.Element(Bpmn + "timerEventDefinition");
             var errorDef = boundaryEl.Element(Bpmn + "errorEventDefinition");

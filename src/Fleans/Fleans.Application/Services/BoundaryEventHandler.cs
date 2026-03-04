@@ -139,6 +139,9 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
 
     public async Task HandleBoundaryErrorAsync(string activityId, BoundaryErrorEvent boundaryError, Guid activityInstanceId, IWorkflowDefinition definition)
     {
+        if (!boundaryError.IsInterrupting)
+            throw new InvalidOperationException($"Error boundary event '{boundaryError.ActivityId}' must be interrupting per BPMN spec");
+
         LogBoundaryEventTriggered(boundaryError.ActivityId, activityId);
 
         await _accessor.CancelScopeChildren(activityInstanceId);
