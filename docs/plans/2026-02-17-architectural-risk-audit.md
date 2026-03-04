@@ -162,7 +162,7 @@ Each item solves exactly one problem. Items within a phase may depend on earlier
 
 ### Phase 4: Non-Interrupting & Compensation (A4)
 
-- [ ] **4.1 — Non-interrupting boundary events**: Add `IsInterrupting` flag to `BoundaryErrorEvent`. When `false`, the attached activity continues; boundary event spawns a parallel branch. *Problem solved: parallel branch on boundary trigger without killing the source.*
+- [x] **4.1 — Non-interrupting boundary events**: Added `IsInterrupting` flag to all boundary events. Non-interrupting boundaries skip cancellation, clone variable scope, and spawn parallel branch. Timer cycle support for repeating non-interrupting timers. Web UI support for IsInterrupting toggle. *Done.*
 - [ ] **4.2 — Escalation Event**: Non-interrupting boundary event with escalation semantics. Routes to escalation handler while attached activity continues. *Problem solved: escalation notifications without flow interruption.*
 - [ ] **4.3 — Compensation stack**: Track completed activities with compensation handlers in an ordered stack on `WorkflowInstanceState`. *Problem solved: knowing what to undo and in what order.*
 - [ ] **4.4 — Compensation Event + Transaction Sub-Process**: When transaction fails, invoke compensation handlers in reverse from the stack. Requires Phase 2 (Embedded Sub-Process). *Problem solved: transactional rollback of completed work.*
