@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI">
+  <process id="ni-timer-boundary-test" isExecutable="true">
+    <startEvent id="start" />
+    <task id="longTask" />
+    <boundaryEvent id="reminderTimer" attachedToRef="longTask" cancelActivity="false">
+      <timerEventDefinition>
+        <timeDuration>PT5S</timeDuration>
+      </timerEventDefinition>
+    </boundaryEvent>
+    <scriptTask id="sendReminder" scriptFormat="csharp">
+      <script>_context.reminderSent = true</script>
+    </scriptTask>
+    <endEvent id="normalEnd" />
+    <endEvent id="reminderEnd" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="longTask" />
+    <sequenceFlow id="f2" sourceRef="longTask" targetRef="normalEnd" />
+    <sequenceFlow id="f3" sourceRef="reminderTimer" targetRef="sendReminder" />
+    <sequenceFlow id="f4" sourceRef="sendReminder" targetRef="reminderEnd" />
+  </process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="ni-timer-boundary-test">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="180" y="182" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="longTask_di" bpmnElement="longTask">
+        <dc:Bounds x="280" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="reminderTimer_di" bpmnElement="reminderTimer">
+        <dc:Bounds x="312" y="222" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="sendReminder_di" bpmnElement="sendReminder">
+        <dc:Bounds x="440" y="280" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="normalEnd_di" bpmnElement="normalEnd">
+        <dc:Bounds x="482" y="182" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="reminderEnd_di" bpmnElement="reminderEnd">
+        <dc:Bounds x="612" y="302" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="216" y="200" />
+        <di:waypoint x="280" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="380" y="200" />
+        <di:waypoint x="482" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="330" y="258" />
+        <di:waypoint x="330" y="320" />
+        <di:waypoint x="440" y="320" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f4_di" bpmnElement="f4">
+        <di:waypoint x="540" y="320" />
+        <di:waypoint x="612" y="320" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>
