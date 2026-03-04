@@ -4,7 +4,7 @@
 
 **Goal:** Add environment variables that can be configured per-process or globally via the Web admin UI, and are injected as `Env` into workflow variable scope on start.
 
-**Architecture:** A singleton `EnvironmentVariablesGrain` (keyed `0`) holds all env var entries. Each entry has a key, typed value (string/int/float/bool), secret flag, and optional list of process keys. On workflow start, matching variables are merged into the root scope as `Env`. A new Blazor page provides CRUD management.
+**Architecture:** A singleton `EnvironmentVariablesGrain` (keyed `0`) holds all env var entries. Each entry has a name, typed value (string/int/float/bool), secret flag, and optional list of process keys. On workflow start, matching variables are merged into the root scope as `Env`. Secret key names are tracked in `_EnvSecretKeys` for UI masking. A new Blazor page provides CRUD management with validation.
 
 **Tech Stack:** Orleans grain + EF Core persistence, Fluent UI Blazor for the admin page.
 
@@ -35,11 +35,14 @@ public class EnvironmentVariablesState
 [GenerateSerializer]
 public class EnvironmentVariableEntry
 {
-    [Id(0)] public string Name { get; set; } = string.Empty;
-    [Id(1)] public string Value { get; set; } = string.Empty;
-    [Id(2)] public string ValueType { get; set; } = "string"; // "string", "int", "float", "bool"
-    [Id(3)] public bool IsSecret { get; set; }
-    [Id(4)] public List<string>? ProcessKeys { get; set; } // null = all processes
+    [Id(0)] public Guid Id { get; set; } = Guid.NewGuid();
+    [Id(1)] public string Name { get; set; } = string.Empty;
+    [Id(2)] public string Value { get; set; } = string.Empty;
+    [Id(3)] public string ValueType { get; set; } = "string"; // "string", "int", "float", "bool"
+    [Id(4)] public bool IsSecret { get; set; }
+    [Id(5)] public List<string>? ProcessKeys { get; set; } // null = all processes
+
+    private static readonly HashSet<string> ValidTypes = new() { "string", "int", "float", "bool" };
 
     /// <summary>
     /// Returns the typed value parsed from the string representation.
@@ -47,10 +50,31 @@ public class EnvironmentVariableEntry
     public object GetTypedValue() => ValueType switch
     {
         "int" => int.Parse(Value),
-        "float" => double.Parse(Value),
+        "float" => double.Parse(Value, System.Globalization.CultureInfo.InvariantCulture),
         "bool" => bool.Parse(Value),
         _ => Value
     };
+
+    /// <summary>
+    /// Validates the entry. Returns null if valid, or an error message if invalid.
+    /// </summary>
+    public string? Validate()
+    {
+        if (string.IsNullOrWhiteSpace(Name))
+            return "Name is required.";
+
+        if (!ValidTypes.Contains(ValueType))
+            return $"Invalid type '{ValueType}'. Must be one of: string, int, float, bool.";
+
+        return ValueType switch
+        {
+            "int" when !int.TryParse(Value, out _) => $"Value '{Value}' is not a valid integer.",
+            "float" when !double.TryParse(Value, System.Globalization.CultureInfo.InvariantCulture, out _)
+                => $"Value '{Value}' is not a valid number.",
+            "bool" when !bool.TryParse(Value, out _) => $"Value '{Value}' is not a valid boolean (true/false).",
+            _ => null
+        };
+    }
 }
 ```
 
@@ -70,7 +94,7 @@ Expected: 0 errors
 **Step 4: Commit**
 
 ```
-feat(domain): add EnvironmentVariablesState and grain storage name
+feat(domain): add EnvironmentVariablesState with validation and grain storage name
 ```
 
 ---
@@ -86,17 +110,21 @@ feat(domain): add EnvironmentVariablesState and grain storage name
 ```csharp
 // src/Fleans/Fleans.Application/Grains/IEnvironmentVariablesGrain.cs
 using Fleans.Domain.States;
+using Orleans.Concurrency;
 
 namespace Fleans.Application.Grains;
 
 public interface IEnvironmentVariablesGrain : IGrainWithIntegerKey
 {
-    ValueTask<List<EnvironmentVariableEntry>> GetAll();
+    [ReadOnly] ValueTask<List<EnvironmentVariableEntry>> GetAll();
     ValueTask Set(EnvironmentVariableEntry variable);
     ValueTask Remove(string name);
-    ValueTask<Dictionary<string, object>> GetVariablesForProcess(string processDefinitionKey);
+    [ReadOnly] ValueTask<Dictionary<string, object>> GetVariablesForProcess(string processDefinitionKey);
+    [ReadOnly] ValueTask<HashSet<string>> GetSecretKeysForProcess(string processDefinitionKey);
 }
 ```
+
+Note: `GetSecretKeysForProcess` returns the set of variable names marked as secret for a given process key. Used to populate `_EnvSecretKeys` in the workflow scope.
 
 **Step 2: Create the grain implementation**
 
@@ -130,9 +158,16 @@ public partial class EnvironmentVariablesGrain : Grain, IEnvironmentVariablesGra
 
     public async ValueTask Set(EnvironmentVariableEntry variable)
     {
+        var error = variable.Validate();
+        if (error is not null)
+            throw new ArgumentException(error);
+
         var existing = State.Variables.FindIndex(v => v.Name == variable.Name);
         if (existing >= 0)
+        {
+            variable.Id = State.Variables[existing].Id; // preserve existing Id
             State.Variables[existing] = variable;
+        }
         else
             State.Variables.Add(variable);
 
@@ -158,6 +193,17 @@ public partial class EnvironmentVariablesGrain : Grain, IEnvironmentVariablesGra
         return ValueTask.FromResult(result);
     }
 
+    public ValueTask<HashSet<string>> GetSecretKeysForProcess(string processDefinitionKey)
+    {
+        var result = new HashSet<string>();
+        foreach (var v in State.Variables)
+        {
+            if (v.IsSecret && (v.ProcessKeys is null || v.ProcessKeys.Contains(processDefinitionKey)))
+                result.Add(v.Name);
+        }
+        return ValueTask.FromResult(result);
+    }
+
     [LoggerMessage(Level = LogLevel.Information, EventId = 8000,
         Message = "Environment variable '{Name}' set (type={ValueType}, secret={IsSecret})")]
     private partial void LogVariableSet(string name, string valueType, bool isSecret);
@@ -176,7 +222,7 @@ Expected: 0 errors
 **Step 4: Commit**
 
 ```
-feat(application): add EnvironmentVariablesGrain with CRUD and process filtering
+feat(application): add EnvironmentVariablesGrain with validation and secret key tracking
 ```
 
 ---
@@ -191,9 +237,7 @@ feat(application): add EnvironmentVariablesGrain with CRUD and process filtering
 
 **Step 1: Create the EF Core grain storage**
 
-Follow the existing `EfCoreSignalCorrelationGrainStorage` pattern exactly. The grain is keyed by integer (`0`), so `grainId.Key.ToString()` will be `"0"`.
-
-The `EnvironmentVariablesState` has a child collection `Variables` (list of `EnvironmentVariableEntry`). Use the same Diff pattern as `DiffSubscriptions` in the signal correlation storage.
+Follow the existing `EfCoreSignalCorrelationGrainStorage` pattern. The grain is keyed by integer (`0`), so `grainId.Key.ToString()` will be `"0"`. Use the Diff pattern from `DiffSubscriptions` for the child `Variables` collection. Key the diff by `Id` (Guid), not by `Name`.
 
 ```csharp
 // src/Fleans/Fleans.Persistence/EfCoreEnvironmentVariablesGrainStorage.cs
@@ -284,19 +328,20 @@ public class EfCoreEnvironmentVariablesGrainStorage : IGrainStorage
         EnvironmentVariablesState existing,
         EnvironmentVariablesState state)
     {
-        var existingByName = existing.Variables.ToDictionary(v => v.Name);
-        var newNames = state.Variables.Select(v => v.Name).ToHashSet();
+        var existingById = existing.Variables.ToDictionary(v => v.Id);
+        var newIds = state.Variables.Select(v => v.Id).ToHashSet();
 
         // Remove deleted
-        foreach (var v in existing.Variables.Where(v => !newNames.Contains(v.Name)).ToList())
+        foreach (var v in existing.Variables.Where(v => !newIds.Contains(v.Id)).ToList())
             db.EnvironmentVariableEntries.Remove(v);
 
         // Add or update
         foreach (var v in state.Variables)
         {
-            if (existingByName.TryGetValue(v.Name, out var existingVar))
+            if (existingById.TryGetValue(v.Id, out var existingVar))
             {
                 db.Entry(existingVar).CurrentValues.SetValues(v);
+                db.Entry(existingVar).Property(e => e.Id).IsModified = false;
             }
             else
             {
@@ -318,7 +363,7 @@ public DbSet<EnvironmentVariableEntry> EnvironmentVariableEntries => Set<Environ
 
 **Step 3: Add entity configuration to FleanModelConfiguration**
 
-Add to the end of `FleanModelConfiguration.Configure()`:
+Add to the end of `FleanModelConfiguration.Configure()`. Note: `EnvironmentVariableEntry` uses `Guid Id` as PK with a unique index on `Name`:
 
 ```csharp
 modelBuilder.Entity<EnvironmentVariablesState>(entity =>
@@ -336,8 +381,9 @@ modelBuilder.Entity<EnvironmentVariablesState>(entity =>
 modelBuilder.Entity<EnvironmentVariableEntry>(entity =>
 {
     entity.ToTable("EnvironmentVariableEntries");
-    entity.HasKey(e => e.Name);
+    entity.HasKey(e => e.Id);
     entity.Property(e => e.Name).HasMaxLength(256);
+    entity.HasIndex(e => e.Name).IsUnique();
     entity.Property(e => e.Value).HasMaxLength(4000);
     entity.Property(e => e.ValueType).HasMaxLength(16);
 
@@ -347,8 +393,6 @@ modelBuilder.Entity<EnvironmentVariableEntry>(entity =>
             v => v == null ? null : JsonConvert.DeserializeObject<List<string>>(v));
 });
 ```
-
-Note: `EnvironmentVariableEntry` needs a `using Newtonsoft.Json;` at the top (already imported in `FleanModelConfiguration.cs`).
 
 **Step 4: Register storage in DependencyInjection.cs**
 
@@ -377,6 +421,7 @@ feat(persistence): add EF Core storage for EnvironmentVariablesGrain
 
 **Files:**
 - Modify: `src/Fleans/Fleans.Application/Grains/WorkflowInstance.Execution.cs`
+- Modify: `src/Fleans/Fleans.Application/Grains/WorkflowInstance.Logging.cs`
 
 **Step 1: Add env injection to StartWorkflow**
 
@@ -399,18 +444,13 @@ public async Task StartWorkflow()
 }
 ```
 
-Add the helper method in the same file:
+Add the helper method in the same file. **Important:** `IWorkflowDefinition` does NOT have `ProcessDefinitionKey` — use `WorkflowId` which is the BPMN process id (same as the process definition key).
 
 ```csharp
 private async Task InjectEnvironmentVariables()
 {
-    var processDefKey = State.ProcessDefinitionId;
-    if (processDefKey is null) return;
-
-    // Extract the process key from the definition ID (format: "key:version")
-    // Look up the actual key via the workflow definition
     var definition = await GetWorkflowDefinition();
-    var processKey = definition.ProcessDefinitionKey;
+    var processKey = definition.WorkflowId;
     if (string.IsNullOrEmpty(processKey)) return;
 
     var envGrain = _grainFactory.GetGrain<IEnvironmentVariablesGrain>(0);
@@ -421,6 +461,11 @@ private async Task InjectEnvironmentVariables()
     var envDict = (IDictionary<string, object>)envExpando;
     envDict["Env"] = envVars;
 
+    // Track secret key names for UI masking
+    var secretKeys = await envGrain.GetSecretKeysForProcess(processKey);
+    if (secretKeys.Count > 0)
+        envDict["_EnvSecretKeys"] = secretKeys.ToList();
+
     State.MergeState(State.VariableStates[0].Id, envExpando);
     LogEnvironmentVariablesInjected(envVars.Count);
 }
@@ -428,7 +473,7 @@ private async Task InjectEnvironmentVariables()
 
 **Step 2: Add the log message**
 
-In `WorkflowInstance.Logging.cs`, add:
+In `WorkflowInstance.Logging.cs`, add (check for next available EventId in the 1000 range):
 
 ```csharp
 [LoggerMessage(Level = LogLevel.Information, EventId = 1050,
@@ -436,18 +481,12 @@ In `WorkflowInstance.Logging.cs`, add:
 private partial void LogEnvironmentVariablesInjected(int count);
 ```
 
-Note: Check `WorkflowInstance.Logging.cs` for the next available EventId in the 1000 range. Use an unused one.
-
-**Step 3: Check that `IWorkflowDefinition` exposes `ProcessDefinitionKey`**
-
-Verify that `IWorkflowDefinition` (or `WorkflowDefinition`) has a `ProcessDefinitionKey` property. If not, the `processKey` must be derived differently — perhaps from `State.ProcessDefinitionId` which stores `processDefinitionKey:version` or similar. Adjust accordingly based on what's available.
-
-**Step 4: Build and run tests**
+**Step 3: Build and run tests**
 
 Run: `dotnet build && dotnet test` from `src/Fleans/`
-Expected: 0 errors, all existing tests pass (no new tests yet — env grain is not activated in test cluster)
+Expected: 0 errors, all existing tests pass
 
-**Step 5: Commit**
+**Step 4: Commit**
 
 ```
 feat(application): inject environment variables into workflow root scope on start
@@ -455,11 +494,52 @@ feat(application): inject environment variables into workflow root scope on star
 
 ---
 
-### Task 5: Web Admin UI — Environment Variables Page
+### Task 5: Mask Secrets in Process Instance Variables Tab
+
+**Files:**
+- Modify: `src/Fleans/Fleans.Persistence/WorkflowQueryService.cs`
+- Modify: `src/Fleans/Fleans.Web/Components/Pages/ProcessInstance.razor`
+
+**Step 1: Mask secret env values in WorkflowQueryService**
+
+In `WorkflowQueryService.GetStateSnapshot`, when building `variableStates`, check if a `_EnvSecretKeys` variable exists in the same scope. If `Env` is a dictionary and `_EnvSecretKeys` is a list, mask the values for keys in that list.
+
+Alternatively, handle masking in the Razor component: in `ProcessInstance.razor`'s `GetVariableRows`, when rendering the `Env` key's value, check the same scope for `_EnvSecretKeys` and replace matching sub-values with `••••••••`.
+
+**Recommended approach:** Handle in `ProcessInstance.razor` since it's a UI concern. The `WorkflowQueryService` should return accurate data — masking belongs in the view layer.
+
+**Step 2: Hide `_EnvSecretKeys` from the variable display**
+
+In `GetVariableRows`, filter out keys starting with `_Env` so internal tracking variables don't clutter the UI.
+
+**Step 3: Build**
+
+Run: `dotnet build` from `src/Fleans/`
+Expected: 0 errors
+
+**Step 4: Commit**
+
+```
+feat(web): mask secret environment variable values in process instance variables tab
+```
+
+---
+
+### Task 6: Web Admin UI — Environment Variables Page
 
 **Files:**
 - Create: `src/Fleans/Fleans.Web/Components/Pages/EnvironmentVariables.razor`
 - Modify: `src/Fleans/Fleans.Web/Components/Layout/NavMenu.razor`
+
+**Step 0: Verify Fluent UI components exist**
+
+Before writing any Razor code, verify these components exist in the Fluent UI Blazor library at https://www.fluentui-blazor.net/:
+- `FluentDialog` with `FluentDialogHeader`, `FluentDialogBody`, `FluentDialogFooter`
+- `FluentSelect` with `Multiple="true"` and `@bind-SelectedOptions`
+- `FluentRadioGroup` and `FluentRadio`
+- `FluentTextField` with `TextFieldType.Password`
+
+If any don't exist, use alternatives. The code below is a **reference** — adapt to what actually exists.
 
 **Step 1: Create the Environment Variables page**
 
@@ -468,300 +548,17 @@ Follow the existing patterns from `Workflows.razor`:
 - Inject `IGrainFactory` directly (Web talks to grains directly for writes)
 - Inject `IWorkflowQueryService` to populate the process key selector
 - Use `FluentDataGrid` to display variables
-- Use `FluentDialog` or inline editing for add/edit
+- Use dialog or inline form for add/edit
 
-The page should have:
-- **Data grid columns:** Name, Value (masked if IsSecret, with eye toggle), Type, Scope, Secret, Actions (edit/delete)
+The page must include:
+- **Data grid columns:** Name, Value (masked for secrets, eye toggle to reveal), Type, Scope, Secret, Actions (edit/delete)
 - **Add button** at the top
-- **Edit dialog** with fields: Name (text), Value (text, type=password if secret), Type (dropdown: string/int/float/bool), Secret (checkbox), Scope (radio: All / Selected, then multi-select of process keys)
-
-```razor
-@page "/environment"
-@rendermode InteractiveServer
-@using Fleans.Application.Grains
-@using Fleans.Application
-@using Fleans.Domain.States
-@inject IGrainFactory GrainFactory
-@inject IWorkflowQueryService QueryService
-@inject ILogger<EnvironmentVariables> Logger
-
-<PageTitle>Environment Variables</PageTitle>
-
-<FluentLabel Typo="Typography.PageTitle">Environment Variables</FluentLabel>
-
-@if (loadErrorMessage is not null)
-{
-    <FluentMessageBar Intent="MessageIntent.Error" Dismissible="true"
-                      OnDismissed="@(() => loadErrorMessage = null)">
-        @loadErrorMessage
-    </FluentMessageBar>
-}
-
-@if (actionSuccessMessage is not null)
-{
-    <FluentMessageBar Intent="MessageIntent.Success" Dismissible="true"
-                      OnDismissed="@(() => actionSuccessMessage = null)">
-        @actionSuccessMessage
-    </FluentMessageBar>
-}
-
-<div style="margin-bottom: 12px;">
-    <FluentButton Appearance="Appearance.Accent"
-                  IconStart="@(new Icons.Regular.Size20.Add())"
-                  @onclick="OpenAddDialog">
-        Add Variable
-    </FluentButton>
-</div>
-
-@if (isLoading)
-{
-    <FluentProgressRing />
-}
-else if (variables.Count == 0)
-{
-    <FluentMessageBar Intent="MessageIntent.Info">
-        No environment variables configured.
-    </FluentMessageBar>
-}
-else
-{
-    <FluentDataGrid Items="@variables.AsQueryable()" TGridItem="EnvironmentVariableEntry">
-        <PropertyColumn Property="@(v => v.Name)" Title="Name" Sortable="true" />
-        <TemplateColumn Title="Value">
-            @if (context.IsSecret && !revealedSecrets.Contains(context.Name))
-            {
-                <span>••••••••</span>
-                <FluentButton Appearance="Appearance.Stealth"
-                              IconStart="@(new Icons.Regular.Size16.Eye())"
-                              @onclick="() => revealedSecrets.Add(context.Name)"
-                              Title="Reveal" />
-            }
-            else
-            {
-                <span>@context.Value</span>
-                @if (context.IsSecret)
-                {
-                    <FluentButton Appearance="Appearance.Stealth"
-                                  IconStart="@(new Icons.Regular.Size16.EyeOff())"
-                                  @onclick="() => revealedSecrets.Remove(context.Name)"
-                                  Title="Hide" />
-                }
-            }
-        </TemplateColumn>
-        <PropertyColumn Property="@(v => v.ValueType)" Title="Type" Sortable="true" />
-        <TemplateColumn Title="Scope">
-            @if (context.ProcessKeys is null)
-            {
-                <span>All processes</span>
-            }
-            else
-            {
-                <span>@string.Join(", ", context.ProcessKeys)</span>
-            }
-        </TemplateColumn>
-        <TemplateColumn Title="Secret">
-            @(context.IsSecret ? "Yes" : "No")
-        </TemplateColumn>
-        <TemplateColumn Title="Actions">
-            <FluentButton Appearance="Appearance.Stealth"
-                          IconStart="@(new Icons.Regular.Size20.Edit())"
-                          @onclick="() => OpenEditDialog(context)"
-                          Title="Edit" />
-            <FluentButton Appearance="Appearance.Stealth"
-                          IconStart="@(new Icons.Regular.Size20.Delete())"
-                          @onclick="() => DeleteVariable(context.Name)"
-                          Title="Delete" />
-        </TemplateColumn>
-    </FluentDataGrid>
-}
-
-@* Add/Edit Dialog *@
-@if (showDialog)
-{
-    <FluentDialog @bind-Hidden="@dialogHidden" Modal="true" TrapFocus="true"
-                  PreventDismissOnOverlayClick="true" @ondialogdismiss="CloseDialog">
-        <FluentDialogHeader>
-            @(isEditing ? "Edit Variable" : "Add Variable")
-        </FluentDialogHeader>
-        <FluentDialogBody>
-            <FluentTextField Label="Name" @bind-Value="editName" Required="true"
-                             ReadOnly="@isEditing" Style="width: 100%; margin-bottom: 8px;" />
-            <FluentTextField Label="Value" @bind-Value="editValue" Required="true"
-                             TextFieldType="@(editIsSecret ? TextFieldType.Password : TextFieldType.Text)"
-                             Style="width: 100%; margin-bottom: 8px;" />
-            <FluentSelect Label="Type" @bind-Value="editValueType"
-                          Items="@valueTypes" OptionValue="@(v => v)" OptionText="@(v => v)"
-                          Style="width: 100%; margin-bottom: 8px;" />
-            <FluentCheckbox Label="Secret" @bind-Value="editIsSecret"
-                            Style="margin-bottom: 8px;" />
-            <FluentRadioGroup Label="Scope" @bind-Value="editScopeMode"
-                              Style="margin-bottom: 8px;">
-                <FluentRadio Value="@("all")">All processes</FluentRadio>
-                <FluentRadio Value="@("selected")">Selected processes</FluentRadio>
-            </FluentRadioGroup>
-            @if (editScopeMode == "selected")
-            {
-                <FluentSelect Label="Processes" Multiple="true"
-                              Items="@availableProcessKeys"
-                              OptionValue="@(v => v)" OptionText="@(v => v)"
-                              @bind-SelectedOptions="editProcessKeys"
-                              Style="width: 100%; margin-bottom: 8px;" />
-            }
-        </FluentDialogBody>
-        <FluentDialogFooter>
-            <FluentButton Appearance="Appearance.Accent" @onclick="SaveVariable"
-                          Loading="@isSaving">
-                Save
-            </FluentButton>
-            <FluentButton Appearance="Appearance.Neutral" @onclick="CloseDialog">Cancel</FluentButton>
-        </FluentDialogFooter>
-    </FluentDialog>
-}
-
-@code {
-    private List<EnvironmentVariableEntry> variables = new();
-    private HashSet<string> revealedSecrets = new();
-    private List<string> availableProcessKeys = new();
-
-    private bool isLoading = true;
-    private bool isSaving;
-    private string? loadErrorMessage;
-    private string? actionSuccessMessage;
-
-    // Dialog state
-    private bool showDialog;
-    private bool dialogHidden = true;
-    private bool isEditing;
-    private string editName = "";
-    private string editValue = "";
-    private string editValueType = "string";
-    private bool editIsSecret;
-    private string editScopeMode = "all";
-    private IEnumerable<string> editProcessKeys = Array.Empty<string>();
-
-    private static readonly string[] valueTypes = ["string", "int", "float", "bool"];
-
-    protected override async Task OnInitializedAsync()
-    {
-        await LoadData();
-    }
-
-    private async Task LoadData()
-    {
-        try
-        {
-            isLoading = true;
-            var grain = GrainFactory.GetGrain<IEnvironmentVariablesGrain>(0);
-            variables = await grain.GetAll();
-
-            var definitions = await QueryService.GetAllProcessDefinitions();
-            availableProcessKeys = definitions.Select(d => d.ProcessDefinitionKey).Distinct().ToList();
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Error loading environment variables");
-            loadErrorMessage = $"Failed to load: {ex.Message}";
-        }
-        finally
-        {
-            isLoading = false;
-        }
-    }
-
-    private void OpenAddDialog()
-    {
-        isEditing = false;
-        editName = "";
-        editValue = "";
-        editValueType = "string";
-        editIsSecret = false;
-        editScopeMode = "all";
-        editProcessKeys = Array.Empty<string>();
-        showDialog = true;
-        dialogHidden = false;
-    }
-
-    private void OpenEditDialog(EnvironmentVariableEntry entry)
-    {
-        isEditing = true;
-        editName = entry.Name;
-        editValue = entry.Value;
-        editValueType = entry.ValueType;
-        editIsSecret = entry.IsSecret;
-        editScopeMode = entry.ProcessKeys is null ? "all" : "selected";
-        editProcessKeys = entry.ProcessKeys ?? Array.Empty<string>();
-        showDialog = true;
-        dialogHidden = false;
-    }
-
-    private void CloseDialog()
-    {
-        showDialog = false;
-        dialogHidden = true;
-    }
-
-    private async Task SaveVariable()
-    {
-        try
-        {
-            isSaving = true;
-            actionSuccessMessage = null;
-
-            var entry = new EnvironmentVariableEntry
-            {
-                Name = editName,
-                Value = editValue,
-                ValueType = editValueType,
-                IsSecret = editIsSecret,
-                ProcessKeys = editScopeMode == "all" ? null : editProcessKeys.ToList()
-            };
-
-            var grain = GrainFactory.GetGrain<IEnvironmentVariablesGrain>(0);
-            await grain.Set(entry);
-
-            CloseDialog();
-            actionSuccessMessage = $"Variable '{editName}' saved.";
-            await LoadData();
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Error saving environment variable");
-            loadErrorMessage = $"Failed to save: {ex.Message}";
-        }
-        finally
-        {
-            isSaving = false;
-        }
-    }
-
-    private async Task DeleteVariable(string name)
-    {
-        try
-        {
-            actionSuccessMessage = null;
-            var grain = GrainFactory.GetGrain<IEnvironmentVariablesGrain>(0);
-            await grain.Remove(name);
-            actionSuccessMessage = $"Variable '{name}' deleted.";
-            await LoadData();
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Error deleting environment variable");
-            loadErrorMessage = $"Failed to delete: {ex.Message}";
-        }
-    }
-}
-```
-
-**Important notes for implementation:**
-- Check that `FluentDialog`, `FluentDialogHeader`, `FluentDialogBody`, `FluentDialogFooter` exist in the Fluent UI Blazor library. If not, use `FluentDialog` with simpler slot patterns or an inline form instead.
-- Check that `FluentSelect` supports `Multiple="true"` and `@bind-SelectedOptions`. If not, use `FluentListbox` or multiple checkboxes.
-- Check that `FluentRadioGroup` and `FluentRadio` exist. If not, use regular HTML radio buttons or `FluentSwitch`.
-- The code above is a **reference** — adapt to whatever Fluent UI components actually exist.
+- **Add/Edit form** with fields: Name (text), Value (text, password input if secret), Type (dropdown: string/int/float/bool), Secret (checkbox), Scope (radio: All / Selected, then multi-select of process keys)
+- **Client-side validation:** call `EnvironmentVariableEntry.Validate()` locally before calling the grain, show inline error. The grain also validates server-side. Catch `ArgumentException` from the grain and display it.
 
 **Step 2: Add nav menu item**
 
-In `NavMenu.razor`, add a new `FluentAppBarItem`:
+In `NavMenu.razor`, add a new `FluentAppBarItem`. Check available icons — candidates: `Settings`, `Key`, `Options`. Pick one that exists.
 
 ```razor
 <FluentAppBarItem Href="/environment"
@@ -770,77 +567,111 @@ In `NavMenu.razor`, add a new `FluentAppBarItem`:
                   IconActive="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Filled.Size24.Settings())" />
 ```
 
-Note: `Settings` icon may or may not exist. Check what icons are available. Alternatives: `Key`, `Shield`, `Options`. Pick one that exists.
-
-**Step 3: Build and run manually**
+**Step 3: Build**
 
 Run: `dotnet build` from `src/Fleans/`
 Expected: 0 errors
 
-Run: `dotnet run --project Fleans.Aspire` and navigate to `/environment` in the browser. Verify:
-- Page loads with empty state message
-- Add a variable, see it in the grid
-- Edit the variable
-- Delete the variable
-- Toggle secret reveal
-- Test with process-scoped variables
-
 **Step 4: Commit**
 
 ```
-feat(web): add Environment Variables management page
+feat(web): add Environment Variables management page with validation
 ```
 
 ---
 
-### Task 6: Integration Test — Env Variables Injected on Start
+### Task 7: Tests — Validation and Filtering Logic
 
 **Files:**
-- Modify or create test in: `src/Fleans/Fleans.Application.Tests/`
+- Create: `src/Fleans/Fleans.Domain.Tests/EnvironmentVariableEntryTests.cs` (or appropriate test project)
 
-**Step 1: Write a test that verifies env variables are in the root scope after workflow start**
+**Step 1: Write unit tests for EnvironmentVariableEntry.Validate()**
 
-Check the existing test patterns (e.g., `ScriptTaskTests.cs`) for how they:
-1. Set up a test cluster
-2. Deploy a workflow definition
-3. Start a workflow instance
-4. Query state and assert on variables
+```csharp
+[TestMethod] public void Validate_ValidString_ReturnsNull()
+[TestMethod] public void Validate_ValidInt_ReturnsNull()
+[TestMethod] public void Validate_ValidFloat_ReturnsNull()
+[TestMethod] public void Validate_ValidBool_ReturnsNull()
+[TestMethod] public void Validate_EmptyName_ReturnsError()
+[TestMethod] public void Validate_InvalidType_ReturnsError()
+[TestMethod] public void Validate_IntWithNonNumericValue_ReturnsError()
+[TestMethod] public void Validate_FloatWithNonNumericValue_ReturnsError()
+[TestMethod] public void Validate_BoolWithNonBoolValue_ReturnsError()
+```
 
-Write a test that:
-1. Sets an env variable on the `IEnvironmentVariablesGrain(0)` grain
-2. Starts a simple workflow (single ScriptTask)
-3. After completion, asserts that `GetVariable(rootScopeId, "Env")` returns a dictionary containing the set variable
+**Step 2: Run tests**
 
-**Important:** The test cluster may need the `EnvironmentVariablesGrain` storage registered. Check how existing tests configure grain storage — if they use in-memory storage or the full EF Core setup. You may need to register a `MemoryGrainStorage` for `GrainStorageNames.EnvironmentVariables` in the test silo config.
-
-**Step 2: Run the test**
-
-Run: `dotnet test --filter "EnvironmentVariables"` from `src/Fleans/`
-Expected: PASS
+Run: `dotnet test --filter "EnvironmentVariableEntry"` from `src/Fleans/`
+Expected: all PASS
 
 **Step 3: Commit**
 
 ```
-test: verify environment variables are injected into workflow root scope
+test: add validation tests for EnvironmentVariableEntry
 ```
 
 ---
 
-### Task 7: Delete SQLite database and verify fresh schema
+### Task 8: Integration Test — Env Variables Injected on Start
 
-Since the project uses `EnsureCreated()` (no migrations), the new table won't be added to existing databases.
+**Files:**
+- Create test in: `src/Fleans/Fleans.Application.Tests/EnvironmentVariablesTests.cs`
 
-**Step 1: Note in commit message**
+**Step 1: Register EnvironmentVariables storage in test cluster**
 
-Add a note that existing SQLite databases must be deleted and recreated to pick up the new `EnvironmentVariables` and `EnvironmentVariableEntries` tables. This is consistent with the existing approach (no migrations).
+Check how the test cluster is configured (look at `TestSiloConfigurations.cs` or the `TestCluster` setup). Add `MemoryGrainStorage` for `GrainStorageNames.EnvironmentVariables` if needed:
 
-**Step 2: Final build and full test run**
+```csharp
+siloBuilder.AddMemoryGrainStorage(GrainStorageNames.EnvironmentVariables);
+```
+
+**Step 2: Write tests**
+
+Test 1: **Global env var is injected on workflow start**
+1. Set a global env variable (ProcessKeys = null) on `IEnvironmentVariablesGrain(0)`
+2. Start a simple workflow (single ScriptTask that completes)
+3. After completion, get state and assert `Env` variable exists in root scope with the correct value
+
+Test 2: **Process-scoped env var is only injected for matching process**
+1. Set an env variable with `ProcessKeys = ["other-process"]`
+2. Start a workflow with a different process key
+3. Assert `Env` variable does NOT contain that variable
+
+Test 3: **Secret keys are tracked in _EnvSecretKeys**
+1. Set a secret env variable
+2. Start a workflow
+3. Assert `_EnvSecretKeys` contains the secret variable name
+
+Test 4: **Validation rejects invalid entries**
+1. Call `Set` with an int-typed variable whose value is "abc"
+2. Assert `ArgumentException` is thrown
+
+**Step 3: Run tests**
+
+Run: `dotnet test --filter "EnvironmentVariables"` from `src/Fleans/`
+Expected: all PASS
+
+**Step 4: Commit**
+
+```
+test: add integration tests for environment variable injection and validation
+```
+
+---
+
+### Task 9: Final Verification
+
+**Step 1: Full build and test**
 
 Run: `dotnet build && dotnet test` from `src/Fleans/`
 Expected: 0 errors, all tests pass
 
-**Step 3: Commit any remaining changes**
+**Step 2: Note about SQLite schema**
+
+Existing SQLite databases must be deleted and recreated to pick up the new `EnvironmentVariables` and `EnvironmentVariableEntries` tables. This is consistent with the existing approach (no migrations, `EnsureCreated()` at startup).
+
+**Step 3: Commit any remaining cleanup**
 
 ```
-chore: clean up and verify full test suite passes
+chore: final cleanup and verification
 ```
