@@ -54,6 +54,19 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
         // Create and execute boundary timer event instance
         await CreateAndExecuteBoundaryInstanceAsync(boundaryTimer, attachedInstance, definition,
             cloneVariables: !boundaryTimer.IsInterrupting);
+
+        // Re-register cycle timer for non-interrupting boundaries
+        if (!boundaryTimer.IsInterrupting && boundaryTimer.TimerDefinition.Type == TimerType.Cycle)
+        {
+            var nextCycle = boundaryTimer.TimerDefinition.DecrementCycle();
+            if (nextCycle != null)
+            {
+                var callbackGrain = _accessor.GrainFactory.GetGrain<ITimerCallbackGrain>(
+                    _accessor.State.Id, $"{hostActivityInstanceId}:{boundaryTimer.ActivityId}");
+                await callbackGrain.Activate(nextCycle.GetDueTime());
+                LogCycleTimerReRegistered(boundaryTimer.ActivityId, nextCycle.Expression);
+            }
+        }
     }
 
     public async Task HandleBoundaryMessageFiredAsync(MessageBoundaryEvent boundaryMessage, Guid hostActivityInstanceId, IWorkflowDefinition definition)
@@ -255,4 +268,7 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
 
     [LoggerMessage(EventId = 4012, Level = LogLevel.Information, Message = "Non-interrupting boundary signal {BoundarySignalId} fired — attached activity {AttachedActivityId} continues")]
     private partial void LogNonInterruptingBoundarySignalFired(string boundarySignalId, string attachedActivityId);
+
+    [LoggerMessage(EventId = 4013, Level = LogLevel.Information, Message = "Cycle timer {TimerActivityId} re-registered with expression {CycleExpression}")]
+    private partial void LogCycleTimerReRegistered(string timerActivityId, string cycleExpression);
 }

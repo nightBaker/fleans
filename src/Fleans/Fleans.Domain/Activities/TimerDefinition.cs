@@ -33,6 +33,25 @@ public record TimerDefinition(
         return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
     }
 
+    public TimerDefinition? DecrementCycle()
+    {
+        if (Type != TimerType.Cycle)
+            throw new InvalidOperationException("DecrementCycle can only be called on Cycle timers");
+
+        var (repeatCount, _) = ParseCycle();
+
+        // Infinite repetition (R/PT...)
+        if (repeatCount == null)
+            return this;
+
+        // Last repetition
+        if (repeatCount <= 1)
+            return null;
+
+        var parts = Expression.Split('/');
+        return new TimerDefinition(TimerType.Cycle, $"R{repeatCount - 1}/{parts[1]}");
+    }
+
     public (int? RepeatCount, TimeSpan Interval) ParseCycle()
     {
         var parts = Expression.Split('/');

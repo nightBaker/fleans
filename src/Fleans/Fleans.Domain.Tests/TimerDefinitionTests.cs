@@ -65,4 +65,37 @@ public class TimerDefinitionTests
         var dueTime = timer.GetDueTime();
         Assert.AreEqual(TimeSpan.FromHours(2) + TimeSpan.FromMinutes(30), dueTime);
     }
+
+    [TestMethod]
+    public void DecrementCycle_DecrementsRepeatCount()
+    {
+        var timer = new TimerDefinition(TimerType.Cycle, "R3/PT10S");
+        var next = timer.DecrementCycle();
+        Assert.IsNotNull(next);
+        Assert.AreEqual("R2/PT10S", next!.Expression);
+    }
+
+    [TestMethod]
+    public void DecrementCycle_ReturnsNull_WhenCountReachesZero()
+    {
+        var timer = new TimerDefinition(TimerType.Cycle, "R1/PT10S");
+        var next = timer.DecrementCycle();
+        Assert.IsNull(next);
+    }
+
+    [TestMethod]
+    public void DecrementCycle_InfiniteRepeat_ReturnsSameCycle()
+    {
+        var timer = new TimerDefinition(TimerType.Cycle, "R/PT10S");
+        var next = timer.DecrementCycle();
+        Assert.IsNotNull(next);
+        Assert.AreEqual("R/PT10S", next!.Expression);
+    }
+
+    [TestMethod]
+    public void DecrementCycle_ThrowsForNonCycleTimers()
+    {
+        var timer = new TimerDefinition(TimerType.Duration, "PT10S");
+        Assert.ThrowsExactly<InvalidOperationException>(() => timer.DecrementCycle());
+    }
 }
