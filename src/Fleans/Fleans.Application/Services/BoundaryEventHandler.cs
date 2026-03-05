@@ -30,20 +30,43 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
             return;
         }
 
-        // Interrupt the attached activity
         var attachedInstance = _accessor.GrainFactory.GetGrain<IActivityInstanceGrain>(attachedEntry.ActivityInstanceId);
-        await attachedInstance.Cancel($"Interrupted by boundary timer event '{boundaryTimer.ActivityId}'");
-        await _accessor.CancelScopeChildren(attachedEntry.ActivityInstanceId);
-        _accessor.State.CompleteEntries([attachedEntry]);
 
-        // Timer fired, so unsubscribe message and signal boundaries
-        var variablesId = await attachedInstance.GetVariablesStateId();
-        await UnsubscribeBoundaryMessageSubscriptionsAsync(attachedActivityId, variablesId, definition);
-        await UnsubscribeBoundarySignalSubscriptionsAsync(attachedActivityId, definition);
-        LogBoundaryTimerInterrupted(boundaryTimer.ActivityId, attachedActivityId);
+        if (boundaryTimer.IsInterrupting)
+        {
+            // Interrupt the attached activity
+            await attachedInstance.Cancel($"Interrupted by boundary timer event '{boundaryTimer.ActivityId}'");
+            await _accessor.CancelScopeChildren(attachedEntry.ActivityInstanceId);
+            _accessor.State.CompleteEntries([attachedEntry]);
+
+            // Timer fired, so unsubscribe message and signal boundaries
+            var variablesId = await attachedInstance.GetVariablesStateId();
+            await UnsubscribeBoundaryMessageSubscriptionsAsync(attachedActivityId, variablesId, definition);
+            await UnsubscribeBoundarySignalSubscriptionsAsync(attachedActivityId, definition);
+            LogBoundaryTimerInterrupted(boundaryTimer.ActivityId, attachedActivityId);
+        }
+        else
+        {
+            // Non-interrupting — attached activity continues, clone variable scope
+            LogNonInterruptingBoundaryTimerFired(boundaryTimer.ActivityId, attachedActivityId);
+        }
 
         // Create and execute boundary timer event instance
-        await CreateAndExecuteBoundaryInstanceAsync(boundaryTimer, attachedInstance, definition);
+        await CreateAndExecuteBoundaryInstanceAsync(boundaryTimer, attachedInstance, definition,
+            cloneVariables: !boundaryTimer.IsInterrupting);
+
+        // Re-register cycle timer for non-interrupting boundaries
+        if (!boundaryTimer.IsInterrupting && boundaryTimer.TimerDefinition.Type == TimerType.Cycle)
+        {
+            var nextCycle = boundaryTimer.TimerDefinition.DecrementCycle();
+            if (nextCycle != null)
+            {
+                var callbackGrain = _accessor.GrainFactory.GetGrain<ITimerCallbackGrain>(
+                    _accessor.State.Id, $"{hostActivityInstanceId}:{boundaryTimer.ActivityId}");
+                await callbackGrain.Activate(nextCycle.GetDueTime());
+                LogCycleTimerReRegistered(boundaryTimer.ActivityId, nextCycle.Expression);
+            }
+        }
     }
 
     public async Task HandleBoundaryMessageFiredAsync(MessageBoundaryEvent boundaryMessage, Guid hostActivityInstanceId, IWorkflowDefinition definition)
@@ -59,25 +82,35 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
             return;
         }
 
-        // Interrupt the attached activity
         var attachedInstance = _accessor.GrainFactory.GetGrain<IActivityInstanceGrain>(attachedEntry.ActivityInstanceId);
-        await attachedInstance.Cancel($"Interrupted by boundary message event '{boundaryMessage.ActivityId}'");
-        await _accessor.CancelScopeChildren(attachedEntry.ActivityInstanceId);
-        _accessor.State.CompleteEntries([attachedEntry]);
 
-        // Clean up all boundary events for the interrupted activity
-        await UnregisterBoundaryTimerRemindersAsync(attachedActivityId, attachedEntry.ActivityInstanceId, definition);
-        // Unsubscribe other boundary messages, but skip the one that fired
-        // (its subscription was already removed by DeliverMessage, and calling
-        // back into the same correlation grain would deadlock)
-        var firedMessageDef = definition.Messages.First(m => m.Id == boundaryMessage.MessageDefinitionId);
-        var variablesId = await attachedInstance.GetVariablesStateId();
-        await UnsubscribeBoundaryMessageSubscriptionsAsync(attachedActivityId, variablesId, definition, skipMessageName: firedMessageDef.Name);
-        await UnsubscribeBoundarySignalSubscriptionsAsync(attachedActivityId, definition);
-        LogBoundaryMessageInterrupted(boundaryMessage.ActivityId, attachedActivityId);
+        if (boundaryMessage.IsInterrupting)
+        {
+            // Interrupt the attached activity
+            await attachedInstance.Cancel($"Interrupted by boundary message event '{boundaryMessage.ActivityId}'");
+            await _accessor.CancelScopeChildren(attachedEntry.ActivityInstanceId);
+            _accessor.State.CompleteEntries([attachedEntry]);
+
+            // Clean up all boundary events for the interrupted activity
+            await UnregisterBoundaryTimerRemindersAsync(attachedActivityId, attachedEntry.ActivityInstanceId, definition);
+            // Unsubscribe other boundary messages, but skip the one that fired
+            // (its subscription was already removed by DeliverMessage, and calling
+            // back into the same correlation grain would deadlock)
+            var firedMessageDef = definition.Messages.First(m => m.Id == boundaryMessage.MessageDefinitionId);
+            var variablesId = await attachedInstance.GetVariablesStateId();
+            await UnsubscribeBoundaryMessageSubscriptionsAsync(attachedActivityId, variablesId, definition, skipMessageName: firedMessageDef.Name);
+            await UnsubscribeBoundarySignalSubscriptionsAsync(attachedActivityId, definition);
+            LogBoundaryMessageInterrupted(boundaryMessage.ActivityId, attachedActivityId);
+        }
+        else
+        {
+            // Non-interrupting — attached activity continues, clone variable scope
+            LogNonInterruptingBoundaryMessageFired(boundaryMessage.ActivityId, attachedActivityId);
+        }
 
         // Create and execute boundary message event instance
-        await CreateAndExecuteBoundaryInstanceAsync(boundaryMessage, attachedInstance, definition);
+        await CreateAndExecuteBoundaryInstanceAsync(boundaryMessage, attachedInstance, definition,
+            cloneVariables: !boundaryMessage.IsInterrupting);
     }
 
     public async Task HandleBoundarySignalFiredAsync(SignalBoundaryEvent boundarySignal, Guid hostActivityInstanceId, IWorkflowDefinition definition)
@@ -93,22 +126,35 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
         }
 
         var attachedInstance = _accessor.GrainFactory.GetGrain<IActivityInstanceGrain>(attachedEntry.ActivityInstanceId);
-        await attachedInstance.Cancel($"Interrupted by boundary signal event '{boundarySignal.ActivityId}'");
-        await _accessor.CancelScopeChildren(attachedEntry.ActivityInstanceId);
-        _accessor.State.CompleteEntries([attachedEntry]);
 
-        await UnregisterBoundaryTimerRemindersAsync(attachedActivityId, attachedEntry.ActivityInstanceId, definition);
-        var variablesId = await attachedInstance.GetVariablesStateId();
-        await UnsubscribeBoundaryMessageSubscriptionsAsync(attachedActivityId, variablesId, definition);
-        var firedSignalDef = definition.Signals.First(s => s.Id == boundarySignal.SignalDefinitionId);
-        await UnsubscribeBoundarySignalSubscriptionsAsync(attachedActivityId, definition, skipSignalName: firedSignalDef.Name);
-        LogBoundarySignalInterrupted(boundarySignal.ActivityId, attachedActivityId);
+        if (boundarySignal.IsInterrupting)
+        {
+            await attachedInstance.Cancel($"Interrupted by boundary signal event '{boundarySignal.ActivityId}'");
+            await _accessor.CancelScopeChildren(attachedEntry.ActivityInstanceId);
+            _accessor.State.CompleteEntries([attachedEntry]);
 
-        await CreateAndExecuteBoundaryInstanceAsync(boundarySignal, attachedInstance, definition);
+            await UnregisterBoundaryTimerRemindersAsync(attachedActivityId, attachedEntry.ActivityInstanceId, definition);
+            var variablesId = await attachedInstance.GetVariablesStateId();
+            await UnsubscribeBoundaryMessageSubscriptionsAsync(attachedActivityId, variablesId, definition);
+            var firedSignalDef = definition.Signals.First(s => s.Id == boundarySignal.SignalDefinitionId);
+            await UnsubscribeBoundarySignalSubscriptionsAsync(attachedActivityId, definition, skipSignalName: firedSignalDef.Name);
+            LogBoundarySignalInterrupted(boundarySignal.ActivityId, attachedActivityId);
+        }
+        else
+        {
+            // Non-interrupting — attached activity continues, clone variable scope
+            LogNonInterruptingBoundarySignalFired(boundarySignal.ActivityId, attachedActivityId);
+        }
+
+        await CreateAndExecuteBoundaryInstanceAsync(boundarySignal, attachedInstance, definition,
+            cloneVariables: !boundarySignal.IsInterrupting);
     }
 
     public async Task HandleBoundaryErrorAsync(string activityId, BoundaryErrorEvent boundaryError, Guid activityInstanceId, IWorkflowDefinition definition)
     {
+        if (!boundaryError.IsInterrupting)
+            throw new InvalidOperationException($"Error boundary event '{boundaryError.ActivityId}' must be interrupting per BPMN spec");
+
         LogBoundaryEventTriggered(boundaryError.ActivityId, activityId);
 
         await _accessor.CancelScopeChildren(activityInstanceId);
@@ -160,11 +206,24 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
         }
     }
 
-    private async Task CreateAndExecuteBoundaryInstanceAsync(Activity boundaryActivity, IActivityInstanceGrain sourceInstance, IWorkflowDefinition definition)
+    private async Task CreateAndExecuteBoundaryInstanceAsync(
+        Activity boundaryActivity, IActivityInstanceGrain sourceInstance,
+        IWorkflowDefinition definition, bool cloneVariables = false)
     {
         var boundaryInstanceId = Guid.NewGuid();
         var boundaryInstance = _accessor.GrainFactory.GetGrain<IActivityInstanceGrain>(boundaryInstanceId);
-        var variablesId = await sourceInstance.GetVariablesStateId();
+        var sourceVariablesId = await sourceInstance.GetVariablesStateId();
+
+        Guid variablesId;
+        if (cloneVariables)
+        {
+            variablesId = _accessor.State.AddCloneOfVariableState(sourceVariablesId);
+        }
+        else
+        {
+            variablesId = sourceVariablesId;
+        }
+
         await boundaryInstance.SetActivity(boundaryActivity.ActivityId, boundaryActivity.GetType().Name);
         await boundaryInstance.SetVariablesId(variablesId);
 
@@ -200,4 +259,16 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
 
     [LoggerMessage(EventId = 4007, Level = LogLevel.Information, Message = "Boundary signal {BoundarySignalId} interrupted attached activity {AttachedActivityId}")]
     private partial void LogBoundarySignalInterrupted(string boundarySignalId, string attachedActivityId);
+
+    [LoggerMessage(EventId = 4010, Level = LogLevel.Information, Message = "Non-interrupting boundary timer {BoundaryTimerId} fired — attached activity {AttachedActivityId} continues")]
+    private partial void LogNonInterruptingBoundaryTimerFired(string boundaryTimerId, string attachedActivityId);
+
+    [LoggerMessage(EventId = 4011, Level = LogLevel.Information, Message = "Non-interrupting boundary message {BoundaryMessageId} fired — attached activity {AttachedActivityId} continues")]
+    private partial void LogNonInterruptingBoundaryMessageFired(string boundaryMessageId, string attachedActivityId);
+
+    [LoggerMessage(EventId = 4012, Level = LogLevel.Information, Message = "Non-interrupting boundary signal {BoundarySignalId} fired — attached activity {AttachedActivityId} continues")]
+    private partial void LogNonInterruptingBoundarySignalFired(string boundarySignalId, string attachedActivityId);
+
+    [LoggerMessage(EventId = 4013, Level = LogLevel.Information, Message = "Cycle timer {TimerActivityId} re-registered with expression {CycleExpression}")]
+    private partial void LogCycleTimerReRegistered(string timerActivityId, string cycleExpression);
 }

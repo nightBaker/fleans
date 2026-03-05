@@ -4,7 +4,8 @@ namespace Fleans.Domain.Activities;
 public record BoundaryErrorEvent(
     string ActivityId,
     [property: Id(1)] string AttachedToActivityId,
-    [property: Id(2)] string? ErrorCode) : Activity(ActivityId)
+    [property: Id(2)] string? ErrorCode,
+    [property: Id(3)] bool IsInterrupting = true) : Activity(ActivityId)
 {
     internal override async Task<List<IExecutionCommand>> ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
     {

@@ -58,4 +58,18 @@ public class MessageBoundaryEventDomainTests
         Assert.AreEqual("task1", boundary.AttachedToActivityId);
         Assert.AreEqual("msg_payment", boundary.MessageDefinitionId);
     }
+
+    [TestMethod]
+    public void MessageBoundaryEvent_IsInterrupting_DefaultsToTrue()
+    {
+        var boundary = new MessageBoundaryEvent("bm1", "task1", "msg1");
+        Assert.IsTrue(boundary.IsInterrupting);
+    }
+
+    [TestMethod]
+    public void MessageBoundaryEvent_IsInterrupting_CanBeSetToFalse()
+    {
+        var boundary = new MessageBoundaryEvent("bm1", "task1", "msg1", IsInterrupting: false);
+        Assert.IsFalse(boundary.IsInterrupting);
+    }
 }

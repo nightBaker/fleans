@@ -63,4 +63,20 @@ public class BoundaryTimerEventDomainTests
         Assert.AreEqual(TimerType.Duration, boundary.TimerDefinition.Type);
         Assert.AreEqual("PT30M", boundary.TimerDefinition.Expression);
     }
+
+    [TestMethod]
+    public void BoundaryTimerEvent_IsInterrupting_DefaultsToTrue()
+    {
+        var timerDef = new TimerDefinition(TimerType.Duration, "PT10M");
+        var boundary = new BoundaryTimerEvent("bt1", "task1", timerDef);
+        Assert.IsTrue(boundary.IsInterrupting);
+    }
+
+    [TestMethod]
+    public void BoundaryTimerEvent_IsInterrupting_CanBeSetToFalse()
+    {
+        var timerDef = new TimerDefinition(TimerType.Duration, "PT10M");
+        var boundary = new BoundaryTimerEvent("bt1", "task1", timerDef, IsInterrupting: false);
+        Assert.IsFalse(boundary.IsInterrupting);
+    }
 }

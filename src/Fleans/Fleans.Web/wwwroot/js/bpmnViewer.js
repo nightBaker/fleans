@@ -296,7 +296,8 @@ window.bpmnViewer = {
             hasTimerDefinition: false,
             hasMessageDefinition: false,
             messageName: '',
-            correlationKey: ''
+            correlationKey: '',
+            isInterrupting: true
         };
 
         if (bo.eventDefinitions && bo.eventDefinitions.length > 0) {
@@ -327,6 +328,10 @@ window.bpmnViewer = {
                     break;
                 }
             }
+        }
+
+        if (bo.$type === 'bpmn:BoundaryEvent') {
+            data.isInterrupting = bo.cancelActivity !== false;
         }
 
         return data;
