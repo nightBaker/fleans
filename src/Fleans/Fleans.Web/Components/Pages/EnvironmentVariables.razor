@@ -1,0 +1,381 @@
+@page "/environment"
+@rendermode InteractiveServer
+@using Fleans.Application
+@using Fleans.Application.Grains
+@using Fleans.Application.QueryModels
+@using Fleans.Domain.States
+@using Microsoft.FluentUI.AspNetCore.Components
+@inject IGrainFactory GrainFactory
+@inject IWorkflowQueryService QueryService
+@inject ILogger<EnvironmentVariables> Logger
+
+<PageTitle>Environment Variables</PageTitle>
+
+<FluentStack Orientation="Orientation.Vertical" Gap="20px">
+    <PageHeader Title="Environment Variables">
+        <Actions>
+            <FluentButton Appearance="Appearance.Accent"
+                          IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Add())"
+                          @onclick="ShowAddForm">
+                Add Variable
+            </FluentButton>
+            <FluentButton Appearance="Appearance.Neutral"
+                          IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowSync())"
+                          @onclick="RefreshVariables"
+                          Disabled="@isLoading">
+                Refresh
+            </FluentButton>
+        </Actions>
+    </PageHeader>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <FluentMessageBar Intent="MessageIntent.Error" Dismissible="true" OnDismissed="@(() => errorMessage = null)">
+            @errorMessage
+        </FluentMessageBar>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(successMessage))
+    {
+        <FluentMessageBar Intent="MessageIntent.Success" Dismissible="true" OnDismissed="@(() => successMessage = null)">
+            @successMessage
+        </FluentMessageBar>
+    }
+
+    @if (showForm)
+    {
+        <FluentCard Style="padding: 16px; max-width: 600px;">
+            <FluentStack Orientation="Orientation.Vertical" Gap="12px">
+                <FluentLabel Typo="Typography.Subject">@(isEditing ? "Edit Variable" : "Add Variable")</FluentLabel>
+
+                @if (!string.IsNullOrWhiteSpace(formError))
+                {
+                    <FluentMessageBar Intent="MessageIntent.Error">
+                        @formError
+                    </FluentMessageBar>
+                }
+
+                <div>
+                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Name</FluentLabel>
+                    <FluentTextField @bind-Value="formName" Disabled="@isEditing" Style="width: 100%;" Placeholder="e.g. API_KEY" />
+                </div>
+
+                <div>
+                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Value</FluentLabel>
+                    <FluentTextField @bind-Value="formValue" Style="width: 100%;" Placeholder="Variable value" />
+                </div>
+
+                <div>
+                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Type</FluentLabel>
+                    <FluentSelect TOption="string"
+                                  Items="@typeOptions"
+                                  @bind-SelectedOption="formType"
+                                  Style="width: 100%;" />
+                </div>
+
+                <div>
+                    <FluentCheckbox @bind-Value="formIsSecret" Label="Secret (value will be masked in UI)" />
+                </div>
+
+                <div>
+                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Scope</FluentLabel>
+                    <FluentSelect TOption="string"
+                                  Items="@scopeOptions"
+                                  @bind-SelectedOption="formScope"
+                                  Style="width: 100%;" />
+                </div>
+
+                @if (formScope == "selected")
+                {
+                    <div>
+                        <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Process Keys (comma-separated)</FluentLabel>
+                        <FluentTextField @bind-Value="formProcessKeys" Style="width: 100%;" Placeholder="e.g. process-1, process-2" />
+                    </div>
+                }
+
+                <FluentStack Orientation="Orientation.Horizontal" Gap="8px">
+                    <FluentButton Appearance="Appearance.Accent"
+                                  Loading="@isSaving"
+                                  @onclick="SaveVariable">
+                        Save
+                    </FluentButton>
+                    <FluentButton Appearance="Appearance.Neutral"
+                                  @onclick="CancelForm">
+                        Cancel
+                    </FluentButton>
+                </FluentStack>
+            </FluentStack>
+        </FluentCard>
+    }
+
+    @if (isLoading && variables.Count == 0)
+    {
+        <FluentStack Orientation="Orientation.Vertical" AlignItems="AlignItems.Center" Gap="10px">
+            <FluentProgressRing />
+            <p>Loading environment variables...</p>
+        </FluentStack>
+    }
+    else if (variables.Count == 0 && !showForm)
+    {
+        <FluentMessageBar Intent="MessageIntent.Info">
+            No environment variables defined. Click <strong>Add Variable</strong> to create one.
+        </FluentMessageBar>
+    }
+    else if (variables.Count > 0)
+    {
+        <FluentDataGrid Items="@variables.AsQueryable()" TGridItem="EnvironmentVariableEntry"
+                        GridTemplateColumns="1.5fr 2fr 0.8fr 1.2fr 0.6fr 1fr">
+            <PropertyColumn Property="@(v => v.Name)" Title="Name" Sortable="true" />
+            <TemplateColumn Title="Value">
+                @if (context.IsSecret && !revealedSecrets.Contains(context.Name))
+                {
+                    <FluentStack Orientation="Orientation.Horizontal" Gap="4px" AlignItems="AlignItems.Center">
+                        <span>********</span>
+                        <FluentButton Appearance="Appearance.Stealth"
+                                      IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size16.Eye())"
+                                      Title="Reveal value"
+                                      @onclick="() => revealedSecrets.Add(context.Name)" />
+                    </FluentStack>
+                }
+                else if (context.IsSecret && revealedSecrets.Contains(context.Name))
+                {
+                    <FluentStack Orientation="Orientation.Horizontal" Gap="4px" AlignItems="AlignItems.Center">
+                        <span>@context.Value</span>
+                        <FluentButton Appearance="Appearance.Stealth"
+                                      IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size16.EyeOff())"
+                                      Title="Hide value"
+                                      @onclick="() => revealedSecrets.Remove(context.Name)" />
+                    </FluentStack>
+                }
+                else
+                {
+                    <span>@context.Value</span>
+                }
+            </TemplateColumn>
+            <TemplateColumn Title="Type">
+                <FluentBadge Color="Color.Accent">@context.ValueType</FluentBadge>
+            </TemplateColumn>
+            <TemplateColumn Title="Scope">
+                @if (context.ProcessKeys is null or { Count: 0 })
+                {
+                    <span>All processes</span>
+                }
+                else
+                {
+                    <span>@string.Join(", ", context.ProcessKeys)</span>
+                }
+            </TemplateColumn>
+            <TemplateColumn Title="Secret">
+                @if (context.IsSecret)
+                {
+                    <FluentBadge Color="Color.Warning">Yes</FluentBadge>
+                }
+                else
+                {
+                    <span>No</span>
+                }
+            </TemplateColumn>
+            <TemplateColumn Title="Actions">
+                <FluentStack Orientation="Orientation.Horizontal" Gap="4px">
+                    <FluentButton Appearance="Appearance.Stealth"
+                                  IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Edit())"
+                                  @onclick="() => EditVariable(context)">
+                        Edit
+                    </FluentButton>
+                    <FluentButton Appearance="Appearance.Stealth"
+                                  IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Delete())"
+                                  Loading="@(isDeleting && deletingName == context.Name)"
+                                  @onclick="() => DeleteVariable(context.Name)">
+                        Delete
+                    </FluentButton>
+                </FluentStack>
+            </TemplateColumn>
+        </FluentDataGrid>
+    }
+</FluentStack>
+
+@code {
+    private List<EnvironmentVariableEntry> variables = [];
+    private bool isLoading = true;
+    private string? errorMessage;
+    private string? successMessage;
+
+    // Form state
+    private bool showForm;
+    private bool isEditing;
+    private bool isSaving;
+    private string? formError;
+    private string formName = string.Empty;
+    private string formValue = string.Empty;
+    private string formType = "string";
+    private bool formIsSecret;
+    private string formScope = "all";
+    private string formProcessKeys = string.Empty;
+
+    // Delete state
+    private bool isDeleting;
+    private string? deletingName;
+
+    // Secret reveal toggle
+    private HashSet<string> revealedSecrets = new();
+
+    private static readonly List<string> typeOptions = ["string", "int", "float", "bool"];
+    private static readonly List<string> scopeOptions = ["all", "selected"];
+
+    private IEnvironmentVariablesGrain Grain => GrainFactory.GetGrain<IEnvironmentVariablesGrain>(0);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadVariables();
+    }
+
+    private async Task LoadVariables()
+    {
+        try
+        {
+            isLoading = true;
+            errorMessage = null;
+            variables = await Grain.GetAll();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading environment variables");
+            errorMessage = "Failed to load environment variables. Try again.";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task RefreshVariables()
+    {
+        await LoadVariables();
+    }
+
+    private void ShowAddForm()
+    {
+        ResetForm();
+        showForm = true;
+    }
+
+    private void EditVariable(EnvironmentVariableEntry entry)
+    {
+        ResetForm();
+        isEditing = true;
+        showForm = true;
+        formName = entry.Name;
+        formValue = entry.Value;
+        formType = entry.ValueType;
+        formIsSecret = entry.IsSecret;
+
+        if (entry.ProcessKeys is null or { Count: 0 })
+        {
+            formScope = "all";
+            formProcessKeys = string.Empty;
+        }
+        else
+        {
+            formScope = "selected";
+            formProcessKeys = string.Join(", ", entry.ProcessKeys);
+        }
+    }
+
+    private void CancelForm()
+    {
+        showForm = false;
+        ResetForm();
+    }
+
+    private void ResetForm()
+    {
+        isEditing = false;
+        formError = null;
+        formName = string.Empty;
+        formValue = string.Empty;
+        formType = "string";
+        formIsSecret = false;
+        formScope = "all";
+        formProcessKeys = string.Empty;
+    }
+
+    private async Task SaveVariable()
+    {
+        formError = null;
+
+        List<string>? processKeys = null;
+        if (formScope == "selected")
+        {
+            var keys = formProcessKeys
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .ToList();
+            if (keys.Count == 0)
+            {
+                formError = "Please specify at least one process key, or select 'all' scope.";
+                return;
+            }
+            processKeys = keys;
+        }
+
+        var entry = new EnvironmentVariableEntry
+        {
+            Name = formName.Trim(),
+            Value = formValue,
+            ValueType = formType,
+            IsSecret = formIsSecret,
+            ProcessKeys = processKeys
+        };
+
+        var validationError = entry.Validate();
+        if (validationError is not null)
+        {
+            formError = validationError;
+            return;
+        }
+
+        try
+        {
+            isSaving = true;
+            await Grain.Set(entry);
+            successMessage = isEditing
+                ? $"Variable '{entry.Name}' updated."
+                : $"Variable '{entry.Name}' created.";
+            showForm = false;
+            ResetForm();
+            await LoadVariables();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error saving environment variable '{Name}'", entry.Name);
+            formError = $"Failed to save: {ex.Message}";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task DeleteVariable(string name)
+    {
+        try
+        {
+            isDeleting = true;
+            deletingName = name;
+            errorMessage = null;
+            await Grain.Remove(name);
+            successMessage = $"Variable '{name}' deleted.";
+            revealedSecrets.Remove(name);
+            await LoadVariables();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error deleting environment variable '{Name}'", name);
+            errorMessage = $"Failed to delete '{name}': {ex.Message}";
+        }
+        finally
+        {
+            isDeleting = false;
+            deletingName = null;
+        }
+    }
+}
