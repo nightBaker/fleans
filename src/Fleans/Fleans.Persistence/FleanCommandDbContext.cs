@@ -18,6 +18,8 @@ public class FleanCommandDbContext : DbContext
     public DbSet<MessageSubscription> MessageSubscriptions => Set<MessageSubscription>();
     public DbSet<SignalCorrelationState> SignalCorrelations => Set<SignalCorrelationState>();
     public DbSet<SignalSubscription> SignalSubscriptions => Set<SignalSubscription>();
+    public DbSet<EnvironmentVariablesState> EnvironmentVariables => Set<EnvironmentVariablesState>();
+    public DbSet<EnvironmentVariableEntry> EnvironmentVariableEntries => Set<EnvironmentVariableEntry>();
 
     public FleanCommandDbContext(DbContextOptions<FleanCommandDbContext> options) : base(options) { }
 

@@ -171,6 +171,33 @@ internal static class FleanModelConfiguration
             sub.Property(s => s.ActivityId).HasMaxLength(256);
         });
 
+        modelBuilder.Entity<EnvironmentVariablesState>(entity =>
+        {
+            entity.ToTable("EnvironmentVariables");
+            entity.HasKey(e => e.Key);
+            entity.Property(e => e.Key).HasMaxLength(64);
+            entity.Property(e => e.ETag).HasMaxLength(64);
+
+            entity.HasMany(e => e.Variables)
+                .WithOne()
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<EnvironmentVariableEntry>(entity =>
+        {
+            entity.ToTable("EnvironmentVariableEntries");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Name).HasMaxLength(256);
+            entity.HasIndex(e => e.Name).IsUnique();
+            entity.Property(e => e.Value).HasMaxLength(4000);
+            entity.Property(e => e.ValueType).HasMaxLength(16);
+
+            entity.Property(e => e.ProcessKeys)
+                .HasConversion(
+                    v => v == null ? null : JsonConvert.SerializeObject(v),
+                    v => v == null ? null : JsonConvert.DeserializeObject<List<string>>(v));
+        });
+
         modelBuilder.Entity<ProcessDefinition>(entity =>
         {
             entity.ToTable("ProcessDefinitions");
