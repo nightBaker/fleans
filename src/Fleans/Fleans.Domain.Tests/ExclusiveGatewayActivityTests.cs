@@ -28,16 +28,8 @@ public class ExclusiveGatewayActivityTests
         var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
 
         // Set up condition state: seq1 is true
-        var conditionStates = new Dictionary<Guid, ConditionSequenceState[]>
-        {
-            [activityInstanceId] =
-            [
-                ActivityTestHelper.CreateEvaluatedConditionState("seq1", activityInstanceId, true),
-                ActivityTestHelper.CreateEvaluatedConditionState("seq2", activityInstanceId, false)
-            ]
-        };
-        workflowContext.GetConditionSequenceStates()
-            .Returns(ValueTask.FromResult<IReadOnlyDictionary<Guid, ConditionSequenceState[]>>(conditionStates));
+        ActivityTestHelper.SetupConditionStates(workflowContext, activityInstanceId,
+            ("seq1", true), ("seq2", false));
 
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("if", activityInstanceId);
 
@@ -68,15 +60,8 @@ public class ExclusiveGatewayActivityTests
         var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
 
         // All conditions false
-        var conditionStates = new Dictionary<Guid, ConditionSequenceState[]>
-        {
-            [activityInstanceId] =
-            [
-                ActivityTestHelper.CreateEvaluatedConditionState("seq1", activityInstanceId, false)
-            ]
-        };
-        workflowContext.GetConditionSequenceStates()
-            .Returns(ValueTask.FromResult<IReadOnlyDictionary<Guid, ConditionSequenceState[]>>(conditionStates));
+        ActivityTestHelper.SetupConditionStates(workflowContext, activityInstanceId,
+            ("seq1", false));
 
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("if", activityInstanceId);
 
@@ -103,15 +88,8 @@ public class ExclusiveGatewayActivityTests
         var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
 
         // All conditions false, no default flow
-        var conditionStates = new Dictionary<Guid, ConditionSequenceState[]>
-        {
-            [activityInstanceId] =
-            [
-                ActivityTestHelper.CreateEvaluatedConditionState("seq1", activityInstanceId, false)
-            ]
-        };
-        workflowContext.GetConditionSequenceStates()
-            .Returns(ValueTask.FromResult<IReadOnlyDictionary<Guid, ConditionSequenceState[]>>(conditionStates));
+        ActivityTestHelper.SetupConditionStates(workflowContext, activityInstanceId,
+            ("seq1", false));
 
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("if", activityInstanceId);
 
