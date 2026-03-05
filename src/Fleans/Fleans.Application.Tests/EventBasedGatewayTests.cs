@@ -58,10 +58,11 @@ public class EventBasedGatewayTests : WorkflowTestBase
             "Message catch should be active");
 
         // Act — deliver message (message wins the race)
-        var correlationGrain = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>("paymentReceived");
+        var grainKey = MessageCorrelationKey.Build("paymentReceived", "order-ebg-1");
+        var correlationGrain = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>(grainKey);
         dynamic msgVars = new ExpandoObject();
         msgVars.paymentStatus = "confirmed";
-        var delivered = await correlationGrain.DeliverMessage("order-ebg-1", (ExpandoObject)msgVars);
+        var delivered = await correlationGrain.DeliverMessage((ExpandoObject)msgVars);
 
         // Assert — workflow completed via message path
         Assert.IsTrue(delivered, "Message should be delivered");
@@ -191,8 +192,9 @@ public class EventBasedGatewayTests : WorkflowTestBase
         await workflowInstance.CompleteActivity("task1", vars);
 
         // Act — deliver message (message wins)
-        var correlationGrain = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>("paymentReceived");
-        await correlationGrain.DeliverMessage("order-3way", new ExpandoObject());
+        var grainKey = MessageCorrelationKey.Build("paymentReceived", "order-3way");
+        var correlationGrain = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>(grainKey);
+        await correlationGrain.DeliverMessage(new ExpandoObject());
 
         // Assert
         var instanceId = workflowInstance.GetPrimaryKey();

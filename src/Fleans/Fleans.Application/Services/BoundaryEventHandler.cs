@@ -187,8 +187,9 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
             var correlationValue = await _accessor.GetVariable(variablesId, messageDef.CorrelationKeyExpression);
             if (correlationValue is null) continue;
 
-            var correlationGrain = _accessor.GrainFactory.GetGrain<IMessageCorrelationGrain>(messageDef.Name);
-            await correlationGrain.Unsubscribe(correlationValue.ToString()!);
+            var grainKey = MessageCorrelationKey.Build(messageDef.Name, correlationValue.ToString()!);
+            var correlationGrain = _accessor.GrainFactory.GetGrain<IMessageCorrelationGrain>(grainKey);
+            await correlationGrain.Unsubscribe();
         }
     }
 
