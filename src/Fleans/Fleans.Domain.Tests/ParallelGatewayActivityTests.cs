@@ -1,5 +1,6 @@
 using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
+using Fleans.Domain.States;
 using NSubstitute;
 
 namespace Fleans.Domain.Tests;
@@ -103,23 +104,34 @@ public class ParallelGatewayActivityTests
 
         var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
 
-        // Both incoming tasks are completed
+        // Set up token-based join: fork created two tokens, both arrived
+        var token1 = Guid.NewGuid();
+        var token2 = Guid.NewGuid();
+        var forkState = new GatewayForkState(Guid.NewGuid(), null, Guid.NewGuid());
+        forkState.CreatedTokenIds.AddRange([token1, token2]);
+
+        // Both incoming tasks are completed with tokens
         var task1Context = Substitute.For<IActivityExecutionContext>();
         task1Context.GetActivityId().Returns(ValueTask.FromResult("task1"));
+        task1Context.GetTokenId().Returns(ValueTask.FromResult<Guid?>(token1));
 
         var task2Context = Substitute.For<IActivityExecutionContext>();
         task2Context.GetActivityId().Returns(ValueTask.FromResult("task2"));
+        task2Context.GetTokenId().Returns(ValueTask.FromResult<Guid?>(token2));
 
         workflowContext.GetCompletedActivities()
             .Returns(ValueTask.FromResult<IReadOnlyList<IActivityExecutionContext>>(
                 new List<IActivityExecutionContext> { task1Context, task2Context }));
+
+        workflowContext.FindForkByToken(Arg.Any<Guid>())
+            .Returns(ValueTask.FromResult<GatewayForkState?>(forkState));
 
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("join");
 
         // Act
         var commands = await join.ExecuteAsync(workflowContext, activityContext, definition);
 
-        // Assert — join calls Complete because all paths are done
+        // Assert — join calls Complete because all tokens have arrived
         await activityContext.Received(1).Complete();
     }
 

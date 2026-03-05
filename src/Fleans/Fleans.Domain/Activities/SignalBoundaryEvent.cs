@@ -5,12 +5,11 @@ using System.Runtime.CompilerServices;
 namespace Fleans.Domain.Activities;
 
 [GenerateSerializer]
-// TODO: Support non-interrupting boundary signal events (cancelActivity=false).
-// Requires keeping the host activity active and running the boundary path in parallel.
 public record SignalBoundaryEvent(
     string ActivityId,
     [property: Id(1)] string AttachedToActivityId,
-    [property: Id(2)] string SignalDefinitionId) : Activity(ActivityId)
+    [property: Id(2)] string SignalDefinitionId,
+    [property: Id(3)] bool IsInterrupting = true) : Activity(ActivityId)
 {
     internal override async Task<List<IExecutionCommand>> ExecuteAsync(
         IWorkflowExecutionContext workflowContext,

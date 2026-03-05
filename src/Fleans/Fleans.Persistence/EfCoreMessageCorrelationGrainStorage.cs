@@ -20,7 +20,7 @@ public class EfCoreMessageCorrelationGrainStorage : IGrainStorage
         var id = grainId.Key.ToString();
 
         var state = await db.MessageCorrelations
-            .Include(e => e.Subscriptions)
+            .Include(e => e.Subscription)
             .AsNoTracking()
             .FirstOrDefaultAsync(e => e.Key == id);
 
@@ -40,7 +40,7 @@ public class EfCoreMessageCorrelationGrainStorage : IGrainStorage
         var newETag = Guid.NewGuid().ToString("N");
 
         var existing = await db.MessageCorrelations
-            .Include(e => e.Subscriptions)
+            .Include(e => e.Subscription)
             .FirstOrDefaultAsync(e => e.Key == id);
 
         if (existing is null)
@@ -48,8 +48,8 @@ public class EfCoreMessageCorrelationGrainStorage : IGrainStorage
             state.Key = id;
             state.ETag = newETag;
             db.MessageCorrelations.Add(state);
-            foreach (var sub in state.Subscriptions)
-                db.Entry(sub).Property(s => s.MessageName).CurrentValue = id;
+            if (state.Subscription is not null)
+                db.Entry(state.Subscription).Property(s => s.MessageName).CurrentValue = id;
         }
         else
         {
@@ -61,7 +61,27 @@ public class EfCoreMessageCorrelationGrainStorage : IGrainStorage
             db.Entry(existing).Property(s => s.Key).IsModified = false;
             db.Entry(existing).Property(s => s.ETag).CurrentValue = newETag;
 
-            DiffSubscriptions(db, existing, state, id);
+            // Handle subscription diff
+            if (existing.Subscription is not null && state.Subscription is null)
+            {
+                db.MessageSubscriptions.Remove(existing.Subscription);
+            }
+            else if (existing.Subscription is null && state.Subscription is not null)
+            {
+                db.MessageSubscriptions.Add(state.Subscription);
+                db.Entry(state.Subscription).Property(s => s.MessageName).CurrentValue = id;
+            }
+            else if (existing.Subscription is not null && state.Subscription is not null)
+            {
+                // Update non-key properties individually — SetValues cannot touch the PK (MessageName)
+                existing.Subscription = existing.Subscription with
+                {
+                    WorkflowInstanceId = state.Subscription.WorkflowInstanceId,
+                    ActivityId = state.Subscription.ActivityId,
+                    HostActivityInstanceId = state.Subscription.HostActivityInstanceId,
+                    CorrelationKey = state.Subscription.CorrelationKey
+                };
+            }
         }
 
         await db.SaveChangesAsync();
@@ -88,36 +108,5 @@ public class EfCoreMessageCorrelationGrainStorage : IGrainStorage
 
         grainState.ETag = null;
         grainState.RecordExists = false;
-    }
-
-    private static void DiffSubscriptions(
-        FleanCommandDbContext db,
-        MessageCorrelationState existing,
-        MessageCorrelationState state,
-        string messageName)
-    {
-        var existingByKey = existing.Subscriptions
-            .ToDictionary(s => s.CorrelationKey);
-        var newKeys = state.Subscriptions
-            .Select(s => s.CorrelationKey)
-            .ToHashSet();
-
-        foreach (var sub in existing.Subscriptions.Where(s => !newKeys.Contains(s.CorrelationKey)).ToList())
-            db.MessageSubscriptions.Remove(sub);
-
-        foreach (var sub in state.Subscriptions)
-        {
-            if (existingByKey.TryGetValue(sub.CorrelationKey, out var existingSub))
-            {
-                db.Entry(existingSub).CurrentValues.SetValues(sub);
-                db.Entry(existingSub).Property(s => s.MessageName).IsModified = false;
-                db.Entry(existingSub).Property(s => s.CorrelationKey).IsModified = false;
-            }
-            else
-            {
-                db.MessageSubscriptions.Add(sub);
-                db.Entry(sub).Property(s => s.MessageName).CurrentValue = messageName;
-            }
-        }
     }
 }

@@ -5,11 +5,9 @@ namespace Fleans.Domain.Activities;
 [GenerateSerializer]
 public record InclusiveGateway(
     string ActivityId,
-    [property: Id(1)] bool IsFork
-) : ConditionalGateway(ActivityId)
+    bool IsFork
+) : ForkJoinGateway(ActivityId, IsFork)
 {
-    internal override bool IsJoinGateway => !IsFork;
-
     internal override async Task<List<IExecutionCommand>> ExecuteAsync(
         IWorkflowExecutionContext workflowContext,
         IActivityExecutionContext activityContext,
@@ -116,35 +114,5 @@ public record InclusiveGateway(
 
         throw new InvalidOperationException(
             $"InclusiveGateway {ActivityId}: no true condition and no default flow");
-    }
-
-    private async Task<bool> AllExpectedTokensArrived(
-        IWorkflowExecutionContext workflowContext, IWorkflowDefinition definition)
-    {
-        var incomingFlows = definition.SequenceFlows.Where(sf => sf.Target == this).ToList();
-        var completedActivities = await workflowContext.GetCompletedActivities();
-
-        var arrivedTokens = new HashSet<Guid>();
-        foreach (var flow in incomingFlows)
-        {
-            foreach (var completed in completedActivities)
-            {
-                if (await completed.GetActivityId() == flow.Source.ActivityId)
-                {
-                    var tokenId = await completed.GetTokenId();
-                    if (tokenId.HasValue)
-                        arrivedTokens.Add(tokenId.Value);
-                }
-            }
-        }
-
-        if (arrivedTokens.Count == 0)
-            return false;
-
-        var forkState = await workflowContext.FindForkByToken(arrivedTokens.First());
-        if (forkState == null)
-            return false;
-
-        return forkState.CreatedTokenIds.All(t => arrivedTokens.Contains(t));
     }
 }

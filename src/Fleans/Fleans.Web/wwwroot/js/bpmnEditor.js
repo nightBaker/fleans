@@ -61,7 +61,8 @@ window.bpmnEditor = {
             messageName: '',
             correlationKey: '',
             hasSignalDefinition: false,
-            signalName: ''
+            signalName: '',
+            isInterrupting: true
         };
 
         if (bo.$type === 'bpmn:ScriptTask') {
@@ -133,6 +134,10 @@ window.bpmnEditor = {
             }
         }
 
+        if (bo.$type === 'bpmn:BoundaryEvent') {
+            data.isInterrupting = bo.cancelActivity !== false;
+        }
+
         return data;
     },
 
@@ -184,6 +189,8 @@ window.bpmnEditor = {
             if (!bo.$attrs) bo.$attrs = {};
             bo.$attrs['fleans:' + propertyName] = String(value);
             return;
+        } else if (propertyName === 'cancelActivity') {
+            props.cancelActivity = value;
         } else {
             props[propertyName] = value;
         }
