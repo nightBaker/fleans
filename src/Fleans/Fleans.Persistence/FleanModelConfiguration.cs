@@ -132,20 +132,20 @@ internal static class FleanModelConfiguration
             entity.ToTable("MessageCorrelations");
             entity.HasKey(e => e.Key);
 
-            entity.Property(e => e.Key).HasMaxLength(512);
+            entity.Property(e => e.Key).HasMaxLength(1024);
             entity.Property(e => e.ETag).HasMaxLength(64);
 
-            entity.HasMany(e => e.Subscriptions)
+            entity.HasOne(e => e.Subscription)
                 .WithOne()
-                .HasForeignKey(s => s.MessageName)
+                .HasForeignKey<MessageSubscription>(s => s.MessageName)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<MessageSubscription>(sub =>
         {
             sub.ToTable("MessageSubscriptions");
-            sub.HasKey(s => new { s.MessageName, s.CorrelationKey });
-            sub.Property(s => s.MessageName).HasMaxLength(512);
+            sub.HasKey(s => s.MessageName);
+            sub.Property(s => s.MessageName).HasMaxLength(1024);
             sub.Property(s => s.CorrelationKey).HasMaxLength(512);
             sub.Property(s => s.ActivityId).HasMaxLength(256);
         });

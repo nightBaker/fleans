@@ -49,8 +49,9 @@ public class MessageBoundaryEventTests : WorkflowTestBase
             "Task should be active");
 
         // Act — deliver boundary message
-        var correlationGrain = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>("cancelOrder");
-        var delivered = await correlationGrain.DeliverMessage("order-456", new ExpandoObject());
+        var grainKey = MessageCorrelationKey.Build("cancelOrder", "order-456");
+        var correlationGrain = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>(grainKey);
+        var delivered = await correlationGrain.DeliverMessage(new ExpandoObject());
 
         // Assert — boundary path taken, task interrupted
         Assert.IsTrue(delivered, "Message should be delivered");
@@ -116,8 +117,9 @@ public class MessageBoundaryEventTests : WorkflowTestBase
             "Should NOT complete via message end event");
 
         // Verify subscription is gone
-        var correlationGrain = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>("cancelOrder");
-        var delivered = await correlationGrain.DeliverMessage("order-789", new ExpandoObject());
+        var grainKey = MessageCorrelationKey.Build("cancelOrder", "order-789");
+        var correlationGrain = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>(grainKey);
+        var delivered = await correlationGrain.DeliverMessage(new ExpandoObject());
         Assert.IsFalse(delivered, "Subscription should have been cleaned up");
     }
 
@@ -161,8 +163,9 @@ public class MessageBoundaryEventTests : WorkflowTestBase
             "Task should be active");
 
         // Act — deliver boundary message (non-interrupting)
-        var correlationGrain = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>("cancelOrder");
-        var delivered = await correlationGrain.DeliverMessage("order-ni-msg", new ExpandoObject());
+        var grainKey = MessageCorrelationKey.Build("cancelOrder", "order-ni-msg");
+        var correlationGrain = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>(grainKey);
+        var delivered = await correlationGrain.DeliverMessage(new ExpandoObject());
 
         // Assert — task1 should still be active (NOT cancelled)
         Assert.IsTrue(delivered, "Message should be delivered");

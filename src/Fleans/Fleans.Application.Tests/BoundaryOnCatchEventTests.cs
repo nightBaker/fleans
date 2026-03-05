@@ -102,8 +102,9 @@ public class BoundaryOnCatchEventTests : WorkflowTestBase
             "Timer catch should be active");
 
         // Act — deliver boundary message
-        var correlationGrain = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>("cancelRequest");
-        var delivered = await correlationGrain.DeliverMessage("req-789", new ExpandoObject());
+        var grainKey = MessageCorrelationKey.Build("cancelRequest", "req-789");
+        var correlationGrain = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>(grainKey);
+        var delivered = await correlationGrain.DeliverMessage(new ExpandoObject());
 
         // Assert — boundary path taken, timer catch interrupted
         Assert.IsTrue(delivered, "Message should be delivered");
@@ -204,8 +205,9 @@ public class BoundaryOnCatchEventTests : WorkflowTestBase
         await workflowInstance.StartWorkflow();
 
         // Act — deliver the message (catch event's own trigger fires first)
-        var correlationGrain = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>("approval");
-        var delivered = await correlationGrain.DeliverMessage("req-100", new ExpandoObject());
+        var grainKey = MessageCorrelationKey.Build("approval", "req-100");
+        var correlationGrain = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>(grainKey);
+        var delivered = await correlationGrain.DeliverMessage(new ExpandoObject());
 
         // Assert — normal flow, boundary not taken
         Assert.IsTrue(delivered, "Message should be delivered");
@@ -266,8 +268,9 @@ public class BoundaryOnCatchEventTests : WorkflowTestBase
             "Should NOT complete via cancel end");
 
         // Verify boundary message subscription is gone
-        var correlationGrain = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>("cancelRequest");
-        var delivered = await correlationGrain.DeliverMessage("req-normal", new ExpandoObject());
+        var grainKey = MessageCorrelationKey.Build("cancelRequest", "req-normal");
+        var correlationGrain = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>(grainKey);
+        var delivered = await correlationGrain.DeliverMessage(new ExpandoObject());
         Assert.IsFalse(delivered, "Boundary message subscription should have been cleaned up");
     }
 

@@ -62,10 +62,9 @@ namespace Fleans.Api.Controllers
                         System.Text.Json.JsonSerializer.Serialize(request.Variables))!
                     : new ExpandoObject();
 
-                var correlationGrain = _grainFactory.GetGrain<IMessageCorrelationGrain>(request.MessageName);
-                var delivered = await correlationGrain.DeliverMessage(
-                    request.CorrelationKey,
-                    variables);
+                var grainKey = MessageCorrelationKey.Build(request.MessageName, request.CorrelationKey);
+                var correlationGrain = _grainFactory.GetGrain<IMessageCorrelationGrain>(grainKey);
+                var delivered = await correlationGrain.DeliverMessage(variables);
 
                 if (!delivered)
                     return NotFound(new ErrorResponse(
