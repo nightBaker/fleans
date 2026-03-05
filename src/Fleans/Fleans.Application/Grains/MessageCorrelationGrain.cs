@@ -23,68 +23,68 @@ public partial class MessageCorrelationGrain : Grain, IMessageCorrelationGrain
         _logger = logger;
     }
 
-    public async ValueTask Subscribe(string correlationKey, Guid workflowInstanceId, string activityId, Guid hostActivityInstanceId)
+    public async ValueTask Subscribe(Guid workflowInstanceId, string activityId, Guid hostActivityInstanceId)
     {
-        var messageName = this.GetPrimaryKeyString();
+        var grainKey = this.GetPrimaryKeyString();
 
-        if (_state.State.Subscriptions.Any(s => s.CorrelationKey == correlationKey))
+        if (_state.State.Subscription is not null)
             throw new InvalidOperationException(
-                $"Duplicate subscription: message '{messageName}' with correlationKey '{correlationKey}' already has a subscriber.");
+                $"Duplicate subscription: grain '{grainKey}' already has a subscriber.");
 
-        _state.State.Subscriptions.Add(new MessageSubscription(workflowInstanceId, activityId, hostActivityInstanceId, correlationKey)
-            { MessageName = messageName });
+        _state.State.Subscription = new MessageSubscription(workflowInstanceId, activityId, hostActivityInstanceId, grainKey)
+            { MessageName = grainKey };
         await _state.WriteStateAsync();
-        LogSubscribed(messageName, correlationKey, workflowInstanceId, activityId);
+        LogSubscribed(grainKey, workflowInstanceId, activityId);
     }
 
-    public async ValueTask Unsubscribe(string correlationKey)
+    public async ValueTask Unsubscribe()
     {
-        var messageName = this.GetPrimaryKeyString();
+        var grainKey = this.GetPrimaryKeyString();
 
-        var subscription = _state.State.Subscriptions.FirstOrDefault(s => s.CorrelationKey == correlationKey);
-        if (subscription is not null)
+        if (_state.State.Subscription is not null)
         {
-            _state.State.Subscriptions.Remove(subscription);
-            await _state.WriteStateAsync();
-            LogUnsubscribed(messageName, correlationKey);
+            _state.State.Subscription = null;
+            await _state.ClearStateAsync();
+            LogUnsubscribed(grainKey);
         }
     }
 
-    public async ValueTask<bool> DeliverMessage(string correlationKey, ExpandoObject variables)
+    public async ValueTask<bool> DeliverMessage(ExpandoObject variables)
     {
-        var messageName = this.GetPrimaryKeyString();
+        var grainKey = this.GetPrimaryKeyString();
 
-        var subscription = _state.State.Subscriptions.FirstOrDefault(s => s.CorrelationKey == correlationKey);
-        if (subscription is null)
+        if (_state.State.Subscription is null)
         {
-            LogDeliveryNoMatch(messageName, correlationKey);
+            LogDeliveryNoMatch(grainKey);
             return false;
         }
 
-        // Remove subscription before delivering (at-most-once)
-        _state.State.Subscriptions.Remove(subscription);
-        await _state.WriteStateAsync();
-
+        var subscription = _state.State.Subscription;
         var workflowInstance = _grainFactory.GetGrain<IWorkflowInstanceGrain>(subscription.WorkflowInstanceId);
-        LogDelivery(messageName, correlationKey, subscription.WorkflowInstanceId, subscription.ActivityId);
+        LogDelivery(grainKey, subscription.WorkflowInstanceId, subscription.ActivityId);
+
+        // Deliver first, then clear — confirm-then-remove for at-least-once
         await workflowInstance.HandleMessageDelivery(subscription.ActivityId, subscription.HostActivityInstanceId, variables);
+
+        _state.State.Subscription = null;
+        await _state.ClearStateAsync();
 
         return true;
     }
 
     [LoggerMessage(EventId = 9000, Level = LogLevel.Information,
-        Message = "Message '{MessageName}' subscription registered: correlationKey='{CorrelationKey}', workflowInstanceId={WorkflowInstanceId}, activityId={ActivityId}")]
-    private partial void LogSubscribed(string messageName, string correlationKey, Guid workflowInstanceId, string activityId);
+        Message = "Message correlation '{GrainKey}' subscription registered: workflowInstanceId={WorkflowInstanceId}, activityId={ActivityId}")]
+    private partial void LogSubscribed(string grainKey, Guid workflowInstanceId, string activityId);
 
     [LoggerMessage(EventId = 9001, Level = LogLevel.Information,
-        Message = "Message '{MessageName}' subscription removed: correlationKey='{CorrelationKey}'")]
-    private partial void LogUnsubscribed(string messageName, string correlationKey);
+        Message = "Message correlation '{GrainKey}' subscription removed")]
+    private partial void LogUnsubscribed(string grainKey);
 
     [LoggerMessage(EventId = 9002, Level = LogLevel.Information,
-        Message = "Message '{MessageName}' delivered: correlationKey='{CorrelationKey}' -> workflowInstanceId={WorkflowInstanceId}, activityId={ActivityId}")]
-    private partial void LogDelivery(string messageName, string correlationKey, Guid workflowInstanceId, string activityId);
+        Message = "Message correlation '{GrainKey}' delivered: workflowInstanceId={WorkflowInstanceId}, activityId={ActivityId}")]
+    private partial void LogDelivery(string grainKey, Guid workflowInstanceId, string activityId);
 
     [LoggerMessage(EventId = 9004, Level = LogLevel.Debug,
-        Message = "Message '{MessageName}' delivery failed: no subscription for correlationKey='{CorrelationKey}'")]
-    private partial void LogDeliveryNoMatch(string messageName, string correlationKey);
+        Message = "Message correlation '{GrainKey}' delivery failed: no active subscription")]
+    private partial void LogDeliveryNoMatch(string grainKey);
 }
