@@ -169,4 +169,8 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1051, Level = LogLevel.Information,
         Message = "Gateway fork state removed: forkInstanceId={ForkInstanceId}")]
     private partial void LogGatewayForkStateRemoved(Guid forkInstanceId);
+
+    [LoggerMessage(EventId = 1052, Level = LogLevel.Information,
+        Message = "Injected {Count} environment variables into root scope")]
+    private partial void LogEnvironmentVariablesInjected(int count);
 }
