@@ -9,5 +9,5 @@ public interface IEnvironmentVariablesGrain : IGrainWithIntegerKey
     ValueTask Set(EnvironmentVariableEntry variable);
     ValueTask Remove(string name);
     [ReadOnly] ValueTask<Dictionary<string, object>> GetVariablesForProcess(string processDefinitionKey);
-    [ReadOnly] ValueTask<HashSet<string>> GetSecretKeysForProcess(string processDefinitionKey);
+    [ReadOnly] ValueTask<ProcessEnvironmentResult> GetEnvironmentForProcess(string processDefinitionKey);
 }

@@ -208,6 +208,7 @@ public class WorkflowQueryService : IWorkflowQueryService
         null => "",
         string s => s,
         IList<object> or IDictionary<string, object> => JsonConvert.SerializeObject(value, Formatting.None),
+        Newtonsoft.Json.Linq.JToken token => token.ToString(Formatting.None),
         _ => value.ToString() ?? ""
     };
 

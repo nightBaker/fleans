@@ -31,20 +31,18 @@ public partial class WorkflowInstance
         if (string.IsNullOrEmpty(processKey)) return;
 
         var envGrain = _grainFactory.GetGrain<IEnvironmentVariablesGrain>(0);
-        var envVars = await envGrain.GetVariablesForProcess(processKey);
-        if (envVars.Count == 0) return;
+        var result = await envGrain.GetEnvironmentForProcess(processKey);
+        if (result.Variables.Count == 0) return;
 
         var envExpando = new System.Dynamic.ExpandoObject();
         var envDict = (IDictionary<string, object>)envExpando;
-        envDict["Env"] = envVars;
+        envDict["Env"] = result.Variables;
 
-        // Track secret key names for UI masking
-        var secretKeys = await envGrain.GetSecretKeysForProcess(processKey);
-        if (secretKeys.Count > 0)
-            envDict["_EnvSecretKeys"] = secretKeys.ToList();
+        if (result.SecretKeys.Count > 0)
+            envDict["_EnvSecretKeys"] = result.SecretKeys;
 
         State.MergeState(State.VariableStates[0].Id, envExpando);
-        LogEnvironmentVariablesInjected(envVars.Count);
+        LogEnvironmentVariablesInjected(result.Variables.Count);
     }
 
     private async Task ExecuteWorkflow()

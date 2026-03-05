@@ -455,7 +455,7 @@
         {
             try
             {
-                var keys = System.Text.Json.JsonSerializer.Deserialize<List<string>>(secretKeysJson);
+                var keys = Newtonsoft.Json.JsonConvert.DeserializeObject<List<string>>(secretKeysJson);
                 if (keys is not null)
                     secretKeys = new HashSet<string>(keys);
             }
@@ -475,7 +475,7 @@
 
         try
         {
-            var envDict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, System.Text.Json.JsonElement>>(value);
+            var envDict = Newtonsoft.Json.JsonConvert.DeserializeObject<Dictionary<string, object>>(value);
             if (envDict is null) return value;
 
             var masked = new Dictionary<string, object>();
@@ -483,7 +483,7 @@
             {
                 masked[kvp.Key] = secretKeys.Contains(kvp.Key) ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" : kvp.Value;
             }
-            return System.Text.Json.JsonSerializer.Serialize(masked);
+            return Newtonsoft.Json.JsonConvert.SerializeObject(masked, Newtonsoft.Json.Formatting.None);
         }
         catch
         {

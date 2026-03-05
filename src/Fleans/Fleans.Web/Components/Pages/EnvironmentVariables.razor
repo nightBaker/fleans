@@ -185,12 +185,35 @@
                     <FluentButton Appearance="Appearance.Stealth"
                                   IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Delete())"
                                   Loading="@(isDeleting && deletingName == context.Name)"
-                                  @onclick="() => DeleteVariable(context.Name)">
+                                  @onclick="() => ConfirmDelete(context.Name)">
                         Delete
                     </FluentButton>
                 </FluentStack>
             </TemplateColumn>
         </FluentDataGrid>
+    }
+
+    @if (pendingDeleteName is not null)
+    {
+        <FluentDialog @bind-Hidden="@hideDeleteDialog" Modal="true" TrapFocus="true" PreventDismissOnOverlayClick="true">
+            <FluentDialogHeader>
+                <FluentLabel Typo="Typography.PaneHeader">Confirm Delete</FluentLabel>
+            </FluentDialogHeader>
+            <FluentDialogBody>
+                <p>Are you sure you want to delete the variable <strong>@pendingDeleteName</strong>? This action cannot be undone.</p>
+            </FluentDialogBody>
+            <FluentDialogFooter>
+                <FluentButton Appearance="Appearance.Accent"
+                              Loading="@isDeleting"
+                              @onclick="ExecuteDelete">
+                    Delete
+                </FluentButton>
+                <FluentButton Appearance="Appearance.Neutral"
+                              @onclick="CancelDelete">
+                    Cancel
+                </FluentButton>
+            </FluentDialogFooter>
+        </FluentDialog>
     }
 </FluentStack>
 
@@ -215,6 +238,8 @@
     // Delete state
     private bool isDeleting;
     private string? deletingName;
+    private string? pendingDeleteName;
+    private bool hideDeleteDialog;
 
     // Secret reveal toggle
     private HashSet<string> revealedSecrets = new();
@@ -355,8 +380,23 @@
         }
     }
 
-    private async Task DeleteVariable(string name)
+    private void ConfirmDelete(string name)
     {
+        pendingDeleteName = name;
+        hideDeleteDialog = false;
+    }
+
+    private void CancelDelete()
+    {
+        pendingDeleteName = null;
+        hideDeleteDialog = true;
+    }
+
+    private async Task ExecuteDelete()
+    {
+        var name = pendingDeleteName;
+        if (name is null) return;
+
         try
         {
             isDeleting = true;
@@ -365,6 +405,8 @@
             await Grain.Remove(name);
             successMessage = $"Variable '{name}' deleted.";
             revealedSecrets.Remove(name);
+            pendingDeleteName = null;
+            hideDeleteDialog = true;
             await LoadVariables();
         }
         catch (Exception ex)

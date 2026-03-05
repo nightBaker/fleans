@@ -61,15 +61,20 @@ public partial class EnvironmentVariablesGrain : Grain, IEnvironmentVariablesGra
         return ValueTask.FromResult(result);
     }
 
-    public ValueTask<HashSet<string>> GetSecretKeysForProcess(string processDefinitionKey)
+    public ValueTask<ProcessEnvironmentResult> GetEnvironmentForProcess(string processDefinitionKey)
     {
-        var result = new HashSet<string>();
+        var variables = new Dictionary<string, object>();
+        var secretKeys = new List<string>();
         foreach (var v in State.Variables)
         {
-            if (v.IsSecret && (v.ProcessKeys is null || v.ProcessKeys.Contains(processDefinitionKey)))
-                result.Add(v.Name);
+            if (v.ProcessKeys is null || v.ProcessKeys.Contains(processDefinitionKey))
+            {
+                variables[v.Name] = v.GetTypedValue();
+                if (v.IsSecret)
+                    secretKeys.Add(v.Name);
+            }
         }
-        return ValueTask.FromResult(result);
+        return ValueTask.FromResult(new ProcessEnvironmentResult(variables, secretKeys));
     }
 
     [LoggerMessage(Level = LogLevel.Information, EventId = 8000,

@@ -3,6 +3,11 @@ using Orleans;
 namespace Fleans.Domain.States;
 
 [GenerateSerializer]
+public record ProcessEnvironmentResult(
+    [property: Id(0)] Dictionary<string, object> Variables,
+    [property: Id(1)] List<string> SecretKeys);
+
+[GenerateSerializer]
 public class EnvironmentVariablesState
 {
     [Id(0)] public string Key { get; set; } = string.Empty;
