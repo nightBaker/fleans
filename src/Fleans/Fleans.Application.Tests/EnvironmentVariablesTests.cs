@@ -10,10 +10,19 @@ namespace Fleans.Application.Tests;
 [TestClass]
 public class EnvironmentVariablesTests : WorkflowTestBase
 {
+    private async Task ClearEnvVariables()
+    {
+        var envGrain = Cluster.GrainFactory.GetGrain<IEnvironmentVariablesGrain>(0);
+        var all = await envGrain.GetAll();
+        foreach (var v in all)
+            await envGrain.Remove(v.Name);
+    }
+
     [TestMethod]
     public async Task GlobalEnvVar_IsInjectedOnWorkflowStart()
     {
         // Arrange
+        await ClearEnvVariables();
         var envGrain = Cluster.GrainFactory.GetGrain<IEnvironmentVariablesGrain>(0);
         await envGrain.Set(new EnvironmentVariableEntry
         {
@@ -51,6 +60,7 @@ public class EnvironmentVariablesTests : WorkflowTestBase
     public async Task ProcessScopedEnvVar_ExcludedForNonMatchingProcess()
     {
         // Arrange
+        await ClearEnvVariables();
         var envGrain = Cluster.GrainFactory.GetGrain<IEnvironmentVariablesGrain>(0);
         await envGrain.Set(new EnvironmentVariableEntry
         {
@@ -105,6 +115,7 @@ public class EnvironmentVariablesTests : WorkflowTestBase
     public async Task SecretEnvVar_TrackedInEnvSecretKeys()
     {
         // Arrange
+        await ClearEnvVariables();
         var envGrain = Cluster.GrainFactory.GetGrain<IEnvironmentVariablesGrain>(0);
         await envGrain.Set(new EnvironmentVariableEntry
         {
@@ -141,6 +152,7 @@ public class EnvironmentVariablesTests : WorkflowTestBase
     public async Task ProcessScopedEnvVar_IncludedForMatchingProcess()
     {
         // Arrange
+        await ClearEnvVariables();
         var envGrain = Cluster.GrainFactory.GetGrain<IEnvironmentVariablesGrain>(0);
         await envGrain.Set(new EnvironmentVariableEntry
         {
