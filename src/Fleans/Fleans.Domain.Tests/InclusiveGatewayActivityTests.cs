@@ -108,17 +108,8 @@ public class InclusiveGatewayActivityTests
         var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
 
         // seq1=true, seq2=true, seq3=false
-        var conditionStates = new Dictionary<Guid, ConditionSequenceState[]>
-        {
-            [activityInstanceId] =
-            [
-                ActivityTestHelper.CreateEvaluatedConditionState("seq1", activityInstanceId, true),
-                ActivityTestHelper.CreateEvaluatedConditionState("seq2", activityInstanceId, true),
-                ActivityTestHelper.CreateEvaluatedConditionState("seq3", activityInstanceId, false)
-            ]
-        };
-        workflowContext.GetConditionSequenceStates()
-            .Returns(ValueTask.FromResult<IReadOnlyDictionary<Guid, ConditionSequenceState[]>>(conditionStates));
+        ActivityTestHelper.SetupConditionStates(workflowContext, activityInstanceId,
+            ("seq1", true), ("seq2", true), ("seq3", false));
 
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("inclusive-fork", activityInstanceId);
 
@@ -150,15 +141,8 @@ public class InclusiveGatewayActivityTests
         var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
 
         // All conditions false
-        var conditionStates = new Dictionary<Guid, ConditionSequenceState[]>
-        {
-            [activityInstanceId] =
-            [
-                ActivityTestHelper.CreateEvaluatedConditionState("seq1", activityInstanceId, false)
-            ]
-        };
-        workflowContext.GetConditionSequenceStates()
-            .Returns(ValueTask.FromResult<IReadOnlyDictionary<Guid, ConditionSequenceState[]>>(conditionStates));
+        ActivityTestHelper.SetupConditionStates(workflowContext, activityInstanceId,
+            ("seq1", false));
 
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("inclusive-fork", activityInstanceId);
 
@@ -184,15 +168,8 @@ public class InclusiveGatewayActivityTests
         var activityInstanceId = Guid.NewGuid();
         var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
 
-        var conditionStates = new Dictionary<Guid, ConditionSequenceState[]>
-        {
-            [activityInstanceId] =
-            [
-                ActivityTestHelper.CreateEvaluatedConditionState("seq1", activityInstanceId, false)
-            ]
-        };
-        workflowContext.GetConditionSequenceStates()
-            .Returns(ValueTask.FromResult<IReadOnlyDictionary<Guid, ConditionSequenceState[]>>(conditionStates));
+        ActivityTestHelper.SetupConditionStates(workflowContext, activityInstanceId,
+            ("seq1", false));
 
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("inclusive-fork", activityInstanceId);
 
