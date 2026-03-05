@@ -173,4 +173,8 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1052, Level = LogLevel.Warning,
         Message = "Stale message delivery ignored for activityId='{ActivityId}', hostActivityInstanceId={HostActivityInstanceId} — activity already completed")]
     private partial void LogStaleMessageDeliveryIgnored(string activityId, Guid hostActivityInstanceId);
+
+    [LoggerMessage(EventId = 1053, Level = LogLevel.Information,
+        Message = "Injected {Count} environment variables into root scope")]
+    private partial void LogEnvironmentVariablesInjected(int count);
 }

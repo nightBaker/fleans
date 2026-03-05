@@ -448,7 +448,48 @@
     }
 
     private static IQueryable<VariableRow> GetVariableRows(VariableStateSnapshot vs)
-        => vs.Variables.Select(kvp => new VariableRow(kvp.Key, kvp.Value)).AsQueryable();
+    {
+        // Get secret key names if present
+        HashSet<string>? secretKeys = null;
+        if (vs.Variables.TryGetValue("_EnvSecretKeys", out var secretKeysJson))
+        {
+            try
+            {
+                var keys = Newtonsoft.Json.JsonConvert.DeserializeObject<List<string>>(secretKeysJson);
+                if (keys is not null)
+                    secretKeys = new HashSet<string>(keys);
+            }
+            catch { /* ignore parse failures */ }
+        }
+
+        return vs.Variables
+            .Where(kvp => !kvp.Key.StartsWith("_Env"))
+            .Select(kvp => new VariableRow(kvp.Key, MaskSecrets(kvp.Key, kvp.Value, secretKeys)))
+            .AsQueryable();
+    }
+
+    private static string MaskSecrets(string key, string value, HashSet<string>? secretKeys)
+    {
+        if (key != "Env" || secretKeys is null || secretKeys.Count == 0)
+            return value;
+
+        try
+        {
+            var envDict = Newtonsoft.Json.JsonConvert.DeserializeObject<Dictionary<string, object>>(value);
+            if (envDict is null) return value;
+
+            var masked = new Dictionary<string, object>();
+            foreach (var kvp in envDict)
+            {
+                masked[kvp.Key] = secretKeys.Contains(kvp.Key) ? "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022" : kvp.Value;
+            }
+            return Newtonsoft.Json.JsonConvert.SerializeObject(masked, Newtonsoft.Json.Formatting.None);
+        }
+        catch
+        {
+            return value;
+        }
+    }
 
     private async Task OnActivityRowClick(FluentDataGridRow<ActivityInstanceSnapshot> row)
     {

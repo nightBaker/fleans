@@ -16,8 +16,33 @@ public partial class WorkflowInstance
         using var scope = BeginWorkflowScope();
         LogWorkflowStarted();
         State.Start();
+
+        // Inject environment variables as "Env" in root scope
+        await InjectEnvironmentVariables();
+
         await ExecuteWorkflow();
         await _state.WriteStateAsync();
+    }
+
+    private async Task InjectEnvironmentVariables()
+    {
+        var definition = await GetWorkflowDefinition();
+        var processKey = definition.WorkflowId;
+        if (string.IsNullOrEmpty(processKey)) return;
+
+        var envGrain = _grainFactory.GetGrain<IEnvironmentVariablesGrain>(0);
+        var result = await envGrain.GetEnvironmentForProcess(processKey);
+        if (result.Variables.Count == 0) return;
+
+        var envExpando = new System.Dynamic.ExpandoObject();
+        var envDict = (IDictionary<string, object>)envExpando;
+        envDict["Env"] = result.Variables;
+
+        if (result.SecretKeys.Count > 0)
+            envDict["_EnvSecretKeys"] = result.SecretKeys;
+
+        State.MergeState(State.VariableStates[0].Id, envExpando);
+        LogEnvironmentVariablesInjected(result.Variables.Count);
     }
 
     private async Task ExecuteWorkflow()

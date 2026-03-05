@@ -171,6 +171,7 @@ public class EventPublisherTests
             hostBuilder
                 .AddMemoryStreams(WorkflowEventsPublisher.StreamProvider)
                 .AddMemoryGrainStorage("PubSubStore")
+                .AddMemoryGrainStorage(GrainStorageNames.EnvironmentVariables)
                 .ConfigureServices(services =>
                 {
                     services.AddDbContextFactory<FleanCommandDbContext>(options =>
