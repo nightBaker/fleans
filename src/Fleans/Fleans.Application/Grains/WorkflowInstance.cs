@@ -63,8 +63,8 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         }
         else
         {
-            startActivity = workflow.Activities.FirstOrDefault(a => a is StartEvent or TimerStartEvent or MessageStartEvent)
-                ?? throw new InvalidOperationException("Workflow must have a StartEvent, TimerStartEvent, or MessageStartEvent");
+            startActivity = workflow.Activities.FirstOrDefault(a => a is StartEvent or TimerStartEvent or MessageStartEvent or SignalStartEvent)
+                ?? throw new InvalidOperationException("Workflow must have a StartEvent, TimerStartEvent, MessageStartEvent, or SignalStartEvent");
         }
 
         var activityInstanceId = Guid.NewGuid();
