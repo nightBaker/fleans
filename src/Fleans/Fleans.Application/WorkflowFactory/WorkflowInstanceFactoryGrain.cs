@@ -152,6 +152,34 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
             await scheduler.ActivateScheduler(processDefinitionId);
         }
 
+        // Register/unregister message start event listeners on redeployment
+        var newMessageNames = new HashSet<string>();
+        foreach (var messageStart in workflowWithId.Activities.OfType<MessageStartEvent>())
+        {
+            var messageDefinition = workflowWithId.Messages.FirstOrDefault(m => m.Id == messageStart.MessageDefinitionId);
+            if (messageDefinition != null)
+            {
+                newMessageNames.Add(messageDefinition.Name);
+                var listener = _grainFactory.GetGrain<IMessageStartEventListenerGrain>(messageDefinition.Name);
+                await listener.RegisterProcess(processDefinitionKey);
+            }
+        }
+
+        // Unregister previous version's message start events that are no longer present
+        if (versions.Count > 1)
+        {
+            var previousWorkflow = versions[^2].Workflow;
+            foreach (var oldMessageStart in previousWorkflow.Activities.OfType<MessageStartEvent>())
+            {
+                var oldMessageDef = previousWorkflow.Messages.FirstOrDefault(m => m.Id == oldMessageStart.MessageDefinitionId);
+                if (oldMessageDef != null && !newMessageNames.Contains(oldMessageDef.Name))
+                {
+                    var listener = _grainFactory.GetGrain<IMessageStartEventListenerGrain>(oldMessageDef.Name);
+                    await listener.UnregisterProcess(processDefinitionKey);
+                }
+            }
+        }
+
         return ToSummary(definition);
     }
 
