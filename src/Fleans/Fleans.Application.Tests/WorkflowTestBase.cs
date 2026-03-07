@@ -82,6 +82,7 @@ public abstract class WorkflowTestBase
                 .AddMemoryGrainStorage(GrainStorageNames.MessageCorrelations)
                 .AddMemoryGrainStorage(GrainStorageNames.SignalCorrelations)
                 .AddMemoryGrainStorage(GrainStorageNames.MessageStartEventListeners)
+                .AddMemoryGrainStorage(GrainStorageNames.SignalStartEventListeners)
                 .UseInMemoryReminderService()
                 .ConfigureServices(services =>
                 {
