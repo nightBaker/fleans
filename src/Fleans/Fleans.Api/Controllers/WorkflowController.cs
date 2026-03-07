@@ -59,26 +59,13 @@ namespace Fleans.Api.Controllers
                         System.Text.Json.JsonSerializer.Serialize(request.Variables))!
                     : new ExpandoObject();
 
-                // Try correlation-based delivery first if a correlation key is provided
-                if (!string.IsNullOrWhiteSpace(request.CorrelationKey))
-                {
-                    var grainKey = MessageCorrelationKey.Build(request.MessageName, request.CorrelationKey);
-                    var correlationGrain = _grainFactory.GetGrain<IMessageCorrelationGrain>(grainKey);
-                    var delivered = await correlationGrain.DeliverMessage(variables);
+                var result = await _commandService.SendMessage(request.MessageName, request.CorrelationKey, variables);
 
-                    if (delivered)
-                        return Ok(new SendMessageResponse(Delivered: true));
-                }
+                if (!result.Delivered)
+                    return NotFound(new ErrorResponse(
+                        $"No subscription or start event found for message '{request.MessageName}'"));
 
-                // Fallthrough: try message start event listener
-                var listener = _grainFactory.GetGrain<IMessageStartEventListenerGrain>(request.MessageName);
-                var instanceIds = await listener.FireMessageStartEvent(variables);
-
-                if (instanceIds.Count > 0)
-                    return Ok(new SendMessageResponse(Delivered: true, WorkflowInstanceIds: instanceIds));
-
-                return NotFound(new ErrorResponse(
-                    $"No subscription or start event found for message '{request.MessageName}'"));
+                return Ok(new SendMessageResponse(result.Delivered, result.WorkflowInstanceIds));
             }
             catch (Exception ex)
             {

@@ -59,20 +59,27 @@ public partial class MessageStartEventListenerGrain : Grain, IMessageStartEventL
 
         foreach (var processDefinitionKey in State.ProcessDefinitionKeys)
         {
-            var instanceId = Guid.NewGuid();
-            var instance = _grainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
+            try
+            {
+                var instanceId = Guid.NewGuid();
+                var instance = _grainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
 
-            var definition = await factory.GetLatestWorkflowDefinition(processDefinitionKey);
+                var definition = await factory.GetLatestWorkflowDefinition(processDefinitionKey);
 
-            // Find the MessageStartEvent that matches this message name
-            var messageStartActivityId = FindMessageStartActivityId(definition, messageName);
+                // Find the MessageStartEvent that matches this message name
+                var messageStartActivityId = FindMessageStartActivityId(definition, messageName);
 
-            await instance.SetWorkflow(definition, messageStartActivityId);
-            await instance.SetInitialVariables(variables);
-            await instance.StartWorkflow();
+                await instance.SetWorkflow(definition, messageStartActivityId);
+                await instance.SetInitialVariables(variables);
+                await instance.StartWorkflow();
 
-            createdIds.Add(instanceId);
-            LogMessageStartEventFired(messageName, processDefinitionKey, instanceId);
+                createdIds.Add(instanceId);
+                LogMessageStartEventFired(messageName, processDefinitionKey, instanceId);
+            }
+            catch (Exception ex)
+            {
+                LogMessageStartEventFailed(messageName, processDefinitionKey, ex);
+            }
         }
 
         return createdIds;
@@ -100,4 +107,7 @@ public partial class MessageStartEventListenerGrain : Grain, IMessageStartEventL
 
     [LoggerMessage(EventId = 9103, Level = LogLevel.Warning, Message = "No registered processes for message start event '{MessageName}'")]
     private partial void LogNoRegisteredProcesses(string messageName);
+
+    [LoggerMessage(EventId = 9104, Level = LogLevel.Error, Message = "Failed to start workflow for message '{MessageName}', process {ProcessDefinitionKey}")]
+    private partial void LogMessageStartEventFailed(string messageName, string processDefinitionKey, Exception ex);
 }
