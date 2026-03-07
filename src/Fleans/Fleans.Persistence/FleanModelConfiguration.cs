@@ -177,10 +177,15 @@ internal static class FleanModelConfiguration
             entity.HasKey(e => e.Key);
             entity.Property(e => e.Key).HasMaxLength(512);
             entity.Property(e => e.ETag).HasMaxLength(64);
-            entity.Property(e => e.ProcessDefinitionKeys)
-                .HasConversion(
-                    v => JsonConvert.SerializeObject(v),
-                    v => JsonConvert.DeserializeObject<List<string>>(v) ?? new List<string>());
+            entity.Ignore(e => e.ProcessDefinitionKeys);
+        });
+
+        modelBuilder.Entity<StartEventRegistration>(entity =>
+        {
+            entity.ToTable("StartEventRegistrations");
+            entity.HasKey(e => new { e.EventName, e.ProcessDefinitionKey });
+            entity.Property(e => e.EventName).HasMaxLength(512);
+            entity.Property(e => e.ProcessDefinitionKey).HasMaxLength(256);
         });
 
         modelBuilder.Entity<ProcessDefinition>(entity =>

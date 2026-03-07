@@ -24,6 +24,12 @@ public class EfCoreMessageStartEventListenerGrainStorage : IGrainStorage
 
         if (state is not null)
         {
+            var registrations = await db.StartEventRegistrations.AsNoTracking()
+                .Where(r => r.EventName == id)
+                .ToListAsync();
+
+            state.ProcessDefinitionKeys = registrations.Select(r => r.ProcessDefinitionKey).ToList();
+
             grainState.State = (T)(object)state;
             grainState.ETag = state.ETag;
             grainState.RecordExists = true;
@@ -51,10 +57,22 @@ public class EfCoreMessageStartEventListenerGrainStorage : IGrainStorage
                 throw new InconsistentStateException(
                     $"ETag mismatch: expected '{grainState.ETag}', stored '{existing.ETag}'");
 
-            // Explicitly assign ProcessDefinitionKeys to ensure the JSON value converter applies correctly
-            existing.ProcessDefinitionKeys = state.ProcessDefinitionKeys;
             existing.ETag = newETag;
         }
+
+        // Diff registrations
+        var existingRegs = await db.StartEventRegistrations
+            .Where(r => r.EventName == id)
+            .ToListAsync();
+
+        var existingKeys = existingRegs.Select(r => r.ProcessDefinitionKey).ToHashSet();
+        var newKeys = state.ProcessDefinitionKeys.ToHashSet();
+
+        foreach (var reg in existingRegs.Where(r => !newKeys.Contains(r.ProcessDefinitionKey)))
+            db.StartEventRegistrations.Remove(reg);
+
+        foreach (var key in newKeys.Where(k => !existingKeys.Contains(k)))
+            db.StartEventRegistrations.Add(new StartEventRegistration(id, key));
 
         await db.SaveChangesAsync();
 
@@ -74,6 +92,9 @@ public class EfCoreMessageStartEventListenerGrainStorage : IGrainStorage
                 throw new InconsistentStateException(
                     $"ETag mismatch on clear: expected '{grainState.ETag}', stored '{existing.ETag}'");
 
+            // Remove registrations first, then the parent
+            var regs = await db.StartEventRegistrations.Where(r => r.EventName == id).ToListAsync();
+            db.StartEventRegistrations.RemoveRange(regs);
             db.MessageStartEventListeners.Remove(existing);
             await db.SaveChangesAsync();
         }
