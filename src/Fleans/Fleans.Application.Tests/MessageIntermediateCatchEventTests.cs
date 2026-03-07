@@ -49,10 +49,11 @@ public class MessageIntermediateCatchEventTests : WorkflowTestBase
             "Message catch activity should be active");
 
         // Act — deliver message via correlation grain
-        var correlationGrain = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>("paymentReceived");
+        var grainKey = MessageCorrelationKey.Build("paymentReceived", "order-123");
+        var correlationGrain = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>(grainKey);
         dynamic msgVars = new ExpandoObject();
         msgVars.paymentStatus = "confirmed";
-        var delivered = await correlationGrain.DeliverMessage("order-123", (ExpandoObject)msgVars);
+        var delivered = await correlationGrain.DeliverMessage((ExpandoObject)msgVars);
 
         // Assert — workflow completed, variables merged
         Assert.IsTrue(delivered, "Message should be delivered successfully");
@@ -152,8 +153,9 @@ public class MessageIntermediateCatchEventTests : WorkflowTestBase
         await workflowInstance.CompleteActivity("task1", vars);
 
         // Act — deliver with wrong key
-        var correlationGrain = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>("paymentReceived");
-        var delivered = await correlationGrain.DeliverMessage("order-999", new ExpandoObject());
+        var grainKey = MessageCorrelationKey.Build("paymentReceived", "order-999");
+        var correlationGrain = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>(grainKey);
+        var delivered = await correlationGrain.DeliverMessage(new ExpandoObject());
 
         // Assert — not delivered, workflow still waiting
         Assert.IsFalse(delivered, "Should not find a matching subscription");

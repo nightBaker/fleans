@@ -16,6 +16,21 @@ internal static class ActivityTestHelper
         return state;
     }
 
+    public static void SetupConditionStates(
+        IWorkflowExecutionContext workflowContext,
+        Guid activityInstanceId,
+        params (string sequenceFlowId, bool result)[] conditions)
+    {
+        var conditionStates = new Dictionary<Guid, ConditionSequenceState[]>
+        {
+            [activityInstanceId] = conditions
+                .Select(c => CreateEvaluatedConditionState(c.sequenceFlowId, activityInstanceId, c.result))
+                .ToArray()
+        };
+        workflowContext.GetConditionSequenceStates()
+            .Returns(ValueTask.FromResult<IReadOnlyDictionary<Guid, ConditionSequenceState[]>>(conditionStates));
+    }
+
     public static WorkflowDefinition CreateDefinitionWithSignal(
         List<Activity> activities,
         List<SequenceFlow> sequenceFlows,

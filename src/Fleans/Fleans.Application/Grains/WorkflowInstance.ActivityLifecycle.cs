@@ -128,8 +128,9 @@ public partial class WorkflowInstance
                         var corrValue = await GetVariable(variablesId, msgDef.CorrelationKeyExpression);
                         if (corrValue is not null)
                         {
-                            var corrGrain = _grainFactory.GetGrain<IMessageCorrelationGrain>(msgDef.Name);
-                            await corrGrain.Unsubscribe(corrValue.ToString()!);
+                            var grainKey = MessageCorrelationKey.Build(msgDef.Name, corrValue.ToString()!);
+                            var corrGrain = _grainFactory.GetGrain<IMessageCorrelationGrain>(grainKey);
+                            await corrGrain.Unsubscribe();
                         }
                     }
                     break;

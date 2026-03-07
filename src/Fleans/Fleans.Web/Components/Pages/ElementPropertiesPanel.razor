@@ -123,6 +123,14 @@
                 </div>
             }
 
+            @if (IsBoundaryEvent)
+            {
+                <div>
+                    <FluentCheckbox Value="@isInterrupting" @onchange="OnIsInterruptingChange"
+                                    Disabled="@ReadOnly" Label="Interrupting (cancels attached activity)" />
+                </div>
+            }
+
             @if (HasTimer)
             {
                 <div>
@@ -197,6 +205,7 @@
     private string messageName = "";
     private string correlationKey = "";
     private string signalName = "";
+    private bool isInterrupting = true;
 
     private static readonly Dictionary<string, string> TaskTypes = new()
     {
@@ -240,6 +249,7 @@
         messageName = Element.MessageName;
         correlationKey = Element.CorrelationKey;
         signalName = Element.SignalName;
+        isInterrupting = Element.IsInterrupting;
     }
 
     private Dictionary<string, string>? GetReplaceOptions()
@@ -325,6 +335,7 @@
     private bool HasTimer => Element.HasTimerDefinition;
     private bool HasMessage => Element.HasMessageDefinition;
     private bool HasSignal => Element.HasSignalDefinition;
+    private bool IsBoundaryEvent => Element.Type == "bpmn:BoundaryEvent";
 
     private static readonly Dictionary<string, string> TimerTypesAll = new()
     {
@@ -357,6 +368,12 @@
         "cycle" => "e.g. R3/PT10M",
         _ => ""
     };
+
+    private async Task OnIsInterruptingChange(ChangeEventArgs e)
+    {
+        isInterrupting = bool.TryParse(e.Value?.ToString(), out var v) && v;
+        await JS.InvokeVoidAsync("bpmnEditor.updateElementProperty", Element.Id, "cancelActivity", isInterrupting);
+    }
 
     private async Task OnTimerTypeChange(ChangeEventArgs e)
     {
@@ -502,6 +519,7 @@
         public string CorrelationKey { get; set; } = "";
         public bool HasSignalDefinition { get; set; }
         public string SignalName { get; set; } = "";
+        public bool IsInterrupting { get; set; } = true;
     }
 
     public class MappingData

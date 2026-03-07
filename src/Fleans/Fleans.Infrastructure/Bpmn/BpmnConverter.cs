@@ -77,6 +77,13 @@ public partial class BpmnConverter : IBpmnConverter
                 var timerDefinition = ParseTimerDefinition(timerDef);
                 activity = new TimerStartEvent(id, timerDefinition);
             }
+            else if (startEvent.Element(Bpmn + "messageEventDefinition") is { } msgDef)
+            {
+                var messageRef = msgDef.Attribute("messageRef")?.Value
+                    ?? throw new InvalidOperationException(
+                        $"startEvent '{id}' messageEventDefinition must have a messageRef attribute");
+                activity = new MessageStartEvent(id, messageRef);
+            }
             else
             {
                 activity = new StartEvent(id);
@@ -368,6 +375,23 @@ public partial class BpmnConverter : IBpmnConverter
             var attachedToRef = boundaryEl.Attribute("attachedToRef")?.Value
                 ?? throw new InvalidOperationException($"boundaryEvent '{id}' must have an attachedToRef attribute");
 
+            // BPMN spec: cancelActivity defaults to true when absent
+            var cancelActivityAttr = boundaryEl.Attribute("cancelActivity")?.Value;
+            bool isInterrupting;
+            if (cancelActivityAttr == null)
+            {
+                isInterrupting = true;
+            }
+            else if (!bool.TryParse(cancelActivityAttr, out var cancelVal))
+            {
+                throw new InvalidOperationException(
+                    $"boundaryEvent '{id}' has invalid cancelActivity value '{cancelActivityAttr}', expected 'true' or 'false'");
+            }
+            else
+            {
+                isInterrupting = cancelVal;
+            }
+
             var timerDef = boundaryEl.Element(Bpmn + "timerEventDefinition");
             var errorDef = boundaryEl.Element(Bpmn + "errorEventDefinition");
             var messageDef = boundaryEl.Element(Bpmn + "messageEventDefinition");
@@ -377,26 +401,27 @@ public partial class BpmnConverter : IBpmnConverter
             if (timerDef != null)
             {
                 var timerDefinition = ParseTimerDefinition(timerDef);
-                activity = new BoundaryTimerEvent(id, attachedToRef, timerDefinition);
+                activity = new BoundaryTimerEvent(id, attachedToRef, timerDefinition, isInterrupting);
             }
             else if (messageDef != null)
             {
                 var messageRef = messageDef.Attribute("messageRef")?.Value
                     ?? throw new InvalidOperationException(
                         $"boundaryEvent '{id}' messageEventDefinition must have a messageRef attribute");
-                activity = new MessageBoundaryEvent(id, attachedToRef, messageRef);
+                activity = new MessageBoundaryEvent(id, attachedToRef, messageRef, isInterrupting);
             }
             else if (signalDef != null)
             {
                 var signalRef = signalDef.Attribute("signalRef")?.Value
                     ?? throw new InvalidOperationException(
                         $"boundaryEvent '{id}' signalEventDefinition must have a signalRef attribute");
-                activity = new SignalBoundaryEvent(id, attachedToRef, signalRef);
+                activity = new SignalBoundaryEvent(id, attachedToRef, signalRef, isInterrupting);
             }
             else
             {
+                // Error boundaries are ALWAYS interrupting per BPMN spec
                 string? errorCode = errorDef?.Attribute("errorRef")?.Value;
-                activity = new BoundaryErrorEvent(id, attachedToRef, errorCode);
+                activity = new BoundaryErrorEvent(id, attachedToRef, errorCode, IsInterrupting: true);
             }
 
             activities.Add(activity);

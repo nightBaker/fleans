@@ -169,4 +169,8 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1051, Level = LogLevel.Information,
         Message = "Gateway fork state removed: forkInstanceId={ForkInstanceId}")]
     private partial void LogGatewayForkStateRemoved(Guid forkInstanceId);
+
+    [LoggerMessage(EventId = 1052, Level = LogLevel.Warning,
+        Message = "Stale message delivery ignored for activityId='{ActivityId}', hostActivityInstanceId={HostActivityInstanceId} — activity already completed")]
+    private partial void LogStaleMessageDeliveryIgnored(string activityId, Guid hostActivityInstanceId);
 }

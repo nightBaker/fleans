@@ -54,6 +54,15 @@ public partial class WorkflowInstance
         SetWorkflowRequestContext();
         using var scope = BeginWorkflowScope();
 
+        // Idempotency guard: if activity already completed/failed, silently ignore
+        var activeEntry = State.Entries.FirstOrDefault(e =>
+            e.ActivityInstanceId == hostActivityInstanceId && !e.IsCompleted);
+        if (activeEntry is null)
+        {
+            LogStaleMessageDeliveryIgnored(activityId, hostActivityInstanceId);
+            return;
+        }
+
         var definition = await GetWorkflowDefinition();
         var scopeDef = definition.GetScopeForActivity(activityId);
         var activity = scopeDef.GetActivity(activityId);
@@ -145,11 +154,12 @@ public partial class WorkflowInstance
 
         await _state.WriteStateAsync();
 
-        var correlationGrain = _grainFactory.GetGrain<IMessageCorrelationGrain>(messageDef.Name);
+        var grainKey = MessageCorrelationKey.Build(messageDef.Name, correlationKey);
+        var correlationGrain = _grainFactory.GetGrain<IMessageCorrelationGrain>(grainKey);
 
         try
         {
-            await correlationGrain.Subscribe(correlationKey, this.GetPrimaryKey(), activityId, entry.ActivityInstanceId);
+            await correlationGrain.Subscribe(this.GetPrimaryKey(), activityId, entry.ActivityInstanceId);
         }
         catch (Exception ex)
         {
@@ -183,11 +193,12 @@ public partial class WorkflowInstance
             return;
 
         var correlationKey = correlationValue.ToString()!;
-        var correlationGrain = _grainFactory.GetGrain<IMessageCorrelationGrain>(messageDef.Name);
+        var grainKey = MessageCorrelationKey.Build(messageDef.Name, correlationKey);
+        var correlationGrain = _grainFactory.GetGrain<IMessageCorrelationGrain>(grainKey);
 
         try
         {
-            await correlationGrain.Subscribe(correlationKey, this.GetPrimaryKey(), boundaryActivityId, hostActivityInstanceId);
+            await correlationGrain.Subscribe(this.GetPrimaryKey(), boundaryActivityId, hostActivityInstanceId);
         }
         catch (Exception ex)
         {

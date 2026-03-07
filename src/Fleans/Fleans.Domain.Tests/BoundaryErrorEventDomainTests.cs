@@ -49,4 +49,18 @@ public class BoundaryErrorEventDomainTests
         Assert.HasCount(1, nextActivities);
         Assert.AreEqual("recovery", nextActivities[0].NextActivity.ActivityId);
     }
+
+    [TestMethod]
+    public void BoundaryErrorEvent_IsInterrupting_DefaultsToTrue()
+    {
+        var boundary = new BoundaryErrorEvent("err1", "call1", null);
+        Assert.IsTrue(boundary.IsInterrupting);
+    }
+
+    [TestMethod]
+    public void BoundaryErrorEvent_IsInterrupting_CanBeSetToFalse()
+    {
+        var boundary = new BoundaryErrorEvent("err1", "call1", null, IsInterrupting: false);
+        Assert.IsFalse(boundary.IsInterrupting);
+    }
 }

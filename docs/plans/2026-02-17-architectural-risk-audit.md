@@ -158,10 +158,11 @@ Each item solves exactly one problem. Items within a phase may depend on earlier
 
 - [x] **3.1 — Token propagation**: Add a `TokenId` concept to `ActivityInstanceEntry`. When a gateway forks, it assigns token IDs to each branch. Join gateway counts arrived tokens. *Done.*
 - [x] **3.2 — Inclusive Gateway**: Fork evaluates all conditions, activates 1..N matching flows (each with a token). Join waits for exactly the number of tokens that were actually created. *Done.*
+- [x] **3.3 — ParallelGateway token migration**: ParallelGateway migrated from static graph-analysis join (`AllIncomingPathsCompleted`) to token-based join (`AllExpectedTokensArrived`) via shared `ForkJoinGateway` base class. *Done.*
 
 ### Phase 4: Non-Interrupting & Compensation (A4)
 
-- [ ] **4.1 — Non-interrupting boundary events**: Add `IsInterrupting` flag to `BoundaryErrorEvent`. When `false`, the attached activity continues; boundary event spawns a parallel branch. *Problem solved: parallel branch on boundary trigger without killing the source.*
+- [x] **4.1 — Non-interrupting boundary events**: Added `IsInterrupting` flag to all boundary events. Non-interrupting boundaries skip cancellation, clone variable scope, and spawn parallel branch. Timer cycle support for repeating non-interrupting timers. Web UI support for IsInterrupting toggle. *Done.*
 - [ ] **4.2 — Escalation Event**: Non-interrupting boundary event with escalation semantics. Routes to escalation handler while attached activity continues. *Problem solved: escalation notifications without flow interruption.*
 - [ ] **4.3 — Compensation stack**: Track completed activities with compensation handlers in an ordered stack on `WorkflowInstanceState`. *Problem solved: knowing what to undo and in what order.*
 - [ ] **4.4 — Compensation Event + Transaction Sub-Process**: When transaction fails, invoke compensation handlers in reverse from the stack. Requires Phase 2 (Embedded Sub-Process). *Problem solved: transactional rollback of completed work.*

@@ -1,5 +1,3 @@
-
-
 using System.Runtime.CompilerServices;
 [assembly:InternalsVisibleTo("Fleans.Domain.Tests")]
 
@@ -8,9 +6,8 @@ namespace Fleans.Domain.Activities;
 [GenerateSerializer]
 public record ParallelGateway(
     string ActivityId,
-    [property: Id(1)] bool IsFork) : Gateway(ActivityId)
+    [property: Id(1)] bool IsFork) : ForkJoinGateway(ActivityId, IsFork)
 {
-    internal override bool IsJoinGateway => !IsFork;
     internal override async Task<List<IExecutionCommand>> ExecuteAsync(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
     {
         var commands = await base.ExecuteAsync(workflowContext, activityContext, definition);
@@ -21,11 +18,10 @@ public record ParallelGateway(
         }
         else
         {
-            if (await AllIncomingPathsCompleted(workflowContext, definition))
+            if (await AllExpectedTokensArrived(workflowContext, definition))
             {
                 await activityContext.Complete();
             }
-            // Otherwise stay active — base.ExecuteAsync already called Execute()
         }
 
         return commands;
@@ -33,34 +29,20 @@ public record ParallelGateway(
 
     internal override Task<List<ActivityTransition>> GetNextActivities(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
     {
+        if (!IsFork)
+        {
+            // Join: restore parent token
+            var joinFlows = definition.SequenceFlows.Where(sf => sf.Source == this)
+                .Select(flow => new ActivityTransition(flow.Target, Token: TokenAction.RestoreParent))
+                .ToList();
+            return Task.FromResult(joinFlows);
+        }
+
+        // Fork: all outgoing paths with cloned variables and new tokens
         var nextFlows = definition.SequenceFlows.Where(sf => sf.Source == this)
-            .Select(flow => new ActivityTransition(flow.Target, CloneVariables: IsFork))
+            .Select(flow => new ActivityTransition(flow.Target, CloneVariables: true, Token: TokenAction.CreateNew))
             .ToList();
 
         return Task.FromResult(nextFlows);
-    }
-
-    private async Task<bool> AllIncomingPathsCompleted(IWorkflowExecutionContext workflowContext, IWorkflowDefinition workflow)
-    {
-        var incomingFlows = workflow.SequenceFlows.Where(sf => sf.Target == this).ToList();
-        var completedActivities = await workflowContext.GetCompletedActivities();
-
-        foreach (var incomingFlow in incomingFlows)
-        {
-            var sourceCompleted = false;
-            foreach (var completedActivity in completedActivities)
-            {
-                if (await completedActivity.GetActivityId() == incomingFlow.Source.ActivityId)
-                {
-                    sourceCompleted = true;
-                    break;
-                }
-            }
-
-            if (!sourceCompleted)
-                return false;
-        }
-
-        return true;
     }
 }

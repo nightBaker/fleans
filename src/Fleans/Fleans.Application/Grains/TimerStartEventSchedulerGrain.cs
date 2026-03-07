@@ -72,9 +72,10 @@ public partial class TimerStartEventSchedulerGrain : Grain, ITimerStartEventSche
         var factory = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
         var definition = await factory.GetLatestWorkflowDefinition(processKey);
 
+        var timerStart = definition.Activities.OfType<TimerStartEvent>().FirstOrDefault();
         var childId = Guid.NewGuid();
         var child = _grainFactory.GetGrain<IWorkflowInstanceGrain>(childId);
-        await child.SetWorkflow(definition);
+        await child.SetWorkflow(definition, timerStart?.ActivityId);
         await child.StartWorkflow();
 
         State.IncrementFireCount();
