@@ -11,6 +11,8 @@ public interface IWorkflowCommandService
     void CompleteActivity(Guid workflowInstanceId, string activityId, ExpandoObject variables);
     Task<ProcessDefinitionSummary> DeployWorkflow(WorkflowDefinition workflow, string bpmnXml);
     Task<SendMessageResult> SendMessage(string messageName, string? correlationKey, ExpandoObject variables);
+    Task<SendSignalResult> SendSignal(string signalName);
 }
 
 public record SendMessageResult(bool Delivered, List<Guid>? WorkflowInstanceIds = null);
+public record SendSignalResult(int DeliveredCount, List<Guid>? WorkflowInstanceIds = null);
