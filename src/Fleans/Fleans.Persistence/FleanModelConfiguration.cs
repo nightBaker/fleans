@@ -177,10 +177,32 @@ internal static class FleanModelConfiguration
             entity.HasKey(e => e.Key);
             entity.Property(e => e.Key).HasMaxLength(512);
             entity.Property(e => e.ETag).HasMaxLength(64);
-            entity.Property(e => e.ProcessDefinitionKeys)
-                .HasConversion(
-                    v => JsonConvert.SerializeObject(v),
-                    v => JsonConvert.DeserializeObject<List<string>>(v) ?? new List<string>());
+            entity.Ignore(e => e.ProcessDefinitionKeys);
+        });
+
+        modelBuilder.Entity<SignalStartEventListenerState>(entity =>
+        {
+            entity.ToTable("SignalStartEventListeners");
+            entity.HasKey(e => e.Key);
+            entity.Property(e => e.Key).HasMaxLength(512);
+            entity.Property(e => e.ETag).HasMaxLength(64);
+            entity.Ignore(e => e.ProcessDefinitionKeys);
+        });
+
+        modelBuilder.Entity<MessageStartEventRegistration>(entity =>
+        {
+            entity.ToTable("MessageStartEventRegistrations");
+            entity.HasKey(e => new { e.MessageName, e.ProcessDefinitionKey });
+            entity.Property(e => e.MessageName).HasMaxLength(512);
+            entity.Property(e => e.ProcessDefinitionKey).HasMaxLength(256);
+        });
+
+        modelBuilder.Entity<SignalStartEventRegistration>(entity =>
+        {
+            entity.ToTable("SignalStartEventRegistrations");
+            entity.HasKey(e => new { e.SignalName, e.ProcessDefinitionKey });
+            entity.Property(e => e.SignalName).HasMaxLength(512);
+            entity.Property(e => e.ProcessDefinitionKey).HasMaxLength(256);
         });
 
         modelBuilder.Entity<ProcessDefinition>(entity =>

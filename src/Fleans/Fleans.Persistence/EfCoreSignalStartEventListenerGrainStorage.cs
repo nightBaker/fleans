@@ -5,11 +5,11 @@ using Orleans.Storage;
 
 namespace Fleans.Persistence;
 
-public class EfCoreMessageStartEventListenerGrainStorage : IGrainStorage
+public class EfCoreSignalStartEventListenerGrainStorage : IGrainStorage
 {
     private readonly IDbContextFactory<FleanCommandDbContext> _dbContextFactory;
 
-    public EfCoreMessageStartEventListenerGrainStorage(IDbContextFactory<FleanCommandDbContext> dbContextFactory)
+    public EfCoreSignalStartEventListenerGrainStorage(IDbContextFactory<FleanCommandDbContext> dbContextFactory)
     {
         _dbContextFactory = dbContextFactory;
     }
@@ -19,13 +19,13 @@ public class EfCoreMessageStartEventListenerGrainStorage : IGrainStorage
         await using var db = await _dbContextFactory.CreateDbContextAsync();
         var id = grainId.Key.ToString();
 
-        var state = await db.MessageStartEventListeners.AsNoTracking()
+        var state = await db.SignalStartEventListeners.AsNoTracking()
             .FirstOrDefaultAsync(e => e.Key == id);
 
         if (state is not null)
         {
-            var registrations = await db.MessageStartEventRegistrations.AsNoTracking()
-                .Where(r => r.MessageName == id)
+            var registrations = await db.SignalStartEventRegistrations.AsNoTracking()
+                .Where(r => r.SignalName == id)
                 .ToListAsync();
 
             state.ProcessDefinitionKeys = registrations.Select(r => r.ProcessDefinitionKey).ToList();
@@ -40,16 +40,16 @@ public class EfCoreMessageStartEventListenerGrainStorage : IGrainStorage
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync();
         var id = grainId.Key.ToString();
-        var state = (MessageStartEventListenerState)(object)grainState.State!;
+        var state = (SignalStartEventListenerState)(object)grainState.State!;
         var newETag = Guid.NewGuid().ToString("N");
 
-        var existing = await db.MessageStartEventListeners.FindAsync(id);
+        var existing = await db.SignalStartEventListeners.FindAsync(id);
 
         if (existing is null)
         {
             state.Key = id;
             state.ETag = newETag;
-            db.MessageStartEventListeners.Add(state);
+            db.SignalStartEventListeners.Add(state);
         }
         else
         {
@@ -61,18 +61,18 @@ public class EfCoreMessageStartEventListenerGrainStorage : IGrainStorage
         }
 
         // Diff registrations
-        var existingRegs = await db.MessageStartEventRegistrations
-            .Where(r => r.MessageName == id)
+        var existingRegs = await db.SignalStartEventRegistrations
+            .Where(r => r.SignalName == id)
             .ToListAsync();
 
         var existingKeys = existingRegs.Select(r => r.ProcessDefinitionKey).ToHashSet();
         var newKeys = state.ProcessDefinitionKeys.ToHashSet();
 
         foreach (var reg in existingRegs.Where(r => !newKeys.Contains(r.ProcessDefinitionKey)))
-            db.MessageStartEventRegistrations.Remove(reg);
+            db.SignalStartEventRegistrations.Remove(reg);
 
         foreach (var key in newKeys.Where(k => !existingKeys.Contains(k)))
-            db.MessageStartEventRegistrations.Add(new MessageStartEventRegistration(id, key));
+            db.SignalStartEventRegistrations.Add(new SignalStartEventRegistration(id, key));
 
         await db.SaveChangesAsync();
 
@@ -84,7 +84,7 @@ public class EfCoreMessageStartEventListenerGrainStorage : IGrainStorage
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync();
         var id = grainId.Key.ToString();
-        var existing = await db.MessageStartEventListeners.FindAsync(id);
+        var existing = await db.SignalStartEventListeners.FindAsync(id);
 
         if (existing is not null)
         {
@@ -93,9 +93,9 @@ public class EfCoreMessageStartEventListenerGrainStorage : IGrainStorage
                     $"ETag mismatch on clear: expected '{grainState.ETag}', stored '{existing.ETag}'");
 
             // Remove registrations first, then the parent
-            var regs = await db.MessageStartEventRegistrations.Where(r => r.MessageName == id).ToListAsync();
-            db.MessageStartEventRegistrations.RemoveRange(regs);
-            db.MessageStartEventListeners.Remove(existing);
+            var regs = await db.SignalStartEventRegistrations.Where(r => r.SignalName == id).ToListAsync();
+            db.SignalStartEventRegistrations.RemoveRange(regs);
+            db.SignalStartEventListeners.Remove(existing);
             await db.SaveChangesAsync();
         }
 

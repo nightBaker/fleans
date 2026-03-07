@@ -99,4 +99,47 @@ public partial class WorkflowCommandService : IWorkflowCommandService
 
     [LoggerMessage(EventId = 7004, Level = LogLevel.Information, Message = "Sending message '{MessageName}' with correlation key '{CorrelationKey}'")]
     private partial void LogSendingMessage(string messageName, string? correlationKey);
+
+    public async Task<SendSignalResult> SendSignal(string signalName)
+    {
+        LogSendingSignal(signalName);
+
+        int deliveredCount = 0;
+        List<Guid>? instanceIds = null;
+
+        // Fan-out: broadcast to running instances AND create new instances
+        // Both always execute independently
+        try
+        {
+            var signalGrain = _grainFactory.GetGrain<ISignalCorrelationGrain>(signalName);
+            deliveredCount = await signalGrain.BroadcastSignal();
+        }
+        catch (Exception ex)
+        {
+            LogSignalBroadcastFailed(signalName, ex);
+        }
+
+        try
+        {
+            var listener = _grainFactory.GetGrain<ISignalStartEventListenerGrain>(signalName);
+            instanceIds = await listener.FireSignalStartEvent();
+            if (instanceIds.Count == 0)
+                instanceIds = null;
+        }
+        catch (Exception ex)
+        {
+            LogSignalStartEventFireFailed(signalName, ex);
+        }
+
+        return new SendSignalResult(deliveredCount, instanceIds);
+    }
+
+    [LoggerMessage(EventId = 7005, Level = LogLevel.Information, Message = "Sending signal '{SignalName}'")]
+    private partial void LogSendingSignal(string signalName);
+
+    [LoggerMessage(EventId = 7006, Level = LogLevel.Error, Message = "Failed to broadcast signal '{SignalName}' to running instances")]
+    private partial void LogSignalBroadcastFailed(string signalName, Exception ex);
+
+    [LoggerMessage(EventId = 7007, Level = LogLevel.Error, Message = "Failed to fire signal start event for '{SignalName}'")]
+    private partial void LogSignalStartEventFireFailed(string signalName, Exception ex);
 }

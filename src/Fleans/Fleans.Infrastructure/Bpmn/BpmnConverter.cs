@@ -84,6 +84,13 @@ public partial class BpmnConverter : IBpmnConverter
                         $"startEvent '{id}' messageEventDefinition must have a messageRef attribute");
                 activity = new MessageStartEvent(id, messageRef);
             }
+            else if (startEvent.Element(Bpmn + "signalEventDefinition") is { } sigDef)
+            {
+                var signalRef = sigDef.Attribute("signalRef")?.Value
+                    ?? throw new InvalidOperationException(
+                        $"startEvent '{id}' signalEventDefinition must have a signalRef attribute");
+                activity = new SignalStartEvent(id, signalRef);
+            }
             else
             {
                 activity = new StartEvent(id);

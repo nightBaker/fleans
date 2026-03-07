@@ -180,6 +180,34 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
             }
         }
 
+        // Register/unregister signal start event listeners
+        var newSignalNames = new HashSet<string>();
+        foreach (var signalStart in workflowWithId.Activities.OfType<SignalStartEvent>())
+        {
+            var signalDefinition = workflowWithId.Signals.FirstOrDefault(s => s.Id == signalStart.SignalDefinitionId);
+            if (signalDefinition != null)
+            {
+                newSignalNames.Add(signalDefinition.Name);
+                var listener = _grainFactory.GetGrain<ISignalStartEventListenerGrain>(signalDefinition.Name);
+                await listener.RegisterProcess(processDefinitionKey);
+            }
+        }
+
+        // Unregister previous version's signal start events that are no longer present
+        if (versions.Count > 1)
+        {
+            var previousWorkflow = versions[^2].Workflow;
+            foreach (var oldSignalStart in previousWorkflow.Activities.OfType<SignalStartEvent>())
+            {
+                var oldSignalDef = previousWorkflow.Signals.FirstOrDefault(s => s.Id == oldSignalStart.SignalDefinitionId);
+                if (oldSignalDef != null && !newSignalNames.Contains(oldSignalDef.Name))
+                {
+                    var listener = _grainFactory.GetGrain<ISignalStartEventListenerGrain>(oldSignalDef.Name);
+                    await listener.UnregisterProcess(processDefinitionKey);
+                }
+            }
+        }
+
         return ToSummary(definition);
     }
 

@@ -1,5 +1,4 @@
 using Fleans.Application;
-using Fleans.Application.Grains;
 using Fleans.ServiceDefaults.DTOs;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
@@ -13,16 +12,13 @@ namespace Fleans.Api.Controllers
     {
         private readonly ILogger<WorkflowController> _logger;
         private readonly IWorkflowCommandService _commandService;
-        private readonly IGrainFactory _grainFactory;
 
         public WorkflowController(
             ILogger<WorkflowController> logger,
-            IWorkflowCommandService commandService,
-            IGrainFactory grainFactory)
+            IWorkflowCommandService commandService)
         {
             _logger = logger;
             _commandService = commandService;
-            _grainFactory = grainFactory;
         }
 
         [HttpPost("start", Name = "StartWorkflow")]
@@ -85,9 +81,13 @@ namespace Fleans.Api.Controllers
 
             try
             {
-                var signalGrain = _grainFactory.GetGrain<ISignalCorrelationGrain>(request.SignalName);
-                var deliveredCount = await signalGrain.BroadcastSignal();
-                return Ok(new SendSignalResponse(DeliveredCount: deliveredCount));
+                var result = await _commandService.SendSignal(request.SignalName);
+
+                if (result.DeliveredCount == 0 && (result.WorkflowInstanceIds == null || result.WorkflowInstanceIds.Count == 0))
+                    return NotFound(new ErrorResponse(
+                        $"No subscription or start event found for signal '{request.SignalName}'"));
+
+                return Ok(new SendSignalResponse(result.DeliveredCount, result.WorkflowInstanceIds));
             }
             catch (Exception ex)
             {
