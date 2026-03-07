@@ -180,6 +180,15 @@ internal static class FleanModelConfiguration
             entity.Ignore(e => e.ProcessDefinitionKeys);
         });
 
+        modelBuilder.Entity<SignalStartEventListenerState>(entity =>
+        {
+            entity.ToTable("SignalStartEventListeners");
+            entity.HasKey(e => e.Key);
+            entity.Property(e => e.Key).HasMaxLength(512);
+            entity.Property(e => e.ETag).HasMaxLength(64);
+            entity.Ignore(e => e.ProcessDefinitionKeys);
+        });
+
         modelBuilder.Entity<StartEventRegistration>(entity =>
         {
             entity.ToTable("StartEventRegistrations");

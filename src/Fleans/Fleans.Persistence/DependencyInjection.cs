@@ -45,6 +45,10 @@ public static class EfCorePersistenceDependencyInjection
             (sp, _) => new EfCoreMessageStartEventListenerGrainStorage(
                 sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
 
+        services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.SignalStartEventListeners,
+            (sp, _) => new EfCoreSignalStartEventListenerGrainStorage(
+                sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
+
         services.AddSingleton<IProcessDefinitionRepository, EfCoreProcessDefinitionRepository>();
         services.AddSingleton<IWorkflowQueryService, WorkflowQueryService>();
     }
