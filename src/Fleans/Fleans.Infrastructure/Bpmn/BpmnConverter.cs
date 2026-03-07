@@ -77,6 +77,13 @@ public partial class BpmnConverter : IBpmnConverter
                 var timerDefinition = ParseTimerDefinition(timerDef);
                 activity = new TimerStartEvent(id, timerDefinition);
             }
+            else if (startEvent.Element(Bpmn + "messageEventDefinition") is { } msgDef)
+            {
+                var messageRef = msgDef.Attribute("messageRef")?.Value
+                    ?? throw new InvalidOperationException(
+                        $"startEvent '{id}' messageEventDefinition must have a messageRef attribute");
+                activity = new MessageStartEvent(id, messageRef);
+            }
             else
             {
                 activity = new StartEvent(id);

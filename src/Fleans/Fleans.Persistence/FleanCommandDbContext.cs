@@ -17,6 +17,7 @@ public class FleanCommandDbContext : DbContext
     public DbSet<MessageCorrelationState> MessageCorrelations => Set<MessageCorrelationState>();
     public DbSet<MessageSubscription> MessageSubscriptions => Set<MessageSubscription>();
     public DbSet<SignalCorrelationState> SignalCorrelations => Set<SignalCorrelationState>();
+    public DbSet<MessageStartEventListenerState> MessageStartEventListeners => Set<MessageStartEventListenerState>();
     public DbSet<SignalSubscription> SignalSubscriptions => Set<SignalSubscription>();
 
     public FleanCommandDbContext(DbContextOptions<FleanCommandDbContext> options) : base(options) { }

@@ -50,9 +50,6 @@ namespace Fleans.Api.Controllers
             if (request == null || string.IsNullOrWhiteSpace(request.MessageName))
                 return BadRequest(new ErrorResponse("MessageName is required"));
 
-            if (string.IsNullOrWhiteSpace(request.CorrelationKey))
-                return BadRequest(new ErrorResponse("CorrelationKey is required"));
-
             try
             {
                 // System.Text.Json deserializes ExpandoObject values as JsonElement,
@@ -62,15 +59,26 @@ namespace Fleans.Api.Controllers
                         System.Text.Json.JsonSerializer.Serialize(request.Variables))!
                     : new ExpandoObject();
 
-                var grainKey = MessageCorrelationKey.Build(request.MessageName, request.CorrelationKey);
-                var correlationGrain = _grainFactory.GetGrain<IMessageCorrelationGrain>(grainKey);
-                var delivered = await correlationGrain.DeliverMessage(variables);
+                // Try correlation-based delivery first if a correlation key is provided
+                if (!string.IsNullOrWhiteSpace(request.CorrelationKey))
+                {
+                    var grainKey = MessageCorrelationKey.Build(request.MessageName, request.CorrelationKey);
+                    var correlationGrain = _grainFactory.GetGrain<IMessageCorrelationGrain>(grainKey);
+                    var delivered = await correlationGrain.DeliverMessage(variables);
 
-                if (!delivered)
-                    return NotFound(new ErrorResponse(
-                        $"No subscription found for message '{request.MessageName}' with correlationKey '{request.CorrelationKey}'"));
+                    if (delivered)
+                        return Ok(new SendMessageResponse(Delivered: true));
+                }
 
-                return Ok(new SendMessageResponse(Delivered: true));
+                // Fallthrough: try message start event listener
+                var listener = _grainFactory.GetGrain<IMessageStartEventListenerGrain>(request.MessageName);
+                var instanceIds = await listener.FireMessageStartEvent(variables);
+
+                if (instanceIds.Count > 0)
+                    return Ok(new SendMessageResponse(Delivered: true, WorkflowInstanceIds: instanceIds));
+
+                return NotFound(new ErrorResponse(
+                    $"No subscription or start event found for message '{request.MessageName}'"));
             }
             catch (Exception ex)
             {

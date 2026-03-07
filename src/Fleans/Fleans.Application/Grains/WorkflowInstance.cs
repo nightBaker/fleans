@@ -45,7 +45,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         _boundaryHandler.Initialize(this);
     }
 
-    public async Task SetWorkflow(IWorkflowDefinition workflow)
+    public async Task SetWorkflow(IWorkflowDefinition workflow, string? startActivityId = null)
     {
         if(_workflowDefinition is not null) throw new ArgumentException("Workflow already set");
 
@@ -55,8 +55,17 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain, IBoundary
         using var scope = BeginWorkflowScope();
         LogWorkflowDefinitionSet();
 
-        var startActivity = workflow.Activities.FirstOrDefault(a => a is StartEvent or TimerStartEvent)
-            ?? throw new InvalidOperationException("Workflow must have a StartEvent or TimerStartEvent");
+        Activity startActivity;
+        if (startActivityId is not null)
+        {
+            startActivity = workflow.Activities.FirstOrDefault(a => a.ActivityId == startActivityId)
+                ?? throw new InvalidOperationException($"Activity '{startActivityId}' not found in workflow");
+        }
+        else
+        {
+            startActivity = workflow.Activities.FirstOrDefault(a => a is StartEvent or TimerStartEvent or MessageStartEvent)
+                ?? throw new InvalidOperationException("Workflow must have a StartEvent, TimerStartEvent, or MessageStartEvent");
+        }
 
         var activityInstanceId = Guid.NewGuid();
         var variablesId = Guid.NewGuid();

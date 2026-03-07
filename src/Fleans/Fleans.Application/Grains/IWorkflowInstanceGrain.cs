@@ -29,7 +29,7 @@ public interface IWorkflowInstanceGrain : IGrainWithGuidKey, IWorkflowExecutionC
     Task FailActivity(string activityId, Exception exception);
     Task FailActivity(string activityId, Guid activityInstanceId, Exception exception);
     Task StartWorkflow();
-    Task SetWorkflow(IWorkflowDefinition workflow);
+    Task SetWorkflow(IWorkflowDefinition workflow, string? startActivityId = null);
 
     [ReadOnly]
     ValueTask<ExpandoObject> GetVariables(Guid variablesStateId);
