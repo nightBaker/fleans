@@ -239,7 +239,8 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
             Version: definition.Version,
             DeployedAt: definition.DeployedAt,
             ActivitiesCount: definition.Workflow.Activities.Count,
-            SequenceFlowsCount: definition.Workflow.SequenceFlows.Count);
+            SequenceFlowsCount: definition.Workflow.SequenceFlows.Count,
+            IsActive: definition.IsActive);
 
     private string GenerateProcessDefinitionId(string key, int version, DateTimeOffset deployedAt)
     {

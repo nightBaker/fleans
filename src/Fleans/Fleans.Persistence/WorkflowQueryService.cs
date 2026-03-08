@@ -100,7 +100,8 @@ public class WorkflowQueryService : IWorkflowQueryService
             d.Version,
             d.DeployedAt,
             d.Workflow.Activities.Count,
-            d.Workflow.SequenceFlows.Count)).ToList();
+            d.Workflow.SequenceFlows.Count,
+            d.IsActive)).ToList();
     }
 
     public async Task<IReadOnlyList<WorkflowInstanceInfo>> GetInstancesByKey(string processDefinitionKey)

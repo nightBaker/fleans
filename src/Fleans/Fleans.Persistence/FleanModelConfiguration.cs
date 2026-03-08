@@ -217,6 +217,8 @@ internal static class FleanModelConfiguration
 
             entity.HasIndex(e => e.ProcessDefinitionKey);
 
+            entity.Property(e => e.IsActive).HasDefaultValue(true);
+
             var jsonSettings = new JsonSerializerSettings
             {
                 TypeNameHandling = TypeNameHandling.Auto,

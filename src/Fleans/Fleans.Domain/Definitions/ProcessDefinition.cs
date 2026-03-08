@@ -37,4 +37,7 @@ public sealed class ProcessDefinition
 
     [Id(6)]
     public string? ETag { get; set; }
+
+    [Id(7)]
+    public bool IsActive { get; set; } = true;
 }
