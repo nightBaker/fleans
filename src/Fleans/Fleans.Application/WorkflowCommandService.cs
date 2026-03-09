@@ -142,4 +142,24 @@ public partial class WorkflowCommandService : IWorkflowCommandService
 
     [LoggerMessage(EventId = 7007, Level = LogLevel.Error, Message = "Failed to fire signal start event for '{SignalName}'")]
     private partial void LogSignalStartEventFireFailed(string signalName, Exception ex);
+
+    public async Task<ProcessDefinitionSummary> DisableProcess(string processDefinitionKey)
+    {
+        LogDisablingProcess(processDefinitionKey);
+        var factoryGrain = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstanceFactorySingletonId);
+        return await factoryGrain.DisableProcess(processDefinitionKey);
+    }
+
+    public async Task<ProcessDefinitionSummary> EnableProcess(string processDefinitionKey)
+    {
+        LogEnablingProcess(processDefinitionKey);
+        var factoryGrain = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstanceFactorySingletonId);
+        return await factoryGrain.EnableProcess(processDefinitionKey);
+    }
+
+    [LoggerMessage(EventId = 7008, Level = LogLevel.Information, Message = "Disabling process {ProcessDefinitionKey}")]
+    private partial void LogDisablingProcess(string processDefinitionKey);
+
+    [LoggerMessage(EventId = 7009, Level = LogLevel.Information, Message = "Enabling process {ProcessDefinitionKey}")]
+    private partial void LogEnablingProcess(string processDefinitionKey);
 }

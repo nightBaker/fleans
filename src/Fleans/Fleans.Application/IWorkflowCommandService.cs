@@ -12,6 +12,8 @@ public interface IWorkflowCommandService
     Task<ProcessDefinitionSummary> DeployWorkflow(WorkflowDefinition workflow, string bpmnXml);
     Task<SendMessageResult> SendMessage(string messageName, string? correlationKey, ExpandoObject variables);
     Task<SendSignalResult> SendSignal(string signalName);
+    Task<ProcessDefinitionSummary> DisableProcess(string processDefinitionKey);
+    Task<ProcessDefinitionSummary> EnableProcess(string processDefinitionKey);
 }
 
 public record SendMessageResult(bool Delivered, List<Guid>? WorkflowInstanceIds = null);
