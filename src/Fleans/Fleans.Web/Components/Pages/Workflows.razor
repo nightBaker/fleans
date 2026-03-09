@@ -84,7 +84,14 @@
             {
                 <FluentDataGrid Items="@filteredRows.Where(r => !r.IsHidden).AsQueryable()" TGridItem="ProcessDefinitionRow">
                     <TemplateColumn Title="Process Key" HierarchicalToggle="true">
-                        <strong title="@context.Item.ProcessDefinitionId">@context.Item.ProcessDefinitionKey</strong>
+                        <strong title="@context.Item.ProcessDefinitionId"
+                                style="@(context.Item.IsActive ? "" : "opacity: 0.5;")">
+                            @context.Item.ProcessDefinitionKey
+                            @if (!context.Item.IsActive)
+                            {
+                                <FluentBadge Color="Color.Warning" Style="margin-left: 8px;">Disabled</FluentBadge>
+                            }
+                        </strong>
                     </TemplateColumn>
                     <TemplateColumn Title="Version">
                         <FluentBadge Color="Color.Accent">v@(context.Item.Version)</FluentBadge>
@@ -102,7 +109,7 @@
                             <FluentButton Appearance="Appearance.Stealth"
                                           IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Play())"
                                           Loading="@(isStarting && startingProcessDefinitionId == context.Item.ProcessDefinitionId)"
-                                          Disabled="@isStarting"
+                                          Disabled="@(isStarting || !context.Item.IsActive)"
                                           @onclick="() => StartVersion(context.Item)">
                                 Start
                             </FluentButton>
@@ -111,6 +118,26 @@
                                           @onclick="() => ViewInstances(context.Item)">
                                 Instances
                             </FluentButton>
+                            @if (context.Item.IsActive)
+                            {
+                                <FluentButton Appearance="Appearance.Stealth"
+                                              IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Pause())"
+                                              Loading="@(isToggling && togglingProcessKey == context.Item.ProcessDefinitionKey)"
+                                              Disabled="@isToggling"
+                                              @onclick="() => ToggleActive(context.Item)">
+                                    Disable
+                                </FluentButton>
+                            }
+                            else
+                            {
+                                <FluentButton Appearance="Appearance.Stealth"
+                                              IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Play())"
+                                              Loading="@(isToggling && togglingProcessKey == context.Item.ProcessDefinitionKey)"
+                                              Disabled="@isToggling"
+                                              @onclick="() => ToggleActive(context.Item)">
+                                    Enable
+                                </FluentButton>
+                            }
                         </FluentStack>
                     </TemplateColumn>
                 </FluentDataGrid>
@@ -132,6 +159,8 @@
     private string? actionSuccessMessage;
     private bool isStarting = false;
     private string? startingProcessDefinitionId;
+    private bool isToggling = false;
+    private string? togglingProcessKey;
     private string searchQuery = string.Empty;
 
     private string SearchQuery
@@ -281,5 +310,39 @@
     private void ViewInstances(ProcessDefinitionSummary version)
     {
         Navigation.NavigateTo($"/process-instances/{Uri.EscapeDataString(version.ProcessDefinitionKey)}/{version.Version}");
+    }
+
+    private async Task ToggleActive(ProcessDefinitionSummary definition)
+    {
+        try
+        {
+            isToggling = true;
+            togglingProcessKey = definition.ProcessDefinitionKey;
+            actionErrorMessage = null;
+            actionSuccessMessage = null;
+
+            if (definition.IsActive)
+            {
+                await CommandService.DisableProcess(definition.ProcessDefinitionKey);
+                actionSuccessMessage = $"Disabled '{definition.ProcessDefinitionKey}'.";
+            }
+            else
+            {
+                await CommandService.EnableProcess(definition.ProcessDefinitionKey);
+                actionSuccessMessage = $"Enabled '{definition.ProcessDefinitionKey}'.";
+            }
+
+            await LoadWorkflows();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error toggling process {ProcessDefinitionKey}", definition.ProcessDefinitionKey);
+            actionErrorMessage = $"Failed to toggle process: {ex.Message}";
+        }
+        finally
+        {
+            isToggling = false;
+            togglingProcessKey = null;
+        }
     }
 }
