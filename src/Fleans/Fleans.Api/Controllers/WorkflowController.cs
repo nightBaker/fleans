@@ -98,5 +98,39 @@ namespace Fleans.Api.Controllers
 
         [LoggerMessage(EventId = 8003, Level = LogLevel.Error, Message = "Error broadcasting signal")]
         private partial void LogSignalDeliveryError(Exception exception);
+
+        [HttpPost("disable", Name = "DisableProcess")]
+        public async Task<IActionResult> DisableProcess([FromBody] ProcessDefinitionKeyRequest request)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.ProcessDefinitionKey))
+                return BadRequest(new ErrorResponse("ProcessDefinitionKey is required"));
+
+            try
+            {
+                var summary = await _commandService.DisableProcess(request.ProcessDefinitionKey);
+                return Ok(summary);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new ErrorResponse(ex.Message));
+            }
+        }
+
+        [HttpPost("enable", Name = "EnableProcess")]
+        public async Task<IActionResult> EnableProcess([FromBody] ProcessDefinitionKeyRequest request)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.ProcessDefinitionKey))
+                return BadRequest(new ErrorResponse("ProcessDefinitionKey is required"));
+
+            try
+            {
+                var summary = await _commandService.EnableProcess(request.ProcessDefinitionKey);
+                return Ok(summary);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new ErrorResponse(ex.Message));
+            }
+        }
     }
 }
