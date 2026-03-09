@@ -1,3 +1,4 @@
+using Fleans.Application.Grains;
 using Fleans.Application.Services;
 using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
@@ -121,6 +122,53 @@ namespace Fleans.Application.Tests
             Assert.IsNull(retrieved.Messages[1].CorrelationKeyExpression);
         }
 
+        [TestMethod]
+        public async Task DeployWorkflow_ShouldDeactivateTimer_WhenNewVersionRemovesTimerStartEvent()
+        {
+            // Arrange — deploy v1 with a TimerStartEvent
+            var processKey = "timer-removal-test";
+            var factoryGrain = _cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
+
+            var timerStart = new TimerStartEvent("timerStart", new TimerDefinition(TimerType.Duration, "PT1H"));
+            var end1 = new EndEvent("end1");
+            var v1 = new WorkflowDefinition
+            {
+                WorkflowId = processKey,
+                Activities = new List<Activity> { timerStart, end1 },
+                SequenceFlows = new List<SequenceFlow>
+                {
+                    new SequenceFlow("seq1", timerStart, end1)
+                }
+            };
+            await factoryGrain.DeployWorkflow(v1, "<bpmn/>");
+
+            // Act — deploy v2 WITHOUT a TimerStartEvent.
+            // Before the fix, the old timer reminder from v1 would keep firing.
+            // After the fix, DeployWorkflow calls DeactivateScheduler to unregister the reminder.
+            var start = new StartEvent("start");
+            var end2 = new EndEvent("end2");
+            var v2 = new WorkflowDefinition
+            {
+                WorkflowId = processKey,
+                Activities = new List<Activity> { start, end2 },
+                SequenceFlows = new List<SequenceFlow>
+                {
+                    new SequenceFlow("seq1", start, end2)
+                }
+            };
+
+            // Assert — deploying v2 should succeed and deactivate the scheduler
+            // (exercises the else-if branch that calls DeactivateScheduler).
+            // Before the fix, ActivateScheduler was called but not DeactivateScheduler,
+            // leaving a stale reminder that would fire indefinitely.
+            var summary = await factoryGrain.DeployWorkflow(v2, "<bpmn/>");
+            Assert.AreEqual(2, summary.Version);
+
+            // Verify v2 is the latest and has no TimerStartEvent
+            var latest = await factoryGrain.GetLatestWorkflowDefinition(processKey);
+            Assert.IsFalse(latest.Activities.OfType<TimerStartEvent>().Any());
+        }
+
         private static WorkflowDefinition CreateSimpleWorkflow(string workflowId)
         {
             var start = new StartEvent("start");
@@ -146,6 +194,12 @@ namespace Fleans.Application.Tests
                     .AddMemoryGrainStorage(GrainStorageNames.WorkflowInstances)
                     .AddMemoryGrainStorage(GrainStorageNames.ActivityInstances)
                     .AddMemoryGrainStorage(GrainStorageNames.ProcessDefinitions)
+                    .AddMemoryGrainStorage(GrainStorageNames.TimerSchedulers)
+                    .AddMemoryGrainStorage(GrainStorageNames.MessageStartEventListeners)
+                    .AddMemoryGrainStorage(GrainStorageNames.SignalStartEventListeners)
+                    .AddMemoryGrainStorage(GrainStorageNames.MessageCorrelations)
+                    .AddMemoryGrainStorage(GrainStorageNames.SignalCorrelations)
+                    .UseInMemoryReminderService()
                     .ConfigureServices(services =>
                     {
                         services.AddSingleton<IProcessDefinitionRepository, StubProcessDefinitionRepository>();

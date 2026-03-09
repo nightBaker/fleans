@@ -145,11 +145,16 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
 
         LogDeployedWorkflow(processDefinitionKey, processDefinitionId, nextVersion);
 
-        // Activate timer scheduler if the workflow contains a TimerStartEvent
+        // Activate or deactivate timer scheduler based on whether new version has a TimerStartEvent
         if (workflowWithId.Activities.OfType<TimerStartEvent>().Any())
         {
             var scheduler = _grainFactory.GetGrain<ITimerStartEventSchedulerGrain>(processDefinitionKey);
             await scheduler.ActivateScheduler(processDefinitionId);
+        }
+        else if (versions.Count > 1 && versions[^2].Workflow.Activities.OfType<TimerStartEvent>().Any())
+        {
+            var scheduler = _grainFactory.GetGrain<ITimerStartEventSchedulerGrain>(processDefinitionKey);
+            await scheduler.DeactivateScheduler();
         }
 
         // Register/unregister message start event listeners on redeployment
