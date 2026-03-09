@@ -222,7 +222,39 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
         return Task.FromResult<IWorkflowDefinition>(definition.Workflow);
     }
 
-    private ProcessDefinition GetLatestDefinitionOrThrow(string processDefinitionKey)
+    public async Task<ProcessDefinitionSummary> DisableProcess(string processDefinitionKey)
+    {
+        var definition = GetLatestDefinitionOrThrow(processDefinitionKey, allowDisabled: true);
+
+        if (!definition.IsActive)
+            return ToSummary(definition);
+
+        definition.IsActive = false;
+        await _repository.SaveAsync(definition);
+        LogProcessDisabled(processDefinitionKey);
+
+        await UnregisterAllStartEventListeners(definition.Workflow, processDefinitionKey);
+
+        return ToSummary(definition);
+    }
+
+    public async Task<ProcessDefinitionSummary> EnableProcess(string processDefinitionKey)
+    {
+        var definition = GetLatestDefinitionOrThrow(processDefinitionKey, allowDisabled: true);
+
+        if (definition.IsActive)
+            return ToSummary(definition);
+
+        definition.IsActive = true;
+        await _repository.SaveAsync(definition);
+        LogProcessEnabled(processDefinitionKey);
+
+        await RegisterAllStartEventListeners(definition.Workflow, processDefinitionKey, definition.ProcessDefinitionId);
+
+        return ToSummary(definition);
+    }
+
+    private ProcessDefinition GetLatestDefinitionOrThrow(string processDefinitionKey, bool allowDisabled = false)
     {
         if (string.IsNullOrWhiteSpace(processDefinitionKey))
         {
@@ -234,7 +266,14 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
             throw new KeyNotFoundException($"Workflow with id '{processDefinitionKey}' is not registered. Ensure the workflow is deployed before creating instances.");
         }
 
-        return versions[^1];
+        var definition = versions[^1];
+
+        if (!allowDisabled && !definition.IsActive)
+        {
+            throw new InvalidOperationException($"Process '{processDefinitionKey}' is disabled. Enable it before creating new instances.");
+        }
+
+        return definition;
     }
 
     private static ProcessDefinitionSummary ToSummary(ProcessDefinition definition) =>
@@ -246,6 +285,64 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
             ActivitiesCount: definition.Workflow.Activities.Count,
             SequenceFlowsCount: definition.Workflow.SequenceFlows.Count,
             IsActive: definition.IsActive);
+
+    private async Task UnregisterAllStartEventListeners(IWorkflowDefinition workflow, string processDefinitionKey)
+    {
+        if (workflow.Activities.OfType<TimerStartEvent>().Any())
+        {
+            var scheduler = _grainFactory.GetGrain<ITimerStartEventSchedulerGrain>(processDefinitionKey);
+            await scheduler.DeactivateScheduler();
+        }
+
+        foreach (var messageStart in workflow.Activities.OfType<MessageStartEvent>())
+        {
+            var msgDef = workflow.Messages.FirstOrDefault(m => m.Id == messageStart.MessageDefinitionId);
+            if (msgDef != null)
+            {
+                var listener = _grainFactory.GetGrain<IMessageStartEventListenerGrain>(msgDef.Name);
+                await listener.UnregisterProcess(processDefinitionKey);
+            }
+        }
+
+        foreach (var signalStart in workflow.Activities.OfType<SignalStartEvent>())
+        {
+            var sigDef = workflow.Signals.FirstOrDefault(s => s.Id == signalStart.SignalDefinitionId);
+            if (sigDef != null)
+            {
+                var listener = _grainFactory.GetGrain<ISignalStartEventListenerGrain>(sigDef.Name);
+                await listener.UnregisterProcess(processDefinitionKey);
+            }
+        }
+    }
+
+    private async Task RegisterAllStartEventListeners(IWorkflowDefinition workflow, string processDefinitionKey, string processDefinitionId)
+    {
+        if (workflow.Activities.OfType<TimerStartEvent>().Any())
+        {
+            var scheduler = _grainFactory.GetGrain<ITimerStartEventSchedulerGrain>(processDefinitionKey);
+            await scheduler.ActivateScheduler(processDefinitionId);
+        }
+
+        foreach (var messageStart in workflow.Activities.OfType<MessageStartEvent>())
+        {
+            var msgDef = workflow.Messages.FirstOrDefault(m => m.Id == messageStart.MessageDefinitionId);
+            if (msgDef != null)
+            {
+                var listener = _grainFactory.GetGrain<IMessageStartEventListenerGrain>(msgDef.Name);
+                await listener.RegisterProcess(processDefinitionKey);
+            }
+        }
+
+        foreach (var signalStart in workflow.Activities.OfType<SignalStartEvent>())
+        {
+            var sigDef = workflow.Signals.FirstOrDefault(s => s.Id == signalStart.SignalDefinitionId);
+            if (sigDef != null)
+            {
+                var listener = _grainFactory.GetGrain<ISignalStartEventListenerGrain>(sigDef.Name);
+                await listener.RegisterProcess(processDefinitionKey);
+            }
+        }
+    }
 
     private string GenerateProcessDefinitionId(string key, int version, DateTimeOffset deployedAt)
     {
@@ -268,4 +365,10 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
 
     [LoggerMessage(EventId = 6001, Level = LogLevel.Information, Message = "Creating workflow instance for {WorkflowKey} definition {ProcessDefinitionId}, instance {InstanceId}")]
     private partial void LogCreatingInstance(string workflowKey, string processDefinitionId, Guid instanceId);
+
+    [LoggerMessage(EventId = 6002, Level = LogLevel.Information, Message = "Process {ProcessDefinitionKey} disabled")]
+    private partial void LogProcessDisabled(string processDefinitionKey);
+
+    [LoggerMessage(EventId = 6003, Level = LogLevel.Information, Message = "Process {ProcessDefinitionKey} enabled")]
+    private partial void LogProcessEnabled(string processDefinitionKey);
 }

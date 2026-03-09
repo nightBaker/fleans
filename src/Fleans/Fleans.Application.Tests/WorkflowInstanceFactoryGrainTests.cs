@@ -169,6 +169,59 @@ namespace Fleans.Application.Tests
             Assert.IsFalse(latest.Activities.OfType<TimerStartEvent>().Any());
         }
 
+        [TestMethod]
+        public async Task DisableProcess_ShouldSetIsActiveFalse()
+        {
+            var processKey = "disable-test";
+            var factoryGrain = _cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
+            await factoryGrain.DeployWorkflow(CreateSimpleWorkflow(processKey), "<bpmn/>");
+
+            var summary = await factoryGrain.DisableProcess(processKey);
+
+            Assert.IsFalse(summary.IsActive);
+        }
+
+        [TestMethod]
+        public async Task EnableProcess_ShouldSetIsActiveTrue()
+        {
+            var processKey = "enable-test";
+            var factoryGrain = _cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
+            await factoryGrain.DeployWorkflow(CreateSimpleWorkflow(processKey), "<bpmn/>");
+            await factoryGrain.DisableProcess(processKey);
+
+            var summary = await factoryGrain.EnableProcess(processKey);
+
+            Assert.IsTrue(summary.IsActive);
+        }
+
+        [TestMethod]
+        public async Task DisableProcess_ShouldBlockNewInstances()
+        {
+            var processKey = "disable-block-test";
+            var factoryGrain = _cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
+            await factoryGrain.DeployWorkflow(CreateSimpleWorkflow(processKey), "<bpmn/>");
+            await factoryGrain.DisableProcess(processKey);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            {
+                await factoryGrain.CreateWorkflowInstanceGrain(processKey);
+            });
+        }
+
+        [TestMethod]
+        public async Task DeployWorkflow_ShouldAutoEnable_WhenProcessWasDisabled()
+        {
+            var processKey = "auto-enable-test";
+            var factoryGrain = _cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
+            await factoryGrain.DeployWorkflow(CreateSimpleWorkflow(processKey), "<bpmn/>");
+            await factoryGrain.DisableProcess(processKey);
+
+            var summary = await factoryGrain.DeployWorkflow(CreateSimpleWorkflow(processKey), "<bpmn/>");
+
+            Assert.IsTrue(summary.IsActive);
+            Assert.AreEqual(2, summary.Version);
+        }
+
         private static WorkflowDefinition CreateSimpleWorkflow(string workflowId)
         {
             var start = new StartEvent("start");
