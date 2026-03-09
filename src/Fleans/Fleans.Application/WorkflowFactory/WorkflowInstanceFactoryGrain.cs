@@ -145,69 +145,50 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
 
         LogDeployedWorkflow(processDefinitionKey, processDefinitionId, nextVersion);
 
-        // Activate or deactivate timer scheduler based on whether new version has a TimerStartEvent
-        if (workflowWithId.Activities.OfType<TimerStartEvent>().Any())
-        {
-            var scheduler = _grainFactory.GetGrain<ITimerStartEventSchedulerGrain>(processDefinitionKey);
-            await scheduler.ActivateScheduler(processDefinitionId);
-        }
-        else if (versions.Count > 1 && versions[^2].Workflow.Activities.OfType<TimerStartEvent>().Any())
-        {
-            var scheduler = _grainFactory.GetGrain<ITimerStartEventSchedulerGrain>(processDefinitionKey);
-            await scheduler.DeactivateScheduler();
-        }
+        // Register start event listeners for the new version
+        await RegisterAllStartEventListeners(workflowWithId, processDefinitionKey, processDefinitionId);
 
-        // Register/unregister message start event listeners on redeployment
-        var newMessageNames = new HashSet<string>();
-        foreach (var messageStart in workflowWithId.Activities.OfType<MessageStartEvent>())
-        {
-            var messageDefinition = workflowWithId.Messages.FirstOrDefault(m => m.Id == messageStart.MessageDefinitionId);
-            if (messageDefinition != null)
-            {
-                newMessageNames.Add(messageDefinition.Name);
-                var listener = _grainFactory.GetGrain<IMessageStartEventListenerGrain>(messageDefinition.Name);
-                await listener.RegisterProcess(processDefinitionKey);
-            }
-        }
-
-        // Unregister previous version's message start events that are no longer present
+        // Unregister removed start event listeners from previous version
         if (versions.Count > 1)
         {
             var previousWorkflow = versions[^2].Workflow;
+
+            // Timer: if previous had timer but new doesn't, deactivate
+            if (!workflowWithId.Activities.OfType<TimerStartEvent>().Any()
+                && previousWorkflow.Activities.OfType<TimerStartEvent>().Any())
+            {
+                var scheduler = _grainFactory.GetGrain<ITimerStartEventSchedulerGrain>(processDefinitionKey);
+                await scheduler.DeactivateScheduler();
+            }
+
+            // Messages: unregister removed message names
+            var newMessageNames = workflowWithId.Activities.OfType<MessageStartEvent>()
+                .Select(ms => workflowWithId.Messages.FirstOrDefault(m => m.Id == ms.MessageDefinitionId)?.Name)
+                .Where(n => n != null)
+                .ToHashSet();
+
             foreach (var oldMessageStart in previousWorkflow.Activities.OfType<MessageStartEvent>())
             {
-                var oldMessageDef = previousWorkflow.Messages.FirstOrDefault(m => m.Id == oldMessageStart.MessageDefinitionId);
-                if (oldMessageDef != null && !newMessageNames.Contains(oldMessageDef.Name))
+                var oldMsgDef = previousWorkflow.Messages.FirstOrDefault(m => m.Id == oldMessageStart.MessageDefinitionId);
+                if (oldMsgDef != null && !newMessageNames.Contains(oldMsgDef.Name))
                 {
-                    var listener = _grainFactory.GetGrain<IMessageStartEventListenerGrain>(oldMessageDef.Name);
+                    var listener = _grainFactory.GetGrain<IMessageStartEventListenerGrain>(oldMsgDef.Name);
                     await listener.UnregisterProcess(processDefinitionKey);
                 }
             }
-        }
 
-        // Register/unregister signal start event listeners
-        var newSignalNames = new HashSet<string>();
-        foreach (var signalStart in workflowWithId.Activities.OfType<SignalStartEvent>())
-        {
-            var signalDefinition = workflowWithId.Signals.FirstOrDefault(s => s.Id == signalStart.SignalDefinitionId);
-            if (signalDefinition != null)
-            {
-                newSignalNames.Add(signalDefinition.Name);
-                var listener = _grainFactory.GetGrain<ISignalStartEventListenerGrain>(signalDefinition.Name);
-                await listener.RegisterProcess(processDefinitionKey);
-            }
-        }
+            // Signals: unregister removed signal names
+            var newSignalNames = workflowWithId.Activities.OfType<SignalStartEvent>()
+                .Select(ss => workflowWithId.Signals.FirstOrDefault(s => s.Id == ss.SignalDefinitionId)?.Name)
+                .Where(n => n != null)
+                .ToHashSet();
 
-        // Unregister previous version's signal start events that are no longer present
-        if (versions.Count > 1)
-        {
-            var previousWorkflow = versions[^2].Workflow;
             foreach (var oldSignalStart in previousWorkflow.Activities.OfType<SignalStartEvent>())
             {
-                var oldSignalDef = previousWorkflow.Signals.FirstOrDefault(s => s.Id == oldSignalStart.SignalDefinitionId);
-                if (oldSignalDef != null && !newSignalNames.Contains(oldSignalDef.Name))
+                var oldSigDef = previousWorkflow.Signals.FirstOrDefault(s => s.Id == oldSignalStart.SignalDefinitionId);
+                if (oldSigDef != null && !newSignalNames.Contains(oldSigDef.Name))
                 {
-                    var listener = _grainFactory.GetGrain<ISignalStartEventListenerGrain>(oldSignalDef.Name);
+                    var listener = _grainFactory.GetGrain<ISignalStartEventListenerGrain>(oldSigDef.Name);
                     await listener.UnregisterProcess(processDefinitionKey);
                 }
             }
