@@ -1,3 +1,4 @@
+using Fleans.Application.Events;
 using Fleans.Application.Grains;
 using Fleans.Application.Services;
 using Fleans.Application.WorkflowFactory;
@@ -222,6 +223,69 @@ namespace Fleans.Application.Tests
             Assert.AreEqual(2, summary.Version);
         }
 
+        [TestMethod]
+        public async Task DisableProcess_ShouldUnregisterSignalStartEventListener()
+        {
+            var processKey = "signal-disable-test";
+            var signalName = "test-signal";
+            var factoryGrain = _cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
+
+            var signalStart = new SignalStartEvent("signalStart", "sig1");
+            var end = new EndEvent("end");
+            var workflow = new WorkflowDefinition
+            {
+                WorkflowId = processKey,
+                Activities = new List<Activity> { signalStart, end },
+                SequenceFlows = new List<SequenceFlow>
+                {
+                    new SequenceFlow("seq1", signalStart, end)
+                },
+                Signals = new List<SignalDefinition>
+                {
+                    new SignalDefinition("sig1", signalName)
+                }
+            };
+            await factoryGrain.DeployWorkflow(workflow, "<bpmn/>");
+
+            await factoryGrain.DisableProcess(processKey);
+
+            var listener = _cluster.GrainFactory.GetGrain<ISignalStartEventListenerGrain>(signalName);
+            var instanceIds = await listener.FireSignalStartEvent();
+            Assert.AreEqual(0, instanceIds.Count);
+        }
+
+        [TestMethod]
+        public async Task EnableProcess_ShouldReregisterSignalStartEventListener()
+        {
+            var processKey = "signal-enable-test";
+            var signalName = "test-signal-enable";
+            var factoryGrain = _cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
+
+            var signalStart = new SignalStartEvent("signalStart", "sig1");
+            var end = new EndEvent("end");
+            var workflow = new WorkflowDefinition
+            {
+                WorkflowId = processKey,
+                Activities = new List<Activity> { signalStart, end },
+                SequenceFlows = new List<SequenceFlow>
+                {
+                    new SequenceFlow("seq1", signalStart, end)
+                },
+                Signals = new List<SignalDefinition>
+                {
+                    new SignalDefinition("sig1", signalName)
+                }
+            };
+            await factoryGrain.DeployWorkflow(workflow, "<bpmn/>");
+            await factoryGrain.DisableProcess(processKey);
+
+            await factoryGrain.EnableProcess(processKey);
+
+            var listener = _cluster.GrainFactory.GetGrain<ISignalStartEventListenerGrain>(signalName);
+            var instanceIds = await listener.FireSignalStartEvent();
+            Assert.AreEqual(1, instanceIds.Count);
+        }
+
         private static WorkflowDefinition CreateSimpleWorkflow(string workflowId)
         {
             var start = new StartEvent("start");
@@ -244,6 +308,8 @@ namespace Fleans.Application.Tests
         {
             public void Configure(ISiloBuilder hostBuilder) =>
                 hostBuilder
+                    .AddMemoryStreams(Events.WorkflowEventsPublisher.StreamProvider)
+                    .AddMemoryGrainStorage("PubSubStore")
                     .AddMemoryGrainStorage(GrainStorageNames.WorkflowInstances)
                     .AddMemoryGrainStorage(GrainStorageNames.ActivityInstances)
                     .AddMemoryGrainStorage(GrainStorageNames.ProcessDefinitions)
