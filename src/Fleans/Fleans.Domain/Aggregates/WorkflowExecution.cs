@@ -3,6 +3,7 @@ using Fleans.Domain.Activities;
 using Fleans.Domain.Effects;
 using Fleans.Domain.Errors;
 using Fleans.Domain.Events;
+using Fleans.Domain.Sequences;
 using Fleans.Domain.States;
 
 namespace Fleans.Domain.Aggregates;
@@ -602,6 +603,108 @@ public class WorkflowExecution
         return (true, hostEffects.AsReadOnly());
     }
 
+    // --- Condition Sequence Handling ---
+
+    public void CompleteConditionSequence(string activityId, string conditionSequenceId, bool result)
+    {
+        var entry = _state.GetFirstActive(activityId)
+            ?? throw new InvalidOperationException(
+                $"No active entry found for activity '{activityId}'.");
+
+        Emit(new ConditionSequenceEvaluated(entry.ActivityInstanceId, conditionSequenceId, result));
+
+        var gateway = _definition.GetActivityAcrossScopes(activityId) as ConditionalGateway
+            ?? throw new InvalidOperationException(
+                $"Activity '{activityId}' is not a ConditionalGateway.");
+
+        bool isDecisionMade = IsGatewayDecisionMade(activityId, entry.ActivityInstanceId, gateway, result);
+
+        if (isDecisionMade)
+        {
+            Emit(new ActivityCompleted(entry.ActivityInstanceId, entry.VariablesId, new ExpandoObject()));
+        }
+    }
+
+    private bool IsGatewayDecisionMade(
+        string activityId, Guid activityInstanceId, ConditionalGateway gateway, bool result)
+    {
+        if (gateway is InclusiveGateway)
+        {
+            // InclusiveGateway: wait for ALL conditions to be evaluated, never short-circuit
+            var sequences = _state.GetConditionSequenceStatesForGateway(activityInstanceId);
+            if (!sequences.All(s => s.IsEvaluated))
+                return false;
+
+            if (sequences.Any(s => s.Result))
+                return true;
+
+            // All false — need default flow
+            return EnsureDefaultFlowExists(activityId, "InclusiveGateway");
+        }
+        else
+        {
+            // ExclusiveGateway: short-circuit on first true condition
+            if (result)
+                return true;
+
+            var sequences = _state.GetConditionSequenceStatesForGateway(activityInstanceId);
+            if (!sequences.All(s => s.IsEvaluated))
+                return false;
+
+            // All evaluated, all false — need default flow
+            return EnsureDefaultFlowExists(activityId, "Gateway");
+        }
+    }
+
+    private bool EnsureDefaultFlowExists(string activityId, string gatewayType)
+    {
+        var hasDefault = _definition.SequenceFlows
+            .OfType<DefaultSequenceFlow>()
+            .Any(sf => sf.Source.ActivityId == activityId);
+
+        if (!hasDefault)
+            throw new InvalidOperationException(
+                $"{gatewayType} {activityId}: all conditions evaluated to false and no default flow exists");
+
+        return true;
+    }
+
+    // --- Child Workflow Handling ---
+
+    public IReadOnlyList<IInfrastructureEffect> OnChildWorkflowCompleted(
+        string parentActivityId, ExpandoObject childVariables)
+    {
+        // Stale guard: if the call activity is no longer active, ignore
+        var entry = _state.GetFirstActive(parentActivityId);
+        if (entry is null)
+            return [];
+
+        var callActivity = _definition.GetActivityAcrossScopes(parentActivityId) as CallActivity
+            ?? throw new InvalidOperationException(
+                $"Activity '{parentActivityId}' is not a CallActivity.");
+
+        var mappedOutput = callActivity.BuildParentOutputVariables(childVariables);
+        return CompleteActivity(parentActivityId, entry.ActivityInstanceId, mappedOutput);
+    }
+
+    public IReadOnlyList<IInfrastructureEffect> OnChildWorkflowFailed(
+        string parentActivityId, Exception exception)
+    {
+        // Stale guard: if the call activity is no longer active, ignore
+        var entry = _state.GetFirstActive(parentActivityId);
+        if (entry is null)
+            return [];
+
+        return FailActivity(parentActivityId, entry.ActivityInstanceId, exception);
+    }
+
+    // --- Parent Info ---
+
+    public void SetParentInfo(Guid parentInstanceId, string parentActivityId)
+    {
+        Emit(new ParentInfoSet(parentInstanceId, parentActivityId));
+    }
+
     // --- Activity Lifecycle (external entry points) ---
 
     public IReadOnlyList<IInfrastructureEffect> CompleteActivity(
@@ -1003,7 +1106,7 @@ public class WorkflowExecution
                 _state.AddConditionSequenceStates(e.GatewayInstanceId, e.SequenceFlowIds);
                 break;
             case ConditionSequenceEvaluated e:
-                // handled in later tasks
+                _state.SetConditionSequenceResult(e.GatewayInstanceId, e.SequenceFlowId, e.Result);
                 break;
             case GatewayForkCreated e:
                 _state.CreateGatewayFork(e.ForkInstanceId, e.ConsumedTokenId);
@@ -1015,7 +1118,7 @@ public class WorkflowExecution
                 _state.RemoveGatewayFork(e.ForkInstanceId);
                 break;
             case ParentInfoSet e:
-                // handled in later tasks
+                _state.SetParentInfo(e.ParentInstanceId, e.ParentActivityId);
                 break;
             default:
                 throw new InvalidOperationException($"Unknown domain event type: {@event.GetType().Name}");
