@@ -1,5 +1,6 @@
 using System.Dynamic;
 using Fleans.Domain.Activities;
+using Fleans.Domain.Effects;
 using Fleans.Domain.Events;
 using Fleans.Domain.States;
 
@@ -67,6 +68,184 @@ public class WorkflowExecution
         Emit(new ActivityCompleted(activityInstanceId, entry.VariablesId, variables));
     }
 
+    public IReadOnlyList<IInfrastructureEffect> ProcessCommands(
+        IReadOnlyList<IExecutionCommand> commands, Guid activityInstanceId)
+    {
+        var effects = new List<IInfrastructureEffect>();
+
+        foreach (var command in commands)
+        {
+            switch (command)
+            {
+                case CompleteWorkflowCommand:
+                    Emit(new WorkflowCompleted());
+                    break;
+
+                case SpawnActivityCommand spawn:
+                    ProcessSpawnActivity(spawn, activityInstanceId);
+                    break;
+
+                case OpenSubProcessCommand openSub:
+                    ProcessOpenSubProcess(openSub);
+                    break;
+
+                case RegisterTimerCommand timer:
+                    effects.Add(new RegisterTimerEffect(
+                        _state.Id, activityInstanceId,
+                        timer.TimerActivityId, timer.DueTime));
+                    break;
+
+                case RegisterMessageCommand msg:
+                    effects.Add(ProcessRegisterMessage(msg, activityInstanceId));
+                    break;
+
+                case RegisterSignalCommand signal:
+                    effects.Add(new SubscribeSignalEffect(
+                        signal.SignalName, _state.Id, activityInstanceId));
+                    break;
+
+                case StartChildWorkflowCommand startChild:
+                    effects.Add(ProcessStartChildWorkflow(startChild, activityInstanceId));
+                    break;
+
+                case AddConditionsCommand conditions:
+                    effects.AddRange(ProcessAddConditions(conditions, activityInstanceId));
+                    break;
+
+                case ThrowSignalCommand throwSignal:
+                    effects.Add(new ThrowSignalEffect(throwSignal.SignalName));
+                    break;
+
+                default:
+                    throw new InvalidOperationException(
+                        $"Unknown execution command type: {command.GetType().Name}");
+            }
+        }
+
+        return effects.AsReadOnly();
+    }
+
+    private void ProcessSpawnActivity(SpawnActivityCommand spawn, Guid activityInstanceId)
+    {
+        Guid variablesId;
+
+        if (spawn.IsMultiInstanceIteration)
+        {
+            // Create a child variable scope for the iteration
+            var newScopeId = Guid.NewGuid();
+            Emit(new ChildVariableScopeCreated(newScopeId, spawn.ParentVariablesId!.Value));
+
+            // Set loopCounter and optional item variable
+            var iterVars = new ExpandoObject();
+            var iterDict = (IDictionary<string, object?>)iterVars;
+            iterDict["loopCounter"] = spawn.MultiInstanceIndex!.Value;
+
+            if (spawn.IterationItemName is not null)
+                iterDict[spawn.IterationItemName] = spawn.IterationItem;
+
+            Emit(new VariablesMerged(newScopeId, iterVars));
+
+            variablesId = newScopeId;
+        }
+        else
+        {
+            // Use the parent activity's variables scope
+            var parentEntry = _state.GetActiveEntry(activityInstanceId);
+            variablesId = parentEntry.VariablesId;
+        }
+
+        Emit(new ActivitySpawned(
+            ActivityInstanceId: Guid.NewGuid(),
+            ActivityId: spawn.Activity.ActivityId,
+            ActivityType: spawn.Activity.GetType().Name,
+            VariablesId: variablesId,
+            ScopeId: spawn.ScopeId,
+            MultiInstanceIndex: spawn.MultiInstanceIndex,
+            TokenId: null));
+    }
+
+    private void ProcessOpenSubProcess(OpenSubProcessCommand openSub)
+    {
+        var newScopeId = Guid.NewGuid();
+        Emit(new ChildVariableScopeCreated(newScopeId, openSub.ParentVariablesId));
+
+        var startEvent = openSub.SubProcess.Activities.OfType<StartEvent>().FirstOrDefault()
+            ?? throw new InvalidOperationException(
+                $"SubProcess '{openSub.SubProcess.ActivityId}' does not contain a StartEvent.");
+
+        Emit(new ActivitySpawned(
+            ActivityInstanceId: Guid.NewGuid(),
+            ActivityId: startEvent.ActivityId,
+            ActivityType: startEvent.GetType().Name,
+            VariablesId: newScopeId,
+            ScopeId: null,
+            MultiInstanceIndex: null,
+            TokenId: null));
+    }
+
+    private SubscribeMessageEffect ProcessRegisterMessage(
+        RegisterMessageCommand msg, Guid activityInstanceId)
+    {
+        var messageDef = _definition.Messages.First(m => m.Id == msg.MessageDefinitionId);
+
+        var correlationKey = string.Empty;
+        if (messageDef.CorrelationKeyExpression is not null)
+        {
+            // Strip the "= " prefix from the expression to get the variable name
+            var variableName = messageDef.CorrelationKeyExpression.StartsWith("= ")
+                ? messageDef.CorrelationKeyExpression[2..]
+                : messageDef.CorrelationKeyExpression;
+
+            var correlationValue = _state.GetVariable(msg.VariablesId, variableName);
+            correlationKey = correlationValue?.ToString()
+                ?? throw new InvalidOperationException(
+                    $"Correlation variable '{variableName}' is null for message '{messageDef.Name}'.");
+        }
+
+        return new SubscribeMessageEffect(
+            messageDef.Name, correlationKey,
+            _state.Id, activityInstanceId);
+    }
+
+    private StartChildWorkflowEffect ProcessStartChildWorkflow(
+        StartChildWorkflowCommand startChild, Guid activityInstanceId)
+    {
+        var callActivity = startChild.CallActivity;
+        var entry = _state.GetActiveEntry(activityInstanceId);
+
+        var childInstanceId = Guid.NewGuid();
+        entry.SetChildWorkflowInstanceId(childInstanceId);
+
+        var parentVariables = _state.GetMergedVariables(entry.VariablesId);
+        var inputVariables = callActivity.BuildChildInputVariables(parentVariables);
+
+        return new StartChildWorkflowEffect(
+            childInstanceId, callActivity.CalledProcessKey,
+            inputVariables, callActivity.ActivityId);
+    }
+
+    private List<IInfrastructureEffect> ProcessAddConditions(
+        AddConditionsCommand conditions, Guid activityInstanceId)
+    {
+        Emit(new ConditionSequencesAdded(activityInstanceId, conditions.SequenceFlowIds));
+
+        var effects = new List<IInfrastructureEffect>();
+        foreach (var evaluation in conditions.Evaluations)
+        {
+            var evalEvent = new EvaluateConditionEvent(
+                _state.Id,
+                _definition.WorkflowId,
+                _definition.ProcessDefinitionId,
+                activityInstanceId,
+                _state.GetActiveEntry(activityInstanceId).ActivityId,
+                evaluation.SequenceFlowId,
+                evaluation.Condition);
+
+            effects.Add(new PublishDomainEventEffect(evalEvent));
+        }
+        return effects;
+    }
+
     // --- Emit / Apply pattern ---
 
     private void Emit(IDomainEvent @event)
@@ -101,10 +280,10 @@ public class WorkflowExecution
                 // handled in later tasks
                 break;
             case VariablesMerged e:
-                // handled in later tasks
+                _state.MergeState(e.VariablesId, e.Variables);
                 break;
             case ChildVariableScopeCreated e:
-                // handled in later tasks
+                _state.AddChildVariableState(e.ScopeId, e.ParentScopeId);
                 break;
             case VariableScopeCloned e:
                 // handled in later tasks
@@ -113,7 +292,7 @@ public class WorkflowExecution
                 // handled in later tasks
                 break;
             case ConditionSequencesAdded e:
-                // handled in later tasks
+                _state.AddConditionSequenceStates(e.GatewayInstanceId, e.SequenceFlowIds);
                 break;
             case ConditionSequenceEvaluated e:
                 // handled in later tasks

@@ -123,6 +123,12 @@ public class WorkflowInstanceState
         return childState.Id;
     }
 
+    public void AddChildVariableState(Guid childId, Guid parentVariablesId)
+    {
+        var childState = new WorkflowVariablesState(childId, Id, parentVariablesId);
+        VariableStates.Add(childState);
+    }
+
     public void AddConditionSequenceStates(Guid activityInstanceId, string[] sequenceFlowIds)
     {
         var sequenceStates = sequenceFlowIds.Select(id =>
