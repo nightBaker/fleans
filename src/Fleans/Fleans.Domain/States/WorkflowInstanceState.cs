@@ -116,6 +116,15 @@ public class WorkflowInstanceState
         return clonedState.Id;
     }
 
+    public void AddCloneOfVariableState(Guid newScopeId, Guid sourceScopeId)
+    {
+        var source = VariableStates.First(v => v.Id == sourceScopeId);
+        var clonedState = new WorkflowVariablesState(newScopeId, Id, source.ParentVariablesId);
+        clonedState.Merge(source.Variables);
+
+        VariableStates.Add(clonedState);
+    }
+
     public Guid AddChildVariableState(Guid parentVariablesId)
     {
         var childState = new WorkflowVariablesState(Guid.NewGuid(), Id, parentVariablesId);

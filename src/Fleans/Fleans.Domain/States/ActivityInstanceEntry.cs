@@ -135,6 +135,18 @@ public class ActivityInstanceEntry
         CompletedAt = DateTimeOffset.UtcNow;
     }
 
+    public void Fail(int errorCode, string errorMessage)
+    {
+        if (IsCompleted)
+            throw new InvalidOperationException($"Activity '{ActivityId}' is already completed — cannot fail.");
+
+        ErrorCode = errorCode;
+        ErrorMessage = errorMessage;
+        IsExecuting = false;
+        IsCompleted = true;
+        CompletedAt = DateTimeOffset.UtcNow;
+    }
+
     public void Cancel(string reason)
     {
         if (IsCompleted)
