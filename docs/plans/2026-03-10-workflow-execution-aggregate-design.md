@@ -1,15 +1,16 @@
-# Workflow Execution Domain Aggregate — Design
+# Workflow Execution Domain Aggregate — Event-Sourced Design
 
 **Date:** 2026-03-10
 **Type:** Refactoring design (P0 from DDD architecture audit)
 **Status:** Approved
 **Addresses:** "Core BPMN logic lives in the grain layer" + "Anemic domain model"
+**Supersedes:** Previous aggregate + effects design (same date)
 
 ---
 
 ## Summary
 
-Extract all BPMN orchestration logic from the `WorkflowInstance` grain into a `WorkflowExecution` domain aggregate in `Fleans.Domain`. Eliminate the `ActivityInstance` grain by folding activity state into `WorkflowInstanceState`. The grain becomes a thin coordinator that calls the aggregate and performs infrastructure effects.
+Extract all BPMN orchestration logic from the `WorkflowInstance` grain into a `WorkflowExecution` domain aggregate in `Fleans.Domain`. The aggregate uses event sourcing internally: every state mutation is modeled as a named domain event via `Emit(event)` → `Apply(event)`. Eliminate the `ActivityInstance` grain by folding activity state into `WorkflowInstanceState`. The grain becomes a thin coordinator that calls the aggregate, performs infrastructure effects, and persists state snapshots.
 
 ---
 
@@ -75,6 +76,46 @@ public class ActivityInstanceEntry
 
 ---
 
+## Domain Event Catalogue
+
+Every state change is a named domain event in `Fleans.Domain/Events/`. These live alongside the existing `IDomainEvent` interface.
+
+### Workflow lifecycle
+
+- `WorkflowStarted(Guid InstanceId, string ProcessDefinitionId)`
+- `WorkflowCompleted()`
+
+### Activity lifecycle
+
+- `ActivitySpawned(Guid ActivityInstanceId, string ActivityId, string ActivityType, Guid VariablesId, Guid? ScopeId, int? MultiInstanceIndex, Guid? TokenId)`
+- `ActivityExecutionStarted(Guid ActivityInstanceId)`
+- `ActivityCompleted(Guid ActivityInstanceId, Guid VariablesId, ExpandoObject Variables)`
+- `ActivityFailed(Guid ActivityInstanceId, int ErrorCode, string ErrorMessage)`
+- `ActivityCancelled(Guid ActivityInstanceId, string Reason)`
+
+### Variable management
+
+- `VariablesMerged(Guid VariablesId, ExpandoObject Variables)`
+- `ChildVariableScopeCreated(Guid ScopeId, Guid ParentScopeId)`
+- `VariableScopeCloned(Guid NewScopeId, Guid SourceScopeId)`
+- `VariableScopesRemoved(List<Guid> ScopeIds)`
+
+### Gateway/token management
+
+- `ConditionSequencesAdded(Guid GatewayInstanceId, string[] SequenceFlowIds)`
+- `ConditionSequenceEvaluated(Guid GatewayInstanceId, string SequenceFlowId, bool Result)`
+- `GatewayForkCreated(Guid ForkInstanceId, Guid? ConsumedTokenId)`
+- `GatewayForkTokenAdded(Guid ForkInstanceId, Guid TokenId)`
+- `GatewayForkRemoved(Guid ForkInstanceId)`
+
+### Parent/child
+
+- `ParentInfoSet(Guid ParentInstanceId, string ParentActivityId)`
+
+Each event has a corresponding handler in the aggregate's `Apply()` method that mutates `WorkflowInstanceState`.
+
+---
+
 ## WorkflowExecution Domain Aggregate
 
 ### Location
@@ -83,48 +124,113 @@ public class ActivityInstanceEntry
 
 ### Responsibility
 
-Owns `WorkflowInstanceState` and encapsulates all BPMN orchestration logic. Every method is synchronous — operates on local state and returns infrastructure effects.
+Owns `WorkflowInstanceState` and encapsulates all BPMN orchestration logic. Every state mutation goes through `Emit(event)` → `Apply(event)`. Methods return infrastructure effects for the grain to perform.
 
-### API
+### Core Mechanism: Emit/Apply
 
 ```csharp
 public class WorkflowExecution
 {
     private readonly WorkflowInstanceState _state;
     private readonly IWorkflowDefinition _definition;
+    private readonly List<IDomainEvent> _uncommittedEvents = new();
 
+    // Emit an event: apply it to state and record it
+    private void Emit(IDomainEvent @event)
+    {
+        Apply(@event);
+        _uncommittedEvents.Add(@event);
+    }
+
+    // Strongly-typed state mutation dispatch
+    private void Apply(IDomainEvent @event)
+    {
+        switch (@event)
+        {
+            case ActivitySpawned e:
+                _state.AddEntry(new ActivityInstanceEntry(
+                    e.ActivityInstanceId, e.ActivityId, _state.Id, e.ScopeId) { ... });
+                break;
+            case ActivityCompleted e:
+                _state.GetEntry(e.ActivityInstanceId).Complete();
+                _state.MergeState(e.VariablesId, e.Variables);
+                break;
+            case GatewayForkTokenAdded e:
+                _state.FindFork(e.ForkInstanceId).AddToken(e.TokenId);
+                break;
+            // ... one case per event type
+        }
+    }
+
+    // Grain reads events for logging/audit
+    public IReadOnlyList<IDomainEvent> GetUncommittedEvents() => _uncommittedEvents;
+    public void ClearUncommittedEvents() => _uncommittedEvents.Clear();
+}
+```
+
+### API
+
+Methods return only `IReadOnlyList<IInfrastructureEffect>`. Domain events are accumulated internally and accessed via `GetUncommittedEvents()`.
+
+```csharp
+public class WorkflowExecution
+{
     // Workflow lifecycle
-    ExecutionResult Start();
+    IReadOnlyList<IInfrastructureEffect> Start();
 
     // Activity execution feedback
-    ExecutionResult ProcessCommands(IReadOnlyList<IExecutionCommand> commands, Guid activityInstanceId);
-    ExecutionResult ResolveTransitions();
+    IReadOnlyList<IInfrastructureEffect> ProcessCommands(
+        IReadOnlyList<IExecutionCommand> commands, Guid activityInstanceId);
+    IReadOnlyList<IInfrastructureEffect> ResolveTransitions();
 
     // External event entry points
-    ExecutionResult CompleteActivity(string activityId, Guid? activityInstanceId, ExpandoObject variables);
-    ExecutionResult FailActivity(string activityId, Guid? activityInstanceId, Exception exception);
-    ExecutionResult HandleTimerFired(string timerActivityId, Guid hostActivityInstanceId);
-    ExecutionResult HandleMessageDelivery(string activityId, Guid hostActivityInstanceId, ExpandoObject variables);
-    ExecutionResult HandleSignalDelivery(string activityId, Guid hostActivityInstanceId);
-    ExecutionResult CompleteConditionSequence(string activityId, Guid activityInstanceId, string sequenceId, bool result);
-    ExecutionResult OnChildWorkflowCompleted(string parentActivityId, ExpandoObject variables);
-    ExecutionResult OnChildWorkflowFailed(string parentActivityId, Exception exception);
+    IReadOnlyList<IInfrastructureEffect> CompleteActivity(
+        string activityId, Guid? activityInstanceId, ExpandoObject variables);
+    IReadOnlyList<IInfrastructureEffect> FailActivity(
+        string activityId, Guid? activityInstanceId, Exception exception);
+    IReadOnlyList<IInfrastructureEffect> HandleTimerFired(
+        string timerActivityId, Guid hostActivityInstanceId);
+    IReadOnlyList<IInfrastructureEffect> HandleMessageDelivery(
+        string activityId, Guid hostActivityInstanceId, ExpandoObject variables);
+    IReadOnlyList<IInfrastructureEffect> HandleSignalDelivery(
+        string activityId, Guid hostActivityInstanceId);
+    IReadOnlyList<IInfrastructureEffect> CompleteConditionSequence(
+        string activityId, Guid activityInstanceId, string sequenceId, bool result);
+    IReadOnlyList<IInfrastructureEffect> OnChildWorkflowCompleted(
+        string parentActivityId, ExpandoObject variables);
+    IReadOnlyList<IInfrastructureEffect> OnChildWorkflowFailed(
+        string parentActivityId, Exception exception);
 
     // Queries
     IReadOnlyList<PendingActivity> GetPendingActivities();
     void MarkExecuting(Guid activityInstanceId);
+
+    // Event access
+    IReadOnlyList<IDomainEvent> GetUncommittedEvents();
+    void ClearUncommittedEvents();
 }
 ```
 
-### ExecutionResult
+### Example: CompleteActivity
 
 ```csharp
-public record ExecutionResult(
-    IReadOnlyList<IInfrastructureEffect> Effects,
-    IReadOnlyList<IDomainEvent> Events);
-```
+public IReadOnlyList<IInfrastructureEffect> CompleteActivity(
+    string activityId, Guid? activityInstanceId, ExpandoObject variables)
+{
+    var entry = ResolveEntry(activityId, activityInstanceId);
 
-The aggregate mutates `WorkflowInstanceState` internally, then returns effects the grain must perform and events to publish. The grain never touches state directly.
+    // State changes as explicit events
+    Emit(new ActivityCompleted(entry.ActivityInstanceId, entry.VariablesId, variables));
+
+    // Domain logic: determine transitions
+    var transitions = ResolveNextActivities(entry);
+    foreach (var t in transitions)
+        Emit(new ActivitySpawned(Guid.NewGuid(), t.ActivityId, ...));
+
+    // Infrastructure: return effects for grain
+    return BuildUnsubscribeEffects(activityId, entry);
+}
+```
 
 ### What Moves Into This Aggregate
 
@@ -142,7 +248,7 @@ From the grain partial files:
 
 ## Infrastructure Effects Model
 
-The aggregate returns declarative effects. The grain performs them.
+The aggregate returns declarative effects. The grain performs them. These are unchanged from the previous design.
 
 ```csharp
 public interface IInfrastructureEffect { }
@@ -182,17 +288,13 @@ record CancelActivitySubscriptionsEffect(string ActivityId,
     Guid ActivityInstanceId) : IInfrastructureEffect;
 ```
 
-State mutations are NOT effects. The aggregate applies those directly to `WorkflowInstanceState` before returning. The grain just calls `WriteStateAsync()` after performing effects.
-
-### Mapping
-
-The existing `IExecutionCommand` types that activities return from `ExecuteAsync` get translated by `ProcessCommands()` into infrastructure effects. Commands remain as the activity-to-aggregate contract; effects are the aggregate-to-grain contract.
+Infrastructure effects are actions the grain must perform externally. Domain events are state changes applied internally. These are two separate concerns — effects tell the grain what to do; events record what happened to state.
 
 ---
 
 ## Grain as Thin Coordinator
 
-The `WorkflowInstance` grain shrinks to a coordinator loop.
+The grain pattern is nearly identical to the previous design. The only addition is event logging.
 
 ```csharp
 public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
@@ -201,26 +303,29 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
 
     public async Task StartWorkflow()
     {
-        var result = _execution.Start();
-        await PerformEffects(result);
+        var effects = _execution.Start();
+        await PerformEffects(effects);
         await RunExecutionLoop();
+        LogAndClearEvents();
         await _state.WriteStateAsync();
     }
 
     public async Task CompleteActivity(string activityId, Guid activityInstanceId,
         ExpandoObject variables)
     {
-        var result = _execution.CompleteActivity(activityId, activityInstanceId, variables);
-        await PerformEffects(result);
+        var effects = _execution.CompleteActivity(activityId, activityInstanceId, variables);
+        await PerformEffects(effects);
         await RunExecutionLoop();
+        LogAndClearEvents();
         await _state.WriteStateAsync();
     }
 
-    // All entry points follow the same 4-step pattern:
-    // 1. Call aggregate method -> get result
-    // 2. PerformEffects(result)
+    // All entry points follow the same 5-step pattern:
+    // 1. Call aggregate method → get effects
+    // 2. PerformEffects(effects)
     // 3. RunExecutionLoop()
-    // 4. WriteStateAsync()
+    // 4. LogAndClearEvents() — log domain events for audit
+    // 5. WriteStateAsync()
 
     private async Task RunExecutionLoop()
     {
@@ -235,18 +340,18 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
                 var activity = _definition.GetActivity(p.ActivityId);
                 var context = new ActivityExecutionContextAdapter(_execution, p.ActivityInstanceId);
                 var commands = await activity.ExecuteAsync(this, context, _definition);
-                var result = _execution.ProcessCommands(commands, p.ActivityInstanceId);
-                await PerformEffects(result);
+                var effects = _execution.ProcessCommands(commands, p.ActivityInstanceId);
+                await PerformEffects(effects);
             }
 
-            var transitions = _execution.ResolveTransitions();
-            await PerformEffects(transitions);
+            var transitionEffects = _execution.ResolveTransitions();
+            await PerformEffects(transitionEffects);
         }
     }
 
-    private async Task PerformEffects(ExecutionResult result)
+    private async Task PerformEffects(IReadOnlyList<IInfrastructureEffect> effects)
     {
-        foreach (var effect in result.Effects)
+        foreach (var effect in effects)
         {
             switch (effect)
             {
@@ -258,11 +363,19 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
                     var corr = _grainFactory.GetGrain<IMessageCorrelationGrain>(...);
                     await corr.Subscribe(...);
                     break;
+                case PublishEventEffect e:
+                    await _eventPublisher.Publish(e.Event);
+                    break;
                 // ... one case per effect type
             }
         }
-        foreach (var evt in result.Events)
-            await _eventPublisher.Publish(evt);
+    }
+
+    private void LogAndClearEvents()
+    {
+        foreach (var evt in _execution.GetUncommittedEvents())
+            LogDomainEvent(evt);
+        _execution.ClearUncommittedEvents();
     }
 }
 ```
@@ -280,7 +393,8 @@ internal class ActivityExecutionContextAdapter : IActivityExecutionContext
     public ValueTask Execute() { _execution.MarkExecuting(_activityInstanceId); return default; }
     public ValueTask Complete() { _execution.MarkCompleted(_activityInstanceId); return default; }
     public ValueTask<Guid> GetActivityInstanceId() => ValueTask.FromResult(_activityInstanceId);
-    public ValueTask<Guid> GetVariablesStateId() => ValueTask.FromResult(_execution.GetVariablesId(_activityInstanceId));
+    public ValueTask<Guid> GetVariablesStateId()
+        => ValueTask.FromResult(_execution.GetVariablesId(_activityInstanceId));
     // ... all methods delegate to aggregate
 }
 ```
@@ -288,6 +402,49 @@ internal class ActivityExecutionContextAdapter : IActivityExecutionContext
 ### IWorkflowExecutionContext
 
 The grain still implements `IWorkflowExecutionContext` but delegates reads to the aggregate's state. Activities don't know the difference.
+
+---
+
+## Persistence Strategy
+
+### Now: Snapshot-only
+
+Persistence is unchanged from today — `WriteStateAsync()` persists the `WorkflowInstanceState` snapshot via EF Core. Domain events are used internally for clean modeling and logged for audit, but not persisted as events.
+
+### Future: Event store migration
+
+Since all domain events are already defined and emitted, migrating to a full event store is additive:
+1. Add event persistence alongside snapshot
+2. Optionally rebuild state from events instead of snapshots
+3. Enable event replay for debugging/compliance
+
+This migration requires zero changes to the aggregate — just add persistence for `GetUncommittedEvents()`.
+
+---
+
+## Testing
+
+### Event-based assertions (new)
+
+```csharp
+var effects = execution.CompleteActivity("task1", instanceId, variables);
+var events = execution.GetUncommittedEvents();
+
+Assert.IsInstanceOfType<ActivityCompleted>(events[0]);
+Assert.IsInstanceOfType<VariablesMerged>(events[1]);
+Assert.IsInstanceOfType<ActivitySpawned>(events[2]);
+Assert.AreEqual("task2", ((ActivitySpawned)events[2]).ActivityId);
+```
+
+### State-based assertions (still work)
+
+```csharp
+execution.CompleteActivity("task1", instanceId, variables);
+var entry = state.GetEntry(instanceId);
+Assert.IsTrue(entry.IsCompleted);
+```
+
+Both styles are valid. Event assertions are more declarative for complex scenarios (parallel gateways, multi-instance, boundary events). No Orleans `TestCluster` needed.
 
 ---
 
@@ -302,14 +459,14 @@ The grain still implements `IWorkflowExecutionContext` but delegates reads to th
 - `WorkflowInstance.EventHandling.cs` — logic moves to aggregate
 - `WorkflowInstance.StateFacade.cs` — reads move to aggregate
 - `BoundaryEventHandler` service + `IBoundaryEventStateAccessor` interface
-- `WorkflowInstance.Logging.cs` — logging moves to aggregate (using injected ILogger)
+- `WorkflowInstance.Logging.cs` — logging moves to aggregate
 
 ### New
 
 - `WorkflowExecution` aggregate in `Fleans.Domain`
-- `ActivityExecutionContextAdapter` in `Fleans.Application`
+- ~17 domain event records in `Fleans.Domain/Events/`
 - Infrastructure effect records in `Fleans.Domain`
-- `ExecutionResult` record in `Fleans.Domain`
+- `ActivityExecutionContextAdapter` in `Fleans.Application`
 
 ### Unchanged
 
@@ -321,10 +478,6 @@ The grain still implements `IWorkflowExecutionContext` but delegates reads to th
 - `WorkflowInstanceFactoryGrain`
 - All integration tests (same external behavior, same grain interface)
 
-### Testing Improvement
-
-`WorkflowExecution` is a plain C# class — testable without Orleans `TestCluster`. Unit tests construct it with `WorkflowInstanceState` + `IWorkflowDefinition`, call methods, assert on returned effects and state mutations. Integration tests remain unchanged.
-
 ---
 
 ## EF Core Persistence Impact
@@ -332,5 +485,7 @@ The grain still implements `IWorkflowExecutionContext` but delegates reads to th
 The `Fleans.Persistence` layer currently stores `ActivityInstanceState` as separate EF Core entities. With this change:
 
 - `ActivityInstanceEntity` table merges into an `ActivityInstanceEntries` collection on `WorkflowInstanceEntity` (or a related table with FK to workflow instance)
-- The `WorkflowQueryService` read queries update to join the merged structure
+- `EfCoreActivityInstanceGrainStorage` is deleted
+- `EfCoreWorkflowInstanceGrainStorage` diff logic updates for enriched entries
+- `WorkflowQueryService` read queries update to join the merged structure
 - Migration required for existing data (if any)
