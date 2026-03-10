@@ -346,6 +346,74 @@ public class WorkflowExecution
         return effects;
     }
 
+    // --- Event Handling (external event delivery) ---
+
+    public IReadOnlyList<IInfrastructureEffect> HandleTimerFired(
+        string timerActivityId, Guid hostActivityInstanceId)
+    {
+        // Stale guard: if entry is no longer active, ignore
+        var entry = _state.Entries.FirstOrDefault(
+            e => e.ActivityInstanceId == hostActivityInstanceId);
+        if (entry is null || entry.IsCompleted)
+            return [];
+
+        // Look up the activity type in the definition
+        var activity = _definition.GetActivityAcrossScopes(timerActivityId);
+
+        if (activity is BoundaryTimerEvent)
+        {
+            // Boundary timer handling — placeholder for Task 10
+            return [];
+        }
+
+        // Intermediate catch timer: complete the activity with empty variables
+        return CompleteActivity(timerActivityId, hostActivityInstanceId, new ExpandoObject());
+    }
+
+    public IReadOnlyList<IInfrastructureEffect> HandleMessageDelivery(
+        string activityId, Guid hostActivityInstanceId, ExpandoObject variables)
+    {
+        // Stale guard: if entry is no longer active, ignore
+        var entry = _state.Entries.FirstOrDefault(
+            e => e.ActivityInstanceId == hostActivityInstanceId);
+        if (entry is null || entry.IsCompleted)
+            return [];
+
+        // Look up the activity type in the definition
+        var activity = _definition.GetActivityAcrossScopes(activityId);
+
+        if (activity is MessageBoundaryEvent)
+        {
+            // Boundary message handling — placeholder for Task 10
+            return [];
+        }
+
+        // Intermediate catch message: complete the activity with delivered variables
+        return CompleteActivity(activityId, hostActivityInstanceId, variables);
+    }
+
+    public IReadOnlyList<IInfrastructureEffect> HandleSignalDelivery(
+        string activityId, Guid hostActivityInstanceId)
+    {
+        // Stale guard: if entry is no longer active, ignore
+        var entry = _state.Entries.FirstOrDefault(
+            e => e.ActivityInstanceId == hostActivityInstanceId);
+        if (entry is null || entry.IsCompleted)
+            return [];
+
+        // Look up the activity type in the definition
+        var activity = _definition.GetActivityAcrossScopes(activityId);
+
+        if (activity is SignalBoundaryEvent)
+        {
+            // Boundary signal handling — placeholder for Task 10
+            return [];
+        }
+
+        // Intermediate catch signal: complete the activity with empty variables
+        return CompleteActivity(activityId, hostActivityInstanceId, new ExpandoObject());
+    }
+
     // --- Activity Lifecycle (external entry points) ---
 
     public IReadOnlyList<IInfrastructureEffect> CompleteActivity(
