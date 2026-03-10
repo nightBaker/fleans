@@ -67,12 +67,17 @@ public class WorkflowInstanceState
     public IEnumerable<ConditionSequenceState> GetConditionSequenceStatesForGateway(Guid gatewayActivityInstanceId)
         => ConditionSequenceStates.Where(c => c.GatewayActivityInstanceId == gatewayActivityInstanceId);
 
-    public void StartWith(Guid id, string? processDefinitionId, ActivityInstanceEntry entry, Guid variablesId)
+    public void Initialize(Guid id, string? processDefinitionId, Guid variablesId)
     {
         Id = id;
         ProcessDefinitionId = processDefinitionId;
         CreatedAt = DateTimeOffset.UtcNow;
         VariableStates.Add(new WorkflowVariablesState(variablesId, id));
+    }
+
+    public void StartWith(Guid id, string? processDefinitionId, ActivityInstanceEntry entry, Guid variablesId)
+    {
+        Initialize(id, processDefinitionId, variablesId);
         Entries.Add(entry);
     }
 

@@ -164,6 +164,8 @@ public class ActivityInstanceEntry
 
     public void SetVariablesId(Guid id) => VariablesId = id;
 
+    public void SetMultiInstanceIndex(int index) => MultiInstanceIndex = index;
+
     public void SetMultiInstanceTotal(int total) => MultiInstanceTotal = total;
 
     public void SetTokenId(Guid id) => TokenId = id;
