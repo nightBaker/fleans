@@ -319,7 +319,7 @@ public class WorkflowExecutionActivityLifecycleTests
     }
 
     [TestMethod]
-    public void FailActivity_WithBoundaryErrorHandler_ShouldReturnCancelActivitySubscriptionsEffect()
+    public void FailActivity_WithBoundaryErrorHandler_ShouldSpawnBoundaryErrorEvent()
     {
         var task = new ScriptTask("task1", "return 1;");
         var boundaryError = new BoundaryErrorEvent("boundary-error1", "task1", "500");
@@ -351,10 +351,15 @@ public class WorkflowExecutionActivityLifecycleTests
         var effects = execution.FailActivity(
             "task1", taskEntry.ActivityInstanceId, new Exception("something broke"));
 
-        // Should return CancelActivitySubscriptionsEffect (placeholder for Task 10)
-        var cancelEffect = effects.OfType<CancelActivitySubscriptionsEffect>().Single();
-        Assert.AreEqual("task1", cancelEffect.ActivityId);
-        Assert.AreEqual(taskEntry.ActivityInstanceId, cancelEffect.ActivityInstanceId);
+        // Should emit ActivityFailed + ActivitySpawned for boundary error event
+        var events = execution.GetUncommittedEvents();
+        var failed = events.OfType<ActivityFailed>().Single();
+        Assert.AreEqual(taskEntry.ActivityInstanceId, failed.ActivityInstanceId);
+
+        var spawned = events.OfType<ActivitySpawned>().Single();
+        Assert.AreEqual("boundary-error1", spawned.ActivityId);
+        Assert.AreEqual("BoundaryErrorEvent", spawned.ActivityType);
+        Assert.AreEqual(taskEntry.VariablesId, spawned.VariablesId);
     }
 
     // ===== CancelEventBasedGatewaySiblings Tests =====

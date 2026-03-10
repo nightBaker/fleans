@@ -360,10 +360,14 @@ public class WorkflowExecution
         // Look up the activity type in the definition
         var activity = _definition.GetActivityAcrossScopes(timerActivityId);
 
-        if (activity is BoundaryTimerEvent)
+        if (activity is BoundaryTimerEvent boundaryTimer)
         {
-            // Boundary timer handling — placeholder for Task 10
-            return [];
+            return HandleBoundaryEventFired(
+                boundaryTimer, boundaryTimer.AttachedToActivityId,
+                boundaryTimer.IsInterrupting, entry, new ExpandoObject(),
+                skipTimerActivityId: null,
+                skipMessageName: null,
+                skipSignalName: null);
         }
 
         // Intermediate catch timer: complete the activity with empty variables
@@ -382,10 +386,17 @@ public class WorkflowExecution
         // Look up the activity type in the definition
         var activity = _definition.GetActivityAcrossScopes(activityId);
 
-        if (activity is MessageBoundaryEvent)
+        if (activity is MessageBoundaryEvent boundaryMessage)
         {
-            // Boundary message handling — placeholder for Task 10
-            return [];
+            // For message boundaries, the fired message's subscription was already removed
+            // by DeliverMessage. Skip it in unsubscribe to avoid deadlocks.
+            var firedMessageDef = _definition.Messages.First(m => m.Id == boundaryMessage.MessageDefinitionId);
+            return HandleBoundaryEventFired(
+                boundaryMessage, boundaryMessage.AttachedToActivityId,
+                boundaryMessage.IsInterrupting, entry, variables,
+                skipTimerActivityId: null,
+                skipMessageName: firedMessageDef.Name,
+                skipSignalName: null);
         }
 
         // Intermediate catch message: complete the activity with delivered variables
@@ -404,10 +415,17 @@ public class WorkflowExecution
         // Look up the activity type in the definition
         var activity = _definition.GetActivityAcrossScopes(activityId);
 
-        if (activity is SignalBoundaryEvent)
+        if (activity is SignalBoundaryEvent boundarySignal)
         {
-            // Boundary signal handling — placeholder for Task 10
-            return [];
+            // For signal boundaries, the fired signal's subscription was already removed.
+            // Skip it in unsubscribe to avoid deadlocks.
+            var firedSignalDef = _definition.Signals.First(s => s.Id == boundarySignal.SignalDefinitionId);
+            return HandleBoundaryEventFired(
+                boundarySignal, boundarySignal.AttachedToActivityId,
+                boundarySignal.IsInterrupting, entry, new ExpandoObject(),
+                skipTimerActivityId: null,
+                skipMessageName: null,
+                skipSignalName: firedSignalDef.Name);
         }
 
         // Intermediate catch signal: complete the activity with empty variables
@@ -641,8 +659,30 @@ public class WorkflowExecution
 
         if (boundaryHandler is not null)
         {
-            // Boundary handler found — placeholder for Task 10 (full boundary handling)
-            effects.Add(new CancelActivitySubscriptionsEffect(activityId, entry.ActivityInstanceId));
+            var (boundaryEvent, scope, attachedToActivityId) = boundaryHandler.Value;
+
+            // Find the attached-to entry (may differ from the failed activity if
+            // the boundary is on a parent subprocess)
+            var attachedEntry = _state.Entries.FirstOrDefault(
+                e => e.ActivityId == attachedToActivityId && !e.IsCompleted);
+
+            var scopeIdForCancel = attachedEntry?.ActivityInstanceId ?? entry.ActivityInstanceId;
+
+            // Cancel scope children of the attached-to activity
+            CancelScopeChildren(scopeIdForCancel);
+
+            // Unsubscribe all boundary subscriptions on the attached activity
+            effects.AddRange(BuildBoundaryUnsubscribeEffects(attachedToActivityId, attachedEntry ?? entry));
+
+            // Spawn the boundary error event activity
+            Emit(new ActivitySpawned(
+                ActivityInstanceId: Guid.NewGuid(),
+                ActivityId: boundaryEvent.ActivityId,
+                ActivityType: boundaryEvent.GetType().Name,
+                VariablesId: entry.VariablesId,
+                ScopeId: attachedEntry?.ScopeId ?? entry.ScopeId,
+                MultiInstanceIndex: null,
+                TokenId: null));
         }
         else
         {
@@ -676,6 +716,109 @@ public class WorkflowExecution
                 $"No active entry found for activity '{activityId}'.");
     }
 
+    // --- Boundary Event Handling ---
+
+    /// <summary>
+    /// Unified handler for boundary timer, message, and signal events firing.
+    /// Handles both interrupting (cancel attached + scope children + unsubscribe siblings)
+    /// and non-interrupting (clone variables, leave attached running) modes.
+    /// </summary>
+    private IReadOnlyList<IInfrastructureEffect> HandleBoundaryEventFired(
+        Activity boundaryActivity,
+        string attachedToActivityId,
+        bool isInterrupting,
+        ActivityInstanceEntry hostEntry,
+        ExpandoObject deliveredVariables,
+        string? skipTimerActivityId,
+        string? skipMessageName,
+        string? skipSignalName)
+    {
+        var effects = new List<IInfrastructureEffect>();
+
+        Guid variablesId;
+        Guid? scopeId;
+
+        if (isInterrupting)
+        {
+            // Cancel the attached activity
+            Emit(new ActivityCancelled(
+                hostEntry.ActivityInstanceId,
+                $"Interrupted by boundary event '{boundaryActivity.ActivityId}'"));
+
+            // Recursively cancel scope children
+            CancelScopeChildren(hostEntry.ActivityInstanceId);
+
+            // Build unsubscribe effects for OTHER boundary subscriptions
+            // (skip the one that fired to avoid deadlocks)
+            effects.AddRange(BuildBoundaryUnsubscribeEffects(
+                attachedToActivityId, hostEntry,
+                skipTimerActivityId, skipMessageName, skipSignalName));
+
+            // Use the attached activity's variables scope
+            variablesId = hostEntry.VariablesId;
+            scopeId = hostEntry.ScopeId;
+        }
+        else
+        {
+            // Non-interrupting: leave attached activity running, clone variables
+            var clonedScopeId = Guid.NewGuid();
+            Emit(new VariableScopeCloned(clonedScopeId, hostEntry.VariablesId));
+            variablesId = clonedScopeId;
+            scopeId = hostEntry.ScopeId;
+
+            // Merge delivered variables into cloned scope
+            if (((IDictionary<string, object?>)deliveredVariables).Count > 0)
+            {
+                Emit(new VariablesMerged(clonedScopeId, deliveredVariables));
+            }
+
+            // For non-interrupting cycle timers, re-register the timer
+            if (boundaryActivity is BoundaryTimerEvent boundaryTimer
+                && boundaryTimer.TimerDefinition.Type == TimerType.Cycle)
+            {
+                var nextCycle = boundaryTimer.TimerDefinition.DecrementCycle();
+                if (nextCycle is not null)
+                {
+                    effects.Add(new RegisterTimerEffect(
+                        _state.Id, hostEntry.ActivityInstanceId,
+                        boundaryTimer.ActivityId, nextCycle.GetDueTime()));
+                }
+            }
+        }
+
+        // Spawn the boundary event activity
+        Emit(new ActivitySpawned(
+            ActivityInstanceId: Guid.NewGuid(),
+            ActivityId: boundaryActivity.ActivityId,
+            ActivityType: boundaryActivity.GetType().Name,
+            VariablesId: variablesId,
+            ScopeId: scopeId,
+            MultiInstanceIndex: null,
+            TokenId: null));
+
+        return effects.AsReadOnly();
+    }
+
+    /// <summary>
+    /// Recursively cancels all active entries within a scope (and their nested scope children).
+    /// </summary>
+    private void CancelScopeChildren(Guid scopeId)
+    {
+        foreach (var entry in _state.GetActiveActivities()
+            .Where(e => e.ScopeId == scopeId).ToList())
+        {
+            // Recursively cancel nested scope children first
+            if (_state.Entries.Any(e => e.ScopeId == entry.ActivityInstanceId && !e.IsCompleted))
+                CancelScopeChildren(entry.ActivityInstanceId);
+
+            Emit(new ActivityCancelled(
+                entry.ActivityInstanceId,
+                "Scope cancelled by boundary event"));
+        }
+    }
+
+    // --- Boundary Unsubscribe Helpers ---
+
     private List<IInfrastructureEffect> BuildBoundaryUnsubscribeEffects(
         string activityId, ActivityInstanceEntry hostEntry)
     {
@@ -705,6 +848,49 @@ public class WorkflowExecution
             .Where(b => b.AttachedToActivityId == activityId))
         {
             var signalDef = _definition.Signals.First(s => s.Id == boundarySig.SignalDefinitionId);
+            effects.Add(new UnsubscribeSignalEffect(signalDef.Name));
+        }
+
+        return effects;
+    }
+
+    /// <summary>
+    /// Builds unsubscribe effects for boundary subscriptions, with optional skip parameters
+    /// to avoid unsubscribing the boundary that just fired (which could cause deadlocks).
+    /// </summary>
+    private List<IInfrastructureEffect> BuildBoundaryUnsubscribeEffects(
+        string activityId, ActivityInstanceEntry hostEntry,
+        string? skipTimerActivityId, string? skipMessageName, string? skipSignalName)
+    {
+        var effects = new List<IInfrastructureEffect>();
+        var scope = _definition.FindScopeForActivity(activityId);
+        if (scope is null) return effects;
+
+        // Boundary timer events (skip the fired timer — it already fired)
+        foreach (var boundaryTimer in scope.Activities.OfType<BoundaryTimerEvent>()
+            .Where(b => b.AttachedToActivityId == activityId
+                && b.ActivityId != skipTimerActivityId))
+        {
+            effects.Add(new UnregisterTimerEffect(
+                _state.Id, hostEntry.ActivityInstanceId, boundaryTimer.ActivityId));
+        }
+
+        // Boundary message events (skip the fired message — subscription already removed)
+        foreach (var boundaryMsg in scope.Activities.OfType<MessageBoundaryEvent>()
+            .Where(b => b.AttachedToActivityId == activityId))
+        {
+            var messageDef = _definition.Messages.First(m => m.Id == boundaryMsg.MessageDefinitionId);
+            if (messageDef.Name == skipMessageName) continue;
+            var correlationKey = ResolveCorrelationKey(messageDef, hostEntry.VariablesId);
+            effects.Add(new UnsubscribeMessageEffect(messageDef.Name, correlationKey));
+        }
+
+        // Boundary signal events (skip the fired signal — subscription already removed)
+        foreach (var boundarySig in scope.Activities.OfType<SignalBoundaryEvent>()
+            .Where(b => b.AttachedToActivityId == activityId))
+        {
+            var signalDef = _definition.Signals.First(s => s.Id == boundarySig.SignalDefinitionId);
+            if (signalDef.Name == skipSignalName) continue;
             effects.Add(new UnsubscribeSignalEffect(signalDef.Name));
         }
 
