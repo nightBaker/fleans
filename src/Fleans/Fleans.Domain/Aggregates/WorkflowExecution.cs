@@ -186,7 +186,7 @@ public class WorkflowExecution
                     break;
 
                 case OpenSubProcessCommand openSub:
-                    ProcessOpenSubProcess(openSub);
+                    ProcessOpenSubProcess(openSub, activityInstanceId);
                     break;
 
                 case RegisterTimerCommand timer:
@@ -264,7 +264,7 @@ public class WorkflowExecution
             TokenId: null));
     }
 
-    private void ProcessOpenSubProcess(OpenSubProcessCommand openSub)
+    private void ProcessOpenSubProcess(OpenSubProcessCommand openSub, Guid hostActivityInstanceId)
     {
         var newScopeId = Guid.NewGuid();
         Emit(new ChildVariableScopeCreated(newScopeId, openSub.ParentVariablesId));
@@ -278,7 +278,7 @@ public class WorkflowExecution
             ActivityId: startEvent.ActivityId,
             ActivityType: startEvent.GetType().Name,
             VariablesId: newScopeId,
-            ScopeId: null,
+            ScopeId: hostActivityInstanceId,
             MultiInstanceIndex: null,
             TokenId: null));
     }
@@ -412,6 +412,176 @@ public class WorkflowExecution
 
         // Intermediate catch signal: complete the activity with empty variables
         return CompleteActivity(activityId, hostActivityInstanceId, new ExpandoObject());
+    }
+
+    // --- Scope Completion ---
+
+    /// <summary>
+    /// Detects when all entries in a subprocess or multi-instance scope are completed.
+    /// Emits ActivityCompleted for completed scope hosts.
+    /// Returns effects (e.g., boundary unsubscribe) and the list of completed host instance IDs
+    /// so the grain can compute transitions for them via ResolveTransitions.
+    /// </summary>
+    public (IReadOnlyList<IInfrastructureEffect> Effects, IReadOnlyList<Guid> CompletedHostInstanceIds)
+        CompleteFinishedSubProcessScopes()
+    {
+        var allEffects = new List<IInfrastructureEffect>();
+        var allCompletedHostIds = new List<Guid>();
+
+        const int maxIterations = 100;
+        var iteration = 0;
+        bool anyCompleted;
+
+        do
+        {
+            if (++iteration > maxIterations)
+                throw new InvalidOperationException(
+                    "Sub-process completion loop exceeded max iterations — possible cycle in scope graph");
+
+            anyCompleted = false;
+
+            foreach (var entry in _state.GetActiveActivities().ToList())
+            {
+                var scopeDefinition = _definition.GetScopeForActivity(entry.ActivityId);
+                var activity = scopeDefinition.GetActivity(entry.ActivityId);
+
+                var isSubProcess = activity is SubProcess;
+                var isMultiInstanceHost = activity is MultiInstanceActivity
+                    && entry.MultiInstanceIndex is null;
+
+                if (!isSubProcess && !isMultiInstanceHost) continue;
+
+                var scopeEntries = _state.Entries
+                    .Where(e => e.ScopeId == entry.ActivityInstanceId).ToList();
+
+                if (scopeEntries.Count == 0 && !isMultiInstanceHost) continue;
+
+                if (isMultiInstanceHost)
+                {
+                    var miResult = TryCompleteMultiInstanceHost(
+                        entry, (MultiInstanceActivity)activity, scopeEntries);
+                    if (miResult.HostCompleted)
+                    {
+                        allEffects.AddRange(miResult.Effects);
+                        allCompletedHostIds.Add(entry.ActivityInstanceId);
+                        anyCompleted = true;
+                    }
+                    continue;
+                }
+
+                // SubProcess: all scope children must be completed
+                if (!scopeEntries.All(e => e.IsCompleted)) continue;
+
+                // All scope children are done — complete the sub-process host
+                Emit(new ActivityCompleted(
+                    entry.ActivityInstanceId, entry.VariablesId, new ExpandoObject()));
+
+                var effects = BuildBoundaryUnsubscribeEffects(entry.ActivityId, entry);
+                allEffects.AddRange(effects);
+                allCompletedHostIds.Add(entry.ActivityInstanceId);
+                anyCompleted = true;
+            }
+        } while (anyCompleted);
+
+        return (allEffects.AsReadOnly(), allCompletedHostIds.AsReadOnly());
+    }
+
+    private (bool HostCompleted, IReadOnlyList<IInfrastructureEffect> Effects)
+        TryCompleteMultiInstanceHost(
+            ActivityInstanceEntry hostEntry,
+            MultiInstanceActivity mi,
+            List<ActivityInstanceEntry> scopeEntries)
+    {
+        var completedIterations = scopeEntries.Where(e => e.IsCompleted).ToList();
+        var activeIterations = scopeEntries.Where(e => !e.IsCompleted).ToList();
+        var total = hostEntry.MultiInstanceTotal;
+
+        // Host not yet executed (no total set)
+        if (total is null)
+            return (false, []);
+
+        // If there are active iterations still running, wait
+        if (activeIterations.Count > 0)
+            return (false, []);
+
+        // All spawned iterations are done but fewer than total — sequential: spawn next
+        if (completedIterations.Count < total)
+        {
+            var nextIndex = completedIterations.Count;
+            var parentVariablesId = hostEntry.VariablesId;
+
+            // Resolve collection item for next iteration
+            object? iterationItem = null;
+            if (mi.InputCollection is not null && mi.InputDataItem is not null)
+            {
+                var collectionVar = _state.GetVariable(parentVariablesId, mi.InputCollection);
+                if (collectionVar is IList<object> list)
+                    iterationItem = list[nextIndex];
+                else if (collectionVar is System.Collections.IEnumerable enumerable and not string)
+                    iterationItem = enumerable.Cast<object>().ElementAt(nextIndex);
+            }
+
+            // Create child variable scope for the new iteration
+            var childScopeId = Guid.NewGuid();
+            Emit(new ChildVariableScopeCreated(childScopeId, parentVariablesId));
+
+            var iterVars = new ExpandoObject();
+            var iterDict = (IDictionary<string, object?>)iterVars;
+            iterDict["loopCounter"] = nextIndex;
+            if (mi.InputDataItem is not null && iterationItem is not null)
+                iterDict[mi.InputDataItem] = iterationItem;
+
+            Emit(new VariablesMerged(childScopeId, iterVars));
+
+            // Spawn the next iteration entry
+            Emit(new ActivitySpawned(
+                ActivityInstanceId: Guid.NewGuid(),
+                ActivityId: mi.ActivityId,
+                ActivityType: mi.InnerActivity.GetType().Name,
+                VariablesId: childScopeId,
+                ScopeId: hostEntry.ActivityInstanceId,
+                MultiInstanceIndex: nextIndex,
+                TokenId: null));
+
+            return (false, []); // host not completed yet
+        }
+
+        // All iterations done — aggregate output variables
+        if (mi.OutputDataItem is not null && mi.OutputCollection is not null)
+        {
+            var iterationEntries = scopeEntries
+                .Where(e => e.MultiInstanceIndex.HasValue)
+                .OrderBy(e => e.MultiInstanceIndex!.Value)
+                .ToList();
+
+            var outputList = new List<object?>();
+            foreach (var iterEntry in iterationEntries)
+            {
+                var outputValue = _state.GetVariable(iterEntry.VariablesId, mi.OutputDataItem);
+                outputList.Add(outputValue);
+            }
+
+            var outputVars = new ExpandoObject();
+            ((IDictionary<string, object?>)outputVars)[mi.OutputCollection] = outputList;
+            Emit(new VariablesMerged(hostEntry.VariablesId, outputVars));
+        }
+
+        // Clean up child variable scopes
+        var childVarIds = scopeEntries
+            .Where(e => e.MultiInstanceIndex.HasValue)
+            .Select(e => e.VariablesId)
+            .ToList();
+        if (childVarIds.Count > 0)
+        {
+            Emit(new VariableScopesRemoved(childVarIds));
+        }
+
+        // Complete the host entry
+        Emit(new ActivityCompleted(
+            hostEntry.ActivityInstanceId, hostEntry.VariablesId, new ExpandoObject()));
+
+        var hostEffects = BuildBoundaryUnsubscribeEffects(mi.ActivityId, hostEntry);
+        return (true, hostEffects.AsReadOnly());
     }
 
     // --- Activity Lifecycle (external entry points) ---
@@ -641,7 +811,7 @@ public class WorkflowExecution
                 _state.AddCloneOfVariableState(e.NewScopeId, e.SourceScopeId);
                 break;
             case VariableScopesRemoved e:
-                // handled in later tasks
+                _state.RemoveVariableStates(e.ScopeIds);
                 break;
             case ConditionSequencesAdded e:
                 _state.AddConditionSequenceStates(e.GatewayInstanceId, e.SequenceFlowIds);
