@@ -64,7 +64,7 @@ public class WorkflowExecution
                     "Workflow must have a StartEvent, TimerStartEvent, MessageStartEvent, or SignalStartEvent");
         }
 
-        var variablesId = _state.VariableStates.First().Id;
+        var variablesId = _state.GetRootVariablesId();
 
         Emit(new ActivitySpawned(
             ActivityInstanceId: Guid.NewGuid(),
@@ -111,8 +111,7 @@ public class WorkflowExecution
     {
         foreach (var completed in completedTransitions)
         {
-            var completedEntry = _state.Entries.First(
-                e => e.ActivityInstanceId == completed.ActivityInstanceId);
+            var completedEntry = _state.GetEntry(completed.ActivityInstanceId);
 
             // Failed or cancelled entries don't transition
             if (completedEntry.ErrorCode is not null || completedEntry.IsCancelled)
@@ -171,8 +170,7 @@ public class WorkflowExecution
                 var newTokenId = Guid.NewGuid();
 
                 // Create or find the fork state for this source activity
-                var existingFork = _state.GatewayForks.FirstOrDefault(
-                    f => f.ForkInstanceId == sourceEntry.ActivityInstanceId);
+                var existingFork = _state.FindGatewayFork(sourceEntry.ActivityInstanceId);
                 if (existingFork is null)
                 {
                     Emit(new GatewayForkCreated(sourceEntry.ActivityInstanceId, sourceEntry.TokenId));
@@ -216,7 +214,7 @@ public class WorkflowExecution
                     if (_state.ParentWorkflowInstanceId.HasValue)
                     {
                         var rootVariables = _state.GetMergedVariables(
-                            _state.VariableStates.First().Id);
+                            _state.GetRootVariablesId());
                         effects.Add(new NotifyParentCompletedEffect(
                             _state.ParentWorkflowInstanceId.Value,
                             _state.ParentActivityId!,
@@ -397,8 +395,7 @@ public class WorkflowExecution
         string timerActivityId, Guid hostActivityInstanceId)
     {
         // Stale guard: if entry is no longer active, ignore
-        var entry = _state.Entries.FirstOrDefault(
-            e => e.ActivityInstanceId == hostActivityInstanceId);
+        var entry = _state.FindEntry(hostActivityInstanceId);
         if (entry is null || entry.IsCompleted)
             return [];
 
@@ -423,8 +420,7 @@ public class WorkflowExecution
         string activityId, Guid hostActivityInstanceId, ExpandoObject variables)
     {
         // Stale guard: if entry is no longer active, ignore
-        var entry = _state.Entries.FirstOrDefault(
-            e => e.ActivityInstanceId == hostActivityInstanceId);
+        var entry = _state.FindEntry(hostActivityInstanceId);
         if (entry is null || entry.IsCompleted)
             return [];
 
@@ -452,8 +448,7 @@ public class WorkflowExecution
         string activityId, Guid hostActivityInstanceId)
     {
         // Stale guard: if entry is no longer active, ignore
-        var entry = _state.Entries.FirstOrDefault(
-            e => e.ActivityInstanceId == hostActivityInstanceId);
+        var entry = _state.FindEntry(hostActivityInstanceId);
         if (entry is null || entry.IsCompleted)
             return [];
 
@@ -514,8 +509,7 @@ public class WorkflowExecution
 
                 if (!isSubProcess && !isMultiInstanceHost) continue;
 
-                var scopeEntries = _state.Entries
-                    .Where(e => e.ScopeId == entry.ActivityInstanceId).ToList();
+                var scopeEntries = _state.GetEntriesInScope(entry.ActivityInstanceId);
 
                 if (scopeEntries.Count == 0 && !isMultiInstanceHost) continue;
 
@@ -658,14 +652,14 @@ public class WorkflowExecution
     private void FailMultiInstanceHost(ActivityInstanceEntry failedIteration, int errorCode, string errorMessage)
     {
         var hostInstanceId = failedIteration.ScopeId!.Value;
-        var hostEntry = _state.Entries.First(e => e.ActivityInstanceId == hostInstanceId);
+        var hostEntry = _state.GetEntry(hostInstanceId);
 
         // Cancel all active sibling iterations
         CancelScopeChildren(hostInstanceId);
 
         // Clean up child variable scopes
-        var scopeEntries = _state.Entries
-            .Where(e => e.ScopeId == hostInstanceId && e.MultiInstanceIndex.HasValue)
+        var scopeEntries = _state.GetEntriesInScope(hostInstanceId)
+            .Where(e => e.MultiInstanceIndex.HasValue)
             .ToList();
         var childVarIds = scopeEntries.Select(e => e.VariablesId).ToList();
         if (childVarIds.Count > 0)
@@ -838,8 +832,7 @@ public class WorkflowExecution
 
             // Find the attached-to entry (may differ from the failed activity if
             // the boundary is on a parent subprocess)
-            var attachedEntry = _state.Entries.FirstOrDefault(
-                e => e.ActivityId == attachedToActivityId && !e.IsCompleted);
+            var attachedEntry = _state.GetFirstActive(attachedToActivityId);
 
             var scopeIdForCancel = attachedEntry?.ActivityInstanceId ?? entry.ActivityInstanceId;
 
@@ -898,8 +891,7 @@ public class WorkflowExecution
     {
         if (activityInstanceId.HasValue)
         {
-            return _state.Entries.First(
-                e => e.ActivityInstanceId == activityInstanceId.Value);
+            return _state.GetEntry(activityInstanceId.Value);
         }
 
         return _state.GetFirstActive(activityId)
@@ -999,7 +991,7 @@ public class WorkflowExecution
             .Where(e => e.ScopeId == scopeId).ToList())
         {
             // Recursively cancel nested scope children first
-            if (_state.Entries.Any(e => e.ScopeId == entry.ActivityInstanceId && !e.IsCompleted))
+            if (_state.HasActiveChildrenInScope(entry.ActivityInstanceId))
                 CancelScopeChildren(entry.ActivityInstanceId);
 
             Emit(new ActivityCancelled(
@@ -1266,7 +1258,7 @@ public class WorkflowExecution
 
     private void ApplyGatewayForkTokenAdded(GatewayForkTokenAdded e)
     {
-        var fork = _state.GatewayForks.First(f => f.ForkInstanceId == e.ForkInstanceId);
+        var fork = _state.GetGatewayFork(e.ForkInstanceId);
         fork.CreatedTokenIds.Add(e.TokenId);
     }
 }

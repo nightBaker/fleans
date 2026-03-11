@@ -56,9 +56,27 @@ public class WorkflowInstanceState
     public ActivityInstanceEntry? GetFirstActive(string activityId)
         => Entries.FirstOrDefault(a => a.ActivityId == activityId && !a.IsCompleted);
 
+    public bool HasActiveEntry(Guid activityInstanceId)
+        => Entries.Any(e => e.ActivityInstanceId == activityInstanceId && !e.IsCompleted);
+
+    public bool HasActiveChildrenInScope(Guid scopeId)
+        => Entries.Any(e => e.ScopeId == scopeId && !e.IsCompleted);
+
     public ActivityInstanceEntry GetActiveEntry(Guid activityInstanceId)
         => Entries.FirstOrDefault(e => e.ActivityInstanceId == activityInstanceId && !e.IsCompleted)
             ?? throw new InvalidOperationException($"Active entry for activity instance '{activityInstanceId}' not found");
+
+    public ActivityInstanceEntry GetEntry(Guid activityInstanceId)
+        => Entries.First(e => e.ActivityInstanceId == activityInstanceId);
+
+    public ActivityInstanceEntry? FindEntry(Guid activityInstanceId)
+        => Entries.FirstOrDefault(e => e.ActivityInstanceId == activityInstanceId);
+
+    public List<ActivityInstanceEntry> GetEntriesInScope(Guid scopeId)
+        => Entries.Where(e => e.ScopeId == scopeId).ToList();
+
+    public Guid GetRootVariablesId()
+        => VariableStates.First().Id;
 
     public WorkflowVariablesState GetVariableState(Guid id)
         => VariableStates.FirstOrDefault(v => v.Id == id)
@@ -222,6 +240,12 @@ public class WorkflowInstanceState
         GatewayForks.Add(fork);
         return fork;
     }
+
+    public GatewayForkState? FindGatewayFork(Guid forkInstanceId)
+        => GatewayForks.FirstOrDefault(f => f.ForkInstanceId == forkInstanceId);
+
+    public GatewayForkState GetGatewayFork(Guid forkInstanceId)
+        => GatewayForks.First(f => f.ForkInstanceId == forkInstanceId);
 
     public GatewayForkState? FindForkByToken(Guid tokenId)
         => GatewayForks.FirstOrDefault(f => f.CreatedTokenIds.Contains(tokenId));

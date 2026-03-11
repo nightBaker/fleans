@@ -114,7 +114,7 @@ public partial class WorkflowInstance
 
         foreach (var completedId in completedEntryIds)
         {
-            var entry = State.Entries.First(e => e.ActivityInstanceId == completedId);
+            var entry = State.GetEntry(completedId);
             if (entry.IsCancelled || entry.ErrorCode is not null) continue;
 
             var scopeDef = definition.FindScopeForActivity(entry.ActivityId);
@@ -142,7 +142,7 @@ public partial class WorkflowInstance
             var hostTransitions = new List<CompletedActivityTransitions>();
             foreach (var hostId in completedHostIds)
             {
-                var hostEntry = State.Entries.First(e => e.ActivityInstanceId == hostId);
+                var hostEntry = State.GetEntry(hostId);
                 var scopeDef = definition.GetScopeForActivity(hostEntry.ActivityId);
                 var activity = scopeDef.GetActivity(hostEntry.ActivityId);
                 var adapter = new ActivityExecutionContextAdapter(hostEntry);

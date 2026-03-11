@@ -129,7 +129,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         await EnsureExecution();
 
         // Stale callback guard
-        if (!State.Entries.Any(e => e.ActivityInstanceId == activityInstanceId && !e.IsCompleted))
+        if (!State.HasActiveEntry(activityInstanceId))
         {
             LogStaleCallbackIgnored(activityId, activityInstanceId, "CompleteActivity");
             return;
@@ -167,7 +167,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         await EnsureExecution();
 
         // Stale callback guard
-        if (!State.Entries.Any(e => e.ActivityInstanceId == activityInstanceId && !e.IsCompleted))
+        if (!State.HasActiveEntry(activityInstanceId))
         {
             LogStaleCallbackIgnored(activityId, activityInstanceId, "FailActivity");
             return;
@@ -213,7 +213,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         if (State.VariableStates.Count == 0)
             throw new InvalidOperationException("Call SetWorkflow before SetInitialVariables.");
 
-        State.MergeState(State.VariableStates[0].Id, variables);
+        State.MergeState(State.GetRootVariablesId(), variables);
         LogInitialVariablesSet();
         await _state.WriteStateAsync();
     }
