@@ -17,4 +17,4 @@ public interface IWorkflowCommandService
 }
 
 public record SendMessageResult(bool Delivered, List<Guid>? WorkflowInstanceIds = null);
-public record SendSignalResult(int DeliveredCount, List<Guid>? WorkflowInstanceIds = null);
+public record SendSignalResult(int DeliveredCount, List<Guid>? WorkflowInstanceIds = null, bool BroadcastFailed = false, bool StartEventFailed = false);
