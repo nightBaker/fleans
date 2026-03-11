@@ -20,6 +20,18 @@ namespace Fleans.Domain
         bool IsRootScope { get; }
         Activity GetActivity(string activityId);
 
+        IEnumerable<BoundaryTimerEvent> GetBoundaryTimerEvents(string attachedToActivityId)
+            => Activities.OfType<BoundaryTimerEvent>()
+                .Where(b => b.AttachedToActivityId == attachedToActivityId);
+
+        IEnumerable<MessageBoundaryEvent> GetBoundaryMessageEvents(string attachedToActivityId)
+            => Activities.OfType<MessageBoundaryEvent>()
+                .Where(b => b.AttachedToActivityId == attachedToActivityId);
+
+        IEnumerable<SignalBoundaryEvent> GetBoundarySignalEvents(string attachedToActivityId)
+            => Activities.OfType<SignalBoundaryEvent>()
+                .Where(b => b.AttachedToActivityId == attachedToActivityId);
+
         /// <summary>
         /// Recursively searches this definition and nested SubProcess scopes
         /// for the scope that directly contains the given activity.

@@ -1005,16 +1005,14 @@ public class WorkflowExecution
         if (scope is null) return effects;
 
         // Boundary timer events
-        foreach (var boundaryTimer in scope.Activities.OfType<BoundaryTimerEvent>()
-            .Where(b => b.AttachedToActivityId == activityId))
+        foreach (var boundaryTimer in scope.GetBoundaryTimerEvents(activityId))
         {
             effects.Add(new UnregisterTimerEffect(
                 _state.Id, hostEntry.ActivityInstanceId, boundaryTimer.ActivityId));
         }
 
         // Boundary message events
-        foreach (var boundaryMsg in scope.Activities.OfType<MessageBoundaryEvent>()
-            .Where(b => b.AttachedToActivityId == activityId))
+        foreach (var boundaryMsg in scope.GetBoundaryMessageEvents(activityId))
         {
             var messageDef = _definition.Messages.First(m => m.Id == boundaryMsg.MessageDefinitionId);
             var correlationKey = ResolveCorrelationKey(messageDef, hostEntry.VariablesId);
@@ -1022,8 +1020,7 @@ public class WorkflowExecution
         }
 
         // Boundary signal events
-        foreach (var boundarySig in scope.Activities.OfType<SignalBoundaryEvent>()
-            .Where(b => b.AttachedToActivityId == activityId))
+        foreach (var boundarySig in scope.GetBoundarySignalEvents(activityId))
         {
             var signalDef = _definition.Signals.First(s => s.Id == boundarySig.SignalDefinitionId);
             effects.Add(new UnsubscribeSignalEffect(signalDef.Name, _state.Id, boundarySig.ActivityId));
@@ -1045,17 +1042,15 @@ public class WorkflowExecution
         if (scope is null) return effects;
 
         // Boundary timer events (skip the fired timer — it already fired)
-        foreach (var boundaryTimer in scope.Activities.OfType<BoundaryTimerEvent>()
-            .Where(b => b.AttachedToActivityId == activityId
-                && b.ActivityId != skipTimerActivityId))
+        foreach (var boundaryTimer in scope.GetBoundaryTimerEvents(activityId)
+            .Where(b => b.ActivityId != skipTimerActivityId))
         {
             effects.Add(new UnregisterTimerEffect(
                 _state.Id, hostEntry.ActivityInstanceId, boundaryTimer.ActivityId));
         }
 
         // Boundary message events (skip the fired message — subscription already removed)
-        foreach (var boundaryMsg in scope.Activities.OfType<MessageBoundaryEvent>()
-            .Where(b => b.AttachedToActivityId == activityId))
+        foreach (var boundaryMsg in scope.GetBoundaryMessageEvents(activityId))
         {
             var messageDef = _definition.Messages.First(m => m.Id == boundaryMsg.MessageDefinitionId);
             if (messageDef.Name == skipMessageName) continue;
@@ -1064,8 +1059,7 @@ public class WorkflowExecution
         }
 
         // Boundary signal events (skip the fired signal — subscription already removed)
-        foreach (var boundarySig in scope.Activities.OfType<SignalBoundaryEvent>()
-            .Where(b => b.AttachedToActivityId == activityId))
+        foreach (var boundarySig in scope.GetBoundarySignalEvents(activityId))
         {
             var signalDef = _definition.Signals.First(s => s.Id == boundarySig.SignalDefinitionId);
             if (signalDef.Name == skipSignalName) continue;
