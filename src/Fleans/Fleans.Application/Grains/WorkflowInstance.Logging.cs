@@ -200,4 +200,8 @@ public partial class WorkflowInstance
 
     [LoggerMessage(EventId = 3015, Level = LogLevel.Debug, Message = "Multi-instance total set: ActivityInstanceId={ActivityInstanceId}, Total={Total}")]
     private partial void LogMultiInstanceTotalSet(Guid activityInstanceId, int total);
+
+    [LoggerMessage(EventId = 3016, Level = LogLevel.Debug,
+        Message = "Timer cycle re-registration deferred to TimerCallbackGrain for activity {TimerActivityId}, dueTime={DueTime}")]
+    private partial void LogTimerCycleReRegistrationDeferred(string timerActivityId, TimeSpan dueTime);
 }

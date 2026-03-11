@@ -67,7 +67,8 @@ public class WorkflowInstanceState
             ?? throw new InvalidOperationException($"Active entry for activity instance '{activityInstanceId}' not found");
 
     public ActivityInstanceEntry GetEntry(Guid activityInstanceId)
-        => Entries.First(e => e.ActivityInstanceId == activityInstanceId);
+        => Entries.FirstOrDefault(e => e.ActivityInstanceId == activityInstanceId)
+            ?? throw new InvalidOperationException($"Entry for activity instance '{activityInstanceId}' not found");
 
     public ActivityInstanceEntry? FindEntry(Guid activityInstanceId)
         => Entries.FirstOrDefault(e => e.ActivityInstanceId == activityInstanceId);

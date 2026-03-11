@@ -8,8 +8,6 @@ public partial class TimerCallbackGrain : Grain, ITimerCallbackGrain, IRemindabl
     private const string ReminderName = "timer-callback";
 
     private readonly ILogger<TimerCallbackGrain> _logger;
-    private bool _reactivatedDuringCallback;
-
     public TimerCallbackGrain(ILogger<TimerCallbackGrain> logger)
     {
         _logger = logger;
@@ -19,7 +17,6 @@ public partial class TimerCallbackGrain : Grain, ITimerCallbackGrain, IRemindabl
     {
         var (workflowInstanceId, _, timerActivityId) = ParseKey();
         LogActivating(workflowInstanceId, timerActivityId, dueTime);
-        _reactivatedDuringCallback = true;
         await this.RegisterOrUpdateReminder(ReminderName, dueTime, TimeSpan.FromMinutes(1));
     }
 
@@ -53,16 +50,13 @@ public partial class TimerCallbackGrain : Grain, ITimerCallbackGrain, IRemindabl
         // Call back to WorkflowInstance first — if this fails, the periodic
         // reminder will fire again and retry. HandleTimerFired is idempotent
         // (stale-timer guards check if the activity is still active).
-        _reactivatedDuringCallback = false;
+        // Returns non-null TimeSpan when a cycle timer needs re-registration.
         var workflowInstance = GrainFactory.GetGrain<IWorkflowInstanceGrain>(workflowInstanceId);
-        await workflowInstance.HandleTimerFired(timerActivityId, hostActivityInstanceId);
+        var cycleReRegistration = await workflowInstance.HandleTimerFired(timerActivityId, hostActivityInstanceId);
 
-        // Skip unregister if HandleTimerFired re-registered a cycle timer
-        // (Activate was called during the callback on this same grain).
-        if (_reactivatedDuringCallback)
-            return;
-
-        // Unregister only after successful callback
+        // Unregister the current reminder first, then re-register if needed.
+        // This ordering prevents the unregister-race: we always unregister the
+        // old reminder before creating a new one for the next cycle.
         try
         {
             var reminder = await this.GetReminder(ReminderName);
@@ -74,6 +68,13 @@ public partial class TimerCallbackGrain : Grain, ITimerCallbackGrain, IRemindabl
             // If unregister fails, the next periodic tick will retry —
             // HandleTimerFired is idempotent so this is safe.
             LogReminderUnregisterFailed(workflowInstanceId, timerActivityId, ex);
+        }
+
+        // Re-register locally for cycle timers (no cross-grain call — avoids deadlock)
+        if (cycleReRegistration.HasValue)
+        {
+            LogCycleReRegistering(workflowInstanceId, timerActivityId, cycleReRegistration.Value);
+            await this.RegisterOrUpdateReminder(ReminderName, cycleReRegistration.Value, TimeSpan.FromMinutes(1));
         }
     }
 
@@ -109,4 +110,8 @@ public partial class TimerCallbackGrain : Grain, ITimerCallbackGrain, IRemindabl
     [LoggerMessage(EventId = 10004, Level = LogLevel.Debug,
         Message = "Timer callback reminder unregister failed for workflow {WorkflowInstanceId}, activity {TimerActivityId}")]
     private partial void LogReminderUnregisterFailed(Guid workflowInstanceId, string timerActivityId, Exception exception);
+
+    [LoggerMessage(EventId = 10005, Level = LogLevel.Information,
+        Message = "Cycle timer re-registering locally for workflow {WorkflowInstanceId}, activity {TimerActivityId}, due in {DueTime}")]
+    private partial void LogCycleReRegistering(Guid workflowInstanceId, string timerActivityId, TimeSpan dueTime);
 }

@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "fleans": {
-      "type": "url",
-      "url": "http://localhost:5200/mcp"
-    }
-  }
-}

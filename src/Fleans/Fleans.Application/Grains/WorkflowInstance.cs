@@ -1,6 +1,7 @@
 using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Aggregates;
+using Fleans.Domain.Effects;
 using Fleans.Domain.States;
 using Fleans.Application.Adapters;
 using Microsoft.Extensions.Logging;
@@ -250,7 +251,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
 
     // ── Event Handling ──────────────────────────────────────────────────
 
-    public async Task HandleTimerFired(string timerActivityId, Guid hostActivityInstanceId)
+    public async Task<TimeSpan?> HandleTimerFired(string timerActivityId, Guid hostActivityInstanceId)
     {
         await EnsureExecution();
         SetWorkflowRequestContext();
@@ -258,11 +259,33 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         LogTimerReminderFired(timerActivityId);
 
         var effects = _execution!.HandleTimerFired(timerActivityId, hostActivityInstanceId);
-        await PerformEffects(effects);
+
+        // Intercept RegisterTimerEffect for cycle re-registration: return the DueTime
+        // instead of calling callbackGrain.Activate() — avoids Orleans non-reentrant
+        // grain deadlock when TimerCallbackGrain calls back to itself (issue #130).
+        TimeSpan? cycleReRegistration = null;
+        var filteredEffects = new List<IInfrastructureEffect>();
+        foreach (var effect in effects)
+        {
+            if (effect is RegisterTimerEffect timerEffect
+                && timerEffect.TimerActivityId == timerActivityId
+                && timerEffect.HostActivityInstanceId == hostActivityInstanceId)
+            {
+                cycleReRegistration = timerEffect.DueTime;
+                LogTimerCycleReRegistrationDeferred(timerActivityId, timerEffect.DueTime);
+            }
+            else
+            {
+                filteredEffects.Add(effect);
+            }
+        }
+
+        await PerformEffects(filteredEffects);
         await ResolveExternalCompletions();
         await RunExecutionLoop();
         LogAndClearEvents();
         await _state.WriteStateAsync();
+        return cycleReRegistration;
     }
 
     public async Task HandleMessageDelivery(string activityId, Guid hostActivityInstanceId, ExpandoObject variables)
