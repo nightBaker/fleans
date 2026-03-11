@@ -2,9 +2,11 @@ using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Aggregates;
 using Fleans.Domain.States;
+using Fleans.Application.Adapters;
 using Microsoft.Extensions.Logging;
 using Orleans;
 using Orleans.Runtime;
+using System.Dynamic;
 
 namespace Fleans.Application.Grains;
 
@@ -88,4 +90,276 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
             "[{WorkflowId}, {ProcessDefinitionId}, {WorkflowInstanceId}]",
             _workflowDefinition.WorkflowId, _workflowDefinition.ProcessDefinitionId ?? "-", this.GetPrimaryKey().ToString());
     }
+
+    // ── StartWorkflow (from Execution) ──────────────────────────────────
+
+    public async Task StartWorkflow()
+    {
+        await EnsureExecution();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+
+        _execution!.MarkExecutionStarted();
+        LogWorkflowStarted();
+
+        await RunExecutionLoop();
+        LogAndClearEvents();
+        await _state.WriteStateAsync();
+    }
+
+    // ── Activity Lifecycle ──────────────────────────────────────────────
+
+    public async Task CompleteActivity(string activityId, ExpandoObject variables)
+    {
+        await EnsureExecution();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+        LogCompletingActivity(activityId);
+
+        var effects = _execution!.CompleteActivity(activityId, null, variables);
+        await PerformEffects(effects);
+        await ResolveExternalCompletions();
+        await RunExecutionLoop();
+        LogAndClearEvents();
+        await _state.WriteStateAsync();
+    }
+
+    public async Task CompleteActivity(string activityId, Guid activityInstanceId, ExpandoObject variables)
+    {
+        await EnsureExecution();
+
+        // Stale callback guard
+        if (!State.Entries.Any(e => e.ActivityInstanceId == activityInstanceId && !e.IsCompleted))
+        {
+            LogStaleCallbackIgnored(activityId, activityInstanceId, "CompleteActivity");
+            return;
+        }
+
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+        LogCompletingActivity(activityId);
+
+        var effects = _execution!.CompleteActivity(activityId, activityInstanceId, variables);
+        await PerformEffects(effects);
+        await ResolveExternalCompletions();
+        await RunExecutionLoop();
+        LogAndClearEvents();
+        await _state.WriteStateAsync();
+    }
+
+    public async Task FailActivity(string activityId, Exception exception)
+    {
+        await EnsureExecution();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+        LogFailingActivity(activityId);
+
+        var effects = _execution!.FailActivity(activityId, null, exception);
+        await PerformEffects(effects);
+        await ResolveExternalCompletions();
+        await RunExecutionLoop();
+        LogAndClearEvents();
+        await _state.WriteStateAsync();
+    }
+
+    public async Task FailActivity(string activityId, Guid activityInstanceId, Exception exception)
+    {
+        await EnsureExecution();
+
+        // Stale callback guard
+        if (!State.Entries.Any(e => e.ActivityInstanceId == activityInstanceId && !e.IsCompleted))
+        {
+            LogStaleCallbackIgnored(activityId, activityInstanceId, "FailActivity");
+            return;
+        }
+
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+        LogFailingActivity(activityId);
+
+        var effects = _execution!.FailActivity(activityId, activityInstanceId, exception);
+        await PerformEffects(effects);
+        await ResolveExternalCompletions();
+        await RunExecutionLoop();
+        LogAndClearEvents();
+        await _state.WriteStateAsync();
+    }
+
+    public async Task CompleteConditionSequence(string activityId, string conditionSequenceId, bool result)
+    {
+        await EnsureExecution();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+        LogConditionResult(conditionSequenceId, result);
+
+        _execution!.CompleteConditionSequence(activityId, conditionSequenceId, result);
+        await ResolveExternalCompletions();
+        await RunExecutionLoop();
+        LogAndClearEvents();
+        await _state.WriteStateAsync();
+    }
+
+    public async Task SetParentInfo(Guid parentWorkflowInstanceId, string parentActivityId)
+    {
+        await EnsureExecution();
+        _execution!.SetParentInfo(parentWorkflowInstanceId, parentActivityId);
+        LogParentInfoSet(parentWorkflowInstanceId, parentActivityId);
+        LogAndClearEvents();
+        await _state.WriteStateAsync();
+    }
+
+    public async Task SetInitialVariables(ExpandoObject variables)
+    {
+        if (State.VariableStates.Count == 0)
+            throw new InvalidOperationException("Call SetWorkflow before SetInitialVariables.");
+
+        State.MergeState(State.VariableStates[0].Id, variables);
+        LogInitialVariablesSet();
+        await _state.WriteStateAsync();
+    }
+
+    public async Task OnChildWorkflowCompleted(string parentActivityId, ExpandoObject childVariables)
+    {
+        await EnsureExecution();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+        LogChildWorkflowCompleted(parentActivityId);
+
+        var effects = _execution!.OnChildWorkflowCompleted(parentActivityId, childVariables);
+        await PerformEffects(effects);
+        await ResolveExternalCompletions();
+        await RunExecutionLoop();
+        LogAndClearEvents();
+        await _state.WriteStateAsync();
+    }
+
+    public async Task OnChildWorkflowFailed(string parentActivityId, Exception exception)
+    {
+        await EnsureExecution();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+        LogChildWorkflowFailed(parentActivityId);
+
+        var effects = _execution!.OnChildWorkflowFailed(parentActivityId, exception);
+        await PerformEffects(effects);
+        await ResolveExternalCompletions();
+        await RunExecutionLoop();
+        LogAndClearEvents();
+        await _state.WriteStateAsync();
+    }
+
+    // ── Event Handling ──────────────────────────────────────────────────
+
+    public async Task HandleTimerFired(string timerActivityId, Guid hostActivityInstanceId)
+    {
+        await EnsureExecution();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+        LogTimerReminderFired(timerActivityId);
+
+        var effects = _execution!.HandleTimerFired(timerActivityId, hostActivityInstanceId);
+        await PerformEffects(effects);
+        await ResolveExternalCompletions();
+        await RunExecutionLoop();
+        LogAndClearEvents();
+        await _state.WriteStateAsync();
+    }
+
+    public async Task HandleMessageDelivery(string activityId, Guid hostActivityInstanceId, ExpandoObject variables)
+    {
+        await EnsureExecution();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+
+        var effects = _execution!.HandleMessageDelivery(activityId, hostActivityInstanceId, variables);
+        await PerformEffects(effects);
+        await ResolveExternalCompletions();
+        await RunExecutionLoop();
+        LogAndClearEvents();
+        await _state.WriteStateAsync();
+    }
+
+    public async Task HandleBoundaryMessageFired(string boundaryActivityId, Guid hostActivityInstanceId)
+    {
+        await EnsureExecution();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+
+        // HandleMessageDelivery on the aggregate handles both boundary and non-boundary
+        var effects = _execution!.HandleMessageDelivery(boundaryActivityId, hostActivityInstanceId, new ExpandoObject());
+        await PerformEffects(effects);
+        await ResolveExternalCompletions();
+        await RunExecutionLoop();
+        LogAndClearEvents();
+        await _state.WriteStateAsync();
+    }
+
+    public async Task HandleSignalDelivery(string activityId, Guid hostActivityInstanceId)
+    {
+        await EnsureExecution();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+
+        var effects = _execution!.HandleSignalDelivery(activityId, hostActivityInstanceId);
+        await PerformEffects(effects);
+        await ResolveExternalCompletions();
+        await RunExecutionLoop();
+        LogAndClearEvents();
+        await _state.WriteStateAsync();
+    }
+
+    public async Task HandleBoundarySignalFired(string boundaryActivityId, Guid hostActivityInstanceId)
+    {
+        await EnsureExecution();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+
+        var effects = _execution!.HandleSignalDelivery(boundaryActivityId, hostActivityInstanceId);
+        await PerformEffects(effects);
+        await ResolveExternalCompletions();
+        await RunExecutionLoop();
+        LogAndClearEvents();
+        await _state.WriteStateAsync();
+    }
+
+    // ── State Facade ────────────────────────────────────────────────────
+
+    public ValueTask<object?> GetVariable(Guid variablesId, string variableName)
+        => ValueTask.FromResult(State.GetVariable(variablesId, variableName));
+
+    public ValueTask<ExpandoObject> GetVariables(Guid variablesStateId)
+        => ValueTask.FromResult(State.GetMergedVariables(variablesStateId));
+
+    public ValueTask<IReadOnlyList<IActivityExecutionContext>> GetActiveActivities()
+    {
+        IReadOnlyList<IActivityExecutionContext> result = State.GetActiveActivities()
+            .Select(e => (IActivityExecutionContext)new ActivityExecutionContextAdapter(e))
+            .ToList().AsReadOnly();
+        return ValueTask.FromResult(result);
+    }
+
+    public ValueTask<IReadOnlyList<IActivityExecutionContext>> GetCompletedActivities()
+    {
+        IReadOnlyList<IActivityExecutionContext> result = State.GetCompletedActivities()
+            .Select(e => (IActivityExecutionContext)new ActivityExecutionContextAdapter(e))
+            .ToList().AsReadOnly();
+        return ValueTask.FromResult(result);
+    }
+
+    public ValueTask<IReadOnlyDictionary<Guid, ConditionSequenceState[]>> GetConditionSequenceStates()
+    {
+        IReadOnlyDictionary<Guid, ConditionSequenceState[]> result = State.ConditionSequenceStates
+            .GroupBy(c => c.GatewayActivityInstanceId)
+            .ToDictionary(g => g.Key, g => g.ToArray());
+        return ValueTask.FromResult(result);
+    }
+
+    public async ValueTask SetConditionSequenceResult(Guid activityInstanceId, string sequenceId, bool result)
+    {
+        State.SetConditionSequenceResult(activityInstanceId, sequenceId, result);
+        await _state.WriteStateAsync();
+    }
+
+    public ValueTask<GatewayForkState?> FindForkByToken(Guid tokenId)
+        => ValueTask.FromResult(State.FindForkByToken(tokenId));
 }

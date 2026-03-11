@@ -14,20 +14,6 @@ namespace Fleans.Application.Grains;
 
 public partial class WorkflowInstance
 {
-    public async Task StartWorkflow()
-    {
-        await EnsureExecution();
-        SetWorkflowRequestContext();
-        using var scope = BeginWorkflowScope();
-
-        _execution!.MarkExecutionStarted();
-        LogWorkflowStarted();
-
-        await RunExecutionLoop();
-        LogAndClearEvents();
-        await _state.WriteStateAsync();
-    }
-
     /// <summary>
     /// After an aggregate method (CompleteActivity, HandleTimerFired, etc.) externally
     /// completes entries, this method computes transitions for those entries and resolves them.
