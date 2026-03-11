@@ -72,20 +72,20 @@ public class WorkflowQueryServiceTests
         var activeAiId = Guid.NewGuid();
         var completedAiId = Guid.NewGuid();
 
-        // Active entry + activity instance state
+        // Active entry — set enriched fields directly on the entry
         var activeEntry = new ActivityInstanceEntry(activeAiId, "task1", instanceId);
+        activeEntry.SetActivity("task1", "TaskActivity");
+        activeEntry.Execute(); // sets IsExecuting = true
         db.WorkflowActivityInstanceEntries.Add(activeEntry);
         await db.SaveChangesAsync();
 
-        await SeedActivityInstance(db, activeAiId, "task1", "TaskActivity", isExecuting: true);
-
-        // Completed entry + activity instance state
+        // Completed entry — set enriched fields directly on the entry
         var completedEntry = new ActivityInstanceEntry(completedAiId, "start", instanceId);
+        completedEntry.SetActivity("start", "StartEvent");
+        completedEntry.Execute();
+        completedEntry.Complete(); // sets IsCompleted = true
         db.WorkflowActivityInstanceEntries.Add(completedEntry);
-        db.Entry(completedEntry).Property(e => e.IsCompleted).CurrentValue = true;
         await db.SaveChangesAsync();
-
-        await SeedActivityInstance(db, completedAiId, "start", "StartEvent", isCompleted: true);
 
         var result = await _service.GetStateSnapshot(instanceId);
 
@@ -209,12 +209,11 @@ public class WorkflowQueryServiceTests
 
         var aiId = Guid.NewGuid();
         var entry = new ActivityInstanceEntry(aiId, "task1", instanceId);
+        entry.SetActivity("task1", "ScriptTask");
+        entry.Execute();
+        entry.Fail(new Exception("Something went wrong"));
         db.WorkflowActivityInstanceEntries.Add(entry);
-        db.Entry(entry).Property(e => e.IsCompleted).CurrentValue = true;
         await db.SaveChangesAsync();
-
-        await SeedActivityInstance(db, aiId, "task1", "ScriptTask",
-            isCompleted: true, errorCode: 500, errorMessage: "Something went wrong");
 
         var result = await _service.GetStateSnapshot(instanceId);
 

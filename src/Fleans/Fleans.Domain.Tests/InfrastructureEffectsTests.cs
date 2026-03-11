@@ -13,10 +13,10 @@ public class InfrastructureEffectsTests
         {
             new RegisterTimerEffect(Guid.NewGuid(), Guid.NewGuid(), "timer1", TimeSpan.FromSeconds(5)),
             new UnregisterTimerEffect(Guid.NewGuid(), Guid.NewGuid(), "timer1"),
-            new SubscribeMessageEffect("msg", "key", Guid.NewGuid(), Guid.NewGuid()),
+            new SubscribeMessageEffect("msg", "key", Guid.NewGuid(), "act1", Guid.NewGuid()),
             new UnsubscribeMessageEffect("msg", "key"),
-            new SubscribeSignalEffect("sig", Guid.NewGuid(), Guid.NewGuid()),
-            new UnsubscribeSignalEffect("sig"),
+            new SubscribeSignalEffect("sig", Guid.NewGuid(), "act1", Guid.NewGuid()),
+            new UnsubscribeSignalEffect("sig", Guid.NewGuid(), "act1"),
             new ThrowSignalEffect("sig"),
             new StartChildWorkflowEffect(Guid.NewGuid(), "process-key", new System.Dynamic.ExpandoObject(), "callAct"),
             new NotifyParentCompletedEffect(Guid.NewGuid(), "parentAct", new System.Dynamic.ExpandoObject()),

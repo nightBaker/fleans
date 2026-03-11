@@ -1,9 +1,14 @@
 using Fleans.Domain;
 using Fleans.Domain.Activities;
+using Fleans.Domain.Aggregates;
+using Fleans.Domain.Effects;
+using Fleans.Domain.Events;
 using Fleans.Domain.States;
-using Fleans.Application.Services;
+using Fleans.Application.Adapters;
+using Fleans.Application.WorkflowFactory;
 using Orleans;
 using Orleans.Runtime;
+using System.Dynamic;
 
 namespace Fleans.Application.Grains;
 
@@ -11,528 +16,303 @@ public partial class WorkflowInstance
 {
     public async Task StartWorkflow()
     {
-        await EnsureWorkflowDefinitionAsync();
+        await EnsureExecution();
         SetWorkflowRequestContext();
         using var scope = BeginWorkflowScope();
+
+        _execution!.MarkExecutionStarted();
         LogWorkflowStarted();
-        State.Start();
-        await ExecuteWorkflow();
+
+        await RunExecutionLoop();
+        LogAndClearEvents();
         await _state.WriteStateAsync();
     }
 
-    private async Task ExecuteWorkflow()
+    /// <summary>
+    /// After an aggregate method (CompleteActivity, HandleTimerFired, etc.) externally
+    /// completes entries, this method computes transitions for those entries and resolves them.
+    /// Must be called between the aggregate method and RunExecutionLoop so that
+    /// newly-spawned successor activities are picked up by the loop.
+    /// </summary>
+    private async Task ResolveExternalCompletions()
     {
         var definition = await GetWorkflowDefinition();
-        while (await AnyNotExecuting())
+
+        // Collect entry IDs from ActivityCompleted events in uncommitted events.
+        // These are entries completed externally by the aggregate method call.
+        var completedIds = _execution!.GetUncommittedEvents()
+            .OfType<ActivityCompleted>()
+            .Select(e => e.ActivityInstanceId)
+            .ToList();
+
+        if (completedIds.Count > 0)
         {
-            foreach (var activityState in await GetNotExecutingNotCompletedActivities())
+            var transitions = await ComputeTransitionsForEntries(definition, completedIds);
+            if (transitions.Count > 0)
+                _execution.ResolveTransitions(transitions);
+        }
+
+        // Handle subprocess/multi-instance scope completions that may have occurred
+        await HandleScopeCompletions(definition);
+    }
+
+    /// <summary>
+    /// Core execution loop. Finds pending (not-yet-executing) activities,
+    /// runs them via adapter, processes commands through aggregate, performs effects,
+    /// computes transitions, and handles scope completions.
+    /// </summary>
+    private async Task RunExecutionLoop()
+    {
+        var definition = await GetWorkflowDefinition();
+
+        while (true)
+        {
+            var pending = _execution!.GetPendingActivities();
+            if (pending.Count == 0) break;
+
+            var newlyCompletedEntryIds = new List<Guid>();
+
+            foreach (var p in pending)
             {
-                var activityId = await activityState.GetActivityId();
-                var scopeDefinition = definition.GetScopeForActivity(activityId);
-                var currentActivity = scopeDefinition.GetActivity(activityId);
-                SetActivityRequestContext(activityId, activityState);
+                var entry = State.GetActiveEntry(p.ActivityInstanceId);
+                var adapter = new ActivityExecutionContextAdapter(entry);
+                var scopeDef = definition.GetScopeForActivity(p.ActivityId);
+                var currentActivity = scopeDef.GetActivity(p.ActivityId);
 
-                LogExecutingActivity(activityId, currentActivity.GetType().Name);
-                var commands = await currentActivity.ExecuteAsync(this, activityState, scopeDefinition);
+                LogExecutingActivity(p.ActivityId, currentActivity.GetType().Name);
 
-                var currentEntry = State.GetActiveEntry(activityState.GetPrimaryKey());
-                await ProcessCommands(commands, currentEntry, activityState);
+                var commands = await currentActivity.ExecuteAsync(this, adapter, scopeDef);
+
+                // Record state changes applied by the adapter
+                if (adapter.WasExecuted)
+                    _execution.RecordExternallyApplied(new ActivityExecutionStarted(entry.ActivityInstanceId));
+
+                // Process commands through aggregate -> get infrastructure effects
+                var effects = _execution.ProcessCommands(commands, entry.ActivityInstanceId);
+                await PerformEffects(effects);
+
+                // Handle domain events published by activities (e.g., ExecuteScriptEvent)
+                foreach (var evt in adapter.PublishedEvents)
+                    await PublishDomainEvent(evt);
+
+                // If the adapter completed the activity, record it
+                if (adapter.WasCompleted)
+                {
+                    _execution.RecordExternallyApplied(
+                        new ActivityCompleted(entry.ActivityInstanceId, entry.VariablesId, new ExpandoObject()));
+                    newlyCompletedEntryIds.Add(entry.ActivityInstanceId);
+                }
             }
 
-            await TransitionToNextActivity();
-            LogStatePersistedAfterTransition();
+            // Compute transitions only for newly completed entries
+            var completedTransitions = await ComputeTransitionsForEntries(definition, newlyCompletedEntryIds);
+            if (completedTransitions.Count > 0)
+                _execution.ResolveTransitions(completedTransitions);
+
+            // Handle subprocess/multi-instance scope completions
+            await HandleScopeCompletions(definition);
+
             await _state.WriteStateAsync();
         }
     }
 
-    private async Task ProcessCommands(
-        IReadOnlyList<IExecutionCommand> commands,
-        ActivityInstanceEntry entry,
-        IActivityExecutionContext activityContext)
+    /// <summary>
+    /// Computes transitions for specific completed entries.
+    /// </summary>
+    private async Task<List<CompletedActivityTransitions>> ComputeTransitionsForEntries(
+        IWorkflowDefinition definition, List<Guid> completedEntryIds)
     {
-        foreach (var command in commands)
+        var result = new List<CompletedActivityTransitions>();
+
+        foreach (var completedId in completedEntryIds)
         {
-            switch (command)
+            var entry = State.Entries.First(e => e.ActivityInstanceId == completedId);
+            if (entry.IsCancelled || entry.ErrorCode is not null) continue;
+
+            var scopeDef = definition.FindScopeForActivity(entry.ActivityId);
+            if (scopeDef is null) continue;
+
+            var activity = scopeDef.GetActivity(entry.ActivityId);
+            var adapter = new ActivityExecutionContextAdapter(entry);
+
+            var transitions = await activity.GetNextActivities(this, adapter, scopeDef);
+            if (transitions.Count > 0)
+                result.Add(new CompletedActivityTransitions(
+                    entry.ActivityInstanceId, entry.ActivityId, transitions));
+        }
+
+        return result;
+    }
+
+    private async Task HandleScopeCompletions(IWorkflowDefinition definition)
+    {
+        var (scopeEffects, completedHostIds) = _execution!.CompleteFinishedSubProcessScopes();
+        await PerformEffects(scopeEffects);
+
+        if (completedHostIds.Count > 0)
+        {
+            var hostTransitions = new List<CompletedActivityTransitions>();
+            foreach (var hostId in completedHostIds)
             {
-                case SpawnActivityCommand spawn:
-                    await SpawnActivity(spawn, activityContext);
+                var hostEntry = State.Entries.First(e => e.ActivityInstanceId == hostId);
+                var scopeDef = definition.GetScopeForActivity(hostEntry.ActivityId);
+                var activity = scopeDef.GetActivity(hostEntry.ActivityId);
+                var adapter = new ActivityExecutionContextAdapter(hostEntry);
+
+                var transitions = await activity.GetNextActivities(this, adapter, scopeDef);
+                hostTransitions.Add(new CompletedActivityTransitions(
+                    hostId, hostEntry.ActivityId, transitions));
+            }
+            _execution.ResolveTransitions(hostTransitions);
+        }
+    }
+
+    private async Task PerformEffects(IReadOnlyList<IInfrastructureEffect> effects)
+    {
+        foreach (var effect in effects)
+        {
+            switch (effect)
+            {
+                case RegisterTimerEffect timer:
+                    var callbackGrain = _grainFactory.GetGrain<ITimerCallbackGrain>(
+                        timer.WorkflowInstanceId, $"{timer.HostActivityInstanceId}:{timer.TimerActivityId}");
+                    await callbackGrain.Activate(timer.DueTime);
+                    LogTimerReminderRegistered(timer.TimerActivityId, timer.DueTime);
                     break;
 
-                case OpenSubProcessCommand sub:
-                    await OpenSubProcessScope(entry.ActivityInstanceId, sub.SubProcess, sub.ParentVariablesId);
+                case UnregisterTimerEffect unregTimer:
+                    var timerCancelGrain = _grainFactory.GetGrain<ITimerCallbackGrain>(
+                        unregTimer.WorkflowInstanceId, $"{unregTimer.HostActivityInstanceId}:{unregTimer.TimerActivityId}");
+                    await timerCancelGrain.Cancel();
                     break;
 
-                case RegisterTimerCommand timer:
-                    await RegisterTimerReminder(entry.ActivityInstanceId, timer.TimerActivityId, timer.DueTime);
+                case SubscribeMessageEffect subMsg:
+                    await PerformMessageSubscribe(subMsg);
                     break;
 
-                case RegisterMessageCommand msg:
-                    await HandleRegisterMessage(msg, entry.ActivityInstanceId);
+                case UnsubscribeMessageEffect unsubMsg:
+                    var unsubMsgKey = MessageCorrelationKey.Build(unsubMsg.MessageName, unsubMsg.CorrelationKey);
+                    var unsubMsgGrain = _grainFactory.GetGrain<IMessageCorrelationGrain>(unsubMsgKey);
+                    await unsubMsgGrain.Unsubscribe();
                     break;
 
-                case RegisterSignalCommand sig:
-                    await HandleRegisterSignal(sig, entry.ActivityInstanceId);
+                case SubscribeSignalEffect subSig:
+                    await PerformSignalSubscribe(subSig);
                     break;
 
-                case StartChildWorkflowCommand child:
-                    await StartChildWorkflow(child.CallActivity, activityContext);
+                case UnsubscribeSignalEffect unsubSig:
+                    var unsubSigGrain = _grainFactory.GetGrain<ISignalCorrelationGrain>(unsubSig.SignalName);
+                    await unsubSigGrain.Unsubscribe(unsubSig.WorkflowInstanceId, unsubSig.ActivityId);
                     break;
 
-                case AddConditionsCommand cond:
-                    await HandleAddConditions(cond, entry, activityContext);
+                case ThrowSignalEffect throwSig:
+                    var throwSigGrain = _grainFactory.GetGrain<ISignalCorrelationGrain>(throwSig.SignalName);
+                    var deliveredCount = await throwSigGrain.BroadcastSignal();
+                    LogSignalThrown(throwSig.SignalName, deliveredCount);
                     break;
 
-                case ThrowSignalCommand sig:
-                    await ThrowSignal(sig.SignalName);
+                case StartChildWorkflowEffect startChild:
+                    await PerformStartChildWorkflow(startChild);
                     break;
 
-                case CompleteWorkflowCommand:
-                    await Complete();
+                case NotifyParentCompletedEffect notifyCompleted:
+                    var parentGrain = _grainFactory.GetGrain<IWorkflowInstanceGrain>(notifyCompleted.ParentInstanceId);
+                    await parentGrain.OnChildWorkflowCompleted(notifyCompleted.ParentActivityId, notifyCompleted.Variables);
                     break;
 
+                case NotifyParentFailedEffect notifyFailed:
+                    var parentFailGrain = _grainFactory.GetGrain<IWorkflowInstanceGrain>(notifyFailed.ParentInstanceId);
+                    await parentFailGrain.OnChildWorkflowFailed(notifyFailed.ParentActivityId, notifyFailed.Exception);
+                    break;
+
+                case PublishDomainEventEffect publishEvt:
+                    await PublishDomainEvent(publishEvt.Event);
+                    break;
+
+                case CancelActivitySubscriptionsEffect:
+                    // Handled by specific unsubscribe effects; this is a placeholder
+                    break;
             }
         }
     }
 
-    private async Task SpawnActivity(SpawnActivityCommand spawn, IActivityExecutionContext activityContext)
+    private async Task PerformMessageSubscribe(SubscribeMessageEffect subMsg)
     {
-        var spawnId = Guid.NewGuid();
-        var spawnInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(spawnId);
-        await spawnInstance.SetActivity(spawn.Activity.ActivityId, spawn.Activity.GetType().Name);
+        var grainKey = MessageCorrelationKey.Build(subMsg.MessageName, subMsg.CorrelationKey);
+        var corrGrain = _grainFactory.GetGrain<IMessageCorrelationGrain>(grainKey);
 
-        ActivityInstanceEntry spawnEntry;
-
-        if (spawn.IsMultiInstanceIteration)
+        try
         {
-            LogMultiInstanceIterationSpawned(spawn.MultiInstanceIndex!.Value, spawn.Activity.ActivityId);
-            var childVariablesId = CreateMultiInstanceIterationScope(
-                spawn.ParentVariablesId!.Value, spawn.MultiInstanceIndex!.Value,
-                spawn.IterationItemName, spawn.IterationItem);
-
-            await spawnInstance.SetVariablesId(childVariablesId);
-            await spawnInstance.SetMultiInstanceIndex(spawn.MultiInstanceIndex.Value);
-            spawnEntry = new ActivityInstanceEntry(
-                spawnId, spawn.Activity.ActivityId, State.Id, spawn.ScopeId, spawn.MultiInstanceIndex.Value);
+            await _state.WriteStateAsync(); // persist before external call
+            await corrGrain.Subscribe(subMsg.WorkflowInstanceId, subMsg.ActivityId, subMsg.HostActivityInstanceId);
+            LogMessageSubscriptionRegistered(subMsg.ActivityId, subMsg.MessageName, subMsg.CorrelationKey);
         }
-        else
+        catch (Exception ex)
         {
-            var spawnVarsId = await activityContext.GetVariablesStateId();
-            await spawnInstance.SetVariablesId(spawnVarsId);
-            spawnEntry = new ActivityInstanceEntry(spawnId, spawn.Activity.ActivityId, State.Id, spawn.ScopeId);
-        }
-
-        State.AddEntries([spawnEntry]);
-    }
-
-    private async Task HandleRegisterMessage(RegisterMessageCommand msg, Guid activityInstanceId)
-    {
-        if (msg.IsBoundary)
-            await RegisterBoundaryMessageSubscription(msg.VariablesId,
-                activityInstanceId, msg.ActivityId, msg.MessageDefinitionId);
-        else
-            await RegisterMessageSubscription(msg.VariablesId, msg.MessageDefinitionId, msg.ActivityId);
-    }
-
-    private async Task HandleRegisterSignal(RegisterSignalCommand sig, Guid activityInstanceId)
-    {
-        if (sig.IsBoundary)
-            await RegisterBoundarySignalSubscription(activityInstanceId, sig.ActivityId, sig.SignalName);
-        else
-            await RegisterSignalSubscription(sig.SignalName, sig.ActivityId, activityInstanceId);
-    }
-
-    private async Task HandleAddConditions(AddConditionsCommand cond, ActivityInstanceEntry entry, IActivityExecutionContext activityContext)
-    {
-        await AddConditionSequenceStates(entry.ActivityInstanceId, cond.SequenceFlowIds);
-        var definition = await GetWorkflowDefinition();
-        var instanceId = await GetWorkflowInstanceId();
-        foreach (var eval in cond.Evaluations)
-        {
-            await activityContext.PublishEvent(new Domain.Events.EvaluateConditionEvent(
-                instanceId,
-                definition.WorkflowId,
-                definition.ProcessDefinitionId,
-                entry.ActivityInstanceId,
-                entry.ActivityId,
-                eval.SequenceFlowId,
-                eval.Condition));
+            LogMessageSubscriptionFailed(subMsg.ActivityId, subMsg.MessageName, subMsg.CorrelationKey, ex);
+            // Fail the activity through the aggregate
+            var failEffects = _execution!.FailActivity(subMsg.ActivityId, subMsg.HostActivityInstanceId, ex);
+            await PerformEffects(failEffects);
         }
     }
 
-    private async Task OpenSubProcessScope(Guid subProcessInstanceId, SubProcess subProcess, Guid parentVariablesId)
+    private async Task PerformSignalSubscribe(SubscribeSignalEffect subSig)
     {
-        var childVariablesId = State.AddChildVariableState(parentVariablesId);
-        LogSubProcessInitialized(subProcess.ActivityId, childVariablesId);
+        var signalGrain = _grainFactory.GetGrain<ISignalCorrelationGrain>(subSig.SignalName);
 
-        var startActivity = subProcess.Activities.FirstOrDefault(a => a is StartEvent)
-            ?? throw new InvalidOperationException($"SubProcess '{subProcess.ActivityId}' must have a StartEvent");
-
-        var startInstanceId = Guid.NewGuid();
-        var startInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(startInstanceId);
-        await startInstance.SetActivity(startActivity.ActivityId, startActivity.GetType().Name);
-        await startInstance.SetVariablesId(childVariablesId);
-
-        var startEntry = new ActivityInstanceEntry(startInstanceId, startActivity.ActivityId, State.Id, subProcessInstanceId);
-        State.AddEntries([startEntry]);
-    }
-
-    private async Task<ActivityInstanceEntry> CreateNextActivityEntry(
-        Activity sourceActivity, IActivityInstanceGrain sourceInstance,
-        ActivityTransition transition, Guid? scopeId, Guid sourceActivityInstanceId)
-    {
-        var sourceVariablesId = await sourceInstance.GetVariablesStateId();
-
-        var variablesId = transition.CloneVariables
-            ? State.AddCloneOfVariableState(sourceVariablesId)
-            : sourceVariablesId;
-        RequestContext.Set("VariablesId", variablesId.ToString());
-
-        var newId = Guid.NewGuid();
-        var newInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(newId);
-        await newInstance.SetVariablesId(variablesId);
-        await newInstance.SetActivity(transition.NextActivity.ActivityId, transition.NextActivity.GetType().Name);
-
-        await PropagateToken(transition, sourceActivity, sourceInstance, newInstance, sourceActivityInstanceId);
-
-        return new ActivityInstanceEntry(newId, transition.NextActivity.ActivityId, State.Id, scopeId);
-    }
-
-    private async Task PropagateToken(
-        ActivityTransition transition, Activity sourceActivity,
-        IActivityInstanceGrain sourceInstance, IActivityInstanceGrain newInstance,
-        Guid sourceActivityInstanceId)
-    {
-        switch (transition.Token)
+        try
         {
-            case TokenAction.CreateNew:
-                var sourceTokenId = await sourceInstance.GetTokenId();
-                var newTokenId = Guid.NewGuid();
-                await newInstance.SetTokenId(newTokenId);
-
-                var forkState = State.GatewayForks.FirstOrDefault(
-                    f => f.ForkInstanceId == sourceActivityInstanceId);
-                if (forkState == null)
-                {
-                    forkState = State.CreateGatewayFork(sourceActivityInstanceId, sourceTokenId);
-                    LogGatewayForkStateCreated(sourceActivityInstanceId, sourceTokenId);
-                }
-                forkState.CreatedTokenIds.Add(newTokenId);
-                LogTokenCreated(sourceActivity.ActivityId, newTokenId);
-                break;
-
-            case TokenAction.RestoreParent:
-                var inheritedToken = await sourceInstance.GetTokenId();
-                if (inheritedToken.HasValue)
-                {
-                    var fork = State.FindForkByToken(inheritedToken.Value);
-                    if (fork?.ConsumedTokenId.HasValue == true)
-                    {
-                        await newInstance.SetTokenId(fork.ConsumedTokenId.Value);
-                        State.RemoveGatewayFork(fork.ForkInstanceId);
-                        LogTokenRestored(fork.ConsumedTokenId.Value, transition.NextActivity.ActivityId, fork.ForkInstanceId);
-                        LogGatewayForkStateRemoved(fork.ForkInstanceId);
-                    }
-                    else
-                    {
-                        await newInstance.SetTokenId(inheritedToken.Value);
-                        LogTokenInherited(inheritedToken.Value, transition.NextActivity.ActivityId);
-                    }
-                }
-                break;
-
-            default: // TokenAction.Inherit
-                var token = await sourceInstance.GetTokenId();
-                if (token.HasValue)
-                {
-                    await newInstance.SetTokenId(token.Value);
-                    LogTokenInherited(token.Value, transition.NextActivity.ActivityId);
-                }
-                break;
+            await _state.WriteStateAsync(); // persist before external call
+            await signalGrain.Subscribe(subSig.WorkflowInstanceId, subSig.ActivityId, subSig.HostActivityInstanceId);
+            LogSignalSubscriptionRegistered(subSig.ActivityId, subSig.SignalName);
+        }
+        catch (Exception ex)
+        {
+            LogSignalSubscriptionFailed(subSig.ActivityId, subSig.SignalName, ex);
+            var failEffects = _execution!.FailActivity(subSig.ActivityId, subSig.HostActivityInstanceId, ex);
+            await PerformEffects(failEffects);
         }
     }
 
-    private async Task TransitionToNextActivity()
+    private async Task PerformStartChildWorkflow(StartChildWorkflowEffect startChild)
     {
-        var definition = await GetWorkflowDefinition();
-        var newActiveEntries = new List<ActivityInstanceEntry>();
-        var completedEntries = new List<ActivityInstanceEntry>();
+        var factory = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
+        var childDefinition = await factory.GetLatestWorkflowDefinition(startChild.ProcessDefinitionKey);
 
-        foreach (var entry in State.GetActiveActivities().ToList())
+        var child = _grainFactory.GetGrain<IWorkflowInstanceGrain>(startChild.ChildInstanceId);
+
+        LogStartingChildWorkflow(startChild.ProcessDefinitionKey, startChild.ChildInstanceId);
+
+        await child.SetWorkflow(childDefinition);
+        await child.SetParentInfo(this.GetPrimaryKey(), startChild.ParentActivityId);
+
+        if (((IDictionary<string, object?>)startChild.InputVariables).Count > 0)
+            await child.SetInitialVariables(startChild.InputVariables);
+
+        await child.StartWorkflow();
+    }
+
+    private async Task PublishDomainEvent(IDomainEvent domainEvent)
+    {
+        var eventPublisher = _grainFactory.GetGrain<IEventPublisher>(0);
+        await eventPublisher.Publish(domainEvent);
+    }
+
+    private void LogAndClearEvents()
+    {
+        // Log each uncommitted event for observability
+        foreach (var evt in _execution!.GetUncommittedEvents())
         {
-            var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(entry.ActivityInstanceId);
-
-            if (await activityInstance.IsCompleted())
+            switch (evt)
             {
-                completedEntries.Add(entry);
-
-                // Failed or cancelled activities don't transition to next activities
-                if (await activityInstance.GetErrorState() is not null)
-                    continue;
-
-                if (await activityInstance.IsCancelled())
-                    continue;
-
-                var scopeDefinition = definition.GetScopeForActivity(entry.ActivityId);
-                var currentActivity = scopeDefinition.GetActivity(entry.ActivityId);
-
-                var nextTransitions = await currentActivity.GetNextActivities(this, activityInstance, scopeDefinition);
-
-                foreach(var transition in nextTransitions)
-                {
-                    // For join gateways, reuse the existing active entry instead of creating a duplicate
-                    if (transition.NextActivity.IsJoinGateway)
-                    {
-                        var existingEntry = State.GetActiveActivities()
-                            .FirstOrDefault(e => e.ActivityId == transition.NextActivity.ActivityId && e.ScopeId == entry.ScopeId);
-                        if (existingEntry != null)
-                        {
-                            LogJoinGatewayDeduplication(transition.NextActivity.ActivityId, existingEntry.ActivityInstanceId);
-                            var existingInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(existingEntry.ActivityInstanceId);
-                            await existingInstance.ResetExecuting();
-                            continue;
-                        }
-                    }
-
-                    var newEntry = await CreateNextActivityEntry(currentActivity, activityInstance, transition, entry.ScopeId, entry.ActivityInstanceId);
-                    newActiveEntries.Add(newEntry);
-                }
+                case WorkflowCompleted:
+                    LogStateCompleted();
+                    break;
+                case ActivitySpawned:
+                    LogStateAddEntries(1);
+                    break;
             }
         }
-
-        LogTransition(completedEntries.Count, newActiveEntries.Count);
-        LogStateCompleteEntries(completedEntries.Count);
-        State.CompleteEntries(completedEntries);
-        LogStateAddEntries(newActiveEntries.Count);
-        State.AddEntries(newActiveEntries);
-
-        await CompleteFinishedSubProcessScopes(definition);
-    }
-
-    private async Task CompleteFinishedSubProcessScopes(IWorkflowDefinition definition)
-    {
-        const int maxIterations = 100;
-        var iteration = 0;
-        bool anyCompleted;
-        do
-        {
-            if (++iteration > maxIterations)
-                throw new InvalidOperationException("Sub-process completion loop exceeded max iterations — possible cycle in scope graph");
-
-            anyCompleted = false;
-            foreach (var entry in State.GetActiveActivities().ToList())
-            {
-                var scopeDefinition = definition.GetScopeForActivity(entry.ActivityId);
-                var activity = scopeDefinition.GetActivity(entry.ActivityId);
-
-                var isSubProcess = activity is SubProcess;
-                var isMultiInstanceHost = activity is MultiInstanceActivity
-                    && entry.MultiInstanceIndex is null;
-
-                if (!isSubProcess && !isMultiInstanceHost) continue;
-
-                var scopeEntries = State.Entries.Where(e => e.ScopeId == entry.ActivityInstanceId).ToList();
-                if (scopeEntries.Count == 0 && !isMultiInstanceHost) continue;
-
-                if (isMultiInstanceHost)
-                {
-                    var completedMiResult = await TryCompleteMultiInstanceHost(
-                        entry, (MultiInstanceActivity)activity, scopeDefinition, scopeEntries);
-                    if (completedMiResult)
-                        anyCompleted = true;
-                    continue;
-                }
-
-                if (!scopeEntries.All(e => e.IsCompleted)) continue;
-
-                // All scope children are done — complete the sub-process
-                var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(entry.ActivityInstanceId);
-                await activityInstance.Complete();
-                LogSubProcessCompleted(entry.ActivityId);
-
-                var nextTransitions = await activity.GetNextActivities(this, activityInstance, scopeDefinition);
-
-                var completedEntries = new List<ActivityInstanceEntry> { entry };
-                var newEntries = new List<ActivityInstanceEntry>();
-
-                foreach (var transition in nextTransitions)
-                {
-                    var newEntry = await CreateNextActivityEntry(activity, activityInstance, transition, entry.ScopeId, entry.ActivityInstanceId);
-                    newEntries.Add(newEntry);
-                }
-
-                State.CompleteEntries(completedEntries);
-                State.AddEntries(newEntries);
-                anyCompleted = true;
-            }
-        } while (anyCompleted);
-    }
-
-    private async Task<bool> TryCompleteMultiInstanceHost(
-        ActivityInstanceEntry hostEntry,
-        MultiInstanceActivity mi,
-        IWorkflowDefinition scopeDefinition,
-        List<ActivityInstanceEntry> scopeEntries)
-    {
-        var completedIterations = scopeEntries.Where(e => e.IsCompleted).ToList();
-        var activeIterations = scopeEntries.Where(e => !e.IsCompleted).ToList();
-        var hostGrain = _grainFactory.GetGrain<IActivityInstanceGrain>(hostEntry.ActivityInstanceId);
-        var total = await hostGrain.GetMultiInstanceTotal();
-        if (total is null)
-            return false; // Host not yet executed
-
-        // If there are active iterations, wait for them
-        if (activeIterations.Count > 0)
-            return false;
-
-        // All spawned iterations are done
-        if (completedIterations.Count < total)
-        {
-            // Sequential mode: spawn next iteration
-            var nextIndex = completedIterations.Count;
-            LogMultiInstanceNextIteration(nextIndex, mi.ActivityId);
-
-            var parentVariablesId = await hostGrain.GetVariablesStateId();
-
-            // Resolve collection item for next iteration
-            object? iterationItem = null;
-            if (mi.InputCollection is not null && mi.InputDataItem is not null)
-            {
-                var collectionVar = await GetVariable(parentVariablesId, mi.InputCollection);
-                if (collectionVar is IList<object> list)
-                    iterationItem = list[nextIndex];
-                else if (collectionVar is System.Collections.IEnumerable enumerable and not string)
-                    iterationItem = enumerable.Cast<object>().ElementAt(nextIndex);
-            }
-
-            var childVariablesId = CreateMultiInstanceIterationScope(
-                parentVariablesId, nextIndex, mi.InputDataItem, iterationItem);
-
-            var iterationInstanceId = Guid.NewGuid();
-            var iterationGrain = _grainFactory.GetGrain<IActivityInstanceGrain>(iterationInstanceId);
-            await iterationGrain.SetActivity(mi.ActivityId, mi.InnerActivity.GetType().Name);
-            await iterationGrain.SetVariablesId(childVariablesId);
-            await iterationGrain.SetMultiInstanceIndex(nextIndex);
-
-            var iterationEntry = new ActivityInstanceEntry(
-                iterationInstanceId, mi.ActivityId, State.Id, hostEntry.ActivityInstanceId, nextIndex);
-            State.AddEntries([iterationEntry]);
-
-            return false; // host not completed yet
-        }
-
-        // All iterations done — aggregate output
-        if (mi.OutputDataItem is not null && mi.OutputCollection is not null)
-        {
-            var iterationEntries = scopeEntries
-                .Where(e => e.MultiInstanceIndex.HasValue)
-                .OrderBy(e => e.MultiInstanceIndex!.Value)
-                .ToList();
-
-            var outputList = new List<object?>();
-            foreach (var iterEntry in iterationEntries)
-            {
-                var iterGrain = _grainFactory.GetGrain<IActivityInstanceGrain>(iterEntry.ActivityInstanceId);
-                var iterVarId = await iterGrain.GetVariablesStateId();
-                var iterVarState = State.VariableStates.FirstOrDefault(v => v.Id == iterVarId);
-                var outputValue = iterVarState is not null
-                    ? State.GetVariable(iterVarId, mi.OutputDataItem)
-                    : null;
-                outputList.Add(outputValue);
-            }
-
-            var hostVarId = await hostGrain.GetVariablesStateId();
-            dynamic outputVars = new System.Dynamic.ExpandoObject();
-            ((IDictionary<string, object?>)outputVars)[mi.OutputCollection] = outputList;
-            State.MergeState(hostVarId, (System.Dynamic.ExpandoObject)outputVars);
-            LogMultiInstanceOutputAggregated(mi.ActivityId, mi.OutputCollection, outputList.Count);
-        }
-
-        // Clean up child variable scopes
-        await CleanupMultiInstanceChildScopes(scopeEntries);
-
-        // Complete host
-        await hostGrain.Complete();
-        LogMultiInstanceScopeCompleted(mi.ActivityId);
-
-        var nextTransitions = await mi.GetNextActivities(this, hostGrain, scopeDefinition);
-
-        var completedEntries = new List<ActivityInstanceEntry> { hostEntry };
-        var newEntries = new List<ActivityInstanceEntry>();
-
-        foreach (var transition in nextTransitions)
-        {
-            var newEntry = await CreateNextActivityEntry(mi, hostGrain, transition, hostEntry.ScopeId, hostEntry.ActivityInstanceId);
-            newEntries.Add(newEntry);
-        }
-
-        State.CompleteEntries(completedEntries);
-        State.AddEntries(newEntries);
-        return true;
-    }
-
-    public async Task CancelScopeChildren(Guid scopeId)
-    {
-        var cancelledEntries = new List<ActivityInstanceEntry>();
-        foreach (var entry in State.GetActiveActivities().Where(e => e.ScopeId == scopeId).ToList())
-        {
-            // Recursively cancel nested sub-process children
-            if (State.Entries.Any(e => e.ScopeId == entry.ActivityInstanceId && !e.IsCompleted))
-            {
-                await CancelScopeChildren(entry.ActivityInstanceId);
-            }
-
-            var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(entry.ActivityInstanceId);
-            await activityInstance.Cancel("Sub-process scope cancelled by boundary event");
-            cancelledEntries.Add(entry);
-            LogScopeChildCancelled(entry.ActivityId, scopeId);
-        }
-        State.CompleteEntries(cancelledEntries);
-    }
-
-    private Guid CreateMultiInstanceIterationScope(
-        Guid parentVariablesId, int index, string? itemName, object? itemValue)
-    {
-        var childVariablesId = State.AddChildVariableState(parentVariablesId);
-        dynamic iterVars = new System.Dynamic.ExpandoObject();
-        var iterDict = (IDictionary<string, object?>)iterVars;
-        iterDict["loopCounter"] = index;
-        if (itemValue is not null && itemName is not null)
-            iterDict[itemName] = itemValue;
-        State.MergeState(childVariablesId, (System.Dynamic.ExpandoObject)iterVars);
-        return childVariablesId;
-    }
-
-    private async Task CleanupMultiInstanceChildScopes(List<ActivityInstanceEntry> scopeEntries)
-    {
-        var childVarIds = new List<Guid>();
-        foreach (var iterEntry in scopeEntries.Where(e => e.MultiInstanceIndex.HasValue))
-        {
-            var iterGrain = _grainFactory.GetGrain<IActivityInstanceGrain>(iterEntry.ActivityInstanceId);
-            childVarIds.Add(await iterGrain.GetVariablesStateId());
-        }
-        State.RemoveVariableStates(childVarIds);
-    }
-
-    private async Task<bool> AnyNotExecuting()
-    {
-        foreach (var entry in State.GetActiveActivities().ToList())
-        {
-            var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(entry.ActivityInstanceId);
-            if (!await activityInstance.IsExecuting())
-                return true;
-        }
-        return false;
-    }
-
-    private async Task<IActivityInstanceGrain[]> GetNotExecutingNotCompletedActivities()
-    {
-        var result = new List<IActivityInstanceGrain>();
-        foreach (var entry in State.GetActiveActivities().ToList())
-        {
-            var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(entry.ActivityInstanceId);
-            if (!await activityInstance.IsExecuting() && !await activityInstance.IsCompleted())
-                result.Add(activityInstance);
-        }
-        return result.ToArray();
+        _execution.ClearUncommittedEvents();
     }
 }

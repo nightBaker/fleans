@@ -11,9 +11,12 @@ namespace Fleans.Application.Adapters;
 /// are collected in <see cref="PublishedEvents"/> for the grain to
 /// process after <c>ExecuteAsync</c> returns.
 /// </summary>
+[GenerateSerializer]
 public class ActivityExecutionContextAdapter : IActivityExecutionContext
 {
+    [Id(0)]
     private readonly ActivityInstanceEntry _entry;
+    [Id(1)]
     private readonly List<IDomainEvent> _publishedEvents = [];
 
     public ActivityExecutionContextAdapter(ActivityInstanceEntry entry)
@@ -33,6 +36,7 @@ public class ActivityExecutionContextAdapter : IActivityExecutionContext
     /// The grain uses this flag to decide whether to emit an
     /// <c>ActivityCompleted</c> domain event on the aggregate.
     /// </summary>
+    [Id(2)]
     public bool WasCompleted { get; private set; }
 
     /// <summary>
@@ -40,6 +44,7 @@ public class ActivityExecutionContextAdapter : IActivityExecutionContext
     /// The grain uses this flag to decide whether to emit an
     /// <c>ActivityExecuting</c> domain event on the aggregate.
     /// </summary>
+    [Id(3)]
     public bool WasExecuted { get; private set; }
 
     // --- Read-only delegates to entry fields ---

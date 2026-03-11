@@ -54,9 +54,8 @@ public partial class WorfklowEvaluateConditionEventHandler : Grain, IWorfklowEva
         try
         {
             var expressionEvaluator = _grainFactory.GetGrain<IConditionExpressionEvaluatorGrain>(0);
-            var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(item.ActivityInstanceId);
 
-            var variables = await workflowInstance.GetVariables(await activityInstance.GetVariablesStateId());
+            var variables = await workflowInstance.GetVariables(item.VariablesId);
 
             var result = await expressionEvaluator.Evaluate(item.Condition, variables);
 

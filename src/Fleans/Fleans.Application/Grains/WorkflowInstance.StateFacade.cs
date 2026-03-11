@@ -1,6 +1,6 @@
 using Fleans.Domain;
 using Fleans.Domain.States;
-using Fleans.Application.Services;
+using Fleans.Application.Adapters;
 using System.Dynamic;
 
 namespace Fleans.Application.Grains;
@@ -13,11 +13,10 @@ public partial class WorkflowInstance
     public ValueTask<ExpandoObject> GetVariables(Guid variablesStateId)
         => ValueTask.FromResult(State.GetMergedVariables(variablesStateId));
 
-    // State facade methods — activities access state through these, not directly
     public ValueTask<IReadOnlyList<IActivityExecutionContext>> GetActiveActivities()
     {
         IReadOnlyList<IActivityExecutionContext> result = State.GetActiveActivities()
-            .Select(e => (IActivityExecutionContext)_grainFactory.GetGrain<IActivityInstanceGrain>(e.ActivityInstanceId))
+            .Select(e => (IActivityExecutionContext)new ActivityExecutionContextAdapter(e))
             .ToList().AsReadOnly();
         return ValueTask.FromResult(result);
     }
@@ -25,7 +24,7 @@ public partial class WorkflowInstance
     public ValueTask<IReadOnlyList<IActivityExecutionContext>> GetCompletedActivities()
     {
         IReadOnlyList<IActivityExecutionContext> result = State.GetCompletedActivities()
-            .Select(e => (IActivityExecutionContext)_grainFactory.GetGrain<IActivityInstanceGrain>(e.ActivityInstanceId))
+            .Select(e => (IActivityExecutionContext)new ActivityExecutionContextAdapter(e))
             .ToList().AsReadOnly();
         return ValueTask.FromResult(result);
     }
@@ -36,12 +35,6 @@ public partial class WorkflowInstance
             .GroupBy(c => c.GatewayActivityInstanceId)
             .ToDictionary(g => g.Key, g => g.ToArray());
         return ValueTask.FromResult(result);
-    }
-
-    private async Task AddConditionSequenceStates(Guid activityInstanceId, string[] sequenceFlowIds)
-    {
-        State.AddConditionSequenceStates(activityInstanceId, sequenceFlowIds);
-        await _state.WriteStateAsync();
     }
 
     public async ValueTask SetConditionSequenceResult(Guid activityInstanceId, string sequenceId, bool result)

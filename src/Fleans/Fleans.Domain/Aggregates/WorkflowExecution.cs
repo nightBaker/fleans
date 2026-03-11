@@ -31,7 +31,17 @@ public class WorkflowExecution
 
     public void ClearUncommittedEvents() => _uncommittedEvents.Clear();
 
-    public void Start()
+    /// <summary>
+    /// Records a domain event that was already applied externally (e.g., by the adapter).
+    /// The event is added to the uncommitted list for tracking but Apply is NOT called,
+    /// since the state change has already been made.
+    /// </summary>
+    public void RecordExternallyApplied(IDomainEvent @event)
+    {
+        _uncommittedEvents.Add(@event);
+    }
+
+    public void Start(string? startActivityId = null)
     {
         if (_state.IsStarted)
             throw new InvalidOperationException("Workflow is already started.");
@@ -40,8 +50,19 @@ public class WorkflowExecution
 
         Emit(new WorkflowStarted(instanceId, _definition.ProcessDefinitionId));
 
-        var startActivity = _definition.Activities.OfType<StartEvent>().FirstOrDefault()
-            ?? throw new InvalidOperationException("Workflow definition does not contain a StartEvent.");
+        Activity startActivity;
+        if (startActivityId is not null)
+        {
+            startActivity = _definition.Activities.FirstOrDefault(a => a.ActivityId == startActivityId)
+                ?? throw new InvalidOperationException($"Activity '{startActivityId}' not found in workflow");
+        }
+        else
+        {
+            startActivity = _definition.Activities
+                .FirstOrDefault(a => a is StartEvent or TimerStartEvent or MessageStartEvent or SignalStartEvent)
+                ?? throw new InvalidOperationException(
+                    "Workflow must have a StartEvent, TimerStartEvent, MessageStartEvent, or SignalStartEvent");
+        }
 
         var variablesId = _state.VariableStates.First().Id;
 
@@ -53,6 +74,17 @@ public class WorkflowExecution
             ScopeId: null,
             MultiInstanceIndex: null,
             TokenId: null));
+    }
+
+    /// <summary>
+    /// Marks the workflow as execution-started. Call after <see cref="Start"/>
+    /// when you want a separate "initialize" vs "execution started" lifecycle.
+    /// </summary>
+    public void MarkExecutionStarted()
+    {
+        if (_state.IsStarted)
+            return; // idempotent
+        _state.Start();
     }
 
     public List<PendingActivity> GetPendingActivities()
@@ -180,6 +212,16 @@ public class WorkflowExecution
             {
                 case CompleteWorkflowCommand:
                     Emit(new WorkflowCompleted());
+                    // If this is a child workflow, notify parent of completion
+                    if (_state.ParentWorkflowInstanceId.HasValue)
+                    {
+                        var rootVariables = _state.GetMergedVariables(
+                            _state.VariableStates.First().Id);
+                        effects.Add(new NotifyParentCompletedEffect(
+                            _state.ParentWorkflowInstanceId.Value,
+                            _state.ParentActivityId!,
+                            rootVariables));
+                    }
                     break;
 
                 case SpawnActivityCommand spawn:
@@ -202,7 +244,7 @@ public class WorkflowExecution
 
                 case RegisterSignalCommand signal:
                     effects.Add(new SubscribeSignalEffect(
-                        signal.SignalName, _state.Id, activityInstanceId));
+                        signal.SignalName, _state.Id, signal.ActivityId, activityInstanceId));
                     break;
 
                 case StartChildWorkflowCommand startChild:
@@ -305,7 +347,7 @@ public class WorkflowExecution
 
         return new SubscribeMessageEffect(
             messageDef.Name, correlationKey,
-            _state.Id, activityInstanceId);
+            _state.Id, msg.ActivityId, activityInstanceId);
     }
 
     private StartChildWorkflowEffect ProcessStartChildWorkflow(
@@ -330,6 +372,7 @@ public class WorkflowExecution
     {
         Emit(new ConditionSequencesAdded(activityInstanceId, conditions.SequenceFlowIds));
 
+        var entry = _state.GetActiveEntry(activityInstanceId);
         var effects = new List<IInfrastructureEffect>();
         foreach (var evaluation in conditions.Evaluations)
         {
@@ -338,9 +381,10 @@ public class WorkflowExecution
                 _definition.WorkflowId,
                 _definition.ProcessDefinitionId,
                 activityInstanceId,
-                _state.GetActiveEntry(activityInstanceId).ActivityId,
+                entry.ActivityId,
                 evaluation.SequenceFlowId,
-                evaluation.Condition);
+                evaluation.Condition,
+                entry.VariablesId);
 
             effects.Add(new PublishDomainEventEffect(evalEvent));
         }
@@ -491,6 +535,10 @@ public class WorkflowExecution
                 // SubProcess: all scope children must be completed
                 if (!scopeEntries.All(e => e.IsCompleted)) continue;
 
+                // If any scope child has an error (and wasn't handled by a boundary),
+                // the subprocess should NOT auto-complete
+                if (scopeEntries.Any(e => e.ErrorCode is not null)) continue;
+
                 // All scope children are done — complete the sub-process host
                 Emit(new ActivityCompleted(
                     entry.ActivityInstanceId, entry.VariablesId, new ExpandoObject()));
@@ -601,6 +649,30 @@ public class WorkflowExecution
 
         var hostEffects = BuildBoundaryUnsubscribeEffects(mi.ActivityId, hostEntry);
         return (true, hostEffects.AsReadOnly());
+    }
+
+    /// <summary>
+    /// When a multi-instance iteration fails, cancel sibling iterations,
+    /// clean up child variable scopes, and fail the host entry.
+    /// </summary>
+    private void FailMultiInstanceHost(ActivityInstanceEntry failedIteration, int errorCode, string errorMessage)
+    {
+        var hostInstanceId = failedIteration.ScopeId!.Value;
+        var hostEntry = _state.Entries.First(e => e.ActivityInstanceId == hostInstanceId);
+
+        // Cancel all active sibling iterations
+        CancelScopeChildren(hostInstanceId);
+
+        // Clean up child variable scopes
+        var scopeEntries = _state.Entries
+            .Where(e => e.ScopeId == hostInstanceId && e.MultiInstanceIndex.HasValue)
+            .ToList();
+        var childVarIds = scopeEntries.Select(e => e.VariablesId).ToList();
+        if (childVarIds.Count > 0)
+            Emit(new VariableScopesRemoved(childVarIds));
+
+        // Fail the host entry
+        Emit(new ActivityFailed(hostInstanceId, errorCode, errorMessage));
     }
 
     // --- Condition Sequence Handling ---
@@ -774,6 +846,15 @@ public class WorkflowExecution
             // Cancel scope children of the attached-to activity
             CancelScopeChildren(scopeIdForCancel);
 
+            // Cancel the attached-to entry itself (e.g., the SubProcess)
+            // so that CompleteFinishedSubProcessScopes doesn't auto-complete it
+            if (attachedEntry is not null && !attachedEntry.IsCompleted)
+            {
+                Emit(new ActivityCancelled(
+                    attachedEntry.ActivityInstanceId,
+                    $"Interrupted by boundary error event '{boundaryEvent.ActivityId}'"));
+            }
+
             // Unsubscribe all boundary subscriptions on the attached activity
             effects.AddRange(BuildBoundaryUnsubscribeEffects(attachedToActivityId, attachedEntry ?? entry));
 
@@ -790,6 +871,13 @@ public class WorkflowExecution
         else
         {
             // No boundary handler found
+
+            // If this is a multi-instance iteration, cancel siblings and fail host
+            if (entry.MultiInstanceIndex is not null && entry.ScopeId.HasValue)
+            {
+                FailMultiInstanceHost(entry, errorCode, errorMessage);
+            }
+
             // If this is a child workflow with no remaining active activities, notify parent
             if (_state.ParentWorkflowInstanceId.HasValue
                 && !_state.GetActiveActivities().Any())
@@ -951,7 +1039,7 @@ public class WorkflowExecution
             .Where(b => b.AttachedToActivityId == activityId))
         {
             var signalDef = _definition.Signals.First(s => s.Id == boundarySig.SignalDefinitionId);
-            effects.Add(new UnsubscribeSignalEffect(signalDef.Name));
+            effects.Add(new UnsubscribeSignalEffect(signalDef.Name, _state.Id, boundarySig.ActivityId));
         }
 
         return effects;
@@ -994,7 +1082,7 @@ public class WorkflowExecution
         {
             var signalDef = _definition.Signals.First(s => s.Id == boundarySig.SignalDefinitionId);
             if (signalDef.Name == skipSignalName) continue;
-            effects.Add(new UnsubscribeSignalEffect(signalDef.Name));
+            effects.Add(new UnsubscribeSignalEffect(signalDef.Name, _state.Id, boundarySig.ActivityId));
         }
 
         return effects;
@@ -1034,7 +1122,7 @@ public class WorkflowExecution
 
                 case SignalIntermediateCatchEvent sigCatch:
                     var signalDef = _definition.Signals.First(s => s.Id == sigCatch.SignalDefinitionId);
-                    effects.Add(new UnsubscribeSignalEffect(signalDef.Name));
+                    effects.Add(new UnsubscribeSignalEffect(signalDef.Name, _state.Id, siblingId));
                     break;
             }
         }
@@ -1129,7 +1217,6 @@ public class WorkflowExecution
     {
         var variablesId = Guid.NewGuid();
         _state.Initialize(e.InstanceId, e.ProcessDefinitionId, variablesId);
-        _state.Start();
     }
 
     private void ApplyActivitySpawned(ActivitySpawned e)

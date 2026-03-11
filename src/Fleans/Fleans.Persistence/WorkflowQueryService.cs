@@ -38,12 +38,6 @@ public class WorkflowQueryService : IWorkflowQueryService
         if (state is null)
             return null;
 
-        // Load activity instance states for all entries
-        var activityInstanceIds = state.Entries.Select(e => e.ActivityInstanceId).ToList();
-        var activityStates = await db.ActivityInstances
-            .Where(a => activityInstanceIds.Contains(a.Id))
-            .ToDictionaryAsync(a => a.Id);
-
         // Load process definition for condition enrichment
         WorkflowDefinition? workflowDef = null;
         if (state.ProcessDefinitionId is not null)
@@ -57,10 +51,10 @@ public class WorkflowQueryService : IWorkflowQueryService
         var completedEntries = state.Entries.Where(e => e.IsCompleted).ToList();
 
         var activeSnapshots = activeEntries
-            .Select(e => ToActivitySnapshot(e, activityStates))
+            .Select(ToActivitySnapshot)
             .ToList();
         var completedSnapshots = completedEntries
-            .Select(e => ToActivitySnapshot(e, activityStates))
+            .Select(ToActivitySnapshot)
             .ToList();
 
         var activeIds = activeEntries.Select(e => e.ActivityId).ToList();
@@ -181,25 +175,13 @@ public class WorkflowQueryService : IWorkflowQueryService
             .FirstOrDefaultAsync();
     }
 
-    private static ActivityInstanceSnapshot ToActivitySnapshot(
-        ActivityInstanceEntry entry,
-        Dictionary<Guid, ActivityInstanceState> activityStates)
+    private static ActivityInstanceSnapshot ToActivitySnapshot(ActivityInstanceEntry entry)
     {
-        if (activityStates.TryGetValue(entry.ActivityInstanceId, out var actState))
-        {
-            return new ActivityInstanceSnapshot(
-                actState.Id, actState.ActivityId ?? entry.ActivityId, actState.ActivityType ?? "",
-                actState.IsCompleted, actState.IsExecuting, actState.IsCancelled, actState.VariablesId,
-                actState.ErrorState, actState.CancellationReason,
-                actState.CreatedAt, actState.ExecutionStartedAt, actState.CompletedAt,
-                entry.ChildWorkflowInstanceId);
-        }
-
-        // Fallback if activity instance state not found in DB
         return new ActivityInstanceSnapshot(
-            entry.ActivityInstanceId, entry.ActivityId, "",
-            entry.IsCompleted, false, false, Guid.Empty, null, null,
-            null, null, null,
+            entry.ActivityInstanceId, entry.ActivityId, entry.ActivityType ?? "",
+            entry.IsCompleted, entry.IsExecuting, entry.IsCancelled, entry.VariablesId,
+            entry.ErrorState, entry.CancellationReason,
+            entry.CreatedAt, entry.ExecutionStartedAt, entry.CompletedAt,
             entry.ChildWorkflowInstanceId);
     }
 

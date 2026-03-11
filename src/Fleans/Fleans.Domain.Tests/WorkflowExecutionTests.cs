@@ -52,6 +52,7 @@ public class WorkflowExecutionTests
         var (execution, state) = CreateExecution([start], []);
 
         execution.Start();
+        execution.MarkExecutionStarted();
 
         Assert.IsTrue(state.IsStarted);
         Assert.AreEqual(1, state.Entries.Count);

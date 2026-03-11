@@ -51,9 +51,8 @@ public partial class WorkflowExecuteScriptEventHandler : Grain, IWorkflowExecute
         try
         {
             var scriptExecutor = _grainFactory.GetGrain<IScriptExecutorGrain>(0);
-            var activityInstance = _grainFactory.GetGrain<IActivityInstanceGrain>(item.ActivityInstanceId);
 
-            var variables = await workflowInstance.GetVariables(await activityInstance.GetVariablesStateId());
+            var variables = await workflowInstance.GetVariables(item.VariablesId);
 
             var result = await scriptExecutor.Execute(item.Script, variables, item.ScriptFormat);
 

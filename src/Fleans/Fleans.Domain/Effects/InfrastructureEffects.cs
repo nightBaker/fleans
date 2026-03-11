@@ -16,15 +16,16 @@ public record UnregisterTimerEffect(
 // Message
 public record SubscribeMessageEffect(
     string MessageName, string CorrelationKey,
-    Guid WorkflowInstanceId, Guid HostActivityInstanceId) : IInfrastructureEffect;
+    Guid WorkflowInstanceId, string ActivityId, Guid HostActivityInstanceId) : IInfrastructureEffect;
 public record UnsubscribeMessageEffect(
     string MessageName, string CorrelationKey) : IInfrastructureEffect;
 
 // Signal
 public record SubscribeSignalEffect(
     string SignalName, Guid WorkflowInstanceId,
-    Guid HostActivityInstanceId) : IInfrastructureEffect;
-public record UnsubscribeSignalEffect(string SignalName) : IInfrastructureEffect;
+    string ActivityId, Guid HostActivityInstanceId) : IInfrastructureEffect;
+public record UnsubscribeSignalEffect(
+    string SignalName, Guid WorkflowInstanceId, string ActivityId) : IInfrastructureEffect;
 public record ThrowSignalEffect(string SignalName) : IInfrastructureEffect;
 
 // Child workflows

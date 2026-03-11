@@ -7,4 +7,5 @@ public record EvaluateConditionEvent(Guid WorkflowInstanceId,
                                      Guid ActivityInstanceId,
                                      string ActivityId,
                                      string SequenceFlowId,
-                                     string Condition) : IDomainEvent;
+                                     string Condition,
+                                     Guid VariablesId) : IDomainEvent;
