@@ -371,7 +371,7 @@ public class BoundaryEventHandlerTests
     // --- Non-interrupting cycle timer re-registration tests ---
 
     [TestMethod]
-    public async Task HandleBoundaryTimerFired_NonInterruptingCycle_ShouldReRegisterTimer()
+    public async Task HandleBoundaryTimerFired_NonInterruptingCycle_ShouldReturnNextCycleDueTime()
     {
         // Arrange
         var hostInstanceId = Guid.NewGuid();
@@ -390,9 +390,6 @@ public class BoundaryEventHandlerTests
         var boundaryGrain = Substitute.For<IActivityInstanceGrain>();
         _grainFactory.GetGrain<IActivityInstanceGrain>(Arg.Is<Guid>(id => id != hostInstanceId)).Returns(boundaryGrain);
 
-        var timerCallbackGrain = Substitute.For<ITimerCallbackGrain>();
-        _grainFactory.GetGrain<ITimerCallbackGrain>(_state.Id, $"{hostInstanceId}:bt1").Returns(timerCallbackGrain);
-
         var definition = Substitute.For<IWorkflowDefinition>();
         definition.Activities.Returns(new List<Activity> { boundaryTimer });
         definition.SequenceFlows.Returns(new List<SequenceFlow>());
@@ -402,14 +399,15 @@ public class BoundaryEventHandlerTests
         _accessor.WorkflowExecutionContext.Returns(Substitute.For<IWorkflowExecutionContext>());
 
         // Act
-        await _handler.HandleBoundaryTimerFiredAsync(boundaryTimer, hostInstanceId, definition);
+        var result = await _handler.HandleBoundaryTimerFiredAsync(boundaryTimer, hostInstanceId, definition);
 
-        // Assert — timer was re-registered with decremented cycle
-        await timerCallbackGrain.Received(1).Activate(TimeSpan.FromSeconds(10));
+        // Assert — returns the next cycle's due time (no direct Activate call)
+        Assert.IsNotNull(result, "Should return non-null TimeSpan for cycle re-registration");
+        Assert.AreEqual(TimeSpan.FromSeconds(10), result.Value);
     }
 
     [TestMethod]
-    public async Task HandleBoundaryTimerFired_NonInterruptingCycleLastRepetition_ShouldNotReRegister()
+    public async Task HandleBoundaryTimerFired_NonInterruptingCycleLastRepetition_ShouldReturnNull()
     {
         // Arrange
         var hostInstanceId = Guid.NewGuid();
@@ -428,9 +426,6 @@ public class BoundaryEventHandlerTests
         var boundaryGrain = Substitute.For<IActivityInstanceGrain>();
         _grainFactory.GetGrain<IActivityInstanceGrain>(Arg.Is<Guid>(id => id != hostInstanceId)).Returns(boundaryGrain);
 
-        var timerCallbackGrain = Substitute.For<ITimerCallbackGrain>();
-        _grainFactory.GetGrain<ITimerCallbackGrain>(_state.Id, $"{hostInstanceId}:bt1").Returns(timerCallbackGrain);
-
         var definition = Substitute.For<IWorkflowDefinition>();
         definition.Activities.Returns(new List<Activity> { boundaryTimer });
         definition.SequenceFlows.Returns(new List<SequenceFlow>());
@@ -440,10 +435,10 @@ public class BoundaryEventHandlerTests
         _accessor.WorkflowExecutionContext.Returns(Substitute.For<IWorkflowExecutionContext>());
 
         // Act
-        await _handler.HandleBoundaryTimerFiredAsync(boundaryTimer, hostInstanceId, definition);
+        var result = await _handler.HandleBoundaryTimerFiredAsync(boundaryTimer, hostInstanceId, definition);
 
-        // Assert — timer NOT re-registered (last repetition, DecrementCycle returns null)
-        await timerCallbackGrain.DidNotReceive().Activate(Arg.Any<TimeSpan>());
+        // Assert — returns null (last repetition, DecrementCycle returns null)
+        Assert.IsNull(result, "Should return null when no more cycles remain");
     }
 
     // --- Verify boundary path is created for non-interrupting ---

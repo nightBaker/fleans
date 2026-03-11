@@ -7,7 +7,7 @@ namespace Fleans.Application.Grains;
 
 public partial class WorkflowInstance
 {
-    public async Task HandleTimerFired(string timerActivityId, Guid hostActivityInstanceId)
+    public async Task<TimeSpan?> HandleTimerFired(string timerActivityId, Guid hostActivityInstanceId)
     {
         await EnsureWorkflowDefinitionAsync();
         var definition = await GetWorkflowDefinition();
@@ -20,8 +20,9 @@ public partial class WorkflowInstance
             SetWorkflowRequestContext();
             using var scope = BeginWorkflowScope();
             LogTimerReminderFired(timerActivityId);
-            await HandleBoundaryTimerFired(boundaryTimer, hostActivityInstanceId);
+            var cycleReRegistration = await HandleBoundaryTimerFired(boundaryTimer, hostActivityInstanceId);
             await _state.WriteStateAsync();
+            return cycleReRegistration;
         }
         else
         {
@@ -36,16 +37,17 @@ public partial class WorkflowInstance
             if (entry == null)
             {
                 LogStaleTimerIgnored(timerActivityId);
-                return;
+                return null;
             }
 
             await CompleteActivityState(timerActivityId, new ExpandoObject());
             await ExecuteWorkflow();
             await _state.WriteStateAsync();
+            return null;
         }
     }
 
-    private Task HandleBoundaryTimerFired(BoundaryTimerEvent boundaryTimer, Guid hostActivityInstanceId)
+    private Task<TimeSpan?> HandleBoundaryTimerFired(BoundaryTimerEvent boundaryTimer, Guid hostActivityInstanceId)
         => _boundaryHandler.HandleBoundaryTimerFiredAsync(boundaryTimer, hostActivityInstanceId, _workflowDefinition!);
 
     public async Task HandleMessageDelivery(string activityId, Guid hostActivityInstanceId, ExpandoObject variables)

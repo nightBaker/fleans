@@ -17,7 +17,7 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
         _logger = accessor.Logger;
     }
 
-    public async Task HandleBoundaryTimerFiredAsync(BoundaryTimerEvent boundaryTimer, Guid hostActivityInstanceId, IWorkflowDefinition definition)
+    public async Task<TimeSpan?> HandleBoundaryTimerFiredAsync(BoundaryTimerEvent boundaryTimer, Guid hostActivityInstanceId, IWorkflowDefinition definition)
     {
         var attachedActivityId = boundaryTimer.AttachedToActivityId;
 
@@ -27,7 +27,7 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
         if (attachedEntry == null)
         {
             LogStaleBoundaryTimerIgnored(boundaryTimer.ActivityId, hostActivityInstanceId);
-            return;
+            return null;
         }
 
         var attachedInstance = _accessor.GrainFactory.GetGrain<IActivityInstanceGrain>(attachedEntry.ActivityInstanceId);
@@ -55,18 +55,20 @@ public partial class BoundaryEventHandler : IBoundaryEventHandler
         await CreateAndExecuteBoundaryInstanceAsync(boundaryTimer, attachedInstance, definition,
             cloneVariables: !boundaryTimer.IsInterrupting);
 
-        // Re-register cycle timer for non-interrupting boundaries
+        // Return cycle re-registration info instead of calling back to the same grain
+        // (avoids Orleans grain deadlock — see issue #130)
         if (!boundaryTimer.IsInterrupting && boundaryTimer.TimerDefinition.Type == TimerType.Cycle)
         {
             var nextCycle = boundaryTimer.TimerDefinition.DecrementCycle();
             if (nextCycle != null)
             {
-                var callbackGrain = _accessor.GrainFactory.GetGrain<ITimerCallbackGrain>(
-                    _accessor.State.Id, $"{hostActivityInstanceId}:{boundaryTimer.ActivityId}");
-                await callbackGrain.Activate(nextCycle.GetDueTime());
+                var dueTime = nextCycle.GetDueTime();
                 LogCycleTimerReRegistered(boundaryTimer.ActivityId, nextCycle.Expression);
+                return dueTime;
             }
         }
+
+        return null;
     }
 
     public async Task HandleBoundaryMessageFiredAsync(MessageBoundaryEvent boundaryMessage, Guid hostActivityInstanceId, IWorkflowDefinition definition)
