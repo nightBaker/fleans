@@ -97,7 +97,7 @@ public class WorkflowExecution
 
     public void MarkExecuting(Guid activityInstanceId)
     {
-        var entry = _state.GetActiveEntry(activityInstanceId);
+        _ = _state.GetActiveEntry(activityInstanceId);
         Emit(new ActivityExecutionStarted(activityInstanceId));
     }
 
