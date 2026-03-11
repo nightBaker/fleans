@@ -39,5 +39,15 @@ public sealed class ProcessDefinition
     public string? ETag { get; set; }
 
     [Id(7)]
-    public bool IsActive { get; set; } = true;
+    public bool IsActive { get; private set; } = true;
+
+    public void Disable()
+    {
+        IsActive = false;
+    }
+
+    public void Enable()
+    {
+        IsActive = true;
+    }
 }

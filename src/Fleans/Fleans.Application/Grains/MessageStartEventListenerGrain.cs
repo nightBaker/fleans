@@ -35,11 +35,16 @@ public partial class MessageStartEventListenerGrain : Grain, IMessageStartEventL
 
     public async ValueTask UnregisterProcess(string processDefinitionKey)
     {
-        State.RemoveProcess(processDefinitionKey);
-        await _state.WriteStateAsync();
+        if (!State.RemoveProcess(processDefinitionKey))
+        {
+            LogProcessUnregistered(this.GetPrimaryKeyString(), processDefinitionKey);
+            return;
+        }
 
         if (State.IsEmpty)
             await _state.ClearStateAsync();
+        else
+            await _state.WriteStateAsync();
 
         LogProcessUnregistered(this.GetPrimaryKeyString(), processDefinitionKey);
     }
@@ -67,7 +72,10 @@ public partial class MessageStartEventListenerGrain : Grain, IMessageStartEventL
                 var definition = await factory.GetLatestWorkflowDefinition(processDefinitionKey);
 
                 // Find the MessageStartEvent that matches this message name
-                var messageStartActivityId = FindMessageStartActivityId(definition, messageName);
+                var messageStartActivityId = FindMessageStartActivityId(definition, messageName)
+                    ?? throw new InvalidOperationException(
+                        $"Message start activity for message '{messageName}' not found in process '{processDefinitionKey}'. " +
+                        "The message definition may have been removed during a redeployment.");
 
                 await instance.SetWorkflow(definition, messageStartActivityId);
                 await instance.SetInitialVariables(variables);

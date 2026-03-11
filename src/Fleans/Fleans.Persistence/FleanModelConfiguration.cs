@@ -171,6 +171,10 @@ internal static class FleanModelConfiguration
             sub.Property(s => s.ActivityId).HasMaxLength(256);
         });
 
+        // BREAKING CHANGE: MessageStartEventListenerState persistence migrated from JSON
+        // ProcessDefinitionKeys column to a separate MessageStartEventRegistrations join table.
+        // Existing databases will lose message start event registrations on upgrade.
+        // After upgrading, re-deploy all workflows with message start events to re-register.
         modelBuilder.Entity<MessageStartEventListenerState>(entity =>
         {
             entity.ToTable("MessageStartEventListeners");

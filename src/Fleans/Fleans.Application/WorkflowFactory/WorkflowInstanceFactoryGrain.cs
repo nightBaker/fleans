@@ -139,14 +139,25 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
             BpmnXml = bpmnXml
         };
 
+        // Preserve disabled state from previous version
+        var wasDisabled = versions.Count > 0 && !versions[^1].IsActive;
+        if (wasDisabled)
+        {
+            definition.Disable();
+            LogProcessRedeployedWhileDisabled(processDefinitionKey);
+        }
+
         _byId[processDefinitionId] = definition;
         versions.Add(definition);
         await _repository.SaveAsync(definition);
 
         LogDeployedWorkflow(processDefinitionKey, processDefinitionId, nextVersion);
 
-        // Register start event listeners for the new version
-        await RegisterAllStartEventListeners(workflowWithId, processDefinitionKey, processDefinitionId);
+        // Only register start event listeners if the process is active
+        if (definition.IsActive)
+        {
+            await RegisterAllStartEventListeners(workflowWithId, processDefinitionKey, processDefinitionId);
+        }
 
         // Unregister removed start event listeners from previous version
         if (versions.Count > 1)
@@ -199,7 +210,7 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
 
     public Task<IWorkflowDefinition> GetLatestWorkflowDefinition(string processDefinitionKey)
     {
-        var definition = GetLatestDefinitionOrThrow(processDefinitionKey);
+        var definition = GetLatestDefinitionOrThrow(processDefinitionKey, allowDisabled: true);
         return Task.FromResult<IWorkflowDefinition>(definition.Workflow);
     }
 
@@ -210,7 +221,7 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
         if (!definition.IsActive)
             return ToSummary(definition);
 
-        definition.IsActive = false;
+        definition.Disable();
         await _repository.SaveAsync(definition);
         LogProcessDisabled(processDefinitionKey);
 
@@ -226,7 +237,7 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
         if (definition.IsActive)
             return ToSummary(definition);
 
-        definition.IsActive = true;
+        definition.Enable();
         await _repository.SaveAsync(definition);
         LogProcessEnabled(processDefinitionKey);
 
@@ -349,6 +360,9 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
 
     [LoggerMessage(EventId = 6002, Level = LogLevel.Information, Message = "Process {ProcessDefinitionKey} disabled")]
     private partial void LogProcessDisabled(string processDefinitionKey);
+
+    [LoggerMessage(EventId = 6004, Level = LogLevel.Warning, Message = "Process {ProcessDefinitionKey} redeployed while disabled — new version remains disabled")]
+    private partial void LogProcessRedeployedWhileDisabled(string processDefinitionKey);
 
     [LoggerMessage(EventId = 6003, Level = LogLevel.Information, Message = "Process {ProcessDefinitionKey} enabled")]
     private partial void LogProcessEnabled(string processDefinitionKey);

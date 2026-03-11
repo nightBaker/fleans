@@ -376,3 +376,7 @@ marker[id*="conditional"] path {
     flex-shrink: 0;
     overflow-y: auto;
 }
+
+.process-disabled {
+    opacity: 0.5;
+}

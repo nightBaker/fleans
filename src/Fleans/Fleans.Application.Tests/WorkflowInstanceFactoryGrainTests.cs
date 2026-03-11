@@ -210,16 +210,16 @@ namespace Fleans.Application.Tests
         }
 
         [TestMethod]
-        public async Task DeployWorkflow_ShouldAutoEnable_WhenProcessWasDisabled()
+        public async Task DeployWorkflow_ShouldPreserveDisabledState_WhenProcessWasDisabled()
         {
-            var processKey = "auto-enable-test";
+            var processKey = "preserve-disabled-test";
             var factoryGrain = _cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
             await factoryGrain.DeployWorkflow(CreateSimpleWorkflow(processKey), "<bpmn/>");
             await factoryGrain.DisableProcess(processKey);
 
             var summary = await factoryGrain.DeployWorkflow(CreateSimpleWorkflow(processKey), "<bpmn/>");
 
-            Assert.IsTrue(summary.IsActive);
+            Assert.IsFalse(summary.IsActive, "Redeploying a disabled process should preserve disabled state");
             Assert.AreEqual(2, summary.Version);
         }
 

@@ -13,9 +13,9 @@ public class SignalStartEventListenerState
             ProcessDefinitionKeys.Add(processDefinitionKey);
     }
 
-    public void RemoveProcess(string processDefinitionKey)
+    public bool RemoveProcess(string processDefinitionKey)
     {
-        ProcessDefinitionKeys.Remove(processDefinitionKey);
+        return ProcessDefinitionKeys.Remove(processDefinitionKey);
     }
 
     public bool IsEmpty => ProcessDefinitionKeys.Count == 0;

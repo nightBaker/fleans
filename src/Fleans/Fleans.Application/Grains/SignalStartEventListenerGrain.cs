@@ -34,11 +34,16 @@ public partial class SignalStartEventListenerGrain : Grain, ISignalStartEventLis
 
     public async ValueTask UnregisterProcess(string processDefinitionKey)
     {
-        State.RemoveProcess(processDefinitionKey);
-        await _state.WriteStateAsync();
+        if (!State.RemoveProcess(processDefinitionKey))
+        {
+            LogProcessUnregistered(this.GetPrimaryKeyString(), processDefinitionKey);
+            return;
+        }
 
         if (State.IsEmpty)
             await _state.ClearStateAsync();
+        else
+            await _state.WriteStateAsync();
 
         LogProcessUnregistered(this.GetPrimaryKeyString(), processDefinitionKey);
     }
@@ -65,7 +70,10 @@ public partial class SignalStartEventListenerGrain : Grain, ISignalStartEventLis
 
                 var definition = await factory.GetLatestWorkflowDefinition(processDefinitionKey);
 
-                var signalStartActivityId = FindSignalStartActivityId(definition, signalName);
+                var signalStartActivityId = FindSignalStartActivityId(definition, signalName)
+                    ?? throw new InvalidOperationException(
+                        $"Signal start activity for signal '{signalName}' not found in process '{processDefinitionKey}'. " +
+                        "The signal definition may have been removed during a redeployment.");
 
                 await instance.SetWorkflow(definition, signalStartActivityId);
                 await instance.StartWorkflow();
