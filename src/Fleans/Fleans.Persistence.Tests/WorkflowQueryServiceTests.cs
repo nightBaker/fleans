@@ -477,29 +477,6 @@ public class WorkflowQueryServiceTests
         return state;
     }
 
-    private static async Task SeedActivityInstance(
-        FleanCommandDbContext db, Guid id, string activityId, string activityType,
-        bool isCompleted = false, bool isExecuting = false,
-        int? errorCode = null, string? errorMessage = null,
-        DateTimeOffset? createdAt = null, DateTimeOffset? executionStartedAt = null,
-        DateTimeOffset? completedAt = null)
-    {
-        var state = new ActivityInstanceState();
-        db.ActivityInstances.Add(state);
-        var entry = db.Entry(state);
-        entry.Property(e => e.Id).CurrentValue = id;
-        entry.Property(e => e.ActivityId).CurrentValue = activityId;
-        entry.Property(e => e.ActivityType).CurrentValue = activityType;
-        entry.Property(e => e.IsCompleted).CurrentValue = isCompleted;
-        entry.Property(e => e.IsExecuting).CurrentValue = isExecuting;
-        entry.Property(e => e.ErrorCode).CurrentValue = errorCode;
-        entry.Property(e => e.ErrorMessage).CurrentValue = errorMessage;
-        entry.Property(e => e.CreatedAt).CurrentValue = createdAt ?? DateTimeOffset.UtcNow;
-        entry.Property(e => e.ExecutionStartedAt).CurrentValue = executionStartedAt;
-        entry.Property(e => e.CompletedAt).CurrentValue = completedAt;
-        await db.SaveChangesAsync();
-    }
-
     private class TestCommandDbContextFactory : IDbContextFactory<FleanCommandDbContext>
     {
         private readonly DbContextOptions<FleanCommandDbContext> _options;

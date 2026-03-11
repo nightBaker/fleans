@@ -1,4 +1,3 @@
-using Fleans.Application.Services;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Fleans.Application
@@ -8,7 +7,6 @@ namespace Fleans.Application
         public static void AddApplication(this IServiceCollection services)
         {
             services.AddSingleton<IWorkflowCommandService, WorkflowCommandService>();
-            services.AddTransient<IBoundaryEventHandler, BoundaryEventHandler>();
         }
     }
 }

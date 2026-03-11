@@ -39,7 +39,7 @@ public class ActivityInstanceEntry
     [Id(6)]
     public int? MultiInstanceIndex { get; private set; }
 
-    // New execution state fields (from ActivityInstanceState)
+    // Execution state fields
     [Id(7)]
     public string? ActivityType { get; private set; }
 
@@ -91,7 +91,7 @@ public class ActivityInstanceEntry
 
     internal void MarkCompleted() => IsCompleted = true;
 
-    // State transition methods (from ActivityInstanceState)
+    // State transition methods
     public void Execute()
     {
         if (IsExecuting)

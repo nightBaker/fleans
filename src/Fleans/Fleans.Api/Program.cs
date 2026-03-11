@@ -36,7 +36,7 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure();
 
-// EF Core persistence for ActivityInstanceState + WorkflowInstanceState
+// EF Core persistence for WorkflowInstanceState
 var sqliteConnectionString = builder.Configuration["FLEANS_SQLITE_CONNECTION"] ?? "DataSource=fleans-dev.db";
 builder.Services.AddEfCorePersistence(options => options.UseSqlite(sqliteConnectionString));
 

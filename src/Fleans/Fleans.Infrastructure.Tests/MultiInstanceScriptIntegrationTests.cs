@@ -1,7 +1,6 @@
 using Fleans.Application;
 using Fleans.Application.Events;
 using Fleans.Application.Scripts;
-using Fleans.Application.Services;
 using Fleans.Application.Conditions;
 using Fleans.Application.Grains;
 using Fleans.Application.WorkflowFactory;
@@ -344,17 +343,12 @@ public class MultiInstanceScriptIntegrationTests
                         (sp, _) => new EfCoreWorkflowInstanceGrainStorage(
                             sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
 
-                    services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.ActivityInstances,
-                        (sp, _) => new EfCoreActivityInstanceGrainStorage(
-                            sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
-
                     services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.TimerSchedulers,
                         (sp, _) => new EfCoreTimerSchedulerGrainStorage(
                             sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
 
                     services.AddSingleton<IProcessDefinitionRepository, EfCoreProcessDefinitionRepository>();
                     services.AddSingleton<IWorkflowQueryService, WorkflowQueryService>();
-                    services.AddTransient<IBoundaryEventHandler, BoundaryEventHandler>();
                     services.AddSingleton<IScriptExpressionExecutor, DynamicExpressoScriptExpressionExecutor>();
                     services.AddSingleton<IConditionExpressionEvaluator, DynamicExpressoConditionExpressionEvaluator>();
 
