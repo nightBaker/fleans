@@ -47,12 +47,18 @@ public partial class WorkflowInstance
     /// runs them via adapter, processes commands through aggregate, performs effects,
     /// computes transitions, and handles scope completions.
     /// </summary>
+    private const int MaxExecutionLoopIterations = 1000;
+
     private async Task RunExecutionLoop()
     {
         var definition = await GetWorkflowDefinition();
+        var iteration = 0;
 
         while (true)
         {
+            if (++iteration > MaxExecutionLoopIterations)
+                throw new InvalidOperationException(
+                    $"Execution loop exceeded {MaxExecutionLoopIterations} iterations — possible infinite loop in workflow definition.");
             var pending = _execution!.GetPendingActivities();
             if (pending.Count == 0) break;
 
@@ -324,6 +330,9 @@ public partial class WorkflowInstance
                 case WorkflowStarted started:
                     LogWorkflowInstanceStarted(started.InstanceId);
                     break;
+                case ExecutionStarted:
+                    LogExecutionStarted();
+                    break;
                 case ActivityExecutionStarted execStarted:
                     LogActivityExecutionStarted(execStarted.ActivityInstanceId);
                     break;
@@ -344,6 +353,12 @@ public partial class WorkflowInstance
                     break;
                 case GatewayForkTokenAdded tokenAdded:
                     LogGatewayForkTokenAdded(tokenAdded.ForkInstanceId, tokenAdded.TokenId);
+                    break;
+                case ActivityExecutionReset execReset:
+                    LogActivityExecutionReset(execReset.ActivityInstanceId);
+                    break;
+                case ChildWorkflowLinked childLinked:
+                    LogChildWorkflowLinked(childLinked.ActivityInstanceId, childLinked.ChildWorkflowInstanceId);
                     break;
                 case MultiInstanceTotalSet miTotal:
                     LogMultiInstanceTotalSet(miTotal.ActivityInstanceId, miTotal.Total);

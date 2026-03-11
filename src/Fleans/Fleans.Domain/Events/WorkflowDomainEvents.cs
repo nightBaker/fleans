@@ -4,6 +4,7 @@ namespace Fleans.Domain.Events;
 
 // Workflow lifecycle
 public record WorkflowStarted(Guid InstanceId, string? ProcessDefinitionId) : IDomainEvent;
+public record ExecutionStarted() : IDomainEvent;
 public record WorkflowCompleted() : IDomainEvent;
 
 // Activity lifecycle
@@ -16,6 +17,7 @@ public record ActivityCompleted(
     Guid ActivityInstanceId, Guid VariablesId, ExpandoObject Variables) : IDomainEvent;
 public record ActivityFailed(
     Guid ActivityInstanceId, int ErrorCode, string ErrorMessage) : IDomainEvent;
+public record ActivityExecutionReset(Guid ActivityInstanceId) : IDomainEvent;
 public record ActivityCancelled(Guid ActivityInstanceId, string Reason) : IDomainEvent;
 public record MultiInstanceTotalSet(Guid ActivityInstanceId, int Total) : IDomainEvent;
 
@@ -36,3 +38,4 @@ public record GatewayForkRemoved(Guid ForkInstanceId) : IDomainEvent;
 
 // Parent/child
 public record ParentInfoSet(Guid ParentInstanceId, string ParentActivityId) : IDomainEvent;
+public record ChildWorkflowLinked(Guid ActivityInstanceId, Guid ChildWorkflowInstanceId) : IDomainEvent;

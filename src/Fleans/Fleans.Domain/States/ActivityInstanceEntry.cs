@@ -89,8 +89,6 @@ public class ActivityInstanceEntry
 
     public void SetChildWorkflowInstanceId(Guid childId) => ChildWorkflowInstanceId = childId;
 
-    internal void MarkCompleted() => IsCompleted = true;
-
     // State transition methods
     public void Execute()
     {

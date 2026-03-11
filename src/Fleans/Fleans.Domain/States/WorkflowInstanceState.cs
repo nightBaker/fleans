@@ -167,7 +167,7 @@ public class WorkflowInstanceState
     public void CompleteEntries(List<ActivityInstanceEntry> entries)
     {
         foreach (var entry in entries)
-            entry.MarkCompleted();
+            entry.Complete();
     }
 
     public void AddEntries(IEnumerable<ActivityInstanceEntry> entries)

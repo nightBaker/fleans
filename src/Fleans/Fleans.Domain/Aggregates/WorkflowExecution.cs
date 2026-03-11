@@ -71,7 +71,7 @@ public class WorkflowExecution
     {
         if (_state.IsStarted)
             return; // idempotent
-        _state.Start();
+        Emit(new ExecutionStarted());
     }
 
     public List<PendingActivity> GetPendingActivities()
@@ -120,7 +120,7 @@ public class WorkflowExecution
                             && e.ScopeId == completedEntry.ScopeId);
                     if (existingEntry is not null)
                     {
-                        existingEntry.ResetExecuting();
+                        Emit(new ActivityExecutionReset(existingEntry.ActivityInstanceId));
                         continue;
                     }
                 }
@@ -347,7 +347,7 @@ public class WorkflowExecution
         var entry = _state.GetActiveEntry(activityInstanceId);
 
         var childInstanceId = Guid.NewGuid();
-        entry.SetChildWorkflowInstanceId(childInstanceId);
+        Emit(new ChildWorkflowLinked(activityInstanceId, childInstanceId));
 
         var parentVariables = _state.GetMergedVariables(entry.VariablesId);
         var inputVariables = callActivity.BuildChildInputVariables(parentVariables);
@@ -1137,8 +1137,25 @@ public class WorkflowExecution
 
     private void Emit(IDomainEvent @event)
     {
-        Apply(@event);
-        _uncommittedEvents.Add(@event);
+        // Snapshot mutable ExpandoObject data to preserve event immutability
+        var snapshotted = @event switch
+        {
+            ActivityCompleted e => e with { Variables = SnapshotExpandoObject(e.Variables) },
+            VariablesMerged e => e with { Variables = SnapshotExpandoObject(e.Variables) },
+            _ => @event
+        };
+
+        Apply(snapshotted);
+        _uncommittedEvents.Add(snapshotted);
+    }
+
+    private static ExpandoObject SnapshotExpandoObject(ExpandoObject source)
+    {
+        var snapshot = new ExpandoObject();
+        var target = (IDictionary<string, object?>)snapshot;
+        foreach (var kvp in (IDictionary<string, object?>)source)
+            target[kvp.Key] = kvp.Value;
+        return snapshot;
     }
 
     private void Apply(IDomainEvent @event)
@@ -1147,6 +1164,9 @@ public class WorkflowExecution
         {
             case WorkflowStarted e:
                 ApplyWorkflowStarted(e);
+                break;
+            case ExecutionStarted:
+                _state.Start();
                 break;
             case WorkflowCompleted:
                 _state.Complete();
@@ -1162,6 +1182,9 @@ public class WorkflowExecution
                 break;
             case ActivityFailed e:
                 ApplyActivityFailed(e);
+                break;
+            case ActivityExecutionReset e:
+                _state.GetActiveEntry(e.ActivityInstanceId).ResetExecuting();
                 break;
             case ActivityCancelled e:
                 ApplyActivityCancelled(e);
@@ -1199,6 +1222,9 @@ public class WorkflowExecution
                 break;
             case ParentInfoSet e:
                 _state.SetParentInfo(e.ParentInstanceId, e.ParentActivityId);
+                break;
+            case ChildWorkflowLinked e:
+                _state.GetActiveEntry(e.ActivityInstanceId).SetChildWorkflowInstanceId(e.ChildWorkflowInstanceId);
                 break;
             default:
                 throw new InvalidOperationException($"Unknown domain event type: {@event.GetType().Name}");

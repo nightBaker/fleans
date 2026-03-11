@@ -204,4 +204,15 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 3016, Level = LogLevel.Debug,
         Message = "Timer cycle re-registration deferred to TimerCallbackGrain for activity {TimerActivityId}, dueTime={DueTime}")]
     private partial void LogTimerCycleReRegistrationDeferred(string timerActivityId, TimeSpan dueTime);
+
+    [LoggerMessage(EventId = 3017, Level = LogLevel.Information, Message = "Workflow execution started")]
+    private partial void LogExecutionStarted();
+
+    [LoggerMessage(EventId = 3018, Level = LogLevel.Debug,
+        Message = "Activity execution reset (join gateway deduplication): ActivityInstanceId={ActivityInstanceId}")]
+    private partial void LogActivityExecutionReset(Guid activityInstanceId);
+
+    [LoggerMessage(EventId = 3019, Level = LogLevel.Information,
+        Message = "Child workflow linked: ActivityInstanceId={ActivityInstanceId}, ChildWorkflowInstanceId={ChildWorkflowInstanceId}")]
+    private partial void LogChildWorkflowLinked(Guid activityInstanceId, Guid childWorkflowInstanceId);
 }
