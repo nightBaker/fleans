@@ -69,9 +69,12 @@ public partial class WorkflowInstance
 
                 var commands = await currentActivity.ExecuteAsync(this, adapter, scopeDef);
 
-                // Record state changes applied by the adapter
+                // Route adapter intent through aggregate's Emit/Apply path
                 if (adapter.WasExecuted)
-                    _execution.RecordExternallyApplied(new ActivityExecutionStarted(entry.ActivityInstanceId));
+                    _execution.MarkExecuting(entry.ActivityInstanceId);
+
+                if (adapter.PendingMultiInstanceTotal.HasValue)
+                    _execution.SetMultiInstanceTotal(entry.ActivityInstanceId, adapter.PendingMultiInstanceTotal.Value);
 
                 // Process commands through aggregate -> get infrastructure effects
                 var effects = _execution.ProcessCommands(commands, entry.ActivityInstanceId);
@@ -81,11 +84,10 @@ public partial class WorkflowInstance
                 foreach (var evt in adapter.PublishedEvents)
                     await PublishDomainEvent(evt);
 
-                // If the adapter completed the activity, record it
+                // Route completion through aggregate's Emit/Apply path
                 if (adapter.WasCompleted)
                 {
-                    _execution.RecordExternallyApplied(
-                        new ActivityCompleted(entry.ActivityInstanceId, entry.VariablesId, new ExpandoObject()));
+                    _execution.MarkCompleted(entry.ActivityInstanceId, new ExpandoObject());
                     newlyCompletedEntryIds.Add(entry.ActivityInstanceId);
                 }
             }

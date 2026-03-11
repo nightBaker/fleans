@@ -31,16 +31,6 @@ public class WorkflowExecution
 
     public void ClearUncommittedEvents() => _uncommittedEvents.Clear();
 
-    /// <summary>
-    /// Records a domain event that was already applied externally (e.g., by the adapter).
-    /// The event is added to the uncommitted list for tracking but Apply is NOT called,
-    /// since the state change has already been made.
-    /// </summary>
-    public void RecordExternallyApplied(IDomainEvent @event)
-    {
-        _uncommittedEvents.Add(@event);
-    }
-
     public void Start(string? startActivityId = null)
     {
         if (_state.IsStarted)
@@ -105,6 +95,11 @@ public class WorkflowExecution
     {
         var entry = _state.GetActiveEntry(activityInstanceId);
         Emit(new ActivityCompleted(activityInstanceId, entry.VariablesId, variables));
+    }
+
+    public void SetMultiInstanceTotal(Guid activityInstanceId, int total)
+    {
+        Emit(new MultiInstanceTotalSet(activityInstanceId, total));
     }
 
     public void ResolveTransitions(IReadOnlyList<CompletedActivityTransitions> completedTransitions)
@@ -1169,6 +1164,9 @@ public class WorkflowExecution
                 break;
             case ActivityCancelled e:
                 ApplyActivityCancelled(e);
+                break;
+            case MultiInstanceTotalSet e:
+                _state.GetActiveEntry(e.ActivityInstanceId).SetMultiInstanceTotal(e.Total);
                 break;
             case VariablesMerged e:
                 _state.MergeState(e.VariablesId, e.Variables);

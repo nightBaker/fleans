@@ -163,56 +163,42 @@ public class ActivityExecutionContextAdapterTests
         Assert.IsNull(result);
     }
 
-    // --- State-changing methods ---
+    // --- Intent-collecting methods (no direct state mutation) ---
 
     [TestMethod]
-    public async Task SetMultiInstanceTotal_ShouldDelegateToEntry()
+    public async Task SetMultiInstanceTotal_ShouldRecordPendingTotal()
     {
         var entry = CreateEntry();
         var adapter = new ActivityExecutionContextAdapter(entry);
 
         await adapter.SetMultiInstanceTotal(10);
 
-        Assert.AreEqual(10, entry.MultiInstanceTotal);
+        Assert.AreEqual(10, adapter.PendingMultiInstanceTotal);
+        Assert.IsNull(entry.MultiInstanceTotal); // entry NOT mutated
     }
 
     [TestMethod]
-    public async Task Complete_ShouldDelegateToEntryAndSetFlag()
+    public async Task Complete_ShouldSetFlagWithoutMutatingEntry()
     {
         var entry = CreateEntry();
-        entry.Execute(); // must be executing before completing
         var adapter = new ActivityExecutionContextAdapter(entry);
 
         await adapter.Complete();
 
-        Assert.IsTrue(entry.IsCompleted);
         Assert.IsTrue(adapter.WasCompleted);
+        Assert.IsFalse(entry.IsCompleted); // entry NOT mutated
     }
 
     [TestMethod]
-    public async Task Complete_ShouldMakeIsCompletedReturnTrue()
-    {
-        var entry = CreateEntry();
-        entry.Execute();
-        var adapter = new ActivityExecutionContextAdapter(entry);
-
-        Assert.IsFalse(await adapter.IsCompleted());
-
-        await adapter.Complete();
-
-        Assert.IsTrue(await adapter.IsCompleted());
-    }
-
-    [TestMethod]
-    public async Task Execute_ShouldDelegateToEntryAndSetFlag()
+    public async Task Execute_ShouldSetFlagWithoutMutatingEntry()
     {
         var entry = CreateEntry();
         var adapter = new ActivityExecutionContextAdapter(entry);
 
         await adapter.Execute();
 
-        Assert.IsTrue(entry.IsExecuting);
         Assert.IsTrue(adapter.WasExecuted);
+        Assert.IsFalse(entry.IsExecuting); // entry NOT mutated
     }
 
     // --- Flags ---
@@ -236,9 +222,7 @@ public class ActivityExecutionContextAdapterTests
     [TestMethod]
     public async Task WasCompleted_TrueAfterComplete()
     {
-        var entry = CreateEntry();
-        entry.Execute();
-        var adapter = new ActivityExecutionContextAdapter(entry);
+        var adapter = CreateAdapter();
 
         await adapter.Complete();
 
@@ -248,12 +232,19 @@ public class ActivityExecutionContextAdapterTests
     [TestMethod]
     public async Task WasExecuted_TrueAfterExecute()
     {
-        var entry = CreateEntry();
-        var adapter = new ActivityExecutionContextAdapter(entry);
+        var adapter = CreateAdapter();
 
         await adapter.Execute();
 
         Assert.IsTrue(adapter.WasExecuted);
+    }
+
+    [TestMethod]
+    public void PendingMultiInstanceTotal_InitiallyNull()
+    {
+        var adapter = CreateAdapter();
+
+        Assert.IsNull(adapter.PendingMultiInstanceTotal);
     }
 
     // --- PublishEvent ---
@@ -318,7 +309,7 @@ public class ActivityExecutionContextAdapterTests
     // --- Full lifecycle scenario ---
 
     [TestMethod]
-    public async Task FullLifecycle_ExecuteThenComplete_ShouldTrackAllState()
+    public async Task FullLifecycle_ExecuteThenComplete_ShouldTrackAllIntent()
     {
         // Arrange
         var entry = CreateEntry("scriptTask1");
@@ -328,28 +319,21 @@ public class ActivityExecutionContextAdapterTests
         Assert.IsFalse(adapter.WasExecuted);
         Assert.IsFalse(adapter.WasCompleted);
         Assert.AreEqual(0, adapter.PublishedEvents.Count);
-        Assert.IsFalse(await adapter.IsCompleted());
 
-        // Act — execute
+        // Act — execute (intent only, entry unchanged)
         await adapter.Execute();
-
-        // Assert after execute
         Assert.IsTrue(adapter.WasExecuted);
         Assert.IsFalse(adapter.WasCompleted);
-        Assert.IsTrue(entry.IsExecuting);
-        Assert.IsFalse(await adapter.IsCompleted());
+        Assert.IsFalse(entry.IsExecuting);
 
         // Act — publish event during execution
         var domainEvent = new WorkflowCompleted();
         await adapter.PublishEvent(domainEvent);
 
-        // Act — complete
+        // Act — complete (intent only, entry unchanged)
         await adapter.Complete();
-
-        // Assert after complete
         Assert.IsTrue(adapter.WasCompleted);
-        Assert.IsTrue(await adapter.IsCompleted());
-        Assert.IsFalse(entry.IsExecuting); // executing cleared on complete
+        Assert.IsFalse(entry.IsCompleted);
         Assert.AreEqual(1, adapter.PublishedEvents.Count);
         Assert.AreSame(domainEvent, adapter.PublishedEvents[0]);
 
@@ -363,37 +347,36 @@ public class ActivityExecutionContextAdapterTests
     [TestMethod]
     public async Task Complete_WithoutExecute_ShouldSucceed()
     {
-        // The entry's Complete() only checks IsCompleted, not IsExecuting.
-        // Completing without executing first is allowed.
-        var entry = CreateEntry();
-        var adapter = new ActivityExecutionContextAdapter(entry);
+        var adapter = CreateAdapter();
 
         await adapter.Complete();
 
         Assert.IsTrue(adapter.WasCompleted);
-        Assert.IsTrue(entry.IsCompleted);
     }
 
     [TestMethod]
-    public async Task Execute_WhenAlreadyExecuting_ShouldThrowFromEntry()
+    public async Task Execute_CalledTwice_ShouldNotThrow()
     {
-        var entry = CreateEntry();
-        var adapter = new ActivityExecutionContextAdapter(entry);
+        // Since the adapter no longer delegates to entry, calling Execute()
+        // twice just sets the flag again — no guard clause to hit.
+        var adapter = CreateAdapter();
+
+        await adapter.Execute();
         await adapter.Execute();
 
-        await Assert.ThrowsExactlyAsync<InvalidOperationException>(
-            () => adapter.Execute().AsTask());
+        Assert.IsTrue(adapter.WasExecuted);
     }
 
     [TestMethod]
-    public async Task Complete_WhenAlreadyCompleted_ShouldThrowFromEntry()
+    public async Task Complete_CalledTwice_ShouldNotThrow()
     {
-        var entry = CreateEntry();
-        entry.Execute();
-        var adapter = new ActivityExecutionContextAdapter(entry);
+        // Since the adapter no longer delegates to entry, calling Complete()
+        // twice just sets the flag again — no guard clause to hit.
+        var adapter = CreateAdapter();
+
+        await adapter.Complete();
         await adapter.Complete();
 
-        await Assert.ThrowsExactlyAsync<InvalidOperationException>(
-            () => adapter.Complete().AsTask());
+        Assert.IsTrue(adapter.WasCompleted);
     }
 }

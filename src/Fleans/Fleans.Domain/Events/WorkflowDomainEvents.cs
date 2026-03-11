@@ -17,6 +17,7 @@ public record ActivityCompleted(
 public record ActivityFailed(
     Guid ActivityInstanceId, int ErrorCode, string ErrorMessage) : IDomainEvent;
 public record ActivityCancelled(Guid ActivityInstanceId, string Reason) : IDomainEvent;
+public record MultiInstanceTotalSet(Guid ActivityInstanceId, int Total) : IDomainEvent;
 
 // Variable management
 public record VariablesMerged(Guid VariablesId, ExpandoObject Variables) : IDomainEvent;
