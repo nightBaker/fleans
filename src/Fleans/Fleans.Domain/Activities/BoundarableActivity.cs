@@ -37,7 +37,7 @@ public abstract record BoundarableActivity(string ActivityId)
 
         foreach (var boundarySignal in definition.GetBoundarySignalEvents(ActivityId))
         {
-            var signalDef = definition.Signals.First(s => s.Id == boundarySignal.SignalDefinitionId);
+            var signalDef = definition.GetSignalDefinition(boundarySignal.SignalDefinitionId);
             commands.Add(new RegisterSignalCommand(signalDef.Name,
                 boundarySignal.ActivityId, IsBoundary: true));
         }

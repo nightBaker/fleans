@@ -43,15 +43,12 @@ public class WorkflowExecution
         Activity startActivity;
         if (startActivityId is not null)
         {
-            startActivity = _definition.Activities.FirstOrDefault(a => a.ActivityId == startActivityId)
+            startActivity = _definition.FindActivity(startActivityId)
                 ?? throw new InvalidOperationException($"Activity '{startActivityId}' not found in workflow");
         }
         else
         {
-            startActivity = _definition.Activities
-                .FirstOrDefault(a => a is StartEvent or TimerStartEvent or MessageStartEvent or SignalStartEvent)
-                ?? throw new InvalidOperationException(
-                    "Workflow must have a StartEvent, TimerStartEvent, MessageStartEvent, or SignalStartEvent");
+            startActivity = _definition.GetStartActivity();
         }
 
         var variablesId = _state.GetRootVariablesId();
@@ -322,7 +319,7 @@ public class WorkflowExecution
     private SubscribeMessageEffect ProcessRegisterMessage(
         RegisterMessageCommand msg, Guid activityInstanceId)
     {
-        var messageDef = _definition.Messages.First(m => m.Id == msg.MessageDefinitionId);
+        var messageDef = _definition.GetMessageDefinition(msg.MessageDefinitionId);
 
         var correlationKey = string.Empty;
         if (messageDef.CorrelationKeyExpression is not null)
@@ -426,7 +423,7 @@ public class WorkflowExecution
         {
             // For message boundaries, the fired message's subscription was already removed
             // by DeliverMessage. Skip it in unsubscribe to avoid deadlocks.
-            var firedMessageDef = _definition.Messages.First(m => m.Id == boundaryMessage.MessageDefinitionId);
+            var firedMessageDef = _definition.GetMessageDefinition(boundaryMessage.MessageDefinitionId);
             return HandleBoundaryEventFired(
                 boundaryMessage, boundaryMessage.AttachedToActivityId,
                 boundaryMessage.IsInterrupting, entry, variables,
@@ -454,7 +451,7 @@ public class WorkflowExecution
         {
             // For signal boundaries, the fired signal's subscription was already removed.
             // Skip it in unsubscribe to avoid deadlocks.
-            var firedSignalDef = _definition.Signals.First(s => s.Id == boundarySignal.SignalDefinitionId);
+            var firedSignalDef = _definition.GetSignalDefinition(boundarySignal.SignalDefinitionId);
             return HandleBoundaryEventFired(
                 boundarySignal, boundarySignal.AttachedToActivityId,
                 boundarySignal.IsInterrupting, entry, new ExpandoObject(),
@@ -1014,7 +1011,7 @@ public class WorkflowExecution
         // Boundary message events
         foreach (var boundaryMsg in scope.GetBoundaryMessageEvents(activityId))
         {
-            var messageDef = _definition.Messages.First(m => m.Id == boundaryMsg.MessageDefinitionId);
+            var messageDef = _definition.GetMessageDefinition(boundaryMsg.MessageDefinitionId);
             var correlationKey = ResolveCorrelationKey(messageDef, hostEntry.VariablesId);
             effects.Add(new UnsubscribeMessageEffect(messageDef.Name, correlationKey));
         }
@@ -1022,7 +1019,7 @@ public class WorkflowExecution
         // Boundary signal events
         foreach (var boundarySig in scope.GetBoundarySignalEvents(activityId))
         {
-            var signalDef = _definition.Signals.First(s => s.Id == boundarySig.SignalDefinitionId);
+            var signalDef = _definition.GetSignalDefinition(boundarySig.SignalDefinitionId);
             effects.Add(new UnsubscribeSignalEffect(signalDef.Name, _state.Id, boundarySig.ActivityId));
         }
 
@@ -1052,7 +1049,7 @@ public class WorkflowExecution
         // Boundary message events (skip the fired message — subscription already removed)
         foreach (var boundaryMsg in scope.GetBoundaryMessageEvents(activityId))
         {
-            var messageDef = _definition.Messages.First(m => m.Id == boundaryMsg.MessageDefinitionId);
+            var messageDef = _definition.GetMessageDefinition(boundaryMsg.MessageDefinitionId);
             if (messageDef.Name == skipMessageName) continue;
             var correlationKey = ResolveCorrelationKey(messageDef, hostEntry.VariablesId);
             effects.Add(new UnsubscribeMessageEffect(messageDef.Name, correlationKey));
@@ -1061,7 +1058,7 @@ public class WorkflowExecution
         // Boundary signal events (skip the fired signal — subscription already removed)
         foreach (var boundarySig in scope.GetBoundarySignalEvents(activityId))
         {
-            var signalDef = _definition.Signals.First(s => s.Id == boundarySig.SignalDefinitionId);
+            var signalDef = _definition.GetSignalDefinition(boundarySig.SignalDefinitionId);
             if (signalDef.Name == skipSignalName) continue;
             effects.Add(new UnsubscribeSignalEffect(signalDef.Name, _state.Id, boundarySig.ActivityId));
         }
@@ -1096,13 +1093,13 @@ public class WorkflowExecution
                     break;
 
                 case MessageIntermediateCatchEvent msgCatch:
-                    var messageDef = _definition.Messages.First(m => m.Id == msgCatch.MessageDefinitionId);
+                    var messageDef = _definition.GetMessageDefinition(msgCatch.MessageDefinitionId);
                     var correlationKey = ResolveCorrelationKey(messageDef, completedEntry.VariablesId);
                     effects.Add(new UnsubscribeMessageEffect(messageDef.Name, correlationKey));
                     break;
 
                 case SignalIntermediateCatchEvent sigCatch:
-                    var signalDef = _definition.Signals.First(s => s.Id == sigCatch.SignalDefinitionId);
+                    var signalDef = _definition.GetSignalDefinition(sigCatch.SignalDefinitionId);
                     effects.Add(new UnsubscribeSignalEffect(signalDef.Name, _state.Id, siblingId));
                     break;
             }

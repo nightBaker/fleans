@@ -20,6 +20,38 @@ namespace Fleans.Domain
         bool IsRootScope { get; }
         Activity GetActivity(string activityId);
 
+        Activity? FindActivity(string activityId)
+            => Activities.FirstOrDefault(a => a.ActivityId == activityId);
+
+        Activity GetStartActivity()
+            => Activities.FirstOrDefault(a => a is StartEvent or TimerStartEvent or MessageStartEvent or SignalStartEvent)
+                ?? throw new InvalidOperationException(
+                    "Workflow must have a StartEvent, TimerStartEvent, MessageStartEvent, or SignalStartEvent");
+
+        SequenceFlow? GetOutgoingFlow(Activity activity)
+            => SequenceFlows.FirstOrDefault(sf => sf.Source == activity);
+
+        IEnumerable<SequenceFlow> GetOutgoingFlows(Activity activity)
+            => SequenceFlows.Where(sf => sf.Source == activity);
+
+        IEnumerable<SequenceFlow> GetIncomingFlows(Activity activity)
+            => SequenceFlows.Where(sf => sf.Target == activity);
+
+        SequenceFlow GetSequenceFlow(string sequenceFlowId)
+            => SequenceFlows.First(sf => sf.SequenceFlowId == sequenceFlowId);
+
+        MessageDefinition GetMessageDefinition(string messageDefinitionId)
+            => Messages.First(m => m.Id == messageDefinitionId);
+
+        MessageDefinition? FindMessageDefinition(string messageDefinitionId)
+            => Messages.FirstOrDefault(m => m.Id == messageDefinitionId);
+
+        SignalDefinition GetSignalDefinition(string signalDefinitionId)
+            => Signals.First(s => s.Id == signalDefinitionId);
+
+        SignalDefinition? FindSignalDefinition(string signalDefinitionId)
+            => Signals.FirstOrDefault(s => s.Id == signalDefinitionId);
+
         IEnumerable<BoundaryTimerEvent> GetBoundaryTimerEvents(string attachedToActivityId)
             => Activities.OfType<BoundaryTimerEvent>()
                 .Where(b => b.AttachedToActivityId == attachedToActivityId);

@@ -15,7 +15,7 @@ public record SignalIntermediateThrowEvent(
         IWorkflowDefinition definition)
     {
         var commands = await base.ExecuteAsync(workflowContext, activityContext, definition);
-        var signalDef = definition.Signals.First(s => s.Id == SignalDefinitionId);
+        var signalDef = definition.GetSignalDefinition(SignalDefinitionId);
         commands.Add(new ThrowSignalCommand(signalDef.Name));
         await activityContext.Complete();
         return commands;
@@ -26,7 +26,7 @@ public record SignalIntermediateThrowEvent(
         IActivityExecutionContext activityContext,
         IWorkflowDefinition definition)
     {
-        var nextFlow = definition.SequenceFlows.FirstOrDefault(sf => sf.Source == this);
+        var nextFlow = definition.GetOutgoingFlow(this);
         return Task.FromResult(nextFlow != null ? new List<ActivityTransition> { new(nextFlow.Target) } : new List<ActivityTransition>());
     }
 }
