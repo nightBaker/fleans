@@ -98,6 +98,8 @@ public partial class WorkflowInstance
             // Handle subprocess/multi-instance scope completions
             await HandleScopeCompletions(definition);
 
+            // Persist after each iteration so partial progress survives grain deactivation
+            // during long execution chains (e.g., sequential multi-instance with many items).
             await _state.WriteStateAsync();
         }
     }
@@ -214,10 +216,6 @@ public partial class WorkflowInstance
                 case PublishDomainEventEffect publishEvt:
                     await PublishDomainEvent(publishEvt.Event);
                     break;
-
-                case CancelActivitySubscriptionsEffect:
-                    // Handled by specific unsubscribe effects; this is a placeholder
-                    break;
             }
         }
     }
@@ -286,7 +284,6 @@ public partial class WorkflowInstance
 
     private void LogAndClearEvents()
     {
-        // Log each uncommitted event for observability
         foreach (var evt in _execution!.GetUncommittedEvents())
         {
             switch (evt)
@@ -294,8 +291,29 @@ public partial class WorkflowInstance
                 case WorkflowCompleted:
                     LogStateCompleted();
                     break;
-                case ActivitySpawned:
+                case ActivitySpawned spawned:
                     LogStateAddEntries(1);
+                    break;
+                case ActivityCompleted completed:
+                    LogStateCompleteEntries(1);
+                    break;
+                case ActivityFailed failed:
+                    LogFailingActivity(failed.ActivityInstanceId.ToString());
+                    break;
+                case ActivityCancelled cancelled:
+                    LogScopeChildCancelled(cancelled.ActivityInstanceId.ToString(), Guid.Empty);
+                    break;
+                case VariablesMerged merged:
+                    LogStateMergeState(merged.VariablesId);
+                    break;
+                case GatewayForkCreated forkCreated:
+                    LogGatewayForkStateCreated(forkCreated.ForkInstanceId, forkCreated.ConsumedTokenId);
+                    break;
+                case GatewayForkRemoved forkRemoved:
+                    LogGatewayForkStateRemoved(forkRemoved.ForkInstanceId);
+                    break;
+                case ParentInfoSet parentInfo:
+                    LogParentInfoSet(parentInfo.ParentInstanceId, parentInfo.ParentActivityId);
                     break;
             }
         }

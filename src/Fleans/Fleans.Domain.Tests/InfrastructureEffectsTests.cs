@@ -22,9 +22,8 @@ public class InfrastructureEffectsTests
             new NotifyParentCompletedEffect(Guid.NewGuid(), "parentAct", new System.Dynamic.ExpandoObject()),
             new NotifyParentFailedEffect(Guid.NewGuid(), "parentAct", new Exception("err")),
             new PublishDomainEventEffect(new WorkflowCompleted()),
-            new CancelActivitySubscriptionsEffect("act1", Guid.NewGuid()),
         };
 
-        Assert.AreEqual(12, effects.Length);
+        Assert.AreEqual(11, effects.Length);
     }
 }

@@ -43,7 +43,3 @@ public record NotifyParentFailedEffect(
 
 // Event publishing
 public record PublishDomainEventEffect(IDomainEvent Event) : IInfrastructureEffect;
-
-// Activity cleanup
-public record CancelActivitySubscriptionsEffect(
-    string ActivityId, Guid ActivityInstanceId) : IInfrastructureEffect;
