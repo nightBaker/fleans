@@ -33,8 +33,16 @@ public partial class EnvironmentVariablesGrain : Grain, IEnvironmentVariablesGra
         var existing = State.Variables.FindIndex(v => v.Name == variable.Name);
         if (existing >= 0)
         {
-            variable.Id = State.Variables[existing].Id;
-            State.Variables[existing] = variable;
+            var updated = new EnvironmentVariableEntry
+            {
+                Id = State.Variables[existing].Id,
+                Name = variable.Name,
+                Value = variable.Value,
+                ValueType = variable.ValueType,
+                IsSecret = variable.IsSecret,
+                ProcessKeys = variable.ProcessKeys
+            };
+            State.Variables[existing] = updated;
         }
         else
             State.Variables.Add(variable);
@@ -45,7 +53,9 @@ public partial class EnvironmentVariablesGrain : Grain, IEnvironmentVariablesGra
 
     public async ValueTask Remove(string name)
     {
-        State.Variables.RemoveAll(v => v.Name == name);
+        var removed = State.Variables.RemoveAll(v => v.Name == name);
+        if (removed == 0) return;
+
         LogVariableRemoved(name);
         await _state.WriteStateAsync();
     }

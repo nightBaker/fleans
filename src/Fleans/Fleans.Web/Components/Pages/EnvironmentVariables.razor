@@ -62,7 +62,8 @@
 
                 <div>
                     <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Value</FluentLabel>
-                    <FluentTextField @bind-Value="formValue" Style="width: 100%;" Placeholder="Variable value" />
+                    <FluentTextField @bind-Value="formValue" Style="width: 100%;" Placeholder="Variable value"
+                                     TextFieldType="@(formIsSecret ? TextFieldType.Password : TextFieldType.Text)" />
                 </div>
 
                 <div>

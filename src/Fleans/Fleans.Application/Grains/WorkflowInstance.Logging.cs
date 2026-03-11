@@ -177,4 +177,8 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1053, Level = LogLevel.Information,
         Message = "Injected {Count} environment variables into root scope")]
     private partial void LogEnvironmentVariablesInjected(int count);
+
+    [LoggerMessage(EventId = 1054, Level = LogLevel.Warning,
+        Message = "Skipped environment variable injection for process '{ProcessKey}': no variable states initialized")]
+    private partial void LogEnvironmentVariablesSkipped(string processKey);
 }

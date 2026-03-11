@@ -33,6 +33,11 @@ public partial class WorkflowInstance
         var envGrain = _grainFactory.GetGrain<IEnvironmentVariablesGrain>(0);
         var result = await envGrain.GetEnvironmentForProcess(processKey);
         if (result.Variables.Count == 0) return;
+        if (State.VariableStates.Count == 0)
+        {
+            LogEnvironmentVariablesSkipped(processKey);
+            return;
+        }
 
         var envExpando = new System.Dynamic.ExpandoObject();
         var envDict = (IDictionary<string, object>)envExpando;

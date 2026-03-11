@@ -12,5 +12,7 @@ public static class GrainStorageNames
     public const string TimerSchedulers = "timerSchedulers";
     public const string MessageCorrelations = "messageCorrelations";
     public const string SignalCorrelations = "signalCorrelations";
+    public const string MessageStartEventListeners = "messageStartEventListeners";
+    public const string SignalStartEventListeners = "signalStartEventListeners";
     public const string EnvironmentVariables = "environmentVariables";
 }
