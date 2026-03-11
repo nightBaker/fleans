@@ -23,7 +23,7 @@ public record MultiInstanceTotalSet(Guid ActivityInstanceId, int Total) : IDomai
 public record VariablesMerged(Guid VariablesId, ExpandoObject Variables) : IDomainEvent;
 public record ChildVariableScopeCreated(Guid ScopeId, Guid ParentScopeId) : IDomainEvent;
 public record VariableScopeCloned(Guid NewScopeId, Guid SourceScopeId) : IDomainEvent;
-public record VariableScopesRemoved(List<Guid> ScopeIds) : IDomainEvent;
+public record VariableScopesRemoved(IReadOnlyList<Guid> ScopeIds) : IDomainEvent;
 
 // Gateway/token management
 public record ConditionSequencesAdded(

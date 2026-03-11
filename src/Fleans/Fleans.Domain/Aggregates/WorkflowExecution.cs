@@ -663,6 +663,11 @@ public class WorkflowExecution
 
     // --- Condition Sequence Handling ---
 
+    public void EvaluateConditionSequence(Guid activityInstanceId, string sequenceId, bool result)
+    {
+        Emit(new ConditionSequenceEvaluated(activityInstanceId, sequenceId, result));
+    }
+
     public void CompleteConditionSequence(string activityId, string conditionSequenceId, bool result)
     {
         var entry = _state.GetFirstActive(activityId)
@@ -761,6 +766,11 @@ public class WorkflowExecution
     public void SetParentInfo(Guid parentInstanceId, string parentActivityId)
     {
         Emit(new ParentInfoSet(parentInstanceId, parentActivityId));
+    }
+
+    public void MergeVariables(Guid variablesId, ExpandoObject variables)
+    {
+        Emit(new VariablesMerged(variablesId, variables));
     }
 
     // --- Activity Lifecycle (external entry points) ---
@@ -1162,6 +1172,7 @@ public class WorkflowExecution
             case VariablesMerged e:
                 _state.MergeState(e.VariablesId, e.Variables);
                 break;
+
             case ChildVariableScopeCreated e:
                 _state.AddChildVariableState(e.ScopeId, e.ParentScopeId);
                 break;
@@ -1208,7 +1219,7 @@ public class WorkflowExecution
             _state.Id,
             e.ScopeId);
 
-        entry.SetActivity(e.ActivityId, e.ActivityType);
+        entry.SetActivityType(e.ActivityType);
         entry.SetVariablesId(e.VariablesId);
 
         if (e.TokenId.HasValue)

@@ -218,6 +218,9 @@ public partial class WorkflowInstance
                 case PublishDomainEventEffect publishEvt:
                     await PublishDomainEvent(publishEvt.Event);
                     break;
+
+                default:
+                    throw new InvalidOperationException($"Unknown infrastructure effect type: {effect.GetType().Name}");
             }
         }
     }
@@ -303,7 +306,8 @@ public partial class WorkflowInstance
                     LogFailingActivity(failed.ActivityInstanceId.ToString());
                     break;
                 case ActivityCancelled cancelled:
-                    LogScopeChildCancelled(cancelled.ActivityInstanceId.ToString(), Guid.Empty);
+                    LogScopeChildCancelled(cancelled.ActivityInstanceId.ToString(),
+                        State.FindEntry(cancelled.ActivityInstanceId)?.ScopeId ?? Guid.Empty);
                     break;
                 case VariablesMerged merged:
                     LogStateMergeState(merged.VariablesId);
@@ -316,6 +320,33 @@ public partial class WorkflowInstance
                     break;
                 case ParentInfoSet parentInfo:
                     LogParentInfoSet(parentInfo.ParentInstanceId, parentInfo.ParentActivityId);
+                    break;
+                case WorkflowStarted started:
+                    LogWorkflowInstanceStarted(started.InstanceId);
+                    break;
+                case ActivityExecutionStarted execStarted:
+                    LogActivityExecutionStarted(execStarted.ActivityInstanceId);
+                    break;
+                case ChildVariableScopeCreated childScope:
+                    LogChildVariableScopeCreated(childScope.ScopeId, childScope.ParentScopeId);
+                    break;
+                case VariableScopeCloned cloned:
+                    LogVariableScopeCloned(cloned.NewScopeId, cloned.SourceScopeId);
+                    break;
+                case VariableScopesRemoved removed:
+                    LogVariableScopesRemoved(removed.ScopeIds.Count);
+                    break;
+                case ConditionSequencesAdded condAdded:
+                    LogConditionSequencesAdded(condAdded.GatewayInstanceId, condAdded.SequenceFlowIds.Length);
+                    break;
+                case ConditionSequenceEvaluated condEval:
+                    LogConditionSequenceEvaluated(condEval.GatewayInstanceId, condEval.SequenceFlowId, condEval.Result);
+                    break;
+                case GatewayForkTokenAdded tokenAdded:
+                    LogGatewayForkTokenAdded(tokenAdded.ForkInstanceId, tokenAdded.TokenId);
+                    break;
+                case MultiInstanceTotalSet miTotal:
+                    LogMultiInstanceTotalSet(miTotal.ActivityInstanceId, miTotal.Total);
                     break;
             }
         }

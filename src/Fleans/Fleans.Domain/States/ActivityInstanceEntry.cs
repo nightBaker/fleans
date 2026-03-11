@@ -168,9 +168,8 @@ public class ActivityInstanceEntry
     }
 
     // Setters for initialization
-    public void SetActivity(string activityId, string activityType)
+    public void SetActivityType(string activityType)
     {
-        ActivityId = activityId;
         ActivityType = activityType;
     }
 

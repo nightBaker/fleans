@@ -543,7 +543,7 @@ public class WorkflowExecutionActivityLifecycleTests
     public void ActivityInstanceEntry_FailWithCodeAndMessage_ShouldSetFields()
     {
         var entry = new ActivityInstanceEntry(Guid.NewGuid(), "act1", Guid.NewGuid());
-        entry.SetActivity("act1", "ScriptTask");
+        entry.SetActivityType("ScriptTask");
         entry.SetVariablesId(Guid.NewGuid());
         entry.Execute();
 
@@ -560,7 +560,7 @@ public class WorkflowExecutionActivityLifecycleTests
     public void ActivityInstanceEntry_FailWithCodeAndMessage_AlreadyCompleted_ShouldThrow()
     {
         var entry = new ActivityInstanceEntry(Guid.NewGuid(), "act1", Guid.NewGuid());
-        entry.SetActivity("act1", "ScriptTask");
+        entry.SetActivityType("ScriptTask");
         entry.SetVariablesId(Guid.NewGuid());
         entry.Execute();
         entry.Complete();

@@ -8,6 +8,7 @@ public partial class TimerCallbackGrain : Grain, ITimerCallbackGrain, IRemindabl
     private const string ReminderName = "timer-callback";
 
     private readonly ILogger<TimerCallbackGrain> _logger;
+    private bool _reactivatedDuringCallback;
 
     public TimerCallbackGrain(ILogger<TimerCallbackGrain> logger)
     {
@@ -18,6 +19,7 @@ public partial class TimerCallbackGrain : Grain, ITimerCallbackGrain, IRemindabl
     {
         var (workflowInstanceId, _, timerActivityId) = ParseKey();
         LogActivating(workflowInstanceId, timerActivityId, dueTime);
+        _reactivatedDuringCallback = true;
         await this.RegisterOrUpdateReminder(ReminderName, dueTime, TimeSpan.FromMinutes(1));
     }
 
@@ -51,8 +53,14 @@ public partial class TimerCallbackGrain : Grain, ITimerCallbackGrain, IRemindabl
         // Call back to WorkflowInstance first — if this fails, the periodic
         // reminder will fire again and retry. HandleTimerFired is idempotent
         // (stale-timer guards check if the activity is still active).
+        _reactivatedDuringCallback = false;
         var workflowInstance = GrainFactory.GetGrain<IWorkflowInstanceGrain>(workflowInstanceId);
         await workflowInstance.HandleTimerFired(timerActivityId, hostActivityInstanceId);
+
+        // Skip unregister if HandleTimerFired re-registered a cycle timer
+        // (Activate was called during the callback on this same grain).
+        if (_reactivatedDuringCallback)
+            return;
 
         // Unregister only after successful callback
         try

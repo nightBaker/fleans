@@ -387,7 +387,7 @@ public class WorkflowExecutionTransitionTests
         // Simulate: there is already an active entry for the join gateway in the same scope
         var existingJoinEntry = new ActivityInstanceEntry(
             Guid.NewGuid(), "join1", state.Id, startEntry.ScopeId);
-        existingJoinEntry.SetActivity("join1", "ParallelGateway");
+        existingJoinEntry.SetActivityType("ParallelGateway");
         existingJoinEntry.SetVariablesId(startEntry.VariablesId);
         existingJoinEntry.Execute(); // mark as executing
         state.AddEntries([existingJoinEntry]);
@@ -600,7 +600,7 @@ public class WorkflowExecutionTransitionTests
         // Manually set scope on the completed entry to test propagation
         // We need a separate entry with a scope for this test
         var scopedEntry = new ActivityInstanceEntry(Guid.NewGuid(), "task1", state.Id, scopeId);
-        scopedEntry.SetActivity("task1", "ScriptTask");
+        scopedEntry.SetActivityType("ScriptTask");
         scopedEntry.SetVariablesId(state.VariableStates.First().Id);
         scopedEntry.Execute();
         scopedEntry.Complete();

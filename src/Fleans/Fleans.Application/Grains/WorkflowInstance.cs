@@ -210,11 +210,11 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
 
     public async Task SetInitialVariables(ExpandoObject variables)
     {
-        if (State.VariableStates.Count == 0)
-            throw new InvalidOperationException("Call SetWorkflow before SetInitialVariables.");
+        await EnsureExecution();
 
-        State.MergeState(State.GetRootVariablesId(), variables);
+        _execution!.MergeVariables(State.GetRootVariablesId(), variables);
         LogInitialVariablesSet();
+        LogAndClearEvents();
         await _state.WriteStateAsync();
     }
 
@@ -356,7 +356,9 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
 
     public async ValueTask SetConditionSequenceResult(Guid activityInstanceId, string sequenceId, bool result)
     {
-        State.SetConditionSequenceResult(activityInstanceId, sequenceId, result);
+        await EnsureExecution();
+        _execution!.EvaluateConditionSequence(activityInstanceId, sequenceId, result);
+        LogAndClearEvents();
         await _state.WriteStateAsync();
     }
 

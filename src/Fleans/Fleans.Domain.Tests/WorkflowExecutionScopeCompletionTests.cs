@@ -307,7 +307,7 @@ public class WorkflowExecutionScopeCompletionTests
 
             var iterEntry = new ActivityInstanceEntry(
                 Guid.NewGuid(), "mi1", state.Id, hostEntry.ActivityInstanceId, i);
-            iterEntry.SetActivity("mi1", "ScriptTask");
+            iterEntry.SetActivityType("ScriptTask");
             iterEntry.SetVariablesId(childScopeId);
             state.AddEntries([iterEntry]);
         }
@@ -353,7 +353,7 @@ public class WorkflowExecutionScopeCompletionTests
 
             var iterEntry = new ActivityInstanceEntry(
                 Guid.NewGuid(), "mi1", state.Id, hostEntry.ActivityInstanceId, i);
-            iterEntry.SetActivity("mi1", "ScriptTask");
+            iterEntry.SetActivityType("ScriptTask");
             iterEntry.SetVariablesId(childScopeId);
             state.AddEntries([iterEntry]);
 
@@ -404,7 +404,7 @@ public class WorkflowExecutionScopeCompletionTests
 
             var iterEntry = new ActivityInstanceEntry(
                 Guid.NewGuid(), "mi1", state.Id, hostEntry.ActivityInstanceId, i);
-            iterEntry.SetActivity("mi1", "ScriptTask");
+            iterEntry.SetActivityType("ScriptTask");
             iterEntry.SetVariablesId(childScopeId);
             state.AddEntries([iterEntry]);
 
@@ -452,7 +452,7 @@ public class WorkflowExecutionScopeCompletionTests
 
             var iterEntry = new ActivityInstanceEntry(
                 Guid.NewGuid(), "mi1", state.Id, hostEntry.ActivityInstanceId, i);
-            iterEntry.SetActivity("mi1", "ScriptTask");
+            iterEntry.SetActivityType("ScriptTask");
             iterEntry.SetVariablesId(childScopeId);
             state.AddEntries([iterEntry]);
 
@@ -478,7 +478,7 @@ public class WorkflowExecutionScopeCompletionTests
         // Verify VariableScopesRemoved event was emitted
         var events = execution.GetUncommittedEvents();
         var removedEvent = events.OfType<VariableScopesRemoved>().Single();
-        CollectionAssert.AreEquivalent(childScopeIds, removedEvent.ScopeIds);
+        CollectionAssert.AreEquivalent(childScopeIds, removedEvent.ScopeIds.ToList());
     }
 
     // ===== MultiInstance Sequential Completion Tests =====
@@ -507,7 +507,7 @@ public class WorkflowExecutionScopeCompletionTests
 
         var iterEntry = new ActivityInstanceEntry(
             Guid.NewGuid(), "mi1", state.Id, hostEntry.ActivityInstanceId, 0);
-        iterEntry.SetActivity("mi1", "ScriptTask");
+        iterEntry.SetActivityType("ScriptTask");
         iterEntry.SetVariablesId(childScopeId);
         state.AddEntries([iterEntry]);
         iterEntry.Execute();
@@ -556,7 +556,7 @@ public class WorkflowExecutionScopeCompletionTests
 
             var iterEntry = new ActivityInstanceEntry(
                 Guid.NewGuid(), "mi1", state.Id, hostEntry.ActivityInstanceId, i);
-            iterEntry.SetActivity("mi1", "ScriptTask");
+            iterEntry.SetActivityType("ScriptTask");
             iterEntry.SetVariablesId(childScopeId);
             state.AddEntries([iterEntry]);
 
@@ -608,7 +608,7 @@ public class WorkflowExecutionScopeCompletionTests
 
         var iterEntry = new ActivityInstanceEntry(
             Guid.NewGuid(), "mi1", state.Id, hostEntry.ActivityInstanceId, 0);
-        iterEntry.SetActivity("mi1", "ScriptTask");
+        iterEntry.SetActivityType("ScriptTask");
         iterEntry.SetVariablesId(childScopeId);
         state.AddEntries([iterEntry]);
         iterEntry.Execute();
@@ -702,7 +702,7 @@ public class WorkflowExecutionScopeCompletionTests
 
             var iterEntry = new ActivityInstanceEntry(
                 Guid.NewGuid(), "mi1", state.Id, hostEntry.ActivityInstanceId, i);
-            iterEntry.SetActivity("mi1", "ScriptTask");
+            iterEntry.SetActivityType("ScriptTask");
             iterEntry.SetVariablesId(childScopeId);
             state.AddEntries([iterEntry]);
 
@@ -798,7 +798,7 @@ public class WorkflowExecutionScopeCompletionTests
 
         var iterEntry = new ActivityInstanceEntry(
             Guid.NewGuid(), "mi1", state2.Id, miHost.ActivityInstanceId, 0);
-        iterEntry.SetActivity("mi1", "ScriptTask");
+        iterEntry.SetActivityType("ScriptTask");
         iterEntry.SetVariablesId(iterScopeId);
         state2.AddEntries([iterEntry]);
         iterEntry.Execute();

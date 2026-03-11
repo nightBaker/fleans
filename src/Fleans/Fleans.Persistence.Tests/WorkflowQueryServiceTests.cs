@@ -74,14 +74,14 @@ public class WorkflowQueryServiceTests
 
         // Active entry — set enriched fields directly on the entry
         var activeEntry = new ActivityInstanceEntry(activeAiId, "task1", instanceId);
-        activeEntry.SetActivity("task1", "TaskActivity");
+        activeEntry.SetActivityType("TaskActivity");
         activeEntry.Execute(); // sets IsExecuting = true
         db.WorkflowActivityInstanceEntries.Add(activeEntry);
         await db.SaveChangesAsync();
 
         // Completed entry — set enriched fields directly on the entry
         var completedEntry = new ActivityInstanceEntry(completedAiId, "start", instanceId);
-        completedEntry.SetActivity("start", "StartEvent");
+        completedEntry.SetActivityType("StartEvent");
         completedEntry.Execute();
         completedEntry.Complete(); // sets IsCompleted = true
         db.WorkflowActivityInstanceEntries.Add(completedEntry);
@@ -209,7 +209,7 @@ public class WorkflowQueryServiceTests
 
         var aiId = Guid.NewGuid();
         var entry = new ActivityInstanceEntry(aiId, "task1", instanceId);
-        entry.SetActivity("task1", "ScriptTask");
+        entry.SetActivityType("ScriptTask");
         entry.Execute();
         entry.Fail(new Exception("Something went wrong"));
         db.WorkflowActivityInstanceEntries.Add(entry);
