@@ -56,9 +56,28 @@ public class WorkflowInstanceState
     public ActivityInstanceEntry? GetFirstActive(string activityId)
         => Entries.FirstOrDefault(a => a.ActivityId == activityId && !a.IsCompleted);
 
+    public bool HasActiveEntry(Guid activityInstanceId)
+        => Entries.Any(e => e.ActivityInstanceId == activityInstanceId && !e.IsCompleted);
+
+    public bool HasActiveChildrenInScope(Guid scopeId)
+        => Entries.Any(e => e.ScopeId == scopeId && !e.IsCompleted);
+
     public ActivityInstanceEntry GetActiveEntry(Guid activityInstanceId)
         => Entries.FirstOrDefault(e => e.ActivityInstanceId == activityInstanceId && !e.IsCompleted)
             ?? throw new InvalidOperationException($"Active entry for activity instance '{activityInstanceId}' not found");
+
+    public ActivityInstanceEntry GetEntry(Guid activityInstanceId)
+        => Entries.FirstOrDefault(e => e.ActivityInstanceId == activityInstanceId)
+            ?? throw new InvalidOperationException($"Entry for activity instance '{activityInstanceId}' not found");
+
+    public ActivityInstanceEntry? FindEntry(Guid activityInstanceId)
+        => Entries.FirstOrDefault(e => e.ActivityInstanceId == activityInstanceId);
+
+    public List<ActivityInstanceEntry> GetEntriesInScope(Guid scopeId)
+        => Entries.Where(e => e.ScopeId == scopeId).ToList();
+
+    public Guid GetRootVariablesId()
+        => VariableStates.First().Id;
 
     public WorkflowVariablesState GetVariableState(Guid id)
         => VariableStates.FirstOrDefault(v => v.Id == id)
@@ -67,12 +86,17 @@ public class WorkflowInstanceState
     public IEnumerable<ConditionSequenceState> GetConditionSequenceStatesForGateway(Guid gatewayActivityInstanceId)
         => ConditionSequenceStates.Where(c => c.GatewayActivityInstanceId == gatewayActivityInstanceId);
 
-    public void StartWith(Guid id, string? processDefinitionId, ActivityInstanceEntry entry, Guid variablesId)
+    public void Initialize(Guid id, string? processDefinitionId, Guid variablesId)
     {
         Id = id;
         ProcessDefinitionId = processDefinitionId;
         CreatedAt = DateTimeOffset.UtcNow;
         VariableStates.Add(new WorkflowVariablesState(variablesId, id));
+    }
+
+    public void StartWith(Guid id, string? processDefinitionId, ActivityInstanceEntry entry, Guid variablesId)
+    {
+        Initialize(id, processDefinitionId, variablesId);
         Entries.Add(entry);
     }
 
@@ -111,11 +135,26 @@ public class WorkflowInstanceState
         return clonedState.Id;
     }
 
+    public void AddCloneOfVariableState(Guid newScopeId, Guid sourceScopeId)
+    {
+        var source = VariableStates.First(v => v.Id == sourceScopeId);
+        var clonedState = new WorkflowVariablesState(newScopeId, Id, source.ParentVariablesId);
+        clonedState.Merge(source.Variables);
+
+        VariableStates.Add(clonedState);
+    }
+
     public Guid AddChildVariableState(Guid parentVariablesId)
     {
         var childState = new WorkflowVariablesState(Guid.NewGuid(), Id, parentVariablesId);
         VariableStates.Add(childState);
         return childState.Id;
+    }
+
+    public void AddChildVariableState(Guid childId, Guid parentVariablesId)
+    {
+        var childState = new WorkflowVariablesState(childId, Id, parentVariablesId);
+        VariableStates.Add(childState);
     }
 
     public void AddConditionSequenceStates(Guid activityInstanceId, string[] sequenceFlowIds)
@@ -128,7 +167,7 @@ public class WorkflowInstanceState
     public void CompleteEntries(List<ActivityInstanceEntry> entries)
     {
         foreach (var entry in entries)
-            entry.MarkCompleted();
+            entry.Complete();
     }
 
     public void AddEntries(IEnumerable<ActivityInstanceEntry> entries)
@@ -202,6 +241,12 @@ public class WorkflowInstanceState
         GatewayForks.Add(fork);
         return fork;
     }
+
+    public GatewayForkState? FindGatewayFork(Guid forkInstanceId)
+        => GatewayForks.FirstOrDefault(f => f.ForkInstanceId == forkInstanceId);
+
+    public GatewayForkState GetGatewayFork(Guid forkInstanceId)
+        => GatewayForks.First(f => f.ForkInstanceId == forkInstanceId);
 
     public GatewayForkState? FindForkByToken(Guid tokenId)
         => GatewayForks.FirstOrDefault(f => f.CreatedTokenIds.Contains(tokenId));

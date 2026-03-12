@@ -118,8 +118,7 @@ public record MultiInstanceActivity : BoundarableActivity
         // Sequence flows reference the MI wrapper (not the inner activity) because
         // BpmnConverter stores the wrapper in the activity map. Record equality
         // matches on ActivityId + all properties, which works here.
-        var nextFlows = definition.SequenceFlows
-            .Where(sf => sf.Source == this)
+        var nextFlows = definition.GetOutgoingFlows(this)
             .Select(flow => new ActivityTransition(flow.Target))
             .ToList();
         return nextFlows;

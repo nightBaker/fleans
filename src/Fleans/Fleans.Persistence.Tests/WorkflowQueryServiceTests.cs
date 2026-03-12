@@ -72,20 +72,20 @@ public class WorkflowQueryServiceTests
         var activeAiId = Guid.NewGuid();
         var completedAiId = Guid.NewGuid();
 
-        // Active entry + activity instance state
+        // Active entry — set enriched fields directly on the entry
         var activeEntry = new ActivityInstanceEntry(activeAiId, "task1", instanceId);
+        activeEntry.SetActivityType("TaskActivity");
+        activeEntry.Execute(); // sets IsExecuting = true
         db.WorkflowActivityInstanceEntries.Add(activeEntry);
         await db.SaveChangesAsync();
 
-        await SeedActivityInstance(db, activeAiId, "task1", "TaskActivity", isExecuting: true);
-
-        // Completed entry + activity instance state
+        // Completed entry — set enriched fields directly on the entry
         var completedEntry = new ActivityInstanceEntry(completedAiId, "start", instanceId);
+        completedEntry.SetActivityType("StartEvent");
+        completedEntry.Execute();
+        completedEntry.Complete(); // sets IsCompleted = true
         db.WorkflowActivityInstanceEntries.Add(completedEntry);
-        db.Entry(completedEntry).Property(e => e.IsCompleted).CurrentValue = true;
         await db.SaveChangesAsync();
-
-        await SeedActivityInstance(db, completedAiId, "start", "StartEvent", isCompleted: true);
 
         var result = await _service.GetStateSnapshot(instanceId);
 
@@ -209,12 +209,11 @@ public class WorkflowQueryServiceTests
 
         var aiId = Guid.NewGuid();
         var entry = new ActivityInstanceEntry(aiId, "task1", instanceId);
+        entry.SetActivityType("ScriptTask");
+        entry.Execute();
+        entry.Fail(new Exception("Something went wrong"));
         db.WorkflowActivityInstanceEntries.Add(entry);
-        db.Entry(entry).Property(e => e.IsCompleted).CurrentValue = true;
         await db.SaveChangesAsync();
-
-        await SeedActivityInstance(db, aiId, "task1", "ScriptTask",
-            isCompleted: true, errorCode: 500, errorMessage: "Something went wrong");
 
         var result = await _service.GetStateSnapshot(instanceId);
 
@@ -476,29 +475,6 @@ public class WorkflowQueryServiceTests
         entry.Property(e => e.CompletedAt).CurrentValue = completedAt;
         await db.SaveChangesAsync();
         return state;
-    }
-
-    private static async Task SeedActivityInstance(
-        FleanCommandDbContext db, Guid id, string activityId, string activityType,
-        bool isCompleted = false, bool isExecuting = false,
-        int? errorCode = null, string? errorMessage = null,
-        DateTimeOffset? createdAt = null, DateTimeOffset? executionStartedAt = null,
-        DateTimeOffset? completedAt = null)
-    {
-        var state = new ActivityInstanceState();
-        db.ActivityInstances.Add(state);
-        var entry = db.Entry(state);
-        entry.Property(e => e.Id).CurrentValue = id;
-        entry.Property(e => e.ActivityId).CurrentValue = activityId;
-        entry.Property(e => e.ActivityType).CurrentValue = activityType;
-        entry.Property(e => e.IsCompleted).CurrentValue = isCompleted;
-        entry.Property(e => e.IsExecuting).CurrentValue = isExecuting;
-        entry.Property(e => e.ErrorCode).CurrentValue = errorCode;
-        entry.Property(e => e.ErrorMessage).CurrentValue = errorMessage;
-        entry.Property(e => e.CreatedAt).CurrentValue = createdAt ?? DateTimeOffset.UtcNow;
-        entry.Property(e => e.ExecutionStartedAt).CurrentValue = executionStartedAt;
-        entry.Property(e => e.CompletedAt).CurrentValue = completedAt;
-        await db.SaveChangesAsync();
     }
 
     private class TestCommandDbContextFactory : IDbContextFactory<FleanCommandDbContext>

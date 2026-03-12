@@ -7,4 +7,5 @@ public record ExecuteScriptEvent(Guid WorkflowInstanceId,
                                  Guid ActivityInstanceId,
                                  string ActivityId,
                                  string Script,
-                                 string ScriptFormat) : IDomainEvent;
+                                 string ScriptFormat,
+                                 Guid VariablesId) : IDomainEvent;

@@ -6,7 +6,6 @@ namespace Fleans.Persistence;
 
 public class FleanQueryDbContext : DbContext
 {
-    public DbSet<ActivityInstanceState> ActivityInstances => Set<ActivityInstanceState>();
     public DbSet<WorkflowInstanceState> WorkflowInstances => Set<WorkflowInstanceState>();
     public DbSet<ProcessDefinition> ProcessDefinitions => Set<ProcessDefinition>();
 

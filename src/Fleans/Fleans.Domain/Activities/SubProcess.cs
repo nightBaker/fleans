@@ -42,8 +42,7 @@ public record SubProcess(string ActivityId) : BoundarableActivity(ActivityId), I
         IActivityExecutionContext activityContext,
         IWorkflowDefinition definition)
     {
-        var nextFlows = definition.SequenceFlows
-            .Where(sf => sf.Source == this)
+        var nextFlows = definition.GetOutgoingFlows(this)
             .Select(flow => new ActivityTransition(flow.Target))
             .ToList();
         return Task.FromResult(nextFlows);

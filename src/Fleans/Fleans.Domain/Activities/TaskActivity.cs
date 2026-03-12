@@ -9,7 +9,7 @@ public record TaskActivity(string ActivityId) : BoundarableActivity(ActivityId)
 {
     internal override Task<List<ActivityTransition>> GetNextActivities(IWorkflowExecutionContext workflowContext, IActivityExecutionContext activityContext, IWorkflowDefinition definition)
     {
-        var nextFlow = definition.SequenceFlows.FirstOrDefault(sf => sf.Source == this);
+        var nextFlow = definition.GetOutgoingFlow(this);
         return Task.FromResult(nextFlow != null ? new List<ActivityTransition> { new(nextFlow.Target) } : new List<ActivityTransition>());
     }
 }

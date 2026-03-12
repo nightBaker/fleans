@@ -1,0 +1,1290 @@
+using System.Dynamic;
+using Fleans.Domain.Activities;
+using Fleans.Domain.Effects;
+using Fleans.Domain.Errors;
+using Fleans.Domain.Events;
+using Fleans.Domain.Sequences;
+using Fleans.Domain.States;
+
+namespace Fleans.Domain.Aggregates;
+
+public record PendingActivity(Guid ActivityInstanceId, string ActivityId);
+
+public record CompletedActivityTransitions(
+    Guid ActivityInstanceId,
+    string ActivityId,
+    IReadOnlyList<ActivityTransition> Transitions);
+
+public class WorkflowExecution
+{
+    private readonly WorkflowInstanceState _state;
+    private readonly IWorkflowDefinition _definition;
+    private readonly List<IDomainEvent> _uncommittedEvents = [];
+
+    public WorkflowExecution(WorkflowInstanceState state, IWorkflowDefinition definition)
+    {
+        _state = state ?? throw new ArgumentNullException(nameof(state));
+        _definition = definition ?? throw new ArgumentNullException(nameof(definition));
+    }
+
+    public IReadOnlyList<IDomainEvent> GetUncommittedEvents() => _uncommittedEvents.AsReadOnly();
+
+    public void ClearUncommittedEvents() => _uncommittedEvents.Clear();
+
+    public void Start(string? startActivityId = null)
+    {
+        if (_state.IsStarted)
+            throw new InvalidOperationException("Workflow is already started.");
+
+        var instanceId = Guid.NewGuid();
+
+        Emit(new WorkflowStarted(instanceId, _definition.ProcessDefinitionId));
+
+        Activity startActivity;
+        if (startActivityId is not null)
+        {
+            startActivity = _definition.FindActivity(startActivityId)
+                ?? throw new InvalidOperationException($"Activity '{startActivityId}' not found in workflow");
+        }
+        else
+        {
+            startActivity = _definition.GetStartActivity();
+        }
+
+        var variablesId = _state.GetRootVariablesId();
+
+        Emit(new ActivitySpawned(
+            ActivityInstanceId: Guid.NewGuid(),
+            ActivityId: startActivity.ActivityId,
+            ActivityType: startActivity.GetType().Name,
+            VariablesId: variablesId,
+            ScopeId: null,
+            MultiInstanceIndex: null,
+            TokenId: null));
+    }
+
+    /// <summary>
+    /// Marks the workflow as execution-started. Call after <see cref="Start"/>
+    /// when you want a separate "initialize" vs "execution started" lifecycle.
+    /// </summary>
+    public void MarkExecutionStarted()
+    {
+        if (_state.IsStarted)
+            return; // idempotent
+        Emit(new ExecutionStarted());
+    }
+
+    public List<PendingActivity> GetPendingActivities()
+    {
+        return _state.GetActiveActivities()
+            .Where(e => !e.IsExecuting)
+            .Select(e => new PendingActivity(e.ActivityInstanceId, e.ActivityId))
+            .ToList();
+    }
+
+    public void MarkExecuting(Guid activityInstanceId)
+    {
+        _ = _state.GetActiveEntry(activityInstanceId);
+        Emit(new ActivityExecutionStarted(activityInstanceId));
+    }
+
+    public void MarkCompleted(Guid activityInstanceId, ExpandoObject variables)
+    {
+        var entry = _state.GetActiveEntry(activityInstanceId);
+        Emit(new ActivityCompleted(activityInstanceId, entry.VariablesId, variables));
+    }
+
+    public void SetMultiInstanceTotal(Guid activityInstanceId, int total)
+    {
+        Emit(new MultiInstanceTotalSet(activityInstanceId, total));
+    }
+
+    public void ResolveTransitions(IReadOnlyList<CompletedActivityTransitions> completedTransitions)
+    {
+        foreach (var completed in completedTransitions)
+        {
+            var completedEntry = _state.GetEntry(completed.ActivityInstanceId);
+
+            // Failed or cancelled entries don't transition
+            if (completedEntry.ErrorCode is not null || completedEntry.IsCancelled)
+                continue;
+
+            foreach (var transition in completed.Transitions)
+            {
+                // Join gateway deduplication: if an active entry already exists
+                // for this activity in the same scope, reset its executing flag
+                if (transition.NextActivity.IsJoinGateway)
+                {
+                    var existingEntry = _state.GetActiveActivities()
+                        .FirstOrDefault(e => e.ActivityId == transition.NextActivity.ActivityId
+                            && e.ScopeId == completedEntry.ScopeId);
+                    if (existingEntry is not null)
+                    {
+                        Emit(new ActivityExecutionReset(existingEntry.ActivityInstanceId));
+                        continue;
+                    }
+                }
+
+                // Determine variables ID (clone if needed)
+                Guid variablesId;
+                if (transition.CloneVariables)
+                {
+                    var newScopeId = Guid.NewGuid();
+                    Emit(new VariableScopeCloned(newScopeId, completedEntry.VariablesId));
+                    variablesId = newScopeId;
+                }
+                else
+                {
+                    variablesId = completedEntry.VariablesId;
+                }
+
+                // Handle token propagation
+                Guid? tokenId = ResolveToken(transition, completedEntry);
+
+                // Spawn the next activity
+                Emit(new ActivitySpawned(
+                    ActivityInstanceId: Guid.NewGuid(),
+                    ActivityId: transition.NextActivity.ActivityId,
+                    ActivityType: transition.NextActivity.GetType().Name,
+                    VariablesId: variablesId,
+                    ScopeId: completedEntry.ScopeId,
+                    MultiInstanceIndex: null,
+                    TokenId: tokenId));
+            }
+        }
+    }
+
+    private Guid? ResolveToken(ActivityTransition transition, ActivityInstanceEntry sourceEntry)
+    {
+        switch (transition.Token)
+        {
+            case TokenAction.CreateNew:
+                var newTokenId = Guid.NewGuid();
+
+                // Create or find the fork state for this source activity
+                var existingFork = _state.FindGatewayFork(sourceEntry.ActivityInstanceId);
+                if (existingFork is null)
+                {
+                    Emit(new GatewayForkCreated(sourceEntry.ActivityInstanceId, sourceEntry.TokenId));
+                }
+                Emit(new GatewayForkTokenAdded(sourceEntry.ActivityInstanceId, newTokenId));
+
+                return newTokenId;
+
+            case TokenAction.RestoreParent:
+                if (sourceEntry.TokenId.HasValue)
+                {
+                    var fork = _state.FindForkByToken(sourceEntry.TokenId.Value);
+                    if (fork?.ConsumedTokenId.HasValue == true)
+                    {
+                        var restoredTokenId = fork.ConsumedTokenId.Value;
+                        Emit(new GatewayForkRemoved(fork.ForkInstanceId));
+                        return restoredTokenId;
+                    }
+                    // No fork found or no consumed token - inherit the token
+                    return sourceEntry.TokenId.Value;
+                }
+                return null;
+
+            default: // TokenAction.Inherit
+                return sourceEntry.TokenId;
+        }
+    }
+
+    public IReadOnlyList<IInfrastructureEffect> ProcessCommands(
+        IReadOnlyList<IExecutionCommand> commands, Guid activityInstanceId)
+    {
+        var effects = new List<IInfrastructureEffect>();
+
+        foreach (var command in commands)
+        {
+            switch (command)
+            {
+                case CompleteWorkflowCommand:
+                    Emit(new WorkflowCompleted());
+                    // If this is a child workflow, notify parent of completion
+                    if (_state.ParentWorkflowInstanceId.HasValue)
+                    {
+                        var rootVariables = _state.GetMergedVariables(
+                            _state.GetRootVariablesId());
+                        effects.Add(new NotifyParentCompletedEffect(
+                            _state.ParentWorkflowInstanceId.Value,
+                            _state.ParentActivityId!,
+                            rootVariables));
+                    }
+                    break;
+
+                case SpawnActivityCommand spawn:
+                    ProcessSpawnActivity(spawn, activityInstanceId);
+                    break;
+
+                case OpenSubProcessCommand openSub:
+                    ProcessOpenSubProcess(openSub, activityInstanceId);
+                    break;
+
+                case RegisterTimerCommand timer:
+                    effects.Add(new RegisterTimerEffect(
+                        _state.Id, activityInstanceId,
+                        timer.TimerActivityId, timer.DueTime));
+                    break;
+
+                case RegisterMessageCommand msg:
+                    effects.Add(ProcessRegisterMessage(msg, activityInstanceId));
+                    break;
+
+                case RegisterSignalCommand signal:
+                    effects.Add(new SubscribeSignalEffect(
+                        signal.SignalName, _state.Id, signal.ActivityId, activityInstanceId));
+                    break;
+
+                case StartChildWorkflowCommand startChild:
+                    effects.Add(ProcessStartChildWorkflow(startChild, activityInstanceId));
+                    break;
+
+                case AddConditionsCommand conditions:
+                    effects.AddRange(ProcessAddConditions(conditions, activityInstanceId));
+                    break;
+
+                case ThrowSignalCommand throwSignal:
+                    effects.Add(new ThrowSignalEffect(throwSignal.SignalName));
+                    break;
+
+                default:
+                    throw new InvalidOperationException(
+                        $"Unknown execution command type: {command.GetType().Name}");
+            }
+        }
+
+        return effects.AsReadOnly();
+    }
+
+    private void ProcessSpawnActivity(SpawnActivityCommand spawn, Guid activityInstanceId)
+    {
+        Guid variablesId;
+
+        if (spawn.IsMultiInstanceIteration)
+        {
+            // Create a child variable scope for the iteration
+            var newScopeId = Guid.NewGuid();
+            Emit(new ChildVariableScopeCreated(newScopeId, spawn.ParentVariablesId!.Value));
+
+            // Set loopCounter and optional item variable
+            var iterVars = new ExpandoObject();
+            var iterDict = (IDictionary<string, object?>)iterVars;
+            iterDict["loopCounter"] = spawn.MultiInstanceIndex!.Value;
+
+            if (spawn.IterationItemName is not null)
+                iterDict[spawn.IterationItemName] = spawn.IterationItem;
+
+            Emit(new VariablesMerged(newScopeId, iterVars));
+
+            variablesId = newScopeId;
+        }
+        else
+        {
+            // Use the parent activity's variables scope
+            var parentEntry = _state.GetActiveEntry(activityInstanceId);
+            variablesId = parentEntry.VariablesId;
+        }
+
+        Emit(new ActivitySpawned(
+            ActivityInstanceId: Guid.NewGuid(),
+            ActivityId: spawn.Activity.ActivityId,
+            ActivityType: spawn.Activity.GetType().Name,
+            VariablesId: variablesId,
+            ScopeId: spawn.ScopeId,
+            MultiInstanceIndex: spawn.MultiInstanceIndex,
+            TokenId: null));
+    }
+
+    private void ProcessOpenSubProcess(OpenSubProcessCommand openSub, Guid hostActivityInstanceId)
+    {
+        var newScopeId = Guid.NewGuid();
+        Emit(new ChildVariableScopeCreated(newScopeId, openSub.ParentVariablesId));
+
+        var startEvent = openSub.SubProcess.Activities.OfType<StartEvent>().FirstOrDefault()
+            ?? throw new InvalidOperationException(
+                $"SubProcess '{openSub.SubProcess.ActivityId}' does not contain a StartEvent.");
+
+        Emit(new ActivitySpawned(
+            ActivityInstanceId: Guid.NewGuid(),
+            ActivityId: startEvent.ActivityId,
+            ActivityType: startEvent.GetType().Name,
+            VariablesId: newScopeId,
+            ScopeId: hostActivityInstanceId,
+            MultiInstanceIndex: null,
+            TokenId: null));
+    }
+
+    private SubscribeMessageEffect ProcessRegisterMessage(
+        RegisterMessageCommand msg, Guid activityInstanceId)
+    {
+        var messageDef = _definition.GetMessageDefinition(msg.MessageDefinitionId);
+
+        var correlationKey = string.Empty;
+        if (messageDef.CorrelationKeyExpression is not null)
+        {
+            // Strip the "= " prefix from the expression to get the variable name
+            var variableName = messageDef.CorrelationKeyExpression.StartsWith("= ")
+                ? messageDef.CorrelationKeyExpression[2..]
+                : messageDef.CorrelationKeyExpression;
+
+            var correlationValue = _state.GetVariable(msg.VariablesId, variableName);
+            correlationKey = correlationValue?.ToString()
+                ?? throw new InvalidOperationException(
+                    $"Correlation variable '{variableName}' is null for message '{messageDef.Name}'.");
+        }
+
+        return new SubscribeMessageEffect(
+            messageDef.Name, correlationKey,
+            _state.Id, msg.ActivityId, activityInstanceId);
+    }
+
+    private StartChildWorkflowEffect ProcessStartChildWorkflow(
+        StartChildWorkflowCommand startChild, Guid activityInstanceId)
+    {
+        var callActivity = startChild.CallActivity;
+        var entry = _state.GetActiveEntry(activityInstanceId);
+
+        var childInstanceId = Guid.NewGuid();
+        Emit(new ChildWorkflowLinked(activityInstanceId, childInstanceId));
+
+        var parentVariables = _state.GetMergedVariables(entry.VariablesId);
+        var inputVariables = callActivity.BuildChildInputVariables(parentVariables);
+
+        return new StartChildWorkflowEffect(
+            childInstanceId, callActivity.CalledProcessKey,
+            inputVariables, callActivity.ActivityId);
+    }
+
+    private List<IInfrastructureEffect> ProcessAddConditions(
+        AddConditionsCommand conditions, Guid activityInstanceId)
+    {
+        Emit(new ConditionSequencesAdded(activityInstanceId, conditions.SequenceFlowIds));
+
+        var entry = _state.GetActiveEntry(activityInstanceId);
+        var effects = new List<IInfrastructureEffect>();
+        foreach (var evaluation in conditions.Evaluations)
+        {
+            var evalEvent = new EvaluateConditionEvent(
+                _state.Id,
+                _definition.WorkflowId,
+                _definition.ProcessDefinitionId,
+                activityInstanceId,
+                entry.ActivityId,
+                evaluation.SequenceFlowId,
+                evaluation.Condition,
+                entry.VariablesId);
+
+            effects.Add(new PublishDomainEventEffect(evalEvent));
+        }
+        return effects;
+    }
+
+    // --- Event Handling (external event delivery) ---
+
+    public IReadOnlyList<IInfrastructureEffect> HandleTimerFired(
+        string timerActivityId, Guid hostActivityInstanceId)
+    {
+        // Stale guard: if entry is no longer active, ignore
+        var entry = _state.FindEntry(hostActivityInstanceId);
+        if (entry is null || entry.IsCompleted)
+            return [];
+
+        // Look up the activity type in the definition
+        var activity = _definition.GetActivityAcrossScopes(timerActivityId);
+
+        if (activity is BoundaryTimerEvent boundaryTimer)
+        {
+            return HandleBoundaryEventFired(
+                boundaryTimer, boundaryTimer.AttachedToActivityId,
+                boundaryTimer.IsInterrupting, entry, new ExpandoObject(),
+                skipTimerActivityId: null,
+                skipMessageName: null,
+                skipSignalName: null);
+        }
+
+        // Intermediate catch timer: complete the activity with empty variables
+        return CompleteActivity(timerActivityId, hostActivityInstanceId, new ExpandoObject());
+    }
+
+    public IReadOnlyList<IInfrastructureEffect> HandleMessageDelivery(
+        string activityId, Guid hostActivityInstanceId, ExpandoObject variables)
+    {
+        // Stale guard: if entry is no longer active, ignore
+        var entry = _state.FindEntry(hostActivityInstanceId);
+        if (entry is null || entry.IsCompleted)
+            return [];
+
+        // Look up the activity type in the definition
+        var activity = _definition.GetActivityAcrossScopes(activityId);
+
+        if (activity is MessageBoundaryEvent boundaryMessage)
+        {
+            // For message boundaries, the fired message's subscription was already removed
+            // by DeliverMessage. Skip it in unsubscribe to avoid deadlocks.
+            var firedMessageDef = _definition.GetMessageDefinition(boundaryMessage.MessageDefinitionId);
+            return HandleBoundaryEventFired(
+                boundaryMessage, boundaryMessage.AttachedToActivityId,
+                boundaryMessage.IsInterrupting, entry, variables,
+                skipTimerActivityId: null,
+                skipMessageName: firedMessageDef.Name,
+                skipSignalName: null);
+        }
+
+        // Intermediate catch message: complete the activity with delivered variables
+        return CompleteActivity(activityId, hostActivityInstanceId, variables);
+    }
+
+    public IReadOnlyList<IInfrastructureEffect> HandleSignalDelivery(
+        string activityId, Guid hostActivityInstanceId)
+    {
+        // Stale guard: if entry is no longer active, ignore
+        var entry = _state.FindEntry(hostActivityInstanceId);
+        if (entry is null || entry.IsCompleted)
+            return [];
+
+        // Look up the activity type in the definition
+        var activity = _definition.GetActivityAcrossScopes(activityId);
+
+        if (activity is SignalBoundaryEvent boundarySignal)
+        {
+            // For signal boundaries, the fired signal's subscription was already removed.
+            // Skip it in unsubscribe to avoid deadlocks.
+            var firedSignalDef = _definition.GetSignalDefinition(boundarySignal.SignalDefinitionId);
+            return HandleBoundaryEventFired(
+                boundarySignal, boundarySignal.AttachedToActivityId,
+                boundarySignal.IsInterrupting, entry, new ExpandoObject(),
+                skipTimerActivityId: null,
+                skipMessageName: null,
+                skipSignalName: firedSignalDef.Name);
+        }
+
+        // Intermediate catch signal: complete the activity with empty variables
+        return CompleteActivity(activityId, hostActivityInstanceId, new ExpandoObject());
+    }
+
+    // --- Scope Completion ---
+
+    /// <summary>
+    /// Detects when all entries in a subprocess or multi-instance scope are completed.
+    /// Emits ActivityCompleted for completed scope hosts.
+    /// Returns effects (e.g., boundary unsubscribe) and the list of completed host instance IDs
+    /// so the grain can compute transitions for them via ResolveTransitions.
+    /// </summary>
+    public (IReadOnlyList<IInfrastructureEffect> Effects, IReadOnlyList<Guid> CompletedHostInstanceIds)
+        CompleteFinishedSubProcessScopes()
+    {
+        var allEffects = new List<IInfrastructureEffect>();
+        var allCompletedHostIds = new List<Guid>();
+
+        const int maxIterations = 100;
+        var iteration = 0;
+        bool anyCompleted;
+
+        do
+        {
+            if (++iteration > maxIterations)
+                throw new InvalidOperationException(
+                    "Sub-process completion loop exceeded max iterations — possible cycle in scope graph");
+
+            anyCompleted = false;
+
+            foreach (var entry in _state.GetActiveActivities().ToList())
+            {
+                var scopeDefinition = _definition.GetScopeForActivity(entry.ActivityId);
+                var activity = scopeDefinition.GetActivity(entry.ActivityId);
+
+                var isSubProcess = activity is SubProcess;
+                var isMultiInstanceHost = activity is MultiInstanceActivity
+                    && entry.MultiInstanceIndex is null;
+
+                if (!isSubProcess && !isMultiInstanceHost) continue;
+
+                var scopeEntries = _state.GetEntriesInScope(entry.ActivityInstanceId);
+
+                if (scopeEntries.Count == 0 && !isMultiInstanceHost) continue;
+
+                if (isMultiInstanceHost)
+                {
+                    var miResult = TryCompleteMultiInstanceHost(
+                        entry, (MultiInstanceActivity)activity, scopeEntries);
+                    if (miResult.HostCompleted)
+                    {
+                        allEffects.AddRange(miResult.Effects);
+                        allCompletedHostIds.Add(entry.ActivityInstanceId);
+                        anyCompleted = true;
+                    }
+                    continue;
+                }
+
+                // SubProcess: all scope children must be completed
+                if (!scopeEntries.All(e => e.IsCompleted)) continue;
+
+                // If any scope child has an error (and wasn't handled by a boundary),
+                // the subprocess should NOT auto-complete
+                if (scopeEntries.Any(e => e.ErrorCode is not null)) continue;
+
+                // All scope children are done — complete the sub-process host
+                Emit(new ActivityCompleted(
+                    entry.ActivityInstanceId, entry.VariablesId, new ExpandoObject()));
+
+                var effects = BuildBoundaryUnsubscribeEffects(entry.ActivityId, entry);
+                allEffects.AddRange(effects);
+                allCompletedHostIds.Add(entry.ActivityInstanceId);
+                anyCompleted = true;
+            }
+        } while (anyCompleted);
+
+        return (allEffects.AsReadOnly(), allCompletedHostIds.AsReadOnly());
+    }
+
+    private (bool HostCompleted, IReadOnlyList<IInfrastructureEffect> Effects)
+        TryCompleteMultiInstanceHost(
+            ActivityInstanceEntry hostEntry,
+            MultiInstanceActivity mi,
+            List<ActivityInstanceEntry> scopeEntries)
+    {
+        var completedIterations = scopeEntries.Where(e => e.IsCompleted).ToList();
+        var activeIterations = scopeEntries.Where(e => !e.IsCompleted).ToList();
+        var total = hostEntry.MultiInstanceTotal;
+
+        // Host not yet executed (no total set)
+        if (total is null)
+            return (false, []);
+
+        // If there are active iterations still running, wait
+        if (activeIterations.Count > 0)
+            return (false, []);
+
+        // All spawned iterations are done but fewer than total — sequential: spawn next
+        if (completedIterations.Count < total)
+        {
+            var nextIndex = completedIterations.Count;
+            var parentVariablesId = hostEntry.VariablesId;
+
+            // Resolve collection item for next iteration
+            object? iterationItem = null;
+            if (mi.InputCollection is not null && mi.InputDataItem is not null)
+            {
+                var collectionVar = _state.GetVariable(parentVariablesId, mi.InputCollection);
+                if (collectionVar is IList<object> list)
+                    iterationItem = list[nextIndex];
+                else if (collectionVar is System.Collections.IEnumerable enumerable and not string)
+                    iterationItem = enumerable.Cast<object>().ElementAt(nextIndex);
+            }
+
+            // Create child variable scope for the new iteration
+            var childScopeId = Guid.NewGuid();
+            Emit(new ChildVariableScopeCreated(childScopeId, parentVariablesId));
+
+            var iterVars = new ExpandoObject();
+            var iterDict = (IDictionary<string, object?>)iterVars;
+            iterDict["loopCounter"] = nextIndex;
+            if (mi.InputDataItem is not null && iterationItem is not null)
+                iterDict[mi.InputDataItem] = iterationItem;
+
+            Emit(new VariablesMerged(childScopeId, iterVars));
+
+            // Spawn the next iteration entry
+            Emit(new ActivitySpawned(
+                ActivityInstanceId: Guid.NewGuid(),
+                ActivityId: mi.ActivityId,
+                ActivityType: mi.InnerActivity.GetType().Name,
+                VariablesId: childScopeId,
+                ScopeId: hostEntry.ActivityInstanceId,
+                MultiInstanceIndex: nextIndex,
+                TokenId: null));
+
+            return (false, []); // host not completed yet
+        }
+
+        // All iterations done — aggregate output variables
+        if (mi.OutputDataItem is not null && mi.OutputCollection is not null)
+        {
+            var iterationEntries = scopeEntries
+                .Where(e => e.MultiInstanceIndex.HasValue)
+                .OrderBy(e => e.MultiInstanceIndex!.Value)
+                .ToList();
+
+            var outputList = new List<object?>();
+            foreach (var iterEntry in iterationEntries)
+            {
+                var outputValue = _state.GetVariable(iterEntry.VariablesId, mi.OutputDataItem);
+                outputList.Add(outputValue);
+            }
+
+            var outputVars = new ExpandoObject();
+            ((IDictionary<string, object?>)outputVars)[mi.OutputCollection] = outputList;
+            Emit(new VariablesMerged(hostEntry.VariablesId, outputVars));
+        }
+
+        // Clean up child variable scopes
+        var childVarIds = scopeEntries
+            .Where(e => e.MultiInstanceIndex.HasValue)
+            .Select(e => e.VariablesId)
+            .ToList();
+        if (childVarIds.Count > 0)
+        {
+            Emit(new VariableScopesRemoved(childVarIds));
+        }
+
+        // Complete the host entry
+        Emit(new ActivityCompleted(
+            hostEntry.ActivityInstanceId, hostEntry.VariablesId, new ExpandoObject()));
+
+        var hostEffects = BuildBoundaryUnsubscribeEffects(mi.ActivityId, hostEntry);
+        return (true, hostEffects.AsReadOnly());
+    }
+
+    /// <summary>
+    /// When a multi-instance iteration fails, cancel sibling iterations,
+    /// clean up child variable scopes, and fail the host entry.
+    /// </summary>
+    private void FailMultiInstanceHost(ActivityInstanceEntry failedIteration, int errorCode, string errorMessage)
+    {
+        var hostInstanceId = failedIteration.ScopeId!.Value;
+        var hostEntry = _state.GetEntry(hostInstanceId);
+
+        // Cancel all active sibling iterations
+        CancelScopeChildren(hostInstanceId);
+
+        // Clean up child variable scopes
+        var scopeEntries = _state.GetEntriesInScope(hostInstanceId)
+            .Where(e => e.MultiInstanceIndex.HasValue)
+            .ToList();
+        var childVarIds = scopeEntries.Select(e => e.VariablesId).ToList();
+        if (childVarIds.Count > 0)
+            Emit(new VariableScopesRemoved(childVarIds));
+
+        // Fail the host entry
+        Emit(new ActivityFailed(hostInstanceId, errorCode, errorMessage));
+    }
+
+    // --- Condition Sequence Handling ---
+
+    public void EvaluateConditionSequence(Guid activityInstanceId, string sequenceId, bool result)
+    {
+        Emit(new ConditionSequenceEvaluated(activityInstanceId, sequenceId, result));
+    }
+
+    public void CompleteConditionSequence(string activityId, string conditionSequenceId, bool result)
+    {
+        var entry = _state.GetFirstActive(activityId)
+            ?? throw new InvalidOperationException(
+                $"No active entry found for activity '{activityId}'.");
+
+        Emit(new ConditionSequenceEvaluated(entry.ActivityInstanceId, conditionSequenceId, result));
+
+        var gateway = _definition.GetActivityAcrossScopes(activityId) as ConditionalGateway
+            ?? throw new InvalidOperationException(
+                $"Activity '{activityId}' is not a ConditionalGateway.");
+
+        bool isDecisionMade = IsGatewayDecisionMade(activityId, entry.ActivityInstanceId, gateway, result);
+
+        if (isDecisionMade)
+        {
+            Emit(new ActivityCompleted(entry.ActivityInstanceId, entry.VariablesId, new ExpandoObject()));
+        }
+    }
+
+    private bool IsGatewayDecisionMade(
+        string activityId, Guid activityInstanceId, ConditionalGateway gateway, bool result)
+    {
+        if (gateway is InclusiveGateway)
+        {
+            // InclusiveGateway: wait for ALL conditions to be evaluated, never short-circuit
+            var sequences = _state.GetConditionSequenceStatesForGateway(activityInstanceId);
+            if (!sequences.All(s => s.IsEvaluated))
+                return false;
+
+            if (sequences.Any(s => s.Result))
+                return true;
+
+            // All false — need default flow
+            return EnsureDefaultFlowExists(activityId, "InclusiveGateway");
+        }
+        else
+        {
+            // ExclusiveGateway: short-circuit on first true condition
+            if (result)
+                return true;
+
+            var sequences = _state.GetConditionSequenceStatesForGateway(activityInstanceId);
+            if (!sequences.All(s => s.IsEvaluated))
+                return false;
+
+            // All evaluated, all false — need default flow
+            return EnsureDefaultFlowExists(activityId, "Gateway");
+        }
+    }
+
+    private bool EnsureDefaultFlowExists(string activityId, string gatewayType)
+    {
+        var hasDefault = _definition.SequenceFlows
+            .OfType<DefaultSequenceFlow>()
+            .Any(sf => sf.Source.ActivityId == activityId);
+
+        if (!hasDefault)
+            throw new InvalidOperationException(
+                $"{gatewayType} {activityId}: all conditions evaluated to false and no default flow exists");
+
+        return true;
+    }
+
+    // --- Child Workflow Handling ---
+
+    public IReadOnlyList<IInfrastructureEffect> OnChildWorkflowCompleted(
+        string parentActivityId, ExpandoObject childVariables)
+    {
+        // Stale guard: if the call activity is no longer active, ignore
+        var entry = _state.GetFirstActive(parentActivityId);
+        if (entry is null)
+            return [];
+
+        var callActivity = _definition.GetActivityAcrossScopes(parentActivityId) as CallActivity
+            ?? throw new InvalidOperationException(
+                $"Activity '{parentActivityId}' is not a CallActivity.");
+
+        var mappedOutput = callActivity.BuildParentOutputVariables(childVariables);
+        return CompleteActivity(parentActivityId, entry.ActivityInstanceId, mappedOutput);
+    }
+
+    public IReadOnlyList<IInfrastructureEffect> OnChildWorkflowFailed(
+        string parentActivityId, Exception exception)
+    {
+        // Stale guard: if the call activity is no longer active, ignore
+        var entry = _state.GetFirstActive(parentActivityId);
+        if (entry is null)
+            return [];
+
+        return FailActivity(parentActivityId, entry.ActivityInstanceId, exception);
+    }
+
+    // --- Parent Info ---
+
+    public void SetParentInfo(Guid parentInstanceId, string parentActivityId)
+    {
+        Emit(new ParentInfoSet(parentInstanceId, parentActivityId));
+    }
+
+    public void MergeVariables(Guid variablesId, ExpandoObject variables)
+    {
+        Emit(new VariablesMerged(variablesId, variables));
+    }
+
+    // --- Activity Lifecycle (external entry points) ---
+
+    public IReadOnlyList<IInfrastructureEffect> CompleteActivity(
+        string activityId, Guid? activityInstanceId, ExpandoObject variables)
+    {
+        var entry = ResolveEntry(activityId, activityInstanceId);
+
+        // Stale guard: if entry is already completed, ignore stale callbacks
+        if (entry.IsCompleted)
+            return [];
+
+        Emit(new ActivityCompleted(entry.ActivityInstanceId, entry.VariablesId, variables));
+
+        var effects = new List<IInfrastructureEffect>();
+
+        // Unsubscribe boundary subscriptions on this activity
+        effects.AddRange(BuildBoundaryUnsubscribeEffects(activityId, entry));
+
+        // Cancel event-based gateway siblings
+        effects.AddRange(CancelEventBasedGatewaySiblings(activityId, entry));
+
+        return effects.AsReadOnly();
+    }
+
+    public IReadOnlyList<IInfrastructureEffect> FailActivity(
+        string activityId, Guid? activityInstanceId, Exception exception)
+    {
+        var entry = ResolveEntry(activityId, activityInstanceId);
+
+        // Stale guard: if entry is already completed, ignore stale callbacks
+        if (entry.IsCompleted)
+            return [];
+
+        // Extract error code from exception type
+        int errorCode;
+        string errorMessage;
+        if (exception is ActivityException activityException)
+        {
+            var errorState = activityException.GetActivityErrorState();
+            errorCode = errorState.Code;
+            errorMessage = errorState.Message;
+        }
+        else
+        {
+            errorCode = 500;
+            errorMessage = exception.Message;
+        }
+
+        Emit(new ActivityFailed(entry.ActivityInstanceId, errorCode, errorMessage));
+
+        var effects = new List<IInfrastructureEffect>();
+
+        // Search for boundary error handler
+        var boundaryHandler = _definition.FindBoundaryErrorHandler(activityId, errorCode.ToString());
+
+        if (boundaryHandler is not null)
+        {
+            var (boundaryEvent, scope, attachedToActivityId) = boundaryHandler.Value;
+
+            // Find the attached-to entry (may differ from the failed activity if
+            // the boundary is on a parent subprocess)
+            var attachedEntry = _state.GetFirstActive(attachedToActivityId);
+
+            var scopeIdForCancel = attachedEntry?.ActivityInstanceId ?? entry.ActivityInstanceId;
+
+            // Cancel scope children of the attached-to activity
+            CancelScopeChildren(scopeIdForCancel);
+
+            // Cancel the attached-to entry itself (e.g., the SubProcess)
+            // so that CompleteFinishedSubProcessScopes doesn't auto-complete it
+            if (attachedEntry is not null && !attachedEntry.IsCompleted)
+            {
+                Emit(new ActivityCancelled(
+                    attachedEntry.ActivityInstanceId,
+                    $"Interrupted by boundary error event '{boundaryEvent.ActivityId}'"));
+            }
+
+            // Unsubscribe all boundary subscriptions on the attached activity
+            effects.AddRange(BuildBoundaryUnsubscribeEffects(attachedToActivityId, attachedEntry ?? entry));
+
+            // Spawn the boundary error event activity
+            Emit(new ActivitySpawned(
+                ActivityInstanceId: Guid.NewGuid(),
+                ActivityId: boundaryEvent.ActivityId,
+                ActivityType: boundaryEvent.GetType().Name,
+                VariablesId: entry.VariablesId,
+                ScopeId: attachedEntry?.ScopeId ?? entry.ScopeId,
+                MultiInstanceIndex: null,
+                TokenId: null));
+        }
+        else
+        {
+            // No boundary handler found
+
+            // If this is a multi-instance iteration, cancel siblings and fail host
+            if (entry.MultiInstanceIndex is not null && entry.ScopeId.HasValue)
+            {
+                FailMultiInstanceHost(entry, errorCode, errorMessage);
+            }
+
+            // If this is a child workflow with no remaining active activities, notify parent
+            if (_state.ParentWorkflowInstanceId.HasValue
+                && !_state.GetActiveActivities().Any())
+            {
+                effects.Add(new NotifyParentFailedEffect(
+                    _state.ParentWorkflowInstanceId.Value,
+                    _state.ParentActivityId!,
+                    exception));
+            }
+        }
+
+        return effects.AsReadOnly();
+    }
+
+    // --- Activity Lifecycle Helpers ---
+
+    private ActivityInstanceEntry ResolveEntry(string activityId, Guid? activityInstanceId)
+    {
+        if (activityInstanceId.HasValue)
+        {
+            return _state.GetEntry(activityInstanceId.Value);
+        }
+
+        return _state.GetFirstActive(activityId)
+            ?? throw new InvalidOperationException(
+                $"No active entry found for activity '{activityId}'.");
+    }
+
+    // --- Boundary Event Handling ---
+
+    /// <summary>
+    /// Unified handler for boundary timer, message, and signal events firing.
+    /// Handles both interrupting (cancel attached + scope children + unsubscribe siblings)
+    /// and non-interrupting (clone variables, leave attached running) modes.
+    /// </summary>
+    private IReadOnlyList<IInfrastructureEffect> HandleBoundaryEventFired(
+        Activity boundaryActivity,
+        string attachedToActivityId,
+        bool isInterrupting,
+        ActivityInstanceEntry hostEntry,
+        ExpandoObject deliveredVariables,
+        string? skipTimerActivityId,
+        string? skipMessageName,
+        string? skipSignalName)
+    {
+        var effects = new List<IInfrastructureEffect>();
+
+        Guid variablesId;
+        Guid? scopeId;
+
+        if (isInterrupting)
+        {
+            // Cancel the attached activity
+            Emit(new ActivityCancelled(
+                hostEntry.ActivityInstanceId,
+                $"Interrupted by boundary event '{boundaryActivity.ActivityId}'"));
+
+            // Recursively cancel scope children
+            CancelScopeChildren(hostEntry.ActivityInstanceId);
+
+            // Build unsubscribe effects for OTHER boundary subscriptions
+            // (skip the one that fired to avoid deadlocks)
+            effects.AddRange(BuildBoundaryUnsubscribeEffects(
+                attachedToActivityId, hostEntry,
+                skipTimerActivityId, skipMessageName, skipSignalName));
+
+            // Use the attached activity's variables scope
+            variablesId = hostEntry.VariablesId;
+            scopeId = hostEntry.ScopeId;
+        }
+        else
+        {
+            // Non-interrupting: leave attached activity running, clone variables
+            var clonedScopeId = Guid.NewGuid();
+            Emit(new VariableScopeCloned(clonedScopeId, hostEntry.VariablesId));
+            variablesId = clonedScopeId;
+            scopeId = hostEntry.ScopeId;
+
+            // Merge delivered variables into cloned scope
+            if (((IDictionary<string, object?>)deliveredVariables).Count > 0)
+            {
+                Emit(new VariablesMerged(clonedScopeId, deliveredVariables));
+            }
+
+            // For non-interrupting cycle timers, re-register the timer
+            if (boundaryActivity is BoundaryTimerEvent boundaryTimer
+                && boundaryTimer.TimerDefinition.Type == TimerType.Cycle)
+            {
+                var nextCycle = boundaryTimer.TimerDefinition.DecrementCycle();
+                if (nextCycle is not null)
+                {
+                    effects.Add(new RegisterTimerEffect(
+                        _state.Id, hostEntry.ActivityInstanceId,
+                        boundaryTimer.ActivityId, nextCycle.GetDueTime()));
+                }
+            }
+        }
+
+        // Spawn the boundary event activity
+        Emit(new ActivitySpawned(
+            ActivityInstanceId: Guid.NewGuid(),
+            ActivityId: boundaryActivity.ActivityId,
+            ActivityType: boundaryActivity.GetType().Name,
+            VariablesId: variablesId,
+            ScopeId: scopeId,
+            MultiInstanceIndex: null,
+            TokenId: null));
+
+        return effects.AsReadOnly();
+    }
+
+    /// <summary>
+    /// Recursively cancels all active entries within a scope (and their nested scope children).
+    /// </summary>
+    private void CancelScopeChildren(Guid scopeId)
+    {
+        foreach (var entry in _state.GetActiveActivities()
+            .Where(e => e.ScopeId == scopeId).ToList())
+        {
+            // Recursively cancel nested scope children first
+            if (_state.HasActiveChildrenInScope(entry.ActivityInstanceId))
+                CancelScopeChildren(entry.ActivityInstanceId);
+
+            Emit(new ActivityCancelled(
+                entry.ActivityInstanceId,
+                "Scope cancelled by boundary event"));
+        }
+    }
+
+    // --- Boundary Unsubscribe Helpers ---
+
+    private List<IInfrastructureEffect> BuildBoundaryUnsubscribeEffects(
+        string activityId, ActivityInstanceEntry hostEntry)
+    {
+        var effects = new List<IInfrastructureEffect>();
+        var scope = _definition.FindScopeForActivity(activityId);
+        if (scope is null) return effects;
+
+        // Boundary timer events
+        foreach (var boundaryTimer in scope.GetBoundaryTimerEvents(activityId))
+        {
+            effects.Add(new UnregisterTimerEffect(
+                _state.Id, hostEntry.ActivityInstanceId, boundaryTimer.ActivityId));
+        }
+
+        // Boundary message events
+        foreach (var boundaryMsg in scope.GetBoundaryMessageEvents(activityId))
+        {
+            var messageDef = _definition.GetMessageDefinition(boundaryMsg.MessageDefinitionId);
+            var correlationKey = ResolveCorrelationKey(messageDef, hostEntry.VariablesId);
+            effects.Add(new UnsubscribeMessageEffect(messageDef.Name, correlationKey));
+        }
+
+        // Boundary signal events
+        foreach (var boundarySig in scope.GetBoundarySignalEvents(activityId))
+        {
+            var signalDef = _definition.GetSignalDefinition(boundarySig.SignalDefinitionId);
+            effects.Add(new UnsubscribeSignalEffect(signalDef.Name, _state.Id, boundarySig.ActivityId));
+        }
+
+        return effects;
+    }
+
+    /// <summary>
+    /// Builds unsubscribe effects for boundary subscriptions, with optional skip parameters
+    /// to avoid unsubscribing the boundary that just fired (which could cause deadlocks).
+    /// </summary>
+    private List<IInfrastructureEffect> BuildBoundaryUnsubscribeEffects(
+        string activityId, ActivityInstanceEntry hostEntry,
+        string? skipTimerActivityId, string? skipMessageName, string? skipSignalName)
+    {
+        var effects = new List<IInfrastructureEffect>();
+        var scope = _definition.FindScopeForActivity(activityId);
+        if (scope is null) return effects;
+
+        // Boundary timer events (skip the fired timer — it already fired)
+        foreach (var boundaryTimer in scope.GetBoundaryTimerEvents(activityId)
+            .Where(b => b.ActivityId != skipTimerActivityId))
+        {
+            effects.Add(new UnregisterTimerEffect(
+                _state.Id, hostEntry.ActivityInstanceId, boundaryTimer.ActivityId));
+        }
+
+        // Boundary message events (skip the fired message — subscription already removed)
+        foreach (var boundaryMsg in scope.GetBoundaryMessageEvents(activityId))
+        {
+            var messageDef = _definition.GetMessageDefinition(boundaryMsg.MessageDefinitionId);
+            if (messageDef.Name == skipMessageName) continue;
+            var correlationKey = ResolveCorrelationKey(messageDef, hostEntry.VariablesId);
+            effects.Add(new UnsubscribeMessageEffect(messageDef.Name, correlationKey));
+        }
+
+        // Boundary signal events (skip the fired signal — subscription already removed)
+        foreach (var boundarySig in scope.GetBoundarySignalEvents(activityId))
+        {
+            var signalDef = _definition.GetSignalDefinition(boundarySig.SignalDefinitionId);
+            if (signalDef.Name == skipSignalName) continue;
+            effects.Add(new UnsubscribeSignalEffect(signalDef.Name, _state.Id, boundarySig.ActivityId));
+        }
+
+        return effects;
+    }
+
+    private List<IInfrastructureEffect> CancelEventBasedGatewaySiblings(
+        string completedActivityId, ActivityInstanceEntry completedEntry)
+    {
+        var effects = new List<IInfrastructureEffect>();
+        var siblings = _definition.GetEventBasedGatewaySiblings(completedActivityId);
+
+        if (siblings.Count == 0) return effects;
+
+        foreach (var siblingId in siblings)
+        {
+            var siblingEntry = _state.GetFirstActive(siblingId);
+            if (siblingEntry is null) continue;
+
+            Emit(new ActivityCancelled(
+                siblingEntry.ActivityInstanceId,
+                "Event-based gateway: sibling event completed"));
+
+            // Build unsubscribe effects based on sibling type
+            var siblingActivity = _definition.GetActivityAcrossScopes(siblingId);
+            switch (siblingActivity)
+            {
+                case TimerIntermediateCatchEvent:
+                    effects.Add(new UnregisterTimerEffect(
+                        _state.Id, siblingEntry.ActivityInstanceId, siblingId));
+                    break;
+
+                case MessageIntermediateCatchEvent msgCatch:
+                    var messageDef = _definition.GetMessageDefinition(msgCatch.MessageDefinitionId);
+                    var correlationKey = ResolveCorrelationKey(messageDef, completedEntry.VariablesId);
+                    effects.Add(new UnsubscribeMessageEffect(messageDef.Name, correlationKey));
+                    break;
+
+                case SignalIntermediateCatchEvent sigCatch:
+                    var signalDef = _definition.GetSignalDefinition(sigCatch.SignalDefinitionId);
+                    effects.Add(new UnsubscribeSignalEffect(signalDef.Name, _state.Id, siblingId));
+                    break;
+            }
+        }
+
+        return effects;
+    }
+
+    private string ResolveCorrelationKey(MessageDefinition messageDef, Guid variablesId)
+    {
+        if (messageDef.CorrelationKeyExpression is null)
+            return string.Empty;
+
+        var variableName = messageDef.CorrelationKeyExpression.StartsWith("= ")
+            ? messageDef.CorrelationKeyExpression[2..]
+            : messageDef.CorrelationKeyExpression;
+
+        var correlationValue = _state.GetVariable(variablesId, variableName);
+        return correlationValue?.ToString()
+            ?? throw new InvalidOperationException(
+                $"Correlation variable '{variableName}' is null for message '{messageDef.Name}'.");
+    }
+
+    // --- Emit / Apply pattern ---
+
+    private void Emit(IDomainEvent @event)
+    {
+        // Snapshot mutable ExpandoObject data to preserve event immutability
+        var snapshotted = @event switch
+        {
+            ActivityCompleted e => e with { Variables = SnapshotExpandoObject(e.Variables) },
+            VariablesMerged e => e with { Variables = SnapshotExpandoObject(e.Variables) },
+            _ => @event
+        };
+
+        Apply(snapshotted);
+        _uncommittedEvents.Add(snapshotted);
+    }
+
+    private static ExpandoObject SnapshotExpandoObject(ExpandoObject source)
+    {
+        var snapshot = new ExpandoObject();
+        var target = (IDictionary<string, object?>)snapshot;
+        foreach (var kvp in (IDictionary<string, object?>)source)
+            target[kvp.Key] = kvp.Value;
+        return snapshot;
+    }
+
+    private void Apply(IDomainEvent @event)
+    {
+        switch (@event)
+        {
+            case WorkflowStarted e:
+                ApplyWorkflowStarted(e);
+                break;
+            case ExecutionStarted:
+                _state.Start();
+                break;
+            case WorkflowCompleted:
+                _state.Complete();
+                break;
+            case ActivitySpawned e:
+                ApplyActivitySpawned(e);
+                break;
+            case ActivityExecutionStarted e:
+                ApplyActivityExecutionStarted(e);
+                break;
+            case ActivityCompleted e:
+                ApplyActivityCompleted(e);
+                break;
+            case ActivityFailed e:
+                ApplyActivityFailed(e);
+                break;
+            case ActivityExecutionReset e:
+                _state.GetActiveEntry(e.ActivityInstanceId).ResetExecuting();
+                break;
+            case ActivityCancelled e:
+                ApplyActivityCancelled(e);
+                break;
+            case MultiInstanceTotalSet e:
+                _state.GetActiveEntry(e.ActivityInstanceId).SetMultiInstanceTotal(e.Total);
+                break;
+            case VariablesMerged e:
+                _state.MergeState(e.VariablesId, e.Variables);
+                break;
+
+            case ChildVariableScopeCreated e:
+                _state.AddChildVariableState(e.ScopeId, e.ParentScopeId);
+                break;
+            case VariableScopeCloned e:
+                _state.AddCloneOfVariableState(e.NewScopeId, e.SourceScopeId);
+                break;
+            case VariableScopesRemoved e:
+                _state.RemoveVariableStates(e.ScopeIds);
+                break;
+            case ConditionSequencesAdded e:
+                _state.AddConditionSequenceStates(e.GatewayInstanceId, e.SequenceFlowIds);
+                break;
+            case ConditionSequenceEvaluated e:
+                _state.SetConditionSequenceResult(e.GatewayInstanceId, e.SequenceFlowId, e.Result);
+                break;
+            case GatewayForkCreated e:
+                _state.CreateGatewayFork(e.ForkInstanceId, e.ConsumedTokenId);
+                break;
+            case GatewayForkTokenAdded e:
+                ApplyGatewayForkTokenAdded(e);
+                break;
+            case GatewayForkRemoved e:
+                _state.RemoveGatewayFork(e.ForkInstanceId);
+                break;
+            case ParentInfoSet e:
+                _state.SetParentInfo(e.ParentInstanceId, e.ParentActivityId);
+                break;
+            case ChildWorkflowLinked e:
+                _state.GetActiveEntry(e.ActivityInstanceId).SetChildWorkflowInstanceId(e.ChildWorkflowInstanceId);
+                break;
+            default:
+                throw new InvalidOperationException($"Unknown domain event type: {@event.GetType().Name}");
+        }
+    }
+
+    private void ApplyWorkflowStarted(WorkflowStarted e)
+    {
+        var variablesId = Guid.NewGuid();
+        _state.Initialize(e.InstanceId, e.ProcessDefinitionId, variablesId);
+    }
+
+    private void ApplyActivitySpawned(ActivitySpawned e)
+    {
+        var entry = new ActivityInstanceEntry(
+            e.ActivityInstanceId,
+            e.ActivityId,
+            _state.Id,
+            e.ScopeId);
+
+        entry.SetActivityType(e.ActivityType);
+        entry.SetVariablesId(e.VariablesId);
+
+        if (e.TokenId.HasValue)
+            entry.SetTokenId(e.TokenId.Value);
+
+        if (e.MultiInstanceIndex.HasValue)
+            entry.SetMultiInstanceIndex(e.MultiInstanceIndex.Value);
+
+        _state.AddEntries([entry]);
+    }
+
+    private void ApplyActivityExecutionStarted(ActivityExecutionStarted e)
+    {
+        var entry = _state.GetActiveEntry(e.ActivityInstanceId);
+        entry.Execute();
+    }
+
+    private void ApplyActivityCompleted(ActivityCompleted e)
+    {
+        var entry = _state.GetActiveEntry(e.ActivityInstanceId);
+        entry.Complete();
+        _state.MergeState(e.VariablesId, e.Variables);
+    }
+
+    private void ApplyActivityFailed(ActivityFailed e)
+    {
+        var entry = _state.GetActiveEntry(e.ActivityInstanceId);
+        entry.Fail(e.ErrorCode, e.ErrorMessage);
+    }
+
+    private void ApplyActivityCancelled(ActivityCancelled e)
+    {
+        var entry = _state.GetActiveEntry(e.ActivityInstanceId);
+        entry.Cancel(e.Reason);
+    }
+
+    private void ApplyGatewayForkTokenAdded(GatewayForkTokenAdded e)
+    {
+        var fork = _state.GetGatewayFork(e.ForkInstanceId);
+        fork.CreatedTokenIds.Add(e.TokenId);
+    }
+}

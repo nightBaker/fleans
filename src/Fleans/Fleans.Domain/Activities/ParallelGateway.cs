@@ -32,14 +32,14 @@ public record ParallelGateway(
         if (!IsFork)
         {
             // Join: restore parent token
-            var joinFlows = definition.SequenceFlows.Where(sf => sf.Source == this)
+            var joinFlows = definition.GetOutgoingFlows(this)
                 .Select(flow => new ActivityTransition(flow.Target, Token: TokenAction.RestoreParent))
                 .ToList();
             return Task.FromResult(joinFlows);
         }
 
         // Fork: all outgoing paths with cloned variables and new tokens
-        var nextFlows = definition.SequenceFlows.Where(sf => sf.Source == this)
+        var nextFlows = definition.GetOutgoingFlows(this)
             .Select(flow => new ActivityTransition(flow.Target, CloneVariables: true, Token: TokenAction.CreateNew))
             .ToList();
 

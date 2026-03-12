@@ -128,6 +128,7 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
             Signals = workflow.Signals,
             ProcessDefinitionId = processDefinitionId
         };
+        IWorkflowDefinition scope = workflowWithId;
 
         var definition = new ProcessDefinition
         {
@@ -156,7 +157,7 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
         var newMessageNames = new HashSet<string>();
         foreach (var messageStart in workflowWithId.Activities.OfType<MessageStartEvent>())
         {
-            var messageDefinition = workflowWithId.Messages.FirstOrDefault(m => m.Id == messageStart.MessageDefinitionId);
+            var messageDefinition = scope.FindMessageDefinition(messageStart.MessageDefinitionId);
             if (messageDefinition != null)
             {
                 newMessageNames.Add(messageDefinition.Name);
@@ -168,10 +169,10 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
         // Unregister previous version's message start events that are no longer present
         if (versions.Count > 1)
         {
-            var previousWorkflow = versions[^2].Workflow;
+            IWorkflowDefinition previousWorkflow = versions[^2].Workflow;
             foreach (var oldMessageStart in previousWorkflow.Activities.OfType<MessageStartEvent>())
             {
-                var oldMessageDef = previousWorkflow.Messages.FirstOrDefault(m => m.Id == oldMessageStart.MessageDefinitionId);
+                var oldMessageDef = previousWorkflow.FindMessageDefinition(oldMessageStart.MessageDefinitionId);
                 if (oldMessageDef != null && !newMessageNames.Contains(oldMessageDef.Name))
                 {
                     var listener = _grainFactory.GetGrain<IMessageStartEventListenerGrain>(oldMessageDef.Name);
@@ -184,7 +185,7 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
         var newSignalNames = new HashSet<string>();
         foreach (var signalStart in workflowWithId.Activities.OfType<SignalStartEvent>())
         {
-            var signalDefinition = workflowWithId.Signals.FirstOrDefault(s => s.Id == signalStart.SignalDefinitionId);
+            var signalDefinition = scope.FindSignalDefinition(signalStart.SignalDefinitionId);
             if (signalDefinition != null)
             {
                 newSignalNames.Add(signalDefinition.Name);
@@ -196,10 +197,10 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
         // Unregister previous version's signal start events that are no longer present
         if (versions.Count > 1)
         {
-            var previousWorkflow = versions[^2].Workflow;
+            IWorkflowDefinition previousWorkflow = versions[^2].Workflow;
             foreach (var oldSignalStart in previousWorkflow.Activities.OfType<SignalStartEvent>())
             {
-                var oldSignalDef = previousWorkflow.Signals.FirstOrDefault(s => s.Id == oldSignalStart.SignalDefinitionId);
+                var oldSignalDef = previousWorkflow.FindSignalDefinition(oldSignalStart.SignalDefinitionId);
                 if (oldSignalDef != null && !newSignalNames.Contains(oldSignalDef.Name))
                 {
                     var listener = _grainFactory.GetGrain<ISignalStartEventListenerGrain>(oldSignalDef.Name);

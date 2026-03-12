@@ -86,7 +86,7 @@ public partial class SignalStartEventListenerGrain : Grain, ISignalStartEventLis
     {
         foreach (var activity in definition.Activities.OfType<SignalStartEvent>())
         {
-            var sigDef = definition.Signals.FirstOrDefault(s => s.Id == activity.SignalDefinitionId);
+            var sigDef = definition.FindSignalDefinition(activity.SignalDefinitionId);
             if (sigDef?.Name == signalName)
                 return activity.ActivityId;
         }

@@ -89,7 +89,7 @@ public partial class MessageStartEventListenerGrain : Grain, IMessageStartEventL
     {
         foreach (var activity in definition.Activities.OfType<MessageStartEvent>())
         {
-            var msgDef = definition.Messages.FirstOrDefault(m => m.Id == activity.MessageDefinitionId);
+            var msgDef = definition.FindMessageDefinition(activity.MessageDefinitionId);
             if (msgDef?.Name == messageName)
                 return activity.ActivityId;
         }
