@@ -62,7 +62,7 @@ Add `bool IsActive` to `ProcessDefinition` (defaults to `true` on deployment). P
 ### 5. Safety Guards
 
 - `GetLatestWorkflowDefinition` throws if the process is disabled — prevents new instances even if a listener wasn't cleaned up.
-- Deploying a new version to a disabled process auto-enables it (sets `IsActive = true` and registers listeners as normal).
+- Deploying a new version to a disabled process preserves the disabled state (`IsActive = false`). Start event listeners are not registered. The operator must explicitly re-enable the process after redeployment.
 
 ### 6. API Endpoints
 
@@ -88,7 +88,7 @@ In the process definition list, add a toggle per process:
 2. **Disable process** — deploy with all three start event types, disable, verify all listeners unregistered
 3. **Enable process** — disable then re-enable, verify all listeners re-registered
 4. **Disabled process blocks instances** — disable, fire start event, verify no instance created
-5. **Deploy auto-enables** — disable, deploy new version, verify `IsActive = true` and listeners registered
+5. **Deploy preserves disabled state** — disable, deploy new version, verify `IsActive = false` and listeners not registered
 
 ### Manual Test Plan
 

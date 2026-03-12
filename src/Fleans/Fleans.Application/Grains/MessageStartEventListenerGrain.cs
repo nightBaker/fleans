@@ -28,7 +28,12 @@ public partial class MessageStartEventListenerGrain : Grain, IMessageStartEventL
 
     public async ValueTask RegisterProcess(string processDefinitionKey)
     {
-        State.AddProcess(processDefinitionKey);
+        if (!State.AddProcess(processDefinitionKey))
+        {
+            LogProcessAlreadyRegistered(this.GetPrimaryKeyString(), processDefinitionKey);
+            return;
+        }
+
         await _state.WriteStateAsync();
         LogProcessRegistered(this.GetPrimaryKeyString(), processDefinitionKey);
     }
@@ -37,7 +42,7 @@ public partial class MessageStartEventListenerGrain : Grain, IMessageStartEventL
     {
         if (!State.RemoveProcess(processDefinitionKey))
         {
-            LogProcessUnregistered(this.GetPrimaryKeyString(), processDefinitionKey);
+            LogProcessNotFound(this.GetPrimaryKeyString(), processDefinitionKey);
             return;
         }
 
@@ -118,4 +123,10 @@ public partial class MessageStartEventListenerGrain : Grain, IMessageStartEventL
 
     [LoggerMessage(EventId = 9104, Level = LogLevel.Error, Message = "Failed to start workflow for message '{MessageName}', process {ProcessDefinitionKey}")]
     private partial void LogMessageStartEventFailed(string messageName, string processDefinitionKey, Exception ex);
+
+    [LoggerMessage(EventId = 9105, Level = LogLevel.Debug, Message = "Process {ProcessDefinitionKey} already registered for message start event '{MessageName}', skipping write")]
+    private partial void LogProcessAlreadyRegistered(string messageName, string processDefinitionKey);
+
+    [LoggerMessage(EventId = 9106, Level = LogLevel.Debug, Message = "Process {ProcessDefinitionKey} not found for message start event '{MessageName}', skipping unregister")]
+    private partial void LogProcessNotFound(string messageName, string processDefinitionKey);
 }

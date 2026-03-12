@@ -198,6 +198,33 @@ public class EfCoreProcessDefinitionRepositoryTests
             () => _repository.SaveAsync(definition));
     }
 
+    [TestMethod]
+    public async Task SaveAndGetById_DisabledProcess_IsActiveFalseRoundTrip()
+    {
+        var definition = CreateDefinition("disabled:1:ts", "disabled", 1, DateTimeOffset.UtcNow);
+        definition.Disable();
+
+        await _repository.SaveAsync(definition);
+
+        var result = await _repository.GetByIdAsync("disabled:1:ts");
+
+        Assert.IsNotNull(result);
+        Assert.IsFalse(result.IsActive, "IsActive should be false after round-trip");
+    }
+
+    [TestMethod]
+    public async Task SaveAndGetById_EnabledProcess_IsActiveTrueByDefault()
+    {
+        var definition = CreateDefinition("enabled:1:ts", "enabled", 1, DateTimeOffset.UtcNow);
+
+        await _repository.SaveAsync(definition);
+
+        var result = await _repository.GetByIdAsync("enabled:1:ts");
+
+        Assert.IsNotNull(result);
+        Assert.IsTrue(result.IsActive, "IsActive should be true by default");
+    }
+
     // ───────────────────────────────────────────────
     // Helpers
     // ───────────────────────────────────────────────

@@ -6,7 +6,6 @@
 @inject IWorkflowQueryService QueryService
 @inject IWorkflowCommandService CommandService
 @inject NavigationManager Navigation
-@inject ILogger<Workflows> Logger
 
 <PageTitle>Workflows</PageTitle>
 
@@ -227,7 +226,7 @@
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error loading workflows");
+            LogLoadWorkflowsError(ex);
             loadErrorMessage = "Unable to reach workflow engine. Try again.";
             if (allRows.Count == 0)
             {
@@ -287,17 +286,17 @@
             actionSuccessMessage = null;
 
             var instanceId = await CommandService.StartWorkflowByProcessDefinitionId(version.ProcessDefinitionId);
-            Logger.LogInformation("Process definition {ProcessDefinitionId} started successfully with instanceId {WorkflowInstanceId}", version.ProcessDefinitionId, instanceId);
+            LogProcessStarted(version.ProcessDefinitionId, instanceId);
             actionSuccessMessage = $"Started '{version.ProcessDefinitionKey}' v{version.Version}. Instance: {instanceId}.";
         }
         catch (KeyNotFoundException ex)
         {
-            Logger.LogWarning("Failed to start process definition {ProcessDefinitionId}: {Error}", version.ProcessDefinitionId, ex.Message);
+            LogProcessStartFailed(version.ProcessDefinitionId, ex.Message);
             actionErrorMessage = $"Failed to start workflow: {ex.Message}";
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error starting process definition {ProcessDefinitionId}", version.ProcessDefinitionId);
+            LogProcessStartError(version.ProcessDefinitionId, ex);
             actionErrorMessage = $"Failed to start workflow: {ex.Message}";
         }
         finally
@@ -336,7 +335,7 @@
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error toggling process {ProcessDefinitionKey}", definition.ProcessDefinitionKey);
+            LogToggleProcessError(definition.ProcessDefinitionKey, ex);
             actionErrorMessage = $"Failed to toggle process: {ex.Message}";
         }
         finally

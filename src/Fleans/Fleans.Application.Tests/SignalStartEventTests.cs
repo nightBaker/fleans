@@ -75,22 +75,24 @@ public class SignalStartEventTests : WorkflowTestBase
         // Arrange
         var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
 
+        var start1 = new SignalStartEvent("ss1", "sig1");
+        var end1 = new EndEvent("end1");
         var workflow1 = new WorkflowDefinition
         {
             WorkflowId = "sig-start-wf1",
-            Activities = [new SignalStartEvent("ss1", "sig1"), new EndEvent("end1")],
-            SequenceFlows = [new SequenceFlow("f1",
-                new SignalStartEvent("ss1", "sig1"), new EndEvent("end1"))],
+            Activities = [start1, end1],
+            SequenceFlows = [new SequenceFlow("f1", start1, end1)],
             Signals = [new SignalDefinition("sig1", "sharedSignal")]
         };
         await factory.DeployWorkflow(workflow1, "<placeholder/>");
 
+        var start2 = new SignalStartEvent("ss2", "sig2");
+        var end2 = new EndEvent("end2");
         var workflow2 = new WorkflowDefinition
         {
             WorkflowId = "sig-start-wf2",
-            Activities = [new SignalStartEvent("ss2", "sig2"), new EndEvent("end2")],
-            SequenceFlows = [new SequenceFlow("f2",
-                new SignalStartEvent("ss2", "sig2"), new EndEvent("end2"))],
+            Activities = [start2, end2],
+            SequenceFlows = [new SequenceFlow("f2", start2, end2)],
             Signals = [new SignalDefinition("sig2", "sharedSignal")]
         };
         await factory.DeployWorkflow(workflow2, "<placeholder/>");

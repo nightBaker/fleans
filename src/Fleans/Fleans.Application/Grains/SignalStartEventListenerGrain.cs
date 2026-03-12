@@ -27,7 +27,12 @@ public partial class SignalStartEventListenerGrain : Grain, ISignalStartEventLis
 
     public async ValueTask RegisterProcess(string processDefinitionKey)
     {
-        State.AddProcess(processDefinitionKey);
+        if (!State.AddProcess(processDefinitionKey))
+        {
+            LogProcessAlreadyRegistered(this.GetPrimaryKeyString(), processDefinitionKey);
+            return;
+        }
+
         await _state.WriteStateAsync();
         LogProcessRegistered(this.GetPrimaryKeyString(), processDefinitionKey);
     }
@@ -36,7 +41,7 @@ public partial class SignalStartEventListenerGrain : Grain, ISignalStartEventLis
     {
         if (!State.RemoveProcess(processDefinitionKey))
         {
-            LogProcessUnregistered(this.GetPrimaryKeyString(), processDefinitionKey);
+            LogProcessNotFound(this.GetPrimaryKeyString(), processDefinitionKey);
             return;
         }
 
@@ -115,4 +120,10 @@ public partial class SignalStartEventListenerGrain : Grain, ISignalStartEventLis
 
     [LoggerMessage(EventId = 9204, Level = LogLevel.Error, Message = "Failed to start workflow for signal '{SignalName}', process {ProcessDefinitionKey}")]
     private partial void LogSignalStartEventFailed(string signalName, string processDefinitionKey, Exception ex);
+
+    [LoggerMessage(EventId = 9205, Level = LogLevel.Debug, Message = "Process {ProcessDefinitionKey} already registered for signal start event '{SignalName}', skipping write")]
+    private partial void LogProcessAlreadyRegistered(string signalName, string processDefinitionKey);
+
+    [LoggerMessage(EventId = 9206, Level = LogLevel.Debug, Message = "Process {ProcessDefinitionKey} not found for signal start event '{SignalName}', skipping unregister")]
+    private partial void LogProcessNotFound(string signalName, string processDefinitionKey);
 }
