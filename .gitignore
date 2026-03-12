@@ -408,3 +408,6 @@ FodyWeavers.xsd
 
 # Git worktrees
 .worktrees/
+
+# MCP configuration (local development)
+.mcp.json

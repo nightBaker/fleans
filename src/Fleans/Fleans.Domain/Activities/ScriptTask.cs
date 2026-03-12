@@ -22,6 +22,7 @@ public record ScriptTask : TaskActivity
     {
         var commands = await base.ExecuteAsync(workflowContext, activityContext, definition);
 
+        var variablesId = await activityContext.GetVariablesStateId();
         await activityContext.PublishEvent(new ExecuteScriptEvent(
             await workflowContext.GetWorkflowInstanceId(),
             definition.WorkflowId,
@@ -29,7 +30,8 @@ public record ScriptTask : TaskActivity
             await activityContext.GetActivityInstanceId(),
             ActivityId,
             Script,
-            ScriptFormat));
+            ScriptFormat,
+            variablesId));
 
         return commands;
     }

@@ -128,6 +128,7 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
             Signals = workflow.Signals,
             ProcessDefinitionId = processDefinitionId
         };
+        IWorkflowDefinition scope = workflowWithId;
 
         var definition = new ProcessDefinition
         {
@@ -162,7 +163,7 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
         // Unregister removed start event listeners from previous version
         if (versions.Count > 1)
         {
-            var previousWorkflow = versions[^2].Workflow;
+            IWorkflowDefinition previousWorkflow = versions[^2].Workflow;
 
             // Timer: if previous had timer but new doesn't, deactivate
             if (!workflowWithId.Activities.OfType<TimerStartEvent>().Any()
@@ -174,13 +175,13 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
 
             // Messages: unregister removed message names
             var newMessageNames = workflowWithId.Activities.OfType<MessageStartEvent>()
-                .Select(ms => workflowWithId.Messages.FirstOrDefault(m => m.Id == ms.MessageDefinitionId)?.Name)
+                .Select(ms => scope.FindMessageDefinition(ms.MessageDefinitionId)?.Name)
                 .Where(n => n != null)
                 .ToHashSet();
 
             foreach (var oldMessageStart in previousWorkflow.Activities.OfType<MessageStartEvent>())
             {
-                var oldMsgDef = previousWorkflow.Messages.FirstOrDefault(m => m.Id == oldMessageStart.MessageDefinitionId);
+                var oldMsgDef = previousWorkflow.FindMessageDefinition(oldMessageStart.MessageDefinitionId);
                 if (oldMsgDef != null && !newMessageNames.Contains(oldMsgDef.Name))
                 {
                     var listener = _grainFactory.GetGrain<IMessageStartEventListenerGrain>(oldMsgDef.Name);
@@ -190,13 +191,13 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
 
             // Signals: unregister removed signal names
             var newSignalNames = workflowWithId.Activities.OfType<SignalStartEvent>()
-                .Select(ss => workflowWithId.Signals.FirstOrDefault(s => s.Id == ss.SignalDefinitionId)?.Name)
+                .Select(ss => scope.FindSignalDefinition(ss.SignalDefinitionId)?.Name)
                 .Where(n => n != null)
                 .ToHashSet();
 
             foreach (var oldSignalStart in previousWorkflow.Activities.OfType<SignalStartEvent>())
             {
-                var oldSigDef = previousWorkflow.Signals.FirstOrDefault(s => s.Id == oldSignalStart.SignalDefinitionId);
+                var oldSigDef = previousWorkflow.FindSignalDefinition(oldSignalStart.SignalDefinitionId);
                 if (oldSigDef != null && !newSignalNames.Contains(oldSigDef.Name))
                 {
                     var listener = _grainFactory.GetGrain<ISignalStartEventListenerGrain>(oldSigDef.Name);
@@ -212,6 +213,18 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
     {
         var definition = GetLatestDefinitionOrThrow(processDefinitionKey, allowDisabled: true);
         return Task.FromResult<IWorkflowDefinition>(definition.Workflow);
+    }
+
+    public Task<bool> IsProcessActive(string processDefinitionKey)
+    {
+        if (string.IsNullOrWhiteSpace(processDefinitionKey)
+            || !_byKey.TryGetValue(processDefinitionKey, out var versions)
+            || versions.Count == 0)
+        {
+            return Task.FromResult(false);
+        }
+
+        return Task.FromResult(versions[^1].IsActive);
     }
 
     public async Task<ProcessDefinitionSummary> DisableProcess(string processDefinitionKey)

@@ -7,18 +7,15 @@ public class SignalStartEventListenerState
     [Id(1)] public string? ETag { get; set; }
     [Id(2)] public List<string> ProcessDefinitionKeys { get; set; } = [];
 
-    public bool AddProcess(string processDefinitionKey)
+    public void AddProcess(string processDefinitionKey)
     {
-        if (ProcessDefinitionKeys.Contains(processDefinitionKey))
-            return false;
-
-        ProcessDefinitionKeys.Add(processDefinitionKey);
-        return true;
+        if (!ProcessDefinitionKeys.Contains(processDefinitionKey))
+            ProcessDefinitionKeys.Add(processDefinitionKey);
     }
 
-    public bool RemoveProcess(string processDefinitionKey)
+    public void RemoveProcess(string processDefinitionKey)
     {
-        return ProcessDefinitionKeys.Remove(processDefinitionKey);
+        ProcessDefinitionKeys.Remove(processDefinitionKey);
     }
 
     public bool IsEmpty => ProcessDefinitionKeys.Count == 0;

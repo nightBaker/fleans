@@ -43,7 +43,7 @@ public interface IWorkflowInstanceGrain : IGrainWithGuidKey, IWorkflowExecutionC
 
     Task HandleMessageDelivery(string activityId, Guid hostActivityInstanceId, ExpandoObject variables);
     Task HandleBoundaryMessageFired(string boundaryActivityId, Guid hostActivityInstanceId);
-    Task HandleTimerFired(string timerActivityId, Guid hostActivityInstanceId);
+    Task<TimeSpan?> HandleTimerFired(string timerActivityId, Guid hostActivityInstanceId);
     [AlwaysInterleave]
     Task HandleSignalDelivery(string activityId, Guid hostActivityInstanceId);
     [AlwaysInterleave]

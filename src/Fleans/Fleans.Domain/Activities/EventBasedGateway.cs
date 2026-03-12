@@ -18,8 +18,7 @@ public record EventBasedGateway(string ActivityId) : Gateway(ActivityId)
         IActivityExecutionContext activityContext,
         IWorkflowDefinition definition)
     {
-        var nextFlows = definition.SequenceFlows
-            .Where(sf => sf.Source == this)
+        var nextFlows = definition.GetOutgoingFlows(this)
             .Select(flow => new ActivityTransition(flow.Target))
             .ToList();
         return Task.FromResult(nextFlows);

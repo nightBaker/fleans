@@ -84,7 +84,7 @@ public record InclusiveGateway(
         if (!IsFork)
         {
             // Join: return all outgoing flows, restore parent token
-            return definition.SequenceFlows.Where(sf => sf.Source == this)
+            return definition.GetOutgoingFlows(this)
                 .Select(flow => new ActivityTransition(flow.Target, Token: TokenAction.RestoreParent))
                 .ToList();
         }
@@ -97,8 +97,7 @@ public record InclusiveGateway(
 
         var trueTargets = activitySequencesState
             .Where(x => x.Result)
-            .Select(x => definition.SequenceFlows
-                .First(sf => sf.SequenceFlowId == x.ConditionalSequenceFlowId).Target)
+            .Select(x => definition.GetSequenceFlow(x.ConditionalSequenceFlowId).Target)
             .Select(target => new ActivityTransition(target, CloneVariables: true, Token: TokenAction.CreateNew))
             .ToList();
 

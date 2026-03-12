@@ -71,6 +71,14 @@ public partial class MessageStartEventListenerGrain : Grain, IMessageStartEventL
         {
             try
             {
+                // Guard: skip disabled processes to prevent race condition
+                // between DisableProcess persisting IsActive=false and unregistering listeners
+                if (!await factory.IsProcessActive(processDefinitionKey))
+                {
+                    LogProcessDisabledSkipped(messageName, processDefinitionKey);
+                    continue;
+                }
+
                 var instanceId = Guid.NewGuid();
                 var instance = _grainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
 
@@ -102,7 +110,7 @@ public partial class MessageStartEventListenerGrain : Grain, IMessageStartEventL
     {
         foreach (var activity in definition.Activities.OfType<MessageStartEvent>())
         {
-            var msgDef = definition.Messages.FirstOrDefault(m => m.Id == activity.MessageDefinitionId);
+            var msgDef = definition.FindMessageDefinition(activity.MessageDefinitionId);
             if (msgDef?.Name == messageName)
                 return activity.ActivityId;
         }
@@ -129,4 +137,7 @@ public partial class MessageStartEventListenerGrain : Grain, IMessageStartEventL
 
     [LoggerMessage(EventId = 9106, Level = LogLevel.Debug, Message = "Process {ProcessDefinitionKey} not found for message start event '{MessageName}', skipping unregister")]
     private partial void LogProcessNotFound(string messageName, string processDefinitionKey);
+
+    [LoggerMessage(EventId = 9107, Level = LogLevel.Warning, Message = "Skipping disabled process {ProcessDefinitionKey} for message '{MessageName}'")]
+    private partial void LogProcessDisabledSkipped(string messageName, string processDefinitionKey);
 }

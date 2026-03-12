@@ -173,4 +173,50 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1052, Level = LogLevel.Warning,
         Message = "Stale message delivery ignored for activityId='{ActivityId}', hostActivityInstanceId={HostActivityInstanceId} — activity already completed")]
     private partial void LogStaleMessageDeliveryIgnored(string activityId, Guid hostActivityInstanceId);
+
+    [LoggerMessage(EventId = 3007, Level = LogLevel.Information, Message = "Workflow started: InstanceId={InstanceId}")]
+    private partial void LogWorkflowInstanceStarted(Guid instanceId);
+
+    [LoggerMessage(EventId = 3008, Level = LogLevel.Debug, Message = "Activity execution started: {ActivityInstanceId}")]
+    private partial void LogActivityExecutionStarted(Guid activityInstanceId);
+
+    [LoggerMessage(EventId = 3009, Level = LogLevel.Debug, Message = "Child variable scope created: ScopeId={ScopeId}, ParentScopeId={ParentScopeId}")]
+    private partial void LogChildVariableScopeCreated(Guid scopeId, Guid parentScopeId);
+
+    [LoggerMessage(EventId = 3010, Level = LogLevel.Debug, Message = "Variable scope cloned: NewScopeId={NewScopeId}, SourceScopeId={SourceScopeId}")]
+    private partial void LogVariableScopeCloned(Guid newScopeId, Guid sourceScopeId);
+
+    [LoggerMessage(EventId = 3011, Level = LogLevel.Debug, Message = "Variable scopes removed: Count={Count}")]
+    private partial void LogVariableScopesRemoved(int count);
+
+    [LoggerMessage(EventId = 3012, Level = LogLevel.Debug, Message = "Condition sequences added: GatewayInstanceId={GatewayInstanceId}, Count={Count}")]
+    private partial void LogConditionSequencesAdded(Guid gatewayInstanceId, int count);
+
+    [LoggerMessage(EventId = 3013, Level = LogLevel.Debug, Message = "Condition sequence evaluated: GatewayInstanceId={GatewayInstanceId}, SequenceFlowId={SequenceFlowId}, Result={Result}")]
+    private partial void LogConditionSequenceEvaluated(Guid gatewayInstanceId, string sequenceFlowId, bool result);
+
+    [LoggerMessage(EventId = 3014, Level = LogLevel.Debug, Message = "Gateway fork token added: ForkInstanceId={ForkInstanceId}, TokenId={TokenId}")]
+    private partial void LogGatewayForkTokenAdded(Guid forkInstanceId, Guid tokenId);
+
+    [LoggerMessage(EventId = 3015, Level = LogLevel.Debug, Message = "Multi-instance total set: ActivityInstanceId={ActivityInstanceId}, Total={Total}")]
+    private partial void LogMultiInstanceTotalSet(Guid activityInstanceId, int total);
+
+    [LoggerMessage(EventId = 3016, Level = LogLevel.Debug,
+        Message = "Timer cycle re-registration deferred to TimerCallbackGrain for activity {TimerActivityId}, dueTime={DueTime}")]
+    private partial void LogTimerCycleReRegistrationDeferred(string timerActivityId, TimeSpan dueTime);
+
+    [LoggerMessage(EventId = 3020, Level = LogLevel.Debug,
+        Message = "Activity spawned: ActivityInstanceId={ActivityInstanceId}, ActivityId={ActivityId}, ActivityType={ActivityType}")]
+    private partial void LogActivitySpawned(Guid activityInstanceId, string activityId, string activityType);
+
+    [LoggerMessage(EventId = 3017, Level = LogLevel.Information, Message = "Workflow execution started")]
+    private partial void LogExecutionStarted();
+
+    [LoggerMessage(EventId = 3018, Level = LogLevel.Debug,
+        Message = "Activity execution reset (join gateway deduplication): ActivityInstanceId={ActivityInstanceId}")]
+    private partial void LogActivityExecutionReset(Guid activityInstanceId);
+
+    [LoggerMessage(EventId = 3019, Level = LogLevel.Information,
+        Message = "Child workflow linked: ActivityInstanceId={ActivityInstanceId}, ChildWorkflowInstanceId={ChildWorkflowInstanceId}")]
+    private partial void LogChildWorkflowLinked(Guid activityInstanceId, Guid childWorkflowInstanceId);
 }

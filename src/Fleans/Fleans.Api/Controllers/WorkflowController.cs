@@ -83,14 +83,7 @@ namespace Fleans.Api.Controllers
             {
                 var result = await _commandService.SendSignal(request.SignalName);
 
-                bool noDeliveries = result.DeliveredCount == 0
-                    && (result.WorkflowInstanceIds == null || result.WorkflowInstanceIds.Count == 0);
-
-                if (noDeliveries && (result.BroadcastFailed || result.StartEventFailed))
-                    return StatusCode(500, new ErrorResponse(
-                        $"Failed to deliver signal '{request.SignalName}' due to internal errors"));
-
-                if (noDeliveries)
+                if (result.DeliveredCount == 0 && (result.WorkflowInstanceIds == null || result.WorkflowInstanceIds.Count == 0))
                     return NotFound(new ErrorResponse(
                         $"No subscription or start event found for signal '{request.SignalName}'"));
 

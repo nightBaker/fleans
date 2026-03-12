@@ -10,7 +10,7 @@ public abstract record ForkJoinGateway(
     protected async Task<bool> AllExpectedTokensArrived(
         IWorkflowExecutionContext workflowContext, IWorkflowDefinition definition)
     {
-        var incomingFlows = definition.SequenceFlows.Where(sf => sf.Target == this).ToList();
+        var incomingFlows = definition.GetIncomingFlows(this).ToList();
         var completedActivities = await workflowContext.GetCompletedActivities();
 
         var arrivedTokens = new HashSet<Guid>();

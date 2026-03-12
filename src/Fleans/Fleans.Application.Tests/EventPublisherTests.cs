@@ -1,7 +1,6 @@
 using Fleans.Application;
 using Fleans.Application.Conditions;
 using Fleans.Application.Events;
-using Fleans.Application.Services;
 using Fleans.Application.Grains;
 using Fleans.Application.QueryModels;
 using Fleans.Application.Scripts;
@@ -110,7 +109,11 @@ public class EventPublisherTests
         {
             var snapshot = await _queryService.GetStateSnapshot(instanceId);
             if (snapshot is not null && snapshot.IsCompleted)
-                return snapshot;
+            {
+                // Allow time for eventual consistency of completed activity IDs
+                await Task.Delay(200);
+                return await _queryService.GetStateSnapshot(instanceId);
+            }
             await Task.Delay(100);
         }
 
@@ -183,14 +186,8 @@ public class EventPublisherTests
                         (sp, _) => new EfCoreWorkflowInstanceGrainStorage(
                             sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
 
-                    services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.ActivityInstances,
-                        (sp, _) => new EfCoreActivityInstanceGrainStorage(
-                            sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
-
                     services.AddSingleton<IProcessDefinitionRepository, EfCoreProcessDefinitionRepository>();
                     services.AddSingleton<IWorkflowQueryService, WorkflowQueryService>();
-                    services.AddTransient<IBoundaryEventHandler, BoundaryEventHandler>();
-
                     services.AddSingleton<IConditionExpressionEvaluator, SimpleConditionEvaluator>();
                     services.AddSingleton<IScriptExpressionExecutor, SimpleScriptExecutor>();
                     services.AddSerializer(serializerBuilder =>

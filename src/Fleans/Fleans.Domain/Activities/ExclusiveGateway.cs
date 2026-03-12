@@ -40,10 +40,7 @@ public record ExclusiveGateway(string ActivityId) : ConditionalGateway(ActivityI
 
         if (trueTarget is not null)
         {
-            var flow = definition.SequenceFlows
-                .FirstOrDefault(sf => sf.SequenceFlowId == trueTarget.ConditionalSequenceFlowId)
-                ?? throw new InvalidOperationException(
-                    $"Sequence flow '{trueTarget.ConditionalSequenceFlowId}' not found in workflow definition");
+            var flow = definition.GetSequenceFlow(trueTarget.ConditionalSequenceFlowId);
             return [new ActivityTransition(flow.Target)];
         }
 

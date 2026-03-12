@@ -27,28 +27,18 @@ public partial class SignalStartEventListenerGrain : Grain, ISignalStartEventLis
 
     public async ValueTask RegisterProcess(string processDefinitionKey)
     {
-        if (!State.AddProcess(processDefinitionKey))
-        {
-            LogProcessAlreadyRegistered(this.GetPrimaryKeyString(), processDefinitionKey);
-            return;
-        }
-
+        State.AddProcess(processDefinitionKey);
         await _state.WriteStateAsync();
         LogProcessRegistered(this.GetPrimaryKeyString(), processDefinitionKey);
     }
 
     public async ValueTask UnregisterProcess(string processDefinitionKey)
     {
-        if (!State.RemoveProcess(processDefinitionKey))
-        {
-            LogProcessNotFound(this.GetPrimaryKeyString(), processDefinitionKey);
-            return;
-        }
+        State.RemoveProcess(processDefinitionKey);
+        await _state.WriteStateAsync();
 
         if (State.IsEmpty)
             await _state.ClearStateAsync();
-        else
-            await _state.WriteStateAsync();
 
         LogProcessUnregistered(this.GetPrimaryKeyString(), processDefinitionKey);
     }
@@ -70,15 +60,20 @@ public partial class SignalStartEventListenerGrain : Grain, ISignalStartEventLis
         {
             try
             {
+                // Guard: skip disabled processes to prevent race condition
+                // between DisableProcess persisting IsActive=false and unregistering listeners
+                if (!await factory.IsProcessActive(processDefinitionKey))
+                {
+                    LogProcessDisabledSkipped(signalName, processDefinitionKey);
+                    continue;
+                }
+
                 var instanceId = Guid.NewGuid();
                 var instance = _grainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
 
                 var definition = await factory.GetLatestWorkflowDefinition(processDefinitionKey);
 
-                var signalStartActivityId = FindSignalStartActivityId(definition, signalName)
-                    ?? throw new InvalidOperationException(
-                        $"Signal start activity for signal '{signalName}' not found in process '{processDefinitionKey}'. " +
-                        "The signal definition may have been removed during a redeployment.");
+                var signalStartActivityId = FindSignalStartActivityId(definition, signalName);
 
                 await instance.SetWorkflow(definition, signalStartActivityId);
                 await instance.StartWorkflow();
@@ -99,7 +94,7 @@ public partial class SignalStartEventListenerGrain : Grain, ISignalStartEventLis
     {
         foreach (var activity in definition.Activities.OfType<SignalStartEvent>())
         {
-            var sigDef = definition.Signals.FirstOrDefault(s => s.Id == activity.SignalDefinitionId);
+            var sigDef = definition.FindSignalDefinition(activity.SignalDefinitionId);
             if (sigDef?.Name == signalName)
                 return activity.ActivityId;
         }
@@ -121,9 +116,6 @@ public partial class SignalStartEventListenerGrain : Grain, ISignalStartEventLis
     [LoggerMessage(EventId = 9204, Level = LogLevel.Error, Message = "Failed to start workflow for signal '{SignalName}', process {ProcessDefinitionKey}")]
     private partial void LogSignalStartEventFailed(string signalName, string processDefinitionKey, Exception ex);
 
-    [LoggerMessage(EventId = 9205, Level = LogLevel.Debug, Message = "Process {ProcessDefinitionKey} already registered for signal start event '{SignalName}', skipping write")]
-    private partial void LogProcessAlreadyRegistered(string signalName, string processDefinitionKey);
-
-    [LoggerMessage(EventId = 9206, Level = LogLevel.Debug, Message = "Process {ProcessDefinitionKey} not found for signal start event '{SignalName}', skipping unregister")]
-    private partial void LogProcessNotFound(string signalName, string processDefinitionKey);
+    [LoggerMessage(EventId = 9205, Level = LogLevel.Warning, Message = "Skipping disabled process {ProcessDefinitionKey} for signal '{SignalName}'")]
+    private partial void LogProcessDisabledSkipped(string signalName, string processDefinitionKey);
 }
