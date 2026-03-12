@@ -27,18 +27,28 @@ public partial class SignalStartEventListenerGrain : Grain, ISignalStartEventLis
 
     public async ValueTask RegisterProcess(string processDefinitionKey)
     {
-        State.AddProcess(processDefinitionKey);
+        if (!State.AddProcess(processDefinitionKey))
+        {
+            LogProcessAlreadyRegistered(this.GetPrimaryKeyString(), processDefinitionKey);
+            return;
+        }
+
         await _state.WriteStateAsync();
         LogProcessRegistered(this.GetPrimaryKeyString(), processDefinitionKey);
     }
 
     public async ValueTask UnregisterProcess(string processDefinitionKey)
     {
-        State.RemoveProcess(processDefinitionKey);
-        await _state.WriteStateAsync();
+        if (!State.RemoveProcess(processDefinitionKey))
+        {
+            LogProcessNotFound(this.GetPrimaryKeyString(), processDefinitionKey);
+            return;
+        }
 
         if (State.IsEmpty)
             await _state.ClearStateAsync();
+        else
+            await _state.WriteStateAsync();
 
         LogProcessUnregistered(this.GetPrimaryKeyString(), processDefinitionKey);
     }
@@ -118,4 +128,10 @@ public partial class SignalStartEventListenerGrain : Grain, ISignalStartEventLis
 
     [LoggerMessage(EventId = 9205, Level = LogLevel.Warning, Message = "Skipping disabled process {ProcessDefinitionKey} for signal '{SignalName}'")]
     private partial void LogProcessDisabledSkipped(string signalName, string processDefinitionKey);
+
+    [LoggerMessage(EventId = 9206, Level = LogLevel.Debug, Message = "Process {ProcessDefinitionKey} already registered for signal start event '{SignalName}', skipping write")]
+    private partial void LogProcessAlreadyRegistered(string signalName, string processDefinitionKey);
+
+    [LoggerMessage(EventId = 9207, Level = LogLevel.Debug, Message = "Process {ProcessDefinitionKey} not found for signal start event '{SignalName}', skipping unregister")]
+    private partial void LogProcessNotFound(string signalName, string processDefinitionKey);
 }

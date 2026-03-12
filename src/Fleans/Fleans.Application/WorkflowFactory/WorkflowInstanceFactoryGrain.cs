@@ -196,7 +196,7 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
 
     public Task<IWorkflowDefinition> GetLatestWorkflowDefinition(string processDefinitionKey)
     {
-        var definition = GetLatestDefinitionOrThrow(processDefinitionKey, allowDisabled: true);
+        var definition = GetLatestDefinitionOrThrow(processDefinitionKey);
         return Task.FromResult<IWorkflowDefinition>(definition.Workflow);
     }
 
@@ -228,6 +228,13 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
         return ToSummary(definition);
     }
 
+    /// <remarks>
+    /// Known edge case: if the silo crashes after SaveAsync but before RegisterAllStartEventListeners
+    /// completes, the process will be marked active but listeners won't be registered. Start events
+    /// won't fire until the next redeployment or manual re-enable. DisableProcess does not have this
+    /// issue because the IsProcessActive guard in listener grains prevents new instances even if
+    /// listener unregistration hasn't completed yet.
+    /// </remarks>
     public async Task<ProcessDefinitionSummary> EnableProcess(string processDefinitionKey)
     {
         var definition = GetLatestDefinitionOrThrow(processDefinitionKey, allowDisabled: true);

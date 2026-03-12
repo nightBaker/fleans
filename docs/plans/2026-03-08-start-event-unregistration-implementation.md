@@ -1,5 +1,7 @@
 # Start Event Unregistration & Process Disable/Enable — Implementation Plan
 
+> **Note:** This is a historical plan document. Code snippets below may diverge from the actual implementation — refer to the source code for the current state.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Fix timer start event leak on redeployment and add soft disable/enable for process definitions.
