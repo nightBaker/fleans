@@ -79,10 +79,6 @@ Add it to `Fleans.Api/Controllers/WorkflowController.cs`. DTOs go in `Fleans.Ser
 - Send message: `POST https://localhost:7140/Workflow/message` — body: `{"MessageName":"...", "CorrelationKey":"...", "Variables":{}}`
 - Send signal: `POST https://localhost:7140/Workflow/signal` — body: `{"SignalName":"..."}`
 
-### Known Bugs (see `docs/plans/2026-02-25-manual-test-results.md`)
-- Boundary events on IntermediateCatchEvents don't register subscriptions (affects timer/message/signal boundaries)
-- Child process errors don't propagate to parent error boundary on CallActivity
-
 ## Things to Know
 
 - **Aspire is the startup project**, not Api or Web
