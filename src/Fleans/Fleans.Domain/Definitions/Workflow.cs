@@ -58,14 +58,14 @@ namespace Fleans.Domain
         HashSet<string> GetMessageStartEventNames()
             => Activities.OfType<MessageStartEvent>()
                 .Select(ms => FindMessageDefinition(ms.MessageDefinitionId)?.Name)
-                .Where(n => n != null)
-                .ToHashSet()!;
+                .OfType<string>()
+                .ToHashSet();
 
         HashSet<string> GetSignalStartEventNames()
             => Activities.OfType<SignalStartEvent>()
                 .Select(ss => FindSignalDefinition(ss.SignalDefinitionId)?.Name)
-                .Where(n => n != null)
-                .ToHashSet()!;
+                .OfType<string>()
+                .ToHashSet();
 
         IEnumerable<BoundaryTimerEvent> GetBoundaryTimerEvents(string attachedToActivityId)
             => Activities.OfType<BoundaryTimerEvent>()

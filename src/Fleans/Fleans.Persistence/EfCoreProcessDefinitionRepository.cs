@@ -55,6 +55,10 @@ public class EfCoreProcessDefinitionRepository : IProcessDefinitionRepository
         await db.SaveChangesAsync();
     }
 
+    /// <summary>
+    /// Updates only the IsActive state of an existing process definition.
+    /// Intentionally scoped to IsActive — other fields are immutable after deployment.
+    /// </summary>
     public async Task UpdateAsync(ProcessDefinition definition)
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync();
