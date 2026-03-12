@@ -109,7 +109,11 @@ public class EventPublisherTests
         {
             var snapshot = await _queryService.GetStateSnapshot(instanceId);
             if (snapshot is not null && snapshot.IsCompleted)
-                return snapshot;
+            {
+                // Allow time for eventual consistency of completed activity IDs
+                await Task.Delay(200);
+                return await _queryService.GetStateSnapshot(instanceId);
+            }
             await Task.Delay(100);
         }
 
