@@ -106,6 +106,7 @@ public partial class WorkflowCommandService : IWorkflowCommandService
 
         int deliveredCount = 0;
         List<Guid>? instanceIds = null;
+        List<string>? errors = null;
 
         // Fan-out: broadcast to running instances AND create new instances
         // Both always execute independently
@@ -117,6 +118,8 @@ public partial class WorkflowCommandService : IWorkflowCommandService
         catch (Exception ex)
         {
             LogSignalBroadcastFailed(signalName, ex);
+            errors ??= [];
+            errors.Add($"Broadcast failed: {ex.Message}");
         }
 
         try
@@ -129,9 +132,11 @@ public partial class WorkflowCommandService : IWorkflowCommandService
         catch (Exception ex)
         {
             LogSignalStartEventFireFailed(signalName, ex);
+            errors ??= [];
+            errors.Add($"Start event failed: {ex.Message}");
         }
 
-        return new SendSignalResult(deliveredCount, instanceIds);
+        return new SendSignalResult(deliveredCount, instanceIds, errors);
     }
 
     [LoggerMessage(EventId = 7005, Level = LogLevel.Information, Message = "Sending signal '{SignalName}'")]

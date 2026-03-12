@@ -35,6 +35,10 @@ public sealed class ProcessDefinition
     [Id(5)]
     public required string BpmnXml { get; init; }
 
+    /// <summary>
+    /// Concurrency token managed by the persistence layer (e.g. EF Core).
+    /// Uses <c>set</c> instead of <c>init</c> because the store updates it after each write.
+    /// </summary>
     [Id(6)]
     public string? ETag { get; set; }
 

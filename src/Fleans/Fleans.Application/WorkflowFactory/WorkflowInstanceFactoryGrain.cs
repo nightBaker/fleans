@@ -220,7 +220,7 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
             return ToSummary(definition);
 
         definition.Disable();
-        await _repository.SaveAsync(definition);
+        await _repository.UpdateAsync(definition);
         LogProcessDisabled(processDefinitionKey);
 
         await UnregisterAllStartEventListeners(definition.Workflow, processDefinitionKey);
@@ -243,7 +243,7 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
             return ToSummary(definition);
 
         definition.Enable();
-        await _repository.SaveAsync(definition);
+        await _repository.UpdateAsync(definition);
         LogProcessEnabled(processDefinitionKey);
 
         await RegisterAllStartEventListeners(definition.Workflow, processDefinitionKey, definition.ProcessDefinitionId);
@@ -366,9 +366,9 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
     [LoggerMessage(EventId = 6002, Level = LogLevel.Information, Message = "Process {ProcessDefinitionKey} disabled")]
     private partial void LogProcessDisabled(string processDefinitionKey);
 
-    [LoggerMessage(EventId = 6004, Level = LogLevel.Warning, Message = "Process {ProcessDefinitionKey} redeployed while disabled — new version remains disabled")]
-    private partial void LogProcessRedeployedWhileDisabled(string processDefinitionKey);
-
     [LoggerMessage(EventId = 6003, Level = LogLevel.Information, Message = "Process {ProcessDefinitionKey} enabled")]
     private partial void LogProcessEnabled(string processDefinitionKey);
+
+    [LoggerMessage(EventId = 6004, Level = LogLevel.Warning, Message = "Process {ProcessDefinitionKey} redeployed while disabled — new version remains disabled")]
+    private partial void LogProcessRedeployedWhileDisabled(string processDefinitionKey);
 }
