@@ -50,4 +50,17 @@ public sealed class ProcessDefinition
     {
         IsActive = true;
     }
+
+    /// <summary>
+    /// Copies relevant mutable state from a previous version of this process definition.
+    /// Currently preserves the disabled state so that redeploying a disabled process
+    /// does not silently re-enable it.
+    /// </summary>
+    public void InheritStateFrom(ProcessDefinition previousVersion)
+    {
+        if (!previousVersion.IsActive)
+        {
+            Disable();
+        }
+    }
 }

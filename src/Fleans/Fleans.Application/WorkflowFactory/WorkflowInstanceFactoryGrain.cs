@@ -141,11 +141,13 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
         };
 
         // Preserve disabled state from previous version
-        var wasDisabled = versions.Count > 0 && !versions[^1].IsActive;
-        if (wasDisabled)
+        if (versions.Count > 0)
         {
-            definition.Disable();
-            LogProcessRedeployedWhileDisabled(processDefinitionKey);
+            definition.InheritStateFrom(versions[^1]);
+            if (!definition.IsActive)
+            {
+                LogProcessRedeployedWhileDisabled(processDefinitionKey);
+            }
         }
 
         _byId[processDefinitionId] = definition;
@@ -166,43 +168,26 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
             IWorkflowDefinition previousWorkflow = versions[^2].Workflow;
 
             // Timer: if previous had timer but new doesn't, deactivate
-            if (!workflowWithId.Activities.OfType<TimerStartEvent>().Any()
-                && previousWorkflow.Activities.OfType<TimerStartEvent>().Any())
+            if (!scope.HasTimerStartEvent() && previousWorkflow.HasTimerStartEvent())
             {
                 var scheduler = _grainFactory.GetGrain<ITimerStartEventSchedulerGrain>(processDefinitionKey);
                 await scheduler.DeactivateScheduler();
             }
 
             // Messages: unregister removed message names
-            var newMessageNames = workflowWithId.Activities.OfType<MessageStartEvent>()
-                .Select(ms => scope.FindMessageDefinition(ms.MessageDefinitionId)?.Name)
-                .Where(n => n != null)
-                .ToHashSet();
-
-            foreach (var oldMessageStart in previousWorkflow.Activities.OfType<MessageStartEvent>())
+            var newMessageNames = scope.GetMessageStartEventNames();
+            foreach (var removedName in previousWorkflow.GetMessageStartEventNames().Except(newMessageNames))
             {
-                var oldMsgDef = previousWorkflow.FindMessageDefinition(oldMessageStart.MessageDefinitionId);
-                if (oldMsgDef != null && !newMessageNames.Contains(oldMsgDef.Name))
-                {
-                    var listener = _grainFactory.GetGrain<IMessageStartEventListenerGrain>(oldMsgDef.Name);
-                    await listener.UnregisterProcess(processDefinitionKey);
-                }
+                var listener = _grainFactory.GetGrain<IMessageStartEventListenerGrain>(removedName);
+                await listener.UnregisterProcess(processDefinitionKey);
             }
 
             // Signals: unregister removed signal names
-            var newSignalNames = workflowWithId.Activities.OfType<SignalStartEvent>()
-                .Select(ss => scope.FindSignalDefinition(ss.SignalDefinitionId)?.Name)
-                .Where(n => n != null)
-                .ToHashSet();
-
-            foreach (var oldSignalStart in previousWorkflow.Activities.OfType<SignalStartEvent>())
+            var newSignalNames = scope.GetSignalStartEventNames();
+            foreach (var removedName in previousWorkflow.GetSignalStartEventNames().Except(newSignalNames))
             {
-                var oldSigDef = previousWorkflow.FindSignalDefinition(oldSignalStart.SignalDefinitionId);
-                if (oldSigDef != null && !newSignalNames.Contains(oldSigDef.Name))
-                {
-                    var listener = _grainFactory.GetGrain<ISignalStartEventListenerGrain>(oldSigDef.Name);
-                    await listener.UnregisterProcess(processDefinitionKey);
-                }
+                var listener = _grainFactory.GetGrain<ISignalStartEventListenerGrain>(removedName);
+                await listener.UnregisterProcess(processDefinitionKey);
             }
         }
 
