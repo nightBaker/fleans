@@ -205,6 +205,10 @@ public partial class WorkflowInstance
         Message = "Timer cycle re-registration deferred to TimerCallbackGrain for activity {TimerActivityId}, dueTime={DueTime}")]
     private partial void LogTimerCycleReRegistrationDeferred(string timerActivityId, TimeSpan dueTime);
 
+    [LoggerMessage(EventId = 3020, Level = LogLevel.Debug,
+        Message = "Activity spawned: ActivityInstanceId={ActivityInstanceId}, ActivityId={ActivityId}, ActivityType={ActivityType}")]
+    private partial void LogActivitySpawned(Guid activityInstanceId, string activityId, string activityType);
+
     [LoggerMessage(EventId = 3017, Level = LogLevel.Information, Message = "Workflow execution started")]
     private partial void LogExecutionStarted();
 

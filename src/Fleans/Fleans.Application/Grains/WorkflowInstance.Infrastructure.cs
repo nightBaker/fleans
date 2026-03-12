@@ -303,7 +303,7 @@ public partial class WorkflowInstance
                     LogStateCompleted();
                     break;
                 case ActivitySpawned spawned:
-                    LogStateAddEntries(1);
+                    LogActivitySpawned(spawned.ActivityInstanceId, spawned.ActivityId, spawned.ActivityType);
                     break;
                 case ActivityCompleted completed:
                     LogStateCompleteEntries(1);
