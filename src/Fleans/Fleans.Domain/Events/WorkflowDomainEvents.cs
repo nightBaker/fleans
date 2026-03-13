@@ -43,8 +43,8 @@ public record ChildWorkflowLinked(Guid ActivityInstanceId, Guid ChildWorkflowIns
 // User task lifecycle
 public record UserTaskRegistered(
     Guid ActivityInstanceId, string? Assignee,
-    List<string> CandidateGroups, List<string> CandidateUsers,
-    List<string>? ExpectedOutputVariables) : IDomainEvent;
+    IReadOnlyList<string> CandidateGroups, IReadOnlyList<string> CandidateUsers,
+    IReadOnlyList<string>? ExpectedOutputVariables) : IDomainEvent;
 public record UserTaskClaimed(Guid ActivityInstanceId, string UserId) : IDomainEvent;
 public record UserTaskUnclaimed(Guid ActivityInstanceId) : IDomainEvent;
 public record UserTaskUnregistered(Guid ActivityInstanceId) : IDomainEvent;

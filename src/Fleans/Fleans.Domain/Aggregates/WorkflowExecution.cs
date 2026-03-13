@@ -702,8 +702,15 @@ public class WorkflowExecution
             activityInstanceId, userId, UserTaskLifecycleState.Claimed)];
     }
 
+    /// <summary>
+    /// Unclaims a user task. No authorization check — any caller can unclaim any task.
+    /// This is intentional for admin/support use cases.
+    /// </summary>
     public IReadOnlyList<IInfrastructureEffect> UnclaimUserTask(Guid activityInstanceId)
     {
+        // Validate entry is still active (not completed/cancelled by boundary event)
+        _state.GetActiveEntry(activityInstanceId);
+
         var metadata = _state.UserTasks.GetValueOrDefault(activityInstanceId)
             ?? throw new InvalidOperationException(
                 $"Activity instance '{activityInstanceId}' is not a user task.");
@@ -738,14 +745,10 @@ public class WorkflowExecution
                     $"Missing required output variables: {string.Join(", ", missing)}");
         }
 
-        // Delegate to existing CompleteActivity
+        // Delegate to existing CompleteActivity — cleanup effects are handled
+        // inside CompleteActivityInternal via BuildUserTaskCleanupEffects
         var entry = _state.GetActiveEntry(activityInstanceId);
-        var effects = CompleteActivityInternal(entry, variables).ToList();
-
-        // Add unregister effect
-        effects.AddRange(BuildUserTaskCleanupEffects(activityInstanceId));
-
-        return effects.AsReadOnly();
+        return CompleteActivityInternal(entry, variables);
     }
 
     private List<IInfrastructureEffect> BuildUserTaskCleanupEffects(Guid activityInstanceId)

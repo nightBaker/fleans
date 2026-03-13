@@ -1,6 +1,7 @@
 using Fleans.Application.Grains;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
+using Fleans.Domain.Errors;
 using Fleans.Domain.Sequences;
 using System.Dynamic;
 
@@ -67,8 +68,15 @@ public class UserTaskIntegrationTests : WorkflowTestBase
         var grain = await StartUserTaskWorkflow(assignee: "john");
 
         var activeActivities = await grain.GetActiveActivities();
-        var userTaskEntry = activeActivities.First(a => a.GetActivityId().Result == "userTask1");
-        var instanceId = await userTaskEntry.GetActivityInstanceId();
+        Guid instanceId = default;
+        foreach (var a in activeActivities)
+        {
+            if (await a.GetActivityId() == "userTask1")
+            {
+                instanceId = await a.GetActivityInstanceId();
+                break;
+            }
+        }
 
         await grain.ClaimUserTask(instanceId, "john");
 
@@ -85,8 +93,15 @@ public class UserTaskIntegrationTests : WorkflowTestBase
         var grain = await StartUserTaskWorkflow(assignee: "john");
 
         var activeActivities = await grain.GetActiveActivities();
-        var userTaskEntry = activeActivities.First(a => a.GetActivityId().Result == "userTask1");
-        var instanceId = await userTaskEntry.GetActivityInstanceId();
+        Guid instanceId = default;
+        foreach (var a in activeActivities)
+        {
+            if (await a.GetActivityId() == "userTask1")
+            {
+                instanceId = await a.GetActivityInstanceId();
+                break;
+            }
+        }
 
         await Assert.ThrowsAsync<Exception>(async () =>
         {
@@ -100,8 +115,15 @@ public class UserTaskIntegrationTests : WorkflowTestBase
         var grain = await StartUserTaskWorkflow(candidateUsers: ["alice", "bob"]);
 
         var activeActivities = await grain.GetActiveActivities();
-        var userTaskEntry = activeActivities.First(a => a.GetActivityId().Result == "userTask1");
-        var instanceId = await userTaskEntry.GetActivityInstanceId();
+        Guid instanceId = default;
+        foreach (var a in activeActivities)
+        {
+            if (await a.GetActivityId() == "userTask1")
+            {
+                instanceId = await a.GetActivityInstanceId();
+                break;
+            }
+        }
 
         await Assert.ThrowsAsync<Exception>(async () =>
         {
@@ -117,8 +139,15 @@ public class UserTaskIntegrationTests : WorkflowTestBase
         var grain = await StartUserTaskWorkflow(assignee: "john");
 
         var activeActivities = await grain.GetActiveActivities();
-        var userTaskEntry = activeActivities.First(a => a.GetActivityId().Result == "userTask1");
-        var instanceId = await userTaskEntry.GetActivityInstanceId();
+        Guid instanceId = default;
+        foreach (var a in activeActivities)
+        {
+            if (await a.GetActivityId() == "userTask1")
+            {
+                instanceId = await a.GetActivityInstanceId();
+                break;
+            }
+        }
 
         await grain.ClaimUserTask(instanceId, "john");
         await grain.UnclaimUserTask(instanceId);
@@ -137,8 +166,15 @@ public class UserTaskIntegrationTests : WorkflowTestBase
         var grain = await StartUserTaskWorkflow(assignee: "john");
 
         var activeActivities = await grain.GetActiveActivities();
-        var userTaskEntry = activeActivities.First(a => a.GetActivityId().Result == "userTask1");
-        var instanceId = await userTaskEntry.GetActivityInstanceId();
+        Guid instanceId = default;
+        foreach (var a in activeActivities)
+        {
+            if (await a.GetActivityId() == "userTask1")
+            {
+                instanceId = await a.GetActivityInstanceId();
+                break;
+            }
+        }
 
         await grain.ClaimUserTask(instanceId, "john");
         await grain.CompleteUserTask(instanceId, "john", new ExpandoObject());
@@ -154,8 +190,15 @@ public class UserTaskIntegrationTests : WorkflowTestBase
         var grain = await StartUserTaskWorkflow(assignee: "john");
 
         var activeActivities = await grain.GetActiveActivities();
-        var userTaskEntry = activeActivities.First(a => a.GetActivityId().Result == "userTask1");
-        var instanceId = await userTaskEntry.GetActivityInstanceId();
+        Guid instanceId = default;
+        foreach (var a in activeActivities)
+        {
+            if (await a.GetActivityId() == "userTask1")
+            {
+                instanceId = await a.GetActivityInstanceId();
+                break;
+            }
+        }
 
         await grain.ClaimUserTask(instanceId, "john");
 
@@ -179,8 +222,15 @@ public class UserTaskIntegrationTests : WorkflowTestBase
         var grain = await StartUserTaskWorkflow(assignee: "john");
 
         var activeActivities = await grain.GetActiveActivities();
-        var userTaskEntry = activeActivities.First(a => a.GetActivityId().Result == "userTask1");
-        var instanceId = await userTaskEntry.GetActivityInstanceId();
+        Guid instanceId = default;
+        foreach (var a in activeActivities)
+        {
+            if (await a.GetActivityId() == "userTask1")
+            {
+                instanceId = await a.GetActivityInstanceId();
+                break;
+            }
+        }
 
         await Assert.ThrowsAsync<Exception>(async () =>
         {
@@ -194,8 +244,15 @@ public class UserTaskIntegrationTests : WorkflowTestBase
         var grain = await StartUserTaskWorkflow(assignee: "john");
 
         var activeActivities = await grain.GetActiveActivities();
-        var userTaskEntry = activeActivities.First(a => a.GetActivityId().Result == "userTask1");
-        var instanceId = await userTaskEntry.GetActivityInstanceId();
+        Guid instanceId = default;
+        foreach (var a in activeActivities)
+        {
+            if (await a.GetActivityId() == "userTask1")
+            {
+                instanceId = await a.GetActivityInstanceId();
+                break;
+            }
+        }
 
         await grain.ClaimUserTask(instanceId, "john");
 
@@ -213,8 +270,15 @@ public class UserTaskIntegrationTests : WorkflowTestBase
             expectedOutputs: ["approval", "comment"]);
 
         var activeActivities = await grain.GetActiveActivities();
-        var userTaskEntry = activeActivities.First(a => a.GetActivityId().Result == "userTask1");
-        var instanceId = await userTaskEntry.GetActivityInstanceId();
+        Guid instanceId = default;
+        foreach (var a in activeActivities)
+        {
+            if (await a.GetActivityId() == "userTask1")
+            {
+                instanceId = await a.GetActivityInstanceId();
+                break;
+            }
+        }
 
         await grain.ClaimUserTask(instanceId, "john");
 
@@ -233,8 +297,15 @@ public class UserTaskIntegrationTests : WorkflowTestBase
             expectedOutputs: ["approval"]);
 
         var activeActivities = await grain.GetActiveActivities();
-        var userTaskEntry = activeActivities.First(a => a.GetActivityId().Result == "userTask1");
-        var instanceId = await userTaskEntry.GetActivityInstanceId();
+        Guid instanceId = default;
+        foreach (var a in activeActivities)
+        {
+            if (await a.GetActivityId() == "userTask1")
+            {
+                instanceId = await a.GetActivityInstanceId();
+                break;
+            }
+        }
 
         await grain.ClaimUserTask(instanceId, "john");
 
@@ -284,8 +355,15 @@ public class UserTaskIntegrationTests : WorkflowTestBase
         var grain = await StartUserTaskWorkflow(assignee: "john");
 
         var activeActivities = await grain.GetActiveActivities();
-        var userTaskEntry = activeActivities.First(a => a.GetActivityId().Result == "userTask1");
-        var instanceId = await userTaskEntry.GetActivityInstanceId();
+        Guid instanceId = default;
+        foreach (var a in activeActivities)
+        {
+            if (await a.GetActivityId() == "userTask1")
+            {
+                instanceId = await a.GetActivityInstanceId();
+                break;
+            }
+        }
 
         await grain.ClaimUserTask(instanceId, "john");
         await grain.CompleteUserTask(instanceId, "john", new ExpandoObject());
@@ -309,5 +387,110 @@ public class UserTaskIntegrationTests : WorkflowTestBase
 
         var aliceTasks = await registry.GetPendingTasks(assignee: "alice");
         Assert.IsTrue(aliceTasks.All(t => t.Assignee == "alice" || t.CandidateUsers.Contains("alice")));
+    }
+
+    // --- FailActivity tests ---
+
+    [TestMethod]
+    public async Task FailActivity_GenericException_ShouldSetErrorCode500()
+    {
+        var grain = await StartUserTaskWorkflow(assignee: "john");
+
+        var exception = new Exception("Something went wrong");
+        await grain.FailActivity("userTask1", exception);
+
+        var snapshot = await QueryService.GetStateSnapshot(grain.GetPrimaryKey());
+        Assert.IsNotNull(snapshot);
+
+        var failedActivity = snapshot.CompletedActivities
+            .FirstOrDefault(a => a.ActivityId == "userTask1");
+        Assert.IsNotNull(failedActivity);
+        Assert.IsNotNull(failedActivity.ErrorState);
+        Assert.AreEqual(500, failedActivity.ErrorState.Code);
+        Assert.AreEqual("Something went wrong", failedActivity.ErrorState.Message);
+    }
+
+    [TestMethod]
+    public async Task FailActivity_BadRequestException_ShouldSetErrorCode400()
+    {
+        var grain = await StartUserTaskWorkflow(assignee: "john");
+
+        var exception = new BadRequestActivityException("Invalid input");
+        await grain.FailActivity("userTask1", exception);
+
+        var snapshot = await QueryService.GetStateSnapshot(grain.GetPrimaryKey());
+        Assert.IsNotNull(snapshot);
+
+        var failedActivity = snapshot.CompletedActivities
+            .FirstOrDefault(a => a.ActivityId == "userTask1");
+        Assert.IsNotNull(failedActivity);
+        Assert.IsNotNull(failedActivity.ErrorState);
+        Assert.AreEqual(400, failedActivity.ErrorState.Code);
+        Assert.AreEqual("Invalid input", failedActivity.ErrorState.Message);
+    }
+
+    [TestMethod]
+    public async Task FailActivity_ShouldTransitionToNextActivity()
+    {
+        var grain = await StartUserTaskWorkflow(assignee: "john");
+
+        var exception = new Exception("Failure");
+        await grain.FailActivity("userTask1", exception);
+
+        var snapshot = await QueryService.GetStateSnapshot(grain.GetPrimaryKey());
+        Assert.IsNotNull(snapshot);
+
+        // Failed activity should be in completed list and workflow should progress
+        var failedEntry = snapshot.CompletedActivities
+            .FirstOrDefault(a => a.ActivityId == "userTask1");
+        Assert.IsNotNull(failedEntry);
+
+        // User task should no longer be active
+        Assert.IsFalse(snapshot.ActiveActivities.Any(a => a.ActivityId == "userTask1"));
+    }
+
+    [TestMethod]
+    public async Task FailActivity_ShouldNotMergeVariables()
+    {
+        var grain = await StartUserTaskWorkflow(assignee: "john");
+
+        // Get initial variable state count
+        var beforeSnapshot = await QueryService.GetStateSnapshot(grain.GetPrimaryKey());
+        Assert.IsNotNull(beforeSnapshot);
+        var initialVarCount = beforeSnapshot.VariableStates.Count;
+
+        var exception = new Exception("Failure");
+        await grain.FailActivity("userTask1", exception);
+
+        var snapshot = await QueryService.GetStateSnapshot(grain.GetPrimaryKey());
+        Assert.IsNotNull(snapshot);
+
+        // No new variable states should be added on failure
+        Assert.AreEqual(initialVarCount, snapshot.VariableStates.Count);
+    }
+
+    [TestMethod]
+    public async Task FailActivity_ShouldUnregisterFromRegistry()
+    {
+        var grain = await StartUserTaskWorkflow(assignee: "john");
+
+        var activeActivities = await grain.GetActiveActivities();
+        Guid instanceId = default;
+        foreach (var a in activeActivities)
+        {
+            if (await a.GetActivityId() == "userTask1")
+            {
+                instanceId = await a.GetActivityInstanceId();
+                break;
+            }
+        }
+
+        var exception = new Exception("Failure");
+        await grain.FailActivity("userTask1", exception);
+
+        var registry = Cluster.GrainFactory.GetGrain<IUserTaskRegistryGrain>(0);
+        var task = await registry.GetTask(instanceId);
+
+        Assert.IsNull(task);
     }
 }

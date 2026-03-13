@@ -742,10 +742,17 @@ public partial class BpmnConverter : IBpmnConverter
 
     private static List<string>? ParseExpectedOutputs(XElement element)
     {
-        var fleansNs = XNamespace.Get("http://fleans.io/schema/1.0");
-        var outputsElement = element.Descendants(fleansNs + "expectedOutputs")
+        var outputsElement = element.Descendants(Fleans + "expectedOutputs")
             .FirstOrDefault();
-        return outputsElement is null ? null : ParseCommaSeparated(outputsElement.Value);
+        if (outputsElement is null)
+            return null;
+
+        var outputs = outputsElement.Elements(Fleans + "output")
+            .Select(e => e.Attribute("name")?.Value)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .ToList();
+
+        return outputs.Count > 0 ? outputs! : null;
     }
 
     private static TimerDefinition ParseTimerDefinition(XElement timerEventDef)

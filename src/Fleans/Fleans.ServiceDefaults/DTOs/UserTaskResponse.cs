@@ -5,8 +5,8 @@ public record UserTaskResponse(
     Guid ActivityInstanceId,
     string ActivityId,
     string? Assignee,
-    List<string> CandidateGroups,
-    List<string> CandidateUsers,
+    IReadOnlyList<string> CandidateGroups,
+    IReadOnlyList<string> CandidateUsers,
     string? ClaimedBy,
     string TaskState,
     DateTimeOffset CreatedAt);

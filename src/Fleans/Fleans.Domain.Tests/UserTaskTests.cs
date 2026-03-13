@@ -26,9 +26,9 @@ public class UserTaskTests
         // Assert
         var regCmd = commands.OfType<RegisterUserTaskCommand>().Single();
         Assert.AreEqual("john", regCmd.Assignee);
-        CollectionAssert.AreEqual(new[] { "group1" }, regCmd.CandidateGroups);
-        CollectionAssert.AreEqual(new[] { "user1", "user2" }, regCmd.CandidateUsers);
-        CollectionAssert.AreEqual(new[] { "outputVar1" }, regCmd.ExpectedOutputVariables);
+        CollectionAssert.AreEqual(new[] { "group1" }, regCmd.CandidateGroups.ToList());
+        CollectionAssert.AreEqual(new[] { "user1", "user2" }, regCmd.CandidateUsers.ToList());
+        CollectionAssert.AreEqual(new[] { "outputVar1" }, regCmd.ExpectedOutputVariables!.ToList());
     }
 
     [TestMethod]

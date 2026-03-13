@@ -22,7 +22,7 @@ public class TaskActivityTests : BpmnConverterTestBase
     }
 
     [TestMethod]
-    public async Task ConvertFromXmlAsync_ShouldParseUserTask_AsTaskActivity()
+    public async Task ConvertFromXmlAsync_ShouldParseUserTask_AsUserTask()
     {
         // Arrange
         var bpmnXml = CreateBpmnWithUserTask("workflow3", "userTask1");
@@ -31,7 +31,7 @@ public class TaskActivityTests : BpmnConverterTestBase
         var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
 
         // Assert
-        Assert.IsTrue(workflow.Activities.Any(a => a is TaskActivity && a.ActivityId == "userTask1"));
+        Assert.IsTrue(workflow.Activities.Any(a => a is UserTask && a.ActivityId == "userTask1"));
     }
 
     [TestMethod]

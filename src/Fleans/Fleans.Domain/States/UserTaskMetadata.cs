@@ -4,15 +4,15 @@ namespace Fleans.Domain.States;
 public class UserTaskMetadata
 {
     [Id(0)] public string? Assignee { get; private set; }
-    [Id(1)] public List<string> CandidateGroups { get; private set; } = [];
-    [Id(2)] public List<string> CandidateUsers { get; private set; } = [];
-    [Id(3)] public List<string>? ExpectedOutputVariables { get; private set; }
+    [Id(1)] public IReadOnlyList<string> CandidateGroups { get; private set; } = [];
+    [Id(2)] public IReadOnlyList<string> CandidateUsers { get; private set; } = [];
+    [Id(3)] public IReadOnlyList<string>? ExpectedOutputVariables { get; private set; }
     [Id(4)] public string? ClaimedBy { get; private set; }
     [Id(5)] public DateTimeOffset? ClaimedAt { get; private set; }
     [Id(6)] public UserTaskLifecycleState TaskState { get; private set; }
 
-    public void Initialize(string? assignee, List<string> candidateGroups,
-        List<string> candidateUsers, List<string>? expectedOutputs)
+    public void Initialize(string? assignee, IReadOnlyList<string> candidateGroups,
+        IReadOnlyList<string> candidateUsers, IReadOnlyList<string>? expectedOutputs)
     {
         Assignee = assignee;
         CandidateGroups = candidateGroups;

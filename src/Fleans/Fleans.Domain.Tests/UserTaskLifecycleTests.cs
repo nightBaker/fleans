@@ -113,9 +113,9 @@ public class UserTaskLifecycleTests
         var registered = events.OfType<UserTaskRegistered>().Single();
         Assert.AreEqual(freshTaskEntry.ActivityInstanceId, registered.ActivityInstanceId);
         Assert.AreEqual("alice", registered.Assignee);
-        CollectionAssert.AreEqual(new[] { "managers" }, registered.CandidateGroups);
-        CollectionAssert.AreEqual(new[] { "bob" }, registered.CandidateUsers);
-        CollectionAssert.AreEqual(new[] { "approval" }, registered.ExpectedOutputVariables);
+        CollectionAssert.AreEqual(new[] { "managers" }, registered.CandidateGroups.ToList());
+        CollectionAssert.AreEqual(new[] { "bob" }, registered.CandidateUsers.ToList());
+        CollectionAssert.AreEqual(new[] { "approval" }, registered.ExpectedOutputVariables!.ToList());
 
         // Assert: RegisterUserTaskEffect returned
         var registerEffect = effects.OfType<RegisterUserTaskEffect>().Single();

@@ -25,9 +25,9 @@ public class UserTaskMetadataTests
 
         // Assert
         Assert.AreEqual("alice", metadata.Assignee);
-        CollectionAssert.AreEqual(new[] { "admins" }, metadata.CandidateGroups);
-        CollectionAssert.AreEqual(new[] { "bob", "carol" }, metadata.CandidateUsers);
-        CollectionAssert.AreEqual(new[] { "outputA" }, metadata.ExpectedOutputVariables);
+        CollectionAssert.AreEqual(new[] { "admins" }, metadata.CandidateGroups.ToList());
+        CollectionAssert.AreEqual(new[] { "bob", "carol" }, metadata.CandidateUsers.ToList());
+        CollectionAssert.AreEqual(new[] { "outputA" }, metadata.ExpectedOutputVariables!.ToList());
         Assert.AreEqual(UserTaskLifecycleState.Created, metadata.TaskState);
         Assert.IsNull(metadata.ClaimedBy);
         Assert.IsNull(metadata.ClaimedAt);

@@ -179,10 +179,13 @@ namespace Fleans.Api.Controllers
 
             try
             {
-                var variables = request.Variables != null
-                    ? JsonConvert.DeserializeObject<ExpandoObject>(
-                        System.Text.Json.JsonSerializer.Serialize(request.Variables))!
-                    : new ExpandoObject();
+                var variables = new ExpandoObject();
+                if (request.Variables is { Count: > 0 })
+                {
+                    var dict = (IDictionary<string, object?>)variables;
+                    foreach (var kvp in request.Variables)
+                        dict[kvp.Key] = kvp.Value;
+                }
 
                 await _commandService.CompleteUserTask(
                     task.WorkflowInstanceId, activityInstanceId, request.UserId, variables);

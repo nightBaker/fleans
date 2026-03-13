@@ -4,9 +4,9 @@ namespace Fleans.Domain.Activities;
 public record UserTask(
     string ActivityId,
     [property: Id(1)] string? Assignee,
-    [property: Id(2)] List<string> CandidateGroups,
-    [property: Id(3)] List<string> CandidateUsers,
-    [property: Id(4)] List<string>? ExpectedOutputVariables
+    [property: Id(2)] IReadOnlyList<string> CandidateGroups,
+    [property: Id(3)] IReadOnlyList<string> CandidateUsers,
+    [property: Id(4)] IReadOnlyList<string>? ExpectedOutputVariables
 ) : BoundarableActivity(ActivityId)
 {
     internal override async Task<List<IExecutionCommand>> ExecuteAsync(
