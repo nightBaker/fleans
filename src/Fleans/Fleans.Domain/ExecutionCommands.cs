@@ -61,5 +61,12 @@ public record ThrowSignalCommand(
     [property: Id(0)] string SignalName) : IExecutionCommand;
 
 [GenerateSerializer]
+public record RegisterUserTaskCommand(
+    [property: Id(0)] string? Assignee,
+    [property: Id(1)] List<string> CandidateGroups,
+    [property: Id(2)] List<string> CandidateUsers,
+    [property: Id(3)] List<string>? ExpectedOutputVariables) : IExecutionCommand;
+
+[GenerateSerializer]
 public record CompleteWorkflowCommand() : IExecutionCommand;
 

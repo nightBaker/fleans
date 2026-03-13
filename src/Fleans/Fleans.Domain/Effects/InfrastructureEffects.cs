@@ -1,5 +1,6 @@
 using System.Dynamic;
 using Fleans.Domain.Events;
+using Fleans.Domain.States;
 
 namespace Fleans.Domain.Effects;
 
@@ -40,6 +41,16 @@ public record NotifyParentCompletedEffect(
 public record NotifyParentFailedEffect(
     Guid ParentInstanceId, string ParentActivityId,
     Exception Exception) : IInfrastructureEffect;
+
+// User task
+public record RegisterUserTaskEffect(
+    Guid WorkflowInstanceId, Guid ActivityInstanceId, string ActivityId,
+    string? Assignee, List<string> CandidateGroups,
+    List<string> CandidateUsers) : IInfrastructureEffect;
+public record UnregisterUserTaskEffect(Guid ActivityInstanceId) : IInfrastructureEffect;
+public record UpdateUserTaskClaimEffect(
+    Guid ActivityInstanceId, string? ClaimedBy,
+    UserTaskLifecycleState TaskState) : IInfrastructureEffect;
 
 // Event publishing
 public record PublishDomainEventEffect(IDomainEvent Event) : IInfrastructureEffect;

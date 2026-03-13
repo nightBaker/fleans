@@ -245,6 +245,18 @@ public class WorkflowExecution
                     effects.AddRange(ProcessAddConditions(conditions, activityInstanceId));
                     break;
 
+                case RegisterUserTaskCommand regUserTask:
+                    Emit(new UserTaskRegistered(
+                        activityInstanceId, regUserTask.Assignee,
+                        regUserTask.CandidateGroups, regUserTask.CandidateUsers,
+                        regUserTask.ExpectedOutputVariables));
+                    var currentEntry = _state.GetActiveEntry(activityInstanceId);
+                    effects.Add(new RegisterUserTaskEffect(
+                        _state.Id, activityInstanceId,
+                        currentEntry.ActivityId, regUserTask.Assignee,
+                        regUserTask.CandidateGroups, regUserTask.CandidateUsers));
+                    break;
+
                 case ThrowSignalCommand throwSignal:
                     effects.Add(new ThrowSignalEffect(throwSignal.SignalName));
                     break;
@@ -641,13 +653,14 @@ public class WorkflowExecution
     /// When a multi-instance iteration fails, cancel sibling iterations,
     /// clean up child variable scopes, and fail the host entry.
     /// </summary>
-    private void FailMultiInstanceHost(ActivityInstanceEntry failedIteration, int errorCode, string errorMessage)
+    private List<IInfrastructureEffect> FailMultiInstanceHost(ActivityInstanceEntry failedIteration, int errorCode, string errorMessage)
     {
+        var effects = new List<IInfrastructureEffect>();
         var hostInstanceId = failedIteration.ScopeId!.Value;
         var hostEntry = _state.GetEntry(hostInstanceId);
 
         // Cancel all active sibling iterations
-        CancelScopeChildren(hostInstanceId);
+        effects.AddRange(CancelScopeChildren(hostInstanceId));
 
         // Clean up child variable scopes
         var scopeEntries = _state.GetEntriesInScope(hostInstanceId)
@@ -659,6 +672,90 @@ public class WorkflowExecution
 
         // Fail the host entry
         Emit(new ActivityFailed(hostInstanceId, errorCode, errorMessage));
+        effects.AddRange(BuildUserTaskCleanupEffects(hostInstanceId));
+
+        return effects;
+    }
+
+    // --- User Task Handling ---
+
+    public IReadOnlyList<IInfrastructureEffect> ClaimUserTask(
+        Guid activityInstanceId, string userId)
+    {
+        var entry = _state.GetActiveEntry(activityInstanceId);
+        var metadata = _state.UserTasks.GetValueOrDefault(activityInstanceId)
+            ?? throw new InvalidOperationException(
+                $"Activity instance '{activityInstanceId}' is not a user task.");
+
+        // Authorization checks
+        if (metadata.Assignee is not null && metadata.Assignee != userId)
+            throw new BadRequestActivityException(
+                $"Task is assigned to {metadata.Assignee}, not {userId}");
+
+        if (metadata.CandidateUsers.Count > 0 && !metadata.CandidateUsers.Contains(userId))
+            throw new BadRequestActivityException(
+                $"User {userId} is not in candidate users list");
+
+        Emit(new UserTaskClaimed(activityInstanceId, userId));
+
+        return [new UpdateUserTaskClaimEffect(
+            activityInstanceId, userId, UserTaskLifecycleState.Claimed)];
+    }
+
+    public IReadOnlyList<IInfrastructureEffect> UnclaimUserTask(Guid activityInstanceId)
+    {
+        var metadata = _state.UserTasks.GetValueOrDefault(activityInstanceId)
+            ?? throw new InvalidOperationException(
+                $"Activity instance '{activityInstanceId}' is not a user task.");
+
+        Emit(new UserTaskUnclaimed(activityInstanceId));
+
+        return [new UpdateUserTaskClaimEffect(
+            activityInstanceId, null, UserTaskLifecycleState.Created)];
+    }
+
+    public IReadOnlyList<IInfrastructureEffect> CompleteUserTask(
+        Guid activityInstanceId, string userId, ExpandoObject variables)
+    {
+        var metadata = _state.UserTasks.GetValueOrDefault(activityInstanceId)
+            ?? throw new InvalidOperationException(
+                $"Activity instance '{activityInstanceId}' is not a user task.");
+
+        // Must be claimed by this user
+        if (metadata.TaskState != UserTaskLifecycleState.Claimed)
+            throw new BadRequestActivityException("Task must be claimed before completing");
+        if (metadata.ClaimedBy != userId)
+            throw new BadRequestActivityException(
+                $"Task is claimed by {metadata.ClaimedBy}, not {userId}");
+
+        // Validate expected output variables
+        if (metadata.ExpectedOutputVariables is { Count: > 0 })
+        {
+            var dict = (IDictionary<string, object?>)variables;
+            var missing = metadata.ExpectedOutputVariables.Where(v => !dict.ContainsKey(v)).ToList();
+            if (missing.Count > 0)
+                throw new BadRequestActivityException(
+                    $"Missing required output variables: {string.Join(", ", missing)}");
+        }
+
+        // Delegate to existing CompleteActivity
+        var entry = _state.GetActiveEntry(activityInstanceId);
+        var effects = CompleteActivityInternal(entry, variables).ToList();
+
+        // Add unregister effect
+        effects.AddRange(BuildUserTaskCleanupEffects(activityInstanceId));
+
+        return effects.AsReadOnly();
+    }
+
+    private List<IInfrastructureEffect> BuildUserTaskCleanupEffects(Guid activityInstanceId)
+    {
+        if (_state.UserTasks.ContainsKey(activityInstanceId))
+        {
+            Emit(new UserTaskUnregistered(activityInstanceId));
+            return [new UnregisterUserTaskEffect(activityInstanceId)];
+        }
+        return [];
     }
 
     // --- Condition Sequence Handling ---
@@ -784,15 +881,30 @@ public class WorkflowExecution
         if (entry.IsCompleted)
             return [];
 
+        // User task guard: force callers through CompleteUserTask
+        if (_state.UserTasks.ContainsKey(entry.ActivityInstanceId))
+            throw new InvalidOperationException(
+                $"Activity '{activityId}' is a user task. " +
+                $"Use CompleteUserTask instead of CompleteActivity.");
+
+        return CompleteActivityInternal(entry, variables);
+    }
+
+    private IReadOnlyList<IInfrastructureEffect> CompleteActivityInternal(
+        ActivityInstanceEntry entry, ExpandoObject variables)
+    {
         Emit(new ActivityCompleted(entry.ActivityInstanceId, entry.VariablesId, variables));
 
         var effects = new List<IInfrastructureEffect>();
 
         // Unsubscribe boundary subscriptions on this activity
-        effects.AddRange(BuildBoundaryUnsubscribeEffects(activityId, entry));
+        effects.AddRange(BuildBoundaryUnsubscribeEffects(entry.ActivityId, entry));
 
         // Cancel event-based gateway siblings
-        effects.AddRange(CancelEventBasedGatewaySiblings(activityId, entry));
+        effects.AddRange(CancelEventBasedGatewaySiblings(entry.ActivityId, entry));
+
+        // Clean up user task registry if applicable
+        effects.AddRange(BuildUserTaskCleanupEffects(entry.ActivityInstanceId));
 
         return effects.AsReadOnly();
     }
@@ -825,6 +937,9 @@ public class WorkflowExecution
 
         var effects = new List<IInfrastructureEffect>();
 
+        // Clean up user task registry if applicable
+        effects.AddRange(BuildUserTaskCleanupEffects(entry.ActivityInstanceId));
+
         // Search for boundary error handler
         var boundaryHandler = _definition.FindBoundaryErrorHandler(activityId, errorCode.ToString());
 
@@ -839,7 +954,7 @@ public class WorkflowExecution
             var scopeIdForCancel = attachedEntry?.ActivityInstanceId ?? entry.ActivityInstanceId;
 
             // Cancel scope children of the attached-to activity
-            CancelScopeChildren(scopeIdForCancel);
+            effects.AddRange(CancelScopeChildren(scopeIdForCancel));
 
             // Cancel the attached-to entry itself (e.g., the SubProcess)
             // so that CompleteFinishedSubProcessScopes doesn't auto-complete it
@@ -848,6 +963,7 @@ public class WorkflowExecution
                 Emit(new ActivityCancelled(
                     attachedEntry.ActivityInstanceId,
                     $"Interrupted by boundary error event '{boundaryEvent.ActivityId}'"));
+                effects.AddRange(BuildUserTaskCleanupEffects(attachedEntry.ActivityInstanceId));
             }
 
             // Unsubscribe all boundary subscriptions on the attached activity
@@ -870,7 +986,7 @@ public class WorkflowExecution
             // If this is a multi-instance iteration, cancel siblings and fail host
             if (entry.MultiInstanceIndex is not null && entry.ScopeId.HasValue)
             {
-                FailMultiInstanceHost(entry, errorCode, errorMessage);
+                effects.AddRange(FailMultiInstanceHost(entry, errorCode, errorMessage));
             }
 
             // If this is a child workflow with no remaining active activities, notify parent
@@ -929,9 +1045,10 @@ public class WorkflowExecution
             Emit(new ActivityCancelled(
                 hostEntry.ActivityInstanceId,
                 $"Interrupted by boundary event '{boundaryActivity.ActivityId}'"));
+            effects.AddRange(BuildUserTaskCleanupEffects(hostEntry.ActivityInstanceId));
 
             // Recursively cancel scope children
-            CancelScopeChildren(hostEntry.ActivityInstanceId);
+            effects.AddRange(CancelScopeChildren(hostEntry.ActivityInstanceId));
 
             // Build unsubscribe effects for OTHER boundary subscriptions
             // (skip the one that fired to avoid deadlocks)
@@ -987,19 +1104,24 @@ public class WorkflowExecution
     /// <summary>
     /// Recursively cancels all active entries within a scope (and their nested scope children).
     /// </summary>
-    private void CancelScopeChildren(Guid scopeId)
+    private List<IInfrastructureEffect> CancelScopeChildren(Guid scopeId)
     {
+        var effects = new List<IInfrastructureEffect>();
         foreach (var entry in _state.GetActiveActivities()
             .Where(e => e.ScopeId == scopeId).ToList())
         {
             // Recursively cancel nested scope children first
             if (_state.HasActiveChildrenInScope(entry.ActivityInstanceId))
-                CancelScopeChildren(entry.ActivityInstanceId);
+                effects.AddRange(CancelScopeChildren(entry.ActivityInstanceId));
 
             Emit(new ActivityCancelled(
                 entry.ActivityInstanceId,
                 "Scope cancelled by boundary event"));
+
+            // Clean up user task registry if this is a user task
+            effects.AddRange(BuildUserTaskCleanupEffects(entry.ActivityInstanceId));
         }
+        return effects;
     }
 
     // --- Boundary Unsubscribe Helpers ---
@@ -1225,6 +1347,20 @@ public class WorkflowExecution
                 break;
             case ChildWorkflowLinked e:
                 _state.GetActiveEntry(e.ActivityInstanceId).SetChildWorkflowInstanceId(e.ChildWorkflowInstanceId);
+                break;
+            case UserTaskRegistered e:
+                var meta = new UserTaskMetadata();
+                meta.Initialize(e.Assignee, e.CandidateGroups, e.CandidateUsers, e.ExpectedOutputVariables);
+                _state.UserTasks[e.ActivityInstanceId] = meta;
+                break;
+            case UserTaskClaimed e:
+                _state.UserTasks[e.ActivityInstanceId].Claim(e.UserId, DateTimeOffset.UtcNow);
+                break;
+            case UserTaskUnclaimed e:
+                _state.UserTasks[e.ActivityInstanceId].Unclaim();
+                break;
+            case UserTaskUnregistered e:
+                _state.UserTasks.Remove(e.ActivityInstanceId);
                 break;
             default:
                 throw new InvalidOperationException($"Unknown domain event type: {@event.GetType().Name}");

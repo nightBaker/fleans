@@ -47,6 +47,9 @@ public class WorkflowInstanceState
     [Id(13)]
     public List<GatewayForkState> GatewayForks { get; private set; } = [];
 
+    [Id(14)]
+    public Dictionary<Guid, UserTaskMetadata> UserTasks { get; private set; } = new();
+
     public IEnumerable<ActivityInstanceEntry> GetActiveActivities()
         => Entries.Where(e => !e.IsCompleted);
 
