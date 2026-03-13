@@ -12,6 +12,11 @@ public interface IWorkflowCommandService
     Task<ProcessDefinitionSummary> DeployWorkflow(WorkflowDefinition workflow, string bpmnXml);
     Task<SendMessageResult> SendMessage(string messageName, string? correlationKey, ExpandoObject variables);
     Task<SendSignalResult> SendSignal(string signalName);
+
+    // User task lifecycle
+    Task ClaimUserTask(Guid workflowInstanceId, Guid activityInstanceId, string userId);
+    Task UnclaimUserTask(Guid workflowInstanceId, Guid activityInstanceId);
+    Task CompleteUserTask(Guid workflowInstanceId, Guid activityInstanceId, string userId, ExpandoObject variables);
 }
 
 public record SendMessageResult(bool Delivered, List<Guid>? WorkflowInstanceIds = null);

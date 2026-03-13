@@ -12,13 +12,16 @@ namespace Fleans.Api.Controllers
     {
         private readonly ILogger<WorkflowController> _logger;
         private readonly IWorkflowCommandService _commandService;
+        private readonly IUserTaskQueryService _userTaskQueryService;
 
         public WorkflowController(
             ILogger<WorkflowController> logger,
-            IWorkflowCommandService commandService)
+            IWorkflowCommandService commandService,
+            IUserTaskQueryService userTaskQueryService)
         {
             _logger = logger;
             _commandService = commandService;
+            _userTaskQueryService = userTaskQueryService;
         }
 
         [HttpPost("start", Name = "StartWorkflow")]
@@ -98,5 +101,97 @@ namespace Fleans.Api.Controllers
 
         [LoggerMessage(EventId = 8003, Level = LogLevel.Error, Message = "Error broadcasting signal")]
         private partial void LogSignalDeliveryError(Exception exception);
+
+        [HttpGet("tasks", Name = "GetPendingTasks")]
+        public async Task<IActionResult> GetPendingTasks(
+            [FromQuery] string? assignee = null,
+            [FromQuery] string? candidateGroup = null)
+        {
+            var tasks = await _userTaskQueryService.GetPendingTasks(assignee, candidateGroup);
+            var response = tasks.Select(t => new UserTaskResponse(
+                t.WorkflowInstanceId, t.ActivityInstanceId, t.ActivityId,
+                t.Assignee, t.CandidateGroups, t.CandidateUsers,
+                t.ClaimedBy, t.TaskState.ToString(), t.CreatedAt)).ToList();
+            return Ok(response);
+        }
+
+        [HttpGet("tasks/{activityInstanceId:guid}", Name = "GetTask")]
+        public async Task<IActionResult> GetTask(Guid activityInstanceId)
+        {
+            var task = await _userTaskQueryService.GetTask(activityInstanceId);
+            if (task == null)
+                return NotFound(new ErrorResponse($"User task '{activityInstanceId}' not found"));
+
+            return Ok(new UserTaskResponse(
+                task.WorkflowInstanceId, task.ActivityInstanceId, task.ActivityId,
+                task.Assignee, task.CandidateGroups, task.CandidateUsers,
+                task.ClaimedBy, task.TaskState.ToString(), task.CreatedAt));
+        }
+
+        [HttpPost("tasks/{activityInstanceId:guid}/claim", Name = "ClaimTask")]
+        public async Task<IActionResult> ClaimTask(Guid activityInstanceId, [FromBody] ClaimTaskRequest request)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.UserId))
+                return BadRequest(new ErrorResponse("UserId is required"));
+
+            var task = await _userTaskQueryService.GetTask(activityInstanceId);
+            if (task == null)
+                return NotFound(new ErrorResponse($"User task '{activityInstanceId}' not found"));
+
+            try
+            {
+                await _commandService.ClaimUserTask(task.WorkflowInstanceId, activityInstanceId, request.UserId);
+                return Ok();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Conflict(new ErrorResponse(ex.Message));
+            }
+        }
+
+        [HttpPost("tasks/{activityInstanceId:guid}/unclaim", Name = "UnclaimTask")]
+        public async Task<IActionResult> UnclaimTask(Guid activityInstanceId)
+        {
+            var task = await _userTaskQueryService.GetTask(activityInstanceId);
+            if (task == null)
+                return NotFound(new ErrorResponse($"User task '{activityInstanceId}' not found"));
+
+            try
+            {
+                await _commandService.UnclaimUserTask(task.WorkflowInstanceId, activityInstanceId);
+                return Ok();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Conflict(new ErrorResponse(ex.Message));
+            }
+        }
+
+        [HttpPost("tasks/{activityInstanceId:guid}/complete", Name = "CompleteTask")]
+        public async Task<IActionResult> CompleteTask(Guid activityInstanceId, [FromBody] CompleteTaskRequest request)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.UserId))
+                return BadRequest(new ErrorResponse("UserId is required"));
+
+            var task = await _userTaskQueryService.GetTask(activityInstanceId);
+            if (task == null)
+                return NotFound(new ErrorResponse($"User task '{activityInstanceId}' not found"));
+
+            try
+            {
+                var variables = request.Variables != null
+                    ? JsonConvert.DeserializeObject<ExpandoObject>(
+                        System.Text.Json.JsonSerializer.Serialize(request.Variables))!
+                    : new ExpandoObject();
+
+                await _commandService.CompleteUserTask(
+                    task.WorkflowInstanceId, activityInstanceId, request.UserId, variables);
+                return Ok();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Conflict(new ErrorResponse(ex.Message));
+            }
+        }
     }
 }

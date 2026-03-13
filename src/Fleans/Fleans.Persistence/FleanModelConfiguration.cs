@@ -38,6 +38,8 @@ internal static class FleanModelConfiguration
 
             entity.Property(e => e.ProcessDefinitionId).HasMaxLength(512);
 
+            entity.Ignore(e => e.UserTasks);
+
             entity.HasOne<ProcessDefinition>()
                 .WithMany()
                 .HasForeignKey(e => e.ProcessDefinitionId)
