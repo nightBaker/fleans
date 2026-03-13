@@ -39,3 +39,8 @@ public record GatewayForkRemoved(Guid ForkInstanceId) : IDomainEvent;
 // Parent/child
 public record ParentInfoSet(Guid ParentInstanceId, string ParentActivityId) : IDomainEvent;
 public record ChildWorkflowLinked(Guid ActivityInstanceId, Guid ChildWorkflowInstanceId) : IDomainEvent;
+
+// Timer cycle tracking
+public record TimerCycleUpdated(
+    Guid HostActivityInstanceId, string TimerActivityId,
+    Activities.TimerDefinition? RemainingCycle) : IDomainEvent;

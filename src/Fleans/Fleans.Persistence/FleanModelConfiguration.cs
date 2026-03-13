@@ -2,6 +2,7 @@ using System.Dynamic;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Fleans.Domain;
+using Fleans.Domain.Activities;
 using Fleans.Domain.States;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -37,6 +38,13 @@ internal static class FleanModelConfiguration
                 .OnDelete(DeleteBehavior.Cascade);
 
             entity.Property(e => e.ProcessDefinitionId).HasMaxLength(512);
+
+            entity.Property(e => e.TimerCycleTracking)
+                .HasColumnName("TimerCycleTracking")
+                .HasConversion(
+                    v => JsonConvert.SerializeObject(v),
+                    v => JsonConvert.DeserializeObject<Dictionary<string, TimerDefinition>>(v)
+                         ?? new Dictionary<string, TimerDefinition>());
 
             entity.HasOne<ProcessDefinition>()
                 .WithMany()

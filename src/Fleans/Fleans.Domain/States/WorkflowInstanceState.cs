@@ -1,4 +1,5 @@
 using System.Dynamic;
+using Fleans.Domain.Activities;
 
 namespace Fleans.Domain.States;
 
@@ -46,6 +47,13 @@ public class WorkflowInstanceState
 
     [Id(13)]
     public List<GatewayForkState> GatewayForks { get; private set; } = [];
+
+    /// <summary>
+    /// Tracks remaining cycle timer definitions per (hostActivityInstanceId, timerActivityId).
+    /// Key format: "{hostActivityInstanceId}:{timerActivityId}".
+    /// </summary>
+    [Id(14)]
+    public Dictionary<string, TimerDefinition> TimerCycleTracking { get; private set; } = new();
 
     public IEnumerable<ActivityInstanceEntry> GetActiveActivities()
         => Entries.Where(e => !e.IsCompleted);
@@ -253,4 +261,19 @@ public class WorkflowInstanceState
 
     public void RemoveGatewayFork(Guid forkInstanceId)
         => GatewayForks.RemoveAll(f => f.ForkInstanceId == forkInstanceId);
+
+    private static string TimerCycleKey(Guid hostActivityInstanceId, string timerActivityId)
+        => $"{hostActivityInstanceId}:{timerActivityId}";
+
+    public TimerDefinition? GetTimerCycleState(Guid hostActivityInstanceId, string timerActivityId)
+        => TimerCycleTracking.GetValueOrDefault(TimerCycleKey(hostActivityInstanceId, timerActivityId));
+
+    public void SetTimerCycleState(Guid hostActivityInstanceId, string timerActivityId, TimerDefinition? definition)
+    {
+        var key = TimerCycleKey(hostActivityInstanceId, timerActivityId);
+        if (definition is null)
+            TimerCycleTracking.Remove(key);
+        else
+            TimerCycleTracking[key] = definition;
+    }
 }
