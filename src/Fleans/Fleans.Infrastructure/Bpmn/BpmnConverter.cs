@@ -13,10 +13,12 @@ public partial class BpmnConverter : IBpmnConverter
     private const string BpmndiNamespace = "http://www.omg.org/spec/BPMN/20100524/DI";
     private const string ZeebeNamespace = "http://camunda.org/schema/zeebe/1.0";
     private const string FleansNamespace = "http://fleans.io/schema/bpmn/fleans";
+    private const string CamundaNamespace = "http://camunda.org/schema/1.0/bpmn";
     private static readonly XNamespace Bpmn = BpmnNamespace;
     private static readonly XNamespace Bpmndi = BpmndiNamespace;
     private static readonly XNamespace Zeebe = ZeebeNamespace;
     private static readonly XNamespace Fleans = FleansNamespace;
+    private static readonly XNamespace Camunda = CamundaNamespace;
 
     public async Task<WorkflowDefinition> ConvertFromXmlAsync(Stream bpmnXmlStream)
     {
@@ -187,7 +189,15 @@ public partial class BpmnConverter : IBpmnConverter
         foreach (var userTask in scopeElement.Elements(Bpmn + "userTask"))
         {
             var id = GetId(userTask);
-            Activity activity = new TaskActivity(id);
+            var assignee = userTask.Attribute(Camunda + "assignee")?.Value;
+            var candidateGroups = ParseCommaSeparated(
+                userTask.Attribute(Camunda + "candidateGroups")?.Value);
+            var candidateUsers = ParseCommaSeparated(
+                userTask.Attribute(Camunda + "candidateUsers")?.Value);
+            var expectedOutputs = ParseExpectedOutputs(userTask);
+
+            Activity activity = new Domain.Activities.UserTask(id, assignee,
+                candidateGroups, candidateUsers, expectedOutputs);
             activity = TryWrapMultiInstance(userTask, activity) ?? activity;
             activities.Add(activity);
             activityMap[id] = activity;
@@ -722,6 +732,20 @@ public partial class BpmnConverter : IBpmnConverter
     {
         return element.Attribute("id")?.Value
             ?? throw new InvalidOperationException($"Element {element.Name} must have an id attribute");
+    }
+
+    private static List<string> ParseCommaSeparated(string? value)
+        => string.IsNullOrWhiteSpace(value)
+            ? []
+            : value.Split(',', StringSplitOptions.RemoveEmptyEntries
+                | StringSplitOptions.TrimEntries).ToList();
+
+    private static List<string>? ParseExpectedOutputs(XElement element)
+    {
+        var fleansNs = XNamespace.Get("http://fleans.io/schema/1.0");
+        var outputsElement = element.Descendants(fleansNs + "expectedOutputs")
+            .FirstOrDefault();
+        return outputsElement is null ? null : ParseCommaSeparated(outputsElement.Value);
     }
 
     private static TimerDefinition ParseTimerDefinition(XElement timerEventDef)
