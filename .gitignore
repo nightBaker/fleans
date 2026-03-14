@@ -411,3 +411,6 @@ FodyWeavers.xsd
 
 # MCP configuration (local development)
 .mcp.json
+
+# Launch settings (developer-local)
+**/Properties/launchSettings.json

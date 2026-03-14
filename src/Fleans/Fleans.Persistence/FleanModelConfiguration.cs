@@ -38,6 +38,11 @@ internal static class FleanModelConfiguration
 
             entity.Property(e => e.ProcessDefinitionId).HasMaxLength(512);
 
+            entity.HasMany(e => e.TimerCycleTracking)
+                .WithOne()
+                .HasForeignKey(e => e.WorkflowInstanceId)
+                .OnDelete(DeleteBehavior.Cascade);
+
             entity.HasOne<ProcessDefinition>()
                 .WithMany()
                 .HasForeignKey(e => e.ProcessDefinitionId)
@@ -96,6 +101,15 @@ internal static class FleanModelConfiguration
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
+        modelBuilder.Entity<TimerCycleTrackingState>(entity =>
+        {
+            entity.ToTable("TimerCycleTracking");
+            entity.HasKey(e => new { e.HostActivityInstanceId, e.TimerActivityId });
+
+            entity.Property(e => e.TimerActivityId).HasMaxLength(256);
+            entity.Property(e => e.TimerExpression).HasMaxLength(512);
+        });
+
         modelBuilder.Entity<TimerStartEventSchedulerState>(entity =>
         {
             entity.ToTable("TimerSchedulers");
@@ -150,6 +164,10 @@ internal static class FleanModelConfiguration
             sub.Property(s => s.ActivityId).HasMaxLength(256);
         });
 
+        // BREAKING CHANGE: MessageStartEventListenerState persistence migrated from JSON
+        // ProcessDefinitionKeys column to a separate MessageStartEventRegistrations join table.
+        // Existing databases will lose message start event registrations on upgrade.
+        // After upgrading, re-deploy all workflows with message start events to re-register.
         modelBuilder.Entity<MessageStartEventListenerState>(entity =>
         {
             entity.ToTable("MessageStartEventListeners");
@@ -195,6 +213,8 @@ internal static class FleanModelConfiguration
             entity.Property(e => e.BpmnXml);
 
             entity.HasIndex(e => e.ProcessDefinitionKey);
+
+            entity.Property(e => e.IsActive).HasDefaultValue(true);
 
             var jsonSettings = new JsonSerializerSettings
             {

@@ -52,6 +52,21 @@ namespace Fleans.Domain
         SignalDefinition? FindSignalDefinition(string signalDefinitionId)
             => Signals.FirstOrDefault(s => s.Id == signalDefinitionId);
 
+        bool HasTimerStartEvent()
+            => Activities.OfType<TimerStartEvent>().Any();
+
+        HashSet<string> GetMessageStartEventNames()
+            => Activities.OfType<MessageStartEvent>()
+                .Select(ms => FindMessageDefinition(ms.MessageDefinitionId)?.Name)
+                .OfType<string>()
+                .ToHashSet();
+
+        HashSet<string> GetSignalStartEventNames()
+            => Activities.OfType<SignalStartEvent>()
+                .Select(ss => FindSignalDefinition(ss.SignalDefinitionId)?.Name)
+                .OfType<string>()
+                .ToHashSet();
+
         IEnumerable<BoundaryTimerEvent> GetBoundaryTimerEvents(string attachedToActivityId)
             => Activities.OfType<BoundaryTimerEvent>()
                 .Where(b => b.AttachedToActivityId == attachedToActivityId);

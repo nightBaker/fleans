@@ -957,11 +957,19 @@ public class WorkflowExecution
                 Emit(new VariablesMerged(clonedScopeId, deliveredVariables));
             }
 
-            // For non-interrupting cycle timers, re-register the timer
+            // For non-interrupting cycle timers, re-register the timer with decremented count
             if (boundaryActivity is BoundaryTimerEvent boundaryTimer
                 && boundaryTimer.TimerDefinition.Type == TimerType.Cycle)
             {
-                var nextCycle = boundaryTimer.TimerDefinition.DecrementCycle();
+                // Use tracked cycle state if available; otherwise use original definition for first fire
+                var currentCycle = _state.GetTimerCycleState(
+                    hostEntry.ActivityInstanceId, boundaryTimer.ActivityId)
+                    ?? boundaryTimer.TimerDefinition;
+
+                var nextCycle = currentCycle.DecrementCycle();
+                Emit(new TimerCycleUpdated(
+                    hostEntry.ActivityInstanceId, boundaryTimer.ActivityId, nextCycle));
+
                 if (nextCycle is not null)
                 {
                     effects.Add(new RegisterTimerEffect(
@@ -1225,6 +1233,9 @@ public class WorkflowExecution
                 break;
             case ChildWorkflowLinked e:
                 _state.GetActiveEntry(e.ActivityInstanceId).SetChildWorkflowInstanceId(e.ChildWorkflowInstanceId);
+                break;
+            case TimerCycleUpdated e:
+                _state.SetTimerCycleState(e.HostActivityInstanceId, e.TimerActivityId, e.RemainingCycle);
                 break;
             default:
                 throw new InvalidOperationException($"Unknown domain event type: {@event.GetType().Name}");

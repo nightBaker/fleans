@@ -2,6 +2,7 @@ using Fleans.Application.Grains;
 using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
+using Fleans.Domain.Errors;
 using Fleans.Domain.Sequences;
 
 namespace Fleans.Application.Tests;
@@ -14,6 +15,25 @@ public class SignalStartEventTests : WorkflowTestBase
         var signalDef = new SignalDefinition("sig1", signalName);
         var start = new SignalStartEvent("sigStart", "sig1");
         var task = new ScriptTask("task1", "", "csharp");
+        var end = new EndEvent("end");
+
+        var flow1 = new SequenceFlow("flow1", start, task);
+        var flow2 = new SequenceFlow("flow2", task, end);
+
+        return new WorkflowDefinition
+        {
+            WorkflowId = processId,
+            Activities = [start, task, end],
+            SequenceFlows = [flow1, flow2],
+            Signals = [signalDef]
+        };
+    }
+
+    private static WorkflowDefinition CreateSignalStartWorkflowWithTask(string processId, string signalName)
+    {
+        var signalDef = new SignalDefinition("sig1", signalName);
+        var start = new SignalStartEvent("sigStart", "sig1");
+        var task = new TaskActivity("task1");
         var end = new EndEvent("end");
 
         var flow1 = new SequenceFlow("flow1", start, task);
@@ -54,22 +74,24 @@ public class SignalStartEventTests : WorkflowTestBase
         // Arrange
         var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
 
+        var start1 = new SignalStartEvent("ss1", "sig1");
+        var end1 = new EndEvent("end1");
         var workflow1 = new WorkflowDefinition
         {
             WorkflowId = "sig-start-wf1",
-            Activities = [new SignalStartEvent("ss1", "sig1"), new EndEvent("end1")],
-            SequenceFlows = [new SequenceFlow("f1",
-                new SignalStartEvent("ss1", "sig1"), new EndEvent("end1"))],
+            Activities = [start1, end1],
+            SequenceFlows = [new SequenceFlow("f1", start1, end1)],
             Signals = [new SignalDefinition("sig1", "sharedSignal")]
         };
         await factory.DeployWorkflow(workflow1, "<placeholder/>");
 
+        var start2 = new SignalStartEvent("ss2", "sig2");
+        var end2 = new EndEvent("end2");
         var workflow2 = new WorkflowDefinition
         {
             WorkflowId = "sig-start-wf2",
-            Activities = [new SignalStartEvent("ss2", "sig2"), new EndEvent("end2")],
-            SequenceFlows = [new SequenceFlow("f2",
-                new SignalStartEvent("ss2", "sig2"), new EndEvent("end2"))],
+            Activities = [start2, end2],
+            SequenceFlows = [new SequenceFlow("f2", start2, end2)],
             Signals = [new SignalDefinition("sig2", "sharedSignal")]
         };
         await factory.DeployWorkflow(workflow2, "<placeholder/>");
@@ -197,5 +219,106 @@ public class SignalStartEventTests : WorkflowTestBase
         var snapshotB = await QueryService.GetStateSnapshot(newInstanceIds[0]);
         Assert.IsNotNull(snapshotB);
         Assert.IsTrue(snapshotB.IsStarted, "Workflow B should be started via signal start event");
+    }
+
+    [TestMethod]
+    public async Task FailActivity_ShouldSetErrorState_WithGenericException()
+    {
+        // Arrange
+        var workflow = CreateSignalStartWorkflowWithTask("sig-fail-500-wf", "fail500Signal");
+        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
+        await factory.DeployWorkflow(workflow, "<placeholder/>");
+
+        var listener = Cluster.GrainFactory.GetGrain<ISignalStartEventListenerGrain>("fail500Signal");
+        var instanceIds = await listener.FireSignalStartEvent();
+        Assert.HasCount(1, instanceIds);
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceIds[0]);
+
+        // Act
+        await workflowInstance.FailActivity("task1", new Exception("Generic failure"));
+
+        // Assert
+        var snapshot = await QueryService.GetStateSnapshot(instanceIds[0]);
+        Assert.IsNotNull(snapshot);
+        var failedTask = snapshot.CompletedActivities.First(a => a.ActivityId == "task1");
+        Assert.IsTrue(failedTask.IsCompleted);
+        Assert.IsNotNull(failedTask.ErrorState);
+        Assert.AreEqual(500, failedTask.ErrorState.Code);
+        Assert.AreEqual("Generic failure", failedTask.ErrorState.Message);
+    }
+
+    [TestMethod]
+    public async Task FailActivity_ShouldSetErrorState_WithBadRequestActivityException()
+    {
+        // Arrange
+        var workflow = CreateSignalStartWorkflowWithTask("sig-fail-400-wf", "fail400Signal");
+        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
+        await factory.DeployWorkflow(workflow, "<placeholder/>");
+
+        var listener = Cluster.GrainFactory.GetGrain<ISignalStartEventListenerGrain>("fail400Signal");
+        var instanceIds = await listener.FireSignalStartEvent();
+        Assert.HasCount(1, instanceIds);
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceIds[0]);
+
+        // Act
+        await workflowInstance.FailActivity("task1", new BadRequestActivityException("Bad input"));
+
+        // Assert
+        var snapshot = await QueryService.GetStateSnapshot(instanceIds[0]);
+        Assert.IsNotNull(snapshot);
+        var failedTask = snapshot.CompletedActivities.First(a => a.ActivityId == "task1");
+        Assert.IsNotNull(failedTask.ErrorState);
+        Assert.AreEqual(400, failedTask.ErrorState.Code);
+        Assert.AreEqual("Bad input", failedTask.ErrorState.Message);
+    }
+
+    [TestMethod]
+    public async Task FailActivity_ShouldTransitionToNextActivity()
+    {
+        // Arrange
+        var workflow = CreateSignalStartWorkflowWithTask("sig-fail-transition-wf", "failTransSignal");
+        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
+        await factory.DeployWorkflow(workflow, "<placeholder/>");
+
+        var listener = Cluster.GrainFactory.GetGrain<ISignalStartEventListenerGrain>("failTransSignal");
+        var instanceIds = await listener.FireSignalStartEvent();
+        Assert.HasCount(1, instanceIds);
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceIds[0]);
+
+        // Act
+        await workflowInstance.FailActivity("task1", new Exception("fail"));
+
+        // Assert — failed activity should still transition to next activity
+        var snapshot = await QueryService.GetStateSnapshot(instanceIds[0]);
+        Assert.IsNotNull(snapshot);
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "task1"),
+            "Failed task should be in completed activities");
+        Assert.IsTrue(snapshot.CompletedActivities.Count > 1,
+            "Failed activity should transition — end event should also be completed");
+    }
+
+    [TestMethod]
+    public async Task FailActivity_ShouldNotMergeVariables()
+    {
+        // Arrange
+        var workflow = CreateSignalStartWorkflowWithTask("sig-fail-novar-wf", "failNoVarSignal");
+        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
+        await factory.DeployWorkflow(workflow, "<placeholder/>");
+
+        var listener = Cluster.GrainFactory.GetGrain<ISignalStartEventListenerGrain>("failNoVarSignal");
+        var instanceIds = await listener.FireSignalStartEvent();
+        Assert.HasCount(1, instanceIds);
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceIds[0]);
+
+        // Act
+        await workflowInstance.FailActivity("task1", new Exception("fail"));
+
+        // Assert — no variables should be merged from the failed activity
+        var snapshot = await QueryService.GetStateSnapshot(instanceIds[0]);
+        Assert.IsNotNull(snapshot);
+        // The only variable state should be the root scope with no merged variables from the failed task
+        var rootScope = snapshot.VariableStates.FirstOrDefault();
+        if (rootScope != null)
+            Assert.AreEqual(0, rootScope.Variables.Count, "No variables should be merged on failure");
     }
 }

@@ -13,4 +13,10 @@ public interface IWorkflowInstanceFactoryGrain : IGrainWithIntegerKey
 
     [ReadOnly]
     Task<IWorkflowDefinition> GetLatestWorkflowDefinition(string processDefinitionKey);
+
+    [ReadOnly]
+    Task<bool> IsProcessActive(string processDefinitionKey);
+
+    Task<ProcessDefinitionSummary> DisableProcess(string processDefinitionKey);
+    Task<ProcessDefinitionSummary> EnableProcess(string processDefinitionKey);
 }

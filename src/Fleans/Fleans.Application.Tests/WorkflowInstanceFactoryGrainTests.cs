@@ -174,6 +174,15 @@ namespace Fleans.Application.Tests
                 return Task.CompletedTask;
             }
 
+            public Task UpdateAsync(ProcessDefinition definition)
+            {
+                if (!_store.ContainsKey(definition.ProcessDefinitionId))
+                    throw new InvalidOperationException(
+                        $"Process definition '{definition.ProcessDefinitionId}' not found.");
+                _store[definition.ProcessDefinitionId] = definition;
+                return Task.CompletedTask;
+            }
+
             public Task DeleteAsync(string processDefinitionId)
             {
                 _store.Remove(processDefinitionId);

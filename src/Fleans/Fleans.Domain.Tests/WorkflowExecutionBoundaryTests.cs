@@ -364,6 +364,63 @@ public class WorkflowExecutionBoundaryTests
     }
 
     [TestMethod]
+    public void NonInterruptingBoundaryTimer_CycleTimer_ShouldDecrementAndStopAfterAllRepetitions()
+    {
+        var boundaryTimer = new BoundaryTimerEvent(
+            "bt1", "task1", new TimerDefinition(TimerType.Cycle, "R3/PT10S"), IsInterrupting: false);
+        var handler = new ScriptTask("handler1", "return 'h';");
+
+        var (execution, state, taskEntry) = CreateWithExecutingTask(
+            [boundaryTimer, handler],
+            [new("seq-bt", boundaryTimer, handler)]);
+
+        // Fire 1: R3 -> R2 (should re-register)
+        var effects1 = execution.HandleTimerFired("bt1", taskEntry.ActivityInstanceId);
+        Assert.AreEqual(1, effects1.OfType<RegisterTimerEffect>().Count());
+
+        // Complete the spawned boundary handler so state is clean for next fire
+        var handler1 = state.GetActiveActivities().First(e => e.ActivityId == "bt1");
+        execution.MarkExecuting(handler1.ActivityInstanceId);
+        execution.MarkCompleted(handler1.ActivityInstanceId, new ExpandoObject());
+
+        // Fire 2: R2 -> R1 (should re-register)
+        var effects2 = execution.HandleTimerFired("bt1", taskEntry.ActivityInstanceId);
+        Assert.AreEqual(1, effects2.OfType<RegisterTimerEffect>().Count());
+
+        var handler2 = state.GetActiveActivities().First(e => e.ActivityId == "bt1");
+        execution.MarkExecuting(handler2.ActivityInstanceId);
+        execution.MarkCompleted(handler2.ActivityInstanceId, new ExpandoObject());
+
+        // Fire 3: R1 -> done (should NOT re-register)
+        var effects3 = execution.HandleTimerFired("bt1", taskEntry.ActivityInstanceId);
+        Assert.AreEqual(0, effects3.OfType<RegisterTimerEffect>().Count());
+    }
+
+    [TestMethod]
+    public void NonInterruptingBoundaryTimer_InfiniteCycle_ShouldAlwaysReRegister()
+    {
+        var boundaryTimer = new BoundaryTimerEvent(
+            "bt1", "task1", new TimerDefinition(TimerType.Cycle, "R/PT10S"), IsInterrupting: false);
+        var handler = new ScriptTask("handler1", "return 'h';");
+
+        var (execution, state, taskEntry) = CreateWithExecutingTask(
+            [boundaryTimer, handler],
+            [new("seq-bt", boundaryTimer, handler)]);
+
+        // Fire multiple times — infinite cycle should always re-register
+        for (var i = 0; i < 5; i++)
+        {
+            var effects = execution.HandleTimerFired("bt1", taskEntry.ActivityInstanceId);
+            Assert.AreEqual(1, effects.OfType<RegisterTimerEffect>().Count(),
+                $"Expected re-register on fire #{i + 1}");
+
+            var handlerEntry = state.GetActiveActivities().First(e => e.ActivityId == "bt1");
+            execution.MarkExecuting(handlerEntry.ActivityInstanceId);
+            execution.MarkCompleted(handlerEntry.ActivityInstanceId, new ExpandoObject());
+        }
+    }
+
+    [TestMethod]
     public void NonInterruptingBoundaryTimer_DurationTimer_ShouldNotReRegister()
     {
         var boundaryTimer = new BoundaryTimerEvent(
