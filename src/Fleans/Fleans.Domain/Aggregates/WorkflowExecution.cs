@@ -181,21 +181,6 @@ public class WorkflowExecution
 
                 return newTokenId;
 
-            case TokenAction.RestoreParent:
-                if (sourceEntry.TokenId.HasValue)
-                {
-                    var fork = _state.FindForkByToken(sourceEntry.TokenId.Value);
-                    if (fork?.ConsumedTokenId.HasValue == true)
-                    {
-                        var restoredTokenId = fork.ConsumedTokenId.Value;
-                        Emit(new GatewayForkRemoved(fork.ForkInstanceId));
-                        return restoredTokenId;
-                    }
-                    // No fork found or no consumed token - inherit the token
-                    return sourceEntry.TokenId.Value;
-                }
-                return null;
-
             default: // TokenAction.Inherit
                 return sourceEntry.TokenId;
         }
@@ -220,7 +205,7 @@ public class WorkflowExecution
         if (forkEntry is null)
         {
             // Fork entry not found — fall back to token restoration without merge
-            var fallbackTokenId = fork.ConsumedTokenId;
+            var fallbackTokenId = fork.ConsumedTokenId ?? sourceEntry.TokenId;
             Emit(new GatewayForkRemoved(fork.ForkInstanceId));
             return (fallbackTokenId, sourceEntry.VariablesId);
         }
@@ -232,7 +217,8 @@ public class WorkflowExecution
         {
             var branchEntry = _state.Entries
                 .FirstOrDefault(e => e.TokenId == tokenId && e.IsCompleted);
-            if (branchEntry is not null && branchEntry.VariablesId != originalScopeId)
+            if (branchEntry is not null && branchEntry.VariablesId != originalScopeId
+                && !branchScopeIds.Contains(branchEntry.VariablesId))
             {
                 branchScopeIds.Add(branchEntry.VariablesId);
             }
@@ -252,7 +238,7 @@ public class WorkflowExecution
         }
 
         // Step 5: Remove fork state and restore parent token
-        var restoredTokenId = fork.ConsumedTokenId;
+        var restoredTokenId = fork.ConsumedTokenId ?? sourceEntry.TokenId;
         Emit(new GatewayForkRemoved(fork.ForkInstanceId));
 
         return (restoredTokenId, originalScopeId);
