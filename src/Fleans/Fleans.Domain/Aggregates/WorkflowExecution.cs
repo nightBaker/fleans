@@ -687,14 +687,29 @@ public class WorkflowExecution
             ?? throw new InvalidOperationException(
                 $"Activity instance '{activityInstanceId}' is not a user task.");
 
-        // Authorization checks
-        if (metadata.Assignee is not null && metadata.Assignee != userId)
-            throw new BadRequestActivityException(
-                $"Task is assigned to {metadata.Assignee}, not {userId}");
+        // Authorization: user must match assignee OR be in candidate users list.
+        // When both are set, satisfying either condition is sufficient.
+        var matchesAssignee = metadata.Assignee is null || metadata.Assignee == userId;
+        var matchesCandidateUsers = metadata.CandidateUsers.Count == 0
+            || metadata.CandidateUsers.Contains(userId);
 
-        if (metadata.CandidateUsers.Count > 0 && !metadata.CandidateUsers.Contains(userId))
-            throw new BadRequestActivityException(
-                $"User {userId} is not in candidate users list");
+        if (metadata.Assignee is not null && metadata.CandidateUsers.Count > 0)
+        {
+            // Both constraints set — OR logic
+            if (!matchesAssignee && !matchesCandidateUsers)
+                throw new BadRequestActivityException(
+                    $"User {userId} is neither the assignee ({metadata.Assignee}) nor in the candidate users list");
+        }
+        else
+        {
+            // Only one constraint set — must satisfy it
+            if (!matchesAssignee)
+                throw new BadRequestActivityException(
+                    $"Task is assigned to {metadata.Assignee}, not {userId}");
+            if (!matchesCandidateUsers)
+                throw new BadRequestActivityException(
+                    $"User {userId} is not in candidate users list");
+        }
 
         Emit(new UserTaskClaimed(activityInstanceId, userId));
 
@@ -744,6 +759,9 @@ public class WorkflowExecution
                 throw new BadRequestActivityException(
                     $"Missing required output variables: {string.Join(", ", missing)}");
         }
+
+        // Transition user task to Completed state before cleanup removes it
+        metadata.Complete();
 
         // Delegate to existing CompleteActivity — cleanup effects are handled
         // inside CompleteActivityInternal via BuildUserTaskCleanupEffects

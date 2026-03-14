@@ -223,6 +223,8 @@ public partial class WorkflowInstance
 
                 case RegisterUserTaskEffect regTask:
                     var userTaskRegistry = _grainFactory.GetGrain<IUserTaskRegistryGrain>(0);
+                    // Note: CreatedAt is set here at effect-processing time, not at domain-event time.
+                    // Minor temporal drift — acceptable today, revisit during JournaledGrain migration.
                     await userTaskRegistry.Register(new UserTaskRegistration(
                         regTask.WorkflowInstanceId, regTask.ActivityInstanceId, regTask.ActivityId,
                         regTask.Assignee, regTask.CandidateGroups, regTask.CandidateUsers,

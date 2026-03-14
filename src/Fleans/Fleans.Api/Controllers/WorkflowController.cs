@@ -140,6 +140,7 @@ namespace Fleans.Api.Controllers
 
             try
             {
+                LogUserTaskClaim(activityInstanceId, request.UserId);
                 await _commandService.ClaimUserTask(task.WorkflowInstanceId, activityInstanceId, request.UserId);
                 return Ok();
             }
@@ -158,6 +159,7 @@ namespace Fleans.Api.Controllers
 
             try
             {
+                LogUserTaskUnclaim(activityInstanceId);
                 await _commandService.UnclaimUserTask(task.WorkflowInstanceId, activityInstanceId);
                 return Ok();
             }
@@ -187,6 +189,7 @@ namespace Fleans.Api.Controllers
                         dict[kvp.Key] = kvp.Value;
                 }
 
+                LogUserTaskComplete(activityInstanceId, request.UserId);
                 await _commandService.CompleteUserTask(
                     task.WorkflowInstanceId, activityInstanceId, request.UserId, variables);
                 return Ok();
@@ -196,5 +199,17 @@ namespace Fleans.Api.Controllers
                 return Conflict(new ErrorResponse(ex.Message));
             }
         }
+
+        [LoggerMessage(EventId = 8004, Level = LogLevel.Information,
+            Message = "Claiming user task {ActivityInstanceId} for user {UserId}")]
+        private partial void LogUserTaskClaim(Guid activityInstanceId, string userId);
+
+        [LoggerMessage(EventId = 8005, Level = LogLevel.Information,
+            Message = "Unclaiming user task {ActivityInstanceId}")]
+        private partial void LogUserTaskUnclaim(Guid activityInstanceId);
+
+        [LoggerMessage(EventId = 8006, Level = LogLevel.Information,
+            Message = "Completing user task {ActivityInstanceId} by user {UserId}")]
+        private partial void LogUserTaskComplete(Guid activityInstanceId, string userId);
     }
 }
