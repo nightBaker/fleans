@@ -108,11 +108,7 @@ namespace Fleans.Api.Controllers
             [FromQuery] string? candidateGroup = null)
         {
             var tasks = await _userTaskQueryService.GetPendingTasks(assignee, candidateGroup);
-            var response = tasks.Select(t => new UserTaskResponse(
-                t.WorkflowInstanceId, t.ActivityInstanceId, t.ActivityId,
-                t.Assignee, t.CandidateGroups, t.CandidateUsers,
-                t.ClaimedBy, t.TaskState.ToString(), t.CreatedAt)).ToList();
-            return Ok(response);
+            return Ok(tasks);
         }
 
         [HttpGet("tasks/{activityInstanceId:guid}", Name = "GetTask")]
@@ -122,10 +118,7 @@ namespace Fleans.Api.Controllers
             if (task == null)
                 return NotFound(new ErrorResponse($"User task '{activityInstanceId}' not found"));
 
-            return Ok(new UserTaskResponse(
-                task.WorkflowInstanceId, task.ActivityInstanceId, task.ActivityId,
-                task.Assignee, task.CandidateGroups, task.CandidateUsers,
-                task.ClaimedBy, task.TaskState.ToString(), task.CreatedAt));
+            return Ok(task);
         }
 
         [HttpPost("tasks/{activityInstanceId:guid}/claim", Name = "ClaimTask")]

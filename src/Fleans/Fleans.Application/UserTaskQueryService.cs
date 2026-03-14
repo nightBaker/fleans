@@ -1,4 +1,5 @@
 using Fleans.Application.Grains;
+using Fleans.ServiceDefaults.DTOs;
 
 namespace Fleans.Application;
 
@@ -13,16 +14,23 @@ public class UserTaskQueryService : IUserTaskQueryService
         _grainFactory = grainFactory;
     }
 
-    public async Task<IReadOnlyList<UserTaskRegistration>> GetPendingTasks(
+    public async Task<IReadOnlyList<UserTaskResponse>> GetPendingTasks(
         string? assignee = null, string? candidateGroup = null)
     {
         var registry = _grainFactory.GetGrain<IUserTaskRegistryGrain>(RegistrySingletonKey);
-        return await registry.GetPendingTasks(assignee, candidateGroup);
+        var tasks = await registry.GetPendingTasks(assignee, candidateGroup);
+        return tasks.Select(ToDto).ToList();
     }
 
-    public async Task<UserTaskRegistration?> GetTask(Guid activityInstanceId)
+    public async Task<UserTaskResponse?> GetTask(Guid activityInstanceId)
     {
         var registry = _grainFactory.GetGrain<IUserTaskRegistryGrain>(RegistrySingletonKey);
-        return await registry.GetTask(activityInstanceId);
+        var task = await registry.GetTask(activityInstanceId);
+        return task is null ? null : ToDto(task);
     }
+
+    private static UserTaskResponse ToDto(UserTaskRegistration t) =>
+        new(t.WorkflowInstanceId, t.ActivityInstanceId, t.ActivityId,
+            t.Assignee, t.CandidateGroups, t.CandidateUsers,
+            t.ClaimedBy, t.TaskState.ToString(), t.CreatedAt);
 }

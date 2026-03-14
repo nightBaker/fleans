@@ -1,11 +1,11 @@
-using Fleans.Application.Grains;
+using Fleans.ServiceDefaults.DTOs;
 
 namespace Fleans.Application;
 
 public interface IUserTaskQueryService
 {
-    Task<IReadOnlyList<UserTaskRegistration>> GetPendingTasks(
+    Task<IReadOnlyList<UserTaskResponse>> GetPendingTasks(
         string? assignee = null, string? candidateGroup = null);
 
-    Task<UserTaskRegistration?> GetTask(Guid activityInstanceId);
+    Task<UserTaskResponse?> GetTask(Guid activityInstanceId);
 }
