@@ -2,7 +2,6 @@ using System.Dynamic;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Fleans.Domain;
-using Fleans.Domain.Activities;
 using Fleans.Domain.States;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -39,12 +38,10 @@ internal static class FleanModelConfiguration
 
             entity.Property(e => e.ProcessDefinitionId).HasMaxLength(512);
 
-            entity.Property(e => e.TimerCycleTracking)
-                .HasColumnName("TimerCycleTracking")
-                .HasConversion(
-                    v => JsonConvert.SerializeObject(v),
-                    v => JsonConvert.DeserializeObject<Dictionary<string, TimerDefinition>>(v)
-                         ?? new Dictionary<string, TimerDefinition>());
+            entity.HasMany(e => e.TimerCycleTracking)
+                .WithOne()
+                .HasForeignKey(e => e.WorkflowInstanceId)
+                .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasOne<ProcessDefinition>()
                 .WithMany()
@@ -102,6 +99,15 @@ internal static class FleanModelConfiguration
                 .WithOne()
                 .HasForeignKey(e => e.WorkflowInstanceId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<TimerCycleTrackingState>(entity =>
+        {
+            entity.ToTable("TimerCycleTracking");
+            entity.HasKey(e => new { e.HostActivityInstanceId, e.TimerActivityId });
+
+            entity.Property(e => e.TimerActivityId).HasMaxLength(256);
+            entity.Property(e => e.TimerExpression).HasMaxLength(512);
         });
 
         modelBuilder.Entity<TimerStartEventSchedulerState>(entity =>

@@ -48,12 +48,8 @@ public class WorkflowInstanceState
     [Id(13)]
     public List<GatewayForkState> GatewayForks { get; private set; } = [];
 
-    /// <summary>
-    /// Tracks remaining cycle timer definitions per (hostActivityInstanceId, timerActivityId).
-    /// Key format: "{hostActivityInstanceId}:{timerActivityId}".
-    /// </summary>
     [Id(14)]
-    public Dictionary<string, TimerDefinition> TimerCycleTracking { get; private set; } = new();
+    public List<TimerCycleTrackingState> TimerCycleTracking { get; private set; } = [];
 
     public IEnumerable<ActivityInstanceEntry> GetActiveActivities()
         => Entries.Where(e => !e.IsCompleted);
@@ -262,18 +258,28 @@ public class WorkflowInstanceState
     public void RemoveGatewayFork(Guid forkInstanceId)
         => GatewayForks.RemoveAll(f => f.ForkInstanceId == forkInstanceId);
 
-    private static string TimerCycleKey(Guid hostActivityInstanceId, string timerActivityId)
-        => $"{hostActivityInstanceId}:{timerActivityId}";
-
     public TimerDefinition? GetTimerCycleState(Guid hostActivityInstanceId, string timerActivityId)
-        => TimerCycleTracking.GetValueOrDefault(TimerCycleKey(hostActivityInstanceId, timerActivityId));
+        => TimerCycleTracking
+            .FirstOrDefault(t => t.HostActivityInstanceId == hostActivityInstanceId && t.TimerActivityId == timerActivityId)
+            ?.ToTimerDefinition();
 
     public void SetTimerCycleState(Guid hostActivityInstanceId, string timerActivityId, TimerDefinition? definition)
     {
-        var key = TimerCycleKey(hostActivityInstanceId, timerActivityId);
+        var existing = TimerCycleTracking
+            .FirstOrDefault(t => t.HostActivityInstanceId == hostActivityInstanceId && t.TimerActivityId == timerActivityId);
+
         if (definition is null)
-            TimerCycleTracking.Remove(key);
+        {
+            if (existing is not null)
+                TimerCycleTracking.Remove(existing);
+        }
+        else if (existing is not null)
+        {
+            existing.UpdateFrom(definition);
+        }
         else
-            TimerCycleTracking[key] = definition;
+        {
+            TimerCycleTracking.Add(new TimerCycleTrackingState(hostActivityInstanceId, timerActivityId, definition, Id));
+        }
     }
 }
