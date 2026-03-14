@@ -28,18 +28,28 @@ public partial class MessageStartEventListenerGrain : Grain, IMessageStartEventL
 
     public async ValueTask RegisterProcess(string processDefinitionKey)
     {
-        State.AddProcess(processDefinitionKey);
+        if (!State.AddProcess(processDefinitionKey))
+        {
+            LogProcessAlreadyRegistered(this.GetPrimaryKeyString(), processDefinitionKey);
+            return;
+        }
+
         await _state.WriteStateAsync();
         LogProcessRegistered(this.GetPrimaryKeyString(), processDefinitionKey);
     }
 
     public async ValueTask UnregisterProcess(string processDefinitionKey)
     {
-        State.RemoveProcess(processDefinitionKey);
-        await _state.WriteStateAsync();
+        if (!State.RemoveProcess(processDefinitionKey))
+        {
+            LogProcessNotFound(this.GetPrimaryKeyString(), processDefinitionKey);
+            return;
+        }
 
         if (State.IsEmpty)
             await _state.ClearStateAsync();
+        else
+            await _state.WriteStateAsync();
 
         LogProcessUnregistered(this.GetPrimaryKeyString(), processDefinitionKey);
     }
@@ -61,13 +71,24 @@ public partial class MessageStartEventListenerGrain : Grain, IMessageStartEventL
         {
             try
             {
+                // Guard: skip disabled processes to prevent race condition
+                // between DisableProcess persisting IsActive=false and unregistering listeners
+                if (!await factory.IsProcessActive(processDefinitionKey))
+                {
+                    LogProcessDisabledSkipped(messageName, processDefinitionKey);
+                    continue;
+                }
+
                 var instanceId = Guid.NewGuid();
                 var instance = _grainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
 
                 var definition = await factory.GetLatestWorkflowDefinition(processDefinitionKey);
 
                 // Find the MessageStartEvent that matches this message name
-                var messageStartActivityId = FindMessageStartActivityId(definition, messageName);
+                var messageStartActivityId = FindMessageStartActivityId(definition, messageName)
+                    ?? throw new InvalidOperationException(
+                        $"Message start activity for message '{messageName}' not found in process '{processDefinitionKey}'. " +
+                        "The message definition may have been removed during a redeployment.");
 
                 await instance.SetWorkflow(definition, messageStartActivityId);
                 await instance.SetInitialVariables(variables);
@@ -110,4 +131,13 @@ public partial class MessageStartEventListenerGrain : Grain, IMessageStartEventL
 
     [LoggerMessage(EventId = 9104, Level = LogLevel.Error, Message = "Failed to start workflow for message '{MessageName}', process {ProcessDefinitionKey}")]
     private partial void LogMessageStartEventFailed(string messageName, string processDefinitionKey, Exception ex);
+
+    [LoggerMessage(EventId = 9105, Level = LogLevel.Debug, Message = "Process {ProcessDefinitionKey} already registered for message start event '{MessageName}', skipping write")]
+    private partial void LogProcessAlreadyRegistered(string messageName, string processDefinitionKey);
+
+    [LoggerMessage(EventId = 9106, Level = LogLevel.Debug, Message = "Process {ProcessDefinitionKey} not found for message start event '{MessageName}', skipping unregister")]
+    private partial void LogProcessNotFound(string messageName, string processDefinitionKey);
+
+    [LoggerMessage(EventId = 9107, Level = LogLevel.Warning, Message = "Skipping disabled process {ProcessDefinitionKey} for message '{MessageName}'")]
+    private partial void LogProcessDisabledSkipped(string messageName, string processDefinitionKey);
 }

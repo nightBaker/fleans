@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             id="Definitions_1"
+             targetNamespace="http://bpmn.io/schema/bpmn">
+
+  <signal id="Signal_1" name="test-disable-signal" />
+
+  <process id="signal-start-disable-test" isExecutable="true">
+    <startEvent id="SignalStart" name="Signal Start">
+      <signalEventDefinition signalRef="Signal_1" />
+    </startEvent>
+
+    <scriptTask id="Script1" name="Log" scriptFormat="csharp">
+      <script>Console.WriteLine("Signal received, workflow started!");</script>
+    </scriptTask>
+
+    <endEvent id="End1" name="End" />
+
+    <sequenceFlow id="Flow1" sourceRef="SignalStart" targetRef="Script1" />
+    <sequenceFlow id="Flow2" sourceRef="Script1" targetRef="End1" />
+  </process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="signal-start-disable-test">
+      <bpmndi:BPMNShape id="SignalStart_di" bpmnElement="SignalStart">
+        <dc:Bounds x="180" y="100" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Script1_di" bpmnElement="Script1">
+        <dc:Bounds x="270" y="78" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End1_di" bpmnElement="End1">
+        <dc:Bounds x="430" y="100" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow1_di" bpmnElement="Flow1">
+        <di:waypoint x="216" y="118" />
+        <di:waypoint x="270" y="118" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow2_di" bpmnElement="Flow2">
+        <di:waypoint x="370" y="118" />
+        <di:waypoint x="430" y="118" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

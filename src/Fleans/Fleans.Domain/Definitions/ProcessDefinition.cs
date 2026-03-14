@@ -35,6 +35,36 @@ public sealed class ProcessDefinition
     [Id(5)]
     public required string BpmnXml { get; init; }
 
+    /// <summary>
+    /// Concurrency token managed by the persistence layer (e.g. EF Core).
+    /// Uses <c>set</c> instead of <c>init</c> because the store updates it after each write.
+    /// </summary>
     [Id(6)]
     public string? ETag { get; set; }
+
+    [Id(7)]
+    public bool IsActive { get; private set; } = true;
+
+    public void Disable()
+    {
+        IsActive = false;
+    }
+
+    public void Enable()
+    {
+        IsActive = true;
+    }
+
+    /// <summary>
+    /// Copies relevant mutable state from a previous version of this process definition.
+    /// Currently preserves the disabled state so that redeploying a disabled process
+    /// does not silently re-enable it.
+    /// </summary>
+    public void InheritStateFrom(ProcessDefinition previousVersion)
+    {
+        if (!previousVersion.IsActive)
+        {
+            Disable();
+        }
+    }
 }

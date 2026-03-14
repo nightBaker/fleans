@@ -25,11 +25,11 @@ For now, next elements are implemented
 | Start Event          | Indicates where a process will start.                                        |     [x]     |
 | Intermediate Event   | Indicates something that happens between the start and end events.           |     [x]     |
 | End Event            | Indicates where a process will end.                                          |     [x]     |
-| Message Event        | Represents the sending or receiving of a message.                            | [x] intermediate catch, boundary |
+| Message Event        | Represents the sending or receiving of a message.                            | [x] start, intermediate catch, boundary |
 | Timer Event          | Represents a delay or a specific time/date.                                  | [x] start, intermediate catch, boundary |
 | Error Event          | Indicates an error that needs to be handled.                                 |  [x] boundary |
 | Conditional Event    | Represents a condition that will cause a process to start or continue.       |             |
-| Signal Event         | Represents the sending or receiving of a signal.                             | [x] intermediate catch, intermediate throw, boundary |
+| Signal Event         | Represents the sending or receiving of a signal.                             | [x] start, intermediate catch, intermediate throw, boundary |
 | Escalation Event     | Used to model situations where escalation is required.                       |             |
 | Cancel Event         | Indicates cancellation of a process.                                         |             |
 | Compensation Event   | Represents a process that is performed to compensate for an error.           |             |

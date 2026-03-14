@@ -17,7 +17,10 @@ public interface IWorkflowCommandService
     Task ClaimUserTask(Guid workflowInstanceId, Guid activityInstanceId, string userId);
     Task UnclaimUserTask(Guid workflowInstanceId, Guid activityInstanceId);
     Task CompleteUserTask(Guid workflowInstanceId, Guid activityInstanceId, string userId, ExpandoObject variables);
+
+    Task<ProcessDefinitionSummary> DisableProcess(string processDefinitionKey);
+    Task<ProcessDefinitionSummary> EnableProcess(string processDefinitionKey);
 }
 
 public record SendMessageResult(bool Delivered, List<Guid>? WorkflowInstanceIds = null);
-public record SendSignalResult(int DeliveredCount, List<Guid>? WorkflowInstanceIds = null);
+public record SendSignalResult(int DeliveredCount, List<Guid>? WorkflowInstanceIds = null, List<string>? Errors = null);

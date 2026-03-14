@@ -198,6 +198,71 @@ public class EfCoreProcessDefinitionRepositoryTests
             () => _repository.SaveAsync(definition));
     }
 
+    [TestMethod]
+    public async Task SaveAndGetById_DisabledProcess_IsActiveFalseRoundTrip()
+    {
+        var definition = CreateDefinition("disabled:1:ts", "disabled", 1, DateTimeOffset.UtcNow);
+        definition.Disable();
+
+        await _repository.SaveAsync(definition);
+
+        var result = await _repository.GetByIdAsync("disabled:1:ts");
+
+        Assert.IsNotNull(result);
+        Assert.IsFalse(result.IsActive, "IsActive should be false after round-trip");
+    }
+
+    [TestMethod]
+    public async Task SaveAndGetById_EnabledProcess_IsActiveTrueByDefault()
+    {
+        var definition = CreateDefinition("enabled:1:ts", "enabled", 1, DateTimeOffset.UtcNow);
+
+        await _repository.SaveAsync(definition);
+
+        var result = await _repository.GetByIdAsync("enabled:1:ts");
+
+        Assert.IsNotNull(result);
+        Assert.IsTrue(result.IsActive, "IsActive should be true by default");
+    }
+
+    [TestMethod]
+    public async Task UpdateAsync_DisableExistingProcess_PersistsIsActiveFalse()
+    {
+        var definition = CreateDefinition("upd:1:ts", "upd", 1, DateTimeOffset.UtcNow);
+        await _repository.SaveAsync(definition);
+
+        definition.Disable();
+        await _repository.UpdateAsync(definition);
+
+        var result = await _repository.GetByIdAsync("upd:1:ts");
+        Assert.IsNotNull(result);
+        Assert.IsFalse(result.IsActive, "IsActive should be false after UpdateAsync with Disable()");
+    }
+
+    [TestMethod]
+    public async Task UpdateAsync_EnableDisabledProcess_PersistsIsActiveTrue()
+    {
+        var definition = CreateDefinition("upd2:1:ts", "upd2", 1, DateTimeOffset.UtcNow);
+        definition.Disable();
+        await _repository.SaveAsync(definition);
+
+        definition.Enable();
+        await _repository.UpdateAsync(definition);
+
+        var result = await _repository.GetByIdAsync("upd2:1:ts");
+        Assert.IsNotNull(result);
+        Assert.IsTrue(result.IsActive, "IsActive should be true after UpdateAsync with Enable()");
+    }
+
+    [TestMethod]
+    public async Task UpdateAsync_NonExistentDefinition_ThrowsInvalidOperationException()
+    {
+        var definition = CreateDefinition("missing:1:ts", "missing", 1, DateTimeOffset.UtcNow);
+
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => _repository.UpdateAsync(definition));
+    }
+
     // ───────────────────────────────────────────────
     // Helpers
     // ───────────────────────────────────────────────

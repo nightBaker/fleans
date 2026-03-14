@@ -200,6 +200,40 @@ namespace Fleans.Api.Controllers
             }
         }
 
+        [HttpPost("disable", Name = "DisableProcess")]
+        public async Task<IActionResult> DisableProcess([FromBody] ProcessDefinitionKeyRequest request)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.ProcessDefinitionKey))
+                return BadRequest(new ErrorResponse("ProcessDefinitionKey is required"));
+
+            try
+            {
+                var summary = await _commandService.DisableProcess(request.ProcessDefinitionKey);
+                return Ok(summary);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new ErrorResponse(ex.Message));
+            }
+        }
+
+        [HttpPost("enable", Name = "EnableProcess")]
+        public async Task<IActionResult> EnableProcess([FromBody] ProcessDefinitionKeyRequest request)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.ProcessDefinitionKey))
+                return BadRequest(new ErrorResponse("ProcessDefinitionKey is required"));
+
+            try
+            {
+                var summary = await _commandService.EnableProcess(request.ProcessDefinitionKey);
+                return Ok(summary);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new ErrorResponse(ex.Message));
+            }
+        }
+
         [LoggerMessage(EventId = 8004, Level = LogLevel.Information,
             Message = "Claiming user task {ActivityInstanceId} for user {UserId}")]
         private partial void LogUserTaskClaim(Guid activityInstanceId, string userId);

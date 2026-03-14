@@ -48,3 +48,8 @@ public record UserTaskRegistered(
 public record UserTaskClaimed(Guid ActivityInstanceId, string UserId) : IDomainEvent;
 public record UserTaskUnclaimed(Guid ActivityInstanceId) : IDomainEvent;
 public record UserTaskUnregistered(Guid ActivityInstanceId) : IDomainEvent;
+
+// Timer cycle tracking
+public record TimerCycleUpdated(
+    Guid HostActivityInstanceId, string TimerActivityId,
+    Activities.TimerDefinition? RemainingCycle) : IDomainEvent;
