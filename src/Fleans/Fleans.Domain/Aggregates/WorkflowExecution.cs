@@ -125,21 +125,31 @@ public class WorkflowExecution
                     }
                 }
 
-                // Determine variables ID (clone if needed)
                 Guid variablesId;
-                if (transition.CloneVariables)
+                Guid? tokenId;
+
+                if (transition.Token == TokenAction.RestoreParent)
                 {
-                    var newScopeId = Guid.NewGuid();
-                    Emit(new VariableScopeCloned(newScopeId, completedEntry.VariablesId));
-                    variablesId = newScopeId;
+                    // Fork-join: merge branch variable scopes, restore parent token
+                    (tokenId, variablesId) = ResolveForkJoinTransition(completedEntry);
                 }
                 else
                 {
-                    variablesId = completedEntry.VariablesId;
-                }
+                    // Determine variables ID (clone if needed)
+                    if (transition.CloneVariables)
+                    {
+                        var newScopeId = Guid.NewGuid();
+                        Emit(new VariableScopeCloned(newScopeId, completedEntry.VariablesId));
+                        variablesId = newScopeId;
+                    }
+                    else
+                    {
+                        variablesId = completedEntry.VariablesId;
+                    }
 
-                // Handle token propagation
-                Guid? tokenId = ResolveToken(transition, completedEntry);
+                    // Handle token propagation
+                    tokenId = ResolveToken(transition, completedEntry);
+                }
 
                 // Spawn the next activity
                 Emit(new ActivitySpawned(
@@ -189,6 +199,63 @@ public class WorkflowExecution
             default: // TokenAction.Inherit
                 return sourceEntry.TokenId;
         }
+    }
+
+    /// <summary>
+    /// Handles fork-join variable merge and token restoration at a join gateway.
+    /// Variables are merged in token creation order (the order branches were spawned at the fork).
+    /// For conflicting variable names, the last branch in creation order wins.
+    /// </summary>
+    private (Guid? tokenId, Guid variablesId) ResolveForkJoinTransition(ActivityInstanceEntry sourceEntry)
+    {
+        if (!sourceEntry.TokenId.HasValue)
+            return (null, sourceEntry.VariablesId);
+
+        var fork = _state.FindForkByToken(sourceEntry.TokenId.Value);
+        if (fork is null)
+            return (sourceEntry.TokenId, sourceEntry.VariablesId);
+
+        // Step 1: Read fork data BEFORE any Emit calls
+        var forkEntry = _state.FindEntry(fork.ForkInstanceId);
+        if (forkEntry is null)
+        {
+            // Fork entry not found — fall back to token restoration without merge
+            var fallbackTokenId = fork.ConsumedTokenId;
+            Emit(new GatewayForkRemoved(fork.ForkInstanceId));
+            return (fallbackTokenId, sourceEntry.VariablesId);
+        }
+        var originalScopeId = forkEntry.VariablesId;
+
+        // Step 2: Collect branch scopes in token creation order
+        var branchScopeIds = new List<Guid>();
+        foreach (var tokenId in fork.CreatedTokenIds)
+        {
+            var branchEntry = _state.Entries
+                .FirstOrDefault(e => e.TokenId == tokenId && e.IsCompleted);
+            if (branchEntry is not null && branchEntry.VariablesId != originalScopeId)
+            {
+                branchScopeIds.Add(branchEntry.VariablesId);
+            }
+        }
+
+        // Step 3: Merge each branch scope into the original scope (token creation order)
+        foreach (var branchScopeId in branchScopeIds)
+        {
+            var branchVars = _state.GetVariableState(branchScopeId).Variables;
+            Emit(new VariablesMerged(originalScopeId, branchVars));
+        }
+
+        // Step 4: Remove branch scopes
+        if (branchScopeIds.Count > 0)
+        {
+            Emit(new VariableScopesRemoved(branchScopeIds));
+        }
+
+        // Step 5: Remove fork state and restore parent token
+        var restoredTokenId = fork.ConsumedTokenId;
+        Emit(new GatewayForkRemoved(fork.ForkInstanceId));
+
+        return (restoredTokenId, originalScopeId);
     }
 
     public IReadOnlyList<IInfrastructureEffect> ProcessCommands(

@@ -163,15 +163,83 @@ namespace Fleans.Application.Tests
             vars2.x = "from-branch-2";
             await workflowInstance.CompleteActivity("task2", vars2);
 
-            // Assert — workflow completed, both scopes have their own value
+            // Assert — workflow completed, branch scopes merged into original scope
             var finalSnapshot = await QueryService.GetStateSnapshot(instanceId);
             Assert.IsNotNull(finalSnapshot);
             Assert.IsTrue(finalSnapshot.IsCompleted);
 
-            var finalScope1 = finalSnapshot.VariableStates.First(v => v.VariablesId == task1Activity.VariablesStateId);
-            var finalScope2 = finalSnapshot.VariableStates.First(v => v.VariablesId == task2Activity.VariablesStateId);
-            Assert.AreEqual("from-branch-1", finalScope1.Variables["x"]);
-            Assert.AreEqual("from-branch-2", finalScope2.Variables["x"]);
+            // After join, branch scopes are removed and merged into the original (root) scope
+            Assert.AreEqual(1, finalSnapshot.VariableStates.Count,
+                "After fork-join completion, only the original scope should remain");
+
+            var mergedScope = finalSnapshot.VariableStates.Single();
+            Assert.IsTrue(mergedScope.Variables.ContainsKey("x"),
+                "Merged scope should contain the variable 'x'");
+        }
+
+        [TestMethod]
+        public async Task ParallelJoin_ShouldMergeDisjointBranchVariables()
+        {
+            // Arrange
+            var workflow = CreateForkJoinWorkflow();
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+            await workflowInstance.SetWorkflow(workflow);
+            await workflowInstance.StartWorkflow();
+
+            // Act — complete each branch with a different variable name
+            dynamic vars1 = new ExpandoObject();
+            vars1.fromBranch1 = "value1";
+            await workflowInstance.CompleteActivity("task1", vars1);
+
+            dynamic vars2 = new ExpandoObject();
+            vars2.fromBranch2 = "value2";
+            await workflowInstance.CompleteActivity("task2", vars2);
+
+            // Assert — single merged scope contains both variables
+            var instanceId = workflowInstance.GetPrimaryKey();
+            var finalSnapshot = await QueryService.GetStateSnapshot(instanceId);
+            Assert.IsNotNull(finalSnapshot);
+            Assert.IsTrue(finalSnapshot.IsCompleted);
+            Assert.AreEqual(1, finalSnapshot.VariableStates.Count,
+                "After fork-join, only the original scope should remain");
+
+            var mergedScope = finalSnapshot.VariableStates.Single();
+            Assert.IsTrue(mergedScope.Variables.ContainsKey("fromBranch1"),
+                "Merged scope should contain branch 1's variable");
+            Assert.IsTrue(mergedScope.Variables.ContainsKey("fromBranch2"),
+                "Merged scope should contain branch 2's variable");
+            Assert.AreEqual("value1", mergedScope.Variables["fromBranch1"]);
+            Assert.AreEqual("value2", mergedScope.Variables["fromBranch2"]);
+        }
+
+        [TestMethod]
+        public async Task ParallelJoin_ConflictingVariables_ShouldMergeWithLastBranchWins()
+        {
+            // Arrange
+            var workflow = CreateForkJoinWorkflow();
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+            await workflowInstance.SetWorkflow(workflow);
+            await workflowInstance.StartWorkflow();
+
+            // Act — both branches set the same variable
+            dynamic vars1 = new ExpandoObject();
+            vars1.shared = "from-branch-1";
+            await workflowInstance.CompleteActivity("task1", vars1);
+
+            dynamic vars2 = new ExpandoObject();
+            vars2.shared = "from-branch-2";
+            await workflowInstance.CompleteActivity("task2", vars2);
+
+            // Assert — merged scope has the variable (last branch in creation order wins)
+            var instanceId = workflowInstance.GetPrimaryKey();
+            var finalSnapshot = await QueryService.GetStateSnapshot(instanceId);
+            Assert.IsNotNull(finalSnapshot);
+            Assert.IsTrue(finalSnapshot.IsCompleted);
+            Assert.AreEqual(1, finalSnapshot.VariableStates.Count);
+
+            var mergedScope = finalSnapshot.VariableStates.Single();
+            Assert.IsTrue(mergedScope.Variables.ContainsKey("shared"),
+                "Merged scope should contain the shared variable");
         }
 
         private static IWorkflowDefinition CreateForkJoinWorkflow()

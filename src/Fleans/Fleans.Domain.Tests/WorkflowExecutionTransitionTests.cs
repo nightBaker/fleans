@@ -572,6 +572,315 @@ public class WorkflowExecutionTransitionTests
         Assert.AreEqual(0, events.Count);
     }
 
+    // --- Fork-join variable scope merge ---
+
+    /// <summary>
+    /// Helper: sets up a fork-join scenario with two completed branches.
+    /// Returns (execution, state, forkEntry, branchEntries with their variable scopes).
+    /// </summary>
+    private static (WorkflowExecution execution, WorkflowInstanceState state,
+        ActivityInstanceEntry joinEntry, Guid originalScopeId,
+        Guid branchScope1Id, Guid branchScope2Id)
+        CreateForkJoinWithCompletedBranches(
+            Action<IDictionary<string, object?>>? setBranch1Vars = null,
+            Action<IDictionary<string, object?>>? setBranch2Vars = null)
+    {
+        var start = new StartEvent("start1");
+        var end = new EndEvent("end1");
+
+        var definition = new WorkflowDefinition
+        {
+            WorkflowId = "wf1",
+            Activities = [start, end],
+            SequenceFlows = [new SequenceFlow("seq1", start, end)],
+            ProcessDefinitionId = "pd1"
+        };
+        var state = new WorkflowInstanceState();
+        var execution = new WorkflowExecution(state, definition);
+        execution.Start();
+
+        var startEntry = state.Entries.First();
+        execution.MarkExecuting(startEntry.ActivityInstanceId);
+        execution.MarkCompleted(startEntry.ActivityInstanceId, new ExpandoObject());
+        execution.ClearUncommittedEvents();
+
+        var originalScopeId = startEntry.VariablesId;
+
+        // Set up fork state with two branches
+        var forkInstanceId = Guid.NewGuid();
+        var parentTokenId = Guid.NewGuid();
+        var token1 = Guid.NewGuid();
+        var token2 = Guid.NewGuid();
+
+        var fork = state.CreateGatewayFork(forkInstanceId, parentTokenId);
+        fork.CreatedTokenIds.Add(token1);
+        fork.CreatedTokenIds.Add(token2);
+
+        // Create cloned variable scopes for each branch
+        var branchScope1Id = Guid.NewGuid();
+        state.AddCloneOfVariableState(branchScope1Id, originalScopeId);
+        var branchScope2Id = Guid.NewGuid();
+        state.AddCloneOfVariableState(branchScope2Id, originalScopeId);
+
+        // Optionally set variables on branch scopes
+        if (setBranch1Vars is not null)
+        {
+            var branch1Vars = new ExpandoObject();
+            setBranch1Vars((IDictionary<string, object?>)branch1Vars);
+            state.MergeState(branchScope1Id, branch1Vars);
+        }
+        if (setBranch2Vars is not null)
+        {
+            var branch2Vars = new ExpandoObject();
+            setBranch2Vars((IDictionary<string, object?>)branch2Vars);
+            state.MergeState(branchScope2Id, branch2Vars);
+        }
+
+        // Create fork entry (completed)
+        var forkEntry = new ActivityInstanceEntry(forkInstanceId, "fork1", state.Id, null);
+        forkEntry.SetActivityType("ParallelGateway");
+        forkEntry.SetVariablesId(originalScopeId);
+        forkEntry.Execute();
+        forkEntry.Complete();
+        state.AddEntries([forkEntry]);
+
+        // Create completed branch entries with their tokens and scopes
+        var branch1Entry = new ActivityInstanceEntry(Guid.NewGuid(), "task1", state.Id, null);
+        branch1Entry.SetActivityType("ScriptTask");
+        branch1Entry.SetVariablesId(branchScope1Id);
+        branch1Entry.SetTokenId(token1);
+        branch1Entry.Execute();
+        branch1Entry.Complete();
+        state.AddEntries([branch1Entry]);
+
+        var branch2Entry = new ActivityInstanceEntry(Guid.NewGuid(), "task2", state.Id, null);
+        branch2Entry.SetActivityType("ScriptTask");
+        branch2Entry.SetVariablesId(branchScope2Id);
+        branch2Entry.SetTokenId(token2);
+        branch2Entry.Execute();
+        branch2Entry.Complete();
+        state.AddEntries([branch2Entry]);
+
+        // Create join entry (completed, arrives with token1 — the first branch's token)
+        var joinEntry = new ActivityInstanceEntry(Guid.NewGuid(), "join1", state.Id, null);
+        joinEntry.SetActivityType("ParallelGateway");
+        joinEntry.SetVariablesId(branchScope1Id);
+        joinEntry.SetTokenId(token1);
+        joinEntry.Execute();
+        joinEntry.Complete();
+        state.AddEntries([joinEntry]);
+
+        return (execution, state, joinEntry, originalScopeId, branchScope1Id, branchScope2Id);
+    }
+
+    [TestMethod]
+    public void ResolveForkJoinTransition_ShouldMergeBranchVariablesIntoOriginalScope()
+    {
+        var (execution, state, joinEntry, originalScopeId, _, _) =
+            CreateForkJoinWithCompletedBranches(
+                setBranch1Vars: d => d["varA"] = "fromBranch1",
+                setBranch2Vars: d => d["varB"] = "fromBranch2");
+
+        var transitions = new List<CompletedActivityTransitions>
+        {
+            new(joinEntry.ActivityInstanceId, "join1",
+                [new ActivityTransition(new EndEvent("end1"), Token: TokenAction.RestoreParent)])
+        };
+
+        execution.ResolveTransitions(transitions);
+
+        // Original scope should have both branch variables
+        var originalScope = state.GetVariableState(originalScopeId);
+        var vars = (IDictionary<string, object?>)originalScope.Variables;
+        Assert.AreEqual("fromBranch1", vars["varA"]);
+        Assert.AreEqual("fromBranch2", vars["varB"]);
+    }
+
+    [TestMethod]
+    public void ResolveForkJoinTransition_ShouldRemoveBranchScopes()
+    {
+        var (execution, state, joinEntry, originalScopeId, branchScope1Id, branchScope2Id) =
+            CreateForkJoinWithCompletedBranches(
+                setBranch1Vars: d => d["x"] = 1,
+                setBranch2Vars: d => d["y"] = 2);
+
+        var initialScopeCount = state.VariableStates.Count;
+
+        var transitions = new List<CompletedActivityTransitions>
+        {
+            new(joinEntry.ActivityInstanceId, "join1",
+                [new ActivityTransition(new EndEvent("end1"), Token: TokenAction.RestoreParent)])
+        };
+
+        execution.ResolveTransitions(transitions);
+
+        // Branch scopes should be removed
+        Assert.IsNull(state.VariableStates.FirstOrDefault(v => v.Id == branchScope1Id));
+        Assert.IsNull(state.VariableStates.FirstOrDefault(v => v.Id == branchScope2Id));
+
+        // Only original scope remains (from the initial set)
+        Assert.IsNotNull(state.VariableStates.FirstOrDefault(v => v.Id == originalScopeId));
+    }
+
+    [TestMethod]
+    public void ResolveForkJoinTransition_ConflictingVariables_LastCreatedBranchWins()
+    {
+        // Both branches set "shared" — branch2 (created second in token order) should win
+        var (execution, state, joinEntry, originalScopeId, _, _) =
+            CreateForkJoinWithCompletedBranches(
+                setBranch1Vars: d => d["shared"] = "from-branch-1",
+                setBranch2Vars: d => d["shared"] = "from-branch-2");
+
+        var transitions = new List<CompletedActivityTransitions>
+        {
+            new(joinEntry.ActivityInstanceId, "join1",
+                [new ActivityTransition(new EndEvent("end1"), Token: TokenAction.RestoreParent)])
+        };
+
+        execution.ResolveTransitions(transitions);
+
+        var originalScope = state.GetVariableState(originalScopeId);
+        var vars = (IDictionary<string, object?>)originalScope.Variables;
+        Assert.AreEqual("from-branch-2", vars["shared"]);
+    }
+
+    [TestMethod]
+    public void ResolveForkJoinTransition_DisjointVariables_AllPreserved()
+    {
+        var (execution, state, joinEntry, originalScopeId, _, _) =
+            CreateForkJoinWithCompletedBranches(
+                setBranch1Vars: d => d["onlyInBranch1"] = 100,
+                setBranch2Vars: d => d["onlyInBranch2"] = 200);
+
+        var transitions = new List<CompletedActivityTransitions>
+        {
+            new(joinEntry.ActivityInstanceId, "join1",
+                [new ActivityTransition(new EndEvent("end1"), Token: TokenAction.RestoreParent)])
+        };
+
+        execution.ResolveTransitions(transitions);
+
+        var originalScope = state.GetVariableState(originalScopeId);
+        var vars = (IDictionary<string, object?>)originalScope.Variables;
+        Assert.AreEqual(100, vars["onlyInBranch1"]);
+        Assert.AreEqual(200, vars["onlyInBranch2"]);
+    }
+
+    [TestMethod]
+    public void ResolveForkJoinTransition_BranchWithNoVariableChanges_OriginalValuesPreserved()
+    {
+        // Set initial variable on the original scope, then only branch1 modifies
+        var (execution, state, joinEntry, originalScopeId, _, _) =
+            CreateForkJoinWithCompletedBranches(
+                setBranch1Vars: d => d["newVar"] = "added",
+                setBranch2Vars: null); // branch2 is passthrough
+
+        // Set an initial variable on the original scope
+        var initVars = new ExpandoObject();
+        ((IDictionary<string, object?>)initVars)["original"] = "value";
+        state.MergeState(originalScopeId, initVars);
+
+        var transitions = new List<CompletedActivityTransitions>
+        {
+            new(joinEntry.ActivityInstanceId, "join1",
+                [new ActivityTransition(new EndEvent("end1"), Token: TokenAction.RestoreParent)])
+        };
+
+        execution.ResolveTransitions(transitions);
+
+        var originalScope = state.GetVariableState(originalScopeId);
+        var vars = (IDictionary<string, object?>)originalScope.Variables;
+        Assert.AreEqual("value", vars["original"]);
+        Assert.AreEqual("added", vars["newVar"]);
+    }
+
+    [TestMethod]
+    public void ResolveForkJoinTransition_SpawnedActivityUsesOriginalScope()
+    {
+        var (execution, state, joinEntry, originalScopeId, _, _) =
+            CreateForkJoinWithCompletedBranches();
+
+        var transitions = new List<CompletedActivityTransitions>
+        {
+            new(joinEntry.ActivityInstanceId, "join1",
+                [new ActivityTransition(new EndEvent("end1"), Token: TokenAction.RestoreParent)])
+        };
+
+        execution.ResolveTransitions(transitions);
+
+        var events = execution.GetUncommittedEvents();
+        var spawned = events.OfType<ActivitySpawned>().Single();
+        Assert.AreEqual(originalScopeId, spawned.VariablesId);
+    }
+
+    [TestMethod]
+    public void ResolveForkJoinTransition_EmitsCorrectEventOrder()
+    {
+        var (execution, state, joinEntry, originalScopeId, _, _) =
+            CreateForkJoinWithCompletedBranches(
+                setBranch1Vars: d => d["a"] = 1,
+                setBranch2Vars: d => d["b"] = 2);
+
+        execution.ClearUncommittedEvents();
+
+        var transitions = new List<CompletedActivityTransitions>
+        {
+            new(joinEntry.ActivityInstanceId, "join1",
+                [new ActivityTransition(new EndEvent("end1"), Token: TokenAction.RestoreParent)])
+        };
+
+        execution.ResolveTransitions(transitions);
+
+        var events = execution.GetUncommittedEvents();
+
+        // Expected order: VariablesMerged (branch1) -> VariablesMerged (branch2)
+        //                 -> VariableScopesRemoved -> GatewayForkRemoved -> ActivitySpawned
+        var mergedEvents = events.OfType<VariablesMerged>().ToList();
+        var removedEvents = events.OfType<VariableScopesRemoved>().ToList();
+        var forkRemovedEvents = events.OfType<GatewayForkRemoved>().ToList();
+        var spawnedEvents = events.OfType<ActivitySpawned>().ToList();
+
+        Assert.AreEqual(2, mergedEvents.Count);
+        Assert.AreEqual(1, removedEvents.Count);
+        Assert.AreEqual(1, forkRemovedEvents.Count);
+        Assert.AreEqual(1, spawnedEvents.Count);
+
+        // Verify ordering via indices
+        var eventList = events.ToList();
+        var firstMergeIdx = eventList.IndexOf(mergedEvents[0]);
+        var lastMergeIdx = eventList.IndexOf(mergedEvents[1]);
+        var removeIdx = eventList.IndexOf(removedEvents[0]);
+        var forkRemoveIdx = eventList.IndexOf(forkRemovedEvents[0]);
+        var spawnIdx = eventList.IndexOf(spawnedEvents[0]);
+
+        Assert.IsTrue(firstMergeIdx < lastMergeIdx, "Merges should be in order");
+        Assert.IsTrue(lastMergeIdx < removeIdx, "Scope removal after merges");
+        Assert.IsTrue(removeIdx < forkRemoveIdx, "Fork removal after scope removal");
+        Assert.IsTrue(forkRemoveIdx < spawnIdx, "Spawn after fork removal");
+    }
+
+    [TestMethod]
+    public void ResolveForkJoinTransition_RestoresParentToken()
+    {
+        var (execution, state, joinEntry, _, _, _) =
+            CreateForkJoinWithCompletedBranches();
+
+        var transitions = new List<CompletedActivityTransitions>
+        {
+            new(joinEntry.ActivityInstanceId, "join1",
+                [new ActivityTransition(new EndEvent("end1"), Token: TokenAction.RestoreParent)])
+        };
+
+        execution.ResolveTransitions(transitions);
+
+        var events = execution.GetUncommittedEvents();
+        var spawned = events.OfType<ActivitySpawned>().Single();
+
+        // The fork was created with a parentTokenId — spawned activity should have it
+        var fork = events.OfType<GatewayForkRemoved>().Single();
+        Assert.IsNotNull(spawned.TokenId);
+    }
+
     // --- ScopeId propagation ---
 
     [TestMethod]
