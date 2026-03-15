@@ -40,6 +40,15 @@ public record GatewayForkRemoved(Guid ForkInstanceId) : IDomainEvent;
 public record ParentInfoSet(Guid ParentInstanceId, string ParentActivityId) : IDomainEvent;
 public record ChildWorkflowLinked(Guid ActivityInstanceId, Guid ChildWorkflowInstanceId) : IDomainEvent;
 
+// User task lifecycle
+public record UserTaskRegistered(
+    Guid ActivityInstanceId, string? Assignee,
+    IReadOnlyList<string> CandidateGroups, IReadOnlyList<string> CandidateUsers,
+    IReadOnlyList<string>? ExpectedOutputVariables) : IDomainEvent;
+public record UserTaskClaimed(Guid ActivityInstanceId, string UserId) : IDomainEvent;
+public record UserTaskUnclaimed(Guid ActivityInstanceId) : IDomainEvent;
+public record UserTaskUnregistered(Guid ActivityInstanceId) : IDomainEvent;
+
 // Timer cycle tracking
 public record TimerCycleUpdated(
     Guid HostActivityInstanceId, string TimerActivityId,

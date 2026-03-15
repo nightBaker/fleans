@@ -41,6 +41,11 @@ public interface IWorkflowInstanceGrain : IGrainWithGuidKey, IWorkflowExecutionC
     [AlwaysInterleave]
     Task OnChildWorkflowFailed(string parentActivityId, Exception exception);
 
+    // User task lifecycle
+    Task ClaimUserTask(Guid activityInstanceId, string userId);
+    Task UnclaimUserTask(Guid activityInstanceId);
+    Task CompleteUserTask(Guid activityInstanceId, string userId, ExpandoObject variables);
+
     Task HandleMessageDelivery(string activityId, Guid hostActivityInstanceId, ExpandoObject variables);
     Task HandleBoundaryMessageFired(string boundaryActivityId, Guid hostActivityInstanceId);
     Task<TimeSpan?> HandleTimerFired(string timerActivityId, Guid hostActivityInstanceId);

@@ -345,6 +345,49 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         await _state.WriteStateAsync();
     }
 
+    // ── User Task Lifecycle ──────────────────────────────────────────────
+
+    public async Task ClaimUserTask(Guid activityInstanceId, string userId)
+    {
+        await EnsureExecution();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+        LogUserTaskClaimAttempt(activityInstanceId, userId);
+
+        var effects = _execution!.ClaimUserTask(activityInstanceId, userId);
+        await PerformEffects(effects);
+        LogAndClearEvents();
+        await _state.WriteStateAsync();
+    }
+
+    public async Task UnclaimUserTask(Guid activityInstanceId)
+    {
+        await EnsureExecution();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+        LogUserTaskUnclaimAttempt(activityInstanceId);
+
+        var effects = _execution!.UnclaimUserTask(activityInstanceId);
+        await PerformEffects(effects);
+        LogAndClearEvents();
+        await _state.WriteStateAsync();
+    }
+
+    public async Task CompleteUserTask(Guid activityInstanceId, string userId, ExpandoObject variables)
+    {
+        await EnsureExecution();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+        LogUserTaskCompleteAttempt(activityInstanceId, userId);
+
+        var effects = _execution!.CompleteUserTask(activityInstanceId, userId, variables);
+        await PerformEffects(effects);
+        await ResolveExternalCompletions();
+        await RunExecutionLoop();
+        LogAndClearEvents();
+        await _state.WriteStateAsync();
+    }
+
     // ── State Facade ────────────────────────────────────────────────────
 
     public ValueTask<object?> GetVariable(Guid variablesId, string variableName)

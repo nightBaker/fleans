@@ -221,6 +221,27 @@ public partial class WorkflowInstance
                     await parentFailGrain.OnChildWorkflowFailed(notifyFailed.ParentActivityId, notifyFailed.Exception);
                     break;
 
+                case RegisterUserTaskEffect regTask:
+                    var userTaskRegistry = _grainFactory.GetGrain<IUserTaskRegistryGrain>(0);
+                    // Note: CreatedAt is set here at effect-processing time, not at domain-event time.
+                    // Minor temporal drift — acceptable today, revisit during JournaledGrain migration.
+                    await userTaskRegistry.Register(new UserTaskRegistration(
+                        regTask.WorkflowInstanceId, regTask.ActivityInstanceId, regTask.ActivityId,
+                        regTask.Assignee, regTask.CandidateGroups, regTask.CandidateUsers,
+                        null, Domain.States.UserTaskLifecycleState.Created, DateTimeOffset.UtcNow));
+                    break;
+
+                case UnregisterUserTaskEffect unregTask:
+                    var unregRegistry = _grainFactory.GetGrain<IUserTaskRegistryGrain>(0);
+                    await unregRegistry.Unregister(unregTask.ActivityInstanceId);
+                    break;
+
+                case UpdateUserTaskClaimEffect claimUpdate:
+                    var claimRegistry = _grainFactory.GetGrain<IUserTaskRegistryGrain>(0);
+                    await claimRegistry.UpdateClaim(
+                        claimUpdate.ActivityInstanceId, claimUpdate.ClaimedBy, claimUpdate.TaskState);
+                    break;
+
                 case PublishDomainEventEffect publishEvt:
                     await PublishDomainEvent(publishEvt.Event);
                     break;
@@ -362,6 +383,18 @@ public partial class WorkflowInstance
                     break;
                 case MultiInstanceTotalSet miTotal:
                     LogMultiInstanceTotalSet(miTotal.ActivityInstanceId, miTotal.Total);
+                    break;
+                case UserTaskRegistered userTaskReg:
+                    LogUserTaskRegistered(userTaskReg.ActivityInstanceId, userTaskReg.Assignee);
+                    break;
+                case UserTaskClaimed userTaskClaimed:
+                    LogUserTaskClaimed(userTaskClaimed.ActivityInstanceId, userTaskClaimed.UserId);
+                    break;
+                case UserTaskUnclaimed userTaskUnclaimed:
+                    LogUserTaskUnclaimed(userTaskUnclaimed.ActivityInstanceId);
+                    break;
+                case UserTaskUnregistered userTaskUnreg:
+                    LogUserTaskUnregistered(userTaskUnreg.ActivityInstanceId);
                     break;
             }
         }

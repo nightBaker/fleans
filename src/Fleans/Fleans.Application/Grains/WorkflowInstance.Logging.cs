@@ -219,4 +219,34 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 3019, Level = LogLevel.Information,
         Message = "Child workflow linked: ActivityInstanceId={ActivityInstanceId}, ChildWorkflowInstanceId={ChildWorkflowInstanceId}")]
     private partial void LogChildWorkflowLinked(Guid activityInstanceId, Guid childWorkflowInstanceId);
+
+    // User task lifecycle (EventId 1060-1069)
+    [LoggerMessage(EventId = 1060, Level = LogLevel.Information,
+        Message = "User task claim attempt: ActivityInstanceId={ActivityInstanceId}, UserId={UserId}")]
+    private partial void LogUserTaskClaimAttempt(Guid activityInstanceId, string userId);
+
+    [LoggerMessage(EventId = 1061, Level = LogLevel.Information,
+        Message = "User task unclaim attempt: ActivityInstanceId={ActivityInstanceId}")]
+    private partial void LogUserTaskUnclaimAttempt(Guid activityInstanceId);
+
+    [LoggerMessage(EventId = 1062, Level = LogLevel.Information,
+        Message = "User task complete attempt: ActivityInstanceId={ActivityInstanceId}, UserId={UserId}")]
+    private partial void LogUserTaskCompleteAttempt(Guid activityInstanceId, string userId);
+
+    // User task domain events (EventId 3020-3029)
+    [LoggerMessage(EventId = 3020, Level = LogLevel.Information,
+        Message = "User task registered: ActivityInstanceId={ActivityInstanceId}, Assignee={Assignee}")]
+    private partial void LogUserTaskRegistered(Guid activityInstanceId, string? assignee);
+
+    [LoggerMessage(EventId = 3021, Level = LogLevel.Information,
+        Message = "User task claimed: ActivityInstanceId={ActivityInstanceId}, UserId={UserId}")]
+    private partial void LogUserTaskClaimed(Guid activityInstanceId, string userId);
+
+    [LoggerMessage(EventId = 3022, Level = LogLevel.Information,
+        Message = "User task unclaimed: ActivityInstanceId={ActivityInstanceId}")]
+    private partial void LogUserTaskUnclaimed(Guid activityInstanceId);
+
+    [LoggerMessage(EventId = 3023, Level = LogLevel.Information,
+        Message = "User task unregistered: ActivityInstanceId={ActivityInstanceId}")]
+    private partial void LogUserTaskUnregistered(Guid activityInstanceId);
 }
