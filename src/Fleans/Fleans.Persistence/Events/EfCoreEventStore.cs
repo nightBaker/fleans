@@ -16,7 +16,7 @@ public class EfCoreEventStore
 {
     private readonly IDbContextFactory<FleanCommandDbContext> _dbContextFactory;
 
-    public static readonly JsonSerializerSettings JsonSettings = new()
+    internal static readonly JsonSerializerSettings JsonSettings = new()
     {
         TypeNameHandling = TypeNameHandling.Auto,
         PreserveReferencesHandling = PreserveReferencesHandling.Objects,
@@ -181,8 +181,7 @@ internal sealed class EventStoreSerializationBinder : DefaultSerializationBinder
         var name = assembly.GetName().Name;
         if (name is null) return false;
         return name.StartsWith("System", StringComparison.Ordinal)
-            || name is "mscorlib" or "netstandard"
-            || name.StartsWith("System.", StringComparison.Ordinal);
+            || name is "mscorlib" or "netstandard";
     }
 }
 
