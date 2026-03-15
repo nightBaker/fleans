@@ -233,20 +233,20 @@ public partial class WorkflowInstance
         Message = "User task complete attempt: ActivityInstanceId={ActivityInstanceId}, UserId={UserId}")]
     private partial void LogUserTaskCompleteAttempt(Guid activityInstanceId, string userId);
 
-    // User task domain events (EventId 3020-3029)
-    [LoggerMessage(EventId = 3020, Level = LogLevel.Information,
+    // User task domain events (EventId 3024-3029)
+    [LoggerMessage(EventId = 3024, Level = LogLevel.Information,
         Message = "User task registered: ActivityInstanceId={ActivityInstanceId}, Assignee={Assignee}")]
     private partial void LogUserTaskRegistered(Guid activityInstanceId, string? assignee);
 
-    [LoggerMessage(EventId = 3021, Level = LogLevel.Information,
+    [LoggerMessage(EventId = 3025, Level = LogLevel.Information,
         Message = "User task claimed: ActivityInstanceId={ActivityInstanceId}, UserId={UserId}")]
     private partial void LogUserTaskClaimed(Guid activityInstanceId, string userId);
 
-    [LoggerMessage(EventId = 3022, Level = LogLevel.Information,
+    [LoggerMessage(EventId = 3026, Level = LogLevel.Information,
         Message = "User task unclaimed: ActivityInstanceId={ActivityInstanceId}")]
     private partial void LogUserTaskUnclaimed(Guid activityInstanceId);
 
-    [LoggerMessage(EventId = 3023, Level = LogLevel.Information,
+    [LoggerMessage(EventId = 3027, Level = LogLevel.Information,
         Message = "User task unregistered: ActivityInstanceId={ActivityInstanceId}")]
     private partial void LogUserTaskUnregistered(Guid activityInstanceId);
 

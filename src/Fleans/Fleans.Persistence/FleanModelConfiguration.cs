@@ -38,8 +38,7 @@ internal static class FleanModelConfiguration
 
             entity.Property(e => e.ProcessDefinitionId).HasMaxLength(512);
 
-            // TODO: UserTasks metadata must be persisted when persistence is implemented.
-            // Currently in-memory only — user task state will be lost on silo restart.
+            // UserTasks is an in-memory dictionary rehydrated from the UserTasks table on activation.
             entity.Ignore(e => e.UserTasks);
 
             entity.HasMany(e => e.TimerCycleTracking)
