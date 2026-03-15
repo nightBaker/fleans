@@ -8,6 +8,9 @@ using Fleans.Domain.States;
 using Fleans.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using Sieve.Models;
+using Sieve.Services;
 
 namespace Fleans.Persistence.Tests;
 
@@ -35,7 +38,13 @@ public class WorkflowQueryServiceTests
 
         _commandDbContextFactory = new TestCommandDbContextFactory(commandOptions);
         _queryDbContextFactory = new TestQueryDbContextFactory(queryOptions);
-        _service = new WorkflowQueryService(_queryDbContextFactory);
+        var sieveOptions = Options.Create(new SieveOptions
+        {
+            DefaultPageSize = 20,
+            MaxPageSize = 100
+        });
+        ISieveProcessor sieveProcessor = new ApplicationSieveProcessor(sieveOptions);
+        _service = new WorkflowQueryService(_queryDbContextFactory, sieveProcessor);
 
         using var db = _commandDbContextFactory.CreateDbContext();
         db.Database.EnsureCreated();
@@ -337,6 +346,161 @@ public class WorkflowQueryServiceTests
         var results = await _service.GetInstancesByKeyAndVersion("key", 99);
 
         Assert.AreEqual(0, results.Count);
+    }
+
+    // ─────────────────────────────────────────────────
+    // GetInstancesByKey (paginated)
+    // ─────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task GetInstancesByKey_Paginated_ReturnsPagedResult()
+    {
+        using var db = _commandDbContextFactory.CreateDbContext();
+
+        await SeedProcessDefinition(db, "paged:1:ts", "paged", 1);
+        for (int i = 0; i < 5; i++)
+            await SeedWorkflowInstance(db, Guid.NewGuid(), processDefinitionId: "paged:1:ts", isStarted: true);
+
+        var page1 = await _service.GetInstancesByKey("paged", new PageRequest(Page: 1, PageSize: 2));
+
+        Assert.AreEqual(2, page1.Items.Count);
+        Assert.AreEqual(5, page1.TotalCount);
+        Assert.AreEqual(1, page1.Page);
+        Assert.AreEqual(2, page1.PageSize);
+    }
+
+    [TestMethod]
+    public async Task GetInstancesByKey_Paginated_ReturnsSecondPage()
+    {
+        using var db = _commandDbContextFactory.CreateDbContext();
+
+        await SeedProcessDefinition(db, "paged2:1:ts", "paged2", 1);
+        for (int i = 0; i < 5; i++)
+            await SeedWorkflowInstance(db, Guid.NewGuid(), processDefinitionId: "paged2:1:ts", isStarted: true);
+
+        var page2 = await _service.GetInstancesByKey("paged2", new PageRequest(Page: 2, PageSize: 2));
+
+        Assert.AreEqual(2, page2.Items.Count);
+        Assert.AreEqual(5, page2.TotalCount);
+        Assert.AreEqual(2, page2.Page);
+    }
+
+    [TestMethod]
+    public async Task GetInstancesByKey_Paginated_ReturnsLastPartialPage()
+    {
+        using var db = _commandDbContextFactory.CreateDbContext();
+
+        await SeedProcessDefinition(db, "paged3:1:ts", "paged3", 1);
+        for (int i = 0; i < 5; i++)
+            await SeedWorkflowInstance(db, Guid.NewGuid(), processDefinitionId: "paged3:1:ts", isStarted: true);
+
+        var page3 = await _service.GetInstancesByKey("paged3", new PageRequest(Page: 3, PageSize: 2));
+
+        Assert.AreEqual(1, page3.Items.Count);
+        Assert.AreEqual(5, page3.TotalCount);
+    }
+
+    [TestMethod]
+    public async Task GetInstancesByKey_Paginated_ReturnsEmpty_WhenNoMatch()
+    {
+        var result = await _service.GetInstancesByKey("nonexistent", new PageRequest());
+
+        Assert.AreEqual(0, result.Items.Count);
+        Assert.AreEqual(0, result.TotalCount);
+    }
+
+    [TestMethod]
+    public async Task GetInstancesByKey_Paginated_SortsByCreatedAtDescending()
+    {
+        using var db = _commandDbContextFactory.CreateDbContext();
+
+        await SeedProcessDefinition(db, "sorted:1:ts", "sorted", 1);
+        var oldest = Guid.NewGuid();
+        var newest = Guid.NewGuid();
+        await SeedWorkflowInstance(db, oldest, processDefinitionId: "sorted:1:ts", isStarted: true,
+            createdAt: new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        await SeedWorkflowInstance(db, newest, processDefinitionId: "sorted:1:ts", isStarted: true,
+            createdAt: new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero));
+
+        var result = await _service.GetInstancesByKey("sorted",
+            new PageRequest(Sorts: "-CreatedAt"));
+
+        Assert.AreEqual(2, result.Items.Count);
+        Assert.AreEqual(newest, result.Items[0].InstanceId);
+        Assert.AreEqual(oldest, result.Items[1].InstanceId);
+    }
+
+    [TestMethod]
+    public async Task GetInstancesByKey_Paginated_FiltersCompleted()
+    {
+        using var db = _commandDbContextFactory.CreateDbContext();
+
+        await SeedProcessDefinition(db, "filtered:1:ts", "filtered", 1);
+        await SeedWorkflowInstance(db, Guid.NewGuid(), processDefinitionId: "filtered:1:ts",
+            isStarted: true, isCompleted: true);
+        await SeedWorkflowInstance(db, Guid.NewGuid(), processDefinitionId: "filtered:1:ts",
+            isStarted: true, isCompleted: false);
+        await SeedWorkflowInstance(db, Guid.NewGuid(), processDefinitionId: "filtered:1:ts",
+            isStarted: true, isCompleted: false);
+
+        var result = await _service.GetInstancesByKey("filtered",
+            new PageRequest(Filters: "IsCompleted==true"));
+
+        Assert.AreEqual(1, result.Items.Count);
+        Assert.AreEqual(1, result.TotalCount);
+        Assert.IsTrue(result.Items[0].IsCompleted);
+    }
+
+    [TestMethod]
+    public async Task GetInstancesByKey_Paginated_NormalizesInvalidPage()
+    {
+        using var db = _commandDbContextFactory.CreateDbContext();
+
+        await SeedProcessDefinition(db, "norm:1:ts", "norm", 1);
+        await SeedWorkflowInstance(db, Guid.NewGuid(), processDefinitionId: "norm:1:ts", isStarted: true);
+
+        var result = await _service.GetInstancesByKey("norm",
+            new PageRequest(Page: -1, PageSize: 0));
+
+        Assert.AreEqual(1, result.Page);
+        Assert.AreEqual(1, result.PageSize);
+    }
+
+    // ─────────────────────────────────────────────────
+    // GetInstancesByKeyAndVersion (paginated)
+    // ─────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task GetInstancesByKeyAndVersion_Paginated_ReturnsPagedResult()
+    {
+        using var db = _commandDbContextFactory.CreateDbContext();
+
+        await SeedProcessDefinition(db, "pvkey:1:ts", "pvkey", 1);
+        await SeedProcessDefinition(db, "pvkey:2:ts", "pvkey", 2);
+
+        for (int i = 0; i < 3; i++)
+            await SeedWorkflowInstance(db, Guid.NewGuid(), processDefinitionId: "pvkey:1:ts", isStarted: true);
+        await SeedWorkflowInstance(db, Guid.NewGuid(), processDefinitionId: "pvkey:2:ts", isStarted: true);
+
+        var result = await _service.GetInstancesByKeyAndVersion("pvkey", 1,
+            new PageRequest(Page: 1, PageSize: 2));
+
+        Assert.AreEqual(2, result.Items.Count);
+        Assert.AreEqual(3, result.TotalCount);
+    }
+
+    [TestMethod]
+    public async Task GetInstancesByKeyAndVersion_Paginated_ReturnsEmpty_WhenVersionNotFound()
+    {
+        using var db = _commandDbContextFactory.CreateDbContext();
+
+        await SeedProcessDefinition(db, "pvkey2:1:ts", "pvkey2", 1);
+        await SeedWorkflowInstance(db, Guid.NewGuid(), processDefinitionId: "pvkey2:1:ts", isStarted: true);
+
+        var result = await _service.GetInstancesByKeyAndVersion("pvkey2", 99, new PageRequest());
+
+        Assert.AreEqual(0, result.Items.Count);
+        Assert.AreEqual(0, result.TotalCount);
     }
 
     // ─────────────────────────────────────────────────

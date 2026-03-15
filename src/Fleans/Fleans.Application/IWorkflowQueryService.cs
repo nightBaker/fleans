@@ -8,6 +8,8 @@ public interface IWorkflowQueryService
     Task<IReadOnlyList<ProcessDefinitionSummary>> GetAllProcessDefinitions();
     Task<IReadOnlyList<WorkflowInstanceInfo>> GetInstancesByKey(string processDefinitionKey);
     Task<IReadOnlyList<WorkflowInstanceInfo>> GetInstancesByKeyAndVersion(string key, int version);
+    Task<PagedResult<WorkflowInstanceInfo>> GetInstancesByKey(string processDefinitionKey, PageRequest page);
+    Task<PagedResult<WorkflowInstanceInfo>> GetInstancesByKeyAndVersion(string key, int version, PageRequest page);
     Task<string?> GetBpmnXml(Guid instanceId);
     Task<string?> GetBpmnXmlByKey(string processDefinitionKey);
     Task<string?> GetBpmnXmlByKeyAndVersion(string key, int version);
