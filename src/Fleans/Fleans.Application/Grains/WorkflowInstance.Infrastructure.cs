@@ -221,6 +221,45 @@ public partial class WorkflowInstance
                     await parentFailGrain.OnChildWorkflowFailed(notifyFailed.ParentActivityId, notifyFailed.Exception);
                     break;
 
+                case RegisterUserTaskEffect regTask:
+                    try
+                    {
+                        var taskGrain = _grainFactory.GetGrain<IUserTaskGrain>(regTask.ActivityInstanceId);
+                        await taskGrain.Register(
+                            regTask.WorkflowInstanceId, regTask.ActivityId,
+                            regTask.Assignee, regTask.CandidateGroups, regTask.CandidateUsers,
+                            regTask.ExpectedOutputVariables);
+                    }
+                    catch (Exception ex)
+                    {
+                        LogUserTaskRegistrationFailed(regTask.ActivityInstanceId, ex);
+                    }
+                    break;
+
+                case CompleteUserTaskPersistenceEffect completeTask:
+                    try
+                    {
+                        var completeGrain = _grainFactory.GetGrain<IUserTaskGrain>(completeTask.ActivityInstanceId);
+                        await completeGrain.MarkCompleted();
+                    }
+                    catch (Exception ex)
+                    {
+                        LogUserTaskCompletionPersistenceFailed(completeTask.ActivityInstanceId, ex);
+                    }
+                    break;
+
+                case UpdateUserTaskClaimEffect claimUpdate:
+                    try
+                    {
+                        var claimGrain = _grainFactory.GetGrain<IUserTaskGrain>(claimUpdate.ActivityInstanceId);
+                        await claimGrain.UpdateClaim(claimUpdate.ClaimedBy, claimUpdate.TaskState);
+                    }
+                    catch (Exception ex)
+                    {
+                        LogUserTaskClaimUpdateFailed(claimUpdate.ActivityInstanceId, ex);
+                    }
+                    break;
+
                 case PublishDomainEventEffect publishEvt:
                     await PublishDomainEvent(publishEvt.Event);
                     break;
@@ -362,6 +401,18 @@ public partial class WorkflowInstance
                     break;
                 case MultiInstanceTotalSet miTotal:
                     LogMultiInstanceTotalSet(miTotal.ActivityInstanceId, miTotal.Total);
+                    break;
+                case UserTaskRegistered userTaskReg:
+                    LogUserTaskRegistered(userTaskReg.ActivityInstanceId, userTaskReg.Assignee);
+                    break;
+                case UserTaskClaimed userTaskClaimed:
+                    LogUserTaskClaimed(userTaskClaimed.ActivityInstanceId, userTaskClaimed.UserId);
+                    break;
+                case UserTaskUnclaimed userTaskUnclaimed:
+                    LogUserTaskUnclaimed(userTaskUnclaimed.ActivityInstanceId);
+                    break;
+                case UserTaskUnregistered userTaskUnreg:
+                    LogUserTaskUnregistered(userTaskUnreg.ActivityInstanceId);
                     break;
             }
         }

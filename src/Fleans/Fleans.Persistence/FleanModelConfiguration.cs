@@ -38,6 +38,9 @@ internal static class FleanModelConfiguration
 
             entity.Property(e => e.ProcessDefinitionId).HasMaxLength(512);
 
+            // UserTasks is an in-memory dictionary rehydrated from the UserTasks table on activation.
+            entity.Ignore(e => e.UserTasks);
+
             entity.HasMany(e => e.TimerCycleTracking)
                 .WithOne()
                 .HasForeignKey(e => e.WorkflowInstanceId)
@@ -202,6 +205,39 @@ internal static class FleanModelConfiguration
             entity.Property(e => e.ProcessDefinitionKey).HasMaxLength(256);
         });
 
+        modelBuilder.Entity<UserTaskState>(entity =>
+        {
+            entity.ToTable("UserTasks");
+            entity.HasKey(e => e.ActivityInstanceId);
+
+            entity.Property(e => e.ActivityId).HasMaxLength(256);
+            entity.Property(e => e.Assignee).HasMaxLength(256);
+            entity.Property(e => e.ClaimedBy).HasMaxLength(256);
+            entity.Property(e => e.ETag).HasMaxLength(64);
+
+            entity.Property(e => e.CandidateGroups)
+                .HasConversion(
+                    v => JsonConvert.SerializeObject(v),
+                    v => JsonConvert.DeserializeObject<List<string>>(v) ?? new List<string>());
+
+            entity.Property(e => e.CandidateUsers)
+                .HasConversion(
+                    v => JsonConvert.SerializeObject(v),
+                    v => JsonConvert.DeserializeObject<List<string>>(v) ?? new List<string>());
+
+            entity.Property(e => e.ExpectedOutputVariables)
+                .HasConversion(
+                    v => v == null ? null : JsonConvert.SerializeObject(v),
+                    v => v == null ? null : JsonConvert.DeserializeObject<List<string>>(v));
+
+            entity.HasOne<WorkflowInstanceState>()
+                .WithMany()
+                .HasForeignKey(e => e.WorkflowInstanceId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => e.WorkflowInstanceId);
+        });
+
         modelBuilder.Entity<ProcessDefinition>(entity =>
         {
             entity.ToTable("ProcessDefinitions");
@@ -240,7 +276,8 @@ internal static class FleanModelConfiguration
 }
 
 /// <summary>
-/// Restricts TypeNameHandling deserialization to types from the Fleans.Domain assembly only.
+/// Restricts TypeNameHandling deserialization to types from the Fleans.Domain assembly
+/// and BCL/system assemblies (e.g. System.Collections.Generic.List&lt;string&gt;).
 /// </summary>
 internal sealed class DomainAssemblySerializationBinder : DefaultSerializationBinder
 {
@@ -249,10 +286,18 @@ internal sealed class DomainAssemblySerializationBinder : DefaultSerializationBi
     public override Type BindToType(string? assemblyName, string typeName)
     {
         var type = base.BindToType(assemblyName, typeName);
-        if (type.Assembly != DomainAssembly)
+        if (type.Assembly != DomainAssembly && !IsSystemAssembly(type.Assembly))
             throw new JsonSerializationException(
                 $"Deserialization of type '{type.FullName}' from assembly '{type.Assembly.FullName}' is not allowed. " +
-                $"Only types from '{DomainAssembly.GetName().Name}' are permitted.");
+                $"Only types from '{DomainAssembly.GetName().Name}' and system assemblies are permitted.");
         return type;
+    }
+
+    private static bool IsSystemAssembly(Assembly assembly)
+    {
+        var name = assembly.GetName().Name;
+        return name != null && (name.StartsWith("System.", StringComparison.Ordinal)
+            || name is "System" or "mscorlib" or "netstandard"
+            || name == typeof(object).Assembly.GetName().Name);
     }
 }

@@ -21,6 +21,7 @@ public class FleanCommandDbContext : DbContext
     public DbSet<SignalStartEventListenerState> SignalStartEventListeners => Set<SignalStartEventListenerState>();
     public DbSet<MessageStartEventRegistration> MessageStartEventRegistrations => Set<MessageStartEventRegistration>();
     public DbSet<SignalStartEventRegistration> SignalStartEventRegistrations => Set<SignalStartEventRegistration>();
+    public DbSet<UserTaskState> UserTasks => Set<UserTaskState>();
 
     public FleanCommandDbContext(DbContextOptions<FleanCommandDbContext> options) : base(options) { }
 
