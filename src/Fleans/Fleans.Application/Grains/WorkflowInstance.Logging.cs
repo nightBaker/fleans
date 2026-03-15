@@ -249,4 +249,17 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 3023, Level = LogLevel.Information,
         Message = "User task unregistered: ActivityInstanceId={ActivityInstanceId}")]
     private partial void LogUserTaskUnregistered(Guid activityInstanceId);
+
+    // User task persistence effect failures (EventId 1063-1065)
+    [LoggerMessage(EventId = 1063, Level = LogLevel.Warning,
+        Message = "User task registration persistence failed: ActivityInstanceId={ActivityInstanceId}")]
+    private partial void LogUserTaskRegistrationFailed(Guid activityInstanceId, Exception exception);
+
+    [LoggerMessage(EventId = 1064, Level = LogLevel.Warning,
+        Message = "User task completion persistence failed: ActivityInstanceId={ActivityInstanceId}")]
+    private partial void LogUserTaskCompletionPersistenceFailed(Guid activityInstanceId, Exception exception);
+
+    [LoggerMessage(EventId = 1065, Level = LogLevel.Warning,
+        Message = "User task claim update persistence failed: ActivityInstanceId={ActivityInstanceId}")]
+    private partial void LogUserTaskClaimUpdateFailed(Guid activityInstanceId, Exception exception);
 }

@@ -206,6 +206,39 @@ internal static class FleanModelConfiguration
             entity.Property(e => e.ProcessDefinitionKey).HasMaxLength(256);
         });
 
+        modelBuilder.Entity<UserTaskState>(entity =>
+        {
+            entity.ToTable("UserTasks");
+            entity.HasKey(e => e.ActivityInstanceId);
+
+            entity.Property(e => e.ActivityId).HasMaxLength(256);
+            entity.Property(e => e.Assignee).HasMaxLength(256);
+            entity.Property(e => e.ClaimedBy).HasMaxLength(256);
+            entity.Property(e => e.ETag).HasMaxLength(64);
+
+            entity.Property(e => e.CandidateGroups)
+                .HasConversion(
+                    v => JsonConvert.SerializeObject(v),
+                    v => JsonConvert.DeserializeObject<List<string>>(v) ?? new List<string>());
+
+            entity.Property(e => e.CandidateUsers)
+                .HasConversion(
+                    v => JsonConvert.SerializeObject(v),
+                    v => JsonConvert.DeserializeObject<List<string>>(v) ?? new List<string>());
+
+            entity.Property(e => e.ExpectedOutputVariables)
+                .HasConversion(
+                    v => v == null ? null : JsonConvert.SerializeObject(v),
+                    v => v == null ? null : JsonConvert.DeserializeObject<List<string>>(v));
+
+            entity.HasOne<WorkflowInstanceState>()
+                .WithMany()
+                .HasForeignKey(e => e.WorkflowInstanceId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => e.WorkflowInstanceId);
+        });
+
         modelBuilder.Entity<ProcessDefinition>(entity =>
         {
             entity.ToTable("ProcessDefinitions");

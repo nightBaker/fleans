@@ -224,9 +224,9 @@ public class UserTaskLifecycleTests
         var unregistered = events.OfType<UserTaskUnregistered>().Single();
         Assert.AreEqual(taskEntry.ActivityInstanceId, unregistered.ActivityInstanceId);
 
-        // Assert: UnregisterUserTaskEffect returned
-        var unregisterEffect = effects.OfType<UnregisterUserTaskEffect>().Single();
-        Assert.AreEqual(taskEntry.ActivityInstanceId, unregisterEffect.ActivityInstanceId);
+        // Assert: CompleteUserTaskPersistenceEffect returned
+        var completeEffect = effects.OfType<CompleteUserTaskPersistenceEffect>().Single();
+        Assert.AreEqual(taskEntry.ActivityInstanceId, completeEffect.ActivityInstanceId);
     }
 
     [TestMethod]

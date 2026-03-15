@@ -332,25 +332,36 @@ public class UserTaskIntegrationTests : WorkflowTestBase
         });
     }
 
-    // --- Registry queries ---
+    // --- Per-task grain queries ---
 
     [TestMethod]
-    public async Task UserTaskRegistry_ShouldTrackPendingTasks()
+    public async Task UserTaskGrain_ShouldTrackPendingTasks()
     {
         var grain = await StartUserTaskWorkflow(
             assignee: "john", candidateGroups: ["managers"]);
 
-        var registry = Cluster.GrainFactory.GetGrain<IUserTaskRegistryGrain>(0);
-        var tasks = await registry.GetPendingTasks();
+        var activeActivities = await grain.GetActiveActivities();
+        Guid instanceId = default;
+        foreach (var a in activeActivities)
+        {
+            if (await a.GetActivityId() == "userTask1")
+            {
+                instanceId = await a.GetActivityInstanceId();
+                break;
+            }
+        }
 
-        Assert.IsTrue(tasks.Count >= 1);
-        var task = tasks.First(t => t.ActivityId == "userTask1");
-        Assert.AreEqual("john", task.Assignee);
-        Assert.IsTrue(task.CandidateGroups.Contains("managers"));
+        var taskGrain = Cluster.GrainFactory.GetGrain<IUserTaskGrain>(instanceId);
+        var taskState = await taskGrain.GetState();
+
+        Assert.IsNotNull(taskState);
+        Assert.AreEqual("userTask1", taskState.ActivityId);
+        Assert.AreEqual("john", taskState.Assignee);
+        Assert.IsTrue(taskState.CandidateGroups.Contains("managers"));
     }
 
     [TestMethod]
-    public async Task UserTaskRegistry_ShouldUnregisterAfterCompletion()
+    public async Task UserTaskGrain_ShouldMarkCompletedAfterCompletion()
     {
         var grain = await StartUserTaskWorkflow(assignee: "john");
 
@@ -368,25 +379,37 @@ public class UserTaskIntegrationTests : WorkflowTestBase
         await grain.ClaimUserTask(instanceId, "john");
         await grain.CompleteUserTask(instanceId, "john", new ExpandoObject());
 
-        var registry = Cluster.GrainFactory.GetGrain<IUserTaskRegistryGrain>(0);
-        var task = await registry.GetTask(instanceId);
+        var taskGrain = Cluster.GrainFactory.GetGrain<IUserTaskGrain>(instanceId);
+        var taskState = await taskGrain.GetState();
 
-        Assert.IsNull(task);
+        Assert.IsNotNull(taskState);
+        Assert.AreEqual(Domain.States.UserTaskLifecycleState.Completed, taskState.TaskState);
     }
 
     [TestMethod]
-    public async Task UserTaskRegistry_ShouldFilterByAssignee()
+    public async Task UserTaskGrain_ShouldReflectClaimState()
     {
-        await StartUserTaskWorkflow(assignee: "john");
-        await StartUserTaskWorkflow(assignee: "alice");
+        var grain = await StartUserTaskWorkflow(assignee: "john");
 
-        var registry = Cluster.GrainFactory.GetGrain<IUserTaskRegistryGrain>(0);
+        var activeActivities = await grain.GetActiveActivities();
+        Guid instanceId = default;
+        foreach (var a in activeActivities)
+        {
+            if (await a.GetActivityId() == "userTask1")
+            {
+                instanceId = await a.GetActivityInstanceId();
+                break;
+            }
+        }
 
-        var johnTasks = await registry.GetPendingTasks(assignee: "john");
-        Assert.IsTrue(johnTasks.All(t => t.Assignee == "john" || t.CandidateUsers.Contains("john")));
+        await grain.ClaimUserTask(instanceId, "john");
 
-        var aliceTasks = await registry.GetPendingTasks(assignee: "alice");
-        Assert.IsTrue(aliceTasks.All(t => t.Assignee == "alice" || t.CandidateUsers.Contains("alice")));
+        var taskGrain = Cluster.GrainFactory.GetGrain<IUserTaskGrain>(instanceId);
+        var taskState = await taskGrain.GetState();
+
+        Assert.IsNotNull(taskState);
+        Assert.AreEqual("john", taskState.ClaimedBy);
+        Assert.AreEqual(Domain.States.UserTaskLifecycleState.Claimed, taskState.TaskState);
     }
 
     // --- FailActivity tests ---
@@ -470,7 +493,7 @@ public class UserTaskIntegrationTests : WorkflowTestBase
     }
 
     [TestMethod]
-    public async Task FailActivity_ShouldUnregisterFromRegistry()
+    public async Task FailActivity_ShouldMarkTaskCompleted()
     {
         var grain = await StartUserTaskWorkflow(assignee: "john");
 
@@ -488,9 +511,10 @@ public class UserTaskIntegrationTests : WorkflowTestBase
         var exception = new Exception("Failure");
         await grain.FailActivity("userTask1", exception);
 
-        var registry = Cluster.GrainFactory.GetGrain<IUserTaskRegistryGrain>(0);
-        var task = await registry.GetTask(instanceId);
+        var taskGrain = Cluster.GrainFactory.GetGrain<IUserTaskGrain>(instanceId);
+        var taskState = await taskGrain.GetState();
 
-        Assert.IsNull(task);
+        Assert.IsNotNull(taskState);
+        Assert.AreEqual(Domain.States.UserTaskLifecycleState.Completed, taskState.TaskState);
     }
 }

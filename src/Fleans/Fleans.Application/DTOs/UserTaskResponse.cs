@@ -9,4 +9,5 @@ public record UserTaskResponse(
     IReadOnlyList<string> CandidateUsers,
     string? ClaimedBy,
     string TaskState,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    IReadOnlyList<string>? ExpectedOutputVariables);

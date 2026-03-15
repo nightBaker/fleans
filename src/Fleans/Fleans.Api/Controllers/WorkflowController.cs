@@ -12,16 +12,16 @@ namespace Fleans.Api.Controllers
     {
         private readonly ILogger<WorkflowController> _logger;
         private readonly IWorkflowCommandService _commandService;
-        private readonly IUserTaskQueryService _userTaskQueryService;
+        private readonly IWorkflowQueryService _workflowQueryService;
 
         public WorkflowController(
             ILogger<WorkflowController> logger,
             IWorkflowCommandService commandService,
-            IUserTaskQueryService userTaskQueryService)
+            IWorkflowQueryService workflowQueryService)
         {
             _logger = logger;
             _commandService = commandService;
-            _userTaskQueryService = userTaskQueryService;
+            _workflowQueryService = workflowQueryService;
         }
 
         [HttpPost("start", Name = "StartWorkflow")]
@@ -107,14 +107,14 @@ namespace Fleans.Api.Controllers
             [FromQuery] string? assignee = null,
             [FromQuery] string? candidateGroup = null)
         {
-            var tasks = await _userTaskQueryService.GetPendingTasks(assignee, candidateGroup);
+            var tasks = await _workflowQueryService.GetPendingUserTasks(assignee, candidateGroup);
             return Ok(tasks);
         }
 
         [HttpGet("tasks/{activityInstanceId:guid}", Name = "GetTask")]
         public async Task<IActionResult> GetTask(Guid activityInstanceId)
         {
-            var task = await _userTaskQueryService.GetTask(activityInstanceId);
+            var task = await _workflowQueryService.GetUserTask(activityInstanceId);
             if (task == null)
                 return NotFound(new ErrorResponse($"User task '{activityInstanceId}' not found"));
 
@@ -127,7 +127,7 @@ namespace Fleans.Api.Controllers
             if (request == null || string.IsNullOrWhiteSpace(request.UserId))
                 return BadRequest(new ErrorResponse("UserId is required"));
 
-            var task = await _userTaskQueryService.GetTask(activityInstanceId);
+            var task = await _workflowQueryService.GetUserTask(activityInstanceId);
             if (task == null)
                 return NotFound(new ErrorResponse($"User task '{activityInstanceId}' not found"));
 
@@ -146,7 +146,7 @@ namespace Fleans.Api.Controllers
         [HttpPost("tasks/{activityInstanceId:guid}/unclaim", Name = "UnclaimTask")]
         public async Task<IActionResult> UnclaimTask(Guid activityInstanceId)
         {
-            var task = await _userTaskQueryService.GetTask(activityInstanceId);
+            var task = await _workflowQueryService.GetUserTask(activityInstanceId);
             if (task == null)
                 return NotFound(new ErrorResponse($"User task '{activityInstanceId}' not found"));
 
@@ -168,7 +168,7 @@ namespace Fleans.Api.Controllers
             if (request == null || string.IsNullOrWhiteSpace(request.UserId))
                 return BadRequest(new ErrorResponse("UserId is required"));
 
-            var task = await _userTaskQueryService.GetTask(activityInstanceId);
+            var task = await _workflowQueryService.GetUserTask(activityInstanceId);
             if (task == null)
                 return NotFound(new ErrorResponse($"User task '{activityInstanceId}' not found"));
 

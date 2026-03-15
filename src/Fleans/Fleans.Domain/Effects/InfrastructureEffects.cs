@@ -46,8 +46,9 @@ public record NotifyParentFailedEffect(
 public record RegisterUserTaskEffect(
     Guid WorkflowInstanceId, Guid ActivityInstanceId, string ActivityId,
     string? Assignee, IReadOnlyList<string> CandidateGroups,
-    IReadOnlyList<string> CandidateUsers) : IInfrastructureEffect;
-public record UnregisterUserTaskEffect(Guid ActivityInstanceId) : IInfrastructureEffect;
+    IReadOnlyList<string> CandidateUsers,
+    IReadOnlyList<string>? ExpectedOutputVariables) : IInfrastructureEffect;
+public record CompleteUserTaskPersistenceEffect(Guid ActivityInstanceId) : IInfrastructureEffect;
 public record UpdateUserTaskClaimEffect(
     Guid ActivityInstanceId, string? ClaimedBy,
     UserTaskLifecycleState TaskState) : IInfrastructureEffect;

@@ -254,7 +254,8 @@ public class WorkflowExecution
                     effects.Add(new RegisterUserTaskEffect(
                         _state.Id, activityInstanceId,
                         currentEntry.ActivityId, regUserTask.Assignee,
-                        regUserTask.CandidateGroups, regUserTask.CandidateUsers));
+                        regUserTask.CandidateGroups, regUserTask.CandidateUsers,
+                        regUserTask.ExpectedOutputVariables));
                     break;
 
                 case ThrowSignalCommand throwSignal:
@@ -774,7 +775,7 @@ public class WorkflowExecution
         if (_state.UserTasks.ContainsKey(activityInstanceId))
         {
             Emit(new UserTaskUnregistered(activityInstanceId));
-            return [new UnregisterUserTaskEffect(activityInstanceId)];
+            return [new CompleteUserTaskPersistenceEffect(activityInstanceId)];
         }
         return [];
     }

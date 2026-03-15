@@ -7,7 +7,6 @@ namespace Fleans.Application
         public static void AddApplication(this IServiceCollection services)
         {
             services.AddSingleton<IWorkflowCommandService, WorkflowCommandService>();
-            services.AddSingleton<IUserTaskQueryService, UserTaskQueryService>();
         }
     }
 }

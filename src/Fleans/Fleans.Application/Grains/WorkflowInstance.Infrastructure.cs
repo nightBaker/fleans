@@ -222,24 +222,42 @@ public partial class WorkflowInstance
                     break;
 
                 case RegisterUserTaskEffect regTask:
-                    var userTaskRegistry = _grainFactory.GetGrain<IUserTaskRegistryGrain>(0);
-                    // Note: CreatedAt is set here at effect-processing time, not at domain-event time.
-                    // Minor temporal drift — acceptable today, revisit during JournaledGrain migration.
-                    await userTaskRegistry.Register(new UserTaskRegistration(
-                        regTask.WorkflowInstanceId, regTask.ActivityInstanceId, regTask.ActivityId,
-                        regTask.Assignee, regTask.CandidateGroups, regTask.CandidateUsers,
-                        null, Domain.States.UserTaskLifecycleState.Created, DateTimeOffset.UtcNow));
+                    try
+                    {
+                        var taskGrain = _grainFactory.GetGrain<IUserTaskGrain>(regTask.ActivityInstanceId);
+                        await taskGrain.Register(
+                            regTask.WorkflowInstanceId, regTask.ActivityId,
+                            regTask.Assignee, regTask.CandidateGroups, regTask.CandidateUsers,
+                            regTask.ExpectedOutputVariables);
+                    }
+                    catch (Exception ex)
+                    {
+                        LogUserTaskRegistrationFailed(regTask.ActivityInstanceId, ex);
+                    }
                     break;
 
-                case UnregisterUserTaskEffect unregTask:
-                    var unregRegistry = _grainFactory.GetGrain<IUserTaskRegistryGrain>(0);
-                    await unregRegistry.Unregister(unregTask.ActivityInstanceId);
+                case CompleteUserTaskPersistenceEffect completeTask:
+                    try
+                    {
+                        var completeGrain = _grainFactory.GetGrain<IUserTaskGrain>(completeTask.ActivityInstanceId);
+                        await completeGrain.MarkCompleted();
+                    }
+                    catch (Exception ex)
+                    {
+                        LogUserTaskCompletionPersistenceFailed(completeTask.ActivityInstanceId, ex);
+                    }
                     break;
 
                 case UpdateUserTaskClaimEffect claimUpdate:
-                    var claimRegistry = _grainFactory.GetGrain<IUserTaskRegistryGrain>(0);
-                    await claimRegistry.UpdateClaim(
-                        claimUpdate.ActivityInstanceId, claimUpdate.ClaimedBy, claimUpdate.TaskState);
+                    try
+                    {
+                        var claimGrain = _grainFactory.GetGrain<IUserTaskGrain>(claimUpdate.ActivityInstanceId);
+                        await claimGrain.UpdateClaim(claimUpdate.ClaimedBy, claimUpdate.TaskState);
+                    }
+                    catch (Exception ex)
+                    {
+                        LogUserTaskClaimUpdateFailed(claimUpdate.ActivityInstanceId, ex);
+                    }
                     break;
 
                 case PublishDomainEventEffect publishEvt:

@@ -1,4 +1,6 @@
+using Fleans.Application.DTOs;
 using Fleans.Application.QueryModels;
+using Fleans.Domain.States;
 
 namespace Fleans.Application;
 
@@ -11,4 +13,7 @@ public interface IWorkflowQueryService
     Task<string?> GetBpmnXml(Guid instanceId);
     Task<string?> GetBpmnXmlByKey(string processDefinitionKey);
     Task<string?> GetBpmnXmlByKeyAndVersion(string key, int version);
+    Task<IReadOnlyList<UserTaskResponse>> GetPendingUserTasks(string? assignee = null, string? candidateGroup = null);
+    Task<UserTaskResponse?> GetUserTask(Guid activityInstanceId);
+    Task<IReadOnlyList<UserTaskState>> GetActiveUserTasksForWorkflow(Guid workflowInstanceId);
 }
