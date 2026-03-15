@@ -16,11 +16,12 @@ public class EfCoreEventStore
 {
     private readonly IDbContextFactory<FleanCommandDbContext> _dbContextFactory;
 
-    internal static readonly JsonSerializerSettings JsonSettings = new()
+    public static readonly JsonSerializerSettings JsonSettings = new()
     {
         TypeNameHandling = TypeNameHandling.Auto,
         PreserveReferencesHandling = PreserveReferencesHandling.Objects,
         SerializationBinder = new EventStoreSerializationBinder(),
+        ContractResolver = new PrivateSetterContractResolver(),
         NullValueHandling = NullValueHandling.Include,
         MissingMemberHandling = MissingMemberHandling.Ignore
     };
@@ -182,5 +183,24 @@ internal sealed class EventStoreSerializationBinder : DefaultSerializationBinder
         return name.StartsWith("System", StringComparison.Ordinal)
             || name is "mscorlib" or "netstandard"
             || name.StartsWith("System.", StringComparison.Ordinal);
+    }
+}
+
+/// <summary>
+/// Contract resolver that allows deserialization of properties with private setters.
+/// Required for WorkflowInstanceState snapshot deserialization (e.g. Id has private set).
+/// </summary>
+internal sealed class PrivateSetterContractResolver : DefaultContractResolver
+{
+    protected override JsonProperty CreateProperty(
+        System.Reflection.MemberInfo member,
+        MemberSerialization memberSerialization)
+    {
+        var prop = base.CreateProperty(member, memberSerialization);
+        if (!prop.Writable && member is System.Reflection.PropertyInfo propertyInfo)
+        {
+            prop.Writable = propertyInfo.GetSetMethod(nonPublic: true) is not null;
+        }
+        return prop;
     }
 }
