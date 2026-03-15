@@ -1,5 +1,5 @@
 using Fleans.Application.Grains;
-using Fleans.ServiceDefaults.DTOs;
+using Fleans.Application.DTOs;
 
 namespace Fleans.Application;
 

@@ -1,4 +1,4 @@
-namespace Fleans.ServiceDefaults.DTOs;
+namespace Fleans.Application.DTOs;
 
 public record UserTaskResponse(
     Guid WorkflowInstanceId,
