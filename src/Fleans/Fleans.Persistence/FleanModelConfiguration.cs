@@ -244,7 +244,8 @@ internal static class FleanModelConfiguration
 }
 
 /// <summary>
-/// Restricts TypeNameHandling deserialization to types from the Fleans.Domain assembly only.
+/// Restricts TypeNameHandling deserialization to types from the Fleans.Domain assembly
+/// and BCL/system assemblies (e.g. System.Collections.Generic.List&lt;string&gt;).
 /// </summary>
 internal sealed class DomainAssemblySerializationBinder : DefaultSerializationBinder
 {
@@ -253,10 +254,18 @@ internal sealed class DomainAssemblySerializationBinder : DefaultSerializationBi
     public override Type BindToType(string? assemblyName, string typeName)
     {
         var type = base.BindToType(assemblyName, typeName);
-        if (type.Assembly != DomainAssembly)
+        if (type.Assembly != DomainAssembly && !IsSystemAssembly(type.Assembly))
             throw new JsonSerializationException(
                 $"Deserialization of type '{type.FullName}' from assembly '{type.Assembly.FullName}' is not allowed. " +
-                $"Only types from '{DomainAssembly.GetName().Name}' are permitted.");
+                $"Only types from '{DomainAssembly.GetName().Name}' and system assemblies are permitted.");
         return type;
+    }
+
+    private static bool IsSystemAssembly(Assembly assembly)
+    {
+        var name = assembly.GetName().Name;
+        return name != null && (name.StartsWith("System.", StringComparison.Ordinal)
+            || name is "System" or "mscorlib" or "netstandard"
+            || name == typeof(object).Assembly.GetName().Name);
     }
 }
