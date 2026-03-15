@@ -1,6 +1,7 @@
 using Fleans.Application;
 using Fleans.Domain;
 using Fleans.Domain.Persistence;
+using Fleans.Persistence.Events;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Orleans.Storage;
@@ -47,5 +48,6 @@ public static class EfCorePersistenceDependencyInjection
 
         services.AddSingleton<IProcessDefinitionRepository, EfCoreProcessDefinitionRepository>();
         services.AddSingleton<IWorkflowQueryService, WorkflowQueryService>();
+        services.AddSingleton<EfCoreEventStore>();
     }
 }
