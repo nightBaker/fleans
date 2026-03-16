@@ -11,10 +11,13 @@ namespace Fleans.Persistence.Events;
 /// <summary>
 /// Encapsulates all database operations for event and snapshot persistence.
 /// Used by the WorkflowInstance grain's ICustomStorageInterface implementation.
+/// Snapshots are stored in normalized SQL tables via IWorkflowStateProjection,
+/// with version metadata tracked in the WorkflowSnapshots table.
 /// </summary>
 public class EfCoreEventStore
 {
     private readonly IDbContextFactory<FleanCommandDbContext> _dbContextFactory;
+    private readonly IWorkflowStateProjection _stateProjection;
 
     internal static readonly JsonSerializerSettings JsonSettings = new()
     {
@@ -26,13 +29,18 @@ public class EfCoreEventStore
         MissingMemberHandling = MissingMemberHandling.Ignore
     };
 
-    public EfCoreEventStore(IDbContextFactory<FleanCommandDbContext> dbContextFactory)
+    public EfCoreEventStore(
+        IDbContextFactory<FleanCommandDbContext> dbContextFactory,
+        IWorkflowStateProjection stateProjection)
     {
         _dbContextFactory = dbContextFactory;
+        _stateProjection = stateProjection;
     }
 
     /// <summary>
     /// Loads the latest snapshot for a grain, or returns (null, 0) if none exists.
+    /// State is read from the normalized WorkflowInstances tables via IWorkflowStateProjection.
+    /// Version metadata is read from the WorkflowSnapshots table.
     /// </summary>
     public async Task<(WorkflowInstanceState? State, int Version)> ReadSnapshotAsync(
         string grainId)
@@ -46,8 +54,7 @@ public class EfCoreEventStore
         if (snapshot is null)
             return (null, 0);
 
-        var state = JsonConvert.DeserializeObject<WorkflowInstanceState>(
-            snapshot.StatePayload, JsonSettings)!;
+        var state = await _stateProjection.ReadAsync(grainId);
 
         return (state, snapshot.Version);
     }
@@ -109,15 +116,17 @@ public class EfCoreEventStore
 
     /// <summary>
     /// Upserts a snapshot for the given grain.
+    /// State is written to normalized WorkflowInstances tables via IWorkflowStateProjection.
+    /// Version metadata is tracked in the WorkflowSnapshots table.
     /// </summary>
     public async Task WriteSnapshotAsync(
         string grainId,
         int version,
         WorkflowInstanceState state)
     {
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        await _stateProjection.WriteAsync(grainId, state);
 
-        var statePayload = JsonConvert.SerializeObject(state, JsonSettings);
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
 
         var existing = await db.WorkflowSnapshots
             .FirstOrDefaultAsync(s => s.GrainId == grainId);
@@ -125,7 +134,6 @@ public class EfCoreEventStore
         if (existing is not null)
         {
             existing.Version = version;
-            existing.StatePayload = statePayload;
             existing.Timestamp = DateTimeOffset.UtcNow;
         }
         else
@@ -134,7 +142,6 @@ public class EfCoreEventStore
             {
                 GrainId = grainId,
                 Version = version,
-                StatePayload = statePayload,
                 Timestamp = DateTimeOffset.UtcNow
             });
         }

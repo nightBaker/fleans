@@ -14,6 +14,5 @@ public class WorkflowSnapshotEntity
 {
     public string GrainId { get; set; } = "";
     public int Version { get; set; }
-    public string StatePayload { get; set; } = "";
     public DateTimeOffset Timestamp { get; set; }
 }

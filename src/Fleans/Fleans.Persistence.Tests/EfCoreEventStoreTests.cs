@@ -25,7 +25,8 @@ public class EfCoreEventStoreTests
             .Options;
 
         _dbContextFactory = new TestDbContextFactory(options);
-        _store = new EfCoreEventStore(_dbContextFactory);
+        var projection = new EfCoreWorkflowStateProjection(_dbContextFactory);
+        _store = new EfCoreEventStore(_dbContextFactory, projection);
 
         using var db = _dbContextFactory.CreateDbContext();
         db.Database.EnsureCreated();
@@ -163,7 +164,8 @@ public class EfCoreEventStoreTests
     [TestMethod]
     public async Task ReadSnapshot_EmptyGrain_ReturnsNullAndZero()
     {
-        var (state, version) = await _store.ReadSnapshotAsync("grain/no-snapshot");
+        var grainId = Guid.NewGuid().ToString();
+        var (state, version) = await _store.ReadSnapshotAsync(grainId);
         Assert.IsNull(state);
         Assert.AreEqual(0, version);
     }
@@ -171,8 +173,9 @@ public class EfCoreEventStoreTests
     [TestMethod]
     public async Task WriteAndReadSnapshot_RoundTrip()
     {
-        var grainId = "grain/snapshot";
-        var state = CreateTestState();
+        var id = Guid.NewGuid();
+        var grainId = id.ToString();
+        var state = CreateTestState(id);
 
         await _store.WriteSnapshotAsync(grainId, version: 5, state);
 
@@ -182,24 +185,36 @@ public class EfCoreEventStoreTests
         Assert.AreEqual(state.Id, loaded.Id);
         Assert.AreEqual(state.IsStarted, loaded.IsStarted);
         Assert.AreEqual(state.ProcessDefinitionId, loaded.ProcessDefinitionId);
+
+        // Verify state is stored in normalized WorkflowInstances table, not as JSON blob
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        var row = await db.WorkflowInstances.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id);
+        Assert.IsNotNull(row, "Snapshot state should exist in WorkflowInstances table");
+
+        // Verify no JSON payload in snapshot metadata table
+        var snapshotMeta = await db.WorkflowSnapshots.AsNoTracking().FirstOrDefaultAsync(s => s.GrainId == grainId);
+        Assert.IsNotNull(snapshotMeta);
+        Assert.AreEqual(5, snapshotMeta.Version);
     }
 
     [TestMethod]
     public async Task WriteSnapshot_UpdateExisting()
     {
-        var grainId = "grain/snapshot-update";
-        var state1 = CreateTestState();
+        var id = Guid.NewGuid();
+        var grainId = id.ToString();
+        var state1 = CreateTestState(id);
 
         await _store.WriteSnapshotAsync(grainId, version: 5, state1);
 
-        var state2 = CreateTestState();
+        // Update the same grain's snapshot with new version
+        var state2 = CreateTestState(id);
 
         await _store.WriteSnapshotAsync(grainId, version: 10, state2);
 
         var (loaded, version) = await _store.ReadSnapshotAsync(grainId);
         Assert.IsNotNull(loaded);
         Assert.AreEqual(10, version);
-        Assert.AreEqual(state2.Id, loaded.Id);
+        Assert.AreEqual(id, loaded.Id);
     }
 
     // --- Isolation ---
@@ -242,11 +257,11 @@ public class EfCoreEventStoreTests
         Assert.IsInstanceOfType<WorkflowCompleted>(all[2]);
     }
 
-    private static WorkflowInstanceState CreateTestState()
+    private static WorkflowInstanceState CreateTestState(Guid? id = null)
     {
         var state = new WorkflowInstanceState();
-        // Use the domain's own Initialize method to set up state
-        state.Initialize(Guid.NewGuid(), "test-process:1:abc", Guid.NewGuid());
+        // Use null ProcessDefinitionId to avoid FK constraint against ProcessDefinitions table
+        state.Initialize(id ?? Guid.NewGuid(), null, Guid.NewGuid());
         state.Start();
         return state;
     }
