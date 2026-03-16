@@ -1,3 +1,4 @@
+using Fleans.Application.QueryModels;
 using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
@@ -144,10 +145,26 @@ namespace Fleans.Application.Tests
                 hostBuilder
                     .AddMemoryGrainStorage(GrainStorageNames.WorkflowInstances)
                     .AddMemoryGrainStorage(GrainStorageNames.ProcessDefinitions)
+                    .AddMemoryGrainStorage(GrainStorageNames.UserTasks)
                     .ConfigureServices(services =>
                     {
                         services.AddSingleton<IProcessDefinitionRepository, StubProcessDefinitionRepository>();
+                        services.AddSingleton<IWorkflowQueryService, StubWorkflowQueryService>();
                     });
+        }
+
+        private class StubWorkflowQueryService : IWorkflowQueryService
+        {
+            public Task<InstanceStateSnapshot?> GetStateSnapshot(Guid workflowInstanceId) => Task.FromResult<InstanceStateSnapshot?>(null);
+            public Task<IReadOnlyList<ProcessDefinitionSummary>> GetAllProcessDefinitions() => Task.FromResult<IReadOnlyList<ProcessDefinitionSummary>>([]);
+            public Task<IReadOnlyList<WorkflowInstanceInfo>> GetInstancesByKey(string processDefinitionKey) => Task.FromResult<IReadOnlyList<WorkflowInstanceInfo>>([]);
+            public Task<IReadOnlyList<WorkflowInstanceInfo>> GetInstancesByKeyAndVersion(string key, int version) => Task.FromResult<IReadOnlyList<WorkflowInstanceInfo>>([]);
+            public Task<string?> GetBpmnXml(Guid instanceId) => Task.FromResult<string?>(null);
+            public Task<string?> GetBpmnXmlByKey(string processDefinitionKey) => Task.FromResult<string?>(null);
+            public Task<string?> GetBpmnXmlByKeyAndVersion(string key, int version) => Task.FromResult<string?>(null);
+            public Task<IReadOnlyList<DTOs.UserTaskResponse>> GetPendingUserTasks(string? assignee = null, string? candidateGroup = null) => Task.FromResult<IReadOnlyList<DTOs.UserTaskResponse>>([]);
+            public Task<DTOs.UserTaskResponse?> GetUserTask(Guid activityInstanceId) => Task.FromResult<DTOs.UserTaskResponse?>(null);
+            public Task<IReadOnlyList<Domain.States.UserTaskState>> GetActiveUserTasksForWorkflow(Guid workflowInstanceId) => Task.FromResult<IReadOnlyList<Domain.States.UserTaskState>>([]);
         }
 
         private class StubProcessDefinitionRepository : IProcessDefinitionRepository

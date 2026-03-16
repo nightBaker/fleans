@@ -53,6 +53,46 @@ public abstract class BpmnConverterTestBase
 </definitions>";
     }
 
+    protected static string CreateBpmnWithUserTaskAttributes(
+        string processId, string userTaskId,
+        string? assignee = null,
+        string? candidateGroups = null,
+        string? candidateUsers = null,
+        string[]? expectedOutputs = null)
+    {
+        var camundaAttrs = "";
+        if (assignee != null) camundaAttrs += $@" camunda:assignee=""{assignee}""";
+        if (candidateGroups != null) camundaAttrs += $@" camunda:candidateGroups=""{candidateGroups}""";
+        if (candidateUsers != null) camundaAttrs += $@" camunda:candidateUsers=""{candidateUsers}""";
+
+        var outputsXml = "";
+        if (expectedOutputs is { Length: > 0 })
+        {
+            var outputElements = string.Join("\n        ",
+                expectedOutputs.Select(o => $@"<fleans:output name=""{o}"" />"));
+            outputsXml = $@"
+      <extensionElements>
+        <fleans:expectedOutputs>
+        {outputElements}
+        </fleans:expectedOutputs>
+      </extensionElements>";
+        }
+
+        return $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL""
+             xmlns:camunda=""http://camunda.org/schema/1.0/bpmn""
+             xmlns:fleans=""http://fleans.io/schema/bpmn/fleans"">
+  <process id=""{processId}"">
+    <startEvent id=""start"" />
+    <userTask id=""{userTaskId}""{camundaAttrs}>{outputsXml}
+    </userTask>
+    <endEvent id=""end"" />
+    <sequenceFlow id=""flow1"" sourceRef=""start"" targetRef=""{userTaskId}"" />
+    <sequenceFlow id=""flow2"" sourceRef=""{userTaskId}"" targetRef=""end"" />
+  </process>
+</definitions>";
+    }
+
     protected static string CreateBpmnWithServiceTask(string processId, string serviceTaskId)
     {
         return $@"<?xml version=""1.0"" encoding=""UTF-8""?>

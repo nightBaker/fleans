@@ -24,6 +24,7 @@ public class FleanCommandDbContext : DbContext
     public DbSet<SignalStartEventRegistration> SignalStartEventRegistrations => Set<SignalStartEventRegistration>();
     public DbSet<WorkflowEventEntity> WorkflowEvents => Set<WorkflowEventEntity>();
     public DbSet<WorkflowSnapshotEntity> WorkflowSnapshots => Set<WorkflowSnapshotEntity>();
+    public DbSet<UserTaskState> UserTasks => Set<UserTaskState>();
 
     public FleanCommandDbContext(DbContextOptions<FleanCommandDbContext> options) : base(options) { }
 

@@ -49,6 +49,9 @@ public class WorkflowInstanceState
     public List<GatewayForkState> GatewayForks { get; private set; } = [];
 
     [Id(14)]
+    public Dictionary<Guid, UserTaskMetadata> UserTasks { get; private set; } = new();
+
+    [Id(15)]
     public List<TimerCycleTrackingState> TimerCycleTracking { get; private set; } = [];
 
     public IEnumerable<ActivityInstanceEntry> GetActiveActivities()
