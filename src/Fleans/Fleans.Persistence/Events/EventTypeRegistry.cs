@@ -5,7 +5,7 @@ namespace Fleans.Persistence.Events;
 
 /// <summary>
 /// Maps domain event types to string discriminators for event store serialization.
-/// Covers the 22 state-mutation domain events processed by WorkflowExecution.Apply().
+/// Covers the 26 state-mutation domain events processed by WorkflowExecution.Apply().
 /// </summary>
 public static class EventTypeRegistry
 {
@@ -41,6 +41,12 @@ public static class EventTypeRegistry
         // Parent/child
         [typeof(ParentInfoSet)] = nameof(ParentInfoSet),
         [typeof(ChildWorkflowLinked)] = nameof(ChildWorkflowLinked),
+
+        // User task lifecycle
+        [typeof(UserTaskRegistered)] = nameof(UserTaskRegistered),
+        [typeof(UserTaskClaimed)] = nameof(UserTaskClaimed),
+        [typeof(UserTaskUnclaimed)] = nameof(UserTaskUnclaimed),
+        [typeof(UserTaskUnregistered)] = nameof(UserTaskUnregistered),
 
         // Timer cycle tracking
         [typeof(TimerCycleUpdated)] = nameof(TimerCycleUpdated),
