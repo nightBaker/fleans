@@ -5,65 +5,69 @@ namespace Fleans.Persistence.Events;
 
 /// <summary>
 /// Maps domain event types to string discriminators for event store serialization.
+/// Uses GetType().Name as the discriminator, with a registry of known types for deserialization.
 /// Covers the 26 state-mutation domain events processed by WorkflowExecution.Apply().
 /// </summary>
 public static class EventTypeRegistry
 {
-    private static readonly Dictionary<Type, string> TypeToName = new()
-    {
+    private static readonly HashSet<Type> RegisteredTypes =
+    [
         // Workflow lifecycle
-        [typeof(WorkflowStarted)] = nameof(WorkflowStarted),
-        [typeof(ExecutionStarted)] = nameof(ExecutionStarted),
-        [typeof(WorkflowCompleted)] = nameof(WorkflowCompleted),
+        typeof(WorkflowStarted),
+        typeof(ExecutionStarted),
+        typeof(WorkflowCompleted),
 
         // Activity lifecycle
-        [typeof(ActivitySpawned)] = nameof(ActivitySpawned),
-        [typeof(ActivityExecutionStarted)] = nameof(ActivityExecutionStarted),
-        [typeof(ActivityCompleted)] = nameof(ActivityCompleted),
-        [typeof(ActivityFailed)] = nameof(ActivityFailed),
-        [typeof(ActivityExecutionReset)] = nameof(ActivityExecutionReset),
-        [typeof(ActivityCancelled)] = nameof(ActivityCancelled),
-        [typeof(MultiInstanceTotalSet)] = nameof(MultiInstanceTotalSet),
+        typeof(ActivitySpawned),
+        typeof(ActivityExecutionStarted),
+        typeof(ActivityCompleted),
+        typeof(ActivityFailed),
+        typeof(ActivityExecutionReset),
+        typeof(ActivityCancelled),
+        typeof(MultiInstanceTotalSet),
 
         // Variable management
-        [typeof(VariablesMerged)] = nameof(VariablesMerged),
-        [typeof(ChildVariableScopeCreated)] = nameof(ChildVariableScopeCreated),
-        [typeof(VariableScopeCloned)] = nameof(VariableScopeCloned),
-        [typeof(VariableScopesRemoved)] = nameof(VariableScopesRemoved),
+        typeof(VariablesMerged),
+        typeof(ChildVariableScopeCreated),
+        typeof(VariableScopeCloned),
+        typeof(VariableScopesRemoved),
 
         // Gateway/token management
-        [typeof(ConditionSequencesAdded)] = nameof(ConditionSequencesAdded),
-        [typeof(ConditionSequenceEvaluated)] = nameof(ConditionSequenceEvaluated),
-        [typeof(GatewayForkCreated)] = nameof(GatewayForkCreated),
-        [typeof(GatewayForkTokenAdded)] = nameof(GatewayForkTokenAdded),
-        [typeof(GatewayForkRemoved)] = nameof(GatewayForkRemoved),
+        typeof(ConditionSequencesAdded),
+        typeof(ConditionSequenceEvaluated),
+        typeof(GatewayForkCreated),
+        typeof(GatewayForkTokenAdded),
+        typeof(GatewayForkRemoved),
 
         // Parent/child
-        [typeof(ParentInfoSet)] = nameof(ParentInfoSet),
-        [typeof(ChildWorkflowLinked)] = nameof(ChildWorkflowLinked),
+        typeof(ParentInfoSet),
+        typeof(ChildWorkflowLinked),
 
         // User task lifecycle
-        [typeof(UserTaskRegistered)] = nameof(UserTaskRegistered),
-        [typeof(UserTaskClaimed)] = nameof(UserTaskClaimed),
-        [typeof(UserTaskUnclaimed)] = nameof(UserTaskUnclaimed),
-        [typeof(UserTaskUnregistered)] = nameof(UserTaskUnregistered),
+        typeof(UserTaskRegistered),
+        typeof(UserTaskClaimed),
+        typeof(UserTaskUnclaimed),
+        typeof(UserTaskUnregistered),
 
         // Timer cycle tracking
-        [typeof(TimerCycleUpdated)] = nameof(TimerCycleUpdated),
-    };
+        typeof(TimerCycleUpdated),
+    ];
 
     private static readonly Dictionary<string, Type> NameToType =
-        TypeToName.ToDictionary(kv => kv.Value, kv => kv.Key);
+        RegisteredTypes.ToDictionary(t => t.Name);
 
     /// <summary>
-    /// Gets the string discriminator for a domain event.
+    /// Gets the string discriminator for a domain event using GetType().Name.
     /// </summary>
-    public static string GetEventType(IDomainEvent @event) =>
-        TypeToName.TryGetValue(@event.GetType(), out var name)
-            ? name
+    public static string GetEventType(IDomainEvent @event)
+    {
+        var type = @event.GetType();
+        return RegisteredTypes.Contains(type)
+            ? type.Name
             : throw new InvalidOperationException(
-                $"Unknown domain event type: {@event.GetType().FullName}. " +
+                $"Unknown domain event type: {type.FullName}. " +
                 "Ensure it is registered in EventTypeRegistry.");
+    }
 
     /// <summary>
     /// Deserializes a JSON payload into the domain event type identified by the discriminator.
@@ -84,5 +88,5 @@ public static class EventTypeRegistry
     /// <summary>
     /// Returns all registered CLR types (for testing/diagnostics).
     /// </summary>
-    public static IReadOnlyCollection<Type> RegisteredClrTypes => TypeToName.Keys;
+    public static IReadOnlyCollection<Type> RegisteredClrTypes => RegisteredTypes;
 }
