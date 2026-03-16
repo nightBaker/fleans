@@ -1,5 +1,6 @@
 using System.Dynamic;
 using Fleans.Application;
+using Fleans.Application.DTOs;
 using Fleans.Application.QueryModels;
 using Fleans.Domain;
 using Fleans.Domain.Sequences;
@@ -291,4 +292,56 @@ public class WorkflowQueryService : IWorkflowQueryService
         return new ConditionSequenceSnapshot(
             cs.ConditionalSequenceFlowId, condition, sourceId, targetId, cs.Result);
     }
+
+    public async Task<IReadOnlyList<UserTaskResponse>> GetPendingUserTasks(
+        string? assignee = null, string? candidateGroup = null)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+
+        var tasks = await db.UserTasks
+            .Where(t => t.TaskState != UserTaskLifecycleState.Completed)
+            .ToListAsync();
+
+        IEnumerable<UserTaskState> filtered = tasks;
+
+        if (assignee is not null)
+        {
+            filtered = filtered.Where(t =>
+                t.Assignee == assignee ||
+                t.CandidateUsers.Contains(assignee));
+        }
+
+        if (candidateGroup is not null)
+        {
+            filtered = filtered.Where(t => t.CandidateGroups.Contains(candidateGroup));
+        }
+
+        return filtered.Select(ToUserTaskDto).ToList();
+    }
+
+    public async Task<UserTaskResponse?> GetUserTask(Guid activityInstanceId)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+
+        var task = await db.UserTasks
+            .FirstOrDefaultAsync(t => t.ActivityInstanceId == activityInstanceId);
+
+        return task is null ? null : ToUserTaskDto(task);
+    }
+
+    public async Task<IReadOnlyList<UserTaskState>> GetActiveUserTasksForWorkflow(Guid workflowInstanceId)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+
+        return await db.UserTasks
+            .Where(t => t.WorkflowInstanceId == workflowInstanceId
+                        && t.TaskState != UserTaskLifecycleState.Completed)
+            .ToListAsync();
+    }
+
+    private static UserTaskResponse ToUserTaskDto(UserTaskState t) =>
+        new(t.WorkflowInstanceId, t.ActivityInstanceId, t.ActivityId,
+            t.Assignee, t.CandidateGroups, t.CandidateUsers,
+            t.ClaimedBy, t.TaskState.ToString(), t.CreatedAt,
+            t.ExpectedOutputVariables);
 }

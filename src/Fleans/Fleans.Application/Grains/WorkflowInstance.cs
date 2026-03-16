@@ -20,17 +20,50 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
     private readonly IPersistentState<WorkflowInstanceState> _state;
     private readonly IGrainFactory _grainFactory;
     private readonly ILogger<WorkflowInstance> _logger;
+    private readonly IWorkflowQueryService _queryService;
 
     private WorkflowInstanceState State => _state.State;
 
     public WorkflowInstance(
         [PersistentState("state", GrainStorageNames.WorkflowInstances)] IPersistentState<WorkflowInstanceState> state,
         IGrainFactory grainFactory,
-        ILogger<WorkflowInstance> logger)
+        ILogger<WorkflowInstance> logger,
+        IWorkflowQueryService queryService)
     {
         _state = state;
         _grainFactory = grainFactory;
         _logger = logger;
+        _queryService = queryService;
+    }
+
+    public override async Task OnActivateAsync(CancellationToken cancellationToken)
+    {
+        await base.OnActivateAsync(cancellationToken);
+
+        if (_state.RecordExists && State.UserTasks.Count == 0)
+        {
+            await RehydrateUserTasks();
+        }
+    }
+
+    private async Task RehydrateUserTasks()
+    {
+        var workflowInstanceId = this.GetPrimaryKey();
+        var tasks = await _queryService.GetActiveUserTasksForWorkflow(workflowInstanceId);
+
+        foreach (var task in tasks)
+        {
+            var metadata = new UserTaskMetadata();
+            metadata.Initialize(task.Assignee, task.CandidateGroups,
+                task.CandidateUsers, task.ExpectedOutputVariables);
+
+            if (task.TaskState == UserTaskLifecycleState.Claimed && task.ClaimedBy is not null)
+            {
+                metadata.Claim(task.ClaimedBy, task.ClaimedAt ?? DateTimeOffset.UtcNow);
+            }
+
+            State.UserTasks[task.ActivityInstanceId] = metadata;
+        }
     }
 
     private async ValueTask EnsureExecution()
@@ -338,6 +371,49 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         using var scope = BeginWorkflowScope();
 
         var effects = _execution!.HandleSignalDelivery(boundaryActivityId, hostActivityInstanceId);
+        await PerformEffects(effects);
+        await ResolveExternalCompletions();
+        await RunExecutionLoop();
+        LogAndClearEvents();
+        await _state.WriteStateAsync();
+    }
+
+    // ── User Task Lifecycle ──────────────────────────────────────────────
+
+    public async Task ClaimUserTask(Guid activityInstanceId, string userId)
+    {
+        await EnsureExecution();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+        LogUserTaskClaimAttempt(activityInstanceId, userId);
+
+        var effects = _execution!.ClaimUserTask(activityInstanceId, userId);
+        await PerformEffects(effects);
+        LogAndClearEvents();
+        await _state.WriteStateAsync();
+    }
+
+    public async Task UnclaimUserTask(Guid activityInstanceId)
+    {
+        await EnsureExecution();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+        LogUserTaskUnclaimAttempt(activityInstanceId);
+
+        var effects = _execution!.UnclaimUserTask(activityInstanceId);
+        await PerformEffects(effects);
+        LogAndClearEvents();
+        await _state.WriteStateAsync();
+    }
+
+    public async Task CompleteUserTask(Guid activityInstanceId, string userId, ExpandoObject variables)
+    {
+        await EnsureExecution();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+        LogUserTaskCompleteAttempt(activityInstanceId, userId);
+
+        var effects = _execution!.CompleteUserTask(activityInstanceId, userId, variables);
         await PerformEffects(effects);
         await ResolveExternalCompletions();
         await RunExecutionLoop();

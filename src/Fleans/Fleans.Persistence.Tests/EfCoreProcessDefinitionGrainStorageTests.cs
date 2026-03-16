@@ -234,6 +234,34 @@ public class EfCoreProcessDefinitionGrainStorageTests
     }
 
     [TestMethod]
+    public async Task WriteAndRead_UserTaskWithListProperties_RoundTripsCorrectly()
+    {
+        var id = "usertask:1:ts";
+        var grainId = NewGrainId(id);
+        var state = CreateGrainStateWithUserTask(id);
+
+        await _storage.WriteStateAsync(StateName, grainId, state);
+
+        var readState = CreateEmptyGrainState();
+        await _storage.ReadStateAsync(StateName, grainId, readState);
+
+        var workflow = readState.State.Workflow;
+        Assert.AreEqual(3, workflow.Activities.Count);
+        Assert.IsInstanceOfType<StartEvent>(workflow.Activities[0]);
+        Assert.IsInstanceOfType<UserTask>(workflow.Activities[1]);
+        Assert.IsInstanceOfType<EndEvent>(workflow.Activities[2]);
+
+        var userTask = (UserTask)workflow.Activities[1];
+        Assert.AreEqual("admin", userTask.Assignee);
+        CollectionAssert.AreEqual(
+            new[] { "managers", "approvers" }, userTask.CandidateGroups.ToList());
+        CollectionAssert.AreEqual(
+            new[] { "alice", "bob" }, userTask.CandidateUsers.ToList());
+        CollectionAssert.AreEqual(
+            new[] { "approved", "comments" }, userTask.ExpectedOutputVariables!.ToList());
+    }
+
+    [TestMethod]
     public async Task WriteClearWrite_ReCreatesSameGrainId()
     {
         var id = "recreate:1:ts";
@@ -321,6 +349,40 @@ public class EfCoreProcessDefinitionGrainStorageTests
                     ProcessDefinitionId = id,
                     Activities = [start, script, gateway, end],
                     SequenceFlows = [flow1, condFlow1, condFlow2, defaultFlow]
+                }
+            }
+        };
+    }
+
+    private static TestGrainState<ProcessDefinition> CreateGrainStateWithUserTask(string id)
+    {
+        var start = new StartEvent("start");
+        var userTask = new UserTask(
+            "userTask1",
+            Assignee: "admin",
+            CandidateGroups: new List<string> { "managers", "approvers" },
+            CandidateUsers: new List<string> { "alice", "bob" },
+            ExpectedOutputVariables: new List<string> { "approved", "comments" });
+        var end = new EndEvent("end");
+
+        var flow1 = new SequenceFlow("flow1", start, userTask);
+        var flow2 = new SequenceFlow("flow2", userTask, end);
+
+        return new TestGrainState<ProcessDefinition>
+        {
+            State = new ProcessDefinition
+            {
+                ProcessDefinitionId = id,
+                ProcessDefinitionKey = "usertask",
+                Version = 1,
+                DeployedAt = DateTimeOffset.UtcNow,
+                BpmnXml = "<bpmn/>",
+                Workflow = new WorkflowDefinition
+                {
+                    WorkflowId = "usertask",
+                    ProcessDefinitionId = id,
+                    Activities = [start, userTask, end],
+                    SequenceFlows = [flow1, flow2]
                 }
             }
         };

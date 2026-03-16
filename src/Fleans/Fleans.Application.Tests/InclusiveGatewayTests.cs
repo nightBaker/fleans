@@ -193,6 +193,75 @@ public class InclusiveGatewayTests : WorkflowTestBase
         CollectionAssert.Contains(snapshot.CompletedActivityIds, "end");
     }
 
+    // --- Variable scope merge tests ---
+
+    [TestMethod]
+    public async Task InclusiveJoin_ShouldMergeBranchVariablesIntoSingleScope()
+    {
+        // Arrange — two branches with different variables
+        var workflow = CreateInclusiveWorkflow(
+            task1Condition: "true", task2Condition: "true", task3Condition: "false");
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await workflowInstance.SetWorkflow(workflow);
+        await workflowInstance.StartWorkflow();
+
+        var instanceId = workflowInstance.GetPrimaryKey();
+        await WaitForCondition(instanceId,
+            s => s.ActiveActivities.Count(a => a.ActivityType == "TaskActivity") >= 2);
+
+        // Act — complete each branch with a different variable
+        dynamic vars1 = new ExpandoObject();
+        vars1.fromBranch1 = "value1";
+        await workflowInstance.CompleteActivity("task1", vars1);
+
+        dynamic vars2 = new ExpandoObject();
+        vars2.fromBranch2 = "value2";
+        await workflowInstance.CompleteActivity("task2", vars2);
+
+        // Assert — single merged scope with both variables
+        var finalSnapshot = await WaitForCondition(instanceId, s => s.IsCompleted);
+        Assert.AreEqual(1, finalSnapshot.VariableStates.Count,
+            "After inclusive fork-join, only the original scope should remain");
+
+        var mergedScope = finalSnapshot.VariableStates.Single();
+        Assert.IsTrue(mergedScope.Variables.ContainsKey("fromBranch1"),
+            "Merged scope should contain branch 1's variable");
+        Assert.IsTrue(mergedScope.Variables.ContainsKey("fromBranch2"),
+            "Merged scope should contain branch 2's variable");
+        Assert.AreEqual("value1", mergedScope.Variables["fromBranch1"]);
+        Assert.AreEqual("value2", mergedScope.Variables["fromBranch2"]);
+    }
+
+    [TestMethod]
+    public async Task InclusiveJoin_PartialBranches_OnlyExecutedBranchMerged()
+    {
+        // Arrange — only one branch taken
+        var workflow = CreateInclusiveWorkflow(
+            task1Condition: "true", task2Condition: "false", task3Condition: "false");
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await workflowInstance.SetWorkflow(workflow);
+        await workflowInstance.StartWorkflow();
+
+        var instanceId = workflowInstance.GetPrimaryKey();
+        await WaitForCondition(instanceId,
+            s => s.ActiveActivities.Any(a => a.ActivityId == "task1"));
+
+        // Act — complete the single active branch
+        dynamic vars1 = new ExpandoObject();
+        vars1.onlyBranch = "merged";
+        await workflowInstance.CompleteActivity("task1", vars1);
+
+        // Assert — workflow completes, single scope with the merged variable
+        var finalSnapshot = await WaitForCondition(instanceId, s => s.IsCompleted);
+        Assert.AreEqual(1, finalSnapshot.VariableStates.Count,
+            "After partial inclusive fork-join, only the original scope should remain");
+
+        var mergedScope = finalSnapshot.VariableStates.Single();
+        Assert.IsTrue(mergedScope.Variables.ContainsKey("onlyBranch"),
+            "Merged scope should contain the single branch's variable");
+        Assert.AreEqual("merged", mergedScope.Variables["onlyBranch"]);
+    }
+
     // --- Helper methods ---
 
     /// <summary>

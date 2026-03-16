@@ -148,6 +148,27 @@ public partial class WorkflowCommandService : IWorkflowCommandService
     [LoggerMessage(EventId = 7007, Level = LogLevel.Error, Message = "Failed to fire signal start event for '{SignalName}'")]
     private partial void LogSignalStartEventFireFailed(string signalName, Exception ex);
 
+    public async Task ClaimUserTask(Guid workflowInstanceId, Guid activityInstanceId, string userId)
+    {
+        LogClaimingUserTask(workflowInstanceId, activityInstanceId, userId);
+        var grain = _grainFactory.GetGrain<IWorkflowInstanceGrain>(workflowInstanceId);
+        await grain.ClaimUserTask(activityInstanceId, userId);
+    }
+
+    public async Task UnclaimUserTask(Guid workflowInstanceId, Guid activityInstanceId)
+    {
+        LogUnclaimingUserTask(workflowInstanceId, activityInstanceId);
+        var grain = _grainFactory.GetGrain<IWorkflowInstanceGrain>(workflowInstanceId);
+        await grain.UnclaimUserTask(activityInstanceId);
+    }
+
+    public async Task CompleteUserTask(Guid workflowInstanceId, Guid activityInstanceId, string userId, ExpandoObject variables)
+    {
+        LogCompletingUserTask(workflowInstanceId, activityInstanceId, userId);
+        var grain = _grainFactory.GetGrain<IWorkflowInstanceGrain>(workflowInstanceId);
+        await grain.CompleteUserTask(activityInstanceId, userId, variables);
+    }
+
     public async Task<ProcessDefinitionSummary> DisableProcess(string processDefinitionKey)
     {
         LogDisablingProcess(processDefinitionKey);
@@ -162,9 +183,21 @@ public partial class WorkflowCommandService : IWorkflowCommandService
         return await factoryGrain.EnableProcess(processDefinitionKey);
     }
 
-    [LoggerMessage(EventId = 7008, Level = LogLevel.Information, Message = "Disabling process {ProcessDefinitionKey}")]
+    [LoggerMessage(EventId = 7008, Level = LogLevel.Information,
+        Message = "Claiming user task: WorkflowInstanceId={WorkflowInstanceId}, ActivityInstanceId={ActivityInstanceId}, UserId={UserId}")]
+    private partial void LogClaimingUserTask(Guid workflowInstanceId, Guid activityInstanceId, string userId);
+
+    [LoggerMessage(EventId = 7009, Level = LogLevel.Information,
+        Message = "Unclaiming user task: WorkflowInstanceId={WorkflowInstanceId}, ActivityInstanceId={ActivityInstanceId}")]
+    private partial void LogUnclaimingUserTask(Guid workflowInstanceId, Guid activityInstanceId);
+
+    [LoggerMessage(EventId = 7010, Level = LogLevel.Information,
+        Message = "Completing user task: WorkflowInstanceId={WorkflowInstanceId}, ActivityInstanceId={ActivityInstanceId}, UserId={UserId}")]
+    private partial void LogCompletingUserTask(Guid workflowInstanceId, Guid activityInstanceId, string userId);
+
+    [LoggerMessage(EventId = 7011, Level = LogLevel.Information, Message = "Disabling process {ProcessDefinitionKey}")]
     private partial void LogDisablingProcess(string processDefinitionKey);
 
-    [LoggerMessage(EventId = 7009, Level = LogLevel.Information, Message = "Enabling process {ProcessDefinitionKey}")]
+    [LoggerMessage(EventId = 7012, Level = LogLevel.Information, Message = "Enabling process {ProcessDefinitionKey}")]
     private partial void LogEnablingProcess(string processDefinitionKey);
 }

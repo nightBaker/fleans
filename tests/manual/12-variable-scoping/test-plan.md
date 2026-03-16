@@ -1,7 +1,9 @@
 # 12 — Variable Scoping
 
 ## Scenario
-A variable `shared` is set before a parallel fork. Each branch overwrites `shared` with a different value. Verifies that parallel branches get isolated variable scopes (cloned at fork), so neither branch's write affects the other.
+A variable `shared` is set before a parallel fork. Each branch overwrites `shared` with a different value. Verifies that:
+1. Parallel branches get isolated variable scopes (cloned at fork) during execution
+2. At the join gateway, branch scopes are merged back into the original scope (last-write-wins in token creation order) and branch scopes are removed
 
 ## Prerequisites
 - Aspire stack running
@@ -13,8 +15,7 @@ A variable `shared` is set before a parallel fork. Each branch overwrites `share
 
 ### 2. Verify outcome
 - [ ] Instance status: **Completed**
-- [ ] Variables tab shows **multiple variable scopes** (separate scope IDs)
-- [ ] One scope has `shared` = **"from-branch-A"**
-- [ ] Another scope has `shared` = **"from-branch-B"**
-- [ ] The scopes are isolated — branch A's write did not affect branch B
-- [ ] Original scope has `shared` = **"original"**
+- [ ] Variables tab shows **1 merged variable scope** (branch scopes removed after join)
+- [ ] The merged scope contains `shared` with one of the branch values (last branch in creation order wins)
+- [ ] Both branches' variables are present in the merged scope
+- [ ] No orphaned branch scopes remain after completion
