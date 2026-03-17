@@ -7,12 +7,15 @@ using Fleans.Domain.Sequences;
 using Fleans.Domain.States;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
+using Sieve.Models;
+using Sieve.Services;
 
 namespace Fleans.Persistence;
 
 public class WorkflowQueryService : IWorkflowQueryService
 {
     private readonly IDbContextFactory<FleanQueryDbContext> _dbContextFactory;
+    private readonly ISieveProcessor _sieveProcessor;
 
     private static readonly JsonSerializerSettings JsonSettings = new()
     {
@@ -21,9 +24,12 @@ public class WorkflowQueryService : IWorkflowQueryService
         SerializationBinder = new DomainAssemblySerializationBinder()
     };
 
-    public WorkflowQueryService(IDbContextFactory<FleanQueryDbContext> dbContextFactory)
+    public WorkflowQueryService(
+        IDbContextFactory<FleanQueryDbContext> dbContextFactory,
+        ISieveProcessor sieveProcessor)
     {
         _dbContextFactory = dbContextFactory;
+        _sieveProcessor = sieveProcessor;
     }
 
     public async Task<InstanceStateSnapshot?> GetStateSnapshot(Guid workflowInstanceId)
@@ -136,6 +142,72 @@ public class WorkflowQueryService : IWorkflowQueryService
         return instances.Select(w => new WorkflowInstanceInfo(
             w.Id, w.ProcessDefinitionId ?? "", w.IsStarted, w.IsCompleted,
             w.CreatedAt, w.ExecutionStartedAt, w.CompletedAt)).ToList();
+    }
+
+    public async Task<PagedResult<WorkflowInstanceInfo>> GetInstancesByKey(
+        string processDefinitionKey, PageRequest page)
+    {
+        page = page.Normalize();
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+
+        var definitionIds = await db.ProcessDefinitions
+            .Where(p => p.ProcessDefinitionKey == processDefinitionKey)
+            .Select(p => p.ProcessDefinitionId)
+            .ToListAsync();
+
+        var baseQuery = db.WorkflowInstances
+            .Where(w => w.ProcessDefinitionId != null
+                && definitionIds.Contains(w.ProcessDefinitionId));
+
+        return await ApplySieveAndProject(baseQuery, page);
+    }
+
+    public async Task<PagedResult<WorkflowInstanceInfo>> GetInstancesByKeyAndVersion(
+        string key, int version, PageRequest page)
+    {
+        page = page.Normalize();
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+
+        var definitionId = await db.ProcessDefinitions
+            .Where(p => p.ProcessDefinitionKey == key && p.Version == version)
+            .Select(p => p.ProcessDefinitionId)
+            .FirstOrDefaultAsync();
+
+        if (definitionId is null)
+            return new PagedResult<WorkflowInstanceInfo>([], 0, page.Page, page.PageSize);
+
+        var baseQuery = db.WorkflowInstances
+            .Where(w => w.ProcessDefinitionId == definitionId);
+
+        return await ApplySieveAndProject(baseQuery, page);
+    }
+
+    private async Task<PagedResult<WorkflowInstanceInfo>> ApplySieveAndProject(
+        IQueryable<WorkflowInstanceState> baseQuery, PageRequest page)
+    {
+        var sieveModel = new SieveModel
+        {
+            Sorts = page.Sorts,
+            Filters = page.Filters,
+            Page = page.Page,
+            PageSize = page.PageSize
+        };
+
+        // Apply filters and sorting without pagination to get total count
+        var filteredQuery = _sieveProcessor.Apply(sieveModel, baseQuery, applyPagination: false);
+        var totalCount = await filteredQuery.CountAsync();
+
+        // Apply pagination manually on the already-filtered-and-sorted query
+        var pagedQuery = filteredQuery
+            .Skip((page.Page - 1) * page.PageSize)
+            .Take(page.PageSize);
+
+        var items = await pagedQuery.Select(w => new WorkflowInstanceInfo(
+            w.Id, w.ProcessDefinitionId ?? "", w.IsStarted, w.IsCompleted,
+            w.CreatedAt, w.ExecutionStartedAt, w.CompletedAt)).ToListAsync();
+
+        return new PagedResult<WorkflowInstanceInfo>(
+            items, totalCount, page.Page, page.PageSize);
     }
 
     public async Task<string?> GetBpmnXml(Guid instanceId)

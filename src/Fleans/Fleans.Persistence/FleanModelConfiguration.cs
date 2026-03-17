@@ -5,6 +5,7 @@ using Fleans.Domain;
 using Fleans.Domain.States;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
 
@@ -37,6 +38,15 @@ internal static class FleanModelConfiguration
                 .OnDelete(DeleteBehavior.Cascade);
 
             entity.Property(e => e.ProcessDefinitionId).HasMaxLength(512);
+
+            // SQLite does not support DateTimeOffset in ORDER BY.
+            // Store as ISO 8601 strings so Sieve sorting works correctly.
+            var dtoConverter = new ValueConverter<DateTimeOffset?, string?>(
+                v => v.HasValue ? v.Value.ToString("O") : null,
+                v => v != null ? DateTimeOffset.Parse(v) : null);
+            entity.Property(e => e.CreatedAt).HasConversion(dtoConverter);
+            entity.Property(e => e.ExecutionStartedAt).HasConversion(dtoConverter);
+            entity.Property(e => e.CompletedAt).HasConversion(dtoConverter);
 
             // UserTasks is an in-memory dictionary rehydrated from the UserTasks table on activation.
             entity.Ignore(e => e.UserTasks);

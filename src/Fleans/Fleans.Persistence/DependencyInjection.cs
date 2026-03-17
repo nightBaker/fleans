@@ -4,6 +4,8 @@ using Fleans.Domain.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Orleans.Storage;
+using Sieve.Models;
+using Sieve.Services;
 
 namespace Fleans.Persistence;
 
@@ -50,6 +52,12 @@ public static class EfCorePersistenceDependencyInjection
                 sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
 
         services.AddSingleton<IProcessDefinitionRepository, EfCoreProcessDefinitionRepository>();
+        services.AddSingleton<ISieveProcessor, ApplicationSieveProcessor>();
+        services.Configure<SieveOptions>(options =>
+        {
+            options.DefaultPageSize = 20;
+            options.MaxPageSize = 100;
+        });
         services.AddSingleton<IWorkflowQueryService, WorkflowQueryService>();
     }
 }

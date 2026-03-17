@@ -13,96 +13,115 @@
 <FluentStack Orientation="Orientation.Vertical" Gap="16px">
     <PageHeader Title="@GetPageTitle()" GoBackUrl="/workflows" />
 
-    @if (isLoading)
-    {
-        <FluentStack Orientation="Orientation.Vertical" AlignItems="AlignItems.Center" Gap="10px">
-            <FluentProgressRing />
-            <p>Loading instances...</p>
-        </FluentStack>
-    }
-    else if (errorMessage != null)
+    @if (!string.IsNullOrEmpty(errorMessage))
     {
         <FluentMessageBar Intent="MessageIntent.Error" Dismissible="true" OnDismissed="@(() => errorMessage = null)">
             @errorMessage
         </FluentMessageBar>
     }
-    else if (instances.Count == 0)
-    {
-        <FluentMessageBar Intent="MessageIntent.Info">
-            No instances found for this process. Start a workflow to create one.
-        </FluentMessageBar>
-    }
-    else
-    {
-        <FluentDataGrid Items="@instancesQueryable" TGridItem="WorkflowInstanceInfo">
-            <TemplateColumn Title="Instance ID">
-                <span title="@context.InstanceId">@context.InstanceId.ToString()[..8]...</span>
-            </TemplateColumn>
-            <TemplateColumn Title="Status">
-                @if (context.IsCompleted)
-                {
-                    <FluentBadge Color="Color.Success">Completed</FluentBadge>
-                }
-                else if (context.IsStarted)
-                {
-                    <FluentBadge Color="Color.Accent">Running</FluentBadge>
-                }
-                else
-                {
-                    <FluentBadge Color="Color.Neutral">Pending</FluentBadge>
-                }
-            </TemplateColumn>
-            <PropertyColumn Property="@(i => i.CreatedAt)" Title="Created At" Sortable="true" Format="yyyy-MM-dd HH:mm:ss" />
-            <PropertyColumn Property="@(i => i.ExecutionStartedAt)" Title="Started At" Sortable="true" Format="yyyy-MM-dd HH:mm:ss" />
-            <PropertyColumn Property="@(i => i.CompletedAt)" Title="Completed At" Sortable="true" Format="yyyy-MM-dd HH:mm:ss" />
-            <TemplateColumn Title="Actions">
-                <FluentButton Appearance="Appearance.Stealth"
-                              IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Eye())"
-                              @onclick="() => ViewInstance(context.InstanceId)">
-                    View
-                </FluentButton>
-            </TemplateColumn>
-        </FluentDataGrid>
-    }
+
+    <FluentDataGrid ItemsProvider="@instancesProvider"
+                    Pagination="@pagination"
+                    TGridItem="WorkflowInstanceInfo"
+                    Loading="@isLoading">
+        <TemplateColumn Title="Instance ID">
+            <span title="@context.InstanceId">@context.InstanceId.ToString()[..8]...</span>
+        </TemplateColumn>
+        <TemplateColumn Title="Status">
+            @if (context.IsCompleted)
+            {
+                <FluentBadge Color="Color.Success">Completed</FluentBadge>
+            }
+            else if (context.IsStarted)
+            {
+                <FluentBadge Color="Color.Accent">Running</FluentBadge>
+            }
+            else
+            {
+                <FluentBadge Color="Color.Neutral">Pending</FluentBadge>
+            }
+        </TemplateColumn>
+        <PropertyColumn Property="@(i => i.CreatedAt)" Title="Created At" Sortable="true" Format="yyyy-MM-dd HH:mm:ss" />
+        <PropertyColumn Property="@(i => i.ExecutionStartedAt)" Title="Started At" Sortable="true" Format="yyyy-MM-dd HH:mm:ss" />
+        <PropertyColumn Property="@(i => i.CompletedAt)" Title="Completed At" Sortable="true" Format="yyyy-MM-dd HH:mm:ss" />
+        <TemplateColumn Title="Actions">
+            <FluentButton Appearance="Appearance.Stealth"
+                          IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Eye())"
+                          @onclick="() => ViewInstance(context.InstanceId)">
+                View
+            </FluentButton>
+        </TemplateColumn>
+    </FluentDataGrid>
+    <FluentPaginator State="@pagination" />
 </FluentStack>
 
 @code {
     [Parameter] public string ProcessDefinitionKey { get; set; } = string.Empty;
     [Parameter] public int? Version { get; set; }
 
-    private List<WorkflowInstanceInfo> instances = new();
-    private IQueryable<WorkflowInstanceInfo> instancesQueryable = Enumerable.Empty<WorkflowInstanceInfo>().AsQueryable();
-    private bool isLoading = true;
+    private PaginationState pagination = new() { ItemsPerPage = 20 };
+    private GridItemsProvider<WorkflowInstanceInfo>? instancesProvider;
+    private bool isLoading;
     private string? errorMessage;
 
-    protected override async Task OnInitializedAsync()
+    private static readonly Dictionary<string, string> SortPropertyMap = new()
     {
-        await LoadInstances();
+        ["Created At"] = "CreatedAt",
+        ["Started At"] = "ExecutionStartedAt",
+        ["Completed At"] = "CompletedAt"
+    };
+
+    protected override void OnInitialized()
+    {
+        instancesProvider = async request =>
+        {
+            try
+            {
+                isLoading = true;
+                errorMessage = null;
+                StateHasChanged();
+
+                var sortString = BuildSortString(request);
+                var page = new PageRequest(
+                    Page: (request.StartIndex / pagination.ItemsPerPage) + 1,
+                    PageSize: pagination.ItemsPerPage,
+                    Sorts: sortString
+                );
+
+                var result = Version.HasValue
+                    ? await QueryService.GetInstancesByKeyAndVersion(
+                        ProcessDefinitionKey, Version.Value, page)
+                    : await QueryService.GetInstancesByKey(
+                        ProcessDefinitionKey, page);
+
+                isLoading = false;
+                return GridItemsProviderResult.From(
+                    result.Items.ToList(), result.TotalCount);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Error loading instances for {Key}", ProcessDefinitionKey);
+                errorMessage = $"Failed to load instances: {ex.Message}";
+                isLoading = false;
+                StateHasChanged();
+                return GridItemsProviderResult.From(
+                    new List<WorkflowInstanceInfo>(), 0);
+            }
+        };
     }
 
-    private async Task LoadInstances()
+    private static string? BuildSortString(
+        GridItemsProviderRequest<WorkflowInstanceInfo> request)
     {
-        try
-        {
-            isLoading = true;
-            errorMessage = null;
-            IReadOnlyList<WorkflowInstanceInfo> result;
-            if (Version.HasValue)
-                result = await QueryService.GetInstancesByKeyAndVersion(ProcessDefinitionKey, Version.Value);
-            else
-                result = await QueryService.GetInstancesByKey(ProcessDefinitionKey);
-            instances = result.ToList();
-            instancesQueryable = instances.AsQueryable();
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Error loading instances for {Key}", ProcessDefinitionKey);
-            errorMessage = $"Failed to load instances: {ex.Message}";
-        }
-        finally
-        {
-            isLoading = false;
-        }
+        if (request.SortByColumn is null)
+            return "-CreatedAt";
+
+        var title = request.SortByColumn.Title;
+        if (title is null || !SortPropertyMap.TryGetValue(title, out var propertyName))
+            return "-CreatedAt";
+
+        var dir = request.SortByAscending == false ? "-" : "";
+        return $"{dir}{propertyName}";
     }
 
     private string GetPageTitle()
