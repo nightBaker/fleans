@@ -68,5 +68,6 @@ app.MapRazorComponents<App>()
 
 // Orleans Dashboard at /dashboard
 app.MapOrleansDashboard(routePrefix: "/dashboard");
+app.MapDefaultEndpoints();
 
 app.Run();
