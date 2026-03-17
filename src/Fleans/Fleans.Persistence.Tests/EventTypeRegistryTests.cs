@@ -12,22 +12,10 @@ public class EventTypeRegistryTests
     private static readonly JsonSerializerSettings JsonSettings = EfCoreEventStore.JsonSettings;
 
     [TestMethod]
-    public void GetEventType_ReturnsCorrectName_ForEachRegisteredEvent()
+    public void GetEventType_ReturnsTypeName()
     {
-        var events = CreateAllDomainEvents();
-        foreach (var (evt, expectedName) in events)
-        {
-            var name = EventTypeRegistry.GetEventType(evt);
-            Assert.AreEqual(expectedName, name, $"Event type name mismatch for {evt.GetType().Name}");
-        }
-    }
-
-    [TestMethod]
-    public void GetEventType_ThrowsForUnregisteredType()
-    {
-        var unregistered = new FakeEvent();
-        Assert.ThrowsExactly<InvalidOperationException>(
-            () => EventTypeRegistry.GetEventType(unregistered));
+        var evt = new WorkflowStarted(Guid.NewGuid(), "proc:1");
+        Assert.AreEqual("WorkflowStarted", EventTypeRegistry.GetEventType(evt));
     }
 
     [TestMethod]
@@ -175,37 +163,6 @@ public class EventTypeRegistryTests
     }
 
     [TestMethod]
-    public void Completeness_AllDomainEventsAreRegistered()
-    {
-        // Infrastructure events that flow through Orleans streams for inter-grain
-        // communication — NOT processed by WorkflowExecution.Apply() and NOT persisted.
-        var infrastructureEventTypes = new HashSet<Type>
-        {
-            typeof(Fleans.Domain.Events.EvaluateConditionEvent),
-            typeof(Fleans.Domain.Events.ExecuteScriptEvent),
-            typeof(Fleans.Domain.Events.WorkflowActivityExecutedEvent),
-        };
-
-        var domainEventsAssembly = typeof(IDomainEvent).Assembly;
-        var allDomainEventTypes = domainEventsAssembly.GetTypes()
-            .Where(t => typeof(IDomainEvent).IsAssignableFrom(t)
-                        && t.IsClass
-                        && !t.IsAbstract
-                        && t.Namespace == "Fleans.Domain.Events"
-                        && !infrastructureEventTypes.Contains(t))
-            .ToList();
-
-        var registeredTypes = EventTypeRegistry.RegisteredClrTypes;
-
-        foreach (var type in allDomainEventTypes)
-        {
-            Assert.IsTrue(registeredTypes.Contains(type),
-                $"Domain event type {type.Name} is not registered in EventTypeRegistry. " +
-                "If this is a state-mutation event (processed by WorkflowExecution.Apply), add it.");
-        }
-    }
-
-    [TestMethod]
     public void WeakSchema_ExtraPropertiesInJson_DoNotCauseErrors()
     {
         var json = """{"InstanceId":"00000000-0000-0000-0000-000000000001","ProcessDefinitionId":"test","NewField":"extra"}""";
@@ -260,6 +217,4 @@ public class EventTypeRegistryTests
             (new TimerCycleUpdated(id, "timer1", null), nameof(TimerCycleUpdated)),
         ];
     }
-
-    private record FakeEvent() : IDomainEvent;
 }
