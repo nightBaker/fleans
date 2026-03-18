@@ -1,107 +1,40 @@
-using System.Collections.Frozen;
+using System.Reflection;
 using Fleans.Domain.Events;
 using Newtonsoft.Json;
 
 namespace Fleans.Persistence.Events;
 
 /// <summary>
-/// Maps domain event types to string discriminators for envelope-based event storage.
-/// All IDomainEvent implementations must be registered here.
+/// Serializes/deserializes domain events for the event store using GetType().Name as the discriminator.
+/// Event types are discovered automatically from the domain assembly — no manual registration needed.
 /// </summary>
 public static class EventTypeRegistry
 {
-    private static readonly FrozenDictionary<string, Type> NameToType;
-    private static readonly FrozenDictionary<Type, string> TypeToName;
+    private static readonly Lazy<Dictionary<string, Type>> NameToType = new(BuildTypeCache);
 
-    static EventTypeRegistry()
+    private static Dictionary<string, Type> BuildTypeCache()
     {
-        var mappings = new Dictionary<string, Type>
-        {
-            // Workflow lifecycle
-            ["WorkflowStarted"] = typeof(WorkflowStarted),
-            ["ExecutionStarted"] = typeof(ExecutionStarted),
-            ["WorkflowCompleted"] = typeof(WorkflowCompleted),
-
-            // Activity lifecycle
-            ["ActivitySpawned"] = typeof(ActivitySpawned),
-            ["ActivityExecutionStarted"] = typeof(ActivityExecutionStarted),
-            ["ActivityCompleted"] = typeof(ActivityCompleted),
-            ["ActivityFailed"] = typeof(ActivityFailed),
-            ["ActivityExecutionReset"] = typeof(ActivityExecutionReset),
-            ["ActivityCancelled"] = typeof(ActivityCancelled),
-            ["MultiInstanceTotalSet"] = typeof(MultiInstanceTotalSet),
-
-            // Variable management
-            ["VariablesMerged"] = typeof(VariablesMerged),
-            ["ChildVariableScopeCreated"] = typeof(ChildVariableScopeCreated),
-            ["VariableScopeCloned"] = typeof(VariableScopeCloned),
-            ["VariableScopesRemoved"] = typeof(VariableScopesRemoved),
-
-            // Gateway/token management
-            ["ConditionSequencesAdded"] = typeof(ConditionSequencesAdded),
-            ["ConditionSequenceEvaluated"] = typeof(ConditionSequenceEvaluated),
-            ["GatewayForkCreated"] = typeof(GatewayForkCreated),
-            ["GatewayForkTokenAdded"] = typeof(GatewayForkTokenAdded),
-            ["GatewayForkRemoved"] = typeof(GatewayForkRemoved),
-
-            // Parent/child
-            ["ParentInfoSet"] = typeof(ParentInfoSet),
-            ["ChildWorkflowLinked"] = typeof(ChildWorkflowLinked),
-
-            // User task lifecycle
-            ["UserTaskRegistered"] = typeof(UserTaskRegistered),
-            ["UserTaskClaimed"] = typeof(UserTaskClaimed),
-            ["UserTaskUnclaimed"] = typeof(UserTaskUnclaimed),
-            ["UserTaskUnregistered"] = typeof(UserTaskUnregistered),
-
-            // Timer cycle tracking
-            ["TimerCycleUpdated"] = typeof(TimerCycleUpdated),
-        };
-
-        NameToType = mappings.ToFrozenDictionary();
-        TypeToName = mappings.ToFrozenDictionary(kvp => kvp.Value, kvp => kvp.Key);
+        var domainAssembly = typeof(IDomainEvent).Assembly;
+        return domainAssembly.GetTypes()
+            .Where(t => typeof(IDomainEvent).IsAssignableFrom(t)
+                        && t.IsClass
+                        && !t.IsAbstract)
+            .ToDictionary(t => t.Name);
     }
 
     /// <summary>
-    /// Gets the string discriminator for a domain event type.
+    /// Gets the string discriminator for a domain event using GetType().Name.
     /// </summary>
-    public static string GetEventTypeName(IDomainEvent domainEvent) =>
-        TypeToName[domainEvent.GetType()];
+    public static string GetEventType(IDomainEvent @event) => @event.GetType().Name;
 
     /// <summary>
-    /// Gets the string discriminator for a domain event CLR type.
+    /// Deserializes a JSON payload into the domain event type identified by the discriminator.
     /// </summary>
-    public static string GetEventTypeName<T>() where T : IDomainEvent =>
-        TypeToName[typeof(T)];
-
-    /// <summary>
-    /// Gets the CLR type for a string discriminator.
-    /// </summary>
-    public static Type GetEventType(string eventTypeName) =>
-        NameToType[eventTypeName];
-
-    /// <summary>
-    /// Deserializes a JSON payload into the correct domain event type.
-    /// </summary>
-    public static IDomainEvent Deserialize(string eventTypeName, string payload, JsonSerializerSettings settings)
-    {
-        var type = GetEventType(eventTypeName);
-        return (IDomainEvent)JsonConvert.DeserializeObject(payload, type, settings)!;
-    }
-
-    /// <summary>
-    /// Serializes a domain event to JSON.
-    /// </summary>
-    public static string Serialize(IDomainEvent domainEvent, JsonSerializerSettings settings) =>
-        JsonConvert.SerializeObject(domainEvent, settings);
-
-    /// <summary>
-    /// Returns all registered event type names.
-    /// </summary>
-    public static IReadOnlyCollection<string> AllEventTypeNames => NameToType.Keys;
-
-    /// <summary>
-    /// Returns all registered event CLR types.
-    /// </summary>
-    public static IReadOnlyCollection<Type> AllEventTypes => TypeToName.Keys;
+    public static IDomainEvent Deserialize(
+        string eventType, string payload, JsonSerializerSettings settings) =>
+        NameToType.Value.TryGetValue(eventType, out var type)
+            ? (IDomainEvent)JsonConvert.DeserializeObject(payload, type, settings)!
+            : throw new KeyNotFoundException(
+                $"Unknown event type discriminator: '{eventType}'. " +
+                "No IDomainEvent implementation with this name found in the domain assembly.");
 }

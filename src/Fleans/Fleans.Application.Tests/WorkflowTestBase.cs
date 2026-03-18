@@ -8,6 +8,9 @@ using Fleans.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using Sieve.Models;
+using Sieve.Services;
 using Orleans.Serialization;
 using Orleans.Storage;
 using Orleans.TestingHost;
@@ -101,6 +104,12 @@ public abstract class WorkflowTestBase
                             sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
 
                     services.AddSingleton<IProcessDefinitionRepository, EfCoreProcessDefinitionRepository>();
+                    services.AddSingleton<ISieveProcessor, ApplicationSieveProcessor>();
+                    services.Configure<SieveOptions>(options =>
+                    {
+                        options.DefaultPageSize = 20;
+                        options.MaxPageSize = 100;
+                    });
                     services.AddSingleton<IWorkflowQueryService, WorkflowQueryService>();
                     services.AddSingleton<IScriptExpressionExecutor, SimpleScriptExecutor>();
                     services.AddSingleton<IConditionExpressionEvaluator, SimpleConditionEvaluator>();

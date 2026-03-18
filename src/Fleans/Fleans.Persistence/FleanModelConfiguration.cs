@@ -6,6 +6,7 @@ using Fleans.Domain.States;
 using Fleans.Persistence.Events;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
 
@@ -38,6 +39,15 @@ internal static class FleanModelConfiguration
                 .OnDelete(DeleteBehavior.Cascade);
 
             entity.Property(e => e.ProcessDefinitionId).HasMaxLength(512);
+
+            // SQLite does not support DateTimeOffset in ORDER BY.
+            // Store as ISO 8601 strings so Sieve sorting works correctly.
+            var dtoConverter = new ValueConverter<DateTimeOffset?, string?>(
+                v => v.HasValue ? v.Value.ToString("O") : null,
+                v => v != null ? DateTimeOffset.Parse(v) : null);
+            entity.Property(e => e.CreatedAt).HasConversion(dtoConverter);
+            entity.Property(e => e.ExecutionStartedAt).HasConversion(dtoConverter);
+            entity.Property(e => e.CompletedAt).HasConversion(dtoConverter);
 
             // UserTasks is an in-memory dictionary rehydrated from the UserTasks table on activation.
             entity.Ignore(e => e.UserTasks);
@@ -239,30 +249,6 @@ internal static class FleanModelConfiguration
             entity.HasIndex(e => e.WorkflowInstanceId);
         });
 
-        modelBuilder.Entity<WorkflowEventEntity>(entity =>
-        {
-            entity.ToTable("WorkflowEvents");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).ValueGeneratedOnAdd();
-            entity.Property(e => e.GrainId).HasMaxLength(256).IsRequired();
-            entity.Property(e => e.Version).IsRequired();
-            entity.Property(e => e.EventType).HasMaxLength(200).IsRequired();
-            entity.Property(e => e.Payload).IsRequired();
-            entity.Property(e => e.Timestamp).IsRequired();
-            entity.HasIndex(e => new { e.GrainId, e.Version }).IsUnique();
-            entity.HasIndex(e => e.GrainId);
-        });
-
-        modelBuilder.Entity<WorkflowSnapshotEntity>(entity =>
-        {
-            entity.ToTable("WorkflowSnapshots");
-            entity.HasKey(e => e.GrainId);
-            entity.Property(e => e.GrainId).HasMaxLength(256);
-            entity.Property(e => e.Version).IsRequired();
-            entity.Property(e => e.StatePayload).IsRequired();
-            entity.Property(e => e.Timestamp).IsRequired();
-        });
-
         modelBuilder.Entity<ProcessDefinition>(entity =>
         {
             entity.ToTable("ProcessDefinitions");
@@ -296,6 +282,25 @@ internal static class FleanModelConfiguration
                         v => JsonConvert.SerializeObject(v, jsonSettings).GetHashCode(),
                         v => JsonConvert.DeserializeObject<WorkflowDefinition>(
                             JsonConvert.SerializeObject(v, jsonSettings), jsonSettings)!));
+        });
+
+        modelBuilder.Entity<WorkflowEventEntity>(entity =>
+        {
+            entity.ToTable("WorkflowEvents");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.GrainId).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.EventType).HasMaxLength(128).IsRequired();
+
+            entity.HasIndex(e => new { e.GrainId, e.Version }).IsUnique();
+        });
+
+        modelBuilder.Entity<WorkflowSnapshotEntity>(entity =>
+        {
+            entity.ToTable("WorkflowSnapshots");
+            entity.HasKey(e => e.GrainId);
+
+            entity.Property(e => e.GrainId).HasMaxLength(256);
         });
     }
 }
