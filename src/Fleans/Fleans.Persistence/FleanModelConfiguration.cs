@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using Fleans.Domain;
 using Fleans.Domain.States;
+using Fleans.Persistence.Events;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
@@ -281,6 +282,25 @@ internal static class FleanModelConfiguration
                         v => JsonConvert.SerializeObject(v, jsonSettings).GetHashCode(),
                         v => JsonConvert.DeserializeObject<WorkflowDefinition>(
                             JsonConvert.SerializeObject(v, jsonSettings), jsonSettings)!));
+        });
+
+        modelBuilder.Entity<WorkflowEventEntity>(entity =>
+        {
+            entity.ToTable("WorkflowEvents");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.GrainId).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.EventType).HasMaxLength(128).IsRequired();
+
+            entity.HasIndex(e => new { e.GrainId, e.Version }).IsUnique();
+        });
+
+        modelBuilder.Entity<WorkflowSnapshotEntity>(entity =>
+        {
+            entity.ToTable("WorkflowSnapshots");
+            entity.HasKey(e => e.GrainId);
+
+            entity.Property(e => e.GrainId).HasMaxLength(256);
         });
     }
 }

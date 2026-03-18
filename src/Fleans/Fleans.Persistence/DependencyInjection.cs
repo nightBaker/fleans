@@ -1,6 +1,8 @@
 using Fleans.Application;
 using Fleans.Domain;
+using Fleans.Domain.Events;
 using Fleans.Domain.Persistence;
+using Fleans.Persistence.Events;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Orleans.Storage;
@@ -59,5 +61,7 @@ public static class EfCorePersistenceDependencyInjection
             options.MaxPageSize = 100;
         });
         services.AddSingleton<IWorkflowQueryService, WorkflowQueryService>();
+        services.AddSingleton<IWorkflowStateProjection, EfCoreWorkflowStateProjection>();
+        services.AddSingleton<EfCoreEventStore>();
     }
 }
