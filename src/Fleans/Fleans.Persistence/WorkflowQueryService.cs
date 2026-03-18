@@ -109,10 +109,9 @@ public class WorkflowQueryService : IWorkflowQueryService
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync();
 
-        var definitionIds = await db.ProcessDefinitions
+        var definitionIds = db.ProcessDefinitions
             .Where(p => p.ProcessDefinitionKey == processDefinitionKey)
-            .Select(p => p.ProcessDefinitionId)
-            .ToListAsync();
+            .Select(p => p.ProcessDefinitionId);
 
         var instances = await db.WorkflowInstances
             .Where(w => w.ProcessDefinitionId != null && definitionIds.Contains(w.ProcessDefinitionId))
@@ -127,16 +126,12 @@ public class WorkflowQueryService : IWorkflowQueryService
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync();
 
-        var definitionId = await db.ProcessDefinitions
+        var definitionIds = db.ProcessDefinitions
             .Where(p => p.ProcessDefinitionKey == key && p.Version == version)
-            .Select(p => p.ProcessDefinitionId)
-            .FirstOrDefaultAsync();
-
-        if (definitionId is null)
-            return [];
+            .Select(p => p.ProcessDefinitionId);
 
         var instances = await db.WorkflowInstances
-            .Where(w => w.ProcessDefinitionId == definitionId)
+            .Where(w => definitionIds.Contains(w.ProcessDefinitionId))
             .ToListAsync();
 
         return instances.Select(w => new WorkflowInstanceInfo(
@@ -150,10 +145,9 @@ public class WorkflowQueryService : IWorkflowQueryService
         page = page.Normalize();
         await using var db = await _dbContextFactory.CreateDbContextAsync();
 
-        var definitionIds = await db.ProcessDefinitions
+        var definitionIds = db.ProcessDefinitions
             .Where(p => p.ProcessDefinitionKey == processDefinitionKey)
-            .Select(p => p.ProcessDefinitionId)
-            .ToListAsync();
+            .Select(p => p.ProcessDefinitionId);
 
         var baseQuery = db.WorkflowInstances
             .Where(w => w.ProcessDefinitionId != null
@@ -168,16 +162,12 @@ public class WorkflowQueryService : IWorkflowQueryService
         page = page.Normalize();
         await using var db = await _dbContextFactory.CreateDbContextAsync();
 
-        var definitionId = await db.ProcessDefinitions
+        var definitionIds = db.ProcessDefinitions
             .Where(p => p.ProcessDefinitionKey == key && p.Version == version)
-            .Select(p => p.ProcessDefinitionId)
-            .FirstOrDefaultAsync();
-
-        if (definitionId is null)
-            return new PagedResult<WorkflowInstanceInfo>([], 0, page.Page, page.PageSize);
+            .Select(p => p.ProcessDefinitionId);
 
         var baseQuery = db.WorkflowInstances
-            .Where(w => w.ProcessDefinitionId == definitionId);
+            .Where(w => definitionIds.Contains(w.ProcessDefinitionId));
 
         return await ApplySieveAndProject(baseQuery, page);
     }
