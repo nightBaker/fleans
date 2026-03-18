@@ -1,5 +1,6 @@
 using Fleans.Domain;
 using Fleans.Domain.States;
+using Fleans.Persistence.Events;
 using Microsoft.EntityFrameworkCore;
 
 namespace Fleans.Persistence;
@@ -22,6 +23,8 @@ public class FleanCommandDbContext : DbContext
     public DbSet<MessageStartEventRegistration> MessageStartEventRegistrations => Set<MessageStartEventRegistration>();
     public DbSet<SignalStartEventRegistration> SignalStartEventRegistrations => Set<SignalStartEventRegistration>();
     public DbSet<UserTaskState> UserTasks => Set<UserTaskState>();
+    public DbSet<WorkflowEventEntity> WorkflowEvents => Set<WorkflowEventEntity>();
+    public DbSet<WorkflowSnapshotEntity> WorkflowSnapshots => Set<WorkflowSnapshotEntity>();
 
     public FleanCommandDbContext(DbContextOptions<FleanCommandDbContext> options) : base(options) { }
 

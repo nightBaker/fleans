@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using Fleans.Domain;
 using Fleans.Domain.States;
+using Fleans.Persistence.Events;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Newtonsoft.Json;
@@ -236,6 +237,30 @@ internal static class FleanModelConfiguration
                 .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasIndex(e => e.WorkflowInstanceId);
+        });
+
+        modelBuilder.Entity<WorkflowEventEntity>(entity =>
+        {
+            entity.ToTable("WorkflowEvents");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).ValueGeneratedOnAdd();
+            entity.Property(e => e.GrainId).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.Version).IsRequired();
+            entity.Property(e => e.EventType).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.Payload).IsRequired();
+            entity.Property(e => e.Timestamp).IsRequired();
+            entity.HasIndex(e => new { e.GrainId, e.Version }).IsUnique();
+            entity.HasIndex(e => e.GrainId);
+        });
+
+        modelBuilder.Entity<WorkflowSnapshotEntity>(entity =>
+        {
+            entity.ToTable("WorkflowSnapshots");
+            entity.HasKey(e => e.GrainId);
+            entity.Property(e => e.GrainId).HasMaxLength(256);
+            entity.Property(e => e.Version).IsRequired();
+            entity.Property(e => e.StatePayload).IsRequired();
+            entity.Property(e => e.Timestamp).IsRequired();
         });
 
         modelBuilder.Entity<ProcessDefinition>(entity =>
