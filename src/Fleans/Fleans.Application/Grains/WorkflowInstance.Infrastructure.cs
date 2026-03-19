@@ -332,6 +332,74 @@ public partial class WorkflowInstance
         await eventPublisher.Publish(domainEvent);
     }
 
+    /// <summary>
+    /// Drains the pending external event queue, processes each event through the aggregate,
+    /// then persists all accumulated state changes. Called at the end of every regular
+    /// (non-[AlwaysInterleave]) grain method to ensure enqueued events are processed
+    /// within the serialized grain turn.
+    /// </summary>
+    private async Task ProcessPendingEvents()
+    {
+        while (_pendingExternalEvents.TryDequeue(out var item))
+        {
+            var (pending, completion) = item;
+            try
+            {
+                await EnsureExecution();
+                SetWorkflowRequestContext();
+
+                LogProcessingPendingEvent(pending.GetType().Name);
+
+                var effects = pending switch
+                {
+                    PendingChildCompleted c => _execution!.OnChildWorkflowCompleted(c.ParentActivityId, c.ChildVariables),
+                    PendingChildFailed f => _execution!.OnChildWorkflowFailed(f.ParentActivityId, f.Exception),
+                    PendingSignalDelivery s => _execution!.HandleSignalDelivery(s.ActivityId, s.HostActivityInstanceId),
+                    PendingBoundarySignalFired b => _execution!.HandleSignalDelivery(b.BoundaryActivityId, b.HostActivityInstanceId),
+                    _ => throw new InvalidOperationException($"Unknown pending event type: {pending.GetType().Name}")
+                };
+                await PerformEffects(effects);
+                await ResolveExternalCompletions();
+                await RunExecutionLoop();
+
+                completion.SetResult();
+            }
+            catch (Exception ex)
+            {
+                completion.TrySetException(ex);
+            }
+        }
+
+        LogAndClearEvents();
+        await _state.WriteStateAsync();
+    }
+
+    /// <summary>
+    /// Safety-net timer callback. Processes pending events that arrived when no regular
+    /// method was executing. This is a regular grain method (not [AlwaysInterleave]),
+    /// so it serializes with other regular methods.
+    /// </summary>
+    private async Task ProcessPendingEventsTimer(object state, CancellationToken cancellationToken)
+    {
+        if (_pendingExternalEvents.IsEmpty)
+            return;
+
+        await ProcessPendingEvents();
+    }
+
+    private void EnsurePendingEventsTimerRegistered()
+    {
+        _pendingEventsTimer ??= this.RegisterGrainTimer(
+            ProcessPendingEventsTimer,
+            state: new object(),
+            options: new GrainTimerCreationOptions
+            {
+                DueTime = TimeSpan.Zero,
+                Period = TimeSpan.FromSeconds(1),
+                Interleave = false
+            });
+    }
+
     private void LogAndClearEvents()
     {
         foreach (var evt in _execution!.GetUncommittedEvents())

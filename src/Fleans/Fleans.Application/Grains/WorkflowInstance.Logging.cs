@@ -250,6 +250,27 @@ public partial class WorkflowInstance
         Message = "User task unregistered: ActivityInstanceId={ActivityInstanceId}")]
     private partial void LogUserTaskUnregistered(Guid activityInstanceId);
 
+    // Pending external event queue (EventId 1070-1079)
+    [LoggerMessage(EventId = 1070, Level = LogLevel.Debug,
+        Message = "Child workflow completed queued for CallActivity {ParentActivityId}")]
+    private partial void LogChildWorkflowCompletedQueued(string parentActivityId);
+
+    [LoggerMessage(EventId = 1071, Level = LogLevel.Debug,
+        Message = "Child workflow failed queued for CallActivity {ParentActivityId}")]
+    private partial void LogChildWorkflowFailedQueued(string parentActivityId);
+
+    [LoggerMessage(EventId = 1072, Level = LogLevel.Debug,
+        Message = "Signal delivery queued for activity {ActivityId}, hostInstanceId={HostActivityInstanceId}")]
+    private partial void LogSignalDeliveryQueued(string activityId, Guid hostActivityInstanceId);
+
+    [LoggerMessage(EventId = 1073, Level = LogLevel.Debug,
+        Message = "Boundary signal fired queued for activity {BoundaryActivityId}, hostInstanceId={HostActivityInstanceId}")]
+    private partial void LogBoundarySignalFiredQueued(string boundaryActivityId, Guid hostActivityInstanceId);
+
+    [LoggerMessage(EventId = 1074, Level = LogLevel.Debug,
+        Message = "Processing pending external event: {EventType}")]
+    private partial void LogProcessingPendingEvent(string eventType);
+
     // User task persistence effect failures (EventId 1063-1065)
     [LoggerMessage(EventId = 1063, Level = LogLevel.Warning,
         Message = "User task registration persistence failed: ActivityInstanceId={ActivityInstanceId}")]

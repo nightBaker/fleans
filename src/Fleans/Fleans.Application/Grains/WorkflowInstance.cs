@@ -7,6 +7,7 @@ using Fleans.Application.Adapters;
 using Microsoft.Extensions.Logging;
 using Orleans;
 using Orleans.Runtime;
+using System.Collections.Concurrent;
 using System.Dynamic;
 
 namespace Fleans.Application.Grains;
@@ -21,6 +22,9 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
     private readonly IGrainFactory _grainFactory;
     private readonly ILogger<WorkflowInstance> _logger;
     private readonly IWorkflowQueryService _queryService;
+
+    private readonly ConcurrentQueue<(PendingExternalEvent Event, TaskCompletionSource Completion)> _pendingExternalEvents = new();
+    private IGrainTimer? _pendingEventsTimer;
 
     private WorkflowInstanceState State => _state.State;
 
@@ -84,8 +88,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
 
         _execution = new WorkflowExecution(State, workflow);
         _execution.Start(startActivityId);
-        LogAndClearEvents();
-        await _state.WriteStateAsync();
+        await ProcessPendingEvents();
     }
 
     private async ValueTask<IWorkflowDefinition> GetWorkflowDefinition()
@@ -137,8 +140,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         LogWorkflowStarted();
 
         await RunExecutionLoop();
-        LogAndClearEvents();
-        await _state.WriteStateAsync();
+        await ProcessPendingEvents();
     }
 
     // ── Activity Lifecycle ──────────────────────────────────────────────
@@ -154,8 +156,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         await PerformEffects(effects);
         await ResolveExternalCompletions();
         await RunExecutionLoop();
-        LogAndClearEvents();
-        await _state.WriteStateAsync();
+        await ProcessPendingEvents();
     }
 
     public async Task CompleteActivity(string activityId, Guid activityInstanceId, ExpandoObject variables)
@@ -177,8 +178,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         await PerformEffects(effects);
         await ResolveExternalCompletions();
         await RunExecutionLoop();
-        LogAndClearEvents();
-        await _state.WriteStateAsync();
+        await ProcessPendingEvents();
     }
 
     public async Task FailActivity(string activityId, Exception exception)
@@ -192,8 +192,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         await PerformEffects(effects);
         await ResolveExternalCompletions();
         await RunExecutionLoop();
-        LogAndClearEvents();
-        await _state.WriteStateAsync();
+        await ProcessPendingEvents();
     }
 
     public async Task FailActivity(string activityId, Guid activityInstanceId, Exception exception)
@@ -215,8 +214,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         await PerformEffects(effects);
         await ResolveExternalCompletions();
         await RunExecutionLoop();
-        LogAndClearEvents();
-        await _state.WriteStateAsync();
+        await ProcessPendingEvents();
     }
 
     public async Task CompleteConditionSequence(string activityId, string conditionSequenceId, bool result)
@@ -229,8 +227,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         _execution!.CompleteConditionSequence(activityId, conditionSequenceId, result);
         await ResolveExternalCompletions();
         await RunExecutionLoop();
-        LogAndClearEvents();
-        await _state.WriteStateAsync();
+        await ProcessPendingEvents();
     }
 
     public async Task SetParentInfo(Guid parentWorkflowInstanceId, string parentActivityId)
@@ -238,8 +235,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         await EnsureExecution();
         _execution!.SetParentInfo(parentWorkflowInstanceId, parentActivityId);
         LogParentInfoSet(parentWorkflowInstanceId, parentActivityId);
-        LogAndClearEvents();
-        await _state.WriteStateAsync();
+        await ProcessPendingEvents();
     }
 
     public async Task SetInitialVariables(ExpandoObject variables)
@@ -248,38 +244,25 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
 
         _execution!.MergeVariables(State.GetRootVariablesId(), variables);
         LogInitialVariablesSet();
-        LogAndClearEvents();
-        await _state.WriteStateAsync();
+        await ProcessPendingEvents();
     }
 
-    public async Task OnChildWorkflowCompleted(string parentActivityId, ExpandoObject childVariables)
+    public Task OnChildWorkflowCompleted(string parentActivityId, ExpandoObject childVariables)
     {
-        await EnsureExecution();
-        SetWorkflowRequestContext();
-        using var scope = BeginWorkflowScope();
-        LogChildWorkflowCompleted(parentActivityId);
-
-        var effects = _execution!.OnChildWorkflowCompleted(parentActivityId, childVariables);
-        await PerformEffects(effects);
-        await ResolveExternalCompletions();
-        await RunExecutionLoop();
-        LogAndClearEvents();
-        await _state.WriteStateAsync();
+        LogChildWorkflowCompletedQueued(parentActivityId);
+        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingExternalEvents.Enqueue((new PendingChildCompleted(parentActivityId, childVariables), tcs));
+        EnsurePendingEventsTimerRegistered();
+        return tcs.Task;
     }
 
-    public async Task OnChildWorkflowFailed(string parentActivityId, Exception exception)
+    public Task OnChildWorkflowFailed(string parentActivityId, Exception exception)
     {
-        await EnsureExecution();
-        SetWorkflowRequestContext();
-        using var scope = BeginWorkflowScope();
-        LogChildWorkflowFailed(parentActivityId);
-
-        var effects = _execution!.OnChildWorkflowFailed(parentActivityId, exception);
-        await PerformEffects(effects);
-        await ResolveExternalCompletions();
-        await RunExecutionLoop();
-        LogAndClearEvents();
-        await _state.WriteStateAsync();
+        LogChildWorkflowFailedQueued(parentActivityId);
+        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingExternalEvents.Enqueue((new PendingChildFailed(parentActivityId, exception), tcs));
+        EnsurePendingEventsTimerRegistered();
+        return tcs.Task;
     }
 
     // ── Event Handling ──────────────────────────────────────────────────
@@ -316,8 +299,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         await PerformEffects(filteredEffects);
         await ResolveExternalCompletions();
         await RunExecutionLoop();
-        LogAndClearEvents();
-        await _state.WriteStateAsync();
+        await ProcessPendingEvents();
         return cycleReRegistration;
     }
 
@@ -331,8 +313,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         await PerformEffects(effects);
         await ResolveExternalCompletions();
         await RunExecutionLoop();
-        LogAndClearEvents();
-        await _state.WriteStateAsync();
+        await ProcessPendingEvents();
     }
 
     public async Task HandleBoundaryMessageFired(string boundaryActivityId, Guid hostActivityInstanceId)
@@ -346,36 +327,25 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         await PerformEffects(effects);
         await ResolveExternalCompletions();
         await RunExecutionLoop();
-        LogAndClearEvents();
-        await _state.WriteStateAsync();
+        await ProcessPendingEvents();
     }
 
-    public async Task HandleSignalDelivery(string activityId, Guid hostActivityInstanceId)
+    public Task HandleSignalDelivery(string activityId, Guid hostActivityInstanceId)
     {
-        await EnsureExecution();
-        SetWorkflowRequestContext();
-        using var scope = BeginWorkflowScope();
-
-        var effects = _execution!.HandleSignalDelivery(activityId, hostActivityInstanceId);
-        await PerformEffects(effects);
-        await ResolveExternalCompletions();
-        await RunExecutionLoop();
-        LogAndClearEvents();
-        await _state.WriteStateAsync();
+        LogSignalDeliveryQueued(activityId, hostActivityInstanceId);
+        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingExternalEvents.Enqueue((new PendingSignalDelivery(activityId, hostActivityInstanceId), tcs));
+        EnsurePendingEventsTimerRegistered();
+        return tcs.Task;
     }
 
-    public async Task HandleBoundarySignalFired(string boundaryActivityId, Guid hostActivityInstanceId)
+    public Task HandleBoundarySignalFired(string boundaryActivityId, Guid hostActivityInstanceId)
     {
-        await EnsureExecution();
-        SetWorkflowRequestContext();
-        using var scope = BeginWorkflowScope();
-
-        var effects = _execution!.HandleSignalDelivery(boundaryActivityId, hostActivityInstanceId);
-        await PerformEffects(effects);
-        await ResolveExternalCompletions();
-        await RunExecutionLoop();
-        LogAndClearEvents();
-        await _state.WriteStateAsync();
+        LogBoundarySignalFiredQueued(boundaryActivityId, hostActivityInstanceId);
+        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingExternalEvents.Enqueue((new PendingBoundarySignalFired(boundaryActivityId, hostActivityInstanceId), tcs));
+        EnsurePendingEventsTimerRegistered();
+        return tcs.Task;
     }
 
     // ── User Task Lifecycle ──────────────────────────────────────────────
@@ -389,8 +359,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
 
         var effects = _execution!.ClaimUserTask(activityInstanceId, userId);
         await PerformEffects(effects);
-        LogAndClearEvents();
-        await _state.WriteStateAsync();
+        await ProcessPendingEvents();
     }
 
     public async Task UnclaimUserTask(Guid activityInstanceId)
@@ -402,8 +371,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
 
         var effects = _execution!.UnclaimUserTask(activityInstanceId);
         await PerformEffects(effects);
-        LogAndClearEvents();
-        await _state.WriteStateAsync();
+        await ProcessPendingEvents();
     }
 
     public async Task CompleteUserTask(Guid activityInstanceId, string userId, ExpandoObject variables)
@@ -417,8 +385,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         await PerformEffects(effects);
         await ResolveExternalCompletions();
         await RunExecutionLoop();
-        LogAndClearEvents();
-        await _state.WriteStateAsync();
+        await ProcessPendingEvents();
     }
 
     // ── State Facade ────────────────────────────────────────────────────
@@ -457,8 +424,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
     {
         await EnsureExecution();
         _execution!.EvaluateConditionSequence(activityInstanceId, sequenceId, result);
-        LogAndClearEvents();
-        await _state.WriteStateAsync();
+        await ProcessPendingEvents();
     }
 
     public ValueTask<GatewayForkState?> FindForkByToken(Guid tokenId)
