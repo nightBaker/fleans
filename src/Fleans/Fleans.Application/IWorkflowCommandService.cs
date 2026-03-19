@@ -8,7 +8,7 @@ public interface IWorkflowCommandService
 {
     Task<Guid> StartWorkflow(string workflowId);
     Task<Guid> StartWorkflowByProcessDefinitionId(string processDefinitionId);
-    void CompleteActivity(Guid workflowInstanceId, string activityId, ExpandoObject variables);
+    Task CompleteActivity(Guid workflowInstanceId, string activityId, ExpandoObject variables);
     Task<ProcessDefinitionSummary> DeployWorkflow(WorkflowDefinition workflow, string bpmnXml);
     Task<SendMessageResult> SendMessage(string messageName, string? correlationKey, ExpandoObject variables);
     Task<SendSignalResult> SendSignal(string signalName);

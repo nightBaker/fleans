@@ -71,14 +71,14 @@ namespace Fleans.Application.Tests
                 .Returns(Task.CompletedTask);
 
             // Act
-            _commandService.CompleteActivity(workflowInstanceId, activityId, variables);
+            await _commandService.CompleteActivity(workflowInstanceId, activityId, variables);
 
             // Assert
             await workflowInstance.Received(1).CompleteActivity(activityId, variables);
         }
 
         [TestMethod]
-        public void CompleteActivity_ShouldGetCorrectGrain_ByInstanceId()
+        public async Task CompleteActivity_ShouldGetCorrectGrain_ByInstanceId()
         {
             // Arrange
             var workflowInstanceId = Guid.NewGuid();
@@ -90,7 +90,7 @@ namespace Fleans.Application.Tests
                 .Returns(workflowInstance);
 
             // Act
-            _commandService.CompleteActivity(workflowInstanceId, activityId, variables);
+            await _commandService.CompleteActivity(workflowInstanceId, activityId, variables);
 
             // Assert
             _grainFactory.Received(1).GetGrain<IWorkflowInstanceGrain>(workflowInstanceId);

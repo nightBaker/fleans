@@ -102,6 +102,40 @@ namespace Fleans.Api.Controllers
         [LoggerMessage(EventId = 8003, Level = LogLevel.Error, Message = "Error broadcasting signal")]
         private partial void LogSignalDeliveryError(Exception exception);
 
+        [HttpPost("complete-activity", Name = "CompleteActivity")]
+        public async Task<IActionResult> CompleteActivity([FromBody] CompleteActivityRequest request)
+        {
+            if (request == null || request.WorkflowInstanceId == Guid.Empty)
+                return BadRequest(new ErrorResponse("WorkflowInstanceId is required"));
+            if (string.IsNullOrWhiteSpace(request.ActivityId))
+                return BadRequest(new ErrorResponse("ActivityId is required"));
+
+            try
+            {
+                // System.Text.Json deserializes ExpandoObject values as JsonElement,
+                // which Orleans cannot serialize. Re-parse via Newtonsoft to get proper .NET primitives.
+                var variables = request.Variables != null
+                    ? JsonConvert.DeserializeObject<ExpandoObject>(
+                        System.Text.Json.JsonSerializer.Serialize(request.Variables))!
+                    : new ExpandoObject();
+
+                await _commandService.CompleteActivity(request.WorkflowInstanceId, request.ActivityId, variables);
+                return Ok();
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new ErrorResponse(ex.Message));
+            }
+            catch (Exception ex)
+            {
+                LogCompleteActivityError(ex);
+                return StatusCode(500, new ErrorResponse("An error occurred while completing the activity"));
+            }
+        }
+
+        [LoggerMessage(EventId = 8007, Level = LogLevel.Error, Message = "Error completing activity")]
+        private partial void LogCompleteActivityError(Exception exception);
+
         [HttpGet("tasks", Name = "GetPendingTasks")]
         public async Task<IActionResult> GetPendingTasks(
             [FromQuery] string? assignee = null,
