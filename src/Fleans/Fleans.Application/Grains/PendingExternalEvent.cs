@@ -5,6 +5,8 @@ namespace Fleans.Application.Grains;
 /// <summary>
 /// Base type for events enqueued by [AlwaysInterleave] methods
 /// and processed later by serialized regular methods.
+/// These records are in-memory queue items only — they never cross grain boundaries,
+/// so [GenerateSerializer] is intentionally omitted.
 /// </summary>
 public abstract record PendingExternalEvent;
 

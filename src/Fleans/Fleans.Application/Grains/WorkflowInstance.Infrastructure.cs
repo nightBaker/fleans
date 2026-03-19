@@ -334,9 +334,9 @@ public partial class WorkflowInstance
 
     /// <summary>
     /// Drains the pending external event queue, processes each event through the aggregate,
-    /// then persists all accumulated state changes. Called at the end of every regular
-    /// (non-[AlwaysInterleave]) grain method to ensure enqueued events are processed
-    /// within the serialized grain turn.
+    /// persists state after each event, and only then signals completion to the caller.
+    /// Called at the end of every regular (non-[AlwaysInterleave]) grain method to ensure
+    /// enqueued events are processed within the serialized grain turn.
     /// </summary>
     private async Task ProcessPendingEvents()
     {
@@ -347,7 +347,23 @@ public partial class WorkflowInstance
             {
                 await EnsureExecution();
                 SetWorkflowRequestContext();
+                using var scope = BeginWorkflowScope();
 
+                switch (pending)
+                {
+                    case PendingChildCompleted c:
+                        LogChildWorkflowCompleted(c.ParentActivityId);
+                        break;
+                    case PendingChildFailed f:
+                        LogChildWorkflowFailed(f.ParentActivityId);
+                        break;
+                    case PendingSignalDelivery s:
+                        LogSignalDeliveryComplete(s.ActivityId);
+                        break;
+                    case PendingBoundarySignalFired b:
+                        LogSignalDeliveryBoundary(b.BoundaryActivityId);
+                        break;
+                }
                 LogProcessingPendingEvent(pending.GetType().Name);
 
                 var effects = pending switch
@@ -362,6 +378,11 @@ public partial class WorkflowInstance
                 await ResolveExternalCompletions();
                 await RunExecutionLoop();
 
+                // Persist state before signaling success to the caller.
+                // This ensures callers only see "completed" after state is durably stored.
+                LogAndClearEvents();
+                await _state.WriteStateAsync();
+
                 completion.SetResult();
             }
             catch (Exception ex)
@@ -372,19 +393,35 @@ public partial class WorkflowInstance
 
         LogAndClearEvents();
         await _state.WriteStateAsync();
+
+        DisposePendingEventsTimerIfTerminal();
     }
 
     /// <summary>
     /// Safety-net timer callback. Processes pending events that arrived when no regular
     /// method was executing. This is a regular grain method (not [AlwaysInterleave]),
     /// so it serializes with other regular methods.
+    /// Orleans grain turn serialization (Interleave = false) ensures this callback
+    /// cannot overlap with any regular grain method, so double-processing is impossible.
     /// </summary>
     private async Task ProcessPendingEventsTimer(object state, CancellationToken cancellationToken)
     {
         if (_pendingExternalEvents.IsEmpty)
+        {
+            DisposePendingEventsTimerIfTerminal();
             return;
+        }
 
         await ProcessPendingEvents();
+    }
+
+    private void DisposePendingEventsTimerIfTerminal()
+    {
+        if (_pendingEventsTimer is not null && _pendingExternalEvents.IsEmpty && State.IsCompleted)
+        {
+            _pendingEventsTimer.Dispose();
+            _pendingEventsTimer = null;
+        }
     }
 
     private void EnsurePendingEventsTimerRegistered()
