@@ -44,11 +44,11 @@ public partial class WorkflowCommandService : IWorkflowCommandService
         return await workflowInstance.GetWorkflowInstanceId();
     }
 
-    public void CompleteActivity(Guid workflowInstanceId, string activityId, ExpandoObject variables)
+    public async Task CompleteActivity(Guid workflowInstanceId, string activityId, ExpandoObject variables)
     {
         LogCompletingActivity(workflowInstanceId, activityId);
 
-        _grainFactory.GetGrain<IWorkflowInstanceGrain>(workflowInstanceId)
+        await _grainFactory.GetGrain<IWorkflowInstanceGrain>(workflowInstanceId)
                      .CompleteActivity(activityId, variables);
     }
 

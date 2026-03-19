@@ -78,6 +78,7 @@ Add it to `Fleans.Api/Controllers/WorkflowController.cs`. DTOs go in `Fleans.Ser
 - Start instance: `POST https://localhost:7140/Workflow/start` — body: `{"WorkflowId":"process-id"}`
 - Send message: `POST https://localhost:7140/Workflow/message` — body: `{"MessageName":"...", "CorrelationKey":"...", "Variables":{}}`
 - Send signal: `POST https://localhost:7140/Workflow/signal` — body: `{"SignalName":"..."}`
+- Complete activity: `POST https://localhost:7140/Workflow/complete-activity` — body: `{"WorkflowInstanceId":"guid", "ActivityId":"activity-id", "Variables":{}}`
 
 ## Things to Know
 
