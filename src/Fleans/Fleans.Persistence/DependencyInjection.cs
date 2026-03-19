@@ -63,5 +63,6 @@ public static class EfCorePersistenceDependencyInjection
         services.AddSingleton<IWorkflowQueryService, WorkflowQueryService>();
         services.AddSingleton<IWorkflowStateProjection, EfCoreWorkflowStateProjection>();
         services.AddSingleton<EfCoreEventStore>();
+        services.AddSingleton<IEventStore>(sp => sp.GetRequiredService<EfCoreEventStore>());
     }
 }
