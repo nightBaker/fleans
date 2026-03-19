@@ -111,10 +111,22 @@ public partial class WorkflowInstance :
         var (snapshot, snapshotVersion) = await _eventStore.ReadSnapshotAsync(grainId);
         _lastSnapshotVersion = snapshotVersion;
 
-        if (snapshot is not null)
-            return new(snapshotVersion, snapshot);
+        var state = snapshot ?? new WorkflowInstanceState();
 
-        return new(0, new WorkflowInstanceState());
+        // Replay events after the snapshot to recover state lost by ungraceful shutdown.
+        // Note: Apply methods with Guid.NewGuid()/DateTimeOffset.UtcNow produce non-deterministic
+        // values during replay (e.g. ApplyWorkflowStarted). This is a known limitation —
+        // in practice, snapshots are written on graceful deactivation covering most events.
+        // A future fix should embed deterministic IDs in event records.
+        var events = await _eventStore.ReadEventsAsync(grainId, snapshotVersion);
+        if (events.Count > 0)
+        {
+            var replay = new WorkflowExecution(state);
+            foreach (var evt in events)
+                replay.ReplayEvent(evt);
+        }
+
+        return new(snapshotVersion + events.Count, state);
     }
 
     public async Task<bool> ApplyUpdatesToStorage(

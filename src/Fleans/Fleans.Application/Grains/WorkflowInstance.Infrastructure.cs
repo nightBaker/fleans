@@ -542,6 +542,9 @@ public partial class WorkflowInstance
             case UserTaskUnregistered userTaskUnreg:
                 LogUserTaskUnregistered(userTaskUnreg.ActivityInstanceId);
                 break;
+            case TimerCycleUpdated timerCycle:
+                LogTimerCycleUpdated(timerCycle.HostActivityInstanceId, timerCycle.TimerActivityId, timerCycle.RemainingCycle is not null);
+                break;
         }
     }
 }

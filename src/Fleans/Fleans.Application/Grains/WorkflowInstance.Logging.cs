@@ -209,6 +209,10 @@ public partial class WorkflowInstance
         Message = "Activity spawned: ActivityInstanceId={ActivityInstanceId}, ActivityId={ActivityId}, ActivityType={ActivityType}")]
     private partial void LogActivitySpawned(Guid activityInstanceId, string activityId, string activityType);
 
+    [LoggerMessage(EventId = 3021, Level = LogLevel.Debug,
+        Message = "Timer cycle updated: HostActivityInstanceId={HostActivityInstanceId}, TimerActivityId={TimerActivityId}, HasRemainingCycle={HasRemainingCycle}")]
+    private partial void LogTimerCycleUpdated(Guid hostActivityInstanceId, string timerActivityId, bool hasRemainingCycle);
+
     [LoggerMessage(EventId = 3017, Level = LogLevel.Information, Message = "Workflow execution started")]
     private partial void LogExecutionStarted();
 
