@@ -332,6 +332,111 @@ public partial class WorkflowInstance
         await eventPublisher.Publish(domainEvent);
     }
 
+    /// <summary>
+    /// Drains the pending external event queue, processes each event through the aggregate,
+    /// persists state after each event, and only then signals completion to the caller.
+    /// Called at the end of every regular (non-[AlwaysInterleave]) grain method to ensure
+    /// enqueued events are processed within the serialized grain turn.
+    /// </summary>
+    private async Task ProcessPendingEvents()
+    {
+        while (_pendingExternalEvents.TryDequeue(out var item))
+        {
+            var (pending, completion) = item;
+            try
+            {
+                await EnsureExecution();
+                SetWorkflowRequestContext();
+                using var scope = BeginWorkflowScope();
+
+                switch (pending)
+                {
+                    case PendingChildCompleted c:
+                        LogChildWorkflowCompleted(c.ParentActivityId);
+                        break;
+                    case PendingChildFailed f:
+                        LogChildWorkflowFailed(f.ParentActivityId);
+                        break;
+                    case PendingSignalDelivery s:
+                        LogSignalDeliveryComplete(s.ActivityId);
+                        break;
+                    case PendingBoundarySignalFired b:
+                        LogSignalDeliveryBoundary(b.BoundaryActivityId);
+                        break;
+                }
+                LogProcessingPendingEvent(pending.GetType().Name);
+
+                var effects = pending switch
+                {
+                    PendingChildCompleted c => _execution!.OnChildWorkflowCompleted(c.ParentActivityId, c.ChildVariables),
+                    PendingChildFailed f => _execution!.OnChildWorkflowFailed(f.ParentActivityId, f.Exception),
+                    PendingSignalDelivery s => _execution!.HandleSignalDelivery(s.ActivityId, s.HostActivityInstanceId),
+                    PendingBoundarySignalFired b => _execution!.HandleSignalDelivery(b.BoundaryActivityId, b.HostActivityInstanceId),
+                    _ => throw new InvalidOperationException($"Unknown pending event type: {pending.GetType().Name}")
+                };
+                await PerformEffects(effects);
+                await ResolveExternalCompletions();
+                await RunExecutionLoop();
+
+                // Persist state before signaling success to the caller.
+                // This ensures callers only see "completed" after state is durably stored.
+                LogAndClearEvents();
+                await _state.WriteStateAsync();
+
+                completion.SetResult();
+            }
+            catch (Exception ex)
+            {
+                completion.TrySetException(ex);
+            }
+        }
+
+        LogAndClearEvents();
+        await _state.WriteStateAsync();
+
+        DisposePendingEventsTimerIfTerminal();
+    }
+
+    /// <summary>
+    /// Safety-net timer callback. Processes pending events that arrived when no regular
+    /// method was executing. This is a regular grain method (not [AlwaysInterleave]),
+    /// so it serializes with other regular methods.
+    /// Orleans grain turn serialization (Interleave = false) ensures this callback
+    /// cannot overlap with any regular grain method, so double-processing is impossible.
+    /// </summary>
+    private async Task ProcessPendingEventsTimer(object state, CancellationToken cancellationToken)
+    {
+        if (_pendingExternalEvents.IsEmpty)
+        {
+            DisposePendingEventsTimerIfTerminal();
+            return;
+        }
+
+        await ProcessPendingEvents();
+    }
+
+    private void DisposePendingEventsTimerIfTerminal()
+    {
+        if (_pendingEventsTimer is not null && _pendingExternalEvents.IsEmpty && State.IsCompleted)
+        {
+            _pendingEventsTimer.Dispose();
+            _pendingEventsTimer = null;
+        }
+    }
+
+    private void EnsurePendingEventsTimerRegistered()
+    {
+        _pendingEventsTimer ??= this.RegisterGrainTimer(
+            ProcessPendingEventsTimer,
+            state: new object(),
+            options: new GrainTimerCreationOptions
+            {
+                DueTime = TimeSpan.Zero,
+                Period = TimeSpan.FromSeconds(1),
+                Interleave = false
+            });
+    }
+
     private void LogAndClearEvents()
     {
         foreach (var evt in _execution!.GetUncommittedEvents())
