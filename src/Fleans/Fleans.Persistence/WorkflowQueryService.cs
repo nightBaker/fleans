@@ -95,49 +95,41 @@ public class WorkflowQueryService : IWorkflowQueryService
             .ThenBy(d => d.Version)
             .ToListAsync();
 
-        return definitions.Select(d => new ProcessDefinitionSummary(
-            d.ProcessDefinitionId,
-            d.ProcessDefinitionKey,
-            d.Version,
-            d.DeployedAt,
-            d.Workflow.Activities.Count,
-            d.Workflow.SequenceFlows.Count,
-            d.IsActive)).ToList();
+        return definitions.Select(ProjectToSummary).ToList();
     }
 
-    public async Task<IReadOnlyList<WorkflowInstanceInfo>> GetInstancesByKey(string processDefinitionKey)
+    public async Task<PagedResult<ProcessDefinitionSummary>> GetAllProcessDefinitions(PageRequest page)
     {
+        page = page.Normalize();
         await using var db = await _dbContextFactory.CreateDbContextAsync();
 
-        var definitionIds = db.ProcessDefinitions
-            .Where(p => p.ProcessDefinitionKey == processDefinitionKey)
-            .Select(p => p.ProcessDefinitionId);
+        var sieveModel = new SieveModel
+        {
+            Sorts = page.Sorts,
+            Filters = page.Filters,
+            Page = page.Page,
+            PageSize = page.PageSize
+        };
 
-        var instances = await db.WorkflowInstances
-            .Where(w => w.ProcessDefinitionId != null && definitionIds.Contains(w.ProcessDefinitionId))
+        var baseQuery = db.ProcessDefinitions.AsQueryable();
+        var filteredQuery = _sieveProcessor.Apply(sieveModel, baseQuery, applyPagination: false);
+        var totalCount = await filteredQuery.CountAsync();
+
+        var definitions = await filteredQuery
+            .Skip((page.Page - 1) * page.PageSize)
+            .Take(page.PageSize)
             .ToListAsync();
 
-        return instances.Select(w => new WorkflowInstanceInfo(
-            w.Id, w.ProcessDefinitionId ?? "", w.IsStarted, w.IsCompleted,
-            w.CreatedAt, w.ExecutionStartedAt, w.CompletedAt)).ToList();
+        var items = definitions.Select(ProjectToSummary).ToList();
+
+        return new PagedResult<ProcessDefinitionSummary>(
+            items, totalCount, page.Page, page.PageSize);
     }
 
-    public async Task<IReadOnlyList<WorkflowInstanceInfo>> GetInstancesByKeyAndVersion(string key, int version)
-    {
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-
-        var definitionIds = db.ProcessDefinitions
-            .Where(p => p.ProcessDefinitionKey == key && p.Version == version)
-            .Select(p => p.ProcessDefinitionId);
-
-        var instances = await db.WorkflowInstances
-            .Where(w => definitionIds.Contains(w.ProcessDefinitionId))
-            .ToListAsync();
-
-        return instances.Select(w => new WorkflowInstanceInfo(
-            w.Id, w.ProcessDefinitionId ?? "", w.IsStarted, w.IsCompleted,
-            w.CreatedAt, w.ExecutionStartedAt, w.CompletedAt)).ToList();
-    }
+    private static ProcessDefinitionSummary ProjectToSummary(ProcessDefinition d) =>
+        new(d.ProcessDefinitionId, d.ProcessDefinitionKey, d.Version,
+            d.DeployedAt, d.Workflow.Activities.Count,
+            d.Workflow.SequenceFlows.Count, d.IsActive);
 
     public async Task<PagedResult<WorkflowInstanceInfo>> GetInstancesByKey(
         string processDefinitionKey, PageRequest page)
@@ -292,21 +284,60 @@ public class WorkflowQueryService : IWorkflowQueryService
             .Where(t => t.TaskState != UserTaskLifecycleState.Completed)
             .ToListAsync();
 
-        IEnumerable<UserTaskState> filtered = tasks;
+        return ApplyUserTaskFilters(tasks, assignee, candidateGroup)
+            .Select(ToUserTaskDto).ToList();
+    }
 
+    public async Task<PagedResult<UserTaskResponse>> GetPendingUserTasks(
+        string? assignee, string? candidateGroup, PageRequest page)
+    {
+        page = page.Normalize();
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+
+        // Layer 1: DB-level — Sieve for TaskState filter + CreatedAt sort
+        var baseQuery = db.UserTasks.AsQueryable();
+        var sieveModel = new SieveModel
+        {
+            Sorts = page.Sorts ?? "-CreatedAt",
+            Filters = page.Filters
+        };
+        var sievedQuery = _sieveProcessor.Apply(sieveModel, baseQuery, applyPagination: false);
+
+        // Materialize — assignee/candidateGroup filtering must happen in memory
+        // because CandidateUsers/CandidateGroups are JSON arrays not queryable in SQLite
+        var tasks = await sievedQuery.ToListAsync();
+
+        // Layer 2: Memory-level — assignee/candidateGroup filtering (preserves existing OR semantics)
+        var filteredList = ApplyUserTaskFilters(tasks, assignee, candidateGroup).ToList();
+        var totalCount = filteredList.Count;
+
+        // Layer 3: Memory-level pagination
+        var items = filteredList
+            .Skip((page.Page - 1) * page.PageSize)
+            .Take(page.PageSize)
+            .Select(ToUserTaskDto)
+            .ToList();
+
+        return new PagedResult<UserTaskResponse>(
+            items, totalCount, page.Page, page.PageSize);
+    }
+
+    private static IEnumerable<UserTaskState> ApplyUserTaskFilters(
+        IEnumerable<UserTaskState> tasks, string? assignee, string? candidateGroup)
+    {
         if (assignee is not null)
         {
-            filtered = filtered.Where(t =>
+            tasks = tasks.Where(t =>
                 t.Assignee == assignee ||
                 t.CandidateUsers.Contains(assignee));
         }
 
         if (candidateGroup is not null)
         {
-            filtered = filtered.Where(t => t.CandidateGroups.Contains(candidateGroup));
+            tasks = tasks.Where(t => t.CandidateGroups.Contains(candidateGroup));
         }
 
-        return filtered.Select(ToUserTaskDto).ToList();
+        return tasks;
     }
 
     public async Task<UserTaskResponse?> GetUserTask(Guid activityInstanceId)
