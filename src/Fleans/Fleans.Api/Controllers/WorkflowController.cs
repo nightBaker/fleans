@@ -1,4 +1,5 @@
 using Fleans.Application;
+using Fleans.Application.QueryModels;
 using Fleans.ServiceDefaults.DTOs;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
@@ -136,13 +137,56 @@ namespace Fleans.Api.Controllers
         [LoggerMessage(EventId = 8007, Level = LogLevel.Error, Message = "Error completing activity")]
         private partial void LogCompleteActivityError(Exception exception);
 
+        [HttpGet("definitions", Name = "ListDefinitions")]
+        public async Task<IActionResult> ListDefinitions(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20,
+            [FromQuery] string? sorts = null,
+            [FromQuery] string? filters = null)
+        {
+            var request = new PageRequest(page, pageSize, sorts, filters);
+            var result = await _workflowQueryService.GetAllProcessDefinitions(request);
+            return Ok(result);
+        }
+
+        [HttpGet("definitions/{key}/instances", Name = "ListInstancesByKey")]
+        public async Task<IActionResult> ListInstancesByKey(
+            string key,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20,
+            [FromQuery] string? sorts = null,
+            [FromQuery] string? filters = null)
+        {
+            var request = new PageRequest(page, pageSize, sorts, filters);
+            var result = await _workflowQueryService.GetInstancesByKey(key, request);
+            return Ok(result);
+        }
+
+        [HttpGet("definitions/{key}/{version:int}/instances", Name = "ListInstancesByKeyAndVersion")]
+        public async Task<IActionResult> ListInstancesByKeyAndVersion(
+            string key, int version,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20,
+            [FromQuery] string? sorts = null,
+            [FromQuery] string? filters = null)
+        {
+            var request = new PageRequest(page, pageSize, sorts, filters);
+            var result = await _workflowQueryService.GetInstancesByKeyAndVersion(key, version, request);
+            return Ok(result);
+        }
+
         [HttpGet("tasks", Name = "GetPendingTasks")]
         public async Task<IActionResult> GetPendingTasks(
             [FromQuery] string? assignee = null,
-            [FromQuery] string? candidateGroup = null)
+            [FromQuery] string? candidateGroup = null,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20,
+            [FromQuery] string? sorts = null,
+            [FromQuery] string? filters = null)
         {
-            var tasks = await _workflowQueryService.GetPendingUserTasks(assignee, candidateGroup);
-            return Ok(tasks);
+            var request = new PageRequest(page, pageSize, sorts, filters);
+            var result = await _workflowQueryService.GetPendingUserTasks(assignee, candidateGroup, request);
+            return Ok(result);
         }
 
         [HttpGet("tasks/{activityInstanceId:guid}", Name = "GetTask")]

@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Text;
 using System.Text.Json;
 using Fleans.Application;
+using Fleans.Application.QueryModels;
 using Fleans.Infrastructure.Bpmn;
 using ModelContextProtocol;
 using ModelContextProtocol.Server;
@@ -39,14 +40,19 @@ public static class WorkflowTools
         }
     }
 
-    [McpServerTool, Description("List all deployed process definitions. Returns an array of definitions with their IDs, keys, versions, and activity counts.")]
+    [McpServerTool, Description("List deployed process definitions with optional pagination and filtering. Returns paginated results with definition IDs, keys, versions, and activity counts.")]
     public static async Task<string> ListDefinitions(
-        IWorkflowQueryService queryService)
+        IWorkflowQueryService queryService,
+        [Description("Page number (1-based, default: 1)")] int page = 1,
+        [Description("Items per page (1-100, default: 50)")] int pageSize = 50,
+        [Description("Sieve sort expression (e.g. '-DeployedAt' for newest first)")] string? sorts = null,
+        [Description("Sieve filter expression (e.g. 'IsActive==true')")] string? filters = null)
     {
         try
         {
-            var definitions = await queryService.GetAllProcessDefinitions();
-            return JsonSerializer.Serialize(definitions, JsonOptions);
+            var request = new PageRequest(page, pageSize, sorts, filters);
+            var result = await queryService.GetAllProcessDefinitions(request);
+            return JsonSerializer.Serialize(result, JsonOptions);
         }
         catch (Exception ex)
         {
