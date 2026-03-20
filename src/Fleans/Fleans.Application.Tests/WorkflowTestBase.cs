@@ -3,8 +3,10 @@ using Fleans.Application.Events;
 using Fleans.Application.Scripts;
 using Fleans.Application.Conditions;
 using Fleans.Domain;
+using Fleans.Domain.Events;
 using Fleans.Domain.Persistence;
 using Fleans.Persistence;
+using Fleans.Persistence.Events;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -41,7 +43,13 @@ public abstract class WorkflowTestBase
         Cluster = builder.Build();
         Cluster.Deploy();
 
-        QueryService = ((InProcessSiloHandle)Cluster.Primary).SiloHost.Services.GetRequiredService<IWorkflowQueryService>();
+        var siloServices = ((InProcessSiloHandle)Cluster.Primary).SiloHost.Services;
+        QueryService = siloServices.GetRequiredService<IWorkflowQueryService>();
+
+        // Ensure DB schema is created using the silo's service provider
+        // (avoids calling BuildServiceProvider() inside ConfigureServices)
+        using var db = siloServices.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>().CreateDbContext();
+        db.Database.EnsureCreated();
     }
 
     [TestCleanup]
@@ -86,6 +94,7 @@ public abstract class WorkflowTestBase
                 .AddMemoryGrainStorage(GrainStorageNames.MessageStartEventListeners)
                 .AddMemoryGrainStorage(GrainStorageNames.SignalStartEventListeners)
                 .AddMemoryGrainStorage(GrainStorageNames.UserTasks)
+                .AddCustomStorageBasedLogConsistencyProviderAsDefault()
                 .UseInMemoryReminderService()
                 .ConfigureServices(services =>
                 {
@@ -94,10 +103,6 @@ public abstract class WorkflowTestBase
 
                     services.AddDbContextFactory<FleanQueryDbContext>(options =>
                         options.UseSqlite("DataSource=file::memory:?cache=shared"));
-
-                    services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.WorkflowInstances,
-                        (sp, _) => new EfCoreWorkflowInstanceGrainStorage(
-                            sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
 
                     services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.TimerSchedulers,
                         (sp, _) => new EfCoreTimerSchedulerGrainStorage(
@@ -113,6 +118,9 @@ public abstract class WorkflowTestBase
                     services.AddSingleton<IWorkflowQueryService, WorkflowQueryService>();
                     services.AddSingleton<IScriptExpressionExecutor, SimpleScriptExecutor>();
                     services.AddSingleton<IConditionExpressionEvaluator, SimpleConditionEvaluator>();
+                    services.AddSingleton<IWorkflowStateProjection, EfCoreWorkflowStateProjection>();
+                    services.AddSingleton<EfCoreEventStore>();
+                    services.AddSingleton<IEventStore>(sp => sp.GetRequiredService<EfCoreEventStore>());
 
                     services.AddSerializer(serializerBuilder =>
                     {
@@ -123,11 +131,6 @@ public abstract class WorkflowTestBase
                                 TypeNameHandling = Newtonsoft.Json.TypeNameHandling.All
                             });
                     });
-
-                    // Ensure DB schema is created
-                    var sp = services.BuildServiceProvider();
-                    using var db = sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>().CreateDbContext();
-                    db.Database.EnsureCreated();
                 });
     }
 }

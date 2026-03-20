@@ -14,7 +14,7 @@ namespace Fleans.Persistence.Events;
 /// Snapshots are stored in normalized SQL tables via IWorkflowStateProjection,
 /// with version metadata tracked in the WorkflowSnapshots table.
 /// </summary>
-public class EfCoreEventStore
+public class EfCoreEventStore : IEventStore
 {
     private readonly IDbContextFactory<FleanCommandDbContext> _dbContextFactory;
     private readonly IWorkflowStateProjection _stateProjection;

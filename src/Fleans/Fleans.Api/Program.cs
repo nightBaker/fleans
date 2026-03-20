@@ -21,6 +21,9 @@ builder.UseOrleans(siloBuilder =>
     // Dashboard data collection (UI served from Web project)
     siloBuilder.AddDashboard();
 
+    // JournaledGrain custom storage provider for WorkflowInstance event sourcing
+    siloBuilder.AddCustomStorageBasedLogConsistencyProviderAsDefault();
+
     // Structured workflow logging via RequestContext
     siloBuilder.AddIncomingGrainCallFilter<WorkflowLoggingScopeFilter>();
 });

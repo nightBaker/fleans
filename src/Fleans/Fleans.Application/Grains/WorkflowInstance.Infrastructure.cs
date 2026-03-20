@@ -105,10 +105,6 @@ public partial class WorkflowInstance
 
             // Handle subprocess/multi-instance scope completions
             await HandleScopeCompletions(definition);
-
-            // Persist after each iteration so partial progress survives grain deactivation
-            // during long execution chains (e.g., sequential multi-instance with many items).
-            await _state.WriteStateAsync();
         }
     }
 
@@ -277,7 +273,6 @@ public partial class WorkflowInstance
 
         try
         {
-            await _state.WriteStateAsync(); // persist before external call
             await corrGrain.Subscribe(subMsg.WorkflowInstanceId, subMsg.ActivityId, subMsg.HostActivityInstanceId);
             LogMessageSubscriptionRegistered(subMsg.ActivityId, subMsg.MessageName, subMsg.CorrelationKey);
         }
@@ -296,7 +291,6 @@ public partial class WorkflowInstance
 
         try
         {
-            await _state.WriteStateAsync(); // persist before external call
             await signalGrain.Subscribe(subSig.WorkflowInstanceId, subSig.ActivityId, subSig.HostActivityInstanceId);
             LogSignalSubscriptionRegistered(subSig.ActivityId, subSig.SignalName);
         }
@@ -380,8 +374,7 @@ public partial class WorkflowInstance
 
                 // Persist state before signaling success to the caller.
                 // This ensures callers only see "completed" after state is durably stored.
-                LogAndClearEvents();
-                await _state.WriteStateAsync();
+                await DrainAndRaiseEvents();
 
                 completion.SetResult();
             }
@@ -391,8 +384,7 @@ public partial class WorkflowInstance
             }
         }
 
-        LogAndClearEvents();
-        await _state.WriteStateAsync();
+        await DrainAndRaiseEvents();
 
         DisposePendingEventsTimerIfTerminal();
     }
@@ -437,90 +429,115 @@ public partial class WorkflowInstance
             });
     }
 
-    private void LogAndClearEvents()
+    /// <summary>
+    /// Drains uncommitted events from the aggregate, logs each one, raises them
+    /// through JournaledGrain's RaiseEvent, and persists via ConfirmEvents.
+    /// Replaces the old LogAndClearEvents() + _state.WriteStateAsync() pattern.
+    /// </summary>
+    private async Task DrainAndRaiseEvents()
     {
-        foreach (var evt in _execution!.GetUncommittedEvents())
+        var events = _execution!.GetUncommittedEvents();
+        // Capture count before clearing — GetUncommittedEvents returns a wrapper
+        // over the internal list, so ClearUncommittedEvents would zero out Count.
+        var eventCount = events.Count;
+        foreach (var evt in events)
         {
-            switch (evt)
-            {
-                case WorkflowCompleted:
-                    LogStateCompleted();
-                    break;
-                case ActivitySpawned spawned:
-                    LogActivitySpawned(spawned.ActivityInstanceId, spawned.ActivityId, spawned.ActivityType);
-                    break;
-                case ActivityCompleted completed:
-                    LogStateCompleteEntries(1);
-                    break;
-                case ActivityFailed failed:
-                    LogFailingActivity(failed.ActivityInstanceId.ToString());
-                    break;
-                case ActivityCancelled cancelled:
-                    LogScopeChildCancelled(cancelled.ActivityInstanceId.ToString(),
-                        State.FindEntry(cancelled.ActivityInstanceId)?.ScopeId ?? Guid.Empty);
-                    break;
-                case VariablesMerged merged:
-                    LogStateMergeState(merged.VariablesId);
-                    break;
-                case GatewayForkCreated forkCreated:
-                    LogGatewayForkStateCreated(forkCreated.ForkInstanceId, forkCreated.ConsumedTokenId);
-                    break;
-                case GatewayForkRemoved forkRemoved:
-                    LogGatewayForkStateRemoved(forkRemoved.ForkInstanceId);
-                    break;
-                case ParentInfoSet parentInfo:
-                    LogParentInfoSet(parentInfo.ParentInstanceId, parentInfo.ParentActivityId);
-                    break;
-                case WorkflowStarted started:
-                    LogWorkflowInstanceStarted(started.InstanceId);
-                    break;
-                case ExecutionStarted:
-                    LogExecutionStarted();
-                    break;
-                case ActivityExecutionStarted execStarted:
-                    LogActivityExecutionStarted(execStarted.ActivityInstanceId);
-                    break;
-                case ChildVariableScopeCreated childScope:
-                    LogChildVariableScopeCreated(childScope.ScopeId, childScope.ParentScopeId);
-                    break;
-                case VariableScopeCloned cloned:
-                    LogVariableScopeCloned(cloned.NewScopeId, cloned.SourceScopeId);
-                    break;
-                case VariableScopesRemoved removed:
-                    LogVariableScopesRemoved(removed.ScopeIds.Count);
-                    break;
-                case ConditionSequencesAdded condAdded:
-                    LogConditionSequencesAdded(condAdded.GatewayInstanceId, condAdded.SequenceFlowIds.Length);
-                    break;
-                case ConditionSequenceEvaluated condEval:
-                    LogConditionSequenceEvaluated(condEval.GatewayInstanceId, condEval.SequenceFlowId, condEval.Result);
-                    break;
-                case GatewayForkTokenAdded tokenAdded:
-                    LogGatewayForkTokenAdded(tokenAdded.ForkInstanceId, tokenAdded.TokenId);
-                    break;
-                case ActivityExecutionReset execReset:
-                    LogActivityExecutionReset(execReset.ActivityInstanceId);
-                    break;
-                case ChildWorkflowLinked childLinked:
-                    LogChildWorkflowLinked(childLinked.ActivityInstanceId, childLinked.ChildWorkflowInstanceId);
-                    break;
-                case MultiInstanceTotalSet miTotal:
-                    LogMultiInstanceTotalSet(miTotal.ActivityInstanceId, miTotal.Total);
-                    break;
-                case UserTaskRegistered userTaskReg:
-                    LogUserTaskRegistered(userTaskReg.ActivityInstanceId, userTaskReg.Assignee);
-                    break;
-                case UserTaskClaimed userTaskClaimed:
-                    LogUserTaskClaimed(userTaskClaimed.ActivityInstanceId, userTaskClaimed.UserId);
-                    break;
-                case UserTaskUnclaimed userTaskUnclaimed:
-                    LogUserTaskUnclaimed(userTaskUnclaimed.ActivityInstanceId);
-                    break;
-                case UserTaskUnregistered userTaskUnreg:
-                    LogUserTaskUnregistered(userTaskUnreg.ActivityInstanceId);
-                    break;
-            }
+            LogEvent(evt);
+            RaiseEvent(evt);
         }
         _execution.ClearUncommittedEvents();
+
+        if (eventCount > 0)
+        {
+            await ConfirmEvents();
+            // Project state to query model so CQRS read side stays in sync
+            await _stateProjection.WriteAsync(GrainId, State);
+        }
+    }
+
+    private void LogEvent(IDomainEvent evt)
+    {
+        switch (evt)
+        {
+            case WorkflowCompleted:
+                LogStateCompleted();
+                break;
+            case ActivitySpawned spawned:
+                LogActivitySpawned(spawned.ActivityInstanceId, spawned.ActivityId, spawned.ActivityType);
+                break;
+            case ActivityCompleted completed:
+                LogStateCompleteEntries(1);
+                break;
+            case ActivityFailed failed:
+                LogFailingActivity(failed.ActivityInstanceId.ToString());
+                break;
+            case ActivityCancelled cancelled:
+                LogScopeChildCancelled(cancelled.ActivityInstanceId.ToString(),
+                    State.FindEntry(cancelled.ActivityInstanceId)?.ScopeId ?? Guid.Empty);
+                break;
+            case VariablesMerged merged:
+                LogStateMergeState(merged.VariablesId);
+                break;
+            case GatewayForkCreated forkCreated:
+                LogGatewayForkStateCreated(forkCreated.ForkInstanceId, forkCreated.ConsumedTokenId);
+                break;
+            case GatewayForkRemoved forkRemoved:
+                LogGatewayForkStateRemoved(forkRemoved.ForkInstanceId);
+                break;
+            case ParentInfoSet parentInfo:
+                LogParentInfoSet(parentInfo.ParentInstanceId, parentInfo.ParentActivityId);
+                break;
+            case WorkflowStarted started:
+                LogWorkflowInstanceStarted(started.InstanceId);
+                break;
+            case ExecutionStarted:
+                LogExecutionStarted();
+                break;
+            case ActivityExecutionStarted execStarted:
+                LogActivityExecutionStarted(execStarted.ActivityInstanceId);
+                break;
+            case ChildVariableScopeCreated childScope:
+                LogChildVariableScopeCreated(childScope.ScopeId, childScope.ParentScopeId);
+                break;
+            case VariableScopeCloned cloned:
+                LogVariableScopeCloned(cloned.NewScopeId, cloned.SourceScopeId);
+                break;
+            case VariableScopesRemoved removed:
+                LogVariableScopesRemoved(removed.ScopeIds.Count);
+                break;
+            case ConditionSequencesAdded condAdded:
+                LogConditionSequencesAdded(condAdded.GatewayInstanceId, condAdded.SequenceFlowIds.Length);
+                break;
+            case ConditionSequenceEvaluated condEval:
+                LogConditionSequenceEvaluated(condEval.GatewayInstanceId, condEval.SequenceFlowId, condEval.Result);
+                break;
+            case GatewayForkTokenAdded tokenAdded:
+                LogGatewayForkTokenAdded(tokenAdded.ForkInstanceId, tokenAdded.TokenId);
+                break;
+            case ActivityExecutionReset execReset:
+                LogActivityExecutionReset(execReset.ActivityInstanceId);
+                break;
+            case ChildWorkflowLinked childLinked:
+                LogChildWorkflowLinked(childLinked.ActivityInstanceId, childLinked.ChildWorkflowInstanceId);
+                break;
+            case MultiInstanceTotalSet miTotal:
+                LogMultiInstanceTotalSet(miTotal.ActivityInstanceId, miTotal.Total);
+                break;
+            case UserTaskRegistered userTaskReg:
+                LogUserTaskRegistered(userTaskReg.ActivityInstanceId, userTaskReg.Assignee);
+                break;
+            case UserTaskClaimed userTaskClaimed:
+                LogUserTaskClaimed(userTaskClaimed.ActivityInstanceId, userTaskClaimed.UserId);
+                break;
+            case UserTaskUnclaimed userTaskUnclaimed:
+                LogUserTaskUnclaimed(userTaskUnclaimed.ActivityInstanceId);
+                break;
+            case UserTaskUnregistered userTaskUnreg:
+                LogUserTaskUnregistered(userTaskUnreg.ActivityInstanceId);
+                break;
+            case TimerCycleUpdated timerCycle:
+                LogTimerCycleUpdated(timerCycle.HostActivityInstanceId, timerCycle.TimerActivityId);
+                break;
+        }
     }
 }

@@ -2,32 +2,60 @@ using Fleans.Application.QueryModels;
 using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
+using Fleans.Domain.Events;
 using Fleans.Domain.Persistence;
+using Fleans.Domain.States;
 using Fleans.Domain.Sequences;
+using Fleans.Persistence.Events;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Orleans.TestingHost;
+using Orleans.TestingHost.InProcess;
+using Fleans.Persistence;
 
 namespace Fleans.Application.Tests
 {
     [TestClass]
     public class WorkflowInstanceFactoryGrainTests
     {
+        private static SqliteConnection? _sharedConnection;
+        private static readonly object _lock = new();
         private TestCluster _cluster = null!;
 
         [TestInitialize]
         public void Setup()
         {
+            lock (_lock)
+            {
+                _sharedConnection = new SqliteConnection("DataSource=file::memory:?cache=shared");
+                _sharedConnection.Open();
+            }
+
             var builder = new TestClusterBuilder();
             builder.AddSiloBuilderConfigurator<SiloConfigurator>();
             _cluster = builder.Build();
             _cluster.Deploy();
+
+            // Ensure DB schema is created using the silo's service provider
+            // (avoids calling BuildServiceProvider() inside ConfigureServices)
+            var siloServices = ((InProcessSiloHandle)_cluster.Primary).SiloHost.Services;
+            using var db = siloServices.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>().CreateDbContext();
+            db.Database.EnsureCreated();
         }
 
         [TestCleanup]
         public void Cleanup()
         {
             _cluster?.StopAllSilos();
+
+            lock (_lock)
+            {
+                _sharedConnection?.Close();
+                _sharedConnection?.Dispose();
+                _sharedConnection = null;
+            }
         }
 
         [TestMethod]
@@ -143,11 +171,16 @@ namespace Fleans.Application.Tests
         {
             public void Configure(ISiloBuilder hostBuilder) =>
                 hostBuilder
-                    .AddMemoryGrainStorage(GrainStorageNames.WorkflowInstances)
+                    .AddCustomStorageBasedLogConsistencyProviderAsDefault()
                     .AddMemoryGrainStorage(GrainStorageNames.ProcessDefinitions)
                     .AddMemoryGrainStorage(GrainStorageNames.UserTasks)
                     .ConfigureServices(services =>
                     {
+                        services.AddDbContextFactory<FleanCommandDbContext>(options =>
+                            options.UseSqlite("DataSource=file::memory:?cache=shared"));
+                        services.AddSingleton<IWorkflowStateProjection, StubWorkflowStateProjection>();
+                        services.AddSingleton<EfCoreEventStore>();
+                        services.AddSingleton<IEventStore>(sp => sp.GetRequiredService<EfCoreEventStore>());
                         services.AddSingleton<IProcessDefinitionRepository, StubProcessDefinitionRepository>();
                         services.AddSingleton<IWorkflowQueryService, StubWorkflowQueryService>();
                     });
@@ -167,6 +200,12 @@ namespace Fleans.Application.Tests
             public Task<PagedResult<DTOs.UserTaskResponse>> GetPendingUserTasks(string? assignee, string? candidateGroup, PageRequest page) => Task.FromResult(new PagedResult<DTOs.UserTaskResponse>([], 0, page.Page, page.PageSize));
             public Task<DTOs.UserTaskResponse?> GetUserTask(Guid activityInstanceId) => Task.FromResult<DTOs.UserTaskResponse?>(null);
             public Task<IReadOnlyList<Domain.States.UserTaskState>> GetActiveUserTasksForWorkflow(Guid workflowInstanceId) => Task.FromResult<IReadOnlyList<Domain.States.UserTaskState>>([]);
+        }
+
+        private class StubWorkflowStateProjection : IWorkflowStateProjection
+        {
+            public Task<WorkflowInstanceState?> ReadAsync(string grainId) => Task.FromResult<WorkflowInstanceState?>(null);
+            public Task WriteAsync(string grainId, WorkflowInstanceState state) => Task.CompletedTask;
         }
 
         private class StubProcessDefinitionRepository : IProcessDefinitionRepository

@@ -2,52 +2,149 @@ using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Aggregates;
 using Fleans.Domain.Effects;
+using Fleans.Domain.Events;
 using Fleans.Domain.States;
 using Fleans.Application.Adapters;
 using Microsoft.Extensions.Logging;
 using Orleans;
+using Orleans.EventSourcing;
+using Orleans.EventSourcing.CustomStorage;
 using Orleans.Runtime;
 using System.Collections.Concurrent;
 using System.Dynamic;
 
 namespace Fleans.Application.Grains;
 
-public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
+public partial class WorkflowInstance :
+    JournaledGrain<WorkflowInstanceState, IDomainEvent>,
+    IWorkflowInstanceGrain,
+    ICustomStorageInterface<WorkflowInstanceState, IDomainEvent>
 {
     public ValueTask<Guid> GetWorkflowInstanceId() => ValueTask.FromResult(this.GetPrimaryKey());
     private IWorkflowDefinition? _workflowDefinition;
     private WorkflowExecution? _execution;
 
-    private readonly IPersistentState<WorkflowInstanceState> _state;
     private readonly IGrainFactory _grainFactory;
     private readonly ILogger<WorkflowInstance> _logger;
     private readonly IWorkflowQueryService _queryService;
+    private readonly IEventStore _eventStore;
+    private readonly IWorkflowStateProjection _stateProjection;
 
     private readonly ConcurrentQueue<(PendingExternalEvent Event, TaskCompletionSource Completion)> _pendingExternalEvents = new();
     private IGrainTimer? _pendingEventsTimer;
 
-    private WorkflowInstanceState State => _state.State;
+    private int _lastSnapshotVersion;
+    private string? _grainId;
+
+    private const int SnapshotFrequency = 100;
+
+    private string GrainId => _grainId ??= this.GetPrimaryKey().ToString();
 
     public WorkflowInstance(
-        [PersistentState("state", GrainStorageNames.WorkflowInstances)] IPersistentState<WorkflowInstanceState> state,
         IGrainFactory grainFactory,
         ILogger<WorkflowInstance> logger,
-        IWorkflowQueryService queryService)
+        IWorkflowQueryService queryService,
+        IEventStore eventStore,
+        IWorkflowStateProjection stateProjection)
     {
-        _state = state;
         _grainFactory = grainFactory;
         _logger = logger;
         _queryService = queryService;
+        _eventStore = eventStore;
+        _stateProjection = stateProjection;
     }
 
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
         await base.OnActivateAsync(cancellationToken);
 
-        if (_state.RecordExists && State.UserTasks.Count == 0)
+        if (State.IsStarted && State.UserTasks.Count == 0)
         {
             await RehydrateUserTasks();
         }
+    }
+
+    /// <summary>
+    /// JournaledGrain calls this for each event during RaiseEvent.
+    /// During normal operation this is a no-op because the aggregate already applied the event.
+    /// During replay (ReadStateFromStorage), the aggregate's ReplayEvent handles application.
+    /// </summary>
+    /// <remarks>
+    /// IMPORTANT: This method MUST remain a no-op. Events are applied in two places:
+    /// 1. Normal operation: aggregate's Emit() → Apply() (immediate state consistency)
+    /// 2. Activation replay: ReadStateFromStorage → WorkflowExecution.ReplayEvent → Apply()
+    ///
+    /// JournaledGrain also calls TransitionState for every event (during RaiseEvent and replay),
+    /// but since both paths above already apply the event, adding logic here would cause
+    /// double-application and silent state corruption. If you need to react to events,
+    /// add the logic to WorkflowExecution.Apply() instead.
+    /// </remarks>
+    protected override void TransitionState(WorkflowInstanceState state, IDomainEvent @event)
+    {
+        // No-op — see remarks above. Do not add logic here.
+    }
+
+    // ── ICustomStorageInterface ─────────────────────────────────────────
+
+    async Task<KeyValuePair<int, WorkflowInstanceState>> ICustomStorageInterface<WorkflowInstanceState, IDomainEvent>.ReadStateFromStorage()
+    {
+        var (snapshot, snapshotVersion) = await _eventStore.ReadSnapshotAsync(GrainId);
+
+        var state = snapshot ?? new WorkflowInstanceState();
+        _lastSnapshotVersion = snapshotVersion;
+
+        // Replay events that occurred after the snapshot
+        var events = await _eventStore.ReadEventsAsync(GrainId, snapshotVersion);
+        if (events.Count > 0)
+        {
+            var replayExecution = new WorkflowExecution(state);
+            foreach (var evt in events)
+                replayExecution.ReplayEvent(evt);
+        }
+
+        var currentVersion = snapshotVersion + events.Count;
+        return new KeyValuePair<int, WorkflowInstanceState>(currentVersion, state);
+    }
+
+    async Task<bool> ICustomStorageInterface<WorkflowInstanceState, IDomainEvent>.ApplyUpdatesToStorage(
+        IReadOnlyList<IDomainEvent> updates, int expectedVersion)
+    {
+        // expectedVersion is the current confirmed version (before these updates).
+        // Events are 1-indexed: first batch starts at version 1, not 0.
+        // ReadEventsAsync uses Version > afterVersion (strictly greater), so version 0
+        // is never stored — it represents "no events".
+        var startVersion = expectedVersion + 1;
+        var success = await _eventStore.AppendEventsAsync(GrainId, updates, startVersion);
+
+        var newVersion = expectedVersion + updates.Count;
+        if (success && newVersion - _lastSnapshotVersion >= SnapshotFrequency)
+        {
+            await _eventStore.WriteSnapshotAsync(GrainId, newVersion, State);
+            _lastSnapshotVersion = newVersion;
+        }
+
+        return success;
+    }
+
+    public override async Task OnDeactivateAsync(DeactivationReason reason, CancellationToken cancellationToken)
+    {
+        // Write a final snapshot on deactivation for faster reactivation.
+        // Wrapped in try/catch so a snapshot failure doesn't prevent base.OnDeactivateAsync
+        // from running (which handles JournaledGrain cleanup).
+        if (State.IsStarted && this.Version > _lastSnapshotVersion)
+        {
+            try
+            {
+                await _eventStore.WriteSnapshotAsync(GrainId, this.Version, State);
+                _lastSnapshotVersion = this.Version;
+            }
+            catch (Exception ex)
+            {
+                LogDeactivationSnapshotFailed(ex);
+            }
+        }
+
+        await base.OnDeactivateAsync(reason, cancellationToken);
     }
 
     private async Task RehydrateUserTasks()
@@ -73,7 +170,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
     private async ValueTask EnsureExecution()
     {
         await EnsureWorkflowDefinitionAsync();
-        _execution ??= new WorkflowExecution(State, _workflowDefinition!);
+        _execution ??= new WorkflowExecution(this.State, _workflowDefinition!);
     }
 
     public async Task SetWorkflow(IWorkflowDefinition workflow, string? startActivityId = null)
@@ -86,7 +183,7 @@ public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
         using var scope = BeginWorkflowScope();
         LogWorkflowDefinitionSet();
 
-        _execution = new WorkflowExecution(State, workflow);
+        _execution = new WorkflowExecution(this.State, workflow);
         _execution.Start(startActivityId);
         await ProcessPendingEvents();
     }
