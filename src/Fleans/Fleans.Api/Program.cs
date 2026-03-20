@@ -58,7 +58,6 @@ if (rateLimitConfig is not null)
 
         options.OnRejected = async (context, token) =>
         {
-            context.HttpContext.Response.ContentType = "application/json";
             if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfterValue))
                 context.HttpContext.Response.Headers.RetryAfter =
                     ((int)retryAfterValue.TotalSeconds).ToString();
