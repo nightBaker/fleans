@@ -28,6 +28,7 @@ public partial class WorkflowInstance :
     private readonly ILogger<WorkflowInstance> _logger;
     private readonly IWorkflowQueryService _queryService;
     private readonly IEventStore _eventStore;
+    private readonly IWorkflowStateProjection _stateProjection;
 
     private readonly ConcurrentQueue<(PendingExternalEvent Event, TaskCompletionSource Completion)> _pendingExternalEvents = new();
     private IGrainTimer? _pendingEventsTimer;
@@ -43,12 +44,14 @@ public partial class WorkflowInstance :
         IGrainFactory grainFactory,
         ILogger<WorkflowInstance> logger,
         IWorkflowQueryService queryService,
-        IEventStore eventStore)
+        IEventStore eventStore,
+        IWorkflowStateProjection stateProjection)
     {
         _grainFactory = grainFactory;
         _logger = logger;
         _queryService = queryService;
         _eventStore = eventStore;
+        _stateProjection = stateProjection;
     }
 
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
@@ -97,13 +100,18 @@ public partial class WorkflowInstance :
     async Task<bool> ICustomStorageInterface<WorkflowInstanceState, IDomainEvent>.ApplyUpdatesToStorage(
         IReadOnlyList<IDomainEvent> updates, int expectedVersion)
     {
-        var startVersion = expectedVersion - updates.Count;
+        // expectedVersion is the current confirmed version (before these updates).
+        // Events are 1-indexed: first batch starts at version 1, not 0.
+        // ReadEventsAsync uses Version > afterVersion (strictly greater), so version 0
+        // is never stored — it represents "no events".
+        var startVersion = expectedVersion + 1;
         var success = await _eventStore.AppendEventsAsync(GrainId, updates, startVersion);
 
-        if (success && expectedVersion - _lastSnapshotVersion >= SnapshotFrequency)
+        var newVersion = expectedVersion + updates.Count;
+        if (success && newVersion - _lastSnapshotVersion >= SnapshotFrequency)
         {
-            await _eventStore.WriteSnapshotAsync(GrainId, expectedVersion, State);
-            _lastSnapshotVersion = expectedVersion;
+            await _eventStore.WriteSnapshotAsync(GrainId, newVersion, State);
+            _lastSnapshotVersion = newVersion;
         }
 
         return success;

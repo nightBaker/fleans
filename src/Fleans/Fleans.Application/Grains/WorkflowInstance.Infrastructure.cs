@@ -105,10 +105,6 @@ public partial class WorkflowInstance
 
             // Handle subprocess/multi-instance scope completions
             await HandleScopeCompletions(definition);
-
-            // Persist after each iteration so partial progress survives grain deactivation
-            // during long execution chains (e.g., sequential multi-instance with many items).
-            await DrainAndRaiseEvents();
         }
     }
 
@@ -277,7 +273,6 @@ public partial class WorkflowInstance
 
         try
         {
-            await DrainAndRaiseEvents(); // persist before external call
             await corrGrain.Subscribe(subMsg.WorkflowInstanceId, subMsg.ActivityId, subMsg.HostActivityInstanceId);
             LogMessageSubscriptionRegistered(subMsg.ActivityId, subMsg.MessageName, subMsg.CorrelationKey);
         }
@@ -296,7 +291,6 @@ public partial class WorkflowInstance
 
         try
         {
-            await DrainAndRaiseEvents(); // persist before external call
             await signalGrain.Subscribe(subSig.WorkflowInstanceId, subSig.ActivityId, subSig.HostActivityInstanceId);
             LogSignalSubscriptionRegistered(subSig.ActivityId, subSig.SignalName);
         }
@@ -443,6 +437,9 @@ public partial class WorkflowInstance
     private async Task DrainAndRaiseEvents()
     {
         var events = _execution!.GetUncommittedEvents();
+        // Capture count before clearing — GetUncommittedEvents returns a wrapper
+        // over the internal list, so ClearUncommittedEvents would zero out Count.
+        var eventCount = events.Count;
         foreach (var evt in events)
         {
             LogEvent(evt);
@@ -450,8 +447,12 @@ public partial class WorkflowInstance
         }
         _execution.ClearUncommittedEvents();
 
-        if (events.Count > 0)
+        if (eventCount > 0)
+        {
             await ConfirmEvents();
+            // Project state to query model so CQRS read side stays in sync
+            await _stateProjection.WriteAsync(GrainId, State);
+        }
     }
 
     private void LogEvent(IDomainEvent evt)
