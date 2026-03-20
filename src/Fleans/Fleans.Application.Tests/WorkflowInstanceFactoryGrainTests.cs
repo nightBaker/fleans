@@ -2,11 +2,16 @@ using Fleans.Application.QueryModels;
 using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
+using Fleans.Domain.Events;
 using Fleans.Domain.Persistence;
 using Fleans.Domain.Sequences;
+using Fleans.Persistence.Events;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Orleans.TestingHost;
+using Fleans.Persistence;
 
 namespace Fleans.Application.Tests
 {
@@ -143,13 +148,23 @@ namespace Fleans.Application.Tests
         {
             public void Configure(ISiloBuilder hostBuilder) =>
                 hostBuilder
-                    .AddMemoryGrainStorage(GrainStorageNames.WorkflowInstances)
+                    .AddCustomStorageBasedLogConsistencyProviderAsDefault()
                     .AddMemoryGrainStorage(GrainStorageNames.ProcessDefinitions)
                     .AddMemoryGrainStorage(GrainStorageNames.UserTasks)
                     .ConfigureServices(services =>
                     {
+                        services.AddDbContextFactory<FleanCommandDbContext>(options =>
+                            options.UseSqlite("DataSource=file::memory:?cache=shared"));
+                        services.AddSingleton<IWorkflowStateProjection, EfCoreWorkflowStateProjection>();
+                        services.AddSingleton<EfCoreEventStore>();
+                        services.AddSingleton<IEventStore>(sp => sp.GetRequiredService<EfCoreEventStore>());
                         services.AddSingleton<IProcessDefinitionRepository, StubProcessDefinitionRepository>();
                         services.AddSingleton<IWorkflowQueryService, StubWorkflowQueryService>();
+
+                        // Ensure DB schema is created
+                        var sp = services.BuildServiceProvider();
+                        using var db = sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>().CreateDbContext();
+                        db.Database.EnsureCreated();
                     });
         }
 

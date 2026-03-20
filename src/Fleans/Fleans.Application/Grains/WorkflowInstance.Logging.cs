@@ -283,4 +283,8 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1065, Level = LogLevel.Warning,
         Message = "User task claim update persistence failed: ActivityInstanceId={ActivityInstanceId}")]
     private partial void LogUserTaskClaimUpdateFailed(Guid activityInstanceId, Exception exception);
+
+    [LoggerMessage(EventId = 3028, Level = LogLevel.Debug,
+        Message = "Timer cycle updated: HostActivityInstanceId={HostActivityInstanceId}, TimerActivityId={TimerActivityId}")]
+    private partial void LogTimerCycleUpdated(Guid hostActivityInstanceId, string timerActivityId);
 }

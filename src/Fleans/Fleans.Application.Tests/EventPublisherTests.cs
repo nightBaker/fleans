@@ -6,9 +6,11 @@ using Fleans.Application.QueryModels;
 using Fleans.Application.Scripts;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
+using Fleans.Domain.Events;
 using Fleans.Domain.Persistence;
 using Fleans.Domain.Sequences;
 using Fleans.Persistence;
+using Fleans.Persistence.Events;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -177,6 +179,7 @@ public class EventPublisherTests
             hostBuilder
                 .AddMemoryStreams(WorkflowEventsPublisher.StreamProvider)
                 .AddMemoryGrainStorage("PubSubStore")
+                .AddCustomStorageBasedLogConsistencyProviderAsDefault()
                 .ConfigureServices(services =>
                 {
                     services.AddDbContextFactory<FleanCommandDbContext>(options =>
@@ -185,9 +188,9 @@ public class EventPublisherTests
                     services.AddDbContextFactory<FleanQueryDbContext>(options =>
                         options.UseSqlite("DataSource=file::memory:?cache=shared"));
 
-                    services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.WorkflowInstances,
-                        (sp, _) => new EfCoreWorkflowInstanceGrainStorage(
-                            sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
+                    services.AddSingleton<IWorkflowStateProjection, EfCoreWorkflowStateProjection>();
+                    services.AddSingleton<EfCoreEventStore>();
+                    services.AddSingleton<IEventStore>(sp => sp.GetRequiredService<EfCoreEventStore>());
 
                     services.AddSingleton<IProcessDefinitionRepository, EfCoreProcessDefinitionRepository>();
                     services.AddSingleton<ISieveProcessor, ApplicationSieveProcessor>();
