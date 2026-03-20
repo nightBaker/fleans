@@ -50,8 +50,13 @@ public class MultiInstanceScriptIntegrationTests
         _cluster = builder.Build();
         _cluster.Deploy();
 
-        _queryService = ((InProcessSiloHandle)_cluster.Primary).SiloHost.Services
-            .GetRequiredService<IWorkflowQueryService>();
+        var siloServices = ((InProcessSiloHandle)_cluster.Primary).SiloHost.Services;
+        _queryService = siloServices.GetRequiredService<IWorkflowQueryService>();
+
+        // Ensure DB schema is created using the silo's service provider
+        // (avoids calling BuildServiceProvider() inside ConfigureServices)
+        using var db = siloServices.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>().CreateDbContext();
+        db.Database.EnsureCreated();
     }
 
     [TestCleanup]
@@ -374,10 +379,6 @@ public class MultiInstanceScriptIntegrationTests
                             });
                     });
 
-                    // Ensure DB schema is created
-                    var sp = services.BuildServiceProvider();
-                    using var db = sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>().CreateDbContext();
-                    db.Database.EnsureCreated();
                 });
     }
 }
