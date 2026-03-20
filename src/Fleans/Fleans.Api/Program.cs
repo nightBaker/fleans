@@ -1,7 +1,10 @@
+using System.Threading.RateLimiting;
+using Fleans.Api;
 using Fleans.Application;
 using Fleans.Application.Logging;
 using Fleans.Infrastructure;
 using Fleans.Persistence;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Orleans.Dashboard;
 
@@ -36,6 +39,66 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure();
 
+// Rate limiting
+var rateLimitConfig = builder.Configuration
+    .GetSection("RateLimiting")
+    .Get<RateLimitingConfiguration>() ?? new RateLimitingConfiguration();
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    options.AddPolicy("workflow-mutation", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                Window = TimeSpan.FromSeconds(rateLimitConfig.WorkflowMutation.Window),
+                PermitLimit = rateLimitConfig.WorkflowMutation.PermitLimit,
+                QueueLimit = 0
+            }));
+
+    options.AddPolicy("task-operation", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                Window = TimeSpan.FromSeconds(rateLimitConfig.TaskOperation.Window),
+                PermitLimit = rateLimitConfig.TaskOperation.PermitLimit,
+                QueueLimit = 0
+            }));
+
+    options.AddPolicy("read", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                Window = TimeSpan.FromSeconds(rateLimitConfig.Read.Window),
+                PermitLimit = rateLimitConfig.Read.PermitLimit,
+                QueueLimit = 0
+            }));
+
+    options.AddPolicy("admin", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                Window = TimeSpan.FromSeconds(rateLimitConfig.Admin.Window),
+                PermitLimit = rateLimitConfig.Admin.PermitLimit,
+                QueueLimit = 0
+            }));
+
+    options.OnRejected = async (context, token) =>
+    {
+        context.HttpContext.Response.ContentType = "application/json";
+        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfterValue))
+            context.HttpContext.Response.Headers.RetryAfter =
+                ((int)retryAfterValue.TotalSeconds).ToString();
+        await context.HttpContext.Response.WriteAsJsonAsync(
+            new { error = "Too many requests. Please retry later." }, token);
+    };
+});
+
 // EF Core persistence for WorkflowInstanceState
 var sqliteConnectionString = builder.Configuration["FLEANS_SQLITE_CONNECTION"] ?? "DataSource=fleans-dev.db";
 builder.Services.AddEfCorePersistence(options => options.UseSqlite(sqliteConnectionString));
@@ -58,6 +121,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+app.UseRateLimiter();
 
 app.UseAuthorization();
 

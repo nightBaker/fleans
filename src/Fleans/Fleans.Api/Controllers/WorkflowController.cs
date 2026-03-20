@@ -1,6 +1,7 @@
 using Fleans.Application;
 using Fleans.ServiceDefaults.DTOs;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Newtonsoft.Json;
 using System.Dynamic;
 
@@ -24,6 +25,7 @@ namespace Fleans.Api.Controllers
             _workflowQueryService = workflowQueryService;
         }
 
+        [EnableRateLimiting("workflow-mutation")]
         [HttpPost("start", Name = "StartWorkflow")]
         public async Task<IActionResult> StartWorkflow([FromBody] StartWorkflowRequest request)
         {
@@ -43,6 +45,7 @@ namespace Fleans.Api.Controllers
             }
         }
 
+        [EnableRateLimiting("workflow-mutation")]
         [HttpPost("message", Name = "SendMessage")]
         public async Task<IActionResult> SendMessage([FromBody] SendMessageRequest request)
         {
@@ -76,6 +79,7 @@ namespace Fleans.Api.Controllers
         [LoggerMessage(EventId = 8002, Level = LogLevel.Error, Message = "Error delivering message")]
         private partial void LogMessageDeliveryError(Exception exception);
 
+        [EnableRateLimiting("workflow-mutation")]
         [HttpPost("signal", Name = "SendSignal")]
         public async Task<IActionResult> SendSignal([FromBody] SendSignalRequest request)
         {
@@ -102,6 +106,7 @@ namespace Fleans.Api.Controllers
         [LoggerMessage(EventId = 8003, Level = LogLevel.Error, Message = "Error broadcasting signal")]
         private partial void LogSignalDeliveryError(Exception exception);
 
+        [EnableRateLimiting("task-operation")]
         [HttpPost("complete-activity", Name = "CompleteActivity")]
         public async Task<IActionResult> CompleteActivity([FromBody] CompleteActivityRequest request)
         {
@@ -136,6 +141,7 @@ namespace Fleans.Api.Controllers
         [LoggerMessage(EventId = 8007, Level = LogLevel.Error, Message = "Error completing activity")]
         private partial void LogCompleteActivityError(Exception exception);
 
+        [EnableRateLimiting("read")]
         [HttpGet("tasks", Name = "GetPendingTasks")]
         public async Task<IActionResult> GetPendingTasks(
             [FromQuery] string? assignee = null,
@@ -145,6 +151,7 @@ namespace Fleans.Api.Controllers
             return Ok(tasks);
         }
 
+        [EnableRateLimiting("read")]
         [HttpGet("tasks/{activityInstanceId:guid}", Name = "GetTask")]
         public async Task<IActionResult> GetTask(Guid activityInstanceId)
         {
@@ -155,6 +162,7 @@ namespace Fleans.Api.Controllers
             return Ok(task);
         }
 
+        [EnableRateLimiting("task-operation")]
         [HttpPost("tasks/{activityInstanceId:guid}/claim", Name = "ClaimTask")]
         public async Task<IActionResult> ClaimTask(Guid activityInstanceId, [FromBody] ClaimTaskRequest request)
         {
@@ -177,6 +185,7 @@ namespace Fleans.Api.Controllers
             }
         }
 
+        [EnableRateLimiting("task-operation")]
         [HttpPost("tasks/{activityInstanceId:guid}/unclaim", Name = "UnclaimTask")]
         public async Task<IActionResult> UnclaimTask(Guid activityInstanceId)
         {
@@ -196,6 +205,7 @@ namespace Fleans.Api.Controllers
             }
         }
 
+        [EnableRateLimiting("task-operation")]
         [HttpPost("tasks/{activityInstanceId:guid}/complete", Name = "CompleteTask")]
         public async Task<IActionResult> CompleteTask(Guid activityInstanceId, [FromBody] CompleteTaskRequest request)
         {
@@ -227,6 +237,7 @@ namespace Fleans.Api.Controllers
             }
         }
 
+        [EnableRateLimiting("admin")]
         [HttpPost("disable", Name = "DisableProcess")]
         public async Task<IActionResult> DisableProcess([FromBody] ProcessDefinitionKeyRequest request)
         {
@@ -244,6 +255,7 @@ namespace Fleans.Api.Controllers
             }
         }
 
+        [EnableRateLimiting("admin")]
         [HttpPost("enable", Name = "EnableProcess")]
         public async Task<IActionResult> EnableProcess([FromBody] ProcessDefinitionKeyRequest request)
         {
