@@ -69,10 +69,19 @@ public partial class WorkflowInstance :
     /// During normal operation this is a no-op because the aggregate already applied the event.
     /// During replay (ReadStateFromStorage), the aggregate's ReplayEvent handles application.
     /// </summary>
+    /// <remarks>
+    /// IMPORTANT: This method MUST remain a no-op. Events are applied in two places:
+    /// 1. Normal operation: aggregate's Emit() → Apply() (immediate state consistency)
+    /// 2. Activation replay: ReadStateFromStorage → WorkflowExecution.ReplayEvent → Apply()
+    ///
+    /// JournaledGrain also calls TransitionState for every event (during RaiseEvent and replay),
+    /// but since both paths above already apply the event, adding logic here would cause
+    /// double-application and silent state corruption. If you need to react to events,
+    /// add the logic to WorkflowExecution.Apply() instead.
+    /// </remarks>
     protected override void TransitionState(WorkflowInstanceState state, IDomainEvent @event)
     {
-        // No-op: events are already applied by the aggregate's Emit → Apply path
-        // during normal operation, or by ReplayEvent during activation recovery.
+        // No-op — see remarks above. Do not add logic here.
     }
 
     // ── ICustomStorageInterface ─────────────────────────────────────────
@@ -119,11 +128,20 @@ public partial class WorkflowInstance :
 
     public override async Task OnDeactivateAsync(DeactivationReason reason, CancellationToken cancellationToken)
     {
-        // Write a final snapshot on deactivation for faster reactivation
+        // Write a final snapshot on deactivation for faster reactivation.
+        // Wrapped in try/catch so a snapshot failure doesn't prevent base.OnDeactivateAsync
+        // from running (which handles JournaledGrain cleanup).
         if (State.IsStarted && this.Version > _lastSnapshotVersion)
         {
-            await _eventStore.WriteSnapshotAsync(GrainId, this.Version, State);
-            _lastSnapshotVersion = this.Version;
+            try
+            {
+                await _eventStore.WriteSnapshotAsync(GrainId, this.Version, State);
+                _lastSnapshotVersion = this.Version;
+            }
+            catch (Exception ex)
+            {
+                LogDeactivationSnapshotFailed(ex);
+            }
         }
 
         await base.OnDeactivateAsync(reason, cancellationToken);

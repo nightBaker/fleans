@@ -12,6 +12,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Orleans.TestingHost;
+using Orleans.TestingHost.InProcess;
 using Fleans.Persistence;
 
 namespace Fleans.Application.Tests
@@ -36,6 +37,12 @@ namespace Fleans.Application.Tests
             builder.AddSiloBuilderConfigurator<SiloConfigurator>();
             _cluster = builder.Build();
             _cluster.Deploy();
+
+            // Ensure DB schema is created using the silo's service provider
+            // (avoids calling BuildServiceProvider() inside ConfigureServices)
+            var siloServices = ((InProcessSiloHandle)_cluster.Primary).SiloHost.Services;
+            using var db = siloServices.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>().CreateDbContext();
+            db.Database.EnsureCreated();
         }
 
         [TestCleanup]
@@ -176,11 +183,6 @@ namespace Fleans.Application.Tests
                         services.AddSingleton<IEventStore>(sp => sp.GetRequiredService<EfCoreEventStore>());
                         services.AddSingleton<IProcessDefinitionRepository, StubProcessDefinitionRepository>();
                         services.AddSingleton<IWorkflowQueryService, StubWorkflowQueryService>();
-
-                        // Ensure DB schema is created
-                        var sp = services.BuildServiceProvider();
-                        using var db = sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>().CreateDbContext();
-                        db.Database.EnsureCreated();
                     });
         }
 

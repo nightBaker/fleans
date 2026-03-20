@@ -287,4 +287,8 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 3028, Level = LogLevel.Debug,
         Message = "Timer cycle updated: HostActivityInstanceId={HostActivityInstanceId}, TimerActivityId={TimerActivityId}")]
     private partial void LogTimerCycleUpdated(Guid hostActivityInstanceId, string timerActivityId);
+
+    [LoggerMessage(EventId = 3029, Level = LogLevel.Warning,
+        Message = "Failed to write deactivation snapshot — grain will replay events on next activation")]
+    private partial void LogDeactivationSnapshotFailed(Exception exception);
 }

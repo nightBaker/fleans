@@ -37,6 +37,16 @@ public class WorkflowExecution
     }
 
     /// <summary>
+    /// Returns the workflow definition, throwing if this is a replay-only instance.
+    /// Methods that need the definition should use this property instead of accessing _definition directly.
+    /// </summary>
+    private IWorkflowDefinition Definition =>
+        _definition ?? throw new InvalidOperationException(
+            "Cannot execute workflow operations in replay mode. " +
+            "The replay-mode constructor creates instances without a workflow definition, " +
+            "which are only valid for replaying persisted events via ReplayEvent().");
+
+    /// <summary>
     /// Replays a persisted event by applying it to state without adding to uncommitted events.
     /// Used during grain activation recovery from the event store.
     /// </summary>
@@ -53,17 +63,17 @@ public class WorkflowExecution
 
         var instanceId = Guid.NewGuid();
 
-        Emit(new WorkflowStarted(instanceId, _definition.ProcessDefinitionId));
+        Emit(new WorkflowStarted(instanceId, Definition.ProcessDefinitionId));
 
         Activity startActivity;
         if (startActivityId is not null)
         {
-            startActivity = _definition.FindActivity(startActivityId)
+            startActivity = Definition.FindActivity(startActivityId)
                 ?? throw new InvalidOperationException($"Activity '{startActivityId}' not found in workflow");
         }
         else
         {
-            startActivity = _definition.GetStartActivity();
+            startActivity = Definition.GetStartActivity();
         }
 
         var variablesId = _state.GetRootVariablesId();
@@ -400,7 +410,7 @@ public class WorkflowExecution
     private SubscribeMessageEffect ProcessRegisterMessage(
         RegisterMessageCommand msg, Guid activityInstanceId)
     {
-        var messageDef = _definition.GetMessageDefinition(msg.MessageDefinitionId);
+        var messageDef = Definition.GetMessageDefinition(msg.MessageDefinitionId);
 
         var correlationKey = string.Empty;
         if (messageDef.CorrelationKeyExpression is not null)
@@ -449,8 +459,8 @@ public class WorkflowExecution
         {
             var evalEvent = new EvaluateConditionEvent(
                 _state.Id,
-                _definition.WorkflowId,
-                _definition.ProcessDefinitionId,
+                Definition.WorkflowId,
+                Definition.ProcessDefinitionId,
                 activityInstanceId,
                 entry.ActivityId,
                 evaluation.SequenceFlowId,
@@ -473,7 +483,7 @@ public class WorkflowExecution
             return [];
 
         // Look up the activity type in the definition
-        var activity = _definition.GetActivityAcrossScopes(timerActivityId);
+        var activity = Definition.GetActivityAcrossScopes(timerActivityId);
 
         if (activity is BoundaryTimerEvent boundaryTimer)
         {
@@ -498,13 +508,13 @@ public class WorkflowExecution
             return [];
 
         // Look up the activity type in the definition
-        var activity = _definition.GetActivityAcrossScopes(activityId);
+        var activity = Definition.GetActivityAcrossScopes(activityId);
 
         if (activity is MessageBoundaryEvent boundaryMessage)
         {
             // For message boundaries, the fired message's subscription was already removed
             // by DeliverMessage. Skip it in unsubscribe to avoid deadlocks.
-            var firedMessageDef = _definition.GetMessageDefinition(boundaryMessage.MessageDefinitionId);
+            var firedMessageDef = Definition.GetMessageDefinition(boundaryMessage.MessageDefinitionId);
             return HandleBoundaryEventFired(
                 boundaryMessage, boundaryMessage.AttachedToActivityId,
                 boundaryMessage.IsInterrupting, entry, variables,
@@ -526,13 +536,13 @@ public class WorkflowExecution
             return [];
 
         // Look up the activity type in the definition
-        var activity = _definition.GetActivityAcrossScopes(activityId);
+        var activity = Definition.GetActivityAcrossScopes(activityId);
 
         if (activity is SignalBoundaryEvent boundarySignal)
         {
             // For signal boundaries, the fired signal's subscription was already removed.
             // Skip it in unsubscribe to avoid deadlocks.
-            var firedSignalDef = _definition.GetSignalDefinition(boundarySignal.SignalDefinitionId);
+            var firedSignalDef = Definition.GetSignalDefinition(boundarySignal.SignalDefinitionId);
             return HandleBoundaryEventFired(
                 boundarySignal, boundarySignal.AttachedToActivityId,
                 boundarySignal.IsInterrupting, entry, new ExpandoObject(),
@@ -573,7 +583,7 @@ public class WorkflowExecution
 
             foreach (var entry in _state.GetActiveActivities().ToList())
             {
-                var scopeDefinition = _definition.GetScopeForActivity(entry.ActivityId);
+                var scopeDefinition = Definition.GetScopeForActivity(entry.ActivityId);
                 var activity = scopeDefinition.GetActivity(entry.ActivityId);
 
                 var isSubProcess = activity is SubProcess;
@@ -863,7 +873,7 @@ public class WorkflowExecution
 
         Emit(new ConditionSequenceEvaluated(entry.ActivityInstanceId, conditionSequenceId, result));
 
-        var gateway = _definition.GetActivityAcrossScopes(activityId) as ConditionalGateway
+        var gateway = Definition.GetActivityAcrossScopes(activityId) as ConditionalGateway
             ?? throw new InvalidOperationException(
                 $"Activity '{activityId}' is not a ConditionalGateway.");
 
@@ -908,7 +918,7 @@ public class WorkflowExecution
 
     private bool EnsureDefaultFlowExists(string activityId, string gatewayType)
     {
-        var hasDefault = _definition.SequenceFlows
+        var hasDefault = Definition.SequenceFlows
             .OfType<DefaultSequenceFlow>()
             .Any(sf => sf.Source.ActivityId == activityId);
 
@@ -929,7 +939,7 @@ public class WorkflowExecution
         if (entry is null)
             return [];
 
-        var callActivity = _definition.GetActivityAcrossScopes(parentActivityId) as CallActivity
+        var callActivity = Definition.GetActivityAcrossScopes(parentActivityId) as CallActivity
             ?? throw new InvalidOperationException(
                 $"Activity '{parentActivityId}' is not a CallActivity.");
 
@@ -1031,7 +1041,7 @@ public class WorkflowExecution
         effects.AddRange(BuildUserTaskCleanupEffects(entry.ActivityInstanceId));
 
         // Search for boundary error handler
-        var boundaryHandler = _definition.FindBoundaryErrorHandler(activityId, errorCode.ToString());
+        var boundaryHandler = Definition.FindBoundaryErrorHandler(activityId, errorCode.ToString());
 
         if (boundaryHandler is not null)
         {
@@ -1228,7 +1238,7 @@ public class WorkflowExecution
         string activityId, ActivityInstanceEntry hostEntry)
     {
         var effects = new List<IInfrastructureEffect>();
-        var scope = _definition.FindScopeForActivity(activityId);
+        var scope = Definition.FindScopeForActivity(activityId);
         if (scope is null) return effects;
 
         // Boundary timer events
@@ -1241,7 +1251,7 @@ public class WorkflowExecution
         // Boundary message events
         foreach (var boundaryMsg in scope.GetBoundaryMessageEvents(activityId))
         {
-            var messageDef = _definition.GetMessageDefinition(boundaryMsg.MessageDefinitionId);
+            var messageDef = Definition.GetMessageDefinition(boundaryMsg.MessageDefinitionId);
             var correlationKey = ResolveCorrelationKey(messageDef, hostEntry.VariablesId);
             effects.Add(new UnsubscribeMessageEffect(messageDef.Name, correlationKey));
         }
@@ -1249,7 +1259,7 @@ public class WorkflowExecution
         // Boundary signal events
         foreach (var boundarySig in scope.GetBoundarySignalEvents(activityId))
         {
-            var signalDef = _definition.GetSignalDefinition(boundarySig.SignalDefinitionId);
+            var signalDef = Definition.GetSignalDefinition(boundarySig.SignalDefinitionId);
             effects.Add(new UnsubscribeSignalEffect(signalDef.Name, _state.Id, boundarySig.ActivityId));
         }
 
@@ -1265,7 +1275,7 @@ public class WorkflowExecution
         string? skipTimerActivityId, string? skipMessageName, string? skipSignalName)
     {
         var effects = new List<IInfrastructureEffect>();
-        var scope = _definition.FindScopeForActivity(activityId);
+        var scope = Definition.FindScopeForActivity(activityId);
         if (scope is null) return effects;
 
         // Boundary timer events (skip the fired timer — it already fired)
@@ -1279,7 +1289,7 @@ public class WorkflowExecution
         // Boundary message events (skip the fired message — subscription already removed)
         foreach (var boundaryMsg in scope.GetBoundaryMessageEvents(activityId))
         {
-            var messageDef = _definition.GetMessageDefinition(boundaryMsg.MessageDefinitionId);
+            var messageDef = Definition.GetMessageDefinition(boundaryMsg.MessageDefinitionId);
             if (messageDef.Name == skipMessageName) continue;
             var correlationKey = ResolveCorrelationKey(messageDef, hostEntry.VariablesId);
             effects.Add(new UnsubscribeMessageEffect(messageDef.Name, correlationKey));
@@ -1288,7 +1298,7 @@ public class WorkflowExecution
         // Boundary signal events (skip the fired signal — subscription already removed)
         foreach (var boundarySig in scope.GetBoundarySignalEvents(activityId))
         {
-            var signalDef = _definition.GetSignalDefinition(boundarySig.SignalDefinitionId);
+            var signalDef = Definition.GetSignalDefinition(boundarySig.SignalDefinitionId);
             if (signalDef.Name == skipSignalName) continue;
             effects.Add(new UnsubscribeSignalEffect(signalDef.Name, _state.Id, boundarySig.ActivityId));
         }
@@ -1300,7 +1310,7 @@ public class WorkflowExecution
         string completedActivityId, ActivityInstanceEntry completedEntry)
     {
         var effects = new List<IInfrastructureEffect>();
-        var siblings = _definition.GetEventBasedGatewaySiblings(completedActivityId);
+        var siblings = Definition.GetEventBasedGatewaySiblings(completedActivityId);
 
         if (siblings.Count == 0) return effects;
 
@@ -1314,7 +1324,7 @@ public class WorkflowExecution
                 "Event-based gateway: sibling event completed"));
 
             // Build unsubscribe effects based on sibling type
-            var siblingActivity = _definition.GetActivityAcrossScopes(siblingId);
+            var siblingActivity = Definition.GetActivityAcrossScopes(siblingId);
             switch (siblingActivity)
             {
                 case TimerIntermediateCatchEvent:
@@ -1323,13 +1333,13 @@ public class WorkflowExecution
                     break;
 
                 case MessageIntermediateCatchEvent msgCatch:
-                    var messageDef = _definition.GetMessageDefinition(msgCatch.MessageDefinitionId);
+                    var messageDef = Definition.GetMessageDefinition(msgCatch.MessageDefinitionId);
                     var correlationKey = ResolveCorrelationKey(messageDef, completedEntry.VariablesId);
                     effects.Add(new UnsubscribeMessageEffect(messageDef.Name, correlationKey));
                     break;
 
                 case SignalIntermediateCatchEvent sigCatch:
-                    var signalDef = _definition.GetSignalDefinition(sigCatch.SignalDefinitionId);
+                    var signalDef = Definition.GetSignalDefinition(sigCatch.SignalDefinitionId);
                     effects.Add(new UnsubscribeSignalEffect(signalDef.Name, _state.Id, siblingId));
                     break;
             }

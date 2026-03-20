@@ -43,7 +43,13 @@ public abstract class WorkflowTestBase
         Cluster = builder.Build();
         Cluster.Deploy();
 
-        QueryService = ((InProcessSiloHandle)Cluster.Primary).SiloHost.Services.GetRequiredService<IWorkflowQueryService>();
+        var siloServices = ((InProcessSiloHandle)Cluster.Primary).SiloHost.Services;
+        QueryService = siloServices.GetRequiredService<IWorkflowQueryService>();
+
+        // Ensure DB schema is created using the silo's service provider
+        // (avoids calling BuildServiceProvider() inside ConfigureServices)
+        using var db = siloServices.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>().CreateDbContext();
+        db.Database.EnsureCreated();
     }
 
     [TestCleanup]
@@ -125,11 +131,6 @@ public abstract class WorkflowTestBase
                                 TypeNameHandling = Newtonsoft.Json.TypeNameHandling.All
                             });
                     });
-
-                    // Ensure DB schema is created
-                    var sp = services.BuildServiceProvider();
-                    using var db = sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>().CreateDbContext();
-                    db.Database.EnsureCreated();
                 });
     }
 }
