@@ -18,7 +18,7 @@ public record CompletedActivityTransitions(
 public class WorkflowExecution
 {
     private readonly WorkflowInstanceState _state;
-    private readonly IWorkflowDefinition _definition;
+    private readonly IWorkflowDefinition? _definition;
     private readonly List<IDomainEvent> _uncommittedEvents = [];
 
     public WorkflowExecution(WorkflowInstanceState state, IWorkflowDefinition definition)
@@ -26,6 +26,21 @@ public class WorkflowExecution
         _state = state ?? throw new ArgumentNullException(nameof(state));
         _definition = definition ?? throw new ArgumentNullException(nameof(definition));
     }
+
+    /// <summary>
+    /// Replay-mode constructor. Used during grain activation to replay events
+    /// from the event store without needing a workflow definition (Apply never references it).
+    /// </summary>
+    public WorkflowExecution(WorkflowInstanceState state)
+    {
+        _state = state ?? throw new ArgumentNullException(nameof(state));
+    }
+
+    /// <summary>
+    /// Replays a persisted event by applying it to state without adding to uncommitted events.
+    /// Used during grain activation recovery from the event store.
+    /// </summary>
+    internal void ReplayEvent(IDomainEvent @event) => Apply(@event);
 
     public IReadOnlyList<IDomainEvent> GetUncommittedEvents() => _uncommittedEvents.AsReadOnly();
 
