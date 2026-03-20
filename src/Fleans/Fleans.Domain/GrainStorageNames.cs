@@ -6,7 +6,6 @@ namespace Fleans.Domain;
 /// </summary>
 public static class GrainStorageNames
 {
-    public const string WorkflowInstances = "workflowInstances";
     public const string ProcessDefinitions = "processDefinitions";
     public const string TimerSchedulers = "timerSchedulers";
     public const string MessageCorrelations = "messageCorrelations";

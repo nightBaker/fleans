@@ -65,8 +65,10 @@ public partial class WorkflowInstance :
     {
         await base.OnActivateAsync(cancellationToken);
 
-        // Clear replay aggregate after activation — the real _execution aggregate
-        // will be created by EnsureExecution() with the full workflow definition.
+        // _replayAggregate lifecycle: base.OnActivateAsync() calls ReadStateFromStorage()
+        // then replays events via TransitionState(), which creates _replayAggregate on first call.
+        // After base returns, we clear it — the real _execution aggregate will be created
+        // by EnsureExecution() with the full workflow definition.
         _replayAggregate = null;
 
         if (State.IsStarted && State.UserTasks.Count == 0)
