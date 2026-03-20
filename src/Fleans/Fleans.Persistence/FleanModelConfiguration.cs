@@ -57,6 +57,8 @@ internal static class FleanModelConfiguration
                 .HasForeignKey(e => e.WorkflowInstanceId)
                 .OnDelete(DeleteBehavior.Cascade);
 
+            entity.HasIndex(e => e.ProcessDefinitionId);
+
             entity.HasOne<ProcessDefinition>()
                 .WithMany()
                 .HasForeignKey(e => e.ProcessDefinitionId)
@@ -241,6 +243,13 @@ internal static class FleanModelConfiguration
                     v => v == null ? null : JsonConvert.SerializeObject(v),
                     v => v == null ? null : JsonConvert.DeserializeObject<List<string>>(v));
 
+            // SQLite does not support DateTimeOffset in ORDER BY.
+            // Store as ISO 8601 string so Sieve sorting works correctly.
+            entity.Property(e => e.CreatedAt)
+                .HasConversion(
+                    v => v.ToString("O"),
+                    v => DateTimeOffset.Parse(v));
+
             entity.HasOne<WorkflowInstanceState>()
                 .WithMany()
                 .HasForeignKey(e => e.WorkflowInstanceId)
@@ -262,6 +271,13 @@ internal static class FleanModelConfiguration
             entity.HasIndex(e => e.ProcessDefinitionKey);
 
             entity.Property(e => e.IsActive).HasDefaultValue(true);
+
+            // SQLite does not support DateTimeOffset in ORDER BY.
+            // Store as ISO 8601 string so Sieve sorting works correctly.
+            entity.Property(e => e.DeployedAt)
+                .HasConversion(
+                    v => v.ToString("O"),
+                    v => DateTimeOffset.Parse(v));
 
             var jsonSettings = new JsonSerializerSettings
             {

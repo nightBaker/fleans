@@ -289,10 +289,10 @@ public class WorkflowQueryServiceTests
         await SeedWorkflowInstance(db, id2, processDefinitionId: "mykey:2:ts", isStarted: true, isCompleted: true);
         await SeedWorkflowInstance(db, id3, processDefinitionId: "other:1:ts", isStarted: true);
 
-        var results = await _service.GetInstancesByKey("mykey");
+        var results = await _service.GetInstancesByKey("mykey", new PageRequest(PageSize: 100));
 
-        Assert.AreEqual(2, results.Count);
-        var instanceIds = results.Select(r => r.InstanceId).ToList();
+        Assert.AreEqual(2, results.Items.Count);
+        var instanceIds = results.Items.Select(r => r.InstanceId).ToList();
         CollectionAssert.Contains(instanceIds, id1);
         CollectionAssert.Contains(instanceIds, id2);
         CollectionAssert.DoesNotContain(instanceIds, id3);
@@ -306,9 +306,9 @@ public class WorkflowQueryServiceTests
         await SeedProcessDefinition(db, "existing:1:ts", "existing", 1);
         await SeedWorkflowInstance(db, Guid.NewGuid(), processDefinitionId: "existing:1:ts", isStarted: true);
 
-        var results = await _service.GetInstancesByKey("nonexistent");
+        var results = await _service.GetInstancesByKey("nonexistent", new PageRequest());
 
-        Assert.AreEqual(0, results.Count);
+        Assert.AreEqual(0, results.Items.Count);
     }
 
     // ─────────────────────────────────────────────────
@@ -328,11 +328,11 @@ public class WorkflowQueryServiceTests
         await SeedWorkflowInstance(db, v1Instance, processDefinitionId: "key:1:ts", isStarted: true);
         await SeedWorkflowInstance(db, v2Instance, processDefinitionId: "key:2:ts", isStarted: true);
 
-        var results = await _service.GetInstancesByKeyAndVersion("key", 1);
+        var results = await _service.GetInstancesByKeyAndVersion("key", 1, new PageRequest());
 
-        Assert.AreEqual(1, results.Count);
-        Assert.AreEqual(v1Instance, results[0].InstanceId);
-        Assert.AreEqual("key:1:ts", results[0].ProcessDefinitionId);
+        Assert.AreEqual(1, results.Items.Count);
+        Assert.AreEqual(v1Instance, results.Items[0].InstanceId);
+        Assert.AreEqual("key:1:ts", results.Items[0].ProcessDefinitionId);
     }
 
     [TestMethod]
@@ -343,9 +343,9 @@ public class WorkflowQueryServiceTests
         await SeedProcessDefinition(db, "key:1:ts", "key", 1);
         await SeedWorkflowInstance(db, Guid.NewGuid(), processDefinitionId: "key:1:ts", isStarted: true);
 
-        var results = await _service.GetInstancesByKeyAndVersion("key", 99);
+        var results = await _service.GetInstancesByKeyAndVersion("key", 99, new PageRequest());
 
-        Assert.AreEqual(0, results.Count);
+        Assert.AreEqual(0, results.Items.Count);
     }
 
     // ─────────────────────────────────────────────────
@@ -567,6 +567,145 @@ public class WorkflowQueryServiceTests
     }
 
     // ─────────────────────────────────────────────────
+    // GetAllProcessDefinitions (paginated)
+    // ─────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task GetAllProcessDefinitions_Paginated_ReturnsPagedResult()
+    {
+        using var db = _commandDbContextFactory.CreateDbContext();
+
+        for (int i = 1; i <= 5; i++)
+            await SeedProcessDefinition(db, $"pagdef:key{i}:1:ts", $"key{i}", 1);
+
+        var result = await _service.GetAllProcessDefinitions(new PageRequest(Page: 1, PageSize: 2));
+
+        Assert.AreEqual(2, result.Items.Count);
+        Assert.AreEqual(5, result.TotalCount);
+        Assert.AreEqual(1, result.Page);
+        Assert.AreEqual(2, result.PageSize);
+    }
+
+    [TestMethod]
+    public async Task GetAllProcessDefinitions_Paginated_ReturnsSecondPage()
+    {
+        using var db = _commandDbContextFactory.CreateDbContext();
+
+        for (int i = 1; i <= 5; i++)
+            await SeedProcessDefinition(db, $"pagdef2:key{i}:1:ts", $"pagdef2key{i}", 1);
+
+        var result = await _service.GetAllProcessDefinitions(new PageRequest(Page: 2, PageSize: 2));
+
+        Assert.AreEqual(2, result.Items.Count);
+        Assert.AreEqual(5, result.TotalCount);
+        Assert.AreEqual(2, result.Page);
+    }
+
+    [TestMethod]
+    public async Task GetAllProcessDefinitions_Paginated_FiltersByIsActive()
+    {
+        using var db = _commandDbContextFactory.CreateDbContext();
+
+        await SeedProcessDefinition(db, "active:1:ts", "activeproc", 1);
+        await SeedProcessDefinition(db, "inactive:1:ts", "inactiveproc", 1);
+        // Disable the second definition
+        var def = await db.ProcessDefinitions.FindAsync("inactive:1:ts");
+        def!.Disable();
+        await db.SaveChangesAsync();
+
+        var result = await _service.GetAllProcessDefinitions(
+            new PageRequest(Filters: "IsActive==true"));
+
+        Assert.AreEqual(1, result.Items.Count);
+        Assert.AreEqual("activeproc", result.Items[0].ProcessDefinitionKey);
+    }
+
+    // ─────────────────────────────────────────────────
+    // GetPendingUserTasks (paginated)
+    // ─────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task GetPendingUserTasks_Paginated_ReturnsPagedResult()
+    {
+        using var db = _commandDbContextFactory.CreateDbContext();
+
+        var instanceId = Guid.NewGuid();
+        await SeedWorkflowInstance(db, instanceId, isStarted: true);
+
+        for (int i = 0; i < 5; i++)
+            await SeedUserTask(db, Guid.NewGuid(), instanceId, $"task{i}");
+
+        var result = await _service.GetPendingUserTasks(null, null,
+            new PageRequest(Page: 1, PageSize: 2));
+
+        Assert.AreEqual(2, result.Items.Count);
+        Assert.AreEqual(5, result.TotalCount);
+        Assert.AreEqual(1, result.Page);
+        Assert.AreEqual(2, result.PageSize);
+    }
+
+    [TestMethod]
+    public async Task GetPendingUserTasks_Paginated_FiltersByAssignee()
+    {
+        using var db = _commandDbContextFactory.CreateDbContext();
+
+        var instanceId = Guid.NewGuid();
+        await SeedWorkflowInstance(db, instanceId, isStarted: true);
+
+        await SeedUserTask(db, Guid.NewGuid(), instanceId, "task1", assignee: "alice");
+        await SeedUserTask(db, Guid.NewGuid(), instanceId, "task2", assignee: "bob");
+        await SeedUserTask(db, Guid.NewGuid(), instanceId, "task3",
+            candidateUsers: new List<string> { "alice", "charlie" });
+
+        var result = await _service.GetPendingUserTasks("alice", null, new PageRequest());
+
+        // Should return task1 (direct assignment) and task3 (candidate user)
+        Assert.AreEqual(2, result.Items.Count);
+        Assert.AreEqual(2, result.TotalCount);
+    }
+
+    [TestMethod]
+    public async Task GetPendingUserTasks_Paginated_FiltersByCandidateGroup()
+    {
+        using var db = _commandDbContextFactory.CreateDbContext();
+
+        var instanceId = Guid.NewGuid();
+        await SeedWorkflowInstance(db, instanceId, isStarted: true);
+
+        await SeedUserTask(db, Guid.NewGuid(), instanceId, "task1",
+            candidateGroups: new List<string> { "managers" });
+        await SeedUserTask(db, Guid.NewGuid(), instanceId, "task2",
+            candidateGroups: new List<string> { "engineers" });
+
+        var result = await _service.GetPendingUserTasks(null, "managers", new PageRequest());
+
+        Assert.AreEqual(1, result.Items.Count);
+        Assert.AreEqual(1, result.TotalCount);
+    }
+
+    [TestMethod]
+    public async Task GetPendingUserTasks_Paginated_ExcludesCompleted()
+    {
+        using var db = _commandDbContextFactory.CreateDbContext();
+
+        var instanceId = Guid.NewGuid();
+        await SeedWorkflowInstance(db, instanceId, isStarted: true);
+
+        await SeedUserTask(db, Guid.NewGuid(), instanceId, "task1",
+            taskState: UserTaskLifecycleState.Created);
+        await SeedUserTask(db, Guid.NewGuid(), instanceId, "task2",
+            taskState: UserTaskLifecycleState.Completed);
+
+        // Default Sieve filter is not set, but the existing behavior filters by
+        // TaskState != Completed via Sieve filter
+        var result = await _service.GetPendingUserTasks(null, null,
+            new PageRequest(Filters: "TaskState!=Completed"));
+
+        Assert.AreEqual(1, result.Items.Count);
+        Assert.AreEqual(1, result.TotalCount);
+    }
+
+    // ─────────────────────────────────────────────────
     // Helpers
     // ─────────────────────────────────────────────────
 
@@ -639,6 +778,27 @@ public class WorkflowQueryServiceTests
         entry.Property(e => e.CompletedAt).CurrentValue = completedAt;
         await db.SaveChangesAsync();
         return state;
+    }
+
+    private static async Task SeedUserTask(
+        FleanCommandDbContext db, Guid activityInstanceId, Guid workflowInstanceId,
+        string activityId, string? assignee = null,
+        List<string>? candidateGroups = null, List<string>? candidateUsers = null,
+        UserTaskLifecycleState taskState = UserTaskLifecycleState.Created)
+    {
+        var task = new UserTaskState
+        {
+            ActivityInstanceId = activityInstanceId,
+            WorkflowInstanceId = workflowInstanceId,
+            ActivityId = activityId,
+            Assignee = assignee,
+            CandidateGroups = candidateGroups ?? [],
+            CandidateUsers = candidateUsers ?? [],
+            TaskState = taskState,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        db.UserTasks.Add(task);
+        await db.SaveChangesAsync();
     }
 
     private class TestCommandDbContextFactory : IDbContextFactory<FleanCommandDbContext>

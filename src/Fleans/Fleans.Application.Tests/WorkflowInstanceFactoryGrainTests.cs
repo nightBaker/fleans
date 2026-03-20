@@ -160,14 +160,14 @@ namespace Fleans.Application.Tests
         {
             public Task<InstanceStateSnapshot?> GetStateSnapshot(Guid workflowInstanceId) => Task.FromResult<InstanceStateSnapshot?>(null);
             public Task<IReadOnlyList<ProcessDefinitionSummary>> GetAllProcessDefinitions() => Task.FromResult<IReadOnlyList<ProcessDefinitionSummary>>([]);
-            public Task<IReadOnlyList<WorkflowInstanceInfo>> GetInstancesByKey(string processDefinitionKey) => Task.FromResult<IReadOnlyList<WorkflowInstanceInfo>>([]);
-            public Task<IReadOnlyList<WorkflowInstanceInfo>> GetInstancesByKeyAndVersion(string key, int version) => Task.FromResult<IReadOnlyList<WorkflowInstanceInfo>>([]);
+            public Task<PagedResult<ProcessDefinitionSummary>> GetAllProcessDefinitions(PageRequest page) => Task.FromResult(new PagedResult<ProcessDefinitionSummary>([], 0, page.Page, page.PageSize));
             public Task<PagedResult<WorkflowInstanceInfo>> GetInstancesByKey(string processDefinitionKey, PageRequest page) => Task.FromResult(new PagedResult<WorkflowInstanceInfo>([], 0, page.Page, page.PageSize));
             public Task<PagedResult<WorkflowInstanceInfo>> GetInstancesByKeyAndVersion(string key, int version, PageRequest page) => Task.FromResult(new PagedResult<WorkflowInstanceInfo>([], 0, page.Page, page.PageSize));
             public Task<string?> GetBpmnXml(Guid instanceId) => Task.FromResult<string?>(null);
             public Task<string?> GetBpmnXmlByKey(string processDefinitionKey) => Task.FromResult<string?>(null);
             public Task<string?> GetBpmnXmlByKeyAndVersion(string key, int version) => Task.FromResult<string?>(null);
             public Task<IReadOnlyList<DTOs.UserTaskResponse>> GetPendingUserTasks(string? assignee = null, string? candidateGroup = null) => Task.FromResult<IReadOnlyList<DTOs.UserTaskResponse>>([]);
+            public Task<PagedResult<DTOs.UserTaskResponse>> GetPendingUserTasks(string? assignee, string? candidateGroup, PageRequest page) => Task.FromResult(new PagedResult<DTOs.UserTaskResponse>([], 0, page.Page, page.PageSize));
             public Task<DTOs.UserTaskResponse?> GetUserTask(Guid activityInstanceId) => Task.FromResult<DTOs.UserTaskResponse?>(null);
             public Task<IReadOnlyList<Domain.States.UserTaskState>> GetActiveUserTasksForWorkflow(Guid workflowInstanceId) => Task.FromResult<IReadOnlyList<Domain.States.UserTaskState>>([]);
         }
