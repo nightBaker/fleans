@@ -1,3 +1,4 @@
+using Fleans.Domain;
 using Fleans.Domain.States;
 using Microsoft.Extensions.Options;
 using Sieve.Models;
@@ -21,6 +22,21 @@ public class ApplicationSieveProcessor : SieveProcessor
             .CanSort();
         mapper.Property<WorkflowInstanceState>(w => w.ExecutionStartedAt)
             .CanSort();
+
+        mapper.Property<ProcessDefinition>(p => p.ProcessDefinitionKey)
+            .CanFilter().CanSort();
+        mapper.Property<ProcessDefinition>(p => p.Version)
+            .CanFilter().CanSort();
+        mapper.Property<ProcessDefinition>(p => p.DeployedAt)
+            .CanSort();
+        mapper.Property<ProcessDefinition>(p => p.IsActive)
+            .CanFilter();
+
+        mapper.Property<UserTaskState>(t => t.CreatedAt)
+            .CanFilter().CanSort();
+        mapper.Property<UserTaskState>(t => t.TaskState)
+            .CanFilter();
+
         return mapper;
     }
 }
