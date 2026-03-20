@@ -39,65 +39,48 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure();
 
-// Rate limiting
-var rateLimitConfig = builder.Configuration
-    .GetSection("RateLimiting")
-    .Get<RateLimitingConfiguration>() ?? new RateLimitingConfiguration();
+// Rate limiting — opt-in: only enabled when RateLimiting section is configured
+var rateLimitSection = builder.Configuration.GetSection("RateLimiting");
+var rateLimitConfig = rateLimitSection.Exists()
+    ? rateLimitSection.Get<RateLimitingConfiguration>()
+    : null;
 
-builder.Services.AddRateLimiter(options =>
+if (rateLimitConfig is not null)
 {
-    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-
-    options.AddPolicy("workflow-mutation", httpContext =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-            factory: _ => new FixedWindowRateLimiterOptions
-            {
-                Window = TimeSpan.FromSeconds(rateLimitConfig.WorkflowMutation.Window),
-                PermitLimit = rateLimitConfig.WorkflowMutation.PermitLimit,
-                QueueLimit = 0
-            }));
-
-    options.AddPolicy("task-operation", httpContext =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-            factory: _ => new FixedWindowRateLimiterOptions
-            {
-                Window = TimeSpan.FromSeconds(rateLimitConfig.TaskOperation.Window),
-                PermitLimit = rateLimitConfig.TaskOperation.PermitLimit,
-                QueueLimit = 0
-            }));
-
-    options.AddPolicy("read", httpContext =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-            factory: _ => new FixedWindowRateLimiterOptions
-            {
-                Window = TimeSpan.FromSeconds(rateLimitConfig.Read.Window),
-                PermitLimit = rateLimitConfig.Read.PermitLimit,
-                QueueLimit = 0
-            }));
-
-    options.AddPolicy("admin", httpContext =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-            factory: _ => new FixedWindowRateLimiterOptions
-            {
-                Window = TimeSpan.FromSeconds(rateLimitConfig.Admin.Window),
-                PermitLimit = rateLimitConfig.Admin.PermitLimit,
-                QueueLimit = 0
-            }));
-
-    options.OnRejected = async (context, token) =>
+    builder.Services.AddRateLimiter(options =>
     {
-        context.HttpContext.Response.ContentType = "application/json";
-        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfterValue))
-            context.HttpContext.Response.Headers.RetryAfter =
-                ((int)retryAfterValue.TotalSeconds).ToString();
-        await context.HttpContext.Response.WriteAsJsonAsync(
-            new { error = "Too many requests. Please retry later." }, token);
-    };
-});
+        options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+        AddPolicyIfConfigured(options, "workflow-mutation", rateLimitConfig.WorkflowMutation);
+        AddPolicyIfConfigured(options, "task-operation", rateLimitConfig.TaskOperation);
+        AddPolicyIfConfigured(options, "read", rateLimitConfig.Read);
+        AddPolicyIfConfigured(options, "admin", rateLimitConfig.Admin);
+
+        options.OnRejected = async (context, token) =>
+        {
+            context.HttpContext.Response.ContentType = "application/json";
+            if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfterValue))
+                context.HttpContext.Response.Headers.RetryAfter =
+                    ((int)retryAfterValue.TotalSeconds).ToString();
+            await context.HttpContext.Response.WriteAsJsonAsync(
+                new { error = "Too many requests. Please retry later." }, token);
+        };
+    });
+}
+
+static void AddPolicyIfConfigured(RateLimiterOptions options, string policyName, RateLimitPolicy? policy)
+{
+    if (policy is null) return;
+    options.AddPolicy(policyName, httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                Window = TimeSpan.FromSeconds(policy.Window),
+                PermitLimit = policy.PermitLimit,
+                QueueLimit = 0
+            }));
+}
 
 // EF Core persistence for WorkflowInstanceState
 var sqliteConnectionString = builder.Configuration["FLEANS_SQLITE_CONNECTION"] ?? "DataSource=fleans-dev.db";
@@ -122,7 +105,8 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-app.UseRateLimiter();
+if (rateLimitConfig is not null)
+    app.UseRateLimiter();
 
 app.UseAuthorization();
 

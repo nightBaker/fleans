@@ -2,10 +2,10 @@ namespace Fleans.Api;
 
 public class RateLimitingConfiguration
 {
-    public RateLimitPolicy WorkflowMutation { get; set; } = new() { Window = 60, PermitLimit = 100 };
-    public RateLimitPolicy TaskOperation { get; set; } = new() { Window = 60, PermitLimit = 200 };
-    public RateLimitPolicy Read { get; set; } = new() { Window = 60, PermitLimit = 300 };
-    public RateLimitPolicy Admin { get; set; } = new() { Window = 60, PermitLimit = 20 };
+    public RateLimitPolicy? WorkflowMutation { get; set; }
+    public RateLimitPolicy? TaskOperation { get; set; }
+    public RateLimitPolicy? Read { get; set; }
+    public RateLimitPolicy? Admin { get; set; }
 }
 
 public class RateLimitPolicy
