@@ -2,52 +2,156 @@ using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Aggregates;
 using Fleans.Domain.Effects;
+using Fleans.Domain.Events;
 using Fleans.Domain.States;
 using Fleans.Application.Adapters;
 using Microsoft.Extensions.Logging;
 using Orleans;
+using Orleans.EventSourcing;
+using Orleans.EventSourcing.CustomStorage;
 using Orleans.Runtime;
 using System.Collections.Concurrent;
 using System.Dynamic;
 
 namespace Fleans.Application.Grains;
 
-public partial class WorkflowInstance : Grain, IWorkflowInstanceGrain
+public partial class WorkflowInstance :
+    JournaledGrain<WorkflowInstanceState, IDomainEvent>,
+    IWorkflowInstanceGrain,
+    ICustomStorageInterface<WorkflowInstanceState, IDomainEvent>
 {
     public ValueTask<Guid> GetWorkflowInstanceId() => ValueTask.FromResult(this.GetPrimaryKey());
     private IWorkflowDefinition? _workflowDefinition;
     private WorkflowExecution? _execution;
 
-    private readonly IPersistentState<WorkflowInstanceState> _state;
     private readonly IGrainFactory _grainFactory;
     private readonly ILogger<WorkflowInstance> _logger;
     private readonly IWorkflowQueryService _queryService;
+    private readonly IEventStore _eventStore;
 
     private readonly ConcurrentQueue<(PendingExternalEvent Event, TaskCompletionSource Completion)> _pendingExternalEvents = new();
     private IGrainTimer? _pendingEventsTimer;
 
-    private WorkflowInstanceState State => _state.State;
+    /// <summary>
+    /// Guards against double-apply: true while draining aggregate events via RaiseEvent.
+    /// When true, TransitionState skips event application (aggregate already applied).
+    /// </summary>
+    private bool _draining;
+
+    /// <summary>
+    /// Tracks the version at which the last snapshot was written, for periodic snapshotting.
+    /// </summary>
+    private int _lastSnapshotVersion;
+
+    /// <summary>
+    /// Temporary aggregate used during JournaledGrain activation replay.
+    /// TransitionState uses this to apply events when not in drain mode.
+    /// </summary>
+    private WorkflowExecution? _replayAggregate;
 
     public WorkflowInstance(
-        [PersistentState("state", GrainStorageNames.WorkflowInstances)] IPersistentState<WorkflowInstanceState> state,
         IGrainFactory grainFactory,
         ILogger<WorkflowInstance> logger,
-        IWorkflowQueryService queryService)
+        IWorkflowQueryService queryService,
+        IEventStore eventStore)
     {
-        _state = state;
         _grainFactory = grainFactory;
         _logger = logger;
         _queryService = queryService;
+        _eventStore = eventStore;
     }
 
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
         await base.OnActivateAsync(cancellationToken);
 
-        if (_state.RecordExists && State.UserTasks.Count == 0)
+        // _replayAggregate lifecycle: base.OnActivateAsync() calls ReadStateFromStorage()
+        // then replays events via TransitionState(), which creates _replayAggregate on first call.
+        // After base returns, we clear it — the real _execution aggregate will be created
+        // by EnsureExecution() with the full workflow definition.
+        _replayAggregate = null;
+
+        if (State.IsStarted && State.UserTasks.Count == 0)
         {
             await RehydrateUserTasks();
         }
+    }
+
+    public override async Task OnDeactivateAsync(DeactivationReason reason, CancellationToken cancellationToken)
+    {
+        // Write a final snapshot on graceful deactivation to reduce replay on next activation
+        if (State.IsStarted && this.Version > _lastSnapshotVersion)
+        {
+            var grainId = this.GetPrimaryKey().ToString();
+            await _eventStore.WriteSnapshotAsync(grainId, this.Version, this.State);
+            _lastSnapshotVersion = this.Version;
+        }
+
+        await base.OnDeactivateAsync(reason, cancellationToken);
+    }
+
+    // ── JournaledGrain: TransitionState ─────────────────────────────────
+
+    protected override void TransitionState(
+        WorkflowInstanceState state, IDomainEvent @event)
+    {
+        if (!_draining)
+        {
+            // During activation replay: apply events via a temporary aggregate
+            _replayAggregate ??= new WorkflowExecution(state);
+            _replayAggregate.ReplayEvent(@event);
+        }
+        // During normal operation (_draining == true): no-op.
+        // The aggregate has already applied the event before RaiseEvent was called.
+    }
+
+    // ── ICustomStorageInterface ─────────────────────────────────────────
+
+    public async Task<KeyValuePair<int, WorkflowInstanceState>> ReadStateFromStorage()
+    {
+        var grainId = this.GetPrimaryKey().ToString();
+        var (snapshot, snapshotVersion) = await _eventStore.ReadSnapshotAsync(grainId);
+        _lastSnapshotVersion = snapshotVersion;
+
+        var state = snapshot ?? new WorkflowInstanceState();
+
+        // Replay events after the snapshot to recover state lost by ungraceful shutdown.
+        // Note: Apply methods with Guid.NewGuid()/DateTimeOffset.UtcNow produce non-deterministic
+        // values during replay (e.g. ApplyWorkflowStarted). This is a known limitation —
+        // in practice, snapshots are written on graceful deactivation covering most events.
+        // A future fix should embed deterministic IDs in event records.
+        var events = await _eventStore.ReadEventsAsync(grainId, snapshotVersion);
+        if (events.Count > 0)
+        {
+            var replay = new WorkflowExecution(state);
+            foreach (var evt in events)
+                replay.ReplayEvent(evt);
+        }
+
+        return new(snapshotVersion + events.Count, state);
+    }
+
+    public async Task<bool> ApplyUpdatesToStorage(
+        IReadOnlyList<IDomainEvent> updates, int expectedVersion)
+    {
+        var grainId = this.GetPrimaryKey().ToString();
+        // expectedVersion is the confirmed version BEFORE these updates.
+        // Events should be appended starting at this version.
+        var success = await _eventStore.AppendEventsAsync(grainId, updates, expectedVersion);
+        if (!success) return false;
+
+        // Project state to query store so IWorkflowQueryService has up-to-date data
+        await _eventStore.ProjectStateAsync(grainId, this.State);
+
+        // Periodic snapshot every 100 events (for faster activation recovery)
+        var newVersion = expectedVersion + updates.Count;
+        if (newVersion - _lastSnapshotVersion >= 100)
+        {
+            await _eventStore.WriteSnapshotAsync(grainId, newVersion, this.State);
+            _lastSnapshotVersion = newVersion;
+        }
+
+        return true;
     }
 
     private async Task RehydrateUserTasks()

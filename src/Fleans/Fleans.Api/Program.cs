@@ -7,6 +7,7 @@ using Fleans.Persistence;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Orleans.Dashboard;
+using Orleans.EventSourcing.CustomStorage;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -26,6 +27,9 @@ builder.UseOrleans(siloBuilder =>
 
     // Structured workflow logging via RequestContext
     siloBuilder.AddIncomingGrainCallFilter<WorkflowLoggingScopeFilter>();
+
+    // JournaledGrain event sourcing: use CustomStorage backed by EfCoreEventStore
+    siloBuilder.AddCustomStorageBasedLogConsistencyProviderAsDefault();
 });
 
 // Add services to the container.

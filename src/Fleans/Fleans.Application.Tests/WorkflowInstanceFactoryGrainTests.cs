@@ -2,10 +2,12 @@ using Fleans.Application.QueryModels;
 using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
+using Fleans.Domain.Events;
 using Fleans.Domain.Persistence;
 using Fleans.Domain.Sequences;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Orleans.EventSourcing.CustomStorage;
 using Orleans.TestingHost;
 
 namespace Fleans.Application.Tests
@@ -143,13 +145,14 @@ namespace Fleans.Application.Tests
         {
             public void Configure(ISiloBuilder hostBuilder) =>
                 hostBuilder
-                    .AddMemoryGrainStorage(GrainStorageNames.WorkflowInstances)
+                    .AddCustomStorageBasedLogConsistencyProviderAsDefault()
                     .AddMemoryGrainStorage(GrainStorageNames.ProcessDefinitions)
                     .AddMemoryGrainStorage(GrainStorageNames.UserTasks)
                     .ConfigureServices(services =>
                     {
                         services.AddSingleton<IProcessDefinitionRepository, StubProcessDefinitionRepository>();
                         services.AddSingleton<IWorkflowQueryService, StubWorkflowQueryService>();
+                        services.AddSingleton<IEventStore, InMemoryEventStore>();
                     });
         }
 
