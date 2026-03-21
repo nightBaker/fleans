@@ -1,7 +1,10 @@
+using System.Threading.RateLimiting;
+using Fleans.Api;
 using Fleans.Application;
 using Fleans.Application.Logging;
 using Fleans.Infrastructure;
 using Fleans.Persistence;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Orleans.Dashboard;
 
@@ -36,6 +39,48 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure();
 
+// Rate limiting — opt-in: only enabled when RateLimiting section is configured
+var rateLimitSection = builder.Configuration.GetSection("RateLimiting");
+var rateLimitConfig = rateLimitSection.Exists()
+    ? rateLimitSection.Get<RateLimitingConfiguration>()
+    : null;
+
+if (rateLimitConfig is not null)
+{
+    builder.Services.AddRateLimiter(options =>
+    {
+        options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+        AddPolicyIfConfigured(options, "workflow-mutation", rateLimitConfig.WorkflowMutation);
+        AddPolicyIfConfigured(options, "task-operation", rateLimitConfig.TaskOperation);
+        AddPolicyIfConfigured(options, "read", rateLimitConfig.Read);
+        AddPolicyIfConfigured(options, "admin", rateLimitConfig.Admin);
+
+        options.OnRejected = async (context, token) =>
+        {
+            if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfterValue))
+                context.HttpContext.Response.Headers.RetryAfter =
+                    ((int)retryAfterValue.TotalSeconds).ToString();
+            await context.HttpContext.Response.WriteAsJsonAsync(
+                new { error = "Too many requests. Please retry later." }, token);
+        };
+    });
+}
+
+static void AddPolicyIfConfigured(RateLimiterOptions options, string policyName, RateLimitPolicy? policy)
+{
+    if (policy is null) return;
+    options.AddPolicy(policyName, httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                Window = TimeSpan.FromSeconds(policy.Window),
+                PermitLimit = policy.PermitLimit,
+                QueueLimit = 0
+            }));
+}
+
 // EF Core persistence for WorkflowInstanceState
 var sqliteConnectionString = builder.Configuration["FLEANS_SQLITE_CONNECTION"] ?? "DataSource=fleans-dev.db";
 builder.Services.AddEfCorePersistence(options => options.UseSqlite(sqliteConnectionString));
@@ -58,6 +103,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+if (rateLimitConfig is not null)
+    app.UseRateLimiter();
 
 app.UseAuthorization();
 
