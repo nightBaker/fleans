@@ -56,17 +56,16 @@ public partial class SignalStartEventListenerGrain : Grain, ISignalStartEventLis
     public async ValueTask<List<Guid>> FireSignalStartEvent()
     {
         var signalName = this.GetPrimaryKeyString();
-        var createdIds = new List<Guid>();
 
         if (State.ProcessDefinitionKeys.Count == 0)
         {
             LogNoRegisteredProcesses(signalName);
-            return createdIds;
+            return [];
         }
 
         var factory = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
 
-        foreach (var processDefinitionKey in State.ProcessDefinitionKeys)
+        var tasks = State.ProcessDefinitionKeys.Select(async processDefinitionKey =>
         {
             try
             {
@@ -75,7 +74,7 @@ public partial class SignalStartEventListenerGrain : Grain, ISignalStartEventLis
                 if (!await factory.IsProcessActive(processDefinitionKey))
                 {
                     LogProcessDisabledSkipped(signalName, processDefinitionKey);
-                    continue;
+                    return (Guid?)null;
                 }
 
                 var instanceId = Guid.NewGuid();
@@ -91,16 +90,18 @@ public partial class SignalStartEventListenerGrain : Grain, ISignalStartEventLis
                 await instance.SetWorkflow(definition, signalStartActivityId);
                 await instance.StartWorkflow();
 
-                createdIds.Add(instanceId);
                 LogSignalStartEventFired(signalName, processDefinitionKey, instanceId);
+                return (Guid?)instanceId;
             }
             catch (Exception ex)
             {
                 LogSignalStartEventFailed(signalName, processDefinitionKey, ex);
+                return (Guid?)null;
             }
-        }
+        });
 
-        return createdIds;
+        var results = await Task.WhenAll(tasks);
+        return results.Where(id => id.HasValue).Select(id => id!.Value).ToList();
     }
 
     private static string? FindSignalStartActivityId(IWorkflowDefinition definition, string signalName)
