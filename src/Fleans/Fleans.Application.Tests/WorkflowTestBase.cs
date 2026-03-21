@@ -47,6 +47,27 @@ public abstract class WorkflowTestBase
         QueryService = ((InProcessSiloHandle)Cluster.Primary).SiloHost.Services.GetRequiredService<IWorkflowQueryService>();
     }
 
+    /// <summary>
+    /// Forces deactivation of all grain activations in the test cluster
+    /// and waits for deactivation to complete. After this call, the next
+    /// method call on any grain will trigger reactivation from the event store
+    /// (snapshot + event replay).
+    /// </summary>
+    protected async Task ForceGrainDeactivation<T>(Guid grainId) where T : IGrainWithGuidKey
+    {
+        var managementGrain = Cluster.GrainFactory.GetGrain<IManagementGrain>(0);
+        await managementGrain.ForceActivationCollection(TimeSpan.Zero);
+        await Task.Delay(TimeSpan.FromSeconds(3));
+    }
+
+    /// <summary>
+    /// Gets a service registered in the silo's DI container.
+    /// Useful for accessing infrastructure services like EfCoreEventStore
+    /// or IDbContextFactory directly in tests.
+    /// </summary>
+    protected T GetSiloService<T>() where T : notnull =>
+        ((InProcessSiloHandle)Cluster.Primary).SiloHost.Services.GetRequiredService<T>();
+
     [TestCleanup]
     public void BaseCleanup()
     {
@@ -101,6 +122,10 @@ public abstract class WorkflowTestBase
 
                     services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.TimerSchedulers,
                         (sp, _) => new EfCoreTimerSchedulerGrainStorage(
+                            sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
+
+                    services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.ProcessDefinitions,
+                        (sp, _) => new EfCoreProcessDefinitionGrainStorage(
                             sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
 
                     services.AddSingleton<IProcessDefinitionRepository, EfCoreProcessDefinitionRepository>();
