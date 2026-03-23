@@ -28,10 +28,10 @@ public class EventSourcingPerformanceTests : WorkflowTestBase
         // Scenario 2: Short workflow (~10-15 events)
         var shortId = Guid.NewGuid();
         var shortGrain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(shortId);
-        await shortGrain.SetWorkflow(CreateSimpleWorkflow());
+        await shortGrain.SetWorkflow(CreateSimpleWorkflow("perf-simple"));
         await shortGrain.StartWorkflow();
         await shortGrain.CompleteActivity("task", new ExpandoObject());
-        await ForceGrainDeactivation<IWorkflowInstanceGrain>(shortId);
+        await ForceAllGrainDeactivation();
 
         sw.Restart();
         var reactivatedShort = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(shortId);
@@ -46,7 +46,7 @@ public class EventSourcingPerformanceTests : WorkflowTestBase
         await medGrain.StartWorkflow();
         for (int i = 1; i <= 10; i++)
             await medGrain.CompleteActivity($"task{i}", new ExpandoObject());
-        await ForceGrainDeactivation<IWorkflowInstanceGrain>(medId);
+        await ForceAllGrainDeactivation();
 
         sw.Restart();
         var reactivatedMed = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(medId);
@@ -61,7 +61,7 @@ public class EventSourcingPerformanceTests : WorkflowTestBase
         await longGrain.StartWorkflow();
         for (int i = 1; i <= 25; i++)
             await longGrain.CompleteActivity($"task{i}", new ExpandoObject());
-        await ForceGrainDeactivation<IWorkflowInstanceGrain>(longId);
+        await ForceAllGrainDeactivation();
 
         sw.Restart();
         var reactivatedLong = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(longId);
@@ -77,24 +77,6 @@ public class EventSourcingPerformanceTests : WorkflowTestBase
             Console.WriteLine($"{scenario,-50} {ms,15}");
         Console.WriteLine(new string('-', 67));
         Console.WriteLine("Note: Results are machine-specific. Use as relative baseline only.\n");
-    }
-
-    private static IWorkflowDefinition CreateSimpleWorkflow()
-    {
-        var start = new StartEvent("start");
-        var task = new TaskActivity("task");
-        var end = new EndEvent("end");
-
-        return new WorkflowDefinition
-        {
-            WorkflowId = "perf-simple",
-            Activities = [start, task, end],
-            SequenceFlows =
-            [
-                new SequenceFlow("seq1", start, task),
-                new SequenceFlow("seq2", task, end)
-            ]
-        };
     }
 
     private static IWorkflowDefinition CreateLongSequentialWorkflow(int taskCount)

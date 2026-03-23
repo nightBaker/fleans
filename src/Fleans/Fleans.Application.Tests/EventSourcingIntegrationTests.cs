@@ -35,7 +35,7 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         Assert.IsTrue(preSnapshot.IsCompleted);
 
         // Act — deactivate and reactivate
-        await ForceGrainDeactivation<IWorkflowInstanceGrain>(instanceId);
+        await ForceAllGrainDeactivation();
 
         // Trigger reactivation by calling a method
         var postGrain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
@@ -82,7 +82,7 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         Assert.IsTrue(preSnapshot.IsCompleted);
 
         // Act — deactivate and reactivate
-        await ForceGrainDeactivation<IWorkflowInstanceGrain>(instanceId);
+        await ForceAllGrainDeactivation();
         var postGrain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
         await postGrain.GetWorkflowInstanceId();
 
@@ -146,7 +146,7 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         Assert.IsTrue(midSnapshot.ActiveActivities.Any(a => a.ActivityId == "waitPayment"));
 
         // Act — deactivate grain while waiting for message
-        await ForceGrainDeactivation<IWorkflowInstanceGrain>(instanceId);
+        await ForceAllGrainDeactivation();
 
         // Send message via correlation grain (full correlation path per design review)
         var grainKey = MessageCorrelationKey.Build("paymentReceived", "order-456");
@@ -181,7 +181,7 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         await grain.CompleteActivity("task2", new ExpandoObject());
 
         // Act — deactivate (triggers OnDeactivateAsync → snapshot write)
-        await ForceGrainDeactivation<IWorkflowInstanceGrain>(instanceId);
+        await ForceAllGrainDeactivation();
 
         // Assert — verify snapshot exists in DB
         var dbFactory = GetSiloService<IDbContextFactory<FleanCommandDbContext>>();
@@ -210,7 +210,7 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
     public async Task VersionTracking_EventCountMatchesExpected()
     {
         // Arrange
-        var workflow = CreateSimpleWorkflow();
+        var workflow = CreateSimpleWorkflow("es-simple-workflow");
         var instanceId = Guid.NewGuid();
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
         var grainIdStr = instanceId.ToString();
@@ -260,7 +260,7 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
     public async Task ExpandoObjectRoundTrip_VariablesSurviveEventStoreReplay()
     {
         // Arrange — workflow with a task that sets diverse variable types
-        var workflow = CreateSimpleWorkflow();
+        var workflow = CreateSimpleWorkflow("es-simple-workflow");
         var instanceId = Guid.NewGuid();
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
         await grain.SetWorkflow(workflow);
@@ -282,7 +282,7 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         var preVars = preSnapshot.VariableStates.First().Variables;
 
         // Act — deactivate and reactivate
-        await ForceGrainDeactivation<IWorkflowInstanceGrain>(instanceId);
+        await ForceAllGrainDeactivation();
         var postGrain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
         await postGrain.GetWorkflowInstanceId();
 
@@ -300,24 +300,6 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
     }
 
     // ── Workflow Builders ────────────────────────────────────────────────
-
-    private static IWorkflowDefinition CreateSimpleWorkflow()
-    {
-        var start = new StartEvent("start");
-        var task = new TaskActivity("task");
-        var end = new EndEvent("end");
-
-        return new WorkflowDefinition
-        {
-            WorkflowId = "es-simple-workflow",
-            Activities = [start, task, end],
-            SequenceFlows =
-            [
-                new SequenceFlow("seq1", start, task),
-                new SequenceFlow("seq2", task, end)
-            ]
-        };
-    }
 
     private static IWorkflowDefinition CreateSequentialWorkflow()
     {
