@@ -3,8 +3,10 @@ using Fleans.Application.Events;
 using Fleans.Application.Scripts;
 using Fleans.Application.Conditions;
 using Fleans.Domain;
+using Fleans.Domain.Activities;
 using Fleans.Domain.Events;
 using Fleans.Domain.Persistence;
+using Fleans.Domain.Sequences;
 using Fleans.Persistence;
 using Fleans.Persistence.Events;
 using Microsoft.Data.Sqlite;
@@ -47,6 +49,28 @@ public abstract class WorkflowTestBase
         QueryService = ((InProcessSiloHandle)Cluster.Primary).SiloHost.Services.GetRequiredService<IWorkflowQueryService>();
     }
 
+    /// <summary>
+    /// Forces deactivation of all grain activations in the test cluster
+    /// and waits for deactivation to complete. After this call, the next
+    /// method call on any grain will trigger reactivation from the event store
+    /// (snapshot + event replay).
+    /// Note: This deactivates ALL grains globally, not a specific grain.
+    /// </summary>
+    protected async Task ForceAllGrainDeactivation()
+    {
+        var managementGrain = Cluster.GrainFactory.GetGrain<IManagementGrain>(0);
+        await managementGrain.ForceActivationCollection(TimeSpan.Zero);
+        await Task.Delay(TimeSpan.FromSeconds(3));
+    }
+
+    /// <summary>
+    /// Gets a service registered in the silo's DI container.
+    /// Useful for accessing infrastructure services like EfCoreEventStore
+    /// or IDbContextFactory directly in tests.
+    /// </summary>
+    protected T GetSiloService<T>() where T : notnull =>
+        ((InProcessSiloHandle)Cluster.Primary).SiloHost.Services.GetRequiredService<T>();
+
     [TestCleanup]
     public void BaseCleanup()
     {
@@ -58,6 +82,28 @@ public abstract class WorkflowTestBase
             _sharedConnection?.Dispose();
             _sharedConnection = null;
         }
+    }
+
+    /// <summary>
+    /// Creates a minimal workflow: start → task → end.
+    /// Shared across test classes to avoid duplication.
+    /// </summary>
+    protected static IWorkflowDefinition CreateSimpleWorkflow(string workflowId = "simple-workflow")
+    {
+        var start = new StartEvent("start");
+        var task = new TaskActivity("task");
+        var end = new EndEvent("end");
+
+        return new WorkflowDefinition
+        {
+            WorkflowId = workflowId,
+            Activities = [start, task, end],
+            SequenceFlows =
+            [
+                new SequenceFlow("seq1", start, task),
+                new SequenceFlow("seq2", task, end)
+            ]
+        };
     }
 
     private class SimpleScriptExecutor : IScriptExpressionExecutor
@@ -101,6 +147,10 @@ public abstract class WorkflowTestBase
 
                     services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.TimerSchedulers,
                         (sp, _) => new EfCoreTimerSchedulerGrainStorage(
+                            sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
+
+                    services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.ProcessDefinitions,
+                        (sp, _) => new EfCoreProcessDefinitionGrainStorage(
                             sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
 
                     services.AddSingleton<IProcessDefinitionRepository, EfCoreProcessDefinitionRepository>();
