@@ -11,6 +11,8 @@ dotnet build
 dotnet test
 ```
 
+**Context management:** Do not read test files into context until you are at the test verification step (i.e., writing or modifying tests, or verifying that tests pass). Test output logs can be large — avoid loading them prematurely.
+
 Run the full stack (Api + Web + Redis) via Aspire:
 
 ```bash
