@@ -35,15 +35,8 @@ namespace Fleans.Api.Controllers
                 return BadRequest(new ErrorResponse("WorkflowId is required"));
             }
 
-            try
-            {
-                var instanceId = await _commandService.StartWorkflow(request.WorkflowId);
-                return Ok(new StartWorkflowResponse(instanceId));
-            }
-            catch (KeyNotFoundException ex)
-            {
-                return NotFound(new ErrorResponse(ex.Message));
-            }
+            var instanceId = await _commandService.StartWorkflow(request.WorkflowId);
+            return Ok(new StartWorkflowResponse(instanceId));
         }
 
         [EnableRateLimiting("workflow-mutation")]
@@ -53,32 +46,21 @@ namespace Fleans.Api.Controllers
             if (request == null || string.IsNullOrWhiteSpace(request.MessageName))
                 return BadRequest(new ErrorResponse("MessageName is required"));
 
-            try
-            {
-                // System.Text.Json deserializes ExpandoObject values as JsonElement,
-                // which Orleans cannot serialize. Re-parse via Newtonsoft to get proper .NET primitives.
-                var variables = request.Variables != null
-                    ? JsonConvert.DeserializeObject<ExpandoObject>(
-                        System.Text.Json.JsonSerializer.Serialize(request.Variables))!
-                    : new ExpandoObject();
+            // System.Text.Json deserializes ExpandoObject values as JsonElement,
+            // which Orleans cannot serialize. Re-parse via Newtonsoft to get proper .NET primitives.
+            var variables = request.Variables != null
+                ? JsonConvert.DeserializeObject<ExpandoObject>(
+                    System.Text.Json.JsonSerializer.Serialize(request.Variables))!
+                : new ExpandoObject();
 
-                var result = await _commandService.SendMessage(request.MessageName, request.CorrelationKey, variables);
+            var result = await _commandService.SendMessage(request.MessageName, request.CorrelationKey, variables);
 
-                if (!result.Delivered)
-                    return NotFound(new ErrorResponse(
-                        $"No subscription or start event found for message '{request.MessageName}'"));
+            if (!result.Delivered)
+                return NotFound(new ErrorResponse(
+                    $"No subscription or start event found for message '{request.MessageName}'"));
 
-                return Ok(new SendMessageResponse(result.Delivered, result.WorkflowInstanceIds));
-            }
-            catch (Exception ex)
-            {
-                LogMessageDeliveryError(ex);
-                return StatusCode(500, new ErrorResponse("An error occurred while delivering the message"));
-            }
+            return Ok(new SendMessageResponse(result.Delivered, result.WorkflowInstanceIds));
         }
-
-        [LoggerMessage(EventId = 8002, Level = LogLevel.Error, Message = "Error delivering message")]
-        private partial void LogMessageDeliveryError(Exception exception);
 
         [EnableRateLimiting("workflow-mutation")]
         [HttpPost("signal", Name = "SendSignal")]
@@ -87,25 +69,14 @@ namespace Fleans.Api.Controllers
             if (request == null || string.IsNullOrWhiteSpace(request.SignalName))
                 return BadRequest(new ErrorResponse("SignalName is required"));
 
-            try
-            {
-                var result = await _commandService.SendSignal(request.SignalName);
+            var result = await _commandService.SendSignal(request.SignalName);
 
-                if (result.DeliveredCount == 0 && (result.WorkflowInstanceIds == null || result.WorkflowInstanceIds.Count == 0))
-                    return NotFound(new ErrorResponse(
-                        $"No subscription or start event found for signal '{request.SignalName}'"));
+            if (result.DeliveredCount == 0 && (result.WorkflowInstanceIds == null || result.WorkflowInstanceIds.Count == 0))
+                return NotFound(new ErrorResponse(
+                    $"No subscription or start event found for signal '{request.SignalName}'"));
 
-                return Ok(new SendSignalResponse(result.DeliveredCount, result.WorkflowInstanceIds));
-            }
-            catch (Exception ex)
-            {
-                LogSignalDeliveryError(ex);
-                return StatusCode(500, new ErrorResponse("An error occurred while broadcasting the signal"));
-            }
+            return Ok(new SendSignalResponse(result.DeliveredCount, result.WorkflowInstanceIds));
         }
-
-        [LoggerMessage(EventId = 8003, Level = LogLevel.Error, Message = "Error broadcasting signal")]
-        private partial void LogSignalDeliveryError(Exception exception);
 
         [EnableRateLimiting("task-operation")]
         [HttpPost("complete-activity", Name = "CompleteActivity")]
@@ -116,31 +87,16 @@ namespace Fleans.Api.Controllers
             if (string.IsNullOrWhiteSpace(request.ActivityId))
                 return BadRequest(new ErrorResponse("ActivityId is required"));
 
-            try
-            {
-                // System.Text.Json deserializes ExpandoObject values as JsonElement,
-                // which Orleans cannot serialize. Re-parse via Newtonsoft to get proper .NET primitives.
-                var variables = request.Variables != null
-                    ? JsonConvert.DeserializeObject<ExpandoObject>(
-                        System.Text.Json.JsonSerializer.Serialize(request.Variables))!
-                    : new ExpandoObject();
+            // System.Text.Json deserializes ExpandoObject values as JsonElement,
+            // which Orleans cannot serialize. Re-parse via Newtonsoft to get proper .NET primitives.
+            var variables = request.Variables != null
+                ? JsonConvert.DeserializeObject<ExpandoObject>(
+                    System.Text.Json.JsonSerializer.Serialize(request.Variables))!
+                : new ExpandoObject();
 
-                await _commandService.CompleteActivity(request.WorkflowInstanceId, request.ActivityId, variables);
-                return Ok();
-            }
-            catch (KeyNotFoundException ex)
-            {
-                return NotFound(new ErrorResponse(ex.Message));
-            }
-            catch (Exception ex)
-            {
-                LogCompleteActivityError(ex);
-                return StatusCode(500, new ErrorResponse("An error occurred while completing the activity"));
-            }
+            await _commandService.CompleteActivity(request.WorkflowInstanceId, request.ActivityId, variables);
+            return Ok();
         }
-
-        [LoggerMessage(EventId = 8007, Level = LogLevel.Error, Message = "Error completing activity")]
-        private partial void LogCompleteActivityError(Exception exception);
 
         [EnableRateLimiting("read")]
         [HttpGet("definitions", Name = "ListDefinitions")]
@@ -220,16 +176,9 @@ namespace Fleans.Api.Controllers
             if (task == null)
                 return NotFound(new ErrorResponse($"User task '{activityInstanceId}' not found"));
 
-            try
-            {
-                LogUserTaskClaim(activityInstanceId, request.UserId);
-                await _commandService.ClaimUserTask(task.WorkflowInstanceId, activityInstanceId, request.UserId);
-                return Ok();
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Conflict(new ErrorResponse(ex.Message));
-            }
+            LogUserTaskClaim(activityInstanceId, request.UserId);
+            await _commandService.ClaimUserTask(task.WorkflowInstanceId, activityInstanceId, request.UserId);
+            return Ok();
         }
 
         [EnableRateLimiting("task-operation")]
@@ -240,16 +189,9 @@ namespace Fleans.Api.Controllers
             if (task == null)
                 return NotFound(new ErrorResponse($"User task '{activityInstanceId}' not found"));
 
-            try
-            {
-                LogUserTaskUnclaim(activityInstanceId);
-                await _commandService.UnclaimUserTask(task.WorkflowInstanceId, activityInstanceId);
-                return Ok();
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Conflict(new ErrorResponse(ex.Message));
-            }
+            LogUserTaskUnclaim(activityInstanceId);
+            await _commandService.UnclaimUserTask(task.WorkflowInstanceId, activityInstanceId);
+            return Ok();
         }
 
         [EnableRateLimiting("task-operation")]
@@ -263,25 +205,18 @@ namespace Fleans.Api.Controllers
             if (task == null)
                 return NotFound(new ErrorResponse($"User task '{activityInstanceId}' not found"));
 
-            try
+            var variables = new ExpandoObject();
+            if (request.Variables is { Count: > 0 })
             {
-                var variables = new ExpandoObject();
-                if (request.Variables is { Count: > 0 })
-                {
-                    var dict = (IDictionary<string, object?>)variables;
-                    foreach (var kvp in request.Variables)
-                        dict[kvp.Key] = kvp.Value;
-                }
+                var dict = (IDictionary<string, object?>)variables;
+                foreach (var kvp in request.Variables)
+                    dict[kvp.Key] = kvp.Value;
+            }
 
-                LogUserTaskComplete(activityInstanceId, request.UserId);
-                await _commandService.CompleteUserTask(
-                    task.WorkflowInstanceId, activityInstanceId, request.UserId, variables);
-                return Ok();
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Conflict(new ErrorResponse(ex.Message));
-            }
+            LogUserTaskComplete(activityInstanceId, request.UserId);
+            await _commandService.CompleteUserTask(
+                task.WorkflowInstanceId, activityInstanceId, request.UserId, variables);
+            return Ok();
         }
 
         [EnableRateLimiting("admin")]
@@ -291,15 +226,8 @@ namespace Fleans.Api.Controllers
             if (request == null || string.IsNullOrWhiteSpace(request.ProcessDefinitionKey))
                 return BadRequest(new ErrorResponse("ProcessDefinitionKey is required"));
 
-            try
-            {
-                var summary = await _commandService.DisableProcess(request.ProcessDefinitionKey);
-                return Ok(summary);
-            }
-            catch (KeyNotFoundException ex)
-            {
-                return NotFound(new ErrorResponse(ex.Message));
-            }
+            var summary = await _commandService.DisableProcess(request.ProcessDefinitionKey);
+            return Ok(summary);
         }
 
         [EnableRateLimiting("admin")]
@@ -309,15 +237,8 @@ namespace Fleans.Api.Controllers
             if (request == null || string.IsNullOrWhiteSpace(request.ProcessDefinitionKey))
                 return BadRequest(new ErrorResponse("ProcessDefinitionKey is required"));
 
-            try
-            {
-                var summary = await _commandService.EnableProcess(request.ProcessDefinitionKey);
-                return Ok(summary);
-            }
-            catch (KeyNotFoundException ex)
-            {
-                return NotFound(new ErrorResponse(ex.Message));
-            }
+            var summary = await _commandService.EnableProcess(request.ProcessDefinitionKey);
+            return Ok(summary);
         }
 
         [LoggerMessage(EventId = 8004, Level = LogLevel.Information,
