@@ -1,5 +1,4 @@
 using Fleans.Application.Grains;
-using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
@@ -30,8 +29,8 @@ public class MessageStartEventTests : WorkflowTestBase
             Messages = [new MessageDefinition("msg1", "orderReceived", null)]
         };
 
-        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        await factory.DeployWorkflow(workflow, "<placeholder/>");
+        var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("message-start-workflow");
+        await processGrain.DeployVersion(workflow, "<placeholder/>");
 
         // Act — fire message start event
         var listener = Cluster.GrainFactory.GetGrain<IMessageStartEventListenerGrain>("orderReceived");
@@ -64,8 +63,8 @@ public class MessageStartEventTests : WorkflowTestBase
             Messages = [new MessageDefinition("msg1", "orderWithVars", null)]
         };
 
-        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        await factory.DeployWorkflow(workflow, "<placeholder/>");
+        var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("message-vars-workflow");
+        await processGrain.DeployVersion(workflow, "<placeholder/>");
 
         // Act
         dynamic variables = new ExpandoObject();
@@ -90,8 +89,6 @@ public class MessageStartEventTests : WorkflowTestBase
     public async Task FireMessageStartEvent_TwoWorkflows_ShouldCreateBothInstances()
     {
         // Arrange — deploy two workflows listening on the same message
-        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-
         var workflow1 = new WorkflowDefinition
         {
             WorkflowId = "msg-start-wf1",
@@ -100,7 +97,8 @@ public class MessageStartEventTests : WorkflowTestBase
                 new MessageStartEvent("ms1", "msg1"), new EndEvent("end1"))],
             Messages = [new MessageDefinition("msg1", "sharedMessage", null)]
         };
-        await factory.DeployWorkflow(workflow1, "<placeholder/>");
+        var processGrain1 = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("msg-start-wf1");
+        await processGrain1.DeployVersion(workflow1, "<placeholder/>");
 
         var workflow2 = new WorkflowDefinition
         {
@@ -110,7 +108,8 @@ public class MessageStartEventTests : WorkflowTestBase
                 new MessageStartEvent("ms2", "msg2"), new EndEvent("end2"))],
             Messages = [new MessageDefinition("msg2", "sharedMessage", null)]
         };
-        await factory.DeployWorkflow(workflow2, "<placeholder/>");
+        var processGrain2 = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("msg-start-wf2");
+        await processGrain2.DeployVersion(workflow2, "<placeholder/>");
 
         // Act
         var listener = Cluster.GrainFactory.GetGrain<IMessageStartEventListenerGrain>("sharedMessage");
@@ -147,8 +146,8 @@ public class MessageStartEventTests : WorkflowTestBase
             Messages = [new MessageDefinition("msg1", "autoRegMsg", null)]
         };
 
-        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        await factory.DeployWorkflow(workflow, "<placeholder/>");
+        var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("auto-register-workflow");
+        await processGrain.DeployVersion(workflow, "<placeholder/>");
 
         // Assert — fire should create an instance
         var listener = Cluster.GrainFactory.GetGrain<IMessageStartEventListenerGrain>("autoRegMsg");
@@ -160,7 +159,7 @@ public class MessageStartEventTests : WorkflowTestBase
     public async Task Redeployment_WithoutMessageStartEvent_ShouldUnregisterListener()
     {
         // Arrange — deploy v1 with message start event
-        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
+        var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("redeploy-workflow");
 
         var messageStart = new MessageStartEvent("msgStart1", "msg1");
         var end = new EndEvent("end");
@@ -171,7 +170,7 @@ public class MessageStartEventTests : WorkflowTestBase
             SequenceFlows = [new SequenceFlow("f1", messageStart, end)],
             Messages = [new MessageDefinition("msg1", "redeployMsg", null)]
         };
-        await factory.DeployWorkflow(v1, "<placeholder/>");
+        await processGrain.DeployVersion(v1, "<placeholder/>");
 
         // Verify v1 registration works
         var listener = Cluster.GrainFactory.GetGrain<IMessageStartEventListenerGrain>("redeployMsg");
@@ -192,7 +191,7 @@ public class MessageStartEventTests : WorkflowTestBase
                 new SequenceFlow("f2", task, end2)
             ]
         };
-        await factory.DeployWorkflow(v2, "<placeholder/>");
+        await processGrain.DeployVersion(v2, "<placeholder/>");
 
         // Assert — listener should no longer create instances for this process
         var v2Ids = await listener.FireMessageStartEvent(new ExpandoObject());
@@ -203,7 +202,7 @@ public class MessageStartEventTests : WorkflowTestBase
     public async Task CorrelationDelivery_WhenSuccessful_ShouldNotTriggerStartEvent()
     {
         // Arrange — deploy a workflow with message intermediate catch event
-        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
+        var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("correlation-priority-wf");
 
         dynamic initVars = new ExpandoObject();
         initVars.orderId = "ORD-999";
@@ -222,10 +221,10 @@ public class MessageStartEventTests : WorkflowTestBase
             ],
             Messages = [new MessageDefinition("msg1", "priorityMsg", "orderId")]
         };
-        await factory.DeployWorkflow(correlationWorkflow, "<placeholder/>");
+        await processGrain.DeployVersion(correlationWorkflow, "<placeholder/>");
 
         // Start an instance with the correlation variable set
-        var instance = await factory.CreateWorkflowInstanceGrain("correlation-priority-wf");
+        var instance = await processGrain.CreateInstance();
         await instance.SetInitialVariables((ExpandoObject)initVars);
         await instance.StartWorkflow();
 

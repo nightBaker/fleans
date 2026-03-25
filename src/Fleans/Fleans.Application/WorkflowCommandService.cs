@@ -1,6 +1,5 @@
 using Fleans.Application.Grains;
 using Fleans.Application.QueryModels;
-using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
 using Microsoft.Extensions.Logging;
 using System.Dynamic;
@@ -9,8 +8,6 @@ namespace Fleans.Application;
 
 public partial class WorkflowCommandService : IWorkflowCommandService
 {
-    private const int WorkflowInstanceFactorySingletonId = 0;
-
     private readonly IGrainFactory _grainFactory;
     private readonly ILogger<WorkflowCommandService> _logger;
 
@@ -24,8 +21,8 @@ public partial class WorkflowCommandService : IWorkflowCommandService
     {
         LogStartingWorkflow(workflowId);
 
-        var workflowInstance = await _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstanceFactorySingletonId)
-                                                .CreateWorkflowInstanceGrain(workflowId);
+        var workflowInstance = await _grainFactory.GetGrain<IProcessDefinitionGrain>(workflowId)
+                                                .CreateInstance();
 
         await workflowInstance.StartWorkflow();
 
@@ -36,8 +33,9 @@ public partial class WorkflowCommandService : IWorkflowCommandService
     {
         LogStartingWorkflowByDefinition(processDefinitionId);
 
-        var workflowInstance = await _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstanceFactorySingletonId)
-            .CreateWorkflowInstanceGrainByProcessDefinitionId(processDefinitionId);
+        var key = ProcessDefinition.ExtractKeyFromId(processDefinitionId);
+        var workflowInstance = await _grainFactory.GetGrain<IProcessDefinitionGrain>(key)
+            .CreateInstanceByDefinitionId(processDefinitionId);
 
         await workflowInstance.StartWorkflow();
 
@@ -56,8 +54,8 @@ public partial class WorkflowCommandService : IWorkflowCommandService
     {
         LogDeployingWorkflow(workflow.WorkflowId);
 
-        var factoryGrain = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstanceFactorySingletonId);
-        return await factoryGrain.DeployWorkflow(workflow, bpmnXml);
+        var processGrain = _grainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId);
+        return await processGrain.DeployVersion(workflow, bpmnXml);
     }
 
     [LoggerMessage(EventId = 7000, Level = LogLevel.Information, Message = "Starting workflow {WorkflowId}")]
@@ -172,15 +170,15 @@ public partial class WorkflowCommandService : IWorkflowCommandService
     public async Task<ProcessDefinitionSummary> DisableProcess(string processDefinitionKey)
     {
         LogDisablingProcess(processDefinitionKey);
-        var factoryGrain = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstanceFactorySingletonId);
-        return await factoryGrain.DisableProcess(processDefinitionKey);
+        var processGrain = _grainFactory.GetGrain<IProcessDefinitionGrain>(processDefinitionKey);
+        return await processGrain.Disable();
     }
 
     public async Task<ProcessDefinitionSummary> EnableProcess(string processDefinitionKey)
     {
         LogEnablingProcess(processDefinitionKey);
-        var factoryGrain = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(WorkflowInstanceFactorySingletonId);
-        return await factoryGrain.EnableProcess(processDefinitionKey);
+        var processGrain = _grainFactory.GetGrain<IProcessDefinitionGrain>(processDefinitionKey);
+        return await processGrain.Enable();
     }
 
     [LoggerMessage(EventId = 7008, Level = LogLevel.Information,

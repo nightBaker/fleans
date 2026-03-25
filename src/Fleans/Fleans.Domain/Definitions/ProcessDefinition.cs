@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Orleans;
 
 namespace Fleans.Domain;
@@ -60,6 +61,19 @@ public sealed class ProcessDefinition
     /// Currently preserves the disabled state so that redeploying a disabled process
     /// does not silently re-enable it.
     /// </summary>
+    /// <summary>
+    /// Extracts the process definition key from a ProcessDefinitionId string.
+    /// Format: {key}:{version}:{timestamp}[-{collision}]
+    /// The key can contain colons, so we match the suffix pattern from the right.
+    /// </summary>
+    public static string ExtractKeyFromId(string processDefinitionId)
+    {
+        var match = Regex.Match(processDefinitionId, @":\d+:\d{8}T\d{6}\.\d{7}Z(-\d+)?$");
+        if (!match.Success)
+            throw new ArgumentException($"Invalid ProcessDefinitionId format: {processDefinitionId}", nameof(processDefinitionId));
+        return processDefinitionId[..match.Index];
+    }
+
     public void InheritStateFrom(ProcessDefinition previousVersion)
     {
         if (!previousVersion.IsActive)

@@ -1,6 +1,5 @@
 using Fleans.Application;
 using Fleans.Application.Grains;
-using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
@@ -17,13 +16,13 @@ namespace Fleans.Application.Tests
     {
         private WorkflowCommandService _commandService = null!;
         private IGrainFactory _grainFactory = null!;
-        private IWorkflowInstanceFactoryGrain _factoryGrain = null!;
+        private IProcessDefinitionGrain _processGrain = null!;
 
         [TestInitialize]
         public void Setup()
         {
             _grainFactory = Substitute.For<IGrainFactory>();
-            _factoryGrain = Substitute.For<IWorkflowInstanceFactoryGrain>();
+            _processGrain = Substitute.For<IProcessDefinitionGrain>();
             _commandService = new WorkflowCommandService(_grainFactory, NullLogger<WorkflowCommandService>.Instance);
         }
 
@@ -35,10 +34,10 @@ namespace Fleans.Application.Tests
             var workflowInstanceId = Guid.NewGuid();
             var workflowInstance = Substitute.For<IWorkflowInstanceGrain>();
 
-            _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0)
-                .Returns(_factoryGrain);
+            _grainFactory.GetGrain<IProcessDefinitionGrain>(Arg.Any<string>())
+                .Returns(_processGrain);
 
-            _factoryGrain.CreateWorkflowInstanceGrain(workflowId)
+            _processGrain.CreateInstance()
                 .Returns(workflowInstance);
 
             workflowInstance.GetWorkflowInstanceId()
@@ -50,7 +49,7 @@ namespace Fleans.Application.Tests
 
             // Assert
             Assert.AreEqual(workflowInstanceId, result);
-            await _factoryGrain.Received(1).CreateWorkflowInstanceGrain(workflowId);
+            await _processGrain.Received(1).CreateInstance();
             await workflowInstance.Received(1).StartWorkflow();
         }
 

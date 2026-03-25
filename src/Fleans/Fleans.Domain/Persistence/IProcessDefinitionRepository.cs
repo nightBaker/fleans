@@ -5,6 +5,7 @@ public interface IProcessDefinitionRepository
     Task<ProcessDefinition?> GetByIdAsync(string processDefinitionId);
     Task<List<ProcessDefinition>> GetByKeyAsync(string processDefinitionKey);
     Task<List<ProcessDefinition>> GetAllAsync();
+    Task<List<string>> GetAllDistinctKeysAsync();
     Task SaveAsync(ProcessDefinition definition);
     Task UpdateAsync(ProcessDefinition definition);
     Task DeleteAsync(string processDefinitionId);

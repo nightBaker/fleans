@@ -1,4 +1,3 @@
-using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.States;
@@ -63,15 +62,15 @@ public partial class SignalStartEventListenerGrain : Grain, ISignalStartEventLis
             return [];
         }
 
-        var factory = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-
         var tasks = State.ProcessDefinitionKeys.Select(async processDefinitionKey =>
         {
             try
             {
+                var processGrain = _grainFactory.GetGrain<IProcessDefinitionGrain>(processDefinitionKey);
+
                 // Guard: skip disabled processes to prevent race condition
                 // between DisableProcess persisting IsActive=false and unregistering listeners
-                if (!await factory.IsProcessActive(processDefinitionKey))
+                if (!await processGrain.IsActive())
                 {
                     LogProcessDisabledSkipped(signalName, processDefinitionKey);
                     return (Guid?)null;
@@ -80,7 +79,7 @@ public partial class SignalStartEventListenerGrain : Grain, ISignalStartEventLis
                 var instanceId = Guid.NewGuid();
                 var instance = _grainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
 
-                var definition = await factory.GetLatestWorkflowDefinition(processDefinitionKey);
+                var definition = await processGrain.GetLatestDefinition();
 
                 var signalStartActivityId = FindSignalStartActivityId(definition, signalName)
                     ?? throw new InvalidOperationException(
