@@ -34,6 +34,7 @@ builder.UseOrleans(siloBuilder =>
 
 // Add services to the container.
 builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
 // Add services to the container.
 builder.Services.AddControllers();
@@ -107,6 +108,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseExceptionHandler();
 
 if (rateLimitConfig is not null)
     app.UseRateLimiter();
