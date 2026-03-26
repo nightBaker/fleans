@@ -1,5 +1,4 @@
 using Fleans.Application.Grains;
-using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Events;
@@ -127,10 +126,10 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
             Messages = [msgDef]
         };
 
-        // Deploy via factory so ProcessDefinitionId is persisted
-        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        await factory.DeployWorkflow(workflow, "<bpmn/>");
-        var grain = await factory.CreateWorkflowInstanceGrain("mid-exec-recovery");
+        // Deploy via processGrain so ProcessDefinitionId is persisted
+        var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("mid-exec-recovery");
+        await processGrain.DeployVersion(workflow, "<bpmn/>");
+        var grain = await processGrain.CreateInstance();
         var instanceId = await grain.GetWorkflowInstanceId();
 
         await grain.StartWorkflow();

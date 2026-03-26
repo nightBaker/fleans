@@ -1,5 +1,4 @@
 using Fleans.Application.Grains;
-using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
@@ -35,10 +34,10 @@ public class MultiInstanceTests : WorkflowTestBase
             ]
         };
 
-        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        await factory.DeployWorkflow(workflow, "<xml/>");
+        var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId);
+        await processGrain.DeployVersion(workflow, "<xml/>");
 
-        var instance = await factory.CreateWorkflowInstanceGrain("mi-cardinality-test");
+        var instance = await processGrain.CreateInstance();
         var instanceId = instance.GetPrimaryKey();
 
         // Act
@@ -87,10 +86,10 @@ public class MultiInstanceTests : WorkflowTestBase
             ]
         };
 
-        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        await factory.DeployWorkflow(workflow, "<xml/>");
+        var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId);
+        await processGrain.DeployVersion(workflow, "<xml/>");
 
-        var instance = await factory.CreateWorkflowInstanceGrain("mi-collection-test");
+        var instance = await processGrain.CreateInstance();
         var instanceId = instance.GetPrimaryKey();
 
         // Set initial variables with a list of items
@@ -141,10 +140,10 @@ public class MultiInstanceTests : WorkflowTestBase
             ]
         };
 
-        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        await factory.DeployWorkflow(workflow, "<xml/>");
+        var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId);
+        await processGrain.DeployVersion(workflow, "<xml/>");
 
-        var instance = await factory.CreateWorkflowInstanceGrain("mi-sequential-test");
+        var instance = await processGrain.CreateInstance();
         var instanceId = instance.GetPrimaryKey();
 
         // Act
@@ -184,10 +183,10 @@ public class MultiInstanceTests : WorkflowTestBase
             ]
         };
 
-        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        await factory.DeployWorkflow(workflow, "<xml/>");
+        var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId);
+        await processGrain.DeployVersion(workflow, "<xml/>");
 
-        var instance = await factory.CreateWorkflowInstanceGrain("mi-cleanup-test");
+        var instance = await processGrain.CreateInstance();
         var instanceId = instance.GetPrimaryKey();
 
         // Act
@@ -230,10 +229,10 @@ public class MultiInstanceTests : WorkflowTestBase
             ]
         };
 
-        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        await factory.DeployWorkflow(workflow, "<xml/>");
+        var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId);
+        await processGrain.DeployVersion(workflow, "<xml/>");
 
-        var instance = await factory.CreateWorkflowInstanceGrain("mi-empty-test");
+        var instance = await processGrain.CreateInstance();
         var instanceId = instance.GetPrimaryKey();
 
         // Set initial variables with an empty list
@@ -275,10 +274,10 @@ public class MultiInstanceTests : WorkflowTestBase
             ]
         };
 
-        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        await factory.DeployWorkflow(workflow, "<xml/>");
+        var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId);
+        await processGrain.DeployVersion(workflow, "<xml/>");
 
-        var instance = await factory.CreateWorkflowInstanceGrain("mi-fail-test");
+        var instance = await processGrain.CreateInstance();
         var instanceId = instance.GetPrimaryKey();
 
         // Act
@@ -334,10 +333,10 @@ public class MultiInstanceTests : WorkflowTestBase
             ]
         };
 
-        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        await factory.DeployWorkflow(workflow, "<xml/>");
+        var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId);
+        await processGrain.DeployVersion(workflow, "<xml/>");
 
-        var instance = await factory.CreateWorkflowInstanceGrain("mi-seq-collection-test");
+        var instance = await processGrain.CreateInstance();
         var instanceId = instance.GetPrimaryKey();
 
         dynamic initVars = new ExpandoObject();

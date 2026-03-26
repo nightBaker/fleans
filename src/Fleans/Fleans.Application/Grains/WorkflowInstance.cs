@@ -209,8 +209,9 @@ public partial class WorkflowInstance :
         var processDefId = State.ProcessDefinitionId
             ?? throw new InvalidOperationException("ProcessDefinitionId not set — call SetWorkflow first.");
 
-        var grain = _grainFactory.GetGrain<IProcessDefinitionGrain>(processDefId);
-        _workflowDefinition = await grain.GetDefinition();
+        var key = ProcessDefinition.ExtractKeyFromId(processDefId);
+        var grain = _grainFactory.GetGrain<IProcessDefinitionGrain>(key);
+        _workflowDefinition = await grain.GetDefinitionById(processDefId);
     }
 
     private void SetWorkflowRequestContext()

@@ -1,5 +1,4 @@
 using Fleans.Application.Grains;
-using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Errors;
@@ -54,8 +53,8 @@ public class SignalStartEventTests : WorkflowTestBase
         // Arrange
         var workflow = CreateSignalStartWorkflow("signal-start-workflow", "orderSignal");
 
-        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        await factory.DeployWorkflow(workflow, "<placeholder/>");
+        var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("signal-start-workflow");
+        await processGrain.DeployVersion(workflow, "<placeholder/>");
 
         // Act
         var listener = Cluster.GrainFactory.GetGrain<ISignalStartEventListenerGrain>("orderSignal");
@@ -72,8 +71,6 @@ public class SignalStartEventTests : WorkflowTestBase
     public async Task FireSignalStartEvent_TwoWorkflows_ShouldCreateBothInstances()
     {
         // Arrange
-        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-
         var start1 = new SignalStartEvent("ss1", "sig1");
         var end1 = new EndEvent("end1");
         var workflow1 = new WorkflowDefinition
@@ -83,7 +80,8 @@ public class SignalStartEventTests : WorkflowTestBase
             SequenceFlows = [new SequenceFlow("f1", start1, end1)],
             Signals = [new SignalDefinition("sig1", "sharedSignal")]
         };
-        await factory.DeployWorkflow(workflow1, "<placeholder/>");
+        var processGrain1 = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("sig-start-wf1");
+        await processGrain1.DeployVersion(workflow1, "<placeholder/>");
 
         var start2 = new SignalStartEvent("ss2", "sig2");
         var end2 = new EndEvent("end2");
@@ -94,7 +92,8 @@ public class SignalStartEventTests : WorkflowTestBase
             SequenceFlows = [new SequenceFlow("f2", start2, end2)],
             Signals = [new SignalDefinition("sig2", "sharedSignal")]
         };
-        await factory.DeployWorkflow(workflow2, "<placeholder/>");
+        var processGrain2 = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("sig-start-wf2");
+        await processGrain2.DeployVersion(workflow2, "<placeholder/>");
 
         // Act
         var listener = Cluster.GrainFactory.GetGrain<ISignalStartEventListenerGrain>("sharedSignal");
@@ -122,8 +121,8 @@ public class SignalStartEventTests : WorkflowTestBase
         // Arrange & Act
         var workflow = CreateSignalStartWorkflow("auto-register-signal-wf", "autoRegSignal");
 
-        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        await factory.DeployWorkflow(workflow, "<placeholder/>");
+        var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("auto-register-signal-wf");
+        await processGrain.DeployVersion(workflow, "<placeholder/>");
 
         // Assert — fire should create an instance without manual registration
         var listener = Cluster.GrainFactory.GetGrain<ISignalStartEventListenerGrain>("autoRegSignal");
@@ -135,10 +134,10 @@ public class SignalStartEventTests : WorkflowTestBase
     public async Task Redeployment_ShouldUnregisterRemovedSignals()
     {
         // Arrange — deploy v1 with signal start event
-        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
+        var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("redeploy-signal-wf");
 
         var v1 = CreateSignalStartWorkflow("redeploy-signal-wf", "redeploySignal");
-        await factory.DeployWorkflow(v1, "<placeholder/>");
+        await processGrain.DeployVersion(v1, "<placeholder/>");
 
         // Verify v1 registration works
         var listener = Cluster.GrainFactory.GetGrain<ISignalStartEventListenerGrain>("redeploySignal");
@@ -159,7 +158,7 @@ public class SignalStartEventTests : WorkflowTestBase
                 new SequenceFlow("f2", task, end)
             ]
         };
-        await factory.DeployWorkflow(v2, "<placeholder/>");
+        await processGrain.DeployVersion(v2, "<placeholder/>");
 
         // Assert — listener should no longer create instances for this process
         var v2Ids = await listener.FireSignalStartEvent();
@@ -169,8 +168,6 @@ public class SignalStartEventTests : WorkflowTestBase
     [TestMethod]
     public async Task SendSignal_ShouldFanOut_ToBothRunningAndStartEvents()
     {
-        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-
         // Workflow A: StartEvent -> SignalIntermediateCatchEvent -> EndEvent
         // (this one gets started manually and waits for signal)
         var sigDefA = new SignalDefinition("sigA", "fanoutSignal");
@@ -188,17 +185,19 @@ public class SignalStartEventTests : WorkflowTestBase
             ],
             Signals = [sigDefA]
         };
-        await factory.DeployWorkflow(workflowA, "<placeholder/>");
+        var processGrainA = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("fanout-catch-wf");
+        await processGrainA.DeployVersion(workflowA, "<placeholder/>");
 
         // Start an instance of Workflow A and wait for it to reach the catch event
-        var instanceA = await factory.CreateWorkflowInstanceGrain("fanout-catch-wf");
+        var instanceA = await processGrainA.CreateInstance();
         await instanceA.StartWorkflow();
         await Task.Delay(500);
 
         // Workflow B: SignalStartEvent -> ScriptTask -> EndEvent
         // (this one gets created by signal)
         var workflowB = CreateSignalStartWorkflow("fanout-start-wf", "fanoutSignal");
-        await factory.DeployWorkflow(workflowB, "<placeholder/>");
+        var processGrainB = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("fanout-start-wf");
+        await processGrainB.DeployVersion(workflowB, "<placeholder/>");
 
         // Act — simulate fan-out: broadcast to running instances + fire start event
         var signalCorrelation = Cluster.GrainFactory.GetGrain<ISignalCorrelationGrain>("fanoutSignal");
@@ -226,8 +225,8 @@ public class SignalStartEventTests : WorkflowTestBase
     {
         // Arrange
         var workflow = CreateSignalStartWorkflowWithTask("sig-fail-500-wf", "fail500Signal");
-        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        await factory.DeployWorkflow(workflow, "<placeholder/>");
+        var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("sig-fail-500-wf");
+        await processGrain.DeployVersion(workflow, "<placeholder/>");
 
         var listener = Cluster.GrainFactory.GetGrain<ISignalStartEventListenerGrain>("fail500Signal");
         var instanceIds = await listener.FireSignalStartEvent();
@@ -252,8 +251,8 @@ public class SignalStartEventTests : WorkflowTestBase
     {
         // Arrange
         var workflow = CreateSignalStartWorkflowWithTask("sig-fail-400-wf", "fail400Signal");
-        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        await factory.DeployWorkflow(workflow, "<placeholder/>");
+        var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("sig-fail-400-wf");
+        await processGrain.DeployVersion(workflow, "<placeholder/>");
 
         var listener = Cluster.GrainFactory.GetGrain<ISignalStartEventListenerGrain>("fail400Signal");
         var instanceIds = await listener.FireSignalStartEvent();
@@ -277,8 +276,8 @@ public class SignalStartEventTests : WorkflowTestBase
     {
         // Arrange
         var workflow = CreateSignalStartWorkflowWithTask("sig-fail-transition-wf", "failTransSignal");
-        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        await factory.DeployWorkflow(workflow, "<placeholder/>");
+        var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("sig-fail-transition-wf");
+        await processGrain.DeployVersion(workflow, "<placeholder/>");
 
         var listener = Cluster.GrainFactory.GetGrain<ISignalStartEventListenerGrain>("failTransSignal");
         var instanceIds = await listener.FireSignalStartEvent();
@@ -302,8 +301,8 @@ public class SignalStartEventTests : WorkflowTestBase
     {
         // Arrange
         var workflow = CreateSignalStartWorkflowWithTask("sig-fail-novar-wf", "failNoVarSignal");
-        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        await factory.DeployWorkflow(workflow, "<placeholder/>");
+        var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("sig-fail-novar-wf");
+        await processGrain.DeployVersion(workflow, "<placeholder/>");
 
         var listener = Cluster.GrainFactory.GetGrain<ISignalStartEventListenerGrain>("failNoVarSignal");
         var instanceIds = await listener.FireSignalStartEvent();
