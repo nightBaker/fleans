@@ -350,6 +350,6 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
     [LoggerMessage(EventId = 6004, Level = LogLevel.Warning, Message = "Process {ProcessDefinitionKey} redeployed while disabled — new version remains disabled")]
     private partial void LogProcessRedeployedWhileDisabled(string processDefinitionKey);
 
-    [LoggerMessage(EventId = 7000, Level = LogLevel.Warning, Message = "Process definition '{ProcessDefinitionId}' not found in storage")]
+    [LoggerMessage(EventId = 6005, Level = LogLevel.Warning, Message = "Process definition '{ProcessDefinitionId}' not found in storage")]
     private partial void LogDefinitionNotFound(string processDefinitionId);
 }
