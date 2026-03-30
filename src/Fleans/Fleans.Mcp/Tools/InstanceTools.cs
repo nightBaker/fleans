@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json;
 using Fleans.Application;
+using Fleans.Application.QueryModels;
 using ModelContextProtocol;
 using ModelContextProtocol.Server;
 
@@ -37,15 +38,20 @@ public static class InstanceTools
         }
     }
 
-    [McpServerTool, Description("List all workflow instances for a given process definition key. Returns instance IDs, status, and timestamps.")]
+    [McpServerTool, Description("List workflow instances for a given process definition key with optional pagination. Returns paginated results with instance IDs, status, and timestamps.")]
     public static async Task<string> ListInstances(
         IWorkflowQueryService queryService,
-        [Description("The process definition key (human-readable identifier, e.g. 'my-process')")] string processDefinitionKey)
+        [Description("The process definition key (human-readable identifier, e.g. 'my-process')")] string processDefinitionKey,
+        [Description("Page number (1-based, default: 1)")] int page = 1,
+        [Description("Items per page (1-100, default: 50)")] int pageSize = 50,
+        [Description("Sieve sort expression (e.g. '-CreatedAt' for newest first)")] string? sorts = null,
+        [Description("Sieve filter expression (e.g. 'IsCompleted==true')")] string? filters = null)
     {
         try
         {
-            var instances = await queryService.GetInstancesByKey(processDefinitionKey);
-            return JsonSerializer.Serialize(instances, JsonOptions);
+            var request = new PageRequest(page, pageSize, sorts, filters);
+            var result = await queryService.GetInstancesByKey(processDefinitionKey, request);
+            return JsonSerializer.Serialize(result, JsonOptions);
         }
         catch (Exception ex)
         {

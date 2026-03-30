@@ -2,10 +2,12 @@ using Fleans.Application.QueryModels;
 using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
+using Fleans.Domain.Events;
 using Fleans.Domain.Persistence;
 using Fleans.Domain.Sequences;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Orleans.EventSourcing.CustomStorage;
 using Orleans.TestingHost;
 
 namespace Fleans.Application.Tests
@@ -143,13 +145,14 @@ namespace Fleans.Application.Tests
         {
             public void Configure(ISiloBuilder hostBuilder) =>
                 hostBuilder
-                    .AddMemoryGrainStorage(GrainStorageNames.WorkflowInstances)
+                    .AddCustomStorageBasedLogConsistencyProviderAsDefault()
                     .AddMemoryGrainStorage(GrainStorageNames.ProcessDefinitions)
                     .AddMemoryGrainStorage(GrainStorageNames.UserTasks)
                     .ConfigureServices(services =>
                     {
                         services.AddSingleton<IProcessDefinitionRepository, StubProcessDefinitionRepository>();
                         services.AddSingleton<IWorkflowQueryService, StubWorkflowQueryService>();
+                        services.AddSingleton<IEventStore, InMemoryEventStore>();
                     });
         }
 
@@ -157,14 +160,14 @@ namespace Fleans.Application.Tests
         {
             public Task<InstanceStateSnapshot?> GetStateSnapshot(Guid workflowInstanceId) => Task.FromResult<InstanceStateSnapshot?>(null);
             public Task<IReadOnlyList<ProcessDefinitionSummary>> GetAllProcessDefinitions() => Task.FromResult<IReadOnlyList<ProcessDefinitionSummary>>([]);
-            public Task<IReadOnlyList<WorkflowInstanceInfo>> GetInstancesByKey(string processDefinitionKey) => Task.FromResult<IReadOnlyList<WorkflowInstanceInfo>>([]);
-            public Task<IReadOnlyList<WorkflowInstanceInfo>> GetInstancesByKeyAndVersion(string key, int version) => Task.FromResult<IReadOnlyList<WorkflowInstanceInfo>>([]);
+            public Task<PagedResult<ProcessDefinitionSummary>> GetAllProcessDefinitions(PageRequest page) => Task.FromResult(new PagedResult<ProcessDefinitionSummary>([], 0, page.Page, page.PageSize));
             public Task<PagedResult<WorkflowInstanceInfo>> GetInstancesByKey(string processDefinitionKey, PageRequest page) => Task.FromResult(new PagedResult<WorkflowInstanceInfo>([], 0, page.Page, page.PageSize));
             public Task<PagedResult<WorkflowInstanceInfo>> GetInstancesByKeyAndVersion(string key, int version, PageRequest page) => Task.FromResult(new PagedResult<WorkflowInstanceInfo>([], 0, page.Page, page.PageSize));
             public Task<string?> GetBpmnXml(Guid instanceId) => Task.FromResult<string?>(null);
             public Task<string?> GetBpmnXmlByKey(string processDefinitionKey) => Task.FromResult<string?>(null);
             public Task<string?> GetBpmnXmlByKeyAndVersion(string key, int version) => Task.FromResult<string?>(null);
             public Task<IReadOnlyList<DTOs.UserTaskResponse>> GetPendingUserTasks(string? assignee = null, string? candidateGroup = null) => Task.FromResult<IReadOnlyList<DTOs.UserTaskResponse>>([]);
+            public Task<PagedResult<DTOs.UserTaskResponse>> GetPendingUserTasks(string? assignee, string? candidateGroup, PageRequest page) => Task.FromResult(new PagedResult<DTOs.UserTaskResponse>([], 0, page.Page, page.PageSize));
             public Task<DTOs.UserTaskResponse?> GetUserTask(Guid activityInstanceId) => Task.FromResult<DTOs.UserTaskResponse?>(null);
             public Task<IReadOnlyList<Domain.States.UserTaskState>> GetActiveUserTasksForWorkflow(Guid workflowInstanceId) => Task.FromResult<IReadOnlyList<Domain.States.UserTaskState>>([]);
         }

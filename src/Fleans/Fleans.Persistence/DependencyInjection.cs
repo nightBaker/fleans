@@ -21,10 +21,6 @@ public static class EfCorePersistenceDependencyInjection
         services.AddDbContextFactory<FleanCommandDbContext>(configureCommandDb);
         services.AddDbContextFactory<FleanQueryDbContext>(configureQueryDb ?? configureCommandDb);
 
-        services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.WorkflowInstances,
-            (sp, _) => new EfCoreWorkflowInstanceGrainStorage(
-                sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
-
         services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.ProcessDefinitions,
             (sp, _) => new EfCoreProcessDefinitionGrainStorage(
                 sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
@@ -63,5 +59,9 @@ public static class EfCorePersistenceDependencyInjection
         services.AddSingleton<IWorkflowQueryService, WorkflowQueryService>();
         services.AddSingleton<IWorkflowStateProjection, EfCoreWorkflowStateProjection>();
         services.AddSingleton<EfCoreEventStore>();
+        services.AddSingleton<IEventStore>(sp => sp.GetRequiredService<EfCoreEventStore>());
+
+        services.AddHealthChecks()
+            .AddDbContextCheck<FleanCommandDbContext>("database");
     }
 }

@@ -1,6 +1,8 @@
 using Fleans.Application;
+using Fleans.Application.QueryModels;
 using Fleans.ServiceDefaults.DTOs;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Newtonsoft.Json;
 using System.Dynamic;
 
@@ -24,6 +26,7 @@ namespace Fleans.Api.Controllers
             _workflowQueryService = workflowQueryService;
         }
 
+        [EnableRateLimiting("workflow-mutation")]
         [HttpPost("start", Name = "StartWorkflow")]
         public async Task<IActionResult> StartWorkflow([FromBody] StartWorkflowRequest request)
         {
@@ -32,76 +35,50 @@ namespace Fleans.Api.Controllers
                 return BadRequest(new ErrorResponse("WorkflowId is required"));
             }
 
-            try
-            {
-                var instanceId = await _commandService.StartWorkflow(request.WorkflowId);
-                return Ok(new StartWorkflowResponse(instanceId));
-            }
-            catch (KeyNotFoundException ex)
-            {
-                return NotFound(new ErrorResponse(ex.Message));
-            }
+            var instanceId = await _commandService.StartWorkflow(request.WorkflowId);
+            return Ok(new StartWorkflowResponse(instanceId));
         }
 
+        [EnableRateLimiting("workflow-mutation")]
         [HttpPost("message", Name = "SendMessage")]
         public async Task<IActionResult> SendMessage([FromBody] SendMessageRequest request)
         {
             if (request == null || string.IsNullOrWhiteSpace(request.MessageName))
                 return BadRequest(new ErrorResponse("MessageName is required"));
 
-            try
-            {
-                // System.Text.Json deserializes ExpandoObject values as JsonElement,
-                // which Orleans cannot serialize. Re-parse via Newtonsoft to get proper .NET primitives.
-                var variables = request.Variables != null
-                    ? JsonConvert.DeserializeObject<ExpandoObject>(
-                        System.Text.Json.JsonSerializer.Serialize(request.Variables))!
-                    : new ExpandoObject();
+            // System.Text.Json deserializes ExpandoObject values as JsonElement,
+            // which Orleans cannot serialize. Re-parse via Newtonsoft to get proper .NET primitives.
+            var variables = request.Variables != null
+                ? JsonConvert.DeserializeObject<ExpandoObject>(
+                    System.Text.Json.JsonSerializer.Serialize(request.Variables))!
+                : new ExpandoObject();
 
-                var result = await _commandService.SendMessage(request.MessageName, request.CorrelationKey, variables);
+            var result = await _commandService.SendMessage(request.MessageName, request.CorrelationKey, variables);
 
-                if (!result.Delivered)
-                    return NotFound(new ErrorResponse(
-                        $"No subscription or start event found for message '{request.MessageName}'"));
+            if (!result.Delivered)
+                return NotFound(new ErrorResponse(
+                    $"No subscription or start event found for message '{request.MessageName}'"));
 
-                return Ok(new SendMessageResponse(result.Delivered, result.WorkflowInstanceIds));
-            }
-            catch (Exception ex)
-            {
-                LogMessageDeliveryError(ex);
-                return StatusCode(500, new ErrorResponse("An error occurred while delivering the message"));
-            }
+            return Ok(new SendMessageResponse(result.Delivered, result.WorkflowInstanceIds));
         }
 
-        [LoggerMessage(EventId = 8002, Level = LogLevel.Error, Message = "Error delivering message")]
-        private partial void LogMessageDeliveryError(Exception exception);
-
+        [EnableRateLimiting("workflow-mutation")]
         [HttpPost("signal", Name = "SendSignal")]
         public async Task<IActionResult> SendSignal([FromBody] SendSignalRequest request)
         {
             if (request == null || string.IsNullOrWhiteSpace(request.SignalName))
                 return BadRequest(new ErrorResponse("SignalName is required"));
 
-            try
-            {
-                var result = await _commandService.SendSignal(request.SignalName);
+            var result = await _commandService.SendSignal(request.SignalName);
 
-                if (result.DeliveredCount == 0 && (result.WorkflowInstanceIds == null || result.WorkflowInstanceIds.Count == 0))
-                    return NotFound(new ErrorResponse(
-                        $"No subscription or start event found for signal '{request.SignalName}'"));
+            if (result.DeliveredCount == 0 && (result.WorkflowInstanceIds == null || result.WorkflowInstanceIds.Count == 0))
+                return NotFound(new ErrorResponse(
+                    $"No subscription or start event found for signal '{request.SignalName}'"));
 
-                return Ok(new SendSignalResponse(result.DeliveredCount, result.WorkflowInstanceIds));
-            }
-            catch (Exception ex)
-            {
-                LogSignalDeliveryError(ex);
-                return StatusCode(500, new ErrorResponse("An error occurred while broadcasting the signal"));
-            }
+            return Ok(new SendSignalResponse(result.DeliveredCount, result.WorkflowInstanceIds));
         }
 
-        [LoggerMessage(EventId = 8003, Level = LogLevel.Error, Message = "Error broadcasting signal")]
-        private partial void LogSignalDeliveryError(Exception exception);
-
+        [EnableRateLimiting("task-operation")]
         [HttpPost("complete-activity", Name = "CompleteActivity")]
         public async Task<IActionResult> CompleteActivity([FromBody] CompleteActivityRequest request)
         {
@@ -110,41 +87,74 @@ namespace Fleans.Api.Controllers
             if (string.IsNullOrWhiteSpace(request.ActivityId))
                 return BadRequest(new ErrorResponse("ActivityId is required"));
 
-            try
-            {
-                // System.Text.Json deserializes ExpandoObject values as JsonElement,
-                // which Orleans cannot serialize. Re-parse via Newtonsoft to get proper .NET primitives.
-                var variables = request.Variables != null
-                    ? JsonConvert.DeserializeObject<ExpandoObject>(
-                        System.Text.Json.JsonSerializer.Serialize(request.Variables))!
-                    : new ExpandoObject();
+            // System.Text.Json deserializes ExpandoObject values as JsonElement,
+            // which Orleans cannot serialize. Re-parse via Newtonsoft to get proper .NET primitives.
+            var variables = request.Variables != null
+                ? JsonConvert.DeserializeObject<ExpandoObject>(
+                    System.Text.Json.JsonSerializer.Serialize(request.Variables))!
+                : new ExpandoObject();
 
-                await _commandService.CompleteActivity(request.WorkflowInstanceId, request.ActivityId, variables);
-                return Ok();
-            }
-            catch (KeyNotFoundException ex)
-            {
-                return NotFound(new ErrorResponse(ex.Message));
-            }
-            catch (Exception ex)
-            {
-                LogCompleteActivityError(ex);
-                return StatusCode(500, new ErrorResponse("An error occurred while completing the activity"));
-            }
+            await _commandService.CompleteActivity(request.WorkflowInstanceId, request.ActivityId, variables);
+            return Ok();
         }
 
-        [LoggerMessage(EventId = 8007, Level = LogLevel.Error, Message = "Error completing activity")]
-        private partial void LogCompleteActivityError(Exception exception);
+        [EnableRateLimiting("read")]
+        [HttpGet("definitions", Name = "ListDefinitions")]
+        public async Task<IActionResult> ListDefinitions(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20,
+            [FromQuery] string? sorts = null,
+            [FromQuery] string? filters = null)
+        {
+            var request = new PageRequest(page, pageSize, sorts, filters);
+            var result = await _workflowQueryService.GetAllProcessDefinitions(request);
+            return Ok(result);
+        }
 
+        [EnableRateLimiting("read")]
+        [HttpGet("definitions/{key}/instances", Name = "ListInstancesByKey")]
+        public async Task<IActionResult> ListInstancesByKey(
+            string key,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20,
+            [FromQuery] string? sorts = null,
+            [FromQuery] string? filters = null)
+        {
+            var request = new PageRequest(page, pageSize, sorts, filters);
+            var result = await _workflowQueryService.GetInstancesByKey(key, request);
+            return Ok(result);
+        }
+
+        [EnableRateLimiting("read")]
+        [HttpGet("definitions/{key}/{version:int}/instances", Name = "ListInstancesByKeyAndVersion")]
+        public async Task<IActionResult> ListInstancesByKeyAndVersion(
+            string key, int version,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20,
+            [FromQuery] string? sorts = null,
+            [FromQuery] string? filters = null)
+        {
+            var request = new PageRequest(page, pageSize, sorts, filters);
+            var result = await _workflowQueryService.GetInstancesByKeyAndVersion(key, version, request);
+            return Ok(result);
+        }
+
+        [EnableRateLimiting("read")]
         [HttpGet("tasks", Name = "GetPendingTasks")]
         public async Task<IActionResult> GetPendingTasks(
             [FromQuery] string? assignee = null,
-            [FromQuery] string? candidateGroup = null)
+            [FromQuery] string? candidateGroup = null,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20,
+            [FromQuery] string? sorts = null,
+            [FromQuery] string? filters = null)
         {
-            var tasks = await _workflowQueryService.GetPendingUserTasks(assignee, candidateGroup);
-            return Ok(tasks);
+            var request = new PageRequest(page, pageSize, sorts, filters);
+            var result = await _workflowQueryService.GetPendingUserTasks(assignee, candidateGroup, request);
+            return Ok(result);
         }
 
+        [EnableRateLimiting("read")]
         [HttpGet("tasks/{activityInstanceId:guid}", Name = "GetTask")]
         public async Task<IActionResult> GetTask(Guid activityInstanceId)
         {
@@ -155,6 +165,7 @@ namespace Fleans.Api.Controllers
             return Ok(task);
         }
 
+        [EnableRateLimiting("task-operation")]
         [HttpPost("tasks/{activityInstanceId:guid}/claim", Name = "ClaimTask")]
         public async Task<IActionResult> ClaimTask(Guid activityInstanceId, [FromBody] ClaimTaskRequest request)
         {
@@ -165,18 +176,12 @@ namespace Fleans.Api.Controllers
             if (task == null)
                 return NotFound(new ErrorResponse($"User task '{activityInstanceId}' not found"));
 
-            try
-            {
-                LogUserTaskClaim(activityInstanceId, request.UserId);
-                await _commandService.ClaimUserTask(task.WorkflowInstanceId, activityInstanceId, request.UserId);
-                return Ok();
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Conflict(new ErrorResponse(ex.Message));
-            }
+            LogUserTaskClaim(activityInstanceId, request.UserId);
+            await _commandService.ClaimUserTask(task.WorkflowInstanceId, activityInstanceId, request.UserId);
+            return Ok();
         }
 
+        [EnableRateLimiting("task-operation")]
         [HttpPost("tasks/{activityInstanceId:guid}/unclaim", Name = "UnclaimTask")]
         public async Task<IActionResult> UnclaimTask(Guid activityInstanceId)
         {
@@ -184,18 +189,12 @@ namespace Fleans.Api.Controllers
             if (task == null)
                 return NotFound(new ErrorResponse($"User task '{activityInstanceId}' not found"));
 
-            try
-            {
-                LogUserTaskUnclaim(activityInstanceId);
-                await _commandService.UnclaimUserTask(task.WorkflowInstanceId, activityInstanceId);
-                return Ok();
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Conflict(new ErrorResponse(ex.Message));
-            }
+            LogUserTaskUnclaim(activityInstanceId);
+            await _commandService.UnclaimUserTask(task.WorkflowInstanceId, activityInstanceId);
+            return Ok();
         }
 
+        [EnableRateLimiting("task-operation")]
         [HttpPost("tasks/{activityInstanceId:guid}/complete", Name = "CompleteTask")]
         public async Task<IActionResult> CompleteTask(Guid activityInstanceId, [FromBody] CompleteTaskRequest request)
         {
@@ -206,58 +205,39 @@ namespace Fleans.Api.Controllers
             if (task == null)
                 return NotFound(new ErrorResponse($"User task '{activityInstanceId}' not found"));
 
-            try
-            {
-                // System.Text.Json deserializes values as JsonElement,
-                // which Orleans cannot serialize. Re-parse via Newtonsoft to get proper .NET primitives.
-                var variables = request.Variables is { Count: > 0 }
-                    ? JsonConvert.DeserializeObject<ExpandoObject>(
-                        System.Text.Json.JsonSerializer.Serialize(request.Variables))!
-                    : new ExpandoObject();
+            // System.Text.Json deserializes values as JsonElement,
+            // which Orleans cannot serialize. Re-parse via Newtonsoft to get proper .NET primitives.
+            var variables = request.Variables is { Count: > 0 }
+                ? JsonConvert.DeserializeObject<ExpandoObject>(
+                    System.Text.Json.JsonSerializer.Serialize(request.Variables))!
+                : new ExpandoObject();
 
-                LogUserTaskComplete(activityInstanceId, request.UserId);
-                await _commandService.CompleteUserTask(
-                    task.WorkflowInstanceId, activityInstanceId, request.UserId, variables);
-                return Ok();
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Conflict(new ErrorResponse(ex.Message));
-            }
+            LogUserTaskComplete(activityInstanceId, request.UserId);
+            await _commandService.CompleteUserTask(
+                task.WorkflowInstanceId, activityInstanceId, request.UserId, variables);
+            return Ok();
         }
 
+        [EnableRateLimiting("admin")]
         [HttpPost("disable", Name = "DisableProcess")]
         public async Task<IActionResult> DisableProcess([FromBody] ProcessDefinitionKeyRequest request)
         {
             if (request == null || string.IsNullOrWhiteSpace(request.ProcessDefinitionKey))
                 return BadRequest(new ErrorResponse("ProcessDefinitionKey is required"));
 
-            try
-            {
-                var summary = await _commandService.DisableProcess(request.ProcessDefinitionKey);
-                return Ok(summary);
-            }
-            catch (KeyNotFoundException ex)
-            {
-                return NotFound(new ErrorResponse(ex.Message));
-            }
+            var summary = await _commandService.DisableProcess(request.ProcessDefinitionKey);
+            return Ok(summary);
         }
 
+        [EnableRateLimiting("admin")]
         [HttpPost("enable", Name = "EnableProcess")]
         public async Task<IActionResult> EnableProcess([FromBody] ProcessDefinitionKeyRequest request)
         {
             if (request == null || string.IsNullOrWhiteSpace(request.ProcessDefinitionKey))
                 return BadRequest(new ErrorResponse("ProcessDefinitionKey is required"));
 
-            try
-            {
-                var summary = await _commandService.EnableProcess(request.ProcessDefinitionKey);
-                return Ok(summary);
-            }
-            catch (KeyNotFoundException ex)
-            {
-                return NotFound(new ErrorResponse(ex.Message));
-            }
+            var summary = await _commandService.EnableProcess(request.ProcessDefinitionKey);
+            return Ok(summary);
         }
 
         [LoggerMessage(EventId = 8004, Level = LogLevel.Information,

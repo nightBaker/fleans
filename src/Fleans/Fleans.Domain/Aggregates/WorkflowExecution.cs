@@ -27,6 +27,22 @@ public class WorkflowExecution
         _definition = definition ?? throw new ArgumentNullException(nameof(definition));
     }
 
+    /// <summary>
+    /// Replay-mode constructor for event sourcing activation recovery.
+    /// Only Apply methods run during replay — they never access _definition.
+    /// </summary>
+    internal WorkflowExecution(WorkflowInstanceState state)
+    {
+        _state = state ?? throw new ArgumentNullException(nameof(state));
+        _definition = null!;
+    }
+
+    /// <summary>
+    /// Replays a persisted event by calling Apply without adding to uncommitted events.
+    /// Used during JournaledGrain activation to reconstruct state from the event log.
+    /// </summary>
+    internal void ReplayEvent(IDomainEvent @event) => Apply(@event);
+
     public IReadOnlyList<IDomainEvent> GetUncommittedEvents() => _uncommittedEvents.AsReadOnly();
 
     public void ClearUncommittedEvents() => _uncommittedEvents.Clear();

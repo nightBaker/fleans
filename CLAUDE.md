@@ -11,6 +11,8 @@ dotnet build
 dotnet test
 ```
 
+**Context management:** Do not read test files into context until you are at the test verification step (i.e., writing or modifying tests, or verifying that tests pass). Test output logs can be large — avoid loading them prematurely.
+
 Run the full stack (Api + Web + Redis) via Aspire:
 
 ```bash
@@ -48,10 +50,11 @@ Add it to `Fleans.Api/Controllers/WorkflowController.cs`. DTOs go in `Fleans.Ser
 - Tests use MSTest + Orleans.TestingHost, AAA pattern. Activity tests must verify both post-completion and post-failure state. Query state via `workflowInstance.GetState()` after completion/failure — never hold grain references from before completion to assert on.
 - **Admin UI (Fleans.Web) communicates with Orleans grains directly via `WorkflowEngine` service** — not through HTTP API endpoints. The Web app runs as Blazor Server (InteractiveServer), so Razor components execute server-side and can call grains directly. Do not add API endpoints for admin UI functionality.
 - **WorkflowInstance partial class layout** — `WorkflowInstance` is a thin coordinator grain split into 3 partial files. Place new methods in the correct file:
-  - `WorkflowInstance.cs` — fields, constructor, all public entry points (`SetWorkflow`, `StartWorkflow`, `CompleteActivity`, `FailActivity`, `HandleTimerFired`, `HandleMessageDelivery`, `HandleSignalDelivery`, `GetVariable`, `GetVariables`, etc.), request context/scope utilities
-  - `WorkflowInstance.Infrastructure.cs` — private infrastructure methods (`RunExecutionLoop`, `ResolveExternalCompletions`, `ComputeTransitionsForEntries`, `HandleScopeCompletions`, `PerformEffects`, `PerformMessageSubscribe`, `PerformSignalSubscribe`, `PerformStartChildWorkflow`, `PublishDomainEvent`, `LogAndClearEvents`)
+  - `WorkflowInstance.cs` — fields, constructor, lifecycle overrides (`OnActivateAsync`, `OnDeactivateAsync`, `TransitionState`), `ICustomStorageInterface` implementation (`ReadStateFromStorage`, `ApplyUpdatesToStorage`), all public entry points grouped by: workflow lifecycle (`SetWorkflow`, `StartWorkflow`), activity completion/failure (`CompleteActivity`, `FailActivity`, `CompleteConditionSequence`), child workflow coordination (`SetParentInfo`, `SetInitialVariables`, `OnChildWorkflowCompleted`, `OnChildWorkflowFailed`), external event handling (`HandleTimerFired`, `HandleMessageDelivery`, `HandleBoundaryMessageFired`, `HandleSignalDelivery`, `HandleBoundarySignalFired`), user task operations (`ClaimUserTask`, `UnclaimUserTask`, `CompleteUserTask`), state queries (`GetState`, `GetVariable`, `GetVariables`, `GetActiveActivities`, `GetCompletedActivities`, `GetConditionSequenceStates`, `SetConditionSequenceResult`, `FindForkByToken`), request context/scope utilities
+  - `WorkflowInstance.Infrastructure.cs` — private infrastructure methods (`RunExecutionLoop`, `ResolveExternalCompletions`, `ComputeTransitionsForEntries`, `HandleScopeCompletions`, `PerformEffects`, `PerformMessageSubscribe`, `PerformSignalSubscribe`, `PerformStartChildWorkflow`, `PublishDomainEvent`, `ProcessPendingEvents`, `ProcessPendingEventsTimer`, `DisposePendingEventsTimerIfTerminal`, `EnsurePendingEventsTimerRegistered`, `DrainAndRaiseEvents`, `LogEvent`)
   - `WorkflowInstance.Logging.cs` — all `[LoggerMessage]` partial method declarations
 - **Logging: always use `[LoggerMessage]` source generators** instead of `ILogger.Log*()` extension methods. Define log methods as `private partial void` on `partial` classes. New `[LoggerMessage]` declarations go in `WorkflowInstance.Logging.cs`. EventId ranges are documented in `docs/plans/2026-02-08-structured-workflow-logging.md`.
+- **WorkflowInstance state changes** flow through `DrainAndRaiseEvents()`, which drains uncommitted events from the aggregate, calls `RaiseEvent(event)` for each, then `ConfirmEvents()` to persist. Never use `WriteStateAsync()` in WorkflowInstance. Other grains still use `WriteStateAsync()` with their own IPersistentState storage.
 - **Log all workflow instance state changes.** Every grain method that mutates state (adds/removes activities, changes condition results, completes/fails instances) must have a `[LoggerMessage]` log call. No silent state mutations.
 - **Fluent UI Blazor (Fleans.Web)**: Only use components that exist in the library (https://www.fluentui-blazor.net/). Use `IconStart`/`IconEnd` parameters on `FluentButton` — never place `<FluentIcon>` as child content. Use the `Loading` parameter for buttons with loading states.
 
@@ -83,7 +86,7 @@ Add it to `Fleans.Api/Controllers/WorkflowController.cs`. DTOs go in `Fleans.Ser
 ## Things to Know
 
 - **Aspire is the startup project**, not Api or Web
-- **Grain state is in-memory** — no persistence yet, this is a known gap, not a design choice. Don't design against eventual persistence.
+- **WorkflowInstance uses JournaledGrain with event sourcing** — events are persisted via EfCoreEventStore, read-side state is projected via EfCoreWorkflowStateProjection (CQRS pattern). Other grains (ProcessDefinition, correlations, timers, start event listeners, user tasks) use IPersistentState with EF Core IGrainStorage.
 - **BPMN coverage is partial** — see the table in `README.md` for what's implemented
 - **Design docs** live in `docs/plans/` — check them before making architectural changes
 

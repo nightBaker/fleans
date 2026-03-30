@@ -57,17 +57,16 @@ public partial class MessageStartEventListenerGrain : Grain, IMessageStartEventL
     public async ValueTask<List<Guid>> FireMessageStartEvent(ExpandoObject variables)
     {
         var messageName = this.GetPrimaryKeyString();
-        var createdIds = new List<Guid>();
 
         if (State.ProcessDefinitionKeys.Count == 0)
         {
             LogNoRegisteredProcesses(messageName);
-            return createdIds;
+            return [];
         }
 
         var factory = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
 
-        foreach (var processDefinitionKey in State.ProcessDefinitionKeys)
+        var tasks = State.ProcessDefinitionKeys.Select(async processDefinitionKey =>
         {
             try
             {
@@ -76,7 +75,7 @@ public partial class MessageStartEventListenerGrain : Grain, IMessageStartEventL
                 if (!await factory.IsProcessActive(processDefinitionKey))
                 {
                     LogProcessDisabledSkipped(messageName, processDefinitionKey);
-                    continue;
+                    return (Guid?)null;
                 }
 
                 var instanceId = Guid.NewGuid();
@@ -94,16 +93,18 @@ public partial class MessageStartEventListenerGrain : Grain, IMessageStartEventL
                 await instance.SetInitialVariables(variables);
                 await instance.StartWorkflow();
 
-                createdIds.Add(instanceId);
                 LogMessageStartEventFired(messageName, processDefinitionKey, instanceId);
+                return (Guid?)instanceId;
             }
             catch (Exception ex)
             {
                 LogMessageStartEventFailed(messageName, processDefinitionKey, ex);
+                return (Guid?)null;
             }
-        }
+        });
 
-        return createdIds;
+        var results = await Task.WhenAll(tasks);
+        return results.Where(id => id.HasValue).Select(id => id!.Value).ToList();
     }
 
     private static string? FindMessageStartActivityId(IWorkflowDefinition definition, string messageName)
