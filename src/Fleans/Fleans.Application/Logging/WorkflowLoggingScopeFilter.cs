@@ -23,12 +23,12 @@ public class WorkflowLoggingScopeFilter : IIncomingGrainCallFilter
             return;
         }
 
-        var wid = RequestContext.Get("WorkflowId") as string;
-        var pdid = RequestContext.Get("ProcessDefinitionId") as string;
-        var wiid = RequestContext.Get("WorkflowInstanceId") as string;
-        var aid = RequestContext.Get("ActivityId") as string;
-        var aiid = RequestContext.Get("ActivityInstanceId") as string;
-        var vid = RequestContext.Get("VariablesId") as string;
+        var wid = RequestContext.Get(WorkflowContextKeys.WorkflowId) as string;
+        var pdid = RequestContext.Get(WorkflowContextKeys.ProcessDefinitionId) as string;
+        var wiid = RequestContext.Get(WorkflowContextKeys.WorkflowInstanceId) as string;
+        var aid = RequestContext.Get(WorkflowContextKeys.ActivityId) as string;
+        var aiid = RequestContext.Get(WorkflowContextKeys.ActivityInstanceId) as string;
+        var vid = RequestContext.Get(WorkflowContextKeys.VariablesId) as string;
 
         if (wid is not null || wiid is not null)
         {
