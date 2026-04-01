@@ -88,9 +88,15 @@ public class MessageBoundaryEventTests : BoundaryEventTestBase
         // Complete the attached activity normally
         await workflowInstance.CompleteActivity("task1", new ExpandoObject());
 
-        // Workflow may now be completed (task1 → end)
+        // After completing task1, workflow should NOT yet be completed — afterMsg is still active
+        var afterTask1Snapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsFalse(afterTask1Snapshot!.IsCompleted,
+            "Workflow should NOT be completed — afterMsg is still active");
+
+        await workflowInstance.CompleteActivity("afterMsg", new ExpandoObject());
+
         var finalSnapshot = await QueryService.GetStateSnapshot(instanceId);
-        Assert.IsTrue(finalSnapshot!.IsCompleted, "Workflow should be completed");
+        Assert.IsTrue(finalSnapshot!.IsCompleted, "Workflow should be completed after all paths finish");
         var task1Entry = finalSnapshot.CompletedActivities.First(a => a.ActivityId == "task1");
         Assert.IsFalse(task1Entry.IsCancelled, "task1 should NOT be cancelled");
     }

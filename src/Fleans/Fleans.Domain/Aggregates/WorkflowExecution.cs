@@ -53,8 +53,9 @@ public class WorkflowExecution
             throw new InvalidOperationException("Workflow is already started.");
 
         var instanceId = Guid.NewGuid();
+        var rootVariablesId = Guid.NewGuid();
 
-        Emit(new WorkflowStarted(instanceId, _definition.ProcessDefinitionId));
+        Emit(new WorkflowStarted(instanceId, _definition.ProcessDefinitionId, rootVariablesId));
 
         Activity startActivity;
         if (startActivityId is not null)
@@ -270,6 +271,14 @@ public class WorkflowExecution
             switch (command)
             {
                 case CompleteWorkflowCommand:
+                    // Guard: only complete workflow when no other activities are active.
+                    // The current EndEvent (identified by activityInstanceId) hasn't been
+                    // marked completed yet — exclude it from the check.
+                    var otherActive = _state.GetActiveActivities()
+                        .Any(e => e.ActivityInstanceId != activityInstanceId);
+                    if (otherActive)
+                        break; // Defer — workflow will complete when last EndEvent fires
+
                     Emit(new WorkflowCompleted());
                     // If this is a child workflow, notify parent of completion
                     if (_state.ParentWorkflowInstanceId.HasValue)
@@ -781,7 +790,8 @@ public class WorkflowExecution
                     $"User {userId} is not in candidate users list");
         }
 
-        Emit(new UserTaskClaimed(activityInstanceId, userId));
+        var claimedAt = DateTimeOffset.UtcNow;
+        Emit(new UserTaskClaimed(activityInstanceId, userId, claimedAt));
 
         return [new UpdateUserTaskClaimEffect(
             activityInstanceId, userId, UserTaskLifecycleState.Claimed)];
@@ -1453,7 +1463,7 @@ public class WorkflowExecution
                 _state.UserTasks[e.ActivityInstanceId] = meta;
                 break;
             case UserTaskClaimed e:
-                _state.UserTasks[e.ActivityInstanceId].Claim(e.UserId, DateTimeOffset.UtcNow);
+                _state.UserTasks[e.ActivityInstanceId].Claim(e.UserId, e.ClaimedAt);
                 break;
             case UserTaskUnclaimed e:
                 _state.UserTasks[e.ActivityInstanceId].Unclaim();
@@ -1471,8 +1481,7 @@ public class WorkflowExecution
 
     private void ApplyWorkflowStarted(WorkflowStarted e)
     {
-        var variablesId = Guid.NewGuid();
-        _state.Initialize(e.InstanceId, e.ProcessDefinitionId, variablesId);
+        _state.Initialize(e.InstanceId, e.ProcessDefinitionId, e.RootVariablesId);
     }
 
     private void ApplyActivitySpawned(ActivitySpawned e)

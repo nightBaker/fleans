@@ -3,7 +3,7 @@ using System.Dynamic;
 namespace Fleans.Domain.Events;
 
 // Workflow lifecycle
-public record WorkflowStarted(Guid InstanceId, string? ProcessDefinitionId) : IDomainEvent;
+public record WorkflowStarted(Guid InstanceId, string? ProcessDefinitionId, Guid RootVariablesId) : IDomainEvent;
 public record ExecutionStarted() : IDomainEvent;
 public record WorkflowCompleted() : IDomainEvent;
 
@@ -45,7 +45,7 @@ public record UserTaskRegistered(
     Guid ActivityInstanceId, string? Assignee,
     IReadOnlyList<string> CandidateGroups, IReadOnlyList<string> CandidateUsers,
     IReadOnlyList<string>? ExpectedOutputVariables) : IDomainEvent;
-public record UserTaskClaimed(Guid ActivityInstanceId, string UserId) : IDomainEvent;
+public record UserTaskClaimed(Guid ActivityInstanceId, string UserId, DateTimeOffset ClaimedAt) : IDomainEvent;
 public record UserTaskUnclaimed(Guid ActivityInstanceId) : IDomainEvent;
 public record UserTaskUnregistered(Guid ActivityInstanceId) : IDomainEvent;
 

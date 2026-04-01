@@ -5,6 +5,7 @@ using Fleans.Domain.Effects;
 using Fleans.Domain.Events;
 using Fleans.Domain.States;
 using Fleans.Application.Adapters;
+using Fleans.Application.Logging;
 using Microsoft.Extensions.Logging;
 using Orleans;
 using Orleans.EventSourcing;
@@ -217,10 +218,10 @@ public partial class WorkflowInstance :
     {
         if (_workflowDefinition is null) return;
 
-        RequestContext.Set("WorkflowId", _workflowDefinition.WorkflowId);
-        RequestContext.Set("WorkflowInstanceId", this.GetPrimaryKey().ToString());
+        RequestContext.Set(WorkflowContextKeys.WorkflowId, _workflowDefinition.WorkflowId);
+        RequestContext.Set(WorkflowContextKeys.WorkflowInstanceId, this.GetPrimaryKey().ToString());
         if (_workflowDefinition.ProcessDefinitionId is not null)
-            RequestContext.Set("ProcessDefinitionId", _workflowDefinition.ProcessDefinitionId);
+            RequestContext.Set(WorkflowContextKeys.ProcessDefinitionId, _workflowDefinition.ProcessDefinitionId);
     }
 
     private IDisposable? BeginWorkflowScope()

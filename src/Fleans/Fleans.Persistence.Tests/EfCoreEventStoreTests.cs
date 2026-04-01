@@ -46,7 +46,7 @@ public class EfCoreEventStoreTests
         var grainId = "grain/test-1";
         var events = new List<IDomainEvent>
         {
-            new WorkflowStarted(Guid.NewGuid(), "process:1"),
+            new WorkflowStarted(Guid.NewGuid(), "process:1", Guid.NewGuid()),
             new ExecutionStarted(),
             new ActivitySpawned(Guid.NewGuid(), "start", "StartEvent", Guid.NewGuid(), null, null, null)
         };
@@ -67,7 +67,7 @@ public class EfCoreEventStoreTests
         var grainId = "grain/test-2";
         var events = new List<IDomainEvent>
         {
-            new WorkflowStarted(Guid.NewGuid(), "p1"),
+            new WorkflowStarted(Guid.NewGuid(), "p1", Guid.NewGuid()),
             new ExecutionStarted(),
             new WorkflowCompleted()
         };
@@ -97,7 +97,7 @@ public class EfCoreEventStoreTests
     public async Task AppendEvents_VersionConflict_ReturnsFalse()
     {
         var grainId = "grain/conflict";
-        var events1 = new List<IDomainEvent> { new WorkflowStarted(Guid.NewGuid(), "p1") };
+        var events1 = new List<IDomainEvent> { new WorkflowStarted(Guid.NewGuid(), "p1", Guid.NewGuid()) };
         var events2 = new List<IDomainEvent> { new ExecutionStarted() };
 
         var result1 = await _store.AppendEventsAsync(grainId, events1, startVersion: 1);
@@ -222,7 +222,7 @@ public class EfCoreEventStoreTests
     [TestMethod]
     public async Task DifferentGrainIds_AreIsolated()
     {
-        var events1 = new List<IDomainEvent> { new WorkflowStarted(Guid.NewGuid(), "p1") };
+        var events1 = new List<IDomainEvent> { new WorkflowStarted(Guid.NewGuid(), "p1", Guid.NewGuid()) };
         var events2 = new List<IDomainEvent> { new ExecutionStarted() };
 
         await _store.AppendEventsAsync("grain/a", events1, startVersion: 1);
@@ -244,7 +244,7 @@ public class EfCoreEventStoreTests
     {
         var grainId = "grain/multi-batch";
 
-        var batch1 = new List<IDomainEvent> { new WorkflowStarted(Guid.NewGuid(), "p1") };
+        var batch1 = new List<IDomainEvent> { new WorkflowStarted(Guid.NewGuid(), "p1", Guid.NewGuid()) };
         var batch2 = new List<IDomainEvent> { new ExecutionStarted(), new WorkflowCompleted() };
 
         await _store.AppendEventsAsync(grainId, batch1, startVersion: 1);
