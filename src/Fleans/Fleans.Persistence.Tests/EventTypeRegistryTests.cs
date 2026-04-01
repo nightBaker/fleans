@@ -50,6 +50,20 @@ public class EventTypeRegistryTests
 
         Assert.AreEqual(original.InstanceId, deserialized.InstanceId);
         Assert.AreEqual(original.ProcessDefinitionId, deserialized.ProcessDefinitionId);
+        Assert.AreEqual(original.RootVariablesId, deserialized.RootVariablesId);
+    }
+
+    [TestMethod]
+    public void RoundTrip_UserTaskClaimed_PreservesClaimedAt()
+    {
+        var original = new UserTaskClaimed(Guid.NewGuid(), "user-42", DateTimeOffset.UtcNow);
+        var json = JsonConvert.SerializeObject(original, JsonSettings);
+        var deserialized = (UserTaskClaimed)EventTypeRegistry.Deserialize(
+            nameof(UserTaskClaimed), json, JsonSettings);
+
+        Assert.AreEqual(original.ActivityInstanceId, deserialized.ActivityInstanceId);
+        Assert.AreEqual(original.UserId, deserialized.UserId);
+        Assert.AreEqual(original.ClaimedAt, deserialized.ClaimedAt);
     }
 
     [TestMethod]
@@ -189,11 +203,12 @@ public class EventTypeRegistryTests
     private static List<(IDomainEvent Event, string ExpectedName)> CreateAllDomainEvents()
     {
         var id = Guid.NewGuid();
+        var rootVarsId = Guid.NewGuid();
         var variables = new ExpandoObject();
 
         return
         [
-            (new WorkflowStarted(id, "proc:1", id), nameof(WorkflowStarted)),
+            (new WorkflowStarted(id, "proc:1", rootVarsId), nameof(WorkflowStarted)),
             (new ExecutionStarted(), nameof(ExecutionStarted)),
             (new WorkflowCompleted(), nameof(WorkflowCompleted)),
             (new ActivitySpawned(id, "a", "ScriptTask", id, null, null, null), nameof(ActivitySpawned)),

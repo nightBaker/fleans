@@ -10,9 +10,11 @@ public class WorkflowDomainEventsTests
     public void WorkflowStarted_ShouldHoldInstanceIdAndProcessDefinitionId()
     {
         var id = Guid.NewGuid();
-        var evt = new WorkflowStarted(id, "process-1", Guid.NewGuid());
+        var rootVarsId = Guid.NewGuid();
+        var evt = new WorkflowStarted(id, "process-1", rootVarsId);
         Assert.AreEqual(id, evt.InstanceId);
         Assert.AreEqual("process-1", evt.ProcessDefinitionId);
+        Assert.AreEqual(rootVarsId, evt.RootVariablesId);
     }
 
     [TestMethod]
