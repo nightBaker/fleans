@@ -3,8 +3,6 @@ using Fleans.Application.QueryModels;
 using Fleans.ServiceDefaults.DTOs;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
-using Newtonsoft.Json;
-using System.Dynamic;
 
 namespace Fleans.Api.Controllers
 {
@@ -46,12 +44,7 @@ namespace Fleans.Api.Controllers
             if (request == null || string.IsNullOrWhiteSpace(request.MessageName))
                 return BadRequest(new ErrorResponse("MessageName is required"));
 
-            // System.Text.Json deserializes ExpandoObject values as JsonElement,
-            // which Orleans cannot serialize. Re-parse via Newtonsoft to get proper .NET primitives.
-            var variables = request.Variables != null
-                ? JsonConvert.DeserializeObject<ExpandoObject>(
-                    System.Text.Json.JsonSerializer.Serialize(request.Variables))!
-                : new ExpandoObject();
+            var variables = VariableConverter.ToExpandoObject(request.Variables);
 
             var result = await _commandService.SendMessage(request.MessageName, request.CorrelationKey, variables);
 
@@ -87,12 +80,7 @@ namespace Fleans.Api.Controllers
             if (string.IsNullOrWhiteSpace(request.ActivityId))
                 return BadRequest(new ErrorResponse("ActivityId is required"));
 
-            // System.Text.Json deserializes ExpandoObject values as JsonElement,
-            // which Orleans cannot serialize. Re-parse via Newtonsoft to get proper .NET primitives.
-            var variables = request.Variables != null
-                ? JsonConvert.DeserializeObject<ExpandoObject>(
-                    System.Text.Json.JsonSerializer.Serialize(request.Variables))!
-                : new ExpandoObject();
+            var variables = VariableConverter.ToExpandoObject(request.Variables);
 
             await _commandService.CompleteActivity(request.WorkflowInstanceId, request.ActivityId, variables);
             return Ok();
@@ -205,13 +193,7 @@ namespace Fleans.Api.Controllers
             if (task == null)
                 return NotFound(new ErrorResponse($"User task '{activityInstanceId}' not found"));
 
-            var variables = new ExpandoObject();
-            if (request.Variables is { Count: > 0 })
-            {
-                var dict = (IDictionary<string, object?>)variables;
-                foreach (var kvp in request.Variables)
-                    dict[kvp.Key] = kvp.Value;
-            }
+            var variables = VariableConverter.ToExpandoObject(request.Variables);
 
             LogUserTaskComplete(activityInstanceId, request.UserId);
             await _commandService.CompleteUserTask(
