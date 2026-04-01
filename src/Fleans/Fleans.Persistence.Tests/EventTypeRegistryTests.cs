@@ -14,7 +14,7 @@ public class EventTypeRegistryTests
     [TestMethod]
     public void GetEventType_ReturnsTypeName()
     {
-        var evt = new WorkflowStarted(Guid.NewGuid(), "proc:1");
+        var evt = new WorkflowStarted(Guid.NewGuid(), "proc:1", Guid.NewGuid());
         Assert.AreEqual("WorkflowStarted", EventTypeRegistry.GetEventType(evt));
     }
 
@@ -43,7 +43,7 @@ public class EventTypeRegistryTests
     [TestMethod]
     public void RoundTrip_WorkflowStarted_PreservesFields()
     {
-        var original = new WorkflowStarted(Guid.NewGuid(), "process:1:abc");
+        var original = new WorkflowStarted(Guid.NewGuid(), "process:1:abc", Guid.NewGuid());
         var json = JsonConvert.SerializeObject(original, JsonSettings);
         var deserialized = (WorkflowStarted)EventTypeRegistry.Deserialize(
             nameof(WorkflowStarted), json, JsonSettings);
@@ -193,7 +193,7 @@ public class EventTypeRegistryTests
 
         return
         [
-            (new WorkflowStarted(id, "proc:1"), nameof(WorkflowStarted)),
+            (new WorkflowStarted(id, "proc:1", id), nameof(WorkflowStarted)),
             (new ExecutionStarted(), nameof(ExecutionStarted)),
             (new WorkflowCompleted(), nameof(WorkflowCompleted)),
             (new ActivitySpawned(id, "a", "ScriptTask", id, null, null, null), nameof(ActivitySpawned)),

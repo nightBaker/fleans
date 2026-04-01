@@ -10,7 +10,7 @@ public class WorkflowDomainEventsTests
     public void WorkflowStarted_ShouldHoldInstanceIdAndProcessDefinitionId()
     {
         var id = Guid.NewGuid();
-        var evt = new WorkflowStarted(id, "process-1");
+        var evt = new WorkflowStarted(id, "process-1", Guid.NewGuid());
         Assert.AreEqual(id, evt.InstanceId);
         Assert.AreEqual("process-1", evt.ProcessDefinitionId);
     }
@@ -38,7 +38,7 @@ public class WorkflowDomainEventsTests
     {
         var events = new IDomainEvent[]
         {
-            new WorkflowStarted(Guid.NewGuid(), "p1"),
+            new WorkflowStarted(Guid.NewGuid(), "p1", Guid.NewGuid()),
             new WorkflowCompleted(),
             new ActivitySpawned(Guid.NewGuid(), "a1", "T", Guid.NewGuid(), null, null, null),
             new ActivityExecutionStarted(Guid.NewGuid()),
