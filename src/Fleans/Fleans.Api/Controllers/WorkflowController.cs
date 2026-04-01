@@ -205,13 +205,12 @@ namespace Fleans.Api.Controllers
             if (task == null)
                 return NotFound(new ErrorResponse($"User task '{activityInstanceId}' not found"));
 
-            var variables = new ExpandoObject();
-            if (request.Variables is { Count: > 0 })
-            {
-                var dict = (IDictionary<string, object?>)variables;
-                foreach (var kvp in request.Variables)
-                    dict[kvp.Key] = kvp.Value;
-            }
+            // System.Text.Json deserializes values as JsonElement,
+            // which Orleans cannot serialize. Re-parse via Newtonsoft to get proper .NET primitives.
+            var variables = request.Variables is { Count: > 0 }
+                ? JsonConvert.DeserializeObject<ExpandoObject>(
+                    System.Text.Json.JsonSerializer.Serialize(request.Variables))!
+                : new ExpandoObject();
 
             LogUserTaskComplete(activityInstanceId, request.UserId);
             await _commandService.CompleteUserTask(
