@@ -271,6 +271,14 @@ public class WorkflowExecution
             switch (command)
             {
                 case CompleteWorkflowCommand:
+                    // Guard: only complete workflow when no other activities are active.
+                    // The current EndEvent (identified by activityInstanceId) hasn't been
+                    // marked completed yet — exclude it from the check.
+                    var otherActive = _state.GetActiveActivities()
+                        .Any(e => e.ActivityInstanceId != activityInstanceId);
+                    if (otherActive)
+                        break; // Defer — workflow will complete when last EndEvent fires
+
                     Emit(new WorkflowCompleted());
                     // If this is a child workflow, notify parent of completion
                     if (_state.ParentWorkflowInstanceId.HasValue)
