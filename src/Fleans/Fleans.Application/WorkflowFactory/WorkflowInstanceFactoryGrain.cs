@@ -1,4 +1,5 @@
 using Fleans.Application.Grains;
+using Fleans.Application.Logging;
 using Fleans.Application.QueryModels;
 using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
@@ -58,9 +59,9 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
         var guid = Guid.NewGuid();
         LogCreatingInstance(workflowId, definition.ProcessDefinitionId, guid);
 
-        RequestContext.Set("WorkflowId", workflowId);
-        RequestContext.Set("ProcessDefinitionId", definition.ProcessDefinitionId);
-        RequestContext.Set("WorkflowInstanceId", guid.ToString());
+        RequestContext.Set(WorkflowContextKeys.WorkflowId, workflowId);
+        RequestContext.Set(WorkflowContextKeys.ProcessDefinitionId, definition.ProcessDefinitionId);
+        RequestContext.Set(WorkflowContextKeys.WorkflowInstanceId, guid.ToString());
 
         var workflowInstanceGrain = _grainFactory.GetGrain<IWorkflowInstanceGrain>(guid);
 
@@ -84,9 +85,9 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
         var guid = Guid.NewGuid();
         LogCreatingInstance(definition.ProcessDefinitionKey, processDefinitionId, guid);
 
-        RequestContext.Set("WorkflowId", definition.ProcessDefinitionKey);
-        RequestContext.Set("ProcessDefinitionId", processDefinitionId);
-        RequestContext.Set("WorkflowInstanceId", guid.ToString());
+        RequestContext.Set(WorkflowContextKeys.WorkflowId, definition.ProcessDefinitionKey);
+        RequestContext.Set(WorkflowContextKeys.ProcessDefinitionId, processDefinitionId);
+        RequestContext.Set(WorkflowContextKeys.WorkflowInstanceId, guid.ToString());
 
         var workflowInstanceGrain = _grainFactory.GetGrain<IWorkflowInstanceGrain>(guid);
 

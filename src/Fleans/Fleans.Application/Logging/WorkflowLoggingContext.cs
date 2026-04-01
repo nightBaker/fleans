@@ -9,12 +9,12 @@ internal static class WorkflowLoggingContext
         ILogger logger, string workflowId, string? processDefinitionId,
         Guid workflowInstanceId, string? activityId = null)
     {
-        RequestContext.Set("WorkflowId", workflowId);
-        RequestContext.Set("WorkflowInstanceId", workflowInstanceId.ToString());
+        RequestContext.Set(WorkflowContextKeys.WorkflowId, workflowId);
+        RequestContext.Set(WorkflowContextKeys.WorkflowInstanceId, workflowInstanceId.ToString());
         if (processDefinitionId is not null)
-            RequestContext.Set("ProcessDefinitionId", processDefinitionId);
+            RequestContext.Set(WorkflowContextKeys.ProcessDefinitionId, processDefinitionId);
         if (activityId is not null)
-            RequestContext.Set("ActivityId", activityId);
+            RequestContext.Set(WorkflowContextKeys.ActivityId, activityId);
 
         return logger.BeginScope(
             "[{WorkflowId}, {ProcessDefinitionId}, {WorkflowInstanceId}, {ActivityId}]",
