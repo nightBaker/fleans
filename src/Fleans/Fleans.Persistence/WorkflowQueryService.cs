@@ -126,6 +126,67 @@ public class WorkflowQueryService : IWorkflowQueryService
             items, totalCount, page.Page, page.PageSize);
     }
 
+    public async Task<PagedResult<ProcessDefinitionGroup>> GetProcessDefinitionGroups(PageRequest page)
+    {
+        page = page.Normalize();
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+
+        // Step 1: Apply Sieve filtering only (no sort, no pagination)
+        var sieveModel = new SieveModel
+        {
+            Filters = page.Filters
+        };
+        var filteredQuery = _sieveProcessor.Apply(sieveModel, db.ProcessDefinitions.AsQueryable(),
+            applyPagination: false, applySorting: false);
+
+        // Step 2: Get distinct keys with explicit group-level ordering
+        var groupedKeys = filteredQuery
+            .GroupBy(d => d.ProcessDefinitionKey);
+
+        // Step 3: Apply sort at group level
+        var sortField = page.Sorts?.TrimStart('-');
+        var descending = page.Sorts?.StartsWith('-') == true;
+
+        IQueryable<string> orderedKeys = sortField switch
+        {
+            "DeployedAt" => descending
+                ? groupedKeys.OrderByDescending(g => g.Max(d => d.DeployedAt)).Select(g => g.Key)
+                : groupedKeys.OrderBy(g => g.Max(d => d.DeployedAt)).Select(g => g.Key),
+            _ => descending
+                ? groupedKeys.OrderByDescending(g => g.Key).Select(g => g.Key)
+                : groupedKeys.OrderBy(g => g.Key).Select(g => g.Key)
+        };
+
+        var totalCount = await orderedKeys.CountAsync();
+
+        // Step 4: Paginate keys
+        var pagedKeys = await orderedKeys
+            .Skip((page.Page - 1) * page.PageSize)
+            .Take(page.PageSize)
+            .ToListAsync();
+
+        // Step 5: Fetch all versions for the paged keys
+        var definitions = await db.ProcessDefinitions
+            .Where(d => pagedKeys.Contains(d.ProcessDefinitionKey))
+            .OrderBy(d => d.ProcessDefinitionKey)
+            .ThenByDescending(d => d.Version)
+            .ToListAsync();
+
+        // Step 6: Build groups (preserve page order)
+        var defsByKey = definitions.GroupBy(d => d.ProcessDefinitionKey)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var groups = pagedKeys
+            .Where(key => defsByKey.ContainsKey(key))
+            .Select(key => new ProcessDefinitionGroup(
+                key,
+                defsByKey[key].Select(ProjectToSummary).ToList()))
+            .ToList();
+
+        return new PagedResult<ProcessDefinitionGroup>(
+            groups, totalCount, page.Page, page.PageSize);
+    }
+
     private static ProcessDefinitionSummary ProjectToSummary(ProcessDefinition d) =>
         new(d.ProcessDefinitionId, d.ProcessDefinitionKey, d.Version,
             d.DeployedAt, d.Workflow.Activities.Count,

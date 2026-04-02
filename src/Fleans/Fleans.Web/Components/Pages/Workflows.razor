@@ -26,123 +26,100 @@
         </Actions>
     </PageHeader>
 
-    @if (isLoading && allRows.Count == 0)
+    @if (!string.IsNullOrWhiteSpace(loadErrorMessage))
     {
-        <FluentStack Orientation="Orientation.Vertical" AlignItems="AlignItems.Center" Gap="10px">
-            <FluentProgressRing />
-            <p>Loading workflows...</p>
-        </FluentStack>
+        <FluentMessageBar Intent="MessageIntent.Error" Dismissible="true" OnDismissed="@(() => loadErrorMessage = null)">
+            <FluentStack Orientation="Orientation.Horizontal" Gap="10px" AlignItems="AlignItems.Center">
+                <span>@loadErrorMessage</span>
+                <FluentButton Appearance="Appearance.Neutral" @onclick="RefreshWorkflows" Disabled="@isLoading">
+                    Retry
+                </FluentButton>
+            </FluentStack>
+        </FluentMessageBar>
     }
-    else
+
+    @if (!string.IsNullOrWhiteSpace(actionErrorMessage))
     {
-        @if (!string.IsNullOrWhiteSpace(loadErrorMessage))
-        {
-            <FluentMessageBar Intent="MessageIntent.Error" Dismissible="true" OnDismissed="@(() => loadErrorMessage = null)">
-                <FluentStack Orientation="Orientation.Horizontal" Gap="10px" AlignItems="AlignItems.Center">
-                    <span>@loadErrorMessage</span>
-                    <FluentButton Appearance="Appearance.Neutral" @onclick="RefreshWorkflows" Disabled="@isLoading">
-                        Retry
+        <FluentMessageBar Intent="MessageIntent.Error" Dismissible="true" OnDismissed="@(() => actionErrorMessage = null)">
+            @actionErrorMessage
+        </FluentMessageBar>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(actionSuccessMessage))
+    {
+        <FluentMessageBar Intent="MessageIntent.Success" Dismissible="true" OnDismissed="@(() => actionSuccessMessage = null)">
+            @actionSuccessMessage
+        </FluentMessageBar>
+    }
+
+    <FluentTextField Placeholder="Search by process key"
+                     @bind-Value="SearchQuery"
+                     Style="max-width: 320px;" />
+
+    <FluentDataGrid ItemsProvider="@workflowsProvider"
+                    Pagination="@pagination"
+                    TGridItem="ProcessDefinitionRow"
+                    Loading="@isLoading"
+                    @ref="grid">
+        <TemplateColumn Title="Process Key" HierarchicalToggle="true">
+            <strong title="@context.Item.ProcessDefinitionId"
+                    class="@(context.Item.IsActive ? "" : "process-disabled")">
+                @context.Item.ProcessDefinitionKey
+                @if (!context.Item.IsActive)
+                {
+                    <FluentBadge Color="Color.Warning" Style="margin-left: 8px;">Disabled</FluentBadge>
+                }
+            </strong>
+        </TemplateColumn>
+        <TemplateColumn Title="Version">
+            <FluentBadge Color="Color.Accent">v@(context.Item.Version)</FluentBadge>
+        </TemplateColumn>
+        <TemplateColumn Title="Deployed at (UTC)" Sortable="true">
+            @context.Item.DeployedAt.ToUniversalTime().ToString("u")
+        </TemplateColumn>
+        <TemplateColumn Title="Actions">
+            <FluentStack Orientation="Orientation.Horizontal" Gap="4px">
+                <FluentButton Appearance="Appearance.Stealth"
+                              IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Edit())"
+                              @onclick="() => EditWorkflow(context.Item)">
+                    Edit
+                </FluentButton>
+                <FluentButton Appearance="Appearance.Stealth"
+                              IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Play())"
+                              Loading="@(isStarting && startingProcessDefinitionId == context.Item.ProcessDefinitionId)"
+                              Disabled="@(isStarting || !context.Item.IsActive)"
+                              @onclick="() => StartVersion(context.Item)">
+                    Start
+                </FluentButton>
+                <FluentButton Appearance="Appearance.Stealth"
+                              IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.List())"
+                              @onclick="() => ViewInstances(context.Item)">
+                    Instances
+                </FluentButton>
+                @if (context.Item.IsActive)
+                {
+                    <FluentButton Appearance="Appearance.Stealth"
+                                  IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Pause())"
+                                  Loading="@(isToggling && togglingProcessKey == context.Item.ProcessDefinitionKey)"
+                                  Disabled="@isToggling"
+                                  @onclick="() => ToggleActive(context.Item)">
+                        Disable
                     </FluentButton>
-                </FluentStack>
-            </FluentMessageBar>
-        }
-
-        @if (!string.IsNullOrWhiteSpace(actionErrorMessage))
-        {
-            <FluentMessageBar Intent="MessageIntent.Error" Dismissible="true" OnDismissed="@(() => actionErrorMessage = null)">
-                @actionErrorMessage
-            </FluentMessageBar>
-        }
-
-        @if (!string.IsNullOrWhiteSpace(actionSuccessMessage))
-        {
-            <FluentMessageBar Intent="MessageIntent.Success" Dismissible="true" OnDismissed="@(() => actionSuccessMessage = null)">
-                @actionSuccessMessage
-            </FluentMessageBar>
-        }
-
-        @if (allRows.Count == 0)
-        {
-            <FluentMessageBar Intent="MessageIntent.Info">
-                <strong>No workflows found.</strong> Create a new workflow in the <a href="/editor">Editor</a>.
-            </FluentMessageBar>
-        }
-        else
-        {
-            <FluentTextField Placeholder="Search by process key"
-                             @bind-Value="SearchQuery"
-                             Style="max-width: 320px;" />
-
-            @if (filteredRows.Count == 0)
-            {
-                <FluentMessageBar Intent="MessageIntent.Info">
-                    No workflows match "@SearchQuery".
-                </FluentMessageBar>
-            }
-            else
-            {
-                <FluentDataGrid Items="@filteredRows.Where(r => !r.IsHidden).AsQueryable()" TGridItem="ProcessDefinitionRow">
-                    <TemplateColumn Title="Process Key" HierarchicalToggle="true">
-                        <strong title="@context.Item.ProcessDefinitionId"
-                                class="@(context.Item.IsActive ? "" : "process-disabled")">
-                            @context.Item.ProcessDefinitionKey
-                            @if (!context.Item.IsActive)
-                            {
-                                <FluentBadge Color="Color.Warning" Style="margin-left: 8px;">Disabled</FluentBadge>
-                            }
-                        </strong>
-                    </TemplateColumn>
-                    <TemplateColumn Title="Version">
-                        <FluentBadge Color="Color.Accent">v@(context.Item.Version)</FluentBadge>
-                    </TemplateColumn>
-                    <TemplateColumn Title="Deployed at (UTC)">
-                        @context.Item.DeployedAt.ToUniversalTime().ToString("u")
-                    </TemplateColumn>
-                    <TemplateColumn Title="Actions">
-                        <FluentStack Orientation="Orientation.Horizontal" Gap="4px">
-                            <FluentButton Appearance="Appearance.Stealth"
-                                          IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Edit())"
-                                          @onclick="() => EditWorkflow(context.Item)">
-                                Edit
-                            </FluentButton>
-                            <FluentButton Appearance="Appearance.Stealth"
-                                          IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Play())"
-                                          Loading="@(isStarting && startingProcessDefinitionId == context.Item.ProcessDefinitionId)"
-                                          Disabled="@(isStarting || !context.Item.IsActive)"
-                                          @onclick="() => StartVersion(context.Item)">
-                                Start
-                            </FluentButton>
-                            <FluentButton Appearance="Appearance.Stealth"
-                                          IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.List())"
-                                          @onclick="() => ViewInstances(context.Item)">
-                                Instances
-                            </FluentButton>
-                            @if (context.Item.IsActive)
-                            {
-                                <FluentButton Appearance="Appearance.Stealth"
-                                              IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Pause())"
-                                              Loading="@(isToggling && togglingProcessKey == context.Item.ProcessDefinitionKey)"
-                                              Disabled="@isToggling"
-                                              @onclick="() => ToggleActive(context.Item)">
-                                    Disable
-                                </FluentButton>
-                            }
-                            else
-                            {
-                                <FluentButton Appearance="Appearance.Stealth"
-                                              IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.CheckmarkCircle())"
-                                              Loading="@(isToggling && togglingProcessKey == context.Item.ProcessDefinitionKey)"
-                                              Disabled="@isToggling"
-                                              @onclick="() => ToggleActive(context.Item)">
-                                    Enable
-                                </FluentButton>
-                            }
-                        </FluentStack>
-                    </TemplateColumn>
-                </FluentDataGrid>
-            }
-        }
-    }
+                }
+                else
+                {
+                    <FluentButton Appearance="Appearance.Stealth"
+                                  IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.CheckmarkCircle())"
+                                  Loading="@(isToggling && togglingProcessKey == context.Item.ProcessDefinitionKey)"
+                                  Disabled="@isToggling"
+                                  @onclick="() => ToggleActive(context.Item)">
+                        Enable
+                    </FluentButton>
+                }
+            </FluentStack>
+        </TemplateColumn>
+    </FluentDataGrid>
+    <FluentPaginator State="@pagination" />
 </FluentStack>
 
 @code {
@@ -150,9 +127,15 @@
     {
     }
 
-    private List<ProcessDefinitionRow> allRows = [];
-    private List<ProcessDefinitionRow> filteredRows = [];
-    private bool isLoading = true;
+    private static readonly Dictionary<string, string> SortPropertyMap = new()
+    {
+        ["Deployed at (UTC)"] = "DeployedAt"
+    };
+
+    private FluentDataGrid<ProcessDefinitionRow>? grid;
+    private PaginationState pagination = new() { ItemsPerPage = 20 };
+    private GridItemsProvider<ProcessDefinitionRow>? workflowsProvider;
+    private bool isLoading;
     private string? loadErrorMessage;
     private string? actionErrorMessage;
     private string? actionSuccessMessage;
@@ -161,6 +144,7 @@
     private bool isToggling = false;
     private string? togglingProcessKey;
     private string searchQuery = string.Empty;
+    private Timer? searchDebounceTimer;
 
     private string SearchQuery
     {
@@ -168,80 +152,117 @@
         set
         {
             if (searchQuery == value)
-            {
                 return;
-            }
 
             searchQuery = value;
-            ApplyFilter();
+            DebounceSearch();
         }
     }
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
-        await LoadWorkflows();
-    }
-
-    private async Task LoadWorkflows()
-    {
-        try
+        workflowsProvider = async request =>
         {
-            isLoading = true;
-            loadErrorMessage = null;
-
-            var definitions = await QueryService.GetAllProcessDefinitions();
-
-            allRows = definitions
-                .GroupBy(d => d.ProcessDefinitionKey)
-                .OrderBy(g => g.Key, StringComparer.Ordinal)
-                .SelectMany(group =>
-                {
-                    var versions = group.OrderByDescending(d => d.Version).ToList();
-
-                    var parent = new ProcessDefinitionRow
-                    {
-                        Item = versions[0],
-                        IsCollapsed = true,
-                    };
-
-                    var children = versions.Skip(1)
-                        .Select(d => new ProcessDefinitionRow
-                        {
-                            Item = d,
-                            Depth = 1,
-                            IsHidden = true,
-                        })
-                        .ToList();
-
-                    foreach (var child in children)
-                    {
-                        parent.Children.Add(child);
-                    }
-
-                    return new[] { parent }.Concat(children);
-                })
-                .ToList();
-
-            ApplyFilter();
-        }
-        catch (Exception ex)
-        {
-            LogLoadWorkflowsError(ex);
-            loadErrorMessage = "Unable to reach workflow engine. Try again.";
-            if (allRows.Count == 0)
+            try
             {
-                filteredRows = [];
+                isLoading = true;
+                loadErrorMessage = null;
+                StateHasChanged();
+
+                var sortString = BuildSortString(request);
+                var filters = string.IsNullOrWhiteSpace(searchQuery)
+                    ? null
+                    : $"ProcessDefinitionKey@={searchQuery}";
+
+                var page = new PageRequest(
+                    Page: (request.StartIndex / pagination.ItemsPerPage) + 1,
+                    PageSize: pagination.ItemsPerPage,
+                    Sorts: sortString,
+                    Filters: filters
+                );
+
+                var result = await QueryService.GetProcessDefinitionGroups(page);
+
+                var rows = result.Items
+                    .SelectMany(group =>
+                    {
+                        var versions = group.Versions;
+                        var parent = new ProcessDefinitionRow
+                        {
+                            Item = versions[0],
+                            IsCollapsed = true,
+                        };
+
+                        var children = versions.Skip(1)
+                            .Select(d => new ProcessDefinitionRow
+                            {
+                                Item = d,
+                                Depth = 1,
+                                IsHidden = true,
+                            })
+                            .ToList();
+
+                        foreach (var child in children)
+                        {
+                            parent.Children.Add(child);
+                        }
+
+                        return new[] { parent }.Concat(children);
+                    })
+                    .ToList();
+
+                isLoading = false;
+                return GridItemsProviderResult.From(rows, result.TotalCount);
             }
-        }
-        finally
+            catch (Exception ex)
+            {
+                LogLoadWorkflowsError(ex);
+                loadErrorMessage = "Unable to reach workflow engine. Try again.";
+                isLoading = false;
+                StateHasChanged();
+                return GridItemsProviderResult.From(
+                    new List<ProcessDefinitionRow>(), 0);
+            }
+        };
+    }
+
+    private static string? BuildSortString(
+        GridItemsProviderRequest<ProcessDefinitionRow> request)
+    {
+        if (request.SortByColumn is null)
+            return "ProcessDefinitionKey";
+
+        var title = request.SortByColumn.Title;
+        if (title is null || !SortPropertyMap.TryGetValue(title, out var propertyName))
+            return "ProcessDefinitionKey";
+
+        var dir = request.SortByAscending == false ? "-" : "";
+        return $"{dir}{propertyName}";
+    }
+
+    private void DebounceSearch()
+    {
+        searchDebounceTimer?.Dispose();
+        searchDebounceTimer = new Timer(async _ =>
         {
-            isLoading = false;
-        }
+            await InvokeAsync(async () =>
+            {
+                if (grid is not null)
+                {
+                    await pagination.SetCurrentPageIndexAsync(0);
+                    await grid.RefreshDataAsync();
+                }
+                StateHasChanged();
+            });
+        }, null, 300, Timeout.Infinite);
     }
 
     private async Task RefreshWorkflows()
     {
-        await LoadWorkflows();
+        if (grid is not null)
+        {
+            await grid.RefreshDataAsync();
+        }
     }
 
     private void NewWorkflow()
@@ -252,28 +273,6 @@
     private void EditWorkflow(ProcessDefinitionSummary definition)
     {
         Navigation.NavigateTo($"/editor/{Uri.EscapeDataString(definition.ProcessDefinitionKey)}/{definition.Version}");
-    }
-
-    private void ApplyFilter()
-    {
-        if (string.IsNullOrWhiteSpace(SearchQuery))
-        {
-            filteredRows = allRows;
-        }
-        else
-        {
-            // Include parent + its children when key matches
-            var matchingKeys = allRows
-                .Where(r => r.Depth == 0
-                    && r.Item.ProcessDefinitionKey.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase))
-                .Select(r => r.Item.ProcessDefinitionKey)
-                .ToHashSet(StringComparer.Ordinal);
-
-            filteredRows = allRows
-                .Where(r => matchingKeys.Contains(r.Item.ProcessDefinitionKey))
-                .ToList();
-        }
-
     }
 
     private async Task StartVersion(ProcessDefinitionSummary version)
@@ -331,7 +330,10 @@
                 actionSuccessMessage = $"Enabled '{definition.ProcessDefinitionKey}'.";
             }
 
-            await LoadWorkflows();
+            if (grid is not null)
+            {
+                await grid.RefreshDataAsync();
+            }
         }
         catch (Exception ex)
         {

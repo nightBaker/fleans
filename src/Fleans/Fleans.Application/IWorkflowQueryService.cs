@@ -9,6 +9,7 @@ public interface IWorkflowQueryService
     Task<InstanceStateSnapshot?> GetStateSnapshot(Guid workflowInstanceId);
     Task<IReadOnlyList<ProcessDefinitionSummary>> GetAllProcessDefinitions();
     Task<PagedResult<ProcessDefinitionSummary>> GetAllProcessDefinitions(PageRequest page);
+    Task<PagedResult<ProcessDefinitionGroup>> GetProcessDefinitionGroups(PageRequest page);
     Task<PagedResult<WorkflowInstanceInfo>> GetInstancesByKey(string processDefinitionKey, PageRequest page);
     Task<PagedResult<WorkflowInstanceInfo>> GetInstancesByKeyAndVersion(string key, int version, PageRequest page);
     Task<string?> GetBpmnXml(Guid instanceId);
