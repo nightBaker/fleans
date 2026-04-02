@@ -34,11 +34,13 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
 
         var key = this.GetPrimaryKeyString();
         var definitions = await _repository.GetByKeyAsync(key);
-        foreach (var def in definitions)
+        foreach (var def in definitions.OrderBy(d => d.Version))
         {
             _byId[def.ProcessDefinitionId] = def;
             _versions.Add(def);
         }
+
+        LogActivated(key, _versions.Count);
     }
 
     public async Task<IWorkflowInstanceGrain> CreateInstance()
@@ -128,9 +130,12 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
         _versions.Add(definition);
         await _repository.SaveAsync(definition);
 
-        // Register key in the registry (idempotent)
-        var registry = _grainFactory.GetGrain<IProcessDefinitionRegistryGrain>(0);
-        await registry.RegisterKey(processDefinitionKey);
+        // Register key in the registry on first deploy (skip for re-deploys)
+        if (_versions.Count == 1)
+        {
+            var registry = _grainFactory.GetGrain<IProcessDefinitionRegistryGrain>(0);
+            await registry.RegisterKey(processDefinitionKey);
+        }
 
         LogDeployedWorkflow(processDefinitionKey, processDefinitionId, nextVersion);
 
@@ -267,40 +272,36 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
         await RegisterSignalListeners(workflow.GetSignalStartEventNames(), processDefinitionKey);
     }
 
-    private async Task RegisterMessageListeners(IEnumerable<string> messageNames, string processDefinitionKey)
+    private Task RegisterMessageListeners(IEnumerable<string> messageNames, string processDefinitionKey)
     {
-        foreach (var name in messageNames)
-        {
-            var listener = _grainFactory.GetGrain<IMessageStartEventListenerGrain>(name);
-            await listener.RegisterProcess(processDefinitionKey);
-        }
+        var tasks = messageNames.Select(name =>
+            _grainFactory.GetGrain<IMessageStartEventListenerGrain>(name)
+                .RegisterProcess(processDefinitionKey).AsTask());
+        return Task.WhenAll(tasks);
     }
 
-    private async Task UnregisterMessageListeners(IEnumerable<string> messageNames, string processDefinitionKey)
+    private Task UnregisterMessageListeners(IEnumerable<string> messageNames, string processDefinitionKey)
     {
-        foreach (var name in messageNames)
-        {
-            var listener = _grainFactory.GetGrain<IMessageStartEventListenerGrain>(name);
-            await listener.UnregisterProcess(processDefinitionKey);
-        }
+        var tasks = messageNames.Select(name =>
+            _grainFactory.GetGrain<IMessageStartEventListenerGrain>(name)
+                .UnregisterProcess(processDefinitionKey).AsTask());
+        return Task.WhenAll(tasks);
     }
 
-    private async Task RegisterSignalListeners(IEnumerable<string> signalNames, string processDefinitionKey)
+    private Task RegisterSignalListeners(IEnumerable<string> signalNames, string processDefinitionKey)
     {
-        foreach (var name in signalNames)
-        {
-            var listener = _grainFactory.GetGrain<ISignalStartEventListenerGrain>(name);
-            await listener.RegisterProcess(processDefinitionKey);
-        }
+        var tasks = signalNames.Select(name =>
+            _grainFactory.GetGrain<ISignalStartEventListenerGrain>(name)
+                .RegisterProcess(processDefinitionKey).AsTask());
+        return Task.WhenAll(tasks);
     }
 
-    private async Task UnregisterSignalListeners(IEnumerable<string> signalNames, string processDefinitionKey)
+    private Task UnregisterSignalListeners(IEnumerable<string> signalNames, string processDefinitionKey)
     {
-        foreach (var name in signalNames)
-        {
-            var listener = _grainFactory.GetGrain<ISignalStartEventListenerGrain>(name);
-            await listener.UnregisterProcess(processDefinitionKey);
-        }
+        var tasks = signalNames.Select(name =>
+            _grainFactory.GetGrain<ISignalStartEventListenerGrain>(name)
+                .UnregisterProcess(processDefinitionKey).AsTask());
+        return Task.WhenAll(tasks);
     }
 
     private string GenerateProcessDefinitionId(string key, int version, DateTimeOffset deployedAt)
@@ -332,4 +333,7 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
 
     [LoggerMessage(EventId = 6004, Level = LogLevel.Warning, Message = "Process {ProcessDefinitionKey} redeployed while disabled — new version remains disabled")]
     private partial void LogProcessRedeployedWhileDisabled(string processDefinitionKey);
+
+    [LoggerMessage(EventId = 6005, Level = LogLevel.Information, Message = "ProcessDefinitionGrain activated for key '{ProcessDefinitionKey}' with {VersionCount} version(s)")]
+    private partial void LogActivated(string processDefinitionKey, int versionCount);
 }

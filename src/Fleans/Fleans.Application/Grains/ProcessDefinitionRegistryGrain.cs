@@ -26,6 +26,8 @@ public partial class ProcessDefinitionRegistryGrain : Grain, IProcessDefinitionR
         var keys = await _repository.GetAllDistinctKeysAsync();
         foreach (var key in keys)
             _knownKeys.Add(key);
+
+        LogRegistryActivated(_knownKeys.Count);
     }
 
     public Task RegisterKey(string processDefinitionKey)
@@ -43,4 +45,7 @@ public partial class ProcessDefinitionRegistryGrain : Grain, IProcessDefinitionR
 
     [LoggerMessage(EventId = 6100, Level = LogLevel.Information, Message = "Registered process definition key '{ProcessDefinitionKey}'")]
     private partial void LogKeyRegistered(string processDefinitionKey);
+
+    [LoggerMessage(EventId = 6101, Level = LogLevel.Information, Message = "ProcessDefinitionRegistryGrain activated with {KeyCount} known key(s)")]
+    private partial void LogRegistryActivated(int keyCount);
 }
