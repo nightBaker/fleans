@@ -1,7 +1,7 @@
 namespace Fleans.Domain.States;
 
 [GenerateSerializer]
-public class SignalStartEventListenerState
+public class SignalStartEventListenerState : IStartEventListenerState
 {
     [Id(0)] public string Key { get; set; } = string.Empty;
     [Id(1)] public string? ETag { get; set; }
