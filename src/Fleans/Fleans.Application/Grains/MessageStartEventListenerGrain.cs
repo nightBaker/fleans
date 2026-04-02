@@ -1,5 +1,4 @@
 using System.Dynamic;
-using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.States;
@@ -8,115 +7,50 @@ using Orleans.Runtime;
 
 namespace Fleans.Application.Grains;
 
-public partial class MessageStartEventListenerGrain : Grain, IMessageStartEventListenerGrain
+public partial class MessageStartEventListenerGrain :
+    StartEventListenerGrainBase<MessageStartEventListenerState>, IMessageStartEventListenerGrain
 {
-    private readonly IGrainFactory _grainFactory;
     private readonly ILogger<MessageStartEventListenerGrain> _logger;
-    private readonly IPersistentState<MessageStartEventListenerState> _state;
-
-    private MessageStartEventListenerState State => _state.State;
 
     public MessageStartEventListenerGrain(
         [PersistentState("state", GrainStorageNames.MessageStartEventListeners)] IPersistentState<MessageStartEventListenerState> state,
         IGrainFactory grainFactory,
         ILogger<MessageStartEventListenerGrain> logger)
+        : base(state, grainFactory)
     {
-        _state = state;
-        _grainFactory = grainFactory;
         _logger = logger;
     }
 
-    public async ValueTask RegisterProcess(string processDefinitionKey)
-    {
-        if (!State.AddProcess(processDefinitionKey))
-        {
-            LogProcessAlreadyRegistered(this.GetPrimaryKeyString(), processDefinitionKey);
-            return;
-        }
-
-        await _state.WriteStateAsync();
-        LogProcessRegistered(this.GetPrimaryKeyString(), processDefinitionKey);
-    }
-
-    public async ValueTask UnregisterProcess(string processDefinitionKey)
-    {
-        if (!State.RemoveProcess(processDefinitionKey))
-        {
-            LogProcessNotFound(this.GetPrimaryKeyString(), processDefinitionKey);
-            return;
-        }
-
-        if (State.IsEmpty)
-            await _state.ClearStateAsync();
-        else
-            await _state.WriteStateAsync();
-
-        LogProcessUnregistered(this.GetPrimaryKeyString(), processDefinitionKey);
-    }
-
     public async ValueTask<List<Guid>> FireMessageStartEvent(ExpandoObject variables)
-    {
-        var messageName = this.GetPrimaryKeyString();
+        => await FireStartEventCore(variables);
 
-        if (State.ProcessDefinitionKeys.Count == 0)
-        {
-            LogNoRegisteredProcesses(messageName);
-            return [];
-        }
-
-        var factory = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-
-        var tasks = State.ProcessDefinitionKeys.Select(async processDefinitionKey =>
-        {
-            try
-            {
-                // Guard: skip disabled processes to prevent race condition
-                // between DisableProcess persisting IsActive=false and unregistering listeners
-                if (!await factory.IsProcessActive(processDefinitionKey))
-                {
-                    LogProcessDisabledSkipped(messageName, processDefinitionKey);
-                    return (Guid?)null;
-                }
-
-                var instanceId = Guid.NewGuid();
-                var instance = _grainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
-
-                var definition = await factory.GetLatestWorkflowDefinition(processDefinitionKey);
-
-                // Find the MessageStartEvent that matches this message name
-                var messageStartActivityId = FindMessageStartActivityId(definition, messageName)
-                    ?? throw new InvalidOperationException(
-                        $"Message start activity for message '{messageName}' not found in process '{processDefinitionKey}'. " +
-                        "The message definition may have been removed during a redeployment.");
-
-                await instance.SetWorkflow(definition, messageStartActivityId);
-                await instance.SetInitialVariables(variables);
-                await instance.StartWorkflow();
-
-                LogMessageStartEventFired(messageName, processDefinitionKey, instanceId);
-                return (Guid?)instanceId;
-            }
-            catch (Exception ex)
-            {
-                LogMessageStartEventFailed(messageName, processDefinitionKey, ex);
-                return (Guid?)null;
-            }
-        });
-
-        var results = await Task.WhenAll(tasks);
-        return results.Where(id => id.HasValue).Select(id => id!.Value).ToList();
-    }
-
-    private static string? FindMessageStartActivityId(IWorkflowDefinition definition, string messageName)
+    protected override string? FindStartActivityId(IWorkflowDefinition definition, string eventName)
     {
         foreach (var activity in definition.Activities.OfType<MessageStartEvent>())
         {
             var msgDef = definition.FindMessageDefinition(activity.MessageDefinitionId);
-            if (msgDef?.Name == messageName)
+            if (msgDef?.Name == eventName)
                 return activity.ActivityId;
         }
         return null;
     }
+
+    protected override void OnProcessRegistered(string eventName, string processDefinitionKey)
+        => LogProcessRegistered(eventName, processDefinitionKey);
+    protected override void OnProcessUnregistered(string eventName, string processDefinitionKey)
+        => LogProcessUnregistered(eventName, processDefinitionKey);
+    protected override void OnProcessAlreadyRegistered(string eventName, string processDefinitionKey)
+        => LogProcessAlreadyRegistered(eventName, processDefinitionKey);
+    protected override void OnProcessNotFound(string eventName, string processDefinitionKey)
+        => LogProcessNotFound(eventName, processDefinitionKey);
+    protected override void OnNoRegisteredProcesses(string eventName)
+        => LogNoRegisteredProcesses(eventName);
+    protected override void OnProcessDisabledSkipped(string eventName, string processDefinitionKey)
+        => LogProcessDisabledSkipped(eventName, processDefinitionKey);
+    protected override void OnStartEventFired(string eventName, string processDefinitionKey, Guid instanceId)
+        => LogMessageStartEventFired(eventName, processDefinitionKey, instanceId);
+    protected override void OnStartEventFailed(string eventName, string processDefinitionKey, Exception ex)
+        => LogMessageStartEventFailed(eventName, processDefinitionKey, ex);
 
     [LoggerMessage(EventId = 9100, Level = LogLevel.Information, Message = "Registered process {ProcessDefinitionKey} for message start event '{MessageName}'")]
     private partial void LogProcessRegistered(string messageName, string processDefinitionKey);
