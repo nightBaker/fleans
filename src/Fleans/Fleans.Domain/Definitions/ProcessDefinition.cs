@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Orleans;
 
 namespace Fleans.Domain;
@@ -6,8 +7,28 @@ namespace Fleans.Domain;
 /// A deployed, immutable version of a workflow definition, similar to a Camunda process definition.
 /// </summary>
 [GenerateSerializer]
-public sealed class ProcessDefinition
+public sealed partial class ProcessDefinition
 {
+    /// <summary>
+    /// Extracts the process definition key from a composite ProcessDefinitionId.
+    /// Format: {key}:{version}:{timestamp}[-{collisionSuffix}]
+    /// The regex matches from the right: ":version:yyyyMMddTHHmmss.fffffffZ[-N]"
+    /// </summary>
+    public static string ExtractKeyFromId(string processDefinitionId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(processDefinitionId);
+
+        var match = IdSuffixPattern().Match(processDefinitionId);
+        if (!match.Success)
+            throw new ArgumentException(
+                $"Invalid ProcessDefinitionId format: '{processDefinitionId}'",
+                nameof(processDefinitionId));
+
+        return processDefinitionId[..match.Index];
+    }
+
+    [GeneratedRegex(@":\d+:\d{8}T\d{6}\.\d{7}Z(-\d+)?$")]
+    private static partial Regex IdSuffixPattern();
     /// <summary>
     /// Unique identifier for a deployed definition (e.g. "&lt;key&gt;:&lt;version&gt;:&lt;timestamp&gt;").
     /// </summary>
