@@ -3,7 +3,6 @@ using Fleans.Application.Logging;
 using Fleans.Application.QueryModels;
 using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
-using Fleans.Domain.Activities;
 using Fleans.Domain.Persistence;
 using Microsoft.Extensions.Logging;
 using Orleans.Concurrency;
@@ -167,32 +166,23 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
         if (versions.Count > 1)
         {
             IWorkflowDefinition previousWorkflow = versions[^2].Workflow;
-            var unregisterTasks = new List<Task>();
 
             // Timer: if previous had timer but new doesn't, deactivate
             if (!scope.HasTimerStartEvent() && previousWorkflow.HasTimerStartEvent())
             {
                 var scheduler = _grainFactory.GetGrain<ITimerStartEventSchedulerGrain>(processDefinitionKey);
-                unregisterTasks.Add(scheduler.DeactivateScheduler());
+                await scheduler.DeactivateScheduler();
             }
 
             // Messages: unregister removed message names
-            var newMessageNames = scope.GetMessageStartEventNames();
-            foreach (var removedName in previousWorkflow.GetMessageStartEventNames().Except(newMessageNames))
-            {
-                var listener = _grainFactory.GetGrain<IMessageStartEventListenerGrain>(removedName);
-                unregisterTasks.Add(listener.UnregisterProcess(processDefinitionKey).AsTask());
-            }
+            var removedMessages = previousWorkflow.GetMessageStartEventNames()
+                .Except(scope.GetMessageStartEventNames());
+            await UnregisterMessageListeners(removedMessages, processDefinitionKey);
 
             // Signals: unregister removed signal names
-            var newSignalNames = scope.GetSignalStartEventNames();
-            foreach (var removedName in previousWorkflow.GetSignalStartEventNames().Except(newSignalNames))
-            {
-                var listener = _grainFactory.GetGrain<ISignalStartEventListenerGrain>(removedName);
-                unregisterTasks.Add(listener.UnregisterProcess(processDefinitionKey).AsTask());
-            }
-
-            await Task.WhenAll(unregisterTasks);
+            var removedSignals = previousWorkflow.GetSignalStartEventNames()
+                .Except(scope.GetSignalStartEventNames());
+            await UnregisterSignalListeners(removedSignals, processDefinitionKey);
         }
 
         return ToSummary(definition);
@@ -289,68 +279,62 @@ public partial class WorkflowInstanceFactoryGrain : Grain, IWorkflowInstanceFact
 
     private async Task UnregisterAllStartEventListeners(IWorkflowDefinition workflow, string processDefinitionKey)
     {
-        var tasks = new List<Task>();
-
-        if (workflow.Activities.OfType<TimerStartEvent>().Any())
+        if (workflow.HasTimerStartEvent())
         {
             var scheduler = _grainFactory.GetGrain<ITimerStartEventSchedulerGrain>(processDefinitionKey);
-            tasks.Add(scheduler.DeactivateScheduler());
+            await scheduler.DeactivateScheduler();
         }
 
-        foreach (var messageStart in workflow.Activities.OfType<MessageStartEvent>())
-        {
-            var msgDef = workflow.Messages.FirstOrDefault(m => m.Id == messageStart.MessageDefinitionId);
-            if (msgDef != null)
-            {
-                var listener = _grainFactory.GetGrain<IMessageStartEventListenerGrain>(msgDef.Name);
-                tasks.Add(listener.UnregisterProcess(processDefinitionKey).AsTask());
-            }
-        }
-
-        foreach (var signalStart in workflow.Activities.OfType<SignalStartEvent>())
-        {
-            var sigDef = workflow.Signals.FirstOrDefault(s => s.Id == signalStart.SignalDefinitionId);
-            if (sigDef != null)
-            {
-                var listener = _grainFactory.GetGrain<ISignalStartEventListenerGrain>(sigDef.Name);
-                tasks.Add(listener.UnregisterProcess(processDefinitionKey).AsTask());
-            }
-        }
-
-        await Task.WhenAll(tasks);
+        await UnregisterMessageListeners(workflow.GetMessageStartEventNames(), processDefinitionKey);
+        await UnregisterSignalListeners(workflow.GetSignalStartEventNames(), processDefinitionKey);
     }
 
     private async Task RegisterAllStartEventListeners(IWorkflowDefinition workflow, string processDefinitionKey, string processDefinitionId)
     {
-        var tasks = new List<Task>();
-
-        if (workflow.Activities.OfType<TimerStartEvent>().Any())
+        if (workflow.HasTimerStartEvent())
         {
             var scheduler = _grainFactory.GetGrain<ITimerStartEventSchedulerGrain>(processDefinitionKey);
-            tasks.Add(scheduler.ActivateScheduler(processDefinitionId));
+            await scheduler.ActivateScheduler(processDefinitionId);
         }
 
-        foreach (var messageStart in workflow.Activities.OfType<MessageStartEvent>())
+        await RegisterMessageListeners(workflow.GetMessageStartEventNames(), processDefinitionKey);
+        await RegisterSignalListeners(workflow.GetSignalStartEventNames(), processDefinitionKey);
+    }
+
+    private async Task RegisterMessageListeners(IEnumerable<string> messageNames, string processDefinitionKey)
+    {
+        foreach (var name in messageNames)
         {
-            var msgDef = workflow.Messages.FirstOrDefault(m => m.Id == messageStart.MessageDefinitionId);
-            if (msgDef != null)
-            {
-                var listener = _grainFactory.GetGrain<IMessageStartEventListenerGrain>(msgDef.Name);
-                tasks.Add(listener.RegisterProcess(processDefinitionKey).AsTask());
-            }
+            var listener = _grainFactory.GetGrain<IMessageStartEventListenerGrain>(name);
+            await listener.RegisterProcess(processDefinitionKey);
         }
+    }
 
-        foreach (var signalStart in workflow.Activities.OfType<SignalStartEvent>())
+    private async Task UnregisterMessageListeners(IEnumerable<string> messageNames, string processDefinitionKey)
+    {
+        foreach (var name in messageNames)
         {
-            var sigDef = workflow.Signals.FirstOrDefault(s => s.Id == signalStart.SignalDefinitionId);
-            if (sigDef != null)
-            {
-                var listener = _grainFactory.GetGrain<ISignalStartEventListenerGrain>(sigDef.Name);
-                tasks.Add(listener.RegisterProcess(processDefinitionKey).AsTask());
-            }
+            var listener = _grainFactory.GetGrain<IMessageStartEventListenerGrain>(name);
+            await listener.UnregisterProcess(processDefinitionKey);
         }
+    }
 
-        await Task.WhenAll(tasks);
+    private async Task RegisterSignalListeners(IEnumerable<string> signalNames, string processDefinitionKey)
+    {
+        foreach (var name in signalNames)
+        {
+            var listener = _grainFactory.GetGrain<ISignalStartEventListenerGrain>(name);
+            await listener.RegisterProcess(processDefinitionKey);
+        }
+    }
+
+    private async Task UnregisterSignalListeners(IEnumerable<string> signalNames, string processDefinitionKey)
+    {
+        foreach (var name in signalNames)
+        {
+            var listener = _grainFactory.GetGrain<ISignalStartEventListenerGrain>(name);
+            await listener.UnregisterProcess(processDefinitionKey);
+        }
     }
 
     private string GenerateProcessDefinitionId(string key, int version, DateTimeOffset deployedAt)
