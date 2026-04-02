@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Dynamic;
 using DynamicExpresso;
 using Fleans.Application.Scripts;
@@ -7,6 +8,8 @@ namespace Fleans.Infrastructure.Scripts;
 public class DynamicExpressoScriptExpressionExecutor : IScriptExpressionExecutor
 {
     private readonly TimeSpan _scriptTimeout;
+    private readonly ConcurrentBag<Interpreter> _interpreterPool = new();
+    private const int MaxPoolSize = 16;
 
     private static readonly HashSet<string> SupportedFormats = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -37,18 +40,41 @@ public class DynamicExpressoScriptExpressionExecutor : IScriptExpressionExecutor
         // would require running scripts in a separate process.
         var task = Task.Run(() =>
         {
-            var interpreter = new Interpreter().SetVariable("_context", variables);
-            interpreter.Reference(typeof(List<>));
-
-            foreach (var statement in SplitStatements(script))
+            var interpreter = RentInterpreter();
+            try
             {
-                interpreter.Eval(statement);
+                interpreter.SetVariable("_context", variables);
+
+                foreach (var statement in SplitStatements(script))
+                {
+                    interpreter.Eval(statement);
+                }
+            }
+            finally
+            {
+                ReturnInterpreter(interpreter);
             }
         });
 
         await task.WaitAsync(_scriptTimeout);
 
         return variables;
+    }
+
+    private Interpreter RentInterpreter()
+    {
+        if (_interpreterPool.TryTake(out var interpreter))
+            return interpreter;
+
+        var newInterpreter = new Interpreter();
+        newInterpreter.Reference(typeof(List<>));
+        return newInterpreter;
+    }
+
+    private void ReturnInterpreter(Interpreter interpreter)
+    {
+        if (_interpreterPool.Count < MaxPoolSize)
+            _interpreterPool.Add(interpreter);
     }
 
     internal static IEnumerable<string> SplitStatements(string script)
