@@ -5,7 +5,6 @@ using Fleans.Domain.Effects;
 using Fleans.Domain.Events;
 using Fleans.Domain.States;
 using Fleans.Application.Adapters;
-using Fleans.Application.WorkflowFactory;
 using Orleans;
 using Orleans.Runtime;
 using System.Dynamic;
@@ -310,8 +309,8 @@ public partial class WorkflowInstance
 
     private async Task PerformStartChildWorkflow(StartChildWorkflowEffect startChild)
     {
-        var factory = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        var childDefinition = await factory.GetLatestWorkflowDefinition(startChild.ProcessDefinitionKey);
+        var processGrain = _grainFactory.GetGrain<IProcessDefinitionGrain>(startChild.ProcessDefinitionKey);
+        var childDefinition = await processGrain.GetLatestDefinition();
 
         var child = _grainFactory.GetGrain<IWorkflowInstanceGrain>(startChild.ChildInstanceId);
 

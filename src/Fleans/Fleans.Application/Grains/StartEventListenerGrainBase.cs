@@ -1,5 +1,4 @@
 using System.Dynamic;
-using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
 using Fleans.Domain.States;
 using Orleans.Runtime;
@@ -64,13 +63,13 @@ public abstract class StartEventListenerGrainBase<TState> : Grain
             return [];
         }
 
-        var factory = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-
         var tasks = State.ProcessDefinitionKeys.Select(async processDefinitionKey =>
         {
             try
             {
-                if (!await factory.IsProcessActive(processDefinitionKey))
+                var processGrain = _grainFactory.GetGrain<IProcessDefinitionGrain>(processDefinitionKey);
+
+                if (!await processGrain.IsActive())
                 {
                     OnProcessDisabledSkipped(eventName, processDefinitionKey);
                     return (Guid?)null;
@@ -79,7 +78,7 @@ public abstract class StartEventListenerGrainBase<TState> : Grain
                 var instanceId = Guid.NewGuid();
                 var instance = _grainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
 
-                var definition = await factory.GetLatestWorkflowDefinition(processDefinitionKey);
+                var definition = await processGrain.GetLatestDefinition();
 
                 var startActivityId = FindStartActivityId(definition, eventName)
                     ?? throw new InvalidOperationException(

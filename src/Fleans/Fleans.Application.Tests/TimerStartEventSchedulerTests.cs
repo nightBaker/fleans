@@ -1,5 +1,4 @@
 using Fleans.Application.Grains;
-using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
@@ -31,8 +30,8 @@ public class TimerStartEventSchedulerTests : WorkflowTestBase
         };
 
         // Deploy the process definition so GetLatestWorkflowDefinition can find it
-        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        await factory.DeployWorkflow(workflow, "<placeholder/>");
+        var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("scheduled-workflow");
+        await processGrain.DeployVersion(workflow, "<placeholder/>");
 
         // Act — call FireTimerStartEvent directly on the scheduler
         var scheduler = Cluster.GrainFactory.GetGrain<ITimerStartEventSchedulerGrain>("scheduled-workflow");

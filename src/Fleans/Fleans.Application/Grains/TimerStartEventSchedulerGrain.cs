@@ -1,4 +1,3 @@
-using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.States;
@@ -27,8 +26,8 @@ public partial class TimerStartEventSchedulerGrain : Grain, ITimerStartEventSche
 
     public async Task ActivateScheduler(string processDefinitionId)
     {
-        var factory = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        var definition = await factory.GetLatestWorkflowDefinition(this.GetPrimaryKeyString());
+        var processGrain = _grainFactory.GetGrain<IProcessDefinitionGrain>(this.GetPrimaryKeyString());
+        var definition = await processGrain.GetLatestDefinition();
         var timerStart = definition.Activities.OfType<TimerStartEvent>().FirstOrDefault()
             ?? throw new InvalidOperationException("Workflow does not have a TimerStartEvent");
 
@@ -69,8 +68,8 @@ public partial class TimerStartEventSchedulerGrain : Grain, ITimerStartEventSche
     public async Task<Guid> FireTimerStartEvent()
     {
         var processKey = this.GetPrimaryKeyString();
-        var factory = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        var definition = await factory.GetLatestWorkflowDefinition(processKey);
+        var processGrain = _grainFactory.GetGrain<IProcessDefinitionGrain>(processKey);
+        var definition = await processGrain.GetLatestDefinition();
 
         var timerStart = definition.Activities.OfType<TimerStartEvent>().FirstOrDefault();
         var childId = Guid.NewGuid();
