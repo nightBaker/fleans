@@ -116,6 +116,12 @@ public class WorkflowExecution
         Emit(new MultiInstanceTotalSet(activityInstanceId, total));
     }
 
+    public void RemoveVariableScopes(IReadOnlyList<Guid> scopeIds)
+    {
+        if (scopeIds.Count > 0)
+            Emit(new VariableScopesRemoved(scopeIds));
+    }
+
     public void ResolveTransitions(IReadOnlyList<CompletedActivityTransitions> completedTransitions)
     {
         foreach (var completed in completedTransitions)
@@ -563,11 +569,12 @@ public class WorkflowExecution
     /// Returns effects (e.g., boundary unsubscribe) and the list of completed host instance IDs
     /// so the grain can compute transitions for them via ResolveTransitions.
     /// </summary>
-    public (IReadOnlyList<IInfrastructureEffect> Effects, IReadOnlyList<Guid> CompletedHostInstanceIds)
+    public (IReadOnlyList<IInfrastructureEffect> Effects, IReadOnlyList<Guid> CompletedHostInstanceIds, IReadOnlyList<Guid> OrphanedScopeIds)
         CompleteFinishedSubProcessScopes()
     {
         var allEffects = new List<IInfrastructureEffect>();
         var allCompletedHostIds = new List<Guid>();
+        var allOrphanedScopeIds = new List<Guid>();
 
         const int maxIterations = 100;
         var iteration = 0;
@@ -620,6 +627,16 @@ public class WorkflowExecution
                 Emit(new ActivityCompleted(
                     entry.ActivityInstanceId, entry.VariablesId, new ExpandoObject()));
 
+                // Collect sub-process child variable scopes for deferred removal.
+                // Scopes cannot be removed here because nested sub-process transitions
+                // (resolved after this method returns) may still reference them.
+                var childScopeIds = scopeEntries
+                    .Select(e => e.VariablesId)
+                    .Where(vid => vid != entry.VariablesId)
+                    .Distinct()
+                    .ToList();
+                allOrphanedScopeIds.AddRange(childScopeIds);
+
                 var effects = BuildBoundaryUnsubscribeEffects(entry.ActivityId, entry);
                 allEffects.AddRange(effects);
                 allCompletedHostIds.Add(entry.ActivityInstanceId);
@@ -627,7 +644,7 @@ public class WorkflowExecution
             }
         } while (anyCompleted);
 
-        return (allEffects.AsReadOnly(), allCompletedHostIds.AsReadOnly());
+        return (allEffects.AsReadOnly(), allCompletedHostIds.AsReadOnly(), allOrphanedScopeIds.AsReadOnly());
     }
 
     private (bool HostCompleted, IReadOnlyList<IInfrastructureEffect> Effects)
@@ -1150,6 +1167,17 @@ public class WorkflowExecution
 
             // Recursively cancel scope children
             effects.AddRange(CancelScopeChildren(hostEntry.ActivityInstanceId));
+
+            // Clean up child variable scope of the interrupted sub-process
+            var interruptedChildScopes = _state.GetEntriesInScope(hostEntry.ActivityInstanceId)
+                .Select(e => e.VariablesId)
+                .Where(vid => vid != hostEntry.VariablesId)
+                .Distinct()
+                .ToList();
+            if (interruptedChildScopes.Count > 0)
+            {
+                Emit(new VariableScopesRemoved(interruptedChildScopes));
+            }
 
             // Build unsubscribe effects for OTHER boundary subscriptions
             // (skip the one that fired to avoid deadlocks)

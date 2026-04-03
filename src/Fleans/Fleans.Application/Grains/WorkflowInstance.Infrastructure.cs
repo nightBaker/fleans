@@ -38,7 +38,9 @@ public partial class WorkflowInstance
                 _execution.ResolveTransitions(transitions);
         }
 
-        // Handle subprocess/multi-instance scope completions that may have occurred
+        // Handle subprocess/multi-instance scope completions that may have occurred.
+        // Orphaned scope IDs are discarded here — they will be cleaned up by RunExecutionLoop
+        // which accumulates and removes them after all pending activities have completed.
         await HandleScopeCompletions(definition);
     }
 
@@ -53,6 +55,7 @@ public partial class WorkflowInstance
     {
         var definition = await GetWorkflowDefinition();
         var iteration = 0;
+        var allOrphanedScopeIds = new List<Guid>();
 
         while (true)
         {
@@ -104,12 +107,18 @@ public partial class WorkflowInstance
                 _execution.ResolveTransitions(completedTransitions);
 
             // Handle subprocess/multi-instance scope completions
-            await HandleScopeCompletions(definition);
+            var orphanedScopes = await HandleScopeCompletions(definition);
+            allOrphanedScopeIds.AddRange(orphanedScopes);
 
             // Persist after each iteration so partial progress survives grain deactivation
             // during long execution chains (e.g., sequential multi-instance with many items).
             await DrainAndRaiseEvents();
         }
+
+        // Remove orphaned sub-process child variable scopes after the execution loop
+        // completes. Scopes must persist during the loop because activities spawned by
+        // sub-process completion transitions still reference them.
+        _execution!.RemoveVariableScopes(allOrphanedScopeIds);
     }
 
     /// <summary>
@@ -140,9 +149,9 @@ public partial class WorkflowInstance
         return result;
     }
 
-    private async Task HandleScopeCompletions(IWorkflowDefinition definition)
+    private async Task<IReadOnlyList<Guid>> HandleScopeCompletions(IWorkflowDefinition definition)
     {
-        var (scopeEffects, completedHostIds) = _execution!.CompleteFinishedSubProcessScopes();
+        var (scopeEffects, completedHostIds, orphanedScopeIds) = _execution!.CompleteFinishedSubProcessScopes();
         await PerformEffects(scopeEffects);
 
         if (completedHostIds.Count > 0)
@@ -161,6 +170,8 @@ public partial class WorkflowInstance
             }
             _execution.ResolveTransitions(hostTransitions);
         }
+
+        return orphanedScopeIds;
     }
 
     private async Task PerformEffects(IReadOnlyList<IInfrastructureEffect> effects)

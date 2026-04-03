@@ -107,7 +107,7 @@ public class WorkflowExecutionScopeCompletionTests
         execution.ClearUncommittedEvents();
 
         // Now scope completion should detect the subprocess is done
-        var (effects, completedHostIds) = execution.CompleteFinishedSubProcessScopes();
+        var (effects, completedHostIds, _) = execution.CompleteFinishedSubProcessScopes();
 
         // Host should be completed
         Assert.AreEqual(1, completedHostIds.Count);
@@ -162,7 +162,7 @@ public class WorkflowExecutionScopeCompletionTests
         execution.ClearUncommittedEvents();
 
         // Scope completion should NOT complete host because subTask is still active
-        var (effects, completedHostIds) = execution.CompleteFinishedSubProcessScopes();
+        var (effects, completedHostIds, _) = execution.CompleteFinishedSubProcessScopes();
 
         Assert.AreEqual(0, completedHostIds.Count);
         Assert.IsFalse(hostEntry.IsCompleted);
@@ -190,7 +190,7 @@ public class WorkflowExecutionScopeCompletionTests
         // Do NOT process OpenSubProcessCommand, so no children exist
         execution.ClearUncommittedEvents();
 
-        var (effects, completedHostIds) = execution.CompleteFinishedSubProcessScopes();
+        var (effects, completedHostIds, _) = execution.CompleteFinishedSubProcessScopes();
 
         Assert.AreEqual(0, completedHostIds.Count);
         Assert.IsFalse(hostEntry.IsCompleted);
@@ -267,7 +267,7 @@ public class WorkflowExecutionScopeCompletionTests
         execution.ClearUncommittedEvents();
 
         // First scope completion should complete innerSub host
-        var (effects1, completedIds1) = execution.CompleteFinishedSubProcessScopes();
+        var (effects1, completedIds1, _) = execution.CompleteFinishedSubProcessScopes();
 
         // Inner sub should be completed, and since that makes all outer scope children
         // completed, the outer sub should also be completed in the same call (loop detects it)
@@ -323,7 +323,7 @@ public class WorkflowExecutionScopeCompletionTests
         }
         execution.ClearUncommittedEvents();
 
-        var (effects, completedHostIds) = execution.CompleteFinishedSubProcessScopes();
+        var (effects, completedHostIds, _) = execution.CompleteFinishedSubProcessScopes();
 
         Assert.AreEqual(1, completedHostIds.Count);
         Assert.AreEqual(hostEntry.ActivityInstanceId, completedHostIds[0]);
@@ -365,7 +365,7 @@ public class WorkflowExecutionScopeCompletionTests
         }
         execution.ClearUncommittedEvents();
 
-        var (effects, completedHostIds) = execution.CompleteFinishedSubProcessScopes();
+        var (effects, completedHostIds, _) = execution.CompleteFinishedSubProcessScopes();
 
         Assert.AreEqual(0, completedHostIds.Count);
         Assert.IsFalse(hostEntry.IsCompleted);
@@ -413,7 +413,7 @@ public class WorkflowExecutionScopeCompletionTests
         }
         execution.ClearUncommittedEvents();
 
-        var (effects, completedHostIds) = execution.CompleteFinishedSubProcessScopes();
+        var (effects, completedHostIds, _) = execution.CompleteFinishedSubProcessScopes();
 
         Assert.AreEqual(1, completedHostIds.Count);
 
@@ -464,7 +464,7 @@ public class WorkflowExecutionScopeCompletionTests
         var initialScopeCount = state.VariableStates.Count;
         execution.ClearUncommittedEvents();
 
-        var (effects, completedHostIds) = execution.CompleteFinishedSubProcessScopes();
+        var (effects, completedHostIds, _) = execution.CompleteFinishedSubProcessScopes();
 
         Assert.AreEqual(1, completedHostIds.Count);
 
@@ -514,7 +514,7 @@ public class WorkflowExecutionScopeCompletionTests
         iterEntry.Complete();
         execution.ClearUncommittedEvents();
 
-        var (effects, completedHostIds) = execution.CompleteFinishedSubProcessScopes();
+        var (effects, completedHostIds, _) = execution.CompleteFinishedSubProcessScopes();
 
         // Host should NOT be completed (only 1 of 3 done)
         Assert.AreEqual(0, completedHostIds.Count);
@@ -565,7 +565,7 @@ public class WorkflowExecutionScopeCompletionTests
         }
         execution.ClearUncommittedEvents();
 
-        var (effects, completedHostIds) = execution.CompleteFinishedSubProcessScopes();
+        var (effects, completedHostIds, _) = execution.CompleteFinishedSubProcessScopes();
 
         Assert.AreEqual(1, completedHostIds.Count);
         Assert.AreEqual(hostEntry.ActivityInstanceId, completedHostIds[0]);
@@ -615,7 +615,7 @@ public class WorkflowExecutionScopeCompletionTests
         iterEntry.Complete();
         execution.ClearUncommittedEvents();
 
-        var (effects, completedHostIds) = execution.CompleteFinishedSubProcessScopes();
+        var (effects, completedHostIds, _) = execution.CompleteFinishedSubProcessScopes();
 
         // Should spawn index 1 with "beta" as the item
         var events = execution.GetUncommittedEvents();
@@ -642,7 +642,7 @@ public class WorkflowExecutionScopeCompletionTests
         // Do NOT set MultiInstanceTotal — simulates host not yet executed
         execution.ClearUncommittedEvents();
 
-        var (effects, completedHostIds) = execution.CompleteFinishedSubProcessScopes();
+        var (effects, completedHostIds, _) = execution.CompleteFinishedSubProcessScopes();
 
         Assert.AreEqual(0, completedHostIds.Count);
         Assert.IsFalse(hostEntry.IsCompleted);
@@ -672,7 +672,7 @@ public class WorkflowExecutionScopeCompletionTests
         execution.ClearUncommittedEvents();
 
         // Should return nothing — task is a regular activity, not a scope
-        var (effects, completedHostIds) = execution.CompleteFinishedSubProcessScopes();
+        var (effects, completedHostIds, _) = execution.CompleteFinishedSubProcessScopes();
 
         Assert.AreEqual(0, completedHostIds.Count);
         Assert.AreEqual(0, effects.Count);
@@ -716,7 +716,7 @@ public class WorkflowExecutionScopeCompletionTests
 
         // Iteration entries should NOT trigger scope completion logic
         // (they are children, not hosts)
-        var (effects, completedHostIds) = execution.CompleteFinishedSubProcessScopes();
+        var (effects, completedHostIds, _) = execution.CompleteFinishedSubProcessScopes();
         Assert.AreEqual(0, completedHostIds.Count);
         Assert.IsFalse(hostEntry.IsCompleted);
     }
@@ -880,7 +880,7 @@ public class WorkflowExecutionScopeCompletionTests
         execution.ClearUncommittedEvents();
 
         // No iterations to spawn or complete. completedIterations.Count (0) == total (0)
-        var (effects, completedHostIds) = execution.CompleteFinishedSubProcessScopes();
+        var (effects, completedHostIds, _) = execution.CompleteFinishedSubProcessScopes();
 
         Assert.AreEqual(1, completedHostIds.Count);
         Assert.AreEqual(hostEntry.ActivityInstanceId, completedHostIds[0]);

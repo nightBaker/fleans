@@ -485,4 +485,101 @@ public class SubProcessTests : WorkflowTestBase
         Assert.IsNotNull(failedEntry, "sub_task should be in completed list");
         Assert.IsNotNull(failedEntry.ErrorState, "sub_task should have error state");
     }
+
+    [TestMethod]
+    public async Task SubProcessCompletion_CleansUpChildVariableScope()
+    {
+        var start = new StartEvent("start");
+        var innerStart = new StartEvent("sub_start");
+        var innerTask = new TaskActivity("sub_task");
+        var innerEnd = new EndEvent("sub_end");
+        var subProcess = new SubProcess("sub1")
+        {
+            Activities = [innerStart, innerTask, innerEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("inner_f1", innerStart, innerTask),
+                new SequenceFlow("inner_f2", innerTask, innerEnd)
+            ]
+        };
+        var end = new EndEvent("end");
+
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "sub-scope-cleanup",
+            Activities = [start, subProcess, end],
+            SequenceFlows =
+            [
+                new SequenceFlow("f1", start, subProcess),
+                new SequenceFlow("f2", subProcess, end)
+            ]
+        };
+
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await workflowInstance.SetWorkflow(workflow);
+        await workflowInstance.StartWorkflow();
+
+        // Before completion: root scope + child scope for sub-process
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var midSnapshot = await QueryService.GetStateSnapshot(instanceId);
+        var midScopeCount = midSnapshot!.VariableStates.Count;
+        Assert.IsTrue(midScopeCount >= 2, $"Should have at least 2 scopes (root + child), got {midScopeCount}");
+
+        await workflowInstance.CompleteActivity("sub_task", new ExpandoObject());
+
+        var finalSnapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsTrue(finalSnapshot!.IsCompleted, "Workflow should complete");
+        Assert.AreEqual(1, finalSnapshot.VariableStates.Count,
+            "Only root scope should remain after sub-process child scope cleanup");
+    }
+
+    [TestMethod]
+    public async Task SubProcessCancellation_CleansUpChildVariableScope()
+    {
+        var start = new StartEvent("start");
+        var innerStart = new StartEvent("sub_start");
+        var innerTask = new TaskActivity("sub_task");
+        var innerEnd = new EndEvent("sub_end");
+        var subProcess = new SubProcess("sub1")
+        {
+            Activities = [innerStart, innerTask, innerEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("inner_f1", innerStart, innerTask),
+                new SequenceFlow("inner_f2", innerTask, innerEnd)
+            ]
+        };
+        var boundaryTimer = new BoundaryTimerEvent("boundary_timer", "sub1",
+            new TimerDefinition(TimerType.Duration, "PT30M"));
+        var endBoundary = new EndEvent("endBoundary");
+        var end = new EndEvent("end");
+
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "sub-scope-cancel-cleanup",
+            Activities = [start, subProcess, boundaryTimer, endBoundary, end],
+            SequenceFlows =
+            [
+                new SequenceFlow("f1", start, subProcess),
+                new SequenceFlow("f2", subProcess, end),
+                new SequenceFlow("f3", boundaryTimer, endBoundary)
+            ]
+        };
+
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await workflowInstance.SetWorkflow(workflow);
+        await workflowInstance.StartWorkflow();
+
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+
+        // Simulate boundary timer firing — cancels sub-process and its children
+        var hostInstanceId = snapshot!.ActiveActivities.First(a => a.ActivityId == "sub1").ActivityInstanceId;
+        await workflowInstance.HandleTimerFired("boundary_timer", hostInstanceId);
+
+        var finalSnapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsTrue(finalSnapshot!.IsCompleted, "Should complete via boundary path");
+        Assert.AreEqual(1, finalSnapshot.VariableStates.Count,
+            "Only root scope should remain after interrupted sub-process child scope cleanup");
+    }
 }
