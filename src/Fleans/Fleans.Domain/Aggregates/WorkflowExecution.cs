@@ -623,19 +623,23 @@ public class WorkflowExecution
                 // the subprocess should NOT auto-complete
                 if (scopeEntries.Any(e => e.ErrorCode is not null)) continue;
 
-                // All scope children are done — complete the sub-process host
+                // SubProcess: merge child scope variables into parent before completing.
+                // Use ParentVariablesId lookup (not entry-based collection) because
+                // internal fork-join may have already removed branch scopes from state.
+                var childScope = _state.VariableStates
+                    .FirstOrDefault(vs => vs.ParentVariablesId == entry.VariablesId);
+                if (childScope is not null)
+                {
+                    Emit(new VariablesMerged(entry.VariablesId, childScope.Variables));
+                    // Defer scope removal: nested subprocess transitions (resolved after
+                    // this method returns) may still reference the child scope.
+                    allOrphanedScopeIds.Add(childScope.Id);
+                }
+
+                // All scope children are done — complete the sub-process host.
+                // Variables arg is empty because the merge already happened above.
                 Emit(new ActivityCompleted(
                     entry.ActivityInstanceId, entry.VariablesId, new ExpandoObject()));
-
-                // Collect sub-process child variable scopes for deferred removal.
-                // Scopes cannot be removed here because nested sub-process transitions
-                // (resolved after this method returns) may still reference them.
-                var childScopeIds = scopeEntries
-                    .Select(e => e.VariablesId)
-                    .Where(vid => vid != entry.VariablesId)
-                    .Distinct()
-                    .ToList();
-                allOrphanedScopeIds.AddRange(childScopeIds);
 
                 var effects = BuildBoundaryUnsubscribeEffects(entry.ActivityId, entry);
                 allEffects.AddRange(effects);

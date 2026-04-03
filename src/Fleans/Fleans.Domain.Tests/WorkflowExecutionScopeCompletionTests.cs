@@ -886,4 +886,88 @@ public class WorkflowExecutionScopeCompletionTests
         Assert.AreEqual(hostEntry.ActivityInstanceId, completedHostIds[0]);
         Assert.IsTrue(hostEntry.IsCompleted);
     }
+
+    [TestMethod]
+    public void CompleteFinishedSubProcessScopes_ShouldMergeChildVariablesIntoParentScope()
+    {
+        // Build: start -> subProcess(subStart -> subTask -> subEnd) -> end
+        var subStart = new StartEvent("subStart1");
+        var subTask = new TaskActivity("subTask1");
+        var subEnd = new EndEvent("subEnd1");
+        var subProcess = new SubProcess("sub1")
+        {
+            Activities = [subStart, subTask, subEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("subSeq1", subStart, subTask),
+                new SequenceFlow("subSeq2", subTask, subEnd)
+            ]
+        };
+        var start = new StartEvent("start1");
+        var end = new EndEvent("end1");
+
+        var (execution, state, hostEntry) = CreateWithExecutingHost(
+            [start, subProcess, end],
+            [new("seq1", start, subProcess), new("seq2", subProcess, end)],
+            subProcess);
+
+        // Process the OpenSubProcessCommand to spawn subStart inside the scope
+        var parentVarId = hostEntry.VariablesId;
+        execution.ProcessCommands(
+            [new OpenSubProcessCommand(subProcess, parentVarId)],
+            hostEntry.ActivityInstanceId);
+
+        // Find the spawned sub-start entry and complete it
+        var subStartEntry = state.Entries.First(e => e.ActivityId == "subStart1");
+        execution.MarkExecuting(subStartEntry.ActivityInstanceId);
+        execution.MarkCompleted(subStartEntry.ActivityInstanceId, new ExpandoObject());
+        execution.ResolveTransitions(
+        [
+            new CompletedActivityTransitions(subStartEntry.ActivityInstanceId, "subStart1",
+                [new ActivityTransition(subTask)])
+        ]);
+
+        // Complete sub-task with variables in the child scope
+        var subTaskEntry = state.Entries.First(e => e.ActivityId == "subTask1");
+        execution.MarkExecuting(subTaskEntry.ActivityInstanceId);
+        dynamic childVars = new ExpandoObject();
+        childVars.childVar = "from-child";
+        childVars.sharedVar = "child-value";
+        execution.MarkCompleted(subTaskEntry.ActivityInstanceId, childVars);
+        execution.ResolveTransitions(
+        [
+            new CompletedActivityTransitions(subTaskEntry.ActivityInstanceId, "subTask1",
+                [new ActivityTransition(subEnd)])
+        ]);
+
+        // Complete sub-end
+        var subEndEntry = state.Entries.First(e => e.ActivityId == "subEnd1");
+        execution.MarkExecuting(subEndEntry.ActivityInstanceId);
+        execution.MarkCompleted(subEndEntry.ActivityInstanceId, new ExpandoObject());
+        execution.ClearUncommittedEvents();
+
+        // Record parent scope state before merge
+        var parentScope = state.GetVariableState(parentVarId);
+        Assert.IsFalse(((IDictionary<string, object>)parentScope.Variables).ContainsKey("childVar"),
+            "Parent scope should not have child variable before merge");
+
+        // Act — scope completion should merge child variables into parent
+        var (effects, completedHostIds, orphanedScopeIds) = execution.CompleteFinishedSubProcessScopes();
+
+        // Assert — host completed
+        Assert.AreEqual(1, completedHostIds.Count);
+        Assert.IsTrue(hostEntry.IsCompleted);
+
+        // Assert — child variables merged into parent scope
+        var parentDict = (IDictionary<string, object>)parentScope.Variables;
+        Assert.IsTrue(parentDict.ContainsKey("childVar"),
+            "Child variable should be merged into parent scope");
+        Assert.AreEqual("from-child", parentDict["childVar"]);
+        Assert.AreEqual("child-value", parentDict["sharedVar"],
+            "Child scope value should overwrite parent for shared keys");
+
+        // Assert — child scope collected for deferred removal
+        Assert.AreEqual(1, orphanedScopeIds.Count,
+            "Child scope should be collected for deferred removal");
+    }
 }
