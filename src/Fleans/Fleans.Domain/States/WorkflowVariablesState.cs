@@ -30,21 +30,10 @@ public class WorkflowVariablesState
 
     internal void Merge(ExpandoObject variables)
     {
-        Variables = Combine(Variables, variables);
-    }
-
-    static ExpandoObject Combine(dynamic item1, dynamic item2)
-    {
-        var dictionary1 = (IDictionary<string, object>)item1;
-        var dictionary2 = (IDictionary<string, object>)item2;
-        var result = new ExpandoObject();
-        var d = result as IDictionary<string, object>;
-
-        foreach (var pair in dictionary1.Concat(dictionary2))
+        var target = (IDictionary<string, object>)Variables;
+        foreach (var kvp in (IDictionary<string, object>)variables)
         {
-            d[pair.Key] = pair.Value;
+            target[kvp.Key] = kvp.Value;
         }
-
-        return result;
     }
 }
