@@ -147,6 +147,9 @@ public class WorkflowQueryService : IWorkflowQueryService
         var sortField = page.Sorts?.TrimStart('-');
         var descending = page.Sorts?.StartsWith('-') == true;
 
+        // Count before ordering to avoid unnecessary ORDER BY in COUNT query
+        var totalCount = await groupedKeys.Select(g => g.Key).CountAsync();
+
         IQueryable<string> orderedKeys = sortField switch
         {
             "DeployedAt" => descending
@@ -157,15 +160,15 @@ public class WorkflowQueryService : IWorkflowQueryService
                 : groupedKeys.OrderBy(g => g.Key).Select(g => g.Key)
         };
 
-        var totalCount = await orderedKeys.CountAsync();
-
         // Step 4: Paginate keys
         var pagedKeys = await orderedKeys
             .Skip((page.Page - 1) * page.PageSize)
             .Take(page.PageSize)
             .ToListAsync();
 
-        // Step 5: Fetch all versions for the paged keys
+        // Step 5: Fetch ALL versions for the paged keys (intentionally unfiltered).
+        // When a filter like IsActive==true narrows which keys appear, we still
+        // show every version within those keys for management purposes.
         var definitions = await db.ProcessDefinitions
             .Where(d => pagedKeys.Contains(d.ProcessDefinitionKey))
             .OrderBy(d => d.ProcessDefinitionKey)

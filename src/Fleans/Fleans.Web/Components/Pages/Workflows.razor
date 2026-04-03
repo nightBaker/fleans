@@ -7,6 +7,8 @@
 @inject IWorkflowCommandService CommandService
 @inject NavigationManager Navigation
 
+@implements IDisposable
+
 <PageTitle>Workflows</PageTitle>
 
 <FluentStack Orientation="Orientation.Vertical" Gap="20px" >
@@ -167,7 +169,6 @@
             {
                 isLoading = true;
                 loadErrorMessage = null;
-                StateHasChanged();
 
                 var sortString = BuildSortString(request);
                 var filters = string.IsNullOrWhiteSpace(searchQuery)
@@ -219,7 +220,6 @@
                 LogLoadWorkflowsError(ex);
                 loadErrorMessage = "Unable to reach workflow engine. Try again.";
                 isLoading = false;
-                StateHasChanged();
                 return GridItemsProviderResult.From(
                     new List<ProcessDefinitionRow>(), 0);
             }
@@ -233,6 +233,7 @@
             return "ProcessDefinitionKey";
 
         var title = request.SortByColumn.Title;
+        // Falls back to default key sort for columns not in the map
         if (title is null || !SortPropertyMap.TryGetValue(title, out var propertyName))
             return "ProcessDefinitionKey";
 
@@ -345,5 +346,10 @@
             isToggling = false;
             togglingProcessKey = null;
         }
+    }
+
+    public void Dispose()
+    {
+        searchDebounceTimer?.Dispose();
     }
 }

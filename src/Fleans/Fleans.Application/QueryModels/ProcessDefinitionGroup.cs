@@ -1,5 +1,6 @@
 namespace Fleans.Application.QueryModels;
 
+[GenerateSerializer]
 public record ProcessDefinitionGroup(
-    string ProcessDefinitionKey,
-    IReadOnlyList<ProcessDefinitionSummary> Versions);
+    [property: Id(0)] string ProcessDefinitionKey,
+    [property: Id(1)] IReadOnlyList<ProcessDefinitionSummary> Versions);
