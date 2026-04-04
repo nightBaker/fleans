@@ -81,24 +81,23 @@ public static class EfCorePersistenceDependencyInjection
     /// to prevent races when multiple processes (Api, Web, MCP) start concurrently.
     /// Also enables WAL mode for better concurrent read/write performance.
     /// </summary>
-    public static void EnsureDatabaseCreated(IServiceProvider serviceProvider, string connectionString)
+    public static void EnsureDatabaseCreated(IServiceProvider serviceProvider)
     {
-        var csb = new SqliteConnectionStringBuilder(connectionString);
+        var dbFactory = serviceProvider.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>();
+        using var db = dbFactory.CreateDbContext();
+
+        var csb = new SqliteConnectionStringBuilder(db.Database.GetConnectionString());
         var lockPath = csb.DataSource + ".init-lock";
 
+        // File lock prevents concurrent EnsureCreated from multiple processes.
+        // Lock file is left in place intentionally — it's empty and harmless.
         using var fileLock = new FileStream(lockPath, FileMode.OpenOrCreate,
             FileAccess.ReadWrite, FileShare.None);
 
-        var dbFactory = serviceProvider.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>();
-        using var db = dbFactory.CreateDbContext();
         db.Database.EnsureCreated();
 
         // WAL mode persists at the database level — set once, effective for all connections
-        db.Database.OpenConnection();
-        db.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;");
-        db.Database.CloseConnection();
-
-        fileLock.Close();
-        try { File.Delete(lockPath); } catch { /* best-effort cleanup */ }
+        db.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
+        db.Database.ExecuteSqlRaw("PRAGMA synchronous=NORMAL;");
     }
 }

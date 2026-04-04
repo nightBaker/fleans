@@ -33,7 +33,7 @@ var app = builder.Build();
 // Ensure EF Core database exists (dev only — use migrations in production).
 using (var scope = app.Services.CreateScope())
 {
-    EfCorePersistenceDependencyInjection.EnsureDatabaseCreated(scope.ServiceProvider, sqliteConnectionString);
+    EfCorePersistenceDependencyInjection.EnsureDatabaseCreated(scope.ServiceProvider);
 }
 
 app.MapDefaultEndpoints();
