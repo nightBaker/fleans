@@ -82,3 +82,39 @@ Persistent streams can redeliver events. Handlers must be safe on retry.
 - Building custom stream adapters (use existing packages)
 - Changing the domain event model or aggregate event sourcing
 - Adding new database tables
+
+## How to Add a New Stream Provider
+
+1. Install the NuGet package for the Orleans stream adapter (e.g., `Microsoft.Orleans.Streaming.EventHubs`)
+2. Add a case to `FleanStreamingExtensions.AddFleanStreaming()` in `Fleans.ServiceDefaults/FleanStreamingExtensions.cs`:
+   ```csharp
+   "eventhubs" => builder.AddEventHubStreams(StreamProviderName, options =>
+   {
+       options.ConfigureEventHub(hub => hub.Configure(cfg =>
+       {
+           cfg.ConnectionString = configuration["Fleans:Streaming:EventHubs:ConnectionString"];
+           cfg.ConsumerGroup = configuration["Fleans:Streaming:EventHubs:ConsumerGroup"] ?? "$Default";
+           cfg.Path = configuration["Fleans:Streaming:EventHubs:Path"] ?? "fleans-events";
+       }));
+       options.UseAzureTableCheckpointer(table => table.Configure(cfg =>
+       {
+           cfg.TableServiceClient = new Azure.Data.Tables.TableServiceClient(
+               configuration["Fleans:Streaming:EventHubs:StorageConnectionString"]);
+       }));
+   }),
+   ```
+3. Set configuration:
+   ```json
+   {
+     "Fleans": {
+       "Streaming": {
+         "Provider": "eventhubs",
+         "EventHubs": {
+           "ConnectionString": "...",
+           "Path": "fleans-events"
+         }
+       }
+     }
+   }
+   ```
+4. No changes to publishers or handlers — they use `IAsyncStream<T>` which is provider-agnostic.
