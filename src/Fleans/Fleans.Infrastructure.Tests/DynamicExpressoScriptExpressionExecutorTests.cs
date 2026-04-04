@@ -169,4 +169,54 @@ public class DynamicExpressoScriptExpressionExecutorTests
         Assert.AreEqual("_context.path = \"C:\\\\\"", statements[0]);
         Assert.AreEqual("_context.x = 1", statements[1]);
     }
+
+    [TestMethod]
+    public async Task Execute_SequentialScripts_NoStateLeak()
+    {
+        // Arrange — run script A that sets _context.x, then script B with fresh variables
+        // that does NOT set _context.x. Pooled Interpreter must not leak _context.x.
+        dynamic varsA = new ExpandoObject();
+        varsA.x = 1;
+        await _executor.Execute("_context.x = _context.x + 100", varsA, "csharp");
+
+        dynamic varsB = new ExpandoObject();
+        varsB.y = 42;
+
+        // Act
+        var result = await _executor.Execute("_context.y = _context.y * 2", varsB, "csharp");
+
+        // Assert — varsB should only have 'y', not 'x' from the previous execution
+        var dict = (IDictionary<string, object>)result;
+        Assert.AreEqual(84, dict["y"]);
+        Assert.IsFalse(dict.ContainsKey("x"), "Pooled interpreter leaked variable 'x' from previous execution");
+    }
+
+    [TestMethod]
+    public async Task Execute_ConcurrentScripts_NoInterference()
+    {
+        // Arrange — 20 concurrent script executions with unique variable names
+        const int concurrency = 20;
+
+        var tasks = Enumerable.Range(0, concurrency).Select(async i =>
+        {
+            dynamic vars = new ExpandoObject();
+            ((IDictionary<string, object>)vars)["input"] = i;
+
+            var result = await _executor.Execute(
+                "_context.output = _context.input * 3",
+                (ExpandoObject)vars, "csharp");
+
+            var dict = (IDictionary<string, object>)result;
+            return (Input: i, Output: dict["output"]);
+        }).ToArray();
+
+        // Act
+        var results = await Task.WhenAll(tasks);
+
+        // Assert — each execution should produce its own correct result
+        foreach (var (input, output) in results)
+        {
+            Assert.AreEqual(input * 3, output, $"Interference detected for input {input}");
+        }
+    }
 }

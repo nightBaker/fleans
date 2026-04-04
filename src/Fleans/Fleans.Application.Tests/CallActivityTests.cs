@@ -1,5 +1,4 @@
 using Fleans.Application.Grains;
-using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
@@ -29,8 +28,8 @@ public class CallActivityTests : WorkflowTestBase
             ]
         };
 
-        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        await factory.DeployWorkflow(childWorkflow, "<xml/>");
+        var childProcessGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("childProcess");
+        await childProcessGrain.DeployVersion(childWorkflow, "<xml/>");
 
         // Arrange — parent workflow: start → callActivity → end
         var parentStart = new StartEvent("start");
@@ -48,9 +47,10 @@ public class CallActivityTests : WorkflowTestBase
             ]
         };
 
-        await factory.DeployWorkflow(parentWorkflow, "<xml/>");
+        var parentProcessGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("parentProcess");
+        await parentProcessGrain.DeployVersion(parentWorkflow, "<xml/>");
 
-        var parentInstance = await factory.CreateWorkflowInstanceGrain("parentProcess");
+        var parentInstance = await parentProcessGrain.CreateInstance();
         var parentInstanceId = parentInstance.GetPrimaryKey();
 
         // Act — start parent, which spawns the child
@@ -95,8 +95,8 @@ public class CallActivityTests : WorkflowTestBase
             ]
         };
 
-        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        await factory.DeployWorkflow(childWorkflow, "<xml/>");
+        var childProcessGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("childProcess2");
+        await childProcessGrain.DeployVersion(childWorkflow, "<xml/>");
 
         // Arrange — parent workflow with input mappings, propagation disabled
         var parentStart = new StartEvent("start");
@@ -122,9 +122,10 @@ public class CallActivityTests : WorkflowTestBase
             ]
         };
 
-        await factory.DeployWorkflow(parentWorkflow, "<xml/>");
+        var parentProcessGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("parentProcess2");
+        await parentProcessGrain.DeployVersion(parentWorkflow, "<xml/>");
 
-        var parentInstance = await factory.CreateWorkflowInstanceGrain("parentProcess2");
+        var parentInstance = await parentProcessGrain.CreateInstance();
         var parentInstanceId = parentInstance.GetPrimaryKey();
 
         // Act — start parent and complete parentTask with variables
@@ -174,8 +175,8 @@ public class CallActivityTests : WorkflowTestBase
             ]
         };
 
-        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        await factory.DeployWorkflow(childWorkflow, "<xml/>");
+        var childProcessGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("childProcess3");
+        await childProcessGrain.DeployVersion(childWorkflow, "<xml/>");
 
         // Arrange — parent workflow with output mappings, propagation disabled
         var parentStart = new StartEvent("start");
@@ -201,9 +202,10 @@ public class CallActivityTests : WorkflowTestBase
             ]
         };
 
-        await factory.DeployWorkflow(parentWorkflow, "<xml/>");
+        var parentProcessGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("parentProcess3");
+        await parentProcessGrain.DeployVersion(parentWorkflow, "<xml/>");
 
-        var parentInstance = await factory.CreateWorkflowInstanceGrain("parentProcess3");
+        var parentInstance = await parentProcessGrain.CreateInstance();
         var parentInstanceId = parentInstance.GetPrimaryKey();
 
         // Act — start parent (call activity spawns child)
@@ -259,8 +261,8 @@ public class CallActivityTests : WorkflowTestBase
             ]
         };
 
-        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        await factory.DeployWorkflow(childWorkflow, "<xml/>");
+        var childProcessGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("childProcess4");
+        await childProcessGrain.DeployVersion(childWorkflow, "<xml/>");
 
         // Arrange — parent workflow with boundary error event on call activity
         var parentStart = new StartEvent("start");
@@ -283,9 +285,10 @@ public class CallActivityTests : WorkflowTestBase
             ]
         };
 
-        await factory.DeployWorkflow(parentWorkflow, "<xml/>");
+        var parentProcessGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("parentProcess4");
+        await parentProcessGrain.DeployVersion(parentWorkflow, "<xml/>");
 
-        var parentInstance = await factory.CreateWorkflowInstanceGrain("parentProcess4");
+        var parentInstance = await parentProcessGrain.CreateInstance();
         var parentInstanceId = parentInstance.GetPrimaryKey();
 
         // Act — start parent, then fail the call activity
@@ -327,8 +330,8 @@ public class CallActivityTests : WorkflowTestBase
             ]
         };
 
-        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        await factory.DeployWorkflow(childWorkflow, "<xml/>");
+        var childProcessGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("childThatFails");
+        await childProcessGrain.DeployVersion(childWorkflow, "<xml/>");
 
         // Arrange — parent workflow: start → callFailing → happyEnd
         //   with errorBoundary on callFailing → errorHandler → end2
@@ -352,9 +355,10 @@ public class CallActivityTests : WorkflowTestBase
             ]
         };
 
-        await factory.DeployWorkflow(parentWorkflow, "<xml/>");
+        var parentProcessGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("errorBoundaryTest");
+        await parentProcessGrain.DeployVersion(parentWorkflow, "<xml/>");
 
-        var parentInstance = await factory.CreateWorkflowInstanceGrain("errorBoundaryTest");
+        var parentInstance = await parentProcessGrain.CreateInstance();
         var parentInstanceId = parentInstance.GetPrimaryKey();
 
         // Act — start parent (spawns child), then fail the child's task
@@ -409,8 +413,8 @@ public class CallActivityTests : WorkflowTestBase
             ]
         };
 
-        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        await factory.DeployWorkflow(childWorkflow, "<xml/>");
+        var childProcessGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("childProcess5");
+        await childProcessGrain.DeployVersion(childWorkflow, "<xml/>");
 
         // Arrange — parent workflow with no mappings and propagation disabled
         var parentStart = new StartEvent("start");
@@ -436,9 +440,10 @@ public class CallActivityTests : WorkflowTestBase
             ]
         };
 
-        await factory.DeployWorkflow(parentWorkflow, "<xml/>");
+        var parentProcessGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("parentProcess5");
+        await parentProcessGrain.DeployVersion(parentWorkflow, "<xml/>");
 
-        var parentInstance = await factory.CreateWorkflowInstanceGrain("parentProcess5");
+        var parentInstance = await parentProcessGrain.CreateInstance();
         var parentInstanceId = parentInstance.GetPrimaryKey();
 
         // Act — start parent and complete parentTask with a variable
@@ -497,8 +502,8 @@ public class CallActivityTests : WorkflowTestBase
             ]
         };
 
-        var factory = Cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        await factory.DeployWorkflow(childWorkflow, "<xml/>");
+        var childProcessGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("childProcess6");
+        await childProcessGrain.DeployVersion(childWorkflow, "<xml/>");
 
         // Arrange — parent workflow with default propagation flags (true, true)
         var parentStart = new StartEvent("start");
@@ -518,9 +523,10 @@ public class CallActivityTests : WorkflowTestBase
             ]
         };
 
-        await factory.DeployWorkflow(parentWorkflow, "<xml/>");
+        var parentProcessGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("parentProcess6");
+        await parentProcessGrain.DeployVersion(parentWorkflow, "<xml/>");
 
-        var parentInstance = await factory.CreateWorkflowInstanceGrain("parentProcess6");
+        var parentInstance = await parentProcessGrain.CreateInstance();
         var parentInstanceId = parentInstance.GetPrimaryKey();
 
         // Act — start parent and complete parentTask with a variable

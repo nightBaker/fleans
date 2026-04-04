@@ -41,6 +41,16 @@ public class EfCoreProcessDefinitionRepository : IProcessDefinitionRepository
             .ToListAsync();
     }
 
+    public async Task<List<string>> GetAllDistinctKeysAsync()
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        return await db.ProcessDefinitions
+            .Select(d => d.ProcessDefinitionKey)
+            .Distinct()
+            .OrderBy(k => k)
+            .ToListAsync();
+    }
+
     public async Task SaveAsync(ProcessDefinition definition)
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync();
