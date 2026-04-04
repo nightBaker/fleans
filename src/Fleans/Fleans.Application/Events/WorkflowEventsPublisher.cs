@@ -1,5 +1,6 @@
 using Fleans.Application.Grains;
 using Fleans.Domain.Events;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Orleans.Concurrency;
 using Orleans.Runtime;
@@ -13,7 +14,7 @@ public partial class WorkflowEventsPublisher : Grain, IEventPublisher
     private IStreamProvider _streamProvider = null!;
     private readonly ILogger<WorkflowEventsPublisher> _logger;
 
-    public const string StreamProvider = "StreamProvider";
+    public const string StreamProvider = FleanStreamingExtensions.StreamProviderName;
     public const string StreamNameSpace = "events";
 
     public WorkflowEventsPublisher(ILogger<WorkflowEventsPublisher> logger)
