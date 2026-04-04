@@ -305,7 +305,7 @@ namespace Fleans.Domain.Tests
         }
 
         [TestMethod]
-        public void MarkEntryCompleted_ShouldRemoveFromActiveSet_ButKeepInDictionary()
+        public void CompleteEntry_ShouldRemoveFromActiveSet_ButKeepInDictionary()
         {
             // Arrange
             var state = new WorkflowInstanceState();
@@ -315,14 +315,14 @@ namespace Fleans.Domain.Tests
 
             Assert.IsTrue(state.HasActiveEntry(id));
 
-            // Act
-            entry.Complete();
-            state.MarkEntryCompleted(id);
+            // Act — single self-contained call
+            state.CompleteEntry(id);
 
             // Assert — not active, but still findable
             Assert.IsFalse(state.HasActiveEntry(id));
             Assert.IsNotNull(state.FindEntry(id));
             Assert.AreEqual("task1", state.GetEntry(id).ActivityId);
+            Assert.IsTrue(state.GetEntry(id).IsCompleted);
         }
 
         [TestMethod]
@@ -339,8 +339,7 @@ namespace Fleans.Domain.Tests
             state.AddEntries(new[] { entry1, entry2, entry3 });
 
             // Act — complete entry2
-            entry2.Complete();
-            state.MarkEntryCompleted(id2);
+            state.CompleteEntry(id2);
 
             // Assert
             var active = state.GetActiveActivities().ToList();
@@ -419,8 +418,7 @@ namespace Fleans.Domain.Tests
             state.AddEntries(new[] { entry });
 
             // Act
-            entry.Complete();
-            state.MarkEntryCompleted(id);
+            state.CompleteEntry(id);
 
             // Assert
             Assert.IsFalse(state.HasActiveChildrenInScope(scopeId));

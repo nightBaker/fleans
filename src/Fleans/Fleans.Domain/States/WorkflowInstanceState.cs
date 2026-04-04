@@ -121,10 +121,26 @@ public class WorkflowInstanceState
     public List<ActivityInstanceEntry> GetEntriesInScope(Guid scopeId)
         => Entries.Where(e => e.ScopeId == scopeId).ToList();
 
-    internal Dictionary<Guid, ActivityInstanceEntry> GetEntriesByIdCache() => EntriesById;
+    internal IReadOnlyDictionary<Guid, ActivityInstanceEntry> GetEntriesByIdCache() => EntriesById;
 
-    internal void MarkEntryCompleted(Guid activityInstanceId)
+    public void CompleteEntry(Guid activityInstanceId)
     {
+        var entry = GetActiveEntry(activityInstanceId);
+        entry.Complete();
+        ActiveEntryIds.Remove(activityInstanceId);
+    }
+
+    public void FailEntry(Guid activityInstanceId, int errorCode, string errorMessage)
+    {
+        var entry = GetActiveEntry(activityInstanceId);
+        entry.Fail(errorCode, errorMessage);
+        ActiveEntryIds.Remove(activityInstanceId);
+    }
+
+    public void CancelEntry(Guid activityInstanceId, string reason)
+    {
+        var entry = GetActiveEntry(activityInstanceId);
+        entry.Cancel(reason);
         ActiveEntryIds.Remove(activityInstanceId);
     }
 
@@ -225,24 +241,24 @@ public class WorkflowInstanceState
     public void CompleteEntries(List<ActivityInstanceEntry> entries)
     {
         foreach (var entry in entries)
-        {
-            entry.Complete();
-            MarkEntryCompleted(entry.ActivityInstanceId);
-        }
+            CompleteEntry(entry.ActivityInstanceId);
     }
 
     public void AddEntries(IEnumerable<ActivityInstanceEntry> entries)
     {
-        var entriesList = entries.ToList();
-        Entries.AddRange(entriesList);
-
         if (_entriesById != null)
         {
+            var entriesList = entries.ToList();
+            Entries.AddRange(entriesList);
             foreach (var entry in entriesList)
             {
                 _entriesById[entry.ActivityInstanceId] = entry;
                 _activeEntryIds!.Add(entry.ActivityInstanceId);
             }
+        }
+        else
+        {
+            Entries.AddRange(entries);
         }
     }
 
