@@ -886,4 +886,84 @@ public class WorkflowExecutionScopeCompletionTests
         Assert.AreEqual(hostEntry.ActivityInstanceId, completedHostIds[0]);
         Assert.IsTrue(hostEntry.IsCompleted);
     }
+
+    [TestMethod]
+    public void CompleteFinishedSubProcessScopes_ShouldMergeChildVariablesIntoParentScope()
+    {
+        // Build: start -> subProcess(subStart -> subTask -> subEnd) -> end
+        var subStart = new StartEvent("subStart1");
+        var subTask = new ScriptTask("subTask1", "return 1;");
+        var subEnd = new EndEvent("subEnd1");
+        var subProcess = new SubProcess("sub1")
+        {
+            Activities = [subStart, subTask, subEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("subSeq1", subStart, subTask),
+                new SequenceFlow("subSeq2", subTask, subEnd)
+            ]
+        };
+        var start = new StartEvent("start1");
+        var end = new EndEvent("end1");
+
+        var (execution, state, hostEntry) = CreateWithExecutingHost(
+            [start, subProcess, end],
+            [new("seq1", start, subProcess), new("seq2", subProcess, end)],
+            subProcess);
+
+        // Process the OpenSubProcessCommand to spawn child scope and subStart
+        var parentVarId = hostEntry.VariablesId;
+        execution.ProcessCommands(
+            [new OpenSubProcessCommand(subProcess, parentVarId)],
+            hostEntry.ActivityInstanceId);
+
+        // Find child scope and add variables to it
+        var childScope = state.VariableStates
+            .First(vs => vs.ParentVariablesId == parentVarId);
+        dynamic childVars = new ExpandoObject();
+        childVars.subVar = "from-child";
+        childScope.Merge(childVars);
+
+        // Complete subStart -> subTask -> subEnd
+        var subStartEntry = state.Entries.First(e => e.ActivityId == "subStart1");
+        execution.MarkExecuting(subStartEntry.ActivityInstanceId);
+        execution.MarkCompleted(subStartEntry.ActivityInstanceId, new ExpandoObject());
+        execution.ResolveTransitions(
+        [
+            new CompletedActivityTransitions(subStartEntry.ActivityInstanceId, "subStart1",
+                [new ActivityTransition(subTask)])
+        ]);
+
+        var subTaskEntry = state.Entries.First(e => e.ActivityId == "subTask1");
+        execution.MarkExecuting(subTaskEntry.ActivityInstanceId);
+        execution.MarkCompleted(subTaskEntry.ActivityInstanceId, new ExpandoObject());
+        execution.ResolveTransitions(
+        [
+            new CompletedActivityTransitions(subTaskEntry.ActivityInstanceId, "subTask1",
+                [new ActivityTransition(subEnd)])
+        ]);
+
+        var subEndEntry = state.Entries.First(e => e.ActivityId == "subEnd1");
+        execution.MarkExecuting(subEndEntry.ActivityInstanceId);
+        execution.MarkCompleted(subEndEntry.ActivityInstanceId, new ExpandoObject());
+        execution.ClearUncommittedEvents();
+
+        // Now scope completion should merge child vars and complete host
+        var (effects, completedHostIds) = execution.CompleteFinishedSubProcessScopes();
+
+        Assert.AreEqual(1, completedHostIds.Count);
+        Assert.IsTrue(hostEntry.IsCompleted);
+
+        // Child scope variables should be merged into parent scope
+        var events = execution.GetUncommittedEvents();
+        var mergeEvent = events.OfType<VariablesMerged>()
+            .FirstOrDefault(e => e.VariablesId == parentVarId);
+        Assert.IsNotNull(mergeEvent, "Should emit VariablesMerged for parent scope");
+
+        // Parent scope should now have the child's variable
+        var parentScope = state.GetVariableState(parentVarId);
+        var parentDict = (IDictionary<string, object>)parentScope!.Variables;
+        Assert.IsTrue(parentDict.ContainsKey("subVar"), "Parent scope should contain merged child variable");
+        Assert.AreEqual("from-child", parentDict["subVar"]);
+    }
 }

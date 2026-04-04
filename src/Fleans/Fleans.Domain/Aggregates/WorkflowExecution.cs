@@ -616,6 +616,17 @@ public class WorkflowExecution
                 // the subprocess should NOT auto-complete
                 if (scopeEntries.Any(e => e.ErrorCode is not null)) continue;
 
+                // SubProcess: merge child scope variables into parent before completing.
+                // We do NOT remove the child scope here because the do-while loop may
+                // complete a parent subprocess before inner transitions are resolved,
+                // and those transitions spawn entries referencing the child scope.
+                var childScope = _state.VariableStates
+                    .FirstOrDefault(vs => vs.ParentVariablesId == entry.VariablesId);
+                if (childScope is not null)
+                {
+                    Emit(new VariablesMerged(entry.VariablesId, childScope.Variables));
+                }
+
                 // All scope children are done — complete the sub-process host
                 Emit(new ActivityCompleted(
                     entry.ActivityInstanceId, entry.VariablesId, new ExpandoObject()));
