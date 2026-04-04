@@ -54,34 +54,79 @@ public class WorkflowInstanceState
     [Id(15)]
     public List<TimerCycleTrackingState> TimerCycleTracking { get; private set; } = [];
 
+    // Runtime caches — NOT serialized by Orleans, NOT persisted by EF Core.
+    // Lazily rebuilt from Entries list after deserialization or grain activation.
+    [field: NonSerialized]
+    private Dictionary<Guid, ActivityInstanceEntry>? _entriesById;
+
+    [field: NonSerialized]
+    private HashSet<Guid>? _activeEntryIds;
+
+    private Dictionary<Guid, ActivityInstanceEntry> EntriesById
+    {
+        get
+        {
+            if (_entriesById == null) RebuildCaches();
+            return _entriesById!;
+        }
+    }
+
+    private HashSet<Guid> ActiveEntryIds
+    {
+        get
+        {
+            if (_activeEntryIds == null) RebuildCaches();
+            return _activeEntryIds!;
+        }
+    }
+
+    private void RebuildCaches()
+    {
+        _entriesById = Entries.ToDictionary(e => e.ActivityInstanceId);
+        _activeEntryIds = Entries
+            .Where(e => !e.IsCompleted)
+            .Select(e => e.ActivityInstanceId)
+            .ToHashSet();
+    }
+
     public IEnumerable<ActivityInstanceEntry> GetActiveActivities()
-        => Entries.Where(e => !e.IsCompleted);
+        => ActiveEntryIds.Select(id => EntriesById[id]);
 
     public IEnumerable<ActivityInstanceEntry> GetCompletedActivities()
         => Entries.Where(e => e.IsCompleted);
 
     public ActivityInstanceEntry? GetFirstActive(string activityId)
-        => Entries.FirstOrDefault(a => a.ActivityId == activityId && !a.IsCompleted);
+        => ActiveEntryIds.Select(id => EntriesById[id])
+            .FirstOrDefault(e => e.ActivityId == activityId);
 
     public bool HasActiveEntry(Guid activityInstanceId)
-        => Entries.Any(e => e.ActivityInstanceId == activityInstanceId && !e.IsCompleted);
+        => ActiveEntryIds.Contains(activityInstanceId);
 
     public bool HasActiveChildrenInScope(Guid scopeId)
-        => Entries.Any(e => e.ScopeId == scopeId && !e.IsCompleted);
+        => ActiveEntryIds.Any(id => EntriesById[id].ScopeId == scopeId);
 
     public ActivityInstanceEntry GetActiveEntry(Guid activityInstanceId)
-        => Entries.FirstOrDefault(e => e.ActivityInstanceId == activityInstanceId && !e.IsCompleted)
-            ?? throw new InvalidOperationException($"Active entry for activity instance '{activityInstanceId}' not found");
+        => ActiveEntryIds.Contains(activityInstanceId)
+            ? EntriesById[activityInstanceId]
+            : throw new InvalidOperationException($"Active entry for activity instance '{activityInstanceId}' not found");
 
     public ActivityInstanceEntry GetEntry(Guid activityInstanceId)
-        => Entries.FirstOrDefault(e => e.ActivityInstanceId == activityInstanceId)
-            ?? throw new InvalidOperationException($"Entry for activity instance '{activityInstanceId}' not found");
+        => EntriesById.TryGetValue(activityInstanceId, out var entry)
+            ? entry
+            : throw new InvalidOperationException($"Entry for activity instance '{activityInstanceId}' not found");
 
     public ActivityInstanceEntry? FindEntry(Guid activityInstanceId)
-        => Entries.FirstOrDefault(e => e.ActivityInstanceId == activityInstanceId);
+        => EntriesById.GetValueOrDefault(activityInstanceId);
 
     public List<ActivityInstanceEntry> GetEntriesInScope(Guid scopeId)
         => Entries.Where(e => e.ScopeId == scopeId).ToList();
+
+    internal Dictionary<Guid, ActivityInstanceEntry> GetEntriesByIdCache() => EntriesById;
+
+    internal void MarkEntryCompleted(Guid activityInstanceId)
+    {
+        ActiveEntryIds.Remove(activityInstanceId);
+    }
 
     public Guid GetRootVariablesId()
         => VariableStates.First().Id;
@@ -105,6 +150,12 @@ public class WorkflowInstanceState
     {
         Initialize(id, processDefinitionId, variablesId);
         Entries.Add(entry);
+
+        if (_entriesById != null)
+        {
+            _entriesById[entry.ActivityInstanceId] = entry;
+            _activeEntryIds!.Add(entry.ActivityInstanceId);
+        }
     }
 
     public void SetParentInfo(Guid parentWorkflowInstanceId, string parentActivityId)
@@ -174,12 +225,25 @@ public class WorkflowInstanceState
     public void CompleteEntries(List<ActivityInstanceEntry> entries)
     {
         foreach (var entry in entries)
+        {
             entry.Complete();
+            MarkEntryCompleted(entry.ActivityInstanceId);
+        }
     }
 
     public void AddEntries(IEnumerable<ActivityInstanceEntry> entries)
     {
-        Entries.AddRange(entries);
+        var entriesList = entries.ToList();
+        Entries.AddRange(entriesList);
+
+        if (_entriesById != null)
+        {
+            foreach (var entry in entriesList)
+            {
+                _entriesById[entry.ActivityInstanceId] = entry;
+                _activeEntryIds!.Add(entry.ActivityInstanceId);
+            }
+        }
     }
 
     public void SetConditionSequenceResult(Guid activityInstanceId, string sequenceId, bool result)

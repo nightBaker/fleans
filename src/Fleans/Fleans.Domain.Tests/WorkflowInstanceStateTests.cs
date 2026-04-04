@@ -271,5 +271,181 @@ namespace Fleans.Domain.Tests
                 state.SetConditionSequenceResult(activityInstanceId, "non-existent", true);
             });
         }
+
+        [TestMethod]
+        public void GetEntry_ShouldReturnEntry_ByActivityInstanceId()
+        {
+            // Arrange
+            var state = new WorkflowInstanceState();
+            var id1 = Guid.NewGuid();
+            var id2 = Guid.NewGuid();
+            var entry1 = new ActivityInstanceEntry(id1, "task1", Guid.Empty);
+            var entry2 = new ActivityInstanceEntry(id2, "task2", Guid.Empty);
+            state.AddEntries(new[] { entry1, entry2 });
+
+            // Act
+            var result = state.GetEntry(id2);
+
+            // Assert
+            Assert.AreEqual("task2", result.ActivityId);
+            Assert.AreEqual(id2, result.ActivityInstanceId);
+        }
+
+        [TestMethod]
+        public void FindEntry_ShouldReturnNull_WhenNotFound()
+        {
+            // Arrange
+            var state = new WorkflowInstanceState();
+
+            // Act
+            var result = state.FindEntry(Guid.NewGuid());
+
+            // Assert
+            Assert.IsNull(result);
+        }
+
+        [TestMethod]
+        public void MarkEntryCompleted_ShouldRemoveFromActiveSet_ButKeepInDictionary()
+        {
+            // Arrange
+            var state = new WorkflowInstanceState();
+            var id = Guid.NewGuid();
+            var entry = new ActivityInstanceEntry(id, "task1", Guid.Empty);
+            state.AddEntries(new[] { entry });
+
+            Assert.IsTrue(state.HasActiveEntry(id));
+
+            // Act
+            entry.Complete();
+            state.MarkEntryCompleted(id);
+
+            // Assert — not active, but still findable
+            Assert.IsFalse(state.HasActiveEntry(id));
+            Assert.IsNotNull(state.FindEntry(id));
+            Assert.AreEqual("task1", state.GetEntry(id).ActivityId);
+        }
+
+        [TestMethod]
+        public void GetActiveActivities_AfterCompletion_ExcludesCompletedEntry()
+        {
+            // Arrange
+            var state = new WorkflowInstanceState();
+            var id1 = Guid.NewGuid();
+            var id2 = Guid.NewGuid();
+            var id3 = Guid.NewGuid();
+            var entry1 = new ActivityInstanceEntry(id1, "task1", Guid.Empty);
+            var entry2 = new ActivityInstanceEntry(id2, "task2", Guid.Empty);
+            var entry3 = new ActivityInstanceEntry(id3, "task3", Guid.Empty);
+            state.AddEntries(new[] { entry1, entry2, entry3 });
+
+            // Act — complete entry2
+            entry2.Complete();
+            state.MarkEntryCompleted(id2);
+
+            // Assert
+            var active = state.GetActiveActivities().ToList();
+            Assert.AreEqual(2, active.Count);
+            Assert.IsTrue(active.Any(e => e.ActivityId == "task1"));
+            Assert.IsTrue(active.Any(e => e.ActivityId == "task3"));
+            Assert.IsFalse(active.Any(e => e.ActivityId == "task2"));
+        }
+
+        [TestMethod]
+        public void IncrementalCacheUpdate_AddEntries_UpdatesBothCaches()
+        {
+            // Arrange — trigger cache build via a query
+            var state = new WorkflowInstanceState();
+            var id1 = Guid.NewGuid();
+            var entry1 = new ActivityInstanceEntry(id1, "task1", Guid.Empty);
+            state.AddEntries(new[] { entry1 });
+
+            // Force cache build
+            Assert.AreEqual(1, state.GetActiveActivities().Count());
+
+            // Act — add more entries after cache is built
+            var id2 = Guid.NewGuid();
+            var entry2 = new ActivityInstanceEntry(id2, "task2", Guid.Empty);
+            state.AddEntries(new[] { entry2 });
+
+            // Assert — new entry visible in both active list and dictionary lookup
+            Assert.AreEqual(2, state.GetActiveActivities().Count());
+            Assert.IsTrue(state.HasActiveEntry(id2));
+            Assert.AreEqual("task2", state.GetEntry(id2).ActivityId);
+        }
+
+        [TestMethod]
+        public void LazyCache_RebuildAfterDeserialization_WorksCorrectly()
+        {
+            // Arrange — simulate deserialization by using StartWith (populates Entries list)
+            // then querying, which forces lazy cache rebuild
+            var state = new WorkflowInstanceState();
+            var id = Guid.NewGuid();
+            var entry = new ActivityInstanceEntry(id, "start", Guid.Empty);
+            state.StartWith(Guid.NewGuid(), "test-process", entry, id);
+
+            // Act — first query forces lazy cache rebuild
+            var hasEntry = state.HasActiveEntry(id);
+            var found = state.FindEntry(id);
+            var active = state.GetActiveActivities().ToList();
+
+            // Assert
+            Assert.IsTrue(hasEntry);
+            Assert.IsNotNull(found);
+            Assert.AreEqual(1, active.Count);
+            Assert.AreEqual("start", active[0].ActivityId);
+        }
+
+        [TestMethod]
+        public void HasActiveChildrenInScope_ShouldReturnTrue_WhenActiveChildrenExist()
+        {
+            // Arrange
+            var state = new WorkflowInstanceState();
+            var scopeId = Guid.NewGuid();
+            var entry = new ActivityInstanceEntry(Guid.NewGuid(), "task1", Guid.Empty, scopeId: scopeId);
+            state.AddEntries(new[] { entry });
+
+            // Act & Assert
+            Assert.IsTrue(state.HasActiveChildrenInScope(scopeId));
+        }
+
+        [TestMethod]
+        public void HasActiveChildrenInScope_ShouldReturnFalse_AfterCompletion()
+        {
+            // Arrange
+            var state = new WorkflowInstanceState();
+            var scopeId = Guid.NewGuid();
+            var id = Guid.NewGuid();
+            var entry = new ActivityInstanceEntry(id, "task1", Guid.Empty, scopeId: scopeId);
+            state.AddEntries(new[] { entry });
+
+            // Act
+            entry.Complete();
+            state.MarkEntryCompleted(id);
+
+            // Assert
+            Assert.IsFalse(state.HasActiveChildrenInScope(scopeId));
+        }
+
+        [TestMethod]
+        public void GetEntriesByIdCache_ReturnsUsableDictionary()
+        {
+            // Arrange
+            var state = new WorkflowInstanceState();
+            var id1 = Guid.NewGuid();
+            var id2 = Guid.NewGuid();
+            state.AddEntries(new[]
+            {
+                new ActivityInstanceEntry(id1, "task1", Guid.Empty),
+                new ActivityInstanceEntry(id2, "task2", Guid.Empty)
+            });
+
+            // Act
+            var cache = state.GetEntriesByIdCache();
+
+            // Assert
+            Assert.AreEqual(2, cache.Count);
+            Assert.IsTrue(cache.ContainsKey(id1));
+            Assert.IsTrue(cache.ContainsKey(id2));
+        }
     }
 }

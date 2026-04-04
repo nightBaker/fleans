@@ -1514,6 +1514,7 @@ public class WorkflowExecution
     {
         var entry = _state.GetActiveEntry(e.ActivityInstanceId);
         entry.Complete();
+        _state.MarkEntryCompleted(e.ActivityInstanceId);
         _state.MergeState(e.VariablesId, e.Variables);
     }
 
@@ -1521,12 +1522,14 @@ public class WorkflowExecution
     {
         var entry = _state.GetActiveEntry(e.ActivityInstanceId);
         entry.Fail(e.ErrorCode, e.ErrorMessage);
+        _state.MarkEntryCompleted(e.ActivityInstanceId);
     }
 
     private void ApplyActivityCancelled(ActivityCancelled e)
     {
         var entry = _state.GetActiveEntry(e.ActivityInstanceId);
         entry.Cancel(e.Reason);
+        _state.MarkEntryCompleted(e.ActivityInstanceId);
     }
 
     private void ApplyGatewayForkTokenAdded(GatewayForkTokenAdded e)
