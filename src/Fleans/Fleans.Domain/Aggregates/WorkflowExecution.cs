@@ -1415,13 +1415,13 @@ public class WorkflowExecution
                 ApplyActivityFailed(e);
                 break;
             case ActivityExecutionReset e:
-                _state.GetActiveEntry(e.ActivityInstanceId).ResetExecuting();
+                _state.ResetEntryExecuting(e.ActivityInstanceId);
                 break;
             case ActivityCancelled e:
                 ApplyActivityCancelled(e);
                 break;
             case MultiInstanceTotalSet e:
-                _state.GetActiveEntry(e.ActivityInstanceId).SetMultiInstanceTotal(e.Total);
+                _state.SetEntryMultiInstanceTotal(e.ActivityInstanceId, e.Total);
                 break;
             case VariablesMerged e:
                 _state.MergeState(e.VariablesId, e.Variables);
@@ -1455,7 +1455,7 @@ public class WorkflowExecution
                 _state.SetParentInfo(e.ParentInstanceId, e.ParentActivityId);
                 break;
             case ChildWorkflowLinked e:
-                _state.GetActiveEntry(e.ActivityInstanceId).SetChildWorkflowInstanceId(e.ChildWorkflowInstanceId);
+                _state.SetEntryChildWorkflowInstanceId(e.ActivityInstanceId, e.ChildWorkflowInstanceId);
                 break;
             case UserTaskRegistered e:
                 var meta = new UserTaskMetadata();
@@ -1506,32 +1506,26 @@ public class WorkflowExecution
 
     private void ApplyActivityExecutionStarted(ActivityExecutionStarted e)
     {
-        var entry = _state.GetActiveEntry(e.ActivityInstanceId);
-        entry.Execute();
+        _state.ExecuteEntry(e.ActivityInstanceId);
     }
 
     private void ApplyActivityCompleted(ActivityCompleted e)
     {
-        var entry = _state.GetActiveEntry(e.ActivityInstanceId);
-        entry.Complete();
-        _state.MergeState(e.VariablesId, e.Variables);
+        _state.CompleteEntry(e.ActivityInstanceId, e.Variables, e.VariablesId);
     }
 
     private void ApplyActivityFailed(ActivityFailed e)
     {
-        var entry = _state.GetActiveEntry(e.ActivityInstanceId);
-        entry.Fail(e.ErrorCode, e.ErrorMessage);
+        _state.FailEntry(e.ActivityInstanceId, e.ErrorCode, e.ErrorMessage);
     }
 
     private void ApplyActivityCancelled(ActivityCancelled e)
     {
-        var entry = _state.GetActiveEntry(e.ActivityInstanceId);
-        entry.Cancel(e.Reason);
+        _state.CancelEntry(e.ActivityInstanceId, e.Reason);
     }
 
     private void ApplyGatewayForkTokenAdded(GatewayForkTokenAdded e)
     {
-        var fork = _state.GetGatewayFork(e.ForkInstanceId);
-        fork.CreatedTokenIds.Add(e.TokenId);
+        _state.AddTokenToFork(e.ForkInstanceId, e.TokenId);
     }
 }

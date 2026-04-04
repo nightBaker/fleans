@@ -47,6 +47,7 @@ public partial class WorkflowInstance
     /// computes transitions, and handles scope completions.
     /// </summary>
     private const int MaxExecutionLoopIterations = 1000;
+    private const int FlushThreshold = 20;
 
     private async Task RunExecutionLoop()
     {
@@ -105,9 +106,12 @@ public partial class WorkflowInstance
             // Handle subprocess/multi-instance scope completions
             await HandleScopeCompletions(definition);
 
-            // Persist after each iteration so partial progress survives grain deactivation
-            // during long execution chains (e.g., sequential multi-instance with many items).
-            await DrainAndRaiseEvents();
+            // Flush periodically during long execution chains to bound durability loss.
+            // Most workflows (< 20 steps) complete in a single batch and persist at the
+            // end via the caller's DrainAndRaiseEvents. Writes before external calls
+            // (PerformMessageSubscribe/PerformSignalSubscribe) remain unconditional.
+            if (iteration % FlushThreshold == 0)
+                await DrainAndRaiseEvents();
         }
     }
 
