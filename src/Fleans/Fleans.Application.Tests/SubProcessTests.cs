@@ -112,7 +112,7 @@ public class SubProcessTests : WorkflowTestBase
     }
 
     [TestMethod]
-    public async Task SubProcess_VariableShadowing_ShouldNotAffectParent()
+    public async Task SubProcess_VariableShadowing_ShouldMergeChildValueIntoParent()
     {
         var start = new StartEvent("start");
         var parentTask = new TaskActivity("parentTask");
@@ -617,5 +617,84 @@ public class SubProcessTests : WorkflowTestBase
 
         var finalSnapshot = await QueryService.GetStateSnapshot(instanceId);
         Assert.IsTrue(finalSnapshot!.IsCompleted, "Workflow should complete");
+    }
+
+    [TestMethod]
+    public async Task SubProcess_Failure_ShouldNotMergeVariablesIntoParent()
+    {
+        // Arrange: parentTask sets "parentVar", subprocess has two sequential tasks:
+        // sub_task1 completes with "subVar", sub_task2 fails (no boundary handler).
+        // The subprocess stays stuck (failed child prevents auto-completion).
+        // Verify the parent scope does NOT contain "subVar" — no merge on failure.
+        var start = new StartEvent("start");
+        var parentTask = new TaskActivity("parentTask");
+
+        var innerStart = new StartEvent("sub_start");
+        var subTask1 = new TaskActivity("sub_task1");
+        var subTask2 = new TaskActivity("sub_task2");
+        var innerEnd = new EndEvent("sub_end");
+        var subProcess = new SubProcess("sub1")
+        {
+            Activities = [innerStart, subTask1, subTask2, innerEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("inner_f1", innerStart, subTask1),
+                new SequenceFlow("inner_f2", subTask1, subTask2),
+                new SequenceFlow("inner_f3", subTask2, innerEnd)
+            ]
+        };
+        var end = new EndEvent("end");
+
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "sp-fail-no-merge",
+            Activities = [start, parentTask, subProcess, end],
+            SequenceFlows =
+            [
+                new SequenceFlow("f1", start, parentTask),
+                new SequenceFlow("f2", parentTask, subProcess),
+                new SequenceFlow("f3", subProcess, end)
+            ]
+        };
+
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await workflowInstance.SetWorkflow(workflow);
+        await workflowInstance.StartWorkflow();
+
+        // Complete parentTask with a known variable
+        dynamic parentVars = new ExpandoObject();
+        parentVars.parentVar = "original";
+        await workflowInstance.CompleteActivity("parentTask", parentVars);
+
+        // Complete sub_task1 with a subprocess-only variable
+        dynamic childVars = new ExpandoObject();
+        childVars.subVar = "from-child";
+        await workflowInstance.CompleteActivity("sub_task1", childVars);
+
+        // Fail sub_task2 — no boundary handler, subprocess stays stuck
+        await workflowInstance.FailActivity("sub_task2", new Exception("task failure"));
+
+        // Workflow should NOT complete (subprocess failed without boundary error)
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsFalse(snapshot!.IsCompleted, "Should not complete when inner task fails");
+
+        // The subprocess host entry ("sub1") is still active with parent scope.
+        // Verify VariablesMerged was NOT applied — parent scope should not have "subVar".
+        var subProcessHost = snapshot.ActiveActivities.First(a => a.ActivityId == "sub1");
+        var parentScopeId = subProcessHost.VariablesStateId;
+
+        var parentVar = await workflowInstance.GetVariable(parentScopeId, "parentVar");
+        Assert.AreEqual("original", parentVar, "Parent variable should be preserved");
+
+        // GetVariable traverses parent scopes only (not child scopes), so querying
+        // the parent scope directly should NOT find the child's "subVar".
+        var subVar = await workflowInstance.GetVariable(parentScopeId, "subVar");
+        Assert.IsNull(subVar, "Subprocess variables should NOT be merged into parent scope on failure");
+
+        // Verify the failed task has error state
+        var failedEntry = snapshot.CompletedActivities.FirstOrDefault(a => a.ActivityId == "sub_task2");
+        Assert.IsNotNull(failedEntry, "sub_task2 should be in completed list");
+        Assert.IsNotNull(failedEntry.ErrorState, "sub_task2 should have error state");
     }
 }

@@ -152,6 +152,10 @@ public partial class WorkflowInstance
                 var hostEntry = State.GetEntry(hostId);
                 var scopeDef = definition.GetScopeForActivity(hostEntry.ActivityId);
                 var activity = scopeDef.GetActivity(hostEntry.ActivityId);
+
+                if (activity is SubProcess)
+                    LogSubProcessVariablesMerged(hostEntry.ActivityId, hostEntry.VariablesId);
+
                 var adapter = new ActivityExecutionContextAdapter(hostEntry);
 
                 var transitions = await activity.GetNextActivities(this, adapter, scopeDef);
