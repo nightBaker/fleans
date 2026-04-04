@@ -2,7 +2,7 @@ var builder = DistributedApplication.CreateBuilder(args);
 
 // Shared SQLite database file for EF Core persistence (dev only)
 var sqliteDbPath = Path.Combine(Path.GetTempPath(), "fleans-dev.db");
-var sqliteConnectionString = $"DataSource={sqliteDbPath}";
+var sqliteConnectionString = $"DataSource={sqliteDbPath};Cache=Shared";
 
 // Add Redis for Orleans clustering and storage.
 // Aspire 13.1+ auto-configures TLS for Redis containers, but the Orleans Redis
