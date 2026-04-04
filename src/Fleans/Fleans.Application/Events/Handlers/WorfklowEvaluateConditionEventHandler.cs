@@ -66,7 +66,14 @@ public partial class WorfklowEvaluateConditionEventHandler : Grain, IWorfklowEva
         catch (Exception ex)
         {
             LogConditionEvaluationFailed(ex, item.ActivityId);
-            await workflowInstance.FailActivity(item.ActivityId, item.ActivityInstanceId, ex);
+            try
+            {
+                await workflowInstance.FailActivity(item.ActivityId, item.ActivityInstanceId, ex);
+            }
+            catch (Exception failEx)
+            {
+                LogFailActivityFailed(failEx, item.ActivityId);
+            }
         }
     }
 
@@ -102,4 +109,7 @@ public partial class WorfklowEvaluateConditionEventHandler : Grain, IWorfklowEva
 
     [LoggerMessage(EventId = 4004, Level = LogLevel.Error, Message = "Condition event stream error")]
     private partial void LogStreamError(Exception ex);
+
+    [LoggerMessage(EventId = 4005, Level = LogLevel.Critical, Message = "FailActivity call itself failed for activity {ActivityId} — workflow may be stalled")]
+    private partial void LogFailActivityFailed(Exception ex, string activityId);
 }
