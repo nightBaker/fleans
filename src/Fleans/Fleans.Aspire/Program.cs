@@ -13,7 +13,6 @@ var redis = builder.AddRedis("orleans-redis").WithoutHttpsCertificate();
 var orleans = builder.AddOrleans("cluster")
     .WithClustering(redis)
     .WithGrainStorage("PubSubStore", redis)
-    .WithMemoryStreaming("StreamProvider")
     .WithMemoryReminders();
 
 // Api = Orleans silo

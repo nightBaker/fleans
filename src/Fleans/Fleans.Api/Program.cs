@@ -22,6 +22,9 @@ builder.AddKeyedRedisClient("orleans-redis");
 // Infrastructure (clustering, storage, streaming, reminders) is managed by Aspire AppHost
 builder.UseOrleans(siloBuilder =>
 {
+    // Pluggable stream provider — reads Fleans:Streaming:Provider from config (default: memory)
+    siloBuilder.AddFleanStreaming(builder.Configuration);
+
     // Dashboard data collection (UI served from Web project)
     siloBuilder.AddDashboard();
 
