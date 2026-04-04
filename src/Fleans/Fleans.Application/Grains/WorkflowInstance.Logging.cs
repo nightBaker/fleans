@@ -54,9 +54,6 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1012, Level = LogLevel.Debug, Message = "Initial variables set")]
     private partial void LogInitialVariablesSet();
 
-    [LoggerMessage(EventId = 1013, Level = LogLevel.Information, Message = "Starting child workflow: CalledProcessKey={CalledProcessKey}, ChildId={ChildId}")]
-    private partial void LogStartingChildWorkflow(string calledProcessKey, Guid childId);
-
     [LoggerMessage(EventId = 1014, Level = LogLevel.Information, Message = "Child workflow completed for CallActivity {ParentActivityId}")]
     private partial void LogChildWorkflowCompleted(string parentActivityId);
 
@@ -66,19 +63,8 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1020, Level = LogLevel.Information, Message = "Child workflow failed with no boundary handler, propagating error to parent. ParentActivityId={ParentActivityId}")]
     private partial void LogChildFailurePropagatedToParent(string parentActivityId);
 
-    [LoggerMessage(EventId = 1017, Level = LogLevel.Information, Message = "Timer reminder registered for activity {TimerActivityId}, due in {DueTime}")]
-    private partial void LogTimerReminderRegistered(string timerActivityId, TimeSpan dueTime);
-
     [LoggerMessage(EventId = 1018, Level = LogLevel.Information, Message = "Timer reminder fired for activity {TimerActivityId}")]
     private partial void LogTimerReminderFired(string timerActivityId);
-
-    [LoggerMessage(EventId = 1021, Level = LogLevel.Information,
-        Message = "Message subscription registered for activity {ActivityId}: messageName={MessageName}, correlationKey={CorrelationKey}")]
-    private partial void LogMessageSubscriptionRegistered(string activityId, string messageName, string correlationKey);
-
-    [LoggerMessage(EventId = 1023, Level = LogLevel.Warning,
-        Message = "Message subscription failed for activity {ActivityId}: messageName={MessageName}, correlationKey={CorrelationKey}")]
-    private partial void LogMessageSubscriptionFailed(string activityId, string messageName, string correlationKey, Exception exception);
 
     [LoggerMessage(EventId = 1024, Level = LogLevel.Debug, Message = "Stale timer ignored for activity {TimerActivityId} — activity no longer active")]
     private partial void LogStaleTimerIgnored(string timerActivityId);
@@ -91,18 +77,6 @@ public partial class WorkflowInstance
 
     [LoggerMessage(EventId = 1027, Level = LogLevel.Debug, Message = "Join gateway {ActivityId} already active ({ActivityInstanceId}), reusing entry instead of creating duplicate")]
     private partial void LogJoinGatewayDeduplication(string activityId, Guid activityInstanceId);
-
-    [LoggerMessage(EventId = 1028, Level = LogLevel.Information,
-        Message = "Signal subscription registered for activity {ActivityId}: signalName={SignalName}")]
-    private partial void LogSignalSubscriptionRegistered(string activityId, string signalName);
-
-    [LoggerMessage(EventId = 1029, Level = LogLevel.Warning,
-        Message = "Signal subscription failed for activity {ActivityId}: signalName={SignalName}")]
-    private partial void LogSignalSubscriptionFailed(string activityId, string signalName, Exception exception);
-
-    [LoggerMessage(EventId = 1030, Level = LogLevel.Information,
-        Message = "Signal thrown: signalName={SignalName}, deliveredTo={DeliveredCount} subscribers")]
-    private partial void LogSignalThrown(string signalName, int deliveredCount);
 
     [LoggerMessage(EventId = 1031, Level = LogLevel.Information, Message = "Signal delivered as boundary event for activity {ActivityId}")]
     private partial void LogSignalDeliveryBoundary(string activityId);
@@ -275,16 +249,4 @@ public partial class WorkflowInstance
         Message = "Processing pending external event: {EventType}")]
     private partial void LogProcessingPendingEvent(string eventType);
 
-    // User task persistence effect failures (EventId 1063-1065)
-    [LoggerMessage(EventId = 1063, Level = LogLevel.Warning,
-        Message = "User task registration persistence failed: ActivityInstanceId={ActivityInstanceId}")]
-    private partial void LogUserTaskRegistrationFailed(Guid activityInstanceId, Exception exception);
-
-    [LoggerMessage(EventId = 1064, Level = LogLevel.Warning,
-        Message = "User task completion persistence failed: ActivityInstanceId={ActivityInstanceId}")]
-    private partial void LogUserTaskCompletionPersistenceFailed(Guid activityInstanceId, Exception exception);
-
-    [LoggerMessage(EventId = 1065, Level = LogLevel.Warning,
-        Message = "User task claim update persistence failed: ActivityInstanceId={ActivityInstanceId}")]
-    private partial void LogUserTaskClaimUpdateFailed(Guid activityInstanceId, Exception exception);
 }

@@ -1,3 +1,4 @@
+using Fleans.Application;
 using Fleans.Application.Grains;
 using Fleans.Application.QueryModels;
 using Fleans.Domain;
@@ -153,6 +154,7 @@ namespace Fleans.Application.Tests
                         services.AddSingleton<IProcessDefinitionRepository, StubProcessDefinitionRepository>();
                         services.AddSingleton<IWorkflowQueryService, StubWorkflowQueryService>();
                         services.AddSingleton<IEventStore, InMemoryEventStore>();
+                        services.AddApplication();
                     });
         }
 
