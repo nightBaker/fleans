@@ -25,6 +25,7 @@ public class WorkflowExecution
     // Domain services
     private readonly UserTaskLifecycle _userTasks;
     private readonly MultiInstanceCoordinator _multiInstance;
+    private readonly BoundaryEventHandler _boundaryEvents;
 
     public WorkflowExecution(WorkflowInstanceState state, IWorkflowDefinition definition)
     {
@@ -33,6 +34,7 @@ public class WorkflowExecution
 
         _userTasks = new UserTaskLifecycle(state, Emit);
         _multiInstance = new MultiInstanceCoordinator(state, Emit);
+        _boundaryEvents = new BoundaryEventHandler(state, Emit);
     }
 
     /// <summary>
@@ -46,6 +48,7 @@ public class WorkflowExecution
 
         _userTasks = new UserTaskLifecycle(state, Emit);
         _multiInstance = new MultiInstanceCoordinator(state, Emit);
+        _boundaryEvents = new BoundaryEventHandler(state, Emit);
     }
 
     /// <summary>
@@ -949,8 +952,9 @@ public class WorkflowExecution
 
     /// <summary>
     /// Unified handler for boundary timer, message, and signal events firing.
-    /// Handles both interrupting (cancel attached + scope children + unsubscribe siblings)
-    /// and non-interrupting (clone variables, leave attached running) modes.
+    /// Delegates core logic to BoundaryEventHandler service, then orchestrates
+    /// shared utilities (CancelScopeChildren, BuildBoundaryUnsubscribeEffects,
+    /// BuildUserTaskCleanupEffects).
     /// </summary>
     private IReadOnlyList<IInfrastructureEffect> HandleBoundaryEventFired(
         Activity boundaryActivity,
@@ -964,75 +968,24 @@ public class WorkflowExecution
     {
         var effects = new List<IInfrastructureEffect>();
 
-        Guid variablesId;
-        Guid? scopeId;
+        // Service handles core boundary logic (cancel/clone, variable ops, timer cycles, spawn)
+        var result = _boundaryEvents.HandleFired(
+            boundaryActivity, attachedToActivityId, isInterrupting,
+            hostEntry, deliveredVariables,
+            skipTimerActivityId, skipMessageName, skipSignalName);
 
-        if (isInterrupting)
+        // Add timer effects from service
+        effects.AddRange(result.TimerEffects);
+
+        if (result.IsInterrupting)
         {
-            // Cancel the attached activity
-            Emit(new ActivityCancelled(
-                hostEntry.ActivityInstanceId,
-                $"Interrupted by boundary event '{boundaryActivity.ActivityId}'"));
-            effects.AddRange(BuildUserTaskCleanupEffects(hostEntry.ActivityInstanceId));
-
-            // Recursively cancel scope children
-            effects.AddRange(CancelScopeChildren(hostEntry.ActivityInstanceId));
-
-            // Build unsubscribe effects for OTHER boundary subscriptions
-            // (skip the one that fired to avoid deadlocks)
+            // Aggregate orchestrates shared utilities for interrupting path
+            effects.AddRange(BuildUserTaskCleanupEffects(result.HostActivityInstanceId));
+            effects.AddRange(CancelScopeChildren(result.HostActivityInstanceId));
             effects.AddRange(BuildBoundaryUnsubscribeEffects(
-                attachedToActivityId, hostEntry,
+                result.AttachedToActivityId, hostEntry,
                 skipTimerActivityId, skipMessageName, skipSignalName));
-
-            // Use the attached activity's variables scope
-            variablesId = hostEntry.VariablesId;
-            scopeId = hostEntry.ScopeId;
         }
-        else
-        {
-            // Non-interrupting: leave attached activity running, clone variables
-            var clonedScopeId = Guid.NewGuid();
-            Emit(new VariableScopeCloned(clonedScopeId, hostEntry.VariablesId));
-            variablesId = clonedScopeId;
-            scopeId = hostEntry.ScopeId;
-
-            // Merge delivered variables into cloned scope
-            if (((IDictionary<string, object?>)deliveredVariables).Count > 0)
-            {
-                Emit(new VariablesMerged(clonedScopeId, deliveredVariables));
-            }
-
-            // For non-interrupting cycle timers, re-register the timer with decremented count
-            if (boundaryActivity is BoundaryTimerEvent boundaryTimer
-                && boundaryTimer.TimerDefinition.Type == TimerType.Cycle)
-            {
-                // Use tracked cycle state if available; otherwise use original definition for first fire
-                var currentCycle = _state.GetTimerCycleState(
-                    hostEntry.ActivityInstanceId, boundaryTimer.ActivityId)
-                    ?? boundaryTimer.TimerDefinition;
-
-                var nextCycle = currentCycle.DecrementCycle();
-                Emit(new TimerCycleUpdated(
-                    hostEntry.ActivityInstanceId, boundaryTimer.ActivityId, nextCycle));
-
-                if (nextCycle is not null)
-                {
-                    effects.Add(new RegisterTimerEffect(
-                        _state.Id, hostEntry.ActivityInstanceId,
-                        boundaryTimer.ActivityId, nextCycle.GetDueTime()));
-                }
-            }
-        }
-
-        // Spawn the boundary event activity
-        Emit(new ActivitySpawned(
-            ActivityInstanceId: Guid.NewGuid(),
-            ActivityId: boundaryActivity.ActivityId,
-            ActivityType: boundaryActivity.GetType().Name,
-            VariablesId: variablesId,
-            ScopeId: scopeId,
-            MultiInstanceIndex: null,
-            TokenId: null));
 
         return effects.AsReadOnly();
     }
