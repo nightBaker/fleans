@@ -125,4 +125,64 @@ public class SignalIntermediateCatchEventTests : WorkflowTestBase
         // Assert
         Assert.AreEqual(0, deliveredCount, "Should return 0 when no subscribers exist");
     }
+
+    [TestMethod]
+    public async Task SignalBroadcast_ManySubscribers_ShouldDeliverInBatchesAndCompleteAll()
+    {
+        // Arrange — 55 workflows all waiting for the same signal (exceeds batch size of 20)
+        const int subscriberCount = 55;
+        var signalDef = new SignalDefinition("sig1", "batchTest");
+
+        WorkflowDefinition CreateWorkflow(string id) => new()
+        {
+            WorkflowId = id,
+            Activities =
+            [
+                new StartEvent("start"),
+                new TaskActivity("task1"),
+                new SignalIntermediateCatchEvent("waitSignal", "sig1"),
+                new EndEvent("end")
+            ],
+            SequenceFlows =
+            [
+                new SequenceFlow("f1", new StartEvent("start"), new TaskActivity("task1")),
+                new SequenceFlow("f2", new TaskActivity("task1"), new SignalIntermediateCatchEvent("waitSignal", "sig1")),
+                new SequenceFlow("f3", new SignalIntermediateCatchEvent("waitSignal", "sig1"), new EndEvent("end"))
+            ],
+            Signals = [signalDef]
+        };
+
+        var instances = new List<IWorkflowInstanceGrain>();
+        for (var i = 0; i < subscriberCount; i++)
+        {
+            var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+            await instance.SetWorkflow(CreateWorkflow($"batch-signal-{i}"));
+            await instance.StartWorkflow();
+            await instance.CompleteActivity("task1", new ExpandoObject());
+            instances.Add(instance);
+        }
+
+        // Verify all are suspended at signal catch
+        foreach (var instance in instances)
+        {
+            var snap = await QueryService.GetStateSnapshot(instance.GetPrimaryKey());
+            Assert.IsTrue(snap!.ActiveActivities.Any(a => a.ActivityId == "waitSignal"),
+                $"Instance {instance.GetPrimaryKey()} should be waiting at signal catch");
+        }
+
+        // Act — broadcast signal (should deliver in batches of 20)
+        var signalGrain = Cluster.GrainFactory.GetGrain<ISignalCorrelationGrain>("batchTest");
+        var deliveredCount = await signalGrain.BroadcastSignal();
+
+        // Assert — all 55 subscribers received the signal and completed
+        Assert.AreEqual(subscriberCount, deliveredCount,
+            $"Signal should be delivered to all {subscriberCount} subscribers");
+
+        foreach (var instance in instances)
+        {
+            var finalSnap = await QueryService.GetStateSnapshot(instance.GetPrimaryKey());
+            Assert.IsTrue(finalSnap!.IsCompleted,
+                $"Instance {instance.GetPrimaryKey()} should be completed after signal broadcast");
+        }
+    }
 }

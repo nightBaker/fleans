@@ -8,6 +8,9 @@ namespace Fleans.Application.Grains;
 public abstract class StartEventListenerGrainBase<TState> : Grain
     where TState : class, IStartEventListenerState
 {
+    private const int DeliveryBatchSize = 20;
+    private const int HighProcessCountThreshold = 50;
+
     private readonly IGrainFactory _grainFactory;
     private readonly IPersistentState<TState> _state;
 
@@ -63,47 +66,59 @@ public abstract class StartEventListenerGrainBase<TState> : Grain
             return [];
         }
 
-        var tasks = State.ProcessDefinitionKeys.Select(async processDefinitionKey =>
-        {
-            try
-            {
-                var processGrain = _grainFactory.GetGrain<IProcessDefinitionGrain>(processDefinitionKey);
+        var processKeys = State.ProcessDefinitionKeys.ToList();
 
-                if (!await processGrain.IsActive())
+        if (processKeys.Count > HighProcessCountThreshold)
+            OnHighProcessCount(eventName, processKeys.Count, HighProcessCountThreshold);
+
+        var createdInstances = new List<Guid>();
+
+        foreach (var batch in processKeys.Chunk(DeliveryBatchSize))
+        {
+            var batchTasks = batch.Select(async processDefinitionKey =>
+            {
+                try
                 {
-                    OnProcessDisabledSkipped(eventName, processDefinitionKey);
+                    var processGrain = _grainFactory.GetGrain<IProcessDefinitionGrain>(processDefinitionKey);
+
+                    if (!await processGrain.IsActive())
+                    {
+                        OnProcessDisabledSkipped(eventName, processDefinitionKey);
+                        return (Guid?)null;
+                    }
+
+                    var instanceId = Guid.NewGuid();
+                    var instance = _grainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
+
+                    var definition = await processGrain.GetLatestDefinition();
+
+                    var startActivityId = FindStartActivityId(definition, eventName)
+                        ?? throw new InvalidOperationException(
+                            $"Start activity for '{eventName}' not found in process '{processDefinitionKey}'. " +
+                            "The definition may have been removed during a redeployment.");
+
+                    await instance.SetWorkflow(definition, startActivityId);
+
+                    if (variables is not null)
+                        await instance.SetInitialVariables(variables);
+
+                    await instance.StartWorkflow();
+
+                    OnStartEventFired(eventName, processDefinitionKey, instanceId);
+                    return (Guid?)instanceId;
+                }
+                catch (Exception ex)
+                {
+                    OnStartEventFailed(eventName, processDefinitionKey, ex);
                     return (Guid?)null;
                 }
+            });
 
-                var instanceId = Guid.NewGuid();
-                var instance = _grainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
+            var results = await Task.WhenAll(batchTasks);
+            createdInstances.AddRange(results.Where(id => id.HasValue).Select(id => id!.Value));
+        }
 
-                var definition = await processGrain.GetLatestDefinition();
-
-                var startActivityId = FindStartActivityId(definition, eventName)
-                    ?? throw new InvalidOperationException(
-                        $"Start activity for '{eventName}' not found in process '{processDefinitionKey}'. " +
-                        "The definition may have been removed during a redeployment.");
-
-                await instance.SetWorkflow(definition, startActivityId);
-
-                if (variables is not null)
-                    await instance.SetInitialVariables(variables);
-
-                await instance.StartWorkflow();
-
-                OnStartEventFired(eventName, processDefinitionKey, instanceId);
-                return (Guid?)instanceId;
-            }
-            catch (Exception ex)
-            {
-                OnStartEventFailed(eventName, processDefinitionKey, ex);
-                return (Guid?)null;
-            }
-        });
-
-        var results = await Task.WhenAll(tasks);
-        return results.Where(id => id.HasValue).Select(id => id!.Value).ToList();
+        return createdInstances;
     }
 
     protected abstract string? FindStartActivityId(IWorkflowDefinition definition, string eventName);
@@ -116,4 +131,5 @@ public abstract class StartEventListenerGrainBase<TState> : Grain
     protected abstract void OnProcessDisabledSkipped(string eventName, string processDefinitionKey);
     protected abstract void OnStartEventFired(string eventName, string processDefinitionKey, Guid instanceId);
     protected abstract void OnStartEventFailed(string eventName, string processDefinitionKey, Exception ex);
+    protected abstract void OnHighProcessCount(string eventName, int processCount, int threshold);
 }
