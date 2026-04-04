@@ -15,7 +15,12 @@ builder.Services.AddInfrastructure();
 // Note: grain storage registrations from AddEfCorePersistence are unused in this
 // Orleans client, but splitting the registration is a future refactor.
 var sqliteConnectionString = builder.Configuration["FLEANS_SQLITE_CONNECTION"] ?? "DataSource=fleans-dev.db";
-builder.Services.AddEfCorePersistence(options => options.UseSqlite(sqliteConnectionString));
+var queryConnectionString = builder.Configuration["FLEANS_QUERY_CONNECTION"];
+builder.Services.AddEfCorePersistence(
+    options => options.UseSqlite(sqliteConnectionString),
+    queryConnectionString is not null
+        ? options => options.UseSqlite(queryConnectionString)
+        : null);
 
 // Redis for Aspire-managed Orleans
 builder.AddKeyedRedisClient("orleans-redis");
