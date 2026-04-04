@@ -971,8 +971,7 @@ public class WorkflowExecution
         // Service handles core boundary logic (cancel/clone, variable ops, timer cycles, spawn)
         var result = _boundaryEvents.HandleFired(
             boundaryActivity, attachedToActivityId, isInterrupting,
-            hostEntry, deliveredVariables,
-            skipTimerActivityId, skipMessageName, skipSignalName);
+            hostEntry, deliveredVariables);
 
         // Add timer effects from service
         effects.AddRange(result.TimerEffects);

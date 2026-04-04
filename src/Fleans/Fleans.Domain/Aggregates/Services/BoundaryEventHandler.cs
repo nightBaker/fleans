@@ -10,7 +10,6 @@ public record BoundaryEventFiredResult(
     bool IsInterrupting,
     string AttachedToActivityId,
     Guid HostActivityInstanceId,
-    Guid? HostScopeId,
     IReadOnlyList<IInfrastructureEffect> TimerEffects);
 
 public class BoundaryEventHandler
@@ -37,10 +36,7 @@ public class BoundaryEventHandler
         string attachedToActivityId,
         bool isInterrupting,
         ActivityInstanceEntry hostEntry,
-        ExpandoObject deliveredVariables,
-        string? skipTimerActivityId,
-        string? skipMessageName,
-        string? skipSignalName)
+        ExpandoObject deliveredVariables)
     {
         var timerEffects = new List<IInfrastructureEffect>();
 
@@ -108,7 +104,6 @@ public class BoundaryEventHandler
             isInterrupting,
             attachedToActivityId,
             hostEntry.ActivityInstanceId,
-            hostEntry.ScopeId,
             timerEffects);
     }
 }
