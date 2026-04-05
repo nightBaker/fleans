@@ -73,6 +73,7 @@ public partial class WorfklowEvaluateConditionEventHandler : Grain, IWorfklowEva
             catch (Exception failEx)
             {
                 LogFailActivityFailed(failEx, item.ActivityId);
+                throw; // Let stream provider retry — domain model idempotency guards handle duplicates
             }
         }
     }

@@ -7,6 +7,10 @@ public static class FleanStreamingExtensions
 {
     public const string StreamProviderName = "StreamProvider";
 
+    /// <summary>
+    /// Configures the Orleans stream provider. Reads <c>Fleans:Streaming:Provider</c> from config (default: "memory").
+    /// Requires <c>PubSubStore</c> grain storage to be configured by the Aspire AppHost.
+    /// </summary>
     public static ISiloBuilder AddFleanStreaming(this ISiloBuilder builder, IConfiguration configuration)
     {
         var provider = configuration.GetValue<string>("Fleans:Streaming:Provider") ?? "memory";

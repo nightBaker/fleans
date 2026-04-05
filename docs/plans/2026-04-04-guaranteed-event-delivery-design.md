@@ -72,8 +72,8 @@ Persistent streams can redeliver events. Handlers must be safe on retry.
 | `Fleans.ServiceDefaults` | Yes | New `AddFleanStreaming()` extension method |
 | `Fleans.Aspire/Program.cs` | Yes | Remove `WithMemoryStreaming()`, use config-driven setup |
 | `Fleans.Api/Program.cs` | Yes | Call `AddFleanStreaming()` in `UseOrleans` callback |
-| `Fleans.Web/Program.cs` | Yes | Call streaming config extension |
-| `appsettings.json` | Yes | New `Fleans:Streaming:Provider` config section |
+| `Fleans.Web/Program.cs` | No | Orleans client — does not host a silo, no stream provider config needed |
+| `appsettings.json` | No | Defaults to `memory` when config absent — add explicitly for non-default providers |
 | Domain / Aggregate | No | No changes |
 | Persistence / EfCoreEventStore | No | No changes |
 

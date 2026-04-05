@@ -68,6 +68,7 @@ public partial class WorkflowExecuteScriptEventHandler : Grain, IWorkflowExecute
             catch (Exception failEx)
             {
                 LogFailActivityFailed(failEx, item.ActivityId);
+                throw; // Let stream provider retry — domain model idempotency guards handle duplicates
             }
         }
     }
