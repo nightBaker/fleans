@@ -95,9 +95,7 @@ var app = builder.Build();
 // Ensure EF Core database is created (dev only — use migrations in production)
 using (var scope = app.Services.CreateScope())
 {
-    var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>();
-    using var db = dbFactory.CreateDbContext();
-    db.Database.EnsureCreated();
+    EfCorePersistenceDependencyInjection.EnsureDatabaseCreated(scope.ServiceProvider);
 }
 
 // Configure the HTTP request pipeline.

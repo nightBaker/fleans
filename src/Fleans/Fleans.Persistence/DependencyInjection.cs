@@ -3,6 +3,7 @@ using Fleans.Domain;
 using Fleans.Domain.Events;
 using Fleans.Domain.Persistence;
 using Fleans.Persistence.Events;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Orleans.Storage;
@@ -18,8 +19,18 @@ public static class EfCorePersistenceDependencyInjection
         Action<DbContextOptionsBuilder> configureCommandDb,
         Action<DbContextOptionsBuilder>? configureQueryDb = null)
     {
-        services.AddDbContextFactory<FleanCommandDbContext>(configureCommandDb);
-        services.AddDbContextFactory<FleanQueryDbContext>(configureQueryDb ?? configureCommandDb);
+        var interceptor = new SqliteBusyTimeoutInterceptor();
+
+        services.AddDbContextFactory<FleanCommandDbContext>(options =>
+        {
+            configureCommandDb(options);
+            options.AddInterceptors(interceptor);
+        });
+        services.AddDbContextFactory<FleanQueryDbContext>(options =>
+        {
+            (configureQueryDb ?? configureCommandDb)(options);
+            options.AddInterceptors(interceptor);
+        });
 
         services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.ProcessDefinitions,
             (sp, _) => new EfCoreProcessDefinitionGrainStorage(
@@ -63,5 +74,54 @@ public static class EfCorePersistenceDependencyInjection
 
         services.AddHealthChecks()
             .AddDbContextCheck<FleanCommandDbContext>("database");
+    }
+
+    /// <summary>
+    /// Creates the database schema if it doesn't exist, using file-based locking
+    /// to prevent races when multiple processes (Api, Web, MCP) start concurrently.
+    /// Also enables WAL mode for better concurrent read/write performance.
+    /// </summary>
+    public static void EnsureDatabaseCreated(IServiceProvider serviceProvider)
+    {
+        var dbFactory = serviceProvider.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>();
+        using var db = dbFactory.CreateDbContext();
+
+        var csb = new SqliteConnectionStringBuilder(db.Database.GetConnectionString());
+        var lockPath = csb.DataSource + ".init-lock";
+
+        // File lock prevents concurrent EnsureCreated from multiple processes.
+        // Retry with backoff because Aspire starts all services concurrently and
+        // FileStream with FileShare.None throws IOException immediately if locked.
+        FileStream? fileLock = null;
+        try
+        {
+            var maxAttempts = 20;
+            for (var attempt = 0; attempt < maxAttempts; attempt++)
+            {
+                try
+                {
+                    fileLock = new FileStream(lockPath, FileMode.OpenOrCreate,
+                        FileAccess.ReadWrite, FileShare.None);
+                    break;
+                }
+                catch (IOException) when (attempt < maxAttempts - 1)
+                {
+                    Thread.Sleep(500);
+                }
+            }
+
+            db.Database.EnsureCreated();
+
+            // WAL mode persists at the database level — set once, effective for all connections
+            db.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
+            db.Database.ExecuteSqlRaw("PRAGMA synchronous=NORMAL;");
+        }
+        finally
+        {
+            fileLock?.Dispose();
+
+            try { File.Delete(lockPath); }
+            catch (IOException) { /* another process may still hold the lock */ }
+        }
     }
 }

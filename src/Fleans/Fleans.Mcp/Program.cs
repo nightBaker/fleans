@@ -31,13 +31,9 @@ builder.Services.AddMcpServer()
 var app = builder.Build();
 
 // Ensure EF Core database exists (dev only — use migrations in production).
-// Wrapped in try-catch: Api silo may have already created the tables in the shared SQLite file.
 using (var scope = app.Services.CreateScope())
 {
-    var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>();
-    using var db = dbFactory.CreateDbContext();
-    try { db.Database.EnsureCreated(); }
-    catch (Microsoft.Data.Sqlite.SqliteException) { /* tables already created by Api */ }
+    EfCorePersistenceDependencyInjection.EnsureDatabaseCreated(scope.ServiceProvider);
 }
 
 app.MapDefaultEndpoints();
