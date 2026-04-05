@@ -50,6 +50,8 @@ public partial class SignalStartEventListenerGrain :
         => LogSignalStartEventFired(eventName, processDefinitionKey, instanceId);
     protected override void OnStartEventFailed(string eventName, string processDefinitionKey, Exception ex)
         => LogSignalStartEventFailed(eventName, processDefinitionKey, ex);
+    protected override void OnHighProcessCount(string eventName, int processCount, int threshold)
+        => LogHighProcessCount(eventName, processCount, threshold);
 
     [LoggerMessage(EventId = 9200, Level = LogLevel.Information, Message = "Registered process {ProcessDefinitionKey} for signal start event '{SignalName}'")]
     private partial void LogProcessRegistered(string signalName, string processDefinitionKey);
@@ -74,4 +76,7 @@ public partial class SignalStartEventListenerGrain :
 
     [LoggerMessage(EventId = 9207, Level = LogLevel.Debug, Message = "Process {ProcessDefinitionKey} not found for signal start event '{SignalName}', skipping unregister")]
     private partial void LogProcessNotFound(string signalName, string processDefinitionKey);
+
+    [LoggerMessage(EventId = 9208, Level = LogLevel.Warning, Message = "Signal start event '{SignalName}' has {ProcessCount} registered processes (threshold: {Threshold}) — delivering in batches")]
+    private partial void LogHighProcessCount(string signalName, int processCount, int threshold);
 }

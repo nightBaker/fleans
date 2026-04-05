@@ -51,6 +51,8 @@ public partial class MessageStartEventListenerGrain :
         => LogMessageStartEventFired(eventName, processDefinitionKey, instanceId);
     protected override void OnStartEventFailed(string eventName, string processDefinitionKey, Exception ex)
         => LogMessageStartEventFailed(eventName, processDefinitionKey, ex);
+    protected override void OnHighProcessCount(string eventName, int processCount, int threshold)
+        => LogHighProcessCount(eventName, processCount, threshold);
 
     [LoggerMessage(EventId = 9100, Level = LogLevel.Information, Message = "Registered process {ProcessDefinitionKey} for message start event '{MessageName}'")]
     private partial void LogProcessRegistered(string messageName, string processDefinitionKey);
@@ -75,4 +77,7 @@ public partial class MessageStartEventListenerGrain :
 
     [LoggerMessage(EventId = 9107, Level = LogLevel.Warning, Message = "Skipping disabled process {ProcessDefinitionKey} for message '{MessageName}'")]
     private partial void LogProcessDisabledSkipped(string messageName, string processDefinitionKey);
+
+    [LoggerMessage(EventId = 9108, Level = LogLevel.Warning, Message = "Message start event '{MessageName}' has {ProcessCount} registered processes (threshold: {Threshold}) — delivering in batches")]
+    private partial void LogHighProcessCount(string messageName, int processCount, int threshold);
 }
