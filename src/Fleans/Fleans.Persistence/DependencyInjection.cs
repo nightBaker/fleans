@@ -90,14 +90,38 @@ public static class EfCorePersistenceDependencyInjection
         var lockPath = csb.DataSource + ".init-lock";
 
         // File lock prevents concurrent EnsureCreated from multiple processes.
-        // Lock file is left in place intentionally — it's empty and harmless.
-        using var fileLock = new FileStream(lockPath, FileMode.OpenOrCreate,
-            FileAccess.ReadWrite, FileShare.None);
+        // Retry with backoff because Aspire starts all services concurrently and
+        // FileStream with FileShare.None throws IOException immediately if locked.
+        FileStream? fileLock = null;
+        try
+        {
+            var maxAttempts = 20;
+            for (var attempt = 0; attempt < maxAttempts; attempt++)
+            {
+                try
+                {
+                    fileLock = new FileStream(lockPath, FileMode.OpenOrCreate,
+                        FileAccess.ReadWrite, FileShare.None);
+                    break;
+                }
+                catch (IOException) when (attempt < maxAttempts - 1)
+                {
+                    Thread.Sleep(500);
+                }
+            }
 
-        db.Database.EnsureCreated();
+            db.Database.EnsureCreated();
 
-        // WAL mode persists at the database level — set once, effective for all connections
-        db.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
-        db.Database.ExecuteSqlRaw("PRAGMA synchronous=NORMAL;");
+            // WAL mode persists at the database level — set once, effective for all connections
+            db.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
+            db.Database.ExecuteSqlRaw("PRAGMA synchronous=NORMAL;");
+        }
+        finally
+        {
+            fileLock?.Dispose();
+
+            try { File.Delete(lockPath); }
+            catch (IOException) { /* another process may still hold the lock */ }
+        }
     }
 }
