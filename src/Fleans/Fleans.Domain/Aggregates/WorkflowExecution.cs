@@ -116,6 +116,12 @@ public class WorkflowExecution
         Emit(new MultiInstanceTotalSet(activityInstanceId, total));
     }
 
+    public void RemoveVariableScopes(IReadOnlyList<Guid> scopeIds)
+    {
+        if (scopeIds.Count > 0)
+            Emit(new VariableScopesRemoved(scopeIds));
+    }
+
     public void ResolveTransitions(IReadOnlyList<CompletedActivityTransitions> completedTransitions)
     {
         foreach (var completed in completedTransitions)
@@ -563,11 +569,12 @@ public class WorkflowExecution
     /// Returns effects (e.g., boundary unsubscribe) and the list of completed host instance IDs
     /// so the grain can compute transitions for them via ResolveTransitions.
     /// </summary>
-    public (IReadOnlyList<IInfrastructureEffect> Effects, IReadOnlyList<Guid> CompletedHostInstanceIds)
+    public (IReadOnlyList<IInfrastructureEffect> Effects, IReadOnlyList<Guid> CompletedHostInstanceIds, IReadOnlyList<Guid> OrphanedScopeIds)
         CompleteFinishedSubProcessScopes()
     {
         var allEffects = new List<IInfrastructureEffect>();
         var allCompletedHostIds = new List<Guid>();
+        var allOrphanedScopeIds = new List<Guid>();
 
         const int maxIterations = 100;
         var iteration = 0;
@@ -616,7 +623,21 @@ public class WorkflowExecution
                 // the subprocess should NOT auto-complete
                 if (scopeEntries.Any(e => e.ErrorCode is not null)) continue;
 
-                // All scope children are done — complete the sub-process host
+                // SubProcess: merge child scope variables into parent before completing.
+                // Use ParentVariablesId lookup (not entry-based collection) because
+                // internal fork-join may have already removed branch scopes from state.
+                var childScope = _state.VariableStates
+                    .FirstOrDefault(vs => vs.ParentVariablesId == entry.VariablesId);
+                if (childScope is not null)
+                {
+                    Emit(new VariablesMerged(entry.VariablesId, childScope.Variables));
+                    // Defer scope removal: nested subprocess transitions (resolved after
+                    // this method returns) may still reference the child scope.
+                    allOrphanedScopeIds.Add(childScope.Id);
+                }
+
+                // All scope children are done — complete the sub-process host.
+                // Variables arg is empty because the merge already happened above.
                 Emit(new ActivityCompleted(
                     entry.ActivityInstanceId, entry.VariablesId, new ExpandoObject()));
 
@@ -627,7 +648,7 @@ public class WorkflowExecution
             }
         } while (anyCompleted);
 
-        return (allEffects.AsReadOnly(), allCompletedHostIds.AsReadOnly());
+        return (allEffects.AsReadOnly(), allCompletedHostIds.AsReadOnly(), allOrphanedScopeIds.AsReadOnly());
     }
 
     private (bool HostCompleted, IReadOnlyList<IInfrastructureEffect> Effects)
@@ -1150,6 +1171,17 @@ public class WorkflowExecution
 
             // Recursively cancel scope children
             effects.AddRange(CancelScopeChildren(hostEntry.ActivityInstanceId));
+
+            // Clean up child variable scope of the interrupted sub-process
+            var interruptedChildScopes = _state.GetEntriesInScope(hostEntry.ActivityInstanceId)
+                .Select(e => e.VariablesId)
+                .Where(vid => vid != hostEntry.VariablesId)
+                .Distinct()
+                .ToList();
+            if (interruptedChildScopes.Count > 0)
+            {
+                Emit(new VariableScopesRemoved(interruptedChildScopes));
+            }
 
             // Build unsubscribe effects for OTHER boundary subscriptions
             // (skip the one that fired to avoid deadlocks)
