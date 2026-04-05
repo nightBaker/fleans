@@ -62,7 +62,12 @@ window.bpmnEditor = {
             correlationKey: '',
             hasSignalDefinition: false,
             signalName: '',
-            isInterrupting: true
+            isInterrupting: true,
+            assignee: '',
+            candidateGroups: [],
+            candidateUsers: [],
+            expectedOutputVariables: [],
+            availableVariables: []
         };
 
         if (bo.$type === 'bpmn:ScriptTask') {
@@ -87,6 +92,25 @@ window.bpmnEditor = {
                         data.inputMappings.push({ source: ext.source || '', target: ext.target || '' });
                     } else if (ext.$type === 'fleans:OutputMapping') {
                         data.outputMappings.push({ source: ext.source || '', target: ext.target || '' });
+                    }
+                });
+            }
+        }
+
+        if (bo.$type === 'bpmn:UserTask') {
+            var attrs = bo.$attrs || {};
+            data.assignee = attrs['camunda:assignee'] || '';
+            var groups = attrs['camunda:candidateGroups'] || '';
+            data.candidateGroups = groups ? groups.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+            var users = attrs['camunda:candidateUsers'] || '';
+            data.candidateUsers = users ? users.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+
+            if (bo.extensionElements && bo.extensionElements.values) {
+                bo.extensionElements.values.forEach(function (ext) {
+                    if (ext.$type === 'fleans:ExpectedOutputs' && ext.outputs) {
+                        ext.outputs.forEach(function (output) {
+                            if (output.name) data.expectedOutputVariables.push(output.name);
+                        });
                     }
                 });
             }
@@ -136,6 +160,22 @@ window.bpmnEditor = {
 
         if (bo.$type === 'bpmn:BoundaryEvent') {
             data.isInterrupting = bo.cancelActivity !== false;
+        }
+
+        // Collect available variable names from ScriptTasks in the diagram
+        if (this._modeler) {
+            var registry = this._modeler.get('elementRegistry');
+            var vars = new Set();
+            registry.forEach(function (el) {
+                var elBo = el.businessObject;
+                if (elBo.$type === 'bpmn:ScriptTask' && elBo.script) {
+                    var matches = elBo.script.match(/variables\.(\w+)/g);
+                    if (matches) {
+                        matches.forEach(function (m) { vars.add(m.replace('variables.', '')); });
+                    }
+                }
+            });
+            data.availableVariables = Array.from(vars).sort();
         }
 
         return data;

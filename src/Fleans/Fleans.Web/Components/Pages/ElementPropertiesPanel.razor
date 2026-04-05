@@ -520,6 +520,11 @@
         public bool HasSignalDefinition { get; set; }
         public string SignalName { get; set; } = "";
         public bool IsInterrupting { get; set; } = true;
+        public string Assignee { get; set; } = "";
+        public List<string> CandidateGroups { get; set; } = [];
+        public List<string> CandidateUsers { get; set; } = [];
+        public List<string> ExpectedOutputVariables { get; set; } = [];
+        public List<string> AvailableVariables { get; set; } = [];
     }
 
     public class MappingData
