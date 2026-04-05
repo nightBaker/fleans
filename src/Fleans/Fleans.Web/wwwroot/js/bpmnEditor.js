@@ -162,8 +162,8 @@ window.bpmnEditor = {
             data.isInterrupting = bo.cancelActivity !== false;
         }
 
-        // Collect available variable names from ScriptTasks in the diagram
-        if (this._modeler) {
+        // Collect available variable names from ScriptTasks (only when a UserTask is selected)
+        if (this._modeler && bo.$type === 'bpmn:UserTask') {
             var registry = this._modeler.get('elementRegistry');
             var vars = new Set();
             registry.forEach(function (el) {
@@ -234,11 +234,9 @@ window.bpmnEditor = {
         } else if (propertyName === 'camunda:assignee' || propertyName === 'camunda:candidateGroups' || propertyName === 'camunda:candidateUsers') {
             var bo = element.businessObject;
             if (!bo.$attrs) bo.$attrs = {};
-            if (value && value.trim() !== '') {
-                bo.$attrs[propertyName] = value;
-            } else {
-                delete bo.$attrs[propertyName];
-            }
+            var attrUpdate = {};
+            attrUpdate[propertyName] = (value && value.trim() !== '') ? value : undefined;
+            modeling.updateModdleProperties(element, bo, attrUpdate);
             return;
         } else {
             props[propertyName] = value;
@@ -266,21 +264,25 @@ window.bpmnEditor = {
             });
         }
 
+        if (!bo.extensionElements) {
+            var extElements = moddle.create('bpmn:ExtensionElements', { values: [] });
+            modeling.updateProperties(element, { extensionElements: extElements });
+        }
+
         if (variableNames && variableNames.length > 0) {
             var outputs = variableNames.map(function (name) {
                 return moddle.create('fleans:Output', { name: name });
             });
             var expectedOutputs = moddle.create('fleans:ExpectedOutputs', { outputs: outputs });
+            expectedOutputs.$parent = bo.extensionElements;
 
-            if (!bo.extensionElements) {
-                var extElements = moddle.create('bpmn:ExtensionElements', { values: [] });
-                modeling.updateProperties(element, { extensionElements: extElements });
-            }
-            bo.extensionElements.values = existingExtensions.concat([expectedOutputs]);
+            modeling.updateModdleProperties(element, bo.extensionElements, {
+                values: existingExtensions.concat([expectedOutputs])
+            });
         } else {
-            if (bo.extensionElements) {
-                bo.extensionElements.values = existingExtensions;
-            }
+            modeling.updateModdleProperties(element, bo.extensionElements, {
+                values: existingExtensions
+            });
         }
     },
 

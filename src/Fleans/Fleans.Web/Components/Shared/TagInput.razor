@@ -15,7 +15,7 @@
     @if (!Disabled)
     {
         <div style="position: relative; width: 100%;">
-            <FluentTextField @bind-Value="inputValue"
+            <FluentTextField Value="@inputValue"
                              @onkeydown="OnKeyDown"
                              @oninput="OnInput"
                              Placeholder="@Placeholder"
@@ -74,8 +74,8 @@
     {
         if (!string.IsNullOrWhiteSpace(tag) && !Tags.Contains(tag))
         {
-            Tags.Add(tag);
-            await TagsChanged.InvokeAsync(Tags);
+            var newTags = new List<string>(Tags) { tag };
+            await TagsChanged.InvokeAsync(newTags);
         }
         inputValue = "";
         showSuggestions = false;
@@ -84,7 +84,8 @@
 
     private async Task RemoveTag(string tag)
     {
-        Tags.Remove(tag);
-        await TagsChanged.InvokeAsync(Tags);
+        var newTags = new List<string>(Tags);
+        newTags.Remove(tag);
+        await TagsChanged.InvokeAsync(newTags);
     }
 }
