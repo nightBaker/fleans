@@ -621,6 +621,127 @@ public class WorkflowQueryServiceTests
     }
 
     // ─────────────────────────────────────────────────
+    // GetProcessDefinitionGroups
+    // ─────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task GetProcessDefinitionGroups_ReturnsCorrectPage()
+    {
+        using var db = _commandDbContextFactory.CreateDbContext();
+
+        for (int i = 1; i <= 5; i++)
+        {
+            await SeedProcessDefinition(db, $"grp:key{i}:1:ts", $"grpkey{i}", 1);
+            await SeedProcessDefinition(db, $"grp:key{i}:2:ts", $"grpkey{i}", 2);
+        }
+
+        var result = await _service.GetProcessDefinitionGroups(
+            new PageRequest(Page: 1, PageSize: 2));
+
+        Assert.AreEqual(2, result.Items.Count);
+        Assert.AreEqual(5, result.TotalCount);
+        Assert.AreEqual(1, result.Page);
+        Assert.AreEqual(2, result.PageSize);
+    }
+
+    [TestMethod]
+    public async Task GetProcessDefinitionGroups_LastPage_ReturnsRemainder()
+    {
+        using var db = _commandDbContextFactory.CreateDbContext();
+
+        for (int i = 1; i <= 5; i++)
+            await SeedProcessDefinition(db, $"grplast:key{i}:1:ts", $"grplastkey{i}", 1);
+
+        var result = await _service.GetProcessDefinitionGroups(
+            new PageRequest(Page: 3, PageSize: 2));
+
+        Assert.AreEqual(1, result.Items.Count);
+        Assert.AreEqual(5, result.TotalCount);
+    }
+
+    [TestMethod]
+    public async Task GetProcessDefinitionGroups_SearchByKey_FiltersCorrectly()
+    {
+        using var db = _commandDbContextFactory.CreateDbContext();
+
+        await SeedProcessDefinition(db, "grpsrch:order:1:ts", "order-process", 1);
+        await SeedProcessDefinition(db, "grpsrch:payment:1:ts", "payment-process", 1);
+        await SeedProcessDefinition(db, "grpsrch:user:1:ts", "user-signup", 1);
+
+        var result = await _service.GetProcessDefinitionGroups(
+            new PageRequest(Filters: "ProcessDefinitionKey@=order"));
+
+        Assert.AreEqual(1, result.Items.Count);
+        Assert.AreEqual("order-process", result.Items[0].ProcessDefinitionKey);
+    }
+
+    [TestMethod]
+    public async Task GetProcessDefinitionGroups_FilterByActive_FiltersCorrectly()
+    {
+        using var db = _commandDbContextFactory.CreateDbContext();
+
+        await SeedProcessDefinition(db, "grpact:active:1:ts", "grpactiveproc", 1);
+        await SeedProcessDefinition(db, "grpact:inactive:1:ts", "grpinactiveproc", 1);
+        var def = await db.ProcessDefinitions.FindAsync("grpact:inactive:1:ts");
+        def!.Disable();
+        await db.SaveChangesAsync();
+
+        var result = await _service.GetProcessDefinitionGroups(
+            new PageRequest(Filters: "IsActive==true"));
+
+        Assert.AreEqual(1, result.Items.Count);
+        Assert.AreEqual("grpactiveproc", result.Items[0].ProcessDefinitionKey);
+    }
+
+    [TestMethod]
+    public async Task GetProcessDefinitionGroups_SortByDeployedAt_CorrectOrder()
+    {
+        using var db = _commandDbContextFactory.CreateDbContext();
+
+        await SeedProcessDefinition(db, "grpsort:old:1:ts", "grpsortold", 1,
+            deployedAt: new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        await SeedProcessDefinition(db, "grpsort:new:1:ts", "grpsortnew", 1,
+            deployedAt: new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero));
+
+        var result = await _service.GetProcessDefinitionGroups(
+            new PageRequest(Sorts: "-DeployedAt"));
+
+        Assert.AreEqual(2, result.Items.Count);
+        Assert.AreEqual("grpsortnew", result.Items[0].ProcessDefinitionKey);
+        Assert.AreEqual("grpsortold", result.Items[1].ProcessDefinitionKey);
+    }
+
+    [TestMethod]
+    public async Task GetProcessDefinitionGroups_EmptyResult_ReturnsEmptyPage()
+    {
+        var result = await _service.GetProcessDefinitionGroups(
+            new PageRequest(Filters: "ProcessDefinitionKey@=nonexistent"));
+
+        Assert.AreEqual(0, result.Items.Count);
+        Assert.AreEqual(0, result.TotalCount);
+    }
+
+    [TestMethod]
+    public async Task GetProcessDefinitionGroups_GroupContainsAllVersions()
+    {
+        using var db = _commandDbContextFactory.CreateDbContext();
+
+        await SeedProcessDefinition(db, "grpver:mykey:1:ts", "grpvermykey", 1);
+        await SeedProcessDefinition(db, "grpver:mykey:2:ts", "grpvermykey", 2);
+        await SeedProcessDefinition(db, "grpver:mykey:3:ts", "grpvermykey", 3);
+
+        var result = await _service.GetProcessDefinitionGroups(new PageRequest());
+
+        Assert.AreEqual(1, result.Items.Count);
+        var group = result.Items[0];
+        Assert.AreEqual("grpvermykey", group.ProcessDefinitionKey);
+        Assert.AreEqual(3, group.Versions.Count);
+        Assert.AreEqual(3, group.Versions[0].Version);
+        Assert.AreEqual(2, group.Versions[1].Version);
+        Assert.AreEqual(1, group.Versions[2].Version);
+    }
+
+    // ─────────────────────────────────────────────────
     // GetPendingUserTasks (paginated)
     // ─────────────────────────────────────────────────
 
@@ -711,7 +832,7 @@ public class WorkflowQueryServiceTests
 
     private static ProcessDefinition CreateProcessDefinition(
         string id, string key, int version, string bpmnXml = "<bpmn/>",
-        bool createConditionalFlow = false)
+        bool createConditionalFlow = false, DateTimeOffset? deployedAt = null)
     {
         var start = new StartEvent("start");
         var end = new EndEvent("end");
@@ -739,7 +860,7 @@ public class WorkflowQueryServiceTests
             ProcessDefinitionId = id,
             ProcessDefinitionKey = key,
             Version = version,
-            DeployedAt = DateTimeOffset.UtcNow,
+            DeployedAt = deployedAt ?? DateTimeOffset.UtcNow,
             BpmnXml = bpmnXml,
             Workflow = new WorkflowDefinition
             {
@@ -753,9 +874,10 @@ public class WorkflowQueryServiceTests
 
     private static async Task SeedProcessDefinition(
         FleanCommandDbContext db, string id, string key, int version,
-        string bpmnXml = "<bpmn/>", bool createConditionalFlow = false)
+        string bpmnXml = "<bpmn/>", bool createConditionalFlow = false,
+        DateTimeOffset? deployedAt = null)
     {
-        var definition = CreateProcessDefinition(id, key, version, bpmnXml, createConditionalFlow);
+        var definition = CreateProcessDefinition(id, key, version, bpmnXml, createConditionalFlow, deployedAt);
         db.ProcessDefinitions.Add(definition);
         await db.SaveChangesAsync();
     }
