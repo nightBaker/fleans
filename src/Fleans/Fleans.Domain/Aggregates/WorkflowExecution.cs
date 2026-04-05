@@ -613,8 +613,28 @@ public class WorkflowExecution
                 if (!scopeEntries.All(e => e.IsCompleted)) continue;
 
                 // If any scope child has an error (and wasn't handled by a boundary),
-                // the subprocess should NOT auto-complete
+                // the subprocess should NOT auto-complete — skip both variable merge and completion.
                 if (scopeEntries.Any(e => e.ErrorCode is not null)) continue;
+
+                // SubProcess: merge child scope variables into parent before completing.
+                // Uses last-write-wins semantics: child values overwrite parent values for
+                // conflicting keys, matching fork-join merge behavior (ResolveForkJoinTransition).
+                // We do NOT remove the child scope here because the do-while loop may
+                // complete a parent subprocess before inner transitions are resolved,
+                // and those transitions spawn entries referencing the child scope.
+                // TODO: Orphaned child scopes accumulate for long-running grains with repeated
+                // subprocess invocations. Track cleanup in a follow-up issue once persistence is added.
+                var childScopes = _state.VariableStates
+                    .Where(vs => vs.ParentVariablesId == entry.VariablesId)
+                    .ToList();
+                if (childScopes.Count > 1)
+                    throw new InvalidOperationException(
+                        $"Expected at most one child scope for subprocess host {entry.ActivityId}, found {childScopes.Count}");
+                var childScope = childScopes.FirstOrDefault();
+                if (childScope is not null)
+                {
+                    Emit(new VariablesMerged(entry.VariablesId, childScope.Variables));
+                }
 
                 // All scope children are done — complete the sub-process host
                 Emit(new ActivityCompleted(

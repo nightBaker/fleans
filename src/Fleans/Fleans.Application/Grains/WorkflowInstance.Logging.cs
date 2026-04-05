@@ -122,6 +122,10 @@ public partial class WorkflowInstance
         Message = "Sub-process {ActivityId} completed — all child activities done")]
     private partial void LogSubProcessCompleted(string activityId);
 
+    [LoggerMessage(EventId = 1040, Level = LogLevel.Information,
+        Message = "Sub-process {ActivityId} child scope variables merged into parent scope {ParentScopeId}")]
+    private partial void LogSubProcessVariablesMerged(string activityId, Guid parentScopeId);
+
     [LoggerMessage(EventId = 1039, Level = LogLevel.Information,
         Message = "Scope child {ActivityId} cancelled (scope {ScopeId})")]
     private partial void LogScopeChildCancelled(string activityId, Guid scopeId);
