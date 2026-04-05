@@ -231,11 +231,57 @@ window.bpmnEditor = {
             return;
         } else if (propertyName === 'cancelActivity') {
             props.cancelActivity = value;
+        } else if (propertyName === 'camunda:assignee' || propertyName === 'camunda:candidateGroups' || propertyName === 'camunda:candidateUsers') {
+            var bo = element.businessObject;
+            if (!bo.$attrs) bo.$attrs = {};
+            if (value && value.trim() !== '') {
+                bo.$attrs[propertyName] = value;
+            } else {
+                delete bo.$attrs[propertyName];
+            }
+            return;
         } else {
             props[propertyName] = value;
         }
 
         modeling.updateProperties(element, props);
+    },
+
+    updateExpectedOutputs: function (elementId, variableNames) {
+        if (!this._modeler) return;
+
+        var elementRegistry = this._modeler.get('elementRegistry');
+        var modeling = this._modeler.get('modeling');
+        var moddle = this._modeler.get('moddle');
+        var element = elementRegistry.get(elementId);
+        if (!element) return;
+
+        var bo = element.businessObject;
+
+        // Remove existing ExpectedOutputs
+        var existingExtensions = [];
+        if (bo.extensionElements && bo.extensionElements.values) {
+            existingExtensions = bo.extensionElements.values.filter(function (ext) {
+                return ext.$type !== 'fleans:ExpectedOutputs';
+            });
+        }
+
+        if (variableNames && variableNames.length > 0) {
+            var outputs = variableNames.map(function (name) {
+                return moddle.create('fleans:Output', { name: name });
+            });
+            var expectedOutputs = moddle.create('fleans:ExpectedOutputs', { outputs: outputs });
+
+            if (!bo.extensionElements) {
+                var extElements = moddle.create('bpmn:ExtensionElements', { values: [] });
+                modeling.updateProperties(element, { extensionElements: extElements });
+            }
+            bo.extensionElements.values = existingExtensions.concat([expectedOutputs]);
+        } else {
+            if (bo.extensionElements) {
+                bo.extensionElements.values = existingExtensions;
+            }
+        }
     },
 
     updateTimerDefinition: function (elementId, timerType, expression) {
