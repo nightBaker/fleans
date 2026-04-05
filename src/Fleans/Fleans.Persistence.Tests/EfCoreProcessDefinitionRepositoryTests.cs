@@ -12,6 +12,7 @@ public class EfCoreProcessDefinitionRepositoryTests
 {
     private SqliteConnection _connection = null!;
     private IDbContextFactory<FleanCommandDbContext> _dbContextFactory = null!;
+    private IDbContextFactory<FleanQueryDbContext> _queryDbContextFactory = null!;
     private IProcessDefinitionRepository _repository = null!;
 
     [TestInitialize]
@@ -20,12 +21,17 @@ public class EfCoreProcessDefinitionRepositoryTests
         _connection = new SqliteConnection("DataSource=:memory:");
         _connection.Open();
 
-        var options = new DbContextOptionsBuilder<FleanCommandDbContext>()
+        var commandOptions = new DbContextOptionsBuilder<FleanCommandDbContext>()
             .UseSqlite(_connection)
             .Options;
 
-        _dbContextFactory = new TestDbContextFactory(options);
-        _repository = new EfCoreProcessDefinitionRepository(_dbContextFactory);
+        var queryOptions = new DbContextOptionsBuilder<FleanQueryDbContext>()
+            .UseSqlite(_connection)
+            .Options;
+
+        _dbContextFactory = new TestDbContextFactory(commandOptions);
+        _queryDbContextFactory = new TestQueryDbContextFactory(queryOptions);
+        _repository = new EfCoreProcessDefinitionRepository(_dbContextFactory, _queryDbContextFactory);
 
         using var db = _dbContextFactory.CreateDbContext();
         db.Database.EnsureCreated();

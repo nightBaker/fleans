@@ -6,26 +6,28 @@ namespace Fleans.Persistence;
 
 public class EfCoreProcessDefinitionRepository : IProcessDefinitionRepository
 {
-    private readonly IDbContextFactory<FleanCommandDbContext> _dbContextFactory;
+    private readonly IDbContextFactory<FleanCommandDbContext> _commandDbFactory;
+    private readonly IDbContextFactory<FleanQueryDbContext> _queryDbFactory;
 
-    public EfCoreProcessDefinitionRepository(IDbContextFactory<FleanCommandDbContext> dbContextFactory)
+    public EfCoreProcessDefinitionRepository(
+        IDbContextFactory<FleanCommandDbContext> commandDbFactory,
+        IDbContextFactory<FleanQueryDbContext> queryDbFactory)
     {
-        _dbContextFactory = dbContextFactory;
+        _commandDbFactory = commandDbFactory;
+        _queryDbFactory = queryDbFactory;
     }
 
     public async Task<ProcessDefinition?> GetByIdAsync(string processDefinitionId)
     {
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        await using var db = await _queryDbFactory.CreateDbContextAsync();
         return await db.ProcessDefinitions
-            .AsNoTracking()
             .FirstOrDefaultAsync(d => d.ProcessDefinitionId == processDefinitionId);
     }
 
     public async Task<List<ProcessDefinition>> GetByKeyAsync(string processDefinitionKey)
     {
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        await using var db = await _queryDbFactory.CreateDbContextAsync();
         return await db.ProcessDefinitions
-            .AsNoTracking()
             .Where(d => d.ProcessDefinitionKey == processDefinitionKey)
             .OrderBy(d => d.Version)
             .ToListAsync();
@@ -33,9 +35,8 @@ public class EfCoreProcessDefinitionRepository : IProcessDefinitionRepository
 
     public async Task<List<ProcessDefinition>> GetAllAsync()
     {
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        await using var db = await _queryDbFactory.CreateDbContextAsync();
         return await db.ProcessDefinitions
-            .AsNoTracking()
             .OrderBy(d => d.ProcessDefinitionKey)
             .ThenBy(d => d.Version)
             .ToListAsync();
@@ -43,7 +44,7 @@ public class EfCoreProcessDefinitionRepository : IProcessDefinitionRepository
 
     public async Task<List<string>> GetAllDistinctKeysAsync()
     {
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        await using var db = await _queryDbFactory.CreateDbContextAsync();
         return await db.ProcessDefinitions
             .Select(d => d.ProcessDefinitionKey)
             .Distinct()
@@ -53,7 +54,7 @@ public class EfCoreProcessDefinitionRepository : IProcessDefinitionRepository
 
     public async Task SaveAsync(ProcessDefinition definition)
     {
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        await using var db = await _commandDbFactory.CreateDbContextAsync();
 
         var existing = await db.ProcessDefinitions.FindAsync(definition.ProcessDefinitionId);
         if (existing is not null)
@@ -71,7 +72,7 @@ public class EfCoreProcessDefinitionRepository : IProcessDefinitionRepository
     /// </summary>
     public async Task UpdateAsync(ProcessDefinition definition)
     {
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        await using var db = await _commandDbFactory.CreateDbContextAsync();
 
         var existing = await db.ProcessDefinitions.FindAsync(definition.ProcessDefinitionId)
             ?? throw new InvalidOperationException(
@@ -87,7 +88,7 @@ public class EfCoreProcessDefinitionRepository : IProcessDefinitionRepository
 
     public async Task DeleteAsync(string processDefinitionId)
     {
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        await using var db = await _commandDbFactory.CreateDbContextAsync();
 
         var existing = await db.ProcessDefinitions.FindAsync(processDefinitionId);
         if (existing is null)
