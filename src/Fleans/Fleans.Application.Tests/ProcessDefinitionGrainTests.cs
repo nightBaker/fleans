@@ -1,3 +1,4 @@
+using Fleans.Application;
 using Fleans.Application.Grains;
 using Fleans.Application.QueryModels;
 using Fleans.Domain;
@@ -153,6 +154,7 @@ namespace Fleans.Application.Tests
                         services.AddSingleton<IProcessDefinitionRepository, StubProcessDefinitionRepository>();
                         services.AddSingleton<IWorkflowQueryService, StubWorkflowQueryService>();
                         services.AddSingleton<IEventStore, InMemoryEventStore>();
+                        services.AddApplication();
                     });
         }
 
@@ -161,6 +163,7 @@ namespace Fleans.Application.Tests
             public Task<InstanceStateSnapshot?> GetStateSnapshot(Guid workflowInstanceId) => Task.FromResult<InstanceStateSnapshot?>(null);
             public Task<IReadOnlyList<ProcessDefinitionSummary>> GetAllProcessDefinitions() => Task.FromResult<IReadOnlyList<ProcessDefinitionSummary>>([]);
             public Task<PagedResult<ProcessDefinitionSummary>> GetAllProcessDefinitions(PageRequest page) => Task.FromResult(new PagedResult<ProcessDefinitionSummary>([], 0, page.Page, page.PageSize));
+            public Task<PagedResult<ProcessDefinitionGroup>> GetProcessDefinitionGroups(PageRequest page) => Task.FromResult(new PagedResult<ProcessDefinitionGroup>([], 0, page.Page, page.PageSize));
             public Task<PagedResult<WorkflowInstanceInfo>> GetInstancesByKey(string processDefinitionKey, PageRequest page) => Task.FromResult(new PagedResult<WorkflowInstanceInfo>([], 0, page.Page, page.PageSize));
             public Task<PagedResult<WorkflowInstanceInfo>> GetInstancesByKeyAndVersion(string key, int version, PageRequest page) => Task.FromResult(new PagedResult<WorkflowInstanceInfo>([], 0, page.Page, page.PageSize));
             public Task<string?> GetBpmnXml(Guid instanceId) => Task.FromResult<string?>(null);

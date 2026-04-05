@@ -5,6 +5,7 @@ using Fleans.Domain.Effects;
 using Fleans.Domain.Events;
 using Fleans.Domain.States;
 using Fleans.Application.Adapters;
+using Fleans.Application.Effects;
 using Fleans.Application.Logging;
 using Microsoft.Extensions.Logging;
 using Orleans;
@@ -29,6 +30,7 @@ public partial class WorkflowInstance :
     private readonly ILogger<WorkflowInstance> _logger;
     private readonly IWorkflowQueryService _queryService;
     private readonly IEventStore _eventStore;
+    private readonly EffectDispatcher _effectDispatcher;
 
     private readonly ConcurrentQueue<(PendingExternalEvent Event, TaskCompletionSource Completion)> _pendingExternalEvents = new();
     private IGrainTimer? _pendingEventsTimer;
@@ -54,12 +56,14 @@ public partial class WorkflowInstance :
         IGrainFactory grainFactory,
         ILogger<WorkflowInstance> logger,
         IWorkflowQueryService queryService,
-        IEventStore eventStore)
+        IEventStore eventStore,
+        EffectDispatcher effectDispatcher)
     {
         _grainFactory = grainFactory;
         _logger = logger;
         _queryService = queryService;
         _eventStore = eventStore;
+        _effectDispatcher = effectDispatcher;
     }
 
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
@@ -535,4 +539,24 @@ public partial class WorkflowInstance :
 
     public ValueTask<GatewayForkState?> FindForkByToken(Guid tokenId)
         => ValueTask.FromResult(State.FindForkByToken(tokenId));
+
+    private sealed class WorkflowInstanceEffectContext : IEffectContext
+    {
+        private readonly WorkflowInstance _grain;
+
+        public WorkflowInstanceEffectContext(WorkflowInstance grain) => _grain = grain;
+
+        public IGrainFactory GrainFactory => _grain._grainFactory;
+
+        public Guid WorkflowInstanceId => _grain.GetPrimaryKey();
+
+        public Task PersistStateAsync() => _grain.DrainAndRaiseEvents();
+
+        public async Task ProcessFailureEffects(
+            string activityId, Guid hostActivityInstanceId, Exception ex)
+        {
+            var failEffects = _grain._execution!.FailActivity(activityId, hostActivityInstanceId, ex);
+            await _grain._effectDispatcher.DispatchAsync(failEffects, this);
+        }
+    }
 }

@@ -1,5 +1,6 @@
 using System.Dynamic;
 using Fleans.Domain.Activities;
+using Fleans.Domain.Aggregates.Services;
 using Fleans.Domain.Effects;
 using Fleans.Domain.Errors;
 using Fleans.Domain.Events;
@@ -21,10 +22,19 @@ public class WorkflowExecution
     private readonly IWorkflowDefinition _definition;
     private readonly List<IDomainEvent> _uncommittedEvents = [];
 
+    // Domain services
+    private readonly UserTaskLifecycle _userTasks;
+    private readonly MultiInstanceCoordinator _multiInstance;
+    private readonly BoundaryEventHandler _boundaryEvents;
+
     public WorkflowExecution(WorkflowInstanceState state, IWorkflowDefinition definition)
     {
         _state = state ?? throw new ArgumentNullException(nameof(state));
         _definition = definition ?? throw new ArgumentNullException(nameof(definition));
+
+        _userTasks = new UserTaskLifecycle(state, Emit);
+        _multiInstance = new MultiInstanceCoordinator(state, Emit);
+        _boundaryEvents = new BoundaryEventHandler(state, Emit);
     }
 
     /// <summary>
@@ -35,6 +45,10 @@ public class WorkflowExecution
     {
         _state = state ?? throw new ArgumentNullException(nameof(state));
         _definition = null!;
+
+        _userTasks = new UserTaskLifecycle(state, Emit);
+        _multiInstance = new MultiInstanceCoordinator(state, Emit);
+        _boundaryEvents = new BoundaryEventHandler(state, Emit);
     }
 
     /// <summary>
@@ -598,11 +612,12 @@ public class WorkflowExecution
 
                 if (isMultiInstanceHost)
                 {
-                    var miResult = TryCompleteMultiInstanceHost(
+                    var miResult = _multiInstance.TryComplete(
                         entry, (MultiInstanceActivity)activity, scopeEntries);
                     if (miResult.HostCompleted)
                     {
-                        allEffects.AddRange(miResult.Effects);
+                        var boundaryEffects = BuildBoundaryUnsubscribeEffects(miResult.HostActivityId!, entry);
+                        allEffects.AddRange(boundaryEffects);
                         allCompletedHostIds.Add(entry.ActivityInstanceId);
                         anyCompleted = true;
                     }
@@ -613,8 +628,28 @@ public class WorkflowExecution
                 if (!scopeEntries.All(e => e.IsCompleted)) continue;
 
                 // If any scope child has an error (and wasn't handled by a boundary),
-                // the subprocess should NOT auto-complete
+                // the subprocess should NOT auto-complete — skip both variable merge and completion.
                 if (scopeEntries.Any(e => e.ErrorCode is not null)) continue;
+
+                // SubProcess: merge child scope variables into parent before completing.
+                // Uses last-write-wins semantics: child values overwrite parent values for
+                // conflicting keys, matching fork-join merge behavior (ResolveForkJoinTransition).
+                // We do NOT remove the child scope here because the do-while loop may
+                // complete a parent subprocess before inner transitions are resolved,
+                // and those transitions spawn entries referencing the child scope.
+                // TODO: Orphaned child scopes accumulate for long-running grains with repeated
+                // subprocess invocations. Track cleanup in a follow-up issue once persistence is added.
+                var childScopes = _state.VariableStates
+                    .Where(vs => vs.ParentVariablesId == entry.VariablesId)
+                    .ToList();
+                if (childScopes.Count > 1)
+                    throw new InvalidOperationException(
+                        $"Expected at most one child scope for subprocess host {entry.ActivityId}, found {childScopes.Count}");
+                var childScope = childScopes.FirstOrDefault();
+                if (childScope is not null)
+                {
+                    Emit(new VariablesMerged(entry.VariablesId, childScope.Variables));
+                }
 
                 // All scope children are done — complete the sub-process host
                 Emit(new ActivityCompleted(
@@ -630,171 +665,12 @@ public class WorkflowExecution
         return (allEffects.AsReadOnly(), allCompletedHostIds.AsReadOnly());
     }
 
-    private (bool HostCompleted, IReadOnlyList<IInfrastructureEffect> Effects)
-        TryCompleteMultiInstanceHost(
-            ActivityInstanceEntry hostEntry,
-            MultiInstanceActivity mi,
-            List<ActivityInstanceEntry> scopeEntries)
-    {
-        var completedIterations = scopeEntries.Where(e => e.IsCompleted).ToList();
-        var activeIterations = scopeEntries.Where(e => !e.IsCompleted).ToList();
-        var total = hostEntry.MultiInstanceTotal;
-
-        // Host not yet executed (no total set)
-        if (total is null)
-            return (false, []);
-
-        // If there are active iterations still running, wait
-        if (activeIterations.Count > 0)
-            return (false, []);
-
-        // All spawned iterations are done but fewer than total — sequential: spawn next
-        if (completedIterations.Count < total)
-        {
-            var nextIndex = completedIterations.Count;
-            var parentVariablesId = hostEntry.VariablesId;
-
-            // Resolve collection item for next iteration
-            object? iterationItem = null;
-            if (mi.InputCollection is not null && mi.InputDataItem is not null)
-            {
-                var collectionVar = _state.GetVariable(parentVariablesId, mi.InputCollection);
-                if (collectionVar is IList<object> list)
-                    iterationItem = list[nextIndex];
-                else if (collectionVar is System.Collections.IEnumerable enumerable and not string)
-                    iterationItem = enumerable.Cast<object>().ElementAt(nextIndex);
-            }
-
-            // Create child variable scope for the new iteration
-            var childScopeId = Guid.NewGuid();
-            Emit(new ChildVariableScopeCreated(childScopeId, parentVariablesId));
-
-            var iterVars = new ExpandoObject();
-            var iterDict = (IDictionary<string, object?>)iterVars;
-            iterDict["loopCounter"] = nextIndex;
-            if (mi.InputDataItem is not null && iterationItem is not null)
-                iterDict[mi.InputDataItem] = iterationItem;
-
-            Emit(new VariablesMerged(childScopeId, iterVars));
-
-            // Spawn the next iteration entry
-            Emit(new ActivitySpawned(
-                ActivityInstanceId: Guid.NewGuid(),
-                ActivityId: mi.ActivityId,
-                ActivityType: mi.InnerActivity.GetType().Name,
-                VariablesId: childScopeId,
-                ScopeId: hostEntry.ActivityInstanceId,
-                MultiInstanceIndex: nextIndex,
-                TokenId: null));
-
-            return (false, []); // host not completed yet
-        }
-
-        // All iterations done — aggregate output variables
-        if (mi.OutputDataItem is not null && mi.OutputCollection is not null)
-        {
-            var iterationEntries = scopeEntries
-                .Where(e => e.MultiInstanceIndex.HasValue)
-                .OrderBy(e => e.MultiInstanceIndex!.Value)
-                .ToList();
-
-            var outputList = new List<object?>();
-            foreach (var iterEntry in iterationEntries)
-            {
-                var outputValue = _state.GetVariable(iterEntry.VariablesId, mi.OutputDataItem);
-                outputList.Add(outputValue);
-            }
-
-            var outputVars = new ExpandoObject();
-            ((IDictionary<string, object?>)outputVars)[mi.OutputCollection] = outputList;
-            Emit(new VariablesMerged(hostEntry.VariablesId, outputVars));
-        }
-
-        // Clean up child variable scopes
-        var childVarIds = scopeEntries
-            .Where(e => e.MultiInstanceIndex.HasValue)
-            .Select(e => e.VariablesId)
-            .ToList();
-        if (childVarIds.Count > 0)
-        {
-            Emit(new VariableScopesRemoved(childVarIds));
-        }
-
-        // Complete the host entry
-        Emit(new ActivityCompleted(
-            hostEntry.ActivityInstanceId, hostEntry.VariablesId, new ExpandoObject()));
-
-        var hostEffects = BuildBoundaryUnsubscribeEffects(mi.ActivityId, hostEntry);
-        return (true, hostEffects.AsReadOnly());
-    }
-
-    /// <summary>
-    /// When a multi-instance iteration fails, cancel sibling iterations,
-    /// clean up child variable scopes, and fail the host entry.
-    /// </summary>
-    private List<IInfrastructureEffect> FailMultiInstanceHost(ActivityInstanceEntry failedIteration, int errorCode, string errorMessage)
-    {
-        var effects = new List<IInfrastructureEffect>();
-        var hostInstanceId = failedIteration.ScopeId!.Value;
-        var hostEntry = _state.GetEntry(hostInstanceId);
-
-        // Cancel all active sibling iterations
-        effects.AddRange(CancelScopeChildren(hostInstanceId));
-
-        // Clean up child variable scopes
-        var scopeEntries = _state.GetEntriesInScope(hostInstanceId)
-            .Where(e => e.MultiInstanceIndex.HasValue)
-            .ToList();
-        var childVarIds = scopeEntries.Select(e => e.VariablesId).ToList();
-        if (childVarIds.Count > 0)
-            Emit(new VariableScopesRemoved(childVarIds));
-
-        // Fail the host entry
-        Emit(new ActivityFailed(hostInstanceId, errorCode, errorMessage));
-        effects.AddRange(BuildUserTaskCleanupEffects(hostInstanceId));
-
-        return effects;
-    }
-
     // --- User Task Handling ---
 
     public IReadOnlyList<IInfrastructureEffect> ClaimUserTask(
         Guid activityInstanceId, string userId)
     {
-        var entry = _state.GetActiveEntry(activityInstanceId);
-        var metadata = _state.UserTasks.GetValueOrDefault(activityInstanceId)
-            ?? throw new InvalidOperationException(
-                $"Activity instance '{activityInstanceId}' is not a user task.");
-
-        // Authorization: user must match assignee OR be in candidate users list.
-        // When both are set, satisfying either condition is sufficient.
-        var matchesAssignee = metadata.Assignee is null || metadata.Assignee == userId;
-        var matchesCandidateUsers = metadata.CandidateUsers.Count == 0
-            || metadata.CandidateUsers.Contains(userId);
-
-        if (metadata.Assignee is not null && metadata.CandidateUsers.Count > 0)
-        {
-            // Both constraints set — OR logic
-            if (!matchesAssignee && !matchesCandidateUsers)
-                throw new BadRequestActivityException(
-                    $"User {userId} is neither the assignee ({metadata.Assignee}) nor in the candidate users list");
-        }
-        else
-        {
-            // Only one constraint set — must satisfy it
-            if (!matchesAssignee)
-                throw new BadRequestActivityException(
-                    $"Task is assigned to {metadata.Assignee}, not {userId}");
-            if (!matchesCandidateUsers)
-                throw new BadRequestActivityException(
-                    $"User {userId} is not in candidate users list");
-        }
-
-        var claimedAt = DateTimeOffset.UtcNow;
-        Emit(new UserTaskClaimed(activityInstanceId, userId, claimedAt));
-
-        return [new UpdateUserTaskClaimEffect(
-            activityInstanceId, userId, UserTaskLifecycleState.Claimed)];
+        return _userTasks.Claim(activityInstanceId, userId);
     }
 
     /// <summary>
@@ -803,49 +679,16 @@ public class WorkflowExecution
     /// </summary>
     public IReadOnlyList<IInfrastructureEffect> UnclaimUserTask(Guid activityInstanceId)
     {
-        // Validate entry is still active (not completed/cancelled by boundary event)
-        _state.GetActiveEntry(activityInstanceId);
-
-        var metadata = _state.UserTasks.GetValueOrDefault(activityInstanceId)
-            ?? throw new InvalidOperationException(
-                $"Activity instance '{activityInstanceId}' is not a user task.");
-
-        Emit(new UserTaskUnclaimed(activityInstanceId));
-
-        return [new UpdateUserTaskClaimEffect(
-            activityInstanceId, null, UserTaskLifecycleState.Created)];
+        return _userTasks.Unclaim(activityInstanceId);
     }
 
     public IReadOnlyList<IInfrastructureEffect> CompleteUserTask(
         Guid activityInstanceId, string userId, ExpandoObject variables)
     {
-        var metadata = _state.UserTasks.GetValueOrDefault(activityInstanceId)
-            ?? throw new InvalidOperationException(
-                $"Activity instance '{activityInstanceId}' is not a user task.");
-
-        // Must be claimed by this user
-        if (metadata.TaskState != UserTaskLifecycleState.Claimed)
-            throw new BadRequestActivityException("Task must be claimed before completing");
-        if (metadata.ClaimedBy != userId)
-            throw new BadRequestActivityException(
-                $"Task is claimed by {metadata.ClaimedBy}, not {userId}");
-
-        // Validate expected output variables
-        if (metadata.ExpectedOutputVariables is { Count: > 0 })
-        {
-            var dict = (IDictionary<string, object?>)variables;
-            var missing = metadata.ExpectedOutputVariables.Where(v => !dict.ContainsKey(v)).ToList();
-            if (missing.Count > 0)
-                throw new BadRequestActivityException(
-                    $"Missing required output variables: {string.Join(", ", missing)}");
-        }
-
-        // Transition user task to Completed state before cleanup removes it
-        metadata.Complete();
+        var entry = _userTasks.ValidateAndPrepareCompletion(activityInstanceId, userId, variables);
 
         // Delegate to existing CompleteActivity — cleanup effects are handled
         // inside CompleteActivityInternal via BuildUserTaskCleanupEffects
-        var entry = _state.GetActiveEntry(activityInstanceId);
         return CompleteActivityInternal(entry, variables);
     }
 
@@ -1087,7 +930,14 @@ public class WorkflowExecution
             // If this is a multi-instance iteration, cancel siblings and fail host
             if (entry.MultiInstanceIndex is not null && entry.ScopeId.HasValue)
             {
-                effects.AddRange(FailMultiInstanceHost(entry, errorCode, errorMessage));
+                // Cancel all active sibling iterations
+                effects.AddRange(CancelScopeChildren(entry.ScopeId.Value));
+
+                // Service handles scope cleanup and host failure
+                var miResult = _multiInstance.FailHost(entry, errorCode, errorMessage);
+
+                // Aggregate builds shared cleanup effects
+                effects.AddRange(BuildUserTaskCleanupEffects(miResult.HostInstanceId));
             }
 
             // If this is a child workflow with no remaining active activities, notify parent
@@ -1122,8 +972,9 @@ public class WorkflowExecution
 
     /// <summary>
     /// Unified handler for boundary timer, message, and signal events firing.
-    /// Handles both interrupting (cancel attached + scope children + unsubscribe siblings)
-    /// and non-interrupting (clone variables, leave attached running) modes.
+    /// Delegates core logic to BoundaryEventHandler service, then orchestrates
+    /// shared utilities (CancelScopeChildren, BuildBoundaryUnsubscribeEffects,
+    /// BuildUserTaskCleanupEffects).
     /// </summary>
     private IReadOnlyList<IInfrastructureEffect> HandleBoundaryEventFired(
         Activity boundaryActivity,
@@ -1137,75 +988,23 @@ public class WorkflowExecution
     {
         var effects = new List<IInfrastructureEffect>();
 
-        Guid variablesId;
-        Guid? scopeId;
+        // Service handles core boundary logic (cancel/clone, variable ops, timer cycles, spawn)
+        var result = _boundaryEvents.HandleFired(
+            boundaryActivity, attachedToActivityId, isInterrupting,
+            hostEntry, deliveredVariables);
 
-        if (isInterrupting)
+        // Add timer effects from service
+        effects.AddRange(result.TimerEffects);
+
+        if (result.IsInterrupting)
         {
-            // Cancel the attached activity
-            Emit(new ActivityCancelled(
-                hostEntry.ActivityInstanceId,
-                $"Interrupted by boundary event '{boundaryActivity.ActivityId}'"));
-            effects.AddRange(BuildUserTaskCleanupEffects(hostEntry.ActivityInstanceId));
-
-            // Recursively cancel scope children
-            effects.AddRange(CancelScopeChildren(hostEntry.ActivityInstanceId));
-
-            // Build unsubscribe effects for OTHER boundary subscriptions
-            // (skip the one that fired to avoid deadlocks)
+            // Aggregate orchestrates shared utilities for interrupting path
+            effects.AddRange(BuildUserTaskCleanupEffects(result.HostActivityInstanceId));
+            effects.AddRange(CancelScopeChildren(result.HostActivityInstanceId));
             effects.AddRange(BuildBoundaryUnsubscribeEffects(
-                attachedToActivityId, hostEntry,
+                result.AttachedToActivityId, hostEntry,
                 skipTimerActivityId, skipMessageName, skipSignalName));
-
-            // Use the attached activity's variables scope
-            variablesId = hostEntry.VariablesId;
-            scopeId = hostEntry.ScopeId;
         }
-        else
-        {
-            // Non-interrupting: leave attached activity running, clone variables
-            var clonedScopeId = Guid.NewGuid();
-            Emit(new VariableScopeCloned(clonedScopeId, hostEntry.VariablesId));
-            variablesId = clonedScopeId;
-            scopeId = hostEntry.ScopeId;
-
-            // Merge delivered variables into cloned scope
-            if (((IDictionary<string, object?>)deliveredVariables).Count > 0)
-            {
-                Emit(new VariablesMerged(clonedScopeId, deliveredVariables));
-            }
-
-            // For non-interrupting cycle timers, re-register the timer with decremented count
-            if (boundaryActivity is BoundaryTimerEvent boundaryTimer
-                && boundaryTimer.TimerDefinition.Type == TimerType.Cycle)
-            {
-                // Use tracked cycle state if available; otherwise use original definition for first fire
-                var currentCycle = _state.GetTimerCycleState(
-                    hostEntry.ActivityInstanceId, boundaryTimer.ActivityId)
-                    ?? boundaryTimer.TimerDefinition;
-
-                var nextCycle = currentCycle.DecrementCycle();
-                Emit(new TimerCycleUpdated(
-                    hostEntry.ActivityInstanceId, boundaryTimer.ActivityId, nextCycle));
-
-                if (nextCycle is not null)
-                {
-                    effects.Add(new RegisterTimerEffect(
-                        _state.Id, hostEntry.ActivityInstanceId,
-                        boundaryTimer.ActivityId, nextCycle.GetDueTime()));
-                }
-            }
-        }
-
-        // Spawn the boundary event activity
-        Emit(new ActivitySpawned(
-            ActivityInstanceId: Guid.NewGuid(),
-            ActivityId: boundaryActivity.ActivityId,
-            ActivityType: boundaryActivity.GetType().Name,
-            VariablesId: variablesId,
-            ScopeId: scopeId,
-            MultiInstanceIndex: null,
-            TokenId: null));
 
         return effects.AsReadOnly();
     }
@@ -1415,13 +1214,13 @@ public class WorkflowExecution
                 ApplyActivityFailed(e);
                 break;
             case ActivityExecutionReset e:
-                _state.GetActiveEntry(e.ActivityInstanceId).ResetExecuting();
+                _state.ResetEntryExecuting(e.ActivityInstanceId);
                 break;
             case ActivityCancelled e:
                 ApplyActivityCancelled(e);
                 break;
             case MultiInstanceTotalSet e:
-                _state.GetActiveEntry(e.ActivityInstanceId).SetMultiInstanceTotal(e.Total);
+                _state.SetEntryMultiInstanceTotal(e.ActivityInstanceId, e.Total);
                 break;
             case VariablesMerged e:
                 _state.MergeState(e.VariablesId, e.Variables);
@@ -1455,7 +1254,7 @@ public class WorkflowExecution
                 _state.SetParentInfo(e.ParentInstanceId, e.ParentActivityId);
                 break;
             case ChildWorkflowLinked e:
-                _state.GetActiveEntry(e.ActivityInstanceId).SetChildWorkflowInstanceId(e.ChildWorkflowInstanceId);
+                _state.SetEntryChildWorkflowInstanceId(e.ActivityInstanceId, e.ChildWorkflowInstanceId);
                 break;
             case UserTaskRegistered e:
                 var meta = new UserTaskMetadata();
@@ -1506,14 +1305,12 @@ public class WorkflowExecution
 
     private void ApplyActivityExecutionStarted(ActivityExecutionStarted e)
     {
-        var entry = _state.GetActiveEntry(e.ActivityInstanceId);
-        entry.Execute();
+        _state.ExecuteEntry(e.ActivityInstanceId);
     }
 
     private void ApplyActivityCompleted(ActivityCompleted e)
     {
-        _state.CompleteEntry(e.ActivityInstanceId);
-        _state.MergeState(e.VariablesId, e.Variables);
+        _state.CompleteEntry(e.ActivityInstanceId, e.Variables, e.VariablesId);
     }
 
     private void ApplyActivityFailed(ActivityFailed e)
@@ -1528,7 +1325,6 @@ public class WorkflowExecution
 
     private void ApplyGatewayForkTokenAdded(GatewayForkTokenAdded e)
     {
-        var fork = _state.GetGatewayFork(e.ForkInstanceId);
-        fork.CreatedTokenIds.Add(e.TokenId);
+        _state.AddTokenToFork(e.ForkInstanceId, e.TokenId);
     }
 }
