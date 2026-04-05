@@ -112,7 +112,7 @@ public class SubProcessTests : WorkflowTestBase
     }
 
     [TestMethod]
-    public async Task SubProcess_VariableShadowing_ShouldNotAffectParent()
+    public async Task SubProcess_VariableShadowing_ShouldMergeToParent()
     {
         var start = new StartEvent("start");
         var parentTask = new TaskActivity("parentTask");
