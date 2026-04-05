@@ -183,6 +183,37 @@
                                      Disabled="@ReadOnly" Placeholder="e.g. approvalGranted" Style="width: 100%;" />
                 </div>
             }
+
+            @if (Element.Type == "bpmn:UserTask")
+            {
+                <div>
+                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Assignee</FluentLabel>
+                    <FluentTextField Value="@assignee" @oninput="OnAssigneeInput" @onchange="OnAssigneeChange"
+                                     Disabled="@ReadOnly" Placeholder="e.g. john.doe" Style="width: 100%;" />
+                </div>
+
+                <div>
+                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Candidate Groups</FluentLabel>
+                    <TagInput Tags="@candidateGroups" TagsChanged="OnCandidateGroupsChanged"
+                              Disabled="@ReadOnly" Placeholder="Type group and press Enter" />
+                </div>
+
+                <div>
+                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Candidate Users</FluentLabel>
+                    <TagInput Tags="@candidateUsers" TagsChanged="OnCandidateUsersChanged"
+                              Disabled="@ReadOnly" Placeholder="Type user and press Enter" />
+                </div>
+
+                <div>
+                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Expected Output Variables</FluentLabel>
+                    <TagInput Tags="@expectedOutputVariables" TagsChanged="OnExpectedOutputsChanged"
+                              Suggestions="@Element.AvailableVariables" Disabled="@ReadOnly"
+                              Placeholder="Type variable name" />
+                    <FluentLabel Style="color: var(--neutral-foreground-hint); margin-top: 4px; font-size: 12px;">
+                        Variables the user task is expected to set on completion
+                    </FluentLabel>
+                </div>
+            }
         </FluentStack>
     </div>
 </div>
@@ -206,6 +237,10 @@
     private string correlationKey = "";
     private string signalName = "";
     private bool isInterrupting = true;
+    private string assignee = "";
+    private List<string> candidateGroups = [];
+    private List<string> candidateUsers = [];
+    private List<string> expectedOutputVariables = [];
 
     private static readonly Dictionary<string, string> TaskTypes = new()
     {
@@ -250,6 +285,10 @@
         correlationKey = Element.CorrelationKey;
         signalName = Element.SignalName;
         isInterrupting = Element.IsInterrupting;
+        assignee = Element.Assignee;
+        candidateGroups = new List<string>(Element.CandidateGroups);
+        candidateUsers = new List<string>(Element.CandidateUsers);
+        expectedOutputVariables = new List<string>(Element.ExpectedOutputVariables);
     }
 
     private Dictionary<string, string>? GetReplaceOptions()
@@ -409,6 +448,33 @@
     {
         signalName = e.Value?.ToString() ?? "";
         await JS.InvokeVoidAsync("bpmnEditor.updateSignalDefinition", Element.Id, signalName);
+    }
+
+    private void OnAssigneeInput(ChangeEventArgs e) => assignee = e.Value?.ToString() ?? "";
+    private async Task OnAssigneeChange(ChangeEventArgs e)
+    {
+        assignee = e.Value?.ToString() ?? "";
+        await JS.InvokeVoidAsync("bpmnEditor.updateElementProperty", Element.Id, "camunda:assignee", assignee);
+    }
+
+    private async Task OnCandidateGroupsChanged(List<string> tags)
+    {
+        candidateGroups = tags;
+        var csv = string.Join(",", tags);
+        await JS.InvokeVoidAsync("bpmnEditor.updateElementProperty", Element.Id, "camunda:candidateGroups", csv);
+    }
+
+    private async Task OnCandidateUsersChanged(List<string> tags)
+    {
+        candidateUsers = tags;
+        var csv = string.Join(",", tags);
+        await JS.InvokeVoidAsync("bpmnEditor.updateElementProperty", Element.Id, "camunda:candidateUsers", csv);
+    }
+
+    private async Task OnExpectedOutputsChanged(List<string> tags)
+    {
+        expectedOutputVariables = tags;
+        await JS.InvokeVoidAsync("bpmnEditor.updateExpectedOutputs", Element.Id, tags);
     }
 
     private async Task AddMapping(string type)
