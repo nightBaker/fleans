@@ -31,6 +31,7 @@ public partial class TimerEffectHandler : IEffectHandler
                 var timerCancelGrain = context.GrainFactory.GetGrain<ITimerCallbackGrain>(
                     unregTimer.WorkflowInstanceId, $"{unregTimer.HostActivityInstanceId}:{unregTimer.TimerActivityId}");
                 await timerCancelGrain.Cancel();
+                LogTimerReminderUnregistered(unregTimer.TimerActivityId);
                 break;
 
             default:
@@ -41,4 +42,8 @@ public partial class TimerEffectHandler : IEffectHandler
     [LoggerMessage(EventId = 1017, Level = LogLevel.Information,
         Message = "Timer reminder registered for activity {TimerActivityId}, due in {DueTime}")]
     private partial void LogTimerReminderRegistered(string timerActivityId, TimeSpan dueTime);
+
+    [LoggerMessage(EventId = 1019, Level = LogLevel.Information,
+        Message = "Timer reminder unregistered for activity {TimerActivityId}")]
+    private partial void LogTimerReminderUnregistered(string timerActivityId);
 }
