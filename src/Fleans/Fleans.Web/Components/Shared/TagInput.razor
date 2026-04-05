@@ -1,0 +1,90 @@
+@using Microsoft.FluentUI.AspNetCore.Components
+
+<div class="tag-input-container">
+    @foreach (var tag in Tags)
+    {
+        <FluentBadge Appearance="Appearance.Neutral" Style="margin: 2px;">
+            @tag
+            @if (!Disabled)
+            {
+                <span class="tag-remove" @onclick="() => RemoveTag(tag)" style="cursor: pointer; margin-left: 4px;">&times;</span>
+            }
+        </FluentBadge>
+    }
+
+    @if (!Disabled)
+    {
+        <div style="position: relative; width: 100%;">
+            <FluentTextField @bind-Value="inputValue"
+                             @onkeydown="OnKeyDown"
+                             @oninput="OnInput"
+                             Placeholder="@Placeholder"
+                             Style="width: 100%; margin-top: 4px;" />
+            @if (showSuggestions && filteredSuggestions.Count > 0)
+            {
+                <div class="tag-suggestions">
+                    @foreach (var suggestion in filteredSuggestions)
+                    {
+                        <div class="tag-suggestion-item" @onclick="() => AddTag(suggestion)">@suggestion</div>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public List<string> Tags { get; set; } = [];
+    [Parameter] public EventCallback<List<string>> TagsChanged { get; set; }
+    [Parameter] public List<string>? Suggestions { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string Placeholder { get; set; } = "Type and press Enter";
+
+    private string inputValue = "";
+    private bool showSuggestions;
+    private List<string> filteredSuggestions = [];
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(inputValue))
+        {
+            await AddTag(inputValue.Trim());
+        }
+    }
+
+    private void OnInput(ChangeEventArgs e)
+    {
+        inputValue = e.Value?.ToString() ?? "";
+        if (Suggestions is not null && !string.IsNullOrEmpty(inputValue))
+        {
+            filteredSuggestions = Suggestions
+                .Where(s => s.Contains(inputValue, StringComparison.OrdinalIgnoreCase) && !Tags.Contains(s))
+                .Take(8)
+                .ToList();
+            showSuggestions = filteredSuggestions.Count > 0;
+        }
+        else
+        {
+            showSuggestions = false;
+            filteredSuggestions = [];
+        }
+    }
+
+    private async Task AddTag(string tag)
+    {
+        if (!string.IsNullOrWhiteSpace(tag) && !Tags.Contains(tag))
+        {
+            Tags.Add(tag);
+            await TagsChanged.InvokeAsync(Tags);
+        }
+        inputValue = "";
+        showSuggestions = false;
+        filteredSuggestions = [];
+    }
+
+    private async Task RemoveTag(string tag)
+    {
+        Tags.Remove(tag);
+        await TagsChanged.InvokeAsync(Tags);
+    }
+}
