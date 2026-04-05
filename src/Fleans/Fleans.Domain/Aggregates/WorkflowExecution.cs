@@ -1171,6 +1171,10 @@ public class WorkflowExecution
             // Recursively cancel scope children
             effects.AddRange(CancelScopeChildren(hostEntry.ActivityInstanceId));
 
+            // Remove orphaned child variable scopes (safe here because the boundary
+            // handler uses the host's VariablesId, not the child scope)
+            RemoveChildVariableScopes(hostEntry.ActivityInstanceId);
+
             // Build unsubscribe effects for OTHER boundary subscriptions
             // (skip the one that fired to avoid deadlocks)
             effects.AddRange(BuildBoundaryUnsubscribeEffects(
@@ -1251,6 +1255,23 @@ public class WorkflowExecution
             effects.AddRange(BuildUserTaskCleanupEffects(entry.ActivityInstanceId));
         }
         return effects;
+    }
+
+    /// <summary>
+    /// Removes orphaned child variable scopes for entries in the given scope.
+    /// Call after CancelScopeChildren when the child scope is no longer referenced
+    /// (e.g., interrupting boundary events where the handler uses the host's scope).
+    /// Do NOT call for error boundaries where the handler inherits the child scope.
+    /// </summary>
+    private void RemoveChildVariableScopes(Guid scopeId)
+    {
+        var childScopeIds = _state.GetEntriesInScope(scopeId)
+            .Select(e => e.VariablesId)
+            .Distinct()
+            .Where(id => _state.VariableStates.Any(vs => vs.Id == id && vs.ParentVariablesId.HasValue))
+            .ToList();
+        if (childScopeIds.Count > 0)
+            Emit(new VariableScopesRemoved(childScopeIds));
     }
 
     // --- Boundary Unsubscribe Helpers ---
