@@ -1001,6 +1001,11 @@ public class WorkflowExecution
             // Aggregate orchestrates shared utilities for interrupting path
             effects.AddRange(BuildUserTaskCleanupEffects(result.HostActivityInstanceId));
             effects.AddRange(CancelScopeChildren(result.HostActivityInstanceId));
+
+            // Remove orphaned child variable scopes (safe here because the boundary
+            // handler uses the host's VariablesId, not the child scope)
+            RemoveChildVariableScopes(result.HostActivityInstanceId);
+
             effects.AddRange(BuildBoundaryUnsubscribeEffects(
                 result.AttachedToActivityId, hostEntry,
                 skipTimerActivityId, skipMessageName, skipSignalName));
@@ -1030,6 +1035,23 @@ public class WorkflowExecution
             effects.AddRange(BuildUserTaskCleanupEffects(entry.ActivityInstanceId));
         }
         return effects;
+    }
+
+    /// <summary>
+    /// Removes orphaned child variable scopes for entries in the given scope.
+    /// Call after CancelScopeChildren when the child scope is no longer referenced
+    /// (e.g., interrupting boundary events where the handler uses the host's scope).
+    /// Do NOT call for error boundaries where the handler inherits the child scope.
+    /// </summary>
+    private void RemoveChildVariableScopes(Guid scopeId)
+    {
+        var childScopeIds = _state.GetEntriesInScope(scopeId)
+            .Select(e => e.VariablesId)
+            .Distinct()
+            .Where(id => _state.VariableStates.Any(vs => vs.Id == id && vs.ParentVariablesId.HasValue))
+            .ToList();
+        if (childScopeIds.Count > 0)
+            Emit(new VariableScopesRemoved(childScopeIds));
     }
 
     // --- Boundary Unsubscribe Helpers ---

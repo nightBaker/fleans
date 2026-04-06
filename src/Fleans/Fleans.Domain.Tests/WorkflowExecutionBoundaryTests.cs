@@ -1063,4 +1063,164 @@ public class WorkflowExecutionBoundaryTests
         var unregTimer = effects.OfType<UnregisterTimerEffect>().Single();
         Assert.AreEqual("bt1", unregTimer.TimerActivityId);
     }
+
+    // ===== Subprocess Cancellation Variable Scope Cleanup Tests =====
+
+    [TestMethod]
+    public void SubProcessCancellation_CleansUpChildVariableScope()
+    {
+        // Subprocess with a boundary timer that interrupts and cancels scope children.
+        // After cancellation, the child variable scope should be removed.
+        var boundaryTimer = new BoundaryTimerEvent(
+            "bt1", "sub1", new TimerDefinition(TimerType.Duration, "PT10S"), IsInterrupting: true);
+        var handler = new ScriptTask("handler1", "return 'h';");
+
+        var start = new StartEvent("start1");
+        var subStart = new StartEvent("sub-start");
+        var subTask = new ScriptTask("sub-task1", "return 1;");
+        var subProcess = new SubProcess("sub1")
+        {
+            Activities = [subStart, subTask],
+            SequenceFlows = [new SequenceFlow("sub-seq1", subStart, subTask)]
+        };
+        var end = new EndEvent("end1");
+
+        var (execution, state, _) = CreateStartedExecution(
+            [start, subProcess, end, boundaryTimer, handler],
+            [
+                new("seq1", start, subProcess),
+                new("seq2", subProcess, end),
+                new("seq-bt", boundaryTimer, handler)
+            ]);
+
+        // Complete start -> spawn subprocess
+        var startEntry = state.Entries.First();
+        execution.MarkExecuting(startEntry.ActivityInstanceId);
+        execution.MarkCompleted(startEntry.ActivityInstanceId, new ExpandoObject());
+        execution.ResolveTransitions(
+        [
+            new CompletedActivityTransitions(startEntry.ActivityInstanceId, "start1",
+                [new ActivityTransition(subProcess)])
+        ]);
+
+        var subEntry = state.GetActiveActivities().First(e => e.ActivityId == "sub1");
+        execution.MarkExecuting(subEntry.ActivityInstanceId);
+
+        // Open subprocess -> creates child variable scope
+        execution.ProcessCommands(
+            [new OpenSubProcessCommand(subProcess, subEntry.VariablesId)],
+            subEntry.ActivityInstanceId);
+
+        var subStartEntry = state.GetActiveActivities().First(e => e.ActivityId == "sub-start");
+        execution.MarkExecuting(subStartEntry.ActivityInstanceId);
+        execution.MarkCompleted(subStartEntry.ActivityInstanceId, new ExpandoObject());
+        execution.ResolveTransitions(
+        [
+            new CompletedActivityTransitions(subStartEntry.ActivityInstanceId, "sub-start",
+                [new ActivityTransition(subTask)])
+        ]);
+        var subTaskEntry = state.GetActiveActivities().First(e => e.ActivityId == "sub-task1");
+        execution.MarkExecuting(subTaskEntry.ActivityInstanceId);
+
+        // Record child variable scope count before cancellation
+        var childScopeId = subTaskEntry.VariablesId;
+        var scopeCountBefore = state.VariableStates.Count;
+        Assert.IsTrue(state.VariableStates.Any(vs => vs.Id == childScopeId),
+            "Child variable scope should exist before cancellation");
+        execution.ClearUncommittedEvents();
+
+        // Fire boundary timer -> cancels subprocess and its children
+        execution.HandleTimerFired("bt1", subEntry.ActivityInstanceId);
+
+        var events = execution.GetUncommittedEvents();
+
+        // Verify VariableScopesRemoved was emitted for the child scope
+        var removedEvent = events.OfType<VariableScopesRemoved>().Single();
+        Assert.IsTrue(removedEvent.ScopeIds.Contains(childScopeId),
+            "VariableScopesRemoved should include the subprocess child scope");
+
+        // Verify the child scope was actually removed from state
+        Assert.IsFalse(state.VariableStates.Any(vs => vs.Id == childScopeId),
+            "Child variable scope should be removed after cancellation");
+        Assert.AreEqual(scopeCountBefore - 1, state.VariableStates.Count,
+            "Exactly one variable scope should have been removed");
+    }
+
+    [TestMethod]
+    public void ErrorBoundary_OnSubProcess_PreservesChildVariableScope()
+    {
+        // When an error boundary fires on a subprocess, the child variable scope
+        // should NOT be removed because the boundary handler inherits it
+        // (the handler is spawned with the failed entry's VariablesId).
+        var subStart = new StartEvent("sub-start");
+        var subTask = new ScriptTask("sub-task1", "throw new Exception();");
+        var subProcess = new SubProcess("sub1")
+        {
+            Activities = [subStart, subTask],
+            SequenceFlows = [new SequenceFlow("sub-seq1", subStart, subTask)]
+        };
+        var boundaryError = new BoundaryErrorEvent("be1", "sub1", "500");
+        var handler = new ScriptTask("handler1", "return 'recovered';");
+
+        var start = new StartEvent("start1");
+        var end = new EndEvent("end1");
+
+        var (execution, state, _) = CreateStartedExecution(
+            [start, subProcess, end, boundaryError, handler],
+            [
+                new("seq1", start, subProcess),
+                new("seq2", subProcess, end),
+                new("seq-be", boundaryError, handler)
+            ]);
+
+        // Complete start -> spawn subprocess
+        var startEntry = state.Entries.First();
+        execution.MarkExecuting(startEntry.ActivityInstanceId);
+        execution.MarkCompleted(startEntry.ActivityInstanceId, new ExpandoObject());
+        execution.ResolveTransitions(
+        [
+            new CompletedActivityTransitions(startEntry.ActivityInstanceId, "start1",
+                [new ActivityTransition(subProcess)])
+        ]);
+
+        var subEntry = state.GetActiveActivities().First(e => e.ActivityId == "sub1");
+        execution.MarkExecuting(subEntry.ActivityInstanceId);
+
+        // Open subprocess
+        execution.ProcessCommands(
+            [new OpenSubProcessCommand(subProcess, subEntry.VariablesId)],
+            subEntry.ActivityInstanceId);
+
+        var subStartEntry = state.GetActiveActivities().First(e => e.ActivityId == "sub-start");
+        execution.MarkExecuting(subStartEntry.ActivityInstanceId);
+        execution.MarkCompleted(subStartEntry.ActivityInstanceId, new ExpandoObject());
+        execution.ResolveTransitions(
+        [
+            new CompletedActivityTransitions(subStartEntry.ActivityInstanceId, "sub-start",
+                [new ActivityTransition(subTask)])
+        ]);
+        var subTaskEntry = state.GetActiveActivities().First(e => e.ActivityId == "sub-task1");
+        execution.MarkExecuting(subTaskEntry.ActivityInstanceId);
+
+        var childScopeId = subTaskEntry.VariablesId;
+        Assert.IsTrue(state.VariableStates.Any(vs => vs.Id == childScopeId),
+            "Child variable scope should exist before error");
+        execution.ClearUncommittedEvents();
+
+        // Fail the task inside subprocess -> error boundary fires
+        execution.FailActivity("sub-task1", subTaskEntry.ActivityInstanceId,
+            new Exception("task failed"));
+
+        var events = execution.GetUncommittedEvents();
+
+        // Verify the boundary handler was spawned
+        var spawned = events.OfType<ActivitySpawned>().Single();
+        Assert.AreEqual("be1", spawned.ActivityId);
+
+        // The child scope should NOT be removed — the boundary handler references it
+        Assert.AreEqual(0, events.OfType<VariableScopesRemoved>().Count(),
+            "Error boundary should not remove child scope (handler inherits it)");
+        Assert.IsTrue(state.VariableStates.Any(vs => vs.Id == childScopeId),
+            "Child variable scope should still exist (used by boundary handler)");
+    }
 }
