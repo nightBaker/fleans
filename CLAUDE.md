@@ -25,6 +25,17 @@ dotnet run --project Fleans.Aspire
 - Branch naming: `feature/<short-description>` or `fix/<short-description>`
 - Open a PR from the feature branch to `main`, merge back. CI runs build + test on PRs.
 
+## Documentation Website
+
+The public docs site lives in `website/` — an Astro + Starlight project deployed to GitHub Pages via `.github/workflows/deploy-website.yml` (Node 22, deploy job gated to `main`).
+
+- Content: `website/src/content/docs/` (`guides/`, `concepts/`, `reference/`, `index.mdx`)
+- Theme: `website/src/styles/custom.css` — palettes scoped to `:root[data-theme='light']` and `:root[data-theme='dark']`
+- Local dev: `cd website && npm install && npm run dev`
+- Build check: `npm run build` (must pass before merging)
+
+**Documentation rule:** Any new feature, BPMN element, API endpoint, or user-facing behavior MUST be reflected in the docs site in the same PR. Update the relevant page under `website/src/content/docs/` (e.g. new BPMN activity → `concepts/bpmn-support.md`; new endpoint → `reference/api.md`; new workflow → add a guide). If no suitable page exists, create one and add it to the Starlight sidebar in `website/astro.config.mjs`. Documentation is part of "done", not a follow-up task.
+
 ## How to Add a New BPMN Activity
 
 1. Create the activity class in `Fleans.Domain/Activities/` — extend the existing `Activity` base class
