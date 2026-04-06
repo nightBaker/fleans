@@ -93,6 +93,15 @@ public partial class BpmnConverter : IBpmnConverter
                         $"startEvent '{id}' signalEventDefinition must have a signalRef attribute");
                 activity = new SignalStartEvent(id, signalRef);
             }
+            else if (startEvent.Element(Bpmn + "errorEventDefinition") is { } errStartDef)
+            {
+                // Only valid inside an event sub-process. We accept it here so the
+                // start-event loop is uniform; misuse outside an event sub-process is
+                // detectable later because such start events have no incoming flows
+                // and are not selected by GetStartActivity().
+                var errorRef = errStartDef.Attribute("errorRef")?.Value;
+                activity = new ErrorStartEvent(id, errorRef);
+            }
             else
             {
                 activity = new StartEvent(id);
@@ -327,7 +336,8 @@ public partial class BpmnConverter : IBpmnConverter
             activityMap[id] = activity;
         }
 
-        // Parse sub-processes (recursive)
+        // Parse sub-processes (recursive). triggeredByEvent="true" produces an
+        // EventSubProcess instead of a regular SubProcess.
         foreach (var subProcessEl in scopeElement.Elements(Bpmn + "subProcess"))
         {
             var id = GetId(subProcessEl);
@@ -338,12 +348,45 @@ public partial class BpmnConverter : IBpmnConverter
             var childSequenceFlows = new List<SequenceFlow>();
             ParseSequenceFlows(subProcessEl, childSequenceFlows, activityMap, childDefaultFlowIds);
 
-            Activity activity = new SubProcess(id)
+            var triggeredByEvent = subProcessEl.Attribute("triggeredByEvent")?.Value == "true";
+
+            Activity activity;
+            if (triggeredByEvent)
             {
-                Activities = childActivities,
-                SequenceFlows = childSequenceFlows
-            };
-            activity = TryWrapMultiInstance(subProcessEl, activity) ?? activity;
+                // Determine isInterrupting from the event sub-process's start event.
+                // Per BPMN 2.0 §10.2.4 an error start event is always interrupting,
+                // regardless of any isInterrupting attribute on the XML.
+                var startEventEl = subProcessEl.Element(Bpmn + "startEvent");
+                var hasErrorStart = startEventEl?.Element(Bpmn + "errorEventDefinition") != null;
+                var isInterruptingAttr = startEventEl?.Attribute("isInterrupting")?.Value;
+                var isInterrupting = hasErrorStart || isInterruptingAttr != "false";
+
+                if (hasErrorStart && isInterruptingAttr == "false")
+                {
+                    // Forced to interrupting per BPMN spec; the XML attribute is ignored.
+                    // (No logger plumbed into BpmnConverter today; behaviour is correct
+                    // even without the warning.)
+                }
+
+                // Multi-instance is not valid for event sub-processes per BPMN spec;
+                // we therefore do not call TryWrapMultiInstance here.
+                activity = new EventSubProcess(id)
+                {
+                    Activities = childActivities,
+                    SequenceFlows = childSequenceFlows,
+                    IsInterrupting = isInterrupting,
+                };
+            }
+            else
+            {
+                activity = new SubProcess(id)
+                {
+                    Activities = childActivities,
+                    SequenceFlows = childSequenceFlows
+                };
+                activity = TryWrapMultiInstance(subProcessEl, activity) ?? activity;
+            }
+
             activities.Add(activity);
             activityMap[id] = activity;
         }
