@@ -1,5 +1,5 @@
 /* Fleans brand colors — tweak freely */
-:root {
+:root[data-theme='dark'] {
   --sl-color-accent-low: #1e2a3a;
   --sl-color-accent: #3b82f6;
   --sl-color-accent-high: #93c5fd;
@@ -11,4 +11,19 @@
   --sl-color-gray-5: #353841;
   --sl-color-gray-6: #24272f;
   --sl-color-black: #17181c;
+}
+
+:root[data-theme='light'] {
+  --sl-color-accent-low: #d5e4fb;
+  --sl-color-accent: #2563eb;
+  --sl-color-accent-high: #1e3a8a;
+  --sl-color-white: #17181c;
+  --sl-color-gray-1: #24272f;
+  --sl-color-gray-2: #353841;
+  --sl-color-gray-3: #545861;
+  --sl-color-gray-4: #888b96;
+  --sl-color-gray-5: #c0c2c7;
+  --sl-color-gray-6: #eceef2;
+  --sl-color-gray-7: #f5f6f8;
+  --sl-color-black: #ffffff;
 }
