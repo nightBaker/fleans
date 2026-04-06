@@ -98,8 +98,8 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
 
     private static void DiffEntries(FleanCommandDbContext db, WorkflowInstanceState existing, WorkflowInstanceState incoming, Guid instanceId)
     {
-        var existingDict = existing.Entries.ToDictionary(e => e.ActivityInstanceId);
-        var incomingDict = incoming.Entries.ToDictionary(e => e.ActivityInstanceId);
+        var existingDict = existing.GetEntriesByIdCache();
+        var incomingDict = incoming.GetEntriesByIdCache();
 
         // Remove
         foreach (var old in existing.Entries.Where(e => !incomingDict.ContainsKey(e.ActivityInstanceId)))
