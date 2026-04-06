@@ -1,0 +1,38 @@
+import { defineConfig } from 'astro/config';
+import starlight from '@astrojs/starlight';
+
+// https://astro.build/config
+export default defineConfig({
+  site: 'https://example.github.io',
+  base: '/fleans',
+  integrations: [
+    starlight({
+      title: 'Fleans',
+      description: 'BPMN Workflow Engine on Orleans — Camunda on .NET Orleans',
+      social: {
+        github: 'https://github.com/<github-user>/fleans',
+      },
+      sidebar: [
+        {
+          label: 'Getting Started',
+          items: [
+            { label: 'Introduction', slug: 'guides/introduction' },
+            { label: 'Quick Start', slug: 'guides/quick-start' },
+          ],
+        },
+        {
+          label: 'Concepts',
+          items: [
+            { label: 'Architecture', slug: 'concepts/architecture' },
+            { label: 'BPMN Support', slug: 'concepts/bpmn-support' },
+          ],
+        },
+        {
+          label: 'Reference',
+          autogenerate: { directory: 'reference' },
+        },
+      ],
+      customCss: ['./src/styles/custom.css'],
+    }),
+  ],
+});

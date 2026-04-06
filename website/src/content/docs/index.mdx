@@ -1,0 +1,40 @@
+---
+title: Fleans
+description: BPMN Workflow Engine on Orleans — Camunda on .NET Orleans
+template: splash
+hero:
+  tagline: BPMN Workflow Engine on Orleans — Camunda on .NET Orleans.
+  image:
+    file: ../../assets/hero.svg
+  actions:
+    - text: Get Started
+      link: /fleans/guides/introduction/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/<github-user>/fleans
+      icon: external
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## Why Fleans?
+
+<CardGrid stagger>
+  <Card title="BPMN 2.0 Native" icon="document">
+    Author workflows as BPMN XML with the familiar Camunda-compatible
+    tooling, then run them on a distributed .NET Orleans cluster.
+  </Card>
+  <Card title="Actor-Based Execution" icon="rocket">
+    Each workflow instance is an Orleans grain — horizontally scalable,
+    location-transparent, and resilient by design.
+  </Card>
+  <Card title="Event-Sourced Core" icon="setting">
+    Workflow state is reconstructed from an immutable event log,
+    giving you audit trails and point-in-time debugging for free.
+  </Card>
+  <Card title=".NET First" icon="seti:c-sharp">
+    Built in modern C#, integrated with ASP.NET Core and .NET Aspire.
+    No JVM, no external workflow engine.
+  </Card>
+</CardGrid>
