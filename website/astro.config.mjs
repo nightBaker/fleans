@@ -9,6 +9,11 @@ export default defineConfig({
     starlight({
       title: 'Fleans',
       description: 'BPMN Workflow Engine on Orleans — Camunda on .NET Orleans',
+      logo: {
+        src: './src/assets/logo.svg',
+        replacesTitle: false,
+      },
+      favicon: '/favicon.svg',
       social: {
         github: 'https://github.com/<github-user>/fleans',
       },
