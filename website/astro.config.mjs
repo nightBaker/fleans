@@ -14,9 +14,9 @@ export default defineConfig({
         replacesTitle: false,
       },
       favicon: '/favicon.svg',
-      social: {
-        github: 'https://github.com/<github-user>/fleans',
-      },
+      social: [
+        { icon: 'github', label: 'GitHub', href: 'https://github.com/<github-user>/fleans' },
+      ],
       sidebar: [
         {
           label: 'Getting Started',
