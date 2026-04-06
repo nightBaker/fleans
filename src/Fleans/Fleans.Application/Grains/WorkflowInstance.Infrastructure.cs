@@ -38,8 +38,13 @@ public partial class WorkflowInstance
         }
 
         // Handle subprocess/multi-instance scope completions that may have occurred.
-        // Orphaned scope IDs are discarded here — they will be cleaned up by RunExecutionLoop
-        // which accumulates and removes them after all pending activities have completed.
+        // Orphaned scope IDs are intentionally discarded here (not in the main RunExecutionLoop):
+        // ResolveExternalCompletions runs *before* RunExecutionLoop on every external entry point
+        // (CompleteActivity, FailActivity, message/signal delivery, etc.). The subsequent
+        // RunExecutionLoop call will re-invoke HandleScopeCompletions on every iteration and
+        // accumulate any still-orphaned scope IDs into its own list, which is then drained via
+        // RemoveVariableScopes after the loop exits. Removing scopes here would risk pulling
+        // them out from under transitions that the loop is about to compute.
         await HandleScopeCompletions(definition);
     }
 
@@ -120,8 +125,10 @@ public partial class WorkflowInstance
 
         // Remove orphaned sub-process child variable scopes after the execution loop
         // completes. Scopes must persist during the loop because activities spawned by
-        // sub-process completion transitions still reference them.
-        _execution!.RemoveVariableScopes(allOrphanedScopeIds);
+        // sub-process completion transitions still reference them. The VariableScopesRemoved
+        // event raised by the aggregate is logged via LogEvent → LogVariableScopesRemoved.
+        if (allOrphanedScopeIds.Count > 0)
+            _execution!.RemoveVariableScopes(allOrphanedScopeIds);
     }
 
     /// <summary>

@@ -1009,9 +1009,12 @@ public class WorkflowExecution
             effects.AddRange(CancelScopeChildren(result.HostActivityInstanceId));
 
             // Clean up child variable scope of the interrupted sub-process
+            // Filter to scopes that have a parent (i.e. true child scopes), rather than
+            // "not equal to host scope" — this is safer against entries that may reference
+            // an unrelated scope. Matches the convention used by sub-process completion cleanup.
             var interruptedChildScopes = _state.GetEntriesInScope(hostEntry.ActivityInstanceId)
                 .Select(e => e.VariablesId)
-                .Where(vid => vid != hostEntry.VariablesId)
+                .Where(vid => _state.VariableStates.Any(vs => vs.Id == vid && vs.ParentVariablesId.HasValue))
                 .Distinct()
                 .ToList();
             if (interruptedChildScopes.Count > 0)
