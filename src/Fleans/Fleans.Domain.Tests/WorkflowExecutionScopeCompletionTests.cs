@@ -107,7 +107,7 @@ public class WorkflowExecutionScopeCompletionTests
         execution.ClearUncommittedEvents();
 
         // Now scope completion should detect the subprocess is done
-        var (effects, completedHostIds) = execution.CompleteFinishedSubProcessScopes();
+        var (effects, completedHostIds, _) = execution.CompleteFinishedSubProcessScopes();
 
         // Host should be completed
         Assert.AreEqual(1, completedHostIds.Count);
@@ -162,7 +162,7 @@ public class WorkflowExecutionScopeCompletionTests
         execution.ClearUncommittedEvents();
 
         // Scope completion should NOT complete host because subTask is still active
-        var (effects, completedHostIds) = execution.CompleteFinishedSubProcessScopes();
+        var (effects, completedHostIds, _) = execution.CompleteFinishedSubProcessScopes();
 
         Assert.AreEqual(0, completedHostIds.Count);
         Assert.IsFalse(hostEntry.IsCompleted);
@@ -190,7 +190,7 @@ public class WorkflowExecutionScopeCompletionTests
         // Do NOT process OpenSubProcessCommand, so no children exist
         execution.ClearUncommittedEvents();
 
-        var (effects, completedHostIds) = execution.CompleteFinishedSubProcessScopes();
+        var (effects, completedHostIds, _) = execution.CompleteFinishedSubProcessScopes();
 
         Assert.AreEqual(0, completedHostIds.Count);
         Assert.IsFalse(hostEntry.IsCompleted);
@@ -267,7 +267,7 @@ public class WorkflowExecutionScopeCompletionTests
         execution.ClearUncommittedEvents();
 
         // First scope completion should complete innerSub host
-        var (effects1, completedIds1) = execution.CompleteFinishedSubProcessScopes();
+        var (effects1, completedIds1, _) = execution.CompleteFinishedSubProcessScopes();
 
         // Inner sub should be completed, and since that makes all outer scope children
         // completed, the outer sub should also be completed in the same call (loop detects it)
@@ -323,7 +323,7 @@ public class WorkflowExecutionScopeCompletionTests
         }
         execution.ClearUncommittedEvents();
 
-        var (effects, completedHostIds) = execution.CompleteFinishedSubProcessScopes();
+        var (effects, completedHostIds, _) = execution.CompleteFinishedSubProcessScopes();
 
         Assert.AreEqual(1, completedHostIds.Count);
         Assert.AreEqual(hostEntry.ActivityInstanceId, completedHostIds[0]);
@@ -365,7 +365,7 @@ public class WorkflowExecutionScopeCompletionTests
         }
         execution.ClearUncommittedEvents();
 
-        var (effects, completedHostIds) = execution.CompleteFinishedSubProcessScopes();
+        var (effects, completedHostIds, _) = execution.CompleteFinishedSubProcessScopes();
 
         Assert.AreEqual(0, completedHostIds.Count);
         Assert.IsFalse(hostEntry.IsCompleted);
@@ -413,7 +413,7 @@ public class WorkflowExecutionScopeCompletionTests
         }
         execution.ClearUncommittedEvents();
 
-        var (effects, completedHostIds) = execution.CompleteFinishedSubProcessScopes();
+        var (effects, completedHostIds, _) = execution.CompleteFinishedSubProcessScopes();
 
         Assert.AreEqual(1, completedHostIds.Count);
 
@@ -464,7 +464,7 @@ public class WorkflowExecutionScopeCompletionTests
         var initialScopeCount = state.VariableStates.Count;
         execution.ClearUncommittedEvents();
 
-        var (effects, completedHostIds) = execution.CompleteFinishedSubProcessScopes();
+        var (effects, completedHostIds, _) = execution.CompleteFinishedSubProcessScopes();
 
         Assert.AreEqual(1, completedHostIds.Count);
 
@@ -514,7 +514,7 @@ public class WorkflowExecutionScopeCompletionTests
         iterEntry.Complete();
         execution.ClearUncommittedEvents();
 
-        var (effects, completedHostIds) = execution.CompleteFinishedSubProcessScopes();
+        var (effects, completedHostIds, _) = execution.CompleteFinishedSubProcessScopes();
 
         // Host should NOT be completed (only 1 of 3 done)
         Assert.AreEqual(0, completedHostIds.Count);
@@ -565,7 +565,7 @@ public class WorkflowExecutionScopeCompletionTests
         }
         execution.ClearUncommittedEvents();
 
-        var (effects, completedHostIds) = execution.CompleteFinishedSubProcessScopes();
+        var (effects, completedHostIds, _) = execution.CompleteFinishedSubProcessScopes();
 
         Assert.AreEqual(1, completedHostIds.Count);
         Assert.AreEqual(hostEntry.ActivityInstanceId, completedHostIds[0]);
@@ -615,7 +615,7 @@ public class WorkflowExecutionScopeCompletionTests
         iterEntry.Complete();
         execution.ClearUncommittedEvents();
 
-        var (effects, completedHostIds) = execution.CompleteFinishedSubProcessScopes();
+        var (effects, completedHostIds, _) = execution.CompleteFinishedSubProcessScopes();
 
         // Should spawn index 1 with "beta" as the item
         var events = execution.GetUncommittedEvents();
@@ -642,7 +642,7 @@ public class WorkflowExecutionScopeCompletionTests
         // Do NOT set MultiInstanceTotal — simulates host not yet executed
         execution.ClearUncommittedEvents();
 
-        var (effects, completedHostIds) = execution.CompleteFinishedSubProcessScopes();
+        var (effects, completedHostIds, _) = execution.CompleteFinishedSubProcessScopes();
 
         Assert.AreEqual(0, completedHostIds.Count);
         Assert.IsFalse(hostEntry.IsCompleted);
@@ -672,7 +672,7 @@ public class WorkflowExecutionScopeCompletionTests
         execution.ClearUncommittedEvents();
 
         // Should return nothing — task is a regular activity, not a scope
-        var (effects, completedHostIds) = execution.CompleteFinishedSubProcessScopes();
+        var (effects, completedHostIds, _) = execution.CompleteFinishedSubProcessScopes();
 
         Assert.AreEqual(0, completedHostIds.Count);
         Assert.AreEqual(0, effects.Count);
@@ -716,7 +716,7 @@ public class WorkflowExecutionScopeCompletionTests
 
         // Iteration entries should NOT trigger scope completion logic
         // (they are children, not hosts)
-        var (effects, completedHostIds) = execution.CompleteFinishedSubProcessScopes();
+        var (effects, completedHostIds, _) = execution.CompleteFinishedSubProcessScopes();
         Assert.AreEqual(0, completedHostIds.Count);
         Assert.IsFalse(hostEntry.IsCompleted);
     }
@@ -880,7 +880,7 @@ public class WorkflowExecutionScopeCompletionTests
         execution.ClearUncommittedEvents();
 
         // No iterations to spawn or complete. completedIterations.Count (0) == total (0)
-        var (effects, completedHostIds) = execution.CompleteFinishedSubProcessScopes();
+        var (effects, completedHostIds, _) = execution.CompleteFinishedSubProcessScopes();
 
         Assert.AreEqual(1, completedHostIds.Count);
         Assert.AreEqual(hostEntry.ActivityInstanceId, completedHostIds[0]);
@@ -917,14 +917,7 @@ public class WorkflowExecutionScopeCompletionTests
             [new OpenSubProcessCommand(subProcess, parentVarId)],
             hostEntry.ActivityInstanceId);
 
-        // Find child scope and add variables to it
-        var childScope = state.VariableStates
-            .First(vs => vs.ParentVariablesId == parentVarId);
-        dynamic childVars = new ExpandoObject();
-        childVars.subVar = "from-child";
-        childScope.Merge(childVars);
-
-        // Complete subStart -> subTask -> subEnd
+        // Find the spawned sub-start entry and complete it
         var subStartEntry = state.Entries.First(e => e.ActivityId == "subStart1");
         execution.MarkExecuting(subStartEntry.ActivityInstanceId);
         execution.MarkCompleted(subStartEntry.ActivityInstanceId, new ExpandoObject());
@@ -934,36 +927,47 @@ public class WorkflowExecutionScopeCompletionTests
                 [new ActivityTransition(subTask)])
         ]);
 
+        // Complete sub-task with variables in the child scope
         var subTaskEntry = state.Entries.First(e => e.ActivityId == "subTask1");
         execution.MarkExecuting(subTaskEntry.ActivityInstanceId);
-        execution.MarkCompleted(subTaskEntry.ActivityInstanceId, new ExpandoObject());
+        dynamic childVars = new ExpandoObject();
+        childVars.childVar = "from-child";
+        childVars.sharedVar = "child-value";
+        execution.MarkCompleted(subTaskEntry.ActivityInstanceId, childVars);
         execution.ResolveTransitions(
         [
             new CompletedActivityTransitions(subTaskEntry.ActivityInstanceId, "subTask1",
                 [new ActivityTransition(subEnd)])
         ]);
 
+        // Complete sub-end
         var subEndEntry = state.Entries.First(e => e.ActivityId == "subEnd1");
         execution.MarkExecuting(subEndEntry.ActivityInstanceId);
         execution.MarkCompleted(subEndEntry.ActivityInstanceId, new ExpandoObject());
         execution.ClearUncommittedEvents();
 
-        // Now scope completion should merge child vars and complete host
-        var (effects, completedHostIds) = execution.CompleteFinishedSubProcessScopes();
+        // Record parent scope state before merge
+        var parentScope = state.GetVariableState(parentVarId);
+        Assert.IsFalse(((IDictionary<string, object>)parentScope.Variables).ContainsKey("childVar"),
+            "Parent scope should not have child variable before merge");
 
+        // Act — scope completion should merge child variables into parent
+        var (effects, completedHostIds, orphanedScopeIds) = execution.CompleteFinishedSubProcessScopes();
+
+        // Assert — host completed
         Assert.AreEqual(1, completedHostIds.Count);
         Assert.IsTrue(hostEntry.IsCompleted);
 
-        // Child scope variables should be merged into parent scope
-        var events = execution.GetUncommittedEvents();
-        var mergeEvent = events.OfType<VariablesMerged>()
-            .FirstOrDefault(e => e.VariablesId == parentVarId);
-        Assert.IsNotNull(mergeEvent, "Should emit VariablesMerged for parent scope");
+        // Assert — child variables merged into parent scope
+        var parentDict = (IDictionary<string, object>)parentScope.Variables;
+        Assert.IsTrue(parentDict.ContainsKey("childVar"),
+            "Child variable should be merged into parent scope");
+        Assert.AreEqual("from-child", parentDict["childVar"]);
+        Assert.AreEqual("child-value", parentDict["sharedVar"],
+            "Child scope value should overwrite parent for shared keys");
 
-        // Parent scope should now have the child's variable
-        var parentScope = state.GetVariableState(parentVarId);
-        var parentDict = (IDictionary<string, object>)parentScope!.Variables;
-        Assert.IsTrue(parentDict.ContainsKey("subVar"), "Parent scope should contain merged child variable");
-        Assert.AreEqual("from-child", parentDict["subVar"]);
+        // Assert — child scope collected for deferred removal
+        Assert.AreEqual(1, orphanedScopeIds.Count,
+            "Child scope should be collected for deferred removal");
     }
 }

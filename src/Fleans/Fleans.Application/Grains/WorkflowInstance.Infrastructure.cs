@@ -37,7 +37,14 @@ public partial class WorkflowInstance
                 _execution.ResolveTransitions(transitions);
         }
 
-        // Handle subprocess/multi-instance scope completions that may have occurred
+        // Handle subprocess/multi-instance scope completions that may have occurred.
+        // Orphaned scope IDs are intentionally discarded here (not in the main RunExecutionLoop):
+        // ResolveExternalCompletions runs *before* RunExecutionLoop on every external entry point
+        // (CompleteActivity, FailActivity, message/signal delivery, etc.). The subsequent
+        // RunExecutionLoop call will re-invoke HandleScopeCompletions on every iteration and
+        // accumulate any still-orphaned scope IDs into its own list, which is then drained via
+        // RemoveVariableScopes after the loop exits. Removing scopes here would risk pulling
+        // them out from under transitions that the loop is about to compute.
         await HandleScopeCompletions(definition);
     }
 
@@ -53,6 +60,7 @@ public partial class WorkflowInstance
     {
         var definition = await GetWorkflowDefinition();
         var iteration = 0;
+        var allOrphanedScopeIds = new List<Guid>();
 
         while (true)
         {
@@ -104,7 +112,8 @@ public partial class WorkflowInstance
                 _execution.ResolveTransitions(completedTransitions);
 
             // Handle subprocess/multi-instance scope completions
-            await HandleScopeCompletions(definition);
+            var orphanedScopes = await HandleScopeCompletions(definition);
+            allOrphanedScopeIds.AddRange(orphanedScopes);
 
             // Flush periodically during long execution chains to bound durability loss.
             // Most workflows (< 20 steps) complete in a single batch and persist at the
@@ -113,6 +122,13 @@ public partial class WorkflowInstance
             if (iteration % FlushThreshold == 0)
                 await DrainAndRaiseEvents();
         }
+
+        // Remove orphaned sub-process child variable scopes after the execution loop
+        // completes. Scopes must persist during the loop because activities spawned by
+        // sub-process completion transitions still reference them. The VariableScopesRemoved
+        // event raised by the aggregate is logged via LogEvent → LogVariableScopesRemoved.
+        if (allOrphanedScopeIds.Count > 0)
+            _execution!.RemoveVariableScopes(allOrphanedScopeIds);
     }
 
     /// <summary>
@@ -143,9 +159,9 @@ public partial class WorkflowInstance
         return result;
     }
 
-    private async Task HandleScopeCompletions(IWorkflowDefinition definition)
+    private async Task<IReadOnlyList<Guid>> HandleScopeCompletions(IWorkflowDefinition definition)
     {
-        var (scopeEffects, completedHostIds) = _execution!.CompleteFinishedSubProcessScopes();
+        var (scopeEffects, completedHostIds, orphanedScopeIds) = _execution!.CompleteFinishedSubProcessScopes();
         await PerformEffects(scopeEffects);
 
         if (completedHostIds.Count > 0)
@@ -168,6 +184,8 @@ public partial class WorkflowInstance
             }
             _execution.ResolveTransitions(hostTransitions);
         }
+
+        return orphanedScopeIds;
     }
 
     private Task PerformEffects(IReadOnlyList<IInfrastructureEffect> effects)
