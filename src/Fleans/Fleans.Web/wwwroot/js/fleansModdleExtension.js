@@ -56,6 +56,28 @@ window.fleansModdleExtension = {
                     isAttr: true
                 }
             ]
+        },
+        {
+            name: "ExpectedOutputs",
+            superClass: ["Element"],
+            properties: [
+                {
+                    name: "outputs",
+                    type: "Output",
+                    isMany: true
+                }
+            ]
+        },
+        {
+            name: "Output",
+            superClass: ["Element"],
+            properties: [
+                {
+                    name: "name",
+                    type: "String",
+                    isAttr: true
+                }
+            ]
         }
     ],
     enumerations: [],

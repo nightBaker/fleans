@@ -62,7 +62,12 @@ window.bpmnEditor = {
             correlationKey: '',
             hasSignalDefinition: false,
             signalName: '',
-            isInterrupting: true
+            isInterrupting: true,
+            assignee: '',
+            candidateGroups: [],
+            candidateUsers: [],
+            expectedOutputVariables: [],
+            availableVariables: []
         };
 
         if (bo.$type === 'bpmn:ScriptTask') {
@@ -87,6 +92,25 @@ window.bpmnEditor = {
                         data.inputMappings.push({ source: ext.source || '', target: ext.target || '' });
                     } else if (ext.$type === 'fleans:OutputMapping') {
                         data.outputMappings.push({ source: ext.source || '', target: ext.target || '' });
+                    }
+                });
+            }
+        }
+
+        if (bo.$type === 'bpmn:UserTask') {
+            var attrs = bo.$attrs || {};
+            data.assignee = attrs['camunda:assignee'] || '';
+            var groups = attrs['camunda:candidateGroups'] || '';
+            data.candidateGroups = groups ? groups.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+            var users = attrs['camunda:candidateUsers'] || '';
+            data.candidateUsers = users ? users.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+
+            if (bo.extensionElements && bo.extensionElements.values) {
+                bo.extensionElements.values.forEach(function (ext) {
+                    if (ext.$type === 'fleans:ExpectedOutputs' && ext.outputs) {
+                        ext.outputs.forEach(function (output) {
+                            if (output.name) data.expectedOutputVariables.push(output.name);
+                        });
                     }
                 });
             }
@@ -136,6 +160,22 @@ window.bpmnEditor = {
 
         if (bo.$type === 'bpmn:BoundaryEvent') {
             data.isInterrupting = bo.cancelActivity !== false;
+        }
+
+        // Collect available variable names from ScriptTasks (only when a UserTask is selected)
+        if (this._modeler && bo.$type === 'bpmn:UserTask') {
+            var registry = this._modeler.get('elementRegistry');
+            var vars = new Set();
+            registry.forEach(function (el) {
+                var elBo = el.businessObject;
+                if (elBo.$type === 'bpmn:ScriptTask' && elBo.script) {
+                    var matches = elBo.script.match(/variables\.(\w+)/g);
+                    if (matches) {
+                        matches.forEach(function (m) { vars.add(m.replace('variables.', '')); });
+                    }
+                }
+            });
+            data.availableVariables = Array.from(vars).sort();
         }
 
         return data;
@@ -191,11 +231,59 @@ window.bpmnEditor = {
             return;
         } else if (propertyName === 'cancelActivity') {
             props.cancelActivity = value;
+        } else if (propertyName === 'camunda:assignee' || propertyName === 'camunda:candidateGroups' || propertyName === 'camunda:candidateUsers') {
+            var bo = element.businessObject;
+            if (!bo.$attrs) bo.$attrs = {};
+            var attrUpdate = {};
+            attrUpdate[propertyName] = (value && value.trim() !== '') ? value : undefined;
+            modeling.updateModdleProperties(element, bo, attrUpdate);
+            return;
         } else {
             props[propertyName] = value;
         }
 
         modeling.updateProperties(element, props);
+    },
+
+    updateExpectedOutputs: function (elementId, variableNames) {
+        if (!this._modeler) return;
+
+        var elementRegistry = this._modeler.get('elementRegistry');
+        var modeling = this._modeler.get('modeling');
+        var moddle = this._modeler.get('moddle');
+        var element = elementRegistry.get(elementId);
+        if (!element) return;
+
+        var bo = element.businessObject;
+
+        // Remove existing ExpectedOutputs
+        var existingExtensions = [];
+        if (bo.extensionElements && bo.extensionElements.values) {
+            existingExtensions = bo.extensionElements.values.filter(function (ext) {
+                return ext.$type !== 'fleans:ExpectedOutputs';
+            });
+        }
+
+        if (!bo.extensionElements) {
+            var extElements = moddle.create('bpmn:ExtensionElements', { values: [] });
+            modeling.updateProperties(element, { extensionElements: extElements });
+        }
+
+        if (variableNames && variableNames.length > 0) {
+            var outputs = variableNames.map(function (name) {
+                return moddle.create('fleans:Output', { name: name });
+            });
+            var expectedOutputs = moddle.create('fleans:ExpectedOutputs', { outputs: outputs });
+            expectedOutputs.$parent = bo.extensionElements;
+
+            modeling.updateModdleProperties(element, bo.extensionElements, {
+                values: existingExtensions.concat([expectedOutputs])
+            });
+        } else {
+            modeling.updateModdleProperties(element, bo.extensionElements, {
+                values: existingExtensions
+            });
+        }
     },
 
     updateTimerDefinition: function (elementId, timerType, expression) {
