@@ -186,4 +186,18 @@ public class EventSubProcessParsingTests : BpmnConverterTestBase
         var start = ((Fleans.Domain.IWorkflowDefinition)workflow).GetStartActivity();
         Assert.AreEqual("start", start.ActivityId);
     }
+
+    [TestMethod]
+    public async Task ConvertFromXml_EventSubProcess_IsResolvableViaGetActivity()
+    {
+        // Reviewer-suggested coverage: later slices need a known-good lookup path
+        // for the event sub-process by ID from the root workflow definition.
+        var xml = MessageEventSubProcess(isInterrupting: null);
+        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(xml)));
+
+        var def = (Fleans.Domain.IWorkflowDefinition)workflow;
+        var resolved = def.GetActivity("evtSub");
+        Assert.IsInstanceOfType(resolved, typeof(EventSubProcess));
+        Assert.AreEqual("evtSub", resolved.ActivityId);
+    }
 }

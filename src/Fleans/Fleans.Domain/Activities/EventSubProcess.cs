@@ -28,6 +28,10 @@ public record EventSubProcess(string ActivityId) : Activity(ActivityId), IWorkfl
     public string? ProcessDefinitionId => null;
     public bool IsRootScope => false;
 
+    // Messages/Signals are declared now (with stable [Id]s) so later slices can
+    // populate them without a serializer-breaking schema change. Wire-up site:
+    // BpmnConverter — populated in slice #B (message/signal-triggered event
+    // sub-processes). Currently always empty.
     [Id(4)]
     public List<MessageDefinition> Messages { get; init; } = [];
 
