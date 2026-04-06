@@ -1,5 +1,6 @@
+using Fleans.Application;
+using Fleans.Application.Grains;
 using Fleans.Application.QueryModels;
-using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Events;
@@ -13,7 +14,7 @@ using Orleans.TestingHost;
 namespace Fleans.Application.Tests
 {
     [TestClass]
-    public class WorkflowInstanceFactoryGrainTests
+    public class ProcessDefinitionGrainTests
     {
         private TestCluster _cluster = null!;
 
@@ -33,17 +34,17 @@ namespace Fleans.Application.Tests
         }
 
         [TestMethod]
-        public async Task CreateWorkflowInstanceGrain_ShouldCreateNewInstance_WithDeployedWorkflow()
+        public async Task CreateInstance_ShouldCreateNewInstance_WithDeployedWorkflow()
         {
             // Arrange
             var workflowId = "test-workflow-1";
-            var factoryGrain = _cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
+            var processGrain = _cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflowId);
             var workflow = CreateSimpleWorkflow(workflowId);
 
-            await factoryGrain.DeployWorkflow(workflow, "<bpmn/>");
+            await processGrain.DeployVersion(workflow, "<bpmn/>");
 
             // Act
-            var instance = await factoryGrain.CreateWorkflowInstanceGrain(workflowId);
+            var instance = await processGrain.CreateInstance();
 
             // Assert
             Assert.IsNotNull(instance);
@@ -52,17 +53,17 @@ namespace Fleans.Application.Tests
         }
 
         [TestMethod]
-        public async Task CreateWorkflowInstanceGrain_ShouldReturnWorkflowInstance_WithCorrectWorkflow()
+        public async Task CreateInstance_ShouldReturnWorkflowInstance_WithCorrectWorkflow()
         {
             // Arrange
             var workflowId = "test-workflow-1";
-            var factoryGrain = _cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
+            var processGrain = _cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflowId);
             var workflow = CreateSimpleWorkflow(workflowId);
 
-            await factoryGrain.DeployWorkflow(workflow, "<bpmn/>");
+            await processGrain.DeployVersion(workflow, "<bpmn/>");
 
             // Act
-            var instance = await factoryGrain.CreateWorkflowInstanceGrain(workflowId);
+            var instance = await processGrain.CreateInstance();
 
             // Assert — workflow was set correctly: instance has an active start activity
             var activeActivities = await instance.GetActiveActivities();
@@ -70,25 +71,25 @@ namespace Fleans.Application.Tests
         }
 
         [TestMethod]
-        public async Task CreateWorkflowInstanceGrain_ShouldThrowException_WhenWorkflowNotRegistered()
+        public async Task CreateInstance_ShouldThrowException_WhenWorkflowNotRegistered()
         {
             // Arrange
             var workflowId = "non-existent-workflow";
-            var factoryGrain = _cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
+            var processGrain = _cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflowId);
 
             // Act & Assert
             await Assert.ThrowsAsync<KeyNotFoundException>(async () =>
             {
-                await factoryGrain.CreateWorkflowInstanceGrain(workflowId);
+                await processGrain.CreateInstance();
             });
         }
 
         [TestMethod]
-        public async Task DeployWorkflow_ShouldPreserveMessages_WhenWorkflowHasMessageDefinitions()
+        public async Task DeployVersion_ShouldPreserveMessages_WhenWorkflowHasMessageDefinitions()
         {
             // Arrange
             var processKey = "msg-workflow";
-            var factoryGrain = _cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
+            var processGrain = _cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(processKey);
 
             var start = new StartEvent("start");
             var end = new EndEvent("end");
@@ -108,8 +109,8 @@ namespace Fleans.Application.Tests
             };
 
             // Act
-            await factoryGrain.DeployWorkflow(workflow, "<bpmn/>");
-            var retrieved = await factoryGrain.GetLatestWorkflowDefinition(processKey);
+            await processGrain.DeployVersion(workflow, "<bpmn/>");
+            var retrieved = await processGrain.GetLatestDefinition();
 
             // Assert
             Assert.AreEqual(2, retrieved.Messages.Count);
@@ -153,6 +154,7 @@ namespace Fleans.Application.Tests
                         services.AddSingleton<IProcessDefinitionRepository, StubProcessDefinitionRepository>();
                         services.AddSingleton<IWorkflowQueryService, StubWorkflowQueryService>();
                         services.AddSingleton<IEventStore, InMemoryEventStore>();
+                        services.AddApplication();
                     });
         }
 
@@ -161,6 +163,7 @@ namespace Fleans.Application.Tests
             public Task<InstanceStateSnapshot?> GetStateSnapshot(Guid workflowInstanceId) => Task.FromResult<InstanceStateSnapshot?>(null);
             public Task<IReadOnlyList<ProcessDefinitionSummary>> GetAllProcessDefinitions() => Task.FromResult<IReadOnlyList<ProcessDefinitionSummary>>([]);
             public Task<PagedResult<ProcessDefinitionSummary>> GetAllProcessDefinitions(PageRequest page) => Task.FromResult(new PagedResult<ProcessDefinitionSummary>([], 0, page.Page, page.PageSize));
+            public Task<PagedResult<ProcessDefinitionGroup>> GetProcessDefinitionGroups(PageRequest page) => Task.FromResult(new PagedResult<ProcessDefinitionGroup>([], 0, page.Page, page.PageSize));
             public Task<PagedResult<WorkflowInstanceInfo>> GetInstancesByKey(string processDefinitionKey, PageRequest page) => Task.FromResult(new PagedResult<WorkflowInstanceInfo>([], 0, page.Page, page.PageSize));
             public Task<PagedResult<WorkflowInstanceInfo>> GetInstancesByKeyAndVersion(string key, int version, PageRequest page) => Task.FromResult(new PagedResult<WorkflowInstanceInfo>([], 0, page.Page, page.PageSize));
             public Task<string?> GetBpmnXml(Guid instanceId) => Task.FromResult<string?>(null);
@@ -189,6 +192,11 @@ namespace Fleans.Application.Tests
 
             public Task<List<ProcessDefinition>> GetAllAsync() =>
                 Task.FromResult(_store.Values.ToList());
+
+            public Task<List<string>> GetAllDistinctKeysAsync() =>
+                Task.FromResult(_store.Values
+                    .Select(d => d.ProcessDefinitionKey)
+                    .Distinct().OrderBy(k => k).ToList());
 
             public Task SaveAsync(ProcessDefinition definition)
             {

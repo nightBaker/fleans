@@ -54,34 +54,117 @@ public class WorkflowInstanceState
     [Id(15)]
     public List<TimerCycleTrackingState> TimerCycleTracking { get; private set; } = [];
 
+    // Runtime caches — NOT serialized by Orleans, NOT persisted by EF Core.
+    // Lazily rebuilt from Entries list after deserialization or grain activation.
+    [field: NonSerialized]
+    private Dictionary<Guid, ActivityInstanceEntry>? _entriesById;
+
+    [field: NonSerialized]
+    private HashSet<Guid>? _activeEntryIds;
+
+    private Dictionary<Guid, ActivityInstanceEntry> EntriesById
+    {
+        get
+        {
+            if (_entriesById == null) RebuildCaches();
+            return _entriesById!;
+        }
+    }
+
+    private HashSet<Guid> ActiveEntryIds
+    {
+        get
+        {
+            if (_activeEntryIds == null) RebuildCaches();
+            return _activeEntryIds!;
+        }
+    }
+
+    private void RebuildCaches()
+    {
+        _entriesById = Entries.ToDictionary(e => e.ActivityInstanceId);
+        _activeEntryIds = Entries
+            .Where(e => !e.IsCompleted)
+            .Select(e => e.ActivityInstanceId)
+            .ToHashSet();
+    }
+
+    // Dirty-flag constants for collection change tracking. Uses int bitmask
+    // to avoid ORLEANS0004 (code gen requires [GenerateSerializer] on custom
+    // enum types). UserTasks ([Id(14)]) excluded — persisted by IUserTaskGrain.
+    private const int DirtyEntries = 1;
+    private const int DirtyVariableStates = 2;
+    private const int DirtyConditionSequenceStates = 4;
+    private const int DirtyGatewayForks = 8;
+    private const int DirtyTimerCycleTracking = 16;
+
+    // Serialized (Orleans 10 requires [Id()] on all fields) but semantically
+    // transient — cleared after each WriteAsync. Defaults to 0 after snapshot
+    // restore, which is correct since freshly loaded state has no pending changes.
+    [Id(16)]
+    private int _dirtyFlags;
+
+    internal int GetDirtyFlags() => _dirtyFlags;
+
+    internal void ClearDirtyFlags() => _dirtyFlags = 0;
+
     public IEnumerable<ActivityInstanceEntry> GetActiveActivities()
-        => Entries.Where(e => !e.IsCompleted);
+        => ActiveEntryIds.Select(id => EntriesById[id]);
 
     public IEnumerable<ActivityInstanceEntry> GetCompletedActivities()
         => Entries.Where(e => e.IsCompleted);
 
     public ActivityInstanceEntry? GetFirstActive(string activityId)
-        => Entries.FirstOrDefault(a => a.ActivityId == activityId && !a.IsCompleted);
+        => ActiveEntryIds.Select(id => EntriesById[id])
+            .FirstOrDefault(e => e.ActivityId == activityId);
 
     public bool HasActiveEntry(Guid activityInstanceId)
-        => Entries.Any(e => e.ActivityInstanceId == activityInstanceId && !e.IsCompleted);
+        => ActiveEntryIds.Contains(activityInstanceId);
 
     public bool HasActiveChildrenInScope(Guid scopeId)
-        => Entries.Any(e => e.ScopeId == scopeId && !e.IsCompleted);
+        => ActiveEntryIds.Any(id => EntriesById[id].ScopeId == scopeId);
 
     public ActivityInstanceEntry GetActiveEntry(Guid activityInstanceId)
-        => Entries.FirstOrDefault(e => e.ActivityInstanceId == activityInstanceId && !e.IsCompleted)
-            ?? throw new InvalidOperationException($"Active entry for activity instance '{activityInstanceId}' not found");
+        => ActiveEntryIds.Contains(activityInstanceId)
+            ? EntriesById[activityInstanceId]
+            : throw new InvalidOperationException($"Active entry for activity instance '{activityInstanceId}' not found");
 
     public ActivityInstanceEntry GetEntry(Guid activityInstanceId)
-        => Entries.FirstOrDefault(e => e.ActivityInstanceId == activityInstanceId)
-            ?? throw new InvalidOperationException($"Entry for activity instance '{activityInstanceId}' not found");
+        => EntriesById.TryGetValue(activityInstanceId, out var entry)
+            ? entry
+            : throw new InvalidOperationException($"Entry for activity instance '{activityInstanceId}' not found");
 
     public ActivityInstanceEntry? FindEntry(Guid activityInstanceId)
-        => Entries.FirstOrDefault(e => e.ActivityInstanceId == activityInstanceId);
+        => EntriesById.GetValueOrDefault(activityInstanceId);
 
     public List<ActivityInstanceEntry> GetEntriesInScope(Guid scopeId)
         => Entries.Where(e => e.ScopeId == scopeId).ToList();
+
+    internal IReadOnlyDictionary<Guid, ActivityInstanceEntry> GetEntriesByIdCache() => EntriesById;
+
+    public void CompleteEntry(Guid activityInstanceId)
+    {
+        var entry = GetActiveEntry(activityInstanceId);
+        entry.Complete();
+        ActiveEntryIds.Remove(activityInstanceId);
+        _dirtyFlags |= DirtyEntries;
+    }
+
+    public void FailEntry(Guid activityInstanceId, int errorCode, string errorMessage)
+    {
+        var entry = GetActiveEntry(activityInstanceId);
+        entry.Fail(errorCode, errorMessage);
+        ActiveEntryIds.Remove(activityInstanceId);
+        _dirtyFlags |= DirtyEntries;
+    }
+
+    public void CancelEntry(Guid activityInstanceId, string reason)
+    {
+        var entry = GetActiveEntry(activityInstanceId);
+        entry.Cancel(reason);
+        ActiveEntryIds.Remove(activityInstanceId);
+        _dirtyFlags |= DirtyEntries;
+    }
 
     public Guid GetRootVariablesId()
         => VariableStates.First().Id;
@@ -99,12 +182,20 @@ public class WorkflowInstanceState
         ProcessDefinitionId = processDefinitionId;
         CreatedAt = DateTimeOffset.UtcNow;
         VariableStates.Add(new WorkflowVariablesState(variablesId, id));
+        _dirtyFlags |= DirtyVariableStates;
     }
 
     public void StartWith(Guid id, string? processDefinitionId, ActivityInstanceEntry entry, Guid variablesId)
     {
         Initialize(id, processDefinitionId, variablesId);
         Entries.Add(entry);
+        _dirtyFlags |= DirtyEntries;
+
+        if (_entriesById != null)
+        {
+            _entriesById[entry.ActivityInstanceId] = entry;
+            _activeEntryIds!.Add(entry.ActivityInstanceId);
+        }
     }
 
     public void SetParentInfo(Guid parentWorkflowInstanceId, string parentActivityId)
@@ -128,6 +219,7 @@ public class WorkflowInstanceState
             throw new InvalidOperationException("Workflow is already completed");
 
         GatewayForks.Clear();
+        _dirtyFlags |= DirtyGatewayForks;
         CompletedAt = DateTimeOffset.UtcNow;
         IsCompleted = true;
     }
@@ -139,6 +231,7 @@ public class WorkflowInstanceState
         clonedState.Merge(source.Variables);
 
         VariableStates.Add(clonedState);
+        _dirtyFlags |= DirtyVariableStates;
         return clonedState.Id;
     }
 
@@ -149,12 +242,14 @@ public class WorkflowInstanceState
         clonedState.Merge(source.Variables);
 
         VariableStates.Add(clonedState);
+        _dirtyFlags |= DirtyVariableStates;
     }
 
     public Guid AddChildVariableState(Guid parentVariablesId)
     {
         var childState = new WorkflowVariablesState(Guid.NewGuid(), Id, parentVariablesId);
         VariableStates.Add(childState);
+        _dirtyFlags |= DirtyVariableStates;
         return childState.Id;
     }
 
@@ -162,6 +257,7 @@ public class WorkflowInstanceState
     {
         var childState = new WorkflowVariablesState(childId, Id, parentVariablesId);
         VariableStates.Add(childState);
+        _dirtyFlags |= DirtyVariableStates;
     }
 
     public void AddConditionSequenceStates(Guid activityInstanceId, string[] sequenceFlowIds)
@@ -169,17 +265,65 @@ public class WorkflowInstanceState
         var sequenceStates = sequenceFlowIds.Select(id =>
             new ConditionSequenceState(id, activityInstanceId, Id));
         ConditionSequenceStates.AddRange(sequenceStates);
+        _dirtyFlags |= DirtyConditionSequenceStates;
     }
 
     public void CompleteEntries(List<ActivityInstanceEntry> entries)
     {
         foreach (var entry in entries)
-            entry.Complete();
+            CompleteEntry(entry.ActivityInstanceId);
+    }
+
+    public void CompleteEntry(Guid activityInstanceId, ExpandoObject variables, Guid variablesId)
+    {
+        var entry = GetActiveEntry(activityInstanceId);
+        entry.Complete();
+        ActiveEntryIds.Remove(activityInstanceId);
+        MergeState(variablesId, variables);
+        _dirtyFlags |= DirtyEntries;
+    }
+
+    public void ExecuteEntry(Guid activityInstanceId)
+    {
+        GetActiveEntry(activityInstanceId).Execute();
+        _dirtyFlags |= DirtyEntries;
+    }
+
+    public void ResetEntryExecuting(Guid activityInstanceId)
+    {
+        GetActiveEntry(activityInstanceId).ResetExecuting();
+        _dirtyFlags |= DirtyEntries;
+    }
+
+    public void SetEntryMultiInstanceTotal(Guid activityInstanceId, int total)
+    {
+        GetActiveEntry(activityInstanceId).SetMultiInstanceTotal(total);
+        _dirtyFlags |= DirtyEntries;
+    }
+
+    public void SetEntryChildWorkflowInstanceId(Guid activityInstanceId, Guid childWorkflowInstanceId)
+    {
+        GetActiveEntry(activityInstanceId).SetChildWorkflowInstanceId(childWorkflowInstanceId);
+        _dirtyFlags |= DirtyEntries;
     }
 
     public void AddEntries(IEnumerable<ActivityInstanceEntry> entries)
     {
-        Entries.AddRange(entries);
+        if (_entriesById != null)
+        {
+            var entriesList = entries.ToList();
+            Entries.AddRange(entriesList);
+            foreach (var entry in entriesList)
+            {
+                _entriesById[entry.ActivityInstanceId] = entry;
+                _activeEntryIds!.Add(entry.ActivityInstanceId);
+            }
+        }
+        else
+        {
+            Entries.AddRange(entries);
+        }
+        _dirtyFlags |= DirtyEntries;
     }
 
     public void SetConditionSequenceResult(Guid activityInstanceId, string sequenceId, bool result)
@@ -190,17 +334,20 @@ public class WorkflowInstanceState
             ?? throw new InvalidOperationException("Sequence not found");
 
         sequence.SetResult(result);
+        _dirtyFlags |= DirtyConditionSequenceStates;
     }
 
     public void MergeState(Guid variablesId, ExpandoObject variables)
     {
         GetVariableState(variablesId).Merge(variables);
+        _dirtyFlags |= DirtyVariableStates;
     }
 
     public void RemoveVariableStates(IEnumerable<Guid> variableStateIds)
     {
         var idsToRemove = new HashSet<Guid>(variableStateIds);
         VariableStates.RemoveAll(vs => idsToRemove.Contains(vs.Id));
+        _dirtyFlags |= DirtyVariableStates;
     }
 
     public ExpandoObject GetMergedVariables(Guid variablesStateId)
@@ -246,6 +393,7 @@ public class WorkflowInstanceState
     {
         var fork = new GatewayForkState(forkInstanceId, consumedTokenId, Id);
         GatewayForks.Add(fork);
+        _dirtyFlags |= DirtyGatewayForks;
         return fork;
     }
 
@@ -255,11 +403,21 @@ public class WorkflowInstanceState
     public GatewayForkState GetGatewayFork(Guid forkInstanceId)
         => GatewayForks.First(f => f.ForkInstanceId == forkInstanceId);
 
+    public void AddTokenToFork(Guid forkInstanceId, Guid tokenId)
+    {
+        var fork = GetGatewayFork(forkInstanceId);
+        fork.CreatedTokenIds.Add(tokenId);
+        _dirtyFlags |= DirtyGatewayForks;
+    }
+
     public GatewayForkState? FindForkByToken(Guid tokenId)
         => GatewayForks.FirstOrDefault(f => f.CreatedTokenIds.Contains(tokenId));
 
     public void RemoveGatewayFork(Guid forkInstanceId)
-        => GatewayForks.RemoveAll(f => f.ForkInstanceId == forkInstanceId);
+    {
+        GatewayForks.RemoveAll(f => f.ForkInstanceId == forkInstanceId);
+        _dirtyFlags |= DirtyGatewayForks;
+    }
 
     public TimerDefinition? GetTimerCycleState(Guid hostActivityInstanceId, string timerActivityId)
         => TimerCycleTracking
@@ -274,15 +432,20 @@ public class WorkflowInstanceState
         if (definition is null)
         {
             if (existing is not null)
+            {
                 TimerCycleTracking.Remove(existing);
+                _dirtyFlags |= DirtyTimerCycleTracking;
+            }
         }
         else if (existing is not null)
         {
             existing.UpdateFrom(definition);
+            _dirtyFlags |= DirtyTimerCycleTracking;
         }
         else
         {
             TimerCycleTracking.Add(new TimerCycleTrackingState(hostActivityInstanceId, timerActivityId, definition, Id));
+            _dirtyFlags |= DirtyTimerCycleTracking;
         }
     }
 }

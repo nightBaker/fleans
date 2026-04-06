@@ -37,17 +37,27 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync();
         var id = Guid.Parse(grainId);
+        var dirty = (DirtyCollections)state.GetDirtyFlags();
 
-        var existing = await db.WorkflowInstances
-            .Include(e => e.Entries)
-            .Include(e => e.VariableStates)
-            .Include(e => e.ConditionSequenceStates)
-            .Include(e => e.GatewayForks)
-            .Include(e => e.TimerCycleTracking)
-            .FirstOrDefaultAsync(e => e.Id == id);
+        // On the update path, only Include/Diff collections that were modified since
+        // the last write. On the insert path, all collections are written unconditionally.
+        var query = db.WorkflowInstances.AsQueryable();
+        if (dirty.HasFlag(DirtyCollections.Entries))
+            query = query.Include(e => e.Entries);
+        if (dirty.HasFlag(DirtyCollections.VariableStates))
+            query = query.Include(e => e.VariableStates);
+        if (dirty.HasFlag(DirtyCollections.ConditionSequenceStates))
+            query = query.Include(e => e.ConditionSequenceStates);
+        if (dirty.HasFlag(DirtyCollections.GatewayForks))
+            query = query.Include(e => e.GatewayForks);
+        if (dirty.HasFlag(DirtyCollections.TimerCycleTracking))
+            query = query.Include(e => e.TimerCycleTracking);
+
+        var existing = await query.FirstOrDefaultAsync(e => e.Id == id);
 
         if (existing is null)
         {
+            // Insert path: write all collections unconditionally
             db.WorkflowInstances.Add(state);
             db.Entry(state).Property(s => s.Id).CurrentValue = id;
             db.Entry(state).Property(s => s.ETag).CurrentValue = Guid.NewGuid().ToString("N");
@@ -65,24 +75,31 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
         }
         else
         {
+            // Update path: only diff dirty collections
             db.Entry(existing).CurrentValues.SetValues(state);
             db.Entry(existing).Property(s => s.Id).IsModified = false;
             db.Entry(existing).Property(s => s.ETag).CurrentValue = Guid.NewGuid().ToString("N");
 
-            DiffEntries(db, existing, state, id);
-            DiffVariableStates(db, existing, state, id);
-            DiffConditionSequenceStates(db, existing, state, id);
-            DiffGatewayForks(db, existing, state, id);
-            DiffTimerCycleTracking(db, existing, state, id);
+            if (dirty.HasFlag(DirtyCollections.Entries))
+                DiffEntries(db, existing, state, id);
+            if (dirty.HasFlag(DirtyCollections.VariableStates))
+                DiffVariableStates(db, existing, state, id);
+            if (dirty.HasFlag(DirtyCollections.ConditionSequenceStates))
+                DiffConditionSequenceStates(db, existing, state, id);
+            if (dirty.HasFlag(DirtyCollections.GatewayForks))
+                DiffGatewayForks(db, existing, state, id);
+            if (dirty.HasFlag(DirtyCollections.TimerCycleTracking))
+                DiffTimerCycleTracking(db, existing, state, id);
         }
 
         await db.SaveChangesAsync();
+        state.ClearDirtyFlags();
     }
 
     private static void DiffEntries(FleanCommandDbContext db, WorkflowInstanceState existing, WorkflowInstanceState incoming, Guid instanceId)
     {
-        var existingDict = existing.Entries.ToDictionary(e => e.ActivityInstanceId);
-        var incomingDict = incoming.Entries.ToDictionary(e => e.ActivityInstanceId);
+        var existingDict = existing.GetEntriesByIdCache();
+        var incomingDict = incoming.GetEntriesByIdCache();
 
         // Remove
         foreach (var old in existing.Entries.Where(e => !incomingDict.ContainsKey(e.ActivityInstanceId)))

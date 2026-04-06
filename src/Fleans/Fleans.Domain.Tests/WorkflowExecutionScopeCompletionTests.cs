@@ -892,7 +892,7 @@ public class WorkflowExecutionScopeCompletionTests
     {
         // Build: start -> subProcess(subStart -> subTask -> subEnd) -> end
         var subStart = new StartEvent("subStart1");
-        var subTask = new TaskActivity("subTask1");
+        var subTask = new ScriptTask("subTask1", "return 1;");
         var subEnd = new EndEvent("subEnd1");
         var subProcess = new SubProcess("sub1")
         {
@@ -911,7 +911,7 @@ public class WorkflowExecutionScopeCompletionTests
             [new("seq1", start, subProcess), new("seq2", subProcess, end)],
             subProcess);
 
-        // Process the OpenSubProcessCommand to spawn subStart inside the scope
+        // Process the OpenSubProcessCommand to spawn child scope and subStart
         var parentVarId = hostEntry.VariablesId;
         execution.ProcessCommands(
             [new OpenSubProcessCommand(subProcess, parentVarId)],

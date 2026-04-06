@@ -22,6 +22,9 @@ builder.AddKeyedRedisClient("orleans-redis");
 // Infrastructure (clustering, storage, streaming, reminders) is managed by Aspire AppHost
 builder.UseOrleans(siloBuilder =>
 {
+    // Pluggable stream provider — reads Fleans:Streaming:Provider from config (default: memory)
+    siloBuilder.AddFleanStreaming(builder.Configuration);
+
     // Dashboard data collection (UI served from Web project)
     siloBuilder.AddDashboard();
 
@@ -88,7 +91,12 @@ static void AddPolicyIfConfigured(RateLimiterOptions options, string policyName,
 
 // EF Core persistence for WorkflowInstanceState
 var sqliteConnectionString = builder.Configuration["FLEANS_SQLITE_CONNECTION"] ?? "DataSource=fleans-dev.db";
-builder.Services.AddEfCorePersistence(options => options.UseSqlite(sqliteConnectionString));
+var queryConnectionString = builder.Configuration["FLEANS_QUERY_CONNECTION"];
+builder.Services.AddEfCorePersistence(
+    options => options.UseSqlite(sqliteConnectionString),
+    queryConnectionString is not null
+        ? options => options.UseSqlite(queryConnectionString)
+        : null);
 
 var app = builder.Build();
 

@@ -3,7 +3,6 @@ using Fleans.Application.Events;
 using Fleans.Application.Scripts;
 using Fleans.Application.Conditions;
 using Fleans.Application.Grains;
-using Fleans.Application.WorkflowFactory;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Events;
@@ -93,10 +92,10 @@ public class MultiInstanceScriptIntegrationTests
             ]
         };
 
-        var factory = _cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        await factory.DeployWorkflow(workflow, "<xml/>");
+        var processGrain = _cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("mi-script-cardinality");
+        await processGrain.DeployVersion(workflow, "<xml/>");
 
-        var instance = await factory.CreateWorkflowInstanceGrain("mi-script-cardinality");
+        var instance = await processGrain.CreateInstance();
         var instanceId = instance.GetPrimaryKey();
 
         // Act
@@ -150,10 +149,10 @@ public class MultiInstanceScriptIntegrationTests
             ]
         };
 
-        var factory = _cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        await factory.DeployWorkflow(workflow, "<xml/>");
+        var processGrain = _cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("mi-script-collection");
+        await processGrain.DeployVersion(workflow, "<xml/>");
 
-        var instance = await factory.CreateWorkflowInstanceGrain("mi-script-collection");
+        var instance = await processGrain.CreateInstance();
         var instanceId = instance.GetPrimaryKey();
 
         dynamic initVars = new ExpandoObject();
@@ -208,10 +207,10 @@ public class MultiInstanceScriptIntegrationTests
             ]
         };
 
-        var factory = _cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        await factory.DeployWorkflow(workflow, "<xml/>");
+        var processGrain = _cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("mi-script-seq-collection");
+        await processGrain.DeployVersion(workflow, "<xml/>");
 
-        var instance = await factory.CreateWorkflowInstanceGrain("mi-script-seq-collection");
+        var instance = await processGrain.CreateInstance();
         var instanceId = instance.GetPrimaryKey();
 
         dynamic initVars = new ExpandoObject();
@@ -266,10 +265,10 @@ public class MultiInstanceScriptIntegrationTests
             ]
         };
 
-        var factory = _cluster.GrainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        await factory.DeployWorkflow(workflow, "<xml/>");
+        var processGrain = _cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("mi-script-fail");
+        await processGrain.DeployVersion(workflow, "<xml/>");
 
-        var instance = await factory.CreateWorkflowInstanceGrain("mi-script-fail");
+        var instance = await processGrain.CreateInstance();
         var instanceId = instance.GetPrimaryKey();
 
         // Act
@@ -349,6 +348,7 @@ public class MultiInstanceScriptIntegrationTests
                     services.AddSingleton<IWorkflowStateProjection, EfCoreWorkflowStateProjection>();
                     services.AddSingleton<EfCoreEventStore>();
                     services.AddSingleton<IEventStore>(sp => sp.GetRequiredService<EfCoreEventStore>());
+                    services.AddApplication();
 
                     services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.TimerSchedulers,
                         (sp, _) => new EfCoreTimerSchedulerGrainStorage(

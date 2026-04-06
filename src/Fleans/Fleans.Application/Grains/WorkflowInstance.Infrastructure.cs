@@ -5,7 +5,6 @@ using Fleans.Domain.Effects;
 using Fleans.Domain.Events;
 using Fleans.Domain.States;
 using Fleans.Application.Adapters;
-using Fleans.Application.WorkflowFactory;
 using Orleans;
 using Orleans.Runtime;
 using System.Dynamic;
@@ -50,6 +49,7 @@ public partial class WorkflowInstance
     /// computes transitions, and handles scope completions.
     /// </summary>
     private const int MaxExecutionLoopIterations = 1000;
+    private const int FlushThreshold = 20;
 
     private async Task RunExecutionLoop()
     {
@@ -110,9 +110,12 @@ public partial class WorkflowInstance
             var orphanedScopes = await HandleScopeCompletions(definition);
             allOrphanedScopeIds.AddRange(orphanedScopes);
 
-            // Persist after each iteration so partial progress survives grain deactivation
-            // during long execution chains (e.g., sequential multi-instance with many items).
-            await DrainAndRaiseEvents();
+            // Flush periodically during long execution chains to bound durability loss.
+            // Most workflows (< 20 steps) complete in a single batch and persist at the
+            // end via the caller's DrainAndRaiseEvents. Writes before external calls
+            // (PerformMessageSubscribe/PerformSignalSubscribe) remain unconditional.
+            if (iteration % FlushThreshold == 0)
+                await DrainAndRaiseEvents();
         }
 
         // Remove orphaned sub-process child variable scopes after the execution loop
@@ -162,6 +165,10 @@ public partial class WorkflowInstance
                 var hostEntry = State.GetEntry(hostId);
                 var scopeDef = definition.GetScopeForActivity(hostEntry.ActivityId);
                 var activity = scopeDef.GetActivity(hostEntry.ActivityId);
+
+                if (activity is SubProcess)
+                    LogSubProcessVariablesMerged(hostEntry.ActivityId, hostEntry.VariablesId);
+
                 var adapter = new ActivityExecutionContextAdapter(hostEntry);
 
                 var transitions = await activity.GetNextActivities(this, adapter, scopeDef);
@@ -174,167 +181,9 @@ public partial class WorkflowInstance
         return orphanedScopeIds;
     }
 
-    private async Task PerformEffects(IReadOnlyList<IInfrastructureEffect> effects)
+    private Task PerformEffects(IReadOnlyList<IInfrastructureEffect> effects)
     {
-        foreach (var effect in effects)
-        {
-            switch (effect)
-            {
-                case RegisterTimerEffect timer:
-                    var callbackGrain = _grainFactory.GetGrain<ITimerCallbackGrain>(
-                        timer.WorkflowInstanceId, $"{timer.HostActivityInstanceId}:{timer.TimerActivityId}");
-                    await callbackGrain.Activate(timer.DueTime);
-                    LogTimerReminderRegistered(timer.TimerActivityId, timer.DueTime);
-                    break;
-
-                case UnregisterTimerEffect unregTimer:
-                    var timerCancelGrain = _grainFactory.GetGrain<ITimerCallbackGrain>(
-                        unregTimer.WorkflowInstanceId, $"{unregTimer.HostActivityInstanceId}:{unregTimer.TimerActivityId}");
-                    await timerCancelGrain.Cancel();
-                    break;
-
-                case SubscribeMessageEffect subMsg:
-                    await PerformMessageSubscribe(subMsg);
-                    break;
-
-                case UnsubscribeMessageEffect unsubMsg:
-                    var unsubMsgKey = MessageCorrelationKey.Build(unsubMsg.MessageName, unsubMsg.CorrelationKey);
-                    var unsubMsgGrain = _grainFactory.GetGrain<IMessageCorrelationGrain>(unsubMsgKey);
-                    await unsubMsgGrain.Unsubscribe();
-                    break;
-
-                case SubscribeSignalEffect subSig:
-                    await PerformSignalSubscribe(subSig);
-                    break;
-
-                case UnsubscribeSignalEffect unsubSig:
-                    var unsubSigGrain = _grainFactory.GetGrain<ISignalCorrelationGrain>(unsubSig.SignalName);
-                    await unsubSigGrain.Unsubscribe(unsubSig.WorkflowInstanceId, unsubSig.ActivityId);
-                    break;
-
-                case ThrowSignalEffect throwSig:
-                    var throwSigGrain = _grainFactory.GetGrain<ISignalCorrelationGrain>(throwSig.SignalName);
-                    var deliveredCount = await throwSigGrain.BroadcastSignal();
-                    LogSignalThrown(throwSig.SignalName, deliveredCount);
-                    break;
-
-                case StartChildWorkflowEffect startChild:
-                    await PerformStartChildWorkflow(startChild);
-                    break;
-
-                case NotifyParentCompletedEffect notifyCompleted:
-                    var parentGrain = _grainFactory.GetGrain<IWorkflowInstanceGrain>(notifyCompleted.ParentInstanceId);
-                    await parentGrain.OnChildWorkflowCompleted(notifyCompleted.ParentActivityId, notifyCompleted.Variables);
-                    break;
-
-                case NotifyParentFailedEffect notifyFailed:
-                    var parentFailGrain = _grainFactory.GetGrain<IWorkflowInstanceGrain>(notifyFailed.ParentInstanceId);
-                    await parentFailGrain.OnChildWorkflowFailed(notifyFailed.ParentActivityId, notifyFailed.Exception);
-                    break;
-
-                case RegisterUserTaskEffect regTask:
-                    try
-                    {
-                        var taskGrain = _grainFactory.GetGrain<IUserTaskGrain>(regTask.ActivityInstanceId);
-                        await taskGrain.Register(
-                            regTask.WorkflowInstanceId, regTask.ActivityId,
-                            regTask.Assignee, regTask.CandidateGroups, regTask.CandidateUsers,
-                            regTask.ExpectedOutputVariables);
-                    }
-                    catch (Exception ex)
-                    {
-                        LogUserTaskRegistrationFailed(regTask.ActivityInstanceId, ex);
-                    }
-                    break;
-
-                case CompleteUserTaskPersistenceEffect completeTask:
-                    try
-                    {
-                        var completeGrain = _grainFactory.GetGrain<IUserTaskGrain>(completeTask.ActivityInstanceId);
-                        await completeGrain.MarkCompleted();
-                    }
-                    catch (Exception ex)
-                    {
-                        LogUserTaskCompletionPersistenceFailed(completeTask.ActivityInstanceId, ex);
-                    }
-                    break;
-
-                case UpdateUserTaskClaimEffect claimUpdate:
-                    try
-                    {
-                        var claimGrain = _grainFactory.GetGrain<IUserTaskGrain>(claimUpdate.ActivityInstanceId);
-                        await claimGrain.UpdateClaim(claimUpdate.ClaimedBy, claimUpdate.TaskState);
-                    }
-                    catch (Exception ex)
-                    {
-                        LogUserTaskClaimUpdateFailed(claimUpdate.ActivityInstanceId, ex);
-                    }
-                    break;
-
-                case PublishDomainEventEffect publishEvt:
-                    await PublishDomainEvent(publishEvt.Event);
-                    break;
-
-                default:
-                    throw new InvalidOperationException($"Unknown infrastructure effect type: {effect.GetType().Name}");
-            }
-        }
-    }
-
-    private async Task PerformMessageSubscribe(SubscribeMessageEffect subMsg)
-    {
-        var grainKey = MessageCorrelationKey.Build(subMsg.MessageName, subMsg.CorrelationKey);
-        var corrGrain = _grainFactory.GetGrain<IMessageCorrelationGrain>(grainKey);
-
-        try
-        {
-            await DrainAndRaiseEvents(); // persist before external call
-            await corrGrain.Subscribe(subMsg.WorkflowInstanceId, subMsg.ActivityId, subMsg.HostActivityInstanceId);
-            LogMessageSubscriptionRegistered(subMsg.ActivityId, subMsg.MessageName, subMsg.CorrelationKey);
-        }
-        catch (Exception ex)
-        {
-            LogMessageSubscriptionFailed(subMsg.ActivityId, subMsg.MessageName, subMsg.CorrelationKey, ex);
-            // Fail the activity through the aggregate
-            var failEffects = _execution!.FailActivity(subMsg.ActivityId, subMsg.HostActivityInstanceId, ex);
-            await PerformEffects(failEffects);
-        }
-    }
-
-    private async Task PerformSignalSubscribe(SubscribeSignalEffect subSig)
-    {
-        var signalGrain = _grainFactory.GetGrain<ISignalCorrelationGrain>(subSig.SignalName);
-
-        try
-        {
-            await DrainAndRaiseEvents(); // persist before external call
-            await signalGrain.Subscribe(subSig.WorkflowInstanceId, subSig.ActivityId, subSig.HostActivityInstanceId);
-            LogSignalSubscriptionRegistered(subSig.ActivityId, subSig.SignalName);
-        }
-        catch (Exception ex)
-        {
-            LogSignalSubscriptionFailed(subSig.ActivityId, subSig.SignalName, ex);
-            var failEffects = _execution!.FailActivity(subSig.ActivityId, subSig.HostActivityInstanceId, ex);
-            await PerformEffects(failEffects);
-        }
-    }
-
-    private async Task PerformStartChildWorkflow(StartChildWorkflowEffect startChild)
-    {
-        var factory = _grainFactory.GetGrain<IWorkflowInstanceFactoryGrain>(0);
-        var childDefinition = await factory.GetLatestWorkflowDefinition(startChild.ProcessDefinitionKey);
-
-        var child = _grainFactory.GetGrain<IWorkflowInstanceGrain>(startChild.ChildInstanceId);
-
-        LogStartingChildWorkflow(startChild.ProcessDefinitionKey, startChild.ChildInstanceId);
-
-        await child.SetWorkflow(childDefinition);
-        await child.SetParentInfo(this.GetPrimaryKey(), startChild.ParentActivityId);
-
-        if (((IDictionary<string, object?>)startChild.InputVariables).Count > 0)
-            await child.SetInitialVariables(startChild.InputVariables);
-
-        await child.StartWorkflow();
+        return _effectDispatcher.DispatchAsync(effects, new WorkflowInstanceEffectContext(this));
     }
 
     private async Task PublishDomainEvent(IDomainEvent domainEvent)

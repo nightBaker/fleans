@@ -13,6 +13,7 @@ public partial class WorkflowEventsPublisher : Grain, IEventPublisher
     private IStreamProvider _streamProvider = null!;
     private readonly ILogger<WorkflowEventsPublisher> _logger;
 
+    // Keep in sync with FleanStreamingExtensions.StreamProviderName in Fleans.ServiceDefaults
     public const string StreamProvider = "StreamProvider";
     public const string StreamNameSpace = "events";
 

@@ -53,6 +53,9 @@ public partial class SignalCorrelationGrain : Grain, ISignalCorrelationGrain
         }
     }
 
+    private const int DeliveryBatchSize = 20;
+    private const int HighSubscriberCountThreshold = 50;
+
     public async ValueTask<int> BroadcastSignal()
     {
         var signalName = this.GetPrimaryKeyString();
@@ -67,25 +70,34 @@ public partial class SignalCorrelationGrain : Grain, ISignalCorrelationGrain
         _state.State.Subscriptions.Clear();
         await _state.WriteStateAsync();
 
+        if (subscribers.Count > HighSubscriberCountThreshold)
+            LogBroadcastHighSubscriberCount(signalName, subscribers.Count, HighSubscriberCountThreshold);
+
         LogBroadcastStarted(signalName, subscribers.Count);
 
-        var deliveryTasks = subscribers.Select(async sub =>
-        {
-            try
-            {
-                var workflowInstance = _grainFactory.GetGrain<IWorkflowInstanceGrain>(sub.WorkflowInstanceId);
-                await workflowInstance.HandleSignalDelivery(sub.ActivityId, sub.HostActivityInstanceId);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                LogDeliveryFailed(signalName, sub.WorkflowInstanceId, sub.ActivityId, ex);
-                return false;
-            }
-        });
+        var deliveredCount = 0;
 
-        var results = await Task.WhenAll(deliveryTasks);
-        var deliveredCount = results.Count(r => r);
+        foreach (var batch in subscribers.Chunk(DeliveryBatchSize))
+        {
+            var batchTasks = batch.Select(async sub =>
+            {
+                try
+                {
+                    var workflowInstance = _grainFactory.GetGrain<IWorkflowInstanceGrain>(sub.WorkflowInstanceId);
+                    await workflowInstance.HandleSignalDelivery(sub.ActivityId, sub.HostActivityInstanceId);
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    LogDeliveryFailed(signalName, sub.WorkflowInstanceId, sub.ActivityId, ex);
+                    return false;
+                }
+            });
+
+            var results = await Task.WhenAll(batchTasks);
+            deliveredCount += results.Count(r => r);
+        }
+
         LogBroadcastCompleted(signalName, deliveredCount, subscribers.Count);
 
         return deliveredCount;
@@ -118,4 +130,8 @@ public partial class SignalCorrelationGrain : Grain, ISignalCorrelationGrain
     [LoggerMessage(EventId = 9106, Level = LogLevel.Debug,
         Message = "Signal '{SignalName}' duplicate subscription ignored: workflowInstanceId={WorkflowInstanceId}, activityId={ActivityId}")]
     private partial void LogDuplicateSubscription(string signalName, Guid workflowInstanceId, string activityId);
+
+    [LoggerMessage(EventId = 9107, Level = LogLevel.Warning,
+        Message = "Signal '{SignalName}' broadcast has {SubscriberCount} subscribers (threshold: {Threshold}) — delivering in batches")]
+    private partial void LogBroadcastHighSubscriberCount(string signalName, int subscriberCount, int threshold);
 }

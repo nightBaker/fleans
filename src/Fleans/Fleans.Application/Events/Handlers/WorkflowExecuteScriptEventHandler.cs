@@ -61,7 +61,15 @@ public partial class WorkflowExecuteScriptEventHandler : Grain, IWorkflowExecute
         catch (Exception ex)
         {
             LogScriptExecutionFailed(ex, item.ActivityId);
-            await workflowInstance.FailActivity(item.ActivityId, item.ActivityInstanceId, ex);
+            try
+            {
+                await workflowInstance.FailActivity(item.ActivityId, item.ActivityInstanceId, ex);
+            }
+            catch (Exception failEx)
+            {
+                LogFailActivityFailed(failEx, item.ActivityId);
+                throw; // Let stream provider retry — domain model idempotency guards handle duplicates
+            }
         }
     }
 
@@ -88,4 +96,7 @@ public partial class WorkflowExecuteScriptEventHandler : Grain, IWorkflowExecute
 
     [LoggerMessage(EventId = 4013, Level = LogLevel.Error, Message = "Script event stream error")]
     private partial void LogStreamError(Exception ex);
+
+    [LoggerMessage(EventId = 4014, Level = LogLevel.Critical, Message = "FailActivity call itself failed for activity {ActivityId} — workflow may be stalled")]
+    private partial void LogFailActivityFailed(Exception ex, string activityId);
 }

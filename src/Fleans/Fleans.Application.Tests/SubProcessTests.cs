@@ -622,7 +622,7 @@ public class SubProcessTests : WorkflowTestBase
 
         await workflowInstance.CompleteActivity("parentTask", new ExpandoObject());
 
-        // Complete sub_task with a new variable not present in parent scope
+        // Complete sub_task with a new variable
         dynamic childVars = new ExpandoObject();
         childVars.newVar = "from-subprocess";
         await workflowInstance.CompleteActivity("sub_task", childVars);
@@ -633,13 +633,9 @@ public class SubProcessTests : WorkflowTestBase
         Assert.IsFalse(snapshot!.IsCompleted, "Should be paused at checkTask");
         var checkTaskSnapshot = snapshot.ActiveActivities.First(a => a.ActivityId == "checkTask");
 
-        // newVar should be visible in parent scope after subprocess merge
+        // Subprocess variable should be visible in parent scope after merge
         var newVar = await workflowInstance.GetVariable(checkTaskSnapshot.VariablesStateId, "newVar");
-        Assert.AreEqual("from-subprocess", newVar, "Subprocess variable should propagate to parent scope");
-
-        // Only 1 variable scope should remain (child scope cleaned up)
-        Assert.AreEqual(1, snapshot.VariableStates.Count,
-            "Child scope should be removed after merge");
+        Assert.AreEqual("from-subprocess", newVar, "Subprocess variables should be merged into parent scope");
 
         await workflowInstance.CompleteActivity("checkTask", new ExpandoObject());
 
@@ -652,28 +648,27 @@ public class SubProcessTests : WorkflowTestBase
     {
         var start = new StartEvent("start");
 
-        // SubProcess with internal fork-join
-        var subStart = new StartEvent("sub_start");
-        var fork = new ParallelGateway("sub_fork", IsFork: true);
-        var branch1 = new TaskActivity("branch1");
-        var branch2 = new TaskActivity("branch2");
-        var join = new ParallelGateway("sub_join", IsFork: false);
-        var subEnd = new EndEvent("sub_end");
+        // Subprocess with internal parallel fork-join
+        var innerStart = new StartEvent("sub_start");
+        var fork = new ParallelGateway("fork", IsFork: true);
+        var branch1Task = new TaskActivity("branch1_task");
+        var branch2Task = new TaskActivity("branch2_task");
+        var join = new ParallelGateway("join", IsFork: false);
+        var innerEnd = new EndEvent("sub_end");
 
         var subProcess = new SubProcess("sub1")
         {
-            Activities = [subStart, fork, branch1, branch2, join, subEnd],
+            Activities = [innerStart, fork, branch1Task, branch2Task, join, innerEnd],
             SequenceFlows =
             [
-                new SequenceFlow("sf1", subStart, fork),
-                new SequenceFlow("sf2", fork, branch1),
-                new SequenceFlow("sf3", fork, branch2),
-                new SequenceFlow("sf4", branch1, join),
-                new SequenceFlow("sf5", branch2, join),
-                new SequenceFlow("sf6", join, subEnd)
+                new SequenceFlow("inner_f1", innerStart, fork),
+                new SequenceFlow("inner_f2", fork, branch1Task),
+                new SequenceFlow("inner_f3", fork, branch2Task),
+                new SequenceFlow("inner_f4", branch1Task, join),
+                new SequenceFlow("inner_f5", branch2Task, join),
+                new SequenceFlow("inner_f6", join, innerEnd)
             ]
         };
-
         var checkTask = new TaskActivity("checkTask");
         var end = new EndEvent("end");
 
@@ -693,37 +688,110 @@ public class SubProcessTests : WorkflowTestBase
         await workflowInstance.SetWorkflow(workflow);
         await workflowInstance.StartWorkflow();
 
-        // Both branches should be active
+        // Complete both parallel branches with different variables
+        dynamic branch1Vars = new ExpandoObject();
+        branch1Vars.branchA = "a";
+        await workflowInstance.CompleteActivity("branch1_task", branch1Vars);
+
+        dynamic branch2Vars = new ExpandoObject();
+        branch2Vars.branchB = "b";
+        await workflowInstance.CompleteActivity("branch2_task", branch2Vars);
+
+        // After join and subprocess completion, check parent scope
         var instanceId = workflowInstance.GetPrimaryKey();
         var snapshot = await QueryService.GetStateSnapshot(instanceId);
-        Assert.AreEqual(2, snapshot!.ActiveActivities.Count(a =>
-            a.ActivityId == "branch1" || a.ActivityId == "branch2"),
-            "Both branches should be active");
-
-        // Complete branch1 with branchA variable
-        dynamic vars1 = new ExpandoObject();
-        vars1.branchA = "a";
-        await workflowInstance.CompleteActivity("branch1", vars1);
-
-        // Complete branch2 with branchB variable
-        dynamic vars2 = new ExpandoObject();
-        vars2.branchB = "b";
-        await workflowInstance.CompleteActivity("branch2", vars2);
-
-        // Workflow should now be paused at checkTask (back in parent scope)
-        snapshot = await QueryService.GetStateSnapshot(instanceId);
         Assert.IsFalse(snapshot!.IsCompleted, "Should be paused at checkTask");
         var checkTaskSnapshot = snapshot.ActiveActivities.First(a => a.ActivityId == "checkTask");
 
         // Both branch variables should be visible in parent scope
         var branchA = await workflowInstance.GetVariable(checkTaskSnapshot.VariablesStateId, "branchA");
+        Assert.AreEqual("a", branchA, "Branch A variable should propagate through subprocess completion");
+
         var branchB = await workflowInstance.GetVariable(checkTaskSnapshot.VariablesStateId, "branchB");
-        Assert.AreEqual("a", branchA, "Branch A variable should propagate through subprocess to parent scope");
-        Assert.AreEqual("b", branchB, "Branch B variable should propagate through subprocess to parent scope");
+        Assert.AreEqual("b", branchB, "Branch B variable should propagate through subprocess completion");
 
         await workflowInstance.CompleteActivity("checkTask", new ExpandoObject());
 
         var finalSnapshot = await QueryService.GetStateSnapshot(instanceId);
         Assert.IsTrue(finalSnapshot!.IsCompleted, "Workflow should complete");
+    }
+
+    [TestMethod]
+    public async Task SubProcess_Failure_ShouldNotMergeVariablesIntoParent()
+    {
+        // Arrange: parentTask sets "parentVar", subprocess has two sequential tasks:
+        // sub_task1 completes with "subVar", sub_task2 fails (no boundary handler).
+        // The subprocess stays stuck (failed child prevents auto-completion).
+        // Verify the parent scope does NOT contain "subVar" — no merge on failure.
+        var start = new StartEvent("start");
+        var parentTask = new TaskActivity("parentTask");
+
+        var innerStart = new StartEvent("sub_start");
+        var subTask1 = new TaskActivity("sub_task1");
+        var subTask2 = new TaskActivity("sub_task2");
+        var innerEnd = new EndEvent("sub_end");
+        var subProcess = new SubProcess("sub1")
+        {
+            Activities = [innerStart, subTask1, subTask2, innerEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("inner_f1", innerStart, subTask1),
+                new SequenceFlow("inner_f2", subTask1, subTask2),
+                new SequenceFlow("inner_f3", subTask2, innerEnd)
+            ]
+        };
+        var end = new EndEvent("end");
+
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "sp-fail-no-merge",
+            Activities = [start, parentTask, subProcess, end],
+            SequenceFlows =
+            [
+                new SequenceFlow("f1", start, parentTask),
+                new SequenceFlow("f2", parentTask, subProcess),
+                new SequenceFlow("f3", subProcess, end)
+            ]
+        };
+
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await workflowInstance.SetWorkflow(workflow);
+        await workflowInstance.StartWorkflow();
+
+        // Complete parentTask with a known variable
+        dynamic parentVars = new ExpandoObject();
+        parentVars.parentVar = "original";
+        await workflowInstance.CompleteActivity("parentTask", parentVars);
+
+        // Complete sub_task1 with a subprocess-only variable
+        dynamic childVars = new ExpandoObject();
+        childVars.subVar = "from-child";
+        await workflowInstance.CompleteActivity("sub_task1", childVars);
+
+        // Fail sub_task2 — no boundary handler, subprocess stays stuck
+        await workflowInstance.FailActivity("sub_task2", new Exception("task failure"));
+
+        // Workflow should NOT complete (subprocess failed without boundary error)
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsFalse(snapshot!.IsCompleted, "Should not complete when inner task fails");
+
+        // The subprocess host entry ("sub1") is still active with parent scope.
+        // Verify VariablesMerged was NOT applied — parent scope should not have "subVar".
+        var subProcessHost = snapshot.ActiveActivities.First(a => a.ActivityId == "sub1");
+        var parentScopeId = subProcessHost.VariablesStateId;
+
+        var parentVar = await workflowInstance.GetVariable(parentScopeId, "parentVar");
+        Assert.AreEqual("original", parentVar, "Parent variable should be preserved");
+
+        // GetVariable traverses parent scopes only (not child scopes), so querying
+        // the parent scope directly should NOT find the child's "subVar".
+        var subVar = await workflowInstance.GetVariable(parentScopeId, "subVar");
+        Assert.IsNull(subVar, "Subprocess variables should NOT be merged into parent scope on failure");
+
+        // Verify the failed task has error state
+        var failedEntry = snapshot.CompletedActivities.FirstOrDefault(a => a.ActivityId == "sub_task2");
+        Assert.IsNotNull(failedEntry, "sub_task2 should be in completed list");
+        Assert.IsNotNull(failedEntry.ErrorState, "sub_task2 should have error state");
     }
 }

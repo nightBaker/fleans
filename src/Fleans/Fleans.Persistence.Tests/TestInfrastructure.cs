@@ -24,3 +24,18 @@ internal class TestDbContextFactory : IDbContextFactory<FleanCommandDbContext>
     public Task<FleanCommandDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
         => Task.FromResult(CreateDbContext());
 }
+
+internal class TestQueryDbContextFactory : IDbContextFactory<FleanQueryDbContext>
+{
+    private readonly DbContextOptions<FleanQueryDbContext> _options;
+
+    public TestQueryDbContextFactory(DbContextOptions<FleanQueryDbContext> options)
+    {
+        _options = options;
+    }
+
+    public FleanQueryDbContext CreateDbContext() => new(_options);
+
+    public Task<FleanQueryDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult(CreateDbContext());
+}
