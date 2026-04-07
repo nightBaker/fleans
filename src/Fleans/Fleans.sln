@@ -33,6 +33,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Fleans.Mcp", "Fleans.Mcp\Fl
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Fleans.Mcp.Tests", "Fleans.Mcp.Tests\Fleans.Mcp.Tests.csproj", "{499B7808-8022-4388-AAED-040A1B411058}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Fleans.Persistence.Sqlite", "Fleans.Persistence.Sqlite\Fleans.Persistence.Sqlite.csproj", "{85899511-19F3-46C9-B3BA-250665406922}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -211,6 +213,18 @@ Global
 		{499B7808-8022-4388-AAED-040A1B411058}.Release|x64.Build.0 = Release|Any CPU
 		{499B7808-8022-4388-AAED-040A1B411058}.Release|x86.ActiveCfg = Release|Any CPU
 		{499B7808-8022-4388-AAED-040A1B411058}.Release|x86.Build.0 = Release|Any CPU
+		{85899511-19F3-46C9-B3BA-250665406922}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{85899511-19F3-46C9-B3BA-250665406922}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{85899511-19F3-46C9-B3BA-250665406922}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{85899511-19F3-46C9-B3BA-250665406922}.Debug|x64.Build.0 = Debug|Any CPU
+		{85899511-19F3-46C9-B3BA-250665406922}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{85899511-19F3-46C9-B3BA-250665406922}.Debug|x86.Build.0 = Debug|Any CPU
+		{85899511-19F3-46C9-B3BA-250665406922}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{85899511-19F3-46C9-B3BA-250665406922}.Release|Any CPU.Build.0 = Release|Any CPU
+		{85899511-19F3-46C9-B3BA-250665406922}.Release|x64.ActiveCfg = Release|Any CPU
+		{85899511-19F3-46C9-B3BA-250665406922}.Release|x64.Build.0 = Release|Any CPU
+		{85899511-19F3-46C9-B3BA-250665406922}.Release|x86.ActiveCfg = Release|Any CPU
+		{85899511-19F3-46C9-B3BA-250665406922}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

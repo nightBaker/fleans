@@ -7,6 +7,7 @@ using Fleans.Domain.Sequences;
 using Fleans.Domain.States;
 using Fleans.Persistence;
 using Microsoft.Data.Sqlite;
+using Fleans.Persistence.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Sieve.Models;
@@ -29,11 +30,11 @@ public class WorkflowQueryServiceTests
         _connection.Open();
 
         var commandOptions = new DbContextOptionsBuilder<FleanCommandDbContext>()
-            .UseSqlite(_connection)
+            .UseFleansSqlite(_connection)
             .Options;
 
         var queryOptions = new DbContextOptionsBuilder<FleanQueryDbContext>()
-            .UseSqlite(_connection)
+            .UseFleansSqlite(_connection)
             .Options;
 
         _commandDbContextFactory = new TestCommandDbContextFactory(commandOptions);

@@ -4,6 +4,7 @@ using Fleans.Application;
 using Fleans.Application.Logging;
 using Fleans.Infrastructure;
 using Fleans.Persistence;
+using Fleans.Persistence.Sqlite;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Orleans.Dashboard;
@@ -92,11 +93,7 @@ static void AddPolicyIfConfigured(RateLimiterOptions options, string policyName,
 // EF Core persistence for WorkflowInstanceState
 var sqliteConnectionString = builder.Configuration["FLEANS_SQLITE_CONNECTION"] ?? "DataSource=fleans-dev.db";
 var queryConnectionString = builder.Configuration["FLEANS_QUERY_CONNECTION"];
-builder.Services.AddEfCorePersistence(
-    options => options.UseSqlite(sqliteConnectionString),
-    queryConnectionString is not null
-        ? options => options.UseSqlite(queryConnectionString)
-        : null);
+builder.Services.AddSqlitePersistence(sqliteConnectionString, queryConnectionString);
 
 var app = builder.Build();
 
@@ -105,7 +102,7 @@ using (var scope = app.Services.CreateScope())
 {
     var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>();
     using var db = dbFactory.CreateDbContext();
-    db.Database.EnsureCreated();
+    SqliteSchemaInitializer.EnsureCreatedIgnoreRaces(db.Database);
 }
 
 // Configure the HTTP request pipeline.

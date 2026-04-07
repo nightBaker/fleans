@@ -13,6 +13,7 @@ using Fleans.Infrastructure.Conditions;
 using Fleans.Persistence;
 using Fleans.Persistence.Events;
 using Microsoft.Data.Sqlite;
+using Fleans.Persistence.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -340,10 +341,10 @@ public class MultiInstanceScriptIntegrationTests
                 .ConfigureServices(services =>
                 {
                     services.AddDbContextFactory<FleanCommandDbContext>(options =>
-                        options.UseSqlite("DataSource=file::memory:?cache=shared"));
+                        options.UseFleansSqlite("DataSource=file::memory:?cache=shared"));
 
                     services.AddDbContextFactory<FleanQueryDbContext>(options =>
-                        options.UseSqlite("DataSource=file::memory:?cache=shared"));
+                        options.UseFleansSqlite("DataSource=file::memory:?cache=shared"));
 
                     services.AddSingleton<IWorkflowStateProjection, EfCoreWorkflowStateProjection>();
                     services.AddSingleton<EfCoreEventStore>();

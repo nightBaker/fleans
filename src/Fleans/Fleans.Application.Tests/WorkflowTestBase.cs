@@ -10,6 +10,7 @@ using Fleans.Domain.Sequences;
 using Fleans.Persistence;
 using Fleans.Persistence.Events;
 using Microsoft.Data.Sqlite;
+using Fleans.Persistence.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -140,10 +141,10 @@ public abstract class WorkflowTestBase
                 .ConfigureServices(services =>
                 {
                     services.AddDbContextFactory<FleanCommandDbContext>(options =>
-                        options.UseSqlite("DataSource=file::memory:?cache=shared"));
+                        options.UseFleansSqlite("DataSource=file::memory:?cache=shared"));
 
                     services.AddDbContextFactory<FleanQueryDbContext>(options =>
-                        options.UseSqlite("DataSource=file::memory:?cache=shared"));
+                        options.UseFleansSqlite("DataSource=file::memory:?cache=shared"));
 
                     services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.TimerSchedulers,
                         (sp, _) => new EfCoreTimerSchedulerGrainStorage(
