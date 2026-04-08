@@ -170,11 +170,16 @@ namespace Fleans.Domain
         /// failed activity, searching the activity's scope and walking up through parent
         /// SubProcess / EventSubProcess scopes. Specific error code matches take priority
         /// over catch-all (null ErrorCode). Inner scopes take priority over outer scopes.
+        /// An EventSubProcess never catches errors thrown from within itself (BPMN spec:
+        /// event sub-processes only catch errors from the enclosing parent scope).
         /// </summary>
         (EventSubProcess EventSubProcess, IWorkflowDefinition EnclosingScope)?
             FindErrorEventSubProcessHandler(string failedActivityId, string? errorCode)
         {
             var targetActivityId = failedActivityId;
+            // When we walk out of an EventSubProcess, we must not re-match it as a handler
+            // in its own parent scope — that would allow an ESP to catch its own errors.
+            string? escapedEventSubProcessId = null;
 
             while (true)
             {
@@ -183,6 +188,7 @@ namespace Fleans.Domain
 
                 var candidates = scope.Activities
                     .OfType<EventSubProcess>()
+                    .Where(esp => esp.ActivityId != escapedEventSubProcessId)
                     .Where(esp => esp.Activities.OfType<ErrorStartEvent>().Any(ese =>
                         ese.ErrorCode == null || ese.ErrorCode == errorCode))
                     .ToList();
@@ -199,9 +205,15 @@ namespace Fleans.Domain
                     return (match, scope);
 
                 if (scope is SubProcess subProcess)
+                {
                     targetActivityId = subProcess.ActivityId;
+                    escapedEventSubProcessId = null;
+                }
                 else if (scope is EventSubProcess outerEvtSub)
+                {
+                    escapedEventSubProcessId = outerEvtSub.ActivityId;
                     targetActivityId = outerEvtSub.ActivityId;
+                }
                 else
                     return null;
             }

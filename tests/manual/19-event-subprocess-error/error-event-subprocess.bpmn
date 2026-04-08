@@ -20,7 +20,7 @@
         <errorEventDefinition errorRef="Err500"/>
       </startEvent>
       <scriptTask id="handlerTask" scriptFormat="csharp">
-        <script>return new System.Dynamic.ExpandoObject();</script>
+        <script>_context.handled = true</script>
       </scriptTask>
       <endEvent id="handlerEnd"/>
       <sequenceFlow id="esf1" sourceRef="errStart" targetRef="handlerTask"/>

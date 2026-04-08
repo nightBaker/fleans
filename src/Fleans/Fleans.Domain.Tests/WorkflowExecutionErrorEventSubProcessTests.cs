@@ -309,4 +309,79 @@ public class WorkflowExecutionErrorEventSubProcessTests
         Assert.IsTrue(cancelled.Any(c => c.ActivityInstanceId == siblingEntry.ActivityInstanceId),
             "expected sibling task to be cancelled");
     }
+
+    /// <summary>
+    /// When an activity inside an error event sub-process fails, the engine must NOT
+    /// re-trigger the same error event sub-process (BPMN spec: an event sub-process only
+    /// catches errors from the enclosing parent scope, not from within itself).
+    /// Regression guard for bug #280: infinite loop when handlerTask inside the error
+    /// event sub-process throws an error matching the sub-process's own trigger code.
+    /// </summary>
+    [TestMethod]
+    public void FailActivity_InsideErrorEventSubProcess_DoesNotRetriggerSameSubProcess()
+    {
+        var start = new StartEvent("start");
+        var failingTask = new ScriptTask("failingTask", "throw;");
+        var normalEnd = new EndEvent("normalEnd");
+        var esp = BuildErrorEventSubProcess("errorEventSub", "500");
+
+        var (execution, state) = CreateStarted(
+            [start, failingTask, normalEnd, esp],
+            [
+                new SequenceFlow("sf1", start, failingTask),
+                new SequenceFlow("sf2", failingTask, normalEnd)
+            ]);
+
+        // Spawn and execute the failing task
+        var startEntry = state.GetActiveActivities().First(e => e.ActivityId == "start");
+        execution.MarkExecuting(startEntry.ActivityInstanceId);
+        execution.ResolveTransitions(
+        [
+            new CompletedActivityTransitions(startEntry.ActivityInstanceId, "start",
+                [new ActivityTransition(failingTask)])
+        ]);
+
+        var failingEntry = state.GetActiveActivities().First(e => e.ActivityId == "failingTask");
+        execution.MarkExecuting(failingEntry.ActivityInstanceId);
+        execution.ClearUncommittedEvents();
+
+        // failingTask fails → errorEventSub should activate (errStart + handler spawned)
+        execution.FailActivity("failingTask", failingEntry.ActivityInstanceId,
+            new Exception("boom") { Data = { ["ErrorCode"] = 500 } });
+
+        var afterOuter = execution.GetUncommittedEvents();
+        var spawnedAfterOuter = afterOuter.OfType<ActivitySpawned>().Select(e => e.ActivityId).ToList();
+        Assert.IsTrue(spawnedAfterOuter.Contains("errorEventSub"),
+            "expected errorEventSub to be spawned after failingTask fails");
+        Assert.IsTrue(spawnedAfterOuter.Contains("errorEventSub_errStart"),
+            "expected errStart to be spawned inside errorEventSub");
+
+        // Now simulate handlerTask inside the ESP failing with the same error code.
+        // The engine must NOT re-trigger the ESP — doing so would cause an infinite loop.
+        var espEntry = state.GetActiveActivities().First(e => e.ActivityId == "errorEventSub");
+        var errStartEntry = state.GetActiveActivities().First(e => e.ActivityId == "errorEventSub_errStart");
+        execution.MarkExecuting(errStartEntry.ActivityInstanceId);
+        execution.ResolveTransitions(
+        [
+            new CompletedActivityTransitions(errStartEntry.ActivityInstanceId, "errorEventSub_errStart",
+                [new ActivityTransition(new ScriptTask("errorEventSub_handler", "// noop"))])
+        ]);
+
+        var handlerEntry = state.GetActiveActivities().FirstOrDefault(e => e.ActivityId == "errorEventSub_handler");
+        if (handlerEntry is not null)
+        {
+            execution.MarkExecuting(handlerEntry.ActivityInstanceId);
+            execution.ClearUncommittedEvents();
+
+            // Handler fails with same error code 500 — must NOT re-spawn errorEventSub
+            execution.FailActivity("errorEventSub_handler", handlerEntry.ActivityInstanceId,
+                new Exception("handler failed") { Data = { ["ErrorCode"] = 500 } });
+
+            var afterInner = execution.GetUncommittedEvents();
+            var espRespawned = afterInner.OfType<ActivitySpawned>()
+                .Any(e => e.ActivityId == "errorEventSub");
+            Assert.IsFalse(espRespawned,
+                "errorEventSub must NOT be re-triggered when its own handler activity fails (infinite loop guard)");
+        }
+    }
 }
