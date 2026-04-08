@@ -664,8 +664,12 @@ public class WorkflowExecution
                         allOrphanedScopeIds.Add(childScope.Id);
                     }
                 }
-                else // EventSubProcess: discard child variable scope(s), no merge back.
+                else if (isEventSubProcess)
                 {
+                    // EventSubProcess: discard child variable scope(s), no merge back.
+                    // Note: MultiInstance hosts have already `continue`d above (line ~637),
+                    // so they never reach this branch and continue to use their dedicated
+                    // _multiInstance.TryComplete merge path.
                     var childScopes = _state.VariableStates
                         .Where(vs => vs.ParentVariablesId == entry.VariablesId)
                         .ToList();
