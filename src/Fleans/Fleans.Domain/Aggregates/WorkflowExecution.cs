@@ -941,6 +941,10 @@ public class WorkflowExecution
                 MultiInstanceIndex: null,
                 TokenId: null));
         }
+        else if (TryActivateErrorEventSubProcess(entry, errorCode, effects))
+        {
+            // Error event sub-process took over.
+        }
         else
         {
             // No boundary handler found
@@ -970,6 +974,114 @@ public class WorkflowExecution
         }
 
         return effects.AsReadOnly();
+    }
+
+    /// <summary>
+    /// If an EventSubProcess with a matching ErrorStartEvent exists in an enclosing
+    /// scope, spawns it (interrupting) and cancels siblings. Returns true if activated.
+    /// Slice B: error trigger only. Peer timer/message/signal listener deregistration
+    /// is a no-op here — slices #C–#E add the registration infrastructure those
+    /// unsubscribes would target.
+    /// </summary>
+    private bool TryActivateErrorEventSubProcess(
+        ActivityInstanceEntry failedEntry, int errorCode, List<IInfrastructureEffect> effects)
+    {
+        var match = _definition.FindErrorEventSubProcessHandler(
+            failedEntry.ActivityId, errorCode.ToString());
+        if (match is null) return false;
+
+        var (eventSubProcess, enclosingScope) = match.Value;
+
+        var enclosingScopeContainerId = FindEnclosingScopeContainerId(failedEntry, enclosingScope);
+        var enclosingScopeVariablesId = ResolveEnclosingScopeVariablesId(
+            enclosingScopeContainerId);
+
+        // 1. Cancel active siblings in the enclosing scope. The failing entry is
+        //    already terminal (ActivityFailed emitted) and will be filtered out.
+        if (enclosingScopeContainerId.HasValue)
+        {
+            effects.AddRange(CancelScopeChildren(enclosingScopeContainerId.Value));
+        }
+        else
+        {
+            foreach (var sibling in _state.GetActiveActivities()
+                .Where(e => e.ScopeId is null
+                            && e.ActivityInstanceId != failedEntry.ActivityInstanceId)
+                .ToList())
+            {
+                if (_state.HasActiveChildrenInScope(sibling.ActivityInstanceId))
+                    effects.AddRange(CancelScopeChildren(sibling.ActivityInstanceId));
+
+                Emit(new ActivityCancelled(
+                    sibling.ActivityInstanceId,
+                    $"Scope cancelled by error event sub-process '{eventSubProcess.ActivityId}'"));
+                effects.AddRange(BuildUserTaskCleanupEffects(sibling.ActivityInstanceId));
+            }
+        }
+
+        // 2. Spawn the EventSubProcess host as a new scope container.
+        var espInstanceId = Guid.NewGuid();
+        Emit(new ActivitySpawned(
+            ActivityInstanceId: espInstanceId,
+            ActivityId: eventSubProcess.ActivityId,
+            ActivityType: nameof(EventSubProcess),
+            VariablesId: enclosingScopeVariablesId,
+            ScopeId: enclosingScopeContainerId,
+            MultiInstanceIndex: null,
+            TokenId: null));
+
+        // 3. Child variable scope for the handler (isolated — not merged back).
+        var handlerScopeId = Guid.NewGuid();
+        Emit(new ChildVariableScopeCreated(handlerScopeId, enclosingScopeVariablesId));
+
+        // 4. Spawn the ErrorStartEvent inside the EventSubProcess scope.
+        var errorStart = eventSubProcess.Activities.OfType<ErrorStartEvent>().First();
+        Emit(new ActivitySpawned(
+            ActivityInstanceId: Guid.NewGuid(),
+            ActivityId: errorStart.ActivityId,
+            ActivityType: nameof(ErrorStartEvent),
+            VariablesId: handlerScopeId,
+            ScopeId: espInstanceId,
+            MultiInstanceIndex: null,
+            TokenId: null));
+
+        // TODO(slices #C–#E): emit unsubscribe effects for peer event-sub listeners
+        // on the enclosing scope once registration infrastructure lands.
+
+        return true;
+    }
+
+    private Guid? FindEnclosingScopeContainerId(
+        ActivityInstanceEntry failedEntry, IWorkflowDefinition enclosingScope)
+    {
+        if (enclosingScope is WorkflowDefinition) return null;
+
+        var targetScopeActivityId = enclosingScope switch
+        {
+            SubProcess sp => sp.ActivityId,
+            EventSubProcess esp => esp.ActivityId,
+            _ => throw new InvalidOperationException(
+                $"Unexpected enclosing scope type {enclosingScope.GetType().Name}"),
+        };
+
+        var current = failedEntry;
+        while (current.ScopeId.HasValue)
+        {
+            var parent = _state.GetEntry(current.ScopeId.Value);
+            if (parent.ActivityId == targetScopeActivityId)
+                return parent.ActivityInstanceId;
+            current = parent;
+        }
+        throw new InvalidOperationException(
+            $"Could not locate enclosing scope entry for '{targetScopeActivityId}' from failing entry '{failedEntry.ActivityId}'");
+    }
+
+    private Guid ResolveEnclosingScopeVariablesId(Guid? enclosingScopeContainerId)
+    {
+        if (enclosingScopeContainerId.HasValue)
+            return _state.GetEntry(enclosingScopeContainerId.Value).VariablesId;
+
+        return _state.GetRootVariablesId();
     }
 
     // --- Activity Lifecycle Helpers ---
