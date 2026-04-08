@@ -95,14 +95,19 @@ public class WorkflowExecution
     }
 
     /// <summary>
-    /// Marks the workflow as execution-started. Call after <see cref="Start"/>
-    /// when you want a separate "initialize" vs "execution started" lifecycle.
+    /// Marks the workflow as execution-started and returns the root-scope entry
+    /// effects (e.g. event sub-process timer/message listener registrations) that
+    /// must be performed by the grain before the first execution tick. Returning
+    /// the effects from here keeps the aggregate as the single owner of "what
+    /// happens at scope entry" — the grain never reaches into the aggregate to
+    /// assemble effects in a specific order.
     /// </summary>
-    public void MarkExecutionStarted()
+    public IReadOnlyList<IInfrastructureEffect> MarkExecutionStarted()
     {
         if (_state.IsStarted)
-            return; // idempotent
+            return Array.Empty<IInfrastructureEffect>(); // idempotent
         Emit(new ExecutionStarted());
+        return BuildRootScopeEntryEffects();
     }
 
     public List<PendingActivity> GetPendingActivities()
@@ -484,11 +489,11 @@ public class WorkflowExecution
     /// <summary>
     /// Root-scope variant of <see cref="BuildEventSubProcessTimerRegistrations(IWorkflowDefinition, Guid)"/>.
     /// At the root scope there is no SubProcess host activity instance, so the workflow
-    /// instance id (<c>_state.Id</c>) is used as a stable synthetic host id. Callable from
-    /// the grain after <see cref="Start"/>/<see cref="MarkExecutionStarted"/> to kick off
-    /// root-scope listeners.
+    /// instance id (<c>_state.Id</c>) is used as a stable synthetic host id. Invoked
+    /// internally from <see cref="MarkExecutionStarted"/> — the aggregate is the single
+    /// owner of scope-entry effect assembly, so this is intentionally not public.
     /// </summary>
-    public IReadOnlyList<IInfrastructureEffect> BuildRootScopeEntryEffects()
+    private IReadOnlyList<IInfrastructureEffect> BuildRootScopeEntryEffects()
     {
         var list = new List<IInfrastructureEffect>();
         list.AddRange(BuildEventSubProcessTimerRegistrations(_definition, _state.Id));
