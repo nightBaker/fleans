@@ -249,6 +249,13 @@ public partial class WorkflowInstance :
         _execution!.MarkExecutionStarted();
         LogWorkflowStarted();
 
+        // Register root-scope event sub-process listeners (e.g. timer-triggered
+        // event sub-processes) before running the execution loop so their timers
+        // are armed from the moment the workflow starts.
+        var scopeEntryEffects = _execution.BuildRootScopeEntryEffects();
+        if (scopeEntryEffects.Count > 0)
+            await PerformEffects(scopeEntryEffects);
+
         await RunExecutionLoop();
         await ProcessPendingEvents();
     }
