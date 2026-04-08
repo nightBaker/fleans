@@ -1,6 +1,7 @@
 using Fleans.Application;
 using Fleans.Infrastructure;
 using Fleans.Persistence;
+using Fleans.Persistence.PostgreSql;
 using Fleans.Persistence.Sqlite;
 using Fleans.Web.Components;
 using Fleans.Web.Services;
@@ -25,10 +26,21 @@ builder.Services.AddScoped<ThemeService>();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure();
 
-// EF Core persistence — shared SQLite file with Api silo
-var sqliteConnectionString = builder.Configuration["FLEANS_SQLITE_CONNECTION"] ?? "DataSource=fleans-dev.db";
-var queryConnectionString = builder.Configuration["FLEANS_QUERY_CONNECTION"];
-builder.Services.AddSqlitePersistence(sqliteConnectionString, queryConnectionString);
+// EF Core persistence — provider selected by Persistence:Provider config key (default: Sqlite)
+var persistenceProvider = builder.Configuration["Persistence:Provider"] ?? "Sqlite";
+if (persistenceProvider.Equals("Postgres", StringComparison.OrdinalIgnoreCase))
+{
+    var pgConnectionString = builder.Configuration.GetConnectionString("fleans")
+        ?? throw new InvalidOperationException("Connection string 'fleans' is required when Persistence:Provider=Postgres");
+    var pgQueryConnectionString = builder.Configuration.GetConnectionString("fleans-query");
+    builder.Services.AddPostgresPersistence(pgConnectionString, pgQueryConnectionString);
+}
+else
+{
+    var sqliteConnectionString = builder.Configuration["FLEANS_SQLITE_CONNECTION"] ?? "DataSource=fleans-dev.db";
+    var queryConnectionString = builder.Configuration["FLEANS_QUERY_CONNECTION"];
+    builder.Services.AddSqlitePersistence(sqliteConnectionString, queryConnectionString);
+}
 
 // Register Redis client for Aspire-managed Orleans
 builder.AddKeyedRedisClient("orleans-redis");
@@ -41,10 +53,11 @@ builder.UseOrleansClient(clientBuilder =>
 
 var app = builder.Build();
 
-// Ensure EF Core database is created (dev only — use migrations in production)
-// Wrapped in try-catch: Api silo may have already created the tables in the shared SQLite file.
-using (var scope = app.Services.CreateScope())
+// Ensure EF Core database schema is ready on startup
+if (!persistenceProvider.Equals("Postgres", StringComparison.OrdinalIgnoreCase))
 {
+    // SQLite: use EnsureCreated — idempotent, race-safe for shared SQLite file with the Api silo
+    using var scope = app.Services.CreateScope();
     var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>();
     using var db = dbFactory.CreateDbContext();
     SqliteSchemaInitializer.EnsureCreatedIgnoreRaces(db.Database);

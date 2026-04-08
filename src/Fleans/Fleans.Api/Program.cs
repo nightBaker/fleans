@@ -4,6 +4,7 @@ using Fleans.Application;
 using Fleans.Application.Logging;
 using Fleans.Infrastructure;
 using Fleans.Persistence;
+using Fleans.Persistence.PostgreSql;
 using Fleans.Persistence.Sqlite;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -90,19 +91,45 @@ static void AddPolicyIfConfigured(RateLimiterOptions options, string policyName,
             }));
 }
 
-// EF Core persistence for WorkflowInstanceState
-var sqliteConnectionString = builder.Configuration["FLEANS_SQLITE_CONNECTION"] ?? "DataSource=fleans-dev.db";
-var queryConnectionString = builder.Configuration["FLEANS_QUERY_CONNECTION"];
-builder.Services.AddSqlitePersistence(sqliteConnectionString, queryConnectionString);
+// EF Core persistence — provider selected by Persistence:Provider config key (default: Sqlite)
+var persistenceProvider = builder.Configuration["Persistence:Provider"] ?? "Sqlite";
+if (persistenceProvider.Equals("Postgres", StringComparison.OrdinalIgnoreCase))
+{
+    var pgConnectionString = builder.Configuration.GetConnectionString("fleans")
+        ?? throw new InvalidOperationException("Connection string 'fleans' is required when Persistence:Provider=Postgres");
+    var pgQueryConnectionString = builder.Configuration.GetConnectionString("fleans-query");
+    builder.Services.AddPostgresPersistence(pgConnectionString, pgQueryConnectionString);
+}
+else
+{
+    var sqliteConnectionString = builder.Configuration["FLEANS_SQLITE_CONNECTION"] ?? "DataSource=fleans-dev.db";
+    var queryConnectionString = builder.Configuration["FLEANS_QUERY_CONNECTION"];
+    builder.Services.AddSqlitePersistence(sqliteConnectionString, queryConnectionString);
+}
 
 var app = builder.Build();
 
-// Ensure EF Core database is created (dev only — use migrations in production)
+// Ensure EF Core database is created / migrated on startup
 using (var scope = app.Services.CreateScope())
 {
-    var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>();
-    using var db = dbFactory.CreateDbContext();
-    SqliteSchemaInitializer.EnsureCreatedIgnoreRaces(db.Database);
+    if (!persistenceProvider.Equals("Postgres", StringComparison.OrdinalIgnoreCase))
+    {
+        // SQLite: use EnsureCreated (fast, idempotent, no migration history required for dev)
+        var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>();
+        using var db = dbFactory.CreateDbContext();
+        SqliteSchemaInitializer.EnsureCreatedIgnoreRaces(db.Database);
+    }
+    else
+    {
+        // PostgreSQL: apply migrations (creates tables on first run, no-op on subsequent runs)
+        var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>();
+        await using var commandDb = dbFactory.CreateDbContext();
+        await commandDb.Database.MigrateAsync();
+
+        var queryFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<FleanQueryDbContext>>();
+        await using var queryDb = queryFactory.CreateDbContext();
+        await queryDb.Database.MigrateAsync();
+    }
 }
 
 // Configure the HTTP request pipeline.
