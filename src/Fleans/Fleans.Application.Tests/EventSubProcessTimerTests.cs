@@ -83,6 +83,73 @@ public class EventSubProcessTimerTests : WorkflowTestBase
             "Normal 'end' event should not be reached when the timer handler interrupts flow");
     }
 
+    [TestMethod]
+    public async Task TimerEventSubProcess_HandlerFails_StillReachesTerminalState()
+    {
+        // Regression for issue #283: when a script inside a timer-triggered
+        // event sub-process throws (e.g. invalid expression), the EventSubProcess
+        // scope must still close so the workflow can terminate. Previously the
+        // scope auto-completion guard treated any errored child as "block forever",
+        // leaving timerEventSub stuck in IsExecuting=true.
+        var start = new StartEvent("start");
+        var userTask = new Fleans.Domain.Activities.UserTask(
+            "userTask", null, [], [], null);
+        var end = new EndEvent("normalEnd");
+
+        var timerStart = new TimerStartEvent("timerStart",
+            new TimerDefinition(TimerType.Duration, "PT30S"));
+        // The SimpleScriptExecutor in WorkflowTestBase throws on the magic "FAIL"
+        // script, mirroring DynamicExpresso failing on an invalid expression in
+        // the real Aspire stack.
+        var handlerTask = new ScriptTask("handlerTask", "FAIL");
+        var handlerEnd = new EndEvent("handlerEnd");
+        var evtSub = new EventSubProcess("timerEventSub")
+        {
+            Activities = [timerStart, handlerTask, handlerEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("esf1", timerStart, handlerTask),
+                new SequenceFlow("esf2", handlerTask, handlerEnd)
+            ],
+            IsInterrupting = true
+        };
+
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "timer-event-sub-handler-fails",
+            Activities = [start, userTask, end, evtSub],
+            SequenceFlows =
+            [
+                new SequenceFlow("sf1", start, userTask),
+                new SequenceFlow("sf2", userTask, end)
+            ]
+        };
+
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await workflowInstance.SetWorkflow(workflow);
+        await workflowInstance.StartWorkflow();
+
+        var instanceId = workflowInstance.GetPrimaryKey();
+
+        await workflowInstance.HandleTimerFired("timerStart", instanceId);
+
+        var snapshot = await PollForNoActiveActivities(instanceId);
+        Assert.IsNotNull(snapshot);
+        Assert.IsTrue(snapshot.IsCompleted,
+            "Workflow must terminate even when the event sub-process handler fails");
+        Assert.AreEqual(0, snapshot.ActiveActivities.Count);
+
+        // The failed handler is preserved with its error state for inspection.
+        var handler = snapshot.CompletedActivities.SingleOrDefault(a => a.ActivityId == "handlerTask");
+        Assert.IsNotNull(handler);
+        Assert.IsNotNull(handler!.ErrorState,
+            "handlerTask must retain its error state for diagnostics");
+
+        // The EventSubProcess host is closed so the workflow can finalize.
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "timerEventSub"),
+            "timerEventSub host must be marked completed once the failed handler closes the scope");
+    }
+
     private async Task<InstanceStateSnapshot?> PollForNoActiveActivities(
         Guid instanceId, int timeoutMs = 10000)
     {
