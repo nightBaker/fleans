@@ -223,6 +223,54 @@ namespace Fleans.Domain
         }
 
         /// <summary>
+        /// Enumerates all <see cref="EventSubProcess"/> definitions declared directly in this
+        /// scope whose start event is a <see cref="TimerStartEvent"/>. Does NOT recurse into
+        /// nested sub-process scopes — callers register timers scope-by-scope.
+        /// </summary>
+        IEnumerable<(EventSubProcess EventSubProcess, TimerStartEvent TimerStart)> GetEventSubProcessTimers()
+        {
+            foreach (var esp in Activities.OfType<EventSubProcess>())
+            {
+                var timerStart = esp.Activities.OfType<TimerStartEvent>().FirstOrDefault();
+                if (timerStart is not null)
+                    yield return (esp, timerStart);
+            }
+        }
+
+        /// <summary>
+        /// Locates the <see cref="EventSubProcess"/> that declares the given start-event activity
+        /// id, along with the enclosing scope it lives inside. Used on timer fire to route from
+        /// the raw timer activity id back to the event sub-process container and its parent scope.
+        /// Returns null if the activity id does not match any event sub-process start event.
+        /// </summary>
+        (EventSubProcess EventSubProcess, IWorkflowDefinition EnclosingScope)?
+            FindEventSubProcessByStartEvent(string startEventActivityId)
+        {
+            foreach (var esp in Activities.OfType<EventSubProcess>())
+            {
+                if (esp.Activities.Any(a => a.ActivityId == startEventActivityId))
+                    return (esp, this);
+            }
+
+            foreach (var subProcess in Activities.OfType<SubProcess>())
+            {
+                var nested = ((IWorkflowDefinition)subProcess).FindEventSubProcessByStartEvent(startEventActivityId);
+                if (nested is not null) return nested;
+            }
+
+            foreach (var mi in Activities.OfType<MultiInstanceActivity>())
+            {
+                if (mi.InnerActivity is IWorkflowDefinition innerScope)
+                {
+                    var nested = innerScope.FindEventSubProcessByStartEvent(startEventActivityId);
+                    if (nested is not null) return nested;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
         /// Returns activity IDs of sibling catch events that compete with the given activity
         /// after an EventBasedGateway. Returns empty set if the activity is not downstream
         /// of an EventBasedGateway.
