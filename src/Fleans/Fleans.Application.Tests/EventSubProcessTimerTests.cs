@@ -263,5 +263,4 @@ public class EventSubProcessTimerTests : WorkflowTestBase
         Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId == "innerEnd"),
             "innerEnd should not be reached when the handler interrupts the inner flow");
     }
-
 }
