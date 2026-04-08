@@ -608,10 +608,11 @@ public class WorkflowExecution
                 var activity = scopeDefinition.GetActivity(entry.ActivityId);
 
                 var isSubProcess = activity is SubProcess;
+                var isEventSubProcess = activity is EventSubProcess;
                 var isMultiInstanceHost = activity is MultiInstanceActivity
                     && entry.MultiInstanceIndex is null;
 
-                if (!isSubProcess && !isMultiInstanceHost) continue;
+                if (!isSubProcess && !isMultiInstanceHost && !isEventSubProcess) continue;
 
                 var scopeEntries = _state.GetEntriesInScope(entry.ActivityInstanceId);
 
@@ -638,22 +639,33 @@ public class WorkflowExecution
                 // the subprocess should NOT auto-complete — skip both variable merge and completion.
                 if (scopeEntries.Any(e => e.ErrorCode is not null)) continue;
 
-                // SubProcess: merge child scope variables into parent before completing.
-                // Use ParentVariablesId lookup (not entry-based collection) because
-                // internal fork-join may have already removed branch scopes from state.
-                var childScopes = _state.VariableStates
-                    .Where(vs => vs.ParentVariablesId == entry.VariablesId)
-                    .ToList();
-                if (childScopes.Count > 1)
-                    throw new InvalidOperationException(
-                        $"Expected at most one child scope for subprocess host {entry.ActivityId}, found {childScopes.Count}");
-                var childScope = childScopes.FirstOrDefault();
-                if (childScope is not null)
+                if (isSubProcess)
                 {
-                    Emit(new VariablesMerged(entry.VariablesId, childScope.Variables));
-                    // Defer scope removal: nested subprocess transitions (resolved after
-                    // this method returns) may still reference the child scope.
-                    allOrphanedScopeIds.Add(childScope.Id);
+                    // SubProcess: merge child scope variables into parent before completing.
+                    // Use ParentVariablesId lookup (not entry-based collection) because
+                    // internal fork-join may have already removed branch scopes from state.
+                    var childScopes = _state.VariableStates
+                        .Where(vs => vs.ParentVariablesId == entry.VariablesId)
+                        .ToList();
+                    if (childScopes.Count > 1)
+                        throw new InvalidOperationException(
+                            $"Expected at most one child scope for subprocess host {entry.ActivityId}, found {childScopes.Count}");
+                    var childScope = childScopes.FirstOrDefault();
+                    if (childScope is not null)
+                    {
+                        Emit(new VariablesMerged(entry.VariablesId, childScope.Variables));
+                        // Defer scope removal: nested subprocess transitions (resolved after
+                        // this method returns) may still reference the child scope.
+                        allOrphanedScopeIds.Add(childScope.Id);
+                    }
+                }
+                else // EventSubProcess: discard child variable scope(s), no merge back.
+                {
+                    var childScopes = _state.VariableStates
+                        .Where(vs => vs.ParentVariablesId == entry.VariablesId)
+                        .ToList();
+                    foreach (var childScope in childScopes)
+                        allOrphanedScopeIds.Add(childScope.Id);
                 }
 
                 // All scope children are done — complete the sub-process host.
