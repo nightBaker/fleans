@@ -74,15 +74,19 @@ public static class BaselineMigrations
                 """;
             await cmd.ExecuteNonQueryAsync(cancellationToken);
 
-            // Insert the baseline row if it hasn't been recorded yet
+            // Insert the baseline row if it hasn't been recorded yet (parameterized to prevent SQL injection)
             var productVersion = ProductInfo.GetVersion();
-            cmd.CommandText = $"""
+            cmd.CommandText = """
                 INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
-                SELECT '{migrationId}', '{productVersion}'
+                SELECT @migrationId, @productVersion
                 WHERE NOT EXISTS (
-                    SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = '{migrationId}'
+                    SELECT 1 FROM "__EFMigrationsHistory" WHERE "MigrationId" = @migrationId
                 )
                 """;
+            var p1 = cmd.CreateParameter(); p1.ParameterName = "@migrationId"; p1.Value = migrationId;
+            var p2 = cmd.CreateParameter(); p2.ParameterName = "@productVersion"; p2.Value = productVersion;
+            cmd.Parameters.Add(p1);
+            cmd.Parameters.Add(p2);
             await cmd.ExecuteNonQueryAsync(cancellationToken);
         }
         finally

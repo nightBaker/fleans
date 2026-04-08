@@ -37,8 +37,10 @@ public static class PostgresPersistenceDependencyInjection
         if (queryConnectionString is not null && queryConnectionString != connectionString)
         {
             queryDataSource = NpgsqlDataSource.Create(queryConnectionString);
-            // Register as a named service so it can be resolved and disposed.
-            services.AddSingleton<NpgsqlDataSource>(queryDataSource);
+            // Register under a distinct key so DI owns its lifetime (disposed on host shutdown)
+            // without shadowing the command data source resolved via GetService<NpgsqlDataSource>().
+            // Future read-replica wiring should resolve via GetKeyedService<NpgsqlDataSource>("fleans-query").
+            services.AddKeyedSingleton("fleans-query", queryDataSource);
         }
 
         var effectiveQueryDataSource = queryDataSource ?? commandDataSource;
