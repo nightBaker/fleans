@@ -121,14 +121,11 @@ using (var scope = app.Services.CreateScope())
     }
     else
     {
-        // PostgreSQL: apply migrations (creates tables on first run, no-op on subsequent runs)
+        // PostgreSQL: apply command migrations only (command and query share the same database;
+        // there are no separate query migrations — the query context reads the same schema).
         var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>();
         await using var commandDb = dbFactory.CreateDbContext();
         await commandDb.Database.MigrateAsync();
-
-        var queryFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<FleanQueryDbContext>>();
-        await using var queryDb = queryFactory.CreateDbContext();
-        await queryDb.Database.MigrateAsync();
     }
 }
 
