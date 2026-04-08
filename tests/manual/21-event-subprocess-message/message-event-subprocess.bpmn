@@ -7,7 +7,9 @@
              id="EventSubProcessMessageDefinitions"
              targetNamespace="http://fleans/tests">
   <message id="cancelOrderMsg" name="cancelOrder">
-    <zeebe:subscription correlationKey="= orderId" />
+    <extensionElements>
+      <zeebe:subscription correlationKey="= orderId" />
+    </extensionElements>
   </message>
 
   <process id="evtSubMessageProcess" isExecutable="true">

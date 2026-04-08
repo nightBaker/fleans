@@ -33,7 +33,11 @@ namespace Fleans.Api.Controllers
                 return BadRequest(new ErrorResponse("WorkflowId is required"));
             }
 
-            var instanceId = await _commandService.StartWorkflow(request.WorkflowId);
+            var initialVariables = request.Variables != null
+                ? VariableConverter.ToExpandoObject(request.Variables)
+                : null;
+
+            var instanceId = await _commandService.StartWorkflow(request.WorkflowId, initialVariables);
             return Ok(new StartWorkflowResponse(instanceId));
         }
 

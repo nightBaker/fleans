@@ -26,8 +26,6 @@ correlation key against the variables snapshot at that moment.
    ```json
    {"WorkflowId":"evtSubMessageProcess","Variables":{"orderId":"ORD-123"}}
    ```
-   (If the start endpoint does not accept initial variables, create the
-   instance via the Web UI and set `orderId=ORD-123` before starting it.)
 3. Confirm `userTask` is active in the Web UI. Do NOT complete it.
 4. **Deliver a correlated message**:
    `POST https://localhost:7140/Workflow/message`
