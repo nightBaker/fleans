@@ -1,5 +1,6 @@
 using Fleans.Application;
 using Fleans.Application.Events;
+using Fleans.Application.QueryModels;
 using Fleans.Application.Scripts;
 using Fleans.Application.Conditions;
 using Fleans.Domain;
@@ -57,6 +58,24 @@ public abstract class WorkflowTestBase
     /// (snapshot + event replay).
     /// Note: This deactivates ALL grains globally, not a specific grain.
     /// </summary>
+    /// <summary>
+    /// Polls the query service until the workflow instance has no active activities,
+    /// or until the timeout expires. Shared across integration test classes.
+    /// </summary>
+    protected async Task<InstanceStateSnapshot?> PollForNoActiveActivities(
+        Guid instanceId, int timeoutMs = 10000)
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+        while (DateTime.UtcNow < deadline)
+        {
+            var snapshot = await QueryService.GetStateSnapshot(instanceId);
+            if (snapshot is not null && snapshot.ActiveActivities.Count == 0)
+                return snapshot;
+            await Task.Delay(100);
+        }
+        return await QueryService.GetStateSnapshot(instanceId);
+    }
+
     protected async Task ForceAllGrainDeactivation()
     {
         var managementGrain = Cluster.GrainFactory.GetGrain<IManagementGrain>(0);
