@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             id="EventSubProcessErrorDefinitions"
+             targetNamespace="http://fleans/tests">
+  <process id="evtSubErrorProcess" isExecutable="true">
+    <startEvent id="start"/>
+    <scriptTask id="failingTask" scriptFormat="csharp">
+      <script>throw new System.Exception("boom");</script>
+    </scriptTask>
+    <endEvent id="normalEnd"/>
+
+    <sequenceFlow id="sf1" sourceRef="start" targetRef="failingTask"/>
+    <sequenceFlow id="sf2" sourceRef="failingTask" targetRef="normalEnd"/>
+
+    <subProcess id="errorEventSub" triggeredByEvent="true">
+      <startEvent id="errStart">
+        <errorEventDefinition errorRef="Err500"/>
+      </startEvent>
+      <scriptTask id="handlerTask" scriptFormat="csharp">
+        <script>return new System.Dynamic.ExpandoObject();</script>
+      </scriptTask>
+      <endEvent id="handlerEnd"/>
+      <sequenceFlow id="esf1" sourceRef="errStart" targetRef="handlerTask"/>
+      <sequenceFlow id="esf2" sourceRef="handlerTask" targetRef="handlerEnd"/>
+    </subProcess>
+  </process>
+
+  <error id="Err500" errorCode="500"/>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="evtSubErrorProcess">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="100" y="100" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="failingTask_di" bpmnElement="failingTask">
+        <dc:Bounds x="200" y="80" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="normalEnd_di" bpmnElement="normalEnd">
+        <dc:Bounds x="360" y="100" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="errorEventSub_di" bpmnElement="errorEventSub" isExpanded="true">
+        <dc:Bounds x="100" y="220" width="340" height="160"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="errStart_di" bpmnElement="errStart">
+        <dc:Bounds x="130" y="280" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="handlerTask_di" bpmnElement="handlerTask">
+        <dc:Bounds x="220" y="258" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="handlerEnd_di" bpmnElement="handlerEnd">
+        <dc:Bounds x="370" y="280" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="sf1_di" bpmnElement="sf1">
+        <di:waypoint x="136" y="118"/>
+        <di:waypoint x="200" y="118"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf2_di" bpmnElement="sf2">
+        <di:waypoint x="300" y="118"/>
+        <di:waypoint x="360" y="118"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="esf1_di" bpmnElement="esf1">
+        <di:waypoint x="166" y="298"/>
+        <di:waypoint x="220" y="298"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="esf2_di" bpmnElement="esf2">
+        <di:waypoint x="320" y="298"/>
+        <di:waypoint x="370" y="298"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>
