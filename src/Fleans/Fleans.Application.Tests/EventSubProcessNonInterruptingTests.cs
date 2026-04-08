@@ -251,17 +251,4 @@ public class EventSubProcessNonInterruptingTests : WorkflowTestBase
             "'handlerVar' must NOT appear in the scope that owns 'parentVar' — scope isolation is broken");
     }
 
-    private async Task<InstanceStateSnapshot?> PollForNoActiveActivities(
-        Guid instanceId, int timeoutMs = 10000)
-    {
-        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
-        while (DateTime.UtcNow < deadline)
-        {
-            var snapshot = await QueryService.GetStateSnapshot(instanceId);
-            if (snapshot is not null && snapshot.ActiveActivities.Count == 0)
-                return snapshot;
-            await Task.Delay(100);
-        }
-        return await QueryService.GetStateSnapshot(instanceId);
-    }
 }
