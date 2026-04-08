@@ -299,9 +299,11 @@ public class WorkflowExecution
                     if (otherActive)
                         break; // Defer — workflow will complete when last EndEvent fires
 
-                    // Unregister any still-armed root-scope event sub-process timers.
+                    // Unregister any still-armed root-scope event sub-process listeners.
                     effects.AddRange(BuildEventSubProcessPeerUnregisterEffects(
-                        _definition, scopeContainerId: null, skipStartEventActivityId: null));
+                        _definition, scopeContainerId: null,
+                        scopeVariablesId: _state.GetRootVariablesId(),
+                        skipStartEventActivityId: null));
 
                     Emit(new WorkflowCompleted());
                     // If this is a child workflow, notify parent of completion
@@ -432,10 +434,12 @@ public class WorkflowExecution
             MultiInstanceIndex: null,
             TokenId: null));
 
-        // Register any event sub-process timers declared directly in this SubProcess
-        // scope — the timers are keyed to the SubProcess host instance so they are
-        // uniquely cleaned up on scope exit.
+        // Register any event sub-process timers / message listeners declared directly
+        // in this SubProcess scope — they are keyed to the SubProcess host instance so
+        // they are uniquely cleaned up on scope exit.
         effects.AddRange(BuildEventSubProcessTimerRegistrations(openSub.SubProcess, hostActivityInstanceId));
+        effects.AddRange(BuildEventSubProcessMessageRegistrations(
+            openSub.SubProcess, hostActivityInstanceId, newScopeId));
     }
 
     /// <summary>
@@ -458,6 +462,26 @@ public class WorkflowExecution
     }
 
     /// <summary>
+    /// Enumerates event sub-process message start events declared directly in
+    /// <paramref name="scope"/> and produces a <see cref="SubscribeMessageEffect"/> for each.
+    /// Correlation key is resolved against the enclosing scope's variables.
+    /// </summary>
+    private List<IInfrastructureEffect> BuildEventSubProcessMessageRegistrations(
+        IWorkflowDefinition scope, Guid scopeContainerId, Guid scopeVariablesId)
+    {
+        var list = new List<IInfrastructureEffect>();
+        foreach (var (_, messageStart) in scope.GetEventSubProcessMessages())
+        {
+            var messageDef = _definition.GetMessageDefinition(messageStart.MessageDefinitionId);
+            var correlationKey = ResolveCorrelationKey(messageDef, scopeVariablesId);
+            list.Add(new SubscribeMessageEffect(
+                messageDef.Name, correlationKey,
+                _state.Id, messageStart.ActivityId, scopeContainerId));
+        }
+        return list;
+    }
+
+    /// <summary>
     /// Root-scope variant of <see cref="BuildEventSubProcessTimerRegistrations(IWorkflowDefinition, Guid)"/>.
     /// At the root scope there is no SubProcess host activity instance, so the workflow
     /// instance id (<c>_state.Id</c>) is used as a stable synthetic host id. Callable from
@@ -465,7 +489,13 @@ public class WorkflowExecution
     /// root-scope listeners.
     /// </summary>
     public IReadOnlyList<IInfrastructureEffect> BuildRootScopeEntryEffects()
-        => BuildEventSubProcessTimerRegistrations(_definition, _state.Id).AsReadOnly();
+    {
+        var list = new List<IInfrastructureEffect>();
+        list.AddRange(BuildEventSubProcessTimerRegistrations(_definition, _state.Id));
+        list.AddRange(BuildEventSubProcessMessageRegistrations(
+            _definition, _state.Id, _state.GetRootVariablesId()));
+        return list.AsReadOnly();
+    }
 
     private SubscribeMessageEffect ProcessRegisterMessage(
         RegisterMessageCommand msg, Guid activityInstanceId)
@@ -577,6 +607,21 @@ public class WorkflowExecution
     public IReadOnlyList<IInfrastructureEffect> HandleMessageDelivery(
         string activityId, Guid hostActivityInstanceId, ExpandoObject variables)
     {
+        // Event sub-process message path: the delivered message targets a
+        // MessageStartEvent inside an EventSubProcess. Route before the
+        // stale-entry guard (the root-scope host id has no matching entry).
+        var espMatch = _definition.FindEventSubProcessByStartEvent(activityId);
+        if (espMatch is not null && espMatch.Value.EventSubProcess.Activities
+                .OfType<MessageStartEvent>()
+                .Any(m => m.ActivityId == activityId))
+        {
+            return TryActivateMessageEventSubProcess(
+                espMatch.Value.EventSubProcess,
+                espMatch.Value.EnclosingScope,
+                hostActivityInstanceId,
+                variables);
+        }
+
         // Stale guard: if entry is no longer active, ignore
         var entry = _state.FindEntry(hostActivityInstanceId);
         if (entry is null || entry.IsCompleted)
@@ -747,7 +792,9 @@ public class WorkflowExecution
                 {
                     var subDef = (IWorkflowDefinition)(SubProcess)activity;
                     allEffects.AddRange(BuildEventSubProcessPeerUnregisterEffects(
-                        subDef, entry.ActivityInstanceId, skipStartEventActivityId: null));
+                        subDef, entry.ActivityInstanceId,
+                        scopeVariablesId: entry.VariablesId,
+                        skipStartEventActivityId: null));
                 }
 
                 allCompletedHostIds.Add(entry.ActivityInstanceId);
@@ -765,9 +812,11 @@ public class WorkflowExecution
             && !_state.IsCompleted
             && !_state.GetActiveActivities().Any())
         {
-            // Unregister any still-armed root-scope event sub-process timers.
+            // Unregister any still-armed root-scope event sub-process listeners.
             allEffects.AddRange(BuildEventSubProcessPeerUnregisterEffects(
-                _definition, scopeContainerId: null, skipStartEventActivityId: null));
+                _definition, scopeContainerId: null,
+                scopeVariablesId: _state.GetRootVariablesId(),
+                skipStartEventActivityId: null));
 
             Emit(new WorkflowCompleted());
             if (_state.ParentWorkflowInstanceId.HasValue)
@@ -1145,10 +1194,12 @@ public class WorkflowExecution
             MultiInstanceIndex: null,
             TokenId: null));
 
-        // Deregister peer event-sub timer listeners on the enclosing scope — we
-        // interrupted the scope, so any still-armed event-sub timers should not fire.
+        // Deregister peer event-sub listeners on the enclosing scope — we
+        // interrupted the scope, so any still-armed event-sub listeners must not fire.
         effects.AddRange(BuildEventSubProcessPeerUnregisterEffects(
-            enclosingScope, enclosingScopeContainerId, skipStartEventActivityId: null));
+            enclosingScope, enclosingScopeContainerId,
+            scopeVariablesId: enclosingScopeVariablesId,
+            skipStartEventActivityId: null));
 
         return true;
     }
@@ -1249,23 +1300,129 @@ public class WorkflowExecution
             MultiInstanceIndex: null,
             TokenId: null));
 
-        // 5. Peer deregistration — unregister any other event-sub timers on the
-        //    enclosing scope (skip this one; its grain already fired and will
+        // 5. Peer deregistration — unregister any other event-sub listeners on the
+        //    enclosing scope (skip this timer; its grain already fired and will
         //    deactivate itself).
         effects.AddRange(BuildEventSubProcessPeerUnregisterEffects(
-            enclosingScope, enclosingScopeContainerId, skipStartEventActivityId: timerStart.ActivityId));
+            enclosingScope, enclosingScopeContainerId,
+            scopeVariablesId: enclosingScopeVariablesId,
+            skipStartEventActivityId: timerStart.ActivityId));
 
         return effects.AsReadOnly();
     }
 
     /// <summary>
-    /// Produces <see cref="UnregisterTimerEffect"/>s for every event sub-process timer
-    /// declared directly inside <paramref name="scope"/>, optionally skipping a single
-    /// start-event activity id (used when an event sub-process fires and its own timer
-    /// grain has already deactivated itself).
+    /// Mirrors <see cref="TryActivateTimerEventSubProcess"/> for message-triggered event
+    /// sub-processes. Invoked from <see cref="HandleMessageDelivery"/> when the delivered
+    /// message targets a <see cref="MessageStartEvent"/> inside an <see cref="EventSubProcess"/>.
+    /// Interrupting-only (slice #D). Delivered variables are merged into the handler's
+    /// isolated child variable scope so the handler script can access them.
+    /// </summary>
+    private IReadOnlyList<IInfrastructureEffect> TryActivateMessageEventSubProcess(
+        EventSubProcess eventSubProcess,
+        IWorkflowDefinition enclosingScope,
+        Guid scopeContainerHostId,
+        ExpandoObject deliveredVariables)
+    {
+        var messageStart = eventSubProcess.Activities.OfType<MessageStartEvent>().First();
+
+        var enclosingScopeContainerId = scopeContainerHostId == _state.Id
+            ? (Guid?)null
+            : scopeContainerHostId;
+
+        // Stale guard: if the enclosing scope has already terminated, ignore the firing.
+        if (enclosingScopeContainerId.HasValue)
+        {
+            var containerEntry = _state.FindEntry(enclosingScopeContainerId.Value);
+            if (containerEntry is null || containerEntry.IsCompleted)
+                return [];
+        }
+        else if (_state.IsCompleted)
+        {
+            return [];
+        }
+
+        // Guard: if this event sub-process already has an active scope entry, skip.
+        if (_state.GetActiveActivities().Any(e =>
+                e.ActivityId == eventSubProcess.ActivityId
+                && e.ScopeId == enclosingScopeContainerId))
+            return [];
+
+        var enclosingScopeVariablesId = ResolveEnclosingScopeVariablesId(enclosingScopeContainerId);
+        var effects = new List<IInfrastructureEffect>();
+
+        // 1. Cancel active siblings in the enclosing scope.
+        if (enclosingScopeContainerId.HasValue)
+        {
+            effects.AddRange(CancelScopeChildren(enclosingScopeContainerId.Value));
+        }
+        else
+        {
+            foreach (var sibling in _state.GetActiveActivities()
+                .Where(e => e.ScopeId is null)
+                .ToList())
+            {
+                if (_state.HasActiveChildrenInScope(sibling.ActivityInstanceId))
+                    effects.AddRange(CancelScopeChildren(sibling.ActivityInstanceId));
+
+                Emit(new ActivityCancelled(
+                    sibling.ActivityInstanceId,
+                    $"Scope cancelled by message event sub-process '{eventSubProcess.ActivityId}'"));
+                effects.AddRange(BuildUserTaskCleanupEffects(sibling.ActivityInstanceId));
+            }
+        }
+
+        // 2. Spawn the EventSubProcess host as a new scope container.
+        var espInstanceId = Guid.NewGuid();
+        Emit(new ActivitySpawned(
+            ActivityInstanceId: espInstanceId,
+            ActivityId: eventSubProcess.ActivityId,
+            ActivityType: nameof(EventSubProcess),
+            VariablesId: enclosingScopeVariablesId,
+            ScopeId: enclosingScopeContainerId,
+            MultiInstanceIndex: null,
+            TokenId: null));
+
+        // 3. Child variable scope for the handler, seeded with the delivered variables.
+        var handlerScopeId = Guid.NewGuid();
+        Emit(new ChildVariableScopeCreated(handlerScopeId, enclosingScopeVariablesId));
+        if (((IDictionary<string, object?>)deliveredVariables).Count > 0)
+            Emit(new VariablesMerged(handlerScopeId, deliveredVariables));
+
+        // 4. Spawn the MessageStartEvent inside the EventSubProcess scope.
+        Emit(new ActivitySpawned(
+            ActivityInstanceId: Guid.NewGuid(),
+            ActivityId: messageStart.ActivityId,
+            ActivityType: nameof(MessageStartEvent),
+            VariablesId: handlerScopeId,
+            ScopeId: espInstanceId,
+            MultiInstanceIndex: null,
+            TokenId: null));
+
+        // 5. Peer deregistration — unregister other event-sub listeners (skip this
+        //    message; its subscription was already consumed by DeliverMessage).
+        effects.AddRange(BuildEventSubProcessPeerUnregisterEffects(
+            enclosingScope, enclosingScopeContainerId,
+            scopeVariablesId: enclosingScopeVariablesId,
+            skipStartEventActivityId: messageStart.ActivityId));
+
+        return effects.AsReadOnly();
+    }
+
+    /// <summary>
+    /// Produces unregister/unsubscribe effects for every event sub-process listener
+    /// (timer and message) declared directly inside <paramref name="scope"/>, optionally
+    /// skipping a single start-event activity id (used when an event sub-process fires
+    /// and its own listener has already been consumed on the infrastructure side).
+    ///
+    /// The message correlation key is re-resolved against <paramref name="scopeVariablesId"/>
+    /// — the same value used at registration — so unsubscribe targets the same
+    /// subscription entry. Callers pass the enclosing scope's variables id (e.g. the
+    /// SubProcess host's variables or the root variables).
     /// </summary>
     private List<IInfrastructureEffect> BuildEventSubProcessPeerUnregisterEffects(
-        IWorkflowDefinition scope, Guid? scopeContainerId, string? skipStartEventActivityId)
+        IWorkflowDefinition scope, Guid? scopeContainerId, Guid scopeVariablesId,
+        string? skipStartEventActivityId)
     {
         var hostId = scopeContainerId ?? _state.Id;
         var list = new List<IInfrastructureEffect>();
@@ -1273,6 +1430,13 @@ public class WorkflowExecution
         {
             if (timerStart.ActivityId == skipStartEventActivityId) continue;
             list.Add(new UnregisterTimerEffect(_state.Id, hostId, timerStart.ActivityId));
+        }
+        foreach (var (_, messageStart) in scope.GetEventSubProcessMessages())
+        {
+            if (messageStart.ActivityId == skipStartEventActivityId) continue;
+            var messageDef = _definition.GetMessageDefinition(messageStart.MessageDefinitionId);
+            var correlationKey = ResolveCorrelationKey(messageDef, scopeVariablesId);
+            list.Add(new UnsubscribeMessageEffect(messageDef.Name, correlationKey));
         }
         return list;
     }
@@ -1401,8 +1565,8 @@ public class WorkflowExecution
             effects.AddRange(BuildUserTaskCleanupEffects(entry.ActivityInstanceId));
         }
 
-        // Unregister event sub-process timers declared inside the cancelled scope
-        // (e.g. a SubProcess being interrupted by a boundary timer on its host).
+        // Unregister event sub-process listeners declared inside the cancelled scope
+        // (e.g. a SubProcess being interrupted by a boundary event on its host).
         var scopeEntry = _state.FindEntry(scopeId);
         if (scopeEntry is not null)
         {
@@ -1410,7 +1574,9 @@ public class WorkflowExecution
             if (scopeActivity is SubProcess cancelledSub)
             {
                 effects.AddRange(BuildEventSubProcessPeerUnregisterEffects(
-                    cancelledSub, scopeId, skipStartEventActivityId: null));
+                    cancelledSub, scopeId,
+                    scopeVariablesId: scopeEntry.VariablesId,
+                    skipStartEventActivityId: null));
             }
         }
 

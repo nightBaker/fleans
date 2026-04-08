@@ -238,6 +238,21 @@ namespace Fleans.Domain
         }
 
         /// <summary>
+        /// Enumerates all <see cref="EventSubProcess"/> definitions declared directly in this
+        /// scope whose start event is a <see cref="MessageStartEvent"/>. Does NOT recurse into
+        /// nested sub-process scopes — callers register listeners scope-by-scope.
+        /// </summary>
+        IEnumerable<(EventSubProcess EventSubProcess, MessageStartEvent MessageStart)> GetEventSubProcessMessages()
+        {
+            foreach (var esp in Activities.OfType<EventSubProcess>())
+            {
+                var messageStart = esp.Activities.OfType<MessageStartEvent>().FirstOrDefault();
+                if (messageStart is not null)
+                    yield return (esp, messageStart);
+            }
+        }
+
+        /// <summary>
         /// Locates the <see cref="EventSubProcess"/> that declares the given start-event activity
         /// id, along with the enclosing scope it lives inside. Used on timer fire to route from
         /// the raw timer activity id back to the event sub-process container and its parent scope.
