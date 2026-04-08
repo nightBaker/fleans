@@ -1,0 +1,187 @@
+# Scheduled analyst review
+#
+# Runs on an hourly cron and uses Claude Code (acting as a senior system analyst)
+# to review every issue/card currently in the "In analysis" column of the
+# GitHub Projects v2 board at:
+#
+#   https://github.com/users/nightBaker/projects/1
+#
+# For each item, Claude pulls the linked issue, performs a structured system-
+# analyst review, and posts the review back as a comment on the issue.
+#
+# ---------------------------------------------------------------------------
+# Required repository secrets
+# ---------------------------------------------------------------------------
+#   ANTHROPIC_API_KEY      Anthropic API key for Claude Code Action.
+#   PROJECTS_GITHUB_TOKEN  A Personal Access Token (classic) with scopes:
+#                              repo, read:project, write:project
+#                          The default GITHUB_TOKEN cannot read **user-level**
+#                          project boards (github.com/users/<name>/projects/<n>),
+#                          so a PAT is required to query the board.
+# ---------------------------------------------------------------------------
+
+name: Scheduled Analyst Review
+
+on:
+  schedule:
+    # Every hour at :00. Adjust cadence here if needed.
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: analyst-review
+  cancel-in-progress: false
+
+jobs:
+  review:
+    name: Review "In analysis" tasks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Claude Code as senior system analyst
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.PROJECTS_GITHUB_TOKEN }}
+          claude_args: |
+            --allowedTools "Bash(gh api:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh project:*),Read,Grep,Glob"
+          prompt: |
+            You are a **senior system analyst** performing a scheduled review of
+            analysis tasks on a GitHub project board. Use your full analytical
+            superpowers.
+
+            ## Board
+            - Owner: user `nightBaker`
+            - Project number: `1`
+            - URL: https://github.com/users/nightBaker/projects/1
+            - Target column / status: **"In analysis"**
+
+            ## Steps (execute in order)
+
+            1. **Discover items in "In analysis".** Query the Projects v2 API
+               via the GitHub CLI and list every item whose `Status` field
+               equals `In analysis`. Example GraphQL query:
+
+               ```graphql
+               query($login: String!, $number: Int!) {
+                 user(login: $login) {
+                   projectV2(number: $number) {
+                     id
+                     items(first: 100) {
+                       nodes {
+                         id
+                         content {
+                           ... on Issue {
+                             number
+                             title
+                             body
+                             url
+                             repository { nameWithOwner }
+                           }
+                           ... on PullRequest {
+                             number
+                             title
+                             url
+                             repository { nameWithOwner }
+                           }
+                         }
+                         fieldValues(first: 20) {
+                           nodes {
+                             ... on ProjectV2ItemFieldSingleSelectValue {
+                               name
+                               field { ... on ProjectV2SingleSelectField { name } }
+                             }
+                           }
+                         }
+                       }
+                     }
+                   }
+                 }
+               }
+               ```
+
+               Invoke it with:
+
+               ```
+               gh api graphql \
+                 -F login=nightBaker -F number=1 \
+                 -f query='<the query above>'
+               ```
+
+               Keep only nodes whose `Status` single-select value is exactly
+               `In analysis` and that point at an Issue (skip draft cards and
+               pull requests for now).
+
+            2. **For each matched issue:**
+
+               a. Fetch the full issue body and recent comments:
+                  ```
+                  gh issue view <number> --repo <owner/repo> --json title,body,comments,labels,author
+                  ```
+
+               b. **Skip if already reviewed recently.** If any comment within
+                  the last 24 hours has a body that starts with
+                  `## Analyst Review (automated)`, skip this issue and log
+                  "skipped: already reviewed".
+
+               c. Otherwise, perform a **thorough system-analyst review**
+                  covering every section below. Be concrete — cite exact
+                  phrases from the issue, point out what is missing, and
+                  ask specific clarifying questions.
+
+                  - **Summary** — 1–2 sentence restatement of what the task is.
+                  - **Requirements clarity** — Are the functional requirements
+                    unambiguous? Call out vague terms.
+                  - **Completeness** — What's missing (inputs, outputs, actors,
+                    preconditions, postconditions)?
+                  - **Acceptance criteria** — Present? Testable? If missing,
+                    propose a draft set using Given/When/Then.
+                  - **Technical feasibility** — Any red flags, architectural
+                    concerns, or conflicts with existing Fleans patterns
+                    (Orleans grains, JournaledGrain event sourcing, BPMN
+                    converter, Clean Architecture boundaries)?
+                  - **Edge cases & error scenarios** — List at least 3 the
+                    author probably hasn't considered.
+                  - **Dependencies** — Upstream/downstream work, other issues,
+                    external systems.
+                  - **Risks** — Technical, scope, timing, data-integrity.
+                  - **Open questions** — Numbered list for the author to answer.
+                  - **Verdict** — One of: `Ready for development`,
+                    `Needs clarification`, or `Blocked`. Justify in one line.
+
+               d. **Post the review as a comment** on the issue. The comment
+                  body **must** start with the exact marker line
+                  `## Analyst Review (automated)` on its own line (the skip
+                  check in step 2b depends on this). Follow with the current
+                  UTC timestamp, then the sections above in markdown.
+
+                  Post via:
+                  ```
+                  gh issue comment <number> --repo <owner/repo> --body-file <path>
+                  ```
+
+            3. **Final summary.** At the end of the run, output a short report:
+               - total items found in "In analysis"
+               - reviews posted
+               - items skipped (and why)
+               - any errors encountered
+
+            ## Hard constraints
+            - **Do not modify repository files, open PRs, or push commits.**
+              This job is read-only against code and write-only against issue
+              comments.
+            - **Do not re-review** an issue that already has a recent
+              `## Analyst Review (automated)` comment (within 24h).
+            - Be professional, specific, and actionable. Do not post generic
+              filler. Every bullet must reference something concrete in the
+              issue (or explicitly note it as missing).
+            - If the "In analysis" column is empty, exit cleanly with a
+              summary saying so — this is a valid successful run.
