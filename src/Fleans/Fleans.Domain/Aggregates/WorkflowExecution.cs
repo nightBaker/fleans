@@ -589,6 +589,11 @@ public class WorkflowExecution
         var allEffects = new List<IInfrastructureEffect>();
         var allCompletedHostIds = new List<Guid>();
         var allOrphanedScopeIds = new List<Guid>();
+        // Event sub-processes have no outgoing sequence flows, so when a root-scope
+        // EventSubProcess completes we must emit WorkflowCompleted directly — the
+        // normal path (outgoing flow → root EndEvent → CompleteWorkflowCommand) is
+        // unavailable.
+        var completedRootEventSubProcess = false;
 
         const int maxIterations = 100;
         var iteration = 0;
@@ -677,8 +682,29 @@ public class WorkflowExecution
                 allEffects.AddRange(effects);
                 allCompletedHostIds.Add(entry.ActivityInstanceId);
                 anyCompleted = true;
+
+                if (isEventSubProcess && entry.ScopeId is null)
+                    completedRootEventSubProcess = true;
             }
         } while (anyCompleted);
+
+        // If a root-scope EventSubProcess just completed and nothing else is active,
+        // finalize the workflow here — no outgoing flow exists to carry the token to
+        // a root EndEvent.
+        if (completedRootEventSubProcess
+            && !_state.IsCompleted
+            && !_state.GetActiveActivities().Any())
+        {
+            Emit(new WorkflowCompleted());
+            if (_state.ParentWorkflowInstanceId.HasValue)
+            {
+                var rootVariables = _state.GetMergedVariables(_state.GetRootVariablesId());
+                allEffects.Add(new NotifyParentCompletedEffect(
+                    _state.ParentWorkflowInstanceId.Value,
+                    _state.ParentActivityId!,
+                    rootVariables));
+            }
+        }
 
         return (allEffects.AsReadOnly(), allCompletedHostIds.AsReadOnly(), allOrphanedScopeIds.AsReadOnly());
     }
