@@ -3,6 +3,7 @@ using Fleans.Domain.Activities;
 using Fleans.Domain.Persistence;
 using Fleans.Domain.Sequences;
 using Microsoft.Data.Sqlite;
+using Fleans.Persistence.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
 namespace Fleans.Persistence.Tests;
@@ -22,11 +23,11 @@ public class EfCoreProcessDefinitionRepositoryTests
         _connection.Open();
 
         var commandOptions = new DbContextOptionsBuilder<FleanCommandDbContext>()
-            .UseSqlite(_connection)
+            .UseFleansSqlite(_connection)
             .Options;
 
         var queryOptions = new DbContextOptionsBuilder<FleanQueryDbContext>()
-            .UseSqlite(_connection)
+            .UseFleansSqlite(_connection)
             .Options;
 
         _dbContextFactory = new TestDbContextFactory(commandOptions);

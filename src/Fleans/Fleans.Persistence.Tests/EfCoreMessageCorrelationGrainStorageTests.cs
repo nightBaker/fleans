@@ -1,5 +1,6 @@
 using Fleans.Domain.States;
 using Microsoft.Data.Sqlite;
+using Fleans.Persistence.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Orleans.Runtime;
 using Orleans.Storage;
@@ -21,7 +22,7 @@ public class EfCoreMessageCorrelationGrainStorageTests
         _connection.Open();
 
         var options = new DbContextOptionsBuilder<FleanCommandDbContext>()
-            .UseSqlite(_connection)
+            .UseFleansSqlite(_connection)
             .Options;
 
         _dbContextFactory = new TestDbContextFactory(options);

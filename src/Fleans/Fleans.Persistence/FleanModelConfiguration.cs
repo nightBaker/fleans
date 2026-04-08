@@ -40,14 +40,10 @@ internal static class FleanModelConfiguration
 
             entity.Property(e => e.ProcessDefinitionId).HasMaxLength(512);
 
-            // SQLite does not support DateTimeOffset in ORDER BY.
-            // Store as ISO 8601 strings so Sieve sorting works correctly.
-            var dtoConverter = new ValueConverter<DateTimeOffset?, string?>(
-                v => v.HasValue ? v.Value.ToString("O") : null,
-                v => v != null ? DateTimeOffset.Parse(v) : null);
-            entity.Property(e => e.CreatedAt).HasConversion(dtoConverter);
-            entity.Property(e => e.ExecutionStartedAt).HasConversion(dtoConverter);
-            entity.Property(e => e.CompletedAt).HasConversion(dtoConverter);
+            // DateTimeOffset columns (CreatedAt / ExecutionStartedAt / CompletedAt) are stored
+            // natively in the shared model. Provider packages may override this — e.g. the
+            // SQLite provider applies a string converter via its IModelCustomizer because SQLite
+            // does not support DateTimeOffset in ORDER BY.
 
             // UserTasks is an in-memory dictionary rehydrated from the UserTasks table on activation.
             entity.Ignore(e => e.UserTasks);
@@ -243,12 +239,8 @@ internal static class FleanModelConfiguration
                     v => v == null ? null : JsonConvert.SerializeObject(v),
                     v => v == null ? null : JsonConvert.DeserializeObject<List<string>>(v));
 
-            // SQLite does not support DateTimeOffset in ORDER BY.
-            // Store as ISO 8601 string so Sieve sorting works correctly.
-            entity.Property(e => e.CreatedAt)
-                .HasConversion(
-                    v => v.ToString("O"),
-                    v => DateTimeOffset.Parse(v));
+            // CreatedAt is stored natively; SQLite provider package overrides this with a
+            // string converter (see SqliteModelCustomizer).
 
             entity.HasOne<WorkflowInstanceState>()
                 .WithMany()
@@ -272,12 +264,8 @@ internal static class FleanModelConfiguration
 
             entity.Property(e => e.IsActive).HasDefaultValue(true);
 
-            // SQLite does not support DateTimeOffset in ORDER BY.
-            // Store as ISO 8601 string so Sieve sorting works correctly.
-            entity.Property(e => e.DeployedAt)
-                .HasConversion(
-                    v => v.ToString("O"),
-                    v => DateTimeOffset.Parse(v));
+            // DeployedAt is stored natively; SQLite provider package overrides this with a
+            // string converter (see SqliteModelCustomizer).
 
             var jsonSettings = new JsonSerializerSettings
             {

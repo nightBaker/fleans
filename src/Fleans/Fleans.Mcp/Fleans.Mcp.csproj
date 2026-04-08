@@ -10,12 +10,12 @@
     <ProjectReference Include="..\Fleans.Application\Fleans.Application.csproj" />
     <ProjectReference Include="..\Fleans.Infrastructure\Fleans.Infrastructure.csproj" />
     <ProjectReference Include="..\Fleans.Persistence\Fleans.Persistence.csproj" />
+    <ProjectReference Include="..\Fleans.Persistence.Sqlite\Fleans.Persistence.Sqlite.csproj" />
     <ProjectReference Include="..\Fleans.ServiceDefaults\Fleans.ServiceDefaults.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Aspire.StackExchange.Redis" Version="13.1.1" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.5" />
     <PackageReference Include="Microsoft.Orleans.Client" Version="10.0.1" />
     <PackageReference Include="Microsoft.Orleans.Clustering.Redis" Version="10.0.1" />
     <PackageReference Include="Microsoft.Orleans.Sdk" Version="10.0.1" />

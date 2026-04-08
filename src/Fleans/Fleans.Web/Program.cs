@@ -1,6 +1,7 @@
 using Fleans.Application;
 using Fleans.Infrastructure;
 using Fleans.Persistence;
+using Fleans.Persistence.Sqlite;
 using Fleans.Web.Components;
 using Fleans.Web.Services;
 using Microsoft.EntityFrameworkCore;
@@ -27,11 +28,7 @@ builder.Services.AddInfrastructure();
 // EF Core persistence — shared SQLite file with Api silo
 var sqliteConnectionString = builder.Configuration["FLEANS_SQLITE_CONNECTION"] ?? "DataSource=fleans-dev.db";
 var queryConnectionString = builder.Configuration["FLEANS_QUERY_CONNECTION"];
-builder.Services.AddEfCorePersistence(
-    options => options.UseSqlite(sqliteConnectionString),
-    queryConnectionString is not null
-        ? options => options.UseSqlite(queryConnectionString)
-        : null);
+builder.Services.AddSqlitePersistence(sqliteConnectionString, queryConnectionString);
 
 // Register Redis client for Aspire-managed Orleans
 builder.AddKeyedRedisClient("orleans-redis");
@@ -50,8 +47,7 @@ using (var scope = app.Services.CreateScope())
 {
     var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>();
     using var db = dbFactory.CreateDbContext();
-    try { db.Database.EnsureCreated(); }
-    catch (Microsoft.Data.Sqlite.SqliteException) { /* tables already created by Api */ }
+    SqliteSchemaInitializer.EnsureCreatedIgnoreRaces(db.Database);
 }
 
 // Configure the HTTP request pipeline.

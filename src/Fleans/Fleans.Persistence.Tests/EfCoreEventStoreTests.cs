@@ -3,6 +3,7 @@ using Fleans.Domain.Events;
 using Fleans.Domain.States;
 using Fleans.Persistence.Events;
 using Microsoft.Data.Sqlite;
+using Fleans.Persistence.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
 namespace Fleans.Persistence.Tests;
@@ -21,7 +22,7 @@ public class EfCoreEventStoreTests
         _connection.Open();
 
         var options = new DbContextOptionsBuilder<FleanCommandDbContext>()
-            .UseSqlite(_connection)
+            .UseFleansSqlite(_connection)
             .Options;
 
         _dbContextFactory = new TestDbContextFactory(options);
