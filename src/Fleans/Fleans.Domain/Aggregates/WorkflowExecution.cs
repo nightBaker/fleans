@@ -445,6 +445,8 @@ public class WorkflowExecution
         effects.AddRange(BuildEventSubProcessTimerRegistrations(openSub.SubProcess, hostActivityInstanceId));
         effects.AddRange(BuildEventSubProcessMessageRegistrations(
             openSub.SubProcess, hostActivityInstanceId, newScopeId));
+        effects.AddRange(BuildEventSubProcessSignalRegistrations(
+            openSub.SubProcess, hostActivityInstanceId));
     }
 
     /// <summary>
@@ -462,6 +464,23 @@ public class WorkflowExecution
             var dueTime = timerStart.TimerDefinition.GetDueTime();
             list.Add(new RegisterTimerEffect(
                 _state.Id, scopeContainerId, timerStart.ActivityId, dueTime));
+        }
+        return list;
+    }
+
+    /// <summary>
+    /// Enumerates event sub-process signal start events declared directly in
+    /// <paramref name="scope"/> and produces a <see cref="SubscribeSignalEffect"/> for each.
+    /// </summary>
+    private List<IInfrastructureEffect> BuildEventSubProcessSignalRegistrations(
+        IWorkflowDefinition scope, Guid scopeContainerId)
+    {
+        var list = new List<IInfrastructureEffect>();
+        foreach (var (_, signalStart) in scope.GetEventSubProcessSignals())
+        {
+            var signalDef = _definition.GetSignalDefinition(signalStart.SignalDefinitionId);
+            list.Add(new SubscribeSignalEffect(
+                signalDef.Name, _state.Id, signalStart.ActivityId, scopeContainerId));
         }
         return list;
     }
@@ -499,6 +518,7 @@ public class WorkflowExecution
         list.AddRange(BuildEventSubProcessTimerRegistrations(_definition, _state.Id));
         list.AddRange(BuildEventSubProcessMessageRegistrations(
             _definition, _state.Id, _state.GetRootVariablesId()));
+        list.AddRange(BuildEventSubProcessSignalRegistrations(_definition, _state.Id));
         return list.AsReadOnly();
     }
 
@@ -655,6 +675,20 @@ public class WorkflowExecution
     public IReadOnlyList<IInfrastructureEffect> HandleSignalDelivery(
         string activityId, Guid hostActivityInstanceId)
     {
+        // Event sub-process signal path: the delivered signal targets a
+        // SignalStartEvent inside an EventSubProcess. Route before the
+        // stale-entry guard (the root-scope host id has no matching entry).
+        var espMatch = _definition.FindEventSubProcessByStartEvent(activityId);
+        if (espMatch is not null && espMatch.Value.EventSubProcess.Activities
+                .OfType<SignalStartEvent>()
+                .Any(s => s.ActivityId == activityId))
+        {
+            return TryActivateSignalEventSubProcess(
+                espMatch.Value.EventSubProcess,
+                espMatch.Value.EnclosingScope,
+                hostActivityInstanceId);
+        }
+
         // Stale guard: if entry is no longer active, ignore
         var entry = _state.FindEntry(hostActivityInstanceId);
         if (entry is null || entry.IsCompleted)
@@ -1419,6 +1453,93 @@ public class WorkflowExecution
     }
 
     /// <summary>
+    /// Mirrors <see cref="TryActivateMessageEventSubProcess"/> for signal-triggered
+    /// event sub-processes. Signal delivery carries no payload so the handler's
+    /// child scope is empty (no merge). Interrupting-only (slice #E).
+    /// </summary>
+    private IReadOnlyList<IInfrastructureEffect> TryActivateSignalEventSubProcess(
+        EventSubProcess eventSubProcess,
+        IWorkflowDefinition enclosingScope,
+        Guid scopeContainerHostId)
+    {
+        var signalStart = eventSubProcess.Activities.OfType<SignalStartEvent>().First();
+
+        var enclosingScopeContainerId = scopeContainerHostId == _state.Id
+            ? (Guid?)null
+            : scopeContainerHostId;
+
+        if (enclosingScopeContainerId.HasValue)
+        {
+            var containerEntry = _state.FindEntry(enclosingScopeContainerId.Value);
+            if (containerEntry is null || containerEntry.IsCompleted)
+                return [];
+        }
+        else if (_state.IsCompleted)
+        {
+            return [];
+        }
+
+        if (_state.GetActiveActivities().Any(e =>
+                e.ActivityId == eventSubProcess.ActivityId
+                && e.ScopeId == enclosingScopeContainerId))
+            return [];
+
+        var enclosingScopeVariablesId = ResolveEnclosingScopeVariablesId(enclosingScopeContainerId);
+        var effects = new List<IInfrastructureEffect>();
+
+        if (enclosingScopeContainerId.HasValue)
+        {
+            effects.AddRange(CancelScopeChildren(enclosingScopeContainerId.Value));
+        }
+        else
+        {
+            foreach (var sibling in _state.GetActiveActivities()
+                .Where(e => e.ScopeId is null)
+                .ToList())
+            {
+                if (_state.HasActiveChildrenInScope(sibling.ActivityInstanceId))
+                    effects.AddRange(CancelScopeChildren(sibling.ActivityInstanceId));
+
+                Emit(new ActivityCancelled(
+                    sibling.ActivityInstanceId,
+                    $"Scope cancelled by signal event sub-process '{eventSubProcess.ActivityId}'"));
+                effects.AddRange(BuildUserTaskCleanupEffects(sibling.ActivityInstanceId));
+            }
+        }
+
+        var espInstanceId = Guid.NewGuid();
+        Emit(new ActivitySpawned(
+            ActivityInstanceId: espInstanceId,
+            ActivityId: eventSubProcess.ActivityId,
+            ActivityType: nameof(EventSubProcess),
+            VariablesId: enclosingScopeVariablesId,
+            ScopeId: enclosingScopeContainerId,
+            MultiInstanceIndex: null,
+            TokenId: null));
+
+        var handlerScopeId = Guid.NewGuid();
+        Emit(new ChildVariableScopeCreated(handlerScopeId, enclosingScopeVariablesId));
+
+        Emit(new ActivitySpawned(
+            ActivityInstanceId: Guid.NewGuid(),
+            ActivityId: signalStart.ActivityId,
+            ActivityType: nameof(SignalStartEvent),
+            VariablesId: handlerScopeId,
+            ScopeId: espInstanceId,
+            MultiInstanceIndex: null,
+            TokenId: null));
+
+        // Peer deregistration — the firing signal's subscription was already
+        // removed by the broadcast side, so skip it.
+        effects.AddRange(BuildEventSubProcessPeerUnregisterEffects(
+            enclosingScope, enclosingScopeContainerId,
+            scopeVariablesId: enclosingScopeVariablesId,
+            skipStartEventActivityId: signalStart.ActivityId));
+
+        return effects.AsReadOnly();
+    }
+
+    /// <summary>
     /// Produces unregister/unsubscribe effects for every event sub-process listener
     /// (timer and message) declared directly inside <paramref name="scope"/>, optionally
     /// skipping a single start-event activity id (used when an event sub-process fires
@@ -1446,6 +1567,12 @@ public class WorkflowExecution
             var messageDef = _definition.GetMessageDefinition(messageStart.MessageDefinitionId);
             var correlationKey = ResolveCorrelationKey(messageDef, scopeVariablesId);
             list.Add(new UnsubscribeMessageEffect(messageDef.Name, correlationKey));
+        }
+        foreach (var (_, signalStart) in scope.GetEventSubProcessSignals())
+        {
+            if (signalStart.ActivityId == skipStartEventActivityId) continue;
+            var signalDef = _definition.GetSignalDefinition(signalStart.SignalDefinitionId);
+            list.Add(new UnsubscribeSignalEffect(signalDef.Name, _state.Id, signalStart.ActivityId));
         }
         return list;
     }
