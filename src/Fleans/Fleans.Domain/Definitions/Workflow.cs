@@ -96,6 +96,13 @@ namespace Fleans.Domain
                     return result;
             }
 
+            foreach (var evtSub in Activities.OfType<EventSubProcess>())
+            {
+                var result = ((IWorkflowDefinition)evtSub).FindScopeForActivity(activityId);
+                if (result is not null)
+                    return result;
+            }
+
             foreach (var mi in Activities.OfType<MultiInstanceActivity>())
             {
                 if (mi.InnerActivity is IWorkflowDefinition innerScope)
@@ -155,6 +162,63 @@ namespace Fleans.Domain
                     targetActivityId = subProcess.ActivityId;
                 else
                     return null; // at root scope, no match found
+            }
+        }
+
+        /// <summary>
+        /// Finds the matching EventSubProcess (containing an ErrorStartEvent) for a
+        /// failed activity, searching the activity's scope and walking up through parent
+        /// SubProcess / EventSubProcess scopes. Specific error code matches take priority
+        /// over catch-all (null ErrorCode). Inner scopes take priority over outer scopes.
+        /// An EventSubProcess never catches errors thrown from within itself (BPMN spec:
+        /// event sub-processes only catch errors from the enclosing parent scope).
+        /// </summary>
+        (EventSubProcess EventSubProcess, IWorkflowDefinition EnclosingScope)?
+            FindErrorEventSubProcessHandler(string failedActivityId, string? errorCode)
+        {
+            var targetActivityId = failedActivityId;
+            // When we walk out of an EventSubProcess, we must not re-match it as a handler
+            // in its own parent scope — that would allow an ESP to catch its own errors.
+            string? escapedEventSubProcessId = null;
+
+            while (true)
+            {
+                var scope = FindScopeForActivity(targetActivityId);
+                if (scope is null) return null;
+
+                var candidates = scope.Activities
+                    .OfType<EventSubProcess>()
+                    .Where(esp => esp.ActivityId != escapedEventSubProcessId)
+                    .Where(esp => esp.Activities.OfType<ErrorStartEvent>().Any(ese =>
+                        ese.ErrorCode == null || ese.ErrorCode == errorCode))
+                    .ToList();
+
+                var specific = candidates.FirstOrDefault(esp =>
+                    esp.Activities.OfType<ErrorStartEvent>()
+                        .Any(ese => ese.ErrorCode == errorCode));
+                var catchAll = candidates.FirstOrDefault(esp =>
+                    esp.Activities.OfType<ErrorStartEvent>()
+                        .Any(ese => ese.ErrorCode == null));
+
+                var match = specific ?? catchAll;
+                if (match is not null)
+                    return (match, scope);
+
+                if (scope is SubProcess subProcess)
+                {
+                    targetActivityId = subProcess.ActivityId;
+                    // Reset when walking out through a SubProcess so that the surrounding
+                    // scope is considered fresh — a SubProcess can contain its own ESP
+                    // children, and we must not skip them based on an inner ESP id.
+                    escapedEventSubProcessId = null;
+                }
+                else if (scope is EventSubProcess outerEvtSub)
+                {
+                    escapedEventSubProcessId = outerEvtSub.ActivityId;
+                    targetActivityId = outerEvtSub.ActivityId;
+                }
+                else
+                    return null;
             }
         }
 

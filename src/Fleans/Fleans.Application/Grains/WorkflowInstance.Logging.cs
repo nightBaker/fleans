@@ -253,4 +253,9 @@ public partial class WorkflowInstance
         Message = "Processing pending external event: {EventType}")]
     private partial void LogProcessingPendingEvent(string eventType);
 
+    // Event Sub-Process lifecycle (EventId 1075-1079)
+    [LoggerMessage(EventId = 1075, Level = LogLevel.Information,
+        Message = "Workflow completed via root EventSubProcess {EventSubProcessId} (no outgoing sequence flow)")]
+    private partial void LogRootEventSubProcessCompleted(string eventSubProcessId);
+
 }

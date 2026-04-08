@@ -589,6 +589,11 @@ public class WorkflowExecution
         var allEffects = new List<IInfrastructureEffect>();
         var allCompletedHostIds = new List<Guid>();
         var allOrphanedScopeIds = new List<Guid>();
+        // Event sub-processes have no outgoing sequence flows, so when a root-scope
+        // EventSubProcess completes we must emit WorkflowCompleted directly — the
+        // normal path (outgoing flow → root EndEvent → CompleteWorkflowCommand) is
+        // unavailable.
+        var completedRootEventSubProcess = false;
 
         const int maxIterations = 100;
         var iteration = 0;
@@ -608,10 +613,11 @@ public class WorkflowExecution
                 var activity = scopeDefinition.GetActivity(entry.ActivityId);
 
                 var isSubProcess = activity is SubProcess;
+                var isEventSubProcess = activity is EventSubProcess;
                 var isMultiInstanceHost = activity is MultiInstanceActivity
                     && entry.MultiInstanceIndex is null;
 
-                if (!isSubProcess && !isMultiInstanceHost) continue;
+                if (!isSubProcess && !isMultiInstanceHost && !isEventSubProcess) continue;
 
                 var scopeEntries = _state.GetEntriesInScope(entry.ActivityInstanceId);
 
@@ -638,22 +644,37 @@ public class WorkflowExecution
                 // the subprocess should NOT auto-complete — skip both variable merge and completion.
                 if (scopeEntries.Any(e => e.ErrorCode is not null)) continue;
 
-                // SubProcess: merge child scope variables into parent before completing.
-                // Use ParentVariablesId lookup (not entry-based collection) because
-                // internal fork-join may have already removed branch scopes from state.
-                var childScopes = _state.VariableStates
-                    .Where(vs => vs.ParentVariablesId == entry.VariablesId)
-                    .ToList();
-                if (childScopes.Count > 1)
-                    throw new InvalidOperationException(
-                        $"Expected at most one child scope for subprocess host {entry.ActivityId}, found {childScopes.Count}");
-                var childScope = childScopes.FirstOrDefault();
-                if (childScope is not null)
+                if (isSubProcess)
                 {
-                    Emit(new VariablesMerged(entry.VariablesId, childScope.Variables));
-                    // Defer scope removal: nested subprocess transitions (resolved after
-                    // this method returns) may still reference the child scope.
-                    allOrphanedScopeIds.Add(childScope.Id);
+                    // SubProcess: merge child scope variables into parent before completing.
+                    // Use ParentVariablesId lookup (not entry-based collection) because
+                    // internal fork-join may have already removed branch scopes from state.
+                    var childScopes = _state.VariableStates
+                        .Where(vs => vs.ParentVariablesId == entry.VariablesId)
+                        .ToList();
+                    if (childScopes.Count > 1)
+                        throw new InvalidOperationException(
+                            $"Expected at most one child scope for subprocess host {entry.ActivityId}, found {childScopes.Count}");
+                    var childScope = childScopes.FirstOrDefault();
+                    if (childScope is not null)
+                    {
+                        Emit(new VariablesMerged(entry.VariablesId, childScope.Variables));
+                        // Defer scope removal: nested subprocess transitions (resolved after
+                        // this method returns) may still reference the child scope.
+                        allOrphanedScopeIds.Add(childScope.Id);
+                    }
+                }
+                else if (isEventSubProcess)
+                {
+                    // EventSubProcess: discard child variable scope(s), no merge back.
+                    // Note: MultiInstance hosts have already `continue`d above (line ~637),
+                    // so they never reach this branch and continue to use their dedicated
+                    // _multiInstance.TryComplete merge path.
+                    var childScopes = _state.VariableStates
+                        .Where(vs => vs.ParentVariablesId == entry.VariablesId)
+                        .ToList();
+                    foreach (var childScope in childScopes)
+                        allOrphanedScopeIds.Add(childScope.Id);
                 }
 
                 // All scope children are done — complete the sub-process host.
@@ -665,8 +686,29 @@ public class WorkflowExecution
                 allEffects.AddRange(effects);
                 allCompletedHostIds.Add(entry.ActivityInstanceId);
                 anyCompleted = true;
+
+                if (isEventSubProcess && entry.ScopeId is null)
+                    completedRootEventSubProcess = true;
             }
         } while (anyCompleted);
+
+        // If a root-scope EventSubProcess just completed and nothing else is active,
+        // finalize the workflow here — no outgoing flow exists to carry the token to
+        // a root EndEvent.
+        if (completedRootEventSubProcess
+            && !_state.IsCompleted
+            && !_state.GetActiveActivities().Any())
+        {
+            Emit(new WorkflowCompleted());
+            if (_state.ParentWorkflowInstanceId.HasValue)
+            {
+                var rootVariables = _state.GetMergedVariables(_state.GetRootVariablesId());
+                allEffects.Add(new NotifyParentCompletedEffect(
+                    _state.ParentWorkflowInstanceId.Value,
+                    _state.ParentActivityId!,
+                    rootVariables));
+            }
+        }
 
         return (allEffects.AsReadOnly(), allCompletedHostIds.AsReadOnly(), allOrphanedScopeIds.AsReadOnly());
     }
@@ -929,6 +971,10 @@ public class WorkflowExecution
                 MultiInstanceIndex: null,
                 TokenId: null));
         }
+        else if (TryActivateErrorEventSubProcess(entry, errorCode, effects))
+        {
+            // Error event sub-process took over.
+        }
         else
         {
             // No boundary handler found
@@ -958,6 +1004,114 @@ public class WorkflowExecution
         }
 
         return effects.AsReadOnly();
+    }
+
+    /// <summary>
+    /// If an EventSubProcess with a matching ErrorStartEvent exists in an enclosing
+    /// scope, spawns it (interrupting) and cancels siblings. Returns true if activated.
+    /// Slice B: error trigger only. Peer timer/message/signal listener deregistration
+    /// is a no-op here — slices #C–#E add the registration infrastructure those
+    /// unsubscribes would target.
+    /// </summary>
+    private bool TryActivateErrorEventSubProcess(
+        ActivityInstanceEntry failedEntry, int errorCode, List<IInfrastructureEffect> effects)
+    {
+        var match = _definition.FindErrorEventSubProcessHandler(
+            failedEntry.ActivityId, errorCode.ToString());
+        if (match is null) return false;
+
+        var (eventSubProcess, enclosingScope) = match.Value;
+
+        var enclosingScopeContainerId = FindEnclosingScopeContainerId(failedEntry, enclosingScope);
+        var enclosingScopeVariablesId = ResolveEnclosingScopeVariablesId(
+            enclosingScopeContainerId);
+
+        // 1. Cancel active siblings in the enclosing scope. The failing entry is
+        //    already terminal (ActivityFailed emitted) and will be filtered out.
+        if (enclosingScopeContainerId.HasValue)
+        {
+            effects.AddRange(CancelScopeChildren(enclosingScopeContainerId.Value));
+        }
+        else
+        {
+            foreach (var sibling in _state.GetActiveActivities()
+                .Where(e => e.ScopeId is null
+                            && e.ActivityInstanceId != failedEntry.ActivityInstanceId)
+                .ToList())
+            {
+                if (_state.HasActiveChildrenInScope(sibling.ActivityInstanceId))
+                    effects.AddRange(CancelScopeChildren(sibling.ActivityInstanceId));
+
+                Emit(new ActivityCancelled(
+                    sibling.ActivityInstanceId,
+                    $"Scope cancelled by error event sub-process '{eventSubProcess.ActivityId}'"));
+                effects.AddRange(BuildUserTaskCleanupEffects(sibling.ActivityInstanceId));
+            }
+        }
+
+        // 2. Spawn the EventSubProcess host as a new scope container.
+        var espInstanceId = Guid.NewGuid();
+        Emit(new ActivitySpawned(
+            ActivityInstanceId: espInstanceId,
+            ActivityId: eventSubProcess.ActivityId,
+            ActivityType: nameof(EventSubProcess),
+            VariablesId: enclosingScopeVariablesId,
+            ScopeId: enclosingScopeContainerId,
+            MultiInstanceIndex: null,
+            TokenId: null));
+
+        // 3. Child variable scope for the handler (isolated — not merged back).
+        var handlerScopeId = Guid.NewGuid();
+        Emit(new ChildVariableScopeCreated(handlerScopeId, enclosingScopeVariablesId));
+
+        // 4. Spawn the ErrorStartEvent inside the EventSubProcess scope.
+        var errorStart = eventSubProcess.Activities.OfType<ErrorStartEvent>().First();
+        Emit(new ActivitySpawned(
+            ActivityInstanceId: Guid.NewGuid(),
+            ActivityId: errorStart.ActivityId,
+            ActivityType: nameof(ErrorStartEvent),
+            VariablesId: handlerScopeId,
+            ScopeId: espInstanceId,
+            MultiInstanceIndex: null,
+            TokenId: null));
+
+        // TODO(slices #C–#E): emit unsubscribe effects for peer event-sub listeners
+        // on the enclosing scope once registration infrastructure lands.
+
+        return true;
+    }
+
+    private Guid? FindEnclosingScopeContainerId(
+        ActivityInstanceEntry failedEntry, IWorkflowDefinition enclosingScope)
+    {
+        if (enclosingScope is WorkflowDefinition) return null;
+
+        var targetScopeActivityId = enclosingScope switch
+        {
+            SubProcess sp => sp.ActivityId,
+            EventSubProcess esp => esp.ActivityId,
+            _ => throw new InvalidOperationException(
+                $"Unexpected enclosing scope type {enclosingScope.GetType().Name}"),
+        };
+
+        var current = failedEntry;
+        while (current.ScopeId.HasValue)
+        {
+            var parent = _state.GetEntry(current.ScopeId.Value);
+            if (parent.ActivityId == targetScopeActivityId)
+                return parent.ActivityInstanceId;
+            current = parent;
+        }
+        throw new InvalidOperationException(
+            $"Could not locate enclosing scope entry for '{targetScopeActivityId}' from failing entry '{failedEntry.ActivityId}'");
+    }
+
+    private Guid ResolveEnclosingScopeVariablesId(Guid? enclosingScopeContainerId)
+    {
+        if (enclosingScopeContainerId.HasValue)
+            return _state.GetEntry(enclosingScopeContainerId.Value).VariablesId;
+
+        return _state.GetRootVariablesId();
     }
 
     // --- Activity Lifecycle Helpers ---

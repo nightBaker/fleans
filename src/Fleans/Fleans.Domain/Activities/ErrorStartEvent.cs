@@ -16,6 +16,16 @@ public record ErrorStartEvent(
     string ActivityId,
     [property: Id(1)] string? ErrorCode) : Activity(ActivityId)
 {
+    internal override async Task<List<IExecutionCommand>> ExecuteAsync(
+        IWorkflowExecutionContext workflowContext,
+        IActivityExecutionContext activityContext,
+        IWorkflowDefinition definition)
+    {
+        var commands = await base.ExecuteAsync(workflowContext, activityContext, definition);
+        await activityContext.Complete();
+        return commands;
+    }
+
     internal override Task<List<ActivityTransition>> GetNextActivities(
         IWorkflowExecutionContext workflowContext,
         IActivityExecutionContext activityContext,
