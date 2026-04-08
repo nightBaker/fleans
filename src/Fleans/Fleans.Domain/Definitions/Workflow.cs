@@ -207,6 +207,9 @@ namespace Fleans.Domain
                 if (scope is SubProcess subProcess)
                 {
                     targetActivityId = subProcess.ActivityId;
+                    // Reset when walking out through a SubProcess so that the surrounding
+                    // scope is considered fresh — a SubProcess can contain its own ESP
+                    // children, and we must not skip them based on an inner ESP id.
                     escapedEventSubProcessId = null;
                 }
                 else if (scope is EventSubProcess outerEvtSub)

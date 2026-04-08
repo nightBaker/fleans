@@ -161,7 +161,22 @@ public partial class WorkflowInstance
 
     private async Task<IReadOnlyList<Guid>> HandleScopeCompletions(IWorkflowDefinition definition)
     {
+        var eventCountBefore = _execution!.GetUncommittedEvents().Count;
         var (scopeEffects, completedHostIds, orphanedScopeIds) = _execution!.CompleteFinishedSubProcessScopes();
+
+        // Detect root EventSubProcess completion — it emits WorkflowCompleted directly
+        // (no outgoing flow), which is a second exit point for workflow completion.
+        var newEvents = _execution.GetUncommittedEvents().Skip(eventCountBefore);
+        if (newEvents.OfType<WorkflowCompleted>().Any())
+        {
+            var espId = completedHostIds
+                .Select(id => State.FindEntry(id))
+                .Where(e => e is not null && e.ScopeId is null)
+                .Select(e => e!.ActivityId)
+                .FirstOrDefault() ?? "unknown";
+            LogRootEventSubProcessCompleted(espId);
+        }
+
         await PerformEffects(scopeEffects);
 
         if (completedHostIds.Count > 0)

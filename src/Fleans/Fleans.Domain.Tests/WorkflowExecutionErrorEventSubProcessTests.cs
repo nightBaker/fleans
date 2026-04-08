@@ -368,20 +368,20 @@ public class WorkflowExecutionErrorEventSubProcessTests
         ]);
 
         var handlerEntry = state.GetActiveActivities().FirstOrDefault(e => e.ActivityId == "errorEventSub_handler");
-        if (handlerEntry is not null)
-        {
-            execution.MarkExecuting(handlerEntry.ActivityInstanceId);
-            execution.ClearUncommittedEvents();
+        Assert.IsNotNull(handlerEntry,
+            "errorEventSub_handler should have been spawned inside the EventSubProcess — if this fails the regression guard below is vacuous");
 
-            // Handler fails with same error code 500 — must NOT re-spawn errorEventSub
-            execution.FailActivity("errorEventSub_handler", handlerEntry.ActivityInstanceId,
-                new Exception("handler failed") { Data = { ["ErrorCode"] = 500 } });
+        execution.MarkExecuting(handlerEntry.ActivityInstanceId);
+        execution.ClearUncommittedEvents();
 
-            var afterInner = execution.GetUncommittedEvents();
-            var espRespawned = afterInner.OfType<ActivitySpawned>()
-                .Any(e => e.ActivityId == "errorEventSub");
-            Assert.IsFalse(espRespawned,
-                "errorEventSub must NOT be re-triggered when its own handler activity fails (infinite loop guard)");
-        }
+        // Handler fails with same error code 500 — must NOT re-spawn errorEventSub
+        execution.FailActivity("errorEventSub_handler", handlerEntry.ActivityInstanceId,
+            new Exception("handler failed") { Data = { ["ErrorCode"] = 500 } });
+
+        var afterInner = execution.GetUncommittedEvents();
+        var espRespawned = afterInner.OfType<ActivitySpawned>()
+            .Any(e => e.ActivityId == "errorEventSub");
+        Assert.IsFalse(espRespawned,
+            "errorEventSub must NOT be re-triggered when its own handler activity fails (infinite loop guard)");
     }
 }
