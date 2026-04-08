@@ -100,7 +100,8 @@ public partial class BpmnConverter : IBpmnConverter
                 // detectable later because such start events have no incoming flows
                 // and are not selected by GetStartActivity().
                 var errorRef = errStartDef.Attribute("errorRef")?.Value;
-                activity = new ErrorStartEvent(id, errorRef);
+                var errorCode = ResolveErrorCode(scopeElement, errorRef);
+                activity = new ErrorStartEvent(id, errorCode);
             }
             else
             {
@@ -480,13 +481,36 @@ public partial class BpmnConverter : IBpmnConverter
             else
             {
                 // Error boundaries are ALWAYS interrupting per BPMN spec
-                string? errorCode = errorDef?.Attribute("errorRef")?.Value;
+                string? errorRef = errorDef?.Attribute("errorRef")?.Value;
+                string? errorCode = ResolveErrorCode(scopeElement, errorRef);
                 activity = new BoundaryErrorEvent(id, attachedToRef, errorCode, IsInterrupting: true);
             }
 
             activities.Add(activity);
             activityMap[id] = activity;
         }
+    }
+
+    // Resolves a BPMN errorRef (the id of an <error> element declared at definitions scope)
+    // to the actual errorCode value. Returns null if errorRef is null/empty or cannot be found
+    // (null is a valid "catch-all" value for error start/boundary events).
+    private static string? ResolveErrorCode(XElement scopeElement, string? errorRef)
+    {
+        if (string.IsNullOrEmpty(errorRef))
+        {
+            return null;
+        }
+
+        var root = scopeElement.Document?.Root;
+        if (root is null)
+        {
+            return errorRef;
+        }
+
+        var errorElement = root.Elements(Bpmn + "error")
+            .FirstOrDefault(e => e.Attribute("id")?.Value == errorRef);
+
+        return errorElement?.Attribute("errorCode")?.Value ?? errorRef;
     }
 
     private void ParseSequenceFlows(XElement scopeElement, List<SequenceFlow> sequenceFlows, Dictionary<string, Activity> activityMap, HashSet<string> defaultFlowIds)

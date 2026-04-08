@@ -152,6 +152,36 @@ public class EventSubProcessParsingTests : BpmnConverterTestBase
     }
 
     [TestMethod]
+    public async Task ConvertFromXml_ErrorStartEvent_ResolvesErrorRefToErrorCodeValue()
+    {
+        // Regression for #272: the parser must resolve the errorRef (id of an <error>
+        // element) to the referenced error's errorCode value, not pass the id through.
+        var xml = $@"{MessageHeader}
+  <error id=""Err500"" errorCode=""500"" name=""ServerError"" />
+  <process id=""p"">
+    <startEvent id=""start"" />
+    <task id=""t1"" />
+    <endEvent id=""end"" />
+    <sequenceFlow id=""f1"" sourceRef=""start"" targetRef=""t1"" />
+    <sequenceFlow id=""f2"" sourceRef=""t1"" targetRef=""end"" />
+    <subProcess id=""evtSub"" triggeredByEvent=""true"">
+      <startEvent id=""evtStart"">
+        <errorEventDefinition errorRef=""Err500"" />
+      </startEvent>
+      <endEvent id=""evtEnd"" />
+      <sequenceFlow id=""ef1"" sourceRef=""evtStart"" targetRef=""evtEnd"" />
+    </subProcess>
+  </process>
+</definitions>";
+        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(xml)));
+
+        var err = workflow.Activities.OfType<EventSubProcess>().Single()
+            .Activities.OfType<ErrorStartEvent>().Single();
+        Assert.AreEqual("500", err.ErrorCode,
+            "errorRef 'Err500' must resolve to the referenced <error> element's errorCode value '500'");
+    }
+
+    [TestMethod]
     public async Task ConvertFromXml_ErrorStartEvent_CatchAllHasNullCode()
     {
         var xml = ErrorEventSubProcess(errorRef: null, isInterrupting: null);
