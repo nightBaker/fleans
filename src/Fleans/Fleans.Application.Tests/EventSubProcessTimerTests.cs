@@ -78,6 +78,13 @@ public class EventSubProcessTimerTests : WorkflowTestBase
         Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "evtSub1"),
             "EventSubProcess host should be completed");
 
+        // The EndEvent inside the event sub-process must also be reached
+        // (closes the visibility gap flagged in #283 review round 2).
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "evtSub1_end"
+                                                              && a.ErrorState == null
+                                                              && !a.IsCancelled),
+            "EventSubProcess inner EndEvent 'evtSub1_end' should be completed");
+
         // Normal 'end' was NOT reached
         Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId == "end"),
             "Normal 'end' event should not be reached when the timer handler interrupts flow");
@@ -148,6 +155,113 @@ public class EventSubProcessTimerTests : WorkflowTestBase
         // The EventSubProcess host is closed so the workflow can finalize.
         Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "timerEventSub"),
             "timerEventSub host must be marked completed once the failed handler closes the scope");
+    }
+
+    [TestMethod]
+    [Ignore("Tracks a newly discovered nested-scope defect — see #284. "
+        + "When a timer EventSubProcess is declared inside a SubProcess, firing "
+        + "the timer throws 'Expected at most one child scope for subprocess host' "
+        + "from WorkflowExecution.CompleteFinishedSubProcessScopes. Re-enable when "
+        + "#284 is fixed.")]
+    public async Task TimerEventSubProcess_NestedInsideSubProcess_CompletesScope()
+    {
+        // Regression for #283 review round 2: ensures scope-id resolution and
+        // auto-completion work correctly when the timer event sub-process is
+        // declared inside a SubProcess (not at the workflow root). The inner
+        // SubProcess's pending user task must be cancelled by the interrupting
+        // handler, the handler chain must run to its EndEvent, the ESP host
+        // must close, the outer SubProcess must complete, and the workflow
+        // must terminate.
+        var start = new StartEvent("start");
+        var end = new EndEvent("end");
+
+        var innerStart = new StartEvent("innerStart");
+        var innerUserTask = new TaskActivity("innerUserTask");
+        var innerEnd = new EndEvent("innerEnd");
+
+        var timerStart = new TimerStartEvent("nestedTimerStart",
+            new TimerDefinition(TimerType.Duration, "PT30S"));
+        var handlerEnd = new EndEvent("nestedHandlerEnd");
+        var nestedEvtSub = new EventSubProcess("nestedEvtSub")
+        {
+            Activities = [timerStart, handlerEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("nested_sf1", timerStart, handlerEnd),
+            ],
+            IsInterrupting = true,
+        };
+
+        var outerSub = new SubProcess("outerSub")
+        {
+            Activities = [innerStart, innerUserTask, innerEnd, nestedEvtSub],
+            SequenceFlows =
+            [
+                new SequenceFlow("outer_sf1", innerStart, innerUserTask),
+                new SequenceFlow("outer_sf2", innerUserTask, innerEnd),
+            ],
+        };
+
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "timer-event-subprocess-nested",
+            Activities = [start, outerSub, end],
+            SequenceFlows =
+            [
+                new SequenceFlow("f1", start, outerSub),
+                new SequenceFlow("f2", outerSub, end),
+            ],
+        };
+
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await workflowInstance.SetWorkflow(workflow);
+        await workflowInstance.StartWorkflow();
+
+        var instanceId = workflowInstance.GetPrimaryKey();
+
+        // The nested timer is keyed to the outer SubProcess's activity instance id,
+        // not the workflow root. Look it up from the live snapshot.
+        var running = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsNotNull(running);
+        var outerSubEntry = running!.ActiveActivities
+            .FirstOrDefault(a => a.ActivityId == "outerSub");
+        Assert.IsNotNull(outerSubEntry,
+            "Outer SubProcess host must be active while inner user task blocks");
+
+        // Act: fire the nested timer with the outer SubProcess instance as host.
+        await workflowInstance.HandleTimerFired(
+            "nestedTimerStart", outerSubEntry!.ActivityInstanceId);
+
+        var snapshot = await PollForNoActiveActivities(instanceId);
+        Assert.IsNotNull(snapshot);
+
+        // Assert
+        Assert.IsTrue(snapshot!.IsCompleted,
+            "Nested timer ESP must terminate the workflow through outer SubProcess");
+        Assert.AreEqual(0, snapshot.ActiveActivities.Count);
+
+        // Inner user task was cancelled by the interrupting nested ESP
+        var inner = snapshot.CompletedActivities
+            .FirstOrDefault(a => a.ActivityId == "innerUserTask");
+        Assert.IsNotNull(inner, "innerUserTask must appear in terminal activity list");
+        Assert.IsTrue(inner!.IsCancelled,
+            "innerUserTask must be cancelled by the nested interrupting timer ESP");
+
+        // Handler chain fully executed
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "nestedHandlerEnd"
+                                                              && a.ErrorState == null
+                                                              && !a.IsCancelled),
+            "nestedHandlerEnd must be completed (scope-id resolution inside nested ESP)");
+
+        // Nested ESP host closed and outer SubProcess completed
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "nestedEvtSub"),
+            "Nested EventSubProcess host should be marked completed");
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "outerSub"),
+            "Outer SubProcess must complete once its child scopes are closed");
+
+        // Normal outer 'end' NOT reached because the interrupting handler short-circuits it
+        Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId == "innerEnd"),
+            "innerEnd should not be reached when the handler interrupts the inner flow");
     }
 
     private async Task<InstanceStateSnapshot?> PollForNoActiveActivities(
