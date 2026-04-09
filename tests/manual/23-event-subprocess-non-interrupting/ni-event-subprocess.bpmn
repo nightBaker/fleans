@@ -3,46 +3,46 @@
              xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
              xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
              xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
-             id="EventSubProcessSignalDefinitions"
+             id="NonInterruptingEventSubProcessDefinitions"
              targetNamespace="http://fleans/tests">
-  <signal id="cancelEverythingSig" name="cancelEverything"/>
-
-  <process id="evtSubSignalProcess" isExecutable="true">
+  <process id="niEvtSubProcess" isExecutable="true">
     <startEvent id="start"/>
-    <userTask id="userTask" name="Manual step (should be cancelled when cancelEverything fires)"/>
+    <userTask id="parentTask" name="Parent user task (stays active while the timer fires)"/>
     <endEvent id="normalEnd"/>
 
-    <sequenceFlow id="sf1" sourceRef="start" targetRef="userTask"/>
-    <sequenceFlow id="sf2" sourceRef="userTask" targetRef="normalEnd"/>
+    <sequenceFlow id="sf1" sourceRef="start" targetRef="parentTask"/>
+    <sequenceFlow id="sf2" sourceRef="parentTask" targetRef="normalEnd"/>
 
-    <subProcess id="signalEventSub" triggeredByEvent="true">
-      <startEvent id="signalStart">
-        <signalEventDefinition signalRef="cancelEverythingSig"/>
+    <subProcess id="niTimerEventSub" triggeredByEvent="true">
+      <startEvent id="timerStart" isInterrupting="false">
+        <timerEventDefinition>
+          <timeDuration>PT5S</timeDuration>
+        </timerEventDefinition>
       </startEvent>
       <scriptTask id="handlerTask" scriptFormat="csharp">
         <script>_context.handlerRan = true</script>
       </scriptTask>
       <endEvent id="handlerEnd"/>
-      <sequenceFlow id="esf1" sourceRef="signalStart" targetRef="handlerTask"/>
+      <sequenceFlow id="esf1" sourceRef="timerStart" targetRef="handlerTask"/>
       <sequenceFlow id="esf2" sourceRef="handlerTask" targetRef="handlerEnd"/>
     </subProcess>
   </process>
 
   <bpmndi:BPMNDiagram id="BPMNDiagram_1">
-    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="evtSubSignalProcess">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="niEvtSubProcess">
       <bpmndi:BPMNShape id="start_di" bpmnElement="start">
         <dc:Bounds x="100" y="100" width="36" height="36"/>
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="userTask_di" bpmnElement="userTask">
+      <bpmndi:BPMNShape id="parentTask_di" bpmnElement="parentTask">
         <dc:Bounds x="200" y="80" width="100" height="80"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="normalEnd_di" bpmnElement="normalEnd">
         <dc:Bounds x="360" y="100" width="36" height="36"/>
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="signalEventSub_di" bpmnElement="signalEventSub" isExpanded="true">
+      <bpmndi:BPMNShape id="niTimerEventSub_di" bpmnElement="niTimerEventSub" isExpanded="true">
         <dc:Bounds x="100" y="220" width="340" height="160"/>
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="signalStart_di" bpmnElement="signalStart">
+      <bpmndi:BPMNShape id="timerStart_di" bpmnElement="timerStart">
         <dc:Bounds x="130" y="280" width="36" height="36"/>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="handlerTask_di" bpmnElement="handlerTask">

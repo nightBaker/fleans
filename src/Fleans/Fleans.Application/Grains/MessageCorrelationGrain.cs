@@ -1,11 +1,18 @@
 using Fleans.Domain;
 using Fleans.Domain.States;
 using Microsoft.Extensions.Logging;
+using Orleans.Concurrency;
 using Orleans.Runtime;
 using System.Dynamic;
 
 namespace Fleans.Application.Grains;
 
+// [Reentrant] is required to prevent deadlocks when a non-interrupting message event
+// sub-process re-subscribes during DeliverMessage. The re-subscription (SubscribeMessageEffect)
+// calls back into this grain while DeliverMessage is still executing (awaiting the
+// delivery tcs). Without reentrancy, Subscribe() queues behind the active DeliverMessage
+// activation, causing a circular wait with neither being able to complete.
+[Reentrant]
 public partial class MessageCorrelationGrain : Grain, IMessageCorrelationGrain
 {
     private readonly IPersistentState<MessageCorrelationState> _state;
