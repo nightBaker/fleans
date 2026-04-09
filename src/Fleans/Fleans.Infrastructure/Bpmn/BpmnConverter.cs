@@ -344,7 +344,8 @@ public partial class BpmnConverter : IBpmnConverter
             if (defaultFlowId is not null)
                 defaultFlowIds.Add(defaultFlowId);
 
-            var activationCondition = gateway.Attribute("activationCondition")?.Value;
+            var activationCondition = gateway.Attribute("activationCondition")?.Value
+                ?? gateway.Element(Bpmn + "activationCondition")?.Value;
 
             var incomingCount = scopeElement.Elements(Bpmn + "sequenceFlow")
                 .Count(sf => sf.Attribute("targetRef")?.Value == id);
@@ -374,9 +375,7 @@ public partial class BpmnConverter : IBpmnConverter
 
             if (activationCondition is not null && isFork)
             {
-                _logger.LogWarning(
-                    "Complex gateway '{GatewayId}' has activationCondition but is detected as a fork — activationCondition is ignored on fork gateways",
-                    id);
+                LogActivationConditionIgnoredOnFork(id);
                 activationCondition = null;
             }
 
@@ -894,4 +893,8 @@ public partial class BpmnConverter : IBpmnConverter
 
         throw new InvalidOperationException("timerEventDefinition must contain timeDuration, timeDate, or timeCycle");
     }
+
+    [LoggerMessage(EventId = 8000, Level = LogLevel.Warning,
+        Message = "Complex gateway '{GatewayId}' has activationCondition but is detected as a fork — activationCondition is ignored on fork gateways")]
+    private partial void LogActivationConditionIgnoredOnFork(string gatewayId);
 }

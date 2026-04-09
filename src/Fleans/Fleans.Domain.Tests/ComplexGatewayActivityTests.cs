@@ -256,8 +256,8 @@ public class ComplexGatewayActivityTests
 
         var activityInstanceId = Guid.NewGuid();
         var firedJoinState = new ComplexGatewayJoinState(activityInstanceId, "_context._nroftoken >= 2", Guid.NewGuid());
-        firedJoinState.Increment();
-        firedJoinState.Increment();
+        firedJoinState.IncrementTokenCount();
+        firedJoinState.IncrementTokenCount();
         firedJoinState.MarkFired();
 
         var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);

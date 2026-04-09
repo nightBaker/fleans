@@ -96,27 +96,27 @@ public partial class WorkflowEvaluateActivationConditionEventHandler : Grain, IW
 
     public void Ping() { }
 
-    [LoggerMessage(EventId = 4010, Level = LogLevel.Information,
+    [LoggerMessage(EventId = 4020, Level = LogLevel.Information,
         Message = "Handling activation condition for activity {ActivityId}, instance {ActivityInstanceId}, nrOfToken={NrOfToken}")]
     private partial void LogHandlingActivationConditionEvent(string activityId, Guid activityInstanceId, int nrOfToken);
 
-    [LoggerMessage(EventId = 4011, Level = LogLevel.Debug,
+    [LoggerMessage(EventId = 4021, Level = LogLevel.Debug,
         Message = "Activation condition result for activity {ActivityId}, instance {ActivityInstanceId}: {Result} (nrOfToken={NrOfToken})")]
     private partial void LogActivationConditionResult(string activityId, Guid activityInstanceId, bool result, int nrOfToken);
 
-    [LoggerMessage(EventId = 4012, Level = LogLevel.Error,
+    [LoggerMessage(EventId = 4022, Level = LogLevel.Error,
         Message = "Activation condition evaluation failed for activity {ActivityId}, instance {ActivityInstanceId}")]
     private partial void LogActivationConditionEvaluationFailed(Exception ex, string activityId, Guid activityInstanceId);
 
-    [LoggerMessage(EventId = 4013, Level = LogLevel.Information,
+    [LoggerMessage(EventId = 4023, Level = LogLevel.Information,
         Message = "Activation condition event stream completed")]
     private partial void LogStreamCompleted();
 
-    [LoggerMessage(EventId = 4014, Level = LogLevel.Error,
+    [LoggerMessage(EventId = 4024, Level = LogLevel.Error,
         Message = "Activation condition event stream error")]
     private partial void LogStreamError(Exception ex);
 
-    [LoggerMessage(EventId = 4015, Level = LogLevel.Critical,
+    [LoggerMessage(EventId = 4025, Level = LogLevel.Critical,
         Message = "FailActivity call itself failed for activity {ActivityId} — workflow may be stalled")]
     private partial void LogFailActivityFailed(Exception ex, string activityId);
 }

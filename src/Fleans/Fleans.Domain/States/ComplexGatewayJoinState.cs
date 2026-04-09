@@ -18,6 +18,6 @@ public class ComplexGatewayJoinState
 
     private ComplexGatewayJoinState() { }
 
-    public void Increment() => WaitingTokenCount++;
+    public void IncrementTokenCount() => WaitingTokenCount++;
     public void MarkFired() => HasFired = true;
 }

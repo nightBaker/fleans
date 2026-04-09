@@ -53,7 +53,7 @@ public record ComplexGateway(
 
             // Get or create join state and increment token count
             var joinState = await workflowContext.GetOrCreateComplexGatewayJoinState(activityInstanceId, ActivationCondition);
-            joinState.Increment();
+            joinState.IncrementTokenCount();
 
             commands.Add(new EvaluateActivationConditionCommand(ActivationCondition, joinState.WaitingTokenCount));
         }

@@ -281,4 +281,8 @@ public partial class WorkflowInstance
         Message = "Complex gateway join {ActivityInstanceId} activation condition met: {Condition} (tokenCount={TokenCount})")]
     private partial void LogComplexGatewayActivationConditionMet(string condition, Guid activityInstanceId, int tokenCount);
 
+    [LoggerMessage(EventId = 1083, Level = LogLevel.Information,
+        Message = "CompleteActivationCondition called for activity {ActivityId}, instance {ActivityInstanceId}, result={Result}")]
+    private partial void LogCompleteActivationCondition(string activityId, Guid activityInstanceId, bool result);
+
 }

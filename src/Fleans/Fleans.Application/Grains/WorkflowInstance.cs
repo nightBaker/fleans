@@ -352,6 +352,7 @@ public partial class WorkflowInstance :
         await EnsureExecution();
         SetWorkflowRequestContext();
         using var scope = BeginWorkflowScope();
+        LogCompleteActivationCondition(activityId, activityInstanceId, result);
 
         var joinState = State.GetComplexGatewayJoinState(activityInstanceId);
         if (joinState is null || joinState.HasFired)
@@ -369,7 +370,7 @@ public partial class WorkflowInstance :
         LogComplexGatewayActivationConditionMet(
             joinState.ActivationCondition, activityInstanceId, joinState.WaitingTokenCount);
 
-        _execution!.CompleteComplexGatewayJoin(activityId, activityInstanceId);
+        _execution!.CompleteComplexGatewayJoin(activityInstanceId);
         await ResolveExternalCompletions();
         await RunExecutionLoop();
         await ProcessPendingEvents();

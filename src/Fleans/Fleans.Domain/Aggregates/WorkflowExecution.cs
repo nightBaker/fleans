@@ -850,7 +850,7 @@ public class WorkflowExecution
         Emit(new ConditionSequenceEvaluated(activityInstanceId, sequenceId, result));
     }
 
-    public void CompleteComplexGatewayJoin(string activityId, Guid activityInstanceId)
+    public void CompleteComplexGatewayJoin(Guid activityInstanceId)
     {
         var entry = _state.GetEntry(activityInstanceId);
         Emit(new ActivityCompleted(activityInstanceId, entry.VariablesId, new ExpandoObject()));
