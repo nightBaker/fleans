@@ -746,8 +746,12 @@ public class WorkflowExecution
                 if (!scopeEntries.All(e => e.IsCompleted)) continue;
 
                 // If any scope child has an error (and wasn't handled by a boundary),
-                // the subprocess should NOT auto-complete — skip both variable merge and completion.
-                if (scopeEntries.Any(e => e.ErrorCode is not null)) continue;
+                // a regular SubProcess should NOT auto-complete — its boundary error
+                // events catch the failure and route execution. EventSubProcesses have
+                // no boundary events, so an unhandled handler failure must still close
+                // the scope (the failure stays visible on the failed child entry); the
+                // ESP host will be marked completed below so the workflow can terminate.
+                if (isSubProcess && scopeEntries.Any(e => e.ErrorCode is not null)) continue;
 
                 if (isSubProcess)
                 {
