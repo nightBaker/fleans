@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI">
+  <process id="complex-gateway-fork" isExecutable="true">
+    <startEvent id="start" />
+    <scriptTask id="setup" scriptFormat="csharp">
+      <script>_context.x = 7</script>
+    </scriptTask>
+    <complexGateway id="fork" default="s3" />
+    <scriptTask id="highBranch" scriptFormat="csharp">
+      <script>_context.high = true</script>
+    </scriptTask>
+    <scriptTask id="defaultBranch" scriptFormat="csharp">
+      <script>_context.defaultTaken = true</script>
+    </scriptTask>
+    <endEvent id="endHigh" />
+    <endEvent id="endDefault" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="setup" />
+    <sequenceFlow id="f2" sourceRef="setup" targetRef="fork" />
+    <sequenceFlow id="s2" sourceRef="fork" targetRef="highBranch">
+      <conditionExpression>x &gt; 5</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="s3" sourceRef="fork" targetRef="defaultBranch" />
+    <sequenceFlow id="f3" sourceRef="highBranch" targetRef="endHigh" />
+    <sequenceFlow id="f4" sourceRef="defaultBranch" targetRef="endDefault" />
+  </process>
+</definitions>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI">
+  <!-- Complex gateway join fires as soon as 1 of 2 tokens arrives -->
+  <process id="complex-gateway-join-activation" isExecutable="true">
+    <startEvent id="start" />
+    <parallelGateway id="fork" />
+    <scriptTask id="fastTask" scriptFormat="csharp">
+      <script>_context.fast = true</script>
+    </scriptTask>
+    <scriptTask id="slowTask" scriptFormat="csharp">
+      <!-- Simulates a slow branch; in a real test this would be a timer or user task -->
+      <script>_context.slow = true</script>
+    </scriptTask>
+    <complexGateway id="join" activationCondition="_context._nroftoken &gt;= 1" />
+    <scriptTask id="afterJoin" scriptFormat="csharp">
+      <script>_context.joined = true</script>
+    </scriptTask>
+    <endEvent id="end" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="fork" />
+    <sequenceFlow id="f2" sourceRef="fork" targetRef="fastTask" />
+    <sequenceFlow id="f3" sourceRef="fork" targetRef="slowTask" />
+    <sequenceFlow id="f4" sourceRef="fastTask" targetRef="join" />
+    <sequenceFlow id="f5" sourceRef="slowTask" targetRef="join" />
+    <sequenceFlow id="f6" sourceRef="join" targetRef="afterJoin" />
+    <sequenceFlow id="f7" sourceRef="afterJoin" targetRef="end" />
+  </process>
+</definitions>

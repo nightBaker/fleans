@@ -7,7 +7,7 @@ Fleans implements a growing subset of BPMN 2.0. See the project `README.md` for 
 up-to-date coverage matrix. Highlights:
 
 - **Tasks**: Script Task, Service Task, User Task, Call Activity
-- **Gateways**: Exclusive, Parallel
+- **Gateways**: Exclusive, Parallel, Inclusive, Complex (fork with conditional outgoing flows; join with optional `activationCondition`), Event-Based
 - **Events**: Start, End, Intermediate Timer, Intermediate Message, Intermediate Signal
 - **Boundary Events**: Timer, Message, Signal (interrupting and non-interrupting)
 - **Subprocesses**: Embedded, Call Activity

@@ -1,4 +1,5 @@
 using Fleans.Infrastructure.Bpmn;
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Text;
 
 namespace Fleans.Infrastructure.Tests.BpmnConverter;
@@ -10,7 +11,7 @@ public abstract class BpmnConverterTestBase
     [TestInitialize]
     public void Setup()
     {
-        _converter = new Bpmn.BpmnConverter();
+        _converter = new Bpmn.BpmnConverter(NullLogger<Bpmn.BpmnConverter>.Instance);
     }
 
     protected static string CreateSimpleBpmnXml(string processId, string startEventId, string endEventId, string sequenceFlowId)

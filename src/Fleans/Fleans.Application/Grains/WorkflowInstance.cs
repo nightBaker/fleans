@@ -340,6 +340,34 @@ public partial class WorkflowInstance :
         await ProcessPendingEvents();
     }
 
+    public async Task CompleteActivationCondition(string activityId, Guid activityInstanceId, bool result)
+    {
+        await EnsureExecution();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+
+        var joinState = State.GetComplexGatewayJoinState(activityInstanceId);
+        if (joinState is null || joinState.HasFired)
+        {
+            LogComplexGatewayActivationConditionLateCallback(activityInstanceId);
+            return;
+        }
+        if (!result)
+        {
+            LogComplexGatewayWaitingForMoreTokens(
+                activityInstanceId, joinState.WaitingTokenCount, joinState.ActivationCondition);
+            return;
+        }
+        joinState.MarkFired();
+        LogComplexGatewayActivationConditionMet(
+            joinState.ActivationCondition, activityInstanceId, joinState.WaitingTokenCount);
+
+        _execution!.CompleteComplexGatewayJoin(activityId, activityInstanceId);
+        await ResolveExternalCompletions();
+        await RunExecutionLoop();
+        await ProcessPendingEvents();
+    }
+
     public async Task SetParentInfo(Guid parentWorkflowInstanceId, string parentActivityId)
     {
         await EnsureExecution();
@@ -539,6 +567,13 @@ public partial class WorkflowInstance :
 
     public ValueTask<GatewayForkState?> FindForkByToken(Guid tokenId)
         => ValueTask.FromResult(State.FindForkByToken(tokenId));
+
+    public ValueTask<ComplexGatewayJoinState?> GetComplexGatewayJoinState(Guid activityInstanceId)
+        => ValueTask.FromResult(State.GetComplexGatewayJoinState(activityInstanceId));
+
+    public ValueTask<ComplexGatewayJoinState> GetOrCreateComplexGatewayJoinState(
+        Guid activityInstanceId, string activationCondition)
+        => ValueTask.FromResult(State.GetOrCreateComplexGatewayJoinState(activityInstanceId, activationCondition));
 
     private sealed class WorkflowInstanceEffectContext : IEffectContext
     {

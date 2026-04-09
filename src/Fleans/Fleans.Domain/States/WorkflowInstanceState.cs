@@ -104,6 +104,11 @@ public class WorkflowInstanceState
     [Id(16)]
     private int _dirtyFlags;
 
+    private const int DirtyComplexGatewayJoinStates = 32;
+
+    [Id(17)]
+    public List<ComplexGatewayJoinState> ComplexGatewayJoinStates { get; private set; } = [];
+
     internal int GetDirtyFlags() => _dirtyFlags;
 
     internal void ClearDirtyFlags() => _dirtyFlags = 0;
@@ -219,7 +224,8 @@ public class WorkflowInstanceState
             throw new InvalidOperationException("Workflow is already completed");
 
         GatewayForks.Clear();
-        _dirtyFlags |= DirtyGatewayForks;
+        ComplexGatewayJoinStates.Clear();
+        _dirtyFlags |= DirtyGatewayForks | DirtyComplexGatewayJoinStates;
         CompletedAt = DateTimeOffset.UtcNow;
         IsCompleted = true;
     }
@@ -447,5 +453,26 @@ public class WorkflowInstanceState
             TimerCycleTracking.Add(new TimerCycleTrackingState(hostActivityInstanceId, timerActivityId, definition, Id));
             _dirtyFlags |= DirtyTimerCycleTracking;
         }
+    }
+
+    public ComplexGatewayJoinState? GetComplexGatewayJoinState(Guid activityInstanceId)
+        => ComplexGatewayJoinStates.FirstOrDefault(s => s.ActivityInstanceId == activityInstanceId);
+
+    public ComplexGatewayJoinState GetOrCreateComplexGatewayJoinState(
+        Guid activityInstanceId, string activationCondition)
+    {
+        var existing = ComplexGatewayJoinStates
+            .FirstOrDefault(s => s.ActivityInstanceId == activityInstanceId);
+        if (existing is not null) return existing;
+        var newState = new ComplexGatewayJoinState(activityInstanceId, activationCondition);
+        ComplexGatewayJoinStates.Add(newState);
+        _dirtyFlags |= DirtyComplexGatewayJoinStates;
+        return newState;
+    }
+
+    public void RemoveComplexGatewayJoinState(Guid activityInstanceId)
+    {
+        ComplexGatewayJoinStates.RemoveAll(s => s.ActivityInstanceId == activityInstanceId);
+        _dirtyFlags |= DirtyComplexGatewayJoinStates;
     }
 }

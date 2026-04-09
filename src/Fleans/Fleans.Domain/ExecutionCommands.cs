@@ -70,3 +70,8 @@ public record RegisterUserTaskCommand(
 [GenerateSerializer]
 public record CompleteWorkflowCommand() : IExecutionCommand;
 
+[GenerateSerializer]
+public record EvaluateActivationConditionCommand(
+    [property: Id(0)] string Condition,
+    [property: Id(1)] int NrOfToken) : IExecutionCommand;
+

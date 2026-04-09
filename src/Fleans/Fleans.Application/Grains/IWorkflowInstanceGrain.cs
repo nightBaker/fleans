@@ -26,6 +26,7 @@ public interface IWorkflowInstanceGrain : IGrainWithGuidKey, IWorkflowExecutionC
     Task CompleteActivity(string activityId, ExpandoObject variables);
     Task CompleteActivity(string activityId, Guid activityInstanceId, ExpandoObject variables);
     Task CompleteConditionSequence(string activityId, string conditionSequenceId, bool result);
+    Task CompleteActivationCondition(string activityId, Guid activityInstanceId, bool result);
     Task FailActivity(string activityId, Exception exception);
     Task FailActivity(string activityId, Guid activityInstanceId, Exception exception);
     Task StartWorkflow();

@@ -343,6 +343,10 @@ public class WorkflowExecution
                     effects.AddRange(ProcessAddConditions(conditions, activityInstanceId));
                     break;
 
+                case EvaluateActivationConditionCommand evalActivation:
+                    effects.Add(ProcessEvaluateActivationCondition(evalActivation, activityInstanceId));
+                    break;
+
                 case RegisterUserTaskCommand regUserTask:
                     Emit(new UserTaskRegistered(
                         activityInstanceId, regUserTask.Assignee,
@@ -466,6 +470,21 @@ public class WorkflowExecution
         return new StartChildWorkflowEffect(
             childInstanceId, callActivity.CalledProcessKey,
             inputVariables, callActivity.ActivityId);
+    }
+
+    private IInfrastructureEffect ProcessEvaluateActivationCondition(
+        EvaluateActivationConditionCommand cmd, Guid activityInstanceId)
+    {
+        var entry = _state.GetActiveEntry(activityInstanceId);
+        return new PublishDomainEventEffect(new EvaluateActivationConditionEvent(
+            _state.Id,
+            _definition.WorkflowId,
+            _definition.ProcessDefinitionId,
+            activityInstanceId,
+            entry.ActivityId,
+            cmd.Condition,
+            entry.VariablesId,
+            cmd.NrOfToken));
     }
 
     private List<IInfrastructureEffect> ProcessAddConditions(
@@ -755,6 +774,13 @@ public class WorkflowExecution
     public void EvaluateConditionSequence(Guid activityInstanceId, string sequenceId, bool result)
     {
         Emit(new ConditionSequenceEvaluated(activityInstanceId, sequenceId, result));
+    }
+
+    public void CompleteComplexGatewayJoin(string activityId, Guid activityInstanceId)
+    {
+        var entry = _state.GetEntry(activityInstanceId);
+        Emit(new ActivityCompleted(activityInstanceId, entry.VariablesId, new ExpandoObject()));
+        Emit(new ComplexGatewayJoinStateRemoved(activityInstanceId));
     }
 
     public void CompleteConditionSequence(string activityId, string conditionSequenceId, bool result)
@@ -1424,6 +1450,9 @@ public class WorkflowExecution
                 break;
             case GatewayForkRemoved e:
                 _state.RemoveGatewayFork(e.ForkInstanceId);
+                break;
+            case ComplexGatewayJoinStateRemoved e:
+                _state.RemoveComplexGatewayJoinState(e.ActivityInstanceId);
                 break;
             case ParentInfoSet e:
                 _state.SetParentInfo(e.ParentInstanceId, e.ParentActivityId);

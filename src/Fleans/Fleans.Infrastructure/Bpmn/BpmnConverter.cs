@@ -3,6 +3,7 @@ using System.Xml.Linq;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
+using Microsoft.Extensions.Logging;
 
 namespace Fleans.Infrastructure.Bpmn;
 
@@ -19,6 +20,13 @@ public partial class BpmnConverter : IBpmnConverter
     private static readonly XNamespace Zeebe = ZeebeNamespace;
     private static readonly XNamespace Fleans = FleansNamespace;
     private static readonly XNamespace Camunda = CamundaNamespace;
+
+    private readonly ILogger<BpmnConverter> _logger;
+
+    public BpmnConverter(ILogger<BpmnConverter> logger)
+    {
+        _logger = logger;
+    }
 
     public async Task<WorkflowDefinition> ConvertFromXmlAsync(Stream bpmnXmlStream)
     {
@@ -326,6 +334,55 @@ public partial class BpmnConverter : IBpmnConverter
             var activity = new InclusiveGateway(id, IsFork: isFork);
             activities.Add(activity);
             activityMap[id] = activity;
+        }
+
+        // Parse complex gateways
+        foreach (var gateway in scopeElement.Elements(Bpmn + "complexGateway"))
+        {
+            var id = GetId(gateway);
+            var defaultFlowId = gateway.Attribute("default")?.Value;
+            if (defaultFlowId is not null)
+                defaultFlowIds.Add(defaultFlowId);
+
+            var activationCondition = gateway.Attribute("activationCondition")?.Value;
+
+            var incomingCount = scopeElement.Elements(Bpmn + "sequenceFlow")
+                .Count(sf => sf.Attribute("targetRef")?.Value == id);
+            var outgoingCount = scopeElement.Elements(Bpmn + "sequenceFlow")
+                .Count(sf => sf.Attribute("sourceRef")?.Value == id);
+
+            bool isFork;
+            if (outgoingCount > incomingCount)
+            {
+                isFork = true;
+            }
+            else if (incomingCount > outgoingCount)
+            {
+                isFork = false;
+            }
+            else if (incomingCount <= 1)
+            {
+                isFork = true;
+            }
+            else
+            {
+                throw new InvalidOperationException(
+                    $"Complex gateway '{id}' has {incomingCount} incoming and {outgoingCount} outgoing flows. " +
+                    "Mixed complex gateways (both join and fork) are not supported. " +
+                    "Split into separate join and fork gateways.");
+            }
+
+            if (activationCondition is not null && isFork)
+            {
+                _logger.LogWarning(
+                    "Complex gateway '{GatewayId}' has activationCondition but is detected as a fork — activationCondition is ignored on fork gateways",
+                    id);
+                activationCondition = null;
+            }
+
+            var complexActivity = new ComplexGateway(id, IsFork: isFork, ActivationCondition: isFork ? null : activationCondition);
+            activities.Add(complexActivity);
+            activityMap[id] = complexActivity;
         }
 
         // Parse event-based gateways
