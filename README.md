@@ -42,7 +42,7 @@ For now, next elements are implemented
 | User Task            | A task that requires human interaction with claim lifecycle.                 |     [x]     |
 | Multi-Instance       | Executes an activity multiple times in parallel or sequentially.             |     [x]     |
 | Transaction          | A set of activities that are handled as a single unit.                      |             |
-| Event Sub-Process    | A sub-process that is triggered by an event.                                 |             |
+| Event Sub-Process    | A sub-process triggered by an event (error / timer / message / signal; interrupting + non-interrupting). |     [x]     |
 | **Gateways**         |                                                                             |             |
 | Exclusive Gateway    | Indicates a decision point where only one path can be taken.                 |    [x]      |
 | Inclusive Gateway    | Indicates a decision point where one or more paths can be taken.             |    [x]      |
