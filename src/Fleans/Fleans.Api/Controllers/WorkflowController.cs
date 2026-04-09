@@ -1,5 +1,7 @@
 using Fleans.Application;
 using Fleans.Application.QueryModels;
+using Fleans.Domain.Errors;
+using Fleans.Domain.States;
 using Fleans.ServiceDefaults.DTOs;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -151,7 +153,7 @@ namespace Fleans.Api.Controllers
         public async Task<IActionResult> GetTask(Guid activityInstanceId)
         {
             var task = await _workflowQueryService.GetUserTask(activityInstanceId);
-            if (task == null)
+            if (task == null || task.TaskState == nameof(UserTaskLifecycleState.Completed))
                 return NotFound(new ErrorResponse($"User task '{activityInstanceId}' not found"));
 
             return Ok(task);
@@ -168,9 +170,16 @@ namespace Fleans.Api.Controllers
             if (task == null)
                 return NotFound(new ErrorResponse($"User task '{activityInstanceId}' not found"));
 
-            LogUserTaskClaim(activityInstanceId, request.UserId);
-            await _commandService.ClaimUserTask(task.WorkflowInstanceId, activityInstanceId, request.UserId);
-            return Ok();
+            try
+            {
+                LogUserTaskClaim(activityInstanceId, request.UserId);
+                await _commandService.ClaimUserTask(task.WorkflowInstanceId, activityInstanceId, request.UserId);
+                return Ok();
+            }
+            catch (BadRequestActivityException ex)
+            {
+                return Conflict(new ErrorResponse(ex.GetActivityErrorState().Message));
+            }
         }
 
         [EnableRateLimiting("task-operation")]
@@ -199,10 +208,17 @@ namespace Fleans.Api.Controllers
 
             var variables = VariableConverter.ToExpandoObject(request.Variables);
 
-            LogUserTaskComplete(activityInstanceId, request.UserId);
-            await _commandService.CompleteUserTask(
-                task.WorkflowInstanceId, activityInstanceId, request.UserId, variables);
-            return Ok();
+            try
+            {
+                LogUserTaskComplete(activityInstanceId, request.UserId);
+                await _commandService.CompleteUserTask(
+                    task.WorkflowInstanceId, activityInstanceId, request.UserId, variables);
+                return Ok();
+            }
+            catch (BadRequestActivityException ex)
+            {
+                return Conflict(new ErrorResponse(ex.GetActivityErrorState().Message));
+            }
         }
 
         [EnableRateLimiting("admin")]

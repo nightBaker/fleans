@@ -193,7 +193,7 @@ public class WorkflowExecutionTimerEventSubProcessTests
     }
 
     [TestMethod]
-    public void HandleTimerFired_CycleTimer_ThrowsNotSupportedException()
+    public void HandleTimerFired_InterruptingCycleTimer_FiresButDoesNotReRegister()
     {
         var start = new StartEvent("start1");
         var task = new ScriptTask("task1", "return 1;");
@@ -217,8 +217,16 @@ public class WorkflowExecutionTimerEventSubProcessTests
         var taskEntry = state.GetActiveActivities().First(e => e.ActivityId == "task1");
         execution.MarkExecuting(taskEntry.ActivityInstanceId);
 
-        Assert.ThrowsExactly<NotSupportedException>(
-            () => execution.HandleTimerFired("timerStart1", state.Id));
+        // Interrupting cycle timer fires successfully (no longer throws)
+        var effects = execution.HandleTimerFired("timerStart1", state.Id);
+
+        // ESP handler is spawned
+        Assert.IsTrue(state.Entries.Any(e => e.ActivityId == "evtSub1"),
+            "EventSubProcess host should be spawned");
+
+        // Interrupting ESP does not re-register cycle timer (peer listeners unregistered)
+        Assert.IsFalse(effects.Any(e => e is RegisterTimerEffect),
+            "Interrupting cycle timer should not produce a re-registration effect");
     }
 
     [TestMethod]
