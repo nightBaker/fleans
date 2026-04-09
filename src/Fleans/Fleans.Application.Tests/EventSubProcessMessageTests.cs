@@ -86,6 +86,12 @@ public class EventSubProcessMessageTests : WorkflowTestBase
         Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "evtSub1"),
             "EventSubProcess host should be completed");
 
+        // The EndEvent inside the event sub-process must also be reached.
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "evtSub1_end"
+                                                              && a.ErrorState == null
+                                                              && !a.IsCancelled),
+            "EventSubProcess inner EndEvent 'evtSub1_end' should be completed");
+
         Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId == "end"),
             "Normal 'end' event should not be reached when the message handler interrupts flow");
     }

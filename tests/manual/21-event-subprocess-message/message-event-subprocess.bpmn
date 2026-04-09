@@ -25,7 +25,7 @@
         <messageEventDefinition messageRef="cancelOrderMsg"/>
       </startEvent>
       <scriptTask id="handlerTask" scriptFormat="csharp">
-        <script>return new System.Dynamic.ExpandoObject();</script>
+        <script>_context.handlerRan = true</script>
       </scriptTask>
       <endEvent id="handlerEnd"/>
       <sequenceFlow id="esf1" sourceRef="msgStart" targetRef="handlerTask"/>
