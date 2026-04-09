@@ -12,6 +12,7 @@ public class FleanCommandDbContext : DbContext
     public DbSet<WorkflowVariablesState> WorkflowVariableStates => Set<WorkflowVariablesState>();
     public DbSet<ConditionSequenceState> WorkflowConditionSequenceStates => Set<ConditionSequenceState>();
     public DbSet<GatewayForkState> GatewayForks => Set<GatewayForkState>();
+    public DbSet<ComplexGatewayJoinState> ComplexGatewayJoinStates => Set<ComplexGatewayJoinState>();
     public DbSet<ProcessDefinition> ProcessDefinitions => Set<ProcessDefinition>();
     public DbSet<TimerStartEventSchedulerState> TimerSchedulers => Set<TimerStartEventSchedulerState>();
     public DbSet<MessageCorrelationState> MessageCorrelations => Set<MessageCorrelationState>();

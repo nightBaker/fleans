@@ -464,7 +464,7 @@ public class WorkflowInstanceState
         var existing = ComplexGatewayJoinStates
             .FirstOrDefault(s => s.ActivityInstanceId == activityInstanceId);
         if (existing is not null) return existing;
-        var newState = new ComplexGatewayJoinState(activityInstanceId, activationCondition);
+        var newState = new ComplexGatewayJoinState(activityInstanceId, activationCondition, Id);
         ComplexGatewayJoinStates.Add(newState);
         _dirtyFlags |= DirtyComplexGatewayJoinStates;
         return newState;

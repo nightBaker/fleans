@@ -258,6 +258,16 @@ public partial class WorkflowInstance
         Message = "Workflow completed via root EventSubProcess {EventSubProcessId} (no outgoing sequence flow)")]
     private partial void LogRootEventSubProcessCompleted(string eventSubProcessId);
 
+    [LoggerMessage(EventId = 1076, Level = LogLevel.Debug,
+        Message = "EventSubProcess host completed: {EventSubProcessId} hostInstance={HostActivityInstanceId}")]
+    private partial void LogEventSubProcessHostCompleted(
+        string eventSubProcessId, Guid hostActivityInstanceId);
+
+    [LoggerMessage(EventId = 1077, Level = LogLevel.Debug,
+        Message = "EventSubProcess handler EndEvent fired: esp={EventSubProcessId} endEvent={EndEventId} hostInstance={HostActivityInstanceId}")]
+    private partial void LogEventSubProcessHandlerEndEventFired(
+        string eventSubProcessId, string endEventId, Guid hostActivityInstanceId);
+
     // Complex gateway lifecycle (EventId 1080-1089)
     [LoggerMessage(EventId = 1080, Level = LogLevel.Debug,
         Message = "Complex gateway activation condition late callback — join instance {ActivityInstanceId} has already fired or was removed")]

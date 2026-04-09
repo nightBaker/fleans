@@ -224,7 +224,7 @@ public class ComplexGatewayActivityTests
             [new SequenceFlow("s1", gateway, end)]);
 
         var activityInstanceId = Guid.NewGuid();
-        var joinState = new ComplexGatewayJoinState(activityInstanceId, "_context._nroftoken >= 2");
+        var joinState = new ComplexGatewayJoinState(activityInstanceId, "_context._nroftoken >= 2", Guid.NewGuid());
 
         var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
         workflowContext.GetComplexGatewayJoinState(activityInstanceId)
@@ -255,7 +255,7 @@ public class ComplexGatewayActivityTests
             [new SequenceFlow("s1", gateway, end)]);
 
         var activityInstanceId = Guid.NewGuid();
-        var firedJoinState = new ComplexGatewayJoinState(activityInstanceId, "_context._nroftoken >= 2");
+        var firedJoinState = new ComplexGatewayJoinState(activityInstanceId, "_context._nroftoken >= 2", Guid.NewGuid());
         firedJoinState.Increment();
         firedJoinState.Increment();
         firedJoinState.MarkFired();

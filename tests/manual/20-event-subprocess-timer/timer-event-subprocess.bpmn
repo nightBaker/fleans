@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             id="EventSubProcessTimerDefinitions"
+             targetNamespace="http://fleans/tests">
+  <process id="evtSubTimerProcess" isExecutable="true">
+    <startEvent id="start"/>
+    <userTask id="userTask" name="Manual step (should be cancelled when the timer fires)"/>
+    <endEvent id="normalEnd"/>
+
+    <sequenceFlow id="sf1" sourceRef="start" targetRef="userTask"/>
+    <sequenceFlow id="sf2" sourceRef="userTask" targetRef="normalEnd"/>
+
+    <subProcess id="timerEventSub" triggeredByEvent="true">
+      <startEvent id="timerStart">
+        <timerEventDefinition>
+          <timeDuration>PT5S</timeDuration>
+        </timerEventDefinition>
+      </startEvent>
+      <scriptTask id="handlerTask" scriptFormat="csharp">
+        <script>_context.handlerRan = true</script>
+      </scriptTask>
+      <endEvent id="handlerEnd"/>
+      <sequenceFlow id="esf1" sourceRef="timerStart" targetRef="handlerTask"/>
+      <sequenceFlow id="esf2" sourceRef="handlerTask" targetRef="handlerEnd"/>
+    </subProcess>
+  </process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="evtSubTimerProcess">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="100" y="100" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="userTask_di" bpmnElement="userTask">
+        <dc:Bounds x="200" y="80" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="normalEnd_di" bpmnElement="normalEnd">
+        <dc:Bounds x="360" y="100" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="timerEventSub_di" bpmnElement="timerEventSub" isExpanded="true">
+        <dc:Bounds x="100" y="220" width="340" height="160"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="timerStart_di" bpmnElement="timerStart">
+        <dc:Bounds x="130" y="280" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="handlerTask_di" bpmnElement="handlerTask">
+        <dc:Bounds x="220" y="258" width="100" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="handlerEnd_di" bpmnElement="handlerEnd">
+        <dc:Bounds x="370" y="280" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="sf1_di" bpmnElement="sf1">
+        <di:waypoint x="136" y="118"/>
+        <di:waypoint x="200" y="118"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf2_di" bpmnElement="sf2">
+        <di:waypoint x="300" y="118"/>
+        <di:waypoint x="360" y="118"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="esf1_di" bpmnElement="esf1">
+        <di:waypoint x="166" y="298"/>
+        <di:waypoint x="220" y="298"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="esf2_di" bpmnElement="esf2">
+        <di:waypoint x="320" y="298"/>
+        <di:waypoint x="370" y="298"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>
