@@ -150,6 +150,9 @@ public partial class WorkflowInstance
             var activity = scopeDef.GetActivity(entry.ActivityId);
             var adapter = new ActivityExecutionContextAdapter(entry);
 
+            if (activity is EndEvent && scopeDef is EventSubProcess esp && entry.ScopeId is Guid espHostId)
+                LogEventSubProcessHandlerEndEventFired(esp.ActivityId, entry.ActivityId, espHostId);
+
             var transitions = await activity.GetNextActivities(this, adapter, scopeDef);
             if (transitions.Count > 0)
                 result.Add(new CompletedActivityTransitions(
@@ -190,6 +193,8 @@ public partial class WorkflowInstance
 
                 if (activity is SubProcess)
                     LogSubProcessVariablesMerged(hostEntry.ActivityId, hostEntry.VariablesId);
+                else if (activity is EventSubProcess)
+                    LogEventSubProcessHostCompleted(hostEntry.ActivityId, hostId);
 
                 var adapter = new ActivityExecutionContextAdapter(hostEntry);
 
