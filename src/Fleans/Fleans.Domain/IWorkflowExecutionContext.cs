@@ -16,6 +16,6 @@ public interface IWorkflowExecutionContext
 
     ValueTask<GatewayForkState?> FindForkByToken(Guid tokenId);
 
-    ValueTask<ComplexGatewayJoinState?> GetComplexGatewayJoinState(Guid activityInstanceId);
-    ValueTask IncrementComplexGatewayJoinToken(Guid activityInstanceId, string activationCondition);
+    ValueTask<ComplexGatewayJoinState?> GetComplexGatewayJoinState(string gatewayActivityId);
+    ValueTask IncrementComplexGatewayJoinToken(string gatewayActivityId, Guid activityInstanceId, string activationCondition);
 }

@@ -206,15 +206,15 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
 
     private static void DiffComplexGatewayJoinStates(FleanCommandDbContext db, WorkflowInstanceState existing, WorkflowInstanceState incoming, Guid instanceId)
     {
-        var existingDict = existing.ComplexGatewayJoinStates.ToDictionary(c => c.ActivityInstanceId);
-        var incomingDict = incoming.ComplexGatewayJoinStates.ToDictionary(c => c.ActivityInstanceId);
+        var existingDict = existing.ComplexGatewayJoinStates.ToDictionary(c => c.GatewayActivityId);
+        var incomingDict = incoming.ComplexGatewayJoinStates.ToDictionary(c => c.GatewayActivityId);
 
-        foreach (var old in existing.ComplexGatewayJoinStates.Where(c => !incomingDict.ContainsKey(c.ActivityInstanceId)))
+        foreach (var old in existing.ComplexGatewayJoinStates.Where(c => !incomingDict.ContainsKey(c.GatewayActivityId)))
             db.Remove(old);
 
         foreach (var cg in incoming.ComplexGatewayJoinStates)
         {
-            if (existingDict.TryGetValue(cg.ActivityInstanceId, out var tracked))
+            if (existingDict.TryGetValue(cg.GatewayActivityId, out var tracked))
             {
                 db.Entry(tracked).CurrentValues.SetValues(cg);
             }

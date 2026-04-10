@@ -354,7 +354,7 @@ public partial class WorkflowInstance :
         using var scope = BeginWorkflowScope();
         LogCompleteActivationCondition(activityId, activityInstanceId, result);
 
-        var joinState = State.GetComplexGatewayJoinState(activityInstanceId);
+        var joinState = State.GetComplexGatewayJoinState(activityId);
         if (joinState is null || joinState.HasFired)
         {
             LogComplexGatewayActivationConditionLateCallback(activityInstanceId);
@@ -366,11 +366,11 @@ public partial class WorkflowInstance :
                 activityInstanceId, joinState.WaitingTokenCount, joinState.ActivationCondition);
             return;
         }
-        _execution!.MarkComplexGatewayJoinFired(activityInstanceId);
+        _execution!.MarkComplexGatewayJoinFired(activityId);
         LogComplexGatewayActivationConditionMet(
             joinState.ActivationCondition, activityInstanceId, joinState.WaitingTokenCount);
 
-        _execution!.CompleteComplexGatewayJoin(activityInstanceId);
+        _execution!.CompleteComplexGatewayJoin(activityId);
         await ResolveExternalCompletions();
         await RunExecutionLoop();
         await ProcessPendingEvents();
@@ -576,12 +576,12 @@ public partial class WorkflowInstance :
     public ValueTask<GatewayForkState?> FindForkByToken(Guid tokenId)
         => ValueTask.FromResult(State.FindForkByToken(tokenId));
 
-    public ValueTask<ComplexGatewayJoinState?> GetComplexGatewayJoinState(Guid activityInstanceId)
-        => ValueTask.FromResult(State.GetComplexGatewayJoinState(activityInstanceId));
+    public ValueTask<ComplexGatewayJoinState?> GetComplexGatewayJoinState(string gatewayActivityId)
+        => ValueTask.FromResult(State.GetComplexGatewayJoinState(gatewayActivityId));
 
-    public ValueTask IncrementComplexGatewayJoinToken(Guid activityInstanceId, string activationCondition)
+    public ValueTask IncrementComplexGatewayJoinToken(string gatewayActivityId, Guid activityInstanceId, string activationCondition)
     {
-        _execution!.CreateOrIncrementComplexGatewayJoinToken(activityInstanceId, activationCondition, State.Id);
+        _execution!.CreateOrIncrementComplexGatewayJoinToken(gatewayActivityId, activityInstanceId, activationCondition, State.Id);
         return ValueTask.CompletedTask;
     }
 

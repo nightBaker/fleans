@@ -43,19 +43,31 @@ public record ComplexGateway(
         }
         else
         {
-            // Join with activation condition
+            // Join with activation condition — state is keyed by gateway definition ID
+            // (shared across all tokens arriving at this gateway)
+            var activityId = await activityContext.GetActivityId();
             var activityInstanceId = await activityContext.GetActivityInstanceId();
 
             // Already-fired guard: if another token fired the gateway, discard this late arrival
-            var existingState = await workflowContext.GetComplexGatewayJoinState(activityInstanceId);
+            var existingState = await workflowContext.GetComplexGatewayJoinState(activityId);
             if (existingState?.HasFired == true)
-                return commands; // GetNextActivities handles RestoreParent token cleanup
+            {
+                commands.Add(new DiscardLateTokenCommand(
+                    $"ComplexGateway '{activityId}' already fired — discarding late token"));
+                return commands;
+            }
 
-            // Create join state (if needed) and increment token count via event sourcing
-            await workflowContext.IncrementComplexGatewayJoinToken(activityInstanceId, ActivationCondition);
-            var joinState = (await workflowContext.GetComplexGatewayJoinState(activityInstanceId))!;
+            // Create join state (if needed) and increment token count via event sourcing.
+            // The first token's activityInstanceId is stored so the gateway can complete
+            // the correct activity instance when the activation condition fires.
+            await workflowContext.IncrementComplexGatewayJoinToken(activityId, activityInstanceId, ActivationCondition);
+            var joinState = (await workflowContext.GetComplexGatewayJoinState(activityId))!;
 
             commands.Add(new EvaluateActivationConditionCommand(ActivationCondition, joinState.WaitingTokenCount));
+
+            // Mark as executing so the execution loop doesn't re-process this entry.
+            // The async activation condition callback will complete or discard this entry.
+            await activityContext.Execute();
         }
 
         return commands;

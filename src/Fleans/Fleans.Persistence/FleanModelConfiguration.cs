@@ -108,8 +108,9 @@ internal static class FleanModelConfiguration
         modelBuilder.Entity<ComplexGatewayJoinState>(entity =>
         {
             entity.ToTable("ComplexGatewayJoinStates");
-            entity.HasKey(e => e.ActivityInstanceId);
+            entity.HasKey(e => new { e.WorkflowInstanceId, e.GatewayActivityId });
 
+            entity.Property(e => e.GatewayActivityId).HasMaxLength(256);
             entity.Property(e => e.ActivationCondition).HasMaxLength(1024);
         });
 

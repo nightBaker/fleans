@@ -57,7 +57,10 @@ public partial class WorkflowEvaluateActivationConditionEventHandler : Grain, IW
         {
             var variables = await workflowInstance.GetVariables(item.VariablesId);
 
-            // Inject _nroftoken into the merged variables so expressions can reference _context._nroftoken
+            // Inject _nroftoken as a top-level key on the ExpandoObject (which IS _context in
+            // DynamicExpresso). BPMN activation conditions reference it as _context._nroftoken
+            // (e.g., "_context._nroftoken >= 2"). Writing just "_nroftoken >= 2" won't work
+            // because DynamicExpresso resolves variables through the _context parameter.
             ((IDictionary<string, object?>)variables)["_nroftoken"] = (object)item.NrOfToken;
 
             var expressionEvaluator = _grainFactory.GetGrain<IConditionExpressionEvaluatorGrain>(0);
@@ -94,6 +97,7 @@ public partial class WorkflowEvaluateActivationConditionEventHandler : Grain, IW
         return Task.CompletedTask;
     }
 
+    // No-op: forces Orleans to activate this grain so the implicit stream subscription starts.
     public void Ping() { }
 
     [LoggerMessage(EventId = 4020, Level = LogLevel.Information,

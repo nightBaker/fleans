@@ -224,13 +224,13 @@ public class ComplexGatewayActivityTests
             [new SequenceFlow("s1", gateway, end)]);
 
         var activityInstanceId = Guid.NewGuid();
-        var joinState = new ComplexGatewayJoinState(activityInstanceId, "_context._nroftoken >= 2", Guid.NewGuid());
+        var joinState = new ComplexGatewayJoinState("cg-join", activityInstanceId, "_context._nroftoken >= 2", Guid.NewGuid());
 
         var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
-        workflowContext.GetComplexGatewayJoinState(activityInstanceId)
+        workflowContext.GetComplexGatewayJoinState("cg-join")
             .Returns(ValueTask.FromResult<ComplexGatewayJoinState?>(null),
                      ValueTask.FromResult<ComplexGatewayJoinState?>(joinState));
-        workflowContext.When(x => x.IncrementComplexGatewayJoinToken(activityInstanceId, "_context._nroftoken >= 2"))
+        workflowContext.When(x => x.IncrementComplexGatewayJoinToken("cg-join", activityInstanceId, "_context._nroftoken >= 2"))
             .Do(_ => joinState.IncrementTokenCount());
 
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("cg-join", activityInstanceId);
@@ -256,13 +256,13 @@ public class ComplexGatewayActivityTests
             [new SequenceFlow("s1", gateway, end)]);
 
         var activityInstanceId = Guid.NewGuid();
-        var firedJoinState = new ComplexGatewayJoinState(activityInstanceId, "_context._nroftoken >= 2", Guid.NewGuid());
+        var firedJoinState = new ComplexGatewayJoinState("cg-join", activityInstanceId, "_context._nroftoken >= 2", Guid.NewGuid());
         firedJoinState.IncrementTokenCount();
         firedJoinState.IncrementTokenCount();
         firedJoinState.MarkFired();
 
         var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
-        workflowContext.GetComplexGatewayJoinState(activityInstanceId)
+        workflowContext.GetComplexGatewayJoinState("cg-join")
             .Returns(ValueTask.FromResult<ComplexGatewayJoinState?>(firedJoinState));
 
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("cg-join", activityInstanceId);
@@ -270,11 +270,12 @@ public class ComplexGatewayActivityTests
         // Act
         var commands = await gateway.ExecuteAsync(workflowContext, activityContext, definition);
 
-        // Assert — no EvaluateActivationConditionCommand, no Complete
+        // Assert — DiscardLateTokenCommand emitted, no EvaluateActivationConditionCommand, no Complete
+        Assert.IsTrue(commands.OfType<DiscardLateTokenCommand>().Any(), "Should emit DiscardLateTokenCommand");
         Assert.IsFalse(commands.OfType<EvaluateActivationConditionCommand>().Any());
         await activityContext.DidNotReceive().Complete();
         await workflowContext.DidNotReceive().IncrementComplexGatewayJoinToken(
-            Arg.Any<Guid>(), Arg.Any<string>());
+            Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>());
     }
 
     [TestMethod]

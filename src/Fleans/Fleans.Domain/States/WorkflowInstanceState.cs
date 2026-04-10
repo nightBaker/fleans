@@ -455,35 +455,35 @@ public class WorkflowInstanceState
         }
     }
 
-    public ComplexGatewayJoinState? GetComplexGatewayJoinState(Guid activityInstanceId)
-        => ComplexGatewayJoinStates.FirstOrDefault(s => s.ActivityInstanceId == activityInstanceId);
+    public ComplexGatewayJoinState? GetComplexGatewayJoinState(string gatewayActivityId)
+        => ComplexGatewayJoinStates.FirstOrDefault(s => s.GatewayActivityId == gatewayActivityId);
 
-    public void CreateComplexGatewayJoinState(Guid activityInstanceId, string activationCondition, Guid workflowInstanceId)
+    public void CreateComplexGatewayJoinState(string gatewayActivityId, Guid firstActivityInstanceId, string activationCondition, Guid workflowInstanceId)
     {
-        var newState = new ComplexGatewayJoinState(activityInstanceId, activationCondition, workflowInstanceId);
+        var newState = new ComplexGatewayJoinState(gatewayActivityId, firstActivityInstanceId, activationCondition, workflowInstanceId);
         ComplexGatewayJoinStates.Add(newState);
         _dirtyFlags |= DirtyComplexGatewayJoinStates;
     }
 
-    public void IncrementComplexGatewayTokenCount(Guid activityInstanceId)
+    public void IncrementComplexGatewayTokenCount(string gatewayActivityId)
     {
-        var state = GetComplexGatewayJoinState(activityInstanceId)
-            ?? throw new InvalidOperationException($"ComplexGatewayJoinState not found for {activityInstanceId}");
+        var state = GetComplexGatewayJoinState(gatewayActivityId)
+            ?? throw new InvalidOperationException($"ComplexGatewayJoinState not found for gateway '{gatewayActivityId}'");
         state.IncrementTokenCount();
         _dirtyFlags |= DirtyComplexGatewayJoinStates;
     }
 
-    public void MarkComplexGatewayJoinFired(Guid activityInstanceId)
+    public void MarkComplexGatewayJoinFired(string gatewayActivityId)
     {
-        var state = GetComplexGatewayJoinState(activityInstanceId)
-            ?? throw new InvalidOperationException($"ComplexGatewayJoinState not found for {activityInstanceId}");
+        var state = GetComplexGatewayJoinState(gatewayActivityId)
+            ?? throw new InvalidOperationException($"ComplexGatewayJoinState not found for gateway '{gatewayActivityId}'");
         state.MarkFired();
         _dirtyFlags |= DirtyComplexGatewayJoinStates;
     }
 
-    public void RemoveComplexGatewayJoinState(Guid activityInstanceId)
+    public void RemoveComplexGatewayJoinState(string gatewayActivityId)
     {
-        ComplexGatewayJoinStates.RemoveAll(s => s.ActivityInstanceId == activityInstanceId);
+        ComplexGatewayJoinStates.RemoveAll(s => s.GatewayActivityId == gatewayActivityId);
         _dirtyFlags |= DirtyComplexGatewayJoinStates;
     }
 }
