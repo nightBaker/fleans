@@ -894,7 +894,7 @@ public partial class BpmnConverter : IBpmnConverter
         throw new InvalidOperationException("timerEventDefinition must contain timeDuration, timeDate, or timeCycle");
     }
 
-    [LoggerMessage(EventId = 8000, Level = LogLevel.Warning,
+    [LoggerMessage(EventId = 9000, Level = LogLevel.Warning,
         Message = "Complex gateway '{GatewayId}' has activationCondition but is detected as a fork — activationCondition is ignored on fork gateways")]
     private partial void LogActivationConditionIgnoredOnFork(string gatewayId);
 }

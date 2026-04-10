@@ -51,9 +51,9 @@ public record ComplexGateway(
             if (existingState?.HasFired == true)
                 return commands; // GetNextActivities handles RestoreParent token cleanup
 
-            // Get or create join state and increment token count
-            var joinState = await workflowContext.GetOrCreateComplexGatewayJoinState(activityInstanceId, ActivationCondition);
-            joinState.IncrementTokenCount();
+            // Create join state (if needed) and increment token count via event sourcing
+            await workflowContext.IncrementComplexGatewayJoinToken(activityInstanceId, ActivationCondition);
+            var joinState = (await workflowContext.GetComplexGatewayJoinState(activityInstanceId))!;
 
             commands.Add(new EvaluateActivationConditionCommand(ActivationCondition, joinState.WaitingTokenCount));
         }

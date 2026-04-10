@@ -458,16 +458,27 @@ public class WorkflowInstanceState
     public ComplexGatewayJoinState? GetComplexGatewayJoinState(Guid activityInstanceId)
         => ComplexGatewayJoinStates.FirstOrDefault(s => s.ActivityInstanceId == activityInstanceId);
 
-    public ComplexGatewayJoinState GetOrCreateComplexGatewayJoinState(
-        Guid activityInstanceId, string activationCondition)
+    public void CreateComplexGatewayJoinState(Guid activityInstanceId, string activationCondition, Guid workflowInstanceId)
     {
-        var existing = ComplexGatewayJoinStates
-            .FirstOrDefault(s => s.ActivityInstanceId == activityInstanceId);
-        if (existing is not null) return existing;
-        var newState = new ComplexGatewayJoinState(activityInstanceId, activationCondition, Id);
+        var newState = new ComplexGatewayJoinState(activityInstanceId, activationCondition, workflowInstanceId);
         ComplexGatewayJoinStates.Add(newState);
         _dirtyFlags |= DirtyComplexGatewayJoinStates;
-        return newState;
+    }
+
+    public void IncrementComplexGatewayTokenCount(Guid activityInstanceId)
+    {
+        var state = GetComplexGatewayJoinState(activityInstanceId)
+            ?? throw new InvalidOperationException($"ComplexGatewayJoinState not found for {activityInstanceId}");
+        state.IncrementTokenCount();
+        _dirtyFlags |= DirtyComplexGatewayJoinStates;
+    }
+
+    public void MarkComplexGatewayJoinFired(Guid activityInstanceId)
+    {
+        var state = GetComplexGatewayJoinState(activityInstanceId)
+            ?? throw new InvalidOperationException($"ComplexGatewayJoinState not found for {activityInstanceId}");
+        state.MarkFired();
+        _dirtyFlags |= DirtyComplexGatewayJoinStates;
     }
 
     public void RemoveComplexGatewayJoinState(Guid activityInstanceId)

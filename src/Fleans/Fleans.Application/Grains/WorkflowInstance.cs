@@ -366,7 +366,7 @@ public partial class WorkflowInstance :
                 activityInstanceId, joinState.WaitingTokenCount, joinState.ActivationCondition);
             return;
         }
-        joinState.MarkFired();
+        _execution!.MarkComplexGatewayJoinFired(activityInstanceId);
         LogComplexGatewayActivationConditionMet(
             joinState.ActivationCondition, activityInstanceId, joinState.WaitingTokenCount);
 
@@ -579,9 +579,11 @@ public partial class WorkflowInstance :
     public ValueTask<ComplexGatewayJoinState?> GetComplexGatewayJoinState(Guid activityInstanceId)
         => ValueTask.FromResult(State.GetComplexGatewayJoinState(activityInstanceId));
 
-    public ValueTask<ComplexGatewayJoinState> GetOrCreateComplexGatewayJoinState(
-        Guid activityInstanceId, string activationCondition)
-        => ValueTask.FromResult(State.GetOrCreateComplexGatewayJoinState(activityInstanceId, activationCondition));
+    public ValueTask IncrementComplexGatewayJoinToken(Guid activityInstanceId, string activationCondition)
+    {
+        _execution!.CreateOrIncrementComplexGatewayJoinToken(activityInstanceId, activationCondition, State.Id);
+        return ValueTask.CompletedTask;
+    }
 
     private sealed class WorkflowInstanceEffectContext : IEffectContext
     {

@@ -850,6 +850,19 @@ public class WorkflowExecution
         Emit(new ConditionSequenceEvaluated(activityInstanceId, sequenceId, result));
     }
 
+    public void CreateOrIncrementComplexGatewayJoinToken(Guid activityInstanceId, string activationCondition, Guid workflowInstanceId)
+    {
+        var existing = _state.GetComplexGatewayJoinState(activityInstanceId);
+        if (existing is null)
+            Emit(new ComplexGatewayJoinStateCreated(activityInstanceId, activationCondition, workflowInstanceId));
+        Emit(new ComplexGatewayJoinStateTokenIncremented(activityInstanceId));
+    }
+
+    public void MarkComplexGatewayJoinFired(Guid activityInstanceId)
+    {
+        Emit(new ComplexGatewayJoinStateFired(activityInstanceId));
+    }
+
     public void CompleteComplexGatewayJoin(Guid activityInstanceId)
     {
         var entry = _state.GetEntry(activityInstanceId);
@@ -1664,6 +1677,15 @@ public class WorkflowExecution
                 break;
             case GatewayForkRemoved e:
                 _state.RemoveGatewayFork(e.ForkInstanceId);
+                break;
+            case ComplexGatewayJoinStateCreated e:
+                _state.CreateComplexGatewayJoinState(e.ActivityInstanceId, e.ActivationCondition, e.WorkflowInstanceId);
+                break;
+            case ComplexGatewayJoinStateTokenIncremented e:
+                _state.IncrementComplexGatewayTokenCount(e.ActivityInstanceId);
+                break;
+            case ComplexGatewayJoinStateFired e:
+                _state.MarkComplexGatewayJoinFired(e.ActivityInstanceId);
                 break;
             case ComplexGatewayJoinStateRemoved e:
                 _state.RemoveComplexGatewayJoinState(e.ActivityInstanceId);

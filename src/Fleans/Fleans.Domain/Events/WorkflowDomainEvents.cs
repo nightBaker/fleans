@@ -35,6 +35,9 @@ public record ConditionSequenceEvaluated(
 public record GatewayForkCreated(Guid ForkInstanceId, Guid? ConsumedTokenId) : IDomainEvent;
 public record GatewayForkTokenAdded(Guid ForkInstanceId, Guid TokenId) : IDomainEvent;
 public record GatewayForkRemoved(Guid ForkInstanceId) : IDomainEvent;
+public record ComplexGatewayJoinStateCreated(Guid ActivityInstanceId, string ActivationCondition, Guid WorkflowInstanceId) : IDomainEvent;
+public record ComplexGatewayJoinStateTokenIncremented(Guid ActivityInstanceId) : IDomainEvent;
+public record ComplexGatewayJoinStateFired(Guid ActivityInstanceId) : IDomainEvent;
 public record ComplexGatewayJoinStateRemoved(Guid ActivityInstanceId) : IDomainEvent;
 
 // Parent/child

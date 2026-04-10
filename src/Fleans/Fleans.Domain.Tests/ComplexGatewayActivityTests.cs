@@ -228,9 +228,10 @@ public class ComplexGatewayActivityTests
 
         var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
         workflowContext.GetComplexGatewayJoinState(activityInstanceId)
-            .Returns(ValueTask.FromResult<ComplexGatewayJoinState?>(null));
-        workflowContext.GetOrCreateComplexGatewayJoinState(activityInstanceId, "_context._nroftoken >= 2")
-            .Returns(ValueTask.FromResult(joinState));
+            .Returns(ValueTask.FromResult<ComplexGatewayJoinState?>(null),
+                     ValueTask.FromResult<ComplexGatewayJoinState?>(joinState));
+        workflowContext.When(x => x.IncrementComplexGatewayJoinToken(activityInstanceId, "_context._nroftoken >= 2"))
+            .Do(_ => joinState.IncrementTokenCount());
 
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("cg-join", activityInstanceId);
 
@@ -272,7 +273,7 @@ public class ComplexGatewayActivityTests
         // Assert — no EvaluateActivationConditionCommand, no Complete
         Assert.IsFalse(commands.OfType<EvaluateActivationConditionCommand>().Any());
         await activityContext.DidNotReceive().Complete();
-        workflowContext.DidNotReceive().GetOrCreateComplexGatewayJoinState(
+        await workflowContext.DidNotReceive().IncrementComplexGatewayJoinToken(
             Arg.Any<Guid>(), Arg.Any<string>());
     }
 
