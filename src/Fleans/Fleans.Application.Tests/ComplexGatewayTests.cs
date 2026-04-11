@@ -108,7 +108,10 @@ public class ComplexGatewayTests : WorkflowTestBase
         await workflowInstance.CompleteActivity("task2", new ExpandoObject());
 
         // Assert — join should NOT fire (condition always false), afterJoin never reached
-        await Task.Delay(1000); // give time for async condition evaluation
+        // Wait for both tasks to complete (confirming condition evaluation has been attempted)
+        await WaitForCondition(instanceId,
+            s => s.CompletedActivities.Count(a => a.ActivityId is "task1" or "task2") >= 2);
+        await Task.Delay(200); // allow time for any async side effects after condition evaluation
         var snapshot = await QueryService.GetStateSnapshot(instanceId);
         Assert.IsNotNull(snapshot);
         Assert.IsFalse(snapshot.IsCompleted,
@@ -135,7 +138,9 @@ public class ComplexGatewayTests : WorkflowTestBase
         await workflowInstance.CompleteActivity("task1", new ExpandoObject());
 
         // Assert — join not yet fired (needs all tokens)
-        await Task.Delay(200);
+        await WaitForCondition(instanceId,
+            s => s.CompletedActivities.Any(a => a.ActivityId == "task1"));
+        await Task.Delay(100); // allow time for any async side effects
         var snapshot = await QueryService.GetStateSnapshot(instanceId);
         Assert.IsNotNull(snapshot);
         Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId == "join"),
@@ -158,27 +163,7 @@ public class ComplexGatewayTests : WorkflowTestBase
         CollectionAssert.Contains(snapshot.CompletedActivityIds, "end");
     }
 
-    /// <summary>
-    /// Polls for a state snapshot satisfying <paramref name="condition"/>.
-    /// </summary>
-    private async Task<InstanceStateSnapshot> WaitForCondition(
-        Guid instanceId, Func<InstanceStateSnapshot, bool> condition, int timeoutMs = 10000)
-    {
-        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
-        while (DateTime.UtcNow < deadline)
-        {
-            var snapshot = await QueryService.GetStateSnapshot(instanceId);
-            if (snapshot != null && condition(snapshot))
-                return snapshot;
-            await Task.Delay(50);
-        }
 
-        var finalSnapshot = await QueryService.GetStateSnapshot(instanceId);
-        Assert.IsNotNull(finalSnapshot, "Snapshot was null after timeout");
-        Assert.IsTrue(condition(finalSnapshot),
-            $"Condition not met after {timeoutMs}ms. Active: [{string.Join(", ", finalSnapshot.ActiveActivities.Select(a => $"{a.ActivityId}({a.ActivityType})"))}], Completed: [{string.Join(", ", finalSnapshot.CompletedActivityIds)}], IsCompleted: {finalSnapshot.IsCompleted}");
-        return finalSnapshot;
-    }
 
     private static IWorkflowDefinition CreateComplexForkWorkflow(
         string task1Condition, string task2Condition, string task3Condition)

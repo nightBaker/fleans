@@ -386,6 +386,12 @@ public class WorkflowExecution
     /// (because other activities were still active), and those activities have since been
     /// cancelled or completed, this method emits WorkflowCompleted.
     /// Returns infrastructure effects (e.g., parent notification) that need to be performed.
+    /// <para>
+    /// This is intentionally general-purpose — it applies to ANY workflow where an EndEvent
+    /// completes before all activities finish (e.g., Complex Gateway early-activation discards
+    /// remaining branches, parallel paths with different lengths, or cancelled activities).
+    /// It is not specific to Complex Gateway.
+    /// </para>
     /// </summary>
     public IReadOnlyList<IInfrastructureEffect> TryDeferredWorkflowCompletion()
     {
@@ -918,7 +924,10 @@ public class WorkflowExecution
         var entry = _state.GetEntry(joinState.FirstActivityInstanceId);
         Emit(new ActivityCompleted(joinState.FirstActivityInstanceId, entry.VariablesId, new ExpandoObject()));
         // Do NOT remove the join state here — keep it with HasFired=true so late-arriving
-        // tokens see it and skip. The state is cleaned up when the workflow completes.
+        // tokens see it and skip. The state is cleaned up in bulk when the workflow completes
+        // (WorkflowCompleted → _state.Complete() → ComplexGatewayJoinStates.Clear()).
+        // Note: ComplexGatewayJoinStateRemoved event exists for per-item removal but is not
+        // emitted here by design — bulk Clear() on completion is sufficient.
     }
 
     public void CompleteConditionSequence(string activityId, string conditionSequenceId, bool result)
