@@ -263,18 +263,4 @@ public class EventSubProcessTimerTests : WorkflowTestBase
         Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId == "innerEnd"),
             "innerEnd should not be reached when the handler interrupts the inner flow");
     }
-
-    private async Task<InstanceStateSnapshot?> PollForNoActiveActivities(
-        Guid instanceId, int timeoutMs = 10000)
-    {
-        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
-        while (DateTime.UtcNow < deadline)
-        {
-            var snapshot = await QueryService.GetStateSnapshot(instanceId);
-            if (snapshot is not null && snapshot.ActiveActivities.Count == 0)
-                return snapshot;
-            await Task.Delay(100);
-        }
-        return await QueryService.GetStateSnapshot(instanceId);
-    }
 }

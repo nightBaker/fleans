@@ -1,11 +1,19 @@
 using Fleans.Domain;
 using Fleans.Domain.States;
 using Microsoft.Extensions.Logging;
+using Orleans.Concurrency;
 using Orleans.Runtime;
 using System.Dynamic;
 
 namespace Fleans.Application.Grains;
 
+// [Reentrant] is required to avoid deadlocks when a non-interrupting event sub-process
+// re-subscribes during BroadcastSignal delivery. The re-subscribe (SubscribeSignalEffect)
+// is emitted after the workflow grain processes the signal and awaits
+// signalGrain.Subscribe(), but BroadcastSignal is still executing (awaiting the
+// delivery tcs). Without reentrancy, Subscribe() is queued behind the current
+// BroadcastSignal activation and neither can complete.
+[Reentrant]
 public partial class SignalCorrelationGrain : Grain, ISignalCorrelationGrain
 {
     private readonly IPersistentState<SignalCorrelationState> _state;

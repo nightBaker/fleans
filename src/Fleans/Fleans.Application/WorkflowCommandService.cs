@@ -17,12 +17,15 @@ public partial class WorkflowCommandService : IWorkflowCommandService
         _logger = logger;
     }
 
-    public async Task<Guid> StartWorkflow(string workflowId)
+    public async Task<Guid> StartWorkflow(string workflowId, ExpandoObject? initialVariables = null)
     {
         LogStartingWorkflow(workflowId);
 
         var processGrain = _grainFactory.GetGrain<IProcessDefinitionGrain>(workflowId);
         var workflowInstance = await processGrain.CreateInstance();
+
+        if (initialVariables != null)
+            await workflowInstance.SetInitialVariables(initialVariables);
 
         await workflowInstance.StartWorkflow();
 

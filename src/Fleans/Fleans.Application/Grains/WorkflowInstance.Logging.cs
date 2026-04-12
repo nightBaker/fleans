@@ -10,6 +10,10 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1001, Level = LogLevel.Debug, Message = "Workflow execution started")]
     private partial void LogWorkflowStarted();
 
+    [LoggerMessage(EventId = 1076, Level = LogLevel.Information,
+        Message = "Root-scope event sub-process listeners armed: {ListenerCount}")]
+    private partial void LogRootScopeListenersArmed(int listenerCount);
+
     [LoggerMessage(EventId = 1002, Level = LogLevel.Debug, Message = "Executing activity {ActivityId} ({ActivityType})")]
     private partial void LogExecutingActivity(string activityId, string activityType);
 
