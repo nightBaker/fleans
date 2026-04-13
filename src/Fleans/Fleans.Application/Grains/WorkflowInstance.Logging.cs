@@ -272,4 +272,21 @@ public partial class WorkflowInstance
     private partial void LogEventSubProcessHandlerEndEventFired(
         string eventSubProcessId, string endEventId, Guid hostActivityInstanceId);
 
+    // Complex gateway lifecycle (EventId 1080-1089)
+    [LoggerMessage(EventId = 1080, Level = LogLevel.Debug,
+        Message = "Complex gateway activation condition late callback — join instance {ActivityInstanceId} has already fired or was removed")]
+    private partial void LogComplexGatewayActivationConditionLateCallback(Guid activityInstanceId);
+
+    [LoggerMessage(EventId = 1081, Level = LogLevel.Debug,
+        Message = "Complex gateway join {ActivityInstanceId} waiting for more tokens: count={TokenCount}, condition={Condition}")]
+    private partial void LogComplexGatewayWaitingForMoreTokens(Guid activityInstanceId, int tokenCount, string condition);
+
+    [LoggerMessage(EventId = 1082, Level = LogLevel.Information,
+        Message = "Complex gateway join {ActivityInstanceId} activation condition met: {Condition} (tokenCount={TokenCount})")]
+    private partial void LogComplexGatewayActivationConditionMet(string condition, Guid activityInstanceId, int tokenCount);
+
+    [LoggerMessage(EventId = 1083, Level = LogLevel.Information,
+        Message = "CompleteActivationCondition called for activity {ActivityId}, instance {ActivityInstanceId}, result={Result}")]
+    private partial void LogCompleteActivationCondition(string activityId, Guid activityInstanceId, bool result);
+
 }

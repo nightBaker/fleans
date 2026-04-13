@@ -41,6 +41,11 @@ public partial class WorkflowEventsPublisher : Grain, IEventPublisher
                 var stream = _streamProvider.GetStream<EvaluateConditionEvent>(streamId);
                 await stream.OnNextAsync(evaluateConditionEvent);
                 break;
+            case EvaluateActivationConditionEvent evaluateActivationConditionEvent:
+                var activationStreamId = StreamId.Create(StreamNameSpace, nameof(EvaluateActivationConditionEvent));
+                var activationStream = _streamProvider.GetStream<EvaluateActivationConditionEvent>(activationStreamId);
+                await activationStream.OnNextAsync(evaluateActivationConditionEvent);
+                break;
             case ExecuteScriptEvent executeScriptEvent:
 
                 var scriptStreamId = StreamId.Create(StreamNameSpace, nameof(ExecuteScriptEvent));

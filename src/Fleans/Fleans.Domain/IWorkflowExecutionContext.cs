@@ -15,4 +15,7 @@ public interface IWorkflowExecutionContext
     ValueTask<object?> GetVariable(Guid variablesId, string variableName);
 
     ValueTask<GatewayForkState?> FindForkByToken(Guid tokenId);
+
+    ValueTask<ComplexGatewayJoinState?> GetComplexGatewayJoinState(string gatewayActivityId);
+    ValueTask IncrementComplexGatewayJoinToken(string gatewayActivityId, Guid activityInstanceId, string activationCondition);
 }

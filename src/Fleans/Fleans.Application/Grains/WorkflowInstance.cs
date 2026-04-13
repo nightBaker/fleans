@@ -349,6 +349,35 @@ public partial class WorkflowInstance :
         await ProcessPendingEvents();
     }
 
+    public async Task CompleteActivationCondition(string activityId, Guid activityInstanceId, bool result)
+    {
+        await EnsureExecution();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+        LogCompleteActivationCondition(activityId, activityInstanceId, result);
+
+        var joinState = State.GetComplexGatewayJoinState(activityId);
+        if (joinState is null || joinState.HasFired)
+        {
+            LogComplexGatewayActivationConditionLateCallback(activityInstanceId);
+            return;
+        }
+        if (!result)
+        {
+            LogComplexGatewayWaitingForMoreTokens(
+                activityInstanceId, joinState.WaitingTokenCount, joinState.ActivationCondition);
+            return;
+        }
+        _execution!.MarkComplexGatewayJoinFired(activityId);
+        LogComplexGatewayActivationConditionMet(
+            joinState.ActivationCondition, activityInstanceId, joinState.WaitingTokenCount);
+
+        _execution!.CompleteComplexGatewayJoin(activityId);
+        await ResolveExternalCompletions();
+        await RunExecutionLoop();
+        await ProcessPendingEvents();
+    }
+
     public async Task SetParentInfo(Guid parentWorkflowInstanceId, string parentActivityId)
     {
         await EnsureExecution();
@@ -548,6 +577,15 @@ public partial class WorkflowInstance :
 
     public ValueTask<GatewayForkState?> FindForkByToken(Guid tokenId)
         => ValueTask.FromResult(State.FindForkByToken(tokenId));
+
+    public ValueTask<ComplexGatewayJoinState?> GetComplexGatewayJoinState(string gatewayActivityId)
+        => ValueTask.FromResult(State.GetComplexGatewayJoinState(gatewayActivityId));
+
+    public ValueTask IncrementComplexGatewayJoinToken(string gatewayActivityId, Guid activityInstanceId, string activationCondition)
+    {
+        _execution!.CreateOrIncrementComplexGatewayJoinToken(gatewayActivityId, activityInstanceId, activationCondition, State.Id);
+        return ValueTask.CompletedTask;
+    }
 
     private sealed class WorkflowInstanceEffectContext : IEffectContext
     {

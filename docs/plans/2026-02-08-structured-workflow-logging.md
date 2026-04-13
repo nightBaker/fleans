@@ -50,6 +50,8 @@ Uses the string template overload (`logger.BeginScope(string, params)`) which cr
 | 5000-5099 | WorkflowEventsPublisher |
 | 6000-6099 | WorkflowInstanceFactoryGrain |
 | 7000-7099 | WorkflowEngine |
+| 8000-8099 | TimerStartEventSchedulerGrain |
+| 9000-9099 | BpmnConverter |
 | 10000-10099 | TimerCallbackGrain |
 
 ### Filter Skip Logic

@@ -104,6 +104,11 @@ public class WorkflowInstanceState
     [Id(16)]
     private int _dirtyFlags;
 
+    private const int DirtyComplexGatewayJoinStates = 32;
+
+    [Id(17)]
+    public List<ComplexGatewayJoinState> ComplexGatewayJoinStates { get; private set; } = [];
+
     internal int GetDirtyFlags() => _dirtyFlags;
 
     internal void ClearDirtyFlags() => _dirtyFlags = 0;
@@ -219,7 +224,8 @@ public class WorkflowInstanceState
             throw new InvalidOperationException("Workflow is already completed");
 
         GatewayForks.Clear();
-        _dirtyFlags |= DirtyGatewayForks;
+        ComplexGatewayJoinStates.Clear();
+        _dirtyFlags |= DirtyGatewayForks | DirtyComplexGatewayJoinStates;
         CompletedAt = DateTimeOffset.UtcNow;
         IsCompleted = true;
     }
@@ -447,5 +453,37 @@ public class WorkflowInstanceState
             TimerCycleTracking.Add(new TimerCycleTrackingState(hostActivityInstanceId, timerActivityId, definition, Id));
             _dirtyFlags |= DirtyTimerCycleTracking;
         }
+    }
+
+    public ComplexGatewayJoinState? GetComplexGatewayJoinState(string gatewayActivityId)
+        => ComplexGatewayJoinStates.FirstOrDefault(s => s.GatewayActivityId == gatewayActivityId);
+
+    public void CreateComplexGatewayJoinState(string gatewayActivityId, Guid firstActivityInstanceId, string activationCondition, Guid workflowInstanceId)
+    {
+        var newState = new ComplexGatewayJoinState(gatewayActivityId, firstActivityInstanceId, activationCondition, workflowInstanceId);
+        ComplexGatewayJoinStates.Add(newState);
+        _dirtyFlags |= DirtyComplexGatewayJoinStates;
+    }
+
+    public void IncrementComplexGatewayTokenCount(string gatewayActivityId)
+    {
+        var state = GetComplexGatewayJoinState(gatewayActivityId)
+            ?? throw new InvalidOperationException($"ComplexGatewayJoinState not found for gateway '{gatewayActivityId}'");
+        state.IncrementTokenCount();
+        _dirtyFlags |= DirtyComplexGatewayJoinStates;
+    }
+
+    public void MarkComplexGatewayJoinFired(string gatewayActivityId)
+    {
+        var state = GetComplexGatewayJoinState(gatewayActivityId)
+            ?? throw new InvalidOperationException($"ComplexGatewayJoinState not found for gateway '{gatewayActivityId}'");
+        state.MarkFired();
+        _dirtyFlags |= DirtyComplexGatewayJoinStates;
+    }
+
+    public void RemoveComplexGatewayJoinState(string gatewayActivityId)
+    {
+        ComplexGatewayJoinStates.RemoveAll(s => s.GatewayActivityId == gatewayActivityId);
+        _dirtyFlags |= DirtyComplexGatewayJoinStates;
     }
 }
