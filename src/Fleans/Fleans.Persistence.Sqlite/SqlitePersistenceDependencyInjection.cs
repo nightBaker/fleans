@@ -44,12 +44,18 @@ public static class SqliteDbContextOptionsExtensions
     /// Configures the builder to use SQLite and installs the
     /// <c>SqliteModelCustomizer</c> so SQLite-specific model tweaks (notably
     /// <see cref="DateTimeOffset"/> → string conversion) are applied.
+    /// Migrations assembly is always set to <c>Fleans.Persistence.Sqlite</c>.
     /// </summary>
     public static DbContextOptionsBuilder UseFleansSqlite(
         this DbContextOptionsBuilder builder,
-        string connectionString)
+        string connectionString,
+        Action<SqliteDbContextOptionsBuilder>? sqliteOptions = null)
     {
-        builder.UseSqlite(connectionString);
+        builder.UseSqlite(connectionString, sql =>
+        {
+            sql.MigrationsAssembly("Fleans.Persistence.Sqlite");
+            sqliteOptions?.Invoke(sql);
+        });
         builder.ReplaceService<IModelCustomizer, SqliteModelCustomizer>();
         return builder;
     }
@@ -58,33 +64,41 @@ public static class SqliteDbContextOptionsExtensions
     /// Configures the builder to use SQLite against an existing
     /// <see cref="System.Data.Common.DbConnection"/> and installs the
     /// <c>SqliteModelCustomizer</c>.
+    /// Migrations assembly is always set to <c>Fleans.Persistence.Sqlite</c>.
     /// </summary>
     public static DbContextOptionsBuilder UseFleansSqlite(
         this DbContextOptionsBuilder builder,
-        System.Data.Common.DbConnection connection)
+        System.Data.Common.DbConnection connection,
+        Action<SqliteDbContextOptionsBuilder>? sqliteOptions = null)
     {
-        builder.UseSqlite(connection);
+        builder.UseSqlite(connection, sql =>
+        {
+            sql.MigrationsAssembly("Fleans.Persistence.Sqlite");
+            sqliteOptions?.Invoke(sql);
+        });
         builder.ReplaceService<IModelCustomizer, SqliteModelCustomizer>();
         return builder;
     }
 
-    /// <inheritdoc cref="UseFleansSqlite(DbContextOptionsBuilder, string)"/>
+    /// <inheritdoc cref="UseFleansSqlite(DbContextOptionsBuilder, string, Action{SqliteDbContextOptionsBuilder}?)"/>
     public static DbContextOptionsBuilder<TContext> UseFleansSqlite<TContext>(
         this DbContextOptionsBuilder<TContext> builder,
-        string connectionString)
+        string connectionString,
+        Action<SqliteDbContextOptionsBuilder>? sqliteOptions = null)
         where TContext : DbContext
     {
-        UseFleansSqlite((DbContextOptionsBuilder)builder, connectionString);
+        UseFleansSqlite((DbContextOptionsBuilder)builder, connectionString, sqliteOptions);
         return builder;
     }
 
-    /// <inheritdoc cref="UseFleansSqlite(DbContextOptionsBuilder, System.Data.Common.DbConnection)"/>
+    /// <inheritdoc cref="UseFleansSqlite(DbContextOptionsBuilder, System.Data.Common.DbConnection, Action{SqliteDbContextOptionsBuilder}?)"/>
     public static DbContextOptionsBuilder<TContext> UseFleansSqlite<TContext>(
         this DbContextOptionsBuilder<TContext> builder,
-        System.Data.Common.DbConnection connection)
+        System.Data.Common.DbConnection connection,
+        Action<SqliteDbContextOptionsBuilder>? sqliteOptions = null)
         where TContext : DbContext
     {
-        UseFleansSqlite((DbContextOptionsBuilder)builder, connection);
+        UseFleansSqlite((DbContextOptionsBuilder)builder, connection, sqliteOptions);
         return builder;
     }
 }
