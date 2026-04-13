@@ -129,6 +129,13 @@ public partial class WorkflowInstance
         // event raised by the aggregate is logged via LogEvent → LogVariableScopesRemoved.
         if (allOrphanedScopeIds.Count > 0)
             _execution!.RemoveVariableScopes(allOrphanedScopeIds);
+
+        // Deferred workflow completion: if a CompleteWorkflowCommand was deferred earlier
+        // (e.g., EndEvent fired while other activities were still active), and all activities
+        // have since completed or been cancelled, complete the workflow now.
+        var deferredEffects = _execution!.TryDeferredWorkflowCompletion();
+        if (deferredEffects.Count > 0)
+            await PerformEffects(deferredEffects);
     }
 
     /// <summary>

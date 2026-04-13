@@ -105,6 +105,28 @@ public abstract class WorkflowTestBase
     }
 
     /// <summary>
+    /// Polls for a state snapshot satisfying <paramref name="condition"/>.
+    /// </summary>
+    protected async Task<InstanceStateSnapshot> WaitForCondition(
+        Guid instanceId, Func<InstanceStateSnapshot, bool> condition, int timeoutMs = 10000)
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+        while (DateTime.UtcNow < deadline)
+        {
+            var snapshot = await QueryService.GetStateSnapshot(instanceId);
+            if (snapshot != null && condition(snapshot))
+                return snapshot;
+            await Task.Delay(50);
+        }
+
+        var finalSnapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsNotNull(finalSnapshot, "Snapshot was null after timeout");
+        Assert.IsTrue(condition(finalSnapshot),
+            $"Condition not met after {timeoutMs}ms. Active: [{string.Join(", ", finalSnapshot.ActiveActivities.Select(a => $"{a.ActivityId}({a.ActivityType})"))}], Completed: [{string.Join(", ", finalSnapshot.CompletedActivityIds)}], IsCompleted: {finalSnapshot.IsCompleted}");
+        return finalSnapshot;
+    }
+
+    /// <summary>
     /// Creates a minimal workflow: start → task → end.
     /// Shared across test classes to avoid duplication.
     /// </summary>

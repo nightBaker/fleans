@@ -14,5 +14,6 @@ internal enum DirtyCollections
     VariableStates = 2,
     ConditionSequenceStates = 4,
     GatewayForks = 8,
-    TimerCycleTracking = 16
+    TimerCycleTracking = 16,
+    ComplexGatewayJoinStates = 32
 }

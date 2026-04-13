@@ -105,9 +105,23 @@ internal static class FleanModelConfiguration
                     v => JsonConvert.DeserializeObject<List<Guid>>(v) ?? new List<Guid>());
         });
 
+        modelBuilder.Entity<ComplexGatewayJoinState>(entity =>
+        {
+            entity.ToTable("ComplexGatewayJoinStates");
+            entity.HasKey(e => new { e.WorkflowInstanceId, e.GatewayActivityId });
+
+            entity.Property(e => e.GatewayActivityId).HasMaxLength(256);
+            entity.Property(e => e.ActivationCondition).HasMaxLength(1024);
+        });
+
         modelBuilder.Entity<WorkflowInstanceState>(entity =>
         {
             entity.HasMany(e => e.GatewayForks)
+                .WithOne()
+                .HasForeignKey(e => e.WorkflowInstanceId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(e => e.ComplexGatewayJoinStates)
                 .WithOne()
                 .HasForeignKey(e => e.WorkflowInstanceId)
                 .OnDelete(DeleteBehavior.Cascade);

@@ -1,4 +1,5 @@
 using Fleans.Domain.Activities;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Fleans.Infrastructure.Tests.BpmnConverter;
 
@@ -25,7 +26,7 @@ public class MultiInstanceParsingTests
   </process>
 </definitions>";
 
-        var converter = new Fleans.Infrastructure.Bpmn.BpmnConverter();
+        var converter = new Fleans.Infrastructure.Bpmn.BpmnConverter(NullLogger<Fleans.Infrastructure.Bpmn.BpmnConverter>.Instance);
         var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(bpmn));
         var workflow = await converter.ConvertFromXmlAsync(stream);
 
@@ -59,7 +60,7 @@ public class MultiInstanceParsingTests
   </process>
 </definitions>";
 
-        var converter = new Fleans.Infrastructure.Bpmn.BpmnConverter();
+        var converter = new Fleans.Infrastructure.Bpmn.BpmnConverter(NullLogger<Fleans.Infrastructure.Bpmn.BpmnConverter>.Instance);
         var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(bpmn));
         var workflow = await converter.ConvertFromXmlAsync(stream);
 
@@ -98,7 +99,7 @@ public class MultiInstanceParsingTests
   </process>
 </definitions>";
 
-        var converter = new Fleans.Infrastructure.Bpmn.BpmnConverter();
+        var converter = new Fleans.Infrastructure.Bpmn.BpmnConverter(NullLogger<Fleans.Infrastructure.Bpmn.BpmnConverter>.Instance);
         var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(bpmn));
         var workflow = await converter.ConvertFromXmlAsync(stream);
 
@@ -130,7 +131,7 @@ public class MultiInstanceParsingTests
   </process>
 </definitions>";
 
-        var converter = new Fleans.Infrastructure.Bpmn.BpmnConverter();
+        var converter = new Fleans.Infrastructure.Bpmn.BpmnConverter(NullLogger<Fleans.Infrastructure.Bpmn.BpmnConverter>.Instance);
         var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(bpmn));
         var workflow = await converter.ConvertFromXmlAsync(stream);
 

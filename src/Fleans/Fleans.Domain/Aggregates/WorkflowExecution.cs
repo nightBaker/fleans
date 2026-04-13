@@ -354,6 +354,10 @@ public class WorkflowExecution
                     effects.AddRange(ProcessAddConditions(conditions, activityInstanceId));
                     break;
 
+                case EvaluateActivationConditionCommand evalActivation:
+                    effects.Add(ProcessEvaluateActivationCondition(evalActivation, activityInstanceId));
+                    break;
+
                 case RegisterUserTaskCommand regUserTask:
                     Emit(new UserTaskRegistered(
                         activityInstanceId, regUserTask.Assignee,
@@ -371,10 +375,64 @@ public class WorkflowExecution
                     effects.Add(new ThrowSignalEffect(throwSignal.SignalName));
                     break;
 
+                case DiscardLateTokenCommand discard:
+                    Emit(new ActivityCancelled(activityInstanceId, discard.Reason));
+                    break;
+
                 default:
                     throw new InvalidOperationException(
                         $"Unknown execution command type: {command.GetType().Name}");
             }
+        }
+
+        return effects.AsReadOnly();
+    }
+
+    /// <summary>
+    /// Checks for deferred workflow completion. When a CompleteWorkflowCommand was deferred
+    /// (because other activities were still active), and those activities have since been
+    /// cancelled or completed, this method emits WorkflowCompleted.
+    /// Returns infrastructure effects (e.g., parent notification) that need to be performed.
+    /// <para>
+    /// This is intentionally general-purpose — it applies to ANY workflow where an EndEvent
+    /// completes before all activities finish (e.g., Complex Gateway early-activation discards
+    /// remaining branches, parallel paths with different lengths, or cancelled activities).
+    /// It is not specific to Complex Gateway.
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<IInfrastructureEffect> TryDeferredWorkflowCompletion()
+    {
+        if (_state.IsCompleted)
+            return [];
+
+        if (_state.GetActiveActivities().Any())
+            return [];
+
+        // Check if a root-scope EndEvent was completed
+        var hasCompletedEndEvent = _state.GetCompletedActivities()
+            .Any(e =>
+            {
+                var scope = _definition.FindScopeForActivity(e.ActivityId);
+                return scope is { IsRootScope: true } && scope.GetActivity(e.ActivityId) is EndEvent;
+            });
+
+        if (!hasCompletedEndEvent)
+            return [];
+
+        var effects = new List<IInfrastructureEffect>();
+
+        effects.AddRange(BuildEventSubProcessPeerUnregisterEffects(
+            _definition, scopeContainerId: null, skipStartEventActivityId: null));
+
+        Emit(new WorkflowCompleted());
+
+        if (_state.ParentWorkflowInstanceId.HasValue)
+        {
+            var rootVariables = _state.GetMergedVariables(_state.GetRootVariablesId());
+            effects.Add(new NotifyParentCompletedEffect(
+                _state.ParentWorkflowInstanceId.Value,
+                _state.ParentActivityId!,
+                rootVariables));
         }
 
         return effects.AsReadOnly();
@@ -561,6 +619,21 @@ public class WorkflowExecution
         return new StartChildWorkflowEffect(
             childInstanceId, callActivity.CalledProcessKey,
             inputVariables, callActivity.ActivityId);
+    }
+
+    private IInfrastructureEffect ProcessEvaluateActivationCondition(
+        EvaluateActivationConditionCommand cmd, Guid activityInstanceId)
+    {
+        var entry = _state.GetActiveEntry(activityInstanceId);
+        return new PublishDomainEventEffect(new EvaluateActivationConditionEvent(
+            _state.Id,
+            _definition.WorkflowId,
+            _definition.ProcessDefinitionId,
+            activityInstanceId,
+            entry.ActivityId,
+            cmd.Condition,
+            entry.VariablesId,
+            cmd.NrOfToken));
     }
 
     private List<IInfrastructureEffect> ProcessAddConditions(
@@ -919,6 +992,32 @@ public class WorkflowExecution
         Emit(new ConditionSequenceEvaluated(activityInstanceId, sequenceId, result));
     }
 
+    public void CreateOrIncrementComplexGatewayJoinToken(string gatewayActivityId, Guid activityInstanceId, string activationCondition, Guid workflowInstanceId)
+    {
+        var existing = _state.GetComplexGatewayJoinState(gatewayActivityId);
+        if (existing is null)
+            Emit(new ComplexGatewayJoinStateCreated(gatewayActivityId, activityInstanceId, activationCondition, workflowInstanceId));
+        Emit(new ComplexGatewayJoinStateTokenIncremented(gatewayActivityId));
+    }
+
+    public void MarkComplexGatewayJoinFired(string gatewayActivityId)
+    {
+        Emit(new ComplexGatewayJoinStateFired(gatewayActivityId));
+    }
+
+    public void CompleteComplexGatewayJoin(string gatewayActivityId)
+    {
+        var joinState = _state.GetComplexGatewayJoinState(gatewayActivityId)
+            ?? throw new InvalidOperationException($"ComplexGatewayJoinState not found for gateway '{gatewayActivityId}'");
+        var entry = _state.GetEntry(joinState.FirstActivityInstanceId);
+        Emit(new ActivityCompleted(joinState.FirstActivityInstanceId, entry.VariablesId, new ExpandoObject()));
+        // Do NOT remove the join state here — keep it with HasFired=true so late-arriving
+        // tokens see it and skip. The state is cleaned up in bulk when the workflow completes
+        // (WorkflowCompleted → _state.Complete() → ComplexGatewayJoinStates.Clear()).
+        // Note: ComplexGatewayJoinStateRemoved event exists for per-item removal but is not
+        // emitted here by design — bulk Clear() on completion is sufficient.
+    }
+
     public void CompleteConditionSequence(string activityId, string conditionSequenceId, bool result)
     {
         var entry = _state.GetFirstActive(activityId)
@@ -942,9 +1041,9 @@ public class WorkflowExecution
     private bool IsGatewayDecisionMade(
         string activityId, Guid activityInstanceId, ConditionalGateway gateway, bool result)
     {
-        if (gateway is InclusiveGateway)
+        if (gateway is InclusiveGateway or ComplexGateway)
         {
-            // InclusiveGateway: wait for ALL conditions to be evaluated, never short-circuit
+            // InclusiveGateway / ComplexGateway fork: wait for ALL conditions to be evaluated, never short-circuit
             var sequences = _state.GetConditionSequenceStatesForGateway(activityInstanceId);
             if (!sequences.All(s => s.IsEvaluated))
                 return false;
@@ -1918,6 +2017,18 @@ public class WorkflowExecution
                 break;
             case GatewayForkRemoved e:
                 _state.RemoveGatewayFork(e.ForkInstanceId);
+                break;
+            case ComplexGatewayJoinStateCreated e:
+                _state.CreateComplexGatewayJoinState(e.GatewayActivityId, e.FirstActivityInstanceId, e.ActivationCondition, e.WorkflowInstanceId);
+                break;
+            case ComplexGatewayJoinStateTokenIncremented e:
+                _state.IncrementComplexGatewayTokenCount(e.GatewayActivityId);
+                break;
+            case ComplexGatewayJoinStateFired e:
+                _state.MarkComplexGatewayJoinFired(e.GatewayActivityId);
+                break;
+            case ComplexGatewayJoinStateRemoved e:
+                _state.RemoveComplexGatewayJoinState(e.GatewayActivityId);
                 break;
             case ParentInfoSet e:
                 _state.SetParentInfo(e.ParentInstanceId, e.ParentActivityId);

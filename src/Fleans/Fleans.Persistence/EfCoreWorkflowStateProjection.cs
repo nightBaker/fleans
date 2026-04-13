@@ -28,6 +28,7 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
             .Include(s => s.VariableStates)
             .Include(s => s.ConditionSequenceStates)
             .Include(s => s.GatewayForks)
+            .Include(s => s.ComplexGatewayJoinStates)
             .Include(s => s.TimerCycleTracking)
             .AsNoTracking()
             .FirstOrDefaultAsync(s => s.Id == id);
@@ -50,6 +51,8 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
             query = query.Include(e => e.ConditionSequenceStates);
         if (dirty.HasFlag(DirtyCollections.GatewayForks))
             query = query.Include(e => e.GatewayForks);
+        if (dirty.HasFlag(DirtyCollections.ComplexGatewayJoinStates))
+            query = query.Include(e => e.ComplexGatewayJoinStates);
         if (dirty.HasFlag(DirtyCollections.TimerCycleTracking))
             query = query.Include(e => e.TimerCycleTracking);
 
@@ -70,6 +73,8 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
                 db.Entry(cs).Property(c => c.WorkflowInstanceId).CurrentValue = id;
             foreach (var gf in state.GatewayForks)
                 db.Entry(gf).Property(g => g.WorkflowInstanceId).CurrentValue = id;
+            foreach (var cg in state.ComplexGatewayJoinStates)
+                db.Entry(cg).Property(c => c.WorkflowInstanceId).CurrentValue = id;
             foreach (var tc in state.TimerCycleTracking)
                 db.Entry(tc).Property(t => t.WorkflowInstanceId).CurrentValue = id;
         }
@@ -88,6 +93,8 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
                 DiffConditionSequenceStates(db, existing, state, id);
             if (dirty.HasFlag(DirtyCollections.GatewayForks))
                 DiffGatewayForks(db, existing, state, id);
+            if (dirty.HasFlag(DirtyCollections.ComplexGatewayJoinStates))
+                DiffComplexGatewayJoinStates(db, existing, state, id);
             if (dirty.HasFlag(DirtyCollections.TimerCycleTracking))
                 DiffTimerCycleTracking(db, existing, state, id);
         }
@@ -193,6 +200,28 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
             {
                 db.Entry(gf).Property(g => g.WorkflowInstanceId).CurrentValue = instanceId;
                 db.Add(gf);
+            }
+        }
+    }
+
+    private static void DiffComplexGatewayJoinStates(FleanCommandDbContext db, WorkflowInstanceState existing, WorkflowInstanceState incoming, Guid instanceId)
+    {
+        var existingDict = existing.ComplexGatewayJoinStates.ToDictionary(c => c.GatewayActivityId);
+        var incomingDict = incoming.ComplexGatewayJoinStates.ToDictionary(c => c.GatewayActivityId);
+
+        foreach (var old in existing.ComplexGatewayJoinStates.Where(c => !incomingDict.ContainsKey(c.GatewayActivityId)))
+            db.Remove(old);
+
+        foreach (var cg in incoming.ComplexGatewayJoinStates)
+        {
+            if (existingDict.TryGetValue(cg.GatewayActivityId, out var tracked))
+            {
+                db.Entry(tracked).CurrentValues.SetValues(cg);
+            }
+            else
+            {
+                db.Entry(cg).Property(c => c.WorkflowInstanceId).CurrentValue = instanceId;
+                db.Add(cg);
             }
         }
     }

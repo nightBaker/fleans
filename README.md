@@ -47,7 +47,7 @@ For now, next elements are implemented
 | Exclusive Gateway    | Indicates a decision point where only one path can be taken.                 |    [x]      |
 | Inclusive Gateway    | Indicates a decision point where one or more paths can be taken.             |    [x]      |
 | Parallel Gateway     | Indicates that all paths are taken in parallel.                              |    [x]      |
-| Complex Gateway      | Indicates a complex decision point with conditions.                          |             |
+| Complex Gateway      | Indicates a complex decision point with conditions.                          |    [x]      |
 | Event-Based Gateway  | Indicates that the process flow is determined by an event.                   |     [x]     |
 | **Connecting Objects**|                                                                            |             |
 | Sequence Flow        | Shows the order of activities.                                              |      [x]     |
