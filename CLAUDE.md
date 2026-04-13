@@ -2,6 +2,12 @@
 
 BPMN workflow engine built on Orleans.
 
+## Main Rule
+
+**After completing each feature or fix, update this CLAUDE.md** with any lessons learned, patterns discovered, or pitfalls encountered during the work. The goal is to capture hard-won knowledge so the same problems are never solved twice. Add entries to the relevant section (conventions, constraints, lessons learned, etc.) or create a new section if needed.
+
+**After completing each feature or fix, update the website documentation** (`website/src/content/docs/`) with: (1) the reason/motivation behind the change, (2) how to use it, and (3) a best-practice example showing real-world usage. Documentation should help users understand not just *what* exists but *why* it exists and *how* to use it correctly.
+
 ## Build & Test
 
 From `src/Fleans/`:
