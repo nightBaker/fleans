@@ -3,6 +3,7 @@ using System;
 using Fleans.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Fleans.Persistence.PostgreSql.Migrations.Command
 {
     [DbContext(typeof(FleanCommandDbContext))]
-    partial class FleanCommandDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260414215920_AddConditionalStartEventTables")]
+    partial class AddConditionalStartEventTables
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

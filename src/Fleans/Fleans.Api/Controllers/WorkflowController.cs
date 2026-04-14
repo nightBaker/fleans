@@ -77,6 +77,21 @@ namespace Fleans.Api.Controllers
             return Ok(new SendSignalResponse(result.DeliveredCount, result.WorkflowInstanceIds));
         }
 
+        [EnableRateLimiting("workflow-mutation")]
+        [HttpPost("evaluate-conditions", Name = "EvaluateConditions")]
+        public async Task<IActionResult> EvaluateConditions([FromBody] EvaluateConditionsRequest request)
+        {
+            if (request == null)
+                return BadRequest(new ErrorResponse("Request body is required"));
+
+            if (request.Variables == null || request.Variables.Count == 0)
+                return BadRequest(new ErrorResponse("Variables are required for condition evaluation"));
+
+            var variables = VariableConverter.ToExpandoObject(request.Variables);
+            var result = await _commandService.EvaluateConditions(request.WorkflowId, variables);
+            return Ok(new EvaluateConditionsResponse(result.StartedInstanceIds));
+        }
+
         [EnableRateLimiting("task-operation")]
         [HttpPost("complete-activity", Name = "CompleteActivity")]
         public async Task<IActionResult> CompleteActivity([FromBody] CompleteActivityRequest request)

@@ -196,6 +196,34 @@ public partial class WorkflowCommandService : IWorkflowCommandService
         Message = "Completing user task: WorkflowInstanceId={WorkflowInstanceId}, ActivityInstanceId={ActivityInstanceId}, UserId={UserId}")]
     private partial void LogCompletingUserTask(Guid workflowInstanceId, Guid activityInstanceId, string userId);
 
+    public async Task<EvaluateConditionsResult> EvaluateConditions(string? workflowId, ExpandoObject variables)
+    {
+        LogEvaluatingConditions(workflowId);
+
+        var registry = _grainFactory.GetGrain<IConditionalStartEventRegistryGrain>(0);
+        var entries = string.IsNullOrWhiteSpace(workflowId)
+            ? await registry.GetAll()
+            : await registry.GetByProcess(workflowId);
+
+        if (entries.Count == 0)
+            return new EvaluateConditionsResult([]);
+
+        var tasks = entries.Select(async entry =>
+        {
+            var grainKey = $"{entry.ProcessDefinitionKey}:{entry.ActivityId}";
+            var listener = _grainFactory.GetGrain<IConditionalStartEventListenerGrain>(grainKey);
+            return await listener.EvaluateAndStart(variables);
+        });
+
+        var results = await Task.WhenAll(tasks);
+        var startedIds = results.Where(id => id.HasValue).Select(id => id!.Value).ToList();
+
+        return new EvaluateConditionsResult(startedIds);
+    }
+
+    [LoggerMessage(EventId = 7013, Level = LogLevel.Information, Message = "Evaluating conditional start events (workflowId={WorkflowId})")]
+    private partial void LogEvaluatingConditions(string? workflowId);
+
     [LoggerMessage(EventId = 7011, Level = LogLevel.Information, Message = "Disabling process {ProcessDefinitionKey}")]
     private partial void LogDisablingProcess(string processDefinitionKey);
 

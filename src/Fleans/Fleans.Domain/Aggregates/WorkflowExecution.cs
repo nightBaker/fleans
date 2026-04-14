@@ -379,6 +379,12 @@ public class WorkflowExecution
                     Emit(new ActivityCancelled(activityInstanceId, discard.Reason));
                     break;
 
+                case RegisterConditionalWatcherCommand conditionalWatcher:
+                    Emit(new ConditionalWatcherRegistered(
+                        activityInstanceId, conditionalWatcher.ActivityId,
+                        conditionalWatcher.ConditionExpression, conditionalWatcher.VariablesId));
+                    break;
+
                 default:
                     throw new InvalidOperationException(
                         $"Unknown execution command type: {command.GetType().Name}");
@@ -422,7 +428,7 @@ public class WorkflowExecution
         var effects = new List<IInfrastructureEffect>();
 
         effects.AddRange(BuildEventSubProcessPeerUnregisterEffects(
-            _definition, scopeContainerId: null, skipStartEventActivityId: null));
+            _definition, scopeContainerId: null, _state.GetRootVariablesId(), skipStartEventActivityId: null));
 
         Emit(new WorkflowCompleted());
 
@@ -785,6 +791,52 @@ public class WorkflowExecution
 
         // Intermediate catch signal: complete the activity with empty variables
         return CompleteActivity(activityId, hostActivityInstanceId, new ExpandoObject());
+    }
+
+    /// <summary>
+    /// Fires a conditional watcher: completes the conditional intermediate catch event
+    /// or fires the conditional boundary event.
+    /// </summary>
+    public IReadOnlyList<IInfrastructureEffect> FireConditionalWatcher(Guid activityInstanceId)
+    {
+        Emit(new ConditionalWatcherFired(activityInstanceId));
+        var entry = _state.FindEntry(activityInstanceId);
+        if (entry == null || entry.IsCompleted) return Array.Empty<IInfrastructureEffect>();
+
+        var activity = _definition.GetActivityAcrossScopes(entry.ActivityId);
+        if (activity is ConditionalBoundaryEvent boundary)
+        {
+            var hostEntry = _state.GetActiveActivities()
+                .FirstOrDefault(e => e.ActivityId == boundary.AttachedToActivityId && !e.IsCompleted);
+            if (hostEntry == null) return Array.Empty<IInfrastructureEffect>();
+
+            return HandleBoundaryEventFired(
+                boundary, boundary.AttachedToActivityId,
+                boundary.IsInterrupting, hostEntry, new ExpandoObject(),
+                skipTimerActivityId: null,
+                skipMessageName: null,
+                skipSignalName: null);
+        }
+
+        // Intermediate catch: complete with empty variables
+        return CompleteActivity(entry.ActivityId, activityInstanceId, new ExpandoObject());
+    }
+
+    /// <summary>
+    /// Clears a single conditional watcher by its activity instance ID.
+    /// Used by BuildBoundaryUnsubscribeEffects for per-activity cleanup.
+    /// </summary>
+    public void ClearConditionalWatcher(Guid activityInstanceId)
+    {
+        Emit(new ConditionalWatcherCleared(activityInstanceId));
+    }
+
+    /// <summary>
+    /// Updates the LastEvaluatedResult for a conditional watcher (edge-triggered tracking).
+    /// </summary>
+    public void UpdateConditionalWatcherResult(Guid activityInstanceId, bool result)
+    {
+        Emit(new ConditionalWatcherResultUpdated(activityInstanceId, result));
     }
 
     // --- Scope Completion ---
@@ -1831,6 +1883,15 @@ public class WorkflowExecution
             effects.Add(new UnsubscribeSignalEffect(signalDef.Name, _state.Id, boundarySig.ActivityId));
         }
 
+        // Conditional boundary watchers — clear from aggregate state (no external grain to unsubscribe)
+        foreach (var watcher in _state.ConditionalWatchers
+            .Where(w => scope.Activities.OfType<ConditionalBoundaryEvent>()
+                .Any(cb => cb.ActivityId == w.ActivityId && cb.AttachedToActivityId == activityId))
+            .ToList())
+        {
+            Emit(new ConditionalWatcherCleared(watcher.ActivityInstanceId));
+        }
+
         return effects;
     }
 
@@ -2052,6 +2113,18 @@ public class WorkflowExecution
                 break;
             case TimerCycleUpdated e:
                 _state.SetTimerCycleState(e.HostActivityInstanceId, e.TimerActivityId, e.RemainingCycle);
+                break;
+            case ConditionalWatcherRegistered e:
+                _state.AddConditionalWatcher(e.ActivityInstanceId, e.ActivityId, e.ConditionExpression, e.VariablesId);
+                break;
+            case ConditionalWatcherFired e:
+                _state.RemoveConditionalWatcher(e.ActivityInstanceId);
+                break;
+            case ConditionalWatcherCleared e:
+                _state.RemoveConditionalWatcher(e.ActivityInstanceId);
+                break;
+            case ConditionalWatcherResultUpdated e:
+                _state.UpdateConditionalWatcherResult(e.ActivityInstanceId, e.Result);
                 break;
             default:
                 throw new InvalidOperationException($"Unknown domain event type: {@event.GetType().Name}");

@@ -84,3 +84,10 @@ public record EvaluateActivationConditionCommand(
 public record DiscardLateTokenCommand(
     [property: Id(0)] string Reason) : IExecutionCommand;
 
+[GenerateSerializer]
+public record RegisterConditionalWatcherCommand(
+    [property: Id(0)] Guid VariablesId,
+    [property: Id(1)] string ConditionExpression,
+    [property: Id(2)] string ActivityId,
+    [property: Id(3)] bool IsBoundary) : IExecutionCommand;
+

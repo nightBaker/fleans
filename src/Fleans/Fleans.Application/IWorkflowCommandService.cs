@@ -20,7 +20,10 @@ public interface IWorkflowCommandService
 
     Task<ProcessDefinitionSummary> DisableProcess(string processDefinitionKey);
     Task<ProcessDefinitionSummary> EnableProcess(string processDefinitionKey);
+    Task<EvaluateConditionsResult> EvaluateConditions(string? workflowId, ExpandoObject variables);
 }
+
+public record EvaluateConditionsResult(List<Guid> StartedInstanceIds);
 
 public record SendMessageResult(bool Delivered, List<Guid>? WorkflowInstanceIds = null);
 public record SendSignalResult(int DeliveredCount, List<Guid>? WorkflowInstanceIds = null, List<string>? Errors = null);

@@ -101,6 +101,11 @@ public partial class BpmnConverter : IBpmnConverter
                         $"startEvent '{id}' signalEventDefinition must have a signalRef attribute");
                 activity = new SignalStartEvent(id, signalRef);
             }
+            else if (startEvent.Element(Bpmn + "conditionalEventDefinition") is { } condStartDef)
+            {
+                var conditionExpression = ParseConditionExpression(condStartDef, id, "startEvent");
+                activity = new ConditionalStartEvent(id, conditionExpression);
+            }
             else if (startEvent.Element(Bpmn + "errorEventDefinition") is { } errStartDef)
             {
                 // Only valid inside an event sub-process. We accept it here so the
@@ -146,12 +151,20 @@ public partial class BpmnConverter : IBpmnConverter
             else
             {
                 var signalDef = catchEvent.Element(Bpmn + "signalEventDefinition");
+                var condDef = catchEvent.Element(Bpmn + "conditionalEventDefinition");
                 if (signalDef != null)
                 {
                     var signalRef = signalDef.Attribute("signalRef")?.Value
                         ?? throw new InvalidOperationException(
                             $"IntermediateCatchEvent '{id}' signalEventDefinition must have a signalRef attribute");
                     var activity = new SignalIntermediateCatchEvent(id, signalRef);
+                    activities.Add(activity);
+                    activityMap[id] = activity;
+                }
+                else if (condDef != null)
+                {
+                    var conditionExpression = ParseConditionExpression(condDef, id, "intermediateCatchEvent");
+                    var activity = new ConditionalIntermediateCatchEvent(id, conditionExpression);
                     activities.Add(activity);
                     activityMap[id] = activity;
                 }
@@ -513,6 +526,7 @@ public partial class BpmnConverter : IBpmnConverter
             var errorDef = boundaryEl.Element(Bpmn + "errorEventDefinition");
             var messageDef = boundaryEl.Element(Bpmn + "messageEventDefinition");
             var signalDef = boundaryEl.Element(Bpmn + "signalEventDefinition");
+            var condDef = boundaryEl.Element(Bpmn + "conditionalEventDefinition");
 
             Activity activity;
             if (timerDef != null)
@@ -534,6 +548,11 @@ public partial class BpmnConverter : IBpmnConverter
                         $"boundaryEvent '{id}' signalEventDefinition must have a signalRef attribute");
                 activity = new SignalBoundaryEvent(id, attachedToRef, signalRef, isInterrupting);
             }
+            else if (condDef != null)
+            {
+                var conditionExpression = ParseConditionExpression(condDef, id, "boundaryEvent");
+                activity = new ConditionalBoundaryEvent(id, attachedToRef, conditionExpression, isInterrupting);
+            }
             else
             {
                 // Error boundaries are ALWAYS interrupting per BPMN spec
@@ -545,6 +564,16 @@ public partial class BpmnConverter : IBpmnConverter
             activities.Add(activity);
             activityMap[id] = activity;
         }
+    }
+
+    private static string ParseConditionExpression(XElement conditionalEventDef, string activityId, string elementType)
+    {
+        var conditionEl = conditionalEventDef.Element(Bpmn + "condition");
+        var expression = conditionEl?.Value?.Trim();
+        if (string.IsNullOrEmpty(expression))
+            throw new InvalidOperationException(
+                $"{elementType} '{activityId}' conditionalEventDefinition must have a non-empty <condition> element");
+        return expression;
     }
 
     // Resolves a BPMN errorRef (the id of an <error> element declared at definitions scope)
