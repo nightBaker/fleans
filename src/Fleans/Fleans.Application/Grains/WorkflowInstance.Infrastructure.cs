@@ -94,6 +94,16 @@ public partial class WorkflowInstance
                 var effects = _execution.ProcessCommands(commands, entry.ActivityInstanceId);
                 await PerformEffects(effects);
 
+                // If an escalation was thrown and the parent grain cancelled the child,
+                // terminate this workflow and break out of the execution loop.
+                if (_pendingEscalationParentResult == EscalationHandledResult.Cancelled)
+                {
+                    _pendingEscalationParentResult = null;
+                    _execution.TerminateForParentEscalationCancellation();
+                    return;
+                }
+                _pendingEscalationParentResult = null;
+
                 // Handle domain events published by activities (e.g., ExecuteScriptEvent)
                 foreach (var evt in adapter.PublishedEvents)
                     await PublishDomainEvent(evt);
@@ -257,18 +267,61 @@ public partial class WorkflowInstance
                     case PendingBoundarySignalFired b:
                         LogSignalDeliveryBoundary(b.BoundaryActivityId);
                         break;
+                    case PendingChildEscalated e:
+                        LogChildWorkflowEscalated(e.ChildWorkflowInstanceId, e.EscalationCode);
+                        break;
+                    case PendingChildEscalationRaised r:
+                        LogChildEscalationRaised(r.ChildWorkflowInstanceId, r.EscalationCode);
+                        break;
                 }
                 LogProcessingPendingEvent(pending.GetType().Name);
 
-                var effects = pending switch
+                if (pending is PendingChildEscalationRaised escalation)
                 {
-                    PendingChildCompleted c => _execution!.OnChildWorkflowCompleted(c.ParentActivityId, c.ChildVariables),
-                    PendingChildFailed f => _execution!.OnChildWorkflowFailed(f.ParentActivityId, f.Exception),
-                    PendingSignalDelivery s => _execution!.HandleSignalDelivery(s.ActivityId, s.HostActivityInstanceId),
-                    PendingBoundarySignalFired b => _execution!.HandleSignalDelivery(b.BoundaryActivityId, b.HostActivityInstanceId),
-                    _ => throw new InvalidOperationException($"Unknown pending event type: {pending.GetType().Name}")
-                };
-                await PerformEffects(effects);
+                    var (localEffects, localResult) = _execution!.HandleChildEscalationRaised(
+                        escalation.ChildWorkflowInstanceId, escalation.HostActivityId,
+                        escalation.EscalationCode, escalation.Variables);
+                    await PerformEffects(localEffects);
+
+                    EscalationHandledResult finalResult;
+                    if (localResult == EscalationHandledResult.NeedsParentLookup)
+                    {
+                        finalResult = _pendingEscalationParentResult ?? EscalationHandledResult.Unhandled;
+                        _pendingEscalationParentResult = null;
+                    }
+                    else
+                    {
+                        finalResult = localResult;
+                    }
+                    escalation.Tcs.SetResult(finalResult);
+                }
+                else if (pending is PendingChildEscalated childEscalated)
+                {
+                    // EscalationEndEvent path: child terminated, resolve host activity from child workflow instance
+                    var hostActivityId = childEscalated.HostActivityId;
+                    if (string.IsNullOrEmpty(hostActivityId))
+                    {
+                        // Resolve from state: find the entry with matching child workflow instance ID
+                        var hostEntry = _execution!.FindEntryByChildWorkflowInstanceId(childEscalated.ChildWorkflowInstanceId);
+                        hostActivityId = hostEntry?.ActivityId ?? string.Empty;
+                    }
+                    var (localEffects, _) = _execution!.HandleChildEscalationRaised(
+                        childEscalated.ChildWorkflowInstanceId, hostActivityId,
+                        childEscalated.EscalationCode, childEscalated.Variables);
+                    await PerformEffects(localEffects);
+                }
+                else
+                {
+                    var effects = pending switch
+                    {
+                        PendingChildCompleted c => _execution!.OnChildWorkflowCompleted(c.ParentActivityId, c.ChildVariables),
+                        PendingChildFailed f => _execution!.OnChildWorkflowFailed(f.ParentActivityId, f.Exception),
+                        PendingSignalDelivery s => _execution!.HandleSignalDelivery(s.ActivityId, s.HostActivityInstanceId),
+                        PendingBoundarySignalFired b => _execution!.HandleSignalDelivery(b.BoundaryActivityId, b.HostActivityInstanceId),
+                        _ => throw new InvalidOperationException($"Unknown pending event type: {pending.GetType().Name}")
+                    };
+                    await PerformEffects(effects);
+                }
                 await ResolveExternalCompletions();
                 await RunExecutionLoop();
 
@@ -438,6 +491,12 @@ public partial class WorkflowInstance
                 break;
             case TimerCycleUpdated timerCycle:
                 LogTimerCycleUpdated(timerCycle.HostActivityInstanceId, timerCycle.TimerActivityId, timerCycle.RemainingCycle is not null);
+                break;
+            case WorkflowCancelled wfCancelled:
+                LogWorkflowCancelled(wfCancelled.Reason);
+                break;
+            case EscalationUncaughtRaised escUncaught:
+                LogEscalationUncaught(escUncaught.EscalationCode, escUncaught.SourceActivityId);
                 break;
         }
     }

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             id="Definitions_1"
+             targetNamespace="http://fleans.io/bpmn">
+
+  <escalation id="Escalation_1" name="PaymentOverdue" escalationCode="ESC_PAYMENT" />
+
+  <process id="child-escalation-end" name="Child Escalation End" isExecutable="true">
+    <startEvent id="start" />
+    <scriptTask id="doWork" scriptFormat="csharp">
+      <script>variables.result = "work-done";</script>
+    </scriptTask>
+    <endEvent id="escEnd">
+      <escalationEventDefinition escalationRef="Escalation_1" />
+    </endEvent>
+    <sequenceFlow id="f1" sourceRef="start" targetRef="doWork" />
+    <sequenceFlow id="f2" sourceRef="doWork" targetRef="escEnd" />
+  </process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="child-escalation-end">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="180" y="100" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="doWork_di" bpmnElement="doWork">
+        <dc:Bounds x="270" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="escEnd_di" bpmnElement="escEnd">
+        <dc:Bounds x="430" y="100" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="216" y="118" />
+        <di:waypoint x="270" y="118" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="370" y="118" />
+        <di:waypoint x="430" y="118" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

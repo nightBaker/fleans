@@ -36,6 +36,13 @@ public partial class WorkflowInstance :
     private IGrainTimer? _pendingEventsTimer;
 
     /// <summary>
+    /// Stores the result from NotifyParentEscalationRaisedEffect handler.
+    /// Written exclusively by PerformEffects when processing that effect.
+    /// Read and cleared in ProcessPendingEvents or RunExecutionLoop.
+    /// </summary>
+    private EscalationHandledResult? _pendingEscalationParentResult;
+
+    /// <summary>
     /// Guards against double-apply: true while draining aggregate events via RaiseEvent.
     /// When true, TransitionState skips event application (aggregate already applied).
     /// </summary>
@@ -413,6 +420,29 @@ public partial class WorkflowInstance :
         return tcs.Task;
     }
 
+    public Task OnChildWorkflowEscalated(Guid childWorkflowInstanceId, string escalationCode, ExpandoObject variables)
+    {
+        LogChildWorkflowEscalatedQueued(childWorkflowInstanceId, escalationCode);
+        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingExternalEvents.Enqueue((new PendingChildEscalated(
+            childWorkflowInstanceId, string.Empty, escalationCode, variables), tcs));
+        EnsurePendingEventsTimerRegistered();
+        return tcs.Task;
+    }
+
+    public Task<EscalationHandledResult> OnChildEscalationRaised(
+        Guid childWorkflowInstanceId, string hostActivityId,
+        string escalationCode, ExpandoObject variables)
+    {
+        LogChildEscalationRaisedQueued(childWorkflowInstanceId, escalationCode);
+        var tcs = new TaskCompletionSource<EscalationHandledResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var wrapper = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingExternalEvents.Enqueue((new PendingChildEscalationRaised(
+            childWorkflowInstanceId, hostActivityId, escalationCode, variables, tcs), wrapper));
+        EnsurePendingEventsTimerRegistered();
+        return tcs.Task;
+    }
+
     // ── Event Handling ──────────────────────────────────────────────────
 
     public async Task<TimeSpan?> HandleTimerFired(string timerActivityId, Guid hostActivityInstanceId)
@@ -605,5 +635,8 @@ public partial class WorkflowInstance :
             var failEffects = _grain._execution!.FailActivity(activityId, hostActivityInstanceId, ex);
             await _grain._effectDispatcher.DispatchAsync(failEffects, this);
         }
+
+        public void SetEscalationParentResult(EscalationHandledResult result)
+            => _grain._pendingEscalationParentResult = result;
     }
 }

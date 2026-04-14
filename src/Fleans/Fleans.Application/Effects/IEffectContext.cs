@@ -1,3 +1,4 @@
+using Fleans.Domain;
 using Orleans;
 
 namespace Fleans.Application.Effects;
@@ -20,4 +21,10 @@ public interface IEffectContext
     /// within the same grain turn.
     /// </summary>
     Task ProcessFailureEffects(string activityId, Guid hostActivityInstanceId, Exception ex);
+
+    /// <summary>
+    /// Stores the result of a parent escalation lookup so the caller
+    /// (ProcessPendingEvents / RunExecutionLoop) can read it after PerformEffects returns.
+    /// </summary>
+    void SetEscalationParentResult(EscalationHandledResult result);
 }

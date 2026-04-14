@@ -38,6 +38,9 @@ public record EventSubProcess(string ActivityId) : Activity(ActivityId), IWorkfl
     [Id(5)]
     public List<SignalDefinition> Signals { get; init; } = [];
 
+    [Id(6)]
+    public List<EscalationDefinition> Escalations { get; init; } = [];
+
     public Activity GetActivity(string activityId)
         => Activities.First(a => a.ActivityId == activityId);
 

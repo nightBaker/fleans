@@ -10,7 +10,7 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1001, Level = LogLevel.Debug, Message = "Workflow execution started")]
     private partial void LogWorkflowStarted();
 
-    [LoggerMessage(EventId = 1076, Level = LogLevel.Information,
+    [LoggerMessage(EventId = 1078, Level = LogLevel.Information,
         Message = "Root-scope event sub-process listeners armed: {ListenerCount}")]
     private partial void LogRootScopeListenersArmed(int listenerCount);
 
@@ -271,6 +271,31 @@ public partial class WorkflowInstance
         Message = "EventSubProcess handler EndEvent fired: esp={EventSubProcessId} endEvent={EndEventId} hostInstance={HostActivityInstanceId}")]
     private partial void LogEventSubProcessHandlerEndEventFired(
         string eventSubProcessId, string endEventId, Guid hostActivityInstanceId);
+
+    // Escalation lifecycle (EventId 1090-1099)
+    [LoggerMessage(EventId = 1090, Level = LogLevel.Debug,
+        Message = "Child workflow escalated queued: ChildId={ChildWorkflowInstanceId}, EscalationCode={EscalationCode}")]
+    private partial void LogChildWorkflowEscalatedQueued(Guid childWorkflowInstanceId, string escalationCode);
+
+    [LoggerMessage(EventId = 1091, Level = LogLevel.Debug,
+        Message = "Child escalation raised queued: ChildId={ChildWorkflowInstanceId}, EscalationCode={EscalationCode}")]
+    private partial void LogChildEscalationRaisedQueued(Guid childWorkflowInstanceId, string escalationCode);
+
+    [LoggerMessage(EventId = 1092, Level = LogLevel.Information,
+        Message = "Child workflow escalated: ChildId={ChildWorkflowInstanceId}, EscalationCode={EscalationCode}")]
+    private partial void LogChildWorkflowEscalated(Guid childWorkflowInstanceId, string escalationCode);
+
+    [LoggerMessage(EventId = 1093, Level = LogLevel.Information,
+        Message = "Child escalation raised: ChildId={ChildWorkflowInstanceId}, EscalationCode={EscalationCode}")]
+    private partial void LogChildEscalationRaised(Guid childWorkflowInstanceId, string escalationCode);
+
+    [LoggerMessage(EventId = 3030, Level = LogLevel.Warning,
+        Message = "Workflow cancelled: {Reason}")]
+    private partial void LogWorkflowCancelled(string reason);
+
+    [LoggerMessage(EventId = 3031, Level = LogLevel.Warning,
+        Message = "Escalation uncaught: EscalationCode={EscalationCode}, SourceActivityId={SourceActivityId}")]
+    private partial void LogEscalationUncaught(string escalationCode, string sourceActivityId);
 
     // Complex gateway lifecycle (EventId 1080-1089)
     [LoggerMessage(EventId = 1080, Level = LogLevel.Debug,

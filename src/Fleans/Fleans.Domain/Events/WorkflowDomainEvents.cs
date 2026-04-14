@@ -6,6 +6,7 @@ namespace Fleans.Domain.Events;
 public record WorkflowStarted(Guid InstanceId, string? ProcessDefinitionId, Guid RootVariablesId) : IDomainEvent;
 public record ExecutionStarted() : IDomainEvent;
 public record WorkflowCompleted() : IDomainEvent;
+public record WorkflowCancelled(string Reason) : IDomainEvent;
 
 // Activity lifecycle
 public record ActivitySpawned(
@@ -52,6 +53,10 @@ public record UserTaskRegistered(
 public record UserTaskClaimed(Guid ActivityInstanceId, string UserId, DateTimeOffset ClaimedAt) : IDomainEvent;
 public record UserTaskUnclaimed(Guid ActivityInstanceId) : IDomainEvent;
 public record UserTaskUnregistered(Guid ActivityInstanceId) : IDomainEvent;
+
+// Escalation
+public record EscalationUncaughtRaised(
+    string EscalationCode, string SourceActivityId) : IDomainEvent;
 
 // Timer cycle tracking
 public record TimerCycleUpdated(
