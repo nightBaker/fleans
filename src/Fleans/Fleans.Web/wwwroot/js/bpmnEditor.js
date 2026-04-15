@@ -155,6 +155,14 @@ window.bpmnEditor = {
                     }
                     break;
                 }
+                if (bo.eventDefinitions[i].$type === 'bpmn:ErrorEventDefinition') {
+                    data.hasErrorDefinition = true;
+                    var errDef = bo.eventDefinitions[i];
+                    if (errDef.errorRef) {
+                        data.errorCode = errDef.errorRef.errorCode || '';
+                    }
+                    break;
+                }
             }
         }
 
@@ -419,6 +427,51 @@ window.bpmnEditor = {
             modeling.updateModdleProperties(element, sigDef, { signalRef: signalEl });
         } else {
             modeling.updateModdleProperties(element, sigDef, { signalRef: undefined });
+        }
+    },
+
+    updateErrorDefinition: function (elementId, errorCode) {
+        if (!this._modeler) return;
+        var elementRegistry = this._modeler.get('elementRegistry');
+        var modeling = this._modeler.get('modeling');
+        var moddle = this._modeler.get('moddle');
+        var element = elementRegistry.get(elementId);
+        if (!element) return;
+
+        var bo = element.businessObject;
+        if (!bo.eventDefinitions || bo.eventDefinitions.length === 0) return;
+
+        var errDef = null;
+        for (var i = 0; i < bo.eventDefinitions.length; i++) {
+            if (bo.eventDefinitions[i].$type === 'bpmn:ErrorEventDefinition') {
+                errDef = bo.eventDefinitions[i];
+                break;
+            }
+        }
+        if (!errDef) return;
+
+        var canvas = this._modeler.get('canvas');
+        var definitions = canvas.getRootElement().businessObject.$parent;
+
+        if (errorCode) {
+            var errorEl = errDef.errorRef;
+
+            if (!errorEl) {
+                var errId = 'Error_' + elementId;
+                errorEl = moddle.create('bpmn:Error', { id: errId, errorCode: errorCode });
+                errorEl.$parent = definitions;
+
+                var rootElements = definitions.get('rootElements');
+                rootElements.push(errorEl);
+
+                moddle.ids.claim(errId, errorEl);
+            } else {
+                errorEl.errorCode = errorCode;
+            }
+
+            modeling.updateModdleProperties(element, errDef, { errorRef: errorEl });
+        } else {
+            modeling.updateModdleProperties(element, errDef, { errorRef: undefined });
         }
     },
 

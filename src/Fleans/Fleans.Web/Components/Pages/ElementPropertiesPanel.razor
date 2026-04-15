@@ -127,7 +127,13 @@
             {
                 <div>
                     <FluentCheckbox Value="@isInterrupting" @onchange="OnIsInterruptingChange"
-                                    Disabled="@ReadOnly" Label="Interrupting (cancels attached activity)" />
+                                    Disabled="@(ReadOnly || HasError)" Label="Interrupting (cancels attached activity)" />
+                    @if (HasError)
+                    {
+                        <FluentLabel Style="color: var(--neutral-foreground-hint); margin-top: 4px; font-size: 12px;">
+                            Error boundary events are always interrupting per BPMN spec.
+                        </FluentLabel>
+                    }
                 </div>
             }
 
@@ -184,6 +190,18 @@
                 </div>
             }
 
+            @if (HasError)
+            {
+                <div>
+                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Error Code</FluentLabel>
+                    <FluentTextField Value="@errorCode" @oninput="OnErrorCodeInput" @onchange="OnErrorCodeChange"
+                                     Disabled="@ReadOnly" Placeholder="e.g. 400 (leave empty for catch-all)" Style="width: 100%;" />
+                    <FluentLabel Style="color: var(--neutral-foreground-hint); margin-top: 4px; font-size: 12px;">
+                        Specific error code to catch. Leave empty to catch all errors.
+                    </FluentLabel>
+                </div>
+            }
+
             @if (Element.Type == "bpmn:UserTask")
             {
                 <div>
@@ -236,6 +254,7 @@
     private string messageName = "";
     private string correlationKey = "";
     private string signalName = "";
+    private string errorCode = "";
     private bool isInterrupting = true;
     private string assignee = "";
     private List<string> candidateGroups = [];
@@ -284,6 +303,7 @@
         messageName = Element.MessageName;
         correlationKey = Element.CorrelationKey;
         signalName = Element.SignalName;
+        errorCode = Element.ErrorCode;
         isInterrupting = Element.IsInterrupting;
         assignee = Element.Assignee;
         candidateGroups = new List<string>(Element.CandidateGroups);
@@ -374,6 +394,7 @@
     private bool HasTimer => Element.HasTimerDefinition;
     private bool HasMessage => Element.HasMessageDefinition;
     private bool HasSignal => Element.HasSignalDefinition;
+    private bool HasError => Element.HasErrorDefinition;
     private bool IsBoundaryEvent => Element.Type == "bpmn:BoundaryEvent";
 
     private static readonly Dictionary<string, string> TimerTypesAll = new()
@@ -448,6 +469,13 @@
     {
         signalName = e.Value?.ToString() ?? "";
         await JS.InvokeVoidAsync("bpmnEditor.updateSignalDefinition", Element.Id, signalName);
+    }
+
+    private void OnErrorCodeInput(ChangeEventArgs e) => errorCode = e.Value?.ToString() ?? "";
+    private async Task OnErrorCodeChange(ChangeEventArgs e)
+    {
+        errorCode = e.Value?.ToString() ?? "";
+        await JS.InvokeVoidAsync("bpmnEditor.updateErrorDefinition", Element.Id, errorCode);
     }
 
     private void OnAssigneeInput(ChangeEventArgs e) => assignee = e.Value?.ToString() ?? "";
@@ -544,6 +572,16 @@
                 _ => Element.Type.Replace("bpmn:", "")
             };
         }
+        if (HasError)
+        {
+            return Element.Type switch
+            {
+                "bpmn:StartEvent" => "Error Start Event",
+                "bpmn:EndEvent" => "Error End Event",
+                "bpmn:BoundaryEvent" => "Error Boundary Event",
+                _ => Element.Type.Replace("bpmn:", "")
+            };
+        }
         return Element.Type switch
         {
             "bpmn:StartEvent" => "Start Event",
@@ -585,6 +623,8 @@
         public string CorrelationKey { get; set; } = "";
         public bool HasSignalDefinition { get; set; }
         public string SignalName { get; set; } = "";
+        public bool HasErrorDefinition { get; set; }
+        public string ErrorCode { get; set; } = "";
         public bool IsInterrupting { get; set; } = true;
         public string Assignee { get; set; } = "";
         public List<string> CandidateGroups { get; set; } = [];
