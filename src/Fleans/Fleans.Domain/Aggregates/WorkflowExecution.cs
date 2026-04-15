@@ -127,7 +127,10 @@ public class WorkflowExecution
     public void MarkCompleted(Guid activityInstanceId, ExpandoObject variables)
     {
         var entry = _state.GetEntry(activityInstanceId);
-        if (entry.IsCompleted) return; // already completed by ProcessCommands (e.g. interrupting escalation)
+        // IsCompleted covers all terminal states: completed, failed, and cancelled.
+        // An entry may already be terminal when an interrupting boundary event
+        // cancels the host activity before the grain calls MarkCompleted.
+        if (entry.IsCompleted) return;
         Emit(new ActivityCompleted(activityInstanceId, entry.VariablesId, variables));
     }
 
@@ -312,7 +315,11 @@ public class WorkflowExecution
                         skipStartEventActivityId: null));
 
                     Emit(new WorkflowCompleted());
-                    // If this is a child workflow, notify parent of completion
+                    // If this is a child workflow, notify parent of completion.
+                    // When an escalation was also raised in this batch, the parent may
+                    // have already cancelled the host entry (interrupting boundary) —
+                    // the parent's stale guard in OnChildWorkflowCompleted safely
+                    // ignores the completion in that case.
                     if (_state.ParentWorkflowInstanceId.HasValue)
                     {
                         var rootVariables = _state.GetMergedVariables(
@@ -2143,6 +2150,11 @@ public class WorkflowExecution
             case WorkflowCompleted:
                 _state.Complete();
                 break;
+            case WorkflowCancelled:
+                _state.Cancel();
+                break;
+            case EscalationUncaughtRaised:
+                break; // non-faulting per BPMN spec — recorded for observability only
             case ActivitySpawned e:
                 ApplyActivitySpawned(e);
                 break;

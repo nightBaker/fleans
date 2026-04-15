@@ -230,6 +230,18 @@ public class WorkflowInstanceState
         IsCompleted = true;
     }
 
+    public void Cancel()
+    {
+        if (IsCompleted)
+            return; // already terminated — cancellation after completion is a no-op
+
+        GatewayForks.Clear();
+        ComplexGatewayJoinStates.Clear();
+        _dirtyFlags |= DirtyGatewayForks | DirtyComplexGatewayJoinStates;
+        CompletedAt = DateTimeOffset.UtcNow;
+        IsCompleted = true;
+    }
+
     public Guid AddCloneOfVariableState(Guid variableStateId)
     {
         var source = VariableStates.First(v => v.Id == variableStateId);
