@@ -289,4 +289,20 @@ public partial class WorkflowInstance
         Message = "CompleteActivationCondition called for activity {ActivityId}, instance {ActivityInstanceId}, result={Result}")]
     private partial void LogCompleteActivationCondition(string activityId, Guid activityInstanceId, bool result);
 
+    [LoggerMessage(EventId = 1090, Level = LogLevel.Information,
+        Message = "Multiple catch event registered: activity {ActivityId}, {DefinitionCount} watchers")]
+    private partial void LogMultipleCatchRegistered(string activityId, int definitionCount);
+
+    [LoggerMessage(EventId = 1091, Level = LogLevel.Information,
+        Message = "Multiple catch event fired: activity {ActivityId}, trigger type {TriggerType}")]
+    private partial void LogMultipleCatchFired(string activityId, string triggerType);
+
+    [LoggerMessage(EventId = 1092, Level = LogLevel.Information,
+        Message = "Multiple throw event fired: activity {ActivityId}, {DefinitionCount} definitions thrown")]
+    private partial void LogMultipleThrowFired(string activityId, int definitionCount);
+
+    [LoggerMessage(EventId = 1093, Level = LogLevel.Information,
+        Message = "Multiple boundary event fired: activity {ActivityId}, trigger type {TriggerType}, interrupting={IsInterrupting}")]
+    private partial void LogMultipleBoundaryFired(string activityId, string triggerType, bool isInterrupting);
+
 }
