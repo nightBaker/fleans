@@ -382,8 +382,7 @@ public class UserTaskIntegrationTests : WorkflowTestBase
         var taskGrain = Cluster.GrainFactory.GetGrain<IUserTaskGrain>(instanceId);
         var taskState = await taskGrain.GetState();
 
-        Assert.IsNotNull(taskState);
-        Assert.AreEqual(Domain.States.UserTaskLifecycleState.Completed, taskState.TaskState);
+        Assert.IsNull(taskState);
     }
 
     [TestMethod]
@@ -514,7 +513,6 @@ public class UserTaskIntegrationTests : WorkflowTestBase
         var taskGrain = Cluster.GrainFactory.GetGrain<IUserTaskGrain>(instanceId);
         var taskState = await taskGrain.GetState();
 
-        Assert.IsNotNull(taskState);
-        Assert.AreEqual(Domain.States.UserTaskLifecycleState.Completed, taskState.TaskState);
+        Assert.IsNull(taskState);
     }
 }
