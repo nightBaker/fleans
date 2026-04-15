@@ -422,7 +422,9 @@ public class WorkflowExecution
         var effects = new List<IInfrastructureEffect>();
 
         effects.AddRange(BuildEventSubProcessPeerUnregisterEffects(
-            _definition, scopeContainerId: null, skipStartEventActivityId: null));
+            _definition, scopeContainerId: null,
+            scopeVariablesId: _state.GetRootVariablesId(),
+            skipStartEventActivityId: null));
 
         Emit(new WorkflowCompleted());
 
