@@ -109,6 +109,23 @@ public class WorkflowInstanceState
     [Id(17)]
     public List<ComplexGatewayJoinState> ComplexGatewayJoinStates { get; private set; } = [];
 
+    private const int DirtyCompensationLog = 64;
+
+    /// <summary>
+    /// Append-only log of completed, compensable activities (those with a CompensationBoundaryEvent attached).
+    /// Keyed implicitly by ScopeId on each entry. Used as input to compensation walks.
+    /// </summary>
+    [Id(18)]
+    public List<CompletedActivitySnapshot> CompensationLog { get; private set; } = [];
+
+    /// <summary>Global monotonic counter for assigning CompletedAtSequence to compensation snapshots.</summary>
+    [Id(19)]
+    public int NextCompensationSequence { get; private set; }
+
+    /// <summary>Non-null while a compensation walk is in progress. At most one walk at a time.</summary>
+    [Id(20)]
+    public CompensationWalkState? ActiveCompensationWalk { get; private set; }
+
     internal int GetDirtyFlags() => _dirtyFlags;
 
     internal void ClearDirtyFlags() => _dirtyFlags = 0;
@@ -486,4 +503,58 @@ public class WorkflowInstanceState
         ComplexGatewayJoinStates.RemoveAll(s => s.GatewayActivityId == gatewayActivityId);
         _dirtyFlags |= DirtyComplexGatewayJoinStates;
     }
+
+    // ── Compensation ────────────────────────────────────────────────────────────────
+
+    public void AddCompensationSnapshot(CompletedActivitySnapshot snapshot)
+    {
+        CompensationLog.Add(snapshot);
+        NextCompensationSequence++;
+        _dirtyFlags |= DirtyCompensationLog;
+    }
+
+    public int GetNextCompensationSequence() => NextCompensationSequence;
+
+    public void MarkSnapshotCompensated(string activityDefinitionId, Guid? scopeId)
+    {
+        var snapshot = CompensationLog
+            .FirstOrDefault(s => s.ActivityDefinitionId == activityDefinitionId
+                              && s.ScopeId == scopeId
+                              && !s.IsCompensated);
+        snapshot?.MarkCompensated();
+        _dirtyFlags |= DirtyCompensationLog;
+    }
+
+    public void StartCompensationWalk(CompensationWalkState walk)
+    {
+        ActiveCompensationWalk = walk;
+        _dirtyFlags |= DirtyCompensationLog;
+    }
+
+    public void ClearCompensationWalk()
+    {
+        ActiveCompensationWalk = null;
+        _dirtyFlags |= DirtyCompensationLog;
+    }
+
+    public void SetCompensationHandlerInstanceId(Guid handlerInstanceId)
+    {
+        ActiveCompensationWalk?.SetCurrentHandler(handlerInstanceId);
+        _dirtyFlags |= DirtyCompensationLog;
+    }
+
+    public void MarkCurrentHandlerEntry(Guid entryInstanceId)
+    {
+        var entry = GetActiveEntry(entryInstanceId);
+        entry.MarkAsCompensationHandler();
+        _dirtyFlags |= DirtyEntries;
+    }
+
+    /// <summary>
+    /// Returns true if the given activity instance is an active compensation handler entry.
+    /// Used by the walk advancement logic to detect completion of the current handler
+    /// without querying the full scope-completion check.
+    /// </summary>
+    public bool HasActiveCompensationHandler(Guid handlerInstanceId)
+        => ActiveEntryIds.Contains(handlerInstanceId);
 }

@@ -57,3 +57,28 @@ public record UserTaskUnregistered(Guid ActivityInstanceId) : IDomainEvent;
 public record TimerCycleUpdated(
     Guid HostActivityInstanceId, string TimerActivityId,
     Activities.TimerDefinition? RemainingCycle) : IDomainEvent;
+
+// Compensation
+public record CompensableActivitySnapshotRecorded(
+    Guid ActivityInstanceId,
+    string ActivityDefinitionId,
+    ExpandoObject VariablesSnapshot,
+    int CompletedAtSequence,
+    Guid? ScopeId) : IDomainEvent;
+
+public record CompensationWalkStarted(
+    Guid? ScopeId,
+    string? TargetActivityRef,
+    int HandlerCount) : IDomainEvent;
+
+public record CompensationHandlerSpawned(
+    Guid HandlerInstanceId,
+    string CompensableActivityDefinitionId,
+    string HandlerActivityId,
+    Guid? ScopeId) : IDomainEvent;
+
+public record CompensationEntryMarkedCompensated(
+    string ActivityDefinitionId,
+    Guid? ScopeId) : IDomainEvent;
+
+public record CompensationWalkCompleted(Guid? ScopeId) : IDomainEvent;

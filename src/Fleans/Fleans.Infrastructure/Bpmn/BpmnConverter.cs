@@ -75,6 +75,14 @@ public partial class BpmnConverter : IBpmnConverter
 
     private void ParseActivities(XElement scopeElement, List<Activity> activities, Dictionary<string, Activity> activityMap, HashSet<string> defaultFlowIds)
     {
+        // Pre-parse compensation associations: boundaryEventId -> handlerActivityId.
+        // Required for CompensationBoundaryEvent which links to its handler via <association>.
+        var compensationHandlerMap = scopeElement
+            .Elements(Bpmn + "association")
+            .Where(a => a.Attribute("sourceRef") != null && a.Attribute("targetRef") != null)
+            .GroupBy(a => a.Attribute("sourceRef")!.Value)
+            .ToDictionary(g => g.Key, g => g.First().Attribute("targetRef")!.Value);
+
         // Parse start events (with optional timer definition)
         foreach (var startEvent in scopeElement.Elements(Bpmn + "startEvent"))
         {
@@ -163,17 +171,26 @@ public partial class BpmnConverter : IBpmnConverter
             }
         }
 
-        // Parse intermediate throw events (signal)
+        // Parse intermediate throw events (signal, compensation)
         foreach (var throwEvent in scopeElement.Elements(Bpmn + "intermediateThrowEvent"))
         {
             var id = GetId(throwEvent);
             var signalDef = throwEvent.Element(Bpmn + "signalEventDefinition");
+            var compensateDef = throwEvent.Element(Bpmn + "compensateEventDefinition");
             if (signalDef != null)
             {
                 var signalRef = signalDef.Attribute("signalRef")?.Value
                     ?? throw new InvalidOperationException(
                         $"IntermediateThrowEvent '{id}' signalEventDefinition must have a signalRef attribute");
                 var activity = new SignalIntermediateThrowEvent(id, signalRef);
+                activities.Add(activity);
+                activityMap[id] = activity;
+            }
+            else if (compensateDef != null)
+            {
+                // Optional: target a specific activity (activityRef attribute)
+                var targetActivityRef = compensateDef.Attribute("activityRef")?.Value;
+                var activity = new CompensationIntermediateThrowEvent(id, targetActivityRef);
                 activities.Add(activity);
                 activityMap[id] = activity;
             }
@@ -188,7 +205,10 @@ public partial class BpmnConverter : IBpmnConverter
         foreach (var endEvent in scopeElement.Elements(Bpmn + "endEvent"))
         {
             var id = GetId(endEvent);
-            var activity = new EndEvent(id);
+            var compensateDef = endEvent.Element(Bpmn + "compensateEventDefinition");
+            Activity activity = compensateDef != null
+                ? new CompensationEndEvent(id)
+                : new EndEvent(id);
             activities.Add(activity);
             activityMap[id] = activity;
         }
@@ -513,6 +533,7 @@ public partial class BpmnConverter : IBpmnConverter
             var errorDef = boundaryEl.Element(Bpmn + "errorEventDefinition");
             var messageDef = boundaryEl.Element(Bpmn + "messageEventDefinition");
             var signalDef = boundaryEl.Element(Bpmn + "signalEventDefinition");
+            var compensateDef2 = boundaryEl.Element(Bpmn + "compensateEventDefinition");
 
             Activity activity;
             if (timerDef != null)
@@ -533,6 +554,16 @@ public partial class BpmnConverter : IBpmnConverter
                     ?? throw new InvalidOperationException(
                         $"boundaryEvent '{id}' signalEventDefinition must have a signalRef attribute");
                 activity = new SignalBoundaryEvent(id, attachedToRef, signalRef, isInterrupting);
+            }
+            else if (compensateDef2 != null)
+            {
+                // Compensation boundary events are always non-interrupting per BPMN spec.
+                // The handler activity is identified via an <association> element.
+                if (!compensationHandlerMap.TryGetValue(id, out var handlerActivityId))
+                    throw new InvalidOperationException(
+                        $"CompensationBoundaryEvent '{id}' has no associated handler activity. " +
+                        "Add an <association> element with sourceRef='{id}' pointing to the handler.");
+                activity = new CompensationBoundaryEvent(id, attachedToRef, handlerActivityId);
             }
             else
             {

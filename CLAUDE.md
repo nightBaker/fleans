@@ -136,6 +136,7 @@ The full regression suite is the union of every plan under `tests/manual/`. Each
 23. **Event Sub-Process — Message (Interrupting)** — `tests/manual/21-event-subprocess-message/test-plan.md`. Message event sub-process: scope-entry correlation against enclosing variables; on delivery, interrupts siblings.
 24. **Event Sub-Process — Signal (Interrupting)** — `tests/manual/22-event-subprocess-signal/test-plan.md`. Signal event sub-process inside a scope; broadcast delivery interrupts siblings.
 25. **Event Sub-Process — Non-Interrupting (Timer)** — `tests/manual/23-event-subprocess-non-interrupting/test-plan.md`. Non-interrupting variant runs in parallel with the host scope, with isolated child variable scope; timer cycles re-arm.
+26. **Compensation Events** — `tests/manual/24-compensation-event/test-plan.md` (`compensation-broadcast.bpmn`). Broadcast compensation throw after two script tasks; verifies reverse-order handler execution (cancel_flight before cancel_hotel) and variable mutation by compensation handlers.
 
 > When adding a new manual test folder under `tests/manual/`, append a numbered entry here so the regression skill picks it up.
 

@@ -174,6 +174,11 @@ public partial class WorkflowInstance
         var eventCountBefore = _execution!.GetUncommittedEvents().Count;
         var (scopeEffects, completedHostIds, orphanedScopeIds) = _execution!.CompleteFinishedSubProcessScopes();
 
+        // Advance compensation walk if the current handler has finished.
+        // Called after scope completions so that any SubProcess-scoped handler completions
+        // are processed before we try to spawn the next compensation handler.
+        _execution.AdvanceCompensationWalkIfHandlerCompleted();
+
         // Detect root EventSubProcess completion — it emits WorkflowCompleted directly
         // (no outgoing flow), which is a second exit point for workflow completion.
         var newEvents = _execution.GetUncommittedEvents().Skip(eventCountBefore);
@@ -438,6 +443,21 @@ public partial class WorkflowInstance
                 break;
             case TimerCycleUpdated timerCycle:
                 LogTimerCycleUpdated(timerCycle.HostActivityInstanceId, timerCycle.TimerActivityId, timerCycle.RemainingCycle is not null);
+                break;
+            case CompensableActivitySnapshotRecorded snap:
+                LogCompensableActivitySnapshotRecorded(snap.ActivityDefinitionId, snap.CompletedAtSequence, snap.ScopeId);
+                break;
+            case CompensationWalkStarted walkStarted:
+                LogCompensationWalkStarted(walkStarted.ScopeId, walkStarted.TargetActivityRef, walkStarted.HandlerCount);
+                break;
+            case CompensationHandlerSpawned handlerSpawned:
+                LogCompensationHandlerSpawned(handlerSpawned.HandlerInstanceId, handlerSpawned.CompensableActivityDefinitionId, handlerSpawned.HandlerActivityId);
+                break;
+            case CompensationEntryMarkedCompensated entryMarked:
+                LogCompensationEntryMarkedCompensated(entryMarked.ActivityDefinitionId, entryMarked.ScopeId);
+                break;
+            case CompensationWalkCompleted walkCompleted:
+                LogCompensationWalkCompleted(walkCompleted.ScopeId);
                 break;
         }
     }

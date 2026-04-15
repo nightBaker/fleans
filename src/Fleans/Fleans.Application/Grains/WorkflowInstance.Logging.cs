@@ -272,6 +272,27 @@ public partial class WorkflowInstance
     private partial void LogEventSubProcessHandlerEndEventFired(
         string eventSubProcessId, string endEventId, Guid hostActivityInstanceId);
 
+    // Compensation event lifecycle (EventId 1090-1099)
+    [LoggerMessage(EventId = 1090, Level = LogLevel.Debug,
+        Message = "Compensable activity snapshot recorded: ActivityDefinitionId={ActivityDefinitionId}, Sequence={Sequence}, ScopeId={ScopeId}")]
+    private partial void LogCompensableActivitySnapshotRecorded(string activityDefinitionId, int sequence, Guid? scopeId);
+
+    [LoggerMessage(EventId = 1091, Level = LogLevel.Information,
+        Message = "Compensation walk started: ScopeId={ScopeId}, TargetActivityRef={TargetActivityRef}, HandlerCount={HandlerCount}")]
+    private partial void LogCompensationWalkStarted(Guid? scopeId, string? targetActivityRef, int handlerCount);
+
+    [LoggerMessage(EventId = 1092, Level = LogLevel.Information,
+        Message = "Compensation handler spawned: HandlerInstanceId={HandlerInstanceId}, CompensableActivityDefinitionId={CompensableActivityDefinitionId}, HandlerActivityId={HandlerActivityId}")]
+    private partial void LogCompensationHandlerSpawned(Guid handlerInstanceId, string compensableActivityDefinitionId, string handlerActivityId);
+
+    [LoggerMessage(EventId = 1093, Level = LogLevel.Information,
+        Message = "Compensation entry marked compensated: ActivityDefinitionId={ActivityDefinitionId}, ScopeId={ScopeId}")]
+    private partial void LogCompensationEntryMarkedCompensated(string activityDefinitionId, Guid? scopeId);
+
+    [LoggerMessage(EventId = 1094, Level = LogLevel.Information,
+        Message = "Compensation walk completed: ScopeId={ScopeId}")]
+    private partial void LogCompensationWalkCompleted(Guid? scopeId);
+
     // Complex gateway lifecycle (EventId 1080-1089)
     [LoggerMessage(EventId = 1080, Level = LogLevel.Debug,
         Message = "Complex gateway activation condition late callback — join instance {ActivityInstanceId} has already fired or was removed")]
