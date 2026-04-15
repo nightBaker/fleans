@@ -7,7 +7,7 @@ namespace Fleans.Domain.Activities;
 [GenerateSerializer]
 public record MultipleIntermediateThrowEvent(
     string ActivityId,
-    [property: Id(1)] IReadOnlyList<EventDefinition> Definitions) : Activity(ActivityId)
+    [property: Id(1)] List<EventDefinition> Definitions) : Activity(ActivityId)
 {
     internal override async Task<List<IExecutionCommand>> ExecuteAsync(
         IWorkflowExecutionContext workflowContext,

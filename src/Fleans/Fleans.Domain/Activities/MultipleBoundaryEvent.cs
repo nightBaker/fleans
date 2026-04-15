@@ -8,7 +8,7 @@ namespace Fleans.Domain.Activities;
 public record MultipleBoundaryEvent(
     string ActivityId,
     [property: Id(1)] string AttachedToActivityId,
-    [property: Id(2)] IReadOnlyList<EventDefinition> Definitions,
+    [property: Id(2)] List<EventDefinition> Definitions,
     [property: Id(3)] bool IsInterrupting = true) : Activity(ActivityId)
 {
     internal override async Task<List<IExecutionCommand>> ExecuteAsync(
