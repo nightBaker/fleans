@@ -27,12 +27,6 @@ public record PendingBoundarySignalFired(
     string BoundaryActivityId,
     Guid HostActivityInstanceId) : PendingExternalEvent;
 
-public record PendingChildEscalated(
-    Guid ChildWorkflowInstanceId,
-    string HostActivityId,
-    string EscalationCode,
-    ExpandoObject Variables) : PendingExternalEvent;
-
 public record PendingChildEscalationRaised(
     Guid ChildWorkflowInstanceId,
     string HostActivityId,

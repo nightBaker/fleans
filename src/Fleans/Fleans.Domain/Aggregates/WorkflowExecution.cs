@@ -127,10 +127,13 @@ public class WorkflowExecution
     public void MarkCompleted(Guid activityInstanceId, ExpandoObject variables)
     {
         var entry = _state.GetEntry(activityInstanceId);
-        // IsCompleted covers all terminal states: completed, failed, and cancelled.
-        // An entry may already be terminal when an interrupting boundary event
+        // An entry may already be cancelled when an interrupting boundary event
         // cancels the host activity before the grain calls MarkCompleted.
-        if (entry.IsCompleted) return;
+        if (entry.IsCancelled) return;
+        // For any other terminal state, delegate to GetActiveEntry which throws —
+        // a double-complete or complete-after-fail is a bug, not a race.
+        if (entry.IsCompleted)
+            _ = _state.GetActiveEntry(activityInstanceId); // throws
         Emit(new ActivityCompleted(activityInstanceId, entry.VariablesId, variables));
     }
 

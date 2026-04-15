@@ -267,9 +267,6 @@ public partial class WorkflowInstance
                     case PendingBoundarySignalFired b:
                         LogSignalDeliveryBoundary(b.BoundaryActivityId);
                         break;
-                    case PendingChildEscalated e:
-                        LogChildWorkflowEscalated(e.ChildWorkflowInstanceId, e.EscalationCode);
-                        break;
                     case PendingChildEscalationRaised r:
                         LogChildEscalationRaised(r.ChildWorkflowInstanceId, r.EscalationCode);
                         break;
@@ -294,21 +291,6 @@ public partial class WorkflowInstance
                         finalResult = localResult;
                     }
                     escalation.Tcs.SetResult(finalResult);
-                }
-                else if (pending is PendingChildEscalated childEscalated)
-                {
-                    // EscalationEndEvent path: child terminated, resolve host activity from child workflow instance
-                    var hostActivityId = childEscalated.HostActivityId;
-                    if (string.IsNullOrEmpty(hostActivityId))
-                    {
-                        // Resolve from state: find the entry with matching child workflow instance ID
-                        var hostEntry = _execution!.FindEntryByChildWorkflowInstanceId(childEscalated.ChildWorkflowInstanceId);
-                        hostActivityId = hostEntry?.ActivityId ?? string.Empty;
-                    }
-                    var (localEffects, _) = _execution!.HandleChildEscalationRaised(
-                        childEscalated.ChildWorkflowInstanceId, hostActivityId,
-                        childEscalated.EscalationCode, childEscalated.Variables);
-                    await PerformEffects(localEffects);
                 }
                 else
                 {

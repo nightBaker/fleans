@@ -273,17 +273,9 @@ public partial class WorkflowInstance
         string eventSubProcessId, string endEventId, Guid hostActivityInstanceId);
 
     // Escalation lifecycle (EventId 1090-1099)
-    [LoggerMessage(EventId = 1090, Level = LogLevel.Debug,
-        Message = "Child workflow escalated queued: ChildId={ChildWorkflowInstanceId}, EscalationCode={EscalationCode}")]
-    private partial void LogChildWorkflowEscalatedQueued(Guid childWorkflowInstanceId, string escalationCode);
-
     [LoggerMessage(EventId = 1091, Level = LogLevel.Debug,
         Message = "Child escalation raised queued: ChildId={ChildWorkflowInstanceId}, EscalationCode={EscalationCode}")]
     private partial void LogChildEscalationRaisedQueued(Guid childWorkflowInstanceId, string escalationCode);
-
-    [LoggerMessage(EventId = 1092, Level = LogLevel.Information,
-        Message = "Child workflow escalated: ChildId={ChildWorkflowInstanceId}, EscalationCode={EscalationCode}")]
-    private partial void LogChildWorkflowEscalated(Guid childWorkflowInstanceId, string escalationCode);
 
     [LoggerMessage(EventId = 1093, Level = LogLevel.Information,
         Message = "Child escalation raised: ChildId={ChildWorkflowInstanceId}, EscalationCode={EscalationCode}")]

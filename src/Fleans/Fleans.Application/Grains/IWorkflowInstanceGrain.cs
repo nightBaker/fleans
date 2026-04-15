@@ -42,8 +42,6 @@ public interface IWorkflowInstanceGrain : IGrainWithGuidKey, IWorkflowExecutionC
     [AlwaysInterleave]
     Task OnChildWorkflowFailed(string parentActivityId, Exception exception);
     [AlwaysInterleave]
-    Task OnChildWorkflowEscalated(Guid childWorkflowInstanceId, string escalationCode, ExpandoObject variables);
-    [AlwaysInterleave]
     Task<EscalationHandledResult> OnChildEscalationRaised(
         Guid childWorkflowInstanceId, string hostActivityId,
         string escalationCode, ExpandoObject variables);

@@ -420,16 +420,6 @@ public partial class WorkflowInstance :
         return tcs.Task;
     }
 
-    public Task OnChildWorkflowEscalated(Guid childWorkflowInstanceId, string escalationCode, ExpandoObject variables)
-    {
-        LogChildWorkflowEscalatedQueued(childWorkflowInstanceId, escalationCode);
-        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        _pendingExternalEvents.Enqueue((new PendingChildEscalated(
-            childWorkflowInstanceId, string.Empty, escalationCode, variables), tcs));
-        EnsurePendingEventsTimerRegistered();
-        return tcs.Task;
-    }
-
     public Task<EscalationHandledResult> OnChildEscalationRaised(
         Guid childWorkflowInstanceId, string hostActivityId,
         string escalationCode, ExpandoObject variables)
