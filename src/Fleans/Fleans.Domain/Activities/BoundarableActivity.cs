@@ -46,7 +46,7 @@ public abstract record BoundarableActivity(string ActivityId)
         {
             commands.Add(new RegisterConditionalWatcherCommand(
                 variablesId, boundaryConditional.ConditionExpression,
-                boundaryConditional.ActivityId, IsBoundary: true));
+                boundaryConditional.ActivityId));
         }
 
         return commands;

@@ -6,7 +6,6 @@ using Orleans.Runtime;
 
 namespace Fleans.Application.Grains;
 
-[Reentrant]
 public partial class ConditionalStartEventRegistryGrain : Grain, IConditionalStartEventRegistryGrain
 {
     private readonly IPersistentState<ConditionalStartEventRegistryState> _state;

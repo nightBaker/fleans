@@ -1,3 +1,5 @@
+namespace Fleans.Application.Grains;
+
 [GenerateSerializer]
 public record ConditionalStartEntry(
     [property: Id(0)] string ProcessDefinitionKey,

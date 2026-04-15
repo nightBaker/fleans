@@ -512,12 +512,6 @@ public class WorkflowInstanceState
         _dirtyFlags |= DirtyConditionalWatchers;
     }
 
-    public void ClearConditionalWatchersForScope(Guid variablesId)
-    {
-        ConditionalWatchers.RemoveAll(w => w.VariablesId == variablesId);
-        _dirtyFlags |= DirtyConditionalWatchers;
-    }
-
     public void UpdateConditionalWatcherResult(Guid activityInstanceId, bool result)
     {
         var watcher = ConditionalWatchers.FirstOrDefault(w => w.ActivityInstanceId == activityInstanceId);

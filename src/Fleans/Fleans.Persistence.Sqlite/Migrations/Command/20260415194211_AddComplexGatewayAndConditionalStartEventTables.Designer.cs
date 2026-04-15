@@ -11,8 +11,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Fleans.Persistence.Sqlite.Migrations.Command
 {
     [DbContext(typeof(FleanCommandDbContext))]
-    [Migration("20260414215907_AddConditionalStartEventTables")]
-    partial class AddConditionalStartEventTables
+    [Migration("20260415194211_AddComplexGatewayAndConditionalStartEventTables")]
+    partial class AddComplexGatewayAndConditionalStartEventTables
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)

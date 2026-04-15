@@ -797,13 +797,14 @@ public class WorkflowExecution
     /// Fires a conditional watcher: completes the conditional intermediate catch event
     /// or fires the conditional boundary event.
     /// </summary>
-    public IReadOnlyList<IInfrastructureEffect> FireConditionalWatcher(Guid activityInstanceId)
+    public IReadOnlyList<IInfrastructureEffect> FireConditionalWatcher(Guid activityInstanceId, string watcherActivityId)
     {
-        Emit(new ConditionalWatcherFired(activityInstanceId));
         var entry = _state.FindEntry(activityInstanceId);
         if (entry == null || entry.IsCompleted) return Array.Empty<IInfrastructureEffect>();
 
-        var activity = _definition.GetActivityAcrossScopes(entry.ActivityId);
+        Emit(new ConditionalWatcherFired(activityInstanceId));
+
+        var activity = _definition.GetActivityAcrossScopes(watcherActivityId);
         if (activity is ConditionalBoundaryEvent boundary)
         {
             var hostEntry = _state.GetActiveActivities()

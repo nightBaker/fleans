@@ -70,9 +70,6 @@ namespace Fleans.Domain
         IEnumerable<ConditionalStartEvent> GetConditionalStartEvents()
             => Activities.OfType<ConditionalStartEvent>();
 
-        bool HasConditionalStartEvent()
-            => Activities.OfType<ConditionalStartEvent>().Any();
-
         IEnumerable<BoundaryTimerEvent> GetBoundaryTimerEvents(string attachedToActivityId)
             => Activities.OfType<BoundaryTimerEvent>()
                 .Where(b => b.AttachedToActivityId == attachedToActivityId);

@@ -1,3 +1,3 @@
 namespace Fleans.ServiceDefaults.DTOs;
 
-public record EvaluateConditionsResponse(List<Guid> StartedInstanceIds);
+public record EvaluateConditionsResponse(List<Guid> StartedInstanceIds, List<string>? Errors = null);

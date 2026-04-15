@@ -23,7 +23,7 @@ public interface IWorkflowCommandService
     Task<EvaluateConditionsResult> EvaluateConditions(string? workflowId, ExpandoObject variables);
 }
 
-public record EvaluateConditionsResult(List<Guid> StartedInstanceIds);
+public record EvaluateConditionsResult(List<Guid> StartedInstanceIds, List<string>? Errors = null);
 
 public record SendMessageResult(bool Delivered, List<Guid>? WorkflowInstanceIds = null);
 public record SendSignalResult(int DeliveredCount, List<Guid>? WorkflowInstanceIds = null, List<string>? Errors = null);

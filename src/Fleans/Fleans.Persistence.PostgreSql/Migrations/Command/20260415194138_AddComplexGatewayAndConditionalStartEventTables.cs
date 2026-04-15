@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace Fleans.Persistence.PostgreSql.Migrations.Command
 {
     /// <inheritdoc />
-    public partial class AddConditionalStartEventTables : Migration
+    public partial class AddComplexGatewayAndConditionalStartEventTables : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)

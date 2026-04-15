@@ -12,8 +12,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Fleans.Persistence.PostgreSql.Migrations.Command
 {
     [DbContext(typeof(FleanCommandDbContext))]
-    [Migration("20260414215920_AddConditionalStartEventTables")]
-    partial class AddConditionalStartEventTables
+    [Migration("20260415194138_AddComplexGatewayAndConditionalStartEventTables")]
+    partial class AddComplexGatewayAndConditionalStartEventTables
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)

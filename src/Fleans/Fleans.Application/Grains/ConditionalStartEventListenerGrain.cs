@@ -57,47 +57,39 @@ public partial class ConditionalStartEventListenerGrain : Grain, IConditionalSta
         var activityId = _state.State.ActivityId;
         var expression = _state.State.ConditionExpression;
 
-        try
+        var evaluator = _grainFactory.GetGrain<IConditionExpressionEvaluatorGrain>(0);
+        var result = await evaluator.Evaluate(expression, variables);
+
+        if (!result)
         {
-            var evaluator = _grainFactory.GetGrain<IConditionExpressionEvaluatorGrain>(0);
-            var result = await evaluator.Evaluate(expression, variables);
-
-            if (!result)
-            {
-                LogConditionFalse(processKey, activityId);
-                return null;
-            }
-
-            var processGrain = _grainFactory.GetGrain<IProcessDefinitionGrain>(processKey);
-            var isActive = await processGrain.IsActive();
-            if (!isActive)
-            {
-                LogProcessDisabledSkipped(processKey, activityId);
-                return null;
-            }
-
-            var definition = await processGrain.GetLatestDefinition();
-            var startActivityId = FindConditionalStartActivityId(definition, activityId);
-            if (startActivityId == null)
-            {
-                LogStartActivityNotFound(processKey, activityId);
-                return null;
-            }
-
-            var instanceId = Guid.NewGuid();
-            var instance = _grainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
-            await instance.SetWorkflow(definition, startActivityId);
-            await instance.SetInitialVariables(variables);
-            await instance.StartWorkflow();
-
-            LogConditionalStartEventFired(processKey, activityId, instanceId);
-            return instanceId;
-        }
-        catch (Exception ex)
-        {
-            LogConditionalStartEventFailed(processKey, activityId, ex);
+            LogConditionFalse(processKey, activityId);
             return null;
         }
+
+        var processGrain = _grainFactory.GetGrain<IProcessDefinitionGrain>(processKey);
+        var isActive = await processGrain.IsActive();
+        if (!isActive)
+        {
+            LogProcessDisabledSkipped(processKey, activityId);
+            return null;
+        }
+
+        var definition = await processGrain.GetLatestDefinition();
+        var startActivityId = FindConditionalStartActivityId(definition, activityId);
+        if (startActivityId == null)
+        {
+            LogStartActivityNotFound(processKey, activityId);
+            return null;
+        }
+
+        var instanceId = Guid.NewGuid();
+        var instance = _grainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
+        await instance.SetWorkflow(definition, startActivityId);
+        await instance.SetInitialVariables(variables);
+        await instance.StartWorkflow();
+
+        LogConditionalStartEventFired(processKey, activityId, instanceId);
+        return instanceId;
     }
 
     private static string? FindConditionalStartActivityId(IWorkflowDefinition definition, string activityId)
@@ -129,10 +121,6 @@ public partial class ConditionalStartEventListenerGrain : Grain, IConditionalSta
     [LoggerMessage(EventId = 9305, Level = LogLevel.Warning,
         Message = "Conditional start activity {ActivityId} not found in latest definition for process {ProcessDefinitionKey}")]
     private partial void LogStartActivityNotFound(string processDefinitionKey, string activityId);
-
-    [LoggerMessage(EventId = 9306, Level = LogLevel.Error,
-        Message = "Failed to evaluate/start conditional start event for process {ProcessDefinitionKey}, activity {ActivityId}")]
-    private partial void LogConditionalStartEventFailed(string processDefinitionKey, string activityId, Exception ex);
 
     [LoggerMessage(EventId = 9307, Level = LogLevel.Debug,
         Message = "Conditional start event listener grain {GrainKey} is not registered, skipping evaluation")]

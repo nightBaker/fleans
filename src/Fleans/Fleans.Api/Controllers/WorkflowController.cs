@@ -89,7 +89,7 @@ namespace Fleans.Api.Controllers
 
             var variables = VariableConverter.ToExpandoObject(request.Variables);
             var result = await _commandService.EvaluateConditions(request.WorkflowId, variables);
-            return Ok(new EvaluateConditionsResponse(result.StartedInstanceIds));
+            return Ok(new EvaluateConditionsResponse(result.StartedInstanceIds, result.Errors));
         }
 
         [EnableRateLimiting("task-operation")]

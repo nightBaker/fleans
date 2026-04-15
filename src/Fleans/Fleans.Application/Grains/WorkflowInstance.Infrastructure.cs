@@ -118,7 +118,15 @@ public partial class WorkflowInstance
             // are missed. If an external "patch variables" API is added, it must call RunExecutionLoop
             // or a dedicated hook to trigger watcher evaluation.
             if (newlyCompletedEntryIds.Count > 0)
-                await EvaluateConditionalWatchers();
+            {
+                var watcherCompletedIds = await EvaluateConditionalWatchers();
+                if (watcherCompletedIds.Count > 0)
+                {
+                    var watcherTransitions = await ComputeTransitionsForEntries(definition, watcherCompletedIds);
+                    if (watcherTransitions.Count > 0)
+                        _execution.ResolveTransitions(watcherTransitions);
+                }
+            }
 
             // Handle subprocess/multi-instance scope completions
             var orphanedScopes = await HandleScopeCompletions(definition);
@@ -228,11 +236,14 @@ public partial class WorkflowInstance
     /// Evaluates all active conditional watchers. For each watcher whose condition transitions
     /// to true (edge-triggered for non-interrupting boundaries), fires the watcher via the aggregate.
     /// Walking all watchers globally is correct: ancestor-scope watchers evaluate false and don't fire.
+    /// Returns activity instance IDs of entries completed by intermediate catch watcher fires
+    /// (callers must compute transitions for these).
     /// </summary>
-    private async Task EvaluateConditionalWatchers()
+    private async Task<List<Guid>> EvaluateConditionalWatchers()
     {
+        var completedEntryIds = new List<Guid>();
         var watchers = State.ConditionalWatchers.ToList();
-        if (watchers.Count == 0) return;
+        if (watchers.Count == 0) return completedEntryIds;
 
         var evaluator = _grainFactory.GetGrain<Conditions.IConditionExpressionEvaluatorGrain>(0);
         var definition = await GetWorkflowDefinition();
@@ -257,7 +268,7 @@ public partial class WorkflowInstance
                     if (result && !watcher.LastEvaluatedResult)
                     {
                         LogConditionalWatcherFired(watcher.ConditionExpression, watcher.ActivityId);
-                        var effects = _execution!.FireConditionalWatcher(watcher.ActivityInstanceId);
+                        var effects = _execution!.FireConditionalWatcher(watcher.ActivityInstanceId, watcher.ActivityId);
                         await PerformEffects(effects);
                     }
                     // Update result tracking for edge detection
@@ -270,8 +281,12 @@ public partial class WorkflowInstance
                     if (result)
                     {
                         LogConditionalWatcherFired(watcher.ConditionExpression, watcher.ActivityId);
-                        var effects = _execution!.FireConditionalWatcher(watcher.ActivityInstanceId);
+                        var effects = _execution!.FireConditionalWatcher(watcher.ActivityInstanceId, watcher.ActivityId);
                         await PerformEffects(effects);
+
+                        // Intermediate catch completions need transitions computed by the caller
+                        if (activity is ConditionalIntermediateCatchEvent)
+                            completedEntryIds.Add(watcher.ActivityInstanceId);
                     }
                 }
             }
@@ -280,6 +295,8 @@ public partial class WorkflowInstance
                 LogConditionalExpressionEvaluationFailed(watcher.ConditionExpression, watcher.ActivityId, ex.Message);
             }
         }
+
+        return completedEntryIds;
     }
 
     private Task PerformEffects(IReadOnlyList<IInfrastructureEffect> effects)

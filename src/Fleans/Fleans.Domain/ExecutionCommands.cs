@@ -88,6 +88,5 @@ public record DiscardLateTokenCommand(
 public record RegisterConditionalWatcherCommand(
     [property: Id(0)] Guid VariablesId,
     [property: Id(1)] string ConditionExpression,
-    [property: Id(2)] string ActivityId,
-    [property: Id(3)] bool IsBoundary) : IExecutionCommand;
+    [property: Id(2)] string ActivityId) : IExecutionCommand;
 

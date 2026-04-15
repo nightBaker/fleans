@@ -16,7 +16,7 @@ public record ConditionalIntermediateCatchEvent(
     {
         var commands = await base.ExecuteAsync(workflowContext, activityContext, definition);
         var variablesId = await activityContext.GetVariablesStateId();
-        commands.Add(new RegisterConditionalWatcherCommand(variablesId, ConditionExpression, ActivityId, IsBoundary: false));
+        commands.Add(new RegisterConditionalWatcherCommand(variablesId, ConditionExpression, ActivityId));
         return commands;
     }
 
