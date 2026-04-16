@@ -101,6 +101,46 @@ Add it to `Fleans.Api/Controllers/WorkflowController.cs`. DTOs go in `Fleans.Ser
 - Complete activity: `POST https://localhost:7140/Workflow/complete-activity` — body: `{"WorkflowInstanceId":"guid", "ActivityId":"activity-id", "Variables":{}}`
 - Evaluate conditions: `POST https://localhost:7140/Workflow/evaluate-conditions` — body: `{"WorkflowId":"process-id", "Variables":{"key":"value"}}` — `WorkflowId` is optional; evaluates conditional start events against supplied variables
 
+## Regression tests
+
+The full regression suite is the union of every plan under `tests/manual/`. Each plan has its own `.bpmn` fixture(s) and a step-by-step `test-plan.md` (deploy, start, trigger events, verify checkbox list).
+
+**Universal prerequisites for every step:**
+- Aspire stack running: `dotnet run --project Fleans.Aspire` (from `src/Fleans/`).
+- A clean dev DB (delete the SQLite file or set a fresh `FLEANS_SQLITE_CONNECTION`) so prior runs don't leave stale instances.
+- Web UI reachable at `https://localhost:7140` (also the API origin used in step bodies).
+
+**Reporting convention:** each numbered entry below is one regression "step". For each one, follow the linked `test-plan.md` end-to-end and report `PASSED`, `FAILED`, `BUG` (new regression — file an issue), or `KNOWN BUG` (matches a `> **KNOWN BUG:** …` note inside the linked plan; counts as PASSED for promotion purposes).
+
+1. **Basic Workflow** — `tests/manual/01-basic-workflow/test-plan.md` (`simple-workflow.bpmn`). Start → task → end completes cleanly; verifies the deploy/start/complete lifecycle.
+2. **Script Tasks** — `tests/manual/02-script-tasks/test-plan.md`. Chained C# script tasks create and mutate workflow variables; verifies the script engine + variable persistence.
+3. **Exclusive Gateway** — `tests/manual/03-exclusive-gateway/test-plan.md`. `x = 7` → exclusive gateway with `x > 5` takes the truthy branch; default branch is not taken.
+4. **Parallel Gateway** — `tests/manual/04-parallel-gateway/test-plan.md`. Two parallel branches set distinct variables, join, then end; verifies fork/join synchronization.
+5. **Event-Based Gateway** — `tests/manual/05-event-based-gateway/test-plan.md`. Gateway races a 30s timer vs a message; sending the message via API before the timer fires wins.
+6. **Call Activity** — `tests/manual/06-call-activity/test-plan.md`. Parent maps `input = 21` into a child that computes `result = input * 2` and maps it back; verifies cross-process variable mapping.
+7. **Embedded SubProcess** — `tests/manual/07-subprocess/test-plan.md`. Embedded subprocess with its own start → script → end runs, then the parent continues.
+8. **Timer Events** — `tests/manual/08-timer-events/test-plan.md`. Timer catch event (5s) pauses then resumes. **Known bug:** boundary events on `IntermediateCatchEvent` don't register subscriptions.
+9. **Message Events** — `tests/manual/09-message-events/test-plan.md`. Workflow waits for a message correlated by `requestId`; sending it via API unblocks. **Known bug:** boundary on `IntermediateCatchEvent` (same root cause as #8).
+10. **Signal Events** — `tests/manual/10-signal-events/test-plan.md`. Workflow waits for signal `globalAlert`; broadcasting via API unblocks. **Known bug:** boundary on `IntermediateCatchEvent` (same root cause as #8).
+11. **Error Boundary Event** — `tests/manual/11-error-boundary/test-plan.md` (`child-that-fails.bpmn`, `error-on-call-activity.bpmn`). Child throws → parent's CallActivity error boundary catches and routes to handler. **Known bug:** child-process errors don't propagate to the parent error boundary; the CallActivity stays Running.
+12. **Variable Scoping** — `tests/manual/12-variable-scoping/test-plan.md`. `shared` is set before a parallel fork; each branch overwrites it independently and the parent merge respects scope isolation.
+13. **Multi-Instance Activity** — `tests/manual/13-multi-instance/test-plan.md`. Multi-instance loop spawns N children, each with its own variables; completion waits for all.
+14. **Inclusive Gateway** — `tests/manual/14-inclusive-gateway/test-plan.md`. Inclusive (OR) gateway forks all conditions that evaluate true, then joins on all live tokens.
+15. **Non-Interrupting Boundary Events** — `tests/manual/15-non-interrupting-boundaries/test-plan.md`. Boundaries fire without cancelling the attached activity; cycle timer boundaries fire repeatedly while the host activity continues.
+16. **Message Start Event** — `tests/manual/16-message-start-event/test-plan.md`. Sending a message matching a process's start-event message name auto-creates an instance.
+17. **Signal Start Event** — `tests/manual/17-signal-start-event/test-plan.md`. Broadcasting a signal matching a process's start-event signal name auto-creates an instance.
+18. **Start Event Undeploy (Disable/Enable)** — `tests/manual/18-start-event-undeploy/test-plan.md`. Disabling a process definition unregisters its start-event listeners; re-enabling re-registers them.
+19. **User Task** — `tests/manual/18-user-task/test-plan.md` (`user-task-approval.bpmn`). Full user-task lifecycle: appears in registry, claim/unclaim, complete with required output variables (409 on unauthorized claim or missing required vars), unregistered after completion. This is the regression home for #288 (User Task API status codes / completed-task removal).
+20. **Event Sub-Process — Error (Interrupting)** — `tests/manual/19-event-subprocess-error/test-plan.md`. Error event sub-process catches a thrown error, runs its handler, and completes the enclosing scope.
+21. **Complex Gateway** — `tests/manual/20-complex-gateway/test-plan.md`. Complex fork (conditional outgoing flows) + join with optional `activationCondition`.
+22. **Event Sub-Process — Timer (Interrupting)** — `tests/manual/20-event-subprocess-timer/test-plan.md`. Timer event sub-process fires inside a scope, interrupts siblings, and runs the handler.
+23. **Event Sub-Process — Message (Interrupting)** — `tests/manual/21-event-subprocess-message/test-plan.md`. Message event sub-process: scope-entry correlation against enclosing variables; on delivery, interrupts siblings.
+24. **Event Sub-Process — Signal (Interrupting)** — `tests/manual/22-event-subprocess-signal/test-plan.md`. Signal event sub-process inside a scope; broadcast delivery interrupts siblings.
+25. **Event Sub-Process — Non-Interrupting (Timer)** — `tests/manual/23-event-subprocess-non-interrupting/test-plan.md`. Non-interrupting variant runs in parallel with the host scope, with isolated child variable scope; timer cycles re-arm.
+26. **Conditional Events** — `tests/manual/24-conditional-event/test-plan.md` (`conditional-event-test.bpmn`). Conditional intermediate catch event blocks until condition is true; conditional start event creates instances via evaluate-conditions API; conditional boundary event (interrupting) cancels host.
+
+> When adding a new manual test folder under `tests/manual/`, append a numbered entry here so the regression skill picks it up.
+
 ## Persistence Providers
 
 Two providers: **SQLite** (default, local dev) and **PostgreSQL** (production/load testing). Selected via configuration — no code changes needed.
