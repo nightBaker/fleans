@@ -48,6 +48,9 @@ internal static class FleanModelConfiguration
             // UserTasks is an in-memory dictionary rehydrated from the UserTasks table on activation.
             entity.Ignore(e => e.UserTasks);
 
+            // TransactionOutcomes is rebuilt from TransactionOutcomeSet events on grain activation.
+            entity.Ignore(e => e.TransactionOutcomes);
+
             entity.HasMany(e => e.TimerCycleTracking)
                 .WithOne()
                 .HasForeignKey(e => e.WorkflowInstanceId)

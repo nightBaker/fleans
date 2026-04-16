@@ -73,7 +73,7 @@ public partial class BpmnConverter : IBpmnConverter
         return workflow;
     }
 
-    private void ParseActivities(XElement scopeElement, List<Activity> activities, Dictionary<string, Activity> activityMap, HashSet<string> defaultFlowIds)
+    private void ParseActivities(XElement scopeElement, List<Activity> activities, Dictionary<string, Activity> activityMap, HashSet<string> defaultFlowIds, bool insideTransaction = false)
     {
         // Parse start events (with optional timer definition)
         foreach (var startEvent in scopeElement.Elements(Bpmn + "startEvent"))
@@ -400,7 +400,7 @@ public partial class BpmnConverter : IBpmnConverter
             var id = GetId(subProcessEl);
             var childActivities = new List<Activity>();
             var childDefaultFlowIds = new HashSet<string>();
-            ParseActivities(subProcessEl, childActivities, activityMap, childDefaultFlowIds);
+            ParseActivities(subProcessEl, childActivities, activityMap, childDefaultFlowIds, insideTransaction);
 
             var childSequenceFlows = new List<SequenceFlow>();
             ParseSequenceFlows(subProcessEl, childSequenceFlows, activityMap, childDefaultFlowIds);
@@ -444,6 +444,40 @@ public partial class BpmnConverter : IBpmnConverter
                 activity = TryWrapMultiInstance(subProcessEl, activity) ?? activity;
             }
 
+            activities.Add(activity);
+            activityMap[id] = activity;
+        }
+
+        // Parse transaction sub-processes (recursive). A <transaction> is a distinct
+        // BPMN 2.0 element — not a flag on <subProcess>. Multi-instance and nested
+        // transactions are rejected at parse time.
+        foreach (var transactionEl in scopeElement.Elements(Bpmn + "transaction"))
+        {
+            var id = GetId(transactionEl);
+
+            if (transactionEl.Element(Bpmn + "multiInstanceLoopCharacteristics") is not null)
+                throw new InvalidOperationException(
+                    $"Transaction Sub-Process '{id}' does not support multi-instance loop characteristics. " +
+                    "Remove the multiInstanceLoopCharacteristics element, or use a regular Sub-Process.");
+
+            if (insideTransaction)
+                throw new InvalidOperationException(
+                    $"Nested Transaction Sub-Process '{id}' is not supported. " +
+                    "A <transaction> cannot contain another <transaction>.");
+
+            var childActivities = new List<Activity>();
+            var childDefaultFlowIds = new HashSet<string>();
+            ParseActivities(transactionEl, childActivities, activityMap, childDefaultFlowIds, insideTransaction: true);
+
+            var childSequenceFlows = new List<SequenceFlow>();
+            ParseSequenceFlows(transactionEl, childSequenceFlows, activityMap, childDefaultFlowIds);
+
+            var activity = new Transaction(id)
+            {
+                Activities = childActivities,
+                SequenceFlows = childSequenceFlows
+            };
+            // Do NOT call TryWrapMultiInstance — rejected above.
             activities.Add(activity);
             activityMap[id] = activity;
         }
