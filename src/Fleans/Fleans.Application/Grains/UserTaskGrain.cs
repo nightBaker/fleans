@@ -52,7 +52,9 @@ public partial class UserTaskGrain : Grain, IUserTaskGrain
     public async Task MarkCompleted()
     {
         var activityInstanceId = this.GetPrimaryKey();
-        await _state.ClearStateAsync();
+        _state.State.TaskState = UserTaskLifecycleState.Completed;
+
+        await _state.WriteStateAsync();
         LogUserTaskCompleted(activityInstanceId);
     }
 
