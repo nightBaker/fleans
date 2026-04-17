@@ -1,7 +1,5 @@
 using Fleans.Application;
 using Fleans.Application.QueryModels;
-using Fleans.Domain.Errors;
-using Fleans.Domain.States;
 using Fleans.ServiceDefaults.DTOs;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -153,7 +151,7 @@ namespace Fleans.Api.Controllers
         public async Task<IActionResult> GetTask(Guid activityInstanceId)
         {
             var task = await _workflowQueryService.GetUserTask(activityInstanceId);
-            if (task == null || task.TaskState == nameof(UserTaskLifecycleState.Completed))
+            if (task == null)
                 return NotFound(new ErrorResponse($"User task '{activityInstanceId}' not found"));
 
             return Ok(task);
@@ -176,9 +174,9 @@ namespace Fleans.Api.Controllers
                 await _commandService.ClaimUserTask(task.WorkflowInstanceId, activityInstanceId, request.UserId);
                 return Ok();
             }
-            catch (BadRequestActivityException ex)
+            catch (InvalidOperationException ex)
             {
-                return Conflict(new ErrorResponse(ex.GetActivityErrorState().Message));
+                return Conflict(new ErrorResponse(ex.Message));
             }
         }
 
@@ -215,9 +213,9 @@ namespace Fleans.Api.Controllers
                     task.WorkflowInstanceId, activityInstanceId, request.UserId, variables);
                 return Ok();
             }
-            catch (BadRequestActivityException ex)
+            catch (InvalidOperationException ex)
             {
-                return Conflict(new ErrorResponse(ex.GetActivityErrorState().Message));
+                return Conflict(new ErrorResponse(ex.Message));
             }
         }
 
