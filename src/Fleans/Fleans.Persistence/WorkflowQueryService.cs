@@ -79,7 +79,7 @@ public class WorkflowQueryService : IWorkflowQueryService
             .ToList();
 
         return new InstanceStateSnapshot(
-            activeIds, completedIds, state.IsStarted, state.IsCompleted,
+            activeIds, completedIds, state.IsStarted, state.IsCompleted, state.IsCancelled,
             activeSnapshots, completedSnapshots,
             variableStates, conditionSequences,
             state.ProcessDefinitionId,
@@ -249,7 +249,7 @@ public class WorkflowQueryService : IWorkflowQueryService
             .Take(page.PageSize);
 
         var items = await pagedQuery.Select(w => new WorkflowInstanceInfo(
-            w.Id, w.ProcessDefinitionId ?? "", w.IsStarted, w.IsCompleted,
+            w.Id, w.ProcessDefinitionId ?? "", w.IsStarted, w.IsCompleted, w.IsCancelled,
             w.CreatedAt, w.ExecutionStartedAt, w.CompletedAt)).ToListAsync();
 
         return new PagedResult<WorkflowInstanceInfo>(

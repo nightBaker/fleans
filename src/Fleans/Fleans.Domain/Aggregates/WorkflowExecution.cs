@@ -130,8 +130,12 @@ public class WorkflowExecution
         // An entry may already be cancelled when an interrupting boundary event
         // cancels the host activity before the grain calls MarkCompleted.
         if (entry.IsCancelled) return;
+        // A failed entry must not be silently completed.
+        if (entry.ErrorCode is not null)
+            throw new InvalidOperationException(
+                $"Activity '{entry.ActivityId}' has failed — cannot mark completed.");
         // For any other terminal state, delegate to GetActiveEntry which throws —
-        // a double-complete or complete-after-fail is a bug, not a race.
+        // a double-complete is a bug, not a race.
         if (entry.IsCompleted)
             _ = _state.GetActiveEntry(activityInstanceId); // throws
         Emit(new ActivityCompleted(activityInstanceId, entry.VariablesId, variables));
@@ -1187,7 +1191,12 @@ public class WorkflowExecution
             var (boundaryEvent, scope, attachedToActivityId) = boundaryHandler.Value;
             var attachedEntry = _state.GetFirstActive(attachedToActivityId);
 
-            return HandleEscalationBoundaryMatch(boundaryEvent, attachedEntry ?? hostEntry, variables);
+            // If the attached activity is no longer active (already completed/cancelled),
+            // the escalation boundary should not fire.
+            if (attachedEntry is null)
+                return ([], EscalationHandledResult.Unhandled);
+
+            return HandleEscalationBoundaryMatch(boundaryEvent, attachedEntry, variables);
         }
 
         // No boundary found in this grain — check if we have a parent (CallActivity escape)

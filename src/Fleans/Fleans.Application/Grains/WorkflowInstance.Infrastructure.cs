@@ -94,6 +94,11 @@ public partial class WorkflowInstance
                 var effects = _execution.ProcessCommands(commands, entry.ActivityInstanceId);
                 await PerformEffects(effects);
 
+                // Log escalation thrown if a ThrowEscalationCommand was in the batch
+                var throwEsc = commands.OfType<ThrowEscalationCommand>().FirstOrDefault();
+                if (throwEsc is not null)
+                    LogEscalationThrown(throwEsc.EscalationCode, p.ActivityId, State.Id);
+
                 // If an escalation was thrown and the parent grain cancelled the child,
                 // terminate this workflow and break out of the execution loop.
                 if (_pendingEscalationParentResult == EscalationHandledResult.Cancelled)
@@ -279,6 +284,12 @@ public partial class WorkflowInstance
                         escalation.ChildWorkflowInstanceId, escalation.HostActivityId,
                         escalation.EscalationCode, escalation.Variables);
                     await PerformEffects(localEffects);
+
+                    // Log escalation caught at this grain if a boundary matched
+                    if (localResult == EscalationHandledResult.Cancelled)
+                        LogEscalationCaught(escalation.EscalationCode, escalation.HostActivityId, isInterrupting: true);
+                    else if (localResult == EscalationHandledResult.Continue)
+                        LogEscalationCaught(escalation.EscalationCode, escalation.HostActivityId, isInterrupting: false);
 
                     EscalationHandledResult finalResult;
                     if (localResult == EscalationHandledResult.NeedsParentLookup)

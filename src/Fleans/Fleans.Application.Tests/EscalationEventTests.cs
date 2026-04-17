@@ -543,4 +543,118 @@ public class EscalationEventTests : WorkflowTestBase
         Assert.IsNotNull(failedEntry.ErrorState);
         Assert.AreEqual(400, failedEntry.ErrorState.Code, "BadRequestActivityException should produce 400 error code");
     }
+
+    // ── EscalationEndEvent in SubProcess without boundary ─────────────
+
+    [TestMethod]
+    public async Task EscalationEndEvent_InSubProcess_NoBoundary_ShouldCompleteNormally()
+    {
+        // B1 regression test: EscalationEndEvent inside a SubProcess without a boundary handler.
+        // The escalation is uncaught (non-faulting per BPMN spec) and the subprocess should
+        // complete normally. Previously, EscalationEndEvent always emitted CompleteWorkflowCommand
+        // which would prematurely terminate the root workflow.
+        var subStart = new StartEvent("sub_start");
+        var task = new TaskActivity("task");
+        var escalationEnd = new EscalationEndEvent("escalation_end", "ESC-UNCAUGHT");
+        var sub = new SubProcess("sub")
+        {
+            Activities = [subStart, task, escalationEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("sf1", subStart, task),
+                new SequenceFlow("sf2", task, escalationEnd)
+            ]
+        };
+
+        var start = new StartEvent("start");
+        var afterSub = new TaskActivity("after_sub");
+        var normalEnd = new EndEvent("normal_end");
+
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "esc-end-no-boundary",
+            Activities = [start, sub, afterSub, normalEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("f1", start, sub),
+                new SequenceFlow("f2", sub, afterSub),
+                new SequenceFlow("f3", afterSub, normalEnd)
+            ]
+        };
+
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await workflowInstance.SetWorkflow(workflow);
+        await workflowInstance.StartWorkflow();
+
+        // Complete task → EscalationEndEvent fires → uncaught, subprocess completes → after_sub becomes active
+        await workflowInstance.CompleteActivity("task", new ExpandoObject());
+
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var snapshot = await WaitForCondition(instanceId,
+            s => s.ActiveActivities.Any(a => a.ActivityId == "after_sub"));
+
+        Assert.IsTrue(snapshot.ActiveActivities.Any(a => a.ActivityId == "after_sub"),
+            "Root workflow should continue after subprocess with uncaught EscalationEndEvent");
+
+        // Complete after_sub to finish workflow
+        await workflowInstance.CompleteActivity("after_sub", new ExpandoObject());
+
+        var finalSnapshot = await PollForNoActiveActivities(instanceId);
+        Assert.IsTrue(finalSnapshot!.IsCompleted);
+        Assert.IsFalse(finalSnapshot.IsCancelled, "Workflow should be completed, not cancelled");
+        Assert.IsTrue(finalSnapshot.CompletedActivities.Any(a => a.ActivityId == "normal_end"),
+            "Should follow normal path to end");
+    }
+
+    // ── EscalationEndEvent with non-interrupting boundary ─────────────
+
+    [TestMethod]
+    public async Task EscalationEndEvent_InSubProcess_NonInterruptingBoundary_ShouldComplete()
+    {
+        // EscalationEndEvent inside a SubProcess with a non-interrupting boundary.
+        // Both the boundary path and the normal path should complete.
+        var subStart = new StartEvent("sub_start");
+        var task = new TaskActivity("task");
+        var escalationEnd = new EscalationEndEvent("escalation_end", "ESC-NI");
+        var sub = new SubProcess("sub")
+        {
+            Activities = [subStart, task, escalationEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("sf1", subStart, task),
+                new SequenceFlow("sf2", task, escalationEnd)
+            ]
+        };
+
+        var start = new StartEvent("start");
+        var boundary = new EscalationBoundaryEvent("esc_boundary", "sub", "ESC-NI", IsInterrupting: false);
+        var boundaryEnd = new EndEvent("boundary_end");
+        var normalEnd = new EndEvent("normal_end");
+
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "esc-end-non-interrupt",
+            Activities = [start, sub, boundary, boundaryEnd, normalEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("f1", start, sub),
+                new SequenceFlow("f2", sub, normalEnd),
+                new SequenceFlow("f3", boundary, boundaryEnd)
+            ]
+        };
+
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await workflowInstance.SetWorkflow(workflow);
+        await workflowInstance.StartWorkflow();
+
+        await workflowInstance.CompleteActivity("task", new ExpandoObject());
+
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var finalSnapshot = await PollForNoActiveActivities(instanceId);
+        Assert.IsTrue(finalSnapshot!.IsCompleted);
+        Assert.IsTrue(finalSnapshot.CompletedActivities.Any(a => a.ActivityId == "boundary_end"),
+            "Boundary path should complete");
+        Assert.IsTrue(finalSnapshot.CompletedActivities.Any(a => a.ActivityId == "normal_end"),
+            "Normal path should also complete after subprocess ends");
+    }
 }

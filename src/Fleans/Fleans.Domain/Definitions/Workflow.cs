@@ -186,8 +186,10 @@ namespace Fleans.Domain
                 var scope = FindScopeForActivity(targetActivityId);
                 if (scope is null) return null;
 
-                // Look for EscalationBoundaryEvent on the containing SubProcess/CallActivity
-                // The targetActivityId is the SubProcess/CallActivity that hosts the throwing activity
+                // Look for EscalationBoundaryEvent attached to targetActivityId within this scope.
+                // On the first iteration, targetActivityId is the throwing activity itself —
+                // this is a no-op for leaf activities but correct when the thrower IS a
+                // SubProcess/CallActivity with boundaries attached directly to it.
                 var candidates = scope.Activities
                     .OfType<EscalationBoundaryEvent>()
                     .Where(b => b.AttachedToActivityId == targetActivityId

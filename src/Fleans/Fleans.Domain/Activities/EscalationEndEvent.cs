@@ -12,7 +12,8 @@ public record EscalationEndEvent(
     {
         var commands = await base.ExecuteAsync(workflowContext, activityContext, definition);
         commands.Add(new ThrowEscalationCommand(EscalationCode));
-        commands.Add(new CompleteWorkflowCommand());
+        if (definition.IsRootScope)
+            commands.Add(new CompleteWorkflowCommand());
         await activityContext.Complete();
         return commands;
     }

@@ -567,6 +567,13 @@ public partial class BpmnConverter : IBpmnConverter
             }
             else if (escalationDef != null)
             {
+                // BPMN spec: escalation boundary may only be attached to SubProcess or CallActivity
+                if (activityMap.TryGetValue(attachedToRef, out var attachedActivity)
+                    && attachedActivity is not SubProcess && attachedActivity is not CallActivity)
+                {
+                    throw new InvalidOperationException(
+                        $"boundaryEvent '{id}' escalationEventDefinition may only be attached to a SubProcess or CallActivity, not '{attachedActivity.GetType().Name}'");
+                }
                 var escalationRef = escalationDef.Attribute("escalationRef")?.Value;
                 var escalationCode = ResolveEscalationCode(scopeElement, escalationRef);
                 activity = new EscalationBoundaryEvent(id, attachedToRef, escalationCode, isInterrupting);
