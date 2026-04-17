@@ -141,6 +141,46 @@ public class WorkflowExecution
             Emit(new VariableScopesRemoved(scopeIds));
     }
 
+    // ── Transaction Sub-Process outcome domain methods ───────────────────────
+
+    /// <summary>Sets the transaction outcome to Completed (idempotent). Throws if already Cancelled.</summary>
+    public void SetTransactionOutcomeCompleted(Guid transactionInstanceId)
+    {
+        if (_state.TransactionOutcomes.TryGetValue(transactionInstanceId, out var existing))
+        {
+            if (existing.Outcome == TransactionOutcome.Completed) return; // idempotent
+            throw new InvalidOperationException(
+                $"Cannot mark transaction {transactionInstanceId} Completed: already {existing.Outcome}.");
+        }
+        Emit(new TransactionOutcomeSet(transactionInstanceId, TransactionOutcome.Completed, null, null));
+    }
+
+    /// <summary>
+    /// Sets the transaction outcome to Cancelled (idempotent; no-op if already Hazard).
+    /// Called by Cancel End Event handling (#230).
+    /// </summary>
+    public void SetTransactionOutcomeCancelled(Guid transactionInstanceId)
+    {
+        if (_state.TransactionOutcomes.TryGetValue(transactionInstanceId, out var existing))
+        {
+            if (existing.Outcome == TransactionOutcome.Hazard) return;    // Hazard wins, no-op
+            if (existing.Outcome == TransactionOutcome.Cancelled) return; // idempotent
+            throw new InvalidOperationException(
+                $"Cannot mark transaction {transactionInstanceId} Cancelled: already {existing.Outcome}.");
+        }
+        Emit(new TransactionOutcomeSet(transactionInstanceId, TransactionOutcome.Cancelled, null, null));
+    }
+
+    /// <summary>
+    /// Sets (or overwrites) the transaction outcome to Hazard. Hazard supersedes any prior outcome.
+    /// Called by: (a) error escape from Transaction scope, and (b) compensation handler failure (#230).
+    /// </summary>
+    public void SetTransactionOutcomeHazard(Guid transactionInstanceId, int errorCode, string? errorMessage)
+    {
+        // Hazard → Hazard: re-emit to update error code/message (last writer wins).
+        Emit(new TransactionOutcomeSet(transactionInstanceId, TransactionOutcome.Hazard, errorCode, errorMessage));
+    }
+
     public void ResolveTransitions(IReadOnlyList<CompletedActivityTransitions> completedTransitions)
     {
         foreach (var completed in completedTransitions)
@@ -894,6 +934,12 @@ public class WorkflowExecution
                     foreach (var childScope in childScopes)
                         allOrphanedScopeIds.Add(childScope.Id);
                 }
+
+                // Record Completed outcome for Transaction Sub-Process hosts.
+                // Placed before ActivityCompleted so the outcome is visible in state
+                // at the moment the host entry is marked done.
+                if (activity is Transaction)
+                    SetTransactionOutcomeCompleted(entry.ActivityInstanceId);
 
                 // All scope children are done — complete the sub-process host.
                 // Variables arg is empty because the merge already happened above.
@@ -2054,6 +2100,10 @@ public class WorkflowExecution
                 break;
             case TimerCycleUpdated e:
                 _state.SetTimerCycleState(e.HostActivityInstanceId, e.TimerActivityId, e.RemainingCycle);
+                break;
+            case TransactionOutcomeSet e:
+                _state.TransactionOutcomes[e.TransactionInstanceId] =
+                    new TransactionOutcomeRecord(e.Outcome, e.ErrorCode, e.ErrorMessage);
                 break;
             default:
                 throw new InvalidOperationException($"Unknown domain event type: {@event.GetType().Name}");
