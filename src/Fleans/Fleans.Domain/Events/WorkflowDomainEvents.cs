@@ -65,3 +65,12 @@ public record ConditionalWatcherRegistered(
 public record ConditionalWatcherFired(Guid ActivityInstanceId) : IDomainEvent;
 public record ConditionalWatcherCleared(Guid ActivityInstanceId) : IDomainEvent;
 public record ConditionalWatcherResultUpdated(Guid ActivityInstanceId, bool Result) : IDomainEvent;
+
+// Transaction Sub-Process outcome
+// Plain record — no [GenerateSerializer] — stored via Newtonsoft.Json in EfCoreEventStore,
+// consistent with all other JournaledGrain events in this file.
+public record TransactionOutcomeSet(
+    Guid TransactionInstanceId,
+    States.TransactionOutcome Outcome,
+    int? ErrorCode,
+    string? ErrorMessage) : IDomainEvent;

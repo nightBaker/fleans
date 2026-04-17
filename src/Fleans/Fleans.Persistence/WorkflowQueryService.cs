@@ -408,8 +408,11 @@ public class WorkflowQueryService : IWorkflowQueryService
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync();
 
+        // Completed tasks are retained in storage for audit/history but are not
+        // returned from active-task lookups — callers receive null (→ 404).
         var task = await db.UserTasks
-            .FirstOrDefaultAsync(t => t.ActivityInstanceId == activityInstanceId);
+            .FirstOrDefaultAsync(t => t.ActivityInstanceId == activityInstanceId
+                && t.TaskState != UserTaskLifecycleState.Completed);
 
         return task is null ? null : ToUserTaskDto(task);
     }

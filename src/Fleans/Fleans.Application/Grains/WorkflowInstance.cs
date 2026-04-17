@@ -568,6 +568,13 @@ public partial class WorkflowInstance :
         return ValueTask.FromResult(result);
     }
 
+    public ValueTask<IReadOnlyDictionary<Guid, TransactionOutcomeRecord>> GetTransactionOutcomes()
+    {
+        IReadOnlyDictionary<Guid, TransactionOutcomeRecord> result =
+            State.TransactionOutcomes.AsReadOnly();
+        return ValueTask.FromResult(result);
+    }
+
     public async ValueTask SetConditionSequenceResult(Guid activityInstanceId, string sequenceId, bool result)
     {
         await EnsureExecution();
