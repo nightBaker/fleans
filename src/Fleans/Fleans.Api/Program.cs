@@ -3,11 +3,10 @@ using Fleans.Api;
 using Fleans.Application;
 using Fleans.Application.Logging;
 using Fleans.Infrastructure;
-using Fleans.Persistence;
 using Fleans.Persistence.PostgreSql;
 using Fleans.Persistence.Sqlite;
+using Fleans.ServiceDefaults;
 using Microsoft.AspNetCore.RateLimiting;
-using Microsoft.EntityFrameworkCore;
 using Orleans.Dashboard;
 using Orleans.EventSourcing.CustomStorage;
 
@@ -92,42 +91,11 @@ static void AddPolicyIfConfigured(RateLimiterOptions options, string policyName,
 }
 
 // EF Core persistence — provider selected by Persistence:Provider config key (default: Sqlite)
-var persistenceProvider = builder.Configuration["Persistence:Provider"] ?? "Sqlite";
-if (persistenceProvider.Equals("Postgres", StringComparison.OrdinalIgnoreCase))
-{
-    var pgConnectionString = builder.Configuration.GetConnectionString("fleans")
-        ?? throw new InvalidOperationException("Connection string 'fleans' is required when Persistence:Provider=Postgres");
-    var pgQueryConnectionString = builder.Configuration.GetConnectionString("fleans-query");
-    builder.Services.AddPostgresPersistence(pgConnectionString, pgQueryConnectionString);
-}
-else
-{
-    var sqliteConnectionString = builder.Configuration["FLEANS_SQLITE_CONNECTION"] ?? "DataSource=fleans-dev.db";
-    var queryConnectionString = builder.Configuration["FLEANS_QUERY_CONNECTION"];
-    builder.Services.AddSqlitePersistence(sqliteConnectionString, queryConnectionString);
-}
+builder.AddFleansPersistence();
 
 var app = builder.Build();
 
-// Ensure EF Core database is created / migrated on startup
-using (var scope = app.Services.CreateScope())
-{
-    if (!persistenceProvider.Equals("Postgres", StringComparison.OrdinalIgnoreCase))
-    {
-        // SQLite: use EnsureCreated (fast, idempotent, no migration history required for dev)
-        var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>();
-        using var db = dbFactory.CreateDbContext();
-        SqliteSchemaInitializer.EnsureCreatedIgnoreRaces(db.Database);
-    }
-    else
-    {
-        // PostgreSQL: apply command migrations only (command and query share the same database;
-        // there are no separate query migrations — the query context reads the same schema).
-        var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>();
-        await using var commandDb = dbFactory.CreateDbContext();
-        await commandDb.Database.MigrateAsync();
-    }
-}
+await app.EnsureDatabaseSchemaAsync();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
