@@ -5,6 +5,8 @@ namespace Fleans.Domain.Activities;
 /// If <see cref="TargetActivityRef"/> is set, only the named activity is compensated (targeted).
 /// If null, all compensable completed activities in the current scope are compensated (broadcast).
 /// After the compensation walk completes, execution continues via the outgoing sequence flow.
+/// The throw does NOT complete itself during ExecuteAsync — it is completed by the compensation
+/// walk state machine after all handlers have finished, which then resumes the outgoing flow.
 /// </summary>
 [GenerateSerializer]
 public record CompensationIntermediateThrowEvent(
@@ -19,7 +21,7 @@ public record CompensationIntermediateThrowEvent(
         var commands = await base.ExecuteAsync(workflowContext, activityContext, definition);
         var throwerInstanceId = await activityContext.GetActivityInstanceId();
         commands.Add(new CompensationRequestedCommand(throwerInstanceId, TargetActivityRef));
-        await activityContext.Complete();
+        // Do NOT complete here — the walk state machine completes us after all handlers finish
         return commands;
     }
 

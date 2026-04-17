@@ -71,6 +71,7 @@ public partial class WorkflowInstance
             if (pending.Count == 0) break;
 
             var newlyCompletedEntryIds = new List<Guid>();
+            var eventCountBeforeIteration = _execution.GetUncommittedEvents().Count;
 
             foreach (var p in pending)
             {
@@ -104,6 +105,16 @@ public partial class WorkflowInstance
                     _execution.MarkCompleted(entry.ActivityInstanceId, new ExpandoObject());
                     newlyCompletedEntryIds.Add(entry.ActivityInstanceId);
                 }
+            }
+
+            // Capture entries completed by the aggregate during command processing
+            // (e.g., compensation thrower completed immediately when walk has zero handlers).
+            foreach (var completedEvt in _execution.GetUncommittedEvents()
+                .Skip(eventCountBeforeIteration)
+                .OfType<ActivityCompleted>())
+            {
+                if (!newlyCompletedEntryIds.Contains(completedEvt.ActivityInstanceId))
+                    newlyCompletedEntryIds.Add(completedEvt.ActivityInstanceId);
             }
 
             // Compute transitions only for newly completed entries
@@ -177,7 +188,13 @@ public partial class WorkflowInstance
         // Advance compensation walk if the current handler has finished.
         // Called after scope completions so that any SubProcess-scoped handler completions
         // are processed before we try to spawn the next compensation handler.
-        _execution.AdvanceCompensationWalkIfHandlerCompleted();
+        var completedThrowerId = _execution.AdvanceCompensationWalkIfHandlerCompleted();
+        if (completedThrowerId.HasValue)
+        {
+            var throwerTransitions = await ComputeTransitionsForEntries(definition, [completedThrowerId.Value]);
+            if (throwerTransitions.Count > 0)
+                _execution.ResolveTransitions(throwerTransitions);
+        }
 
         // Detect root EventSubProcess completion — it emits WorkflowCompleted directly
         // (no outgoing flow), which is a second exit point for workflow completion.
@@ -445,7 +462,7 @@ public partial class WorkflowInstance
                 LogTimerCycleUpdated(timerCycle.HostActivityInstanceId, timerCycle.TimerActivityId, timerCycle.RemainingCycle is not null);
                 break;
             case CompensableActivitySnapshotRecorded snap:
-                LogCompensableActivitySnapshotRecorded(snap.ActivityDefinitionId, snap.CompletedAtSequence, snap.ScopeId);
+                LogCompensableActivitySnapshotRecorded(snap.ActivityDefinitionId, State.NextCompensationSequence, snap.ScopeId);
                 break;
             case CompensationWalkStarted walkStarted:
                 LogCompensationWalkStarted(walkStarted.ScopeId, walkStarted.TargetActivityRef, walkStarted.HandlerCount);
@@ -458,6 +475,9 @@ public partial class WorkflowInstance
                 break;
             case CompensationWalkCompleted walkCompleted:
                 LogCompensationWalkCompleted(walkCompleted.ScopeId);
+                break;
+            case CompensationWalkFailed walkFailed:
+                LogCompensationHandlerFailed(walkFailed.HandlerInstanceId, walkFailed.ErrorCode, walkFailed.ErrorMessage);
                 break;
         }
     }

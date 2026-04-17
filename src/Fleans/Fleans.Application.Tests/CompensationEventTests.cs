@@ -260,6 +260,102 @@ public class CompensationEventTests : WorkflowTestBase
     }
 
     [TestMethod]
+    public async Task HandlerFailure_ShouldStopWalkAndLeaveWorkflowCompleted()
+    {
+        // Arrange: start → task_a → task_b → throw_comp → end
+        // handler_b (for task_b, runs first in reverse order) FAILS
+        // handler_a should NOT execute because the walk stops at the failure
+        var start = new StartEvent("start");
+        var taskA = AutoTask("task_a");
+        var taskB = AutoTask("task_b");
+        var cbA = new CompensationBoundaryEvent("cb_a", "task_a", "handler_a");
+        var cbB = new CompensationBoundaryEvent("cb_b", "task_b", "handler_b");
+        var handlerA = AutoTask("handler_a");
+        var handlerB = new ScriptTask("handler_b", "FAIL", "csharp"); // will throw
+        var throwComp = new CompensationIntermediateThrowEvent("throw_comp", null);
+        var end = new EndEvent("end");
+
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "comp-handler-fail",
+            Activities = [start, taskA, taskB, cbA, cbB, handlerA, handlerB, throwComp, end],
+            SequenceFlows =
+            [
+                new("f1", start, taskA),
+                new("f2", taskA, taskB),
+                new("f3", taskB, throwComp),
+                new("f4", throwComp, end)
+            ]
+        };
+
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await grain.SetWorkflow(workflow);
+        await grain.StartWorkflow();
+
+        // Act & Assert: workflow should complete (terminal) with handler_b error
+        var snapshot = await WaitForCondition(
+            grain.GetPrimaryKey(),
+            s => s.IsCompleted,
+            timeoutMs: 10000);
+
+        Assert.IsTrue(snapshot.IsCompleted, "Workflow should reach terminal state after handler failure");
+
+        // handler_b was executed but failed
+        var handlerBEntry = snapshot.CompletedActivities.FirstOrDefault(a => a.ActivityId == "handler_b");
+        Assert.IsNotNull(handlerBEntry, "handler_b should appear in completed activities (it ran, then failed)");
+        Assert.IsNotNull(handlerBEntry.ErrorState,
+            "handler_b should have an ErrorState because its script threw");
+
+        // handler_a should NOT have executed — the walk stopped at handler_b's failure
+        Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId == "handler_a"),
+            "handler_a should NOT run because the compensation walk stopped at handler_b failure");
+    }
+
+    [TestMethod]
+    public async Task ReCompensationPrevention_BroadcastAfterTargeted_SkipsAlreadyCompensated()
+    {
+        // Arrange: start → task_a → throw_targeted(task_a) → throw_broadcast → end
+        // Targeted throw compensates task_a and marks it IsCompensated=true.
+        // Subsequent broadcast throw should skip task_a (already compensated).
+        // handler_a should run exactly once.
+        var start = new StartEvent("start");
+        var taskA = AutoTask("task_a");
+        var cbA = new CompensationBoundaryEvent("cb_a", "task_a", "handler_a");
+        var handlerA = AutoTask("handler_a");
+        var throwTargeted = new CompensationIntermediateThrowEvent("throw_targeted", "task_a");
+        var throwBroadcast = new CompensationIntermediateThrowEvent("throw_broadcast", null);
+        var end = new EndEvent("end");
+
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "comp-recomp",
+            Activities = [start, taskA, cbA, handlerA, throwTargeted, throwBroadcast, end],
+            SequenceFlows =
+            [
+                new("f1", start, taskA),
+                new("f2", taskA, throwTargeted),
+                new("f3", throwTargeted, throwBroadcast),
+                new("f4", throwBroadcast, end)
+            ]
+        };
+
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await grain.SetWorkflow(workflow);
+        await grain.StartWorkflow();
+
+        var snapshot = await WaitForCondition(
+            grain.GetPrimaryKey(),
+            s => s.IsCompleted,
+            timeoutMs: 10000);
+
+        Assert.IsTrue(snapshot.IsCompleted, "Workflow should complete after both throws");
+
+        var handlerACount = snapshot.CompletedActivities.Count(a => a.ActivityId == "handler_a");
+        Assert.AreEqual(1, handlerACount,
+            "handler_a should run only once — broadcast throw skips already-compensated entries");
+    }
+
+    [TestMethod]
     public async Task CompensationSnapshotIsolation_HandlerReceivesVariablesAtCompletionTime()
     {
         // Arrange: task_a sets variable, then workflow overwrites it, compensation handler should see original value

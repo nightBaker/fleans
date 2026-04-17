@@ -63,13 +63,13 @@ public record CompensableActivitySnapshotRecorded(
     Guid ActivityInstanceId,
     string ActivityDefinitionId,
     ExpandoObject VariablesSnapshot,
-    int CompletedAtSequence,
     Guid? ScopeId) : IDomainEvent;
 
 public record CompensationWalkStarted(
     Guid? ScopeId,
     string? TargetActivityRef,
-    int HandlerCount) : IDomainEvent;
+    int HandlerCount,
+    Guid ThrowerActivityInstanceId) : IDomainEvent;
 
 public record CompensationHandlerSpawned(
     Guid HandlerInstanceId,
@@ -82,3 +82,9 @@ public record CompensationEntryMarkedCompensated(
     Guid? ScopeId) : IDomainEvent;
 
 public record CompensationWalkCompleted(Guid? ScopeId) : IDomainEvent;
+
+public record CompensationWalkFailed(
+    Guid? ScopeId,
+    Guid HandlerInstanceId,
+    int ErrorCode,
+    string ErrorMessage) : IDomainEvent;

@@ -458,10 +458,8 @@ public class WorkflowExecution
         var throwerEntry = _state.GetEntry(throwerActivityInstanceId);
         var scopeId = throwerEntry.ScopeId; // null = root scope
 
-        // Get the scope definition to verify compensable activities
         var scopeDef = GetScopeDefinition(scopeId);
 
-        // Build the ordered list of activity definition IDs to compensate
         var snapshots = _state.CompensationLog
             .Where(s => s.ScopeId == scopeId && !s.IsCompensated)
             .Where(s => targetActivityRef is null || s.ActivityDefinitionId == targetActivityRef)
@@ -470,16 +468,14 @@ public class WorkflowExecution
 
         if (snapshots.Count == 0)
         {
-            // Nothing to compensate: emit walk events and immediately complete
-            Emit(new CompensationWalkStarted(scopeId, targetActivityRef, 0));
+            Emit(new CompensationWalkStarted(scopeId, targetActivityRef, 0, throwerActivityInstanceId));
             Emit(new CompensationWalkCompleted(scopeId));
+            // Empty walk — complete the thrower so it transitions normally
+            Emit(new ActivityCompleted(throwerActivityInstanceId, throwerEntry.VariablesId, new System.Dynamic.ExpandoObject()));
             return;
         }
 
-        Emit(new CompensationWalkStarted(scopeId, targetActivityRef, snapshots.Count));
-        // Apply(CompensationWalkStarted) calls _state.StartCompensationWalk(...)
-
-        // Spawn the first handler
+        Emit(new CompensationWalkStarted(scopeId, targetActivityRef, snapshots.Count, throwerActivityInstanceId));
         AdvanceCompensationWalk(scopeId, scopeDef, snapshots);
     }
 
@@ -494,24 +490,27 @@ public class WorkflowExecution
         var walk = _state.ActiveCompensationWalk;
         if (walk is null) return;
 
-        // Find the next uncompensated snapshot from the ordered list
-        var snapshot = orderedSnapshots.FirstOrDefault(s => !s.IsCompensated);
+        // Find the next uncompensated snapshot that has a compensation handler
+        CompletedActivitySnapshot? snapshot = null;
+        Activities.CompensationBoundaryEvent? boundary = null;
+        foreach (var candidate in orderedSnapshots.Where(s => !s.IsCompensated))
+        {
+            boundary = scopeDef.FindCompensationBoundary(candidate.ActivityDefinitionId);
+            if (boundary is not null)
+            {
+                snapshot = candidate;
+                break;
+            }
+        }
 
         if (snapshot is null)
         {
-            // No more handlers: complete the walk
+            var throwerInstanceId = walk.ThrowerActivityInstanceId;
+            var throwerEntry = _state.GetEntry(throwerInstanceId);
             Emit(new CompensationWalkCompleted(scopeId));
-            // Apply(CompensationWalkCompleted) clears the walk state
-            return;
-        }
-
-        // Find the compensation boundary event for this activity
-        var boundary = scopeDef.FindCompensationBoundary(snapshot.ActivityDefinitionId);
-        if (boundary is null)
-        {
-            // No handler defined for this activity; skip it and advance to the next
-            var remaining = orderedSnapshots.Where(s => s != snapshot).ToList();
-            AdvanceCompensationWalk(scopeId, scopeDef, remaining);
+            // Complete the thrower so it can transition to its outgoing flow
+            if (!throwerEntry.IsCompleted)
+                Emit(new ActivityCompleted(throwerInstanceId, throwerEntry.VariablesId, new System.Dynamic.ExpandoObject()));
             return;
         }
 
@@ -546,22 +545,26 @@ public class WorkflowExecution
     /// <summary>
     /// Called from HandleScopeCompletions (grain infrastructure) after CompleteFinishedSubProcessScopes
     /// to check if the active compensation handler has finished, and if so advance the walk.
-    /// Returns true if the walk was advanced (caller should loop to pick up the next handler).
+    /// Returns the thrower's instance ID if the walk completed (so the caller can compute transitions),
+    /// or null if the walk is still in progress or was not active.
     /// </summary>
-    public bool AdvanceCompensationWalkIfHandlerCompleted()
+    public Guid? AdvanceCompensationWalkIfHandlerCompleted()
     {
         var walk = _state.ActiveCompensationWalk;
-        if (walk is null || walk.CurrentHandlerInstanceId is null) return false;
+        if (walk is null || walk.CurrentHandlerInstanceId is null) return null;
 
         var handlerEntry = _state.FindEntry(walk.CurrentHandlerInstanceId.Value);
-        if (handlerEntry is null || !handlerEntry.IsCompleted) return false;
+        if (handlerEntry is null || !handlerEntry.IsCompleted) return null;
 
         if (handlerEntry.ErrorCode is not null)
         {
-            // Handler failed — abandon the walk; the failed handler entry propagates the error.
-            // Emit CompensationWalkCompleted so Apply clears the walk state event-sourcing-safely.
-            Emit(new CompensationWalkCompleted(walk.ScopeId));
-            return false;
+            Emit(new CompensationWalkFailed(
+                walk.ScopeId,
+                walk.CurrentHandlerInstanceId.Value,
+                handlerEntry.ErrorCode.Value,
+                handlerEntry.ErrorMessage ?? "Compensation handler failed"));
+            Emit(new WorkflowCompleted());
+            return null;
         }
 
         // Handler completed successfully; find the compensable activity def ID via the boundary.
@@ -574,7 +577,6 @@ public class WorkflowExecution
         if (boundary is not null)
         {
             Emit(new CompensationEntryMarkedCompensated(boundary.AttachedToActivityId, scopeId));
-            // Apply(CompensationEntryMarkedCompensated) marks the snapshot as compensated in _state
         }
 
         // Build the remaining ordered snapshot list from current log state
@@ -585,7 +587,13 @@ public class WorkflowExecution
             .ToList();
 
         AdvanceCompensationWalk(scopeId, scopeDef, remainingSnapshots);
-        return true;
+
+        // If the walk completed (no more handlers), the thrower was completed inside AdvanceCompensationWalk.
+        // Return its instance ID so the caller can compute transitions for it.
+        if (_state.ActiveCompensationWalk is null)
+            return walk.ThrowerActivityInstanceId;
+
+        return null;
     }
 
     /// <summary>Gets the IWorkflowDefinition for a scope instance (null = root scope).</summary>
@@ -601,7 +609,8 @@ public class WorkflowExecution
     private static ExpandoObject DeepCopyExpandoObject(ExpandoObject source)
     {
         var json = Newtonsoft.Json.JsonConvert.SerializeObject(source);
-        return Newtonsoft.Json.JsonConvert.DeserializeObject<ExpandoObject>(json)!;
+        return Newtonsoft.Json.JsonConvert.DeserializeObject<ExpandoObject>(
+            json, new Newtonsoft.Json.Converters.ExpandoObjectConverter())!;
     }
 
     private void ProcessSpawnActivity(SpawnActivityCommand spawn, Guid activityInstanceId)
@@ -1312,18 +1321,17 @@ public class WorkflowExecution
     private IReadOnlyList<IInfrastructureEffect> CompleteActivityInternal(
         ActivityInstanceEntry entry, ExpandoObject variables)
     {
-        // Compensation snapshot hook: capture variables BEFORE ActivityCompleted merges them.
+        // Compensation snapshot hook: capture the activity's output variables at completion time.
         // Only for non-compensation-handler activities that have a CompensationBoundaryEvent attached.
         if (!entry.IsCompensationHandler)
         {
             var scopeDef = _definition.FindScopeForActivity(entry.ActivityId);
             if (scopeDef?.FindCompensationBoundary(entry.ActivityId) is not null)
             {
-                var sequence = _state.GetNextCompensationSequence();
-                var snapshot = DeepCopyExpandoObject(_state.GetMergedVariables(entry.VariablesId));
+                var snapshot = DeepCopyExpandoObject(variables ?? new ExpandoObject());
                 Emit(new CompensableActivitySnapshotRecorded(
                     entry.ActivityInstanceId, entry.ActivityId,
-                    snapshot, sequence, entry.ScopeId));
+                    snapshot, entry.ScopeId));
             }
         }
 
@@ -2237,11 +2245,11 @@ public class WorkflowExecution
             case CompensableActivitySnapshotRecorded e:
                 _state.AddCompensationSnapshot(new CompletedActivitySnapshot(
                     e.ActivityInstanceId, e.ActivityDefinitionId,
-                    e.VariablesSnapshot, e.CompletedAtSequence, e.ScopeId));
+                    e.VariablesSnapshot, _state.NextCompensationSequence, e.ScopeId));
                 break;
             case CompensationWalkStarted e:
                 if (e.HandlerCount > 0)
-                    _state.StartCompensationWalk(new CompensationWalkState(e.ScopeId, e.TargetActivityRef));
+                    _state.StartCompensationWalk(new CompensationWalkState(e.ScopeId, e.TargetActivityRef, e.ThrowerActivityInstanceId));
                 break;
             case CompensationHandlerSpawned e:
                 _state.SetCompensationHandlerInstanceId(e.HandlerInstanceId);
@@ -2252,6 +2260,9 @@ public class WorkflowExecution
                 break;
             case CompensationWalkCompleted:
                 _state.ClearCompensationWalk();
+                break;
+            case CompensationWalkFailed:
+                // Walk state intentionally NOT cleared — preserved for observability
                 break;
             default:
                 throw new InvalidOperationException($"Unknown domain event type: {@event.GetType().Name}");

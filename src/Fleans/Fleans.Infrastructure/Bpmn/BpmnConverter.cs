@@ -76,12 +76,15 @@ public partial class BpmnConverter : IBpmnConverter
     private void ParseActivities(XElement scopeElement, List<Activity> activities, Dictionary<string, Activity> activityMap, HashSet<string> defaultFlowIds)
     {
         // Pre-parse compensation associations: boundaryEventId -> handlerActivityId.
-        // Required for CompensationBoundaryEvent which links to its handler via <association>.
-        var compensationHandlerMap = scopeElement
-            .Elements(Bpmn + "association")
+        // Associations can appear at process level, definitions level, or inside sub-processes.
+        var root = scopeElement.Document?.Root;
+        var allAssociations = scopeElement.Elements(Bpmn + "association")
+            .Concat(root?.Elements(Bpmn + "association") ?? Enumerable.Empty<XElement>())
             .Where(a => a.Attribute("sourceRef") != null && a.Attribute("targetRef") != null)
+            .DistinctBy(a => a.Attribute("id")?.Value)
             .GroupBy(a => a.Attribute("sourceRef")!.Value)
             .ToDictionary(g => g.Key, g => g.First().Attribute("targetRef")!.Value);
+        var compensationHandlerMap = allAssociations;
 
         // Parse start events (with optional timer definition)
         foreach (var startEvent in scopeElement.Elements(Bpmn + "startEvent"))
@@ -207,7 +210,7 @@ public partial class BpmnConverter : IBpmnConverter
             var id = GetId(endEvent);
             var compensateDef = endEvent.Element(Bpmn + "compensateEventDefinition");
             Activity activity = compensateDef != null
-                ? new CompensationEndEvent(id)
+                ? new CompensationEndEvent(id, compensateDef.Attribute("activityRef")?.Value)
                 : new EndEvent(id);
             activities.Add(activity);
             activityMap[id] = activity;
@@ -533,7 +536,7 @@ public partial class BpmnConverter : IBpmnConverter
             var errorDef = boundaryEl.Element(Bpmn + "errorEventDefinition");
             var messageDef = boundaryEl.Element(Bpmn + "messageEventDefinition");
             var signalDef = boundaryEl.Element(Bpmn + "signalEventDefinition");
-            var compensateDef2 = boundaryEl.Element(Bpmn + "compensateEventDefinition");
+            var compensateDefBoundary = boundaryEl.Element(Bpmn + "compensateEventDefinition");
 
             Activity activity;
             if (timerDef != null)
@@ -555,10 +558,12 @@ public partial class BpmnConverter : IBpmnConverter
                         $"boundaryEvent '{id}' signalEventDefinition must have a signalRef attribute");
                 activity = new SignalBoundaryEvent(id, attachedToRef, signalRef, isInterrupting);
             }
-            else if (compensateDef2 != null)
+            else if (compensateDefBoundary != null)
             {
-                // Compensation boundary events are always non-interrupting per BPMN spec.
-                // The handler activity is identified via an <association> element.
+                if (isInterrupting)
+                    throw new InvalidOperationException(
+                        $"CompensationBoundaryEvent '{id}' must not have cancelActivity=\"true\". " +
+                        "Compensation boundary events are always non-interrupting per BPMN spec.");
                 if (!compensationHandlerMap.TryGetValue(id, out var handlerActivityId))
                     throw new InvalidOperationException(
                         $"CompensationBoundaryEvent '{id}' has no associated handler activity. " +
@@ -575,6 +580,69 @@ public partial class BpmnConverter : IBpmnConverter
 
             activities.Add(activity);
             activityMap[id] = activity;
+        }
+
+        // Post-parse compensation validations
+        ValidateCompensationConstraints(activities, scopeElement);
+    }
+
+    private void ValidateCompensationConstraints(List<Activity> activities, XElement scopeElement)
+    {
+        var compensationBoundaries = activities.OfType<CompensationBoundaryEvent>().ToList();
+        if (compensationBoundaries.Count == 0) return;
+
+        // At most one compensation boundary per activity
+        var duplicates = compensationBoundaries
+            .GroupBy(b => b.AttachedToActivityId)
+            .Where(g => g.Count() > 1)
+            .ToList();
+        foreach (var dup in duplicates)
+            throw new InvalidOperationException(
+                $"Activity '{dup.Key}' has {dup.Count()} CompensationBoundaryEvents. At most one is allowed.");
+
+        // Collect all sequence flow targets to check handler has no incoming flow
+        var sequenceFlowTargets = new HashSet<string>(
+            scopeElement.Elements(Bpmn + "sequenceFlow")
+                .Select(sf => sf.Attribute("targetRef")?.Value)
+                .Where(v => v is not null)!);
+
+        var handlerActivityIds = compensationBoundaries.Select(b => b.HandlerActivityId).ToHashSet();
+
+        foreach (var boundary in compensationBoundaries)
+        {
+            var handlerId = boundary.HandlerActivityId;
+
+            // Handler must not have incoming sequence flow
+            if (sequenceFlowTargets.Contains(handlerId))
+                throw new InvalidOperationException(
+                    $"Compensation handler '{handlerId}' must not have incoming sequence flow. " +
+                    "Handlers are detached — invoked only during compensation walks.");
+
+            // Handler must not have its own CompensationBoundaryEvent (no compensation-of-compensation)
+            if (compensationBoundaries.Any(b => b.AttachedToActivityId == handlerId))
+                throw new InvalidOperationException(
+                    $"Compensation handler '{handlerId}' must not have its own CompensationBoundaryEvent. " +
+                    "Compensation of compensation is not allowed.");
+        }
+
+        // activityRef on throw/end must reference a compensable activity
+        var compensableActivityIds = compensationBoundaries.Select(b => b.AttachedToActivityId).ToHashSet();
+
+        foreach (var throwEvent in activities.OfType<CompensationIntermediateThrowEvent>())
+        {
+            if (throwEvent.TargetActivityRef is not null && !compensableActivityIds.Contains(throwEvent.TargetActivityRef))
+                throw new InvalidOperationException(
+                    $"CompensationIntermediateThrowEvent '{throwEvent.ActivityId}' targets activity " +
+                    $"'{throwEvent.TargetActivityRef}' which has no CompensationBoundaryEvent attached.");
+        }
+
+        foreach (var endEvent in activities.OfType<CompensationEndEvent>())
+        {
+            if (endEvent is CompensationEndEvent { TargetActivityRef: not null } targeted
+                && !compensableActivityIds.Contains(targeted.TargetActivityRef))
+                throw new InvalidOperationException(
+                    $"CompensationEndEvent '{endEvent.ActivityId}' targets activity " +
+                    $"'{targeted.TargetActivityRef}' which has no CompensationBoundaryEvent attached.");
         }
     }
 

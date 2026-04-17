@@ -179,6 +179,180 @@ public class CompensationEventParsingTests : BpmnConverterTestBase
     }
 
     [TestMethod]
+    public async Task ParseCompensationBoundaryEvent_CancelActivityTrue_ShouldThrow()
+    {
+        var xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL"">
+  <process id=""comp-cancel-true"">
+    <startEvent id=""start"" />
+    <scriptTask id=""task_a"" scriptFormat=""csharp""><script>pass</script></scriptTask>
+    <boundaryEvent id=""cb_a"" attachedToRef=""task_a"" cancelActivity=""true"">
+      <compensateEventDefinition />
+    </boundaryEvent>
+    <scriptTask id=""handler_a"" scriptFormat=""csharp""><script>pass</script></scriptTask>
+    <endEvent id=""end"" />
+    <association id=""assoc1"" sourceRef=""cb_a"" targetRef=""handler_a"" associationDirection=""One"" />
+    <sequenceFlow id=""f1"" sourceRef=""start"" targetRef=""task_a"" />
+    <sequenceFlow id=""f2"" sourceRef=""task_a"" targetRef=""end"" />
+  </process>
+</definitions>";
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await _converter.ConvertFromXmlAsync(
+                new MemoryStream(Encoding.UTF8.GetBytes(xml))));
+    }
+
+    [TestMethod]
+    public async Task ParseCompensationBoundaryEvent_MultipleBoundariesOnSameActivity_ShouldThrow()
+    {
+        var xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL"">
+  <process id=""comp-dup-boundary"">
+    <startEvent id=""start"" />
+    <scriptTask id=""task_a"" scriptFormat=""csharp""><script>pass</script></scriptTask>
+    <boundaryEvent id=""cb_a1"" attachedToRef=""task_a"" cancelActivity=""false"">
+      <compensateEventDefinition />
+    </boundaryEvent>
+    <boundaryEvent id=""cb_a2"" attachedToRef=""task_a"" cancelActivity=""false"">
+      <compensateEventDefinition />
+    </boundaryEvent>
+    <scriptTask id=""handler_a1"" scriptFormat=""csharp""><script>pass</script></scriptTask>
+    <scriptTask id=""handler_a2"" scriptFormat=""csharp""><script>pass</script></scriptTask>
+    <endEvent id=""end"" />
+    <association id=""assoc1"" sourceRef=""cb_a1"" targetRef=""handler_a1"" associationDirection=""One"" />
+    <association id=""assoc2"" sourceRef=""cb_a2"" targetRef=""handler_a2"" associationDirection=""One"" />
+    <sequenceFlow id=""f1"" sourceRef=""start"" targetRef=""task_a"" />
+    <sequenceFlow id=""f2"" sourceRef=""task_a"" targetRef=""end"" />
+  </process>
+</definitions>";
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await _converter.ConvertFromXmlAsync(
+                new MemoryStream(Encoding.UTF8.GetBytes(xml))));
+    }
+
+    [TestMethod]
+    public async Task ParseCompensationThrow_ActivityRefPointsToNonCompensableActivity_ShouldThrow()
+    {
+        // task_b has a compensation boundary, but the throw targets task_a which does NOT
+        var xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL"">
+  <process id=""comp-bad-ref"">
+    <startEvent id=""start"" />
+    <scriptTask id=""task_a"" scriptFormat=""csharp""><script>pass</script></scriptTask>
+    <scriptTask id=""task_b"" scriptFormat=""csharp""><script>pass</script></scriptTask>
+    <boundaryEvent id=""cb_b"" attachedToRef=""task_b"" cancelActivity=""false"">
+      <compensateEventDefinition />
+    </boundaryEvent>
+    <scriptTask id=""handler_b"" scriptFormat=""csharp""><script>pass</script></scriptTask>
+    <intermediateThrowEvent id=""throw_comp"">
+      <compensateEventDefinition activityRef=""task_a"" />
+    </intermediateThrowEvent>
+    <endEvent id=""end"" />
+    <association id=""assoc1"" sourceRef=""cb_b"" targetRef=""handler_b"" associationDirection=""One"" />
+    <sequenceFlow id=""f1"" sourceRef=""start"" targetRef=""task_a"" />
+    <sequenceFlow id=""f2"" sourceRef=""task_a"" targetRef=""task_b"" />
+    <sequenceFlow id=""f3"" sourceRef=""task_b"" targetRef=""throw_comp"" />
+    <sequenceFlow id=""f4"" sourceRef=""throw_comp"" targetRef=""end"" />
+  </process>
+</definitions>";
+
+        // task_a has no CompensationBoundaryEvent, so activityRef="task_a" is invalid
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await _converter.ConvertFromXmlAsync(
+                new MemoryStream(Encoding.UTF8.GetBytes(xml))));
+    }
+
+    [TestMethod]
+    public async Task ParseCompensationHandler_WithIncomingSequenceFlow_ShouldThrow()
+    {
+        var xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL"">
+  <process id=""comp-handler-incoming"">
+    <startEvent id=""start"" />
+    <scriptTask id=""task_a"" scriptFormat=""csharp""><script>pass</script></scriptTask>
+    <boundaryEvent id=""cb_a"" attachedToRef=""task_a"" cancelActivity=""false"">
+      <compensateEventDefinition />
+    </boundaryEvent>
+    <scriptTask id=""handler_a"" scriptFormat=""csharp""><script>pass</script></scriptTask>
+    <endEvent id=""end"" />
+    <association id=""assoc1"" sourceRef=""cb_a"" targetRef=""handler_a"" associationDirection=""One"" />
+    <sequenceFlow id=""f1"" sourceRef=""start"" targetRef=""task_a"" />
+    <sequenceFlow id=""f2"" sourceRef=""task_a"" targetRef=""end"" />
+    <sequenceFlow id=""f3"" sourceRef=""task_a"" targetRef=""handler_a"" />
+  </process>
+</definitions>";
+
+        // handler_a has an incoming sequence flow (f3), which is not allowed
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await _converter.ConvertFromXmlAsync(
+                new MemoryStream(Encoding.UTF8.GetBytes(xml))));
+    }
+
+    [TestMethod]
+    public async Task ParseCompensationHandler_WithOwnCompensationBoundary_ShouldThrow()
+    {
+        var xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL"">
+  <process id=""comp-handler-nested"">
+    <startEvent id=""start"" />
+    <scriptTask id=""task_a"" scriptFormat=""csharp""><script>pass</script></scriptTask>
+    <boundaryEvent id=""cb_a"" attachedToRef=""task_a"" cancelActivity=""false"">
+      <compensateEventDefinition />
+    </boundaryEvent>
+    <scriptTask id=""handler_a"" scriptFormat=""csharp""><script>pass</script></scriptTask>
+    <boundaryEvent id=""cb_handler"" attachedToRef=""handler_a"" cancelActivity=""false"">
+      <compensateEventDefinition />
+    </boundaryEvent>
+    <scriptTask id=""handler_handler"" scriptFormat=""csharp""><script>pass</script></scriptTask>
+    <endEvent id=""end"" />
+    <association id=""assoc1"" sourceRef=""cb_a"" targetRef=""handler_a"" associationDirection=""One"" />
+    <association id=""assoc2"" sourceRef=""cb_handler"" targetRef=""handler_handler"" associationDirection=""One"" />
+    <sequenceFlow id=""f1"" sourceRef=""start"" targetRef=""task_a"" />
+    <sequenceFlow id=""f2"" sourceRef=""task_a"" targetRef=""end"" />
+  </process>
+</definitions>";
+
+        // handler_a itself has a CompensationBoundaryEvent — not allowed
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await _converter.ConvertFromXmlAsync(
+                new MemoryStream(Encoding.UTF8.GetBytes(xml))));
+    }
+
+    [TestMethod]
+    public async Task ParseCompensation_AssociationAtDefinitionsLevel_ShouldParse()
+    {
+        // Association placed directly under <definitions>, not under <process>
+        var xml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL"">
+  <process id=""comp-defn-assoc"">
+    <startEvent id=""start"" />
+    <scriptTask id=""task_a"" scriptFormat=""csharp""><script>pass</script></scriptTask>
+    <boundaryEvent id=""cb_a"" attachedToRef=""task_a"" cancelActivity=""false"">
+      <compensateEventDefinition />
+    </boundaryEvent>
+    <scriptTask id=""handler_a"" scriptFormat=""csharp""><script>pass</script></scriptTask>
+    <intermediateThrowEvent id=""throw_comp"">
+      <compensateEventDefinition />
+    </intermediateThrowEvent>
+    <endEvent id=""end"" />
+    <sequenceFlow id=""f1"" sourceRef=""start"" targetRef=""task_a"" />
+    <sequenceFlow id=""f2"" sourceRef=""task_a"" targetRef=""throw_comp"" />
+    <sequenceFlow id=""f3"" sourceRef=""throw_comp"" targetRef=""end"" />
+  </process>
+  <association id=""assoc1"" sourceRef=""cb_a"" targetRef=""handler_a"" associationDirection=""One"" />
+</definitions>";
+
+        var workflow = await _converter.ConvertFromXmlAsync(
+            new MemoryStream(Encoding.UTF8.GetBytes(xml)));
+
+        var cbA = workflow.Activities.OfType<CompensationBoundaryEvent>().FirstOrDefault();
+        Assert.IsNotNull(cbA, "CompensationBoundaryEvent should be parsed");
+        Assert.AreEqual("handler_a", cbA.HandlerActivityId,
+            "Handler should be resolved from association at definitions level");
+    }
+
+    [TestMethod]
     public async Task ParseWorkflowWithCompensation_SequenceFlowsShouldBeWiredCorrectly()
     {
         var workflow = await _converter.ConvertFromXmlAsync(

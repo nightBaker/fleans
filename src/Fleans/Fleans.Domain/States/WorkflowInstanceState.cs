@@ -513,8 +513,6 @@ public class WorkflowInstanceState
         _dirtyFlags |= DirtyCompensationLog;
     }
 
-    public int GetNextCompensationSequence() => NextCompensationSequence;
-
     public void MarkSnapshotCompensated(string activityDefinitionId, Guid? scopeId)
     {
         var snapshot = CompensationLog
