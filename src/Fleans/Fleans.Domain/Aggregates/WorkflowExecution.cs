@@ -127,8 +127,13 @@ public class WorkflowExecution
     public void MarkCompleted(Guid activityInstanceId, ExpandoObject variables)
     {
         var entry = _state.GetEntry(activityInstanceId);
-        // An entry may already be cancelled when an interrupting boundary event
-        // cancels the host activity before the grain calls MarkCompleted.
+        // Escalation boundary cancellation race: when an interrupting escalation
+        // boundary fires, the host SubProcess/CallActivity is cancelled immediately.
+        // However, the grain's RunExecutionLoop may still call MarkCompleted for
+        // activities within that cancelled scope. Using GetEntry (not GetActiveEntry)
+        // and returning early for cancelled entries prevents a spurious throw.
+        // This guard is intentionally narrow — only IsCancelled returns early.
+        // Failed or already-completed entries fall through to the checks below.
         if (entry.IsCancelled) return;
         // A failed entry must not be silently completed.
         if (entry.ErrorCode is not null)

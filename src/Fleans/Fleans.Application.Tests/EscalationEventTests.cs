@@ -606,6 +606,102 @@ public class EscalationEventTests : WorkflowTestBase
             "Should follow normal path to end");
     }
 
+    // ── CallActivity cross-grain escalation ─────────────────────────────
+
+    [TestMethod]
+    public async Task CallActivity_EscalationThrow_InterruptingBoundary_ShouldCancelAndRouteToRecovery()
+    {
+        // Cross-grain escalation: child workflow throws an escalation that propagates
+        // to the parent grain via NotifyParentEscalationRaisedEffect → OnChildEscalationRaised.
+        // The parent's interrupting EscalationBoundaryEvent on the CallActivity should cancel
+        // the CallActivity and route to the recovery path.
+
+        // Arrange — deploy child workflow: start → task → escalationThrow → childEnd
+        var childStart = new StartEvent("childStart");
+        var childTask = new TaskActivity("childTask");
+        var childEscalationThrow = new EscalationIntermediateThrowEvent("childEscThrow", "ESC-CALL");
+        var childEnd = new EndEvent("childEnd");
+
+        var childWorkflow = new WorkflowDefinition
+        {
+            WorkflowId = "childEscProcess",
+            Activities = [childStart, childTask, childEscalationThrow, childEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("cs1", childStart, childTask),
+                new SequenceFlow("cs2", childTask, childEscalationThrow),
+                new SequenceFlow("cs3", childEscalationThrow, childEnd)
+            ]
+        };
+
+        var childProcessGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("childEscProcess");
+        await childProcessGrain.DeployVersion(childWorkflow, "<xml/>");
+
+        // Arrange — parent workflow: start → callActivity → normalEnd
+        //           + EscalationBoundaryEvent on callActivity (interrupting) → recoveryTask → recoveryEnd
+        var parentStart = new StartEvent("start");
+        var call1 = new CallActivity("call1", "childEscProcess", [], []);
+        var normalEnd = new EndEvent("normalEnd");
+        var escBoundary = new EscalationBoundaryEvent("escBoundary", "call1", "ESC-CALL", IsInterrupting: true);
+        var recoveryTask = new TaskActivity("recoveryTask");
+        var recoveryEnd = new EndEvent("recoveryEnd");
+
+        var parentWorkflow = new WorkflowDefinition
+        {
+            WorkflowId = "parentEscProcess",
+            Activities = [parentStart, call1, normalEnd, escBoundary, recoveryTask, recoveryEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("ps1", parentStart, call1),
+                new SequenceFlow("ps2", call1, normalEnd),
+                new SequenceFlow("ps3", escBoundary, recoveryTask),
+                new SequenceFlow("ps4", recoveryTask, recoveryEnd)
+            ]
+        };
+
+        var parentProcessGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("parentEscProcess");
+        await parentProcessGrain.DeployVersion(parentWorkflow, "<xml/>");
+
+        var parentInstance = await parentProcessGrain.CreateInstance();
+        var parentInstanceId = parentInstance.GetPrimaryKey();
+
+        // Act — start parent (spawns child), then complete childTask → triggers escalation throw
+        await parentInstance.StartWorkflow();
+
+        // Get child instance id from parent's active call activity
+        var parentSnapshot = await QueryService.GetStateSnapshot(parentInstanceId);
+        Assert.IsNotNull(parentSnapshot);
+        var callActivitySnapshot = parentSnapshot.ActiveActivities.First(a => a.ActivityId == "call1");
+        Assert.IsNotNull(callActivitySnapshot.ChildWorkflowInstanceId, "Child workflow instance should have been spawned");
+        var childInstanceId = callActivitySnapshot.ChildWorkflowInstanceId.Value;
+
+        // Complete child task → triggers escalation → parent boundary fires
+        var childInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(childInstanceId);
+        await childInstance.CompleteActivity("childTask", new ExpandoObject());
+
+        // Wait for recoveryTask to become active in parent (boundary path)
+        var snapshot = await WaitForCondition(parentInstanceId,
+            s => s.ActiveActivities.Any(a => a.ActivityId == "recoveryTask"));
+
+        Assert.IsTrue(snapshot.ActiveActivities.Any(a => a.ActivityId == "recoveryTask"),
+            "Recovery task should be active after escalation boundary fires");
+
+        // Complete recovery task to finish parent workflow
+        await parentInstance.CompleteActivity("recoveryTask", new ExpandoObject());
+
+        var finalSnapshot = await PollForNoActiveActivities(parentInstanceId);
+        Assert.IsTrue(finalSnapshot!.IsCompleted, "Parent workflow should be completed");
+        Assert.IsTrue(finalSnapshot.CompletedActivities.Any(a => a.ActivityId == "recoveryEnd"),
+            "Should complete via boundary recovery path");
+        Assert.IsFalse(finalSnapshot.CompletedActivities.Any(a => a.ActivityId == "normalEnd"),
+            "Should NOT follow normal path");
+
+        // CallActivity should be cancelled by the interrupting boundary
+        var callEntry = finalSnapshot.CompletedActivities.FirstOrDefault(a => a.ActivityId == "call1");
+        Assert.IsNotNull(callEntry, "CallActivity should be in completed list");
+        Assert.IsTrue(callEntry.IsCancelled, "CallActivity should be cancelled by interrupting boundary");
+    }
+
     // ── EscalationEndEvent with non-interrupting boundary ─────────────
 
     [TestMethod]

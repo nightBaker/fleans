@@ -297,6 +297,10 @@ public partial class WorkflowInstance
         Message = "Escalation uncaught: EscalationCode={EscalationCode}, SourceActivityId={SourceActivityId}")]
     private partial void LogEscalationUncaught(string escalationCode, string sourceActivityId);
 
+    [LoggerMessage(EventId = 3032, Level = LogLevel.Warning,
+        Message = "Escalation parent result missing: expected _pendingEscalationParentResult to be set for EscalationCode={EscalationCode}, WorkflowInstanceId={WorkflowInstanceId} — defaulting to Unhandled")]
+    private partial void LogEscalationParentResultMissing(string? escalationCode, Guid workflowInstanceId);
+
     // Complex gateway lifecycle (EventId 1080-1089)
     [LoggerMessage(EventId = 1080, Level = LogLevel.Debug,
         Message = "Complex gateway activation condition late callback — join instance {ActivityInstanceId} has already fired or was removed")]

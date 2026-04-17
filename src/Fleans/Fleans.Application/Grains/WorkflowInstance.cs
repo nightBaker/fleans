@@ -39,6 +39,13 @@ public partial class WorkflowInstance :
     /// Stores the result from NotifyParentEscalationRaisedEffect handler.
     /// Written exclusively by PerformEffects when processing that effect.
     /// Read and cleared in ProcessPendingEvents or RunExecutionLoop.
+    ///
+    /// Thread-safety invariant: this field is safe because PerformEffects (write)
+    /// and RunExecutionLoop/ProcessPendingEvents (read+clear) execute within the
+    /// same Orleans single-threaded turn — no interleaving is possible between
+    /// write and read. The field is NOT persisted; if the grain deactivates between
+    /// effect execution and the subsequent read, the escalation result would be lost.
+    /// In practice this cannot happen because both occur in the same turn.
     /// </summary>
     private EscalationHandledResult? _pendingEscalationParentResult;
 

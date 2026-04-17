@@ -169,4 +169,32 @@ public class EscalationEventTests : BpmnConverterTestBase
         Assert.IsNotNull(escBoundary);
         Assert.IsNull(escBoundary.EscalationCode);
     }
+
+    [TestMethod]
+    public async Task ConvertFromXmlAsync_ShouldRejectEscalationBoundaryOnPlainTask()
+    {
+        // Parse-time validation: EscalationBoundaryEvent may only be attached to SubProcess or CallActivity.
+        // Attaching to a plain scriptTask should throw.
+        var bpmnXml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL"">
+  <escalation id=""Escalation_1"" name=""Test"" escalationCode=""ESC_001"" />
+  <process id=""process1"">
+    <startEvent id=""start"" />
+    <scriptTask id=""task1"" scriptFormat=""csharp"">
+      <script>/* noop */</script>
+    </scriptTask>
+    <boundaryEvent id=""escBoundary"" attachedToRef=""task1"" cancelActivity=""true"">
+      <escalationEventDefinition escalationRef=""Escalation_1"" />
+    </boundaryEvent>
+    <endEvent id=""end"" />
+    <sequenceFlow id=""f1"" sourceRef=""start"" targetRef=""task1"" />
+    <sequenceFlow id=""f2"" sourceRef=""task1"" targetRef=""end"" />
+    <sequenceFlow id=""f3"" sourceRef=""escBoundary"" targetRef=""end"" />
+  </process>
+</definitions>";
+
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            async () => await _converter.ConvertFromXmlAsync(
+                new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml))));
+    }
 }

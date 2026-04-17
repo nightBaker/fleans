@@ -294,6 +294,8 @@ public partial class WorkflowInstance
                     EscalationHandledResult finalResult;
                     if (localResult == EscalationHandledResult.NeedsParentLookup)
                     {
+                        if (_pendingEscalationParentResult is null)
+                            LogEscalationParentResultMissing(escalation.EscalationCode, State.Id);
                         finalResult = _pendingEscalationParentResult ?? EscalationHandledResult.Unhandled;
                         _pendingEscalationParentResult = null;
                     }
