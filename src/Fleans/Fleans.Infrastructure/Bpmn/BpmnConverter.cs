@@ -735,9 +735,14 @@ public partial class BpmnConverter : IBpmnConverter
             return escalationRef;
 
         var escalationElement = root.Elements(Bpmn + "escalation")
-            .FirstOrDefault(e => e.Attribute("id")?.Value == escalationRef);
+            .FirstOrDefault(e => e.Attribute("id")?.Value == escalationRef)
+            ?? throw new InvalidOperationException(
+                $"Escalation definition '{escalationRef}' referenced but not found in <definitions>. "
+                + "Add a <bpmn:escalation id=\"{escalationRef}\" escalationCode=\"...\"/> element.");
 
-        return escalationElement?.Attribute("escalationCode")?.Value ?? escalationRef;
+        return escalationElement.Attribute("escalationCode")?.Value
+            ?? throw new InvalidOperationException(
+                $"Escalation definition '{escalationRef}' is missing the 'escalationCode' attribute.");
     }
 
     private static string? FindCorrelationKeyOnEventElement(XElement process, string messageId)

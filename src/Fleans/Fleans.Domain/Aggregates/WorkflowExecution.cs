@@ -1296,8 +1296,13 @@ public class WorkflowExecution
     {
         // Cancel all active activities — recursively cancel nested scopes first,
         // then cancel the root-level entries themselves.
+        // The list is snapshotted before iteration. CancelScopeChildren may cancel
+        // nested entries that also appear in this snapshot, so we skip entries that
+        // are already cancelled to avoid a duplicate-cancel exception from GetActiveEntry.
         foreach (var entry in _state.GetActiveActivities().ToList())
         {
+            if (entry.IsCancelled) continue;
+
             if (_state.HasActiveChildrenInScope(entry.ActivityInstanceId))
                 CancelScopeChildren(entry.ActivityInstanceId);
 
