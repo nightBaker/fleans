@@ -83,8 +83,7 @@ public class WorkflowQueryService : IWorkflowQueryService
             activeSnapshots, completedSnapshots,
             variableStates, conditionSequences,
             state.ProcessDefinitionId,
-            state.CreatedAt, state.ExecutionStartedAt, state.CompletedAt,
-            new Dictionary<Guid, TransactionOutcomeRecord>());
+            state.CreatedAt, state.ExecutionStartedAt, state.CompletedAt);
     }
 
     public async Task<IReadOnlyList<ProcessDefinitionSummary>> GetAllProcessDefinitions()

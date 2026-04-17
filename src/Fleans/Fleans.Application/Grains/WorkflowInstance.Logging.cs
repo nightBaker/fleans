@@ -289,19 +289,11 @@ public partial class WorkflowInstance
         Message = "CompleteActivationCondition called for activity {ActivityId}, instance {ActivityInstanceId}, result={Result}")]
     private partial void LogCompleteActivationCondition(string activityId, Guid activityInstanceId, bool result);
 
-    // ── Transaction Sub-Process lifecycle (EventId range 1100–1103) ──────────
+    // ── Transaction Sub-Process lifecycle (EventId range 1100–1103; 1101–1102 reserved for Phase 2) ──
 
     [LoggerMessage(EventId = 1100, Level = LogLevel.Debug,
-        Message = "Transaction scope opened: activityId={ActivityId} instanceId={TransactionInstanceId} parentInstanceId={ParentInstanceId}")]
-    private partial void LogTransactionScopeOpened(string activityId, Guid transactionInstanceId, Guid? parentInstanceId);
-
-    [LoggerMessage(EventId = 1101, Level = LogLevel.Information,
-        Message = "Transaction outcome set: transactionInstanceId={TransactionInstanceId} outcome={Outcome}")]
-    private partial void LogTransactionOutcomeSet(Guid transactionInstanceId, string outcome);
-
-    [LoggerMessage(EventId = 1102, Level = LogLevel.Warning,
-        Message = "Transaction hazard recorded: transactionInstanceId={TransactionInstanceId} errorCode={ErrorCode} errorMessage={ErrorMessage}")]
-    private partial void LogTransactionHazardRecorded(Guid transactionInstanceId, int? errorCode, string? errorMessage);
+        Message = "Transaction scope opened: activityId={ActivityId} instanceId={TransactionInstanceId} parentScopeId={ParentScopeId}")]
+    private partial void LogTransactionScopeOpened(string activityId, Guid transactionInstanceId, Guid? parentScopeId);
 
     [LoggerMessage(EventId = 1103, Level = LogLevel.Information,
         Message = "Transaction completed: transactionInstanceId={TransactionInstanceId} activityId={ActivityId}")]

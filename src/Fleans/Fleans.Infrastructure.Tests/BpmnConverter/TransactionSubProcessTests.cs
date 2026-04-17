@@ -161,7 +161,7 @@ public class TransactionSubProcessTests
     }
 
     [TestMethod]
-    public async Task Transaction_NestedViaSubProcess_ThrowsInvalidOperation()
+    public async Task Transaction_NestedInsidePlainSubProcess_IsValid()
     {
         var bpmn = MakeBpmn("""
             <subProcess id="outer_sp">

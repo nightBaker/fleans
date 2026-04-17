@@ -1,5 +1,3 @@
-using Fleans.Domain.States;
-
 namespace Fleans.Application.QueryModels;
 
 public sealed record InstanceStateSnapshot(
@@ -14,5 +12,4 @@ public sealed record InstanceStateSnapshot(
     string? ProcessDefinitionId,
     DateTimeOffset? CreatedAt,
     DateTimeOffset? ExecutionStartedAt,
-    DateTimeOffset? CompletedAt,
-    Dictionary<Guid, TransactionOutcomeRecord> TransactionOutcomes);
+    DateTimeOffset? CompletedAt);
