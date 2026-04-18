@@ -54,4 +54,11 @@ public interface IWorkflowInstanceGrain : IGrainWithGuidKey, IWorkflowExecutionC
     Task HandleSignalDelivery(string activityId, Guid hostActivityInstanceId);
     [AlwaysInterleave]
     Task HandleBoundarySignalFired(string boundaryActivityId, Guid hostActivityInstanceId);
+
+    /// <summary>
+    /// Returns the current Transaction Sub-Process outcomes for this workflow instance.
+    /// Keyed by the activity instance ID of each Transaction host entry.
+    /// </summary>
+    [ReadOnly]
+    ValueTask<IReadOnlyDictionary<Guid, TransactionOutcomeRecord>> GetTransactionOutcomes();
 }

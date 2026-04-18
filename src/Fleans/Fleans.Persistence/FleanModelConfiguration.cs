@@ -54,6 +54,9 @@ internal static class FleanModelConfiguration
             entity.Ignore(e => e.ActiveCompensationWalk);
             entity.Ignore(e => e.NextCompensationSequence);
 
+            // TransactionOutcomes is rebuilt from TransactionOutcomeSet events on grain activation.
+            entity.Ignore(e => e.TransactionOutcomes);
+
             entity.HasMany(e => e.TimerCycleTracking)
                 .WithOne()
                 .HasForeignKey(e => e.WorkflowInstanceId)

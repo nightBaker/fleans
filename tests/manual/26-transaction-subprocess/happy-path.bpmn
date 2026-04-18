@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             id="Definitions_tx_happy"
+             targetNamespace="http://bpmn.io/schema/bpmn">
+
+  <process id="txHappyPathProcess" isExecutable="true">
+
+    <startEvent id="start" name="Start" />
+
+    <scriptTask id="setupTask" name="Setup" scriptFormat="csharp">
+      <script>_context.requestId = "tx-001"; _context.amount = 100</script>
+    </scriptTask>
+
+    <transaction id="paymentTransaction" name="Payment Transaction">
+      <startEvent id="tx_start" name="Tx Start" />
+
+      <scriptTask id="validateTask" name="Validate Payment" scriptFormat="csharp">
+        <script>_context.validated = true</script>
+      </scriptTask>
+
+      <scriptTask id="processTask" name="Process Payment" scriptFormat="csharp">
+        <script>_context.processed = true; _context.result = "SUCCESS"</script>
+      </scriptTask>
+
+      <endEvent id="tx_end" name="Tx End" />
+
+      <sequenceFlow id="tsf1" sourceRef="tx_start" targetRef="validateTask" />
+      <sequenceFlow id="tsf2" sourceRef="validateTask" targetRef="processTask" />
+      <sequenceFlow id="tsf3" sourceRef="processTask" targetRef="tx_end" />
+    </transaction>
+
+    <scriptTask id="confirmTask" name="Confirm" scriptFormat="csharp">
+      <script>_context.confirmed = true</script>
+    </scriptTask>
+
+    <endEvent id="end" name="End" />
+
+    <sequenceFlow id="f1" sourceRef="start" targetRef="setupTask" />
+    <sequenceFlow id="f2" sourceRef="setupTask" targetRef="paymentTransaction" />
+    <sequenceFlow id="f3" sourceRef="paymentTransaction" targetRef="confirmTask" />
+    <sequenceFlow id="f4" sourceRef="confirmTask" targetRef="end" />
+  </process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="txHappyPathProcess">
+      <bpmndi:BPMNShape id="Shape_start" bpmnElement="start">
+        <dc:Bounds x="152" y="102" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_setupTask" bpmnElement="setupTask">
+        <dc:Bounds x="240" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_paymentTransaction" bpmnElement="paymentTransaction" isExpanded="true">
+        <dc:Bounds x="390" y="40" width="400" height="160" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_tx_start" bpmnElement="tx_start">
+        <dc:Bounds x="420" y="102" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_validateTask" bpmnElement="validateTask">
+        <dc:Bounds x="500" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_processTask" bpmnElement="processTask">
+        <dc:Bounds x="640" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_tx_end" bpmnElement="tx_end">
+        <dc:Bounds x="762" y="102" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_confirmTask" bpmnElement="confirmTask">
+        <dc:Bounds x="840" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_end" bpmnElement="end">
+        <dc:Bounds x="992" y="102" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Edge_f1" bpmnElement="f1">
+        <di:waypoint x="188" y="120" />
+        <di:waypoint x="240" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f2" bpmnElement="f2">
+        <di:waypoint x="340" y="120" />
+        <di:waypoint x="390" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f3" bpmnElement="f3">
+        <di:waypoint x="790" y="120" />
+        <di:waypoint x="840" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_f4" bpmnElement="f4">
+        <di:waypoint x="940" y="120" />
+        <di:waypoint x="992" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_tsf1" bpmnElement="tsf1">
+        <di:waypoint x="456" y="120" />
+        <di:waypoint x="500" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_tsf2" bpmnElement="tsf2">
+        <di:waypoint x="600" y="120" />
+        <di:waypoint x="640" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Edge_tsf3" bpmnElement="tsf3">
+        <di:waypoint x="740" y="120" />
+        <di:waypoint x="762" y="120" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

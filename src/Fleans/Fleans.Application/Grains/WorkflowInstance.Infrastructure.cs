@@ -82,6 +82,9 @@ public partial class WorkflowInstance
 
                 LogExecutingActivity(p.ActivityId, currentActivity.GetType().Name);
 
+                if (currentActivity is Transaction)
+                    LogTransactionScopeOpened(currentActivity.ActivityId, entry.ActivityInstanceId, entry.ScopeId);
+
                 var commands = await currentActivity.ExecuteAsync(this, adapter, scopeDef);
 
                 // Route adapter intent through aggregate's Emit/Apply path
@@ -220,7 +223,11 @@ public partial class WorkflowInstance
                 var scopeDef = definition.GetScopeForActivity(hostEntry.ActivityId);
                 var activity = scopeDef.GetActivity(hostEntry.ActivityId);
 
-                if (activity is SubProcess)
+                if (activity is Transaction tx)
+                {
+                    LogTransactionCompleted(hostId, tx.ActivityId);
+                }
+                else if (activity is SubProcess)
                     LogSubProcessVariablesMerged(hostEntry.ActivityId, hostEntry.VariablesId);
                 else if (activity is EventSubProcess)
                     LogEventSubProcessHostCompleted(hostEntry.ActivityId, hostId);

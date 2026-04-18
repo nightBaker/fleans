@@ -109,21 +109,27 @@ public class WorkflowInstanceState
     [Id(17)]
     public List<ComplexGatewayJoinState> ComplexGatewayJoinStates { get; private set; } = [];
 
+    // Transaction Sub-Process outcome tracking. In-memory — excluded from EF Core schema
+    // (see FleanModelConfiguration). Populated from grain snapshot if present, otherwise
+    // rebuilt from TransactionOutcomeSet events on activation.
+    [Id(18)]
+    public Dictionary<Guid, TransactionOutcomeRecord> TransactionOutcomes { get; private set; } = new();
+
     private const int DirtyCompensationLog = 64;
 
     /// <summary>
     /// Append-only log of completed, compensable activities (those with a CompensationBoundaryEvent attached).
     /// Keyed implicitly by ScopeId on each entry. Used as input to compensation walks.
     /// </summary>
-    [Id(18)]
+    [Id(19)]
     public List<CompletedActivitySnapshot> CompensationLog { get; private set; } = [];
 
     /// <summary>Global monotonic counter for assigning CompletedAtSequence to compensation snapshots.</summary>
-    [Id(19)]
+    [Id(20)]
     public int NextCompensationSequence { get; private set; }
 
     /// <summary>Non-null while a compensation walk is in progress. At most one walk at a time.</summary>
-    [Id(20)]
+    [Id(21)]
     public CompensationWalkState? ActiveCompensationWalk { get; private set; }
 
     internal int GetDirtyFlags() => _dirtyFlags;

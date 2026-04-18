@@ -2,7 +2,7 @@ using System.Dynamic;
 using Fleans.Domain.Aggregates;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Effects;
-using Fleans.Domain.Errors;
+
 using Fleans.Domain.Events;
 using Fleans.Domain.Sequences;
 using Fleans.Domain.States;
@@ -161,7 +161,7 @@ public class UserTaskLifecycleTests
         var (execution, state, taskEntry) = CreateWithExecutingUserTask(assignee: "alice");
 
         // Act & Assert
-        Assert.ThrowsExactly<BadRequestActivityException>(
+        Assert.ThrowsExactly<InvalidOperationException>(
             () => execution.ClaimUserTask(taskEntry.ActivityInstanceId, "bob"));
     }
 
@@ -174,7 +174,7 @@ public class UserTaskLifecycleTests
             candidateUsers: ["alice", "carol"]);
 
         // Act & Assert
-        Assert.ThrowsExactly<BadRequestActivityException>(
+        Assert.ThrowsExactly<InvalidOperationException>(
             () => execution.ClaimUserTask(taskEntry.ActivityInstanceId, "bob"));
     }
 
@@ -237,7 +237,7 @@ public class UserTaskLifecycleTests
         // Task is in Created state, not claimed
 
         // Act & Assert
-        Assert.ThrowsExactly<BadRequestActivityException>(
+        Assert.ThrowsExactly<InvalidOperationException>(
             () => execution.CompleteUserTask(taskEntry.ActivityInstanceId, "alice", new ExpandoObject()));
     }
 
@@ -250,7 +250,7 @@ public class UserTaskLifecycleTests
         execution.ClearUncommittedEvents();
 
         // Act & Assert
-        Assert.ThrowsExactly<BadRequestActivityException>(
+        Assert.ThrowsExactly<InvalidOperationException>(
             () => execution.CompleteUserTask(taskEntry.ActivityInstanceId, "bob", new ExpandoObject()));
     }
 
@@ -269,7 +269,7 @@ public class UserTaskLifecycleTests
         // "comments" is missing
 
         // Act & Assert
-        Assert.ThrowsExactly<BadRequestActivityException>(
+        Assert.ThrowsExactly<InvalidOperationException>(
             () => execution.CompleteUserTask(taskEntry.ActivityInstanceId, "alice", incompleteVars));
     }
 
