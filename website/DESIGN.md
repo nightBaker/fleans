@@ -12,7 +12,7 @@ Owner decisions fixed up front:
 
 1. Aesthetic direction: Candidate 1 — brutalist-technical.
 2. Per-candidate token completeness: option (a) — full token map for every Starlight token plus the two `--fleans-*` tokens, both themes.
-3. `--fleans-accent-2` usage: contract-only in this PR; real usage deferred to [#259](https://github.com/nightBaker/fleans/issues/259) / [#260](https://github.com/nightBaker/fleans/issues/260).
+3. `--fleans-accent-2` usage: contract-only in this PR; real usage deferred to [#260](https://github.com/nightBaker/fleans/issues/260).
 
 ### Dark theme token map
 
@@ -153,8 +153,50 @@ A `repeating-linear-gradient(0deg, rgba(245,245,240,0.015) 0 1px, transparent 1p
 
 No undocumented Starlight internal class selectors. Any future selector targeting a Starlight internal must carry a `/* Verified: Starlight <version> */` comment.
 
-<!-- ## Hero atmospheric details — applied with #259
-   Deferred hero-specific effects to be added alongside the hero redesign (#259):
-   - Heavier scanline clipped to .hero (rgba(255,95,31,0.04) bands)
-   - Corner brackets around hero image
--->
+## Hero
+
+Added in [#259](https://github.com/nightBaker/fleans/issues/259). Redesigns the landing hero to inherit the brutalist-technical aesthetic established by the palette (#258) and atmospheric details (#261).
+
+### Tagline
+
+Replaced the default repetitive tagline with two declarative clauses that name the engine's two-layer architecture:
+
+> **Workflow definitions in BPMN.  
+> Execution as Orleans grains.**
+
+Uses `<br>` HTML tag in the YAML `tagline:` value. Starlight renders the tagline via `set:html`, so HTML tags parse correctly — no CSS `white-space` trick needed.
+
+### Layout
+
+Starlight's splash hero already implements an asymmetric two-column grid at `min-width: 50rem` (text left, image right). No layout override was needed. Additions are:
+
+- **Accent bar on text column** — `border-inline-start: 3px solid var(--sl-color-accent)` on `.hero .stack` (desktop only, inside `@media (min-width: 50rem)`). CLI-prompt visual cue.
+- **H1 typography** — `font-size: clamp(2.5rem, 6vw, 4.5rem)`, `letter-spacing: -0.03em`, `line-height: 1.05`. Increases size contrast without requiring a new font face.
+- **Tagline** — rendered in `var(--sl-font-mono, monospace)`, `font-size: 1rem`, `opacity: 0.85`, `max-width: 28rem` to create deliberate negative space to the right.
+- **Vertical padding** — `padding-block: 8rem` (dark) / `6rem` (light) for controlled negative space around the hero.
+
+### Hero image
+
+Switched from `image.file: ../../assets/logo.svg` (Astro image pipeline) to `image.html:` with a static `<img src="/fleans/logo.svg">`. The SVG is served from `public/logo.svg` at the predictable static path `/fleans/logo.svg` — consistent with `favicon.svg` and `texture-dotmatrix.svg`. SVG logos need no format conversion or responsive breakpoints, so skipping the image pipeline is appropriate.
+
+Switching to `image.html:` is required to get the `.hero-html` element hook for the corner brackets.
+
+### Atmospheric details (hero-specific)
+
+#### E. Orange-tinted hero scanline (dark theme only)
+
+`.hero::before` — same `repeating-linear-gradient` technique as the body scanline (§ D) but with `rgba(255, 95, 31, 0.04)` instead of the neutral `rgba(245,245,240,0.015)`. The orange tint gives the hero landing zone a warmer atmospheric feel vs. the body. Applied `position: absolute` (not `fixed`) so it clips to the `.hero` area. `.hero` gets `position: relative` as the positioning anchor.
+
+#### F. Corner brackets on hero image (both themes)
+
+`.hero-html::before` — reuses the same eight-gradient technique as code-block brackets (§ C2) with 16px L-shapes (vs. 12px on code blocks) to signal visual prominence. Applied in both themes via the `--fleans-bracket` token.
+
+### CSS selector stability
+
+| Target | Selector | Stability |
+|---|---|---|
+| Hero section | `.hero` | Starlight stable since v0.10 |
+| Text+actions column | `.hero .stack` | Verified: Starlight 0.38.2 — emitted as `class="sl-flex stack"`; scoped to `.hero` |
+| Tagline | `.hero .tagline` | Starlight stable since v0.10 |
+| H1 | `.hero h1` | Starlight stable since v0.10 |
+| Image container | `.hero-html` | Verified: Starlight 0.38.2 — emitted by `Hero.astro` when `image.html:` is used |
