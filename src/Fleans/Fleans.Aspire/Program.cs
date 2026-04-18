@@ -16,75 +16,65 @@ var orleans = builder.AddOrleans("cluster")
     .WithGrainStorage("PubSubStore", redis)
     .WithMemoryReminders();
 
+IResourceBuilder<PostgresDatabaseResource>? pg = null;
+string? sqliteConnectionString = null;
+
 if (usePostgres)
 {
-    // PostgreSQL provider: provision a containerised Postgres instance
-    var pg = builder.AddPostgres("postgres")
+    pg = builder.AddPostgres("postgres")
         .WithDataVolume()
         .AddDatabase("fleans");
-
-    // Api = Orleans silo (with PostgreSQL)
-    var fleansSilo = builder.AddProject<Projects.Fleans_Api>("fleans-core")
-        .WithReference(orleans)
-        .WaitFor(redis)
-        .WithReference(pg)
-        .WaitFor(pg)
-        .WithEnvironment("Persistence__Provider", "Postgres")
-        .WithReplicas(1);
-
-    // Web = Orleans client (with PostgreSQL)
-    builder.AddProject<Projects.Fleans_Web>("fleans-management")
-        .WithReference(orleans.AsClient())
-        .WaitFor(fleansSilo)
-        .WithReference(pg)
-        .WaitFor(pg)
-        .WithEnvironment("Persistence__Provider", "Postgres")
-        .WithReplicas(1);
-
-    // MCP = Orleans client (with PostgreSQL)
-    builder.AddProject<Projects.Fleans_Mcp>("fleans-mcp")
-        .WithReference(orleans.AsClient())
-        .WaitFor(fleansSilo)
-        .WithReference(pg)
-        .WaitFor(pg)
-        .WithEnvironment("Persistence__Provider", "Postgres")
-        .WithHttpEndpoint(port: 5200, name: "mcp")
-        .WithReplicas(1);
 }
 else
 {
-    // SQLite provider: shared database file for EF Core persistence (dev only)
     var sqliteDbPath = Path.Combine(Path.GetTempPath(), "fleans-dev.db");
-    var sqliteConnectionString = $"DataSource={sqliteDbPath}";
-    // Read replica connection — defaults to primary for dev (SQLite).
-    // For production with PostgreSQL/SQL Server, point this at a read replica.
-    var queryConnectionString = sqliteConnectionString;
+    sqliteConnectionString = $"DataSource={sqliteDbPath}";
+}
 
-    // Api = Orleans silo
-    var fleansSilo = builder.AddProject<Projects.Fleans_Api>("fleans-core")
-        .WithReference(orleans)
-        .WaitFor(redis)
-        .WithEnvironment("FLEANS_SQLITE_CONNECTION", sqliteConnectionString)
-        .WithEnvironment("FLEANS_QUERY_CONNECTION", queryConnectionString)
-        .WithReplicas(1);
+// Local helper: wires persistence env-vars / resource references onto a project.
+// WaitFor(pg) is intentionally omitted — startup ordering is the caller's responsibility.
+// Web and Mcp already wait for fleansSilo, which waits for pg when using Postgres.
+static IResourceBuilder<ProjectResource> WithPersistence(
+    IResourceBuilder<ProjectResource> project,
+    bool isPostgres,
+    IResourceBuilder<PostgresDatabaseResource>? pgDb,
+    string? sqliteConn)
+{
+    if (isPostgres)
+    {
+        return project
+            .WithReference(pgDb!)
+            .WithEnvironment("Persistence__Provider", "Postgres");
+    }
+    return project
+        .WithEnvironment("FLEANS_SQLITE_CONNECTION", sqliteConn!)
+        .WithEnvironment("FLEANS_QUERY_CONNECTION", sqliteConn!);
+}
 
-    // Web = Orleans client
+// Api = Orleans silo
+var apiProject = builder.AddProject<Projects.Fleans_Api>("fleans-core")
+    .WithReference(orleans)
+    .WaitFor(redis)
+    .WithReplicas(1);
+if (usePostgres) apiProject = apiProject.WaitFor(pg!);
+var fleansSilo = WithPersistence(apiProject, usePostgres, pg, sqliteConnectionString);
+
+// Web = Orleans client
+WithPersistence(
     builder.AddProject<Projects.Fleans_Web>("fleans-management")
         .WithReference(orleans.AsClient())
         .WaitFor(fleansSilo)
-        .WithEnvironment("FLEANS_SQLITE_CONNECTION", sqliteConnectionString)
-        .WithEnvironment("FLEANS_QUERY_CONNECTION", queryConnectionString)
-        .WithReplicas(1);
+        .WithReplicas(1),
+    usePostgres, pg, sqliteConnectionString);
 
-    // MCP = Orleans client (for Claude Code)
+// MCP = Orleans client (for Claude Code)
+WithPersistence(
     builder.AddProject<Projects.Fleans_Mcp>("fleans-mcp")
         .WithReference(orleans.AsClient())
         .WaitFor(fleansSilo)
-        .WithEnvironment("FLEANS_SQLITE_CONNECTION", sqliteConnectionString)
-        .WithEnvironment("FLEANS_QUERY_CONNECTION", queryConnectionString)
         .WithHttpEndpoint(port: 5200, name: "mcp")
-        .WithReplicas(1);
-}
+        .WithReplicas(1),
+    usePostgres, pg, sqliteConnectionString);
 
 using var app = builder.Build();
 await app.RunAsync();

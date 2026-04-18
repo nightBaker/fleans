@@ -27,7 +27,7 @@ public class WorkflowInstanceState
     [Id(6)]
     public bool IsCompleted { get; private set; }
 
-    [Id(18)]
+    [Id(19)]
     public bool IsCancelled { get; private set; }
 
     [Id(7)]
@@ -111,6 +111,12 @@ public class WorkflowInstanceState
 
     [Id(17)]
     public List<ComplexGatewayJoinState> ComplexGatewayJoinStates { get; private set; } = [];
+
+    // Transaction Sub-Process outcome tracking. In-memory — excluded from EF Core schema
+    // (see FleanModelConfiguration). Populated from grain snapshot if present, otherwise
+    // rebuilt from TransactionOutcomeSet events on activation.
+    [Id(18)]
+    public Dictionary<Guid, TransactionOutcomeRecord> TransactionOutcomes { get; private set; } = new();
 
     internal int GetDirtyFlags() => _dirtyFlags;
 

@@ -8,14 +8,14 @@
 
   <escalation id="Escalation_1" name="PaymentOverdue" escalationCode="ESC_PAYMENT" />
 
-  <process id="parent-escalation-non-interrupting" name="Parent Escalation Non-Interrupting" isExecutable="true">
+  <process id="parent-escalation-interrupting" name="Parent Escalation Interrupting" isExecutable="true">
     <startEvent id="start" />
-    <callActivity id="callChild" calledElement="child-escalation-throw" />
-    <boundaryEvent id="escBoundary" attachedToRef="callChild" cancelActivity="false">
+    <callActivity id="callChild" calledElement="child-escalation-end" />
+    <boundaryEvent id="escBoundary" attachedToRef="callChild" cancelActivity="true">
       <escalationEventDefinition escalationRef="Escalation_1" />
     </boundaryEvent>
     <scriptTask id="escalationHandler" scriptFormat="csharp">
-      <script>variables.escalationHandled = true;</script>
+      <script>_context.escalationHandled = true;</script>
     </scriptTask>
     <endEvent id="escalationEnd" />
     <endEvent id="happyEnd" />
@@ -26,7 +26,7 @@
   </process>
 
   <bpmndi:BPMNDiagram id="BPMNDiagram_1">
-    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="parent-escalation-non-interrupting">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="parent-escalation-interrupting">
       <bpmndi:BPMNShape id="start_di" bpmnElement="start">
         <dc:Bounds x="180" y="100" width="36" height="36" />
       </bpmndi:BPMNShape>

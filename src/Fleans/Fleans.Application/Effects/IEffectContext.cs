@@ -23,8 +23,14 @@ public interface IEffectContext
     Task ProcessFailureEffects(string activityId, Guid hostActivityInstanceId, Exception ex);
 
     /// <summary>
-    /// Stores the result of a parent escalation lookup so the caller
-    /// (ProcessPendingEvents / RunExecutionLoop) can read it after PerformEffects returns.
+    /// Reports the result of a parent escalation lookup. Read after DispatchAsync returns
+    /// via <see cref="EscalationParentResult"/>.
     /// </summary>
     void SetEscalationParentResult(EscalationHandledResult result);
+
+    /// <summary>
+    /// The result reported by the most recent <see cref="SetEscalationParentResult"/> call
+    /// on this context, or <c>null</c> if no escalation effect ran.
+    /// </summary>
+    EscalationHandledResult? EscalationParentResult { get; }
 }

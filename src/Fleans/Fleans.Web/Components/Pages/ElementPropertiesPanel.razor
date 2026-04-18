@@ -232,6 +232,64 @@
                     </FluentLabel>
                 </div>
             }
+
+            @if (SupportsMultiInstance)
+            {
+                <div>
+                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Multi-Instance</FluentLabel>
+                    <FluentCheckbox Value="@hasMultiInstance" @onchange="OnMultiInstanceToggle"
+                                    Disabled="@ReadOnly" Label="Enable Multi-Instance" />
+                </div>
+
+                @if (hasMultiInstance)
+                {
+                    <div>
+                        <FluentCheckbox Value="@isSequential" @onchange="OnIsSequentialChange"
+                                        Disabled="@ReadOnly" Label="Sequential (default: parallel)" />
+                    </div>
+
+                    <div>
+                        <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Loop Cardinality</FluentLabel>
+                        <FluentTextField Value="@loopCardinality" @oninput="OnLoopCardinalityInput"
+                                         @onchange="OnLoopCardinalityChange" Disabled="@ReadOnly"
+                                         Placeholder="e.g. 3" Style="width: 100%;" />
+                        <FluentLabel Style="color: var(--neutral-foreground-hint); margin-top: 4px; font-size: 12px;">
+                            Integer ≥ 0. Expressions are not supported.
+                        </FluentLabel>
+                    </div>
+
+                    <div>
+                        <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Input Collection</FluentLabel>
+                        <FluentTextField Value="@inputCollection" @oninput="OnInputCollectionInput" @onchange="OnInputCollectionChange"
+                                         Disabled="@ReadOnly" Placeholder="e.g. items" Style="width: 100%;" />
+                    </div>
+
+                    <div>
+                        <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Input Data Item</FluentLabel>
+                        <FluentTextField Value="@inputDataItem" @oninput="OnInputDataItemInput" @onchange="OnInputDataItemChange"
+                                         Disabled="@ReadOnly" Placeholder="e.g. item" Style="width: 100%;" />
+                    </div>
+
+                    <div>
+                        <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Output Collection</FluentLabel>
+                        <FluentTextField Value="@outputCollection" @oninput="OnOutputCollectionInput" @onchange="OnOutputCollectionChange"
+                                         Disabled="@ReadOnly" Placeholder="e.g. results" Style="width: 100%;" />
+                    </div>
+
+                    <div>
+                        <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Output Data Item</FluentLabel>
+                        <FluentTextField Value="@outputDataItem" @oninput="OnOutputDataItemInput" @onchange="OnOutputDataItemChange"
+                                         Disabled="@ReadOnly" Placeholder="e.g. result" Style="width: 100%;" />
+                    </div>
+
+                    @if (string.IsNullOrWhiteSpace(loopCardinality) && string.IsNullOrWhiteSpace(inputCollection))
+                    {
+                        <FluentLabel Style="color: var(--warning); margin-top: 4px; font-size: 12px;">
+                            ⚠ Set a Loop Cardinality or Input Collection for multi-instance to work at runtime.
+                        </FluentLabel>
+                    }
+                }
+            }
         </FluentStack>
     </div>
 </div>
@@ -260,6 +318,13 @@
     private List<string> candidateGroups = [];
     private List<string> candidateUsers = [];
     private List<string> expectedOutputVariables = [];
+    private bool hasMultiInstance;
+    private bool isSequential;
+    private string loopCardinality = "";
+    private string inputCollection = "";
+    private string inputDataItem = "";
+    private string outputCollection = "";
+    private string outputDataItem = "";
 
     private static readonly Dictionary<string, string> TaskTypes = new()
     {
@@ -309,6 +374,13 @@
         candidateGroups = new List<string>(Element.CandidateGroups);
         candidateUsers = new List<string>(Element.CandidateUsers);
         expectedOutputVariables = new List<string>(Element.ExpectedOutputVariables);
+        hasMultiInstance = Element.HasMultiInstance;
+        isSequential = Element.IsSequential;
+        loopCardinality = Element.LoopCardinality;
+        inputCollection = Element.InputCollection;
+        inputDataItem = Element.InputDataItem;
+        outputCollection = Element.OutputCollection;
+        outputDataItem = Element.OutputDataItem;
     }
 
     private Dictionary<string, string>? GetReplaceOptions()
@@ -541,6 +613,75 @@
         }
     }
 
+    private static readonly HashSet<string> MultiInstanceTypes = new()
+    {
+        "bpmn:Task", "bpmn:UserTask", "bpmn:ServiceTask", "bpmn:ScriptTask",
+        "bpmn:CallActivity", "bpmn:SubProcess",
+        "bpmn:BusinessRuleTask", "bpmn:SendTask", "bpmn:ReceiveTask", "bpmn:ManualTask"
+    };
+
+    private bool SupportsMultiInstance => MultiInstanceTypes.Contains(Element.Type);
+
+    private async Task OnMultiInstanceToggle(ChangeEventArgs e)
+    {
+        hasMultiInstance = bool.TryParse(e.Value?.ToString(), out var v) && v;
+        if (hasMultiInstance)
+        {
+            isSequential = false;
+            loopCardinality = "";
+            inputCollection = "";
+            inputDataItem = "";
+            outputCollection = "";
+            outputDataItem = "";
+            await JS.InvokeVoidAsync("bpmnEditor.enableMultiInstance", Element.Id);
+        }
+        else
+        {
+            await JS.InvokeVoidAsync("bpmnEditor.removeMultiInstance", Element.Id);
+        }
+    }
+
+    private async Task OnIsSequentialChange(ChangeEventArgs e)
+    {
+        isSequential = bool.TryParse(e.Value?.ToString(), out var v) && v;
+        await JS.InvokeVoidAsync("bpmnEditor.updateMultiInstanceProperty", Element.Id, "isSequential", isSequential);
+    }
+
+    private void OnLoopCardinalityInput(ChangeEventArgs e) => loopCardinality = e.Value?.ToString() ?? "";
+    private async Task OnLoopCardinalityChange(ChangeEventArgs e)
+    {
+        loopCardinality = e.Value?.ToString() ?? "";
+        await JS.InvokeVoidAsync("bpmnEditor.updateMultiInstanceProperty", Element.Id, "loopCardinality", loopCardinality);
+    }
+
+    private void OnInputCollectionInput(ChangeEventArgs e) => inputCollection = e.Value?.ToString() ?? "";
+    private async Task OnInputCollectionChange(ChangeEventArgs e)
+    {
+        inputCollection = e.Value?.ToString() ?? "";
+        await JS.InvokeVoidAsync("bpmnEditor.updateMultiInstanceProperty", Element.Id, "inputCollection", inputCollection);
+    }
+
+    private void OnInputDataItemInput(ChangeEventArgs e) => inputDataItem = e.Value?.ToString() ?? "";
+    private async Task OnInputDataItemChange(ChangeEventArgs e)
+    {
+        inputDataItem = e.Value?.ToString() ?? "";
+        await JS.InvokeVoidAsync("bpmnEditor.updateMultiInstanceProperty", Element.Id, "inputDataItem", inputDataItem);
+    }
+
+    private void OnOutputCollectionInput(ChangeEventArgs e) => outputCollection = e.Value?.ToString() ?? "";
+    private async Task OnOutputCollectionChange(ChangeEventArgs e)
+    {
+        outputCollection = e.Value?.ToString() ?? "";
+        await JS.InvokeVoidAsync("bpmnEditor.updateMultiInstanceProperty", Element.Id, "outputCollection", outputCollection);
+    }
+
+    private void OnOutputDataItemInput(ChangeEventArgs e) => outputDataItem = e.Value?.ToString() ?? "";
+    private async Task OnOutputDataItemChange(ChangeEventArgs e)
+    {
+        outputDataItem = e.Value?.ToString() ?? "";
+        await JS.InvokeVoidAsync("bpmnEditor.updateMultiInstanceProperty", Element.Id, "outputDataItem", outputDataItem);
+    }
+
     private string GetTypeLabel()
     {
         if (HasTimer)
@@ -631,6 +772,13 @@
         public List<string> CandidateUsers { get; set; } = [];
         public List<string> ExpectedOutputVariables { get; set; } = [];
         public List<string> AvailableVariables { get; set; } = [];
+        public bool HasMultiInstance { get; set; }
+        public bool IsSequential { get; set; }
+        public string LoopCardinality { get; set; } = "";
+        public string InputCollection { get; set; } = "";
+        public string InputDataItem { get; set; } = "";
+        public string OutputCollection { get; set; } = "";
+        public string OutputDataItem { get; set; } = "";
     }
 
     public class MappingData

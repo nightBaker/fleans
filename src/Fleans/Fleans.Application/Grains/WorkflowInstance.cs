@@ -36,20 +36,6 @@ public partial class WorkflowInstance :
     private IGrainTimer? _pendingEventsTimer;
 
     /// <summary>
-    /// Stores the result from NotifyParentEscalationRaisedEffect handler.
-    /// Written exclusively by PerformEffects when processing that effect.
-    /// Read and cleared in ProcessPendingEvents or RunExecutionLoop.
-    ///
-    /// Thread-safety invariant: this field is safe because PerformEffects (write)
-    /// and RunExecutionLoop/ProcessPendingEvents (read+clear) execute within the
-    /// same Orleans single-threaded turn — no interleaving is possible between
-    /// write and read. The field is NOT persisted; if the grain deactivates between
-    /// effect execution and the subsequent read, the escalation result would be lost.
-    /// In practice this cannot happen because both occur in the same turn.
-    /// </summary>
-    private EscalationHandledResult? _pendingEscalationParentResult;
-
-    /// <summary>
     /// Guards against double-apply: true while draining aggregate events via RaiseEvent.
     /// When true, TransitionState skips event application (aggregate already applied).
     /// </summary>
@@ -595,6 +581,13 @@ public partial class WorkflowInstance :
         return ValueTask.FromResult(result);
     }
 
+    public ValueTask<IReadOnlyDictionary<Guid, TransactionOutcomeRecord>> GetTransactionOutcomes()
+    {
+        IReadOnlyDictionary<Guid, TransactionOutcomeRecord> result =
+            State.TransactionOutcomes.AsReadOnly();
+        return ValueTask.FromResult(result);
+    }
+
     public async ValueTask SetConditionSequenceResult(Guid activityInstanceId, string sequenceId, bool result)
     {
         await EnsureExecution();
@@ -633,7 +626,9 @@ public partial class WorkflowInstance :
             await _grain._effectDispatcher.DispatchAsync(failEffects, this);
         }
 
+        public EscalationHandledResult? EscalationParentResult { get; private set; }
+
         public void SetEscalationParentResult(EscalationHandledResult result)
-            => _grain._pendingEscalationParentResult = result;
+            => EscalationParentResult = result;
     }
 }

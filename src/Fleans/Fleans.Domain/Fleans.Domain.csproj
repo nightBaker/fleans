@@ -8,7 +8,6 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Fleans.Application" />
-    <InternalsVisibleTo Include="Fleans.Domain.Tests" />
     <InternalsVisibleTo Include="Fleans.Persistence" />
     <InternalsVisibleTo Include="Fleans.Persistence.Tests" />
   </ItemGroup>

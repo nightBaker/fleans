@@ -81,6 +81,9 @@ public partial class WorkflowInstance
 
                 LogExecutingActivity(p.ActivityId, currentActivity.GetType().Name);
 
+                if (currentActivity is Transaction)
+                    LogTransactionScopeOpened(currentActivity.ActivityId, entry.ActivityInstanceId, entry.ScopeId);
+
                 var commands = await currentActivity.ExecuteAsync(this, adapter, scopeDef);
 
                 // Route adapter intent through aggregate's Emit/Apply path
@@ -92,7 +95,7 @@ public partial class WorkflowInstance
 
                 // Process commands through aggregate -> get infrastructure effects
                 var effects = _execution.ProcessCommands(commands, entry.ActivityInstanceId);
-                await PerformEffects(effects);
+                var escalationParentResult = await PerformEffects(effects);
 
                 // Log escalation thrown if a ThrowEscalationCommand was in the batch
                 var throwEsc = commands.OfType<ThrowEscalationCommand>().FirstOrDefault();
@@ -101,13 +104,11 @@ public partial class WorkflowInstance
 
                 // If an escalation was thrown and the parent grain cancelled the child,
                 // terminate this workflow and break out of the execution loop.
-                if (_pendingEscalationParentResult == EscalationHandledResult.Cancelled)
+                if (escalationParentResult == EscalationHandledResult.Cancelled)
                 {
-                    _pendingEscalationParentResult = null;
                     _execution.TerminateForParentEscalationCancellation();
                     return;
                 }
-                _pendingEscalationParentResult = null;
 
                 // Handle domain events published by activities (e.g., ExecuteScriptEvent)
                 foreach (var evt in adapter.PublishedEvents)
@@ -213,7 +214,11 @@ public partial class WorkflowInstance
                 var scopeDef = definition.GetScopeForActivity(hostEntry.ActivityId);
                 var activity = scopeDef.GetActivity(hostEntry.ActivityId);
 
-                if (activity is SubProcess)
+                if (activity is Transaction tx)
+                {
+                    LogTransactionCompleted(hostId, tx.ActivityId);
+                }
+                else if (activity is SubProcess)
                     LogSubProcessVariablesMerged(hostEntry.ActivityId, hostEntry.VariablesId);
                 else if (activity is EventSubProcess)
                     LogEventSubProcessHostCompleted(hostEntry.ActivityId, hostId);
@@ -230,9 +235,11 @@ public partial class WorkflowInstance
         return orphanedScopeIds;
     }
 
-    private Task PerformEffects(IReadOnlyList<IInfrastructureEffect> effects)
+    private async Task<EscalationHandledResult?> PerformEffects(IReadOnlyList<IInfrastructureEffect> effects)
     {
-        return _effectDispatcher.DispatchAsync(effects, new WorkflowInstanceEffectContext(this));
+        var context = new WorkflowInstanceEffectContext(this);
+        await _effectDispatcher.DispatchAsync(effects, context);
+        return context.EscalationParentResult;
     }
 
     private async Task PublishDomainEvent(IDomainEvent domainEvent)
@@ -283,7 +290,7 @@ public partial class WorkflowInstance
                     var (localEffects, localResult) = _execution!.HandleChildEscalationRaised(
                         escalation.ChildWorkflowInstanceId, escalation.HostActivityId,
                         escalation.EscalationCode, escalation.Variables);
-                    await PerformEffects(localEffects);
+                    var parentResult = await PerformEffects(localEffects);
 
                     // Log escalation caught at this grain if a boundary matched
                     if (localResult == EscalationHandledResult.Cancelled)
@@ -294,10 +301,9 @@ public partial class WorkflowInstance
                     EscalationHandledResult finalResult;
                     if (localResult == EscalationHandledResult.NeedsParentLookup)
                     {
-                        if (_pendingEscalationParentResult is null)
+                        if (parentResult is null)
                             LogEscalationParentResultMissing(escalation.EscalationCode, State.Id);
-                        finalResult = _pendingEscalationParentResult ?? EscalationHandledResult.Unhandled;
-                        _pendingEscalationParentResult = null;
+                        finalResult = parentResult ?? EscalationHandledResult.Unhandled;
                     }
                     else
                     {

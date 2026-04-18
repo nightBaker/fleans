@@ -67,7 +67,14 @@ window.bpmnEditor = {
             candidateGroups: [],
             candidateUsers: [],
             expectedOutputVariables: [],
-            availableVariables: []
+            availableVariables: [],
+            hasMultiInstance: false,
+            isSequential: false,
+            loopCardinality: '',
+            inputCollection: '',
+            inputDataItem: '',
+            outputCollection: '',
+            outputDataItem: ''
         };
 
         if (bo.$type === 'bpmn:ScriptTask') {
@@ -168,6 +175,32 @@ window.bpmnEditor = {
 
         if (bo.$type === 'bpmn:BoundaryEvent') {
             data.isInterrupting = bo.cancelActivity !== false;
+        }
+
+        var miElement = bo.loopCharacteristics;
+        if (miElement && miElement.$type === 'bpmn:MultiInstanceLoopCharacteristics') {
+            data.hasMultiInstance = true;
+            data.isSequential = miElement.isSequential === true;
+
+            if (miElement.loopCardinality && miElement.loopCardinality.body) {
+                data.loopCardinality = miElement.loopCardinality.body;
+            }
+
+            // Zeebe-namespaced attributes may land on the moddle object directly
+            // or in $attrs depending on how bpmn-js stored them. Check both
+            // locations and fall back to the standard (un-prefixed) form.
+            var miAttrs = miElement.$attrs || {};
+            var readNs = function (zeebeKey, stdKey) {
+                return miElement[zeebeKey]
+                    || miAttrs[zeebeKey]
+                    || miElement[stdKey]
+                    || miAttrs[stdKey]
+                    || '';
+            };
+            data.inputCollection  = readNs('zeebe:collection',       'collection');
+            data.inputDataItem    = readNs('zeebe:elementVariable',  'elementVariable');
+            data.outputCollection = readNs('zeebe:outputCollection', 'outputCollection');
+            data.outputDataItem   = readNs('zeebe:outputElement',    'outputElement');
         }
 
         // Collect available variable names from ScriptTasks (only when a UserTask is selected)
@@ -475,6 +508,81 @@ window.bpmnEditor = {
         }
     },
 
+    enableMultiInstance: function (elementId) {
+        if (!this._modeler) return;
+        var elementRegistry = this._modeler.get('elementRegistry');
+        var modeling = this._modeler.get('modeling');
+        var moddle = this._modeler.get('moddle');
+        var element = elementRegistry.get(elementId);
+        if (!element) return;
+
+        var bo = element.businessObject;
+        if (bo.loopCharacteristics) return;
+
+        var mi = moddle.create('bpmn:MultiInstanceLoopCharacteristics', {
+            isSequential: false
+        });
+        mi.$parent = bo;
+        modeling.updateProperties(element, { loopCharacteristics: mi });
+    },
+
+    removeMultiInstance: function (elementId) {
+        if (!this._modeler) return;
+        var elementRegistry = this._modeler.get('elementRegistry');
+        var modeling = this._modeler.get('modeling');
+        var element = elementRegistry.get(elementId);
+        if (!element) return;
+        modeling.updateProperties(element, { loopCharacteristics: undefined });
+    },
+
+    updateMultiInstanceProperty: function (elementId, property, value) {
+        if (!this._modeler) return;
+        var elementRegistry = this._modeler.get('elementRegistry');
+        var modeling = this._modeler.get('modeling');
+        var moddle = this._modeler.get('moddle');
+        var element = elementRegistry.get(elementId);
+        if (!element) return;
+
+        var bo = element.businessObject;
+        var mi = bo.loopCharacteristics;
+        if (!mi) return;
+
+        switch (property) {
+            case 'isSequential':
+                modeling.updateModdleProperties(element, mi, { isSequential: !!value });
+                break;
+
+            case 'loopCardinality':
+                if (value && value.trim() !== '') {
+                    var expr = moddle.create('bpmn:FormalExpression', { body: value });
+                    expr.$parent = mi;
+                    modeling.updateModdleProperties(element, mi, { loopCardinality: expr });
+                } else {
+                    modeling.updateModdleProperties(element, mi, { loopCardinality: undefined });
+                }
+                break;
+
+            case 'inputCollection':
+            case 'inputDataItem':
+            case 'outputCollection':
+            case 'outputDataItem': {
+                var keyMap = {
+                    inputCollection:  { zeebe: 'zeebe:collection',       std: 'collection' },
+                    inputDataItem:    { zeebe: 'zeebe:elementVariable',  std: 'elementVariable' },
+                    outputCollection: { zeebe: 'zeebe:outputCollection', std: 'outputCollection' },
+                    outputDataItem:   { zeebe: 'zeebe:outputElement',    std: 'outputElement' }
+                };
+                var keys = keyMap[property];
+                var normalized = (value && value.trim() !== '') ? value : undefined;
+                var attrUpdate = {};
+                attrUpdate[keys.zeebe] = normalized;
+                attrUpdate[keys.std] = undefined;
+                modeling.updateModdleProperties(element, mi, attrUpdate);
+                break;
+            }
+        }
+    },
+
     getProcessId: function () {
         if (!this._modeler) return null;
         var canvas = this._modeler.get('canvas');
@@ -583,6 +691,7 @@ window.bpmnEditor = {
             '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" ' +
             'xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" ' +
             'xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" ' +
+            'xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" ' +
             'id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn">' +
             '<bpmn:process id="Process_1" isExecutable="true">' +
             '<bpmn:startEvent id="StartEvent_1" />' +
