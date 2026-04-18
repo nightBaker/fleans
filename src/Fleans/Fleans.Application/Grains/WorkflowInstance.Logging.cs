@@ -305,4 +305,14 @@ public partial class WorkflowInstance
         Message = "Multiple boundary event fired: activity {ActivityId}, trigger type {TriggerType}, interrupting={IsInterrupting}")]
     private partial void LogMultipleBoundaryFired(string activityId, string triggerType, bool isInterrupting);
 
+    // ── Transaction Sub-Process lifecycle (EventId range 1100–1103; 1101–1102 reserved for Phase 2) ──
+
+    [LoggerMessage(EventId = 1100, Level = LogLevel.Debug,
+        Message = "Transaction scope opened: activityId={ActivityId} instanceId={TransactionInstanceId} parentScopeId={ParentScopeId}")]
+    private partial void LogTransactionScopeOpened(string activityId, Guid transactionInstanceId, Guid? parentScopeId);
+
+    [LoggerMessage(EventId = 1103, Level = LogLevel.Information,
+        Message = "Transaction completed: transactionInstanceId={TransactionInstanceId} activityId={ActivityId}")]
+    private partial void LogTransactionCompleted(Guid transactionInstanceId, string activityId);
+
 }

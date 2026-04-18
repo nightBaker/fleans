@@ -109,6 +109,12 @@ public class WorkflowInstanceState
     [Id(17)]
     public List<ComplexGatewayJoinState> ComplexGatewayJoinStates { get; private set; } = [];
 
+    // Transaction Sub-Process outcome tracking. In-memory — excluded from EF Core schema
+    // (see FleanModelConfiguration). Populated from grain snapshot if present, otherwise
+    // rebuilt from TransactionOutcomeSet events on activation.
+    [Id(18)]
+    public Dictionary<Guid, TransactionOutcomeRecord> TransactionOutcomes { get; private set; } = new();
+
     internal int GetDirtyFlags() => _dirtyFlags;
 
     internal void ClearDirtyFlags() => _dirtyFlags = 0;

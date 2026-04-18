@@ -72,6 +72,35 @@ public class BoundaryErrorEventTests : BpmnConverterTestBase
     }
 
     [TestMethod]
+    public async Task ConvertFromXmlAsync_ShouldResolveErrorRef_ToErrorCode_FromDefinitionsLevelErrorElement()
+    {
+        // When errorRef points to a <bpmn:error> element at definitions level,
+        // the converter must read the actual errorCode attribute — not store the reference ID.
+        var bpmnXml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL"">
+  <error id=""Error_Payment"" name=""PaymentFailure"" errorCode=""400"" />
+  <process id=""parent-process"">
+    <startEvent id=""start"" />
+    <task id=""task1"" />
+    <endEvent id=""end"" />
+    <endEvent id=""errorEnd"" />
+    <boundaryEvent id=""err1"" attachedToRef=""task1"">
+      <errorEventDefinition errorRef=""Error_Payment"" />
+    </boundaryEvent>
+    <sequenceFlow id=""flow1"" sourceRef=""start"" targetRef=""task1"" />
+    <sequenceFlow id=""flow2"" sourceRef=""task1"" targetRef=""end"" />
+    <sequenceFlow id=""flow3"" sourceRef=""err1"" targetRef=""errorEnd"" />
+  </process>
+</definitions>";
+
+        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
+
+        var boundaryEvent = workflow.Activities.OfType<BoundaryErrorEvent>().FirstOrDefault();
+        Assert.IsNotNull(boundaryEvent);
+        Assert.AreEqual("400", boundaryEvent.ErrorCode);
+    }
+
+    [TestMethod]
     public async Task ConvertFromXmlAsync_ShouldStillParseBoundaryErrorEvent_WhenErrorDefinitionPresent()
     {
         var bpmnXml = @"<?xml version=""1.0"" encoding=""UTF-8""?>

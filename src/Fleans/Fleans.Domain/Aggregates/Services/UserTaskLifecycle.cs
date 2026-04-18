@@ -1,6 +1,6 @@
 using System.Dynamic;
 using Fleans.Domain.Effects;
-using Fleans.Domain.Errors;
+
 using Fleans.Domain.Events;
 using Fleans.Domain.States;
 
@@ -37,17 +37,17 @@ public class UserTaskLifecycle
         {
             // Both constraints set — OR logic
             if (!matchesAssignee && !matchesCandidateUsers)
-                throw new BadRequestActivityException(
+                throw new InvalidOperationException(
                     $"User {userId} is neither the assignee ({metadata.Assignee}) nor in the candidate users list");
         }
         else
         {
             // Only one constraint set — must satisfy it
             if (!matchesAssignee)
-                throw new BadRequestActivityException(
+                throw new InvalidOperationException(
                     $"Task is assigned to {metadata.Assignee}, not {userId}");
             if (!matchesCandidateUsers)
-                throw new BadRequestActivityException(
+                throw new InvalidOperationException(
                     $"User {userId} is not in candidate users list");
         }
 
@@ -86,9 +86,9 @@ public class UserTaskLifecycle
 
         // Must be claimed by this user
         if (metadata.TaskState != UserTaskLifecycleState.Claimed)
-            throw new BadRequestActivityException("Task must be claimed before completing");
+            throw new InvalidOperationException("Task must be claimed before completing");
         if (metadata.ClaimedBy != userId)
-            throw new BadRequestActivityException(
+            throw new InvalidOperationException(
                 $"Task is claimed by {metadata.ClaimedBy}, not {userId}");
 
         // Validate expected output variables
@@ -97,7 +97,7 @@ public class UserTaskLifecycle
             var dict = (IDictionary<string, object?>)variables;
             var missing = metadata.ExpectedOutputVariables.Where(v => !dict.ContainsKey(v)).ToList();
             if (missing.Count > 0)
-                throw new BadRequestActivityException(
+                throw new InvalidOperationException(
                     $"Missing required output variables: {string.Join(", ", missing)}");
         }
 
