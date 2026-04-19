@@ -62,7 +62,7 @@ Add it to `Fleans.Api/Controllers/WorkflowController.cs`. DTOs go in `Fleans.Ser
 
 ## Code Conventions
 
-- Follow existing patterns — records for immutable DTOs, `[GenerateSerializer]` on anything crossing grain boundaries
+- Follow existing patterns — records for immutable DTOs, `[GenerateSerializer]` on anything crossing grain boundaries. Collections inside serialized records must be `List<T>` (or another Orleans-copyable collection) — `ReadOnlyArray<T>` produced by C# collection expressions (`[x, y, z]` assigned to a non-mutable target) has no Orleans copier and fails at runtime.
 - ExpandoObject + Newtonsoft.Json for dynamic workflow variable state
 - Tests use MSTest + Orleans.TestingHost, AAA pattern. Activity tests must verify both post-completion and post-failure state. Query state via `workflowInstance.GetState()` after completion/failure — never hold grain references from before completion to assert on.
 - **Admin UI (Fleans.Web) communicates with Orleans grains directly via `WorkflowEngine` service** — not through HTTP API endpoints. The Web app runs as Blazor Server (InteractiveServer), so Razor components execute server-side and can call grains directly. Do not add API endpoints for admin UI functionality.
@@ -137,6 +137,7 @@ The full regression suite is the union of every plan under `tests/manual/`. Each
 24. **Event Sub-Process — Signal (Interrupting)** — `tests/manual/22-event-subprocess-signal/test-plan.md`. Signal event sub-process inside a scope; broadcast delivery interrupts siblings.
 25. **Event Sub-Process — Non-Interrupting (Timer)** — `tests/manual/23-event-subprocess-non-interrupting/test-plan.md`. Non-interrupting variant runs in parallel with the host scope, with isolated child variable scope; timer cycles re-arm.
 26. **Transaction Sub-Process (Happy Path)** — `tests/manual/26-transaction-subprocess/test-plan.md`. Transaction Sub-Process completes normally: variables merge into parent scope, all tasks inside show Completed. Cancel/Hazard paths are `KNOWN BUG` pending issues #230 and #231.
+27. **Multiple Event (Catch, Throw, Boundary)** — `tests/manual/24-multiple-event/test-plan.md` (`message-or-signal-catch.bpmn`, `multi-throw.bpmn`, `multiple-boundary.bpmn`). Multiple intermediate catch races message vs signal (first-fires-wins; loser subscription cancelled); multiple intermediate throw fires every defined signal; multiple interrupting boundary (message + timer) cancels the host activity whichever triggers first.
 
 > When adding a new manual test folder under `tests/manual/`, append a numbered entry here so the regression skill picks it up.
 
