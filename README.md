@@ -33,7 +33,7 @@ For now, next elements are implemented
 | Escalation Event     | Used to model situations where escalation is required.                       | [x] end, intermediate throw, boundary |
 | Cancel Event         | Indicates cancellation of a process.                                         |             |
 | Compensation Event   | Represents a process that is performed to compensate for an error.           |             |
-| Multiple Event       | Indicates that multiple events can occur.                                    |             |
+| Multiple Event       | Indicates that multiple events can occur.                                    | [x] intermediate catch, intermediate throw, boundary, start |
 | **Activities**       |                                                                             |             |
 | Task                 | A single unit of work.                                                      |     [x]     |
 | Script Task          | A task that executes an inline script.                                       |     [x]     |

@@ -25,9 +25,9 @@ namespace Fleans.Domain
             => Activities.FirstOrDefault(a => a.ActivityId == activityId);
 
         Activity GetStartActivity()
-            => Activities.FirstOrDefault(a => a is StartEvent or TimerStartEvent or MessageStartEvent or SignalStartEvent)
+            => Activities.FirstOrDefault(a => a is StartEvent or TimerStartEvent or MessageStartEvent or SignalStartEvent or MultipleStartEvent)
                 ?? throw new InvalidOperationException(
-                    "Workflow must have a StartEvent, TimerStartEvent, MessageStartEvent, or SignalStartEvent");
+                    "Workflow must have a StartEvent, TimerStartEvent, MessageStartEvent, SignalStartEvent, or MultipleStartEvent");
 
         SequenceFlow? GetOutgoingFlow(Activity activity)
             => SequenceFlows.FirstOrDefault(sf => sf.Source == activity);
@@ -54,19 +54,49 @@ namespace Fleans.Domain
             => Signals.FirstOrDefault(s => s.Id == signalDefinitionId);
 
         bool HasTimerStartEvent()
-            => Activities.OfType<TimerStartEvent>().Any();
+            => Activities.OfType<TimerStartEvent>().Any()
+               || Activities.OfType<MultipleStartEvent>()
+                   .Any(ms => ms.Definitions.OfType<TimerEventDef>().Any());
 
         HashSet<string> GetMessageStartEventNames()
-            => Activities.OfType<MessageStartEvent>()
+        {
+            var names = Activities.OfType<MessageStartEvent>()
                 .Select(ms => FindMessageDefinition(ms.MessageDefinitionId)?.Name)
                 .OfType<string>()
                 .ToHashSet();
 
+            foreach (var multiStart in Activities.OfType<MultipleStartEvent>())
+            {
+                foreach (var msgDef in multiStart.Definitions.OfType<MessageEventDef>())
+                {
+                    var def = FindMessageDefinition(msgDef.MessageDefinitionId);
+                    if (def?.Name is not null)
+                        names.Add(def.Name);
+                }
+            }
+
+            return names;
+        }
+
         HashSet<string> GetSignalStartEventNames()
-            => Activities.OfType<SignalStartEvent>()
+        {
+            var names = Activities.OfType<SignalStartEvent>()
                 .Select(ss => FindSignalDefinition(ss.SignalDefinitionId)?.Name)
                 .OfType<string>()
                 .ToHashSet();
+
+            foreach (var multiStart in Activities.OfType<MultipleStartEvent>())
+            {
+                foreach (var sigDef in multiStart.Definitions.OfType<SignalEventDef>())
+                {
+                    var def = FindSignalDefinition(sigDef.SignalDefinitionId);
+                    if (def?.Name is not null)
+                        names.Add(def.Name);
+                }
+            }
+
+            return names;
+        }
 
         IEnumerable<BoundaryTimerEvent> GetBoundaryTimerEvents(string attachedToActivityId)
             => Activities.OfType<BoundaryTimerEvent>()
@@ -78,6 +108,10 @@ namespace Fleans.Domain
 
         IEnumerable<SignalBoundaryEvent> GetBoundarySignalEvents(string attachedToActivityId)
             => Activities.OfType<SignalBoundaryEvent>()
+                .Where(b => b.AttachedToActivityId == attachedToActivityId);
+
+        IEnumerable<MultipleBoundaryEvent> GetBoundaryMultipleEvents(string attachedToActivityId)
+            => Activities.OfType<MultipleBoundaryEvent>()
                 .Where(b => b.AttachedToActivityId == attachedToActivityId);
 
         IEnumerable<EscalationBoundaryEvent> GetBoundaryEscalationEvents(string attachedToActivityId)
