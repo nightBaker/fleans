@@ -1,0 +1,86 @@
+services:
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: fleans
+      POSTGRES_PASSWORD: fleans
+      POSTGRES_DB: fleans
+    # Write-tuning flags for load testing workloads (not for production)
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - max_wal_size=2GB
+      - -c
+      - synchronous_commit=off
+      - -c
+      - max_connections=200
+      - -c
+      - work_mem=4MB
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fleans"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  silo-1: &silo
+    build:
+      # Build context must be the solution root so dotnet restore can follow P2P references.
+      context: ../../src/Fleans
+      dockerfile: ../../tests/load/Dockerfile
+    environment:
+      # Bind HTTP only — removes the HTTPS endpoint so UseHttpsRedirection is a no-op.
+      ASPNETCORE_URLS: "http://+:8080"
+      ASPNETCORE_HTTP_PORTS: "8080"
+      # Activate the standalone Orleans configuration block in Program.cs.
+      FLEANS_STANDALONE: "true"
+      ConnectionStrings__orleans-redis: "redis:6379"
+      ConnectionStrings__fleans: "Host=postgres;Port=5432;Database=fleans;Username=fleans;Password=fleans"
+      Persistence__Provider: "Postgres"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      # Allow time for Orleans cluster membership to be established before health checks begin.
+      start_period: 30s
+
+  silo-2:
+    # Inherits all configuration from the silo-1 anchor.
+    # Note: the local depends_on fully replaces the anchor's depends_on (YAML merge semantics).
+    # The result below is intentional: postgres + redis + silo-1 (so silo-2 joins after silo-1).
+    <<: *silo
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      silo-1:
+        condition: service_healthy
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      silo-1:
+        condition: service_healthy
+      silo-2:
+        condition: service_healthy
