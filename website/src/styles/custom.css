@@ -13,6 +13,12 @@
   --sl-color-black: #0a0a0a;
   --fleans-accent-2: #9eff00;
   --fleans-surface: #141411;
+
+  /* § Atmospheric details — issue #261 */
+  --fleans-rule-glyph: var(--sl-color-accent);
+  --fleans-bracket: var(--sl-color-accent);
+  --fleans-noise-opacity: 0.04;
+  --fleans-scanline-base: rgba(245, 245, 240, 0.015);
 }
 
 :root[data-theme='light'] {
@@ -30,4 +36,175 @@
   --sl-color-black: #f5f5f0;
   --fleans-accent-2: #3a7d00;
   --fleans-surface: #f5f5f0;
+
+  /* § Atmospheric details — issue #261 */
+  --fleans-rule-glyph: var(--sl-color-accent);
+  --fleans-bracket: var(--sl-color-accent);
+  --fleans-noise-opacity: 0;
+  /* --fleans-scanline-base intentionally undefined in light theme */
 }
+
+/* ============================================================
+   § Atmospheric details — issue #261
+   Techniques: A (H2 accent rule), B (dot-matrix noise, dark only),
+   C (section divider glyph, code-block brackets, sidebar tick),
+   D (scanline overlay on <main>, dark only)
+   ============================================================ */
+
+/* --- A. H2 accent rule ---
+   2px gradient bar beneath each <h2> — reads as a printer
+   registration mark / CLI prompt bar.
+   Selector: .sl-markdown-content h2::after
+   Stability: STABLE — .sl-markdown-content is Starlight's documented
+   content override point (unchanged since v0.15). */
+.sl-markdown-content h2 {
+  position: relative;
+  padding-bottom: 0.45em;
+}
+
+.sl-markdown-content h2::after {
+  content: '';
+  display: block;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(
+    to right,
+    var(--sl-color-accent) 0,
+    var(--sl-color-accent) 3.5rem,
+    transparent 3.5rem
+  );
+}
+
+/* --- B. Dot-matrix noise (dark theme only) ---
+   Applied via body::before fixed pseudo-element in dark theme only.
+   z-index: -1 keeps it behind all page content without requiring
+   explicit z-index on body children.
+   Light theme intentionally texture-free: dot-matrix on warm
+   #f5f5f0 bg fights the bg tint rather than reinforcing it. */
+:root[data-theme='dark'] body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url('/fleans/texture-dotmatrix.svg');
+  background-size: 240px 240px;
+  background-repeat: repeat;
+  opacity: var(--fleans-noise-opacity);
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* --- C1. Section divider (<hr>) with centered glyph ---
+   Replaces the stock <hr> with a dashed rule centered on a ■ glyph.
+   Selector: .sl-markdown-content hr
+   Stability: STABLE — documented content override point. */
+.sl-markdown-content hr {
+  border: none;
+  position: relative;
+  height: 1.5em;
+  overflow: visible;
+  margin: 2em 0;
+}
+
+.sl-markdown-content hr::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  border-top: 1px dashed var(--sl-color-gray-4);
+  transform: translateY(-50%);
+}
+
+.sl-markdown-content hr::after {
+  content: '■';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--fleans-rule-glyph);
+  background: var(--sl-color-bg);
+  padding: 0 0.5em;
+  font-size: 0.6em;
+  line-height: 1;
+}
+
+/* --- C2. Code-block corner brackets ---
+   Four 12px L-shapes in accent color on the code-block container.
+   All four corners rendered via a single ::before using stacked
+   background gradients — no knowledge of internal DOM required.
+   Selector: div.expressive-code
+   Stability: STABLE within ExpressiveCode — outer wrapper emitted by
+   ExpressiveCode 0.41.7 (pinned in lockfile). .expressive-code is
+   ExpressiveCode's public API class. */
+div.expressive-code {
+  position: relative;
+}
+
+div.expressive-code::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  background:
+    /* top-left vertical */
+    linear-gradient(var(--fleans-bracket) 12px, transparent 0) top left / 2px 12px no-repeat,
+    /* top-right vertical */
+    linear-gradient(var(--fleans-bracket) 12px, transparent 0) top right / 2px 12px no-repeat,
+    /* bottom-left vertical */
+    linear-gradient(var(--fleans-bracket) 12px, transparent 0) bottom left / 2px 12px no-repeat,
+    /* bottom-right vertical */
+    linear-gradient(var(--fleans-bracket) 12px, transparent 0) bottom right / 2px 12px no-repeat,
+    /* top-left horizontal */
+    linear-gradient(to right, var(--fleans-bracket) 12px, transparent 0) top left / 12px 2px no-repeat,
+    /* top-right horizontal */
+    linear-gradient(to left, var(--fleans-bracket) 12px, transparent 0) top right / 12px 2px no-repeat,
+    /* bottom-left horizontal */
+    linear-gradient(to right, var(--fleans-bracket) 12px, transparent 0) bottom left / 12px 2px no-repeat,
+    /* bottom-right horizontal */
+    linear-gradient(to left, var(--fleans-bracket) 12px, transparent 0) bottom right / 12px 2px no-repeat;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* --- C3. Sidebar active-item tick ---
+   Short 2px accent bar replacing Starlight's thick left border.
+   Selector: nav a[aria-current="page"]
+   Stability: STABLE — uses ARIA attribute that Starlight assigns;
+   attribute contract is part of a11y, not internal CSS. */
+nav a[aria-current='page'] {
+  border-inline-start-width: 2px !important;
+  border-inline-start-color: var(--sl-color-accent) !important;
+  font-weight: 600;
+}
+
+/* --- D. Scanline overlay on <main> (dark theme only) ---
+   CRT-over-CLI cue. At 0.015 opacity, imperceptible over body text
+   but adds horizontal line rhythm over code-block surfaces.
+   Selector: <main> — semantic HTML element, won't be renamed
+   in any Starlight minor version bump.
+   z-index: 1 + pointer-events: none overlays content without
+   blocking interaction. Opacity is low enough to be non-intrusive.
+   Light theme: no scanlines — deliberate (complementary to
+   light-theme noise omission). */
+:root[data-theme='dark'] main::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    var(--fleans-scanline-base) 0 1px,
+    transparent 1px 3px
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ============================================================
+   § Deferred to #259 (hero-specific atmospheric details)
+   - Scanline behind tagline (heavier rgba(255,95,31,0.04) bands
+     clipped to .hero)
+   - Corner brackets around hero image
+   ============================================================ */
