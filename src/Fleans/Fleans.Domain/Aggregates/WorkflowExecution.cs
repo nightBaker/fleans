@@ -619,6 +619,17 @@ public class WorkflowExecution
             Emit(new CompensationEntryMarkedCompensated(boundary.AttachedToActivityId, scopeId));
         }
 
+        // Propagate the handler's variable changes up to the enclosing scope so
+        // compensation side-effects are visible after the walk. The handler ran in
+        // an isolated child scope seeded with the compensable activity's snapshot;
+        // its updated variables must be merged into the parent before the next
+        // handler is spawned so later handlers also observe the change.
+        var parentVariablesId = scopeId.HasValue
+            ? _state.GetEntry(scopeId.Value).VariablesId
+            : _state.GetRootVariablesId();
+        var handlerVariables = _state.GetVariableState(handlerEntry.VariablesId).Variables;
+        Emit(new VariablesMerged(parentVariablesId, handlerVariables));
+
         // Build the remaining ordered snapshot list from current log state
         var remainingSnapshots = _state.CompensationLog
             .Where(s => s.ScopeId == scopeId && !s.IsCompensated)

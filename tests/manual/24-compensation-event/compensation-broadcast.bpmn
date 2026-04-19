@@ -9,11 +9,11 @@
 
     <!-- Two script tasks that will be compensated in reverse order -->
     <scriptTask id="reserve_hotel" name="Reserve Hotel" scriptFormat="csharp">
-      <script>variables["hotelStatus"] = "reserved";</script>
+      <script>_context.hotelStatus = "reserved";</script>
     </scriptTask>
 
     <scriptTask id="book_flight" name="Book Flight" scriptFormat="csharp">
-      <script>variables["flightStatus"] = "booked";</script>
+      <script>_context.flightStatus = "booked";</script>
     </scriptTask>
 
     <!-- Compensation boundary events (non-interrupting, cancelActivity=false) -->
@@ -27,11 +27,11 @@
 
     <!-- Compensation handler tasks (executed during compensation walk) -->
     <scriptTask id="cancel_hotel" name="Cancel Hotel Reservation" scriptFormat="csharp">
-      <script>variables["hotelStatus"] = "cancelled";</script>
+      <script>_context.hotelStatus = "cancelled";</script>
     </scriptTask>
 
     <scriptTask id="cancel_flight" name="Cancel Flight Booking" scriptFormat="csharp">
-      <script>variables["flightStatus"] = "cancelled";</script>
+      <script>_context.flightStatus = "cancelled";</script>
     </scriptTask>
 
     <!-- Compensation intermediate throw event — broadcasts to all compensable activities in scope -->

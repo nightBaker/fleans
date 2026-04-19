@@ -415,4 +415,109 @@ public class CompensationEventTests : WorkflowTestBase
 
         Assert.IsTrue(finalSnapshot.IsCompleted);
     }
+
+    [TestMethod]
+    public async Task CompensationHandler_OutputVariables_ShouldPropagateToParentScope()
+    {
+        // Regression test for bug #326.
+        //
+        // Each compensation handler runs in an isolated child scope seeded with the
+        // compensable activity's snapshot. When a handler mutates variables (e.g. sets
+        // "hotelStatus" = "cancelled"), those changes were silently dropped because no
+        // code merged the handler's output back into the enclosing scope before the
+        // walk moved on. This meant:
+        //   1) later handlers saw stale variables, and
+        //   2) after the walk finished, the outer scope had no record of what the
+        //      compensation had done.
+        //
+        // With the fix, each handler's variables are merged into the enclosing scope
+        // as soon as the handler completes successfully — so the next handler and the
+        // post-walk continuation both observe the accumulated compensation state.
+        var start = new StartEvent("start");
+        var taskA = new TaskActivity("task_a");
+        var taskB = new TaskActivity("task_b");
+        var cbA = new CompensationBoundaryEvent("cb_a", "task_a", "handler_a");
+        var cbB = new CompensationBoundaryEvent("cb_b", "task_b", "handler_b");
+        var handlerA = new TaskActivity("handler_a");
+        var handlerB = new TaskActivity("handler_b");
+        var throwComp = new CompensationIntermediateThrowEvent("throw_comp", null);
+        var end = new EndEvent("end");
+
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "comp-handler-output-propagation",
+            Activities = [start, taskA, taskB, cbA, cbB, handlerA, handlerB, throwComp, end],
+            SequenceFlows =
+            [
+                new("f1", start, taskA),
+                new("f2", taskA, taskB),
+                new("f3", taskB, throwComp),
+                new("f4", throwComp, end)
+            ]
+        };
+
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await grain.SetWorkflow(workflow);
+        await grain.StartWorkflow();
+        var instanceId = grain.GetPrimaryKey();
+
+        // Complete task_a with hotelStatus="reserved"
+        dynamic taskAVars = new ExpandoObject();
+        taskAVars.hotelStatus = "reserved";
+        await grain.CompleteActivity("task_a", taskAVars);
+
+        // Complete task_b with flightStatus="booked"
+        dynamic taskBVars = new ExpandoObject();
+        taskBVars.flightStatus = "booked";
+        await grain.CompleteActivity("task_b", taskBVars);
+
+        // Compensation runs in reverse: handler_b first (for task_b, most recent).
+        var handlerBActive = await WaitForCondition(
+            instanceId,
+            s => s.ActiveActivities.Any(a => a.ActivityId == "handler_b"),
+            timeoutMs: 5000);
+
+        // Handler_b cancels the flight.
+        dynamic handlerBVars = new ExpandoObject();
+        handlerBVars.flightStatus = "cancelled";
+        await grain.CompleteActivity("handler_b", handlerBVars);
+
+        // Now handler_a runs. With the fix, handler_a's scope (seeded from task_a's
+        // snapshot and overlaying the parent) should see flightStatus="cancelled"
+        // because handler_b's change was merged into the parent scope.
+        var handlerAActive = await WaitForCondition(
+            instanceId,
+            s => s.ActiveActivities.Any(a => a.ActivityId == "handler_a"),
+            timeoutMs: 5000);
+
+        var handlerAEntry = handlerAActive.ActiveActivities.First(a => a.ActivityId == "handler_a");
+        var flightStatusSeenByHandlerA =
+            await grain.GetVariable(handlerAEntry.VariablesStateId, "flightStatus");
+        Assert.AreEqual("cancelled", flightStatusSeenByHandlerA?.ToString(),
+            "handler_a should see the updated flightStatus that handler_b just wrote — " +
+            "proves handler_b's changes were merged into the parent scope");
+
+        // Handler_a cancels the hotel.
+        dynamic handlerAVars = new ExpandoObject();
+        handlerAVars.hotelStatus = "cancelled";
+        await grain.CompleteActivity("handler_a", handlerAVars);
+
+        var finalSnapshot = await WaitForCondition(
+            instanceId,
+            s => s.IsCompleted,
+            timeoutMs: 5000);
+
+        Assert.IsTrue(finalSnapshot.IsCompleted);
+
+        // After the walk finishes, the "end" event (in the root scope) should see
+        // both compensation handlers' mutations via the merged view of root.
+        var endEntry = finalSnapshot.CompletedActivities.First(a => a.ActivityId == "end");
+        var finalHotelStatus = await grain.GetVariable(endEntry.VariablesStateId, "hotelStatus");
+        var finalFlightStatus = await grain.GetVariable(endEntry.VariablesStateId, "flightStatus");
+
+        Assert.AreEqual("cancelled", finalHotelStatus?.ToString(),
+            "Root scope should reflect handler_a's hotelStatus=\"cancelled\"");
+        Assert.AreEqual("cancelled", finalFlightStatus?.ToString(),
+            "Root scope should reflect handler_b's flightStatus=\"cancelled\"");
+    }
 }
