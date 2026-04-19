@@ -9,6 +9,7 @@ using Fleans.ServiceDefaults;
 using Microsoft.AspNetCore.RateLimiting;
 using Orleans.Dashboard;
 using Orleans.EventSourcing.CustomStorage;
+using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,9 +21,24 @@ builder.AddServiceDefaults();
 builder.AddKeyedRedisClient("orleans-redis");
 
 // Orleans silo configuration
-// Infrastructure (clustering, storage, streaming, reminders) is managed by Aspire AppHost
+// Infrastructure (clustering, storage, streaming, reminders) is managed by Aspire AppHost.
+// When running outside Aspire (e.g., Docker Compose load testing), FLEANS_LOAD_TEST_MODE=true
+// activates explicit Redis clustering wiring. Aspire never sets this variable — safe as a guard.
+var orleansRedisConnection = builder.Configuration.GetConnectionString("orleans-redis");
+var isLoadTestMode = builder.Configuration["FLEANS_LOAD_TEST_MODE"] == "true";
+
 builder.UseOrleans(siloBuilder =>
 {
+    if (isLoadTestMode && !string.IsNullOrEmpty(orleansRedisConnection))
+    {
+        // Non-Aspire startup path: wire Redis clustering, PubSubStore, and reminders explicitly.
+        siloBuilder.UseRedisClustering(orleansRedisConnection);
+        siloBuilder.AddRedisGrainStorage("PubSubStore",
+            options => options.ConfigurationOptions =
+                ConfigurationOptions.Parse(orleansRedisConnection));
+        siloBuilder.UseInMemoryReminderService();
+    }
+
     // Pluggable stream provider — reads Fleans:Streaming:Provider from config (default: memory)
     siloBuilder.AddFleanStreaming(builder.Configuration);
 
