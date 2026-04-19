@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             id="Definitions_1"
+             targetNamespace="http://fleans.io/bpmn">
+
+  <escalation id="Escalation_1" name="PaymentOverdue" escalationCode="ESC_PAYMENT" />
+
+  <process id="parent-escalation-non-interrupting" name="Parent Escalation Non-Interrupting" isExecutable="true">
+    <startEvent id="start" />
+    <callActivity id="callChild" calledElement="child-escalation-throw" />
+    <boundaryEvent id="escBoundary" attachedToRef="callChild" cancelActivity="false">
+      <escalationEventDefinition escalationRef="Escalation_1" />
+    </boundaryEvent>
+    <scriptTask id="escalationHandler" scriptFormat="csharp">
+      <script>_context.escalationHandled = true;</script>
+    </scriptTask>
+    <endEvent id="escalationEnd" />
+    <endEvent id="happyEnd" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="callChild" />
+    <sequenceFlow id="f2" sourceRef="callChild" targetRef="happyEnd" />
+    <sequenceFlow id="f3" sourceRef="escBoundary" targetRef="escalationHandler" />
+    <sequenceFlow id="f4" sourceRef="escalationHandler" targetRef="escalationEnd" />
+  </process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="parent-escalation-non-interrupting">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="180" y="100" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="callChild_di" bpmnElement="callChild">
+        <dc:Bounds x="270" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="escBoundary_di" bpmnElement="escBoundary">
+        <dc:Bounds x="332" y="142" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="escalationHandler_di" bpmnElement="escalationHandler">
+        <dc:Bounds x="300" y="230" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="escalationEnd_di" bpmnElement="escalationEnd">
+        <dc:Bounds x="460" y="252" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="happyEnd_di" bpmnElement="happyEnd">
+        <dc:Bounds x="430" y="100" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="216" y="118" />
+        <di:waypoint x="270" y="118" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="370" y="118" />
+        <di:waypoint x="430" y="118" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="350" y="178" />
+        <di:waypoint x="350" y="230" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f4_di" bpmnElement="f4">
+        <di:waypoint x="400" y="270" />
+        <di:waypoint x="460" y="270" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

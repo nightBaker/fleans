@@ -126,7 +126,23 @@ public class WorkflowExecution
 
     public void MarkCompleted(Guid activityInstanceId, ExpandoObject variables)
     {
-        var entry = _state.GetActiveEntry(activityInstanceId);
+        var entry = _state.GetEntry(activityInstanceId);
+        // Escalation boundary cancellation race: when an interrupting escalation
+        // boundary fires, the host SubProcess/CallActivity is cancelled immediately.
+        // However, the grain's RunExecutionLoop may still call MarkCompleted for
+        // activities within that cancelled scope. Using GetEntry (not GetActiveEntry)
+        // and returning early for cancelled entries prevents a spurious throw.
+        // This guard is intentionally narrow — only IsCancelled returns early.
+        // Failed or already-completed entries fall through to the checks below.
+        if (entry.IsCancelled) return;
+        // A failed entry must not be silently completed.
+        if (entry.ErrorCode is not null)
+            throw new InvalidOperationException(
+                $"Activity '{entry.ActivityId}' has failed — cannot mark completed.");
+        // For any other terminal state, delegate to GetActiveEntry which throws —
+        // a double-complete is a bug, not a race.
+        if (entry.IsCompleted)
+            _ = _state.GetActiveEntry(activityInstanceId); // throws
         Emit(new ActivityCompleted(activityInstanceId, entry.VariablesId, variables));
     }
 
@@ -351,7 +367,11 @@ public class WorkflowExecution
                         skipStartEventActivityId: null));
 
                     Emit(new WorkflowCompleted());
-                    // If this is a child workflow, notify parent of completion
+                    // If this is a child workflow, notify parent of completion.
+                    // When an escalation was also raised in this batch, the parent may
+                    // have already cancelled the host entry (interrupting boundary) —
+                    // the parent's stale guard in OnChildWorkflowCompleted safely
+                    // ignores the completion in that case.
                     if (_state.ParentWorkflowInstanceId.HasValue)
                     {
                         var rootVariables = _state.GetMergedVariables(
@@ -415,6 +435,10 @@ public class WorkflowExecution
                     effects.Add(new ThrowSignalEffect(throwSignal.SignalName));
                     break;
 
+                case ThrowEscalationCommand throwEscalation:
+                    effects.AddRange(ProcessThrowEscalation(throwEscalation, activityInstanceId));
+                    break;
+
                 case DiscardLateTokenCommand discard:
                     Emit(new ActivityCancelled(activityInstanceId, discard.Reason));
                     break;
@@ -453,7 +477,7 @@ public class WorkflowExecution
             .Any(e =>
             {
                 var scope = _definition.FindScopeForActivity(e.ActivityId);
-                return scope is { IsRootScope: true } && scope.GetActivity(e.ActivityId) is EndEvent;
+                return scope is { IsRootScope: true } && scope.GetActivity(e.ActivityId) is EndEvent or EscalationEndEvent;
             });
 
         if (!hasCompletedEndEvent)
@@ -478,6 +502,45 @@ public class WorkflowExecution
         }
 
         return effects.AsReadOnly();
+    }
+
+    private IReadOnlyList<IInfrastructureEffect> ProcessThrowEscalation(
+        ThrowEscalationCommand command, Guid activityInstanceId)
+    {
+        var entry = _state.FindEntry(activityInstanceId);
+        if (entry is null)
+            return [];
+
+        // Use the definition's scope walker to find a matching boundary handler
+        var boundaryHandler = _definition.FindBoundaryEscalationHandler(
+            entry.ActivityId, command.EscalationCode);
+
+        if (boundaryHandler is not null)
+        {
+            var (boundaryEvent, _, attachedToActivityId) = boundaryHandler.Value;
+            var attachedEntry = _state.GetFirstActive(attachedToActivityId);
+            if (attachedEntry is null)
+                return [];
+
+            var scopeVariables = _state.GetMergedVariables(entry.VariablesId);
+            return HandleEscalationBoundaryMatch(boundaryEvent, attachedEntry, scopeVariables).Effects;
+        }
+
+        // No boundary found — escalate to parent grain if this is a child workflow
+        if (_state.ParentWorkflowInstanceId.HasValue)
+        {
+            var scopeVariables = _state.GetMergedVariables(entry.VariablesId);
+            return [new NotifyParentEscalationRaisedEffect(
+                _state.ParentWorkflowInstanceId.Value,
+                _state.Id,
+                _state.ParentActivityId!,
+                command.EscalationCode,
+                scopeVariables)];
+        }
+
+        // Uncaught at root — BPMN spec: escalation is non-faulting, just record it
+        Emit(new EscalationUncaughtRaised(command.EscalationCode, entry.ActivityId));
+        return [];
     }
 
     private void ProcessSpawnActivity(SpawnActivityCommand spawn, Guid activityInstanceId)
@@ -1231,6 +1294,144 @@ public class WorkflowExecution
             return [];
 
         return FailActivity(parentActivityId, entry.ActivityInstanceId, exception);
+    }
+
+    public (IReadOnlyList<IInfrastructureEffect> Effects, EscalationHandledResult Result)
+        HandleChildEscalationRaised(
+            Guid childWorkflowInstanceId,
+            string hostActivityId,
+            string escalationCode,
+            ExpandoObject variables)
+    {
+        // Find the host activity entry (CallActivity/SubProcess) in the parent
+        var hostEntry = _state.GetFirstActive(hostActivityId);
+        if (hostEntry is null)
+            return ([], EscalationHandledResult.Unhandled);
+
+        // Use the definition's escalation boundary walker
+        var boundaryHandler = _definition.FindBoundaryEscalationHandler(hostActivityId, escalationCode);
+
+        if (boundaryHandler is not null)
+        {
+            var (boundaryEvent, scope, attachedToActivityId) = boundaryHandler.Value;
+            var attachedEntry = _state.GetFirstActive(attachedToActivityId);
+
+            // If the attached activity is no longer active (already completed/cancelled),
+            // the escalation boundary should not fire.
+            if (attachedEntry is null)
+                return ([], EscalationHandledResult.Unhandled);
+
+            return HandleEscalationBoundaryMatch(boundaryEvent, attachedEntry, variables);
+        }
+
+        // No boundary found in this grain — check if we have a parent (CallActivity escape)
+        if (_state.ParentWorkflowInstanceId.HasValue)
+        {
+            var effects = new List<IInfrastructureEffect>
+            {
+                new NotifyParentEscalationRaisedEffect(
+                    _state.ParentWorkflowInstanceId.Value,
+                    _state.Id,
+                    _state.ParentActivityId!,
+                    escalationCode,
+                    variables)
+            };
+            return (effects, EscalationHandledResult.NeedsParentLookup);
+        }
+
+        // Uncaught at root
+        Emit(new EscalationUncaughtRaised(escalationCode, hostActivityId));
+        return ([], EscalationHandledResult.Unhandled);
+    }
+
+    private (IReadOnlyList<IInfrastructureEffect> Effects, EscalationHandledResult Result)
+        HandleEscalationBoundaryMatch(
+            EscalationBoundaryEvent boundaryEvent,
+            ActivityInstanceEntry hostEntry,
+            ExpandoObject escalationVariables)
+    {
+        var effects = new List<IInfrastructureEffect>();
+
+        if (boundaryEvent.IsInterrupting)
+        {
+            // Cancel host scope children
+            effects.AddRange(CancelScopeChildren(hostEntry.ActivityInstanceId));
+
+            // Cancel the host entry itself
+            if (!hostEntry.IsCompleted)
+            {
+                Emit(new ActivityCancelled(
+                    hostEntry.ActivityInstanceId,
+                    $"Interrupted by escalation boundary event '{boundaryEvent.ActivityId}'"));
+                effects.AddRange(BuildUserTaskCleanupEffects(hostEntry.ActivityInstanceId));
+            }
+
+            // Unsubscribe all boundary subscriptions on the host
+            effects.AddRange(BuildBoundaryUnsubscribeEffects(
+                boundaryEvent.AttachedToActivityId, hostEntry));
+
+            // Clone variables and merge escalation snapshot
+            var clonedScopeId = Guid.NewGuid();
+            Emit(new VariableScopeCloned(clonedScopeId, hostEntry.VariablesId));
+            if (((IDictionary<string, object?>)escalationVariables).Count > 0)
+                Emit(new VariablesMerged(clonedScopeId, escalationVariables));
+
+            // Spawn the boundary event activity
+            Emit(new ActivitySpawned(
+                ActivityInstanceId: Guid.NewGuid(),
+                ActivityId: boundaryEvent.ActivityId,
+                ActivityType: boundaryEvent.GetType().Name,
+                VariablesId: clonedScopeId,
+                ScopeId: hostEntry.ScopeId,
+                MultiInstanceIndex: null,
+                TokenId: null));
+
+            return (effects, EscalationHandledResult.Cancelled);
+        }
+        else
+        {
+            // Non-interrupting: clone variables and spawn boundary, host continues
+            var clonedScopeId = Guid.NewGuid();
+            Emit(new VariableScopeCloned(clonedScopeId, hostEntry.VariablesId));
+            if (((IDictionary<string, object?>)escalationVariables).Count > 0)
+                Emit(new VariablesMerged(clonedScopeId, escalationVariables));
+
+            Emit(new ActivitySpawned(
+                ActivityInstanceId: Guid.NewGuid(),
+                ActivityId: boundaryEvent.ActivityId,
+                ActivityType: boundaryEvent.GetType().Name,
+                VariablesId: clonedScopeId,
+                ScopeId: hostEntry.ScopeId,
+                MultiInstanceIndex: null,
+                TokenId: null));
+
+            return (effects, EscalationHandledResult.Continue);
+        }
+    }
+
+    public ActivityInstanceEntry? FindEntryByChildWorkflowInstanceId(Guid childWorkflowInstanceId)
+        => _state.Entries.FirstOrDefault(e => e.ChildWorkflowInstanceId == childWorkflowInstanceId);
+
+    public void TerminateForParentEscalationCancellation()
+    {
+        // Cancel all active activities — recursively cancel nested scopes first,
+        // then cancel the root-level entries themselves.
+        // The list is snapshotted before iteration. CancelScopeChildren may cancel
+        // nested entries that also appear in this snapshot, so we skip entries that
+        // are already cancelled to avoid a duplicate-cancel exception from GetActiveEntry.
+        foreach (var entry in _state.GetActiveActivities().ToList())
+        {
+            if (entry.IsCancelled) continue;
+
+            if (_state.HasActiveChildrenInScope(entry.ActivityInstanceId))
+                CancelScopeChildren(entry.ActivityInstanceId);
+
+            Emit(new ActivityCancelled(
+                entry.ActivityInstanceId,
+                "Cancelled by parent interrupting escalation boundary"));
+        }
+
+        Emit(new WorkflowCancelled("Escalation: child scope cancelled by parent interrupting boundary"));
     }
 
     // --- Parent Info ---
@@ -2201,6 +2402,11 @@ public class WorkflowExecution
             case WorkflowCompleted:
                 _state.Complete();
                 break;
+            case WorkflowCancelled:
+                _state.Cancel();
+                break;
+            case EscalationUncaughtRaised:
+                break; // non-faulting per BPMN spec — recorded for observability only
             case ActivitySpawned e:
                 ApplyActivitySpawned(e);
                 break;
