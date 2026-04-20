@@ -289,6 +289,7 @@ public partial class WorkflowInstance
         Message = "CompleteActivationCondition called for activity {ActivityId}, instance {ActivityInstanceId}, result={Result}")]
     private partial void LogCompleteActivationCondition(string activityId, Guid activityInstanceId, bool result);
 
+    // Multiple event (EventId 1090-1093)
     [LoggerMessage(EventId = 1090, Level = LogLevel.Information,
         Message = "Multiple catch event registered: activity {ActivityId}, {DefinitionCount} watchers")]
     private partial void LogMultipleCatchRegistered(string activityId, int definitionCount);
@@ -304,6 +305,23 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1093, Level = LogLevel.Information,
         Message = "Multiple boundary event fired: activity {ActivityId}, trigger type {TriggerType}, interrupting={IsInterrupting}")]
     private partial void LogMultipleBoundaryFired(string activityId, string triggerType, bool isInterrupting);
+
+    // Conditional event watchers (EventId 1094-1097)
+    [LoggerMessage(EventId = 1094, Level = LogLevel.Information,
+        Message = "Conditional watcher registered: expression={ConditionExpression}, activityId={ActivityId}")]
+    private partial void LogConditionalWatcherRegistered(string conditionExpression, string activityId);
+
+    [LoggerMessage(EventId = 1095, Level = LogLevel.Information,
+        Message = "Conditional watcher fired: expression={ConditionExpression}, activityId={ActivityId}")]
+    private partial void LogConditionalWatcherFired(string conditionExpression, string activityId);
+
+    [LoggerMessage(EventId = 1096, Level = LogLevel.Information,
+        Message = "Conditional watcher cleared: activityInstanceId={ActivityInstanceId}")]
+    private partial void LogConditionalWatcherCleared(Guid activityInstanceId);
+
+    [LoggerMessage(EventId = 1097, Level = LogLevel.Warning,
+        Message = "Conditional expression evaluation failed: expression={ConditionExpression}, activityId={ActivityId}, error={ErrorMessage}")]
+    private partial void LogConditionalExpressionEvaluationFailed(string conditionExpression, string activityId, string errorMessage);
 
     // ── Transaction Sub-Process lifecycle (EventId range 1100–1103; 1101–1102 reserved for Phase 2) ──
 

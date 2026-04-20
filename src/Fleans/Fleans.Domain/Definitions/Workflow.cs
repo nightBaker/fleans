@@ -97,6 +97,9 @@ namespace Fleans.Domain
             return names;
         }
 
+        IEnumerable<ConditionalStartEvent> GetConditionalStartEvents()
+            => Activities.OfType<ConditionalStartEvent>();
+
         IEnumerable<BoundaryTimerEvent> GetBoundaryTimerEvents(string attachedToActivityId)
             => Activities.OfType<BoundaryTimerEvent>()
                 .Where(b => b.AttachedToActivityId == attachedToActivityId);
@@ -107,6 +110,10 @@ namespace Fleans.Domain
 
         IEnumerable<SignalBoundaryEvent> GetBoundarySignalEvents(string attachedToActivityId)
             => Activities.OfType<SignalBoundaryEvent>()
+                .Where(b => b.AttachedToActivityId == attachedToActivityId);
+
+        IEnumerable<ConditionalBoundaryEvent> GetBoundaryConditionalEvents(string attachedToActivityId)
+            => Activities.OfType<ConditionalBoundaryEvent>()
                 .Where(b => b.AttachedToActivityId == attachedToActivityId);
 
         IEnumerable<MultipleBoundaryEvent> GetBoundaryMultipleEvents(string attachedToActivityId)

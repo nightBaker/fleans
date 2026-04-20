@@ -114,6 +114,23 @@ public partial class WorkflowInstance
             if (completedTransitions.Count > 0)
                 _execution.ResolveTransitions(completedTransitions);
 
+            // Evaluate conditional event watchers after activity completions.
+            // NOTE: Conditional watcher evaluation is intentionally placed here (inside RunExecutionLoop)
+            // rather than in ResolveExternalCompletions. Variables merged by external handlers are visible
+            // to watchers in this loop iteration. The loop continues until quiescent, so no evaluations
+            // are missed. If an external "patch variables" API is added, it must call RunExecutionLoop
+            // or a dedicated hook to trigger watcher evaluation.
+            if (newlyCompletedEntryIds.Count > 0)
+            {
+                var watcherCompletedIds = await EvaluateConditionalWatchers();
+                if (watcherCompletedIds.Count > 0)
+                {
+                    var watcherTransitions = await ComputeTransitionsForEntries(definition, watcherCompletedIds);
+                    if (watcherTransitions.Count > 0)
+                        _execution.ResolveTransitions(watcherTransitions);
+                }
+            }
+
             // Handle subprocess/multi-instance scope completions
             var orphanedScopes = await HandleScopeCompletions(definition);
             allOrphanedScopeIds.AddRange(orphanedScopes);
@@ -220,6 +237,73 @@ public partial class WorkflowInstance
         }
 
         return orphanedScopeIds;
+    }
+
+    /// <summary>
+    /// Evaluates all active conditional watchers. For each watcher whose condition transitions
+    /// to true (edge-triggered for non-interrupting boundaries), fires the watcher via the aggregate.
+    /// Walking all watchers globally is correct: ancestor-scope watchers evaluate false and don't fire.
+    /// Returns activity instance IDs of entries completed by intermediate catch watcher fires
+    /// (callers must compute transitions for these).
+    /// </summary>
+    private async Task<List<Guid>> EvaluateConditionalWatchers()
+    {
+        var completedEntryIds = new List<Guid>();
+        var watchers = State.ConditionalWatchers.ToList();
+        if (watchers.Count == 0) return completedEntryIds;
+
+        var evaluator = _grainFactory.GetGrain<Conditions.IConditionExpressionEvaluatorGrain>(0);
+        var definition = await GetWorkflowDefinition();
+
+        foreach (var watcher in watchers)
+        {
+            // Skip if already fired/cleared during this evaluation pass
+            if (!State.ConditionalWatchers.Any(w => w.ActivityInstanceId == watcher.ActivityInstanceId))
+                continue;
+
+            try
+            {
+                var variables = State.GetMergedVariables(watcher.VariablesId);
+                var result = await evaluator.Evaluate(watcher.ConditionExpression, variables);
+
+                var activity = definition.GetActivityAcrossScopes(watcher.ActivityId);
+                var isNonInterruptingBoundary = activity is ConditionalBoundaryEvent cb && !cb.IsInterrupting;
+
+                if (isNonInterruptingBoundary)
+                {
+                    // Edge-triggered: fire only on false -> true transition
+                    if (result && !watcher.LastEvaluatedResult)
+                    {
+                        LogConditionalWatcherFired(watcher.ConditionExpression, watcher.ActivityId);
+                        var effects = _execution!.FireConditionalWatcher(watcher.ActivityInstanceId, watcher.ActivityId);
+                        await PerformEffects(effects);
+                    }
+                    // Update result tracking for edge detection
+                    if (result != watcher.LastEvaluatedResult)
+                        _execution!.UpdateConditionalWatcherResult(watcher.ActivityInstanceId, result);
+                }
+                else
+                {
+                    // Interrupting boundary or intermediate catch: fire on any true
+                    if (result)
+                    {
+                        LogConditionalWatcherFired(watcher.ConditionExpression, watcher.ActivityId);
+                        var effects = _execution!.FireConditionalWatcher(watcher.ActivityInstanceId, watcher.ActivityId);
+                        await PerformEffects(effects);
+
+                        // Intermediate catch completions need transitions computed by the caller
+                        if (activity is ConditionalIntermediateCatchEvent)
+                            completedEntryIds.Add(watcher.ActivityInstanceId);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogConditionalExpressionEvaluationFailed(watcher.ConditionExpression, watcher.ActivityId, ex.Message);
+            }
+        }
+
+        return completedEntryIds;
     }
 
     private Task PerformEffects(IReadOnlyList<IInfrastructureEffect> effects)
@@ -446,6 +530,16 @@ public partial class WorkflowInstance
             case TimerCycleUpdated timerCycle:
                 LogTimerCycleUpdated(timerCycle.HostActivityInstanceId, timerCycle.TimerActivityId, timerCycle.RemainingCycle is not null);
                 break;
+            case ConditionalWatcherRegistered condReg:
+                LogConditionalWatcherRegistered(condReg.ConditionExpression, condReg.ActivityId);
+                break;
+            case ConditionalWatcherFired condFired:
+                break; // Logged at the call site with expression context
+            case ConditionalWatcherCleared condCleared:
+                LogConditionalWatcherCleared(condCleared.ActivityInstanceId);
+                break;
+            case ConditionalWatcherResultUpdated:
+                break; // Internal bookkeeping, no logging needed
         }
     }
 }
