@@ -746,6 +746,28 @@ public class WorkflowExecution
                 skipSignalName: null);
         }
 
+        if (activity is MultipleBoundaryEvent multiBoundaryTimer)
+        {
+            return HandleBoundaryEventFired(
+                multiBoundaryTimer, multiBoundaryTimer.AttachedToActivityId,
+                multiBoundaryTimer.IsInterrupting, entry, new ExpandoObject(),
+                skipTimerActivityId: multiBoundaryTimer.ActivityId,
+                skipMessageName: null,
+                skipSignalName: null);
+        }
+
+        // Multiple intermediate catch timer: cancel siblings, then complete
+        if (activity is MultipleIntermediateCatchEvent multiCatchTimer)
+        {
+            var effects = new List<IInfrastructureEffect>();
+            effects.AddRange(CancelMultipleEventSiblings(
+                multiCatchTimer, entry,
+                skipMessageName: null, skipSignalName: null,
+                skipTimerActivityId: timerActivityId));
+            effects.AddRange(CompleteActivity(timerActivityId, hostActivityInstanceId, new ExpandoObject()));
+            return effects.AsReadOnly();
+        }
+
         // Intermediate catch timer: complete the activity with empty variables
         return CompleteActivity(timerActivityId, hostActivityInstanceId, new ExpandoObject());
     }
@@ -789,6 +811,34 @@ public class WorkflowExecution
                 skipSignalName: null);
         }
 
+        if (activity is MultipleBoundaryEvent multiBoundaryMsg)
+        {
+            // Message subscription was already removed by the correlation grain.
+            // HandleBoundaryEventFired + boundary unsubscribe will clean up remaining watchers.
+            return HandleBoundaryEventFired(
+                multiBoundaryMsg, multiBoundaryMsg.AttachedToActivityId,
+                multiBoundaryMsg.IsInterrupting, entry, variables,
+                skipTimerActivityId: null,
+                skipMessageName: null,
+                skipSignalName: null);
+        }
+
+        // Multiple intermediate catch message: cancel siblings, then complete.
+        // The fired message's subscription was already removed by the correlation grain.
+        // We unsubscribe all sibling watchers (including other messages — the correlation
+        // grain's Unsubscribe is idempotent for the already-cleared one).
+        if (activity is MultipleIntermediateCatchEvent multiCatchMsg)
+        {
+            var effects = new List<IInfrastructureEffect>();
+            effects.AddRange(CancelMultipleEventSiblings(
+                multiCatchMsg, entry,
+                skipMessageName: null,
+                skipSignalName: null,
+                skipTimerActivityId: null));
+            effects.AddRange(CompleteActivity(activityId, hostActivityInstanceId, variables));
+            return effects.AsReadOnly();
+        }
+
         // Intermediate catch message: complete the activity with delivered variables
         return CompleteActivity(activityId, hostActivityInstanceId, variables);
     }
@@ -829,6 +879,30 @@ public class WorkflowExecution
                 skipTimerActivityId: null,
                 skipMessageName: null,
                 skipSignalName: firedSignalDef.Name);
+        }
+
+        if (activity is MultipleBoundaryEvent multiBoundarySignal)
+        {
+            // Signal subscription was already removed by the signal correlation grain.
+            return HandleBoundaryEventFired(
+                multiBoundarySignal, multiBoundarySignal.AttachedToActivityId,
+                multiBoundarySignal.IsInterrupting, entry, new ExpandoObject(),
+                skipTimerActivityId: null,
+                skipMessageName: null,
+                skipSignalName: null);
+        }
+
+        // Multiple intermediate catch signal: cancel siblings, then complete
+        if (activity is MultipleIntermediateCatchEvent multiCatchSignal)
+        {
+            var effects = new List<IInfrastructureEffect>();
+            effects.AddRange(CancelMultipleEventSiblings(
+                multiCatchSignal, entry,
+                skipMessageName: null,
+                skipSignalName: null,
+                skipTimerActivityId: null));
+            effects.AddRange(CompleteActivity(activityId, hostActivityInstanceId, new ExpandoObject()));
+            return effects.AsReadOnly();
         }
 
         // Intermediate catch signal: complete the activity with empty variables
@@ -1941,6 +2015,13 @@ public class WorkflowExecution
             Emit(new ConditionalWatcherCleared(watcher.ActivityInstanceId));
         }
 
+        // Boundary multiple events
+        foreach (var boundaryMulti in scope.GetBoundaryMultipleEvents(activityId))
+        {
+            effects.AddRange(BuildMultipleBoundaryUnsubscribeEffects(
+                boundaryMulti, hostEntry, skipActivityId: null, skipMessageName: null, skipSignalName: null));
+        }
+
         return effects;
     }
 
@@ -1981,6 +2062,16 @@ public class WorkflowExecution
             effects.Add(new UnsubscribeSignalEffect(signalDef.Name, _state.Id, boundarySig.ActivityId));
         }
 
+        // Boundary multiple events (skip definitions that just fired)
+        foreach (var boundaryMulti in scope.GetBoundaryMultipleEvents(activityId))
+        {
+            effects.AddRange(BuildMultipleBoundaryUnsubscribeEffects(
+                boundaryMulti, hostEntry,
+                skipActivityId: skipTimerActivityId,
+                skipMessageName: skipMessageName,
+                skipSignalName: skipSignalName));
+        }
+
         return effects;
     }
 
@@ -2019,6 +2110,99 @@ public class WorkflowExecution
                 case SignalIntermediateCatchEvent sigCatch:
                     var signalDef = _definition.GetSignalDefinition(sigCatch.SignalDefinitionId);
                     effects.Add(new UnsubscribeSignalEffect(signalDef.Name, _state.Id, siblingId));
+                    break;
+
+                case MultipleIntermediateCatchEvent multiCatch:
+                    // Cancel all watchers for a Multiple Event sibling
+                    effects.AddRange(CancelMultipleEventSiblings(
+                        multiCatch, siblingEntry,
+                        skipMessageName: null, skipSignalName: null, skipTimerActivityId: null));
+                    break;
+            }
+        }
+
+        return effects;
+    }
+
+    /// <summary>
+    /// Cancels sibling watchers for a Multiple Intermediate Catch Event when one definition fires.
+    /// Modeled on CancelEventBasedGatewaySiblings but iterates the definitions list
+    /// instead of looking up sibling activity entries.
+    /// </summary>
+    private List<IInfrastructureEffect> CancelMultipleEventSiblings(
+        MultipleIntermediateCatchEvent multipleEvent,
+        ActivityInstanceEntry completedEntry,
+        string? skipMessageName,
+        string? skipSignalName,
+        string? skipTimerActivityId)
+    {
+        var effects = new List<IInfrastructureEffect>();
+
+        foreach (var definition in multipleEvent.Definitions)
+        {
+            switch (definition)
+            {
+                case MessageEventDef msgDef:
+                    var messageDef = _definition.GetMessageDefinition(msgDef.MessageDefinitionId);
+                    if (messageDef.Name == skipMessageName) continue;
+                    var correlationKey = ResolveCorrelationKey(messageDef, completedEntry.VariablesId);
+                    effects.Add(new UnsubscribeMessageEffect(messageDef.Name, correlationKey));
+                    break;
+
+                case SignalEventDef sigDef:
+                    var signalDef = _definition.GetSignalDefinition(sigDef.SignalDefinitionId);
+                    if (signalDef.Name == skipSignalName) continue;
+                    effects.Add(new UnsubscribeSignalEffect(
+                        signalDef.Name, _state.Id, multipleEvent.ActivityId));
+                    break;
+
+                case TimerEventDef:
+                    if (multipleEvent.ActivityId == skipTimerActivityId) continue;
+                    effects.Add(new UnregisterTimerEffect(
+                        _state.Id, completedEntry.ActivityInstanceId,
+                        multipleEvent.ActivityId));
+                    break;
+            }
+        }
+
+        return effects;
+    }
+
+    /// <summary>
+    /// Builds unsubscribe effects for all definitions in a MultipleBoundaryEvent,
+    /// with skip parameters to avoid unsubscribing the definition that just fired.
+    /// </summary>
+    private List<IInfrastructureEffect> BuildMultipleBoundaryUnsubscribeEffects(
+        MultipleBoundaryEvent boundaryMulti,
+        ActivityInstanceEntry hostEntry,
+        string? skipActivityId,
+        string? skipMessageName,
+        string? skipSignalName)
+    {
+        var effects = new List<IInfrastructureEffect>();
+
+        foreach (var definition in boundaryMulti.Definitions)
+        {
+            switch (definition)
+            {
+                case TimerEventDef:
+                    if (boundaryMulti.ActivityId == skipActivityId) continue;
+                    effects.Add(new UnregisterTimerEffect(
+                        _state.Id, hostEntry.ActivityInstanceId, boundaryMulti.ActivityId));
+                    break;
+
+                case MessageEventDef msgDef:
+                    var messageDef = _definition.GetMessageDefinition(msgDef.MessageDefinitionId);
+                    if (messageDef.Name == skipMessageName) continue;
+                    var correlationKey = ResolveCorrelationKey(messageDef, hostEntry.VariablesId);
+                    effects.Add(new UnsubscribeMessageEffect(messageDef.Name, correlationKey));
+                    break;
+
+                case SignalEventDef sigDef:
+                    var signalDef = _definition.GetSignalDefinition(sigDef.SignalDefinitionId);
+                    if (signalDef.Name == skipSignalName) continue;
+                    effects.Add(new UnsubscribeSignalEffect(
+                        signalDef.Name, _state.Id, boundaryMulti.ActivityId));
                     break;
             }
         }
