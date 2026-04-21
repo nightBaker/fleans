@@ -16,9 +16,9 @@
 
 /* Palette source of truth: website/DESIGN.md § Color palette */
 :root[data-theme='dark'] {
-  --sl-color-accent-low: #2a1609;
-  --sl-color-accent: #ff5f1f;
-  --sl-color-accent-high: #ffb38f;
+  --sl-color-accent-low: #0f2926;
+  --sl-color-accent: #4eb5a6;
+  --sl-color-accent-high: #a8e0d6;
   --sl-color-white: #f5f5f0;
   --sl-color-gray-1: #e5e5df;
   --sl-color-gray-2: #b8b8b1;
@@ -32,9 +32,9 @@
 }
 
 :root[data-theme='light'] {
-  --sl-color-accent-low: #fbe6d9;
-  --sl-color-accent: #ad2f08;
-  --sl-color-accent-high: #8a2706;
+  --sl-color-accent-low: #d4f0eb;
+  --sl-color-accent: #1f6357;
+  --sl-color-accent-high: #175046;
   --sl-color-white: #0a0a0a;
   --sl-color-gray-1: #1a1a17;
   --sl-color-gray-2: #2e2e2a;

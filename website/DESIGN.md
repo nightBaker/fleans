@@ -6,21 +6,21 @@ Design doc for the Fleans marketing + docs site. Sections owned by individual de
 
 ## Color palette
 
-Chosen direction: **Candidate 1 — Brutalist-technical** (owner decision on [#258](https://github.com/nightBaker/fleans/issues/258)). The site signals a workflow engine for backend developers — industrial orange on near-black reads like CLI output and industrial signage, not like default Starlight with a blue tint.
+Chosen direction: **Technical-clean with teal accent** (owner decision on [#327](https://github.com/nightBaker/fleans/issues/327), superseding the original orange palette from [#258](https://github.com/nightBaker/fleans/issues/258)). The site signals a workflow engine for backend developers — teal on near-black reads as precise and technical without the industrial harshness of orange.
 
 Owner decisions fixed up front:
 
-1. Aesthetic direction: Candidate 1 — brutalist-technical.
+1. Aesthetic direction: technical-clean (teal `#4eb5a6` as primary accent).
 2. Per-candidate token completeness: option (a) — full token map for every Starlight token plus the two `--fleans-*` tokens, both themes.
-3. `--fleans-accent-2` usage: contract-only in this PR; real usage deferred to [#259](https://github.com/nightBaker/fleans/issues/259) / [#260](https://github.com/nightBaker/fleans/issues/260).
+3. `--fleans-accent-2` usage: contract-only; real usage deferred to [#259](https://github.com/nightBaker/fleans/issues/259) / [#260](https://github.com/nightBaker/fleans/issues/260).
 
 ### Dark theme token map
 
 | Token | Hex | Role |
 |---|---|---|
-| `--sl-color-accent-low` | `#2a1609` | Callout / admonition background |
-| `--sl-color-accent` | `#ff5f1f` | Primary accent — links, focus rings, sidebar hover (industrial orange) |
-| `--sl-color-accent-high` | `#ffb38f` | Admonition/callout titles on accent-low |
+| `--sl-color-accent-low` | `#0f2926` | Callout / admonition background (teal tint at L* ≈ 12%) |
+| `--sl-color-accent` | `#4eb5a6` | Primary accent — links, focus rings, sidebar hover (teal) |
+| `--sl-color-accent-high` | `#a8e0d6` | Admonition/callout titles on accent-low |
 | `--sl-color-white` | `#f5f5f0` | Body text (Starlight "max-contrast-vs-bg") |
 | `--sl-color-gray-1` | `#e5e5df` | Text-adjacent |
 | `--sl-color-gray-2` | `#b8b8b1` | |
@@ -38,9 +38,9 @@ Narrative page bg: `#0a0a0a` (near-true black).
 
 | Token | Hex | Role |
 |---|---|---|
-| `--sl-color-accent-low` | `#fbe6d9` | Callout / admonition background |
-| `--sl-color-accent` | `#ad2f08` | Primary accent — darker industrial orange for AA on light bg |
-| `--sl-color-accent-high` | `#8a2706` | Admonition/callout titles on accent-low |
+| `--sl-color-accent-low` | `#d4f0eb` | Callout / admonition background (teal tint at L* ≈ 92%) |
+| `--sl-color-accent` | `#1f6357` | Primary accent — darkened teal for AA on light bg |
+| `--sl-color-accent-high` | `#175046` | Admonition/callout titles on accent-low |
 | `--sl-color-white` | `#0a0a0a` | Body text (Starlight "max-contrast-vs-bg", flipped) |
 | `--sl-color-gray-1` | `#1a1a17` | Text-adjacent |
 | `--sl-color-gray-2` | `#2e2e2a` | |
@@ -73,7 +73,7 @@ Any future palette tweak follows this rule rather than ad-hoc picks:
 
 Re-tuning during implementation stays within **±5% OKLCH L\*** of the table values. Anything beyond the envelope is a design change and needs a fresh review.
 
-Note on the current light-theme `--sl-color-accent`: the plan's starting value `#c4380b` (OklabL = 54.7) missed AA on `accent-on-accent-low` (4.45:1, need 4.5:1) and AA-large on `accent-on-gray-5` (2.69:1, need 3.0:1). Re-tuning darker to `#ad2f08` (OklabL = 49.7, ΔL\* = −4.98, within envelope) lands all pairs above their minimums with comfortable margin.
+Note on the current light-theme `--sl-color-accent`: the raw teal `#4eb5a6` fails AA on light bg (2.26:1). Darkening to `#1f6357` achieves 6.44:1 on bg while staying in the same hue family. All pairs meet or exceed WCAG AA minimums with comfortable margin.
 
 ### Contrast matrix (verified)
 
@@ -83,27 +83,27 @@ WCAG ratios via the sRGB relative-luminance formula (W3C WCAG 2.1 §1.4.3). Veri
 
 ```
 pair: --sl-color-white (#f5f5f0) on bg (#0a0a0a) = 18.10:1 (AA pass)
-pair: --sl-color-accent (#ff5f1f) on bg (#0a0a0a) = 6.51:1 (AA pass)
-pair: --sl-color-accent-high (#ffb38f) on --sl-color-accent-low (#2a1609) = 9.94:1 (AA pass)
-pair: --sl-color-accent (#ff5f1f) on --sl-color-accent-low (#2a1609) = 5.68:1 (AA pass)
+pair: --sl-color-accent (#4eb5a6) on bg (#0a0a0a) = 8.00:1 (AA pass)
+pair: --sl-color-accent-high (#a8e0d6) on --sl-color-accent-low (#0f2926) = 10.47:1 (AA pass)
+pair: --sl-color-accent (#4eb5a6) on --sl-color-accent-low (#0f2926) = 6.21:1 (AA pass)
 pair: --sl-color-gray-3 (#8a8a82) on bg (#0a0a0a) = 5.69:1 (AA pass)
 pair: --fleans-accent-2 (#9eff00) on bg (#0a0a0a) = 15.80:1 (AA-large pass)
-pair: --sl-color-accent (#ff5f1f) on --sl-color-gray-5 (#2e2e2a) = 4.48:1 (AA-large pass)
-pair: --sl-color-accent (#ff5f1f) on --sl-color-gray-6 (#1a1a17) = 5.74:1 (AA-large pass)
-pair: --sl-color-accent (#ff5f1f) on --fleans-surface (#141411) = 6.07:1 (AA-large pass)
+pair: --sl-color-accent (#4eb5a6) on --sl-color-gray-5 (#2e2e2a) = 5.51:1 (AA-large pass)
+pair: --sl-color-accent (#4eb5a6) on --sl-color-gray-6 (#1a1a17) = 7.05:1 (AA pass)
+pair: --sl-color-accent (#4eb5a6) on --fleans-surface (#141411) = 7.46:1 (AA pass)
 ```
 
 **Light theme**
 
 ```
 pair: --sl-color-white (#0a0a0a) on bg (#f5f5f0) = 18.10:1 (AA pass)
-pair: --sl-color-accent (#ad2f08) on bg (#f5f5f0) = 6.03:1 (AA pass)
-pair: --sl-color-accent-high (#8a2706) on --sl-color-accent-low (#fbe6d9) = 7.34:1 (AA pass)
-pair: --sl-color-accent (#ad2f08) on --sl-color-accent-low (#fbe6d9) = 5.47:1 (AA pass)
+pair: --sl-color-accent (#1f6357) on bg (#f5f5f0) = 6.44:1 (AA pass)
+pair: --sl-color-accent-high (#175046) on --sl-color-accent-low (#d4f0eb) = 7.69:1 (AA pass)
+pair: --sl-color-accent (#1f6357) on --sl-color-accent-low (#d4f0eb) = 5.86:1 (AA pass)
 pair: --sl-color-gray-3 (#5a5a53) on bg (#f5f5f0) = 6.35:1 (AA pass)
 pair: --fleans-accent-2 (#3a7d00) on bg (#f5f5f0) = 4.67:1 (AA-large pass)
-pair: --sl-color-accent (#ad2f08) on --sl-color-gray-5 (#b8b8b1) = 3.30:1 (AA-large pass)
-pair: --sl-color-accent (#ad2f08) on --sl-color-gray-6 (#e0e0d9) = 4.97:1 (AA-large pass)
+pair: --sl-color-accent (#1f6357) on --sl-color-gray-5 (#b8b8b1) = 3.53:1 (AA-large pass)
+pair: --sl-color-accent (#1f6357) on --sl-color-gray-6 (#e0e0d9) = 5.31:1 (AA pass)
 ```
 
 Row 7b (accent on `--fleans-surface`) is dark-only; in light theme `--fleans-surface = bg`, so the pair degenerates to row 2 which already passes.
