@@ -27,6 +27,9 @@ public class WorkflowInstanceState
     [Id(6)]
     public bool IsCompleted { get; private set; }
 
+    [Id(19)]
+    public bool IsCancelled { get; private set; }
+
     [Id(7)]
     public DateTimeOffset? CreatedAt { get; private set; }
 
@@ -234,6 +237,19 @@ public class WorkflowInstanceState
         _dirtyFlags |= DirtyGatewayForks | DirtyComplexGatewayJoinStates;
         CompletedAt = DateTimeOffset.UtcNow;
         IsCompleted = true;
+    }
+
+    public void Cancel()
+    {
+        if (IsCompleted)
+            return; // already terminated — cancellation after completion is a no-op
+
+        GatewayForks.Clear();
+        ComplexGatewayJoinStates.Clear();
+        _dirtyFlags |= DirtyGatewayForks | DirtyComplexGatewayJoinStates;
+        CompletedAt = DateTimeOffset.UtcNow;
+        IsCompleted = true;
+        IsCancelled = true;
     }
 
     public Guid AddCloneOfVariableState(Guid variableStateId)

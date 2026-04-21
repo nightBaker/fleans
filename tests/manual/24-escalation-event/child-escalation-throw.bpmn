@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             id="Definitions_1"
+             targetNamespace="http://fleans.io/bpmn">
+
+  <escalation id="Escalation_1" name="PaymentOverdue" escalationCode="ESC_PAYMENT" />
+
+  <process id="child-escalation-throw" name="Child Escalation Throw" isExecutable="true">
+    <startEvent id="start" />
+    <scriptTask id="doWork" scriptFormat="csharp">
+      <script>_context.result = "work-done";</script>
+    </scriptTask>
+    <intermediateThrowEvent id="escThrow">
+      <escalationEventDefinition escalationRef="Escalation_1" />
+    </intermediateThrowEvent>
+    <scriptTask id="continueWork" scriptFormat="csharp">
+      <script>_context.continued = true;</script>
+    </scriptTask>
+    <endEvent id="end" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="doWork" />
+    <sequenceFlow id="f2" sourceRef="doWork" targetRef="escThrow" />
+    <sequenceFlow id="f3" sourceRef="escThrow" targetRef="continueWork" />
+    <sequenceFlow id="f4" sourceRef="continueWork" targetRef="end" />
+  </process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="child-escalation-throw">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="180" y="100" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="doWork_di" bpmnElement="doWork">
+        <dc:Bounds x="270" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="escThrow_di" bpmnElement="escThrow">
+        <dc:Bounds x="430" y="100" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="continueWork_di" bpmnElement="continueWork">
+        <dc:Bounds x="520" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_di" bpmnElement="end">
+        <dc:Bounds x="680" y="100" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="216" y="118" />
+        <di:waypoint x="270" y="118" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="370" y="118" />
+        <di:waypoint x="430" y="118" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="466" y="118" />
+        <di:waypoint x="520" y="118" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f4_di" bpmnElement="f4">
+        <di:waypoint x="620" y="118" />
+        <di:waypoint x="680" y="118" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

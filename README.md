@@ -30,7 +30,7 @@ For now, next elements are implemented
 | Error Event          | Indicates an error that needs to be handled.                                 |  [x] boundary |
 | Conditional Event    | Represents a condition that will cause a process to start or continue.       |             |
 | Signal Event         | Represents the sending or receiving of a signal.                             | [x] start, intermediate catch, intermediate throw, boundary |
-| Escalation Event     | Used to model situations where escalation is required.                       |             |
+| Escalation Event     | Used to model situations where escalation is required.                       | [x] end, intermediate throw, boundary |
 | Cancel Event         | Indicates cancellation of a process.                                         |             |
 | Compensation Event   | Represents a process that is performed to compensate for an error.           |             |
 | Multiple Event       | Indicates that multiple events can occur.                                    | [x] intermediate catch, intermediate throw, boundary, start |

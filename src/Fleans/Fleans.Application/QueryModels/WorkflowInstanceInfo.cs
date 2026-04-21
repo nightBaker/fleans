@@ -5,6 +5,7 @@ public sealed record WorkflowInstanceInfo(
     string ProcessDefinitionId,
     bool IsStarted,
     bool IsCompleted,
+    bool IsCancelled,
     DateTimeOffset? CreatedAt,
     DateTimeOffset? ExecutionStartedAt,
     DateTimeOffset? CompletedAt);
