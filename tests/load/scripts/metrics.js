@@ -7,8 +7,7 @@
 // modules is an undocumented implementation detail. Using a single shared module
 // avoids any ambiguity around duplicate registration across k6 versions.
 //
-// Required by: linear.js (issue #239), parallel.js (issue #240),
-//              events.js (issue #241), mixed.js (issue #242)
+// Required by: linear.js (#239), parallel.js (#240), events.js (#241), mixed.js (#242)
 
 import { Trend } from 'k6/metrics';
 
@@ -17,6 +16,7 @@ import { Trend } from 'k6/metrics';
 // at its POST /Workflow/start call site.
 //
 // WARNING: k6 silently skips thresholds for metrics that are never emitted.
-// If a script does not call .add(), the 'workflow_start_duration' threshold
-// will be silently ignored rather than failed.
+// If a script does not call .add(), the 'workflow_start_duration' threshold in
+// mixed.js will be silently ignored rather than failed. Ensure all three
+// dependency scripts instrument this metric.
 export const workflowStartDuration = new Trend('workflow_start_duration');

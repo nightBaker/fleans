@@ -10,7 +10,7 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1001, Level = LogLevel.Debug, Message = "Workflow execution started")]
     private partial void LogWorkflowStarted();
 
-    [LoggerMessage(EventId = 1076, Level = LogLevel.Information,
+    [LoggerMessage(EventId = 1078, Level = LogLevel.Information,
         Message = "Root-scope event sub-process listeners armed: {ListenerCount}")]
     private partial void LogRootScopeListenersArmed(int listenerCount);
 
@@ -272,6 +272,35 @@ public partial class WorkflowInstance
     private partial void LogEventSubProcessHandlerEndEventFired(
         string eventSubProcessId, string endEventId, Guid hostActivityInstanceId);
 
+    // Escalation lifecycle (EventId 1090-1099)
+    [LoggerMessage(EventId = 1090, Level = LogLevel.Information,
+        Message = "Escalation thrown: EscalationCode={EscalationCode}, ActivityId={ActivityId}, WorkflowInstanceId={WorkflowInstanceId}")]
+    private partial void LogEscalationThrown(string escalationCode, string activityId, Guid workflowInstanceId);
+
+    [LoggerMessage(EventId = 1091, Level = LogLevel.Debug,
+        Message = "Child escalation raised queued: ChildId={ChildWorkflowInstanceId}, EscalationCode={EscalationCode}")]
+    private partial void LogChildEscalationRaisedQueued(Guid childWorkflowInstanceId, string escalationCode);
+
+    [LoggerMessage(EventId = 1092, Level = LogLevel.Information,
+        Message = "Escalation caught: EscalationCode={EscalationCode}, BoundaryActivityId={BoundaryActivityId}, IsInterrupting={IsInterrupting}")]
+    private partial void LogEscalationCaught(string? escalationCode, string boundaryActivityId, bool isInterrupting);
+
+    [LoggerMessage(EventId = 1093, Level = LogLevel.Information,
+        Message = "Child escalation raised: ChildId={ChildWorkflowInstanceId}, EscalationCode={EscalationCode}")]
+    private partial void LogChildEscalationRaised(Guid childWorkflowInstanceId, string escalationCode);
+
+    [LoggerMessage(EventId = 3030, Level = LogLevel.Warning,
+        Message = "Workflow cancelled: {Reason}")]
+    private partial void LogWorkflowCancelled(string reason);
+
+    [LoggerMessage(EventId = 3031, Level = LogLevel.Warning,
+        Message = "Escalation uncaught: EscalationCode={EscalationCode}, SourceActivityId={SourceActivityId}")]
+    private partial void LogEscalationUncaught(string escalationCode, string sourceActivityId);
+
+    [LoggerMessage(EventId = 3032, Level = LogLevel.Warning,
+        Message = "Escalation parent result missing: expected _pendingEscalationParentResult to be set for EscalationCode={EscalationCode}, WorkflowInstanceId={WorkflowInstanceId} — defaulting to Unhandled")]
+    private partial void LogEscalationParentResultMissing(string? escalationCode, Guid workflowInstanceId);
+
     // Complex gateway lifecycle (EventId 1080-1089)
     [LoggerMessage(EventId = 1080, Level = LogLevel.Debug,
         Message = "Complex gateway activation condition late callback — join instance {ActivityInstanceId} has already fired or was removed")]
@@ -288,6 +317,22 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1083, Level = LogLevel.Information,
         Message = "CompleteActivationCondition called for activity {ActivityId}, instance {ActivityInstanceId}, result={Result}")]
     private partial void LogCompleteActivationCondition(string activityId, Guid activityInstanceId, bool result);
+
+    [LoggerMessage(EventId = 1090, Level = LogLevel.Information,
+        Message = "Multiple catch event registered: activity {ActivityId}, {DefinitionCount} watchers")]
+    private partial void LogMultipleCatchRegistered(string activityId, int definitionCount);
+
+    [LoggerMessage(EventId = 1091, Level = LogLevel.Information,
+        Message = "Multiple catch event fired: activity {ActivityId}, trigger type {TriggerType}")]
+    private partial void LogMultipleCatchFired(string activityId, string triggerType);
+
+    [LoggerMessage(EventId = 1092, Level = LogLevel.Information,
+        Message = "Multiple throw event fired: activity {ActivityId}, {DefinitionCount} definitions thrown")]
+    private partial void LogMultipleThrowFired(string activityId, int definitionCount);
+
+    [LoggerMessage(EventId = 1093, Level = LogLevel.Information,
+        Message = "Multiple boundary event fired: activity {ActivityId}, trigger type {TriggerType}, interrupting={IsInterrupting}")]
+    private partial void LogMultipleBoundaryFired(string activityId, string triggerType, bool isInterrupting);
 
     // ── Transaction Sub-Process lifecycle (EventId range 1100–1103; 1101–1102 reserved for Phase 2) ──
 

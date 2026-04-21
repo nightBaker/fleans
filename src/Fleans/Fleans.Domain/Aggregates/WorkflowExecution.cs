@@ -126,7 +126,23 @@ public class WorkflowExecution
 
     public void MarkCompleted(Guid activityInstanceId, ExpandoObject variables)
     {
-        var entry = _state.GetActiveEntry(activityInstanceId);
+        var entry = _state.GetEntry(activityInstanceId);
+        // Escalation boundary cancellation race: when an interrupting escalation
+        // boundary fires, the host SubProcess/CallActivity is cancelled immediately.
+        // However, the grain's RunExecutionLoop may still call MarkCompleted for
+        // activities within that cancelled scope. Using GetEntry (not GetActiveEntry)
+        // and returning early for cancelled entries prevents a spurious throw.
+        // This guard is intentionally narrow — only IsCancelled returns early.
+        // Failed or already-completed entries fall through to the checks below.
+        if (entry.IsCancelled) return;
+        // A failed entry must not be silently completed.
+        if (entry.ErrorCode is not null)
+            throw new InvalidOperationException(
+                $"Activity '{entry.ActivityId}' has failed — cannot mark completed.");
+        // For any other terminal state, delegate to GetActiveEntry which throws —
+        // a double-complete is a bug, not a race.
+        if (entry.IsCompleted)
+            _ = _state.GetActiveEntry(activityInstanceId); // throws
         Emit(new ActivityCompleted(activityInstanceId, entry.VariablesId, variables));
     }
 
@@ -351,7 +367,11 @@ public class WorkflowExecution
                         skipStartEventActivityId: null));
 
                     Emit(new WorkflowCompleted());
-                    // If this is a child workflow, notify parent of completion
+                    // If this is a child workflow, notify parent of completion.
+                    // When an escalation was also raised in this batch, the parent may
+                    // have already cancelled the host entry (interrupting boundary) —
+                    // the parent's stale guard in OnChildWorkflowCompleted safely
+                    // ignores the completion in that case.
                     if (_state.ParentWorkflowInstanceId.HasValue)
                     {
                         var rootVariables = _state.GetMergedVariables(
@@ -415,6 +435,10 @@ public class WorkflowExecution
                     effects.Add(new ThrowSignalEffect(throwSignal.SignalName));
                     break;
 
+                case ThrowEscalationCommand throwEscalation:
+                    effects.AddRange(ProcessThrowEscalation(throwEscalation, activityInstanceId));
+                    break;
+
                 case DiscardLateTokenCommand discard:
                     Emit(new ActivityCancelled(activityInstanceId, discard.Reason));
                     break;
@@ -453,7 +477,7 @@ public class WorkflowExecution
             .Any(e =>
             {
                 var scope = _definition.FindScopeForActivity(e.ActivityId);
-                return scope is { IsRootScope: true } && scope.GetActivity(e.ActivityId) is EndEvent;
+                return scope is { IsRootScope: true } && scope.GetActivity(e.ActivityId) is EndEvent or EscalationEndEvent;
             });
 
         if (!hasCompletedEndEvent)
@@ -478,6 +502,45 @@ public class WorkflowExecution
         }
 
         return effects.AsReadOnly();
+    }
+
+    private IReadOnlyList<IInfrastructureEffect> ProcessThrowEscalation(
+        ThrowEscalationCommand command, Guid activityInstanceId)
+    {
+        var entry = _state.FindEntry(activityInstanceId);
+        if (entry is null)
+            return [];
+
+        // Use the definition's scope walker to find a matching boundary handler
+        var boundaryHandler = _definition.FindBoundaryEscalationHandler(
+            entry.ActivityId, command.EscalationCode);
+
+        if (boundaryHandler is not null)
+        {
+            var (boundaryEvent, _, attachedToActivityId) = boundaryHandler.Value;
+            var attachedEntry = _state.GetFirstActive(attachedToActivityId);
+            if (attachedEntry is null)
+                return [];
+
+            var scopeVariables = _state.GetMergedVariables(entry.VariablesId);
+            return HandleEscalationBoundaryMatch(boundaryEvent, attachedEntry, scopeVariables).Effects;
+        }
+
+        // No boundary found — escalate to parent grain if this is a child workflow
+        if (_state.ParentWorkflowInstanceId.HasValue)
+        {
+            var scopeVariables = _state.GetMergedVariables(entry.VariablesId);
+            return [new NotifyParentEscalationRaisedEffect(
+                _state.ParentWorkflowInstanceId.Value,
+                _state.Id,
+                _state.ParentActivityId!,
+                command.EscalationCode,
+                scopeVariables)];
+        }
+
+        // Uncaught at root — BPMN spec: escalation is non-faulting, just record it
+        Emit(new EscalationUncaughtRaised(command.EscalationCode, entry.ActivityId));
+        return [];
     }
 
     private void ProcessSpawnActivity(SpawnActivityCommand spawn, Guid activityInstanceId)
@@ -740,6 +803,28 @@ public class WorkflowExecution
                 skipSignalName: null);
         }
 
+        if (activity is MultipleBoundaryEvent multiBoundaryTimer)
+        {
+            return HandleBoundaryEventFired(
+                multiBoundaryTimer, multiBoundaryTimer.AttachedToActivityId,
+                multiBoundaryTimer.IsInterrupting, entry, new ExpandoObject(),
+                skipTimerActivityId: multiBoundaryTimer.ActivityId,
+                skipMessageName: null,
+                skipSignalName: null);
+        }
+
+        // Multiple intermediate catch timer: cancel siblings, then complete
+        if (activity is MultipleIntermediateCatchEvent multiCatchTimer)
+        {
+            var effects = new List<IInfrastructureEffect>();
+            effects.AddRange(CancelMultipleEventSiblings(
+                multiCatchTimer, entry,
+                skipMessageName: null, skipSignalName: null,
+                skipTimerActivityId: timerActivityId));
+            effects.AddRange(CompleteActivity(timerActivityId, hostActivityInstanceId, new ExpandoObject()));
+            return effects.AsReadOnly();
+        }
+
         // Intermediate catch timer: complete the activity with empty variables
         return CompleteActivity(timerActivityId, hostActivityInstanceId, new ExpandoObject());
     }
@@ -783,6 +868,34 @@ public class WorkflowExecution
                 skipSignalName: null);
         }
 
+        if (activity is MultipleBoundaryEvent multiBoundaryMsg)
+        {
+            // Message subscription was already removed by the correlation grain.
+            // HandleBoundaryEventFired + boundary unsubscribe will clean up remaining watchers.
+            return HandleBoundaryEventFired(
+                multiBoundaryMsg, multiBoundaryMsg.AttachedToActivityId,
+                multiBoundaryMsg.IsInterrupting, entry, variables,
+                skipTimerActivityId: null,
+                skipMessageName: null,
+                skipSignalName: null);
+        }
+
+        // Multiple intermediate catch message: cancel siblings, then complete.
+        // The fired message's subscription was already removed by the correlation grain.
+        // We unsubscribe all sibling watchers (including other messages — the correlation
+        // grain's Unsubscribe is idempotent for the already-cleared one).
+        if (activity is MultipleIntermediateCatchEvent multiCatchMsg)
+        {
+            var effects = new List<IInfrastructureEffect>();
+            effects.AddRange(CancelMultipleEventSiblings(
+                multiCatchMsg, entry,
+                skipMessageName: null,
+                skipSignalName: null,
+                skipTimerActivityId: null));
+            effects.AddRange(CompleteActivity(activityId, hostActivityInstanceId, variables));
+            return effects.AsReadOnly();
+        }
+
         // Intermediate catch message: complete the activity with delivered variables
         return CompleteActivity(activityId, hostActivityInstanceId, variables);
     }
@@ -823,6 +936,30 @@ public class WorkflowExecution
                 skipTimerActivityId: null,
                 skipMessageName: null,
                 skipSignalName: firedSignalDef.Name);
+        }
+
+        if (activity is MultipleBoundaryEvent multiBoundarySignal)
+        {
+            // Signal subscription was already removed by the signal correlation grain.
+            return HandleBoundaryEventFired(
+                multiBoundarySignal, multiBoundarySignal.AttachedToActivityId,
+                multiBoundarySignal.IsInterrupting, entry, new ExpandoObject(),
+                skipTimerActivityId: null,
+                skipMessageName: null,
+                skipSignalName: null);
+        }
+
+        // Multiple intermediate catch signal: cancel siblings, then complete
+        if (activity is MultipleIntermediateCatchEvent multiCatchSignal)
+        {
+            var effects = new List<IInfrastructureEffect>();
+            effects.AddRange(CancelMultipleEventSiblings(
+                multiCatchSignal, entry,
+                skipMessageName: null,
+                skipSignalName: null,
+                skipTimerActivityId: null));
+            effects.AddRange(CompleteActivity(activityId, hostActivityInstanceId, new ExpandoObject()));
+            return effects.AsReadOnly();
         }
 
         // Intermediate catch signal: complete the activity with empty variables
@@ -1157,6 +1294,144 @@ public class WorkflowExecution
             return [];
 
         return FailActivity(parentActivityId, entry.ActivityInstanceId, exception);
+    }
+
+    public (IReadOnlyList<IInfrastructureEffect> Effects, EscalationHandledResult Result)
+        HandleChildEscalationRaised(
+            Guid childWorkflowInstanceId,
+            string hostActivityId,
+            string escalationCode,
+            ExpandoObject variables)
+    {
+        // Find the host activity entry (CallActivity/SubProcess) in the parent
+        var hostEntry = _state.GetFirstActive(hostActivityId);
+        if (hostEntry is null)
+            return ([], EscalationHandledResult.Unhandled);
+
+        // Use the definition's escalation boundary walker
+        var boundaryHandler = _definition.FindBoundaryEscalationHandler(hostActivityId, escalationCode);
+
+        if (boundaryHandler is not null)
+        {
+            var (boundaryEvent, scope, attachedToActivityId) = boundaryHandler.Value;
+            var attachedEntry = _state.GetFirstActive(attachedToActivityId);
+
+            // If the attached activity is no longer active (already completed/cancelled),
+            // the escalation boundary should not fire.
+            if (attachedEntry is null)
+                return ([], EscalationHandledResult.Unhandled);
+
+            return HandleEscalationBoundaryMatch(boundaryEvent, attachedEntry, variables);
+        }
+
+        // No boundary found in this grain — check if we have a parent (CallActivity escape)
+        if (_state.ParentWorkflowInstanceId.HasValue)
+        {
+            var effects = new List<IInfrastructureEffect>
+            {
+                new NotifyParentEscalationRaisedEffect(
+                    _state.ParentWorkflowInstanceId.Value,
+                    _state.Id,
+                    _state.ParentActivityId!,
+                    escalationCode,
+                    variables)
+            };
+            return (effects, EscalationHandledResult.NeedsParentLookup);
+        }
+
+        // Uncaught at root
+        Emit(new EscalationUncaughtRaised(escalationCode, hostActivityId));
+        return ([], EscalationHandledResult.Unhandled);
+    }
+
+    private (IReadOnlyList<IInfrastructureEffect> Effects, EscalationHandledResult Result)
+        HandleEscalationBoundaryMatch(
+            EscalationBoundaryEvent boundaryEvent,
+            ActivityInstanceEntry hostEntry,
+            ExpandoObject escalationVariables)
+    {
+        var effects = new List<IInfrastructureEffect>();
+
+        if (boundaryEvent.IsInterrupting)
+        {
+            // Cancel host scope children
+            effects.AddRange(CancelScopeChildren(hostEntry.ActivityInstanceId));
+
+            // Cancel the host entry itself
+            if (!hostEntry.IsCompleted)
+            {
+                Emit(new ActivityCancelled(
+                    hostEntry.ActivityInstanceId,
+                    $"Interrupted by escalation boundary event '{boundaryEvent.ActivityId}'"));
+                effects.AddRange(BuildUserTaskCleanupEffects(hostEntry.ActivityInstanceId));
+            }
+
+            // Unsubscribe all boundary subscriptions on the host
+            effects.AddRange(BuildBoundaryUnsubscribeEffects(
+                boundaryEvent.AttachedToActivityId, hostEntry));
+
+            // Clone variables and merge escalation snapshot
+            var clonedScopeId = Guid.NewGuid();
+            Emit(new VariableScopeCloned(clonedScopeId, hostEntry.VariablesId));
+            if (((IDictionary<string, object?>)escalationVariables).Count > 0)
+                Emit(new VariablesMerged(clonedScopeId, escalationVariables));
+
+            // Spawn the boundary event activity
+            Emit(new ActivitySpawned(
+                ActivityInstanceId: Guid.NewGuid(),
+                ActivityId: boundaryEvent.ActivityId,
+                ActivityType: boundaryEvent.GetType().Name,
+                VariablesId: clonedScopeId,
+                ScopeId: hostEntry.ScopeId,
+                MultiInstanceIndex: null,
+                TokenId: null));
+
+            return (effects, EscalationHandledResult.Cancelled);
+        }
+        else
+        {
+            // Non-interrupting: clone variables and spawn boundary, host continues
+            var clonedScopeId = Guid.NewGuid();
+            Emit(new VariableScopeCloned(clonedScopeId, hostEntry.VariablesId));
+            if (((IDictionary<string, object?>)escalationVariables).Count > 0)
+                Emit(new VariablesMerged(clonedScopeId, escalationVariables));
+
+            Emit(new ActivitySpawned(
+                ActivityInstanceId: Guid.NewGuid(),
+                ActivityId: boundaryEvent.ActivityId,
+                ActivityType: boundaryEvent.GetType().Name,
+                VariablesId: clonedScopeId,
+                ScopeId: hostEntry.ScopeId,
+                MultiInstanceIndex: null,
+                TokenId: null));
+
+            return (effects, EscalationHandledResult.Continue);
+        }
+    }
+
+    public ActivityInstanceEntry? FindEntryByChildWorkflowInstanceId(Guid childWorkflowInstanceId)
+        => _state.Entries.FirstOrDefault(e => e.ChildWorkflowInstanceId == childWorkflowInstanceId);
+
+    public void TerminateForParentEscalationCancellation()
+    {
+        // Cancel all active activities — recursively cancel nested scopes first,
+        // then cancel the root-level entries themselves.
+        // The list is snapshotted before iteration. CancelScopeChildren may cancel
+        // nested entries that also appear in this snapshot, so we skip entries that
+        // are already cancelled to avoid a duplicate-cancel exception from GetActiveEntry.
+        foreach (var entry in _state.GetActiveActivities().ToList())
+        {
+            if (entry.IsCancelled) continue;
+
+            if (_state.HasActiveChildrenInScope(entry.ActivityInstanceId))
+                CancelScopeChildren(entry.ActivityInstanceId);
+
+            Emit(new ActivityCancelled(
+                entry.ActivityInstanceId,
+                "Cancelled by parent interrupting escalation boundary"));
+        }
+
+        Emit(new WorkflowCancelled("Escalation: child scope cancelled by parent interrupting boundary"));
     }
 
     // --- Parent Info ---
@@ -1879,6 +2154,13 @@ public class WorkflowExecution
             effects.Add(new UnsubscribeSignalEffect(signalDef.Name, _state.Id, boundarySig.ActivityId));
         }
 
+        // Boundary multiple events
+        foreach (var boundaryMulti in scope.GetBoundaryMultipleEvents(activityId))
+        {
+            effects.AddRange(BuildMultipleBoundaryUnsubscribeEffects(
+                boundaryMulti, hostEntry, skipActivityId: null, skipMessageName: null, skipSignalName: null));
+        }
+
         return effects;
     }
 
@@ -1919,6 +2201,16 @@ public class WorkflowExecution
             effects.Add(new UnsubscribeSignalEffect(signalDef.Name, _state.Id, boundarySig.ActivityId));
         }
 
+        // Boundary multiple events (skip definitions that just fired)
+        foreach (var boundaryMulti in scope.GetBoundaryMultipleEvents(activityId))
+        {
+            effects.AddRange(BuildMultipleBoundaryUnsubscribeEffects(
+                boundaryMulti, hostEntry,
+                skipActivityId: skipTimerActivityId,
+                skipMessageName: skipMessageName,
+                skipSignalName: skipSignalName));
+        }
+
         return effects;
     }
 
@@ -1957,6 +2249,99 @@ public class WorkflowExecution
                 case SignalIntermediateCatchEvent sigCatch:
                     var signalDef = _definition.GetSignalDefinition(sigCatch.SignalDefinitionId);
                     effects.Add(new UnsubscribeSignalEffect(signalDef.Name, _state.Id, siblingId));
+                    break;
+
+                case MultipleIntermediateCatchEvent multiCatch:
+                    // Cancel all watchers for a Multiple Event sibling
+                    effects.AddRange(CancelMultipleEventSiblings(
+                        multiCatch, siblingEntry,
+                        skipMessageName: null, skipSignalName: null, skipTimerActivityId: null));
+                    break;
+            }
+        }
+
+        return effects;
+    }
+
+    /// <summary>
+    /// Cancels sibling watchers for a Multiple Intermediate Catch Event when one definition fires.
+    /// Modeled on CancelEventBasedGatewaySiblings but iterates the definitions list
+    /// instead of looking up sibling activity entries.
+    /// </summary>
+    private List<IInfrastructureEffect> CancelMultipleEventSiblings(
+        MultipleIntermediateCatchEvent multipleEvent,
+        ActivityInstanceEntry completedEntry,
+        string? skipMessageName,
+        string? skipSignalName,
+        string? skipTimerActivityId)
+    {
+        var effects = new List<IInfrastructureEffect>();
+
+        foreach (var definition in multipleEvent.Definitions)
+        {
+            switch (definition)
+            {
+                case MessageEventDef msgDef:
+                    var messageDef = _definition.GetMessageDefinition(msgDef.MessageDefinitionId);
+                    if (messageDef.Name == skipMessageName) continue;
+                    var correlationKey = ResolveCorrelationKey(messageDef, completedEntry.VariablesId);
+                    effects.Add(new UnsubscribeMessageEffect(messageDef.Name, correlationKey));
+                    break;
+
+                case SignalEventDef sigDef:
+                    var signalDef = _definition.GetSignalDefinition(sigDef.SignalDefinitionId);
+                    if (signalDef.Name == skipSignalName) continue;
+                    effects.Add(new UnsubscribeSignalEffect(
+                        signalDef.Name, _state.Id, multipleEvent.ActivityId));
+                    break;
+
+                case TimerEventDef:
+                    if (multipleEvent.ActivityId == skipTimerActivityId) continue;
+                    effects.Add(new UnregisterTimerEffect(
+                        _state.Id, completedEntry.ActivityInstanceId,
+                        multipleEvent.ActivityId));
+                    break;
+            }
+        }
+
+        return effects;
+    }
+
+    /// <summary>
+    /// Builds unsubscribe effects for all definitions in a MultipleBoundaryEvent,
+    /// with skip parameters to avoid unsubscribing the definition that just fired.
+    /// </summary>
+    private List<IInfrastructureEffect> BuildMultipleBoundaryUnsubscribeEffects(
+        MultipleBoundaryEvent boundaryMulti,
+        ActivityInstanceEntry hostEntry,
+        string? skipActivityId,
+        string? skipMessageName,
+        string? skipSignalName)
+    {
+        var effects = new List<IInfrastructureEffect>();
+
+        foreach (var definition in boundaryMulti.Definitions)
+        {
+            switch (definition)
+            {
+                case TimerEventDef:
+                    if (boundaryMulti.ActivityId == skipActivityId) continue;
+                    effects.Add(new UnregisterTimerEffect(
+                        _state.Id, hostEntry.ActivityInstanceId, boundaryMulti.ActivityId));
+                    break;
+
+                case MessageEventDef msgDef:
+                    var messageDef = _definition.GetMessageDefinition(msgDef.MessageDefinitionId);
+                    if (messageDef.Name == skipMessageName) continue;
+                    var correlationKey = ResolveCorrelationKey(messageDef, hostEntry.VariablesId);
+                    effects.Add(new UnsubscribeMessageEffect(messageDef.Name, correlationKey));
+                    break;
+
+                case SignalEventDef sigDef:
+                    var signalDef = _definition.GetSignalDefinition(sigDef.SignalDefinitionId);
+                    if (signalDef.Name == skipSignalName) continue;
+                    effects.Add(new UnsubscribeSignalEffect(
+                        signalDef.Name, _state.Id, boundaryMulti.ActivityId));
                     break;
             }
         }
@@ -2017,6 +2402,11 @@ public class WorkflowExecution
             case WorkflowCompleted:
                 _state.Complete();
                 break;
+            case WorkflowCancelled:
+                _state.Cancel();
+                break;
+            case EscalationUncaughtRaised:
+                break; // non-faulting per BPMN spec — recorded for observability only
             case ActivitySpawned e:
                 ApplyActivitySpawned(e);
                 break;

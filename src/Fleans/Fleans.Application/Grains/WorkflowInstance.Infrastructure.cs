@@ -95,7 +95,20 @@ public partial class WorkflowInstance
 
                 // Process commands through aggregate -> get infrastructure effects
                 var effects = _execution.ProcessCommands(commands, entry.ActivityInstanceId);
-                await PerformEffects(effects);
+                var escalationParentResult = await PerformEffects(effects);
+
+                // Log escalation thrown if a ThrowEscalationCommand was in the batch
+                var throwEsc = commands.OfType<ThrowEscalationCommand>().FirstOrDefault();
+                if (throwEsc is not null)
+                    LogEscalationThrown(throwEsc.EscalationCode, p.ActivityId, State.Id);
+
+                // If an escalation was thrown and the parent grain cancelled the child,
+                // terminate this workflow and break out of the execution loop.
+                if (escalationParentResult == EscalationHandledResult.Cancelled)
+                {
+                    _execution.TerminateForParentEscalationCancellation();
+                    return;
+                }
 
                 // Handle domain events published by activities (e.g., ExecuteScriptEvent)
                 foreach (var evt in adapter.PublishedEvents)
@@ -222,9 +235,11 @@ public partial class WorkflowInstance
         return orphanedScopeIds;
     }
 
-    private Task PerformEffects(IReadOnlyList<IInfrastructureEffect> effects)
+    private async Task<EscalationHandledResult?> PerformEffects(IReadOnlyList<IInfrastructureEffect> effects)
     {
-        return _effectDispatcher.DispatchAsync(effects, new WorkflowInstanceEffectContext(this));
+        var context = new WorkflowInstanceEffectContext(this);
+        await _effectDispatcher.DispatchAsync(effects, context);
+        return context.EscalationParentResult;
     }
 
     private async Task PublishDomainEvent(IDomainEvent domainEvent)
@@ -264,18 +279,50 @@ public partial class WorkflowInstance
                     case PendingBoundarySignalFired b:
                         LogSignalDeliveryBoundary(b.BoundaryActivityId);
                         break;
+                    case PendingChildEscalationRaised r:
+                        LogChildEscalationRaised(r.ChildWorkflowInstanceId, r.EscalationCode);
+                        break;
                 }
                 LogProcessingPendingEvent(pending.GetType().Name);
 
-                var effects = pending switch
+                if (pending is PendingChildEscalationRaised escalation)
                 {
-                    PendingChildCompleted c => _execution!.OnChildWorkflowCompleted(c.ParentActivityId, c.ChildVariables),
-                    PendingChildFailed f => _execution!.OnChildWorkflowFailed(f.ParentActivityId, f.Exception),
-                    PendingSignalDelivery s => _execution!.HandleSignalDelivery(s.ActivityId, s.HostActivityInstanceId),
-                    PendingBoundarySignalFired b => _execution!.HandleSignalDelivery(b.BoundaryActivityId, b.HostActivityInstanceId),
-                    _ => throw new InvalidOperationException($"Unknown pending event type: {pending.GetType().Name}")
-                };
-                await PerformEffects(effects);
+                    var (localEffects, localResult) = _execution!.HandleChildEscalationRaised(
+                        escalation.ChildWorkflowInstanceId, escalation.HostActivityId,
+                        escalation.EscalationCode, escalation.Variables);
+                    var parentResult = await PerformEffects(localEffects);
+
+                    // Log escalation caught at this grain if a boundary matched
+                    if (localResult == EscalationHandledResult.Cancelled)
+                        LogEscalationCaught(escalation.EscalationCode, escalation.HostActivityId, isInterrupting: true);
+                    else if (localResult == EscalationHandledResult.Continue)
+                        LogEscalationCaught(escalation.EscalationCode, escalation.HostActivityId, isInterrupting: false);
+
+                    EscalationHandledResult finalResult;
+                    if (localResult == EscalationHandledResult.NeedsParentLookup)
+                    {
+                        if (parentResult is null)
+                            LogEscalationParentResultMissing(escalation.EscalationCode, State.Id);
+                        finalResult = parentResult ?? EscalationHandledResult.Unhandled;
+                    }
+                    else
+                    {
+                        finalResult = localResult;
+                    }
+                    escalation.Tcs.SetResult(finalResult);
+                }
+                else
+                {
+                    var effects = pending switch
+                    {
+                        PendingChildCompleted c => _execution!.OnChildWorkflowCompleted(c.ParentActivityId, c.ChildVariables),
+                        PendingChildFailed f => _execution!.OnChildWorkflowFailed(f.ParentActivityId, f.Exception),
+                        PendingSignalDelivery s => _execution!.HandleSignalDelivery(s.ActivityId, s.HostActivityInstanceId),
+                        PendingBoundarySignalFired b => _execution!.HandleSignalDelivery(b.BoundaryActivityId, b.HostActivityInstanceId),
+                        _ => throw new InvalidOperationException($"Unknown pending event type: {pending.GetType().Name}")
+                    };
+                    await PerformEffects(effects);
+                }
                 await ResolveExternalCompletions();
                 await RunExecutionLoop();
 
@@ -445,6 +492,12 @@ public partial class WorkflowInstance
                 break;
             case TimerCycleUpdated timerCycle:
                 LogTimerCycleUpdated(timerCycle.HostActivityInstanceId, timerCycle.TimerActivityId, timerCycle.RemainingCycle is not null);
+                break;
+            case WorkflowCancelled wfCancelled:
+                LogWorkflowCancelled(wfCancelled.Reason);
+                break;
+            case EscalationUncaughtRaised escUncaught:
+                LogEscalationUncaught(escUncaught.EscalationCode, escUncaught.SourceActivityId);
                 break;
         }
     }
