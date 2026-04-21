@@ -16,7 +16,8 @@ public partial class WorkflowLifecycleEffectHandler : IEffectHandler
 
     public bool CanHandle(IInfrastructureEffect effect) =>
         effect is StartChildWorkflowEffect or NotifyParentCompletedEffect
-            or NotifyParentFailedEffect or PublishDomainEventEffect;
+            or NotifyParentFailedEffect or NotifyParentEscalationRaisedEffect
+            or PublishDomainEventEffect;
 
     public async Task HandleAsync(IInfrastructureEffect effect, IEffectContext context)
     {
@@ -34,6 +35,14 @@ public partial class WorkflowLifecycleEffectHandler : IEffectHandler
             case NotifyParentFailedEffect notifyFailed:
                 var parentFailGrain = context.GrainFactory.GetGrain<IWorkflowInstanceGrain>(notifyFailed.ParentInstanceId);
                 await parentFailGrain.OnChildWorkflowFailed(notifyFailed.ParentActivityId, notifyFailed.Exception);
+                break;
+
+            case NotifyParentEscalationRaisedEffect escalation:
+                var parentEscGrain = context.GrainFactory.GetGrain<IWorkflowInstanceGrain>(escalation.ParentWorkflowInstanceId);
+                var escalationResult = await parentEscGrain.OnChildEscalationRaised(
+                    escalation.ChildWorkflowInstanceId, escalation.HostActivityId,
+                    escalation.EscalationCode, escalation.Variables);
+                context.SetEscalationParentResult(escalationResult);
                 break;
 
             case PublishDomainEventEffect publishEvt:

@@ -10,7 +10,7 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1001, Level = LogLevel.Debug, Message = "Workflow execution started")]
     private partial void LogWorkflowStarted();
 
-    [LoggerMessage(EventId = 1076, Level = LogLevel.Information,
+    [LoggerMessage(EventId = 1078, Level = LogLevel.Information,
         Message = "Root-scope event sub-process listeners armed: {ListenerCount}")]
     private partial void LogRootScopeListenersArmed(int listenerCount);
 
@@ -272,32 +272,61 @@ public partial class WorkflowInstance
     private partial void LogEventSubProcessHandlerEndEventFired(
         string eventSubProcessId, string endEventId, Guid hostActivityInstanceId);
 
-    // Compensation event lifecycle (EventId 1090-1099)
-    [LoggerMessage(EventId = 1090, Level = LogLevel.Debug,
+    // Escalation lifecycle (EventId 1090-1099)
+    [LoggerMessage(EventId = 1090, Level = LogLevel.Information,
+        Message = "Escalation thrown: EscalationCode={EscalationCode}, ActivityId={ActivityId}, WorkflowInstanceId={WorkflowInstanceId}")]
+    private partial void LogEscalationThrown(string escalationCode, string activityId, Guid workflowInstanceId);
+
+    [LoggerMessage(EventId = 1091, Level = LogLevel.Debug,
+        Message = "Child escalation raised queued: ChildId={ChildWorkflowInstanceId}, EscalationCode={EscalationCode}")]
+    private partial void LogChildEscalationRaisedQueued(Guid childWorkflowInstanceId, string escalationCode);
+
+    [LoggerMessage(EventId = 1092, Level = LogLevel.Information,
+        Message = "Escalation caught: EscalationCode={EscalationCode}, BoundaryActivityId={BoundaryActivityId}, IsInterrupting={IsInterrupting}")]
+    private partial void LogEscalationCaught(string? escalationCode, string boundaryActivityId, bool isInterrupting);
+
+    [LoggerMessage(EventId = 1093, Level = LogLevel.Information,
+        Message = "Child escalation raised: ChildId={ChildWorkflowInstanceId}, EscalationCode={EscalationCode}")]
+    private partial void LogChildEscalationRaised(Guid childWorkflowInstanceId, string escalationCode);
+
+    [LoggerMessage(EventId = 3030, Level = LogLevel.Warning,
+        Message = "Workflow cancelled: {Reason}")]
+    private partial void LogWorkflowCancelled(string reason);
+
+    [LoggerMessage(EventId = 3031, Level = LogLevel.Warning,
+        Message = "Escalation uncaught: EscalationCode={EscalationCode}, SourceActivityId={SourceActivityId}")]
+    private partial void LogEscalationUncaught(string escalationCode, string sourceActivityId);
+
+    [LoggerMessage(EventId = 3032, Level = LogLevel.Warning,
+        Message = "Escalation parent result missing: expected _pendingEscalationParentResult to be set for EscalationCode={EscalationCode}, WorkflowInstanceId={WorkflowInstanceId} — defaulting to Unhandled")]
+    private partial void LogEscalationParentResultMissing(string? escalationCode, Guid workflowInstanceId);
+
+    // Compensation event lifecycle (EventId 1110-1119)
+    [LoggerMessage(EventId = 1110, Level = LogLevel.Debug,
         Message = "Compensable activity snapshot recorded: ActivityDefinitionId={ActivityDefinitionId}, Sequence={Sequence}, ScopeId={ScopeId}")]
     private partial void LogCompensableActivitySnapshotRecorded(string activityDefinitionId, int sequence, Guid? scopeId);
 
-    [LoggerMessage(EventId = 1091, Level = LogLevel.Information,
+    [LoggerMessage(EventId = 1111, Level = LogLevel.Information,
         Message = "Compensation walk started: ScopeId={ScopeId}, TargetActivityRef={TargetActivityRef}, HandlerCount={HandlerCount}")]
     private partial void LogCompensationWalkStarted(Guid? scopeId, string? targetActivityRef, int handlerCount);
 
-    [LoggerMessage(EventId = 1092, Level = LogLevel.Information,
+    [LoggerMessage(EventId = 1112, Level = LogLevel.Information,
         Message = "Compensation handler spawned: HandlerInstanceId={HandlerInstanceId}, CompensableActivityDefinitionId={CompensableActivityDefinitionId}, HandlerActivityId={HandlerActivityId}")]
     private partial void LogCompensationHandlerSpawned(Guid handlerInstanceId, string compensableActivityDefinitionId, string handlerActivityId);
 
-    [LoggerMessage(EventId = 1093, Level = LogLevel.Information,
+    [LoggerMessage(EventId = 1113, Level = LogLevel.Information,
         Message = "Compensation entry marked compensated: ActivityDefinitionId={ActivityDefinitionId}, ScopeId={ScopeId}")]
     private partial void LogCompensationEntryMarkedCompensated(string activityDefinitionId, Guid? scopeId);
 
-    [LoggerMessage(EventId = 1094, Level = LogLevel.Information,
+    [LoggerMessage(EventId = 1114, Level = LogLevel.Information,
         Message = "Compensation walk completed: ScopeId={ScopeId}")]
     private partial void LogCompensationWalkCompleted(Guid? scopeId);
 
-    [LoggerMessage(EventId = 1095, Level = LogLevel.Information,
+    [LoggerMessage(EventId = 1115, Level = LogLevel.Information,
         Message = "Compensation handler completed: HandlerInstanceId={HandlerInstanceId}, CompensableActivityDefinitionId={CompensableActivityDefinitionId}")]
     private partial void LogCompensationHandlerCompleted(Guid handlerInstanceId, string compensableActivityDefinitionId);
 
-    [LoggerMessage(EventId = 1096, Level = LogLevel.Error,
+    [LoggerMessage(EventId = 1116, Level = LogLevel.Error,
         Message = "Compensation handler failed: HandlerInstanceId={HandlerInstanceId}, ErrorCode={ErrorCode}, ErrorMessage={ErrorMessage}")]
     private partial void LogCompensationHandlerFailed(Guid handlerInstanceId, int errorCode, string errorMessage);
 

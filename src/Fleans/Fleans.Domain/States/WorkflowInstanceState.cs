@@ -27,6 +27,9 @@ public class WorkflowInstanceState
     [Id(6)]
     public bool IsCompleted { get; private set; }
 
+    [Id(19)]
+    public bool IsCancelled { get; private set; }
+
     [Id(7)]
     public DateTimeOffset? CreatedAt { get; private set; }
 
@@ -121,15 +124,15 @@ public class WorkflowInstanceState
     /// Append-only log of completed, compensable activities (those with a CompensationBoundaryEvent attached).
     /// Keyed implicitly by ScopeId on each entry. Used as input to compensation walks.
     /// </summary>
-    [Id(19)]
+    [Id(20)]
     public List<CompletedActivitySnapshot> CompensationLog { get; private set; } = [];
 
     /// <summary>Global monotonic counter for assigning CompletedAtSequence to compensation snapshots.</summary>
-    [Id(20)]
+    [Id(21)]
     public int NextCompensationSequence { get; private set; }
 
     /// <summary>Non-null while a compensation walk is in progress. At most one walk at a time.</summary>
-    [Id(21)]
+    [Id(22)]
     public CompensationWalkState? ActiveCompensationWalk { get; private set; }
 
     internal int GetDirtyFlags() => _dirtyFlags;
@@ -251,6 +254,19 @@ public class WorkflowInstanceState
         _dirtyFlags |= DirtyGatewayForks | DirtyComplexGatewayJoinStates;
         CompletedAt = DateTimeOffset.UtcNow;
         IsCompleted = true;
+    }
+
+    public void Cancel()
+    {
+        if (IsCompleted)
+            return; // already terminated — cancellation after completion is a no-op
+
+        GatewayForks.Clear();
+        ComplexGatewayJoinStates.Clear();
+        _dirtyFlags |= DirtyGatewayForks | DirtyComplexGatewayJoinStates;
+        CompletedAt = DateTimeOffset.UtcNow;
+        IsCompleted = true;
+        IsCancelled = true;
     }
 
     public Guid AddCloneOfVariableState(Guid variableStateId)

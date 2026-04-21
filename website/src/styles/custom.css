@@ -1,3 +1,19 @@
+/* Typography — issue #257 */
+/* IBM Plex Sans: body (400), italic prose (400-italic), UI labels/strong (600) */
+/* Note: weight 500 is NOT imported — no Starlight 0.38.2 element uses it */
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/400-italic.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+/* Space Grotesk: h1/h2 (700), h3/h4 (500) */
+@import '@fontsource/space-grotesk/500.css';
+@import '@fontsource/space-grotesk/700.css';
+/* @fontsource v5 includes font-display: swap in all generated CSS — no extra config needed */
+
+/* Typography tokens — theme-agnostic */
+:root {
+  --sl-font: 'IBM Plex Sans', sans-serif;
+}
+
 /* Palette source of truth: website/DESIGN.md § Color palette */
 :root[data-theme='dark'] {
   --sl-color-accent-low: #2a1609;
@@ -30,4 +46,24 @@
   --sl-color-black: #f5f5f0;
   --fleans-accent-2: #3a7d00;
   --fleans-surface: #f5f5f0;
+}
+
+/* Display font — headings */
+/* Selectors verified against @astrojs/starlight 0.38.2 source */
+/* .site-title: SiteTitle.astro <a class="site-title"> */
+/* .group-label .large: SidebarSublist.astro details>summary>span.group-label>span.large */
+.sl-markdown-content h1,
+.sl-markdown-content h2,
+.hero h1,
+.site-title,
+.group-label .large {
+  font-family: 'Space Grotesk', var(--sl-font-system);
+  font-weight: 700;
+}
+
+/* h3/h4: medium weight — uses the 500-weight import */
+.sl-markdown-content h3,
+.sl-markdown-content h4 {
+  font-family: 'Space Grotesk', var(--sl-font-system);
+  font-weight: 500;
 }

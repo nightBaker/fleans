@@ -55,6 +55,9 @@ public partial class BpmnConverter : IBpmnConverter
         // Parse signal definitions at <definitions> level
         var signals = ParseSignals(doc);
 
+        // Parse escalation definitions at <definitions> level
+        var escalations = ParseEscalations(doc);
+
         // Parse activities
         ParseActivities(process, activities, activityMap, defaultFlowIds);
 
@@ -67,7 +70,8 @@ public partial class BpmnConverter : IBpmnConverter
             Activities = activities,
             SequenceFlows = sequenceFlows,
             Messages = messages,
-            Signals = signals
+            Signals = signals,
+            Escalations = escalations
         };
 
         return workflow;
@@ -186,7 +190,7 @@ public partial class BpmnConverter : IBpmnConverter
             activityMap[id] = activity;
         }
 
-        // Parse intermediate throw events (signal, compensation, or multiple)
+        // Parse intermediate throw events (signal, escalation, compensation, or multiple)
         foreach (var throwEvent in scopeElement.Elements(Bpmn + "intermediateThrowEvent"))
         {
             var id = GetId(throwEvent);
@@ -207,12 +211,21 @@ public partial class BpmnConverter : IBpmnConverter
             else
             {
                 var signalDef = throwEvent.Element(Bpmn + "signalEventDefinition");
+                var escalationDef = throwEvent.Element(Bpmn + "escalationEventDefinition");
                 if (signalDef != null)
                 {
                     var signalRef = signalDef.Attribute("signalRef")?.Value
                         ?? throw new InvalidOperationException(
                             $"IntermediateThrowEvent '{id}' signalEventDefinition must have a signalRef attribute");
                     activity = new SignalIntermediateThrowEvent(id, signalRef);
+                }
+                else if (escalationDef != null)
+                {
+                    var escalationRef = escalationDef.Attribute("escalationRef")?.Value;
+                    var escalationCode = ResolveEscalationCode(scopeElement, escalationRef)
+                        ?? throw new InvalidOperationException(
+                            $"IntermediateThrowEvent '{id}' escalationEventDefinition must resolve to an escalation code");
+                    activity = new EscalationIntermediateThrowEvent(id, escalationCode);
                 }
                 else
                 {
@@ -229,10 +242,26 @@ public partial class BpmnConverter : IBpmnConverter
         foreach (var endEvent in scopeElement.Elements(Bpmn + "endEvent"))
         {
             var id = GetId(endEvent);
-            var compensateDef = endEvent.Element(Bpmn + "compensateEventDefinition");
-            Activity activity = compensateDef != null
-                ? new CompensationEndEvent(id, compensateDef.Attribute("activityRef")?.Value)
-                : new EndEvent(id);
+
+            Activity activity;
+            if (endEvent.Element(Bpmn + "compensateEventDefinition") is { } compEndDef)
+            {
+                activity = new CompensationEndEvent(id, compEndDef.Attribute("activityRef")?.Value);
+            }
+            else if (endEvent.Element(Bpmn + "escalationEventDefinition") is { } escEndDef)
+            {
+                var escalationRef = escEndDef.Attribute("escalationRef")?.Value;
+                var escalationCode = ResolveEscalationCode(scopeElement, escalationRef)
+                    ?? throw new InvalidOperationException(
+                        $"endEvent '{id}' escalationEventDefinition must resolve to an escalation code");
+                activity = new EscalationEndEvent(id, escalationCode);
+            }
+            else
+            {
+                activity = new EndEvent(id);
+            }
+
+
             activities.Add(activity);
             activityMap[id] = activity;
         }
@@ -613,8 +642,22 @@ public partial class BpmnConverter : IBpmnConverter
                 var errorDef = boundaryEl.Element(Bpmn + "errorEventDefinition");
                 var messageDef = boundaryEl.Element(Bpmn + "messageEventDefinition");
                 var signalDef = boundaryEl.Element(Bpmn + "signalEventDefinition");
+                var escalationDef = boundaryEl.Element(Bpmn + "escalationEventDefinition");
 
-                if (timerDef != null)
+                if (escalationDef != null)
+                {
+                    // BPMN spec: escalation boundary may only be attached to SubProcess or CallActivity
+                    if (activityMap.TryGetValue(attachedToRef, out var attachedActivity)
+                        && attachedActivity is not SubProcess && attachedActivity is not CallActivity)
+                    {
+                        throw new InvalidOperationException(
+                            $"boundaryEvent '{id}' escalationEventDefinition may only be attached to a SubProcess or CallActivity, not '{attachedActivity.GetType().Name}'");
+                    }
+                    var escalationRef = escalationDef.Attribute("escalationRef")?.Value;
+                    var escalationCode = ResolveEscalationCode(scopeElement, escalationRef);
+                    activity = new EscalationBoundaryEvent(id, attachedToRef, escalationCode, isInterrupting);
+                }
+                else if (timerDef != null)
                 {
                     var timerDefinition = ParseTimerDefinition(timerDef);
                     activity = new BoundaryTimerEvent(id, attachedToRef, timerDefinition, isInterrupting);
@@ -827,6 +870,41 @@ public partial class BpmnConverter : IBpmnConverter
             signals.Add(new SignalDefinition(id, name));
         }
         return signals;
+    }
+
+    private static List<EscalationDefinition> ParseEscalations(XDocument doc)
+    {
+        var escalations = new List<EscalationDefinition>();
+        foreach (var escEl in doc.Root!.Elements(Bpmn + "escalation"))
+        {
+            var id = escEl.Attribute("id")?.Value
+                ?? throw new InvalidOperationException("escalation element must have an id attribute");
+            var escalationCode = escEl.Attribute("escalationCode")?.Value
+                ?? throw new InvalidOperationException($"escalation '{id}' must have an escalationCode attribute");
+            var name = escEl.Attribute("name")?.Value;
+            escalations.Add(new EscalationDefinition(id, escalationCode, name));
+        }
+        return escalations;
+    }
+
+    private static string? ResolveEscalationCode(XElement scopeElement, string? escalationRef)
+    {
+        if (string.IsNullOrEmpty(escalationRef))
+            return null;
+
+        var root = scopeElement.Document?.Root;
+        if (root is null)
+            return escalationRef;
+
+        var escalationElement = root.Elements(Bpmn + "escalation")
+            .FirstOrDefault(e => e.Attribute("id")?.Value == escalationRef)
+            ?? throw new InvalidOperationException(
+                $"Escalation definition '{escalationRef}' referenced but not found in <definitions>. "
+                + "Add a <bpmn:escalation id=\"{escalationRef}\" escalationCode=\"...\"/> element.");
+
+        return escalationElement.Attribute("escalationCode")?.Value
+            ?? throw new InvalidOperationException(
+                $"Escalation definition '{escalationRef}' is missing the 'escalationCode' attribute.");
     }
 
     private static string? FindCorrelationKeyOnEventElement(XElement process, string messageId)
