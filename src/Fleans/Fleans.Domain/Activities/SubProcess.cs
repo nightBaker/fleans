@@ -23,6 +23,9 @@ public record SubProcess(string ActivityId) : BoundarableActivity(ActivityId), I
     [Id(4)]
     public List<SignalDefinition> Signals { get; init; } = [];
 
+    [Id(5)]
+    public List<EscalationDefinition> Escalations { get; init; } = [];
+
     public Activity GetActivity(string activityId)
         => Activities.First(a => a.ActivityId == activityId);
 

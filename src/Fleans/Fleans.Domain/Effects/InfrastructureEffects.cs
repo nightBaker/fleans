@@ -53,5 +53,13 @@ public record UpdateUserTaskClaimEffect(
     Guid ActivityInstanceId, string? ClaimedBy,
     UserTaskLifecycleState TaskState) : IInfrastructureEffect;
 
+// Escalation
+public record NotifyParentEscalationRaisedEffect(
+    Guid ParentWorkflowInstanceId,
+    Guid ChildWorkflowInstanceId,
+    string HostActivityId,
+    string EscalationCode,
+    ExpandoObject Variables) : IInfrastructureEffect;
+
 // Event publishing
 public record PublishDomainEventEffect(IDomainEvent Event) : IInfrastructureEffect;

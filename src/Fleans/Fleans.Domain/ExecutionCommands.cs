@@ -61,6 +61,10 @@ public record ThrowSignalCommand(
     [property: Id(0)] string SignalName) : IExecutionCommand;
 
 [GenerateSerializer]
+public record ThrowEscalationCommand(
+    [property: Id(0)] string EscalationCode) : IExecutionCommand;
+
+[GenerateSerializer]
 public record RegisterUserTaskCommand(
     [property: Id(0)] string? Assignee,
     [property: Id(1)] IReadOnlyList<string> CandidateGroups,

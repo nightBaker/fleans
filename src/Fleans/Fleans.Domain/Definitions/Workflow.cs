@@ -17,6 +17,7 @@ namespace Fleans.Domain
         List<SequenceFlow> SequenceFlows { get; }
         List<MessageDefinition> Messages { get; }
         List<SignalDefinition> Signals { get; }
+        List<EscalationDefinition> Escalations { get; }
         bool IsRootScope { get; }
         Activity GetActivity(string activityId);
 
@@ -120,6 +121,10 @@ namespace Fleans.Domain
             => Activities.OfType<MultipleBoundaryEvent>()
                 .Where(b => b.AttachedToActivityId == attachedToActivityId);
 
+        IEnumerable<EscalationBoundaryEvent> GetBoundaryEscalationEvents(string attachedToActivityId)
+            => Activities.OfType<EscalationBoundaryEvent>()
+                .Where(b => b.AttachedToActivityId == attachedToActivityId);
+
         /// <summary>
         /// Recursively searches this definition and nested SubProcess scopes
         /// for the scope that directly contains the given activity.
@@ -194,6 +199,47 @@ namespace Fleans.Domain
                 // Prefer specific error code match over catch-all
                 var match = candidates.FirstOrDefault(b => b.ErrorCode == errorCode)
                             ?? candidates.FirstOrDefault(b => b.ErrorCode == null);
+
+                if (match is not null)
+                    return (match, scope, targetActivityId);
+
+                // Bubble up: if scope is a SubProcess, check its parent for boundary on the SubProcess
+                if (scope is SubProcess subProcess)
+                    targetActivityId = subProcess.ActivityId;
+                else
+                    return null; // at root scope, no match found
+            }
+        }
+
+        /// <summary>
+        /// Finds the matching EscalationBoundaryEvent for a thrown escalation, searching the
+        /// activity's scope and walking up parent SubProcess scopes if not found.
+        /// Specific escalation code matches take priority over catch-all (null EscalationCode) boundaries.
+        /// Returns null if no match is found (escalation is uncaught at this grain level).
+        /// </summary>
+        (EscalationBoundaryEvent BoundaryEvent, IWorkflowDefinition Scope, string AttachedToActivityId)?
+            FindBoundaryEscalationHandler(string throwingActivityId, string? escalationCode)
+        {
+            var targetActivityId = throwingActivityId;
+
+            while (true)
+            {
+                var scope = FindScopeForActivity(targetActivityId);
+                if (scope is null) return null;
+
+                // Look for EscalationBoundaryEvent attached to targetActivityId within this scope.
+                // On the first iteration, targetActivityId is the throwing activity itself —
+                // this is a no-op for leaf activities but correct when the thrower IS a
+                // SubProcess/CallActivity with boundaries attached directly to it.
+                var candidates = scope.Activities
+                    .OfType<EscalationBoundaryEvent>()
+                    .Where(b => b.AttachedToActivityId == targetActivityId
+                        && (b.EscalationCode == null || b.EscalationCode == escalationCode))
+                    .ToList();
+
+                // Prefer specific escalation code match over catch-all
+                var match = candidates.FirstOrDefault(b => b.EscalationCode == escalationCode)
+                            ?? candidates.FirstOrDefault(b => b.EscalationCode == null);
 
                 if (match is not null)
                     return (match, scope, targetActivityId);
@@ -385,6 +431,9 @@ namespace Fleans.Domain
 
         [Id(5)]
         public List<SignalDefinition> Signals { get; init; } = [];
+
+        [Id(6)]
+        public List<EscalationDefinition> Escalations { get; init; } = [];
 
         public bool IsRootScope => true;
 
