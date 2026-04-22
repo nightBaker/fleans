@@ -3,7 +3,7 @@ import starlight from '@astrojs/starlight';
 
 // https://astro.build/config
 export default defineConfig({
-  site: 'https://example.github.io',
+  site: 'https://nightBaker.github.io',
   base: '/fleans',
   integrations: [
     starlight({
