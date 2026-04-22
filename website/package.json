@@ -22,7 +22,9 @@
     "three": "^0.183.0"
   },
   "devDependencies": {
+    "@astrojs/check": "^0.9.8",
     "@types/three": "^0.183.0",
-    "playwright": "^1.49.0"
+    "playwright": "^1.49.0",
+    "typescript": "^5.9.3"
   }
 }
