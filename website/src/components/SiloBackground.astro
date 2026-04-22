@@ -1,0 +1,42 @@
+---
+import '../styles/silo-background.css';
+---
+
+<div class="silo-bg-root" aria-hidden="true">
+  <canvas class="silo-bg-canvas" id="silo-bg-canvas"></canvas>
+  <picture class="silo-poster" id="silo-bg-poster" hidden>
+    <img
+      alt=""
+      data-theme-src-dark="/fleans/silo-poster-dark.webp"
+      data-theme-src-light="/fleans/silo-poster-light.webp"
+    />
+  </picture>
+  <div class="silo-contrast-overlay" id="silo-contrast-overlay"></div>
+</div>
+
+<button
+  type="button"
+  class="silo-close-btn"
+  id="silo-close-btn"
+  aria-label="Return to landing page"
+  hidden
+>&times;</button>
+
+<script is:inline>
+  // Runs before first paint; sets poster src to the correct theme variant.
+  (function () {
+    var pic = document.getElementById('silo-bg-poster');
+    if (!pic) return;
+    var img = pic.querySelector('img');
+    if (!img) return;
+    var theme = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+    img.src = theme === 'light'
+      ? img.dataset.themeSrcLight
+      : img.dataset.themeSrcDark;
+  })();
+</script>
+
+<script>
+  import { mountSiloBackground } from '../scripts/silo-bg-controller';
+  mountSiloBackground();
+</script>
