@@ -62,6 +62,130 @@ curl -s -X POST https://localhost:7140/Workflow/deploy \
 
 This reads the `.bpmn` file, JSON-escapes it with `jq -Rs`, and sends it to the deploy endpoint. The response contains the `ProcessDefinitionKey` you pass to `/start` to create instances.
 
+### `POST /Workflow/start`
+
+Starts a new workflow instance from a deployed process definition. Returns the instance ID which can be used to track state, send messages, or complete activities.
+
+**Request**
+
+```json
+POST /Workflow/start
+Content-Type: application/json
+
+{
+  "WorkflowId": "my-process",
+  "Variables": { "amount": 100 }
+}
+```
+
+`Variables` is optional. When provided, variables are merged into the root scope before the workflow starts.
+
+**Success response (200)**
+
+```json
+{
+  "WorkflowInstanceId": "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+}
+```
+
+**Error response (400)**
+
+```json
+{
+  "Error": "WorkflowId is required"
+}
+```
+
+### `POST /Workflow/message`
+
+Delivers a message to workflow instances waiting for it, correlated by key. Used to trigger intermediate message catch events and message start events.
+
+**Request**
+
+```json
+POST /Workflow/message
+Content-Type: application/json
+
+{
+  "MessageName": "payment-received",
+  "CorrelationKey": "order-123",
+  "Variables": { "paymentId": "pay-456" }
+}
+```
+
+**Success response (200)**
+
+```json
+{
+  "Delivered": true,
+  "WorkflowInstanceIds": ["3fa85f64-5717-4562-b3fc-2c963f66afa6"]
+}
+```
+
+**Error responses**
+
+- **400** — `{"Error": "MessageName is required"}`
+- **404** — `{"Error": "No active subscription found for message 'payment-received' with correlation key 'order-123'"}` — no workflow instance is currently waiting for this message/key combination
+
+### `POST /Workflow/signal`
+
+Broadcasts a signal to all workflow instances listening for it. Unlike messages, signals have no correlation key — every matching listener receives the signal.
+
+**Request**
+
+```json
+POST /Workflow/signal
+Content-Type: application/json
+
+{
+  "SignalName": "global-alert"
+}
+```
+
+**Success response (200)**
+
+```json
+{
+  "DeliveredCount": 2,
+  "WorkflowInstanceIds": [
+    "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+    "8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8"
+  ]
+}
+```
+
+**Error responses**
+
+- **400** — `{"Error": "SignalName is required"}`
+- **404** — `{"Error": "No active subscription found for signal 'global-alert'"}` — no workflow instance is currently listening for this signal
+
+### `POST /Workflow/complete-activity`
+
+Completes a manual activity (e.g., a task waiting for external input) on a running workflow instance, optionally passing output variables.
+
+**Request**
+
+```json
+POST /Workflow/complete-activity
+Content-Type: application/json
+
+{
+  "WorkflowInstanceId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "ActivityId": "review-task",
+  "Variables": { "approved": true }
+}
+```
+
+**Success response (200)** — empty body
+
+**Error response (400)**
+
+```json
+{
+  "Error": "WorkflowInstanceId is required"
+}
+```
+
 ### Instance State endpoint
 
 `GET /Workflow/instances/{instanceId}/state` returns a per-instance state snapshot including `activeActivityIds`, `completedActivityIds`, `isStarted`, `isCompleted`, and related fields.
