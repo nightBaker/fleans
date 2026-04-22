@@ -15,7 +15,7 @@ export default defineConfig({
       },
       favicon: '/favicon.svg',
       social: [
-        { icon: 'github', label: 'GitHub', href: 'https://github.com/<github-user>/fleans' },
+        { icon: 'github', label: 'GitHub', href: 'https://github.com/nightBaker/fleans' },
       ],
       sidebar: [
         {
