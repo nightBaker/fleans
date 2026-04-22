@@ -3,11 +3,19 @@ import '../styles/silo-background.css';
 ---
 
 <script is:inline>
-  // Splash page is a dark-only stage for the 3D scene — pin data-theme to
-  // 'dark' before first paint, regardless of the user's global preference.
-  // localStorage is NOT touched, so the user's preference is preserved on
-  // other pages.
-  document.documentElement.dataset.theme = 'dark';
+  // Splash page is a dark-only stage for the 3D scene. Set data-theme=dark
+  // before first paint, then keep it locked via a MutationObserver so
+  // Starlight's ThemeProvider, localStorage sync, or any client-side
+  // navigation can't flip the splash to light. localStorage is NOT touched,
+  // so the user's preference is preserved on other pages.
+  (function () {
+    var html = document.documentElement;
+    html.dataset.theme = 'dark';
+    var mo = new MutationObserver(function () {
+      if (html.dataset.theme !== 'dark') html.dataset.theme = 'dark';
+    });
+    mo.observe(html, { attributes: true, attributeFilter: ['data-theme'] });
+  })();
 </script>
 
 <div class="silo-bg-root" aria-hidden="true">
