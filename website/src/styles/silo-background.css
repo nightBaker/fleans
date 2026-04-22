@@ -58,9 +58,12 @@
   }
 }
 
-/* INTERACTIVE state: body class set by controller. */
+/* INTERACTIVE state: body class set by controller.
+ * The splash MDX renders <SiloBackground /> INSIDE .sl-markdown-content, so
+ * we can't hide that whole container — it would take the canvas and close
+ * button with it. Instead, hide each markdown child except our own. */
 body.silo-interactive .hero,
-body.silo-interactive .sl-markdown-content,
+body.silo-interactive .sl-markdown-content > :not(.silo-bg-root):not(.silo-close-btn):not(script),
 body.silo-interactive .silo-contrast-overlay {
   opacity: 0;
   visibility: hidden;
@@ -75,7 +78,7 @@ body.silo-interactive .silo-bg-root {
 
 /* Default (IDLE): ensure fades reverse. */
 .hero,
-.sl-markdown-content,
+.sl-markdown-content > :not(.silo-bg-root):not(.silo-close-btn):not(script),
 .silo-contrast-overlay {
   opacity: 1;
   visibility: visible;
@@ -130,9 +133,9 @@ body.silo-interactive .silo-close-btn {
   .silo-contrast-overlay,
   .silo-close-btn,
   .hero,
-  .sl-markdown-content,
+  .sl-markdown-content > :not(.silo-bg-root):not(.silo-close-btn):not(script),
   body.silo-interactive .hero,
-  body.silo-interactive .sl-markdown-content,
+  body.silo-interactive .sl-markdown-content > :not(.silo-bg-root):not(.silo-close-btn):not(script),
   body.silo-interactive .silo-contrast-overlay {
     transition: none !important;
   }
