@@ -148,8 +148,8 @@ for (let i = 0; i < activeSiloCount; i++) {
 // --- PENTAGON SHAPE HELPERS ---
 function createPentagonShape(radius) {
   const shape = new THREE.Shape();
-  for (let i = 0; i < 5; i++) {
-    const angle = (i / 5) * Math.PI * 2 - Math.PI / 2;
+  for (let i = 0; i < 6; i++) {
+    const angle = (i / 6) * Math.PI * 2 - Math.PI / 2;
     const x = Math.cos(angle) * radius;
     const y = Math.sin(angle) * radius;
     if (i === 0) shape.moveTo(x, y);
@@ -166,12 +166,12 @@ function createPentagonEdges(radius, height, yOffset, edgeMat) {
   // as the extruded Shape vertices after rotation.x = -Math.PI/2 (which
   // maps shape-space +Y → world -Z). Without this, the frame and walls/roof
   // are mirrored 180° around Y and corners don't meet.
-  for (let i = 0; i < 5; i++) {
-    const angle = (i / 5) * Math.PI * 2 - Math.PI / 2;
+  for (let i = 0; i < 6; i++) {
+    const angle = (i / 6) * Math.PI * 2 - Math.PI / 2;
     vertices.push(new THREE.Vector3(Math.cos(angle) * radius, 0, -Math.sin(angle) * radius));
   }
 
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 6; i++) {
     const pillarGeo = new THREE.CylinderGeometry(0.1, 0.1, height, 8);
     const pillar = new THREE.Mesh(pillarGeo, edgeMat);
     pillar.position.set(vertices[i].x, yOffset + height / 2, vertices[i].z);
@@ -180,8 +180,8 @@ function createPentagonEdges(radius, height, yOffset, edgeMat) {
   }
 
   [yOffset, yOffset + height].forEach((y, ri) => {
-    for (let i = 0; i < 5; i++) {
-      const next = (i + 1) % 5;
+    for (let i = 0; i < 6; i++) {
+      const next = (i + 1) % 6;
       const start = vertices[i];
       const end = vertices[next];
       const mid = new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);
@@ -351,8 +351,8 @@ function createSilo(position, colorHex, labelIndex) {
   const pillarStreamGeo = new THREE.SphereGeometry(0.09, 10, 10);
   const pillarStreamMats = [];
   const pillarStreams = [];
-  for (let i = 0; i < 5; i++) {
-    const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
     const px = Math.cos(a) * pentRadius;
     const pz = -Math.sin(a) * pentRadius;
     const smat = new THREE.MeshStandardMaterial({
@@ -365,7 +365,7 @@ function createSilo(position, colorHex, labelIndex) {
     const stream = new THREE.Mesh(pillarStreamGeo, smat);
     stream.name = `silo_stream_${id}_${i}`;
     stream.position.set(px, 0, pz);
-    stream.userData = { phase: i / 5 };
+    stream.userData = { phase: i / 6 };
     pillarStreamMats.push(smat);
     pillarStreams.push(stream);
     group.add(stream);
@@ -460,14 +460,14 @@ function createSilo(position, colorHex, labelIndex) {
   ring.position.y = 0.35;
   const ringRadius = pentRadius + 0.3;
   const ringVerts = [];
-  for (let i = 0; i < 5; i++) {
-    const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
     ringVerts.push(new THREE.Vector3(Math.cos(a) * ringRadius, 0, -Math.sin(a) * ringRadius));
   }
   const ringSegGeos = [];
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 6; i++) {
     const start = ringVerts[i];
-    const end = ringVerts[(i + 1) % 5];
+    const end = ringVerts[(i + 1) % 6];
     const mid = start.clone().add(end).multiplyScalar(0.5);
     const len = start.distanceTo(end);
     const segGeo = new THREE.CylinderGeometry(0.04, 0.04, len, 8);
