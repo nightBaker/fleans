@@ -71,6 +71,37 @@ public record ConditionalWatcherFired(Guid ActivityInstanceId) : IDomainEvent;
 public record ConditionalWatcherCleared(Guid ActivityInstanceId) : IDomainEvent;
 public record ConditionalWatcherResultUpdated(Guid ActivityInstanceId, bool Result) : IDomainEvent;
 
+// Compensation
+public record CompensableActivitySnapshotRecorded(
+    Guid ActivityInstanceId,
+    string ActivityDefinitionId,
+    ExpandoObject VariablesSnapshot,
+    Guid? ScopeId) : IDomainEvent;
+
+public record CompensationWalkStarted(
+    Guid? ScopeId,
+    string? TargetActivityRef,
+    int HandlerCount,
+    Guid ThrowerActivityInstanceId) : IDomainEvent;
+
+public record CompensationHandlerSpawned(
+    Guid HandlerInstanceId,
+    string CompensableActivityDefinitionId,
+    string HandlerActivityId,
+    Guid? ScopeId) : IDomainEvent;
+
+public record CompensationEntryMarkedCompensated(
+    string ActivityDefinitionId,
+    Guid? ScopeId) : IDomainEvent;
+
+public record CompensationWalkCompleted(Guid? ScopeId) : IDomainEvent;
+
+public record CompensationWalkFailed(
+    Guid? ScopeId,
+    Guid HandlerInstanceId,
+    int ErrorCode,
+    string ErrorMessage) : IDomainEvent;
+
 // Transaction Sub-Process outcome
 // Plain record — no [GenerateSerializer] — stored via Newtonsoft.Json in EfCoreEventStore,
 // consistent with all other JournaledGrain events in this file.

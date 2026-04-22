@@ -48,6 +48,12 @@ internal static class FleanModelConfiguration
             // UserTasks is an in-memory dictionary rehydrated from the UserTasks table on activation.
             entity.Ignore(e => e.UserTasks);
 
+            // CompensationLog and ActiveCompensationWalk are event-sourced state: they are rebuilt
+            // from domain events on grain activation and are NOT projected to the relational store.
+            entity.Ignore(e => e.CompensationLog);
+            entity.Ignore(e => e.ActiveCompensationWalk);
+            entity.Ignore(e => e.NextCompensationSequence);
+
             // TransactionOutcomes is rebuilt from TransactionOutcomeSet events on grain activation.
             entity.Ignore(e => e.TransactionOutcomes);
 
