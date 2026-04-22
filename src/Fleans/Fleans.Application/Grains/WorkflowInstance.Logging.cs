@@ -301,6 +301,35 @@ public partial class WorkflowInstance
         Message = "Escalation parent result missing: expected _pendingEscalationParentResult to be set for EscalationCode={EscalationCode}, WorkflowInstanceId={WorkflowInstanceId} — defaulting to Unhandled")]
     private partial void LogEscalationParentResultMissing(string? escalationCode, Guid workflowInstanceId);
 
+    // Compensation event lifecycle (EventId 1110-1119)
+    [LoggerMessage(EventId = 1110, Level = LogLevel.Debug,
+        Message = "Compensable activity snapshot recorded: ActivityDefinitionId={ActivityDefinitionId}, Sequence={Sequence}, ScopeId={ScopeId}")]
+    private partial void LogCompensableActivitySnapshotRecorded(string activityDefinitionId, int sequence, Guid? scopeId);
+
+    [LoggerMessage(EventId = 1111, Level = LogLevel.Information,
+        Message = "Compensation walk started: ScopeId={ScopeId}, TargetActivityRef={TargetActivityRef}, HandlerCount={HandlerCount}")]
+    private partial void LogCompensationWalkStarted(Guid? scopeId, string? targetActivityRef, int handlerCount);
+
+    [LoggerMessage(EventId = 1112, Level = LogLevel.Information,
+        Message = "Compensation handler spawned: HandlerInstanceId={HandlerInstanceId}, CompensableActivityDefinitionId={CompensableActivityDefinitionId}, HandlerActivityId={HandlerActivityId}")]
+    private partial void LogCompensationHandlerSpawned(Guid handlerInstanceId, string compensableActivityDefinitionId, string handlerActivityId);
+
+    [LoggerMessage(EventId = 1113, Level = LogLevel.Information,
+        Message = "Compensation entry marked compensated: ActivityDefinitionId={ActivityDefinitionId}, ScopeId={ScopeId}")]
+    private partial void LogCompensationEntryMarkedCompensated(string activityDefinitionId, Guid? scopeId);
+
+    [LoggerMessage(EventId = 1114, Level = LogLevel.Information,
+        Message = "Compensation walk completed: ScopeId={ScopeId}")]
+    private partial void LogCompensationWalkCompleted(Guid? scopeId);
+
+    [LoggerMessage(EventId = 1115, Level = LogLevel.Information,
+        Message = "Compensation handler completed: HandlerInstanceId={HandlerInstanceId}, CompensableActivityDefinitionId={CompensableActivityDefinitionId}")]
+    private partial void LogCompensationHandlerCompleted(Guid handlerInstanceId, string compensableActivityDefinitionId);
+
+    [LoggerMessage(EventId = 1116, Level = LogLevel.Error,
+        Message = "Compensation handler failed: HandlerInstanceId={HandlerInstanceId}, ErrorCode={ErrorCode}, ErrorMessage={ErrorMessage}")]
+    private partial void LogCompensationHandlerFailed(Guid handlerInstanceId, int errorCode, string errorMessage);
+
     // Complex gateway lifecycle (EventId 1080-1089)
     [LoggerMessage(EventId = 1080, Level = LogLevel.Debug,
         Message = "Complex gateway activation condition late callback — join instance {ActivityInstanceId} has already fired or was removed")]
