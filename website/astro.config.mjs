@@ -15,7 +15,7 @@ export default defineConfig({
       },
       favicon: '/favicon.svg',
       social: [
-        { icon: 'github', label: 'GitHub', href: 'https://github.com/<github-user>/fleans' },
+        { icon: 'github', label: 'GitHub', href: 'https://github.com/nightBaker/fleans' },
       ],
       sidebar: [
         {
@@ -29,6 +29,7 @@ export default defineConfig({
           label: 'Concepts',
           items: [
             { label: 'Architecture', slug: 'concepts/architecture' },
+            { label: 'What is BPMN?', slug: 'concepts/bpmn-overview' },
             { label: 'BPMN Support', slug: 'concepts/bpmn-support' },
           ],
         },

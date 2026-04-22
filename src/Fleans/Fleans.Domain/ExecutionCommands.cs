@@ -88,3 +88,14 @@ public record EvaluateActivationConditionCommand(
 public record DiscardLateTokenCommand(
     [property: Id(0)] string Reason) : IExecutionCommand;
 
+/// <summary>
+/// Emitted by CompensationIntermediateThrowEvent and CompensationEndEvent to trigger
+/// the compensation walk for the enclosing scope. The scope is resolved at runtime
+/// from the thrower's ScopeId. If TargetActivityRef is null, all compensable activities
+/// in the scope are compensated (broadcast); otherwise only the named activity (targeted).
+/// </summary>
+[GenerateSerializer]
+public record CompensationRequestedCommand(
+    [property: Id(0)] Guid ThrowerActivityInstanceId,
+    [property: Id(1)] string? TargetActivityRef) : IExecutionCommand;
+
