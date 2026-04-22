@@ -71,8 +71,8 @@ builder.UseOrleans(siloBuilder =>
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure();
 
-// Persistence — SQLite for local dev
-builder.AddFleansSqlitePersistence();
+// Persistence — provider selected by Persistence:Provider config (default: Sqlite)
+builder.AddFleansPersistence();
 
 builder.Services.AddControllers();
 
