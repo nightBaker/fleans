@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI">
+
+  <process id="compensation-broadcast-process" isExecutable="true">
+    <startEvent id="start" name="Start" />
+
+    <!-- Two script tasks that will be compensated in reverse order -->
+    <scriptTask id="reserve_hotel" name="Reserve Hotel" scriptFormat="csharp">
+      <script>_context.hotelStatus = "reserved";</script>
+    </scriptTask>
+
+    <scriptTask id="book_flight" name="Book Flight" scriptFormat="csharp">
+      <script>_context.flightStatus = "booked";</script>
+    </scriptTask>
+
+    <!-- Compensation boundary events (non-interrupting, cancelActivity=false) -->
+    <boundaryEvent id="cb_hotel" attachedToRef="reserve_hotel" cancelActivity="false">
+      <compensateEventDefinition />
+    </boundaryEvent>
+
+    <boundaryEvent id="cb_flight" attachedToRef="book_flight" cancelActivity="false">
+      <compensateEventDefinition />
+    </boundaryEvent>
+
+    <!-- Compensation handler tasks (executed during compensation walk) -->
+    <scriptTask id="cancel_hotel" name="Cancel Hotel Reservation" scriptFormat="csharp">
+      <script>_context.hotelStatus = "cancelled";</script>
+    </scriptTask>
+
+    <scriptTask id="cancel_flight" name="Cancel Flight Booking" scriptFormat="csharp">
+      <script>_context.flightStatus = "cancelled";</script>
+    </scriptTask>
+
+    <!-- Compensation intermediate throw event — broadcasts to all compensable activities in scope -->
+    <intermediateThrowEvent id="compensate_all" name="Compensate All" >
+      <compensateEventDefinition />
+    </intermediateThrowEvent>
+
+    <endEvent id="end" name="End" />
+
+    <!-- Associations: link boundary events to their handlers -->
+    <association id="assoc_hotel" sourceRef="cb_hotel" targetRef="cancel_hotel" associationDirection="One" />
+    <association id="assoc_flight" sourceRef="cb_flight" targetRef="cancel_flight" associationDirection="One" />
+
+    <!-- Sequence flows -->
+    <sequenceFlow id="f1" sourceRef="start" targetRef="reserve_hotel" />
+    <sequenceFlow id="f2" sourceRef="reserve_hotel" targetRef="book_flight" />
+    <sequenceFlow id="f3" sourceRef="book_flight" targetRef="compensate_all" />
+    <sequenceFlow id="f4" sourceRef="compensate_all" targetRef="end" />
+  </process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="compensation-broadcast-process">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="152" y="82" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="reserve_hotel_di" bpmnElement="reserve_hotel">
+        <dc:Bounds x="240" y="60" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="book_flight_di" bpmnElement="book_flight">
+        <dc:Bounds x="390" y="60" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="compensate_all_di" bpmnElement="compensate_all">
+        <dc:Bounds x="542" y="82" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_di" bpmnElement="end">
+        <dc:Bounds x="632" y="82" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="cb_hotel_di" bpmnElement="cb_hotel">
+        <dc:Bounds x="272" y="122" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="cancel_hotel_di" bpmnElement="cancel_hotel">
+        <dc:Bounds x="240" y="210" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="cb_flight_di" bpmnElement="cb_flight">
+        <dc:Bounds x="422" y="122" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="cancel_flight_di" bpmnElement="cancel_flight">
+        <dc:Bounds x="390" y="210" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="188" y="100" />
+        <di:waypoint x="240" y="100" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="340" y="100" />
+        <di:waypoint x="390" y="100" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="490" y="100" />
+        <di:waypoint x="542" y="100" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f4_di" bpmnElement="f4">
+        <di:waypoint x="578" y="100" />
+        <di:waypoint x="632" y="100" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

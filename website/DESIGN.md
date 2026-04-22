@@ -1,26 +1,110 @@
-# Fleans design doc
+# Fleans Website Design
 
-## Overview
+Design decisions, rationale, and guidelines for the Fleans documentation website. Sections are owned by individual design issues.
 
-Design doc for the Fleans marketing + docs site. Sections owned by individual design issues.
+## Aesthetic Direction
 
-## Color palette
+> **Status note — retrospective brief:** This section codifies aesthetic decisions already validated by sibling issues #257–#261 (typography pair, color palette, hero redesign, motion details, visual details). It does not prescribe new choices; it documents the reasoning behind decisions already in review so future contributors have a coherent reference instead of scattered PR descriptions.
+>
+> All subsections below are written in the descriptive voice (*"the site is designed to…"*), not the prescriptive voice (*"the site should…"*). Contributors who deviate from this brief should have a conscious reason, not just an absent reference.
 
-Chosen direction: **Candidate 1 — Brutalist-technical** (owner decision on [#258](https://github.com/nightBaker/fleans/issues/258)). The site signals a workflow engine for backend developers — industrial orange on near-black reads like CLI output and industrial signage, not like default Starlight with a blue tint.
+### Audience
+
+Backend .NET engineers and architects who:
+- Already know what BPMN is or are willing to learn it
+- Are evaluating whether Fleans replaces Camunda, Temporal, or a home-grown state machine
+- Work primarily in dark IDEs and terminals
+- Distrust tools that hide complexity; respect tools that are honest about it
+
+They do not need to be convinced workflows are important. They need to be convinced Fleans is the right implementation.
+
+### Tone
+
+**Precise. Formal. Confident without being loud.**
+
+The tone is that of a well-designed technical specification document — dense when it needs to be, clear when it can afford to be. Not terse to the point of unfriendliness, but never chatty. Headings read like section labels in an RFC. Code is always shown, never described.
+
+Visual corollary: tight typographic rhythm, exact spacing, meaningful contrast. Ornamentation only when it carries meaning (e.g., a BPMN flow diagram as a visual element, not just a screenshot).
+
+### What Makes It Unforgettable
+
+Three things no other .NET workflow engine site is designed to do:
+
+1. **The BPMN diagram as hero art** — A real BPMN flow rendered in the page's own visual language (CSS or inline SVG), not a screenshot. Backend devs immediately recognise it and feel at home. Non-devs see a sophisticated data-flow graphic.
+
+2. **IBM Plex as a tribal signal** — IBM Plex Sans is the font IBM uses for developer-facing products (VS Code extension docs, Cloud platform docs). For backend devs who have worked in IBM/enterprise spaces, it signals 'serious tooling' without a word being said.
+
+3. **Dark-first, light-correct** — Almost all dev-tool sites are designed light with a dark mode bolted on. Fleans inverts this. The dark theme is the reference; light is the polite alternative. The color palette (near-true black + industrial orange accent) is built to be extraordinary in dark mode and merely clean in light.
+
+### Light Mode Constraint
+
+Light mode uses the same type scale, spacing, and layout as dark mode. **Only surface colors and accent lightness change.** The constraint: light mode must read as *specification-grade clean* — white paper with ink, not *bright app*. Concretely:
+
+- Backgrounds stay in the warm off-white range (`#f5f5f0`), no colored gradients
+- No decorative fills that appear only in light mode
+- Accent uses a darker shade of the same industrial orange used in dark mode (≈ 20–30% darkened for contrast on white; see [Color & Theme](#color--theme) for exact tokens)
+- A contributor adding a new page should be able to follow this rule without guessing
+
+### Rejected Alternatives
+
+The following directions were explicitly evaluated and rejected during the design phase (issues #257–#261):
+
+| Alternative | Why Rejected |
+|---|---|
+| **Vercel-style gradient-dark** (deep background, purple/blue linear gradients, large sans-serif hero) | Signals "premium SaaS product" — Fleans is infrastructure, not a consumer product. The aesthetic would misrepresent the tool's category to its primary audience. |
+| **Go.dev minimal white** (sparse white layout, large body text, no visual differentiation) | Too sparse to carry personality. Backend devs associate the style with Google's house style, not the .NET/Orleans ecosystem. Under-signals craft. |
+| **Retro-futuristic neon** (dark background, neon green/magenta accents, monospace-heavy) | Decorative over substantive. Signals gaming or crypto tooling, not enterprise workflow execution. The monospace-everywhere approach conflicts with the RFC-document tone. |
+| **Starlight stock theme (no customisation)** | Signals "template project" — the exact perception the redesign aims to eliminate. Indistinguishable from hundreds of other Starlight-based docs sites. |
+
+---
+
+## Typography
+
+**Display (headings): Space Grotesk** — `@fontsource/space-grotesk`
+**Body (prose): IBM Plex Sans** — `@fontsource/ibm-plex-sans`
+
+### Rationale
+
+| | Space Grotesk (headings) | IBM Plex Sans (body) |
+|---|---|---|
+| **Character** | Geometric grotesque with distinctive terminals — precise and engineered | Humanist sans with IBM industrial heritage; comfortable at body size |
+| **Brutalist-technical fit** | Geometric construction mirrors BPMN diagram notation | Enterprise/backend-dev association without being loud |
+| **Weights used** | **700** (h1/h2, .hero h1, .site-title, .group-label .large), **500** (h3/h4) | **400** (body), **400-italic**, **600** (UI labels/strong) |
+| **@fontsource** | `@fontsource/space-grotesk` | `@fontsource/ibm-plex-sans` |
+
+### Why not alternatives
+
+- *Syne + DM Sans*: Syne is too art-forward for a BPMN workflow engine site that needs to project reliability.
+- *IBM Plex Mono as body*: Monospace for long-form prose degrades readability. Mono stays for code only (handled by `--sl-font-mono`).
+- *Space Grotesk throughout*: IBM Plex Sans's humanist proportions read more naturally at body size on long docs pages.
+
+### Implementation notes
+
+- `--sl-font: 'IBM Plex Sans', sans-serif` is set in a theme-agnostic `:root {}` block in `custom.css`, applying the body font globally via Starlight's `--__sl-font` computed variable.
+- Space Grotesk is applied to heading selectors with explicit `font-weight` declarations so both weight imports are actively rendered.
+- Sidebar group labels (`.group-label .large`) and site title (`.site-title`) use Space Grotesk at weight 700 — verified against `@astrojs/starlight` 0.38.2 source.
+- `@fontsource` v5 ships `font-display: swap` in all generated CSS — no additional configuration needed.
+- IBM Plex Sans weight 500 is NOT imported — no Starlight 0.38.2 element uses it. All UI emphasis uses weight 600.
+
+---
+
+## Color & Theme
+
+Chosen direction: **Technical-clean with teal accent** (owner decision on [#327](https://github.com/nightBaker/fleans/issues/327), superseding the original orange palette from [#258](https://github.com/nightBaker/fleans/issues/258)). The site signals a workflow engine for backend developers — teal on near-black reads as precise and technical without the industrial harshness of orange.
 
 Owner decisions fixed up front:
 
-1. Aesthetic direction: Candidate 1 — brutalist-technical.
+1. Aesthetic direction: technical-clean (teal `#4eb5a6` as primary accent).
 2. Per-candidate token completeness: option (a) — full token map for every Starlight token plus the two `--fleans-*` tokens, both themes.
-3. `--fleans-accent-2` usage: contract-only in this PR; real usage deferred to [#259](https://github.com/nightBaker/fleans/issues/259) / [#260](https://github.com/nightBaker/fleans/issues/260).
+3. `--fleans-accent-2` usage: contract-only; real usage deferred to [#259](https://github.com/nightBaker/fleans/issues/259) / [#260](https://github.com/nightBaker/fleans/issues/260).
 
 ### Dark theme token map
 
 | Token | Hex | Role |
 |---|---|---|
-| `--sl-color-accent-low` | `#2a1609` | Callout / admonition background |
-| `--sl-color-accent` | `#ff5f1f` | Primary accent — links, focus rings, sidebar hover (industrial orange) |
-| `--sl-color-accent-high` | `#ffb38f` | Admonition/callout titles on accent-low |
+| `--sl-color-accent-low` | `#0f2926` | Callout / admonition background (teal tint at L* ≈ 12%) |
+| `--sl-color-accent` | `#4eb5a6` | Primary accent — links, focus rings, sidebar hover (teal) |
+| `--sl-color-accent-high` | `#a8e0d6` | Admonition/callout titles on accent-low |
 | `--sl-color-white` | `#f5f5f0` | Body text (Starlight "max-contrast-vs-bg") |
 | `--sl-color-gray-1` | `#e5e5df` | Text-adjacent |
 | `--sl-color-gray-2` | `#b8b8b1` | |
@@ -38,9 +122,9 @@ Narrative page bg: `#0a0a0a` (near-true black).
 
 | Token | Hex | Role |
 |---|---|---|
-| `--sl-color-accent-low` | `#fbe6d9` | Callout / admonition background |
-| `--sl-color-accent` | `#ad2f08` | Primary accent — darker industrial orange for AA on light bg |
-| `--sl-color-accent-high` | `#8a2706` | Admonition/callout titles on accent-low |
+| `--sl-color-accent-low` | `#d4f0eb` | Callout / admonition background (teal tint at L* ≈ 92%) |
+| `--sl-color-accent` | `#1f6357` | Primary accent — darkened teal for AA on light bg |
+| `--sl-color-accent-high` | `#175046` | Admonition/callout titles on accent-low |
 | `--sl-color-white` | `#0a0a0a` | Body text (Starlight "max-contrast-vs-bg", flipped) |
 | `--sl-color-gray-1` | `#1a1a17` | Text-adjacent |
 | `--sl-color-gray-2` | `#2e2e2a` | |
@@ -73,7 +157,7 @@ Any future palette tweak follows this rule rather than ad-hoc picks:
 
 Re-tuning during implementation stays within **±5% OKLCH L\*** of the table values. Anything beyond the envelope is a design change and needs a fresh review.
 
-Note on the current light-theme `--sl-color-accent`: the plan's starting value `#c4380b` (OklabL = 54.7) missed AA on `accent-on-accent-low` (4.45:1, need 4.5:1) and AA-large on `accent-on-gray-5` (2.69:1, need 3.0:1). Re-tuning darker to `#ad2f08` (OklabL = 49.7, ΔL\* = −4.98, within envelope) lands all pairs above their minimums with comfortable margin.
+Note on the current light-theme `--sl-color-accent`: the raw teal `#4eb5a6` fails AA on light bg (2.26:1). Darkening to `#1f6357` achieves 6.44:1 on bg while staying in the same hue family. All pairs meet or exceed WCAG AA minimums with comfortable margin.
 
 ### Contrast matrix (verified)
 
@@ -83,55 +167,71 @@ WCAG ratios via the sRGB relative-luminance formula (W3C WCAG 2.1 §1.4.3). Veri
 
 ```
 pair: --sl-color-white (#f5f5f0) on bg (#0a0a0a) = 18.10:1 (AA pass)
-pair: --sl-color-accent (#ff5f1f) on bg (#0a0a0a) = 6.51:1 (AA pass)
-pair: --sl-color-accent-high (#ffb38f) on --sl-color-accent-low (#2a1609) = 9.94:1 (AA pass)
-pair: --sl-color-accent (#ff5f1f) on --sl-color-accent-low (#2a1609) = 5.68:1 (AA pass)
+pair: --sl-color-accent (#4eb5a6) on bg (#0a0a0a) = 8.00:1 (AA pass)
+pair: --sl-color-accent-high (#a8e0d6) on --sl-color-accent-low (#0f2926) = 10.47:1 (AA pass)
+pair: --sl-color-accent (#4eb5a6) on --sl-color-accent-low (#0f2926) = 6.21:1 (AA pass)
 pair: --sl-color-gray-3 (#8a8a82) on bg (#0a0a0a) = 5.69:1 (AA pass)
 pair: --fleans-accent-2 (#9eff00) on bg (#0a0a0a) = 15.80:1 (AA-large pass)
-pair: --sl-color-accent (#ff5f1f) on --sl-color-gray-5 (#2e2e2a) = 4.48:1 (AA-large pass)
-pair: --sl-color-accent (#ff5f1f) on --sl-color-gray-6 (#1a1a17) = 5.74:1 (AA-large pass)
-pair: --sl-color-accent (#ff5f1f) on --fleans-surface (#141411) = 6.07:1 (AA-large pass)
+pair: --sl-color-accent (#4eb5a6) on --sl-color-gray-5 (#2e2e2a) = 5.51:1 (AA-large pass)
+pair: --sl-color-accent (#4eb5a6) on --sl-color-gray-6 (#1a1a17) = 7.05:1 (AA pass)
+pair: --sl-color-accent (#4eb5a6) on --fleans-surface (#141411) = 7.46:1 (AA pass)
 ```
 
 **Light theme**
 
 ```
 pair: --sl-color-white (#0a0a0a) on bg (#f5f5f0) = 18.10:1 (AA pass)
-pair: --sl-color-accent (#ad2f08) on bg (#f5f5f0) = 6.03:1 (AA pass)
-pair: --sl-color-accent-high (#8a2706) on --sl-color-accent-low (#fbe6d9) = 7.34:1 (AA pass)
-pair: --sl-color-accent (#ad2f08) on --sl-color-accent-low (#fbe6d9) = 5.47:1 (AA pass)
+pair: --sl-color-accent (#1f6357) on bg (#f5f5f0) = 6.44:1 (AA pass)
+pair: --sl-color-accent-high (#175046) on --sl-color-accent-low (#d4f0eb) = 7.69:1 (AA pass)
+pair: --sl-color-accent (#1f6357) on --sl-color-accent-low (#d4f0eb) = 5.86:1 (AA pass)
 pair: --sl-color-gray-3 (#5a5a53) on bg (#f5f5f0) = 6.35:1 (AA pass)
 pair: --fleans-accent-2 (#3a7d00) on bg (#f5f5f0) = 4.67:1 (AA-large pass)
-pair: --sl-color-accent (#ad2f08) on --sl-color-gray-5 (#b8b8b1) = 3.30:1 (AA-large pass)
-pair: --sl-color-accent (#ad2f08) on --sl-color-gray-6 (#e0e0d9) = 4.97:1 (AA-large pass)
+pair: --sl-color-accent (#1f6357) on --sl-color-gray-5 (#b8b8b1) = 3.53:1 (AA-large pass)
+pair: --sl-color-accent (#1f6357) on --sl-color-gray-6 (#e0e0d9) = 5.31:1 (AA pass)
 ```
 
 Row 7b (accent on `--fleans-surface`) is dark-only; in light theme `--fleans-surface = bg`, so the pair degenerates to row 2 which already passes.
 
-## Typography
+---
 
-**Display (headings): Space Grotesk** — `@fontsource/space-grotesk`
-**Body (prose): IBM Plex Sans** — `@fontsource/ibm-plex-sans`
+## Spatial Composition
 
-### Rationale
+> **Stub** — hero layout and spatial decisions are documented in issue #259. This section will be expanded after PR #259 merges.
 
-| | Space Grotesk (headings) | IBM Plex Sans (body) |
+The landing hero is designed around a brutalist-technical layout: asymmetric grid, large typographic anchors, and a BPMN diagram rendered as visual art rather than a screenshot.
+
+## Motion
+
+CSS-only motion and hover effects — no JavaScript. Implemented in [#260](https://github.com/nightBaker/fleans/issues/260).
+
+### Principles
+
+1. **Motion is progressive enhancement.** Every animation is inside `@media (prefers-reduced-motion: no-preference)`. Users who prefer reduced motion see the final state instantly — no information is lost.
+2. **Hover effects require a pointer.** Hover rules live in `@media (hover: hover)`. `:focus-visible` equivalents are always active (outside the media query) so keyboard users get the same visual feedback.
+3. **No JavaScript, no intersection observers.** Scroll-driven animations use the CSS `animation-timeline: view()` spec behind an `@supports` guard — browsers without support see the static fallback (accent markers always visible).
+
+### Three moments
+
+| Moment | Technique | Timing |
 |---|---|---|
-| **Character** | Geometric grotesque with distinctive terminals — precise and engineered | Humanist sans with IBM industrial heritage; comfortable at body size |
-| **Brutalist-technical fit** | Geometric construction mirrors BPMN diagram notation | Enterprise/backend-dev association without being loud |
-| **Weights used** | **700** (h1/h2, .hero h1, .site-title, .group-label .large), **500** (h3/h4) | **400** (body), **400-italic**, **600** (UI labels/strong) |
-| **@fontsource** | `@fontsource/space-grotesk` | `@fontsource/ibm-plex-sans` |
+| **Hero entrance** | `fade-up-clip` stagger (title → tagline → actions) + `clip-reveal-x` on logo | 320–420ms per element, 60–380ms stagger delay, `cubic-bezier(.2,.8,0,1)` (sharp-out) |
+| **Scroll accents** | Left-border `border-draw` on `.card`, underline `underline-draw` on `h2::after` | Tied to `animation-timeline: view()`, entry 0–40% |
+| **Hover / focus** | Sidebar lime `>` caret + 4px text shift; `.site-title` underline wipe; `.card` lift + hard lime shadow; primary action underline wipe; copy-button blinking lime dot | 120–180ms transitions |
 
-### Why not alternatives
+### Keyframes
 
-- *Syne + DM Sans*: Syne is too art-forward for a BPMN workflow engine site that needs to project reliability.
-- *IBM Plex Mono as body*: Monospace for long-form prose degrades readability. Mono stays for code only (handled by `--sl-font-mono`).
-- *Space Grotesk throughout*: IBM Plex Sans's humanist proportions read more naturally at body size on long docs pages.
+| Name | From | To | Notes |
+|---|---|---|---|
+| `fade-up-clip` | `translateY(8px)` + `clip-path: inset(100% 0 0 0)` | `translateY(0)` + `inset(0)` | Hero stagger |
+| `clip-reveal-x` | `clip-path: inset(0 100% 0 0)` | `inset(0)` | Logo reveal |
+| `underline-draw` | `scaleX(0)` | `scaleX(1)`, origin left | Scroll + hover underlines |
+| `caret-slide` | `translateX(-8px)` + opacity 0 | `translateX(0)` + opacity 1 | Sidebar hover (via transition, keyframe reserved) |
+| `border-draw` | `scaleY(0)` | `scaleY(1)`, origin top | Scroll-driven card border |
+| `cursor-blink` | opacity 1 | opacity 0, `steps(2)` | Copy-button lime dot |
 
-### Implementation notes
+### Accessibility
 
-- `--sl-font: 'IBM Plex Sans', sans-serif` is set in a theme-agnostic `:root {}` block in `custom.css`, applying the body font globally via Starlight's `--__sl-font` computed variable.
-- Space Grotesk is applied to heading selectors with explicit `font-weight` declarations so both weight imports are actively rendered.
-- Sidebar group labels (`.group-label .large`) and site title (`.site-title`) use Space Grotesk at weight 700 — verified against `@astrojs/starlight` 0.38.2 source.
-- `@fontsource` v5 ships `font-display: swap` in all generated CSS — no additional configuration needed.
-- IBM Plex Sans weight 500 is NOT imported — no Starlight 0.38.2 element uses it. All UI emphasis uses weight 600.
+- All keyframe animations are inside `@media (prefers-reduced-motion: no-preference)`.
+- `cursor-blink` is frozen (`animation: none !important`) under `@media (prefers-reduced-motion: reduce)`.
+- Hover effects gated on `@media (hover: hover)`; `:focus-visible` mirrors are outside the media query so they always apply for keyboard navigation.
+- `will-change: transform, clip-path` is scoped to `.hero > *` only — no blanket GPU promotion.

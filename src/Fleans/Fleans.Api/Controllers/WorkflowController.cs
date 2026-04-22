@@ -266,6 +266,16 @@ namespace Fleans.Api.Controllers
             return Ok(summary);
         }
 
+        [EnableRateLimiting("polling")]
+        [HttpGet("instances/{instanceId:guid}/state", Name = "GetInstanceState")]
+        public async Task<IActionResult> GetInstanceState(Guid instanceId)
+        {
+            var snapshot = await _workflowQueryService.GetStateSnapshot(instanceId);
+            if (snapshot is null)
+                return NotFound(new ErrorResponse($"Instance {instanceId} not found"));
+            return Ok(snapshot);
+        }
+
         [LoggerMessage(EventId = 8004, Level = LogLevel.Information,
             Message = "Claiming user task {ActivityInstanceId} for user {UserId}")]
         private partial void LogUserTaskClaim(Guid activityInstanceId, string userId);
