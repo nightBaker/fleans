@@ -23,6 +23,7 @@ export default defineConfig({
           items: [
             { label: 'Introduction', slug: 'guides/introduction' },
             { label: 'Quick Start', slug: 'guides/quick-start' },
+            { label: 'Add to Existing Project', slug: 'guides/add-to-existing-project' },
           ],
         },
         {
