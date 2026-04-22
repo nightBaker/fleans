@@ -50,7 +50,7 @@ The splash page (`website/src/content/docs/index.mdx`) loads an interactive Thre
 - **Theme-reactive:** a `MutationObserver` on `<html data-theme>` recolors the scene in place — no reload, no rebuild.
 - **Only imported by `index.mdx`:** doc pages are untouched and pay zero bundle cost.
 - **Regenerating posters:** if you change scene visuals, run `cd website && npm run posters` (requires `npx playwright install chromium`). Commit the updated `public/silo-poster-*.webp` files.
-- **Contrast guardrail:** `npm run build` runs a `prebuild` Playwright check that fails if hero text drops below WCAG AA against the themed composite background. Tighten the gradient stops in `src/styles/silo-background.css` if the check fails.
+- **Contrast guardrail:** `cd website && npm run check:contrast` runs a Playwright check that fails if hero text drops below WCAG AA against the themed composite background. It is *not* wired into `npm run build` (that would force CI to install Chromium on every deploy). Run it manually after any change to the silo-background CSS, silo-scene, or hero styling.
 
 ## How to Add a New BPMN Activity
 
