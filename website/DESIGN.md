@@ -135,3 +135,39 @@ Row 7b (accent on `--fleans-surface`) is dark-only; in light theme `--fleans-sur
 - Sidebar group labels (`.group-label .large`) and site title (`.site-title`) use Space Grotesk at weight 700 — verified against `@astrojs/starlight` 0.38.2 source.
 - `@fontsource` v5 ships `font-display: swap` in all generated CSS — no additional configuration needed.
 - IBM Plex Sans weight 500 is NOT imported — no Starlight 0.38.2 element uses it. All UI emphasis uses weight 600.
+
+## Motion
+
+CSS-only motion and hover effects — no JavaScript. Implemented in [#260](https://github.com/nightBaker/fleans/issues/260).
+
+### Principles
+
+1. **Motion is progressive enhancement.** Every animation is inside `@media (prefers-reduced-motion: no-preference)`. Users who prefer reduced motion see the final state instantly — no information is lost.
+2. **Hover effects require a pointer.** Hover rules live in `@media (hover: hover)`. `:focus-visible` equivalents are always active (outside the media query) so keyboard users get the same visual feedback.
+3. **No JavaScript, no intersection observers.** Scroll-driven animations use the CSS `animation-timeline: view()` spec behind an `@supports` guard — browsers without support see the static fallback (accent markers always visible).
+
+### Three moments
+
+| Moment | Technique | Timing |
+|---|---|---|
+| **Hero entrance** | `fade-up-clip` stagger (title → tagline → actions) + `clip-reveal-x` on logo | 320–420ms per element, 60–380ms stagger delay, `cubic-bezier(.2,.8,0,1)` (sharp-out) |
+| **Scroll accents** | Left-border `border-draw` on `.card`, underline `underline-draw` on `h2::after` | Tied to `animation-timeline: view()`, entry 0–40% |
+| **Hover / focus** | Sidebar lime `>` caret + 4px text shift; `.site-title` underline wipe; `.card` lift + hard lime shadow; primary action underline wipe; copy-button blinking lime dot | 120–180ms transitions |
+
+### Keyframes
+
+| Name | From | To | Notes |
+|---|---|---|---|
+| `fade-up-clip` | `translateY(8px)` + `clip-path: inset(100% 0 0 0)` | `translateY(0)` + `inset(0)` | Hero stagger |
+| `clip-reveal-x` | `clip-path: inset(0 100% 0 0)` | `inset(0)` | Logo reveal |
+| `underline-draw` | `scaleX(0)` | `scaleX(1)`, origin left | Scroll + hover underlines |
+| `caret-slide` | `translateX(-8px)` + opacity 0 | `translateX(0)` + opacity 1 | Sidebar hover (via transition, keyframe reserved) |
+| `border-draw` | `scaleY(0)` | `scaleY(1)`, origin top | Scroll-driven card border |
+| `cursor-blink` | opacity 1 | opacity 0, `steps(2)` | Copy-button lime dot |
+
+### Accessibility
+
+- All keyframe animations are inside `@media (prefers-reduced-motion: no-preference)`.
+- `cursor-blink` is frozen (`animation: none !important`) under `@media (prefers-reduced-motion: reduce)`.
+- Hover effects gated on `@media (hover: hover)`; `:focus-visible` mirrors are outside the media query so they always apply for keyboard navigation.
+- `will-change: transform, clip-path` is scoped to `.hero > *` only — no blanket GPU promotion.
