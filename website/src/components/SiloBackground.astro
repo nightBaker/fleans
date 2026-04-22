@@ -2,6 +2,14 @@
 import '../styles/silo-background.css';
 ---
 
+<script is:inline>
+  // Splash page is a dark-only stage for the 3D scene — pin data-theme to
+  // 'dark' before first paint, regardless of the user's global preference.
+  // localStorage is NOT touched, so the user's preference is preserved on
+  // other pages.
+  document.documentElement.dataset.theme = 'dark';
+</script>
+
 <div class="silo-bg-root" aria-hidden="true">
   <canvas class="silo-bg-canvas" id="silo-bg-canvas"></canvas>
   <picture class="silo-poster" id="silo-bg-poster" hidden>
@@ -21,6 +29,18 @@ import '../styles/silo-background.css';
   aria-label="Return to landing page"
   hidden
 >&times;</button>
+
+<button
+  type="button"
+  class="silo-pull-hint"
+  id="silo-pull-hint"
+  aria-label="Enter interactive mode"
+>
+  <span class="silo-pull-hint__label">Pull to explore</span>
+  <svg class="silo-pull-hint__arrow" width="20" height="24" viewBox="0 0 20 24" fill="none" aria-hidden="true">
+    <path d="M10 2 V20 M3 13 L10 20 L17 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+  </svg>
+</button>
 
 <script is:inline>
   // Runs before first paint; sets poster src to the correct theme variant.

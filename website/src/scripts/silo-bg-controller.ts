@@ -8,23 +8,25 @@ function currentTheme(): Theme {
 }
 
 function readThemeColors(): ThemeColors {
+  // Splash is dark-only. Read from :root so CSS var swaps still propagate if
+  // a future change themes the splash, but the scalar tuning is pinned to
+  // dark values — there is no light-mode scene here.
   const styles = getComputedStyle(document.documentElement);
   const get = (v: string): string => styles.getPropertyValue(v).trim();
-  const isDark = currentTheme() === 'dark';
 
   return {
     background: get('--fleans-surface'),
     fog: get('--fleans-surface'),
     primarySilo: get('--sl-color-accent'),
     accent: get('--fleans-accent-2'),
-    commLine: get('--sl-color-accent-high'),
+    commLine: get('--sl-color-accent'),
     ground: get('--sl-color-gray-6'),
     grid: get('--sl-color-gray-5'),
-    ambientIntensity: isDark ? 0.6 : 0.9,
-    directionalIntensity: isDark ? 1.0 : 0.5,
-    bloomStrength: isDark ? 0.9 : 0.15,
-    bloomThreshold: isDark ? 0.8 : 0.95,
-    emissiveIntensity: isDark ? 0.4 : 0.05,
+    ambientIntensity: 0.6,
+    directionalIntensity: 1.0,
+    bloomStrength: 0.9,
+    bloomThreshold: 0.8,
+    emissiveIntensity: 0.4,
   };
 }
 
@@ -53,6 +55,7 @@ export function mountSiloBackground(): void {
   const canvas = document.getElementById('silo-bg-canvas') as HTMLCanvasElement | null;
   const poster = document.getElementById('silo-bg-poster') as HTMLElement | null;
   const closeBtn = document.getElementById('silo-close-btn') as HTMLButtonElement | null;
+  const pullHint = document.getElementById('silo-pull-hint') as HTMLButtonElement | null;
   if (!canvas || !poster || !closeBtn) return;
 
   const liveMode = shouldUseLiveScene();
@@ -151,6 +154,57 @@ export function mountSiloBackground(): void {
   };
   document.addEventListener('pointerdown', onPointerDown);
 
+  // --- Pull-to-enter (wheel / touch scroll at the top of the page) ---
+  // Only fires after the user "pulls down" past the top of the page with
+  // enough effort (accumulated wheel delta / touch drag). Normal page
+  // scrolling or a single small scroll does NOT enter interactive mode.
+  const atTop = (): boolean => (window.scrollY || document.documentElement.scrollTop || 0) <= 0;
+  const WHEEL_PULL_THRESHOLD = 400;  // pixels worth of wheel-up at top
+  const TOUCH_PULL_THRESHOLD = 160;  // pixels of continuous downward drag
+  let wheelPull = 0;
+  let wheelPullResetTimer = 0 as unknown as number;
+
+  const onWheel = (ev: WheelEvent): void => {
+    if (interactive) return;
+    if (!atTop() || ev.deltaY >= 0) {
+      wheelPull = 0;
+      return;
+    }
+    wheelPull += -ev.deltaY; // deltaY is negative when scrolling up
+    window.clearTimeout(wheelPullResetTimer);
+    wheelPullResetTimer = window.setTimeout(() => { wheelPull = 0; }, 500);
+    if (wheelPull >= WHEEL_PULL_THRESHOLD) {
+      wheelPull = 0;
+      enterInteractive();
+    }
+  };
+  document.addEventListener('wheel', onWheel, { passive: true });
+
+  // Touch devices: touchstart at top + drag downward ≥ TOUCH_PULL_THRESHOLD.
+  let touchStartY: number | null = null;
+  const onTouchStart = (ev: TouchEvent): void => {
+    if (interactive) return;
+    if (!atTop()) { touchStartY = null; return; }
+    touchStartY = ev.touches[0]?.clientY ?? null;
+  };
+  const onTouchMove = (ev: TouchEvent): void => {
+    if (interactive || touchStartY === null) return;
+    const y = ev.touches[0]?.clientY;
+    if (y === undefined) return;
+    if (y - touchStartY > TOUCH_PULL_THRESHOLD) {
+      touchStartY = null;
+      enterInteractive();
+    }
+  };
+  document.addEventListener('touchstart', onTouchStart, { passive: true });
+  document.addEventListener('touchmove', onTouchMove, { passive: true });
+
+  // --- Pull-hint click: shortcut into interactive mode ---
+  pullHint?.addEventListener('click', (ev) => {
+    ev.preventDefault();
+    if (!interactive) enterInteractive();
+  });
+
   // --- Exit handlers ---
   closeBtn.addEventListener('click', exitInteractive);
   const onKey = (ev: KeyboardEvent): void => {
@@ -177,6 +231,9 @@ export function mountSiloBackground(): void {
     destroyed = true;
     themeObserver.disconnect();
     document.removeEventListener('pointerdown', onPointerDown);
+    document.removeEventListener('wheel', onWheel);
+    document.removeEventListener('touchstart', onTouchStart);
+    document.removeEventListener('touchmove', onTouchMove);
     document.removeEventListener('keydown', onKey);
     window.removeEventListener('resize', sizeCanvas);
     controller?.dispose();

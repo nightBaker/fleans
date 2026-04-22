@@ -1,5 +1,29 @@
 /* Silo background — splash-only. Loaded via SiloBackground.astro. */
 
+/* Splash is dark-only: hide Starlight's theme toggle so the user can't flip
+ * to light mode here. The toggle remains visible on doc pages. */
+:root[data-has-hero] starlight-theme-select {
+  display: none;
+}
+
+/* Splash-only brand color — matches the silo CLUSTER_COLOR_HEX from the
+ * 3D scene so the page chrome and the cluster read as one palette. */
+:root[data-has-hero] .site-title,
+:root[data-has-hero] .hero h1 {
+  color: #4db5a6;
+}
+
+:root[data-has-hero] .sl-link-button.primary {
+  background: #4db5a6;
+  border-color: #4db5a6;
+  color: var(--sl-color-black);
+}
+
+:root[data-has-hero] .sl-link-button.primary:hover {
+  background: #3fa395;
+  border-color: #3fa395;
+}
+
 .silo-bg-root {
   position: fixed;
   inset: 0;
@@ -15,6 +39,15 @@
   width: 100%;
   height: 100%;
   display: block;
+}
+
+/* The browser's default [hidden]{display:none} rule has only attribute
+ * specificity (0,0,1), which is lower than our class rules above — without
+ * this explicit reset, <picture hidden> would still render on top of the
+ * canvas as a "page-shaped" background image. */
+.silo-bg-canvas[hidden],
+.silo-poster[hidden] {
+  display: none;
 }
 
 .silo-poster img {
@@ -74,6 +107,10 @@ body.silo-interactive .silo-contrast-overlay {
 
 body.silo-interactive .silo-bg-root {
   pointer-events: auto;
+  /* Lift above the (now-invisible) content containers so OrbitControls
+   * pointer events reach the canvas instead of being swallowed by the
+   * .main-pane / .content-panel / .sl-markdown-content stack. */
+  z-index: 50;
 }
 
 /* Default (IDLE): ensure fades reverse. */
@@ -90,14 +127,15 @@ body.silo-interactive .silo-bg-root {
 /* Close button — visible only in INTERACTIVE. */
 .silo-close-btn {
   position: fixed;
-  top: calc(var(--sl-nav-height, 3.5rem) + 12px);
-  right: 16px;
+  top: calc(var(--sl-nav-height, 3.5rem) + 14px);
+  left: 50%;
+  transform: translateX(-50%);
   width: 40px;
   height: 40px;
   border-radius: 999px;
   background: var(--sl-color-gray-6);
   border: 1px solid var(--sl-color-accent);
-  color: var(--sl-color-accent-high);
+  color: var(--sl-color-accent);
   font-size: 22px;
   line-height: 1;
   cursor: pointer;
@@ -128,10 +166,71 @@ body.silo-interactive .silo-close-btn {
   outline-offset: 2px;
 }
 
+/* Pull-to-explore hint — pulses in IDLE, hidden in INTERACTIVE. Clickable
+ * as a shortcut that enters interactive mode without requiring a scroll. */
+.silo-pull-hint {
+  position: fixed;
+  top: calc(var(--sl-nav-height, 3.5rem) + 14px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  color: var(--sl-color-gray-3);
+  font-family: var(--sl-font), sans-serif;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  pointer-events: auto;
+  z-index: 40;
+  opacity: 0.4;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  padding: 4px 10px;
+  transition: opacity 240ms cubic-bezier(.2, .8, 0, 1);
+}
+
+.silo-pull-hint:hover,
+.silo-pull-hint:focus-visible {
+  opacity: 0.9;
+}
+
+.silo-pull-hint:focus-visible {
+  outline: 1px solid var(--sl-color-accent);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+
+.silo-pull-hint__label {
+  /* subtle — no glow */
+}
+
+.silo-pull-hint__arrow {
+  color: var(--sl-color-gray-3);
+  animation: silo-pull-bounce 2s cubic-bezier(.2, .8, 0, 1) infinite;
+}
+
+@keyframes silo-pull-bounce {
+  0%, 100% { transform: translateY(0); opacity: 0.25; }
+  50%      { transform: translateY(4px); opacity: 0.55; }
+}
+
+body.silo-interactive .silo-pull-hint {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .silo-pull-hint__arrow { animation: none !important; }
+}
+
 /* Respect reduced motion: disable non-essential transitions. */
 @media (prefers-reduced-motion: reduce) {
   .silo-contrast-overlay,
   .silo-close-btn,
+  .silo-pull-hint,
   .hero,
   .sl-markdown-content > :not(.silo-bg-root):not(.silo-close-btn):not(script),
   body.silo-interactive .hero,
