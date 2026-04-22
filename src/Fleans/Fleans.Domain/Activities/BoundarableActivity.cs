@@ -42,6 +42,29 @@ public abstract record BoundarableActivity(string ActivityId)
                 boundarySignal.ActivityId, IsBoundary: true));
         }
 
+        foreach (var boundaryMultiple in definition.GetBoundaryMultipleEvents(ActivityId))
+        {
+            foreach (var eventDef in boundaryMultiple.Definitions)
+            {
+                switch (eventDef)
+                {
+                    case TimerEventDef timerDef:
+                        commands.Add(new RegisterTimerCommand(boundaryMultiple.ActivityId,
+                            timerDef.TimerDefinition.GetDueTime(), IsBoundary: true));
+                        break;
+                    case MessageEventDef msgDef:
+                        commands.Add(new RegisterMessageCommand(variablesId, msgDef.MessageDefinitionId,
+                            boundaryMultiple.ActivityId, IsBoundary: true));
+                        break;
+                    case SignalEventDef sigDef:
+                        var sigDefn = definition.GetSignalDefinition(sigDef.SignalDefinitionId);
+                        commands.Add(new RegisterSignalCommand(sigDefn.Name,
+                            boundaryMultiple.ActivityId, IsBoundary: true));
+                        break;
+                }
+            }
+        }
+
         return commands;
     }
 }

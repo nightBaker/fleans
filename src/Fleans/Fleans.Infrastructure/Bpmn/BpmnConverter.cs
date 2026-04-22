@@ -55,6 +55,9 @@ public partial class BpmnConverter : IBpmnConverter
         // Parse signal definitions at <definitions> level
         var signals = ParseSignals(doc);
 
+        // Parse escalation definitions at <definitions> level
+        var escalations = ParseEscalations(doc);
+
         // Parse activities
         ParseActivities(process, activities, activityMap, defaultFlowIds);
 
@@ -67,7 +70,8 @@ public partial class BpmnConverter : IBpmnConverter
             Activities = activities,
             SequenceFlows = sequenceFlows,
             Messages = messages,
-            Signals = signals
+            Signals = signals,
+            Escalations = escalations
         };
 
         return workflow;
@@ -75,120 +79,189 @@ public partial class BpmnConverter : IBpmnConverter
 
     private void ParseActivities(XElement scopeElement, List<Activity> activities, Dictionary<string, Activity> activityMap, HashSet<string> defaultFlowIds, bool insideTransaction = false)
     {
+        // Pre-parse compensation associations: boundaryEventId -> handlerActivityId.
+        // Associations can appear at process level, definitions level, or inside sub-processes.
+        var root = scopeElement.Document?.Root;
+        var allAssociations = scopeElement.Elements(Bpmn + "association")
+            .Concat(root?.Elements(Bpmn + "association") ?? Enumerable.Empty<XElement>())
+            .Where(a => a.Attribute("sourceRef") != null && a.Attribute("targetRef") != null)
+            .DistinctBy(a => a.Attribute("id")?.Value)
+            .GroupBy(a => a.Attribute("sourceRef")!.Value)
+            .ToDictionary(g => g.Key, g => g.First().Attribute("targetRef")!.Value);
+        var compensationHandlerMap = allAssociations;
+
         // Parse start events (with optional timer definition)
         foreach (var startEvent in scopeElement.Elements(Bpmn + "startEvent"))
         {
             var id = GetId(startEvent);
-            var timerDef = startEvent.Element(Bpmn + "timerEventDefinition");
 
+            // Check for multiple event definitions
+            var eventDefs = CollectEventDefinitions(startEvent, id, "startEvent");
             Activity activity;
-            if (timerDef != null)
+            if (eventDefs.Count > 1)
             {
-                var timerDefinition = ParseTimerDefinition(timerDef);
-                activity = new TimerStartEvent(id, timerDefinition);
-            }
-            else if (startEvent.Element(Bpmn + "messageEventDefinition") is { } msgDef)
-            {
-                var messageRef = msgDef.Attribute("messageRef")?.Value
-                    ?? throw new InvalidOperationException(
-                        $"startEvent '{id}' messageEventDefinition must have a messageRef attribute");
-                activity = new MessageStartEvent(id, messageRef);
-            }
-            else if (startEvent.Element(Bpmn + "signalEventDefinition") is { } sigDef)
-            {
-                var signalRef = sigDef.Attribute("signalRef")?.Value
-                    ?? throw new InvalidOperationException(
-                        $"startEvent '{id}' signalEventDefinition must have a signalRef attribute");
-                activity = new SignalStartEvent(id, signalRef);
-            }
-            else if (startEvent.Element(Bpmn + "errorEventDefinition") is { } errStartDef)
-            {
-                // Only valid inside an event sub-process. We accept it here so the
-                // start-event loop is uniform; misuse outside an event sub-process is
-                // detectable later because such start events have no incoming flows
-                // and are not selected by GetStartActivity().
-                var errorRef = errStartDef.Attribute("errorRef")?.Value;
-                var errorCode = ResolveErrorCode(scopeElement, errorRef);
-                activity = new ErrorStartEvent(id, errorCode);
+                activity = new MultipleStartEvent(id, eventDefs);
             }
             else
             {
-                activity = new StartEvent(id);
+                var timerDef = startEvent.Element(Bpmn + "timerEventDefinition");
+                if (timerDef != null)
+                {
+                    var timerDefinition = ParseTimerDefinition(timerDef);
+                    activity = new TimerStartEvent(id, timerDefinition);
+                }
+                else if (startEvent.Element(Bpmn + "messageEventDefinition") is { } msgDef)
+                {
+                    var messageRef = msgDef.Attribute("messageRef")?.Value
+                        ?? throw new InvalidOperationException(
+                            $"startEvent '{id}' messageEventDefinition must have a messageRef attribute");
+                    activity = new MessageStartEvent(id, messageRef);
+                }
+                else if (startEvent.Element(Bpmn + "signalEventDefinition") is { } sigDef)
+                {
+                    var signalRef = sigDef.Attribute("signalRef")?.Value
+                        ?? throw new InvalidOperationException(
+                            $"startEvent '{id}' signalEventDefinition must have a signalRef attribute");
+                    activity = new SignalStartEvent(id, signalRef);
+                }
+                else if (startEvent.Element(Bpmn + "errorEventDefinition") is { } errStartDef)
+                {
+                    var errorRef = errStartDef.Attribute("errorRef")?.Value;
+                    var errorCode = ResolveErrorCode(scopeElement, errorRef);
+                    activity = new ErrorStartEvent(id, errorCode);
+                }
+                else
+                {
+                    activity = new StartEvent(id);
+                }
             }
 
             activities.Add(activity);
             activityMap[id] = activity;
         }
 
-        // Parse intermediate catch events (timer, message)
+        // Parse intermediate catch events (timer, message, signal, or multiple)
         foreach (var catchEvent in scopeElement.Elements(Bpmn + "intermediateCatchEvent"))
         {
             var id = GetId(catchEvent);
-            var timerDef = catchEvent.Element(Bpmn + "timerEventDefinition");
-            var messageDef = catchEvent.Element(Bpmn + "messageEventDefinition");
 
-            if (timerDef != null)
+            var eventDefs = CollectEventDefinitions(catchEvent, id, "intermediateCatchEvent");
+            Activity activity;
+            if (eventDefs.Count > 1)
             {
-                var timerDefinition = ParseTimerDefinition(timerDef);
-                var activity = new TimerIntermediateCatchEvent(id, timerDefinition);
-                activities.Add(activity);
-                activityMap[id] = activity;
-            }
-            else if (messageDef != null)
-            {
-                var messageRef = messageDef.Attribute("messageRef")?.Value
-                    ?? throw new InvalidOperationException(
-                        $"IntermediateCatchEvent '{id}' messageEventDefinition must have a messageRef attribute");
-                var activity = new MessageIntermediateCatchEvent(id, messageRef);
-                activities.Add(activity);
-                activityMap[id] = activity;
+                activity = new MultipleIntermediateCatchEvent(id, eventDefs);
             }
             else
             {
-                var signalDef = catchEvent.Element(Bpmn + "signalEventDefinition");
+                var timerDef = catchEvent.Element(Bpmn + "timerEventDefinition");
+                var messageDef = catchEvent.Element(Bpmn + "messageEventDefinition");
+
+                if (timerDef != null)
+                {
+                    var timerDefinition = ParseTimerDefinition(timerDef);
+                    activity = new TimerIntermediateCatchEvent(id, timerDefinition);
+                }
+                else if (messageDef != null)
+                {
+                    var messageRef = messageDef.Attribute("messageRef")?.Value
+                        ?? throw new InvalidOperationException(
+                            $"IntermediateCatchEvent '{id}' messageEventDefinition must have a messageRef attribute");
+                    activity = new MessageIntermediateCatchEvent(id, messageRef);
+                }
+                else
+                {
+                    var signalDef = catchEvent.Element(Bpmn + "signalEventDefinition");
+                    if (signalDef != null)
+                    {
+                        var signalRef = signalDef.Attribute("signalRef")?.Value
+                            ?? throw new InvalidOperationException(
+                                $"IntermediateCatchEvent '{id}' signalEventDefinition must have a signalRef attribute");
+                        activity = new SignalIntermediateCatchEvent(id, signalRef);
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException(
+                            $"IntermediateCatchEvent '{id}' has an unsupported event definition.");
+                    }
+                }
+            }
+
+            activities.Add(activity);
+            activityMap[id] = activity;
+        }
+
+        // Parse intermediate throw events (signal, escalation, compensation, or multiple)
+        foreach (var throwEvent in scopeElement.Elements(Bpmn + "intermediateThrowEvent"))
+        {
+            var id = GetId(throwEvent);
+            var compensateDef = throwEvent.Element(Bpmn + "compensateEventDefinition");
+
+            var eventDefs = CollectEventDefinitions(throwEvent, id, "intermediateThrowEvent");
+            Activity activity;
+            if (eventDefs.Count > 1)
+            {
+                activity = new MultipleIntermediateThrowEvent(id, eventDefs);
+            }
+            else if (compensateDef != null)
+            {
+                // Optional: target a specific activity (activityRef attribute)
+                var targetActivityRef = compensateDef.Attribute("activityRef")?.Value;
+                activity = new CompensationIntermediateThrowEvent(id, targetActivityRef);
+            }
+            else
+            {
+                var signalDef = throwEvent.Element(Bpmn + "signalEventDefinition");
+                var escalationDef = throwEvent.Element(Bpmn + "escalationEventDefinition");
                 if (signalDef != null)
                 {
                     var signalRef = signalDef.Attribute("signalRef")?.Value
                         ?? throw new InvalidOperationException(
-                            $"IntermediateCatchEvent '{id}' signalEventDefinition must have a signalRef attribute");
-                    var activity = new SignalIntermediateCatchEvent(id, signalRef);
-                    activities.Add(activity);
-                    activityMap[id] = activity;
+                            $"IntermediateThrowEvent '{id}' signalEventDefinition must have a signalRef attribute");
+                    activity = new SignalIntermediateThrowEvent(id, signalRef);
+                }
+                else if (escalationDef != null)
+                {
+                    var escalationRef = escalationDef.Attribute("escalationRef")?.Value;
+                    var escalationCode = ResolveEscalationCode(scopeElement, escalationRef)
+                        ?? throw new InvalidOperationException(
+                            $"IntermediateThrowEvent '{id}' escalationEventDefinition must resolve to an escalation code");
+                    activity = new EscalationIntermediateThrowEvent(id, escalationCode);
                 }
                 else
                 {
                     throw new InvalidOperationException(
-                        $"IntermediateCatchEvent '{id}' has an unsupported event definition.");
+                        $"IntermediateThrowEvent '{id}' has an unsupported event definition.");
                 }
             }
-        }
 
-        // Parse intermediate throw events (signal)
-        foreach (var throwEvent in scopeElement.Elements(Bpmn + "intermediateThrowEvent"))
-        {
-            var id = GetId(throwEvent);
-            var signalDef = throwEvent.Element(Bpmn + "signalEventDefinition");
-            if (signalDef != null)
-            {
-                var signalRef = signalDef.Attribute("signalRef")?.Value
-                    ?? throw new InvalidOperationException(
-                        $"IntermediateThrowEvent '{id}' signalEventDefinition must have a signalRef attribute");
-                var activity = new SignalIntermediateThrowEvent(id, signalRef);
-                activities.Add(activity);
-                activityMap[id] = activity;
-            }
-            else
-            {
-                throw new InvalidOperationException(
-                    $"IntermediateThrowEvent '{id}' has an unsupported event definition.");
-            }
+            activities.Add(activity);
+            activityMap[id] = activity;
         }
 
         // Parse end events
         foreach (var endEvent in scopeElement.Elements(Bpmn + "endEvent"))
         {
             var id = GetId(endEvent);
-            var activity = new EndEvent(id);
+
+            Activity activity;
+            if (endEvent.Element(Bpmn + "compensateEventDefinition") is { } compEndDef)
+            {
+                activity = new CompensationEndEvent(id, compEndDef.Attribute("activityRef")?.Value);
+            }
+            else if (endEvent.Element(Bpmn + "escalationEventDefinition") is { } escEndDef)
+            {
+                var escalationRef = escEndDef.Attribute("escalationRef")?.Value;
+                var escalationCode = ResolveEscalationCode(scopeElement, escalationRef)
+                    ?? throw new InvalidOperationException(
+                        $"endEvent '{id}' escalationEventDefinition must resolve to an escalation code");
+                activity = new EscalationEndEvent(id, escalationCode);
+            }
+            else
+            {
+                activity = new EndEvent(id);
+            }
+
+
             activities.Add(activity);
             activityMap[id] = activity;
         }
@@ -543,41 +616,140 @@ public partial class BpmnConverter : IBpmnConverter
                 isInterrupting = cancelVal;
             }
 
-            var timerDef = boundaryEl.Element(Bpmn + "timerEventDefinition");
-            var errorDef = boundaryEl.Element(Bpmn + "errorEventDefinition");
-            var messageDef = boundaryEl.Element(Bpmn + "messageEventDefinition");
-            var signalDef = boundaryEl.Element(Bpmn + "signalEventDefinition");
+            var compensateDefBoundary = boundaryEl.Element(Bpmn + "compensateEventDefinition");
+            var eventDefs = CollectEventDefinitions(boundaryEl, id, "boundaryEvent");
 
             Activity activity;
-            if (timerDef != null)
+            if (eventDefs.Count > 1)
             {
-                var timerDefinition = ParseTimerDefinition(timerDef);
-                activity = new BoundaryTimerEvent(id, attachedToRef, timerDefinition, isInterrupting);
+                activity = new MultipleBoundaryEvent(id, attachedToRef, eventDefs, isInterrupting);
             }
-            else if (messageDef != null)
+            else if (compensateDefBoundary != null)
             {
-                var messageRef = messageDef.Attribute("messageRef")?.Value
-                    ?? throw new InvalidOperationException(
-                        $"boundaryEvent '{id}' messageEventDefinition must have a messageRef attribute");
-                activity = new MessageBoundaryEvent(id, attachedToRef, messageRef, isInterrupting);
-            }
-            else if (signalDef != null)
-            {
-                var signalRef = signalDef.Attribute("signalRef")?.Value
-                    ?? throw new InvalidOperationException(
-                        $"boundaryEvent '{id}' signalEventDefinition must have a signalRef attribute");
-                activity = new SignalBoundaryEvent(id, attachedToRef, signalRef, isInterrupting);
+                if (isInterrupting)
+                    throw new InvalidOperationException(
+                        $"CompensationBoundaryEvent '{id}' must not have cancelActivity=\"true\". " +
+                        "Compensation boundary events are always non-interrupting per BPMN spec.");
+                if (!compensationHandlerMap.TryGetValue(id, out var handlerActivityId))
+                    throw new InvalidOperationException(
+                        $"CompensationBoundaryEvent '{id}' has no associated handler activity. " +
+                        "Add an <association> element with sourceRef='{id}' pointing to the handler.");
+                activity = new CompensationBoundaryEvent(id, attachedToRef, handlerActivityId);
             }
             else
             {
-                // Error boundaries are ALWAYS interrupting per BPMN spec
-                string? errorRef = errorDef?.Attribute("errorRef")?.Value;
-                string? errorCode = ResolveErrorCode(scopeElement, errorRef);
-                activity = new BoundaryErrorEvent(id, attachedToRef, errorCode, IsInterrupting: true);
+                var timerDef = boundaryEl.Element(Bpmn + "timerEventDefinition");
+                var errorDef = boundaryEl.Element(Bpmn + "errorEventDefinition");
+                var messageDef = boundaryEl.Element(Bpmn + "messageEventDefinition");
+                var signalDef = boundaryEl.Element(Bpmn + "signalEventDefinition");
+                var escalationDef = boundaryEl.Element(Bpmn + "escalationEventDefinition");
+
+                if (escalationDef != null)
+                {
+                    // BPMN spec: escalation boundary may only be attached to SubProcess or CallActivity
+                    if (activityMap.TryGetValue(attachedToRef, out var attachedActivity)
+                        && attachedActivity is not SubProcess && attachedActivity is not CallActivity)
+                    {
+                        throw new InvalidOperationException(
+                            $"boundaryEvent '{id}' escalationEventDefinition may only be attached to a SubProcess or CallActivity, not '{attachedActivity.GetType().Name}'");
+                    }
+                    var escalationRef = escalationDef.Attribute("escalationRef")?.Value;
+                    var escalationCode = ResolveEscalationCode(scopeElement, escalationRef);
+                    activity = new EscalationBoundaryEvent(id, attachedToRef, escalationCode, isInterrupting);
+                }
+                else if (timerDef != null)
+                {
+                    var timerDefinition = ParseTimerDefinition(timerDef);
+                    activity = new BoundaryTimerEvent(id, attachedToRef, timerDefinition, isInterrupting);
+                }
+                else if (messageDef != null)
+                {
+                    var messageRef = messageDef.Attribute("messageRef")?.Value
+                        ?? throw new InvalidOperationException(
+                            $"boundaryEvent '{id}' messageEventDefinition must have a messageRef attribute");
+                    activity = new MessageBoundaryEvent(id, attachedToRef, messageRef, isInterrupting);
+                }
+                else if (signalDef != null)
+                {
+                    var signalRef = signalDef.Attribute("signalRef")?.Value
+                        ?? throw new InvalidOperationException(
+                            $"boundaryEvent '{id}' signalEventDefinition must have a signalRef attribute");
+                    activity = new SignalBoundaryEvent(id, attachedToRef, signalRef, isInterrupting);
+                }
+                else
+                {
+                    // Error boundaries are ALWAYS interrupting per BPMN spec
+                    string? errorRef = errorDef?.Attribute("errorRef")?.Value;
+                    string? errorCode = ResolveErrorCode(scopeElement, errorRef);
+                    activity = new BoundaryErrorEvent(id, attachedToRef, errorCode, IsInterrupting: true);
+                }
             }
 
             activities.Add(activity);
             activityMap[id] = activity;
+        }
+
+        // Post-parse compensation validations
+        ValidateCompensationConstraints(activities, scopeElement);
+    }
+
+    private void ValidateCompensationConstraints(List<Activity> activities, XElement scopeElement)
+    {
+        var compensationBoundaries = activities.OfType<CompensationBoundaryEvent>().ToList();
+        if (compensationBoundaries.Count == 0) return;
+
+        // At most one compensation boundary per activity
+        var duplicates = compensationBoundaries
+            .GroupBy(b => b.AttachedToActivityId)
+            .Where(g => g.Count() > 1)
+            .ToList();
+        foreach (var dup in duplicates)
+            throw new InvalidOperationException(
+                $"Activity '{dup.Key}' has {dup.Count()} CompensationBoundaryEvents. At most one is allowed.");
+
+        // Collect all sequence flow targets to check handler has no incoming flow
+        var sequenceFlowTargets = new HashSet<string>(
+            scopeElement.Elements(Bpmn + "sequenceFlow")
+                .Select(sf => sf.Attribute("targetRef")?.Value)
+                .Where(v => v is not null)!);
+
+        var handlerActivityIds = compensationBoundaries.Select(b => b.HandlerActivityId).ToHashSet();
+
+        foreach (var boundary in compensationBoundaries)
+        {
+            var handlerId = boundary.HandlerActivityId;
+
+            // Handler must not have incoming sequence flow
+            if (sequenceFlowTargets.Contains(handlerId))
+                throw new InvalidOperationException(
+                    $"Compensation handler '{handlerId}' must not have incoming sequence flow. " +
+                    "Handlers are detached — invoked only during compensation walks.");
+
+            // Handler must not have its own CompensationBoundaryEvent (no compensation-of-compensation)
+            if (compensationBoundaries.Any(b => b.AttachedToActivityId == handlerId))
+                throw new InvalidOperationException(
+                    $"Compensation handler '{handlerId}' must not have its own CompensationBoundaryEvent. " +
+                    "Compensation of compensation is not allowed.");
+        }
+
+        // activityRef on throw/end must reference a compensable activity
+        var compensableActivityIds = compensationBoundaries.Select(b => b.AttachedToActivityId).ToHashSet();
+
+        foreach (var throwEvent in activities.OfType<CompensationIntermediateThrowEvent>())
+        {
+            if (throwEvent.TargetActivityRef is not null && !compensableActivityIds.Contains(throwEvent.TargetActivityRef))
+                throw new InvalidOperationException(
+                    $"CompensationIntermediateThrowEvent '{throwEvent.ActivityId}' targets activity " +
+                    $"'{throwEvent.TargetActivityRef}' which has no CompensationBoundaryEvent attached.");
+        }
+
+        foreach (var endEvent in activities.OfType<CompensationEndEvent>())
+        {
+            if (endEvent is CompensationEndEvent { TargetActivityRef: not null } targeted
+                && !compensableActivityIds.Contains(targeted.TargetActivityRef))
+                throw new InvalidOperationException(
+                    $"CompensationEndEvent '{endEvent.ActivityId}' targets activity " +
+                    $"'{targeted.TargetActivityRef}' which has no CompensationBoundaryEvent attached.");
         }
     }
 
@@ -698,6 +870,41 @@ public partial class BpmnConverter : IBpmnConverter
             signals.Add(new SignalDefinition(id, name));
         }
         return signals;
+    }
+
+    private static List<EscalationDefinition> ParseEscalations(XDocument doc)
+    {
+        var escalations = new List<EscalationDefinition>();
+        foreach (var escEl in doc.Root!.Elements(Bpmn + "escalation"))
+        {
+            var id = escEl.Attribute("id")?.Value
+                ?? throw new InvalidOperationException("escalation element must have an id attribute");
+            var escalationCode = escEl.Attribute("escalationCode")?.Value
+                ?? throw new InvalidOperationException($"escalation '{id}' must have an escalationCode attribute");
+            var name = escEl.Attribute("name")?.Value;
+            escalations.Add(new EscalationDefinition(id, escalationCode, name));
+        }
+        return escalations;
+    }
+
+    private static string? ResolveEscalationCode(XElement scopeElement, string? escalationRef)
+    {
+        if (string.IsNullOrEmpty(escalationRef))
+            return null;
+
+        var root = scopeElement.Document?.Root;
+        if (root is null)
+            return escalationRef;
+
+        var escalationElement = root.Elements(Bpmn + "escalation")
+            .FirstOrDefault(e => e.Attribute("id")?.Value == escalationRef)
+            ?? throw new InvalidOperationException(
+                $"Escalation definition '{escalationRef}' referenced but not found in <definitions>. "
+                + "Add a <bpmn:escalation id=\"{escalationRef}\" escalationCode=\"...\"/> element.");
+
+        return escalationElement.Attribute("escalationCode")?.Value
+            ?? throw new InvalidOperationException(
+                $"Escalation definition '{escalationRef}' is missing the 'escalationCode' attribute.");
     }
 
     private static string? FindCorrelationKeyOnEventElement(XElement process, string messageId)
@@ -910,6 +1117,41 @@ public partial class BpmnConverter : IBpmnConverter
             .ToList();
 
         return outputs.Count > 0 ? outputs! : null;
+    }
+
+    /// <summary>
+    /// Collects all event definition children from a BPMN event element.
+    /// Returns a list of <see cref="EventDefinition"/> records. When the list has more
+    /// than one entry the caller creates a Multiple*Event variant.
+    /// </summary>
+    private List<EventDefinition> CollectEventDefinitions(
+        XElement eventElement, string eventId, string elementType)
+    {
+        var definitions = new List<EventDefinition>();
+
+        foreach (var timerDef in eventElement.Elements(Bpmn + "timerEventDefinition"))
+        {
+            var timerDefinition = ParseTimerDefinition(timerDef);
+            definitions.Add(new TimerEventDef(timerDefinition));
+        }
+
+        foreach (var msgDef in eventElement.Elements(Bpmn + "messageEventDefinition"))
+        {
+            var messageRef = msgDef.Attribute("messageRef")?.Value
+                ?? throw new InvalidOperationException(
+                    $"{elementType} '{eventId}' messageEventDefinition must have a messageRef attribute");
+            definitions.Add(new MessageEventDef(messageRef));
+        }
+
+        foreach (var sigDef in eventElement.Elements(Bpmn + "signalEventDefinition"))
+        {
+            var signalRef = sigDef.Attribute("signalRef")?.Value
+                ?? throw new InvalidOperationException(
+                    $"{elementType} '{eventId}' signalEventDefinition must have a signalRef attribute");
+            definitions.Add(new SignalEventDef(signalRef));
+        }
+
+        return definitions;
     }
 
     private static TimerDefinition ParseTimerDefinition(XElement timerEventDef)

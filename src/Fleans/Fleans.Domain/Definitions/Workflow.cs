@@ -17,6 +17,7 @@ namespace Fleans.Domain
         List<SequenceFlow> SequenceFlows { get; }
         List<MessageDefinition> Messages { get; }
         List<SignalDefinition> Signals { get; }
+        List<EscalationDefinition> Escalations { get; }
         bool IsRootScope { get; }
         Activity GetActivity(string activityId);
 
@@ -24,9 +25,9 @@ namespace Fleans.Domain
             => Activities.FirstOrDefault(a => a.ActivityId == activityId);
 
         Activity GetStartActivity()
-            => Activities.FirstOrDefault(a => a is StartEvent or TimerStartEvent or MessageStartEvent or SignalStartEvent)
+            => Activities.FirstOrDefault(a => a is StartEvent or TimerStartEvent or MessageStartEvent or SignalStartEvent or MultipleStartEvent)
                 ?? throw new InvalidOperationException(
-                    "Workflow must have a StartEvent, TimerStartEvent, MessageStartEvent, or SignalStartEvent");
+                    "Workflow must have a StartEvent, TimerStartEvent, MessageStartEvent, SignalStartEvent, or MultipleStartEvent");
 
         SequenceFlow? GetOutgoingFlow(Activity activity)
             => SequenceFlows.FirstOrDefault(sf => sf.Source == activity);
@@ -53,19 +54,49 @@ namespace Fleans.Domain
             => Signals.FirstOrDefault(s => s.Id == signalDefinitionId);
 
         bool HasTimerStartEvent()
-            => Activities.OfType<TimerStartEvent>().Any();
+            => Activities.OfType<TimerStartEvent>().Any()
+               || Activities.OfType<MultipleStartEvent>()
+                   .Any(ms => ms.Definitions.OfType<TimerEventDef>().Any());
 
         HashSet<string> GetMessageStartEventNames()
-            => Activities.OfType<MessageStartEvent>()
+        {
+            var names = Activities.OfType<MessageStartEvent>()
                 .Select(ms => FindMessageDefinition(ms.MessageDefinitionId)?.Name)
                 .OfType<string>()
                 .ToHashSet();
 
+            foreach (var multiStart in Activities.OfType<MultipleStartEvent>())
+            {
+                foreach (var msgDef in multiStart.Definitions.OfType<MessageEventDef>())
+                {
+                    var def = FindMessageDefinition(msgDef.MessageDefinitionId);
+                    if (def?.Name is not null)
+                        names.Add(def.Name);
+                }
+            }
+
+            return names;
+        }
+
         HashSet<string> GetSignalStartEventNames()
-            => Activities.OfType<SignalStartEvent>()
+        {
+            var names = Activities.OfType<SignalStartEvent>()
                 .Select(ss => FindSignalDefinition(ss.SignalDefinitionId)?.Name)
                 .OfType<string>()
                 .ToHashSet();
+
+            foreach (var multiStart in Activities.OfType<MultipleStartEvent>())
+            {
+                foreach (var sigDef in multiStart.Definitions.OfType<SignalEventDef>())
+                {
+                    var def = FindSignalDefinition(sigDef.SignalDefinitionId);
+                    if (def?.Name is not null)
+                        names.Add(def.Name);
+                }
+            }
+
+            return names;
+        }
 
         IEnumerable<BoundaryTimerEvent> GetBoundaryTimerEvents(string attachedToActivityId)
             => Activities.OfType<BoundaryTimerEvent>()
@@ -77,6 +108,14 @@ namespace Fleans.Domain
 
         IEnumerable<SignalBoundaryEvent> GetBoundarySignalEvents(string attachedToActivityId)
             => Activities.OfType<SignalBoundaryEvent>()
+                .Where(b => b.AttachedToActivityId == attachedToActivityId);
+
+        IEnumerable<MultipleBoundaryEvent> GetBoundaryMultipleEvents(string attachedToActivityId)
+            => Activities.OfType<MultipleBoundaryEvent>()
+                .Where(b => b.AttachedToActivityId == attachedToActivityId);
+
+        IEnumerable<EscalationBoundaryEvent> GetBoundaryEscalationEvents(string attachedToActivityId)
+            => Activities.OfType<EscalationBoundaryEvent>()
                 .Where(b => b.AttachedToActivityId == attachedToActivityId);
 
         /// <summary>
@@ -153,6 +192,47 @@ namespace Fleans.Domain
                 // Prefer specific error code match over catch-all
                 var match = candidates.FirstOrDefault(b => b.ErrorCode == errorCode)
                             ?? candidates.FirstOrDefault(b => b.ErrorCode == null);
+
+                if (match is not null)
+                    return (match, scope, targetActivityId);
+
+                // Bubble up: if scope is a SubProcess, check its parent for boundary on the SubProcess
+                if (scope is SubProcess subProcess)
+                    targetActivityId = subProcess.ActivityId;
+                else
+                    return null; // at root scope, no match found
+            }
+        }
+
+        /// <summary>
+        /// Finds the matching EscalationBoundaryEvent for a thrown escalation, searching the
+        /// activity's scope and walking up parent SubProcess scopes if not found.
+        /// Specific escalation code matches take priority over catch-all (null EscalationCode) boundaries.
+        /// Returns null if no match is found (escalation is uncaught at this grain level).
+        /// </summary>
+        (EscalationBoundaryEvent BoundaryEvent, IWorkflowDefinition Scope, string AttachedToActivityId)?
+            FindBoundaryEscalationHandler(string throwingActivityId, string? escalationCode)
+        {
+            var targetActivityId = throwingActivityId;
+
+            while (true)
+            {
+                var scope = FindScopeForActivity(targetActivityId);
+                if (scope is null) return null;
+
+                // Look for EscalationBoundaryEvent attached to targetActivityId within this scope.
+                // On the first iteration, targetActivityId is the throwing activity itself —
+                // this is a no-op for leaf activities but correct when the thrower IS a
+                // SubProcess/CallActivity with boundaries attached directly to it.
+                var candidates = scope.Activities
+                    .OfType<EscalationBoundaryEvent>()
+                    .Where(b => b.AttachedToActivityId == targetActivityId
+                        && (b.EscalationCode == null || b.EscalationCode == escalationCode))
+                    .ToList();
+
+                // Prefer specific escalation code match over catch-all
+                var match = candidates.FirstOrDefault(b => b.EscalationCode == escalationCode)
+                            ?? candidates.FirstOrDefault(b => b.EscalationCode == null);
 
                 if (match is not null)
                     return (match, scope, targetActivityId);
@@ -301,6 +381,14 @@ namespace Fleans.Domain
         }
 
         /// <summary>
+        /// Finds the compensation boundary event attached to the given activity definition ID,
+        /// returning the handler activity ID, or null if none is defined.
+        /// </summary>
+        Activities.CompensationBoundaryEvent? FindCompensationBoundary(string activityDefinitionId)
+            => Activities.OfType<Activities.CompensationBoundaryEvent>()
+                .FirstOrDefault(b => b.AttachedToActivityId == activityDefinitionId);
+
+        /// <summary>
         /// Returns activity IDs of sibling catch events that compete with the given activity
         /// after an EventBasedGateway. Returns empty set if the activity is not downstream
         /// of an EventBasedGateway.
@@ -344,6 +432,9 @@ namespace Fleans.Domain
 
         [Id(5)]
         public List<SignalDefinition> Signals { get; init; } = [];
+
+        [Id(6)]
+        public List<EscalationDefinition> Escalations { get; init; } = [];
 
         public bool IsRootScope => true;
 

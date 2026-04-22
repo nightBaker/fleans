@@ -1,29 +1,348 @@
-/* Fleans brand colors — tweak freely */
+/* Typography — issue #257 */
+/* IBM Plex Sans: body (400), italic prose (400-italic), UI labels/strong (600) */
+/* Note: weight 500 is NOT imported — no Starlight 0.38.2 element uses it */
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/400-italic.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+/* Space Grotesk: h1/h2 (700), h3/h4 (500) */
+@import '@fontsource/space-grotesk/500.css';
+@import '@fontsource/space-grotesk/700.css';
+/* @fontsource v5 includes font-display: swap in all generated CSS — no extra config needed */
+
+/* Typography tokens — theme-agnostic */
+:root {
+  --sl-font: 'IBM Plex Sans', sans-serif;
+}
+
+/* Palette source of truth: website/DESIGN.md § Color palette */
 :root[data-theme='dark'] {
-  --sl-color-accent-low: #1e2a3a;
-  --sl-color-accent: #3b82f6;
-  --sl-color-accent-high: #93c5fd;
-  --sl-color-white: #ffffff;
-  --sl-color-gray-1: #eceef2;
-  --sl-color-gray-2: #c0c2c7;
-  --sl-color-gray-3: #888b96;
-  --sl-color-gray-4: #545861;
-  --sl-color-gray-5: #353841;
-  --sl-color-gray-6: #24272f;
-  --sl-color-black: #17181c;
+  --sl-color-accent-low: #0f2926;
+  --sl-color-accent: #4eb5a6;
+  --sl-color-accent-high: #a8e0d6;
+  --sl-color-white: #f5f5f0;
+  --sl-color-gray-1: #e5e5df;
+  --sl-color-gray-2: #b8b8b1;
+  --sl-color-gray-3: #8a8a82;
+  --sl-color-gray-4: #5a5a53;
+  --sl-color-gray-5: #2e2e2a;
+  --sl-color-gray-6: #1a1a17;
+  --sl-color-black: #0a0a0a;
+  --fleans-accent-2: #9eff00;
+  --fleans-surface: #141411;
 }
 
 :root[data-theme='light'] {
-  --sl-color-accent-low: #d5e4fb;
-  --sl-color-accent: #2563eb;
-  --sl-color-accent-high: #1e3a8a;
-  --sl-color-white: #17181c;
-  --sl-color-gray-1: #24272f;
-  --sl-color-gray-2: #353841;
-  --sl-color-gray-3: #545861;
-  --sl-color-gray-4: #888b96;
-  --sl-color-gray-5: #c0c2c7;
-  --sl-color-gray-6: #eceef2;
-  --sl-color-gray-7: #f5f6f8;
-  --sl-color-black: #ffffff;
+  --sl-color-accent-low: #d4f0eb;
+  --sl-color-accent: #1f6357;
+  --sl-color-accent-high: #175046;
+  --sl-color-white: #0a0a0a;
+  --sl-color-gray-1: #1a1a17;
+  --sl-color-gray-2: #2e2e2a;
+  --sl-color-gray-3: #5a5a53;
+  --sl-color-gray-4: #8a8a82;
+  --sl-color-gray-5: #b8b8b1;
+  --sl-color-gray-6: #e0e0d9;
+  --sl-color-gray-7: #efefea;
+  --sl-color-black: #f5f5f0;
+  --fleans-accent-2: #3a7d00;
+  --fleans-surface: #f5f5f0;
+}
+
+/* Display font — headings */
+/* Selectors verified against @astrojs/starlight 0.38.2 source */
+/* .site-title: SiteTitle.astro <a class="site-title"> */
+/* .group-label .large: SidebarSublist.astro details>summary>span.group-label>span.large */
+.sl-markdown-content h1,
+.sl-markdown-content h2,
+.hero h1,
+.site-title,
+.group-label .large {
+  font-family: 'Space Grotesk', var(--sl-font-system);
+  font-weight: 700;
+}
+
+/* h3/h4: medium weight — uses the 500-weight import */
+.sl-markdown-content h3,
+.sl-markdown-content h4 {
+  font-family: 'Space Grotesk', var(--sl-font-system);
+  font-weight: 500;
+}
+
+/* ===================================================================
+   Motion & hover — issue #260
+   All animation gated on prefers-reduced-motion: no-preference.
+   Hover effects gated on (hover: hover); :focus-visible always active.
+   =================================================================== */
+
+/* --- Keyframes --- */
+@keyframes fade-up-clip {
+  from {
+    transform: translateY(8px);
+    clip-path: inset(100% 0 0 0);
+  }
+  to {
+    transform: translateY(0);
+    clip-path: inset(0);
+  }
+}
+
+@keyframes clip-reveal-x {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0);
+  }
+}
+
+@keyframes underline-draw {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes caret-slide {
+  from {
+    transform: translateX(-8px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes border-draw {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes cursor-blink {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* --- Shared easing token --- */
+:root {
+  --fleans-ease-sharp-out: cubic-bezier(.2, .8, 0, 1);
+}
+
+/* --- Hero stagger reveals --- */
+@media (prefers-reduced-motion: no-preference) {
+  .hero > * {
+    will-change: transform, clip-path;
+  }
+
+  /* Title */
+  .hero h1 {
+    animation: fade-up-clip 320ms var(--fleans-ease-sharp-out) 60ms both;
+  }
+
+  /* Tagline */
+  .hero .tagline {
+    animation: fade-up-clip 320ms var(--fleans-ease-sharp-out) 180ms both;
+  }
+
+  /* Primary action (first link in actions) */
+  .hero .action:first-child {
+    animation: fade-up-clip 320ms var(--fleans-ease-sharp-out) 300ms both;
+  }
+
+  /* Secondary action */
+  .hero .action:nth-child(2) {
+    animation: fade-up-clip 320ms var(--fleans-ease-sharp-out) 380ms both;
+  }
+
+  /* Logo / hero image */
+  .hero img {
+    animation: clip-reveal-x 420ms var(--fleans-ease-sharp-out) 120ms both;
+  }
+}
+
+/* --- Scroll-driven accents (progressive enhancement) --- */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .card {
+      border-left: 3px solid var(--fleans-accent-2);
+      border-left-color: var(--fleans-accent-2);
+      animation: border-draw linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 40%;
+      transform-origin: top;
+    }
+
+    .sl-markdown-content h2 {
+      position: relative;
+    }
+
+    .sl-markdown-content h2::after {
+      content: '';
+      position: absolute;
+      bottom: -2px;
+      left: 0;
+      width: 100%;
+      height: 2px;
+      background: var(--fleans-accent-2);
+      transform-origin: left;
+      animation: underline-draw linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 40%;
+    }
+  }
+}
+
+/* --- Hover / focus states --- */
+
+/* Sidebar links: lime caret + text shift */
+@media (hover: hover) {
+  .sidebar-content a {
+    position: relative;
+    transition: padding-left 140ms var(--fleans-ease-sharp-out);
+  }
+
+  .sidebar-content a::before {
+    content: '>';
+    position: absolute;
+    left: 0;
+    color: var(--fleans-accent-2);
+    font-weight: 600;
+    opacity: 0;
+    transform: translateX(-8px);
+    transition: opacity 140ms var(--fleans-ease-sharp-out),
+                transform 140ms var(--fleans-ease-sharp-out);
+  }
+
+  .sidebar-content a:hover {
+    padding-left: 4px;
+  }
+
+  .sidebar-content a:hover::before {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Sidebar links: focus-visible (outside hover media query) */
+.sidebar-content a:focus-visible {
+  padding-left: 4px;
+}
+
+.sidebar-content a:focus-visible::before {
+  content: '>';
+  position: absolute;
+  left: 0;
+  color: var(--fleans-accent-2);
+  font-weight: 600;
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* Site title: accent-2 underline */
+.site-title {
+  position: relative;
+}
+
+.site-title::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--fleans-accent-2);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 180ms var(--fleans-ease-sharp-out);
+}
+
+@media (hover: hover) {
+  .site-title:hover::after {
+    transform: scaleX(1);
+  }
+}
+
+.site-title:focus-visible::after {
+  transform: scaleX(1);
+}
+
+/* Cards: border accent + lift + lime shadow */
+.card {
+  transition: border-color 120ms var(--fleans-ease-sharp-out),
+              transform 120ms var(--fleans-ease-sharp-out),
+              box-shadow 120ms var(--fleans-ease-sharp-out);
+}
+
+@media (hover: hover) {
+  .card:hover {
+    border-color: var(--sl-color-accent);
+    transform: translate(-1px, -1px);
+    box-shadow: 2px 2px 0 var(--fleans-accent-2);
+  }
+}
+
+.card:focus-visible {
+  border-color: var(--sl-color-accent);
+  transform: translate(-1px, -1px);
+  box-shadow: 2px 2px 0 var(--fleans-accent-2);
+}
+
+/* Primary hero action: accent-2 underline wipe */
+.hero .action.primary a {
+  position: relative;
+}
+
+.hero .action.primary a::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--fleans-accent-2);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 180ms var(--fleans-ease-sharp-out);
+}
+
+@media (hover: hover) {
+  .hero .action.primary a:hover::after {
+    transform: scaleX(1);
+  }
+}
+
+.hero .action.primary a:focus-visible::after {
+  transform: scaleX(1);
+}
+
+/* Copy-code button: blinking lime dot on hover */
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .copy button:hover::after {
+    content: '';
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--fleans-accent-2);
+    animation: cursor-blink 1s steps(2) infinite;
+  }
+}
+
+/* Freeze cursor-blink under reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .copy button::after {
+    animation: none !important;
+  }
 }

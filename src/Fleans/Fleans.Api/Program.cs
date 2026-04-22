@@ -86,6 +86,7 @@ if (rateLimitConfig is not null)
         AddPolicyIfConfigured(options, "task-operation", rateLimitConfig.TaskOperation);
         AddPolicyIfConfigured(options, "read", rateLimitConfig.Read);
         AddPolicyIfConfigured(options, "admin", rateLimitConfig.Admin);
+        AddPolicyIfConfigured(options, "polling", rateLimitConfig.Polling);
 
         options.OnRejected = async (context, token) =>
         {
