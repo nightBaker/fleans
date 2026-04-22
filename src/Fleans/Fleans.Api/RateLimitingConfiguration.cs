@@ -6,6 +6,7 @@ public class RateLimitingConfiguration
     public RateLimitPolicy? TaskOperation { get; set; }
     public RateLimitPolicy? Read { get; set; }
     public RateLimitPolicy? Admin { get; set; }
+    public RateLimitPolicy? Polling { get; set; }
 }
 
 public class RateLimitPolicy
