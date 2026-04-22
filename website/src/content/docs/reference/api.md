@@ -81,3 +81,46 @@ Rate limiting: uses the `polling` policy. See [Rate Limiting](#rate-limiting) be
 ### Rate limiting
 
 All API endpoints have rate-limiting attributes (`workflow-mutation`, `task-operation`, `read`, `admin`, `polling`), but rate limiting is **opt-in**: it only activates when the `RateLimiting` configuration section is present. Default `appsettings.json` has no such section, so the middleware is off by default. When activating rate limiting, populate **all five** policies together — partially populating the section causes unregistered-policy endpoints to return HTTP 500.
+
+#### Configuration example
+
+Add this to your `appsettings.json` (or `appsettings.Production.json`):
+
+```json
+{
+  "RateLimiting": {
+    "WorkflowMutation": { "Window": 60, "PermitLimit": 100 },
+    "TaskOperation":    { "Window": 60, "PermitLimit": 100 },
+    "Read":             { "Window": 60, "PermitLimit": 200 },
+    "Admin":            { "Window": 60, "PermitLimit": 50  },
+    "Polling":          { "Window": 1,  "PermitLimit": 1000 }
+  }
+}
+```
+
+- **`Window`** — time window in seconds (default: 60)
+- **`PermitLimit`** — maximum requests per window per client IP (default: 100)
+
+The rate limiter uses a **fixed window** algorithm, partitioned by the client's `RemoteIpAddress`.
+
+#### Policy → endpoint mapping
+
+| Policy | Endpoints | Description |
+|--------|-----------|-------------|
+| `WorkflowMutation` | `POST /start`, `/complete-activity`, `/message`, `/signal`, `/deploy`, `/evaluate-conditions` | Workflow write operations |
+| `TaskOperation` | `POST /claim-user-task`, `/unclaim-user-task`, `/complete-user-task` | User task operations |
+| `Read` | `GET /definitions` | Read-only queries |
+| `Admin` | `POST /upload-bpmn`, `/disable`, `/enable` | Admin operations |
+| `Polling` | `GET /instances/{id}/state` | High-frequency state polling |
+
+#### Environment variable overrides
+
+For Docker Compose or container deployments, use `__` (double underscore) notation:
+
+```bash
+RateLimiting__WorkflowMutation__PermitLimit=1000
+RateLimiting__WorkflowMutation__Window=1
+RateLimiting__Polling__PermitLimit=10000
+```
+
+> **Important:** Either configure all five policies or leave the `RateLimiting` section absent entirely. A partial configuration will cause HTTP 500 errors on endpoints whose policy is not registered.
