@@ -77,6 +77,14 @@ public class ActivityInstanceEntry
     [Id(18)]
     public DateTimeOffset? CompletedAt { get; private set; }
 
+    /// <summary>
+    /// True when this entry represents a compensation handler spawned during a compensation walk.
+    /// Compensation handlers are excluded from the compensation snapshot hook (no re-compensation)
+    /// and tracked separately from normal scope children.
+    /// </summary>
+    [Id(19)]
+    public bool IsCompensationHandler { get; private set; }
+
     // Computed
     public ActivityErrorState? ErrorState =>
         ErrorCode is not null ? new ActivityErrorState(ErrorCode.Value, ErrorMessage!) : null;
@@ -178,4 +186,6 @@ public class ActivityInstanceEntry
     public void SetMultiInstanceTotal(int total) => MultiInstanceTotal = total;
 
     public void SetTokenId(Guid id) => TokenId = id;
+
+    internal void MarkAsCompensationHandler() => IsCompensationHandler = true;
 }

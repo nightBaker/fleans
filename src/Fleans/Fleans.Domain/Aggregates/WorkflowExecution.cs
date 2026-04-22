@@ -126,7 +126,23 @@ public class WorkflowExecution
 
     public void MarkCompleted(Guid activityInstanceId, ExpandoObject variables)
     {
-        var entry = _state.GetActiveEntry(activityInstanceId);
+        var entry = _state.GetEntry(activityInstanceId);
+        // Escalation boundary cancellation race: when an interrupting escalation
+        // boundary fires, the host SubProcess/CallActivity is cancelled immediately.
+        // However, the grain's RunExecutionLoop may still call MarkCompleted for
+        // activities within that cancelled scope. Using GetEntry (not GetActiveEntry)
+        // and returning early for cancelled entries prevents a spurious throw.
+        // This guard is intentionally narrow — only IsCancelled returns early.
+        // Failed or already-completed entries fall through to the checks below.
+        if (entry.IsCancelled) return;
+        // A failed entry must not be silently completed.
+        if (entry.ErrorCode is not null)
+            throw new InvalidOperationException(
+                $"Activity '{entry.ActivityId}' has failed — cannot mark completed.");
+        // For any other terminal state, delegate to GetActiveEntry which throws —
+        // a double-complete is a bug, not a race.
+        if (entry.IsCompleted)
+            _ = _state.GetActiveEntry(activityInstanceId); // throws
         Emit(new ActivityCompleted(activityInstanceId, entry.VariablesId, variables));
     }
 
@@ -351,7 +367,11 @@ public class WorkflowExecution
                         skipStartEventActivityId: null));
 
                     Emit(new WorkflowCompleted());
-                    // If this is a child workflow, notify parent of completion
+                    // If this is a child workflow, notify parent of completion.
+                    // When an escalation was also raised in this batch, the parent may
+                    // have already cancelled the host entry (interrupting boundary) —
+                    // the parent's stale guard in OnChildWorkflowCompleted safely
+                    // ignores the completion in that case.
                     if (_state.ParentWorkflowInstanceId.HasValue)
                     {
                         var rootVariables = _state.GetMergedVariables(
@@ -415,8 +435,16 @@ public class WorkflowExecution
                     effects.Add(new ThrowSignalEffect(throwSignal.SignalName));
                     break;
 
+                case ThrowEscalationCommand throwEscalation:
+                    effects.AddRange(ProcessThrowEscalation(throwEscalation, activityInstanceId));
+                    break;
+
                 case DiscardLateTokenCommand discard:
                     Emit(new ActivityCancelled(activityInstanceId, discard.Reason));
+                    break;
+
+                case CompensationRequestedCommand compensation:
+                    PerformCompensationWalk(compensation.ThrowerActivityInstanceId, compensation.TargetActivityRef);
                     break;
 
                 default:
@@ -448,12 +476,13 @@ public class WorkflowExecution
         if (_state.GetActiveActivities().Any())
             return [];
 
-        // Check if a root-scope EndEvent was completed
+        // Check if a root-scope end event (EndEvent or CompensationEndEvent) was completed
         var hasCompletedEndEvent = _state.GetCompletedActivities()
             .Any(e =>
             {
                 var scope = _definition.FindScopeForActivity(e.ActivityId);
-                return scope is { IsRootScope: true } && scope.GetActivity(e.ActivityId) is EndEvent;
+                return scope is { IsRootScope: true }
+                    && scope.GetActivity(e.ActivityId) is (EndEvent or EscalationEndEvent or Activities.CompensationEndEvent);
             });
 
         if (!hasCompletedEndEvent)
@@ -478,6 +507,224 @@ public class WorkflowExecution
         }
 
         return effects.AsReadOnly();
+    }
+
+    // ── Compensation Walk ────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Initiates a compensation walk for the scope that contains the thrower activity.
+    /// Resolves the scope from the thrower's ScopeId, filters and sorts the compensation
+    /// log, emits CompensationWalkStarted, then spawns the first handler.
+    /// Called from ProcessCommands when a CompensationRequestedCommand is encountered.
+    /// </summary>
+    private void PerformCompensationWalk(Guid throwerActivityInstanceId, string? targetActivityRef)
+    {
+        var throwerEntry = _state.GetEntry(throwerActivityInstanceId);
+        var scopeId = throwerEntry.ScopeId; // null = root scope
+
+        var scopeDef = GetScopeDefinition(scopeId);
+
+        var snapshots = _state.CompensationLog
+            .Where(s => s.ScopeId == scopeId && !s.IsCompensated)
+            .Where(s => targetActivityRef is null || s.ActivityDefinitionId == targetActivityRef)
+            .OrderByDescending(s => s.CompletedAtSequence)
+            .ToList();
+
+        if (snapshots.Count == 0)
+        {
+            Emit(new CompensationWalkStarted(scopeId, targetActivityRef, 0, throwerActivityInstanceId));
+            Emit(new CompensationWalkCompleted(scopeId));
+            // Empty walk — complete the thrower so it transitions normally
+            Emit(new ActivityCompleted(throwerActivityInstanceId, throwerEntry.VariablesId, new System.Dynamic.ExpandoObject()));
+            return;
+        }
+
+        Emit(new CompensationWalkStarted(scopeId, targetActivityRef, snapshots.Count, throwerActivityInstanceId));
+        AdvanceCompensationWalk(scopeId, scopeDef, snapshots);
+    }
+
+    /// <summary>
+    /// Spawns the next compensation handler from the active walk.
+    /// Called both from PerformCompensationWalk (for the first handler) and from
+    /// AdvanceCompensationWalkIfHandlerCompleted (for subsequent handlers).
+    /// </summary>
+    private void AdvanceCompensationWalk(Guid? scopeId, IWorkflowDefinition scopeDef,
+        List<CompletedActivitySnapshot> orderedSnapshots)
+    {
+        var walk = _state.ActiveCompensationWalk;
+        if (walk is null) return;
+
+        // Find the next uncompensated snapshot that has a compensation handler
+        CompletedActivitySnapshot? snapshot = null;
+        Activities.CompensationBoundaryEvent? boundary = null;
+        foreach (var candidate in orderedSnapshots.Where(s => !s.IsCompensated))
+        {
+            boundary = scopeDef.FindCompensationBoundary(candidate.ActivityDefinitionId);
+            if (boundary is not null)
+            {
+                snapshot = candidate;
+                break;
+            }
+        }
+
+        if (snapshot is null)
+        {
+            var throwerInstanceId = walk.ThrowerActivityInstanceId;
+            var throwerEntry = _state.GetEntry(throwerInstanceId);
+            Emit(new CompensationWalkCompleted(scopeId));
+            // Complete the thrower so it can transition to its outgoing flow
+            if (!throwerEntry.IsCompleted)
+                Emit(new ActivityCompleted(throwerInstanceId, throwerEntry.VariablesId, new System.Dynamic.ExpandoObject()));
+            return;
+        }
+
+        // Find the handler activity definition in the scope
+        var handlerActivity = scopeDef.GetActivity(boundary.HandlerActivityId);
+
+        // Create a child variable scope seeded with the snapshot variables
+        var handlerVariablesId = Guid.NewGuid();
+        var parentVariablesId = scopeId.HasValue
+            ? _state.GetEntry(scopeId.Value).VariablesId
+            : _state.GetRootVariablesId();
+
+        Emit(new ChildVariableScopeCreated(handlerVariablesId, parentVariablesId));
+        Emit(new VariablesMerged(handlerVariablesId, snapshot.VariablesSnapshot));
+
+        // Spawn the handler activity
+        var handlerInstanceId = Guid.NewGuid();
+        Emit(new ActivitySpawned(
+            ActivityInstanceId: handlerInstanceId,
+            ActivityId: handlerActivity.ActivityId,
+            ActivityType: handlerActivity.GetType().Name,
+            VariablesId: handlerVariablesId,
+            ScopeId: scopeId,
+            MultiInstanceIndex: null,
+            TokenId: null));
+
+        Emit(new CompensationHandlerSpawned(
+            handlerInstanceId, snapshot.ActivityDefinitionId, handlerActivity.ActivityId, scopeId));
+        // Apply(CompensationHandlerSpawned) sets CurrentHandlerInstanceId and marks entry as handler
+    }
+
+    /// <summary>
+    /// Called from HandleScopeCompletions (grain infrastructure) after CompleteFinishedSubProcessScopes
+    /// to check if the active compensation handler has finished, and if so advance the walk.
+    /// Returns the thrower's instance ID if the walk completed (so the caller can compute transitions),
+    /// or null if the walk is still in progress or was not active.
+    /// </summary>
+    public Guid? AdvanceCompensationWalkIfHandlerCompleted()
+    {
+        var walk = _state.ActiveCompensationWalk;
+        if (walk is null || walk.CurrentHandlerInstanceId is null) return null;
+
+        var handlerEntry = _state.FindEntry(walk.CurrentHandlerInstanceId.Value);
+        if (handlerEntry is null || !handlerEntry.IsCompleted) return null;
+
+        if (handlerEntry.ErrorCode is not null)
+        {
+            Emit(new CompensationWalkFailed(
+                walk.ScopeId,
+                walk.CurrentHandlerInstanceId.Value,
+                handlerEntry.ErrorCode.Value,
+                handlerEntry.ErrorMessage ?? "Compensation handler failed"));
+            Emit(new WorkflowCompleted());
+            return null;
+        }
+
+        // Handler completed successfully; find the compensable activity def ID via the boundary.
+        var scopeId = walk.ScopeId;
+        var scopeDef = GetScopeDefinition(scopeId);
+        var handlerActivityId = handlerEntry.ActivityId;
+        var boundary = scopeDef.Activities.OfType<Activities.CompensationBoundaryEvent>()
+            .FirstOrDefault(b => b.HandlerActivityId == handlerActivityId);
+
+        if (boundary is not null)
+        {
+            Emit(new CompensationEntryMarkedCompensated(boundary.AttachedToActivityId, scopeId));
+        }
+
+        // Propagate the handler's variable changes up to the enclosing scope so
+        // compensation side-effects are visible after the walk. The handler ran in
+        // an isolated child scope seeded with the compensable activity's snapshot;
+        // its updated variables must be merged into the parent before the next
+        // handler is spawned so later handlers also observe the change.
+        var parentVariablesId = scopeId.HasValue
+            ? _state.GetEntry(scopeId.Value).VariablesId
+            : _state.GetRootVariablesId();
+        var handlerVariables = _state.GetVariableState(handlerEntry.VariablesId).Variables;
+        Emit(new VariablesMerged(parentVariablesId, handlerVariables));
+
+        // Build the remaining ordered snapshot list from current log state
+        var remainingSnapshots = _state.CompensationLog
+            .Where(s => s.ScopeId == scopeId && !s.IsCompensated)
+            .Where(s => walk.TargetActivityRef is null || s.ActivityDefinitionId == walk.TargetActivityRef)
+            .OrderByDescending(s => s.CompletedAtSequence)
+            .ToList();
+
+        AdvanceCompensationWalk(scopeId, scopeDef, remainingSnapshots);
+
+        // If the walk completed (no more handlers), the thrower was completed inside AdvanceCompensationWalk.
+        // Return its instance ID so the caller can compute transitions for it.
+        if (_state.ActiveCompensationWalk is null)
+            return walk.ThrowerActivityInstanceId;
+
+        return null;
+    }
+
+    /// <summary>Gets the IWorkflowDefinition for a scope instance (null = root scope).</summary>
+    private IWorkflowDefinition GetScopeDefinition(Guid? scopeId)
+    {
+        if (scopeId is null) return _definition;
+
+        var scopeEntry = _state.GetEntry(scopeId.Value);
+        var parentDef = _definition.GetScopeForActivity(scopeEntry.ActivityId);
+        return (IWorkflowDefinition)parentDef.GetActivity(scopeEntry.ActivityId);
+    }
+
+    private static ExpandoObject DeepCopyExpandoObject(ExpandoObject source)
+    {
+        var json = Newtonsoft.Json.JsonConvert.SerializeObject(source);
+        return Newtonsoft.Json.JsonConvert.DeserializeObject<ExpandoObject>(
+            json, new Newtonsoft.Json.Converters.ExpandoObjectConverter())!;
+    }
+
+    private IReadOnlyList<IInfrastructureEffect> ProcessThrowEscalation(
+        ThrowEscalationCommand command, Guid activityInstanceId)
+    {
+        var entry = _state.FindEntry(activityInstanceId);
+        if (entry is null)
+            return [];
+
+        // Use the definition's scope walker to find a matching boundary handler
+        var boundaryHandler = _definition.FindBoundaryEscalationHandler(
+            entry.ActivityId, command.EscalationCode);
+
+        if (boundaryHandler is not null)
+        {
+            var (boundaryEvent, _, attachedToActivityId) = boundaryHandler.Value;
+            var attachedEntry = _state.GetFirstActive(attachedToActivityId);
+            if (attachedEntry is null)
+                return [];
+
+            var scopeVariables = _state.GetMergedVariables(entry.VariablesId);
+            return HandleEscalationBoundaryMatch(boundaryEvent, attachedEntry, scopeVariables).Effects;
+        }
+
+        // No boundary found — escalate to parent grain if this is a child workflow
+        if (_state.ParentWorkflowInstanceId.HasValue)
+        {
+            var scopeVariables = _state.GetMergedVariables(entry.VariablesId);
+            return [new NotifyParentEscalationRaisedEffect(
+                _state.ParentWorkflowInstanceId.Value,
+                _state.Id,
+                _state.ParentActivityId!,
+                command.EscalationCode,
+                scopeVariables)];
+        }
+
+        // Uncaught at root — BPMN spec: escalation is non-faulting, just record it
+        Emit(new EscalationUncaughtRaised(command.EscalationCode, entry.ActivityId));
+        return [];
     }
 
     private void ProcessSpawnActivity(SpawnActivityCommand spawn, Guid activityInstanceId)
@@ -1233,6 +1480,144 @@ public class WorkflowExecution
         return FailActivity(parentActivityId, entry.ActivityInstanceId, exception);
     }
 
+    public (IReadOnlyList<IInfrastructureEffect> Effects, EscalationHandledResult Result)
+        HandleChildEscalationRaised(
+            Guid childWorkflowInstanceId,
+            string hostActivityId,
+            string escalationCode,
+            ExpandoObject variables)
+    {
+        // Find the host activity entry (CallActivity/SubProcess) in the parent
+        var hostEntry = _state.GetFirstActive(hostActivityId);
+        if (hostEntry is null)
+            return ([], EscalationHandledResult.Unhandled);
+
+        // Use the definition's escalation boundary walker
+        var boundaryHandler = _definition.FindBoundaryEscalationHandler(hostActivityId, escalationCode);
+
+        if (boundaryHandler is not null)
+        {
+            var (boundaryEvent, scope, attachedToActivityId) = boundaryHandler.Value;
+            var attachedEntry = _state.GetFirstActive(attachedToActivityId);
+
+            // If the attached activity is no longer active (already completed/cancelled),
+            // the escalation boundary should not fire.
+            if (attachedEntry is null)
+                return ([], EscalationHandledResult.Unhandled);
+
+            return HandleEscalationBoundaryMatch(boundaryEvent, attachedEntry, variables);
+        }
+
+        // No boundary found in this grain — check if we have a parent (CallActivity escape)
+        if (_state.ParentWorkflowInstanceId.HasValue)
+        {
+            var effects = new List<IInfrastructureEffect>
+            {
+                new NotifyParentEscalationRaisedEffect(
+                    _state.ParentWorkflowInstanceId.Value,
+                    _state.Id,
+                    _state.ParentActivityId!,
+                    escalationCode,
+                    variables)
+            };
+            return (effects, EscalationHandledResult.NeedsParentLookup);
+        }
+
+        // Uncaught at root
+        Emit(new EscalationUncaughtRaised(escalationCode, hostActivityId));
+        return ([], EscalationHandledResult.Unhandled);
+    }
+
+    private (IReadOnlyList<IInfrastructureEffect> Effects, EscalationHandledResult Result)
+        HandleEscalationBoundaryMatch(
+            EscalationBoundaryEvent boundaryEvent,
+            ActivityInstanceEntry hostEntry,
+            ExpandoObject escalationVariables)
+    {
+        var effects = new List<IInfrastructureEffect>();
+
+        if (boundaryEvent.IsInterrupting)
+        {
+            // Cancel host scope children
+            effects.AddRange(CancelScopeChildren(hostEntry.ActivityInstanceId));
+
+            // Cancel the host entry itself
+            if (!hostEntry.IsCompleted)
+            {
+                Emit(new ActivityCancelled(
+                    hostEntry.ActivityInstanceId,
+                    $"Interrupted by escalation boundary event '{boundaryEvent.ActivityId}'"));
+                effects.AddRange(BuildUserTaskCleanupEffects(hostEntry.ActivityInstanceId));
+            }
+
+            // Unsubscribe all boundary subscriptions on the host
+            effects.AddRange(BuildBoundaryUnsubscribeEffects(
+                boundaryEvent.AttachedToActivityId, hostEntry));
+
+            // Clone variables and merge escalation snapshot
+            var clonedScopeId = Guid.NewGuid();
+            Emit(new VariableScopeCloned(clonedScopeId, hostEntry.VariablesId));
+            if (((IDictionary<string, object?>)escalationVariables).Count > 0)
+                Emit(new VariablesMerged(clonedScopeId, escalationVariables));
+
+            // Spawn the boundary event activity
+            Emit(new ActivitySpawned(
+                ActivityInstanceId: Guid.NewGuid(),
+                ActivityId: boundaryEvent.ActivityId,
+                ActivityType: boundaryEvent.GetType().Name,
+                VariablesId: clonedScopeId,
+                ScopeId: hostEntry.ScopeId,
+                MultiInstanceIndex: null,
+                TokenId: null));
+
+            return (effects, EscalationHandledResult.Cancelled);
+        }
+        else
+        {
+            // Non-interrupting: clone variables and spawn boundary, host continues
+            var clonedScopeId = Guid.NewGuid();
+            Emit(new VariableScopeCloned(clonedScopeId, hostEntry.VariablesId));
+            if (((IDictionary<string, object?>)escalationVariables).Count > 0)
+                Emit(new VariablesMerged(clonedScopeId, escalationVariables));
+
+            Emit(new ActivitySpawned(
+                ActivityInstanceId: Guid.NewGuid(),
+                ActivityId: boundaryEvent.ActivityId,
+                ActivityType: boundaryEvent.GetType().Name,
+                VariablesId: clonedScopeId,
+                ScopeId: hostEntry.ScopeId,
+                MultiInstanceIndex: null,
+                TokenId: null));
+
+            return (effects, EscalationHandledResult.Continue);
+        }
+    }
+
+    public ActivityInstanceEntry? FindEntryByChildWorkflowInstanceId(Guid childWorkflowInstanceId)
+        => _state.Entries.FirstOrDefault(e => e.ChildWorkflowInstanceId == childWorkflowInstanceId);
+
+    public void TerminateForParentEscalationCancellation()
+    {
+        // Cancel all active activities — recursively cancel nested scopes first,
+        // then cancel the root-level entries themselves.
+        // The list is snapshotted before iteration. CancelScopeChildren may cancel
+        // nested entries that also appear in this snapshot, so we skip entries that
+        // are already cancelled to avoid a duplicate-cancel exception from GetActiveEntry.
+        foreach (var entry in _state.GetActiveActivities().ToList())
+        {
+            if (entry.IsCancelled) continue;
+
+            if (_state.HasActiveChildrenInScope(entry.ActivityInstanceId))
+                CancelScopeChildren(entry.ActivityInstanceId);
+
+            Emit(new ActivityCancelled(
+                entry.ActivityInstanceId,
+                "Cancelled by parent interrupting escalation boundary"));
+        }
+
+        Emit(new WorkflowCancelled("Escalation: child scope cancelled by parent interrupting boundary"));
+    }
+
     // --- Parent Info ---
 
     public void SetParentInfo(Guid parentInstanceId, string parentActivityId)
@@ -1268,6 +1653,20 @@ public class WorkflowExecution
     private IReadOnlyList<IInfrastructureEffect> CompleteActivityInternal(
         ActivityInstanceEntry entry, ExpandoObject variables)
     {
+        // Compensation snapshot hook: capture the activity's output variables at completion time.
+        // Only for non-compensation-handler activities that have a CompensationBoundaryEvent attached.
+        if (!entry.IsCompensationHandler)
+        {
+            var scopeDef = _definition.FindScopeForActivity(entry.ActivityId);
+            if (scopeDef?.FindCompensationBoundary(entry.ActivityId) is not null)
+            {
+                var snapshot = DeepCopyExpandoObject(variables ?? new ExpandoObject());
+                Emit(new CompensableActivitySnapshotRecorded(
+                    entry.ActivityInstanceId, entry.ActivityId,
+                    snapshot, entry.ScopeId));
+            }
+        }
+
         Emit(new ActivityCompleted(entry.ActivityInstanceId, entry.VariablesId, variables));
 
         var effects = new List<IInfrastructureEffect>();
@@ -2201,6 +2600,11 @@ public class WorkflowExecution
             case WorkflowCompleted:
                 _state.Complete();
                 break;
+            case WorkflowCancelled:
+                _state.Cancel();
+                break;
+            case EscalationUncaughtRaised:
+                break; // non-faulting per BPMN spec — recorded for observability only
             case ActivitySpawned e:
                 ApplyActivitySpawned(e);
                 break;
@@ -2284,6 +2688,28 @@ public class WorkflowExecution
                 break;
             case TimerCycleUpdated e:
                 _state.SetTimerCycleState(e.HostActivityInstanceId, e.TimerActivityId, e.RemainingCycle);
+                break;
+            case CompensableActivitySnapshotRecorded e:
+                _state.AddCompensationSnapshot(new CompletedActivitySnapshot(
+                    e.ActivityInstanceId, e.ActivityDefinitionId,
+                    e.VariablesSnapshot, _state.NextCompensationSequence, e.ScopeId));
+                break;
+            case CompensationWalkStarted e:
+                if (e.HandlerCount > 0)
+                    _state.StartCompensationWalk(new CompensationWalkState(e.ScopeId, e.TargetActivityRef, e.ThrowerActivityInstanceId));
+                break;
+            case CompensationHandlerSpawned e:
+                _state.SetCompensationHandlerInstanceId(e.HandlerInstanceId);
+                _state.MarkCurrentHandlerEntry(e.HandlerInstanceId);
+                break;
+            case CompensationEntryMarkedCompensated e:
+                _state.MarkSnapshotCompensated(e.ActivityDefinitionId, e.ScopeId);
+                break;
+            case CompensationWalkCompleted:
+                _state.ClearCompensationWalk();
+                break;
+            case CompensationWalkFailed:
+                // Walk state intentionally NOT cleared — preserved for observability
                 break;
             case TransactionOutcomeSet e:
                 _state.TransactionOutcomes[e.TransactionInstanceId] =

@@ -11,7 +11,7 @@ description: Run Fleans locally in under 5 minutes.
 ## Clone and run
 
 ```bash
-git clone https://github.com/<github-user>/fleans.git
+git clone https://github.com/nightBaker/fleans.git
 cd fleans/src/Fleans
 dotnet run --project Fleans.Aspire
 ```

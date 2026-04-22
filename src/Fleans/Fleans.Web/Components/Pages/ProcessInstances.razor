@@ -28,7 +28,11 @@
             <span title="@context.InstanceId">@context.InstanceId.ToString()[..8]...</span>
         </TemplateColumn>
         <TemplateColumn Title="Status">
-            @if (context.IsCompleted)
+            @if (context.IsCancelled)
+            {
+                <FluentBadge Color="Color.Warning">Cancelled</FluentBadge>
+            }
+            else if (context.IsCompleted)
             {
                 <FluentBadge Color="Color.Success">Completed</FluentBadge>
             }
