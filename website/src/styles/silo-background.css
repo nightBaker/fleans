@@ -1,5 +1,31 @@
 /* Silo background — splash-only. Loaded via SiloBackground.astro. */
 
+/* Splash is dark-only. These overrides pin the Fleans palette to the dark
+ * values on any page that has a hero (`[data-has-hero]` is set by Starlight
+ * on splash-template pages). The rules are scoped by attribute so they
+ * override both `[data-theme='light']` and `[data-theme='dark']` — the
+ * splash ignores the active theme entirely and stays dark even when the
+ * user toggled light elsewhere.
+ *
+ * Selector chain `:root[data-has-hero][data-theme]` has specificity (0,3,1)
+ * which beats custom.css's `:root[data-theme='light']` (0,2,1).
+ */
+:root[data-has-hero][data-theme] {
+  --sl-color-accent-low: #0f2926;
+  --sl-color-accent: #4eb5a6;
+  --sl-color-accent-high: #a8e0d6;
+  --sl-color-white: #f5f5f0;
+  --sl-color-gray-1: #e5e5df;
+  --sl-color-gray-2: #b8b8b1;
+  --sl-color-gray-3: #8a8a82;
+  --sl-color-gray-4: #5a5a53;
+  --sl-color-gray-5: #2e2e2a;
+  --sl-color-gray-6: #1a1a17;
+  --sl-color-black: #0a0a0a;
+  --fleans-accent-2: #9eff00;
+  --fleans-surface: #141411;
+}
+
 /* Splash is dark-only: hide Starlight's theme toggle so the user can't flip
  * to light mode here. The toggle remains visible on doc pages. */
 :root[data-has-hero] starlight-theme-select {
