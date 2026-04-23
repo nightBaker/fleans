@@ -42,6 +42,17 @@ The public docs site lives in `website/` — an Astro + Starlight project deploy
 
 **Documentation rule:** Any new feature, BPMN element, API endpoint, or user-facing behavior MUST be reflected in the docs site in the same PR. Update the relevant page under `website/src/content/docs/` (e.g. new BPMN activity → `concepts/bpmn-support.md`; new endpoint → `reference/api.md`; new workflow → add a guide). If no suitable page exists, create one and add it to the Starlight sidebar in `website/astro.config.mjs`. Documentation is part of "done", not a follow-up task.
 
+### Hero BPMN Diagram
+
+The landing page includes a rendered BPMN workflow diagram between the hero and the "Why Fleans?" cards. Two themed SVG variants (light/dark) are pre-rendered from `tests/manual/04-parallel-gateway/fork-join.bpmn` using bpmn-js in a headless Playwright browser.
+
+- **Prerequisites:** `npx playwright install chromium` (one-time setup)
+- **Trigger:** re-run when the source fixture changes or `bpmn-js` version is bumped
+- **Command:** `cd website && npm run render-bpmn`
+- **Output:** `website/public/hero-workflow-light.svg` and `website/public/hero-workflow-dark.svg`
+- **Rule:** visually inspect both SVGs in a browser before committing
+- **Known limitation:** interior type-markers (script/user/service icons) are stripped from the SVG — only shapes (rectangles, diamonds, circles, arrows) are rendered. The admin UI (Fleans.Web) shows full markers because it loads the bpmn-font.
+
 ### 3D Landing Background
 
 The splash page (`website/src/content/docs/index.mdx`) loads an interactive Three.js silo scene as its background via `src/components/SiloBackground.astro`. Key points:
