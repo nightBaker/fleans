@@ -381,6 +381,14 @@ namespace Fleans.Domain
         }
 
         /// <summary>
+        /// Finds the compensation boundary event attached to the given activity definition ID,
+        /// returning the handler activity ID, or null if none is defined.
+        /// </summary>
+        Activities.CompensationBoundaryEvent? FindCompensationBoundary(string activityDefinitionId)
+            => Activities.OfType<Activities.CompensationBoundaryEvent>()
+                .FirstOrDefault(b => b.AttachedToActivityId == activityDefinitionId);
+
+        /// <summary>
         /// Returns activity IDs of sibling catch events that compete with the given activity
         /// after an EventBasedGateway. Returns empty set if the activity is not downstream
         /// of an EventBasedGateway.

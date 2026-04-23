@@ -42,6 +42,16 @@ The public docs site lives in `website/` — an Astro + Starlight project deploy
 
 **Documentation rule:** Any new feature, BPMN element, API endpoint, or user-facing behavior MUST be reflected in the docs site in the same PR. Update the relevant page under `website/src/content/docs/` (e.g. new BPMN activity → `concepts/bpmn-support.md`; new endpoint → `reference/api.md`; new workflow → add a guide). If no suitable page exists, create one and add it to the Starlight sidebar in `website/astro.config.mjs`. Documentation is part of "done", not a follow-up task.
 
+### 3D Landing Background
+
+The splash page (`website/src/content/docs/index.mdx`) loads an interactive Three.js silo scene as its background via `src/components/SiloBackground.astro`. Key points:
+
+- **Feature-gated:** loads the scene only on desktop (≥ 768 px), when `prefers-reduced-motion` is not set, and when WebGL2 is available. Otherwise renders `public/silo-poster-{dark,light}.webp`.
+- **Theme-reactive:** a `MutationObserver` on `<html data-theme>` recolors the scene in place — no reload, no rebuild.
+- **Only imported by `index.mdx`:** doc pages are untouched and pay zero bundle cost.
+- **Regenerating posters:** if you change scene visuals, run `cd website && npm run posters` (requires `npx playwright install chromium`). Commit the updated `public/silo-poster-*.webp` files.
+- **Contrast guardrail:** `cd website && npm run check:contrast` runs a Playwright check that fails if hero text drops below WCAG AA against the themed composite background. It is *not* wired into `npm run build` (that would force CI to install Chromium on every deploy). Run it manually after any change to the silo-background CSS, silo-scene, or hero styling.
+
 ## How to Add a New BPMN Activity
 
 1. Create the activity class in `Fleans.Domain/Activities/` — extend the existing `Activity` base class
@@ -78,6 +88,7 @@ Add it to `Fleans.Api/Controllers/WorkflowController.cs`. DTOs go in `Fleans.Ser
 ## Design Constraints
 
 - **Each activity instance executes at most once** — every non-boundary activity instance runs exactly once (completes or fails). An activity definition can be visited multiple times (e.g., in a loop), creating a new instance each time. `TimerCallbackGrain` keying uses `hostActivityInstanceId` to distinguish instances of the same activity.
+- **Compensation handlers run in isolated child scopes** — each handler gets a fresh variable scope seeded with the compensable activity's completion-time snapshot, overlaying the enclosing scope. After a handler completes successfully, its variable changes MUST be merged back into the enclosing scope before the next handler spawns. Otherwise: (a) later handlers in the walk see stale variables, and (b) compensation side-effects vanish after the walk finishes. `WorkflowExecution.AdvanceCompensationWalkIfHandlerCompleted` emits a `VariablesMerged` event with the handler's full variable map targeting the parent scope's variables ID (root scope's if the walk is at root). Do not break this invariant when refactoring the compensation path.
 
 ## Manual Test Plans
 
@@ -95,10 +106,12 @@ Add it to `Fleans.Api/Controllers/WorkflowController.cs`. DTOs go in `Fleans.Ser
 - **Use short timer durations** for test fixtures (PT5S–PT10S) so tests complete quickly.
 
 ### API Endpoints for Manual Tests
+- Deploy process: `POST https://localhost:7140/Workflow/deploy` — body: `{"BpmnXml":"<raw BPMN XML string>"}` — returns `{"ProcessDefinitionKey":"...","Version":1}` on success, 400 with `{"Error":"..."}` on parse failure
 - Start instance: `POST https://localhost:7140/Workflow/start` — body: `{"WorkflowId":"process-id"}` or `{"WorkflowId":"process-id","Variables":{"key":"value"}}` to set initial variables before workflow starts (required for message event sub-processes that use variables as correlation keys)
 - Send message: `POST https://localhost:7140/Workflow/message` — body: `{"MessageName":"...", "CorrelationKey":"...", "Variables":{}}`
 - Send signal: `POST https://localhost:7140/Workflow/signal` — body: `{"SignalName":"..."}`
 - Complete activity: `POST https://localhost:7140/Workflow/complete-activity` — body: `{"WorkflowInstanceId":"guid", "ActivityId":"activity-id", "Variables":{}}`
+- Instance state: `GET https://localhost:7140/Workflow/instances/{instanceId}/state` — returns per-instance state snapshot (activeActivityIds, completedActivityIds, isStarted, isCompleted). Diagnostics/load-test endpoint; reads from the eventually-consistent EF projection.
 
 ## Regression tests
 
@@ -139,8 +152,26 @@ The full regression suite is the union of every plan under `tests/manual/`. Each
 26. **Transaction Sub-Process (Happy Path)** — `tests/manual/26-transaction-subprocess/test-plan.md`. Transaction Sub-Process completes normally: variables merge into parent scope, all tasks inside show Completed. Cancel/Hazard paths are `KNOWN BUG` pending issues #230 and #231.
 27. **Multiple Event (Catch, Throw, Boundary)** — `tests/manual/24-multiple-event/test-plan.md` (`message-or-signal-catch.bpmn`, `multi-throw.bpmn`, `multiple-boundary.bpmn`). Multiple intermediate catch races message vs signal (first-fires-wins; loser subscription cancelled); multiple intermediate throw fires every defined signal; multiple interrupting boundary (message + timer) cancels the host activity whichever triggers first.
 28. **Escalation Event** — `tests/manual/24-escalation-event/test-plan.md` (`child-escalation-end.bpmn`, `child-escalation-throw.bpmn`, `parent-escalation-interrupting.bpmn`, `parent-escalation-non-interrupting.bpmn`). Child CallActivity throws escalation; parent's interrupting boundary cancels the CallActivity and runs the handler; non-interrupting boundary runs the handler while the child continues. Specific escalation codes match before catch-all; uncaught escalations are non-faulting per BPMN spec.
+29. **Compensation Events** — `tests/manual/24-compensation-event/test-plan.md` (`compensation-broadcast.bpmn`). Broadcast compensation throw after two script tasks; verifies reverse-order handler execution (cancel_flight before cancel_hotel) and variable mutation by compensation handlers.
+
+29. **Instance State Endpoint** — `tests/manual/27-instance-state-endpoint/test-plan.md`. `GET /Workflow/instances/{id}/state` returns per-instance state snapshot with camelCase JSON keys; verifies active activity tracking through the message-catch lifecycle and 404 for unknown instances.
 
 > When adding a new manual test folder under `tests/manual/`, append a numbered entry here so the regression skill picks it up.
+
+## Website regression tests
+
+Website-specific manual tests live under `tests/manual/website/`. These run in a local dev server, not against the .NET stack.
+
+**Universal prerequisites for every website step:**
+- `cd website && npm install` has been run at least once.
+- `npx playwright install chromium` has been run at least once (only needed for scripts that shell out to Playwright — poster generation + contrast check).
+- Dev server NOT already running on port 4321 or 4327 or 4328.
+
+**Reporting convention:** same as the BPMN list — `PASSED`, `FAILED`, `BUG`, or `KNOWN BUG`.
+
+1. **3D Silo Landing Background** — `tests/manual/website/3d-landing/test-plan.md`. Splash page renders birds-eye Three.js silo scene as background; clicking outside the hero enters interactive orbit/zoom/pan mode with a close (×) button; mobile and reduced-motion users see a static WebP poster instead.
+
+> When adding a new website test folder, append a numbered entry here.
 
 ## Persistence Providers
 

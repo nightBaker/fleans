@@ -1,5 +1,7 @@
+using System.Text;
 using Fleans.Application;
 using Fleans.Application.QueryModels;
+using Fleans.Infrastructure.Bpmn;
 using Fleans.ServiceDefaults.DTOs;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -13,15 +15,18 @@ namespace Fleans.Api.Controllers
         private readonly ILogger<WorkflowController> _logger;
         private readonly IWorkflowCommandService _commandService;
         private readonly IWorkflowQueryService _workflowQueryService;
+        private readonly IBpmnConverter _bpmnConverter;
 
         public WorkflowController(
             ILogger<WorkflowController> logger,
             IWorkflowCommandService commandService,
-            IWorkflowQueryService workflowQueryService)
+            IWorkflowQueryService workflowQueryService,
+            IBpmnConverter bpmnConverter)
         {
             _logger = logger;
             _commandService = commandService;
             _workflowQueryService = workflowQueryService;
+            _bpmnConverter = bpmnConverter;
         }
 
         [EnableRateLimiting("workflow-mutation")]
@@ -88,6 +93,26 @@ namespace Fleans.Api.Controllers
 
             await _commandService.CompleteActivity(request.WorkflowInstanceId, request.ActivityId, variables);
             return Ok();
+        }
+
+        [EnableRateLimiting("workflow-mutation")]
+        [HttpPost("deploy", Name = "DeployWorkflow")]
+        public async Task<IActionResult> DeployWorkflow([FromBody] DeployBpmnRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request.BpmnXml))
+                return BadRequest(new ErrorResponse("BpmnXml is required."));
+
+            try
+            {
+                using var stream = new MemoryStream(Encoding.UTF8.GetBytes(request.BpmnXml));
+                var workflow = await _bpmnConverter.ConvertFromXmlAsync(stream);
+                var summary = await _commandService.DeployWorkflow(workflow, request.BpmnXml);
+                return Ok(new DeployBpmnResponse(summary.ProcessDefinitionKey, summary.Version));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new ErrorResponse($"Invalid BPMN: {ex.Message}"));
+            }
         }
 
         [EnableRateLimiting("read")]
@@ -239,6 +264,16 @@ namespace Fleans.Api.Controllers
 
             var summary = await _commandService.EnableProcess(request.ProcessDefinitionKey);
             return Ok(summary);
+        }
+
+        [EnableRateLimiting("polling")]
+        [HttpGet("instances/{instanceId:guid}/state", Name = "GetInstanceState")]
+        public async Task<IActionResult> GetInstanceState(Guid instanceId)
+        {
+            var snapshot = await _workflowQueryService.GetStateSnapshot(instanceId);
+            if (snapshot is null)
+                return NotFound(new ErrorResponse($"Instance {instanceId} not found"));
+            return Ok(snapshot);
         }
 
         [LoggerMessage(EventId = 8004, Level = LogLevel.Information,
