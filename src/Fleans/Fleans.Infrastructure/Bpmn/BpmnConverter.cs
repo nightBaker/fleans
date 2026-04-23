@@ -256,6 +256,13 @@ public partial class BpmnConverter : IBpmnConverter
                         $"endEvent '{id}' escalationEventDefinition must resolve to an escalation code");
                 activity = new EscalationEndEvent(id, escalationCode);
             }
+            else if (endEvent.Element(Bpmn + "cancelEventDefinition") is not null)
+            {
+                if (!insideTransaction)
+                    throw new InvalidOperationException(
+                        $"CancelEndEvent '{id}' is only valid inside a Transaction Sub-Process.");
+                activity = new CancelEndEvent(id);
+            }
             else
             {
                 activity = new EndEvent(id);
@@ -675,6 +682,15 @@ public partial class BpmnConverter : IBpmnConverter
                         ?? throw new InvalidOperationException(
                             $"boundaryEvent '{id}' signalEventDefinition must have a signalRef attribute");
                     activity = new SignalBoundaryEvent(id, attachedToRef, signalRef, isInterrupting);
+                }
+                else if (boundaryEl.Element(Bpmn + "cancelEventDefinition") != null)
+                {
+                    // Cancel boundaries are ALWAYS interrupting per BPMN spec
+                    if (activityMap.TryGetValue(attachedToRef, out var attachedActivity)
+                        && attachedActivity is not Transaction)
+                        throw new InvalidOperationException(
+                            $"CancelBoundaryEvent '{id}' may only be attached to a Transaction Sub-Process, not '{attachedActivity.GetType().Name}'");
+                    activity = new CancelBoundaryEvent(id, attachedToRef, IsInterrupting: true);
                 }
                 else
                 {
