@@ -23,6 +23,7 @@ export default defineConfig({
           items: [
             { label: 'Introduction', slug: 'guides/introduction' },
             { label: 'Quick Start', slug: 'guides/quick-start' },
+            { label: 'Add to Existing Project', slug: 'guides/add-to-existing-project' },
           ],
         },
         {
@@ -38,6 +39,9 @@ export default defineConfig({
           autogenerate: { directory: 'reference' },
         },
       ],
+      components: {
+        Footer: './src/components/Footer.astro',
+      },
       customCss: ['./src/styles/custom.css'],
     }),
   ],

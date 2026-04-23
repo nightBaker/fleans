@@ -1,0 +1,267 @@
+/* Silo background — splash-only. Loaded via SiloBackground.astro. */
+
+/* Splash is dark-only. These overrides pin the Fleans palette to the dark
+ * values on any page that has a hero (`[data-has-hero]` is set by Starlight
+ * on splash-template pages). The rules are scoped by attribute so they
+ * override both `[data-theme='light']` and `[data-theme='dark']` — the
+ * splash ignores the active theme entirely and stays dark even when the
+ * user toggled light elsewhere.
+ *
+ * Selector chain `:root[data-has-hero][data-theme]` has specificity (0,3,1)
+ * which beats custom.css's `:root[data-theme='light']` (0,2,1).
+ */
+:root[data-has-hero][data-theme] {
+  --sl-color-accent-low: #0f2926;
+  --sl-color-accent: #4eb5a6;
+  --sl-color-accent-high: #a8e0d6;
+  --sl-color-white: #f5f5f0;
+  --sl-color-gray-1: #e5e5df;
+  --sl-color-gray-2: #b8b8b1;
+  --sl-color-gray-3: #8a8a82;
+  --sl-color-gray-4: #5a5a53;
+  --sl-color-gray-5: #2e2e2a;
+  --sl-color-gray-6: #1a1a17;
+  --sl-color-black: #0a0a0a;
+  --fleans-accent-2: #9eff00;
+  --fleans-surface: #141411;
+}
+
+/* Splash is dark-only: hide Starlight's theme toggle so the user can't flip
+ * to light mode here. The toggle remains visible on doc pages. */
+:root[data-has-hero] starlight-theme-select {
+  display: none;
+}
+
+/* Splash-only brand color — matches the silo CLUSTER_COLOR_HEX from the
+ * 3D scene so the page chrome and the cluster read as one palette. */
+:root[data-has-hero] .site-title,
+:root[data-has-hero] .hero h1 {
+  color: #4db5a6;
+}
+
+:root[data-has-hero] .sl-link-button.primary {
+  background: #4db5a6;
+  border-color: #4db5a6;
+  color: var(--sl-color-black);
+}
+
+:root[data-has-hero] .sl-link-button.primary:hover {
+  background: #3fa395;
+  border-color: #3fa395;
+}
+
+.silo-bg-root {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.silo-bg-canvas,
+.silo-poster {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* The browser's default [hidden]{display:none} rule has only attribute
+ * specificity (0,0,1), which is lower than our class rules above — without
+ * this explicit reset, <picture hidden> would still render on top of the
+ * canvas as a "page-shaped" background image. */
+.silo-bg-canvas[hidden],
+.silo-poster[hidden] {
+  display: none;
+}
+
+.silo-poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+}
+
+/* Contrast overlay between canvas and hero copy. */
+.silo-contrast-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transition: opacity 240ms cubic-bezier(.2, .8, 0, 1);
+}
+
+:root[data-theme='dark'] .silo-contrast-overlay {
+  background: linear-gradient(
+    180deg,
+    rgba(20, 20, 17, 0) 0%,
+    rgba(20, 20, 17, 0.55) 60%,
+    rgba(20, 20, 17, 0.8) 100%
+  );
+}
+
+:root[data-theme='light'] .silo-contrast-overlay {
+  background: linear-gradient(
+    180deg,
+    rgba(245, 245, 240, 0) 0%,
+    rgba(245, 245, 240, 0.65) 55%,
+    rgba(245, 245, 240, 0.9) 100%
+  );
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .silo-contrast-overlay {
+    background: var(--fleans-surface) !important;
+    opacity: 0.95 !important;
+  }
+}
+
+/* INTERACTIVE state: body class set by controller.
+ * The splash MDX renders <SiloBackground /> INSIDE .sl-markdown-content, so
+ * we can't hide that whole container — it would take the canvas and close
+ * button with it. Instead, hide each markdown child except our own. */
+body.silo-interactive .hero,
+body.silo-interactive .sl-markdown-content > :not(.silo-bg-root):not(.silo-close-btn):not(script),
+body.silo-interactive .silo-contrast-overlay {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 240ms cubic-bezier(.2, .8, 0, 1),
+    visibility 0s linear 240ms;
+}
+
+body.silo-interactive .silo-bg-root {
+  pointer-events: auto;
+  /* Lift above the (now-invisible) content containers so OrbitControls
+   * pointer events reach the canvas instead of being swallowed by the
+   * .main-pane / .content-panel / .sl-markdown-content stack. */
+  z-index: 50;
+}
+
+/* Default (IDLE): ensure fades reverse. */
+.hero,
+.sl-markdown-content > :not(.silo-bg-root):not(.silo-close-btn):not(script),
+.silo-contrast-overlay {
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity 240ms cubic-bezier(.2, .8, 0, 1),
+    visibility 0s linear 0s;
+}
+
+/* Close button — visible only in INTERACTIVE. */
+.silo-close-btn {
+  position: fixed;
+  top: calc(var(--sl-nav-height, 3.5rem) + 14px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  background: var(--sl-color-gray-6);
+  border: 1px solid var(--sl-color-accent);
+  color: var(--sl-color-accent);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 240ms cubic-bezier(.2, .8, 0, 1),
+    background 120ms cubic-bezier(.2, .8, 0, 1),
+    border-color 120ms cubic-bezier(.2, .8, 0, 1);
+}
+
+body.silo-interactive .silo-close-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.silo-close-btn:hover {
+  background: var(--sl-color-gray-5);
+  border-color: var(--fleans-accent-2);
+}
+
+.silo-close-btn:focus-visible {
+  outline: 2px solid var(--fleans-accent-2);
+  outline-offset: 2px;
+}
+
+/* Pull-to-explore hint — pulses in IDLE, hidden in INTERACTIVE. Clickable
+ * as a shortcut that enters interactive mode without requiring a scroll. */
+.silo-pull-hint {
+  position: fixed;
+  top: calc(var(--sl-nav-height, 3.5rem) + 14px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  color: var(--sl-color-gray-3);
+  font-family: var(--sl-font), sans-serif;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  pointer-events: auto;
+  z-index: 40;
+  opacity: 0.4;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  padding: 4px 10px;
+  transition: opacity 240ms cubic-bezier(.2, .8, 0, 1);
+}
+
+.silo-pull-hint:hover,
+.silo-pull-hint:focus-visible {
+  opacity: 0.9;
+}
+
+.silo-pull-hint:focus-visible {
+  outline: 1px solid var(--sl-color-accent);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+
+.silo-pull-hint__label {
+  /* subtle — no glow */
+}
+
+.silo-pull-hint__arrow {
+  color: var(--sl-color-gray-3);
+  animation: silo-pull-bounce 2s cubic-bezier(.2, .8, 0, 1) infinite;
+}
+
+@keyframes silo-pull-bounce {
+  0%, 100% { transform: translateY(0); opacity: 0.25; }
+  50%      { transform: translateY(4px); opacity: 0.55; }
+}
+
+body.silo-interactive .silo-pull-hint {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .silo-pull-hint__arrow { animation: none !important; }
+}
+
+/* Respect reduced motion: disable non-essential transitions. */
+@media (prefers-reduced-motion: reduce) {
+  .silo-contrast-overlay,
+  .silo-close-btn,
+  .silo-pull-hint,
+  .hero,
+  .sl-markdown-content > :not(.silo-bg-root):not(.silo-close-btn):not(script),
+  body.silo-interactive .hero,
+  body.silo-interactive .sl-markdown-content > :not(.silo-bg-root):not(.silo-close-btn):not(script),
+  body.silo-interactive .silo-contrast-overlay {
+    transition: none !important;
+  }
+}
