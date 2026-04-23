@@ -6,6 +6,8 @@ using Fleans.Infrastructure;
 using Fleans.Persistence.PostgreSql;
 using Fleans.Persistence.Sqlite;
 using Fleans.ServiceDefaults;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
 using Orleans.Dashboard;
 using Orleans.EventSourcing.CustomStorage;
@@ -15,6 +17,24 @@ var builder = WebApplication.CreateBuilder(args);
 // Add service defaults & Aspire components first
 // This must be called before UseOrleans when running through Aspire
 builder.AddServiceDefaults();
+
+// Authentication — opt-in: only enabled when Authentication:Authority is configured
+var authAuthority = builder.Configuration["Authentication:Authority"];
+var authEnabled = !string.IsNullOrEmpty(authAuthority);
+if (authEnabled)
+{
+    builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+        .AddJwtBearer(opts =>
+        {
+            opts.Authority = authAuthority;
+            opts.Audience = builder.Configuration["Authentication:Audience"] ?? "fleans-api";
+            opts.RequireHttpsMetadata = builder.Configuration.GetValue("Authentication:RequireHttpsMetadata", true);
+        });
+    builder.Services.AddAuthorizationBuilder()
+        .SetFallbackPolicy(new AuthorizationPolicyBuilder()
+            .RequireAuthenticatedUser()
+            .Build());
+}
 
 // Register Redis client for Aspire-managed Orleans
 builder.AddKeyedRedisClient("orleans-redis");
@@ -111,7 +131,11 @@ app.UseExceptionHandler();
 if (rateLimitConfig is not null)
     app.UseRateLimiter();
 
-app.UseAuthorization();
+if (authEnabled)
+{
+    app.UseAuthentication();
+    app.UseAuthorization();
+}
 
 app.MapControllers();
 app.MapDefaultEndpoints();
