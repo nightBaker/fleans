@@ -9,6 +9,7 @@ using Fleans.ServiceDefaults;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
+using Orleans.Configuration;
 using Orleans.Dashboard;
 using Orleans.EventSourcing.CustomStorage;
 
@@ -54,6 +55,27 @@ builder.UseOrleans(siloBuilder =>
 
     // JournaledGrain event sourcing: use CustomStorage backed by EfCoreEventStore
     siloBuilder.AddCustomStorageBasedLogConsistencyProviderAsDefault();
+
+    // Standalone mode: configure Orleans clustering outside of Aspire.
+    // Set FLEANS_STANDALONE=true when running via Docker Compose or other non-Aspire hosts.
+    // Aspire deployments must NOT set this flag — Aspire injects clustering config itself.
+    var isStandalone = builder.Configuration.GetValue<bool>("FLEANS_STANDALONE");
+    if (isStandalone)
+    {
+        var redisConn = builder.Configuration.GetConnectionString("orleans-redis")
+            ?? throw new InvalidOperationException(
+                "ConnectionStrings:orleans-redis is required when FLEANS_STANDALONE=true");
+        siloBuilder.Configure<ClusterOptions>(opts =>
+        {
+            opts.ClusterId = "fleans-load-test";
+            opts.ServiceId = "fleans";
+        });
+        siloBuilder.UseRedisClustering(opts => opts.ConfigurationOptions =
+            StackExchange.Redis.ConfigurationOptions.Parse(redisConn));
+        siloBuilder.AddRedisGrainStorage("PubSubStore", opts => opts.ConfigurationOptions =
+            StackExchange.Redis.ConfigurationOptions.Parse(redisConn));
+        siloBuilder.UseInMemoryReminderService();
+    }
 });
 
 // Add services to the container.
