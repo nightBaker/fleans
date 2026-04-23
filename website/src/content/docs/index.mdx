@@ -37,10 +37,12 @@ import SiloBackground from '../../components/SiloBackground.astro';
   <Card title="Scale reads separately from writes" icon="random">
     Built-in CQRS split routes read traffic through a NoTracking query
     context and optional PostgreSQL replica.
+    [Learn how →](/fleans/concepts/architecture/#scalability)
   </Card>
   <Card title="Event-sourced, crash-safe state" icon="approve-check">
     Append-only event log with deterministic replay. Silo dies mid-workflow?
     Orleans reactivates the grain on another silo — no orphaned state.
+    [Learn how →](/fleans/concepts/architecture/#reliability)
   </Card>
   <Card title="Typed BPMN recovery paths" icon="warning">
     Compensation, error boundaries, and escalation events are first-class.
