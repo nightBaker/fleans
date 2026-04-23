@@ -414,3 +414,6 @@ FodyWeavers.xsd
 
 # Launch settings (developer-local)
 **/Properties/launchSettings.json
+
+# Aspire Docker compose publisher output
+tests/load/generated/
