@@ -596,6 +596,13 @@ public class WorkflowExecution
         Emit(new ChildVariableScopeCreated(handlerVariablesId, parentVariablesId));
         Emit(new VariablesMerged(handlerVariablesId, snapshot.VariablesSnapshot));
 
+        // Overlay the parent scope's current variables so this handler sees changes
+        // made by previous compensation handlers in the same walk. Without this,
+        // each handler would only see the original snapshot and miss side-effects
+        // from earlier handlers that were already merged back to the parent scope.
+        var parentVariables = _state.GetVariableState(parentVariablesId).Variables;
+        Emit(new VariablesMerged(handlerVariablesId, parentVariables));
+
         // Spawn the handler activity
         var handlerInstanceId = Guid.NewGuid();
         Emit(new ActivitySpawned(

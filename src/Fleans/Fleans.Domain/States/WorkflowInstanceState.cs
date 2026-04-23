@@ -118,25 +118,25 @@ public class WorkflowInstanceState
     [Id(18)]
     public Dictionary<Guid, TransactionOutcomeRecord> TransactionOutcomes { get; private set; } = new();
 
-    private const int DirtyConditionalWatchers = 64;
-    private const int DirtyCompensationLog = 128;
+    private const int DirtyCompensationLog = 64;
+    private const int DirtyConditionalWatchers = 128;
 
-    [Id(20)]
+    [Id(23)]
     public List<ConditionalEventWatcherState> ConditionalWatchers { get; private set; } = [];
 
     /// <summary>
     /// Append-only log of completed, compensable activities (those with a CompensationBoundaryEvent attached).
     /// Keyed implicitly by ScopeId on each entry. Used as input to compensation walks.
     /// </summary>
-    [Id(23)]
+    [Id(20)]
     public List<CompletedActivitySnapshot> CompensationLog { get; private set; } = [];
 
     /// <summary>Global monotonic counter for assigning CompletedAtSequence to compensation snapshots.</summary>
-    [Id(24)]
+    [Id(21)]
     public int NextCompensationSequence { get; private set; }
 
     /// <summary>Non-null while a compensation walk is in progress. At most one walk at a time.</summary>
-    [Id(25)]
+    [Id(22)]
     public CompensationWalkState? ActiveCompensationWalk { get; private set; }
 
     internal int GetDirtyFlags() => _dirtyFlags;
