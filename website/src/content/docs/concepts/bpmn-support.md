@@ -8,12 +8,12 @@ up-to-date coverage matrix. Highlights:
 
 - **Tasks**: Script Task, Service Task, User Task, Call Activity
 - **Gateways**: Exclusive, Parallel, Inclusive, Complex (fork with conditional outgoing flows; join with optional `activationCondition`), Event-Based
-- **Events**: Start, End, Intermediate Timer, Intermediate Message, Intermediate Signal, Multiple (catch, throw, boundary, start)
-- **Boundary Events**: Timer, Message, Signal, Multiple (interrupting and non-interrupting), Escalation (interrupting and non-interrupting), Error (always interrupting per BPMN spec). Error boundaries can specify a specific error code to catch, or leave it empty to catch any error raised by the attached activity. In the BPMN editor's properties panel, selecting an error boundary exposes an **Error Code** field (maps to `errorRef` → `<bpmn:error errorCode="…"/>`); the _Interrupting_ checkbox is disabled for error boundaries because the spec mandates interrupting behaviour.
+- **Events**: Start, End, Cancel End (inside Transaction), Intermediate Timer, Intermediate Message, Intermediate Signal, Multiple (catch, throw, boundary, start)
+- **Boundary Events**: Timer, Message, Signal, Cancel (always interrupting, on Transaction only), Multiple (interrupting and non-interrupting), Escalation (interrupting and non-interrupting), Error (always interrupting per BPMN spec). Error boundaries can specify a specific error code to catch, or leave it empty to catch any error raised by the attached activity. In the BPMN editor's properties panel, selecting an error boundary exposes an **Error Code** field (maps to `errorRef` → `<bpmn:error errorCode="…"/>`); the _Interrupting_ checkbox is disabled for error boundaries because the spec mandates interrupting behaviour.
 - **Escalation Events**: End (throws escalation and terminates sub-process), Intermediate Throw (throws escalation mid-flow, continues execution), Boundary (catches escalation on SubProcess/CallActivity). Escalation propagates from child to parent scope automatically. Specific escalation code matches take priority over catch-all (null code) boundaries. Uncaught escalations are non-faulting per BPMN spec.
 - **Multi-Instance**: Any task or sub-process can be configured as multi-instance (parallel or sequential) via the properties panel. Enable the **Multi-Instance** checkbox, then set **Loop Cardinality** (fixed instance count) or **Input Collection** / **Input Data Item** (iterate over a workflow variable). Output collection and output data item control how results are gathered. Collection attributes use the Zeebe namespace (`zeebe:collection`, `zeebe:elementVariable`, etc.) for Camunda compatibility.
 - **Subprocesses**: Embedded, Call Activity
-- **Transaction Sub-Process** (`<transaction>`): A special subprocess with atomicity semantics and three possible terminal outcomes: **Completed** (normal exit), **Cancelled** (Cancel End Event fires — requires #230), and **Hazard** (unhandled error escapes the scope — requires #231). Phase 1 (this release) supports the Completed path: the transaction scope executes like a regular subprocess, variables merge into the parent scope on exit, and the outcome is recorded keyed by the transaction activity instance id. Nested transactions and multi-instance transactions are rejected at parse time. Cancel and Compensation paths ship in a follow-up once Cancel End Event and Compensation Event are implemented.
+- **Transaction Sub-Process** (`<transaction>`): A special subprocess with atomicity semantics and three possible terminal outcomes: **Completed** (normal exit), **Cancelled** (Cancel End Event fires), and **Hazard** (unhandled error escapes the scope — requires #231). The Completed and Cancelled paths are fully supported. On the Cancelled path: all remaining active activities inside the transaction scope are cancelled, compensation handlers (if any) are run in reverse completion order, and the Cancel Boundary Event attached to the transaction fires so the recovery flow can continue. The Hazard path ships in a follow-up. Nested transactions and multi-instance transactions are rejected at parse time. See [Cancel Events](#cancel-events) below.
 - **Event Sub-Processes**: Error-, timer-, message-, and signal-triggered (`<subProcess triggeredByEvent="true">`), both **interrupting and non-interrupting** variants. Interrupting variants cancel enclosing-scope siblings on fire and wind the workflow down through the handler. Non-interrupting variants run the handler in parallel with the parent flow, seed the handler's isolated child variable scope with a snapshot of the enclosing scope's variables, and leave other listeners armed; timer cycles re-register automatically, and message/signal listeners re-subscribe so subsequent deliveries reach the scope. Error event sub-processes are always interrupting per BPMN 2.0 §10.2.4. A `BoundaryErrorEvent` on the failing activity takes precedence over an error event sub-process. Message correlation keys are resolved at scope entry against the enclosing scope's variables, so the correlation variable must be populated before the scope starts.
 - **Compensation Events**: Compensation boundary events, intermediate throw events (broadcast and targeted), and compensation end events. See [Compensation Events](#compensation-events) below.
 
@@ -91,3 +91,84 @@ When the workflow reaches `compensate_all`, the engine:
 - Handler activities are **not on the main sequence flow** — they are wired only via `<association>`. Do not draw sequence flows to/from handlers.
 - A `CompensationEndEvent` also triggers compensation but ends the process (no resumption after the walk). It is typically used inside an error sub-process or error boundary handler.
 - Compensation state (`CompensationLog`, `ActiveCompensationWalk`) is rebuilt from domain events on grain activation — it is **not stored in the relational database** directly.
+
+## Cancel Events
+
+Cancel events implement the **transaction cancellation** path in BPMN: when a Cancel End Event fires inside a Transaction Sub-Process, the engine rolls back the transaction's scope and routes execution to a recovery flow via the Cancel Boundary Event.
+
+### Why cancel events exist
+
+Transactions model atomic business operations (e.g., payment processing). If an internal check decides the transaction must not commit — and the decision is a normal business outcome rather than a system fault — the process reaches a **Cancel End Event** to signal deliberate cancellation. Unlike error events, cancellation is not a failure; it is a designed exit from the transaction with a dedicated recovery path.
+
+### How to use it
+
+1. **Place a Cancel End Event inside a Transaction** — draw a `<cancelEndEvent>` at the end of a flow branch inside `<transaction>`. When the engine reaches it, all still-active activities in the transaction scope are cancelled, and any compensation handlers (if defined) are run in reverse completion order.
+
+2. **Attach a Cancel Boundary Event to the transaction** — draw a `<boundaryEvent cancelActivity="true">` with `<cancelEventDefinition />` on the outer edge of the `<transaction>` element. This event fires after compensation finishes, routing the process to the recovery flow.
+
+3. **Wire the recovery flow** — connect the Cancel Boundary Event to the activities that handle the cancelled outcome (e.g., notify the user, roll back external state).
+
+### Interaction with compensation
+
+Cancel events and compensation work together. If you attach `CompensationBoundaryEvent`s to activities inside the transaction, the engine will run their handlers (in reverse completion order) **before** firing the Cancel Boundary Event. This gives you a deterministic cleanup sequence:
+
+1. Cancel active activities in the transaction scope
+2. Run compensation handlers in reverse completion order
+3. Fire Cancel Boundary Event → execute recovery flow
+
+### Best-practice example
+
+```xml
+<transaction id="paymentTransaction" name="Payment Transaction">
+  <startEvent id="tx_start" />
+
+  <!-- Compensable task with a handler -->
+  <userTask id="reserve" name="Reserve Funds" />
+  <boundaryEvent id="cb_reserve" attachedToRef="reserve" cancelActivity="false">
+    <compensateEventDefinition />
+  </boundaryEvent>
+  <scriptTask id="release_reserve" name="Release Reserve" scriptFormat="csharp">
+    <script>_context.released = true</script>
+  </scriptTask>
+  <association id="a1" sourceRef="cb_reserve" targetRef="release_reserve" associationDirection="One" />
+
+  <!-- Cancel decision -->
+  <exclusiveGateway id="gw" />
+  <cancelEndEvent id="cancel_end" name="Payment Rejected" />
+  <endEvent id="tx_end" name="Payment Accepted" />
+
+  <sequenceFlow sourceRef="tx_start" targetRef="reserve" />
+  <sequenceFlow sourceRef="reserve" targetRef="gw" />
+  <sequenceFlow sourceRef="gw" targetRef="cancel_end">
+    <conditionExpression>= rejected == true</conditionExpression>
+  </sequenceFlow>
+  <sequenceFlow sourceRef="gw" targetRef="tx_end" />
+</transaction>
+
+<!-- Cancel Boundary Event on the transaction -->
+<boundaryEvent id="cancel_boundary" attachedToRef="paymentTransaction" cancelActivity="true">
+  <cancelEventDefinition />
+</boundaryEvent>
+
+<!-- Recovery flow -->
+<scriptTask id="notify_rejected" name="Notify Rejection" scriptFormat="csharp">
+  <script>_context.status = "rejected"</script>
+</scriptTask>
+<endEvent id="end" />
+
+<sequenceFlow sourceRef="cancel_boundary" targetRef="notify_rejected" />
+<sequenceFlow sourceRef="notify_rejected" targetRef="end" />
+```
+
+When the workflow reaches `cancel_end`:
+1. `release_reserve` (compensation handler for `reserve`) runs
+2. `cancel_boundary` fires
+3. `notify_rejected` executes
+4. Process ends
+
+### Notes
+
+- A Cancel End Event is only valid inside a `<transaction>`. Using it elsewhere has no defined BPMN behavior.
+- A Cancel Boundary Event (`cancelActivity="true"`) is always interrupting — it always cancels the transaction scope.
+- The transaction outcome is recorded as `Cancelled` in the engine state (queryable via the grain interface) and can be used for audit or downstream decisions.
+- Compensation handlers inside the transaction run in the same isolated-scope model as standalone compensation events — each handler gets a fresh child variable scope seeded with the compensable activity's completion-time snapshot.
