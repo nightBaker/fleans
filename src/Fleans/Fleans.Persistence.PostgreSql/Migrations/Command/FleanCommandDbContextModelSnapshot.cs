@@ -136,6 +136,33 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                     b.ToTable("WorkflowActivityInstanceEntries", (string)null);
                 });
 
+            modelBuilder.Entity("Fleans.Domain.States.ComplexGatewayJoinState", b =>
+                {
+                    b.Property<Guid>("WorkflowInstanceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("GatewayActivityId")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("ActivationCondition")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
+
+                    b.Property<Guid>("FirstActivityInstanceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("HasFired")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("WaitingTokenCount")
+                        .HasColumnType("integer");
+
+                    b.HasKey("WorkflowInstanceId", "GatewayActivityId");
+
+                    b.ToTable("ComplexGatewayJoinStates", (string)null);
+                });
+
             modelBuilder.Entity("Fleans.Domain.States.ConditionSequenceState", b =>
                 {
                     b.Property<Guid>("GatewayActivityInstanceId")
@@ -159,6 +186,59 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                     b.HasIndex("WorkflowInstanceId");
 
                     b.ToTable("WorkflowConditionSequenceStates", (string)null);
+                });
+
+            modelBuilder.Entity("Fleans.Domain.States.ConditionalStartEntryState", b =>
+                {
+                    b.Property<string>("ProcessDefinitionKey")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("ActivityId")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("ConditionExpression")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.HasKey("ProcessDefinitionKey", "ActivityId");
+
+                    b.ToTable("ConditionalStartEventRegistryEntries", (string)null);
+                });
+
+            modelBuilder.Entity("Fleans.Domain.States.ConditionalStartEventListenerState", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<string>("ActivityId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("ConditionExpression")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<string>("ETag")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<bool>("IsRegistered")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ProcessDefinitionKey")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.HasKey("Key");
+
+                    b.ToTable("ConditionalStartEventListeners", (string)null);
                 });
 
             modelBuilder.Entity("Fleans.Domain.States.GatewayForkState", b =>
@@ -556,6 +636,15 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Fleans.Domain.States.ComplexGatewayJoinState", b =>
+                {
+                    b.HasOne("Fleans.Domain.States.WorkflowInstanceState", null)
+                        .WithMany("ComplexGatewayJoinStates")
+                        .HasForeignKey("WorkflowInstanceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Fleans.Domain.States.ConditionSequenceState", b =>
                 {
                     b.HasOne("Fleans.Domain.States.WorkflowInstanceState", null)
@@ -639,6 +728,8 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
 
             modelBuilder.Entity("Fleans.Domain.States.WorkflowInstanceState", b =>
                 {
+                    b.Navigation("ComplexGatewayJoinStates");
+
                     b.Navigation("ConditionSequenceStates");
 
                     b.Navigation("Entries");

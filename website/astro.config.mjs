@@ -23,6 +23,8 @@ export default defineConfig({
           items: [
             { label: 'Introduction', slug: 'guides/introduction' },
             { label: 'Quick Start', slug: 'guides/quick-start' },
+            { label: 'Service Tasks', slug: 'guides/service-tasks' },
+            { label: 'BPMN Editor', slug: 'guides/editor' },
             { label: 'Add to Existing Project', slug: 'guides/add-to-existing-project' },
           ],
         },

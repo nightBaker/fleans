@@ -119,6 +119,10 @@ public class WorkflowInstanceState
     public Dictionary<Guid, TransactionOutcomeRecord> TransactionOutcomes { get; private set; } = new();
 
     private const int DirtyCompensationLog = 64;
+    private const int DirtyConditionalWatchers = 128;
+
+    [Id(23)]
+    public List<ConditionalEventWatcherState> ConditionalWatchers { get; private set; } = [];
 
     /// <summary>
     /// Append-only log of completed, compensable activities (those with a CompensationBoundaryEvent attached).
@@ -524,6 +528,36 @@ public class WorkflowInstanceState
     {
         ComplexGatewayJoinStates.RemoveAll(s => s.GatewayActivityId == gatewayActivityId);
         _dirtyFlags |= DirtyComplexGatewayJoinStates;
+    }
+
+    public void AddConditionalWatcher(Guid activityInstanceId, string activityId,
+        string conditionExpression, Guid variablesId)
+    {
+        ConditionalWatchers.Add(new ConditionalEventWatcherState
+        {
+            ActivityInstanceId = activityInstanceId,
+            ActivityId = activityId,
+            ConditionExpression = conditionExpression,
+            VariablesId = variablesId,
+            LastEvaluatedResult = false
+        });
+        _dirtyFlags |= DirtyConditionalWatchers;
+    }
+
+    public void RemoveConditionalWatcher(Guid activityInstanceId)
+    {
+        ConditionalWatchers.RemoveAll(w => w.ActivityInstanceId == activityInstanceId);
+        _dirtyFlags |= DirtyConditionalWatchers;
+    }
+
+    public void UpdateConditionalWatcherResult(Guid activityInstanceId, bool result)
+    {
+        var watcher = ConditionalWatchers.FirstOrDefault(w => w.ActivityInstanceId == activityInstanceId);
+        if (watcher != null)
+        {
+            watcher.LastEvaluatedResult = result;
+            _dirtyFlags |= DirtyConditionalWatchers;
+        }
     }
 
     // ── Compensation ────────────────────────────────────────────────────────────────

@@ -63,6 +63,14 @@ public record TimerCycleUpdated(
     Guid HostActivityInstanceId, string TimerActivityId,
     Activities.TimerDefinition? RemainingCycle) : IDomainEvent;
 
+// Conditional event watchers
+public record ConditionalWatcherRegistered(
+    Guid ActivityInstanceId, string ActivityId, string ConditionExpression,
+    Guid VariablesId) : IDomainEvent;
+public record ConditionalWatcherFired(Guid ActivityInstanceId) : IDomainEvent;
+public record ConditionalWatcherCleared(Guid ActivityInstanceId) : IDomainEvent;
+public record ConditionalWatcherResultUpdated(Guid ActivityInstanceId, bool Result) : IDomainEvent;
+
 // Compensation
 public record CompensableActivitySnapshotRecorded(
     Guid ActivityInstanceId,

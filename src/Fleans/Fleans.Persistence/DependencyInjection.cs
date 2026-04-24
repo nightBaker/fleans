@@ -49,6 +49,14 @@ public static class EfCorePersistenceDependencyInjection
             (sp, _) => new EfCoreUserTaskGrainStorage(
                 sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
 
+        services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.ConditionalStartEventListeners,
+            (sp, _) => new EfCoreConditionalStartEventListenerGrainStorage(
+                sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
+
+        services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.ConditionalStartEventRegistry,
+            (sp, _) => new EfCoreConditionalStartEventRegistryGrainStorage(
+                sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
+
         services.AddSingleton<IProcessDefinitionRepository, EfCoreProcessDefinitionRepository>();
         services.AddSingleton<ISieveProcessor, ApplicationSieveProcessor>();
         services.Configure<SieveOptions>(options =>

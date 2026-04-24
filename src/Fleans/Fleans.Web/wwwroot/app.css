@@ -246,6 +246,74 @@ marker[id*="conditional"] path {
     flex: 1;
 }
 
+.editor-tab-bar {
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
+    padding: 0 8px;
+    border-bottom: 1px solid var(--neutral-stroke-rest);
+    background: var(--neutral-layer-2);
+    flex-shrink: 0;
+    overflow-x: auto;
+}
+
+.editor-tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    max-width: 220px;
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-radius: 4px 4px 0 0;
+    cursor: pointer;
+    user-select: none;
+    font-size: 13px;
+    line-height: 1.2;
+    background: transparent;
+    transition: background 0.12s;
+}
+
+.editor-tab:hover {
+    background: var(--neutral-fill-stealth-hover);
+}
+
+.editor-tab--active {
+    background: var(--neutral-layer-1);
+    border-color: var(--neutral-stroke-rest);
+    font-weight: 600;
+}
+
+.editor-tab__label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 160px;
+}
+
+.editor-tab__dirty {
+    color: var(--accent-fill-rest);
+    font-size: 14px;
+    line-height: 1;
+}
+
+.editor-tab__close {
+    border: none;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    padding: 0 4px;
+    font-size: 16px;
+    line-height: 1;
+    opacity: 0.6;
+    border-radius: 3px;
+}
+
+.editor-tab__close:hover {
+    background: var(--neutral-fill-stealth-active);
+    opacity: 1;
+}
+
 .editor-content {
     display: flex;
     flex: 1;

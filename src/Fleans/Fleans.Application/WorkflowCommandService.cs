@@ -196,6 +196,47 @@ public partial class WorkflowCommandService : IWorkflowCommandService
         Message = "Completing user task: WorkflowInstanceId={WorkflowInstanceId}, ActivityInstanceId={ActivityInstanceId}, UserId={UserId}")]
     private partial void LogCompletingUserTask(Guid workflowInstanceId, Guid activityInstanceId, string userId);
 
+    public async Task<EvaluateConditionsResult> EvaluateConditions(string? workflowId, ExpandoObject variables)
+    {
+        LogEvaluatingConditions(workflowId);
+
+        var registry = _grainFactory.GetGrain<IConditionalStartEventRegistryGrain>(0);
+        var entries = string.IsNullOrWhiteSpace(workflowId)
+            ? await registry.GetAll()
+            : await registry.GetByProcess(workflowId);
+
+        if (entries.Count == 0)
+            return new EvaluateConditionsResult([]);
+
+        var startedIds = new List<Guid>();
+        var errors = new List<string>();
+
+        foreach (var entry in entries)
+        {
+            var grainKey = $"{entry.ProcessDefinitionKey}:{entry.ActivityId}";
+            var listener = _grainFactory.GetGrain<IConditionalStartEventListenerGrain>(grainKey);
+            try
+            {
+                var instanceId = await listener.EvaluateAndStart(variables);
+                if (instanceId.HasValue)
+                    startedIds.Add(instanceId.Value);
+            }
+            catch (Exception ex)
+            {
+                LogConditionalEvaluationFailed(entry.ProcessDefinitionKey, entry.ActivityId, ex);
+                errors.Add($"{entry.ProcessDefinitionKey}:{entry.ActivityId}: {ex.Message}");
+            }
+        }
+
+        return new EvaluateConditionsResult(startedIds, errors.Count > 0 ? errors : null);
+    }
+
+    [LoggerMessage(EventId = 7013, Level = LogLevel.Information, Message = "Evaluating conditional start events (workflowId={WorkflowId})")]
+    private partial void LogEvaluatingConditions(string? workflowId);
+
+    [LoggerMessage(EventId = 7014, Level = LogLevel.Error, Message = "Conditional evaluation failed for process {ProcessDefinitionKey}, activity {ActivityId}")]
+    private partial void LogConditionalEvaluationFailed(string processDefinitionKey, string activityId, Exception ex);
+
     [LoggerMessage(EventId = 7011, Level = LogLevel.Information, Message = "Disabling process {ProcessDefinitionKey}")]
     private partial void LogDisablingProcess(string processDefinitionKey);
 
