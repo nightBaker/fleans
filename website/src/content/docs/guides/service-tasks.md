@@ -14,10 +14,14 @@ Fleans treats service tasks as **external-completion tasks**. When a workflow in
 There is no in-process handler interface to implement. Instead, the pattern is:
 
 1. The workflow instance reaches a `<bpmn:serviceTask>` and marks it as an active activity.
-2. An external worker polls or is notified, then calls `POST /Workflow/complete-activity` with the activity result.
+2. An external worker calls `POST /Workflow/complete-activity` with the activity result.
 3. The engine merges the returned variables into the workflow scope and advances the token.
 
 This decoupled model lets you write workers in any language and scale them independently of the engine.
+
+:::note
+Fleans does not currently have a dedicated "list active service tasks" API endpoint. Your worker needs to know the `WorkflowInstanceId` and `ActivityId` to complete a task — typically received via a message broker, webhook, or by querying instance state. See the [C# worker example](#c-backgroundservice-worker) below for one approach.
+:::
 
 ## BPMN example
 
@@ -51,7 +55,7 @@ This decoupled model lets you write workers in any language and scale them indep
         <di:waypoint x="216" y="118" />
         <di:waypoint x="270" y="118" />
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="f2_di" bpmnElement="charge-payment">
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
         <di:waypoint x="370" y="118" />
         <di:waypoint x="430" y="118" />
       </bpmndi:BPMNEdge>
@@ -60,21 +64,17 @@ This decoupled model lets you write workers in any language and scale them indep
 </bpmn:definitions>
 ```
 
-Deploy and start the workflow:
+Deploy via the Admin UI (Blazor editor) — open the **Web app** from the Aspire dashboard, navigate to the **Editor** page, import the BPMN XML, and click **Deploy**.
+
+Then start an instance:
 
 ```bash
-# Deploy
-curl -X POST https://localhost:7140/Workflow/deploy \
-  -H "Content-Type: application/json" \
-  -d @order-process.bpmn
-
-# Start an instance
 curl -X POST https://localhost:7140/Workflow/start \
   -H "Content-Type: application/json" \
   -d '{"WorkflowId":"order-process"}'
 ```
 
-The instance is now paused at `charge-payment`.
+The response includes a `workflowInstanceId`. The instance is now paused at `charge-payment`.
 
 ## Completing a service task with curl
 
@@ -92,7 +92,7 @@ The engine merges `paymentRef` into the workflow variables and moves to the end 
 
 ## C# BackgroundService worker
 
-The example below polls the Fleans admin UI API for pending tasks and completes any `charge-payment` activities it finds. In production you would use a message broker or webhook instead of polling.
+The example below shows a worker that receives work items via a message queue and completes service tasks. In a real system, the queue message would contain the `WorkflowInstanceId` and `ActivityId` — pushed by a webhook, message broker, or another service that started the workflow.
 
 ```csharp
 public sealed class PaymentWorker : BackgroundService
@@ -111,38 +111,40 @@ public sealed class PaymentWorker : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var client = _httpClientFactory.CreateClient("fleans");
-        // Base address configured in DI: https://localhost:7140
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            var tasks = await client.GetFromJsonAsync<List<PendingTask>>(
-                "Workflow/tasks", stoppingToken);
-
-            foreach (var task in tasks ?? [])
+            // In production, receive work items from a message broker
+            // (e.g., RabbitMQ, Azure Service Bus, Kafka).
+            // Each message contains the WorkflowInstanceId and ActivityId.
+            var workItem = await DequeueWorkItemAsync(stoppingToken);
+            if (workItem is null)
             {
-                if (task.ActivityId != "charge-payment")
-                    continue;
-
-                _logger.LogInformation("Processing {ActivityId} for instance {Id}",
-                    task.ActivityId, task.WorkflowInstanceId);
-
-                // --- your business logic here ---
-                var paymentRef = $"ch_{Guid.NewGuid():N}";
-
-                await client.PostAsJsonAsync("Workflow/complete-activity", new
-                {
-                    task.WorkflowInstanceId,
-                    task.ActivityId,
-                    Variables = new { paymentRef }
-                }, stoppingToken);
+                await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+                continue;
             }
 
-            await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+            _logger.LogInformation("Processing {ActivityId} for instance {Id}",
+                workItem.ActivityId, workItem.WorkflowInstanceId);
+
+            // --- your business logic here ---
+            var paymentRef = $"ch_{Guid.NewGuid():N}";
+
+            await client.PostAsJsonAsync("Workflow/complete-activity", new
+            {
+                workItem.WorkflowInstanceId,
+                workItem.ActivityId,
+                Variables = new { paymentRef }
+            }, stoppingToken);
         }
     }
+
+    // Placeholder — replace with your actual message broker consumer.
+    private Task<WorkItem?> DequeueWorkItemAsync(CancellationToken ct) =>
+        Task.FromResult<WorkItem?>(null);
 }
 
-public record PendingTask(Guid WorkflowInstanceId, string ActivityId);
+public record WorkItem(Guid WorkflowInstanceId, string ActivityId);
 ```
 
 Register it in `Program.cs`:
@@ -155,6 +157,7 @@ builder.Services.AddHostedService<PaymentWorker>();
 
 ## Best practices
 
-- **Idempotency** — design workers so that completing the same task twice is harmless. The engine rejects duplicate completions, but your side effects should be safe to retry.
+- **Idempotency** — design workers so that completing the same task twice is harmless. The engine rejects duplicate completions (409 Conflict), but your side effects should be safe to retry.
 - **Error handling** — if your worker encounters an error, decide whether to retry or to call the fail-activity path so the workflow can route through an error boundary event.
-- **Scaling** — because workers are decoupled from the engine, you can run multiple replicas polling for tasks without any coordination.
+- **Scaling** — because workers are decoupled from the engine, you can run multiple replicas without any coordination.
+- **Discovery** — Fleans does not expose a "list pending service tasks" API. Design your integration so that the caller who starts the workflow instance passes the `WorkflowInstanceId` to the worker via a message queue or callback URL.
