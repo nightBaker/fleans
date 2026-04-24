@@ -23,7 +23,7 @@ to find the Web app.
 
 Fleans deploys workflows through the **Admin UI** (Blazor editor), not via a REST endpoint.
 
-1. Open the Web app (default: `https://localhost:7141`)
+1. Open the **Web app** — find its URL on the Aspire dashboard
 2. Navigate to the **Editor** page
 3. Import or paste your BPMN XML, then click **Deploy**
 
