@@ -1,6 +1,8 @@
 ---
 title: REST API
 description: HTTP endpoints exposed by Fleans.Api.
+sidebar:
+  order: 1
 ---
 
 All endpoints are served from `https://localhost:7140/Workflow/*` by default.
@@ -252,71 +254,4 @@ RateLimiting__Polling__PermitLimit=10000
 
 ### Authentication
 
-The API supports **opt-in JWT bearer authentication** via any OIDC-compliant identity provider (Keycloak, Auth0, Entra ID, etc.). When no `Authentication:Authority` is configured, the API runs fully unauthenticated — identical to previous behavior.
-
-**Why opt-in?** Local development and single-tenant deployments often don't need auth. Production multi-tenant deployments need it. By making it configuration-driven, the same binary serves both scenarios.
-
-#### Enabling authentication
-
-Add the `Authentication` section to your `appsettings.json` (or use environment variables):
-
-```json
-{
-  "Authentication": {
-    "Authority": "https://your-idp.example.com/realms/fleans",
-    "Audience": "fleans-api",
-    "RequireHttpsMetadata": true
-  }
-}
-```
-
-| Key | Required | Default | Description |
-|-----|----------|---------|-------------|
-| `Authority` | Yes (to enable auth) | *(absent — auth disabled)* | OIDC issuer URL. When set, all API endpoints require a valid JWT. |
-| `Audience` | No | `fleans-api` | Expected `aud` claim in the JWT. |
-| `RequireHttpsMetadata` | No | `true` | Set to `false` only for local dev with an HTTP-only IdP (e.g., Keycloak dev mode). |
-
-#### Environment variable overrides
-
-```bash
-Authentication__Authority=https://your-idp.example.com/realms/fleans
-Authentication__Audience=fleans-api
-Authentication__RequireHttpsMetadata=false
-```
-
-#### Behavior when enabled
-
-- **All API endpoints** (`/Workflow/*`) require a valid `Authorization: Bearer <token>` header. Unauthenticated requests receive `401 Unauthorized`.
-- **Health endpoints** (`/health`, `/alive`) remain unauthenticated — they are exempt so that load balancers and orchestrators can probe without credentials.
-- **Swagger UI** remains accessible in development mode for testing.
-
-#### Best-practice example: Keycloak
-
-```bash
-# 1. Start Keycloak dev instance
-docker run -p 8080:8080 \
-  -e KC_BOOTSTRAP_ADMIN_USERNAME=admin \
-  -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
-  quay.io/keycloak/keycloak:latest start-dev
-
-# 2. Create realm "fleans", client "fleans-api" with client credentials grant
-
-# 3. Configure Fleans
-#    appsettings.json:
-#    "Authentication": {
-#      "Authority": "http://localhost:8080/realms/fleans",
-#      "Audience": "fleans-api",
-#      "RequireHttpsMetadata": false
-#    }
-
-# 4. Obtain a token and call the API
-TOKEN=$(curl -s -X POST http://localhost:8080/realms/fleans/protocol/openid-connect/token \
-  -d "grant_type=client_credentials" \
-  -d "client_id=fleans-api" \
-  -d "client_secret=YOUR_SECRET" | jq -r '.access_token')
-
-curl -X POST https://localhost:7140/Workflow/deploy \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $TOKEN" \
-  -d '{"BpmnXml":"..."}'
-```
+The API supports opt-in JWT bearer authentication, **disabled by default**. See [Authentication](/fleans/reference/authentication/) for configuration, provider walkthroughs, and client examples.
