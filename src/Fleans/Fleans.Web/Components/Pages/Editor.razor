@@ -209,6 +209,15 @@
 
         await RestoreTabsFromStorage();
 
+        // Load the restored active tab into the modeler first, so any subsequent
+        // SaveActiveTabXml (e.g. inside OpenFromWorkflow when a URL param is present)
+        // reads that tab's real content instead of the modeler's default-empty XML
+        // and clobbers the restored tab's stored BpmnXml.
+        if (tabs.Count > 0)
+        {
+            await ActivateTab(activeTabId ?? tabs[0].Id, saveOutgoing: false);
+        }
+
         if (!string.IsNullOrEmpty(ProcessDefinitionKey))
         {
             await OpenFromWorkflow(ProcessDefinitionKey, Version);
@@ -216,10 +225,6 @@
         else if (tabs.Count == 0)
         {
             await AddBlankTab(activate: true);
-        }
-        else
-        {
-            await ActivateTab(activeTabId ?? tabs[0].Id, saveOutgoing: false);
         }
 
         await PersistTabs();
@@ -320,6 +325,12 @@
     {
         if (!editorInitialized) return;
         if (!EnsureCapacity()) return;
+
+        // Snapshot the outgoing tab's modeler XML before AddBlankTab replaces
+        // the modeler with the fresh empty diagram — otherwise any edits made
+        // since the outgoing tab was last activated would be lost.
+        await SaveActiveTabXml();
+
         await AddBlankTab(activate: true);
         await PersistTabs();
         StateHasChanged();
@@ -359,7 +370,6 @@
                 ProcessKey = "",
                 Version = null,
                 BpmnXml = bpmnXml,
-                LastSavedXml = bpmnXml,
                 Dirty = false
             };
             tabs.Add(tab);
@@ -459,7 +469,6 @@
             ActiveTab.ProcessKey = deployed.ProcessDefinitionKey;
             ActiveTab.Version = deployed.Version;
             ActiveTab.Label = deployed.ProcessDefinitionKey;
-            ActiveTab.LastSavedXml = pendingBpmnXml;
             ActiveTab.BpmnXml = pendingBpmnXml;
             ActiveTab.Dirty = false;
 
@@ -514,7 +523,6 @@
             ProcessKey = "",
             Version = null,
             BpmnXml = xml,
-            LastSavedXml = xml,
             Dirty = false
         };
         tabs.Add(tab);
@@ -555,7 +563,6 @@
                 ProcessKey = processKey,
                 Version = version,
                 BpmnXml = bpmnXml,
-                LastSavedXml = bpmnXml,
                 Dirty = false
             };
             tabs.Add(tab);
@@ -681,7 +688,8 @@
             await ActivateTab(tabs[nextIdx].Id, saveOutgoing: false);
         }
 
-        await PersistTabs();
+        // UpdateDirtyFlagAndPersist calls PersistTabs internally — avoid a
+        // redundant localStorage serialize on close.
         await UpdateDirtyFlagAndPersist();
         StateHasChanged();
     }
@@ -707,7 +715,6 @@
                     ProcessKey = t.ProcessKey,
                     Version = t.Version,
                     BpmnXml = t.BpmnXml,
-                    LastSavedXml = t.LastSavedXml,
                     Dirty = t.Dirty
                 }).ToList()
             };
@@ -747,7 +754,6 @@
                     ProcessKey = dto.ProcessKey ?? "",
                     Version = dto.Version,
                     BpmnXml = dto.BpmnXml,
-                    LastSavedXml = dto.LastSavedXml ?? dto.BpmnXml,
                     Dirty = dto.Dirty
                 });
             }
@@ -802,7 +808,6 @@
         public string ProcessKey { get; set; } = "";
         public int? Version { get; set; }
         public string BpmnXml { get; set; } = "";
-        public string LastSavedXml { get; set; } = "";
         public bool Dirty { get; set; }
     }
 
@@ -820,7 +825,6 @@
         public string ProcessKey { get; set; } = "";
         public int? Version { get; set; }
         public string BpmnXml { get; set; } = "";
-        public string? LastSavedXml { get; set; }
         public bool Dirty { get; set; }
     }
 }

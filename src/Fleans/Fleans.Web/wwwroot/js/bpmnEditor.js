@@ -676,6 +676,10 @@ window.bpmnEditor = {
     loadXml: async function (bpmnXml) {
         if (!this._modeler) return;
 
+        // bpmn-js fires commandStack.changed from CommandStack.clear() inside
+        // importXML. Suppress dirty notifications for the duration of the load
+        // so tab-switching or restoring doesn't flag the incoming tab dirty.
+        this._suppressDirty = true;
         try {
             await this._modeler.importXML(bpmnXml);
             var canvas = this._modeler.get('canvas');
@@ -683,6 +687,8 @@ window.bpmnEditor = {
         } catch (err) {
             console.error('Failed to load BPMN XML', err);
             throw err;
+        } finally {
+            this._suppressDirty = false;
         }
     },
 
@@ -736,13 +742,16 @@ window.bpmnEditor = {
         }
         this._dotNetRef = null;
         this._dirtyListenerAttached = false;
+        this._suppressDirty = false;
     },
 
     registerDirtyCallback: function (dotNetRef) {
         if (!this._modeler || !dotNetRef) return;
         if (this._dirtyListenerAttached) return;
         var eventBus = this._modeler.get('eventBus');
+        var self = this;
         eventBus.on('commandStack.changed', function () {
+            if (self._suppressDirty) return;
             dotNetRef.invokeMethodAsync('OnModelerDirty');
         });
         this._dirtyListenerAttached = true;

@@ -257,10 +257,6 @@ marker[id*="conditional"] path {
     overflow-x: auto;
 }
 
-.editor-tab-bar:empty {
-    display: none;
-}
-
 .editor-tab {
     display: flex;
     align-items: center;
