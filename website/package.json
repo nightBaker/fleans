@@ -10,7 +10,8 @@
     "preview": "astro preview",
     "astro": "astro",
     "posters": "node scripts/generate-posters.mjs",
-    "check:contrast": "node scripts/check-landing-contrast.mjs"
+    "check:contrast": "node scripts/check-landing-contrast.mjs",
+    "render-bpmn": "node scripts/render-bpmn.mjs"
   },
   "dependencies": {
     "@astrojs/starlight": "^0.38.2",
@@ -23,7 +24,8 @@
   "devDependencies": {
     "@astrojs/check": "^0.9.8",
     "@types/three": "^0.183.0",
-    "playwright": "^1.49.0",
+    "bpmn-js": "^17.11.1",
+    "playwright": "^1.59.1",
     "typescript": "^5.9.3"
   }
 }
