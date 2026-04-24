@@ -42,6 +42,13 @@ public abstract record BoundarableActivity(string ActivityId)
                 boundarySignal.ActivityId, IsBoundary: true));
         }
 
+        foreach (var boundaryConditional in definition.GetBoundaryConditionalEvents(ActivityId))
+        {
+            commands.Add(new RegisterConditionalWatcherCommand(
+                variablesId, boundaryConditional.ConditionExpression,
+                boundaryConditional.ActivityId));
+        }
+
         foreach (var boundaryMultiple in definition.GetBoundaryMultipleEvents(ActivityId))
         {
             foreach (var eventDef in boundaryMultiple.Definitions)

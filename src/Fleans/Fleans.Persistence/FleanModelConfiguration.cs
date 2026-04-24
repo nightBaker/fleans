@@ -123,6 +123,8 @@ internal static class FleanModelConfiguration
             entity.Property(e => e.ActivationCondition).HasMaxLength(1024);
         });
 
+        modelBuilder.Ignore<ConditionalEventWatcherState>();
+
         modelBuilder.Entity<WorkflowInstanceState>(entity =>
         {
             entity.HasMany(e => e.GatewayForks)
@@ -309,6 +311,26 @@ internal static class FleanModelConfiguration
                         v => JsonConvert.SerializeObject(v, jsonSettings).GetHashCode(),
                         v => JsonConvert.DeserializeObject<WorkflowDefinition>(
                             JsonConvert.SerializeObject(v, jsonSettings), jsonSettings)!));
+        });
+
+        modelBuilder.Entity<ConditionalStartEventListenerState>(entity =>
+        {
+            entity.ToTable("ConditionalStartEventListeners");
+            entity.HasKey(e => e.Key);
+            entity.Property(e => e.Key).HasMaxLength(512);
+            entity.Property(e => e.ETag).HasMaxLength(64);
+            entity.Property(e => e.ProcessDefinitionKey).HasMaxLength(256);
+            entity.Property(e => e.ActivityId).HasMaxLength(256);
+            entity.Property(e => e.ConditionExpression).HasMaxLength(4000);
+        });
+
+        modelBuilder.Entity<ConditionalStartEntryState>(entity =>
+        {
+            entity.ToTable("ConditionalStartEventRegistryEntries");
+            entity.HasKey(e => new { e.ProcessDefinitionKey, e.ActivityId });
+            entity.Property(e => e.ProcessDefinitionKey).HasMaxLength(256);
+            entity.Property(e => e.ActivityId).HasMaxLength(256);
+            entity.Property(e => e.ConditionExpression).HasMaxLength(4000);
         });
 
         modelBuilder.Entity<WorkflowEventEntity>(entity =>

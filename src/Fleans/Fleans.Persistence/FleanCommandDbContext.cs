@@ -26,6 +26,8 @@ public class FleanCommandDbContext : DbContext
     public DbSet<WorkflowEventEntity> WorkflowEvents => Set<WorkflowEventEntity>();
     public DbSet<WorkflowSnapshotEntity> WorkflowSnapshots => Set<WorkflowSnapshotEntity>();
     public DbSet<UserTaskState> UserTasks => Set<UserTaskState>();
+    public DbSet<ConditionalStartEventListenerState> ConditionalStartEventListeners => Set<ConditionalStartEventListenerState>();
+    public DbSet<ConditionalStartEntryState> ConditionalStartEventRegistryEntries => Set<ConditionalStartEntryState>();
 
     public FleanCommandDbContext(DbContextOptions<FleanCommandDbContext> options) : base(options) { }
 

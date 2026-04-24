@@ -415,5 +415,8 @@ FodyWeavers.xsd
 # Launch settings (developer-local)
 **/Properties/launchSettings.json
 
+# Claude Code local state
+.claude/
+
 # Aspire Docker compose publisher output
 tests/load/generated/

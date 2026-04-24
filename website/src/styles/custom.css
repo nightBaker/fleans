@@ -365,6 +365,36 @@
   display: none;
 }
 
+/* GitHub stars badge — theme toggle */
+:root[data-theme='light'] .github-stars-dark,
+:root[data-theme='dark'] .github-stars-light {
+  display: none;
+}
+
+/* --- Landing page accent override --- */
+/* Use --sl-color-accent (teal) instead of --fleans-accent-2 (lime) on the splash page */
+.hero .action.primary a::after {
+  background: var(--sl-color-accent) !important;
+}
+.card {
+  border-left-color: var(--sl-color-accent) !important;
+}
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .sl-markdown-content h2::after {
+      background: var(--sl-color-accent);
+    }
+  }
+}
+@media (hover: hover) {
+  .card:hover {
+    box-shadow: 2px 2px 0 var(--sl-color-accent);
+  }
+}
+.card:focus-visible {
+  box-shadow: 2px 2px 0 var(--sl-color-accent);
+}
+
 /* --- Custom footer --- */
 .fleans-footer {
   border-top: 1px solid var(--sl-color-hairline);
