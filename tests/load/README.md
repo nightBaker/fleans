@@ -5,7 +5,7 @@ k6 load test suite for the Fleans workflow engine.
 ## Prerequisites
 
 - [k6](https://k6.io/docs/get-started/installation/) installed
-- Fleans cluster running (see `docker-compose` in issue #237, or Aspire for local dev)
+- Fleans cluster running (see [Docker Compose setup](#docker-compose-setup) below, or Aspire for local dev)
 - All 3 BPMN fixtures deployed (run `setup.js` first)
 
 ## Scripts
@@ -29,6 +29,40 @@ k6 load test suite for the Fleans workflow engine.
 | `fixtures/linear-workflow.bpmn` | `load-linear` | Simple start → script → end |
 | `fixtures/parallel-workflow.bpmn` | `load-parallel` | Parallel gateway fork/join |
 | `fixtures/events-workflow.bpmn` | `load-events` | Timer + message events |
+
+## Docker Compose Setup
+
+The load-testing Docker stack is generated from the Aspire AppHost using the Docker compose publisher. No hand-written Dockerfiles or compose files.
+
+### Generate
+
+```bash
+dotnet run --project src/Fleans/Fleans.Aspire -- --publisher docker-compose --output-path tests/load/generated
+```
+
+### Start
+
+```bash
+cd tests/load/generated && docker compose up -d
+```
+
+### Verify
+
+```bash
+# Health check — should return 400 (no workflow deployed)
+curl -X POST http://localhost:80/Workflow/start -d '{"WorkflowId":"nonexistent"}' -H "Content-Type: application/json"
+
+# Check all services are running
+docker compose ps
+```
+
+### Teardown
+
+```bash
+docker compose down -v
+```
+
+The generated artifacts are gitignored (`tests/load/generated/`). The AppHost is the single source of truth.
 
 ## Running
 
