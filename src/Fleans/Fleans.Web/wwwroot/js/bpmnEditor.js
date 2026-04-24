@@ -735,5 +735,50 @@ window.bpmnEditor = {
             this._modeler = null;
         }
         this._dotNetRef = null;
+        this._dirtyListenerAttached = false;
+    },
+
+    registerDirtyCallback: function (dotNetRef) {
+        if (!this._modeler || !dotNetRef) return;
+        if (this._dirtyListenerAttached) return;
+        var eventBus = this._modeler.get('eventBus');
+        eventBus.on('commandStack.changed', function () {
+            dotNetRef.invokeMethodAsync('OnModelerDirty');
+        });
+        this._dirtyListenerAttached = true;
+    },
+
+    readStorage: function (key) {
+        try {
+            return window.localStorage.getItem(key);
+        } catch (err) {
+            return null;
+        }
+    },
+
+    writeStorage: function (key, value) {
+        try {
+            window.localStorage.setItem(key, value);
+            return true;
+        } catch (err) {
+            return false;
+        }
+    },
+
+    registerBeforeUnloadWarning: function (dotNetRef) {
+        if (this._beforeUnloadAttached) return;
+        this._beforeUnloadAttached = true;
+        var self = this;
+        window.addEventListener('beforeunload', function (event) {
+            if (self._hasDirtyTabs) {
+                event.preventDefault();
+                event.returnValue = '';
+                return '';
+            }
+        });
+    },
+
+    setDirtyTabsFlag: function (hasDirty) {
+        this._hasDirtyTabs = !!hasDirty;
     }
 };
