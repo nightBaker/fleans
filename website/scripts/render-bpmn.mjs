@@ -53,21 +53,27 @@ function postProcess(svg, theme) {
   svg = svg.replace(/<[^>]+class="[^"]*djs-outline[^"]*"[^>]*\/>/g, '');
 
   // Recolor strokes — bpmn-js uses inline style properties, not SVG attributes
-  // Default color is rgb(34, 36, 42) for strokes and "white" for fills
+  // The actual rendered color depends on bpmn-js version:
+  //   - Some versions emit rgb(34, 36, 42)
+  //   - Others emit #1a1a2e (rgb(26, 26, 46))
+  // Match all known variants.
   svg = svg.replace(/stroke:\s*rgb\(34,\s*36,\s*42\)/g, `stroke: ${theme.stroke}`);
+  svg = svg.replace(/stroke:\s*#1a1a2e/gi, `stroke: ${theme.stroke}`);
   svg = svg.replace(/stroke:\s*black/g, `stroke: ${theme.stroke}`);
   svg = svg.replace(/fill:\s*rgb\(34,\s*36,\s*42\)/g, `fill: ${theme.stroke}`);
+  svg = svg.replace(/fill:\s*#1a1a2e/gi, `fill: ${theme.stroke}`);
   // Also handle SVG attribute form as fallback
+  svg = svg.replace(/stroke="#1a1a2e"/gi, `stroke="${theme.stroke}"`);
   svg = svg.replace(/stroke="black"/g, `stroke="${theme.stroke}"`);
   svg = svg.replace(/stroke="#000000"/g, `stroke="${theme.stroke}"`);
   svg = svg.replace(/stroke="#000"/g, `stroke="${theme.stroke}"`);
 
   // Recolor fills
+  svg = svg.replace(/fill:\s*#ffffff/gi, `fill: ${theme.fill}`);
   svg = svg.replace(/fill:\s*white/g, `fill: ${theme.fill}`);
   svg = svg.replace(/fill="white"/g, `fill="${theme.fill}"`);
-  svg = svg.replace(/fill="#ffffff"/g, `fill="${theme.fill}"`);
-  svg = svg.replace(/fill="#fff"/g, `fill="${theme.fill}"`);
-  svg = svg.replace(/fill="#FFF"/g, `fill="${theme.fill}"`);
+  svg = svg.replace(/fill="#ffffff"/gi, `fill="${theme.fill}"`);
+  svg = svg.replace(/fill="#fff"/gi, `fill="${theme.fill}"`);
 
   // Add padding to viewBox
   const vbMatch = svg.match(/viewBox="([^"]+)"/);
