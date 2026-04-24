@@ -1,3 +1,4 @@
+using Fleans.Application.Placement;
 using Fleans.Domain;
 using Fleans.Domain.States;
 using Microsoft.Extensions.Logging;
@@ -6,6 +7,7 @@ using Orleans.Runtime;
 
 namespace Fleans.Application.Grains;
 
+[CorePlacement]
 public partial class ConditionalStartEventRegistryGrain : Grain, IConditionalStartEventRegistryGrain
 {
     private readonly IPersistentState<ConditionalStartEventRegistryState> _state;

@@ -1,3 +1,4 @@
+using Fleans.Application.Placement;
 using Fleans.Domain;
 using Fleans.Domain.States;
 using Microsoft.Extensions.Logging;
@@ -14,6 +15,7 @@ namespace Fleans.Application.Grains;
 // delivery tcs). Without reentrancy, Subscribe() is queued behind the current
 // BroadcastSignal activation and neither can complete.
 [Reentrant]
+[CorePlacement]
 public partial class SignalCorrelationGrain : Grain, ISignalCorrelationGrain
 {
     private readonly IPersistentState<SignalCorrelationState> _state;

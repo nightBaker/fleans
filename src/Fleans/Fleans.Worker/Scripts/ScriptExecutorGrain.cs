@@ -1,5 +1,6 @@
 using System.Dynamic;
 using Fleans.Application.Scripts;
+using Fleans.Worker.Placement;
 using Microsoft.Extensions.Logging;
 using Orleans.Concurrency;
 using Orleans.Runtime;
@@ -7,6 +8,7 @@ using Orleans.Runtime;
 namespace Fleans.Worker.Scripts;
 
 [StatelessWorker]
+[WorkerPlacement]
 public partial class ScriptExecutorGrain : Grain, IScriptExecutorGrain
 {
     private readonly IScriptExpressionExecutor _scriptExpressionExecutor;

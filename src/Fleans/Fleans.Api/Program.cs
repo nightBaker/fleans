@@ -2,15 +2,19 @@ using System.Threading.RateLimiting;
 using Fleans.Api;
 using Fleans.Application;
 using Fleans.Application.Logging;
+using Fleans.Application.Placement;
 using Fleans.Infrastructure;
 using Fleans.Persistence.PostgreSql;
 using Fleans.Persistence.Sqlite;
 using Fleans.ServiceDefaults;
+using Fleans.Worker.Placement;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.DependencyInjection;
 using Orleans.Dashboard;
 using Orleans.EventSourcing.CustomStorage;
+using Orleans.Runtime.Placement;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -70,6 +74,13 @@ builder.UseOrleans(siloBuilder =>
 
     // JournaledGrain event sourcing: use CustomStorage backed by EfCoreEventStore
     siloBuilder.AddCustomStorageBasedLogConsistencyProviderAsDefault();
+
+    // Role-aware placement directors. Every silo registers both so a Core-only
+    // silo can still route worker grains to its Worker siblings (and vice versa).
+    // The director's fallback keeps test silos and Combined silos working even
+    // when only a single silo exists.
+    siloBuilder.AddPlacementDirector<CorePlacementStrategy, CorePlacementDirector>();
+    siloBuilder.AddPlacementDirector<WorkerPlacementStrategy, WorkerPlacementDirector>();
 });
 
 // Add services to the container.
