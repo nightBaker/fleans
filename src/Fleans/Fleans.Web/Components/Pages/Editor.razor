@@ -2,6 +2,7 @@
 @page "/editor/{ProcessDefinitionKey}"
 @page "/editor/{ProcessDefinitionKey}/{Version:int}"
 @rendermode InteractiveServer
+@using System.Text.Json
 @using Fleans.Application
 @using Fleans.Application.QueryModels
 @using Fleans.Infrastructure.Bpmn
@@ -37,18 +38,24 @@
                 <FluentBadge Color="Color.Error">@processIdError</FluentBadge>
             }
         }
-        else if (!string.IsNullOrEmpty(processIdDisplay))
+        else if (ActiveTab != null && !string.IsNullOrEmpty(ActiveTab.ProcessKey))
         {
             <span class="process-id-toolbar" @onclick="StartProcessIdEdit" title="Click to edit process ID">
-                @processIdDisplay
+                @ActiveTab.ProcessKey
             </span>
-            @if (Version.HasValue)
+            @if (ActiveTab.Version.HasValue)
             {
-                <FluentBadge Color="Color.Accent">v@(Version)</FluentBadge>
+                <FluentBadge Color="Color.Accent">v@(ActiveTab.Version)</FluentBadge>
             }
         }
 
         <div class="toolbar-spacer"></div>
+
+        <FluentButton Appearance="Appearance.Stealth"
+                      IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Add())"
+                      @onclick="NewDiagramTab">
+            New Diagram
+        </FluentButton>
 
         <FluentInputFile @ref="fileUploader"
                          DragDropZoneVisible="false"
@@ -77,6 +84,26 @@
                       @onclick="ShowDeployDialog">
             Deploy
         </FluentButton>
+    </div>
+
+    <div class="editor-tab-bar">
+        @foreach (var tab in tabs)
+        {
+            var t = tab;
+            var classes = "editor-tab" + (t.Id == activeTabId ? " editor-tab--active" : "");
+            <div class="@classes" @onclick="() => SwitchTab(t.Id)" title="@t.Label">
+                <span class="editor-tab__label">@t.Label</span>
+                @if (t.Dirty)
+                {
+                    <span class="editor-tab__dirty" title="Unsaved changes">●</span>
+                }
+                <button type="button"
+                        class="editor-tab__close"
+                        title="Close tab"
+                        @onclick="() => RequestCloseTab(t.Id)"
+                        @onclick:stopPropagation="true">×</button>
+            </div>
+        }
     </div>
 
     @if (errorMessage != null)
@@ -122,7 +149,25 @@
     </div>
 }
 
+@if (tabPendingClose != null)
+{
+    <div class="deploy-overlay" @onclick="CancelCloseTab"></div>
+    <div class="deploy-dialog">
+        <FluentStack Orientation="Orientation.Vertical" Gap="16px">
+            <FluentLabel Typo="Typography.PaneHeader">Discard unsaved changes?</FluentLabel>
+            <p>Tab "<strong>@tabPendingClose.Label</strong>" has unsaved changes. Discarding will close the tab and lose those changes.</p>
+            <FluentStack Orientation="Orientation.Horizontal" Gap="8px" Justify="JustifyContent.FlexEnd">
+                <FluentButton Appearance="Appearance.Neutral" @onclick="CancelCloseTab">Cancel</FluentButton>
+                <FluentButton Appearance="Appearance.Accent" @onclick="ConfirmCloseTab">Discard</FluentButton>
+            </FluentStack>
+        </FluentStack>
+    </div>
+}
+
 @code {
+    private const int MaxTabs = 10;
+    private const string StorageKey = "fleans.editor.tabs.v1";
+
     [Parameter] public string? ProcessDefinitionKey { get; set; }
     [Parameter] public int? Version { get; set; }
 
@@ -132,7 +177,6 @@
     private bool showDeployDialog;
     private string? errorMessage;
     private string? successMessage;
-    private string? processKey;
     private bool editorInitialized;
 
     private string? deployProcessKey;
@@ -142,50 +186,62 @@
 
     private ElementPropertiesPanel.BpmnElementData? selectedElement;
 
-    private string processIdDisplay = "";
     private string processIdEdit = "";
     private bool isEditingProcessId;
     private string? processIdError;
 
+    private readonly List<TabSession> tabs = new();
+    private string? activeTabId;
+    private TabSession? tabPendingClose;
+
+    private TabSession? ActiveTab =>
+        activeTabId == null ? null : tabs.FirstOrDefault(t => t.Id == activeTabId);
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
-        {
-            dotNetRef = DotNetObjectReference.Create(this);
-            await JS.InvokeVoidAsync("bpmnEditor.init", "editor-canvas", dotNetRef);
-            editorInitialized = true;
+        if (!firstRender) return;
 
-            if (!string.IsNullOrEmpty(ProcessDefinitionKey))
-            {
-                try
-                {
-                    string bpmnXml;
-                    if (Version.HasValue)
-                    {
-                        bpmnXml = await QueryService.GetBpmnXmlByKeyAndVersion(ProcessDefinitionKey, Version.Value);
-                    }
-                    else
-                    {
-                        bpmnXml = await QueryService.GetBpmnXmlByKey(ProcessDefinitionKey);
-                    }
-                    await JS.InvokeVoidAsync("bpmnEditor.loadXml", bpmnXml);
-                    await RefreshProcessId();
-                    StateHasChanged();
-                }
-                catch (Exception ex)
-                {
-                    Logger.LogError(ex, "Failed to load BPMN for key {Key}", ProcessDefinitionKey);
-                    errorMessage = $"Failed to load workflow: {ex.Message}";
-                    StateHasChanged();
-                }
-            }
-            else
-            {
-                await JS.InvokeVoidAsync("bpmnEditor.newDiagram");
-                await RefreshProcessId();
-                StateHasChanged();
-            }
+        dotNetRef = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("bpmnEditor.init", "editor-canvas", dotNetRef);
+        await JS.InvokeVoidAsync("bpmnEditor.registerDirtyCallback", dotNetRef);
+        await JS.InvokeVoidAsync("bpmnEditor.registerBeforeUnloadWarning", dotNetRef);
+        editorInitialized = true;
+
+        await RestoreTabsFromStorage();
+
+        // Load the restored active tab into the modeler first, so any subsequent
+        // SaveActiveTabXml (e.g. inside OpenFromWorkflow when a URL param is present)
+        // reads that tab's real content instead of the modeler's default-empty XML
+        // and clobbers the restored tab's stored BpmnXml.
+        if (tabs.Count > 0)
+        {
+            await ActivateTab(activeTabId ?? tabs[0].Id, saveOutgoing: false);
         }
+
+        if (!string.IsNullOrEmpty(ProcessDefinitionKey))
+        {
+            await OpenFromWorkflow(ProcessDefinitionKey, Version);
+        }
+        else if (tabs.Count == 0)
+        {
+            await AddBlankTab(activate: true);
+        }
+
+        await PersistTabs();
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public Task OnModelerDirty()
+    {
+        var active = ActiveTab;
+        if (active != null && !active.Dirty)
+        {
+            active.Dirty = true;
+            _ = UpdateDirtyFlagAndPersist();
+            return InvokeAsync(StateHasChanged);
+        }
+        return Task.CompletedTask;
     }
 
     [JSInvokable]
@@ -210,7 +266,8 @@
 
     private void StartProcessIdEdit()
     {
-        processIdEdit = processIdDisplay;
+        if (ActiveTab == null) return;
+        processIdEdit = ActiveTab.ProcessKey;
         processIdError = null;
         isEditingProcessId = true;
     }
@@ -230,7 +287,7 @@
 
     private async Task ConfirmProcessIdEdit()
     {
-        if (!isEditingProcessId) return;
+        if (!isEditingProcessId || ActiveTab == null) return;
 
         var newId = processIdEdit.Trim();
 
@@ -252,26 +309,31 @@
             return;
         }
 
-        if (newId != processIdDisplay)
+        if (newId != ActiveTab.ProcessKey)
         {
             await JS.InvokeAsync<bool>("bpmnEditor.updateProcessId", newId);
-            processIdDisplay = newId;
-            processKey = newId;
+            ActiveTab.ProcessKey = newId;
+            ActiveTab.Label = newId;
+            await PersistTabs();
         }
 
         isEditingProcessId = false;
         processIdError = null;
     }
 
-    private async Task RefreshProcessId()
+    private async Task NewDiagramTab()
     {
         if (!editorInitialized) return;
-        var id = await JS.InvokeAsync<string>("bpmnEditor.getProcessId");
-        if (!string.IsNullOrEmpty(id))
-        {
-            processIdDisplay = id;
-            processKey = id;
-        }
+        if (!EnsureCapacity()) return;
+
+        // Snapshot the outgoing tab's modeler XML before AddBlankTab replaces
+        // the modeler with the fresh empty diagram — otherwise any edits made
+        // since the outgoing tab was last activated would be lost.
+        await SaveActiveTabXml();
+
+        await AddBlankTab(activate: true);
+        await PersistTabs();
+        StateHasChanged();
     }
 
     private async Task OnImportFileSelected(IEnumerable<FluentInputFileEventArgs> files)
@@ -293,12 +355,27 @@
                 return;
             }
 
+            if (!EnsureCapacity()) return;
+
             errorMessage = null;
             successMessage = null;
+
             var bpmnXml = await File.ReadAllTextAsync(file.LocalFile.FullName);
-            await JS.InvokeVoidAsync("bpmnEditor.loadXml", bpmnXml);
-            await RefreshProcessId();
+            await SaveActiveTabXml();
+
+            var tab = new TabSession
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                Label = Path.GetFileNameWithoutExtension(file.Name),
+                ProcessKey = "",
+                Version = null,
+                BpmnXml = bpmnXml,
+                Dirty = false
+            };
+            tabs.Add(tab);
+            await ActivateTab(tab.Id, saveOutgoing: false);
             successMessage = $"Imported {file.Name}";
+            await PersistTabs();
         }
         catch (Exception ex)
         {
@@ -313,7 +390,7 @@
 
     private async Task DownloadXml()
     {
-        if (!editorInitialized) return;
+        if (!editorInitialized || ActiveTab == null) return;
 
         try
         {
@@ -322,7 +399,7 @@
 
             var bytes = System.Text.Encoding.UTF8.GetBytes(xml);
             var base64 = Convert.ToBase64String(bytes);
-            var filename = !string.IsNullOrEmpty(processKey) ? $"{processKey}.bpmn" : "diagram.bpmn";
+            var filename = !string.IsNullOrEmpty(ActiveTab.ProcessKey) ? $"{ActiveTab.ProcessKey}.bpmn" : "diagram.bpmn";
             await JS.InvokeVoidAsync("bpmnEditor.downloadXml", base64, filename);
         }
         catch (Exception ex)
@@ -334,7 +411,7 @@
 
     private async Task ShowDeployDialog()
     {
-        if (!editorInitialized) return;
+        if (!editorInitialized || ActiveTab == null) return;
 
         try
         {
@@ -381,7 +458,7 @@
 
     private async Task ConfirmDeploy()
     {
-        if (pendingWorkflow == null || pendingBpmnXml == null) return;
+        if (pendingWorkflow == null || pendingBpmnXml == null || ActiveTab == null) return;
 
         try
         {
@@ -389,8 +466,15 @@
             showDeployDialog = false;
 
             var deployed = await CommandService.DeployWorkflow(pendingWorkflow, pendingBpmnXml);
-            processKey = deployed.ProcessDefinitionKey;
+            ActiveTab.ProcessKey = deployed.ProcessDefinitionKey;
+            ActiveTab.Version = deployed.Version;
+            ActiveTab.Label = deployed.ProcessDefinitionKey;
+            ActiveTab.BpmnXml = pendingBpmnXml;
+            ActiveTab.Dirty = false;
+
             successMessage = $"Deployed '{deployed.ProcessDefinitionKey}' v{deployed.Version} ({deployed.ActivitiesCount} activities, {deployed.SequenceFlowsCount} flows)";
+            await PersistTabs();
+            await UpdateDirtyFlagAndPersist();
         }
         catch (Exception ex)
         {
@@ -410,6 +494,297 @@
         Navigation.NavigateTo("/workflows");
     }
 
+    // ---- Tab management --------------------------------------------------
+
+    private bool EnsureCapacity()
+    {
+        if (tabs.Count >= MaxTabs)
+        {
+            errorMessage = $"Tab limit reached ({MaxTabs}). Close a tab to open another.";
+            return false;
+        }
+        return true;
+    }
+
+    private async Task AddBlankTab(bool activate)
+    {
+        var id = Guid.NewGuid().ToString("N");
+        var label = $"Untitled-{tabs.Count(t => t.Label.StartsWith("Untitled-", StringComparison.Ordinal)) + 1}";
+
+        // Capture bpmn-js's built-in empty diagram XML so tabs all share the same
+        // "blank canvas" starting point and round-trip through loadXml correctly.
+        await JS.InvokeVoidAsync("bpmnEditor.newDiagram");
+        var xml = await JS.InvokeAsync<string>("bpmnEditor.getXml") ?? "";
+
+        var tab = new TabSession
+        {
+            Id = id,
+            Label = label,
+            ProcessKey = "",
+            Version = null,
+            BpmnXml = xml,
+            Dirty = false
+        };
+        tabs.Add(tab);
+
+        if (activate)
+        {
+            activeTabId = id;
+            await RefreshActiveProcessId();
+        }
+    }
+
+    private async Task OpenFromWorkflow(string processKey, int? version)
+    {
+        // If already open with the same (key, version), just activate.
+        var existing = tabs.FirstOrDefault(t =>
+            t.ProcessKey == processKey &&
+            t.Version == version);
+        if (existing != null)
+        {
+            await ActivateTab(existing.Id, saveOutgoing: true);
+            return;
+        }
+
+        if (!EnsureCapacity()) return;
+
+        try
+        {
+            string bpmnXml = (version.HasValue
+                ? await QueryService.GetBpmnXmlByKeyAndVersion(processKey, version.Value)
+                : await QueryService.GetBpmnXmlByKey(processKey)) ?? "";
+
+            await SaveActiveTabXml();
+
+            var tab = new TabSession
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                Label = processKey,
+                ProcessKey = processKey,
+                Version = version,
+                BpmnXml = bpmnXml,
+                Dirty = false
+            };
+            tabs.Add(tab);
+            await ActivateTab(tab.Id, saveOutgoing: false);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load BPMN for key {Key}", processKey);
+            errorMessage = $"Failed to load workflow: {ex.Message}";
+        }
+    }
+
+    private async Task SwitchTab(string tabId)
+    {
+        if (tabId == activeTabId) return;
+        await ActivateTab(tabId, saveOutgoing: true);
+        await PersistTabs();
+    }
+
+    private async Task ActivateTab(string tabId, bool saveOutgoing)
+    {
+        var incoming = tabs.FirstOrDefault(t => t.Id == tabId);
+        if (incoming == null) return;
+
+        if (saveOutgoing)
+        {
+            await SaveActiveTabXml();
+        }
+
+        activeTabId = tabId;
+
+        try
+        {
+            await JS.InvokeVoidAsync("bpmnEditor.loadXml", incoming.BpmnXml);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load BPMN for tab {TabId}", tabId);
+            errorMessage = $"Failed to load tab: {ex.Message}";
+            return;
+        }
+
+        selectedElement = null;
+        await RefreshActiveProcessId();
+        StateHasChanged();
+    }
+
+    private async Task SaveActiveTabXml()
+    {
+        if (!editorInitialized || ActiveTab == null) return;
+        try
+        {
+            var xml = await JS.InvokeAsync<string>("bpmnEditor.getXml");
+            if (!string.IsNullOrEmpty(xml))
+            {
+                ActiveTab.BpmnXml = xml;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to snapshot XML for active tab");
+        }
+    }
+
+    private async Task RefreshActiveProcessId()
+    {
+        if (!editorInitialized || ActiveTab == null) return;
+        var id = await JS.InvokeAsync<string>("bpmnEditor.getProcessId");
+        if (!string.IsNullOrEmpty(id))
+        {
+            ActiveTab.ProcessKey = id;
+            if (string.IsNullOrEmpty(ActiveTab.Label) || ActiveTab.Label.StartsWith("Untitled-", StringComparison.Ordinal))
+            {
+                ActiveTab.Label = id;
+            }
+        }
+    }
+
+    private void RequestCloseTab(string tabId)
+    {
+        var tab = tabs.FirstOrDefault(t => t.Id == tabId);
+        if (tab == null) return;
+        if (tab.Dirty)
+        {
+            tabPendingClose = tab;
+            StateHasChanged();
+        }
+        else
+        {
+            _ = PerformCloseTab(tab);
+        }
+    }
+
+    private void CancelCloseTab()
+    {
+        tabPendingClose = null;
+    }
+
+    private async Task ConfirmCloseTab()
+    {
+        var tab = tabPendingClose;
+        tabPendingClose = null;
+        if (tab != null)
+        {
+            await PerformCloseTab(tab);
+        }
+    }
+
+    private async Task PerformCloseTab(TabSession tab)
+    {
+        var idx = tabs.IndexOf(tab);
+        var wasActive = tab.Id == activeTabId;
+        tabs.RemoveAt(idx);
+
+        if (tabs.Count == 0)
+        {
+            // Never leave the editor with zero tabs — fall back to a fresh blank.
+            await AddBlankTab(activate: true);
+        }
+        else if (wasActive)
+        {
+            var nextIdx = Math.Min(idx, tabs.Count - 1);
+            await ActivateTab(tabs[nextIdx].Id, saveOutgoing: false);
+        }
+
+        // UpdateDirtyFlagAndPersist calls PersistTabs internally — avoid a
+        // redundant localStorage serialize on close.
+        await UpdateDirtyFlagAndPersist();
+        StateHasChanged();
+    }
+
+    // ---- Persistence -----------------------------------------------------
+
+    private async Task PersistTabs()
+    {
+        try
+        {
+            // Snapshot current modeler XML into the active tab before serializing,
+            // so a refresh restores the in-memory edits up to this point.
+            await SaveActiveTabXml();
+
+            var payload = new TabsPayload
+            {
+                ActiveTabId = activeTabId,
+                SavedAt = DateTimeOffset.UtcNow,
+                Tabs = tabs.Select(t => new TabSessionDto
+                {
+                    Id = t.Id,
+                    Label = t.Label,
+                    ProcessKey = t.ProcessKey,
+                    Version = t.Version,
+                    BpmnXml = t.BpmnXml,
+                    Dirty = t.Dirty
+                }).ToList()
+            };
+            var json = JsonSerializer.Serialize(payload);
+            var ok = await JS.InvokeAsync<bool>("bpmnEditor.writeStorage", StorageKey, json);
+            if (!ok)
+            {
+                Logger.LogDebug("localStorage write for editor tabs was rejected (quota?)");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to persist editor tabs");
+        }
+    }
+
+    private async Task RestoreTabsFromStorage()
+    {
+        try
+        {
+            var json = await JS.InvokeAsync<string?>("bpmnEditor.readStorage", StorageKey);
+            if (string.IsNullOrWhiteSpace(json)) return;
+
+            var payload = JsonSerializer.Deserialize<TabsPayload>(json);
+            if (payload?.Tabs == null) return;
+
+            foreach (var dto in payload.Tabs.Take(MaxTabs))
+            {
+                if (string.IsNullOrEmpty(dto.Id) || string.IsNullOrEmpty(dto.BpmnXml))
+                {
+                    continue;
+                }
+                tabs.Add(new TabSession
+                {
+                    Id = dto.Id,
+                    Label = string.IsNullOrEmpty(dto.Label) ? "Untitled" : dto.Label,
+                    ProcessKey = dto.ProcessKey ?? "",
+                    Version = dto.Version,
+                    BpmnXml = dto.BpmnXml,
+                    Dirty = dto.Dirty
+                });
+            }
+
+            if (tabs.Count > 0)
+            {
+                activeTabId = payload.ActiveTabId != null && tabs.Any(t => t.Id == payload.ActiveTabId)
+                    ? payload.ActiveTabId
+                    : tabs[0].Id;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to restore editor tabs from localStorage");
+        }
+    }
+
+    private async Task UpdateDirtyFlagAndPersist()
+    {
+        var anyDirty = tabs.Any(t => t.Dirty);
+        try
+        {
+            await JS.InvokeVoidAsync("bpmnEditor.setDirtyTabsFlag", anyDirty);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "setDirtyTabsFlag interop failed");
+        }
+        await PersistTabs();
+    }
+
     public async ValueTask DisposeAsync()
     {
         try
@@ -422,5 +797,34 @@
         }
 
         dotNetRef?.Dispose();
+    }
+
+    // ---- Types -----------------------------------------------------------
+
+    private sealed class TabSession
+    {
+        public string Id { get; set; } = "";
+        public string Label { get; set; } = "";
+        public string ProcessKey { get; set; } = "";
+        public int? Version { get; set; }
+        public string BpmnXml { get; set; } = "";
+        public bool Dirty { get; set; }
+    }
+
+    private sealed class TabsPayload
+    {
+        public string? ActiveTabId { get; set; }
+        public DateTimeOffset SavedAt { get; set; }
+        public List<TabSessionDto> Tabs { get; set; } = new();
+    }
+
+    private sealed class TabSessionDto
+    {
+        public string Id { get; set; } = "";
+        public string Label { get; set; } = "";
+        public string ProcessKey { get; set; } = "";
+        public int? Version { get; set; }
+        public string BpmnXml { get; set; } = "";
+        public bool Dirty { get; set; }
     }
 }
