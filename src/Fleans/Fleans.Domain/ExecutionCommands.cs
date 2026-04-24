@@ -88,6 +88,12 @@ public record EvaluateActivationConditionCommand(
 public record DiscardLateTokenCommand(
     [property: Id(0)] string Reason) : IExecutionCommand;
 
+[GenerateSerializer]
+public record RegisterConditionalWatcherCommand(
+    [property: Id(0)] Guid VariablesId,
+    [property: Id(1)] string ConditionExpression,
+    [property: Id(2)] string ActivityId) : IExecutionCommand;
+
 /// <summary>
 /// Emitted by CompensationIntermediateThrowEvent and CompensationEndEvent to trigger
 /// the compensation walk for the enclosing scope. The scope is resolved at runtime

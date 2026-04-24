@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             id="Definitions_1"
+             targetNamespace="http://bpmn.io/schema/bpmn">
+  <process id="conditional-boundary-test" isExecutable="true">
+    <startEvent id="start">
+      <outgoing>f1</outgoing>
+    </startEvent>
+
+    <scriptTask id="set-vars" scriptFormat="csharp">
+      <incoming>f1</incoming>
+      <outgoing>f2</outgoing>
+      <script>status = "pending";</script>
+    </scriptTask>
+
+    <scriptTask id="main-task" scriptFormat="csharp">
+      <incoming>f2</incoming>
+      <outgoing>f3</outgoing>
+      <script>status = "approved";</script>
+    </scriptTask>
+
+    <boundaryEvent id="cond-boundary" attachedToRef="main-task" cancelActivity="true">
+      <outgoing>f4</outgoing>
+      <conditionalEventDefinition>
+        <condition>status == "approved"</condition>
+      </conditionalEventDefinition>
+    </boundaryEvent>
+
+    <endEvent id="end-normal">
+      <incoming>f3</incoming>
+    </endEvent>
+
+    <scriptTask id="boundary-handler" scriptFormat="csharp">
+      <incoming>f4</incoming>
+      <outgoing>f5</outgoing>
+      <script>handled = "boundary-fired";</script>
+    </scriptTask>
+
+    <endEvent id="end-boundary">
+      <incoming>f5</incoming>
+    </endEvent>
+
+    <sequenceFlow id="f1" sourceRef="start" targetRef="set-vars" />
+    <sequenceFlow id="f2" sourceRef="set-vars" targetRef="main-task" />
+    <sequenceFlow id="f3" sourceRef="main-task" targetRef="end-normal" />
+    <sequenceFlow id="f4" sourceRef="cond-boundary" targetRef="boundary-handler" />
+    <sequenceFlow id="f5" sourceRef="boundary-handler" targetRef="end-boundary" />
+  </process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="conditional-boundary-test">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="180" y="200" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="set-vars_di" bpmnElement="set-vars">
+        <dc:Bounds x="270" y="178" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="main-task_di" bpmnElement="main-task">
+        <dc:Bounds x="430" y="178" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="cond-boundary_di" bpmnElement="cond-boundary">
+        <dc:Bounds x="462" y="240" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end-normal_di" bpmnElement="end-normal">
+        <dc:Bounds x="590" y="200" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="boundary-handler_di" bpmnElement="boundary-handler">
+        <dc:Bounds x="530" y="310" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end-boundary_di" bpmnElement="end-boundary">
+        <dc:Bounds x="690" y="332" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="216" y="218" />
+        <di:waypoint x="270" y="218" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="370" y="218" />
+        <di:waypoint x="430" y="218" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="530" y="218" />
+        <di:waypoint x="590" y="218" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f4_di" bpmnElement="f4">
+        <di:waypoint x="480" y="276" />
+        <di:waypoint x="480" y="350" />
+        <di:waypoint x="530" y="350" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f5_di" bpmnElement="f5">
+        <di:waypoint x="630" y="350" />
+        <di:waypoint x="690" y="350" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>
