@@ -414,3 +414,6 @@ FodyWeavers.xsd
 
 # Launch settings (developer-local)
 **/Properties/launchSettings.json
+
+# Claude Code local state
+.claude/

@@ -26,11 +26,7 @@ public partial class ConditionalStartEventListenerGrain : Grain, IConditionalSta
 
     public async ValueTask Register(string processDefinitionKey, string activityId, string conditionExpression)
     {
-        _state.State.Key = this.GetPrimaryKeyString();
-        _state.State.ProcessDefinitionKey = processDefinitionKey;
-        _state.State.ActivityId = activityId;
-        _state.State.ConditionExpression = conditionExpression;
-        _state.State.IsRegistered = true;
+        _state.State.Register(this.GetPrimaryKeyString(), processDefinitionKey, activityId, conditionExpression);
         await _state.WriteStateAsync();
         LogRegistered(processDefinitionKey, activityId, conditionExpression);
     }

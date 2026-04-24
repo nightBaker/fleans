@@ -9,4 +9,13 @@ public class ConditionalStartEventListenerState
     [Id(3)] public string ActivityId { get; set; } = string.Empty;
     [Id(4)] public string ConditionExpression { get; set; } = string.Empty;
     [Id(5)] public bool IsRegistered { get; set; }
+
+    public void Register(string key, string processDefinitionKey, string activityId, string conditionExpression)
+    {
+        Key = key;
+        ProcessDefinitionKey = processDefinitionKey;
+        ActivityId = activityId;
+        ConditionExpression = conditionExpression;
+        IsRegistered = true;
+    }
 }

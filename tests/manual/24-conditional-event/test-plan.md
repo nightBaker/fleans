@@ -7,7 +7,7 @@ Tests BPMN Conditional Events: a workflow with a **conditional intermediate catc
 ## Prerequisites
 
 - Aspire stack running (`dotnet run --project Fleans.Aspire`)
-- Web UI accessible at `https://localhost:7168`
+- Web UI accessible at `https://localhost:7140`
 
 ## Fixture
 

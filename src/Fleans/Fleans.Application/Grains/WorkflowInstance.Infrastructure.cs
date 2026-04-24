@@ -323,6 +323,13 @@ public partial class WorkflowInstance
             catch (Exception ex)
             {
                 LogConditionalExpressionEvaluationFailed(watcher.ConditionExpression, watcher.ActivityId, ex.Message);
+                // Surface the error by failing the watcher's activity instance
+                // so operators can diagnose stuck workflows.
+                var failEffects = _execution!.FailActivity(
+                    watcher.ActivityId, watcher.ActivityInstanceId,
+                    new InvalidOperationException($"Condition expression error: {ex.Message}", ex));
+                await PerformEffects(failEffects);
+                completedEntryIds.Add(watcher.ActivityInstanceId);
             }
         }
 
