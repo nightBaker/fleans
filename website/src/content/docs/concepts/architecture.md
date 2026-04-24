@@ -78,3 +78,17 @@ This means Fleans inherits Orleans' distributed systems guarantees without build
 | **Load testing** | PostgreSQL (write-tuned) | Redis (Docker Compose) | Performance benchmarking with k6 |
 
 Switching providers is configuration-only — set `Persistence:Provider` and the appropriate connection string. No code changes needed. See the [Persistence reference](/fleans/reference/persistence/) for details.
+
+## Core and Worker silos
+
+Fleans ships as a single binary (`Fleans.Api`) that can run in three roles, selected via the `Fleans:Role` configuration key:
+
+| Role | What the silo hosts |
+|------|--------------------|
+| `Combined` *(default)* | Everything — WorkflowInstance, ProcessDefinition, timers, correlations, user tasks, **and** the StatelessWorker script/condition evaluators. Right choice for single-node deployments. |
+| `Core` | Workflow coordination grains and event-sourcing storage. Delegates script/condition evaluation to a Worker silo. |
+| `Worker` | The StatelessWorker evaluators (`ScriptExecutorGrain`, `ConditionExpressionEvaluatorGrain`) and nothing else. Isolates CPU-bound script execution from workflow state. |
+
+The role is stamped onto the silo name as `{role}-{machine}-{guid}`, so the Orleans Dashboard (and other silos via membership gossip) can see which role each silo is running. Set the role via the `Fleans__Role` environment variable, an `appsettings.json` entry, or a command-line argument.
+
+A small deployment stays on `Combined`. Splitting to `Core` + scaled `Worker` instances is an operational choice you can make later without code changes.

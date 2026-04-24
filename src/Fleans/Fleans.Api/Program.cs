@@ -39,10 +39,26 @@ if (authEnabled)
 // Register Redis client for Aspire-managed Orleans
 builder.AddKeyedRedisClient("orleans-redis");
 
+// Fleans:Role — controls which grain set this silo hosts. Validated against the
+// allowed set at startup so a typo fails fast rather than silently drifting into
+// a silo that hosts no grains. The role is also stamped onto the silo name so
+// other silos (and the Orleans dashboard) can see it via membership.
+var roleRaw = builder.Configuration["Fleans:Role"] ?? "Combined";
+var role = roleRaw.ToLowerInvariant();
+if (role != "core" && role != "worker" && role != "combined")
+{
+    throw new InvalidOperationException(
+        $"Fleans:Role must be one of 'Core', 'Worker', 'Combined' (case-insensitive) — got '{roleRaw}'.");
+}
+var siloName = $"{role}-{Environment.MachineName}-{Guid.NewGuid():N}".ToLowerInvariant();
+
 // Orleans silo configuration
 // Infrastructure (clustering, storage, streaming, reminders) is managed by Aspire AppHost
 builder.UseOrleans(siloBuilder =>
 {
+    // Stamp the role into the silo name so membership gossip exposes it cluster-wide.
+    siloBuilder.Configure<Orleans.Configuration.SiloOptions>(o => o.SiloName = siloName);
+
     // Pluggable stream provider — reads Fleans:Streaming:Provider from config (default: memory)
     siloBuilder.AddFleanStreaming(builder.Configuration);
 

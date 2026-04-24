@@ -32,6 +32,7 @@
     <ProjectReference Include="..\Fleans.Persistence\Fleans.Persistence.csproj" />
     <ProjectReference Include="..\Fleans.Persistence.Sqlite\Fleans.Persistence.Sqlite.csproj" />
     <ProjectReference Include="..\Fleans.ServiceDefaults\Fleans.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\Fleans.Worker\Fleans.Worker.csproj" />
   </ItemGroup>
 
   <ItemGroup>
