@@ -132,6 +132,33 @@ namespace Fleans.Persistence.Sqlite.Migrations.Command
                     b.ToTable("WorkflowActivityInstanceEntries", (string)null);
                 });
 
+            modelBuilder.Entity("Fleans.Domain.States.ComplexGatewayJoinState", b =>
+                {
+                    b.Property<Guid>("WorkflowInstanceId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("GatewayActivityId")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ActivationCondition")
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("FirstActivityInstanceId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("HasFired")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("WaitingTokenCount")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("WorkflowInstanceId", "GatewayActivityId");
+
+                    b.ToTable("ComplexGatewayJoinStates", (string)null);
+                });
+
             modelBuilder.Entity("Fleans.Domain.States.ConditionSequenceState", b =>
                 {
                     b.Property<Guid>("GatewayActivityInstanceId")
@@ -155,6 +182,59 @@ namespace Fleans.Persistence.Sqlite.Migrations.Command
                     b.HasIndex("WorkflowInstanceId");
 
                     b.ToTable("WorkflowConditionSequenceStates", (string)null);
+                });
+
+            modelBuilder.Entity("Fleans.Domain.States.ConditionalStartEntryState", b =>
+                {
+                    b.Property<string>("ProcessDefinitionKey")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ActivityId")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ConditionExpression")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("ProcessDefinitionKey", "ActivityId");
+
+                    b.ToTable("ConditionalStartEventRegistryEntries", (string)null);
+                });
+
+            modelBuilder.Entity("Fleans.Domain.States.ConditionalStartEventListenerState", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ActivityId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ConditionExpression")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ETag")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsRegistered")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ProcessDefinitionKey")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Key");
+
+                    b.ToTable("ConditionalStartEventListeners", (string)null);
                 });
 
             modelBuilder.Entity("Fleans.Domain.States.GatewayForkState", b =>
@@ -551,6 +631,15 @@ namespace Fleans.Persistence.Sqlite.Migrations.Command
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Fleans.Domain.States.ComplexGatewayJoinState", b =>
+                {
+                    b.HasOne("Fleans.Domain.States.WorkflowInstanceState", null)
+                        .WithMany("ComplexGatewayJoinStates")
+                        .HasForeignKey("WorkflowInstanceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Fleans.Domain.States.ConditionSequenceState", b =>
                 {
                     b.HasOne("Fleans.Domain.States.WorkflowInstanceState", null)
@@ -634,6 +723,8 @@ namespace Fleans.Persistence.Sqlite.Migrations.Command
 
             modelBuilder.Entity("Fleans.Domain.States.WorkflowInstanceState", b =>
                 {
+                    b.Navigation("ComplexGatewayJoinStates");
+
                     b.Navigation("ConditionSequenceStates");
 
                     b.Navigation("Entries");

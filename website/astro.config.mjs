@@ -3,7 +3,7 @@ import starlight from '@astrojs/starlight';
 
 // https://astro.build/config
 export default defineConfig({
-  site: 'https://example.github.io',
+  site: 'https://nightBaker.github.io',
   base: '/fleans',
   integrations: [
     starlight({
@@ -15,7 +15,7 @@ export default defineConfig({
       },
       favicon: '/favicon.svg',
       social: [
-        { icon: 'github', label: 'GitHub', href: 'https://github.com/<github-user>/fleans' },
+        { icon: 'github', label: 'GitHub', href: 'https://github.com/nightBaker/fleans' },
       ],
       sidebar: [
         {
@@ -23,12 +23,16 @@ export default defineConfig({
           items: [
             { label: 'Introduction', slug: 'guides/introduction' },
             { label: 'Quick Start', slug: 'guides/quick-start' },
+            { label: 'Service Tasks', slug: 'guides/service-tasks' },
+            { label: 'BPMN Editor', slug: 'guides/editor' },
+            { label: 'Add to Existing Project', slug: 'guides/add-to-existing-project' },
           ],
         },
         {
           label: 'Concepts',
           items: [
             { label: 'Architecture', slug: 'concepts/architecture' },
+            { label: 'What is BPMN?', slug: 'concepts/bpmn-overview' },
             { label: 'BPMN Support', slug: 'concepts/bpmn-support' },
           ],
         },
@@ -37,6 +41,9 @@ export default defineConfig({
           autogenerate: { directory: 'reference' },
         },
       ],
+      components: {
+        Footer: './src/components/Footer.astro',
+      },
       customCss: ['./src/styles/custom.css'],
     }),
   ],

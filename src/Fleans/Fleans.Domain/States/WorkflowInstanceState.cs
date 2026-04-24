@@ -27,6 +27,9 @@ public class WorkflowInstanceState
     [Id(6)]
     public bool IsCompleted { get; private set; }
 
+    [Id(19)]
+    public bool IsCancelled { get; private set; }
+
     [Id(7)]
     public DateTimeOffset? CreatedAt { get; private set; }
 
@@ -114,6 +117,27 @@ public class WorkflowInstanceState
     // rebuilt from TransactionOutcomeSet events on activation.
     [Id(18)]
     public Dictionary<Guid, TransactionOutcomeRecord> TransactionOutcomes { get; private set; } = new();
+
+    private const int DirtyCompensationLog = 64;
+    private const int DirtyConditionalWatchers = 128;
+
+    [Id(23)]
+    public List<ConditionalEventWatcherState> ConditionalWatchers { get; private set; } = [];
+
+    /// <summary>
+    /// Append-only log of completed, compensable activities (those with a CompensationBoundaryEvent attached).
+    /// Keyed implicitly by ScopeId on each entry. Used as input to compensation walks.
+    /// </summary>
+    [Id(20)]
+    public List<CompletedActivitySnapshot> CompensationLog { get; private set; } = [];
+
+    /// <summary>Global monotonic counter for assigning CompletedAtSequence to compensation snapshots.</summary>
+    [Id(21)]
+    public int NextCompensationSequence { get; private set; }
+
+    /// <summary>Non-null while a compensation walk is in progress. At most one walk at a time.</summary>
+    [Id(22)]
+    public CompensationWalkState? ActiveCompensationWalk { get; private set; }
 
     internal int GetDirtyFlags() => _dirtyFlags;
 
@@ -234,6 +258,19 @@ public class WorkflowInstanceState
         _dirtyFlags |= DirtyGatewayForks | DirtyComplexGatewayJoinStates;
         CompletedAt = DateTimeOffset.UtcNow;
         IsCompleted = true;
+    }
+
+    public void Cancel()
+    {
+        if (IsCompleted)
+            return; // already terminated — cancellation after completion is a no-op
+
+        GatewayForks.Clear();
+        ComplexGatewayJoinStates.Clear();
+        _dirtyFlags |= DirtyGatewayForks | DirtyComplexGatewayJoinStates;
+        CompletedAt = DateTimeOffset.UtcNow;
+        IsCompleted = true;
+        IsCancelled = true;
     }
 
     public Guid AddCloneOfVariableState(Guid variableStateId)
@@ -492,4 +529,86 @@ public class WorkflowInstanceState
         ComplexGatewayJoinStates.RemoveAll(s => s.GatewayActivityId == gatewayActivityId);
         _dirtyFlags |= DirtyComplexGatewayJoinStates;
     }
+
+    public void AddConditionalWatcher(Guid activityInstanceId, string activityId,
+        string conditionExpression, Guid variablesId)
+    {
+        ConditionalWatchers.Add(new ConditionalEventWatcherState
+        {
+            ActivityInstanceId = activityInstanceId,
+            ActivityId = activityId,
+            ConditionExpression = conditionExpression,
+            VariablesId = variablesId,
+            LastEvaluatedResult = false
+        });
+        _dirtyFlags |= DirtyConditionalWatchers;
+    }
+
+    public void RemoveConditionalWatcher(Guid activityInstanceId)
+    {
+        ConditionalWatchers.RemoveAll(w => w.ActivityInstanceId == activityInstanceId);
+        _dirtyFlags |= DirtyConditionalWatchers;
+    }
+
+    public void UpdateConditionalWatcherResult(Guid activityInstanceId, bool result)
+    {
+        var watcher = ConditionalWatchers.FirstOrDefault(w => w.ActivityInstanceId == activityInstanceId);
+        if (watcher != null)
+        {
+            watcher.LastEvaluatedResult = result;
+            _dirtyFlags |= DirtyConditionalWatchers;
+        }
+    }
+
+    // ── Compensation ────────────────────────────────────────────────────────────────
+
+    public void AddCompensationSnapshot(CompletedActivitySnapshot snapshot)
+    {
+        CompensationLog.Add(snapshot);
+        NextCompensationSequence++;
+        _dirtyFlags |= DirtyCompensationLog;
+    }
+
+    public void MarkSnapshotCompensated(string activityDefinitionId, Guid? scopeId)
+    {
+        var snapshot = CompensationLog
+            .FirstOrDefault(s => s.ActivityDefinitionId == activityDefinitionId
+                              && s.ScopeId == scopeId
+                              && !s.IsCompensated);
+        snapshot?.MarkCompensated();
+        _dirtyFlags |= DirtyCompensationLog;
+    }
+
+    public void StartCompensationWalk(CompensationWalkState walk)
+    {
+        ActiveCompensationWalk = walk;
+        _dirtyFlags |= DirtyCompensationLog;
+    }
+
+    public void ClearCompensationWalk()
+    {
+        ActiveCompensationWalk = null;
+        _dirtyFlags |= DirtyCompensationLog;
+    }
+
+    public void SetCompensationHandlerInstanceId(Guid handlerInstanceId)
+    {
+        ActiveCompensationWalk?.SetCurrentHandler(handlerInstanceId);
+        _dirtyFlags |= DirtyCompensationLog;
+    }
+
+    public void MarkCurrentHandlerEntry(Guid entryInstanceId)
+    {
+        var entry = GetActiveEntry(entryInstanceId);
+        entry.MarkAsCompensationHandler();
+        _dirtyFlags |= DirtyEntries;
+    }
+
+    /// <summary>
+    /// Returns true if the given activity instance is an active compensation handler entry.
+    /// Used by the walk advancement logic to detect completion of the current handler
+    /// without querying the full scope-completion check.
+    /// </summary>
+    public bool HasActiveCompensationHandler(Guid handlerInstanceId)
+        => ActiveEntryIds.Contains(handlerInstanceId);
 }

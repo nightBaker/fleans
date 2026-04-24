@@ -61,6 +61,10 @@ public record ThrowSignalCommand(
     [property: Id(0)] string SignalName) : IExecutionCommand;
 
 [GenerateSerializer]
+public record ThrowEscalationCommand(
+    [property: Id(0)] string EscalationCode) : IExecutionCommand;
+
+[GenerateSerializer]
 public record RegisterUserTaskCommand(
     [property: Id(0)] string? Assignee,
     [property: Id(1)] IReadOnlyList<string> CandidateGroups,
@@ -83,4 +87,21 @@ public record EvaluateActivationConditionCommand(
 [GenerateSerializer]
 public record DiscardLateTokenCommand(
     [property: Id(0)] string Reason) : IExecutionCommand;
+
+[GenerateSerializer]
+public record RegisterConditionalWatcherCommand(
+    [property: Id(0)] Guid VariablesId,
+    [property: Id(1)] string ConditionExpression,
+    [property: Id(2)] string ActivityId) : IExecutionCommand;
+
+/// <summary>
+/// Emitted by CompensationIntermediateThrowEvent and CompensationEndEvent to trigger
+/// the compensation walk for the enclosing scope. The scope is resolved at runtime
+/// from the thrower's ScopeId. If TargetActivityRef is null, all compensable activities
+/// in the scope are compensated (broadcast); otherwise only the named activity (targeted).
+/// </summary>
+[GenerateSerializer]
+public record CompensationRequestedCommand(
+    [property: Id(0)] Guid ThrowerActivityInstanceId,
+    [property: Id(1)] string? TargetActivityRef) : IExecutionCommand;
 
