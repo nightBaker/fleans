@@ -50,7 +50,8 @@ The landing page includes a rendered BPMN workflow diagram between the hero and 
 - **Trigger:** re-run when the source fixture changes or `bpmn-js` version is bumped
 - **Command:** `cd website && npm run render-bpmn`
 - **Output:** `website/public/hero-workflow-light.svg` and `website/public/hero-workflow-dark.svg`
-- **Rule:** visually inspect both SVGs in a browser before committing
+- **Rule:** visually inspect both SVGs in a browser before committing, AND open each file directly (not embedded in a page) to confirm the browser's XML viewer accepts it without a parse-error banner. The output must begin with `<?xml …?>` + `<!-- created with bpmn-js -->` + `<!DOCTYPE svg …>`.
+- **Structural cleanup happens in the DOM, not via regex.** `render-bpmn.mjs` calls `viewer.saveSVG()`, round-trips the result through `DOMParser` + `querySelectorAll('.djs-hit, .djs-outline, .djs-dragger').remove()`, then re-serializes via `XMLSerializer` with the prolog/DOCTYPE re-prepended. Do not re-introduce regex-based element stripping — `<[^>]+>` absorbs the `/` of self-closing `<rect class="djs-hit" .../>` tags, causing a non-greedy `[\s\S]*?</[^>]+>` trailer to consume unrelated `</g>` closers (that is the root cause of #366 — 21 missing `</g>` per file, SVG rejected by strict XML parsers).
 - **Known limitation:** interior type-markers (script/user/service icons) are stripped from the SVG — only shapes (rectangles, diamonds, circles, arrows) are rendered. The admin UI (Fleans.Web) shows full markers because it loads the bpmn-font.
 
 ### 3D Landing Background
@@ -96,6 +97,7 @@ Add it to `Fleans.Api/Controllers/WorkflowController.cs`. DTOs go in `Fleans.Ser
 - **Log all workflow instance state changes.** Every grain method that mutates state (adds/removes activities, changes condition results, completes/fails instances) must have a `[LoggerMessage]` log call. No silent state mutations.
 - **Fluent UI Blazor (Fleans.Web)**: Only use components that exist in the library (https://www.fluentui-blazor.net/). Use `IconStart`/`IconEnd` parameters on `FluentButton` — never place `<FluentIcon>` as child content. Use the `Loading` parameter for buttons with loading states.
 - **Core / Worker role split (`Fleans:Role`)**: `Fleans.Api` reads `Fleans:Role` at startup (values: `Core`, `Worker`, `Combined` — case-insensitive, default `Combined`; invalid values throw). The role is stamped into `SiloOptions.SiloName` as `{role}-{machine}-{guid}` so other silos see it via Orleans membership. `Fleans.Worker` hosts the `[StatelessWorker]` script/condition grain **implementations** (`ScriptExecutorGrain`, `ConditionExpressionEvaluatorGrain`); their interfaces remain in `Fleans.Application` so callers don't need a Worker reference. **When adding a new worker-type grain** (e.g. the upcoming REST-call service task), put the implementation in `Fleans.Worker` and keep the interface next to the caller in `Fleans.Application`. Placement strategies that would route worker grains only to silos with the `worker-` / `combined-` prefix are a follow-up — today the split is structural (separate assembly, separate role config) without runtime placement filtering, so a `Core`-tagged silo will still host a worker grain if one is needed there.
+- **BPMN Editor tabs (`/editor`)**: multi-tab state lives in `Editor.razor` (private `tabs: List<TabSession>` + `activeTabId`). Only one `bpmn-js` modeler exists at a time — switching tabs calls `bpmnEditor.getXml` on the outgoing tab and `bpmnEditor.loadXml(incoming.BpmnXml)` on the incoming. Dirty tracking subscribes to bpmn-js `commandStack.changed` via `bpmnEditor.registerDirtyCallback` and flips the active tab's flag (cleared on deploy). Persistence is localStorage-only under key `fleans.editor.tabs.v1` (versioned so future schema changes don't crash old sessions). The cap is 10 tabs; closing the last tab opens a fresh blank one so the editor is never empty.
 
 ## Design Constraints
 
@@ -169,6 +171,7 @@ The full regression suite is the union of every plan under `tests/manual/`. Each
 30. **Instance State Endpoint** — `tests/manual/27-instance-state-endpoint/test-plan.md`. `GET /Workflow/instances/{id}/state` returns per-instance state snapshot with camelCase JSON keys; verifies active activity tracking through the message-catch lifecycle and 404 for unknown instances.
 31. **API JWT Authentication** — `tests/manual/28-api-auth/test-plan.md`. Opt-in JWT bearer authentication; verifies API works unauthenticated by default, returns 401 when auth is configured and no token is provided, and accepts valid tokens.
 32. **Conditional Events** — `tests/manual/24-conditional-event/test-plan.md` (`conditional-event-test.bpmn`). Conditional intermediate catch event blocks until condition is true; conditional start event creates instances via evaluate-conditions API; conditional boundary event (interrupting) cancels host.
+33. **Editor Tabs** — `tests/manual/29-editor-tabs/test-plan.md`. Multi-tab BPMN editor in the Admin UI: open/switch/close tabs, dirty tracking with confirm-close dialog, 10-tab cap, `localStorage` persistence across refresh, `beforeunload` warning when any tab is dirty.
 
 > When adding a new manual test folder under `tests/manual/`, append a numbered entry here so the regression skill picks it up.
 
@@ -184,6 +187,7 @@ Website-specific manual tests live under `tests/manual/website/`. These run in a
 **Reporting convention:** same as the BPMN list — `PASSED`, `FAILED`, `BUG`, or `KNOWN BUG`.
 
 1. **3D Silo Landing Background** — `tests/manual/website/3d-landing/test-plan.md`. Splash page renders birds-eye Three.js silo scene as background; clicking outside the hero enters interactive orbit/zoom/pan mode with a close (×) button; mobile and reduced-motion users see a static WebP poster instead.
+2. **Hero BPMN SVG** — `tests/manual/website/hero-bpmn-svg/test-plan.md`. The pre-rendered `public/hero-workflow-{light,dark}.svg` files parse as strict XML (no `</g>` imbalance, no leftover `djs-hit` / `djs-outline` / `djs-dragger` classes, XML prolog + SVG 1.1 DOCTYPE preserved); landing page hero renders in both themes; regeneration is reproducible. Regression home for #366.
 
 > When adding a new website test folder, append a numbered entry here.
 

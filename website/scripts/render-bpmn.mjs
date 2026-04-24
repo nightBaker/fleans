@@ -32,26 +32,16 @@ const THEMES = {
 };
 
 /**
- * Post-process SVG string:
- * - Strip bpmn-font marker <text> elements (codepoints U+E800–U+E900)
- * - Strip editor-only nodes (.djs-hit, .djs-outline, .djs-dragger)
- * - Recolor stroke/fill for the target theme
- * - Add viewBox padding
+ * Post-process SVG string (theme recoloring + viewBox padding only).
+ * Structural cleanup (removing .djs-hit / .djs-outline / .djs-dragger overlays
+ * and bpmn-font interior-type markers) runs earlier, inside `page.evaluate`,
+ * via `DOMParser` + `querySelectorAll().remove()` + `XMLSerializer` — see
+ * main(). Attempting to do it with regex here previously caused #366:
+ * `<[^>]+>` absorbed the `/` of self-closing `<rect .../>` tags, so the
+ * non-greedy `[\s\S]*?</[^>]+>` trailer consumed unrelated `</g>` closers
+ * and produced 21 unclosed groups per file.
  */
 function postProcess(svg, theme) {
-  // Strip <text> elements containing bpmn-font codepoints (single char in private use area)
-  // These are the small interior type-markers (script icon, user icon, etc.)
-  // Match with optional surrounding whitespace
-  svg = svg.replace(/<text[^>]*>[\s]*[\uE800-\uE900][\s]*<\/text>/g, '');
-
-  // Strip editor-only overlay elements
-  svg = svg.replace(/<[^>]+class="[^"]*djs-hit[^"]*"[^>]*>[\s\S]*?<\/[^>]+>/g, '');
-  svg = svg.replace(/<[^>]+class="[^"]*djs-outline[^"]*"[^>]*>[\s\S]*?<\/[^>]+>/g, '');
-  svg = svg.replace(/<[^>]+class="[^"]*djs-dragger[^"]*"[^>]*>[\s\S]*?<\/[^>]+>/g, '');
-  // Also strip self-closing variants
-  svg = svg.replace(/<[^>]+class="[^"]*djs-hit[^"]*"[^>]*\/>/g, '');
-  svg = svg.replace(/<[^>]+class="[^"]*djs-outline[^"]*"[^>]*\/>/g, '');
-
   // Recolor strokes — bpmn-js uses inline style properties, not SVG attributes
   // The actual rendered color depends on bpmn-js version:
   //   - Some versions emit rgb(34, 36, 42)
@@ -128,14 +118,54 @@ async function main() {
 
   await page.setContent(html, { waitUntil: 'networkidle' });
 
-  // Import BPMN XML and export SVG
+  // Pipeline:
+  //   1. saveSVG() → serialized string with computed viewBox + the standard
+  //      XML prolog / bpmn-js comment / SVG 1.1 DOCTYPE header.
+  //   2. DOMParser → real DOM so we can clean structurally.
+  //   3. querySelectorAll().remove() → strip editor-only overlays and bpmn-
+  //      font interior-type markers.
+  //   4. XMLSerializer → back to string, with the prolog/DOCTYPE re-prepended
+  //      (DOMParser keeps them as processing-instruction/comment nodes but
+  //      XMLSerializer on the <svg> documentElement emits only the root).
+  //
+  // Why the round-trip? The live `.djs-container > svg` has `width="100%"`
+  // and no viewBox — cloning it directly loses the computed drawing bounds
+  // that `saveSVG()` derives from canvas.viewbox(). And raw regex cleanup on
+  // saveSVG's string output mis-handled self-closing `<rect class="djs-hit"
+  // .../>` tags — that is #366 itself.
   const svgResult = await page.evaluate(async (xml) => {
     const viewer = new BpmnJS({ container: '#canvas' });
     await viewer.importXML(xml);
     const canvas = viewer.get('canvas');
     canvas.zoom('fit-viewport');
-    const { svg } = await viewer.saveSVG();
-    return svg;
+
+    const { svg: rawSvg } = await viewer.saveSVG();
+
+    const doc = new DOMParser().parseFromString(rawSvg, 'image/svg+xml');
+    const svgEl = doc.documentElement;
+
+    // djs-hit / djs-outline / djs-dragger are editor-only interaction overlays
+    // (invisible hit targets, selection outlines). bpmn-js 17+ emits them as
+    // self-closing <rect ...>.
+    svgEl.querySelectorAll('.djs-hit, .djs-outline, .djs-dragger').forEach(el => el.remove());
+
+    // Interior type-marker glyphs (script/user/service icons) live in the
+    // bpmn-font Unicode Private Use Area A (U+E800–U+E900). Strip them since
+    // the static docs site doesn't load the font.
+    svgEl.querySelectorAll('text').forEach(el => {
+      const t = (el.textContent || '').trim();
+      if (t.length === 1) {
+        const c = t.charCodeAt(0);
+        if (c >= 0xE800 && c <= 0xE900) el.remove();
+      }
+    });
+
+    const body = new XMLSerializer().serializeToString(svgEl);
+    const prolog =
+      '<?xml version="1.0" encoding="utf-8"?>\n' +
+      '<!-- created with bpmn-js / http://bpmn.io -->\n' +
+      '<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">\n';
+    return prolog + body;
   }, bpmnXml);
 
   await browser.close();
