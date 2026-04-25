@@ -192,6 +192,57 @@ pair: --sl-color-accent (#1f6357) on --sl-color-gray-6 (#e0e0d9) = 5.31:1 (AA pa
 
 Row 7b (accent on `--fleans-surface`) is dark-only; in light theme `--fleans-surface = bg`, so the pair degenerates to row 2 which already passes.
 
+## Atmospheric details
+
+Added in [#261](https://github.com/nightBaker/fleans/issues/261). Implements four atmospheric techniques that push the brutalist-technical aesthetic beyond palette alone — controlled surface texture, sharp rules, and direction-carrying light/shadow.
+
+### Techniques
+
+#### A. H2 accent rule
+A 2px linear-gradient bar beneath each `<h2>`: `linear-gradient(to right, accent 0 3.5rem, transparent 3.5rem)`. Reads as a printer registration mark / CLI prompt bar. Applied in both themes via `.sl-markdown-content h2::after`.
+
+#### B. Dot-matrix noise (dark theme only)
+A static SVG (`public/texture-dotmatrix.svg`, ~120×120 viewBox, staggered 1px dots at ~1% coverage) applied as `background-image` on `body::before` at `opacity: 0.04`, `background-size: 240px`. Fixed positioning covers the viewport without scrolling.
+
+Light theme is intentionally texture-free: dot-matrix on warm `#f5f5f0` bg fights the bg tint rather than reinforcing it.
+
+#### C. Decorative borders
+Three primitives used sparingly:
+
+1. **Section rule** — `.sl-markdown-content hr` becomes a 1px dashed rule in `--sl-color-gray-4` centered on a `■` glyph in accent color. Reads like a page-break marker.
+2. **Code-block corner brackets** — `div.expressive-code::before` uses eight stacked background gradients to paint four 12×12px L-shapes in accent color at each corner. No full border — terminal-panel feel.
+3. **Sidebar active-item tick** — `nav a[aria-current="page"]` overrides Starlight's thick left border with a 2px accent bar (`border-inline-start-width: 2px`).
+
+#### D. Scanline overlay (dark theme only)
+A `repeating-linear-gradient(0deg, rgba(245,245,240,0.015) 0 1px, transparent 1px 3px)` applied via `main::before` in dark theme. Fixed positioning, `z-index: 1`, `pointer-events: none`. At 1.5% opacity the effect is imperceptible over body text but adds horizontal line rhythm over near-black code-block surfaces — the CRT-over-CLI cue.
+
+### Token additions
+
+| Token | Role | Dark | Light |
+|---|---|---|---|
+| `--fleans-rule-glyph` | `■` glyph color in section dividers | `= --sl-color-accent` | `= --sl-color-accent` |
+| `--fleans-bracket` | Code-block corner bracket color | `= --sl-color-accent` | `= --sl-color-accent` |
+| `--fleans-noise-opacity` | Dot-matrix layer opacity | `0.04` | `0` (no noise) |
+| `--fleans-scanline-base` | Scanline tint for content area | `rgba(245,245,240,0.015)` | *(undefined — no scanlines)* |
+
+### CSS selector stability
+
+| Target | Selector | Stability |
+|---|---|---|
+| H2 accent rule | `.sl-markdown-content h2::after` | Stable — documented Starlight override point since v0.15 |
+| Section divider | `.sl-markdown-content hr` | Stable — same documented override point |
+| Code-block brackets | `div.expressive-code::before` | Stable — ExpressiveCode public API class, v0.41.7 |
+| Scanline overlay | `main::before` | Stable — semantic HTML element, won't be renamed |
+| Sidebar active tick | `nav a[aria-current="page"]` | Stable — ARIA attribute, part of a11y contract |
+
+No undocumented Starlight internal class selectors. Any future selector targeting a Starlight internal must carry a `/* Verified: Starlight <version> */` comment.
+
+<!-- ## Hero atmospheric details — applied with #259
+   Deferred hero-specific effects to be added alongside the hero redesign (#259):
+   - Heavier scanline clipped to .hero (rgba(255,95,31,0.04) bands)
+   - Corner brackets around hero image
+-->
+
 ---
 
 ## Spatial Composition
