@@ -1,5 +1,6 @@
 using Fleans.Application;
 using Fleans.Application.Events;
+using Fleans.Application.Placement;
 using Fleans.Application.Scripts;
 using Fleans.Application.Conditions;
 using Fleans.Application.Grains;
@@ -12,12 +13,14 @@ using Fleans.Infrastructure.Scripts;
 using Fleans.Infrastructure.Conditions;
 using Fleans.Persistence;
 using Fleans.Persistence.Events;
+using Fleans.Worker.Placement;
 using Microsoft.Data.Sqlite;
 using Fleans.Persistence.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Orleans.EventSourcing.CustomStorage;
+using Orleans.Runtime.Placement;
 using Orleans.Serialization;
 using Orleans.Storage;
 using Orleans.TestingHost;
@@ -332,6 +335,10 @@ public class MultiInstanceScriptIntegrationTests
     {
         public void Configure(ISiloBuilder hostBuilder) =>
             hostBuilder
+                .Configure<Orleans.Configuration.SiloOptions>(o =>
+                    o.SiloName = "combined-test-" + Guid.NewGuid().ToString("N"))
+                .AddPlacementDirector<CorePlacementStrategy, CorePlacementDirector>()
+                .AddPlacementDirector<WorkerPlacementStrategy, WorkerPlacementDirector>()
                 .AddMemoryStreams(WorkflowEventsPublisher.StreamProvider)
                 .AddMemoryGrainStorage("PubSubStore")
                 .AddMemoryGrainStorage(GrainStorageNames.MessageCorrelations)

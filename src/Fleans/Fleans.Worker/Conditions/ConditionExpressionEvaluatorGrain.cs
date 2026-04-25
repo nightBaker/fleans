@@ -1,9 +1,12 @@
-﻿using Orleans.Concurrency;
-using System.Dynamic;
+﻿using System.Dynamic;
+using Fleans.Application.Conditions;
+using Fleans.Worker.Placement;
+using Orleans.Concurrency;
 
-namespace Fleans.Application.Conditions;
+namespace Fleans.Worker.Conditions;
 
 [StatelessWorker]
+[WorkerPlacement]
 public class ConditionExpressionEvaluatorGrain : Grain, IConditionExpressionEvaluatorGrain
 {
     private readonly IConditionExpressionEvaluator _conditionExpressionEvaluator;

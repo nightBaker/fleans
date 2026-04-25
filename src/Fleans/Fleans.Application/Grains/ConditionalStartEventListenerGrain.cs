@@ -1,5 +1,6 @@
 using System.Dynamic;
 using Fleans.Application.Conditions;
+using Fleans.Application.Placement;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.States;
@@ -8,6 +9,7 @@ using Orleans.Runtime;
 
 namespace Fleans.Application.Grains;
 
+[CorePlacement]
 public partial class ConditionalStartEventListenerGrain : Grain, IConditionalStartEventListenerGrain
 {
     private readonly IPersistentState<ConditionalStartEventListenerState> _state;
