@@ -48,6 +48,12 @@ internal static class FleanModelConfiguration
             // UserTasks is an in-memory dictionary rehydrated from the UserTasks table on activation.
             entity.Ignore(e => e.UserTasks);
 
+            // CompensationLog and ActiveCompensationWalk are event-sourced state: they are rebuilt
+            // from domain events on grain activation and are NOT projected to the relational store.
+            entity.Ignore(e => e.CompensationLog);
+            entity.Ignore(e => e.ActiveCompensationWalk);
+            entity.Ignore(e => e.NextCompensationSequence);
+
             // TransactionOutcomes is rebuilt from TransactionOutcomeSet events on grain activation.
             entity.Ignore(e => e.TransactionOutcomes);
 
@@ -116,6 +122,8 @@ internal static class FleanModelConfiguration
             entity.Property(e => e.GatewayActivityId).HasMaxLength(256);
             entity.Property(e => e.ActivationCondition).HasMaxLength(1024);
         });
+
+        modelBuilder.Ignore<ConditionalEventWatcherState>();
 
         modelBuilder.Entity<WorkflowInstanceState>(entity =>
         {
@@ -303,6 +311,26 @@ internal static class FleanModelConfiguration
                         v => JsonConvert.SerializeObject(v, jsonSettings).GetHashCode(),
                         v => JsonConvert.DeserializeObject<WorkflowDefinition>(
                             JsonConvert.SerializeObject(v, jsonSettings), jsonSettings)!));
+        });
+
+        modelBuilder.Entity<ConditionalStartEventListenerState>(entity =>
+        {
+            entity.ToTable("ConditionalStartEventListeners");
+            entity.HasKey(e => e.Key);
+            entity.Property(e => e.Key).HasMaxLength(512);
+            entity.Property(e => e.ETag).HasMaxLength(64);
+            entity.Property(e => e.ProcessDefinitionKey).HasMaxLength(256);
+            entity.Property(e => e.ActivityId).HasMaxLength(256);
+            entity.Property(e => e.ConditionExpression).HasMaxLength(4000);
+        });
+
+        modelBuilder.Entity<ConditionalStartEntryState>(entity =>
+        {
+            entity.ToTable("ConditionalStartEventRegistryEntries");
+            entity.HasKey(e => new { e.ProcessDefinitionKey, e.ActivityId });
+            entity.Property(e => e.ProcessDefinitionKey).HasMaxLength(256);
+            entity.Property(e => e.ActivityId).HasMaxLength(256);
+            entity.Property(e => e.ConditionExpression).HasMaxLength(4000);
         });
 
         modelBuilder.Entity<WorkflowEventEntity>(entity =>

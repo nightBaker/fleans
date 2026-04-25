@@ -1,3 +1,4 @@
+using Fleans.Application.Placement;
 using Fleans.Domain;
 using Fleans.Domain.States;
 using Microsoft.Extensions.Logging;
@@ -5,6 +6,7 @@ using Orleans.Runtime;
 
 namespace Fleans.Application.Grains;
 
+[CorePlacement]
 public partial class UserTaskGrain : Grain, IUserTaskGrain
 {
     private readonly ILogger<UserTaskGrain> _logger;

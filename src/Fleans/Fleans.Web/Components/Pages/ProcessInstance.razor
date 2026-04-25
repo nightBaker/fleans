@@ -18,7 +18,11 @@
         <Actions>
             @if (snapshot != null)
             {
-                @if (snapshot.IsCompleted)
+                @if (snapshot.IsCancelled)
+                {
+                    <FluentBadge Color="Color.Warning">Cancelled</FluentBadge>
+                }
+                else if (snapshot.IsCompleted)
                 {
                     <FluentBadge Color="Color.Success">Completed</FluentBadge>
                 }

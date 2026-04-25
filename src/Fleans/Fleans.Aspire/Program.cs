@@ -76,5 +76,19 @@ WithPersistence(
         .WithReplicas(1),
     usePostgres, pg, sqliteConnectionString);
 
+// Load-testing topology: 2 silo replicas behind nginx, forced Postgres.
+// Activated by: dotnet run --project Fleans.Aspire -- --publisher docker-compose --output-path <dir>
+if (builder.ExecutionContext.IsPublishMode)
+{
+    apiProject = apiProject
+        .WithHttpEndpoint(port: 8080, name: "http")
+        .WithReplicas(2);
+
+    builder.AddContainer("nginx", "nginx:1.27")
+        .WithBindMount("../../tests/load/nginx.conf", "/etc/nginx/nginx.conf", isReadOnly: true)
+        .WithHttpEndpoint(port: 80, targetPort: 80, name: "http")
+        .WaitFor(apiProject);
+}
+
 using var app = builder.Build();
 await app.RunAsync();

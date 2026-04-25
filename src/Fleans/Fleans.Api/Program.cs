@@ -2,13 +2,19 @@ using System.Threading.RateLimiting;
 using Fleans.Api;
 using Fleans.Application;
 using Fleans.Application.Logging;
+using Fleans.Application.Placement;
 using Fleans.Infrastructure;
 using Fleans.Persistence.PostgreSql;
 using Fleans.Persistence.Sqlite;
 using Fleans.ServiceDefaults;
+using Fleans.Worker.Placement;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.DependencyInjection;
 using Orleans.Dashboard;
 using Orleans.EventSourcing.CustomStorage;
+using Orleans.Runtime.Placement;
 using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -17,8 +23,39 @@ var builder = WebApplication.CreateBuilder(args);
 // This must be called before UseOrleans when running through Aspire
 builder.AddServiceDefaults();
 
+// Authentication — opt-in: only enabled when Authentication:Authority is configured
+var authAuthority = builder.Configuration["Authentication:Authority"];
+var authEnabled = !string.IsNullOrEmpty(authAuthority);
+if (authEnabled)
+{
+    builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+        .AddJwtBearer(opts =>
+        {
+            opts.Authority = authAuthority;
+            opts.Audience = builder.Configuration["Authentication:Audience"] ?? "fleans-api";
+            opts.RequireHttpsMetadata = builder.Configuration.GetValue("Authentication:RequireHttpsMetadata", true);
+        });
+    builder.Services.AddAuthorizationBuilder()
+        .SetFallbackPolicy(new AuthorizationPolicyBuilder()
+            .RequireAuthenticatedUser()
+            .Build());
+}
+
 // Register Redis client for Aspire-managed Orleans
 builder.AddKeyedRedisClient("orleans-redis");
+
+// Fleans:Role — controls which grain set this silo hosts. Validated against the
+// allowed set at startup so a typo fails fast rather than silently drifting into
+// a silo that hosts no grains. The role is also stamped onto the silo name so
+// other silos (and the Orleans dashboard) can see it via membership.
+var roleRaw = builder.Configuration["Fleans:Role"] ?? "Combined";
+var role = roleRaw.ToLowerInvariant();
+if (role != "core" && role != "worker" && role != "combined")
+{
+    throw new InvalidOperationException(
+        $"Fleans:Role must be one of 'Core', 'Worker', 'Combined' (case-insensitive) — got '{roleRaw}'.");
+}
+var siloName = $"{role}-{Environment.MachineName}-{Guid.NewGuid():N}".ToLowerInvariant();
 
 // Orleans silo configuration
 // Infrastructure (clustering, storage, streaming, reminders) is managed by Aspire AppHost.
@@ -29,6 +66,9 @@ var isLoadTestMode = builder.Configuration["FLEANS_LOAD_TEST_MODE"] == "true";
 
 builder.UseOrleans(siloBuilder =>
 {
+    // Stamp the role into the silo name so membership gossip exposes it cluster-wide.
+    siloBuilder.Configure<Orleans.Configuration.SiloOptions>(o => o.SiloName = siloName);
+
     if (isLoadTestMode && !string.IsNullOrEmpty(orleansRedisConnection))
     {
         // Non-Aspire startup path: wire Redis clustering, PubSubStore, and reminders explicitly.
@@ -50,6 +90,13 @@ builder.UseOrleans(siloBuilder =>
 
     // JournaledGrain event sourcing: use CustomStorage backed by EfCoreEventStore
     siloBuilder.AddCustomStorageBasedLogConsistencyProviderAsDefault();
+
+    // Role-aware placement directors. Every silo registers both so a Core-only
+    // silo can still route worker grains to its Worker siblings (and vice versa).
+    // The director's fallback keeps test silos and Combined silos working even
+    // when only a single silo exists.
+    siloBuilder.AddPlacementDirector<CorePlacementStrategy, CorePlacementDirector>();
+    siloBuilder.AddPlacementDirector<WorkerPlacementStrategy, WorkerPlacementDirector>();
 });
 
 // Add services to the container.
@@ -80,6 +127,7 @@ if (rateLimitConfig is not null)
         AddPolicyIfConfigured(options, "task-operation", rateLimitConfig.TaskOperation);
         AddPolicyIfConfigured(options, "read", rateLimitConfig.Read);
         AddPolicyIfConfigured(options, "admin", rateLimitConfig.Admin);
+        AddPolicyIfConfigured(options, "polling", rateLimitConfig.Polling);
 
         options.OnRejected = async (context, token) =>
         {
@@ -126,7 +174,11 @@ app.UseExceptionHandler();
 if (rateLimitConfig is not null)
     app.UseRateLimiter();
 
-app.UseAuthorization();
+if (authEnabled)
+{
+    app.UseAuthentication();
+    app.UseAuthorization();
+}
 
 app.MapControllers();
 app.MapDefaultEndpoints();

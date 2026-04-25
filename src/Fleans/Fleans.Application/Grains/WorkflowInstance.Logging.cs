@@ -10,7 +10,7 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1001, Level = LogLevel.Debug, Message = "Workflow execution started")]
     private partial void LogWorkflowStarted();
 
-    [LoggerMessage(EventId = 1076, Level = LogLevel.Information,
+    [LoggerMessage(EventId = 1078, Level = LogLevel.Information,
         Message = "Root-scope event sub-process listeners armed: {ListenerCount}")]
     private partial void LogRootScopeListenersArmed(int listenerCount);
 
@@ -272,6 +272,64 @@ public partial class WorkflowInstance
     private partial void LogEventSubProcessHandlerEndEventFired(
         string eventSubProcessId, string endEventId, Guid hostActivityInstanceId);
 
+    // Escalation lifecycle (EventId 1090-1099)
+    [LoggerMessage(EventId = 1090, Level = LogLevel.Information,
+        Message = "Escalation thrown: EscalationCode={EscalationCode}, ActivityId={ActivityId}, WorkflowInstanceId={WorkflowInstanceId}")]
+    private partial void LogEscalationThrown(string escalationCode, string activityId, Guid workflowInstanceId);
+
+    [LoggerMessage(EventId = 1091, Level = LogLevel.Debug,
+        Message = "Child escalation raised queued: ChildId={ChildWorkflowInstanceId}, EscalationCode={EscalationCode}")]
+    private partial void LogChildEscalationRaisedQueued(Guid childWorkflowInstanceId, string escalationCode);
+
+    [LoggerMessage(EventId = 1092, Level = LogLevel.Information,
+        Message = "Escalation caught: EscalationCode={EscalationCode}, BoundaryActivityId={BoundaryActivityId}, IsInterrupting={IsInterrupting}")]
+    private partial void LogEscalationCaught(string? escalationCode, string boundaryActivityId, bool isInterrupting);
+
+    [LoggerMessage(EventId = 1093, Level = LogLevel.Information,
+        Message = "Child escalation raised: ChildId={ChildWorkflowInstanceId}, EscalationCode={EscalationCode}")]
+    private partial void LogChildEscalationRaised(Guid childWorkflowInstanceId, string escalationCode);
+
+    [LoggerMessage(EventId = 3030, Level = LogLevel.Warning,
+        Message = "Workflow cancelled: {Reason}")]
+    private partial void LogWorkflowCancelled(string reason);
+
+    [LoggerMessage(EventId = 3031, Level = LogLevel.Warning,
+        Message = "Escalation uncaught: EscalationCode={EscalationCode}, SourceActivityId={SourceActivityId}")]
+    private partial void LogEscalationUncaught(string escalationCode, string sourceActivityId);
+
+    [LoggerMessage(EventId = 3032, Level = LogLevel.Warning,
+        Message = "Escalation parent result missing: expected _pendingEscalationParentResult to be set for EscalationCode={EscalationCode}, WorkflowInstanceId={WorkflowInstanceId} — defaulting to Unhandled")]
+    private partial void LogEscalationParentResultMissing(string? escalationCode, Guid workflowInstanceId);
+
+    // Compensation event lifecycle (EventId 1110-1119)
+    [LoggerMessage(EventId = 1110, Level = LogLevel.Debug,
+        Message = "Compensable activity snapshot recorded: ActivityDefinitionId={ActivityDefinitionId}, Sequence={Sequence}, ScopeId={ScopeId}")]
+    private partial void LogCompensableActivitySnapshotRecorded(string activityDefinitionId, int sequence, Guid? scopeId);
+
+    [LoggerMessage(EventId = 1111, Level = LogLevel.Information,
+        Message = "Compensation walk started: ScopeId={ScopeId}, TargetActivityRef={TargetActivityRef}, HandlerCount={HandlerCount}")]
+    private partial void LogCompensationWalkStarted(Guid? scopeId, string? targetActivityRef, int handlerCount);
+
+    [LoggerMessage(EventId = 1112, Level = LogLevel.Information,
+        Message = "Compensation handler spawned: HandlerInstanceId={HandlerInstanceId}, CompensableActivityDefinitionId={CompensableActivityDefinitionId}, HandlerActivityId={HandlerActivityId}")]
+    private partial void LogCompensationHandlerSpawned(Guid handlerInstanceId, string compensableActivityDefinitionId, string handlerActivityId);
+
+    [LoggerMessage(EventId = 1113, Level = LogLevel.Information,
+        Message = "Compensation entry marked compensated: ActivityDefinitionId={ActivityDefinitionId}, ScopeId={ScopeId}")]
+    private partial void LogCompensationEntryMarkedCompensated(string activityDefinitionId, Guid? scopeId);
+
+    [LoggerMessage(EventId = 1114, Level = LogLevel.Information,
+        Message = "Compensation walk completed: ScopeId={ScopeId}")]
+    private partial void LogCompensationWalkCompleted(Guid? scopeId);
+
+    [LoggerMessage(EventId = 1115, Level = LogLevel.Information,
+        Message = "Compensation handler completed: HandlerInstanceId={HandlerInstanceId}, CompensableActivityDefinitionId={CompensableActivityDefinitionId}")]
+    private partial void LogCompensationHandlerCompleted(Guid handlerInstanceId, string compensableActivityDefinitionId);
+
+    [LoggerMessage(EventId = 1116, Level = LogLevel.Error,
+        Message = "Compensation handler failed: HandlerInstanceId={HandlerInstanceId}, ErrorCode={ErrorCode}, ErrorMessage={ErrorMessage}")]
+    private partial void LogCompensationHandlerFailed(Guid handlerInstanceId, int errorCode, string errorMessage);
+
     // Complex gateway lifecycle (EventId 1080-1089)
     [LoggerMessage(EventId = 1080, Level = LogLevel.Debug,
         Message = "Complex gateway activation condition late callback — join instance {ActivityInstanceId} has already fired or was removed")]
@@ -288,6 +346,40 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1083, Level = LogLevel.Information,
         Message = "CompleteActivationCondition called for activity {ActivityId}, instance {ActivityInstanceId}, result={Result}")]
     private partial void LogCompleteActivationCondition(string activityId, Guid activityInstanceId, bool result);
+
+    // Multiple event (EventId 1090-1093)
+    [LoggerMessage(EventId = 1090, Level = LogLevel.Information,
+        Message = "Multiple catch event registered: activity {ActivityId}, {DefinitionCount} watchers")]
+    private partial void LogMultipleCatchRegistered(string activityId, int definitionCount);
+
+    [LoggerMessage(EventId = 1091, Level = LogLevel.Information,
+        Message = "Multiple catch event fired: activity {ActivityId}, trigger type {TriggerType}")]
+    private partial void LogMultipleCatchFired(string activityId, string triggerType);
+
+    [LoggerMessage(EventId = 1092, Level = LogLevel.Information,
+        Message = "Multiple throw event fired: activity {ActivityId}, {DefinitionCount} definitions thrown")]
+    private partial void LogMultipleThrowFired(string activityId, int definitionCount);
+
+    [LoggerMessage(EventId = 1093, Level = LogLevel.Information,
+        Message = "Multiple boundary event fired: activity {ActivityId}, trigger type {TriggerType}, interrupting={IsInterrupting}")]
+    private partial void LogMultipleBoundaryFired(string activityId, string triggerType, bool isInterrupting);
+
+    // Conditional event watchers (EventId 1094-1097)
+    [LoggerMessage(EventId = 1094, Level = LogLevel.Information,
+        Message = "Conditional watcher registered: expression={ConditionExpression}, activityId={ActivityId}")]
+    private partial void LogConditionalWatcherRegistered(string conditionExpression, string activityId);
+
+    [LoggerMessage(EventId = 1095, Level = LogLevel.Information,
+        Message = "Conditional watcher fired: expression={ConditionExpression}, activityId={ActivityId}")]
+    private partial void LogConditionalWatcherFired(string conditionExpression, string activityId);
+
+    [LoggerMessage(EventId = 1096, Level = LogLevel.Information,
+        Message = "Conditional watcher cleared: activityInstanceId={ActivityInstanceId}")]
+    private partial void LogConditionalWatcherCleared(Guid activityInstanceId);
+
+    [LoggerMessage(EventId = 1097, Level = LogLevel.Warning,
+        Message = "Conditional expression evaluation failed: expression={ConditionExpression}, activityId={ActivityId}, error={ErrorMessage}")]
+    private partial void LogConditionalExpressionEvaluationFailed(string conditionExpression, string activityId, string errorMessage);
 
     // ── Transaction Sub-Process lifecycle (EventId range 1100–1103; 1101–1102 reserved for Phase 2) ──
 

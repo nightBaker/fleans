@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:zeebe="http://camunda.org/schema/zeebe/1.0">
+  <message id="msg1" name="cancelOrder">
+    <extensionElements>
+      <zeebe:subscription correlationKey="= orderId" />
+    </extensionElements>
+  </message>
+  <process id="multi-boundary-test" isExecutable="true">
+    <startEvent id="start" />
+    <scriptTask id="setVars" scriptFormat="csharp">
+      <script>_context.orderId = "order-boundary-1"</script>
+    </scriptTask>
+    <scriptTask id="longTask" scriptFormat="csharp">
+      <script>_context.taskDone = true</script>
+    </scriptTask>
+    <boundaryEvent id="multiBoundary" attachedToRef="longTask" cancelActivity="true">
+      <messageEventDefinition messageRef="msg1" />
+      <timerEventDefinition>
+        <timeDuration>PT10S</timeDuration>
+      </timerEventDefinition>
+    </boundaryEvent>
+    <scriptTask id="escalation" scriptFormat="csharp">
+      <script>_context.escalated = true</script>
+    </scriptTask>
+    <endEvent id="normalEnd" />
+    <endEvent id="escalationEnd" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="setVars" />
+    <sequenceFlow id="f2" sourceRef="setVars" targetRef="longTask" />
+    <sequenceFlow id="f3" sourceRef="longTask" targetRef="normalEnd" />
+    <sequenceFlow id="f4" sourceRef="multiBoundary" targetRef="escalation" />
+    <sequenceFlow id="f5" sourceRef="escalation" targetRef="escalationEnd" />
+  </process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="multi-boundary-test">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="180" y="182" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="setVars_di" bpmnElement="setVars">
+        <dc:Bounds x="280" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="longTask_di" bpmnElement="longTask">
+        <dc:Bounds x="440" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="multiBoundary_di" bpmnElement="multiBoundary">
+        <dc:Bounds x="472" y="222" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="escalation_di" bpmnElement="escalation">
+        <dc:Bounds x="440" y="310" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="normalEnd_di" bpmnElement="normalEnd">
+        <dc:Bounds x="602" y="182" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="escalationEnd_di" bpmnElement="escalationEnd">
+        <dc:Bounds x="602" y="332" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="216" y="200" />
+        <di:waypoint x="280" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="380" y="200" />
+        <di:waypoint x="440" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="540" y="200" />
+        <di:waypoint x="602" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f4_di" bpmnElement="f4">
+        <di:waypoint x="490" y="258" />
+        <di:waypoint x="490" y="310" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f5_di" bpmnElement="f5">
+        <di:waypoint x="540" y="350" />
+        <di:waypoint x="602" y="350" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

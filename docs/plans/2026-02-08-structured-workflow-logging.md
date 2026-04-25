@@ -43,7 +43,7 @@ Uses the string template overload (`logger.BeginScope(string, params)`) which cr
 
 | Range | Class |
 |-------|-------|
-| 1000-1099 | WorkflowInstance |
+| 1000-1199 | WorkflowInstance (sub-ranges: 1070-1079 pending events & event sub-processes, 1078 root-scope listeners, 1080-1089 complex gateway, 1090-1099 escalation, 3030-3032 escalation warnings, 1100-1109 transaction sub-process, 1110-1119 compensation) |
 | 2000-2099 | ActivityInstance |
 | 3000-3099 | WorkflowInstanceState |
 | 4000-4099 | Event handlers |
