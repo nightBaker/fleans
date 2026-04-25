@@ -219,11 +219,93 @@ nav a[aria-current='page'] {
 }
 
 /* ============================================================
-   § Deferred to #259 (hero-specific atmospheric details)
-   - Scanline behind tagline (heavier rgba(255,95,31,0.04) bands
-     clipped to .hero)
-   - Corner brackets around hero image
+   § Hero redesign — issue #259
+   Changes: tagline layout, H1 typography, accent bar on text
+   column (desktop), orange-tinted hero scanline (dark),
+   corner brackets on hero image (both themes)
    ============================================================ */
+
+/* --- Position context (required for ::before) --- */
+.hero {
+  position: relative;
+}
+
+/* --- Vertical padding (theme-split) --- */
+:root[data-theme='dark']  .hero { padding-block: 8rem; }
+:root[data-theme='light'] .hero { padding-block: 6rem; }
+
+/* --- H1 typography --- */
+.hero h1 {
+  font-size: clamp(2.5rem, 6vw, 4.5rem);
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+}
+
+/* --- Tagline as monospace declaration --- */
+.hero .tagline {
+  font-family: var(--sl-font-mono, monospace);
+  font-size: 1rem;
+  opacity: 0.85;
+  max-width: 28rem;
+}
+
+/* --- Accent bar on text column (desktop only) ---
+   Verified: Starlight 0.38.2 — .stack is the text+actions flex
+   column inside the hero grid, emitted as class="sl-flex stack".
+   Scoped to .hero .stack to avoid bleeding into other Starlight
+   components that also emit .stack. */
+@media (min-width: 50rem) {
+  .hero .stack {
+    border-inline-start: 3px solid var(--sl-color-accent);
+    padding-inline-start: 1.5rem;
+  }
+}
+
+/* --- Orange-tinted hero scanline (dark theme only) ---
+   Heavier orange tint (0.04) vs. the neutral main::before
+   scanline (0.015). position: absolute clips to .hero area.
+   z-index: 0 keeps it below grid items (.stack, .hero-html). */
+:root[data-theme='dark'] .hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(255, 95, 31, 0.04) 0 1px,
+    transparent 1px 3px
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* --- Lift direct grid items above ::before overlay ---
+   Both .hero .stack and .hero-html are direct grid children of
+   .hero. Setting position+z-index on the grid items (not on their
+   descendants) is the correct and consistent approach. */
+.hero .stack,
+.hero-html {
+  position: relative;
+  z-index: 1;
+}
+
+/* --- Corner brackets on hero image (C2 technique, 16px) --- */
+/* Verified: Starlight 0.38.2 — .hero-html emitted by Hero.astro when image.html: is used */
+.hero-html::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  background:
+    linear-gradient(var(--fleans-bracket) 16px, transparent 0) top left / 2px 16px no-repeat,
+    linear-gradient(var(--fleans-bracket) 16px, transparent 0) top right / 2px 16px no-repeat,
+    linear-gradient(var(--fleans-bracket) 16px, transparent 0) bottom left / 2px 16px no-repeat,
+    linear-gradient(var(--fleans-bracket) 16px, transparent 0) bottom right / 2px 16px no-repeat,
+    linear-gradient(to right, var(--fleans-bracket) 16px, transparent 0) top left / 16px 2px no-repeat,
+    linear-gradient(to left,  var(--fleans-bracket) 16px, transparent 0) top right / 16px 2px no-repeat,
+    linear-gradient(to right, var(--fleans-bracket) 16px, transparent 0) bottom left / 16px 2px no-repeat,
+    linear-gradient(to left,  var(--fleans-bracket) 16px, transparent 0) bottom right / 16px 2px no-repeat;
+  pointer-events: none;
+  z-index: 1;
+}
 
 /* Display font — headings */
 /* Selectors verified against @astrojs/starlight 0.38.2 source */
