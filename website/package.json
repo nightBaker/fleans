@@ -8,11 +8,24 @@
     "start": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "astro": "astro"
+    "astro": "astro",
+    "posters": "node scripts/generate-posters.mjs",
+    "check:contrast": "node scripts/check-landing-contrast.mjs",
+    "render-bpmn": "node scripts/render-bpmn.mjs"
   },
   "dependencies": {
     "@astrojs/starlight": "^0.38.2",
+    "@fontsource/ibm-plex-sans": "^5.2.8",
+    "@fontsource/space-grotesk": "^5.2.10",
     "astro": "^6.1.3",
-    "sharp": "^0.33.5"
+    "sharp": "^0.33.5",
+    "three": "^0.183.0"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.8",
+    "@types/three": "^0.183.0",
+    "bpmn-js": "^17.11.1",
+    "playwright": "^1.59.1",
+    "typescript": "^5.9.3"
   }
 }

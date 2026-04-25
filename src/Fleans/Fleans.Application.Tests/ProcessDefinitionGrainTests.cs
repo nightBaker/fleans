@@ -1,11 +1,13 @@
 using Fleans.Application;
 using Fleans.Application.Grains;
+using Fleans.Application.Placement;
 using Fleans.Application.QueryModels;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Events;
 using Fleans.Domain.Persistence;
 using Fleans.Domain.Sequences;
+using Fleans.Worker.Placement;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Orleans.EventSourcing.CustomStorage;
@@ -146,6 +148,10 @@ namespace Fleans.Application.Tests
         {
             public void Configure(ISiloBuilder hostBuilder) =>
                 hostBuilder
+                    .Configure<Orleans.Configuration.SiloOptions>(o =>
+                        o.SiloName = "combined-test-" + Guid.NewGuid().ToString("N"))
+                    .AddPlacementDirector<CorePlacementStrategy, CorePlacementDirector>()
+                    .AddPlacementDirector<WorkerPlacementStrategy, WorkerPlacementDirector>()
                     .AddCustomStorageBasedLogConsistencyProviderAsDefault()
                     .AddMemoryGrainStorage(GrainStorageNames.ProcessDefinitions)
                     .AddMemoryGrainStorage(GrainStorageNames.UserTasks)

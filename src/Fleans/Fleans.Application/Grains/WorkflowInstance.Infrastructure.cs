@@ -71,6 +71,7 @@ public partial class WorkflowInstance
             if (pending.Count == 0) break;
 
             var newlyCompletedEntryIds = new List<Guid>();
+            var eventCountBeforeIteration = _execution.GetUncommittedEvents().Count;
 
             foreach (var p in pending)
             {
@@ -95,7 +96,20 @@ public partial class WorkflowInstance
 
                 // Process commands through aggregate -> get infrastructure effects
                 var effects = _execution.ProcessCommands(commands, entry.ActivityInstanceId);
-                await PerformEffects(effects);
+                var escalationParentResult = await PerformEffects(effects);
+
+                // Log escalation thrown if a ThrowEscalationCommand was in the batch
+                var throwEsc = commands.OfType<ThrowEscalationCommand>().FirstOrDefault();
+                if (throwEsc is not null)
+                    LogEscalationThrown(throwEsc.EscalationCode, p.ActivityId, State.Id);
+
+                // If an escalation was thrown and the parent grain cancelled the child,
+                // terminate this workflow and break out of the execution loop.
+                if (escalationParentResult == EscalationHandledResult.Cancelled)
+                {
+                    _execution.TerminateForParentEscalationCancellation();
+                    return;
+                }
 
                 // Handle domain events published by activities (e.g., ExecuteScriptEvent)
                 foreach (var evt in adapter.PublishedEvents)
@@ -109,10 +123,37 @@ public partial class WorkflowInstance
                 }
             }
 
+            // Capture entries completed by the aggregate during command processing
+            // (e.g., compensation thrower completed immediately when walk has zero handlers).
+            foreach (var completedEvt in _execution.GetUncommittedEvents()
+                .Skip(eventCountBeforeIteration)
+                .OfType<ActivityCompleted>())
+            {
+                if (!newlyCompletedEntryIds.Contains(completedEvt.ActivityInstanceId))
+                    newlyCompletedEntryIds.Add(completedEvt.ActivityInstanceId);
+            }
+
             // Compute transitions only for newly completed entries
             var completedTransitions = await ComputeTransitionsForEntries(definition, newlyCompletedEntryIds);
             if (completedTransitions.Count > 0)
                 _execution.ResolveTransitions(completedTransitions);
+
+            // Evaluate conditional event watchers after activity completions.
+            // NOTE: Conditional watcher evaluation is intentionally placed here (inside RunExecutionLoop)
+            // rather than in ResolveExternalCompletions. Variables merged by external handlers are visible
+            // to watchers in this loop iteration. The loop continues until quiescent, so no evaluations
+            // are missed. If an external "patch variables" API is added, it must call RunExecutionLoop
+            // or a dedicated hook to trigger watcher evaluation.
+            if (newlyCompletedEntryIds.Count > 0)
+            {
+                var watcherCompletedIds = await EvaluateConditionalWatchers();
+                if (watcherCompletedIds.Count > 0)
+                {
+                    var watcherTransitions = await ComputeTransitionsForEntries(definition, watcherCompletedIds);
+                    if (watcherTransitions.Count > 0)
+                        _execution.ResolveTransitions(watcherTransitions);
+                }
+            }
 
             // Handle subprocess/multi-instance scope completions
             var orphanedScopes = await HandleScopeCompletions(definition);
@@ -177,6 +218,17 @@ public partial class WorkflowInstance
         var eventCountBefore = _execution!.GetUncommittedEvents().Count;
         var (scopeEffects, completedHostIds, orphanedScopeIds) = _execution!.CompleteFinishedSubProcessScopes();
 
+        // Advance compensation walk if the current handler has finished.
+        // Called after scope completions so that any SubProcess-scoped handler completions
+        // are processed before we try to spawn the next compensation handler.
+        var completedThrowerId = _execution.AdvanceCompensationWalkIfHandlerCompleted();
+        if (completedThrowerId.HasValue)
+        {
+            var throwerTransitions = await ComputeTransitionsForEntries(definition, [completedThrowerId.Value]);
+            if (throwerTransitions.Count > 0)
+                _execution.ResolveTransitions(throwerTransitions);
+        }
+
         // Detect root EventSubProcess completion — it emits WorkflowCompleted directly
         // (no outgoing flow), which is a second exit point for workflow completion.
         var newEvents = _execution.GetUncommittedEvents().Skip(eventCountBefore);
@@ -222,9 +274,73 @@ public partial class WorkflowInstance
         return orphanedScopeIds;
     }
 
-    private Task PerformEffects(IReadOnlyList<IInfrastructureEffect> effects)
+    private async Task<List<Guid>> EvaluateConditionalWatchers()
     {
-        return _effectDispatcher.DispatchAsync(effects, new WorkflowInstanceEffectContext(this));
+        var completedEntryIds = new List<Guid>();
+        var watchers = State.ConditionalWatchers.ToList();
+        if (watchers.Count == 0) return completedEntryIds;
+
+        var evaluator = _grainFactory.GetGrain<Conditions.IConditionExpressionEvaluatorGrain>(0);
+        var definition = await GetWorkflowDefinition();
+
+        foreach (var watcher in watchers)
+        {
+            if (!State.ConditionalWatchers.Any(w => w.ActivityInstanceId == watcher.ActivityInstanceId))
+                continue;
+
+            try
+            {
+                var variables = State.GetMergedVariables(watcher.VariablesId);
+                var result = await evaluator.Evaluate(watcher.ConditionExpression, variables);
+
+                var activity = definition.GetActivityAcrossScopes(watcher.ActivityId);
+                var isNonInterruptingBoundary = activity is ConditionalBoundaryEvent cb && !cb.IsInterrupting;
+
+                if (isNonInterruptingBoundary)
+                {
+                    if (result && !watcher.LastEvaluatedResult)
+                    {
+                        LogConditionalWatcherFired(watcher.ConditionExpression, watcher.ActivityId);
+                        var effects = _execution!.FireConditionalWatcher(watcher.ActivityInstanceId, watcher.ActivityId);
+                        await PerformEffects(effects);
+                    }
+                    if (result != watcher.LastEvaluatedResult)
+                        _execution!.UpdateConditionalWatcherResult(watcher.ActivityInstanceId, result);
+                }
+                else
+                {
+                    if (result)
+                    {
+                        LogConditionalWatcherFired(watcher.ConditionExpression, watcher.ActivityId);
+                        var effects = _execution!.FireConditionalWatcher(watcher.ActivityInstanceId, watcher.ActivityId);
+                        await PerformEffects(effects);
+
+                        if (activity is ConditionalIntermediateCatchEvent)
+                            completedEntryIds.Add(watcher.ActivityInstanceId);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogConditionalExpressionEvaluationFailed(watcher.ConditionExpression, watcher.ActivityId, ex.Message);
+                // Surface the error by failing the watcher's activity instance
+                // so operators can diagnose stuck workflows.
+                var failEffects = _execution!.FailActivity(
+                    watcher.ActivityId, watcher.ActivityInstanceId,
+                    new InvalidOperationException($"Condition expression error: {ex.Message}", ex));
+                await PerformEffects(failEffects);
+                completedEntryIds.Add(watcher.ActivityInstanceId);
+            }
+        }
+
+        return completedEntryIds;
+    }
+
+    private async Task<EscalationHandledResult?> PerformEffects(IReadOnlyList<IInfrastructureEffect> effects)
+    {
+        var context = new WorkflowInstanceEffectContext(this);
+        await _effectDispatcher.DispatchAsync(effects, context);
+        return context.EscalationParentResult;
     }
 
     private async Task PublishDomainEvent(IDomainEvent domainEvent)
@@ -264,18 +380,50 @@ public partial class WorkflowInstance
                     case PendingBoundarySignalFired b:
                         LogSignalDeliveryBoundary(b.BoundaryActivityId);
                         break;
+                    case PendingChildEscalationRaised r:
+                        LogChildEscalationRaised(r.ChildWorkflowInstanceId, r.EscalationCode);
+                        break;
                 }
                 LogProcessingPendingEvent(pending.GetType().Name);
 
-                var effects = pending switch
+                if (pending is PendingChildEscalationRaised escalation)
                 {
-                    PendingChildCompleted c => _execution!.OnChildWorkflowCompleted(c.ParentActivityId, c.ChildVariables),
-                    PendingChildFailed f => _execution!.OnChildWorkflowFailed(f.ParentActivityId, f.Exception),
-                    PendingSignalDelivery s => _execution!.HandleSignalDelivery(s.ActivityId, s.HostActivityInstanceId),
-                    PendingBoundarySignalFired b => _execution!.HandleSignalDelivery(b.BoundaryActivityId, b.HostActivityInstanceId),
-                    _ => throw new InvalidOperationException($"Unknown pending event type: {pending.GetType().Name}")
-                };
-                await PerformEffects(effects);
+                    var (localEffects, localResult) = _execution!.HandleChildEscalationRaised(
+                        escalation.ChildWorkflowInstanceId, escalation.HostActivityId,
+                        escalation.EscalationCode, escalation.Variables);
+                    var parentResult = await PerformEffects(localEffects);
+
+                    // Log escalation caught at this grain if a boundary matched
+                    if (localResult == EscalationHandledResult.Cancelled)
+                        LogEscalationCaught(escalation.EscalationCode, escalation.HostActivityId, isInterrupting: true);
+                    else if (localResult == EscalationHandledResult.Continue)
+                        LogEscalationCaught(escalation.EscalationCode, escalation.HostActivityId, isInterrupting: false);
+
+                    EscalationHandledResult finalResult;
+                    if (localResult == EscalationHandledResult.NeedsParentLookup)
+                    {
+                        if (parentResult is null)
+                            LogEscalationParentResultMissing(escalation.EscalationCode, State.Id);
+                        finalResult = parentResult ?? EscalationHandledResult.Unhandled;
+                    }
+                    else
+                    {
+                        finalResult = localResult;
+                    }
+                    escalation.Tcs.SetResult(finalResult);
+                }
+                else
+                {
+                    var effects = pending switch
+                    {
+                        PendingChildCompleted c => _execution!.OnChildWorkflowCompleted(c.ParentActivityId, c.ChildVariables),
+                        PendingChildFailed f => _execution!.OnChildWorkflowFailed(f.ParentActivityId, f.Exception),
+                        PendingSignalDelivery s => _execution!.HandleSignalDelivery(s.ActivityId, s.HostActivityInstanceId),
+                        PendingBoundarySignalFired b => _execution!.HandleSignalDelivery(b.BoundaryActivityId, b.HostActivityInstanceId),
+                        _ => throw new InvalidOperationException($"Unknown pending event type: {pending.GetType().Name}")
+                    };
+                    await PerformEffects(effects);
+                }
                 await ResolveExternalCompletions();
                 await RunExecutionLoop();
 
@@ -445,6 +593,40 @@ public partial class WorkflowInstance
                 break;
             case TimerCycleUpdated timerCycle:
                 LogTimerCycleUpdated(timerCycle.HostActivityInstanceId, timerCycle.TimerActivityId, timerCycle.RemainingCycle is not null);
+                break;
+            case ConditionalWatcherRegistered condReg:
+                LogConditionalWatcherRegistered(condReg.ConditionExpression, condReg.ActivityId);
+                break;
+            case ConditionalWatcherFired condFired:
+                break; // Logged at the call site with expression context
+            case ConditionalWatcherCleared condCleared:
+                LogConditionalWatcherCleared(condCleared.ActivityInstanceId);
+                break;
+            case ConditionalWatcherResultUpdated:
+                break; // Internal bookkeeping, no logging needed
+            case CompensableActivitySnapshotRecorded snap:
+                LogCompensableActivitySnapshotRecorded(snap.ActivityDefinitionId, State.NextCompensationSequence, snap.ScopeId);
+                break;
+            case CompensationWalkStarted walkStarted:
+                LogCompensationWalkStarted(walkStarted.ScopeId, walkStarted.TargetActivityRef, walkStarted.HandlerCount);
+                break;
+            case CompensationHandlerSpawned handlerSpawned:
+                LogCompensationHandlerSpawned(handlerSpawned.HandlerInstanceId, handlerSpawned.CompensableActivityDefinitionId, handlerSpawned.HandlerActivityId);
+                break;
+            case CompensationEntryMarkedCompensated entryMarked:
+                LogCompensationEntryMarkedCompensated(entryMarked.ActivityDefinitionId, entryMarked.ScopeId);
+                break;
+            case CompensationWalkCompleted walkCompleted:
+                LogCompensationWalkCompleted(walkCompleted.ScopeId);
+                break;
+            case CompensationWalkFailed walkFailed:
+                LogCompensationHandlerFailed(walkFailed.HandlerInstanceId, walkFailed.ErrorCode, walkFailed.ErrorMessage);
+                break;
+            case WorkflowCancelled wfCancelled:
+                LogWorkflowCancelled(wfCancelled.Reason);
+                break;
+            case EscalationUncaughtRaised escUncaught:
+                LogEscalationUncaught(escUncaught.EscalationCode, escUncaught.SourceActivityId);
                 break;
         }
     }

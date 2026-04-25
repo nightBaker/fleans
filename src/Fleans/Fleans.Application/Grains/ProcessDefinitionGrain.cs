@@ -1,6 +1,8 @@
 using Fleans.Application.Logging;
+using Fleans.Application.Placement;
 using Fleans.Application.QueryModels;
 using Fleans.Domain;
+using Fleans.Domain.Activities;
 using Fleans.Domain.Persistence;
 using Microsoft.Extensions.Logging;
 using Orleans.Concurrency;
@@ -9,6 +11,7 @@ using Orleans.Runtime;
 namespace Fleans.Application.Grains;
 
 [Reentrant]
+[CorePlacement]
 public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
 {
     private readonly IGrainFactory _grainFactory;
@@ -161,6 +164,12 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
             var removedSignals = previousWorkflow.GetSignalStartEventNames()
                 .Except(scope.GetSignalStartEventNames());
             await UnregisterSignalListeners(removedSignals, processDefinitionKey);
+
+            var currentCondActivityIds = scope.GetConditionalStartEvents()
+                .Select(c => c.ActivityId).ToHashSet();
+            var removedConditionals = previousWorkflow.GetConditionalStartEvents()
+                .Where(c => !currentCondActivityIds.Contains(c.ActivityId));
+            await UnregisterConditionalListeners(removedConditionals, processDefinitionKey);
         }
 
         return ToSummary(definition);
@@ -258,6 +267,7 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
 
         await UnregisterMessageListeners(workflow.GetMessageStartEventNames(), processDefinitionKey);
         await UnregisterSignalListeners(workflow.GetSignalStartEventNames(), processDefinitionKey);
+        await UnregisterConditionalListeners(workflow.GetConditionalStartEvents(), processDefinitionKey);
     }
 
     private async Task RegisterAllStartEventListeners(IWorkflowDefinition workflow, string processDefinitionKey, string processDefinitionId)
@@ -270,6 +280,7 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
 
         await RegisterMessageListeners(workflow.GetMessageStartEventNames(), processDefinitionKey);
         await RegisterSignalListeners(workflow.GetSignalStartEventNames(), processDefinitionKey);
+        await RegisterConditionalListeners(workflow.GetConditionalStartEvents(), processDefinitionKey);
     }
 
     private Task RegisterMessageListeners(IEnumerable<string> messageNames, string processDefinitionKey)
@@ -301,6 +312,32 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
         var tasks = signalNames.Select(name =>
             _grainFactory.GetGrain<ISignalStartEventListenerGrain>(name)
                 .UnregisterProcess(processDefinitionKey).AsTask());
+        return Task.WhenAll(tasks);
+    }
+
+    private Task RegisterConditionalListeners(IEnumerable<ConditionalStartEvent> events, string processDefinitionKey)
+    {
+        var registry = _grainFactory.GetGrain<IConditionalStartEventRegistryGrain>(0);
+        var tasks = events.Select(async cse =>
+        {
+            var grainKey = $"{processDefinitionKey}:{cse.ActivityId}";
+            var listener = _grainFactory.GetGrain<IConditionalStartEventListenerGrain>(grainKey);
+            await listener.Register(processDefinitionKey, cse.ActivityId, cse.ConditionExpression);
+            await registry.Register(processDefinitionKey, cse.ActivityId, cse.ConditionExpression);
+        });
+        return Task.WhenAll(tasks);
+    }
+
+    private Task UnregisterConditionalListeners(IEnumerable<ConditionalStartEvent> events, string processDefinitionKey)
+    {
+        var registry = _grainFactory.GetGrain<IConditionalStartEventRegistryGrain>(0);
+        var tasks = events.Select(async cse =>
+        {
+            var grainKey = $"{processDefinitionKey}:{cse.ActivityId}";
+            var listener = _grainFactory.GetGrain<IConditionalStartEventListenerGrain>(grainKey);
+            await listener.Unregister();
+            await registry.Unregister(processDefinitionKey, cse.ActivityId);
+        });
         return Task.WhenAll(tasks);
     }
 

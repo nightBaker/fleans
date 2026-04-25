@@ -12,29 +12,55 @@ hero:
       icon: right-arrow
       variant: primary
     - text: View on GitHub
-      link: https://github.com/<github-user>/fleans
+      link: https://github.com/nightBaker/fleans
       icon: external
 ---
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
+import SiloBackground from '../../components/SiloBackground.astro';
+
+<SiloBackground />
+
+<p style="text-align: center; margin-top: -1rem; margin-bottom: 2rem;">
+  <a href="https://github.com/nightBaker/fleans">
+    <img class="github-stars-light" src="https://img.shields.io/github/stars/nightBaker/fleans?style=for-the-badge&color=1f6357&labelColor=2e2e2a&logo=github&logoColor=white" alt="GitHub stars" />
+    <img class="github-stars-dark" src="https://img.shields.io/github/stars/nightBaker/fleans?style=for-the-badge&color=4eb5a6&labelColor=1a1a17&logo=github&logoColor=white" alt="GitHub stars" />
+  </a>
+</p>
+
+<figure class="hero-workflow" role="img" aria-label="A sample BPMN workflow showing parallel task execution">
+  <img class="hero-workflow-light" src="/fleans/hero-workflow-light.svg" alt="BPMN workflow diagram with parallel gateway" width="720" height="auto" loading="eager" />
+  <img class="hero-workflow-dark" src="/fleans/hero-workflow-dark.svg" alt="BPMN workflow diagram with parallel gateway" width="720" height="auto" loading="eager" />
+  <figcaption>A parallel-gateway workflow rendered by Fleans</figcaption>
+</figure>
 
 ## Why Fleans?
 
 <CardGrid stagger>
-  <Card title="BPMN 2.0 Native" icon="document">
-    Author workflows as BPMN XML with the familiar Camunda-compatible
-    tooling, then run them on a distributed .NET Orleans cluster.
+  <Card title="Actors, not orchestrators" icon="rocket">
+    Every workflow is an independent Orleans grain. No shared coordinator,
+    no lock contention — add silos, get linear throughput.
   </Card>
-  <Card title="Actor-Based Execution" icon="rocket">
-    Each workflow instance is an Orleans grain — horizontally scalable,
-    location-transparent, and resilient by design.
+  <Card title="Scale reads separately from writes" icon="random">
+    Built-in CQRS split routes read traffic through a NoTracking query
+    context and optional PostgreSQL replica.
+    [Learn how →](/fleans/concepts/architecture/#scalability)
   </Card>
-  <Card title="Event-Sourced Core" icon="setting">
-    Workflow state is reconstructed from an immutable event log,
-    giving you audit trails and point-in-time debugging for free.
+  <Card title="Event-sourced, crash-safe state" icon="approve-check">
+    Append-only event log with deterministic replay. Silo dies mid-workflow?
+    Orleans reactivates the grain on another silo — no orphaned state.
+    [Learn how →](/fleans/concepts/architecture/#reliability)
   </Card>
-  <Card title=".NET First" icon="seti:c-sharp">
-    Built in modern C#, integrated with ASP.NET Core and .NET Aspire.
-    No JVM, no external workflow engine.
+  <Card title="Typed BPMN recovery paths" icon="warning">
+    Compensation, error boundaries, and escalation events are first-class.
+    Failure modes get explicit semantics, not ad-hoc try/catch.
+  </Card>
+  <Card title="In-memory hot path" icon="star">
+    Active workflows run from RAM — mid-workflow steps skip the database.
+    Events batch into one transaction at the end of each grain call.
+  </Card>
+  <Card title="Materialized read projections" icon="magnifier">
+    Admin UI and state queries read a pre-built EF projection.
+    No event replay to render a list or poll for completion.
   </Card>
 </CardGrid>

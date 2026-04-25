@@ -27,6 +27,7 @@
     <ProjectReference Include="..\Fleans.Infrastructure\Fleans.Infrastructure.csproj" />
     <ProjectReference Include="..\Fleans.Persistence\Fleans.Persistence.csproj" />
     <ProjectReference Include="..\Fleans.Persistence.Sqlite\Fleans.Persistence.Sqlite.csproj" />
+    <ProjectReference Include="..\Fleans.Worker\Fleans.Worker.csproj" />
   </ItemGroup>
 
   <ItemGroup>

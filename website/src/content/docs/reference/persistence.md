@@ -1,6 +1,8 @@
 ---
 title: Persistence Configuration
 description: Configuration reference for Fleans database persistence providers (SQLite and PostgreSQL).
+sidebar:
+  order: 3
 ---
 
 Fleans supports two persistence providers: **SQLite** (default, for local development) and **PostgreSQL** (for production and load testing). The provider is selected at startup via configuration — no code changes are required to switch.

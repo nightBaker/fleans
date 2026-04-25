@@ -7,6 +7,7 @@ using Fleans.Domain.States;
 using Fleans.Application.Adapters;
 using Fleans.Application.Effects;
 using Fleans.Application.Logging;
+using Fleans.Application.Placement;
 using Microsoft.Extensions.Logging;
 using Orleans;
 using Orleans.EventSourcing;
@@ -17,6 +18,7 @@ using System.Dynamic;
 
 namespace Fleans.Application.Grains;
 
+[CorePlacement]
 public partial class WorkflowInstance :
     JournaledGrain<WorkflowInstanceState, IDomainEvent>,
     IWorkflowInstanceGrain,
@@ -413,6 +415,19 @@ public partial class WorkflowInstance :
         return tcs.Task;
     }
 
+    public Task<EscalationHandledResult> OnChildEscalationRaised(
+        Guid childWorkflowInstanceId, string hostActivityId,
+        string escalationCode, ExpandoObject variables)
+    {
+        LogChildEscalationRaisedQueued(childWorkflowInstanceId, escalationCode);
+        var tcs = new TaskCompletionSource<EscalationHandledResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var wrapper = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingExternalEvents.Enqueue((new PendingChildEscalationRaised(
+            childWorkflowInstanceId, hostActivityId, escalationCode, variables, tcs), wrapper));
+        EnsurePendingEventsTimerRegistered();
+        return tcs.Task;
+    }
+
     // ── Event Handling ──────────────────────────────────────────────────
 
     public async Task<TimeSpan?> HandleTimerFired(string timerActivityId, Guid hostActivityInstanceId)
@@ -612,5 +627,10 @@ public partial class WorkflowInstance :
             var failEffects = _grain._execution!.FailActivity(activityId, hostActivityInstanceId, ex);
             await _grain._effectDispatcher.DispatchAsync(failEffects, this);
         }
+
+        public EscalationHandledResult? EscalationParentResult { get; private set; }
+
+        public void SetEscalationParentResult(EscalationHandledResult result)
+            => EscalationParentResult = result;
     }
 }

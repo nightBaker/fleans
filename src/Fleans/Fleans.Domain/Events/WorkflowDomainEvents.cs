@@ -6,6 +6,7 @@ namespace Fleans.Domain.Events;
 public record WorkflowStarted(Guid InstanceId, string? ProcessDefinitionId, Guid RootVariablesId) : IDomainEvent;
 public record ExecutionStarted() : IDomainEvent;
 public record WorkflowCompleted() : IDomainEvent;
+public record WorkflowCancelled(string Reason) : IDomainEvent;
 
 // Activity lifecycle
 public record ActivitySpawned(
@@ -53,10 +54,53 @@ public record UserTaskClaimed(Guid ActivityInstanceId, string UserId, DateTimeOf
 public record UserTaskUnclaimed(Guid ActivityInstanceId) : IDomainEvent;
 public record UserTaskUnregistered(Guid ActivityInstanceId) : IDomainEvent;
 
+// Escalation
+public record EscalationUncaughtRaised(
+    string EscalationCode, string SourceActivityId) : IDomainEvent;
+
 // Timer cycle tracking
 public record TimerCycleUpdated(
     Guid HostActivityInstanceId, string TimerActivityId,
     Activities.TimerDefinition? RemainingCycle) : IDomainEvent;
+
+// Conditional event watchers
+public record ConditionalWatcherRegistered(
+    Guid ActivityInstanceId, string ActivityId, string ConditionExpression,
+    Guid VariablesId) : IDomainEvent;
+public record ConditionalWatcherFired(Guid ActivityInstanceId) : IDomainEvent;
+public record ConditionalWatcherCleared(Guid ActivityInstanceId) : IDomainEvent;
+public record ConditionalWatcherResultUpdated(Guid ActivityInstanceId, bool Result) : IDomainEvent;
+
+// Compensation
+public record CompensableActivitySnapshotRecorded(
+    Guid ActivityInstanceId,
+    string ActivityDefinitionId,
+    ExpandoObject VariablesSnapshot,
+    Guid? ScopeId) : IDomainEvent;
+
+public record CompensationWalkStarted(
+    Guid? ScopeId,
+    string? TargetActivityRef,
+    int HandlerCount,
+    Guid ThrowerActivityInstanceId) : IDomainEvent;
+
+public record CompensationHandlerSpawned(
+    Guid HandlerInstanceId,
+    string CompensableActivityDefinitionId,
+    string HandlerActivityId,
+    Guid? ScopeId) : IDomainEvent;
+
+public record CompensationEntryMarkedCompensated(
+    string ActivityDefinitionId,
+    Guid? ScopeId) : IDomainEvent;
+
+public record CompensationWalkCompleted(Guid? ScopeId) : IDomainEvent;
+
+public record CompensationWalkFailed(
+    Guid? ScopeId,
+    Guid HandlerInstanceId,
+    int ErrorCode,
+    string ErrorMessage) : IDomainEvent;
 
 // Transaction Sub-Process outcome
 // Plain record — no [GenerateSerializer] — stored via Newtonsoft.Json in EfCoreEventStore,
