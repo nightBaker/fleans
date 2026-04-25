@@ -1,0 +1,3 @@
+# k6 result CSV files — committed reports go in results/cloud/report.md
+*.csv
+results/cloud/compose-final.log
