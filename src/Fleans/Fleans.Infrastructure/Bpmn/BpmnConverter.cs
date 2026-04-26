@@ -285,6 +285,20 @@ public partial class BpmnConverter : IBpmnConverter
             activityMap[id] = activity;
         }
 
+        // Parse cancel end events declared via the <cancelEndEvent> shorthand.
+        // BPMN allows two equivalent forms — long form is <endEvent><cancelEventDefinition/></endEvent>
+        // (handled above) and short form is <cancelEndEvent/>. Both must produce the same activity.
+        foreach (var cancelEndEvent in scopeElement.Elements(Bpmn + "cancelEndEvent"))
+        {
+            var id = GetId(cancelEndEvent);
+            if (!insideTransaction)
+                throw new InvalidOperationException(
+                    $"CancelEndEvent '{id}' is only valid inside a Transaction Sub-Process.");
+            Activity activity = new CancelEndEvent(id);
+            activities.Add(activity);
+            activityMap[id] = activity;
+        }
+
         // Parse tasks
         foreach (var task in scopeElement.Elements(Bpmn + "task"))
         {
