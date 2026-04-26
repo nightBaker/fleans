@@ -458,7 +458,7 @@ namespace Fleans.Application.Tests
             Assert.AreEqual("task", taskSnapshot.ActivityId);
             Assert.IsTrue(taskSnapshot.IsCompleted);
             Assert.IsNotNull(taskSnapshot.ErrorState);
-            Assert.AreEqual(500, taskSnapshot.ErrorState.Code);
+            Assert.AreEqual("500", taskSnapshot.ErrorState.Code);
             Assert.AreEqual("snapshot error", taskSnapshot.ErrorState.Message);
             Assert.IsNotNull(taskSnapshot.CreatedAt);
             Assert.IsNotNull(taskSnapshot.ExecutionStartedAt);
@@ -484,7 +484,7 @@ namespace Fleans.Application.Tests
 
             // Assert
             Assert.IsNotNull(taskSnapshot.ErrorState);
-            Assert.AreEqual(400, taskSnapshot.ErrorState.Code);
+            Assert.AreEqual("400", taskSnapshot.ErrorState.Code);
             Assert.AreEqual("Bad input", taskSnapshot.ErrorState.Message);
         }
 
