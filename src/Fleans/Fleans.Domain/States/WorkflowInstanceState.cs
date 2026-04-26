@@ -185,7 +185,7 @@ public class WorkflowInstanceState
         _dirtyFlags |= DirtyEntries;
     }
 
-    public void FailEntry(Guid activityInstanceId, int errorCode, string errorMessage)
+    public void FailEntry(Guid activityInstanceId, string errorCode, string errorMessage)
     {
         var entry = GetActiveEntry(activityInstanceId);
         entry.Fail(errorCode, errorMessage);
