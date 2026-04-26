@@ -135,7 +135,7 @@ The full regression suite is the union of every plan under `tests/manual/`. Each
 **Universal prerequisites for every step:**
 - Aspire stack running: `dotnet run --project Fleans.Aspire` (from `src/Fleans/`).
 - A clean dev DB (delete the SQLite file or set a fresh `FLEANS_SQLITE_CONNECTION`) so prior runs don't leave stale instances.
-- Web UI reachable at `https://localhost:7140` (also the API origin used in step bodies).
+- Web UI reachable at `https://localhost:7124`. The API origin used in step bodies is `https://localhost:7140`.
 
 **Reporting convention:** each numbered entry below is one regression "step". For each one, follow the linked `test-plan.md` end-to-end and report `PASSED`, `FAILED`, `BUG` (new regression — file an issue), or `KNOWN BUG` (matches a `> **KNOWN BUG:** …` note inside the linked plan; counts as PASSED for promotion purposes).
 
@@ -206,6 +206,9 @@ Two providers: **SQLite** (default, local dev) and **PostgreSQL** (production/lo
 
 ## Things to Know
 
+- **Error code type is string, not int** — `ActivityFailed.ErrorCode`, `ActivityErrorState.Code`, `ActivityInstanceEntry.ErrorCode` are all `string`. Numeric codes ("400", "500") are stored/compared as strings. Old events in the DB with integer JSON (`"ErrorCode": 500`) are read back transparently by `StringFromNumberConverter` in `EfCoreEventStore.JsonSettings`.
+- **EF migrations for column type changes** — SQLite doesn't support `ALTER COLUMN`, but EF Core's SQLite provider handles `migrationBuilder.AlterColumn<T>` by rebuilding the table internally. Just write the `AlterColumn` call; don't manually generate the table-rebuild SQL.
+- **Static JS files need `@Assets["..."]` fingerprinting in App.razor** — files referenced via plain `src="js/foo.js"` are not cache-busted when updated. Use `src="@Assets["js/foo.js"]"` (same pattern as `app.css`). Failure to do this causes stale-cache `JSException: not a function` errors after updates.
 - **Aspire is the startup project**, not Api or Web
 - **WorkflowInstance uses JournaledGrain with event sourcing** — events are persisted via EfCoreEventStore, read-side state is projected via EfCoreWorkflowStateProjection (CQRS pattern). Other grains (ProcessDefinition, correlations, timers, start event listeners, user tasks) use IPersistentState with EF Core IGrainStorage.
 - **BPMN coverage is partial** — see the table in `README.md` for what's implemented

@@ -92,8 +92,8 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                     b.Property<DateTimeOffset?>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<int?>("ErrorCode")
-                        .HasColumnType("integer");
+                    b.Property<string>("ErrorCode")
+                        .HasColumnType("text");
 
                     b.Property<string>("ErrorMessage")
                         .HasMaxLength(2000)

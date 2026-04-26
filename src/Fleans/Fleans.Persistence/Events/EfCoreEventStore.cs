@@ -26,7 +26,11 @@ public class EfCoreEventStore : IEventStore
         SerializationBinder = new EventStoreSerializationBinder(),
         ContractResolver = new PrivateSetterContractResolver(),
         NullValueHandling = NullValueHandling.Include,
-        MissingMemberHandling = MissingMemberHandling.Ignore
+        MissingMemberHandling = MissingMemberHandling.Ignore,
+        // Backward compat: ActivityFailed.ErrorCode / CompensationWalkFailed.ErrorCode /
+        // TransactionOutcomeSet.ErrorCode changed from int to string in #282.
+        // Old events stored "ErrorCode": 500 (integer); this converter reads both forms as string.
+        Converters = { new StringFromNumberConverter() }
     };
 
     public EfCoreEventStore(

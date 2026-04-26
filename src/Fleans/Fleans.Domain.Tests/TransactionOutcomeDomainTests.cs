@@ -91,7 +91,7 @@ public class TransactionOutcomeDomainTests
         var (execution, state) = CreateExecution();
         var instanceId = Guid.NewGuid();
 
-        execution.SetTransactionOutcomeHazard(instanceId, 500, "error");
+        execution.SetTransactionOutcomeHazard(instanceId, "500", "error");
 
         Assert.ThrowsExactly<InvalidOperationException>(
             () => execution.SetTransactionOutcomeCompleted(instanceId));
@@ -145,7 +145,7 @@ public class TransactionOutcomeDomainTests
         var (execution, state) = CreateExecution();
         var instanceId = Guid.NewGuid();
 
-        execution.SetTransactionOutcomeHazard(instanceId, 500, "err");
+        execution.SetTransactionOutcomeHazard(instanceId, "500", "err");
         execution.ClearUncommittedEvents();
 
         // Cancelled after Hazard → Hazard wins, no-op, no event
@@ -175,12 +175,12 @@ public class TransactionOutcomeDomainTests
         var (execution, state) = CreateExecution();
         var instanceId = Guid.NewGuid();
 
-        execution.SetTransactionOutcomeHazard(instanceId, 500, "internal error");
+        execution.SetTransactionOutcomeHazard(instanceId, "500", "internal error");
 
         Assert.IsTrue(state.TransactionOutcomes.ContainsKey(instanceId));
         var record = state.TransactionOutcomes[instanceId];
         Assert.AreEqual(TransactionOutcome.Hazard, record.Outcome);
-        Assert.AreEqual(500, record.ErrorCode);
+        Assert.AreEqual("500", record.ErrorCode);
         Assert.AreEqual("internal error", record.ErrorMessage);
     }
 
@@ -190,13 +190,13 @@ public class TransactionOutcomeDomainTests
         var (execution, _) = CreateExecution();
         var instanceId = Guid.NewGuid();
 
-        execution.SetTransactionOutcomeHazard(instanceId, 400, "bad request");
+        execution.SetTransactionOutcomeHazard(instanceId, "400", "bad request");
 
         var events = execution.GetUncommittedEvents();
         var evt = events.OfType<TransactionOutcomeSet>().Single();
         Assert.AreEqual(instanceId, evt.TransactionInstanceId);
         Assert.AreEqual(TransactionOutcome.Hazard, evt.Outcome);
-        Assert.AreEqual(400, evt.ErrorCode);
+        Assert.AreEqual("400", evt.ErrorCode);
         Assert.AreEqual("bad request", evt.ErrorMessage);
     }
 
@@ -206,12 +206,12 @@ public class TransactionOutcomeDomainTests
         var (execution, state) = CreateExecution();
         var instanceId = Guid.NewGuid();
 
-        execution.SetTransactionOutcomeHazard(instanceId, 500, "first");
-        execution.SetTransactionOutcomeHazard(instanceId, 400, "second");
+        execution.SetTransactionOutcomeHazard(instanceId, "500", "first");
+        execution.SetTransactionOutcomeHazard(instanceId, "400", "second");
 
         var record = state.TransactionOutcomes[instanceId];
         Assert.AreEqual(TransactionOutcome.Hazard, record.Outcome);
-        Assert.AreEqual(400, record.ErrorCode);
+        Assert.AreEqual("400", record.ErrorCode);
         Assert.AreEqual("second", record.ErrorMessage);
     }
 
