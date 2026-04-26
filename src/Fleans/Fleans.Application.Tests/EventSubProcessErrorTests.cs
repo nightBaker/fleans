@@ -61,7 +61,7 @@ public class EventSubProcessErrorTests : WorkflowTestBase
         var failingEntry = snapshot.CompletedActivities.FirstOrDefault(a => a.ActivityId == "failingTask");
         Assert.IsNotNull(failingEntry, "failingTask should appear in the completed-activities list");
         Assert.IsNotNull(failingEntry.ErrorState, "failingTask should have an error state");
-        Assert.AreEqual(500, failingEntry.ErrorState!.Code,
+        Assert.AreEqual("500", failingEntry.ErrorState!.Code,
             "Generic Exception should map to error code 500");
 
         // 3. handlerTask ran successfully
@@ -73,7 +73,13 @@ public class EventSubProcessErrorTests : WorkflowTestBase
         Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "evtSub1"),
             "EventSubProcess host should be marked completed");
 
-        // 5. Sibling 'end' was NOT reached
+        // 5. The EndEvent inside the error event sub-process must also be reached
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "evtSub1_errEnd"
+                                                             && a.ErrorState == null
+                                                             && !a.IsCancelled),
+            "EventSubProcess inner EndEvent 'evtSub1_errEnd' should be completed");
+
+        // 6. Sibling 'end' was NOT reached
         Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId == "end"),
             "Normal 'end' event should not be reached when the error handler interrupts flow");
     }
