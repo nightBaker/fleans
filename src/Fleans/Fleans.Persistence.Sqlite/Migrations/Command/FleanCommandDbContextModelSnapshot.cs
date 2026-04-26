@@ -88,8 +88,9 @@ namespace Fleans.Persistence.Sqlite.Migrations.Command
                     b.Property<DateTimeOffset?>("CreatedAt")
                         .HasColumnType("TEXT");
 
-                    b.Property<int?>("ErrorCode")
-                        .HasColumnType("INTEGER");
+                    b.Property<string>("ErrorCode")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("ErrorMessage")
                         .HasMaxLength(2000)

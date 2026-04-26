@@ -191,7 +191,7 @@ public class WorkflowExecution
     /// Sets (or overwrites) the transaction outcome to Hazard. Hazard supersedes any prior outcome.
     /// Called by: (a) error escape from Transaction scope, and (b) compensation handler failure (#230).
     /// </summary>
-    public void SetTransactionOutcomeHazard(Guid transactionInstanceId, int errorCode, string? errorMessage)
+    public void SetTransactionOutcomeHazard(Guid transactionInstanceId, string? errorCode, string? errorMessage)
     {
         // Hazard → Hazard: re-emit to update error code/message (last writer wins).
         Emit(new TransactionOutcomeSet(transactionInstanceId, TransactionOutcome.Hazard, errorCode, errorMessage));
@@ -638,7 +638,7 @@ public class WorkflowExecution
             Emit(new CompensationWalkFailed(
                 walk.ScopeId,
                 walk.CurrentHandlerInstanceId.Value,
-                handlerEntry.ErrorCode.Value,
+                handlerEntry.ErrorCode,
                 handlerEntry.ErrorMessage ?? "Compensation handler failed"));
             Emit(new WorkflowCompleted());
             return null;
@@ -1753,7 +1753,7 @@ public class WorkflowExecution
             return [];
 
         // Extract error code from exception type
-        int errorCode;
+        string errorCode;
         string errorMessage;
         if (exception is ActivityException activityException)
         {
@@ -1763,7 +1763,7 @@ public class WorkflowExecution
         }
         else
         {
-            errorCode = 500;
+            errorCode = "500";
             errorMessage = exception.Message;
         }
 
@@ -1775,7 +1775,7 @@ public class WorkflowExecution
         effects.AddRange(BuildUserTaskCleanupEffects(entry.ActivityInstanceId));
 
         // Search for boundary error handler
-        var boundaryHandler = _definition.FindBoundaryErrorHandler(activityId, errorCode.ToString());
+        var boundaryHandler = _definition.FindBoundaryErrorHandler(activityId, errorCode);
 
         if (boundaryHandler is not null)
         {
@@ -1856,10 +1856,10 @@ public class WorkflowExecution
     /// unsubscribes would target.
     /// </summary>
     private bool TryActivateErrorEventSubProcess(
-        ActivityInstanceEntry failedEntry, int errorCode, List<IInfrastructureEffect> effects)
+        ActivityInstanceEntry failedEntry, string errorCode, List<IInfrastructureEffect> effects)
     {
         var match = _definition.FindErrorEventSubProcessHandler(
-            failedEntry.ActivityId, errorCode.ToString());
+            failedEntry.ActivityId, errorCode);
         if (match is null) return false;
 
         var (eventSubProcess, enclosingScope) = match.Value;
