@@ -1,6 +1,6 @@
 ---
 title: Authentication
-description: Opt-in JWT bearer authentication for the Fleans REST API.
+description: Opt-in OIDC authentication for the Fleans REST API and Management UI.
 sidebar:
   order: 2
 ---
@@ -130,12 +130,89 @@ builder.Services.AddHttpClient<IFleansClient, FleansClient>(client =>
 .AddHttpMessageHandler<BearerTokenHandler>();
 ```
 
+## Management UI
+
+The `Fleans.Web` Blazor admin UI supports the same opt-in pattern via OIDC Authorization Code flow with PKCE, persisting the resulting identity in a session cookie. **Disabled by default** — when no `Authentication` section is present, the UI runs unauthenticated, identical to today's behaviour.
+
+### Why a different flow than the API?
+
+Browser users don't hold raw JWTs. The canonical pattern for server-side web apps is OIDC Authorization Code flow with PKCE, which exchanges the authorization code for tokens server-side and persists the identity in an encrypted session cookie. The API uses bearer JWTs because its callers are scripts and services that *do* hold tokens; the UI uses cookies because its callers are humans in browsers.
+
+### Config block (Management UI)
+
+```json
+{
+  "Authentication": {
+    "Authority":             "https://your-idp.example.com/realms/fleans",
+    "ClientId":              "fleans-web",
+    "ClientSecret":          "<from-IdP>",
+    "RequireHttpsMetadata":  true,
+    "CookieExpireMinutes":   60,
+    "KnownProxies":          [],
+    "KnownNetworks":         []
+  }
+}
+```
+
+Auth on iff **both** `Authority` AND `ClientId` are non-empty (single source of truth — same key namespace as the API). The shipped `appsettings.json` carries no `Authentication` block; a documented copy lives at [`src/Fleans/Fleans.Web/appsettings.example.jsonc`](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Web/appsettings.example.jsonc) and is not loaded at runtime.
+
+| Key | Required | Default | Description |
+|-----|----------|---------|-------------|
+| `Authority` | Yes (to enable auth) | *(absent — auth disabled)* | OIDC issuer URL. |
+| `ClientId` | Yes (to enable auth) | *(absent)* | OAuth client id registered with the IdP. Must be a confidential client. |
+| `ClientSecret` | Yes when auth on | — | Confidential-client secret. Use `dotnet user-secrets` in dev; Aspire `auth-client-secret` parameter (`secret: true`) or env var `Authentication__ClientSecret` in prod. **Never commit.** |
+| `RequireHttpsMetadata` | No | `true` | Set to `false` only for local Keycloak dev mode (HTTP). |
+| `CookieExpireMinutes` | No | `60` | Sliding session cookie lifetime. Mirror the IdP's access-token / management-page session lifetime so admin sessions in the UI and tokens used against the API don't drift apart. |
+| `KnownProxies` | No | `[]` | Reverse-proxy IP addresses trusted to set `X-Forwarded-For` / `X-Forwarded-Proto`. Empty list = headers ignored. |
+| `KnownNetworks` | No | `[]` | Same as above but accepts CIDR ranges (e.g. `10.0.0.0/8`). |
+
+### Aspire wiring
+
+`Fleans.Aspire/Program.cs` declares three optional parameters (always present, defaulting to empty strings) that are forwarded to `Fleans.Web` as env vars:
+
+```csharp
+var authAuthority    = builder.AddParameter("auth-authority", () => "");
+var authClientId     = builder.AddParameter("auth-client-id", () => "");
+var authClientSecret = builder.AddParameter("auth-client-secret", () => "", secret: true);
+
+builder.AddProject<Projects.Fleans_Web>("fleans-management")
+    .WithEnvironment("Authentication__Authority",   authAuthority)
+    .WithEnvironment("Authentication__ClientId",    authClientId)
+    .WithEnvironment("Authentication__ClientSecret", authClientSecret)
+    /* ... */;
+```
+
+Operators set the parameters at run-time (Aspire CLI prompt, env vars, deployment manifest). When unset, `Fleans.Web` sees empty strings and falls into auth-disabled mode automatically.
+
+### Behaviour when enabled
+
+- **Every page** is wrapped in `<AuthorizeRouteView>`. Unauthenticated requests trigger an OIDC challenge → IdP login → callback to `/signin-oidc` → session cookie issued → bounce to the originally-requested URL (deep links preserved).
+- **Orleans Dashboard at `/dashboard`** is gated by an explicit middleware branch — Orleans' dashboard middleware does not honour `[Authorize]`, so the guard fires before `MapOrleansDashboard`.
+- **NavMenu** renders a `Signed in as <preferred_username>` chip with a `Sign out` button. The button submits an antiforgery-protected POST to `/Account/Logout` that clears both the cookie and the IdP session.
+- **`/health`, `/alive`** stay anonymous (operator probes are unaffected).
+- **`/Account/Login?returnUrl=…`** validates `returnUrl` against an inline `IsLocalUrl` predicate (same shape as `IUrlHelper.IsLocalUrl`). Open-redirect attacks (`/\evil.com`, `//evil.com`, absolute URLs, leading whitespace) collapse to `/`; well-formed local paths pass through.
+
+### Multi-instance deployments
+
+When `Fleans.Web` runs as more than one replica, ASP.NET Data Protection keys are persisted to the existing `orleans-redis` Aspire resource so cookies issued by replica A decrypt on replica B. Single-replica deployments use the same path (it's a no-op on key cardinality, not behaviour).
+
+### Reverse proxies
+
+If `Fleans.Web` sits behind a reverse proxy that terminates TLS, populate `KnownProxies` (or `KnownNetworks` for CIDR ranges) so `X-Forwarded-For` / `X-Forwarded-Proto` are honoured when constructing OIDC redirect URIs. Empty defaults are deliberately strict — without an explicit allowlist the framework discards the headers, preventing host-spoofing from untrusted networks.
+
+### Local dev
+
+A copy-paste Keycloak quickstart (Docker run, realm JSON, `dotnet user-secrets` commands, sample user) lives at [`tests/manual/30-web-auth/keycloak-dev.md`](https://github.com/nightBaker/fleans/blob/main/tests/manual/30-web-auth/keycloak-dev.md). The full manual test plan (login round-trip, dashboard guard, open-redirect attack table, antiforgery on logout) is at [`tests/manual/30-web-auth/test-plan.md`](https://github.com/nightBaker/fleans/blob/main/tests/manual/30-web-auth/test-plan.md).
+
+### Roles (deferred)
+
+This slice authenticates only — every signed-in user has the same access. Role-based policies (`Admin`, `Operator`, `Viewer`) and per-page `[Authorize(Roles=…)]` are deliberately a separate slice, mirroring the same staging used for the API in [#341](https://github.com/nightBaker/fleans/issues/341). The OIDC handler already maps the `roles` claim from the token; the follow-up slice adds policy registration and component-level enforcement.
+
 ## Testing & troubleshooting
 
-The manual regression test plan for authentication lives in [`tests/manual/28-api-auth/test-plan.md`](https://github.com/nightBaker/fleans/blob/main/tests/manual/28-api-auth/test-plan.md). It verifies:
-- API works unauthenticated by default
-- Returns `401` when auth is configured and no token is provided
-- Accepts valid tokens
+The manual regression test plans for authentication live at:
+- API: [`tests/manual/28-api-auth/test-plan.md`](https://github.com/nightBaker/fleans/blob/main/tests/manual/28-api-auth/test-plan.md) — verifies the API works unauthenticated by default, returns `401` when auth is on and no token is provided, and accepts valid tokens.
+- Management UI: [`tests/manual/30-web-auth/test-plan.md`](https://github.com/nightBaker/fleans/blob/main/tests/manual/30-web-auth/test-plan.md) — verifies anonymous browse is allowed when no `Authentication` section is present, every page (and `/dashboard`) returns 302 → IdP when auth is on, login round-trip preserves deep-link query strings, the open-redirect guard rejects every canonical attack input, and `/Account/Logout` is antiforgery-protected.
 
 **Common errors:**
 
@@ -147,4 +224,4 @@ The manual regression test plan for authentication lives in [`tests/manual/28-ap
 
 ## Related
 
-- Web admin authorization — tracked separately in [#370](https://github.com/nightBaker/fleans/issues/370).
+- Role-based authorization for both API and Management UI — tracked in [#341](https://github.com/nightBaker/fleans/issues/341).
