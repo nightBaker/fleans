@@ -172,6 +172,7 @@ The full regression suite is the union of every plan under `tests/manual/`. Each
 31. **API JWT Authentication** — `tests/manual/28-api-auth/test-plan.md`. Opt-in JWT bearer authentication; verifies API works unauthenticated by default, returns 401 when auth is configured and no token is provided, and accepts valid tokens.
 32. **Conditional Events** — `tests/manual/24-conditional-event/test-plan.md` (`conditional-event-test.bpmn`). Conditional intermediate catch event blocks until condition is true; conditional start event creates instances via evaluate-conditions API; conditional boundary event (interrupting) cancels host.
 33. **Editor Tabs** — `tests/manual/29-editor-tabs/test-plan.md`. Multi-tab BPMN editor in the Admin UI: open/switch/close tabs, dirty tracking with confirm-close dialog, 10-tab cap, `localStorage` persistence across refresh, `beforeunload` warning when any tab is dirty.
+34. **Management UI Authentication** — `tests/manual/30-web-auth/test-plan.md`. Opt-in OIDC for the Blazor Server admin UI; verifies (a) anonymous browse is allowed when no `Authentication` config is present, (b) `/dashboard` and any cascading-`AuthorizeView` page return 302 → IdP when auth is enabled, (c) login round-trip lands on the requested page (including `?query` parameters), (d) `/Account/Logout` is antiforgery-protected (bare POST is rejected, form-bound POST signs out and clears both schemes).
 
 > When adding a new manual test folder under `tests/manual/`, append a numbered entry here so the regression skill picks it up.
 

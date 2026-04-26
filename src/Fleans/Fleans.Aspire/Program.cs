@@ -10,6 +10,14 @@ var usePostgres = persistenceProvider.Equals("Postgres", StringComparison.Ordina
 // provider doesn't negotiate TLS. Disable to avoid health check failures (dotnet/aspire#13612).
 var redis = builder.AddRedis("orleans-redis").WithoutHttpsCertificate();
 
+// Authentication parameters (D2a) — declared unconditionally with empty defaults so the
+// AppHost contract is stable. When the operator does not supply values at run-time, the
+// downstream Web project sees empty strings for Authority/ClientId and falls into
+// auth-disabled mode (single source of truth lives in Fleans.Web/Program.cs).
+var authAuthority = builder.AddParameter("auth-authority", () => "");
+var authClientId = builder.AddParameter("auth-client-id", () => "");
+var authClientSecret = builder.AddParameter("auth-client-secret", () => "", secret: true);
+
 // Centralized Orleans configuration
 var orleans = builder.AddOrleans("cluster")
     .WithClustering(redis)
@@ -64,6 +72,9 @@ WithPersistence(
     builder.AddProject<Projects.Fleans_Web>("fleans-management")
         .WithReference(orleans.AsClient())
         .WaitFor(fleansSilo)
+        .WithEnvironment("Authentication__Authority", authAuthority)
+        .WithEnvironment("Authentication__ClientId", authClientId)
+        .WithEnvironment("Authentication__ClientSecret", authClientSecret)
         .WithReplicas(1),
     usePostgres, pg, sqliteConnectionString);
 
