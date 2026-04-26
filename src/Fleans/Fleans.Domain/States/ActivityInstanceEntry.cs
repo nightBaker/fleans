@@ -56,7 +56,7 @@ public class ActivityInstanceEntry
     public Guid VariablesId { get; private set; }
 
     [Id(12)]
-    public int? ErrorCode { get; private set; }
+    public string? ErrorCode { get; private set; }
 
     [Id(13)]
     public string? ErrorMessage { get; private set; }
@@ -87,7 +87,7 @@ public class ActivityInstanceEntry
 
     // Computed
     public ActivityErrorState? ErrorState =>
-        ErrorCode is not null ? new ActivityErrorState(ErrorCode.Value, ErrorMessage!) : null;
+        ErrorCode is not null ? new ActivityErrorState(ErrorCode, ErrorMessage!) : null;
 
     public ActivityInstanceEntry(Guid activityInstanceId, string activityId, Guid workflowInstanceId, Guid? scopeId, int multiInstanceIndex)
         : this(activityInstanceId, activityId, workflowInstanceId, scopeId)
@@ -132,7 +132,7 @@ public class ActivityInstanceEntry
         }
         else
         {
-            ErrorCode = 500;
+            ErrorCode = "500";
             ErrorMessage = exception.Message;
         }
 
@@ -141,7 +141,7 @@ public class ActivityInstanceEntry
         CompletedAt = DateTimeOffset.UtcNow;
     }
 
-    public void Fail(int errorCode, string errorMessage)
+    public void Fail(string errorCode, string errorMessage)
     {
         if (IsCompleted)
             throw new InvalidOperationException($"Activity '{ActivityId}' is already completed — cannot fail.");

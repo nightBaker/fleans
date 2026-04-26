@@ -8,5 +8,5 @@ namespace Fleans.Domain.States;
 [GenerateSerializer]
 public sealed record TransactionOutcomeRecord(
     [property: Id(0)][property: JsonConverter(typeof(JsonStringEnumConverter))] TransactionOutcome Outcome,
-    [property: Id(1)] int? ErrorCode,
+    [property: Id(1)] string? ErrorCode,
     [property: Id(2)] string? ErrorMessage);

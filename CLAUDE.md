@@ -135,7 +135,7 @@ The full regression suite is the union of every plan under `tests/manual/`. Each
 **Universal prerequisites for every step:**
 - Aspire stack running: `dotnet run --project Fleans.Aspire` (from `src/Fleans/`).
 - A clean dev DB (delete the SQLite file or set a fresh `FLEANS_SQLITE_CONNECTION`) so prior runs don't leave stale instances.
-- Web UI reachable at `https://localhost:7140` (also the API origin used in step bodies).
+- Web UI reachable at `https://localhost:7124`. The API origin used in step bodies is `https://localhost:7140`.
 
 **Reporting convention:** each numbered entry below is one regression "step". For each one, follow the linked `test-plan.md` end-to-end and report `PASSED`, `FAILED`, `BUG` (new regression — file an issue), or `KNOWN BUG` (matches a `> **KNOWN BUG:** …` note inside the linked plan; counts as PASSED for promotion purposes).
 
@@ -173,6 +173,7 @@ The full regression suite is the union of every plan under `tests/manual/`. Each
 32. **Conditional Events** — `tests/manual/24-conditional-event/test-plan.md` (`conditional-event-test.bpmn`). Conditional intermediate catch event blocks until condition is true; conditional start event creates instances via evaluate-conditions API; conditional boundary event (interrupting) cancels host.
 33. **Editor Tabs** — `tests/manual/29-editor-tabs/test-plan.md`. Multi-tab BPMN editor in the Admin UI: open/switch/close tabs, dirty tracking with confirm-close dialog, 10-tab cap, `localStorage` persistence across refresh, `beforeunload` warning when any tab is dirty.
 34. **Management UI Authentication** — `tests/manual/30-web-auth/test-plan.md`. Opt-in OIDC for the Blazor Server admin UI; verifies (a) anonymous browse is allowed when no `Authentication` config is present, (b) `/dashboard` and any cascading-`AuthorizeView` page return 302 → IdP when auth is enabled, (c) login round-trip lands on the requested page (including `?query` parameters), (d) `/Account/Logout` is antiforgery-protected (bare POST is rejected, form-bound POST signs out and clears both schemes).
+35. **Events Page** — `tests/manual/30-events-page/test-plan.md`. Admin UI `/events` page lists registered message/signal/conditional start events and active message/signal subscriptions; Refresh reloads without page reload; truncated instance IDs show full GUID on hover.
 
 > When adding a new manual test folder under `tests/manual/`, append a numbered entry here so the regression skill picks it up.
 

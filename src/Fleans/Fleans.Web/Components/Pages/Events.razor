@@ -1,0 +1,155 @@
+@page "/events"
+@rendermode InteractiveServer
+@using Fleans.Application
+@using Fleans.Application.QueryModels
+@using Microsoft.FluentUI.AspNetCore.Components
+@inject IWorkflowQueryService QueryService
+
+<PageTitle>Events</PageTitle>
+
+<FluentStack Orientation="Orientation.Vertical" Gap="20px">
+    <PageHeader Title="Registered Events">
+        <Actions>
+            <FluentButton Appearance="Appearance.Neutral"
+                          IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowSync())"
+                          @onclick="Refresh"
+                          Loading="@isLoading">
+                Refresh
+            </FluentButton>
+        </Actions>
+    </PageHeader>
+
+    @if (errorMessage is not null)
+    {
+        <FluentMessageBar Intent="MessageIntent.Error" @ondismiss="() => errorMessage = null">
+            @errorMessage
+        </FluentMessageBar>
+    }
+
+    @if (events is not null)
+    {
+        <FluentStack Orientation="Orientation.Vertical" Gap="16px">
+
+            <FluentLabel Typo="Typography.H5">Message Start Events</FluentLabel>
+            @if (events.MessageStartEvents.Count == 0)
+            {
+                <FluentLabel>No message start events registered.</FluentLabel>
+            }
+            else
+            {
+                <FluentDataGrid Items="@events.MessageStartEvents.AsQueryable()" TGridItem="MessageStartEventEntry">
+                    <PropertyColumn Property="@(e => e.MessageName)" Title="Message Name" />
+                    <PropertyColumn Property="@(e => e.ProcessDefinitionKey)" Title="Process Definition" />
+                </FluentDataGrid>
+            }
+
+            <FluentDivider />
+
+            <FluentLabel Typo="Typography.H5">Signal Start Events</FluentLabel>
+            @if (events.SignalStartEvents.Count == 0)
+            {
+                <FluentLabel>No signal start events registered.</FluentLabel>
+            }
+            else
+            {
+                <FluentDataGrid Items="@events.SignalStartEvents.AsQueryable()" TGridItem="SignalStartEventEntry">
+                    <PropertyColumn Property="@(e => e.SignalName)" Title="Signal Name" />
+                    <PropertyColumn Property="@(e => e.ProcessDefinitionKey)" Title="Process Definition" />
+                </FluentDataGrid>
+            }
+
+            <FluentDivider />
+
+            <FluentLabel Typo="Typography.H5">Conditional Start Events</FluentLabel>
+            @if (events.ConditionalStartEvents.Count == 0)
+            {
+                <FluentLabel>No conditional start events registered.</FluentLabel>
+            }
+            else
+            {
+                <FluentDataGrid Items="@events.ConditionalStartEvents.AsQueryable()" TGridItem="ConditionalStartEventEntry">
+                    <PropertyColumn Property="@(e => e.ProcessDefinitionKey)" Title="Process Definition" />
+                    <PropertyColumn Property="@(e => e.ActivityId)" Title="Activity ID" />
+                    <PropertyColumn Property="@(e => e.ConditionExpression)" Title="Condition" />
+                </FluentDataGrid>
+            }
+
+            <FluentDivider />
+
+            <FluentLabel Typo="Typography.H5">Active Message Subscriptions</FluentLabel>
+            @if (events.ActiveMessageSubscriptions.Count == 0)
+            {
+                <FluentLabel>No active message subscriptions.</FluentLabel>
+            }
+            else
+            {
+                <FluentDataGrid Items="@events.ActiveMessageSubscriptions.AsQueryable()" TGridItem="ActiveMessageSubscriptionEntry">
+                    <PropertyColumn Property="@(e => e.MessageName)" Title="Message Name" />
+                    <PropertyColumn Property="@(e => e.CorrelationKey)" Title="Correlation Key" />
+                    <PropertyColumn Property="@(e => e.ActivityId)" Title="Activity ID" />
+                    <TemplateColumn Title="Instance ID">
+                        <FluentTooltip Anchor="@($"tip-{context.WorkflowInstanceId:N}")">
+                            @context.WorkflowInstanceId
+                        </FluentTooltip>
+                        <span id="@($"tip-{context.WorkflowInstanceId:N}")" style="cursor:default">
+                            @context.WorkflowInstanceId.ToString()[..8]…
+                        </span>
+                    </TemplateColumn>
+                </FluentDataGrid>
+            }
+
+            <FluentDivider />
+
+            <FluentLabel Typo="Typography.H5">Active Signal Subscriptions</FluentLabel>
+            @if (events.ActiveSignalSubscriptions.Count == 0)
+            {
+                <FluentLabel>No active signal subscriptions.</FluentLabel>
+            }
+            else
+            {
+                <FluentDataGrid Items="@events.ActiveSignalSubscriptions.AsQueryable()" TGridItem="ActiveSignalSubscriptionEntry">
+                    <PropertyColumn Property="@(e => e.SignalName)" Title="Signal Name" />
+                    <PropertyColumn Property="@(e => e.ActivityId)" Title="Activity ID" />
+                    <TemplateColumn Title="Instance ID">
+                        <FluentTooltip Anchor="@($"tsig-{context.WorkflowInstanceId:N}")">
+                            @context.WorkflowInstanceId
+                        </FluentTooltip>
+                        <span id="@($"tsig-{context.WorkflowInstanceId:N}")" style="cursor:default">
+                            @context.WorkflowInstanceId.ToString()[..8]…
+                        </span>
+                    </TemplateColumn>
+                </FluentDataGrid>
+            }
+
+        </FluentStack>
+    }
+</FluentStack>
+
+@code {
+    private RegisteredEventsInfo? events;
+    private bool isLoading;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Refresh();
+    }
+
+    private async Task Refresh()
+    {
+        isLoading = true;
+        errorMessage = null;
+        try
+        {
+            events = await QueryService.GetRegisteredEventsAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Failed to load events: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+}

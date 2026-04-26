@@ -19,4 +19,5 @@ public interface IWorkflowQueryService
     Task<PagedResult<UserTaskResponse>> GetPendingUserTasks(string? assignee, string? candidateGroup, PageRequest page);
     Task<UserTaskResponse?> GetUserTask(Guid activityInstanceId);
     Task<IReadOnlyList<UserTaskState>> GetActiveUserTasksForWorkflow(Guid workflowInstanceId);
+    Task<RegisteredEventsInfo> GetRegisteredEventsAsync();
 }
