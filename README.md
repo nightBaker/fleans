@@ -31,7 +31,7 @@ For now, next elements are implemented
 | Conditional Event    | Represents a condition that will cause a process to start or continue.       | [x] start, intermediate catch, boundary |
 | Signal Event         | Represents the sending or receiving of a signal.                             | [x] start, intermediate catch, intermediate throw, boundary |
 | Escalation Event     | Used to model situations where escalation is required.                       | [x] end, intermediate throw, boundary |
-| Cancel Event         | Indicates cancellation of a process.                                         |             |
+| Cancel Event         | Indicates cancellation of a process.                                         | [x] end (inside Transaction), boundary (on Transaction) |
 | Compensation Event   | Represents a process that is performed to compensate for an error.           | [x] boundary, intermediate throw (broadcast + targeted), end event |
 | Multiple Event       | Indicates that multiple events can occur.                                    | [x] intermediate catch, intermediate throw, boundary, start |
 | **Activities**       |                                                                             |             |
@@ -41,7 +41,7 @@ For now, next elements are implemented
 | Call Activity        | A type of sub-process that calls another process.                            |     [x]     |
 | User Task            | A task that requires human interaction with claim lifecycle.                 |     [x]     |
 | Multi-Instance       | Executes an activity multiple times in parallel or sequentially.             |     [x]     |
-| Transaction          | A set of activities that are handled as a single unit. Phase 1: Completed outcome. Cancel/Hazard paths pending [#307](https://github.com/nightBaker/fleans/issues/307). | [x] (Completed) |
+| Transaction          | A set of activities that are handled as a single unit. Completed and Cancelled outcomes supported. Hazard path pending [#231](https://github.com/nightBaker/fleans/issues/231). | [x] (Completed, Cancelled) |
 | Event Sub-Process    | A sub-process triggered by an event (error / timer / message / signal; interrupting + non-interrupting). |     [x]     |
 | **Gateways**         |                                                                             |             |
 | Exclusive Gateway    | Indicates a decision point where only one path can be taken.                 |    [x]      |

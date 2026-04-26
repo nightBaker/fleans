@@ -159,14 +159,21 @@ public class WorkflowExecution
 
     // ── Transaction Sub-Process outcome domain methods ───────────────────────
 
-    /// <summary>Sets the transaction outcome to Completed (idempotent). Throws if already Cancelled.</summary>
+    /// <summary>
+    /// Sets the transaction outcome to Completed (idempotent).
+    /// No-op if already Cancelled (cancel takes precedence over auto-complete).
+    /// </summary>
     public void SetTransactionOutcomeCompleted(Guid transactionInstanceId)
     {
         if (_state.TransactionOutcomes.TryGetValue(transactionInstanceId, out var existing))
         {
             if (existing.Outcome == TransactionOutcome.Completed) return; // idempotent
-            throw new InvalidOperationException(
-                $"Cannot mark transaction {transactionInstanceId} Completed: already {existing.Outcome}.");
+            if (existing.Outcome == TransactionOutcome.Cancelled)
+                throw new InvalidOperationException(
+                    $"Cannot set transaction outcome to Completed: already Cancelled (id={transactionInstanceId}).");
+            if (existing.Outcome == TransactionOutcome.Hazard)
+                throw new InvalidOperationException(
+                    $"Cannot set transaction outcome to Completed: already Hazard (id={transactionInstanceId}).");
         }
         Emit(new TransactionOutcomeSet(transactionInstanceId, TransactionOutcome.Completed, null, null));
     }
@@ -181,8 +188,9 @@ public class WorkflowExecution
         {
             if (existing.Outcome == TransactionOutcome.Hazard) return;    // Hazard wins, no-op
             if (existing.Outcome == TransactionOutcome.Cancelled) return; // idempotent
-            throw new InvalidOperationException(
-                $"Cannot mark transaction {transactionInstanceId} Cancelled: already {existing.Outcome}.");
+            if (existing.Outcome == TransactionOutcome.Completed)
+                throw new InvalidOperationException(
+                    $"Cannot set transaction outcome to Cancelled: already Completed (id={transactionInstanceId}).");
         }
         Emit(new TransactionOutcomeSet(transactionInstanceId, TransactionOutcome.Cancelled, null, null));
     }
@@ -195,6 +203,84 @@ public class WorkflowExecution
     {
         // Hazard → Hazard: re-emit to update error code/message (last writer wins).
         Emit(new TransactionOutcomeSet(transactionInstanceId, TransactionOutcome.Hazard, errorCode, errorMessage));
+    }
+
+    /// <summary>
+    /// Scans for any active Transaction scope containing a completed CancelEndEvent
+    /// and, for each found that has not yet been marked Cancelled, initiates the cancel flow:
+    /// sets outcome to Cancelled, cancels other active scope children, and starts the compensation walk.
+    /// Must be called before CompleteFinishedSubProcessScopes so the auto-complete path
+    /// does not race with the cancel path and set the outcome to Completed.
+    /// Returns infrastructure effects from cancelling scope children (boundary unsubscriptions, etc.).
+    /// </summary>
+    public List<IInfrastructureEffect> InitiateTransactionCancelFlowIfNeeded()
+    {
+        var effects = new List<IInfrastructureEffect>();
+
+        foreach (var txEntry in _state.GetActiveActivities().ToList())
+        {
+            var scopeDef = _definition.GetScopeForActivity(txEntry.ActivityId);
+            var activity = scopeDef.GetActivity(txEntry.ActivityId);
+            if (activity is not Activities.Transaction) continue;
+
+            // Idempotent: if already Cancelled, skip
+            if (_state.TransactionOutcomes.TryGetValue(txEntry.ActivityInstanceId, out var existing)
+                && existing.Outcome == TransactionOutcome.Cancelled) continue;
+
+            // Look for a completed CancelEndEvent among this Transaction's scope entries
+            var cancelEntry = _state.GetEntriesInScope(txEntry.ActivityInstanceId)
+                .FirstOrDefault(e => e.IsCompleted && !e.IsCancelled && e.ErrorCode is null
+                    && _definition.GetActivityAcrossScopes(e.ActivityId) is Activities.CancelEndEvent);
+
+            if (cancelEntry is null) continue;
+
+            // 1. Mark outcome as Cancelled
+            SetTransactionOutcomeCancelled(txEntry.ActivityInstanceId);
+
+            // 2. Cancel all remaining active activities in the transaction scope
+            //    (the CancelEndEvent is already completed, so it is not in GetActiveActivities)
+            effects.AddRange(CancelScopeChildren(txEntry.ActivityInstanceId, "CancelledByTransaction"));
+
+            // 3. Initiate compensation walk — CancelEndEvent is the thrower, broadcast (null target)
+            PerformCompensationWalk(cancelEntry.ActivityInstanceId, targetActivityRef: null);
+        }
+
+        return effects;
+    }
+
+    /// <summary>
+    /// Spawns the CancelBoundaryEvent that is attached to the given Transaction host entry
+    /// in the parent scope. Called when the Transaction completes with Cancelled outcome.
+    /// Variables produced inside the transaction are NOT propagated — the boundary event
+    /// inherits the parent scope's variables directly (BPMN spec).
+    /// Returns infrastructure effects for the caller to dispatch.
+    /// </summary>
+    public List<IInfrastructureEffect> ActivateCancelBoundaryEvent(
+        ActivityInstanceEntry txHostEntry, IWorkflowDefinition parentScopeDef)
+    {
+        var cancelBoundary = parentScopeDef.Activities
+            .OfType<Activities.CancelBoundaryEvent>()
+            .FirstOrDefault(b => b.AttachedToActivityId == txHostEntry.ActivityId);
+
+        if (cancelBoundary is null)
+            return [];
+
+        // Spawn the CancelBoundaryEvent in the parent scope with the parent's variables.
+        // Transaction variables are intentionally discarded on cancel per the BPMN spec.
+        var parentVariablesId = txHostEntry.ScopeId.HasValue
+            ? _state.GetEntry(txHostEntry.ScopeId.Value).VariablesId
+            : _state.GetRootVariablesId();
+
+        Emit(new ActivitySpawned(
+            ActivityInstanceId: Guid.NewGuid(),
+            ActivityId: cancelBoundary.ActivityId,
+            ActivityType: cancelBoundary.GetType().Name,
+            VariablesId: parentVariablesId,
+            ScopeId: txHostEntry.ScopeId,
+            MultiInstanceIndex: null,
+            TokenId: null));
+
+        return [];
     }
 
     public void ResolveTransitions(IReadOnlyList<CompletedActivityTransitions> completedTransitions)
@@ -540,8 +626,10 @@ public class WorkflowExecution
         {
             Emit(new CompensationWalkStarted(scopeId, targetActivityRef, 0, throwerActivityInstanceId));
             Emit(new CompensationWalkCompleted(scopeId));
-            // Empty walk — complete the thrower so it transitions normally
-            Emit(new ActivityCompleted(throwerActivityInstanceId, throwerEntry.VariablesId, new System.Dynamic.ExpandoObject()));
+            // Complete the thrower so it transitions normally — unless already completed
+            // (e.g. CancelEndEvent is pre-completed before the cancel walk is initiated).
+            if (!throwerEntry.IsCompleted)
+                Emit(new ActivityCompleted(throwerActivityInstanceId, throwerEntry.VariablesId, new System.Dynamic.ExpandoObject()));
             return;
         }
 
@@ -589,8 +677,15 @@ public class WorkflowExecution
 
         // Create a child variable scope seeded with the snapshot variables
         var handlerVariablesId = Guid.NewGuid();
+        // For sub-process scopes the host entry inherits the parent's VariablesId, but the
+        // activities inside use an internal scope created by ProcessOpenSubProcess. Use the
+        // first non-handler entry's VariablesId to get that internal scope.
         var parentVariablesId = scopeId.HasValue
-            ? _state.GetEntry(scopeId.Value).VariablesId
+            ? (_state.GetEntriesInScope(scopeId.Value)
+                   .Where(e => !e.IsCompensationHandler)
+                   .Select(e => (Guid?)e.VariablesId)
+                   .FirstOrDefault()
+               ?? _state.GetEntry(scopeId.Value).VariablesId)
             : _state.GetRootVariablesId();
 
         Emit(new ChildVariableScopeCreated(handlerVariablesId, parentVariablesId));
@@ -662,7 +757,11 @@ public class WorkflowExecution
         // its updated variables must be merged into the parent before the next
         // handler is spawned so later handlers also observe the change.
         var parentVariablesId = scopeId.HasValue
-            ? _state.GetEntry(scopeId.Value).VariablesId
+            ? (_state.GetEntriesInScope(scopeId.Value)
+                   .Where(e => !e.IsCompensationHandler)
+                   .Select(e => (Guid?)e.VariablesId)
+                   .FirstOrDefault()
+               ?? _state.GetEntry(scopeId.Value).VariablesId)
             : _state.GetRootVariablesId();
         var handlerVariables = _state.GetVariableState(handlerEntry.VariablesId).Variables;
         Emit(new VariablesMerged(parentVariablesId, handlerVariables));
@@ -1316,10 +1415,11 @@ public class WorkflowExecution
                         allOrphanedScopeIds.Add(childScope.Id);
                 }
 
-                // Record Completed outcome for Transaction Sub-Process hosts.
-                // Placed before ActivityCompleted so the outcome is visible in state
-                // at the moment the host entry is marked done.
-                if (activity is Transaction)
+                // Record Completed outcome for Transaction Sub-Process hosts unless the cancel or
+                // hazard flow already set a different outcome (cancel path runs before this method).
+                if (activity is Transaction
+                    && (!_state.TransactionOutcomes.TryGetValue(entry.ActivityInstanceId, out var priorOutcome)
+                        || priorOutcome.Outcome == TransactionOutcome.Completed))
                     SetTransactionOutcomeCompleted(entry.ActivityInstanceId);
 
                 // All scope children are done — complete the sub-process host.
@@ -2345,7 +2445,8 @@ public class WorkflowExecution
     /// <summary>
     /// Recursively cancels all active entries within a scope (and their nested scope children).
     /// </summary>
-    private List<IInfrastructureEffect> CancelScopeChildren(Guid scopeId)
+    private List<IInfrastructureEffect> CancelScopeChildren(
+        Guid scopeId, string cancellationReason = "Scope cancelled by boundary event")
     {
         var effects = new List<IInfrastructureEffect>();
         foreach (var entry in _state.GetActiveActivities()
@@ -2353,11 +2454,11 @@ public class WorkflowExecution
         {
             // Recursively cancel nested scope children first
             if (_state.HasActiveChildrenInScope(entry.ActivityInstanceId))
-                effects.AddRange(CancelScopeChildren(entry.ActivityInstanceId));
+                effects.AddRange(CancelScopeChildren(entry.ActivityInstanceId, cancellationReason));
 
             Emit(new ActivityCancelled(
                 entry.ActivityInstanceId,
-                "Scope cancelled by boundary event"));
+                cancellationReason));
 
             // Clean up user task registry if this is a user task
             effects.AddRange(BuildUserTaskCleanupEffects(entry.ActivityInstanceId));

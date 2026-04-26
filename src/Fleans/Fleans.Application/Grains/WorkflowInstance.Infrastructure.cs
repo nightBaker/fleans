@@ -216,6 +216,24 @@ public partial class WorkflowInstance
     private async Task<IReadOnlyList<Guid>> HandleScopeCompletions(IWorkflowDefinition definition)
     {
         var eventCountBefore = _execution!.GetUncommittedEvents().Count;
+
+        // Detect completed CancelEndEvents inside active Transaction scopes and initiate the
+        // cancel flow (outcome=Cancelled, scope children cancelled, compensation walk started)
+        // before CompleteFinishedSubProcessScopes can auto-complete the Transaction as Completed.
+        var cancelEventCountBefore = _execution.GetUncommittedEvents().Count;
+        var cancelEffects = _execution.InitiateTransactionCancelFlowIfNeeded();
+        // Log each transaction cancel that was just initiated
+        foreach (var cancelledTx in _execution.GetUncommittedEvents()
+            .Skip(cancelEventCountBefore)
+            .OfType<TransactionOutcomeSet>()
+            .Where(e => e.Outcome == TransactionOutcome.Cancelled))
+        {
+            var txEntry = State.FindEntry(cancelledTx.TransactionInstanceId);
+            LogTransactionCancelInitiated(cancelledTx.TransactionInstanceId, txEntry?.ActivityId ?? "unknown");
+        }
+        if (cancelEffects.Count > 0)
+            await PerformEffects(cancelEffects);
+
         var (scopeEffects, completedHostIds, orphanedScopeIds) = _execution!.CompleteFinishedSubProcessScopes();
 
         // Advance compensation walk if the current handler has finished.
@@ -255,6 +273,16 @@ public partial class WorkflowInstance
 
                 if (activity is Transaction tx)
                 {
+                    var outcome = State.TransactionOutcomes.GetValueOrDefault(hostId);
+                    if (outcome?.Outcome == TransactionOutcome.Cancelled)
+                    {
+                        // Cancel path: route to the CancelBoundaryEvent attached to the Transaction.
+                        // Transaction variables are NOT propagated to the parent scope (BPMN spec).
+                        LogTransactionCancelBoundaryTaken(hostId, tx.ActivityId);
+                        var cancelEffects2 = _execution.ActivateCancelBoundaryEvent(hostEntry, scopeDef);
+                        await PerformEffects(cancelEffects2);
+                        continue; // skip normal GetNextActivities routing
+                    }
                     LogTransactionCompleted(hostId, tx.ActivityId);
                 }
                 else if (activity is SubProcess)

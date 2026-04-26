@@ -387,6 +387,14 @@ public partial class WorkflowInstance
         Message = "Transaction scope opened: activityId={ActivityId} instanceId={TransactionInstanceId} parentScopeId={ParentScopeId}")]
     private partial void LogTransactionScopeOpened(string activityId, Guid transactionInstanceId, Guid? parentScopeId);
 
+    [LoggerMessage(EventId = 1101, Level = LogLevel.Information,
+        Message = "Transaction cancel initiated: transactionInstanceId={TransactionInstanceId} activityId={ActivityId}")]
+    private partial void LogTransactionCancelInitiated(Guid transactionInstanceId, string activityId);
+
+    [LoggerMessage(EventId = 1102, Level = LogLevel.Information,
+        Message = "Transaction cancel boundary taken: transactionInstanceId={TransactionInstanceId} activityId={ActivityId}")]
+    private partial void LogTransactionCancelBoundaryTaken(Guid transactionInstanceId, string activityId);
+
     [LoggerMessage(EventId = 1103, Level = LogLevel.Information,
         Message = "Transaction completed: transactionInstanceId={TransactionInstanceId} activityId={ActivityId}")]
     private partial void LogTransactionCompleted(Guid transactionInstanceId, string activityId);
