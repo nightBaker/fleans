@@ -104,7 +104,7 @@
   content: '';
   position: fixed;
   inset: 0;
-  background-image: url('/fleans/texture-dotmatrix.svg');
+  background-image: url('../assets/texture-dotmatrix.svg');
   background-size: 240px 240px;
   background-repeat: repeat;
   opacity: var(--fleans-noise-opacity);
@@ -311,9 +311,13 @@ nav a[aria-current='page'] {
 /* Selectors verified against @astrojs/starlight 0.38.2 source */
 /* .site-title: SiteTitle.astro <a class="site-title"> */
 /* .group-label .large: SidebarSublist.astro details>summary>span.group-label>span.large */
+/* h1#_top: PageTitle.astro page-title heading (rendered outside .sl-markdown-content) */
+/* h2#starlight__on-this-page: TableOfContents.astro right-rail heading */
 .sl-markdown-content h1,
 .sl-markdown-content h2,
 .hero h1,
+h1#_top,
+h2#starlight__on-this-page,
 .site-title,
 .group-label .large {
   font-family: 'Space Grotesk', var(--sl-font-system);
