@@ -289,7 +289,7 @@ public class MultiInstanceScriptIntegrationTests
             $"At least one script iteration should have failed, got {failedIterations.Count}");
 
         var errorState = failedIterations.First().ErrorState!;
-        Assert.AreEqual(500, errorState.Code, "Generic exception should produce error code 500");
+        Assert.AreEqual("500", errorState.Code, "Generic exception should produce error code 500");
 
         // MI host should also be completed (failed) — host + iterations = 4 total
         var scriptCompletions = snapshot.CompletedActivities.Count(a => a.ActivityId == "script");

@@ -74,7 +74,7 @@ public class MultiInstanceCoordinator
     /// scope children and build cleanup effects.
     /// </summary>
     public MultiInstanceFailResult FailHost(
-        ActivityInstanceEntry failedIteration, int errorCode, string errorMessage)
+        ActivityInstanceEntry failedIteration, string errorCode, string errorMessage)
     {
         var hostInstanceId = failedIteration.ScopeId!.Value;
         var hostEntry = _state.GetEntry(hostInstanceId);

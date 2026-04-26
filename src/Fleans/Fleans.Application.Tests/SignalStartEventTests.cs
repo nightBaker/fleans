@@ -239,7 +239,7 @@ public class SignalStartEventTests : WorkflowTestBase
         var failedTask = snapshot.CompletedActivities.First(a => a.ActivityId == "task1");
         Assert.IsTrue(failedTask.IsCompleted);
         Assert.IsNotNull(failedTask.ErrorState);
-        Assert.AreEqual(500, failedTask.ErrorState.Code);
+        Assert.AreEqual("500", failedTask.ErrorState.Code);
         Assert.AreEqual("Generic failure", failedTask.ErrorState.Message);
     }
 
@@ -264,7 +264,7 @@ public class SignalStartEventTests : WorkflowTestBase
         Assert.IsNotNull(snapshot);
         var failedTask = snapshot.CompletedActivities.First(a => a.ActivityId == "task1");
         Assert.IsNotNull(failedTask.ErrorState);
-        Assert.AreEqual(400, failedTask.ErrorState.Code);
+        Assert.AreEqual("400", failedTask.ErrorState.Code);
         Assert.AreEqual("Bad input", failedTask.ErrorState.Message);
     }
 
