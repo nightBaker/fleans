@@ -63,7 +63,7 @@ public class ActivityInstanceEntryTests
         entry.Fail(new Exception("something broke"));
         Assert.IsTrue(entry.IsCompleted);
         Assert.IsFalse(entry.IsExecuting);
-        Assert.AreEqual(500, entry.ErrorCode);
+        Assert.AreEqual("500", entry.ErrorCode);
         Assert.AreEqual("something broke", entry.ErrorMessage);
     }
 
@@ -73,7 +73,7 @@ public class ActivityInstanceEntryTests
         var entry = CreateEntry();
         entry.Execute();
         entry.Fail(new BadRequestActivityException("bad input"));
-        Assert.AreEqual(400, entry.ErrorCode);
+        Assert.AreEqual("400", entry.ErrorCode);
     }
 
     [TestMethod]

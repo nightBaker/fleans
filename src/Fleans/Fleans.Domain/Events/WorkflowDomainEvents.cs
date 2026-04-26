@@ -17,7 +17,7 @@ public record ActivityExecutionStarted(Guid ActivityInstanceId) : IDomainEvent;
 public record ActivityCompleted(
     Guid ActivityInstanceId, Guid VariablesId, ExpandoObject Variables) : IDomainEvent;
 public record ActivityFailed(
-    Guid ActivityInstanceId, int ErrorCode, string ErrorMessage) : IDomainEvent;
+    Guid ActivityInstanceId, string ErrorCode, string ErrorMessage) : IDomainEvent;
 public record ActivityExecutionReset(Guid ActivityInstanceId) : IDomainEvent;
 public record ActivityCancelled(Guid ActivityInstanceId, string Reason) : IDomainEvent;
 public record MultiInstanceTotalSet(Guid ActivityInstanceId, int Total) : IDomainEvent;
@@ -99,7 +99,7 @@ public record CompensationWalkCompleted(Guid? ScopeId) : IDomainEvent;
 public record CompensationWalkFailed(
     Guid? ScopeId,
     Guid HandlerInstanceId,
-    int ErrorCode,
+    string ErrorCode,
     string ErrorMessage) : IDomainEvent;
 
 // Transaction Sub-Process outcome
@@ -108,5 +108,5 @@ public record CompensationWalkFailed(
 public record TransactionOutcomeSet(
     Guid TransactionInstanceId,
     States.TransactionOutcome Outcome,
-    int? ErrorCode,
+    string? ErrorCode,
     string? ErrorMessage) : IDomainEvent;
