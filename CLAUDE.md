@@ -135,7 +135,7 @@ The full regression suite is the union of every plan under `tests/manual/`. Each
 **Universal prerequisites for every step:**
 - Aspire stack running: `dotnet run --project Fleans.Aspire` (from `src/Fleans/`).
 - A clean dev DB (delete the SQLite file or set a fresh `FLEANS_SQLITE_CONNECTION`) so prior runs don't leave stale instances.
-- Web UI reachable at `https://localhost:7140` (also the API origin used in step bodies).
+- Web UI reachable at `https://localhost:7124`. The API origin used in step bodies is `https://localhost:7140`.
 
 **Reporting convention:** each numbered entry below is one regression "step". For each one, follow the linked `test-plan.md` end-to-end and report `PASSED`, `FAILED`, `BUG` (new regression — file an issue), or `KNOWN BUG` (matches a `> **KNOWN BUG:** …` note inside the linked plan; counts as PASSED for promotion purposes).
 
