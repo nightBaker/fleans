@@ -15,6 +15,7 @@ namespace Fleans.Persistence;
 public class WorkflowQueryService : IWorkflowQueryService
 {
     private readonly IDbContextFactory<FleanQueryDbContext> _dbContextFactory;
+    private readonly IDbContextFactory<FleanCommandDbContext> _commandDbContextFactory;
     private readonly ISieveProcessor _sieveProcessor;
 
     private static readonly JsonSerializerSettings JsonSettings = new()
@@ -26,9 +27,11 @@ public class WorkflowQueryService : IWorkflowQueryService
 
     public WorkflowQueryService(
         IDbContextFactory<FleanQueryDbContext> dbContextFactory,
+        IDbContextFactory<FleanCommandDbContext> commandDbContextFactory,
         ISieveProcessor sieveProcessor)
     {
         _dbContextFactory = dbContextFactory;
+        _commandDbContextFactory = commandDbContextFactory;
         _sieveProcessor = sieveProcessor;
     }
 
@@ -432,4 +435,56 @@ public class WorkflowQueryService : IWorkflowQueryService
             t.Assignee, t.CandidateGroups, t.CandidateUsers,
             t.ClaimedBy, t.TaskState.ToString(), t.CreatedAt,
             t.ExpectedOutputVariables);
+
+    public async Task<RegisteredEventsSnapshot> GetRegisteredEventsAsync()
+    {
+        await using var db = await _commandDbContextFactory.CreateDbContextAsync();
+
+        var messageStartEvents = await db.MessageStartEventRegistrations
+            .AsNoTracking()
+            .OrderBy(r => r.MessageName).ThenBy(r => r.ProcessDefinitionKey)
+            .Select(r => new MessageStartEventInfo(r.MessageName, r.ProcessDefinitionKey))
+            .ToListAsync();
+
+        var signalStartEvents = await db.SignalStartEventRegistrations
+            .AsNoTracking()
+            .OrderBy(r => r.SignalName).ThenBy(r => r.ProcessDefinitionKey)
+            .Select(r => new SignalStartEventInfo(r.SignalName, r.ProcessDefinitionKey))
+            .ToListAsync();
+
+        // MessageSubscription.MessageName is the combined grain key "messageName:correlationKey"
+        var rawMessageSubs = await db.MessageSubscriptions
+            .AsNoTracking()
+            .OrderBy(s => s.MessageName).ThenBy(s => s.WorkflowInstanceId)
+            .Select(s => new { s.MessageName, s.WorkflowInstanceId, s.ActivityId })
+            .ToListAsync();
+
+        var messageSubscriptions = rawMessageSubs.Select(s =>
+        {
+            var idx = s.MessageName.IndexOf(':');
+            var msgName = idx >= 0 ? s.MessageName[..idx] : s.MessageName;
+            var corrKey = idx >= 0 ? s.MessageName[(idx + 1)..] : string.Empty;
+            return new MessageSubscriptionInfo(msgName, corrKey, s.WorkflowInstanceId, s.ActivityId);
+        }).ToList();
+
+        var signalSubscriptions = await db.SignalSubscriptions
+            .AsNoTracking()
+            .OrderBy(s => s.SignalName).ThenBy(s => s.WorkflowInstanceId)
+            .Select(s => new SignalSubscriptionInfo(s.SignalName, s.WorkflowInstanceId, s.ActivityId))
+            .ToListAsync();
+
+        var conditionalStartEvents = await db.ConditionalStartEventListeners
+            .AsNoTracking()
+            .Where(c => c.IsRegistered)
+            .OrderBy(c => c.ProcessDefinitionKey).ThenBy(c => c.ActivityId)
+            .Select(c => new ConditionalStartEventInfo(c.ProcessDefinitionKey, c.ActivityId, c.ConditionExpression))
+            .ToListAsync();
+
+        return new RegisteredEventsSnapshot(
+            messageStartEvents,
+            signalStartEvents,
+            messageSubscriptions,
+            signalSubscriptions,
+            conditionalStartEvents);
+    }
 }

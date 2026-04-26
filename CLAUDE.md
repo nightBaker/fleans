@@ -172,6 +172,7 @@ The full regression suite is the union of every plan under `tests/manual/`. Each
 31. **API JWT Authentication** — `tests/manual/28-api-auth/test-plan.md`. Opt-in JWT bearer authentication; verifies API works unauthenticated by default, returns 401 when auth is configured and no token is provided, and accepts valid tokens.
 32. **Conditional Events** — `tests/manual/24-conditional-event/test-plan.md` (`conditional-event-test.bpmn`). Conditional intermediate catch event blocks until condition is true; conditional start event creates instances via evaluate-conditions API; conditional boundary event (interrupting) cancels host.
 33. **Editor Tabs** — `tests/manual/29-editor-tabs/test-plan.md`. Multi-tab BPMN editor in the Admin UI: open/switch/close tabs, dirty tracking with confirm-close dialog, 10-tab cap, `localStorage` persistence across refresh, `beforeunload` warning when any tab is dirty.
+34. **Events Page** — `tests/manual/30-events-page/test-plan.md`. Admin UI `/events` page showing message start events, signal start events, conditional start events, active message subscriptions, and active signal subscriptions; verifies empty-state messaging and live data refresh.
 
 > When adding a new manual test folder under `tests/manual/`, append a numbered entry here so the regression skill picks it up.
 
@@ -209,4 +210,5 @@ Two providers: **SQLite** (default, local dev) and **PostgreSQL** (production/lo
 - **WorkflowInstance uses JournaledGrain with event sourcing** — events are persisted via EfCoreEventStore, read-side state is projected via EfCoreWorkflowStateProjection (CQRS pattern). Other grains (ProcessDefinition, correlations, timers, start event listeners, user tasks) use IPersistentState with EF Core IGrainStorage.
 - **BPMN coverage is partial** — see the table in `README.md` for what's implemented
 - **Design docs** live in `docs/plans/` — check them before making architectural changes
+- **MessageSubscription.MessageName is the combined grain key** — `MessageCorrelationGrain` uses `messageName:correlationKey` as its grain primary key, and stores this composite key in both `MessageSubscription.MessageName` (FK/PK) and `.CorrelationKey`. Parse by splitting on the first `:` to recover the human-readable message name and correlation key for display (e.g. on the Events page). `FleanQueryDbContext` only has `WorkflowInstances`, `ProcessDefinitions`, `UserTasks`, and event sourcing tables; event subscription state (message/signal correlations, start event listeners) lives in `FleanCommandDbContext` — inject `IDbContextFactory<FleanCommandDbContext>` when you need to query those.
 
