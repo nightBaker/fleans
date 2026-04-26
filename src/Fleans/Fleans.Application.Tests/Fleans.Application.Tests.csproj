@@ -21,6 +21,8 @@
     <PackageReference Include="MSTest.TestAdapter" Version="4.0.2" />
     <PackageReference Include="MSTest.TestFramework" Version="4.0.2" />
     <PackageReference Include="NSubstitute" Version="5.3.0" />
+    <!-- Kafka integration tests are env-gated by FLEANS_KAFKA_TESTS=1; package is light enough to keep in the default test project. -->
+    <PackageReference Include="Testcontainers.Kafka" Version="3.10.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -32,6 +34,7 @@
     <ProjectReference Include="..\Fleans.Persistence\Fleans.Persistence.csproj" />
     <ProjectReference Include="..\Fleans.Persistence.Sqlite\Fleans.Persistence.Sqlite.csproj" />
     <ProjectReference Include="..\Fleans.ServiceDefaults\Fleans.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\Fleans.Streaming.Kafka\Fleans.Streaming.Kafka.csproj" />
     <ProjectReference Include="..\Fleans.Worker\Fleans.Worker.csproj" />
   </ItemGroup>
 
