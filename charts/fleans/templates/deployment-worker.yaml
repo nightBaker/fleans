@@ -1,4 +1,9 @@
 {{- if .Values.worker.enabled }}
+{{- /*
+No Service by design: worker silos host [StatelessWorker] grains called
+in-process or via Orleans clustering (Redis + pod IPs). Nothing outside
+the cluster targets the worker, so no inbound HTTP Service is needed.
+*/}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

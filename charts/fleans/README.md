@@ -113,8 +113,13 @@ worker:
 
 ```bash
 helm lint charts/fleans/
-helm template fleans charts/fleans/ > /tmp/rendered.yaml
-diff -u <(echo "previous-rendered") /tmp/rendered.yaml | head -100   # eyeball diffs in PRs
+
+# Render with main and your branch, then diff — useful in PRs to see what changed.
+git stash
+helm template fleans charts/fleans/ > /tmp/rendered-main.yaml
+git stash pop
+helm template fleans charts/fleans/ > /tmp/rendered-branch.yaml
+diff -u /tmp/rendered-main.yaml /tmp/rendered-branch.yaml | less
 ```
 
 ## Acceptance reference (from #407)
