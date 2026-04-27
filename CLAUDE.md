@@ -73,6 +73,49 @@ The splash page (`website/src/content/docs/index.mdx`) loads an interactive Thre
    - **Fail tests:** error state set with correct code/message (500 for generic Exception, 400 for BadRequestActivityException), failed activity still transitions to next activity, no variables merged on failure
 4. Update the BPMN elements table in `README.md`
 
+## How to Add a Custom Task Provider
+
+> **When to use this**: this section describes adding a **plugin** that runs in a Worker silo and is invoked by `<serviceTask type="...">`. To add a new **core** activity that ships in `Fleans.Domain` (e.g. a future built-in BPMN activity), see "How to Add a New BPMN Activity" instead. The two are not mutually exclusive — a plugin appears as a `CustomTaskActivity` in the engine, which is itself a single core activity registered once. Plugins extend the catalog of `taskType` discriminators handled by that one activity class.
+
+1. Define a per-plugin grain interface in your plugin's *.Core* assembly:
+   ```csharp
+   public interface IRestCallerGrain : ICustomTaskCallProvider { }
+   ```
+2. Implement the grain in your plugin's *.Worker* assembly. Keep this assembly out of the Api host's reference graph — only the Worker silo loads it:
+   ```csharp
+   [StatelessWorker]
+   public class RestCallerGrain : Grain, IRestCallerGrain
+   {
+       public async Task ExecuteAsync(IDictionary<string, object?> resolved, ExpandoObject variables)
+       {
+           // 1. Read inputs from `resolved` (set by the framework before this call).
+           // 2. Perform the side effect (HTTP, queue publish, file IO, etc.).
+           // 3. Populate `resolved["__response"] = ...` for output mapping to project from.
+       }
+   }
+   ```
+3. Register the plugin in the Api host (or test DI):
+   ```csharp
+   services.AddCustomTaskProvider<IRestCallerGrain>("rest-call");
+   ```
+   All `AddCustomTaskProvider<T>` calls must complete before the first resolution of `CustomTaskCallProviderRegistry`. In production this is the host startup; in tests, register all providers before resolving the registry.
+4. Author BPMN that targets your plugin:
+   ```xml
+   <serviceTask id="t1" type="rest-call">
+     <extensionElements>
+       <zeebe:ioMapping>
+         <zeebe:input  source="=userId"               target="user_id" />
+         <zeebe:output source="=__response.body.id"   target="created_id" />
+       </zeebe:ioMapping>
+     </extensionElements>
+   </serviceTask>
+   ```
+   `${expr}` is condition-expression syntax — not for io mappings. Mapping `source` uses `=expr` for an expression (`=path.to.value`, `="literal"`, `=42`, `=true`/`=false`/`=null`) or omits `=` for a bare string literal. There is no `${…}` form for mappings; using it will fail deploy-time grammar validation.
+
+5. Output `target` rules: top-level identifier; `__response` is reserved (providers populate it during execution; output mapping cannot target it). Input `target` rules: top-level identifier (provider parameter name — plugin-specific, no reserved-name list).
+
+**Constraint inherited from #357 v1**: There is no cancellation/timeout on `ICustomTaskCallProvider.ExecuteAsync` — provider implementations should not block indefinitely. Cancellation + timeout + Worker-silo placement gating land in a v2 follow-up.
+
 ## How to Add a New API Endpoint
 
 Add it to `Fleans.Api/Controllers/WorkflowController.cs`. DTOs go in `Fleans.ServiceDefaults/`.

@@ -37,6 +37,7 @@ For now, next elements are implemented
 | **Activities**       |                                                                             |             |
 | Task                 | A single unit of work.                                                      |     [x]     |
 | Script Task          | A task that executes an inline script.                                       |     [x]     |
+| Service Task         | A task dispatched to a pluggable provider (e.g., REST caller) via `<serviceTask type="...">` and `zeebe:ioMapping`. | [x] (framework — plugins ship separately) |
 | Sub-Process          | A group of tasks that are treated as a single unit.                         |     [x]     |
 | Call Activity        | A type of sub-process that calls another process.                            |     [x]     |
 | User Task            | A task that requires human interaction with claim lifecycle.                 |     [x]     |

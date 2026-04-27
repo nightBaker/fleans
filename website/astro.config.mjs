@@ -34,6 +34,7 @@ export default defineConfig({
             { label: 'Architecture', slug: 'concepts/architecture' },
             { label: 'What is BPMN?', slug: 'concepts/bpmn-overview' },
             { label: 'BPMN Support', slug: 'concepts/bpmn-support' },
+            { label: 'Custom Tasks', slug: 'concepts/custom-tasks' },
           ],
         },
         {
