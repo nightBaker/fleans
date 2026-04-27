@@ -44,13 +44,13 @@ spec:
             {{- include "fleans.commonEnv" . | nindent 12 }}
           livenessProbe:
             httpGet:
-              path: /health
+              path: /alive
               port: http
             initialDelaySeconds: 30
             periodSeconds: 30
           readinessProbe:
             httpGet:
-              path: /alive
+              path: /health
               port: http
             initialDelaySeconds: 10
             periodSeconds: 10
