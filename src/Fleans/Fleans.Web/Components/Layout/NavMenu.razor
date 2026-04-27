@@ -1,3 +1,5 @@
+@using Microsoft.AspNetCore.Components.Forms
+
 <div class="navmenu">
     <FluentAppBar>
         <FluentAppBarItem Href="/workflows"
@@ -9,4 +11,15 @@
                           IconRest="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size24.DrawShape())"
                           IconActive="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Filled.Size24.DrawShape())" />
     </FluentAppBar>
+    <AuthorizeView>
+        <Authorized>
+            <div class="nav-user">
+                <span class="nav-user-name">Signed in as @context.User.Identity?.Name</span>
+                <form action="/Account/Logout" method="post" class="nav-user-logout">
+                    <AntiforgeryToken />
+                    <FluentButton Type="ButtonType.Submit" Appearance="Appearance.Stealth">Sign out</FluentButton>
+                </form>
+            </div>
+        </Authorized>
+    </AuthorizeView>
 </div>

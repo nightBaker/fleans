@@ -96,7 +96,7 @@ Owner decisions fixed up front:
 
 1. Aesthetic direction: technical-clean (teal `#4eb5a6` as primary accent).
 2. Per-candidate token completeness: option (a) — full token map for every Starlight token plus the two `--fleans-*` tokens, both themes.
-3. `--fleans-accent-2` usage: contract-only; real usage deferred to [#259](https://github.com/nightBaker/fleans/issues/259) / [#260](https://github.com/nightBaker/fleans/issues/260).
+3. `--fleans-accent-2` usage: contract-only in this PR; real usage deferred to [#260](https://github.com/nightBaker/fleans/issues/260).
 
 ### Dark theme token map
 
@@ -191,6 +191,99 @@ pair: --sl-color-accent (#1f6357) on --sl-color-gray-6 (#e0e0d9) = 5.31:1 (AA pa
 ```
 
 Row 7b (accent on `--fleans-surface`) is dark-only; in light theme `--fleans-surface = bg`, so the pair degenerates to row 2 which already passes.
+
+## Atmospheric details
+
+Added in [#261](https://github.com/nightBaker/fleans/issues/261). Implements four atmospheric techniques that push the brutalist-technical aesthetic beyond palette alone — controlled surface texture, sharp rules, and direction-carrying light/shadow.
+
+### Techniques
+
+#### A. H2 accent rule
+A 2px linear-gradient bar beneath each `<h2>`: `linear-gradient(to right, accent 0 3.5rem, transparent 3.5rem)`. Reads as a printer registration mark / CLI prompt bar. Applied in both themes via `.sl-markdown-content h2::after`.
+
+#### B. Dot-matrix noise (dark theme only)
+A static SVG (`public/texture-dotmatrix.svg`, ~120×120 viewBox, staggered 1px dots at ~1% coverage) applied as `background-image` on `body::before` at `opacity: 0.04`, `background-size: 240px`. Fixed positioning covers the viewport without scrolling.
+
+Light theme is intentionally texture-free: dot-matrix on warm `#f5f5f0` bg fights the bg tint rather than reinforcing it.
+
+#### C. Decorative borders
+Three primitives used sparingly:
+
+1. **Section rule** — `.sl-markdown-content hr` becomes a 1px dashed rule in `--sl-color-gray-4` centered on a `■` glyph in accent color. Reads like a page-break marker.
+2. **Code-block corner brackets** — `div.expressive-code::before` uses eight stacked background gradients to paint four 12×12px L-shapes in accent color at each corner. No full border — terminal-panel feel.
+3. **Sidebar active-item tick** — `nav a[aria-current="page"]` overrides Starlight's thick left border with a 2px accent bar (`border-inline-start-width: 2px`).
+
+#### D. Scanline overlay (dark theme only)
+A `repeating-linear-gradient(0deg, rgba(245,245,240,0.015) 0 1px, transparent 1px 3px)` applied via `main::before` in dark theme. Fixed positioning, `z-index: 1`, `pointer-events: none`. At 1.5% opacity the effect is imperceptible over body text but adds horizontal line rhythm over near-black code-block surfaces — the CRT-over-CLI cue.
+
+### Token additions
+
+| Token | Role | Dark | Light |
+|---|---|---|---|
+| `--fleans-rule-glyph` | `■` glyph color in section dividers | `= --sl-color-accent` | `= --sl-color-accent` |
+| `--fleans-bracket` | Code-block corner bracket color | `= --sl-color-accent` | `= --sl-color-accent` |
+| `--fleans-noise-opacity` | Dot-matrix layer opacity | `0.04` | `0` (no noise) |
+| `--fleans-scanline-base` | Scanline tint for content area | `rgba(245,245,240,0.015)` | *(undefined — no scanlines)* |
+
+### CSS selector stability
+
+| Target | Selector | Stability |
+|---|---|---|
+| H2 accent rule | `.sl-markdown-content h2::after` | Stable — documented Starlight override point since v0.15 |
+| Section divider | `.sl-markdown-content hr` | Stable — same documented override point |
+| Code-block brackets | `div.expressive-code::before` | Stable — ExpressiveCode public API class, v0.41.7 |
+| Scanline overlay | `main::before` | Stable — semantic HTML element, won't be renamed |
+| Sidebar active tick | `nav a[aria-current="page"]` | Stable — ARIA attribute, part of a11y contract |
+
+No undocumented Starlight internal class selectors. Any future selector targeting a Starlight internal must carry a `/* Verified: Starlight <version> */` comment.
+
+## Hero
+
+Added in [#259](https://github.com/nightBaker/fleans/issues/259). Redesigns the landing hero to inherit the brutalist-technical aesthetic established by the palette (#258) and atmospheric details (#261).
+
+### Tagline
+
+Replaced the default repetitive tagline with two declarative clauses that name the engine's two-layer architecture:
+
+> **Workflow definitions in BPMN.  
+> Execution as Orleans grains.**
+
+Uses `<br>` HTML tag in the YAML `tagline:` value. Starlight renders the tagline via `set:html`, so HTML tags parse correctly — no CSS `white-space` trick needed.
+
+### Layout
+
+Starlight's splash hero already implements an asymmetric two-column grid at `min-width: 50rem` (text left, image right). No layout override was needed. Additions are:
+
+- **Accent bar on text column** — `border-inline-start: 3px solid var(--sl-color-accent)` on `.hero .stack` (desktop only, inside `@media (min-width: 50rem)`). CLI-prompt visual cue.
+- **H1 typography** — `font-size: clamp(2.5rem, 6vw, 4.5rem)`, `letter-spacing: -0.03em`, `line-height: 1.05`. Increases size contrast without requiring a new font face.
+- **Tagline** — rendered in `var(--sl-font-mono, monospace)`, `font-size: 1rem`, `opacity: 0.85`, `max-width: 28rem` to create deliberate negative space to the right.
+- **Vertical padding** — `padding-block: 8rem` (dark) / `6rem` (light) for controlled negative space around the hero.
+
+### Hero image
+
+Switched from `image.file: ../../assets/logo.svg` (Astro image pipeline) to `image.html:` with a static `<img src="/fleans/logo.svg">`. The SVG is served from `public/logo.svg` at the predictable static path `/fleans/logo.svg` — consistent with `favicon.svg` and `texture-dotmatrix.svg`. SVG logos need no format conversion or responsive breakpoints, so skipping the image pipeline is appropriate.
+
+Switching to `image.html:` is required to get the `.hero-html` element hook for the corner brackets.
+
+### Atmospheric details (hero-specific)
+
+#### E. Orange-tinted hero scanline (dark theme only)
+
+`.hero::before` — same `repeating-linear-gradient` technique as the body scanline (§ D) but with `rgba(255, 95, 31, 0.04)` instead of the neutral `rgba(245,245,240,0.015)`. The orange tint gives the hero landing zone a warmer atmospheric feel vs. the body. Applied `position: absolute` (not `fixed`) so it clips to the `.hero` area. `.hero` gets `position: relative` as the positioning anchor.
+
+#### F. Corner brackets on hero image (both themes)
+
+`.hero-html::before` — reuses the same eight-gradient technique as code-block brackets (§ C2) with 16px L-shapes (vs. 12px on code blocks) to signal visual prominence. Applied in both themes via the `--fleans-bracket` token.
+
+### CSS selector stability
+
+| Target | Selector | Stability |
+|---|---|---|
+| Hero section | `.hero` | Starlight stable since v0.10 |
+| Text+actions column | `.hero .stack` | Verified: Starlight 0.38.2 — emitted as `class="sl-flex stack"`; scoped to `.hero` |
+| Tagline | `.hero .tagline` | Starlight stable since v0.10 |
+| H1 | `.hero h1` | Starlight stable since v0.10 |
+| Image container | `.hero-html` | Verified: Starlight 0.38.2 — emitted by `Hero.astro` when `image.html:` is used |
 
 ---
 

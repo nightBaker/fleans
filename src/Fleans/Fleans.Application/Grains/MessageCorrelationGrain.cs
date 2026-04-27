@@ -1,3 +1,4 @@
+using Fleans.Application.Placement;
 using Fleans.Domain;
 using Fleans.Domain.States;
 using Microsoft.Extensions.Logging;
@@ -13,6 +14,7 @@ namespace Fleans.Application.Grains;
 // delivery tcs). Without reentrancy, Subscribe() queues behind the active DeliverMessage
 // activation, causing a circular wait with neither being able to complete.
 [Reentrant]
+[CorePlacement]
 public partial class MessageCorrelationGrain : Grain, IMessageCorrelationGrain
 {
     private readonly IPersistentState<MessageCorrelationState> _state;

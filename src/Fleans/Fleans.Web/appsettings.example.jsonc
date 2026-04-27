@@ -1,0 +1,37 @@
+// Documentation only — this file is NOT loaded by the host.
+// Copy the relevant block into appsettings.json (or set the equivalent env vars)
+// to enable OIDC authentication for the Fleans Management UI.
+//
+// Auth is enabled iff Authority AND ClientId are both non-empty (single source of truth).
+// Leaving the section absent (the default) preserves today's open-access behaviour.
+{
+  "Authentication": {
+    // OIDC issuer URL (required to enable auth).
+    "Authority": "https://keycloak.example.com/realms/fleans",
+
+    // OAuth client id (required to enable auth). Must match a confidential client
+    // registered with the IdP.
+    "ClientId": "fleans-web",
+
+    // Confidential-client secret. In dev, prefer `dotnet user-secrets`; in prod,
+    // set via the Aspire `auth-client-secret` parameter (secret: true) or env var
+    // Authentication__ClientSecret. NEVER commit a real secret to source control.
+    "ClientSecret": "<from-IdP>",
+
+    // Optional. Defaults to true. Set to false ONLY for local Keycloak dev mode (HTTP).
+    "RequireHttpsMetadata": true,
+
+    // Optional. Defaults to 60. Cookie expiry for the management UI session.
+    // Align with the IdP's access-token / management-page session lifetime
+    // so admin sessions in the Web UI and tokens used against the API don't drift apart.
+    "CookieExpireMinutes": 60,
+
+    // Optional. List of trusted reverse-proxy IP addresses (D12 — forwarded headers).
+    // Empty list = X-Forwarded-* headers are ignored. Add proxy IPs only if Fleans.Web
+    // sits behind a reverse proxy that terminates TLS.
+    "KnownProxies": [],
+
+    // Optional. List of trusted reverse-proxy CIDR networks (D12). Same gating as above.
+    "KnownNetworks": []
+  }
+}

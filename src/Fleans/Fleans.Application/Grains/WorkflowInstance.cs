@@ -7,6 +7,7 @@ using Fleans.Domain.States;
 using Fleans.Application.Adapters;
 using Fleans.Application.Effects;
 using Fleans.Application.Logging;
+using Fleans.Application.Placement;
 using Microsoft.Extensions.Logging;
 using Orleans;
 using Orleans.EventSourcing;
@@ -17,6 +18,7 @@ using System.Dynamic;
 
 namespace Fleans.Application.Grains;
 
+[CorePlacement]
 public partial class WorkflowInstance :
     JournaledGrain<WorkflowInstanceState, IDomainEvent>,
     IWorkflowInstanceGrain,

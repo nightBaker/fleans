@@ -2,6 +2,7 @@ using Fleans.Application.Conditions;
 using Fleans.Application.Events;
 using Fleans.Application.Grains;
 using Fleans.Application.Logging;
+using Fleans.Application.Placement;
 using Fleans.Domain.Events;
 using Microsoft.Extensions.Logging;
 using Orleans.Runtime;
@@ -10,6 +11,7 @@ using Orleans.Streams;
 namespace Fleans.Application.Events.Handlers;
 
 [ImplicitStreamSubscription(WorkflowEventsPublisher.StreamNameSpace)]
+[CorePlacement]
 public partial class WorfklowEvaluateConditionEventHandler : Grain, IWorfklowEvaluateConditionEventHandler, IAsyncObserver<EvaluateConditionEvent>
 {
 

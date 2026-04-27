@@ -1,0 +1,13 @@
+@inject NavigationManager NavigationManager
+
+@code {
+    protected override void OnInitialized()
+    {
+        // ToBaseRelativePath strips origin + base-href, giving e.g. "workflows?filter=active".
+        // Prepending "/" produces a relative path the D6 IsLocalUrl predicate accepts.
+        // EscapeDataString handles any "?" or "&" so a single decode by the model binder restores the original.
+        var relPath = "/" + NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
+        var encoded = Uri.EscapeDataString(relPath);
+        NavigationManager.NavigateTo($"/Account/Login?returnUrl={encoded}", forceLoad: true);
+    }
+}

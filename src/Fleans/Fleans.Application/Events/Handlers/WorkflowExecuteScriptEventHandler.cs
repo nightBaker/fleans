@@ -1,5 +1,6 @@
 using Fleans.Application.Grains;
 using Fleans.Application.Logging;
+using Fleans.Application.Placement;
 using Fleans.Application.Scripts;
 using Fleans.Domain.Events;
 using Microsoft.Extensions.Logging;
@@ -8,6 +9,7 @@ using Orleans.Streams;
 namespace Fleans.Application.Events.Handlers;
 
 [ImplicitStreamSubscription(WorkflowEventsPublisher.StreamNameSpace)]
+[CorePlacement]
 public partial class WorkflowExecuteScriptEventHandler : Grain, IWorkflowExecuteScriptEventHandler, IAsyncObserver<ExecuteScriptEvent>
 {
     private readonly ILogger<WorkflowExecuteScriptEventHandler> _logger;

@@ -1,3 +1,4 @@
+using Fleans.Application.Placement;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.States;
@@ -6,6 +7,7 @@ using Orleans.Runtime;
 
 namespace Fleans.Application.Grains;
 
+[CorePlacement]
 public partial class SignalStartEventListenerGrain :
     StartEventListenerGrainBase<SignalStartEventListenerState>, ISignalStartEventListenerGrain
 {

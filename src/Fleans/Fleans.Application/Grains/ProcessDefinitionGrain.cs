@@ -1,4 +1,5 @@
 using Fleans.Application.Logging;
+using Fleans.Application.Placement;
 using Fleans.Application.QueryModels;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
@@ -10,6 +11,7 @@ using Orleans.Runtime;
 namespace Fleans.Application.Grains;
 
 [Reentrant]
+[CorePlacement]
 public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
 {
     private readonly IGrainFactory _grainFactory;

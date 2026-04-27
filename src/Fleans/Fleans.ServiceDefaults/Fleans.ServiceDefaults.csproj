@@ -13,6 +13,8 @@
     <!-- If a third provider is added, consider extracting to a dedicated Fleans.Persistence.Configuration project. -->
     <ProjectReference Include="..\Fleans.Persistence.Sqlite\Fleans.Persistence.Sqlite.csproj" />
     <ProjectReference Include="..\Fleans.Persistence.PostgreSql\Fleans.Persistence.PostgreSql.csproj" />
+    <!-- Streaming providers: only Kafka has a separate package today (Memory ships with Microsoft.Orleans.Streaming). -->
+    <ProjectReference Include="..\Fleans.Streaming.Kafka\Fleans.Streaming.Kafka.csproj" />
   </ItemGroup>
 
   <ItemGroup>

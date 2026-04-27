@@ -29,6 +29,7 @@
     <ProjectReference Include="..\Fleans.Persistence.Sqlite\Fleans.Persistence.Sqlite.csproj" />
     <ProjectReference Include="..\Fleans.ServiceDefaults\Fleans.ServiceDefaults.csproj" />
     <ProjectReference Include="..\Fleans.Persistence.PostgreSql\Fleans.Persistence.PostgreSql.csproj" />
+    <ProjectReference Include="..\Fleans.Worker\Fleans.Worker.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,3 +1,4 @@
+using Fleans.Application.Placement;
 using Fleans.Domain.Persistence;
 using Microsoft.Extensions.Logging;
 using Orleans.Concurrency;
@@ -5,6 +6,7 @@ using Orleans.Concurrency;
 namespace Fleans.Application.Grains;
 
 [Reentrant]
+[CorePlacement]
 public partial class ProcessDefinitionRegistryGrain : Grain, IProcessDefinitionRegistryGrain
 {
     private readonly IProcessDefinitionRepository _repository;

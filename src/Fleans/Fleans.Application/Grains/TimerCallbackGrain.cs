@@ -1,8 +1,10 @@
+using Fleans.Application.Placement;
 using Microsoft.Extensions.Logging;
 using Orleans.Runtime;
 
 namespace Fleans.Application.Grains;
 
+[CorePlacement]
 public partial class TimerCallbackGrain : Grain, ITimerCallbackGrain, IRemindable
 {
     private const string ReminderName = "timer-callback";
