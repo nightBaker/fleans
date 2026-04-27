@@ -1,0 +1,67 @@
+{{- if .Values.mcp.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fleans.fullname" . }}-mcp
+  labels:
+    {{- include "fleans.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mcp
+spec:
+  replicas: {{ .Values.mcp.replicas }}
+  selector:
+    matchLabels:
+      {{- include "fleans.selectorLabels" (dict "ctx" . "component" "mcp") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fleans.selectorLabels" (dict "ctx" . "component" "mcp") | nindent 8 }}
+      {{- with .Values.mcp.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: fleans-mcp
+          image: {{ include "fleans.imageRef" (dict "ctx" . "repo" .Values.image.mcp.repository) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: mcp
+              containerPort: 5200
+              protocol: TCP
+          env:
+            - name: ASPNETCORE_URLS
+              value: "http://+:5200"
+            {{- include "fleans.commonEnv" . | nindent 12 }}
+          livenessProbe:
+            tcpSocket:
+              port: mcp
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            tcpSocket:
+              port: mcp
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.mcp.resources | nindent 12 }}
+      {{- with .Values.mcp.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.mcp.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.mcp.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

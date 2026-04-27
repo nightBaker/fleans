@@ -1,0 +1,18 @@
+{{- if .Values.mcp.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fleans.fullname" . }}-mcp
+  labels:
+    {{- include "fleans.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mcp
+spec:
+  type: {{ .Values.mcp.service.type }}
+  selector:
+    {{- include "fleans.selectorLabels" (dict "ctx" . "component" "mcp") | nindent 4 }}
+  ports:
+    - name: mcp
+      port: {{ .Values.mcp.service.port }}
+      targetPort: mcp
+      protocol: TCP
+{{- end }}
