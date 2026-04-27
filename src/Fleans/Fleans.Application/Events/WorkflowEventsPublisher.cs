@@ -52,6 +52,12 @@ public partial class WorkflowEventsPublisher : Grain, IEventPublisher
                 var scriptStream = _streamProvider.GetStream<ExecuteScriptEvent>(scriptStreamId);
                 await scriptStream.OnNextAsync(executeScriptEvent);
                 break;
+            case ExecuteCustomTaskEvent executeCustomTaskEvent:
+
+                var customTaskStreamId = StreamId.Create(StreamNameSpace, nameof(ExecuteCustomTaskEvent));
+                var customTaskStream = _streamProvider.GetStream<ExecuteCustomTaskEvent>(customTaskStreamId);
+                await customTaskStream.OnNextAsync(executeCustomTaskEvent);
+                break;
             default:
                 var defaultStreamId = StreamId.Create(StreamNameSpace, nameof(IDomainEvent));
                 var defaultStream = _streamProvider.GetStream<IDomainEvent>(defaultStreamId);
