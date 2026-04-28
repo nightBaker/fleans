@@ -17,7 +17,7 @@
 import http             from 'k6/http';
 import { check, sleep } from 'k6';
 import { workflowStartDuration } from './metrics.js';
-import thresholds       from '../thresholds.json';
+const thresholds = JSON.parse(open('../thresholds.json'));
 
 const BASE_URL = __ENV.K6_TARGET_URL || 'https://localhost:7140';
 const HEADERS  = { 'Content-Type': 'application/json' };

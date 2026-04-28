@@ -24,7 +24,7 @@ import {
   pollStallsRate,
   correlationMissRate,
 } from './metrics.js';
-import thresholds from '../thresholds.json';
+const thresholds = JSON.parse(open('../thresholds.json'));
 
 const int = (name, def) => {
   const n = Number(__ENV[name]);
