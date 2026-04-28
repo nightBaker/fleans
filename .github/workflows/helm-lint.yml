@@ -1,0 +1,46 @@
+name: Helm chart lint
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'charts/**'
+      - '.github/workflows/helm-lint.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'charts/**'
+      - '.github/workflows/helm-lint.yml'
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.14.4
+      - name: helm lint
+        run: helm lint charts/fleans/
+      - name: helm template (default values)
+        run: helm template fleans charts/fleans/ > /tmp/render-default.yaml
+      - name: helm template (postgres + ingress + auth + worker + kafka)
+        run: |
+          helm template fleans charts/fleans/ \
+            --set ingress.enabled=true \
+            --set ingress.host=fleans.test.local \
+            --set ingress.tls.enabled=true \
+            --set ingress.tls.secretName=fleans-tls \
+            --set auth.authority=https://idp.test/realms/fleans \
+            --set auth.clientId=fleans-web \
+            --set auth.clientSecret=test-secret \
+            --set worker.enabled=true \
+            --set streaming.provider=Kafka \
+            --set streaming.kafka.brokers=kafka:9092 \
+            > /tmp/render-full.yaml
+      - name: Confirm both renders are non-empty
+        run: |
+          test -s /tmp/render-default.yaml
+          test -s /tmp/render-full.yaml
+          echo "default render: $(wc -l < /tmp/render-default.yaml) lines"
+          echo "full render:    $(wc -l < /tmp/render-full.yaml) lines"

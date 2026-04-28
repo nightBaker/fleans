@@ -1,0 +1,215 @@
+# Default values for the fleans Helm chart.
+# Override on the helm install command line via --set or -f my-values.yaml.
+
+# -----------------------------------------------------------------------------
+# Container images
+# -----------------------------------------------------------------------------
+# `Fleans.Worker` is a library hosted by `Fleans.Api`; both the silo (Core role)
+# and worker silos (Worker role) run the same `fleans-api` image with a
+# different Fleans__Role env var. There is no separate `fleans-worker` image.
+image:
+  pullPolicy: IfNotPresent
+  # Tag defaults to the chart's appVersion when left empty.
+  tag: ""
+  api:
+    repository: ghcr.io/nightbaker/fleans-api
+  web:
+    repository: ghcr.io/nightbaker/fleans-web
+  mcp:
+    repository: ghcr.io/nightbaker/fleans-mcp
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# -----------------------------------------------------------------------------
+# Workloads
+# -----------------------------------------------------------------------------
+# Orleans Core silo (hosts coordinator grains: WorkflowInstance etc.).
+core:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+  service:
+    type: ClusterIP
+    port: 8080
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# Orleans Worker silo (hosts [StatelessWorker] grains: ScriptExecutorGrain etc.).
+# Disabled by default — Combined silos host worker grains too. Enable to run
+# worker silos on dedicated nodes (e.g. cheaper / spot instances).
+worker:
+  enabled: false
+  replicas: 1
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# Blazor Server admin UI.
+web:
+  enabled: true
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+  service:
+    type: ClusterIP
+    port: 8080
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# MCP server (for AI agent integration).
+mcp:
+  enabled: true
+  replicas: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+  service:
+    type: ClusterIP
+    port: 5200
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# -----------------------------------------------------------------------------
+# Ingress (optional, for exposing the Web UI publicly)
+# -----------------------------------------------------------------------------
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  host: fleans.example.com
+  tls:
+    enabled: false
+    secretName: ""
+
+# -----------------------------------------------------------------------------
+# Persistence — choose Sqlite (in-pod, ephemeral) or Postgres
+# -----------------------------------------------------------------------------
+persistence:
+  # Sqlite | Postgres
+  # NOTE: Sqlite is for local-dev parity with `dotnet run --project Fleans.Aspire`
+  # and is NOT supported by this chart out of the box. To run with Sqlite you
+  # must add a writable volume (PVC or emptyDir, single-replica only) and set
+  # FLEANS_SQLITE_CONNECTION + FLEANS_QUERY_CONNECTION via `extraEnv`. Postgres
+  # is the recommended production path.
+  provider: Postgres
+
+# Postgres dependency. When postgres.enabled=true the chart provisions an
+# in-cluster StatefulSet. When false, set persistence.provider=Postgres and
+# supply external connection strings via env (extraEnv on each workload) or
+# bake them into a values overlay.
+postgres:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "16"
+  database: fleans
+  username: fleans
+  # Empty = chart generates a random password into a Secret on first install.
+  # Set explicitly for reproducible installs (e.g. GitOps).
+  password: ""
+  # Set to reference an existing Secret with key `postgres-password`. If set,
+  # `password` above is ignored.
+  existingSecret: ""
+  service:
+    port: 5432
+  persistentVolume:
+    enabled: true
+    size: 8Gi
+    storageClassName: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+
+# -----------------------------------------------------------------------------
+# Redis dependency (Orleans clustering + grain storage; always required).
+# -----------------------------------------------------------------------------
+redis:
+  enabled: true
+  image:
+    repository: redis
+    tag: "7-alpine"
+  service:
+    port: 6379
+  persistentVolume:
+    enabled: false
+    size: 1Gi
+    storageClassName: ""
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+
+# -----------------------------------------------------------------------------
+# Authentication (OIDC for the Web admin UI)
+# -----------------------------------------------------------------------------
+# Leave authority + clientId empty to disable auth (matches Fleans.Web's
+# auth-disabled fallback). Provide all three to enable.
+auth:
+  authority: ""
+  clientId: ""
+  # Reference an existing Secret with key `client-secret` instead of inlining.
+  clientSecretExistingSecret: ""
+  # Or inline (NOT recommended for production — use existingSecret).
+  clientSecret: ""
+
+# -----------------------------------------------------------------------------
+# Streaming (Kafka for Orleans Streams; optional, in-memory by default).
+# -----------------------------------------------------------------------------
+streaming:
+  # Memory | Kafka
+  provider: Memory
+  kafka:
+    # Comma-separated brokers list, e.g. "kafka.kafka.svc:9092"
+    brokers: ""
+
+# -----------------------------------------------------------------------------
+# Common pod settings
+# -----------------------------------------------------------------------------
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false
+
+# Add custom env vars to ALL fleans workloads (api/web/mcp). Use this for
+# Postgres connection-string overrides when postgres.enabled=false.
+extraEnv: []
+# - name: ConnectionStrings__fleans
+#   value: "Host=my-external-pg;Port=5432;Database=fleans;Username=fleans;Password=..."

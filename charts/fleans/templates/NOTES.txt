@@ -1,0 +1,38 @@
+{{- $fullName := include "fleans.fullname" . -}}
+Fleans was deployed.
+
+1. Watch the silos come up:
+     kubectl --namespace {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }} -w
+
+2. Open the admin UI:
+{{- if .Values.ingress.enabled }}
+{{ if .Values.ingress.tls.enabled -}}
+     https://{{ .Values.ingress.host }}/
+{{- else -}}
+     http://{{ .Values.ingress.host }}/
+{{- end }}
+{{- else if .Values.web.enabled }}
+     kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ $fullName }}-web {{ .Values.web.service.port }}:{{ .Values.web.service.port }}
+     # then open http://localhost:{{ .Values.web.service.port }}/
+{{- else }}
+     # web.enabled is false — admin UI is not deployed.
+{{- end }}
+
+{{- if .Values.mcp.enabled }}
+
+3. Reach the MCP server:
+     kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ $fullName }}-mcp {{ .Values.mcp.service.port }}:{{ .Values.mcp.service.port }}
+     # then point your MCP client at http://localhost:{{ .Values.mcp.service.port }}/
+{{- end }}
+
+Documentation: {{ .Chart.Home }}guides/self-host-helm/
+
+To upgrade:
+  helm upgrade {{ .Release.Name }} {{ .Chart.Name }} -n {{ .Release.Namespace }}
+
+To uninstall:
+  helm uninstall {{ .Release.Name }} -n {{ .Release.Namespace }}
+{{- if .Values.postgres.enabled }}
+  # Note: the Postgres data PVC and password Secret are kept by design (helm.sh/resource-policy=keep).
+  # Delete them manually if you want a clean reinstall.
+{{- end }}
