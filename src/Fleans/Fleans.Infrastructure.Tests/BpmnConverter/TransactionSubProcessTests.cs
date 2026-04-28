@@ -241,4 +241,38 @@ public class TransactionSubProcessTests
             () => ParseBpmn(bpmn),
             "Multi-instance Transaction Sub-Process should throw InvalidOperationException");
     }
+
+    [TestMethod]
+    public async Task Transaction_CancelEndEventShorthand_ProducesCancelEndEvent()
+    {
+        var bpmn = MakeBpmn("""
+            <transaction id="tx1">
+              <startEvent id="tx_start" />
+              <cancelEndEvent id="cancel_end" />
+              <sequenceFlow id="tsf1" sourceRef="tx_start" targetRef="cancel_end" />
+            </transaction>
+            <sequenceFlow id="f1" sourceRef="start" targetRef="tx1" />
+            <sequenceFlow id="f2" sourceRef="tx1" targetRef="end" />
+            """);
+
+        var workflow = await ParseBpmn(bpmn);
+
+        var tx = workflow.Activities.OfType<Transaction>().First();
+        var cancelEnd = tx.Activities.OfType<CancelEndEvent>().FirstOrDefault();
+        Assert.IsNotNull(cancelEnd, "<cancelEndEvent> shorthand should be parsed as a CancelEndEvent");
+        Assert.AreEqual("cancel_end", cancelEnd.ActivityId);
+    }
+
+    [TestMethod]
+    public async Task Transaction_CancelEndEventShorthand_OutsideTransaction_ThrowsInvalidOperation()
+    {
+        var bpmn = MakeBpmn("""
+            <cancelEndEvent id="rogue_cancel" />
+            <sequenceFlow id="f1" sourceRef="start" targetRef="rogue_cancel" />
+            """);
+
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => ParseBpmn(bpmn),
+            "<cancelEndEvent> outside a Transaction Sub-Process should throw InvalidOperationException");
+    }
 }

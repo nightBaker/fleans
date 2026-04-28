@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             id="Definitions_cancel"
+             targetNamespace="http://bpmn.io/schema/bpmn">
+
+  <process id="cancelTransactionProcess" isExecutable="true">
+
+    <startEvent id="start" name="Start" />
+
+    <transaction id="paymentTransaction" name="Payment Transaction">
+      <startEvent id="tx_start" name="Tx Start" />
+
+      <userTask id="review_task" name="Review Payment" />
+
+      <cancelEndEvent id="cancel_end" name="Cancel" />
+
+      <sequenceFlow id="tsf1" sourceRef="tx_start" targetRef="review_task" />
+      <sequenceFlow id="tsf2" sourceRef="review_task" targetRef="cancel_end" />
+    </transaction>
+
+    <boundaryEvent id="cancel_boundary" attachedToRef="paymentTransaction" cancelActivity="true">
+      <cancelEventDefinition />
+    </boundaryEvent>
+
+    <scriptTask id="recovery_task" name="Log Cancellation" scriptFormat="csharp">
+      <script>_context.cancelled = true; _context.reason = "payment-rejected"</script>
+    </scriptTask>
+
+    <endEvent id="end" name="End" />
+
+    <sequenceFlow id="f1" sourceRef="start" targetRef="paymentTransaction" />
+    <sequenceFlow id="f2" sourceRef="cancel_boundary" targetRef="recovery_task" />
+    <sequenceFlow id="f3" sourceRef="recovery_task" targetRef="end" />
+
+    <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+      <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="cancelTransactionProcess">
+        <bpmndi:BPMNShape id="start_shape" bpmnElement="start">
+          <dc:Bounds x="152" y="182" width="36" height="36" />
+        </bpmndi:BPMNShape>
+        <bpmndi:BPMNShape id="paymentTransaction_shape" bpmnElement="paymentTransaction" isExpanded="true">
+          <dc:Bounds x="240" y="100" width="400" height="200" />
+        </bpmndi:BPMNShape>
+        <bpmndi:BPMNShape id="tx_start_shape" bpmnElement="tx_start">
+          <dc:Bounds x="272" y="182" width="36" height="36" />
+        </bpmndi:BPMNShape>
+        <bpmndi:BPMNShape id="review_task_shape" bpmnElement="review_task">
+          <dc:Bounds x="360" y="160" width="100" height="80" />
+        </bpmndi:BPMNShape>
+        <bpmndi:BPMNShape id="cancel_end_shape" bpmnElement="cancel_end">
+          <dc:Bounds x="522" y="182" width="36" height="36" />
+        </bpmndi:BPMNShape>
+        <bpmndi:BPMNShape id="cancel_boundary_shape" bpmnElement="cancel_boundary">
+          <dc:Bounds x="622" y="282" width="36" height="36" />
+        </bpmndi:BPMNShape>
+        <bpmndi:BPMNShape id="recovery_task_shape" bpmnElement="recovery_task">
+          <dc:Bounds x="700" y="260" width="100" height="80" />
+        </bpmndi:BPMNShape>
+        <bpmndi:BPMNShape id="end_shape" bpmnElement="end">
+          <dc:Bounds x="852" y="282" width="36" height="36" />
+        </bpmndi:BPMNShape>
+        <bpmndi:BPMNEdge id="f1_edge" bpmnElement="f1">
+          <di:waypoint x="188" y="200" />
+          <di:waypoint x="240" y="200" />
+        </bpmndi:BPMNEdge>
+        <bpmndi:BPMNEdge id="tsf1_edge" bpmnElement="tsf1">
+          <di:waypoint x="308" y="200" />
+          <di:waypoint x="360" y="200" />
+        </bpmndi:BPMNEdge>
+        <bpmndi:BPMNEdge id="tsf2_edge" bpmnElement="tsf2">
+          <di:waypoint x="460" y="200" />
+          <di:waypoint x="522" y="200" />
+        </bpmndi:BPMNEdge>
+        <bpmndi:BPMNEdge id="f2_edge" bpmnElement="f2">
+          <di:waypoint x="640" y="318" />
+          <di:waypoint x="700" y="300" />
+        </bpmndi:BPMNEdge>
+        <bpmndi:BPMNEdge id="f3_edge" bpmnElement="f3">
+          <di:waypoint x="800" y="300" />
+          <di:waypoint x="852" y="300" />
+        </bpmndi:BPMNEdge>
+      </bpmndi:BPMNPlane>
+    </bpmndi:BPMNDiagram>
+  </process>
+
+</definitions>
