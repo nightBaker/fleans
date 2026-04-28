@@ -3,6 +3,7 @@ using System;
 using Fleans.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Fleans.Persistence.Sqlite.Migrations.Command
 {
     [DbContext(typeof(FleanCommandDbContext))]
-    partial class FleanCommandDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260428141041_SyncModelDrift")]
+    partial class SyncModelDrift
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.5");
