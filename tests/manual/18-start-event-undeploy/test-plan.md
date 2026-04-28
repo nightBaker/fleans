@@ -5,7 +5,7 @@ Verify that disabling a process definition stops its start event listeners and e
 
 ## Prerequisites
 - Aspire stack running: `dotnet run --project Fleans.Aspire`
-- Web UI at https://localhost:7175
+- Web UI at https://localhost:7124
 - API at https://localhost:7140
 
 ## Steps

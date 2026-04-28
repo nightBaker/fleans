@@ -7,7 +7,7 @@ Verify `GET /Workflow/instances/{instanceId}/state` returns per-instance state w
 ## Prerequisites
 
 - Aspire stack running: `dotnet run --project Fleans.Aspire` (from `src/Fleans/`)
-- Deploy `tests/load/fixtures/events-workflow.bpmn` via the Workflows UI at `https://localhost:7140/workflows`
+- Deploy `tests/load/fixtures/events-workflow.bpmn` via the Workflows UI at `https://localhost:7124/workflows`
 
 ## Steps
 
