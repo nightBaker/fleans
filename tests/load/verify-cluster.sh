@@ -20,7 +20,7 @@ EXPECTED=${EXPECTED_REPLICA_COUNT:-2}
 
 echo "=== Stage 1: Docker container health (expected ${EXPECTED} healthy) ==="
 for i in $(seq 1 12); do
-  HEALTHY=$(docker compose ps api --format json 2>/dev/null \
+  HEALTHY=$(docker compose ps fleans-core --format json 2>/dev/null \
     | python3 -c "
 import json, sys
 

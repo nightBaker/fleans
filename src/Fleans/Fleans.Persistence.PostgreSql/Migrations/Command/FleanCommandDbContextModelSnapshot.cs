@@ -105,6 +105,9 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                     b.Property<bool>("IsCancelled")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsCompensationHandler")
+                        .HasColumnType("boolean");
+
                     b.Property<bool>("IsCompleted")
                         .HasColumnType("boolean");
 
@@ -526,6 +529,9 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
 
                     b.Property<DateTimeOffset?>("ExecutionStartedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsCancelled")
+                        .HasColumnType("boolean");
 
                     b.Property<bool>("IsCompleted")
                         .HasColumnType("boolean");
