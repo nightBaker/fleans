@@ -14,6 +14,7 @@ k6 load test suite for the Fleans workflow engine.
 |--------|---------|---------|
 | `scripts/setup.js` | Deploy BPMN fixtures | `k6 run scripts/setup.js` (run once) |
 | `scripts/linear.js` | Scenario 1: linear throughput | `k6 run scripts/linear.js` |
+| `scripts/parallel.js` | Scenario 2: parallel branching (3-branch fork/join) | `k6 run scripts/parallel.js` |
 | `scripts/events.js` | Scenario 3 — event-driven with message correlation | `k6 run scripts/events.js` |
 | `scripts/mixed.js` | Mixed workload combining all scenarios | `k6 run scripts/mixed.js` |
 | `scripts/metrics.js` | Shared metric definitions | Imported by scenario scripts |
@@ -92,6 +93,20 @@ k6 run --vus 5 --iterations 20 --insecure-skip-tls-verify tests/load/scripts/lin
 
 > **Warning:** Do NOT run the full 500-VU scenario against a local single-node dev setup.
 > It generates ~5 000 workflow starts/second and will overwhelm a dev database.
+
+### 3. Run parallel branching scenario
+
+**Cloud / Docker Compose cluster (full load):**
+```bash
+k6 run --insecure-skip-tls-verify tests/load/scripts/parallel.js
+```
+
+**Local connectivity check (safe for dev):**
+```bash
+k6 run --vus 5 --iterations 20 --insecure-skip-tls-verify tests/load/scripts/parallel.js
+```
+
+`parallel.js` shares the same VU profile and `workflow_start_duration` metric as `linear.js`, so the two scripts can be compared directly. The fixture is a 3-branch fork/join (`branchA`/`branchB`/`branchC`); fork/join completion timing is asynchronous in Orleans and is **not** captured by `workflow_start_duration` — that metric records `POST /Workflow/start` HTTP latency only. End-to-end fork/join latency is covered by issue #244.
 
 ## Environment Variables
 
