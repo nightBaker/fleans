@@ -15,7 +15,7 @@ This plan covers:
 
 - Aspire stack running: `dotnet run --project Fleans.Aspire` (from `src/Fleans/`)
 - Clean dev DB (delete the SQLite file or set a fresh `FLEANS_SQLITE_CONNECTION`)
-- Web UI reachable at `https://localhost:7140`
+- Web UI reachable at `https://localhost:7124`
 
 ## BPMN Fixtures
 
@@ -27,7 +27,7 @@ This plan covers:
 
 ### Step 1 — Deploy the BPMN
 
-1. Open the Web UI at `https://localhost:7140`.
+1. Open the Web UI at `https://localhost:7124`.
 2. Navigate to **Process Definitions** → **Upload**.
 3. Upload `compensation-broadcast.bpmn`.
 4. Confirm the process `compensation-broadcast-process` appears in the definitions list with status **Active**.

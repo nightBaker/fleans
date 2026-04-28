@@ -11,9 +11,9 @@ and have tabs persisted across browser refreshes via `localStorage`.
 
 - Aspire stack running: `dotnet run --project Fleans.Aspire` (from `src/Fleans/`).
 - Chrome / Chromium (the test relies on `localStorage`).
-- Web UI reachable at `https://localhost:7140`.
+- Web UI reachable at `https://localhost:7124`.
 - A clean browser profile (or an **Application → Storage → Clear site data**
-  on `https://localhost:7140`) so the prior run's tabs don't bleed in.
+  on `https://localhost:7124`) so the prior run's tabs don't bleed in.
 
 ## Two sample BPMN fixtures
 

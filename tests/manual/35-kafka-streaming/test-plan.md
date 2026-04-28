@@ -26,7 +26,7 @@ client-side topic-ensure logic in `Fleans.Streaming.Kafka`.
 - [ ] Kafka UI is reachable from the dashboard link.
 
 ### 2. Deploy the workflow
-- Navigate to the Workflows page in the Web UI (`https://localhost:7140`).
+- Navigate to the Workflows page in the Web UI (`https://localhost:7124`).
 - Click "Create New", import `kafka-streams.bpmn`.
 - Click Deploy, confirm `kafka-streams` v1 is registered.
 
