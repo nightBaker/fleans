@@ -124,8 +124,11 @@ WithPersistence(
 // Activated by: dotnet run --project Fleans.Aspire -- --publisher docker-compose --output-path <dir>
 if (builder.ExecutionContext.IsPublishMode)
 {
+    // Override the container listen port to 8080 so nginx (tests/load/nginx.conf) can
+    // reach each replica at fleans-core:8080. WithHttpEndpoint cannot be used here because
+    // AddProject<> already registers the default "http" endpoint — re-using that name throws.
     apiProject = apiProject
-        .WithHttpEndpoint(port: 8080, name: "http")
+        .WithEnvironment("ASPNETCORE_HTTP_PORTS", "8080")
         .WithReplicas(2);
 
     builder.AddContainer("nginx", "nginx:1.27")

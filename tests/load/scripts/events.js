@@ -24,7 +24,7 @@ import {
   pollStallsRate,
   correlationMissRate,
 } from './metrics.js';
-import thresholds from '../thresholds.json';
+import thresholds from '../thresholds.js';
 
 const int = (name, def) => {
   const n = Number(__ENV[name]);
@@ -168,4 +168,6 @@ export function eventsWorkflow() {
   });
 }
 
+// Named export alias required by mixed.js (exec: 'eventDrivenWorkflow')
+export { eventsWorkflow as eventDrivenWorkflow };
 export default eventsWorkflow;

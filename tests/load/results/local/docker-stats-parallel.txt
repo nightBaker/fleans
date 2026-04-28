@@ -1,0 +1,95 @@
+10:56:52
+generated-fleans-core-1	64.19%	305.4MiB / 7.653GiB
+generated-fleans-core-2	323.89%	612.7MiB / 7.653GiB
+generated-postgres-1	427.88%	243.1MiB / 7.653GiB
+generated-redis-1	2.21%	9.855MiB / 7.653GiB
+10:57:09
+generated-fleans-core-1	101.75%	350MiB / 7.653GiB
+generated-fleans-core-2	404.99%	636.8MiB / 7.653GiB
+generated-postgres-1	469.28%	236.2MiB / 7.653GiB
+generated-redis-1	1.55%	9.855MiB / 7.653GiB
+10:57:27
+generated-fleans-core-1	79.20%	385.4MiB / 7.653GiB
+generated-fleans-core-2	409.00%	689MiB / 7.653GiB
+generated-postgres-1	271.26%	211.4MiB / 7.653GiB
+generated-redis-1	1.61%	9.852MiB / 7.653GiB
+10:57:45
+generated-fleans-core-1	95.52%	398.8MiB / 7.653GiB
+generated-fleans-core-2	314.97%	695.4MiB / 7.653GiB
+generated-postgres-1	520.90%	271.9MiB / 7.653GiB
+generated-redis-1	2.47%	9.852MiB / 7.653GiB
+10:58:04
+generated-fleans-core-1	117.92%	427.8MiB / 7.653GiB
+generated-fleans-core-2	507.28%	742.7MiB / 7.653GiB
+generated-postgres-1	369.15%	216.2MiB / 7.653GiB
+generated-redis-1	5.13%	10.11MiB / 7.653GiB
+10:58:21
+generated-fleans-core-1	136.85%	428.9MiB / 7.653GiB
+generated-fleans-core-2	477.23%	766.8MiB / 7.653GiB
+generated-postgres-1	463.19%	231.9MiB / 7.653GiB
+generated-redis-1	2.73%	9.855MiB / 7.653GiB
+10:58:39
+generated-fleans-core-1	116.64%	418.1MiB / 7.653GiB
+generated-fleans-core-2	354.26%	771.1MiB / 7.653GiB
+generated-postgres-1	485.32%	244.7MiB / 7.653GiB
+generated-redis-1	4.04%	9.855MiB / 7.653GiB
+10:58:56
+generated-fleans-core-1	121.51%	447.2MiB / 7.653GiB
+generated-fleans-core-2	326.22%	791.6MiB / 7.653GiB
+generated-postgres-1	323.70%	209.1MiB / 7.653GiB
+generated-redis-1	5.40%	9.855MiB / 7.653GiB
+10:59:14
+generated-fleans-core-1	126.80%	448.2MiB / 7.653GiB
+generated-fleans-core-2	398.06%	806.9MiB / 7.653GiB
+generated-postgres-1	440.78%	272.1MiB / 7.653GiB
+generated-redis-1	2.83%	9.855MiB / 7.653GiB
+10:59:31
+generated-fleans-core-1	122.28%	453.8MiB / 7.653GiB
+generated-fleans-core-2	423.13%	834MiB / 7.653GiB
+generated-postgres-1	605.66%	241.3MiB / 7.653GiB
+generated-redis-1	14.12%	9.855MiB / 7.653GiB
+10:59:48
+generated-fleans-core-1	128.21%	422.9MiB / 7.653GiB
+generated-fleans-core-2	397.36%	854.6MiB / 7.653GiB
+generated-postgres-1	555.31%	223.4MiB / 7.653GiB
+generated-redis-1	1.11%	9.855MiB / 7.653GiB
+11:00:06
+generated-fleans-core-1	96.70%	420.9MiB / 7.653GiB
+generated-fleans-core-2	352.22%	841.2MiB / 7.653GiB
+generated-postgres-1	493.05%	226.2MiB / 7.653GiB
+generated-redis-1	1.38%	9.855MiB / 7.653GiB
+11:00:23
+generated-fleans-core-1	88.66%	420MiB / 7.653GiB
+generated-fleans-core-2	266.34%	812.8MiB / 7.653GiB
+generated-postgres-1	485.05%	290.7MiB / 7.653GiB
+generated-redis-1	10.85%	9.855MiB / 7.653GiB
+11:00:40
+generated-fleans-core-1	94.72%	422.3MiB / 7.653GiB
+generated-fleans-core-2	489.42%	853.1MiB / 7.653GiB
+generated-postgres-1	256.20%	210.7MiB / 7.653GiB
+generated-redis-1	1.89%	9.859MiB / 7.653GiB
+11:00:58
+generated-fleans-core-1	150.69%	421MiB / 7.653GiB
+generated-fleans-core-2	371.17%	859.8MiB / 7.653GiB
+generated-postgres-1	558.23%	292.7MiB / 7.653GiB
+generated-redis-1	1.87%	9.855MiB / 7.653GiB
+11:01:17
+generated-fleans-core-1	127.99%	436.1MiB / 7.653GiB
+generated-fleans-core-2	517.37%	860.4MiB / 7.653GiB
+generated-postgres-1	180.55%	248.5MiB / 7.653GiB
+generated-redis-1	2.11%	9.855MiB / 7.653GiB
+11:01:36
+generated-fleans-core-1	66.71%	440.9MiB / 7.653GiB
+generated-fleans-core-2	618.83%	870.9MiB / 7.653GiB
+generated-postgres-1	356.70%	240.1MiB / 7.653GiB
+generated-redis-1	1.95%	9.855MiB / 7.653GiB
+11:01:54
+generated-fleans-core-1	74.49%	443.8MiB / 7.653GiB
+generated-fleans-core-2	365.86%	837.5MiB / 7.653GiB
+generated-postgres-1	452.66%	305.1MiB / 7.653GiB
+generated-redis-1	2.61%	9.852MiB / 7.653GiB
+11:02:12
+generated-fleans-core-1	64.00%	401.1MiB / 7.653GiB
+generated-fleans-core-2	408.18%	829.2MiB / 7.653GiB
+generated-postgres-1	387.78%	275.3MiB / 7.653GiB
+generated-redis-1	2.77%	9.852MiB / 7.653GiB
