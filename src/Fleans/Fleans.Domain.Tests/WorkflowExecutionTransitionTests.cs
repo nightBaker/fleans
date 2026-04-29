@@ -986,7 +986,7 @@ public class WorkflowExecutionTransitionTests
         branch2Entry.SetVariablesId(branchScope2Id);
         branch2Entry.SetTokenId(token2);
         branch2Entry.Execute();
-        branch2Entry.Fail(500, "Something went wrong");
+        branch2Entry.Fail("500", "Something went wrong");
         state.AddEntries([branch2Entry]);
 
         // Create join entry

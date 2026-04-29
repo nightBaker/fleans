@@ -565,7 +565,7 @@ public class WorkflowExecutionActivityLifecycleTests
         entry.Execute();
         entry.Complete();
 
-        Assert.ThrowsExactly<InvalidOperationException>(() => entry.Fail(500, "too late"));
+        Assert.ThrowsExactly<InvalidOperationException>(() => entry.Fail("500", "too late"));
     }
 
     // ===== FailActivity with no boundary handler and child workflow =====

@@ -112,7 +112,7 @@ public class MessageIntermediateCatchEventTests : WorkflowTestBase
         var failedActivity = snap2!.CompletedActivities.FirstOrDefault(a => a.ActivityId == "waitPayment");
         Assert.IsNotNull(failedActivity, "Message catch activity should be in completed (failed) list");
         Assert.IsNotNull(failedActivity.ErrorState, "Activity should have an error state");
-        Assert.AreEqual(500, failedActivity.ErrorState.Code);
+        Assert.AreEqual("500", failedActivity.ErrorState.Code);
         StringAssert.Contains(failedActivity.ErrorState.Message, "Duplicate subscription");
 
         // Workflow should NOT have completed — failed activity stops the flow

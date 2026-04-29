@@ -45,7 +45,7 @@ public class WorkflowDomainEventsTests
             new ActivitySpawned(Guid.NewGuid(), "a1", "T", Guid.NewGuid(), null, null, null),
             new ActivityExecutionStarted(Guid.NewGuid()),
             new ActivityCompleted(Guid.NewGuid(), Guid.NewGuid(), new ExpandoObject()),
-            new ActivityFailed(Guid.NewGuid(), 500, "err"),
+            new ActivityFailed(Guid.NewGuid(), "500", "err"),
             new ActivityCancelled(Guid.NewGuid(), "reason"),
             new VariablesMerged(Guid.NewGuid(), new ExpandoObject()),
             new ChildVariableScopeCreated(Guid.NewGuid(), Guid.NewGuid()),

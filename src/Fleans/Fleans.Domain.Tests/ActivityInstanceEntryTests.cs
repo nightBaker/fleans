@@ -101,6 +101,6 @@ public class ActivityInstanceEntryTests
         entry.Execute();
         entry.Fail(new Exception("err"));
         Assert.IsNotNull(entry.ErrorState);
-        Assert.AreEqual(500, entry.ErrorState!.Code);
+        Assert.AreEqual("500", entry.ErrorState!.Code);
     }
 }

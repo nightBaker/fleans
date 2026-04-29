@@ -61,7 +61,7 @@ public class EventSubProcessErrorTests : WorkflowTestBase
         var failingEntry = snapshot.CompletedActivities.FirstOrDefault(a => a.ActivityId == "failingTask");
         Assert.IsNotNull(failingEntry, "failingTask should appear in the completed-activities list");
         Assert.IsNotNull(failingEntry.ErrorState, "failingTask should have an error state");
-        Assert.AreEqual(500, failingEntry.ErrorState!.Code,
+        Assert.AreEqual("500", failingEntry.ErrorState!.Code,
             "Generic Exception should map to error code 500");
 
         // 3. handlerTask ran successfully
