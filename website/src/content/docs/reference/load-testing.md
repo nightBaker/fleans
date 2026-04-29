@@ -7,6 +7,14 @@ Fleans ships a load-test suite under `tests/load/`. Two drivers are wired up: **
 primary suite) and **Locust** (port of the same scenarios for Azure Load Testing). This page
 summarises the most recent baseline measurements and the bottleneck profile they expose.
 
+:::note
+This page tracks load-test results for the **current public release** of Fleans only. Older
+runs are removed when a new version ships — for historical numbers, check the report files
+under `tests/load/results/` in the matching git tag.
+
+**Currently published:** Fleans **v0.1.0**.
+:::
+
 ## Scenarios
 
 Four scenario scripts live in parallel under `tests/load/scripts/` (k6) and `tests/load/locust/`
@@ -23,7 +31,8 @@ The suite is documented in detail in `tests/load/README.md`.
 
 ## Recent baselines
 
-Two reports exist in the repository:
+Two reports exist in the repository for the current release. Each is anchored to its driving
+hardware/SKU and the date it was run:
 
 - **Local Docker Compose** (`tests/load/results/local/report.md`) — 2 silos in `docker compose`,
   500 concurrent virtual users per scenario. Hardware: developer laptop. Originally produced for
@@ -35,7 +44,7 @@ Two reports exist in the repository:
 Both reports include per-scenario throughput / latency tables, peak container CPU, threshold compliance, and ranked recommendations. The summary below pulls the headline numbers; reach for the
 report files for raw CSVs and full bottleneck attribution.
 
-### Local Docker Compose @ 500 VU
+### Fleans v0.1.0 — 2026-04-28 — Local Docker Compose @ 500 VU
 
 | Scenario   | Max VUs | Iterations | Throughput (req/s) | p(95) duration | Error rate | First bottleneck |
 |------------|--------:|----------:|--------------------:|---------------:|:----------:|-----------------:|
@@ -47,7 +56,7 @@ report files for raw CSVs and full bottleneck attribution.
 The local laptop run is **db-bound**: PostgreSQL CPU peaks above 600 % across all scenarios. The error spikes are connection-pool exhaustion (`max_connections=100` default vs. 200+ EF Core
 connections under burst), not slow queries.
 
-### Azure Container Apps @ 500 VU (and a 2 000-VU scale test)
+### Fleans v0.1.0 — 2026-04-29 — Azure Container Apps @ 500 VU (and a 2 000-VU scale test)
 
 | Scenario | Reqs | RPS | HTTP fail % | p50 | p95 | max |
 |----------|-----:|----:|------------:|----:|----:|----:|
