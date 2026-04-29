@@ -42,6 +42,8 @@ The public docs site lives in `website/` — an Astro + Starlight project deploy
 
 **Documentation rule:** Any new feature, BPMN element, API endpoint, or user-facing behavior MUST be reflected in the docs site in the same PR. Update the relevant page under `website/src/content/docs/` (e.g. new BPMN activity → `concepts/bpmn-support.md`; new endpoint → `reference/api.md`; new workflow → add a guide). If no suitable page exists, create one and add it to the Starlight sidebar in `website/astro.config.mjs`. Documentation is part of "done", not a follow-up task.
 
+**Load-test results publishing rule:** `website/src/content/docs/reference/load-testing.md` publishes load-test results **only for the current public release version** of Fleans. Each result section MUST be headed with `### Fleans vX.Y.Z — YYYY-MM-DD — <stack description>` so readers can scope numbers to a release + run date. When a new release ships, REMOVE prior-version sections from the website page in the same release PR — do not let stale numbers accumulate publicly. The full historical reports stay in the repo at `tests/load/results/<run-id>/report.md` and are recoverable via the matching git tag; only the website page is curated.
+
 ### Hero BPMN Diagram
 
 The landing page includes a rendered BPMN workflow diagram between the hero and the "Why Fleans?" cards. Two themed SVG variants (light/dark) are pre-rendered from `tests/manual/04-parallel-gateway/fork-join.bpmn` using bpmn-js in a headless Playwright browser.
