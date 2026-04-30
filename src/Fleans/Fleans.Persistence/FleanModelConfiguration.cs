@@ -78,6 +78,7 @@ internal static class FleanModelConfiguration
 
             entity.Property(e => e.ActivityId).HasMaxLength(256);
             entity.Property(e => e.ActivityType).HasMaxLength(256);
+            entity.Property(e => e.ErrorCode).HasMaxLength(256);
             entity.Property(e => e.ErrorMessage).HasMaxLength(2000);
             entity.Property(e => e.CancellationReason).HasMaxLength(2000);
             entity.Ignore(e => e.ErrorState);

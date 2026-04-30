@@ -1,7 +1,7 @@
 namespace Fleans.Domain;
 
 [GenerateSerializer]
-public record ActivityErrorState(int Code, string Message)
+public record ActivityErrorState(string Code, string Message)
 {
-    private ActivityErrorState() : this(default, default!) { }
+    private ActivityErrorState() : this(default!, default!) { }
 }

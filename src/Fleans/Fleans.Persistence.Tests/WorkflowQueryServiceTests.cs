@@ -231,7 +231,7 @@ public class WorkflowQueryServiceTests
         Assert.AreEqual(1, result.CompletedActivities.Count);
         var snapshot = result.CompletedActivities[0];
         Assert.IsNotNull(snapshot.ErrorState);
-        Assert.AreEqual(500, snapshot.ErrorState.Code);
+        Assert.AreEqual("500", snapshot.ErrorState.Code);
         Assert.AreEqual("Something went wrong", snapshot.ErrorState.Message);
     }
 

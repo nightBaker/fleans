@@ -703,7 +703,7 @@ public class WorkflowExecutionBoundaryTests
         // Activity failed
         var failed = events.OfType<ActivityFailed>().Single();
         Assert.AreEqual(taskEntry.ActivityInstanceId, failed.ActivityInstanceId);
-        Assert.AreEqual(500, failed.ErrorCode);
+        Assert.AreEqual("500", failed.ErrorCode);
 
         // Boundary error event spawned
         var spawned = events.OfType<ActivitySpawned>().Single();

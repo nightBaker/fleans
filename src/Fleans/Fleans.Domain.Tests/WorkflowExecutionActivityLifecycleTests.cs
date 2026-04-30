@@ -262,14 +262,14 @@ public class WorkflowExecutionActivityLifecycleTests
 
         // Entry should be failed
         Assert.IsTrue(taskEntry.IsCompleted);
-        Assert.AreEqual(500, taskEntry.ErrorCode);
+        Assert.AreEqual("500", taskEntry.ErrorCode);
         Assert.AreEqual("boom", taskEntry.ErrorMessage);
 
         // Events should include ActivityFailed
         var events = execution.GetUncommittedEvents();
         var failed = events.OfType<ActivityFailed>().Single();
         Assert.AreEqual(taskEntry.ActivityInstanceId, failed.ActivityInstanceId);
-        Assert.AreEqual(500, failed.ErrorCode);
+        Assert.AreEqual("500", failed.ErrorCode);
         Assert.AreEqual("boom", failed.ErrorMessage);
     }
 
@@ -283,12 +283,12 @@ public class WorkflowExecutionActivityLifecycleTests
             new BadRequestActivityException("invalid input"));
 
         Assert.IsTrue(taskEntry.IsCompleted);
-        Assert.AreEqual(400, taskEntry.ErrorCode);
+        Assert.AreEqual("400", taskEntry.ErrorCode);
         Assert.AreEqual("invalid input", taskEntry.ErrorMessage);
 
         var events = execution.GetUncommittedEvents();
         var failed = events.OfType<ActivityFailed>().Single();
-        Assert.AreEqual(400, failed.ErrorCode);
+        Assert.AreEqual("400", failed.ErrorCode);
     }
 
     [TestMethod]
@@ -315,7 +315,7 @@ public class WorkflowExecutionActivityLifecycleTests
         var effects = execution.FailActivity("task1", null, new Exception("fail"));
 
         Assert.IsTrue(taskEntry.IsCompleted);
-        Assert.AreEqual(500, taskEntry.ErrorCode);
+        Assert.AreEqual("500", taskEntry.ErrorCode);
     }
 
     [TestMethod]
@@ -470,7 +470,7 @@ public class WorkflowExecutionActivityLifecycleTests
         execution.FailActivity("task1", taskEntry.ActivityInstanceId, new Exception("test error"));
 
         Assert.IsTrue(taskEntry.IsCompleted);
-        Assert.AreEqual(500, taskEntry.ErrorCode);
+        Assert.AreEqual("500", taskEntry.ErrorCode);
         Assert.AreEqual("test error", taskEntry.ErrorMessage);
         Assert.IsFalse(taskEntry.IsExecuting);
     }
@@ -547,11 +547,11 @@ public class WorkflowExecutionActivityLifecycleTests
         entry.SetVariablesId(Guid.NewGuid());
         entry.Execute();
 
-        entry.Fail(500, "something broke");
+        entry.Fail("500", "something broke");
 
         Assert.IsTrue(entry.IsCompleted);
         Assert.IsFalse(entry.IsExecuting);
-        Assert.AreEqual(500, entry.ErrorCode);
+        Assert.AreEqual("500", entry.ErrorCode);
         Assert.AreEqual("something broke", entry.ErrorMessage);
         Assert.IsNotNull(entry.CompletedAt);
     }
@@ -565,7 +565,7 @@ public class WorkflowExecutionActivityLifecycleTests
         entry.Execute();
         entry.Complete();
 
-        Assert.ThrowsExactly<InvalidOperationException>(() => entry.Fail(500, "too late"));
+        Assert.ThrowsExactly<InvalidOperationException>(() => entry.Fail("500", "too late"));
     }
 
     // ===== FailActivity with no boundary handler and child workflow =====

@@ -603,7 +603,7 @@ public class WorkflowExecutionConditionAndChildTests
 
         // Call activity should be failed
         Assert.IsTrue(callEntry.IsCompleted);
-        Assert.AreEqual(500, callEntry.ErrorCode);
+        Assert.AreEqual("500", callEntry.ErrorCode);
         Assert.AreEqual("child process crashed", callEntry.ErrorMessage);
 
         // Events should include ActivityFailed

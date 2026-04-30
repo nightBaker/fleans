@@ -291,7 +291,7 @@ public class ConditionalBoundaryEventTests : WorkflowTestBase
         var failedEntry = snapshot.CompletedActivities.FirstOrDefault(a => a.ActivityId == "task1");
         Assert.IsNotNull(failedEntry, "task1 should be in completed activities after failure");
         Assert.IsNotNull(failedEntry.ErrorState, "Failed task should have error state");
-        Assert.AreEqual(500, failedEntry.ErrorState.Code, "Generic exception should produce 500 error code");
+        Assert.AreEqual("500", failedEntry.ErrorState.Code, "Generic exception should produce 500 error code");
         Assert.AreEqual("Something went wrong", failedEntry.ErrorState.Message);
     }
 
@@ -332,7 +332,7 @@ public class ConditionalBoundaryEventTests : WorkflowTestBase
         var failedEntry = snapshot.CompletedActivities.FirstOrDefault(a => a.ActivityId == "task1");
         Assert.IsNotNull(failedEntry);
         Assert.IsNotNull(failedEntry.ErrorState);
-        Assert.AreEqual(400, failedEntry.ErrorState.Code, "BadRequestActivityException should produce 400 error code");
+        Assert.AreEqual("400", failedEntry.ErrorState.Code, "BadRequestActivityException should produce 400 error code");
     }
 }
 

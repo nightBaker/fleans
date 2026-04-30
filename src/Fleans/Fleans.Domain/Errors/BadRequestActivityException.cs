@@ -9,6 +9,6 @@ public class BadRequestActivityException(string message) : ActivityException
 
     public override ActivityErrorState GetActivityErrorState()
     {
-        return new ActivityErrorState(400, _message);
+        return new ActivityErrorState("400", _message);
     }
 }

@@ -214,7 +214,7 @@ public class EventTypeRegistryTests
             (new ActivitySpawned(id, "a", "ScriptTask", id, null, null, null), nameof(ActivitySpawned)),
             (new ActivityExecutionStarted(id), nameof(ActivityExecutionStarted)),
             (new ActivityCompleted(id, id, variables), nameof(ActivityCompleted)),
-            (new ActivityFailed(id, 500, "error"), nameof(ActivityFailed)),
+            (new ActivityFailed(id, "500", "error"), nameof(ActivityFailed)),
             (new ActivityExecutionReset(id), nameof(ActivityExecutionReset)),
             (new ActivityCancelled(id, "cancelled"), nameof(ActivityCancelled)),
             (new MultiInstanceTotalSet(id, 3), nameof(MultiInstanceTotalSet)),

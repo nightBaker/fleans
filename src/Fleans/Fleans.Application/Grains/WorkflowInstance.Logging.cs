@@ -328,7 +328,7 @@ public partial class WorkflowInstance
 
     [LoggerMessage(EventId = 1116, Level = LogLevel.Error,
         Message = "Compensation handler failed: HandlerInstanceId={HandlerInstanceId}, ErrorCode={ErrorCode}, ErrorMessage={ErrorMessage}")]
-    private partial void LogCompensationHandlerFailed(Guid handlerInstanceId, int errorCode, string errorMessage);
+    private partial void LogCompensationHandlerFailed(Guid handlerInstanceId, string errorCode, string errorMessage);
 
     // Complex gateway lifecycle (EventId 1080-1089)
     [LoggerMessage(EventId = 1080, Level = LogLevel.Debug,

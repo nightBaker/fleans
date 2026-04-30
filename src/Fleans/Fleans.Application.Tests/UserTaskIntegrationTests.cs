@@ -429,7 +429,7 @@ public class UserTaskIntegrationTests : WorkflowTestBase
             .FirstOrDefault(a => a.ActivityId == "userTask1");
         Assert.IsNotNull(failedActivity);
         Assert.IsNotNull(failedActivity.ErrorState);
-        Assert.AreEqual(500, failedActivity.ErrorState.Code);
+        Assert.AreEqual("500", failedActivity.ErrorState.Code);
         Assert.AreEqual("Something went wrong", failedActivity.ErrorState.Message);
     }
 
@@ -448,7 +448,7 @@ public class UserTaskIntegrationTests : WorkflowTestBase
             .FirstOrDefault(a => a.ActivityId == "userTask1");
         Assert.IsNotNull(failedActivity);
         Assert.IsNotNull(failedActivity.ErrorState);
-        Assert.AreEqual(400, failedActivity.ErrorState.Code);
+        Assert.AreEqual("400", failedActivity.ErrorState.Code);
         Assert.AreEqual("Invalid input", failedActivity.ErrorState.Message);
     }
 
