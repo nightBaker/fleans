@@ -15,7 +15,24 @@ public partial class WorkflowEventsPublisher : Grain, IEventPublisher
 
     // Keep in sync with FleanStreamingExtensions.StreamProviderName in Fleans.ServiceDefaults
     public const string StreamProvider = "StreamProvider";
+
+    /// <summary>
+    /// Shared namespace for engine-internal events (script, condition, activation-condition,
+    /// default fallback). Custom-task events use a dedicated namespace below to keep
+    /// plugin handlers from being implicit-subscribed to engine-internal streams.
+    /// </summary>
     public const string StreamNameSpace = "events";
+
+    /// <summary>
+    /// Dedicated namespace for <see cref="ExecuteCustomTaskEvent"/>. Plugin handlers
+    /// (<c>CustomTaskHandlerBase</c> subclasses) carry
+    /// <c>[ImplicitStreamSubscription(ExecuteCustomTaskStreamNamespace)]</c> so Orleans
+    /// only activates them on custom-task events. Sharing the engine "events" namespace
+    /// caused every implicit-subscriber grain class to be activated for every event type
+    /// — Orleans then logs "got an item for subscription …, but I don't have any
+    /// subscriber for that stream. Dropping on the floor." on each cross-event delivery.
+    /// </summary>
+    public const string ExecuteCustomTaskStreamNamespace = "events.ExecuteCustomTaskEvent";
 
     public WorkflowEventsPublisher(ILogger<WorkflowEventsPublisher> logger)
     {
@@ -54,7 +71,7 @@ public partial class WorkflowEventsPublisher : Grain, IEventPublisher
                 break;
             case ExecuteCustomTaskEvent executeCustomTaskEvent:
 
-                var customTaskStreamId = StreamId.Create(StreamNameSpace, nameof(ExecuteCustomTaskEvent));
+                var customTaskStreamId = StreamId.Create(ExecuteCustomTaskStreamNamespace, nameof(ExecuteCustomTaskEvent));
                 var customTaskStream = _streamProvider.GetStream<ExecuteCustomTaskEvent>(customTaskStreamId);
                 await customTaskStream.OnNextAsync(executeCustomTaskEvent);
                 break;

@@ -57,6 +57,10 @@ public static class EfCorePersistenceDependencyInjection
             (sp, _) => new EfCoreConditionalStartEventRegistryGrainStorage(
                 sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
 
+        services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.CustomTaskCatalog,
+            (sp, _) => new EfCoreCustomTaskCatalogGrainStorage(
+                sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
+
         services.AddSingleton<IProcessDefinitionRepository, EfCoreProcessDefinitionRepository>();
         services.AddSingleton<ISieveProcessor, ApplicationSieveProcessor>();
         services.Configure<SieveOptions>(options =>

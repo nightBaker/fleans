@@ -1,8 +1,11 @@
+using System.Diagnostics;
 using System.Dynamic;
 using System.Net.Http.Headers;
 using System.Text;
+using Fleans.Application.Events;
 using Fleans.Domain.Errors;
 using Fleans.Worker.CustomTasks;
+using Fleans.Worker.Placement;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 
@@ -13,7 +16,15 @@ namespace Fleans.Plugins.RestCaller;
 /// resolved input parameters; populates <c>__response</c> with status / statusCode / ok /
 /// body / headers; throws a typed <see cref="CustomTaskFailedActivityException"/> on
 /// non-success per the v2 design's failure-code mapping.
+///
+/// <c>[ImplicitStreamSubscription]</c> and <c>[WorkerPlacement]</c> are repeated here
+/// even though <see cref="CustomTaskHandlerBase"/> already carries them: Orleans's
+/// grain-class discovery walks concrete types, and inheritance of these attributes
+/// from an abstract base is not reliably honored. Plugin authors should repeat both
+/// attributes on every concrete <c>CustomTaskHandlerBase</c> subclass they ship.
 /// </summary>
+[ImplicitStreamSubscription(WorkflowEventsPublisher.ExecuteCustomTaskStreamNamespace)]
+[WorkerPlacement]
 public sealed partial class RestCallerHandler : CustomTaskHandlerBase
 {
     private static readonly HashSet<string> AllowedMethods = new(StringComparer.OrdinalIgnoreCase)
@@ -75,7 +86,10 @@ public sealed partial class RestCallerHandler : CustomTaskHandlerBase
 
         // Idempotency-key opt-in. Plugin's value wins on collision with user-supplied headers.
         if (!string.IsNullOrWhiteSpace(idempotencyKeyHeader))
+        {
             headers[idempotencyKeyHeader] = context.ActivityInstanceId.ToString();
+            LogIdempotencyKeySet(idempotencyKeyHeader, context.ActivityInstanceId);
+        }
 
         using var request = new HttpRequestMessage(new HttpMethod(method), uri);
 
@@ -99,24 +113,35 @@ public sealed partial class RestCallerHandler : CustomTaskHandlerBase
         using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSec));
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
 
+        var bodyLength = body?.Length ?? 0;
+        LogSendingRequest(method, uri.ToString(), headers.Count, bodyLength, timeoutSec, context.ActivityInstanceId);
+        var stopwatch = Stopwatch.StartNew();
+
         HttpResponseMessage response;
         try
         {
-            LogSendingRequest(method, uri.ToString(), context.ActivityInstanceId);
             response = await _http.SendAsync(request, linkedCts.Token);
         }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
         {
+            stopwatch.Stop();
+            LogTimeout(method, uri.ToString(), timeoutSec, stopwatch.ElapsedMilliseconds);
             throw new CustomTaskFailedActivityException("504", $"timeout after {timeoutSec}s calling {uri}");
         }
         catch (HttpRequestException ex)
         {
+            stopwatch.Stop();
+            LogNetworkError(ex, method, uri.ToString(), stopwatch.ElapsedMilliseconds);
             throw new CustomTaskFailedActivityException("502", $"network error calling {uri}: {ex.Message}");
         }
+        stopwatch.Stop();
 
         try
         {
-            return await BuildResponseAsync(response, successCodes, uri);
+            var statusCode = (int)response.StatusCode;
+            var contentLength = response.Content.Headers.ContentLength ?? -1;
+            LogResponseReceived(method, uri.ToString(), statusCode, contentLength, stopwatch.ElapsedMilliseconds);
+            return await BuildResponseAsync(response, successCodes, uri, method);
         }
         finally
         {
@@ -125,7 +150,7 @@ public sealed partial class RestCallerHandler : CustomTaskHandlerBase
     }
 
     private async Task<IDictionary<string, object?>> BuildResponseAsync(
-        HttpResponseMessage response, IReadOnlyList<int>? successCodes, Uri uri)
+        HttpResponseMessage response, IReadOnlyList<int>? successCodes, Uri uri, string method)
     {
         var statusCode = (int)response.StatusCode;
         var rawBody = await response.Content.ReadAsStringAsync();
@@ -153,6 +178,7 @@ public sealed partial class RestCallerHandler : CustomTaskHandlerBase
 
         if (!isSuccess)
         {
+            LogNonSuccessStatus(method, uri.ToString(), statusCode);
             var truncated = rawBody.Length <= FailureBodyTruncate
                 ? rawBody
                 : rawBody[..FailureBodyTruncate] + "…";
@@ -163,7 +189,7 @@ public sealed partial class RestCallerHandler : CustomTaskHandlerBase
         return new Dictionary<string, object?> { ["__response"] = responseExpando };
     }
 
-    private static object? TryParseJsonBody(string rawBody, MediaTypeHeaderValue? contentType)
+    private object? TryParseJsonBody(string rawBody, MediaTypeHeaderValue? contentType)
     {
         if (string.IsNullOrEmpty(rawBody)) return rawBody;
         if (contentType?.MediaType is null) return rawBody;
@@ -174,7 +200,11 @@ public sealed partial class RestCallerHandler : CustomTaskHandlerBase
         if (!isJson) return rawBody;
 
         try { return JsonConvert.DeserializeObject<ExpandoObject>(rawBody, ResponseDeserializerSettings); }
-        catch (JsonException) { return rawBody; }
+        catch (JsonException ex)
+        {
+            LogJsonParseFailed(ex, contentType.MediaType ?? "(none)");
+            return rawBody;
+        }
     }
 
     // --- helpers for resolvedInputs coercion ---
@@ -236,7 +266,34 @@ public sealed partial class RestCallerHandler : CustomTaskHandlerBase
             $"input '{key}' must be a map of strings; got {v.GetType().Name}");
     }
 
+    // --- structured logging via [LoggerMessage] source generators ---
+    // Bodies are NEVER logged: they may contain secrets or PII. Counts and lengths only.
+
     [LoggerMessage(EventId = 9340, Level = LogLevel.Information,
-        Message = "REST plugin sending {Method} {Url} (activityInstanceId={ActivityInstanceId})")]
-    private partial void LogSendingRequest(string method, string url, Guid activityInstanceId);
+        Message = "REST plugin sending {Method} {Url} (headers={HeaderCount}, body={BodyLength}B, timeout={TimeoutSec}s, activityInstanceId={ActivityInstanceId})")]
+    private partial void LogSendingRequest(string method, string url, int headerCount, int bodyLength, int timeoutSec, Guid activityInstanceId);
+
+    [LoggerMessage(EventId = 9341, Level = LogLevel.Information,
+        Message = "REST plugin received {StatusCode} for {Method} {Url} ({ContentLength}B, {ElapsedMs}ms)")]
+    private partial void LogResponseReceived(string method, string url, int statusCode, long contentLength, long elapsedMs);
+
+    [LoggerMessage(EventId = 9342, Level = LogLevel.Warning,
+        Message = "REST plugin timed out after {TimeoutSec}s calling {Method} {Url} (elapsed={ElapsedMs}ms)")]
+    private partial void LogTimeout(string method, string url, int timeoutSec, long elapsedMs);
+
+    [LoggerMessage(EventId = 9343, Level = LogLevel.Warning,
+        Message = "REST plugin network error on {Method} {Url} (elapsed={ElapsedMs}ms)")]
+    private partial void LogNetworkError(Exception ex, string method, string url, long elapsedMs);
+
+    [LoggerMessage(EventId = 9344, Level = LogLevel.Warning,
+        Message = "REST plugin received non-success status {StatusCode} from {Method} {Url} — failing the activity (configure successCodes input to whitelist this code)")]
+    private partial void LogNonSuccessStatus(string method, string url, int statusCode);
+
+    [LoggerMessage(EventId = 9345, Level = LogLevel.Debug,
+        Message = "REST plugin set idempotency-key header '{HeaderName}' = activityInstanceId={ActivityInstanceId}")]
+    private partial void LogIdempotencyKeySet(string headerName, Guid activityInstanceId);
+
+    [LoggerMessage(EventId = 9346, Level = LogLevel.Warning,
+        Message = "REST plugin failed to deserialize response body as JSON despite Content-Type='{ContentType}'; body returned as raw string")]
+    private partial void LogJsonParseFailed(Exception ex, string contentType);
 }

@@ -90,11 +90,15 @@ Add `HelloWorldHandler.cs`:
 
 ```csharp
 using System.Dynamic;
+using Fleans.Application.Events;
 using Fleans.Worker.CustomTasks;
+using Fleans.Worker.Placement;
 using Microsoft.Extensions.Logging;
 
 namespace Fleans.Plugins.HelloWorld;
 
+[ImplicitStreamSubscription(WorkflowEventsPublisher.ExecuteCustomTaskStreamNamespace)]
+[WorkerPlacement]
 public sealed partial class HelloWorldHandler(
     ILogger<HelloWorldHandler> logger,
     IGrainFactory grainFactory)
@@ -135,7 +139,7 @@ public sealed partial class HelloWorldHandler(
 Things worth noticing:
 
 - `partial class` because of the `[LoggerMessage]` source generator.
-- `[ImplicitStreamSubscription]` and `[WorkerPlacement]` are inherited from `CustomTaskHandlerBase` — you don't repeat them.
+- **`[ImplicitStreamSubscription(WorkflowEventsPublisher.ExecuteCustomTaskStreamNamespace)]` and `[WorkerPlacement]` MUST be repeated on the concrete handler.** `CustomTaskHandlerBase` carries both, but Orleans's grain-class discovery walks concrete types and doesn't reliably honor attribute inheritance from an abstract base — without the explicit attributes on the subclass, the handler is never activated when an event arrives.
 - The returned dictionary's `__response` key is what output mappings read. Plugins are free to put whatever shape they like under `__response` (string, primitive, or a nested object as shown).
 - Throw `Fleans.Domain.Errors.CustomTaskFailedActivityException(string code, string message)` to fail with a typed error code routable via boundary error events. Any other thrown exception fails with code `"500"`.
 
