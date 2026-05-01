@@ -23,7 +23,7 @@ namespace Fleans.Worker.CustomTasks;
 /// stream subscription, filtering, error path, and completion callback are all owned
 /// by the base.
 /// </summary>
-[ImplicitStreamSubscription(WorkflowEventsPublisher.StreamNameSpace)]
+[ImplicitStreamSubscription(WorkflowEventsPublisher.ExecuteCustomTaskStreamNamespace)]
 [WorkerPlacement]
 public abstract partial class CustomTaskHandlerBase : Grain, IAsyncObserver<ExecuteCustomTaskEvent>
 {
@@ -55,7 +55,7 @@ public abstract partial class CustomTaskHandlerBase : Grain, IAsyncObserver<Exec
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
         var streamProvider = this.GetStreamProvider(WorkflowEventsPublisher.StreamProvider);
-        var streamId = StreamId.Create(WorkflowEventsPublisher.StreamNameSpace, nameof(ExecuteCustomTaskEvent));
+        var streamId = StreamId.Create(WorkflowEventsPublisher.ExecuteCustomTaskStreamNamespace, nameof(ExecuteCustomTaskEvent));
         var stream = streamProvider.GetStream<ExecuteCustomTaskEvent>(streamId);
 
         var handles = await stream.GetAllSubscriptionHandles();
