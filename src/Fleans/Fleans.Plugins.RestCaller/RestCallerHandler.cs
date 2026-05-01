@@ -2,8 +2,10 @@ using System.Diagnostics;
 using System.Dynamic;
 using System.Net.Http.Headers;
 using System.Text;
+using Fleans.Application.Events;
 using Fleans.Domain.Errors;
 using Fleans.Worker.CustomTasks;
+using Fleans.Worker.Placement;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 
@@ -14,7 +16,15 @@ namespace Fleans.Plugins.RestCaller;
 /// resolved input parameters; populates <c>__response</c> with status / statusCode / ok /
 /// body / headers; throws a typed <see cref="CustomTaskFailedActivityException"/> on
 /// non-success per the v2 design's failure-code mapping.
+///
+/// <c>[ImplicitStreamSubscription]</c> and <c>[WorkerPlacement]</c> are repeated here
+/// even though <see cref="CustomTaskHandlerBase"/> already carries them: Orleans's
+/// grain-class discovery walks concrete types, and inheritance of these attributes
+/// from an abstract base is not reliably honored. Plugin authors should repeat both
+/// attributes on every concrete <c>CustomTaskHandlerBase</c> subclass they ship.
 /// </summary>
+[ImplicitStreamSubscription(WorkflowEventsPublisher.ExecuteCustomTaskStreamNamespace)]
+[WorkerPlacement]
 public sealed partial class RestCallerHandler : CustomTaskHandlerBase
 {
     private static readonly HashSet<string> AllowedMethods = new(StringComparer.OrdinalIgnoreCase)
