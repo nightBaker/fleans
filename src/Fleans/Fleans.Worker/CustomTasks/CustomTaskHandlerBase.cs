@@ -43,10 +43,13 @@ public abstract partial class CustomTaskHandlerBase : Grain, IAsyncObserver<Exec
     /// Executes the plugin's work. Inputs are resolved from the workflow scope per
     /// <c>&lt;zeebe:input&gt;</c> mappings; the returned dictionary feeds output mapping
     /// (so plugins should write fields the outputs reference, e.g. <c>__response</c>).
+    /// The <paramref name="context"/> carries identifiers a plugin may need for
+    /// idempotency keys, distributed-tracing tags, or external-system dedup.
     /// </summary>
     protected abstract Task<IDictionary<string, object?>> ExecuteAsync(
         IDictionary<string, object?> resolvedInputs,
         ExpandoObject variables,
+        CustomTaskExecutionContext context,
         CancellationToken cancellationToken);
 
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
@@ -89,7 +92,15 @@ public abstract partial class CustomTaskHandlerBase : Grain, IAsyncObserver<Exec
             foreach (var im in item.InputMappings)
                 resolved[im.Target] = MappingResolver.Resolve(im.Source, (IDictionary<string, object?>)variables);
 
-            var pluginResult = await ExecuteAsync(resolved, variables, CancellationToken.None);
+            var context = new CustomTaskExecutionContext(
+                item.WorkflowInstanceId,
+                item.WorkflowId,
+                item.ProcessDefinitionId,
+                item.ActivityInstanceId,
+                item.ActivityId,
+                item.TaskType);
+
+            var pluginResult = await ExecuteAsync(resolved, variables, context, CancellationToken.None);
 
             var outputs = new ExpandoObject();
             var outputsDict = (IDictionary<string, object?>)outputs;

@@ -1,0 +1,242 @@
+using System.Dynamic;
+using System.Net.Http.Headers;
+using System.Text;
+using Fleans.Domain.Errors;
+using Fleans.Worker.CustomTasks;
+using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
+
+namespace Fleans.Plugins.RestCaller;
+
+/// <summary>
+/// Backs <c>&lt;serviceTask type="rest-call"&gt;</c>. Issues an HTTP request per the
+/// resolved input parameters; populates <c>__response</c> with status / statusCode / ok /
+/// body / headers; throws a typed <see cref="CustomTaskFailedActivityException"/> on
+/// non-success per the v2 design's failure-code mapping.
+/// </summary>
+public sealed partial class RestCallerHandler : CustomTaskHandlerBase
+{
+    private static readonly HashSet<string> AllowedMethods = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"
+    };
+
+    // TypeNameHandling.None — response bodies are untrusted external data; allowing $type
+    // would be a real CVE. Default Newtonsoft setting is None; we set it explicitly to keep
+    // a future contributor from "helpfully" enabling TypeNameHandling.All.
+    private static readonly JsonSerializerSettings ResponseDeserializerSettings = new()
+    {
+        TypeNameHandling = TypeNameHandling.None,
+    };
+
+    private const string DefaultRequestContentType = "application/json";
+    private const int FailureBodyTruncate = 1024;
+
+    private readonly HttpClient _http;
+    private readonly ILogger<RestCallerHandler> _logger;
+
+    public RestCallerHandler(HttpClient http, ILogger<RestCallerHandler> logger, IGrainFactory grainFactory)
+        : base(logger, grainFactory)
+    {
+        _http = http;
+        _logger = logger;
+    }
+
+    protected override string TaskType => "rest-call";
+
+    protected override async Task<IDictionary<string, object?>> ExecuteAsync(
+        IDictionary<string, object?> resolvedInputs,
+        ExpandoObject variables,
+        CustomTaskExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        var url = ReadString(resolvedInputs, "url")
+            ?? throw new CustomTaskFailedActivityException("400", "url is required");
+        var method = (ReadString(resolvedInputs, "method") ?? "GET").ToUpperInvariant();
+        if (!AllowedMethods.Contains(method))
+            throw new CustomTaskFailedActivityException("400", $"unsupported method '{method}'");
+
+        Uri uri;
+        try { uri = new Uri(url); }
+        catch (UriFormatException ex)
+        {
+            throw new CustomTaskFailedActivityException("400", $"invalid url '{url}': {ex.Message}");
+        }
+
+        var timeoutSec = ReadInteger(resolvedInputs, "timeoutSec")
+            ?? throw new CustomTaskFailedActivityException("400", "timeoutSec is required");
+        if (timeoutSec is < 1 or > 300)
+            throw new CustomTaskFailedActivityException("400", $"timeoutSec must be in [1, 300]; got {timeoutSec}");
+
+        var headers = ReadMap(resolvedInputs, "headers");
+        var body = ReadString(resolvedInputs, "body");
+        var successCodes = ReadIntegerList(resolvedInputs, "successCodes");
+        var idempotencyKeyHeader = ReadString(resolvedInputs, "idempotencyKeyHeader");
+
+        // Idempotency-key opt-in. Plugin's value wins on collision with user-supplied headers.
+        if (!string.IsNullOrWhiteSpace(idempotencyKeyHeader))
+            headers[idempotencyKeyHeader] = context.ActivityInstanceId.ToString();
+
+        using var request = new HttpRequestMessage(new HttpMethod(method), uri);
+
+        // Set body + Content-Type before adding other headers so a user-supplied Content-Type override wins.
+        var contentTypeHeader = headers.FirstOrDefault(kv =>
+            string.Equals(kv.Key, "Content-Type", StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrEmpty(body))
+        {
+            var contentType = contentTypeHeader.Key is null ? DefaultRequestContentType : contentTypeHeader.Value;
+            request.Content = new StringContent(body, Encoding.UTF8, contentType);
+        }
+
+        foreach (var (name, value) in headers)
+        {
+            if (string.Equals(name, "Content-Type", StringComparison.OrdinalIgnoreCase))
+                continue;  // already handled via StringContent
+            if (!request.Headers.TryAddWithoutValidation(name, value))
+                request.Content?.Headers.TryAddWithoutValidation(name, value);
+        }
+
+        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSec));
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+
+        HttpResponseMessage response;
+        try
+        {
+            LogSendingRequest(method, uri.ToString(), context.ActivityInstanceId);
+            response = await _http.SendAsync(request, linkedCts.Token);
+        }
+        catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
+        {
+            throw new CustomTaskFailedActivityException("504", $"timeout after {timeoutSec}s calling {uri}");
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new CustomTaskFailedActivityException("502", $"network error calling {uri}: {ex.Message}");
+        }
+
+        try
+        {
+            return await BuildResponseAsync(response, successCodes, uri);
+        }
+        finally
+        {
+            response.Dispose();
+        }
+    }
+
+    private async Task<IDictionary<string, object?>> BuildResponseAsync(
+        HttpResponseMessage response, IReadOnlyList<int>? successCodes, Uri uri)
+    {
+        var statusCode = (int)response.StatusCode;
+        var rawBody = await response.Content.ReadAsStringAsync();
+        var contentTypeStr = response.Content.Headers.ContentType?.ToString();
+        var bodyShape = TryParseJsonBody(rawBody, response.Content.Headers.ContentType);
+
+        var responseHeaders = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var h in response.Headers)
+            responseHeaders[h.Key] = string.Join(",", h.Value);
+        foreach (var h in response.Content.Headers)
+            responseHeaders[h.Key] = string.Join(",", h.Value);
+
+        var responseExpando = new ExpandoObject();
+        var responseDict = (IDictionary<string, object?>)responseExpando;
+        responseDict["status"] = statusCode;
+        responseDict["statusCode"] = statusCode;
+        responseDict["ok"] = response.IsSuccessStatusCode;
+        responseDict["body"] = bodyShape;
+        responseDict["headers"] = responseHeaders;
+        responseDict["contentType"] = contentTypeStr;
+
+        var isSuccess = successCodes is { Count: > 0 }
+            ? successCodes.Contains(statusCode)
+            : statusCode is >= 200 and <= 299;
+
+        if (!isSuccess)
+        {
+            var truncated = rawBody.Length <= FailureBodyTruncate
+                ? rawBody
+                : rawBody[..FailureBodyTruncate] + "…";
+            throw new CustomTaskFailedActivityException(statusCode.ToString(),
+                $"HTTP {statusCode} from {uri}: {truncated}");
+        }
+
+        return new Dictionary<string, object?> { ["__response"] = responseExpando };
+    }
+
+    private static object? TryParseJsonBody(string rawBody, MediaTypeHeaderValue? contentType)
+    {
+        if (string.IsNullOrEmpty(rawBody)) return rawBody;
+        if (contentType?.MediaType is null) return rawBody;
+
+        var media = contentType.MediaType;
+        var isJson = string.Equals(media, "application/json", StringComparison.OrdinalIgnoreCase)
+            || media.EndsWith("+json", StringComparison.OrdinalIgnoreCase);
+        if (!isJson) return rawBody;
+
+        try { return JsonConvert.DeserializeObject<ExpandoObject>(rawBody, ResponseDeserializerSettings); }
+        catch (JsonException) { return rawBody; }
+    }
+
+    // --- helpers for resolvedInputs coercion ---
+
+    private static string? ReadString(IDictionary<string, object?> inputs, string key)
+        => inputs.TryGetValue(key, out var v) ? v?.ToString() : null;
+
+    private static int? ReadInteger(IDictionary<string, object?> inputs, string key)
+    {
+        if (!inputs.TryGetValue(key, out var v) || v is null) return null;
+        try { return Convert.ToInt32(v); }
+        catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException)
+        {
+            throw new CustomTaskFailedActivityException("400",
+                $"input '{key}' must be an integer; got {v} ({v.GetType().Name})");
+        }
+    }
+
+    private static IReadOnlyList<int>? ReadIntegerList(IDictionary<string, object?> inputs, string key)
+    {
+        if (!inputs.TryGetValue(key, out var v) || v is null) return null;
+        if (v is System.Collections.IEnumerable enumerable && v is not string)
+        {
+            var result = new List<int>();
+            foreach (var item in enumerable)
+            {
+                if (item is null) continue;
+                try { result.Add(Convert.ToInt32(item)); }
+                catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException)
+                {
+                    throw new CustomTaskFailedActivityException("400",
+                        $"input '{key}' must be a list of integers; got entry {item} ({item.GetType().Name})");
+                }
+            }
+            return result;
+        }
+        throw new CustomTaskFailedActivityException("400",
+            $"input '{key}' must be a list of integers; got {v.GetType().Name}");
+    }
+
+    private static Dictionary<string, string> ReadMap(IDictionary<string, object?> inputs, string key)
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (!inputs.TryGetValue(key, out var v) || v is null) return map;
+
+        if (v is IDictionary<string, object?> dict)
+        {
+            foreach (var (k, value) in dict)
+            {
+                if (value is null) continue;            // skip null per design (don't send empty header)
+                if (value is string or bool or int or long or double or decimal)
+                    map[k] = value.ToString()!;
+                // complex values (nested object/list) are intentionally skipped + warned below
+            }
+            return map;
+        }
+
+        throw new CustomTaskFailedActivityException("400",
+            $"input '{key}' must be a map of strings; got {v.GetType().Name}");
+    }
+
+    [LoggerMessage(EventId = 9340, Level = LogLevel.Information,
+        Message = "REST plugin sending {Method} {Url} (activityInstanceId={ActivityInstanceId})")]
+    private partial void LogSendingRequest(string method, string url, Guid activityInstanceId);
+}

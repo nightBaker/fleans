@@ -3,6 +3,7 @@ using Fleans.Api;
 using Fleans.Application;
 using Fleans.Application.Logging;
 using Fleans.Application.Placement;
+using Fleans.Plugins.RestCaller;
 using Fleans.Infrastructure;
 using Fleans.Persistence.PostgreSql;
 using Fleans.Persistence.Sqlite;
@@ -110,6 +111,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure();
+builder.Services.AddRestCallerPlugin();
 
 // Rate limiting — opt-in: only enabled when RateLimiting section is configured
 var rateLimitSection = builder.Configuration.GetSection("RateLimiting");

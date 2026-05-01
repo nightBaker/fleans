@@ -30,6 +30,7 @@
     <ProjectReference Include="..\Fleans.ServiceDefaults\Fleans.ServiceDefaults.csproj" />
     <ProjectReference Include="..\Fleans.Persistence.PostgreSql\Fleans.Persistence.PostgreSql.csproj" />
     <ProjectReference Include="..\Fleans.Worker\Fleans.Worker.csproj" />
+    <ProjectReference Include="..\Fleans.Plugins.RestCaller\Fleans.Plugins.RestCaller.csproj" />
   </ItemGroup>
 
 </Project>
