@@ -1,3 +1,5 @@
+using Fleans.Application.CustomTasks;
+
 namespace Fleans.Worker.CustomTasks;
 
 /// <summary>
@@ -8,4 +10,4 @@ namespace Fleans.Worker.CustomTasks;
 public sealed record CustomTaskPluginDescriptor(
     string TaskType,
     string? DisplayName,
-    string? ParameterSchemaJson);
+    CustomTaskParameterSchema? ParameterSchema);

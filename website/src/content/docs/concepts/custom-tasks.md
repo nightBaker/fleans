@@ -51,8 +51,50 @@ Register the plugin in the Worker silo's host:
 ```csharp
 services.AddCustomTaskPlugin<HiPluginHandler>(
     taskType: "hi",
-    displayName: "Say hi");
+    displayName: "Say hi",
+    parameterSchema: new CustomTaskParameterSchema(new[]
+    {
+        new CustomTaskParameterSpec(
+            Name: "name",
+            DisplayName: "Recipient name",
+            Type: CustomTaskParameterType.String,
+            Required: false,
+            Description: "Greeting target; defaults to \"world\".",
+            DefaultValue: "world"),
+    }));
 ```
+
+The `parameterSchema` is optional. When supplied, the management UI's BPMN editor (sub-issue C) renders a typed editor for each parameter (`String` → text field, `Boolean` → checkbox, `Expression` → multi-line `=`-prefixed input, etc.). Pass `CustomTaskParameterSchema.Empty` for plugins that take no inputs; omit the argument entirely to leave the editor opaque (UI falls back to a free-form key/value editor).
+
+### Repeat-allowed parameters: `List` and `Map`
+
+Parameters that accept multiple values (e.g. a REST plugin's HTTP headers, where each header is a separate `(key, value)` pair) use `Type = List` or `Type = Map` plus an `ItemType` describing each entry. `List` is "N values of `ItemType`"; `Map` is "N `(string-key, ItemType-value)` entries":
+
+```csharp
+services.AddCustomTaskPlugin<RestCallerHandler>(
+    taskType: "rest-call",
+    displayName: "REST Caller",
+    parameterSchema: new CustomTaskParameterSchema(new[]
+    {
+        new CustomTaskParameterSpec("url", "URL",
+            CustomTaskParameterType.String,
+            Required: true, Description: null, DefaultValue: null),
+
+        // multiple (header-name, header-value) pairs
+        new CustomTaskParameterSpec("headers", "HTTP Headers",
+            CustomTaskParameterType.Map,
+            Required: false, Description: "Repeat for each header.", DefaultValue: null,
+            ItemType: CustomTaskParameterType.String),
+
+        // multiple HTTP status codes treated as success
+        new CustomTaskParameterSpec("successCodes", "Success Codes",
+            CustomTaskParameterType.List,
+            Required: false, Description: "Defaults to 200..299.", DefaultValue: null,
+            ItemType: CustomTaskParameterType.Integer),
+    }));
+```
+
+The editor renders `Map` as a two-column table (Key, Value) with an "+ Add row" button; `List` as a single-column list with "+ Add" / "remove". The value column is rendered per `ItemType`. Nested `List`/`Map` (e.g. a list whose items are themselves objects with three fields) is **not** supported in v1 — keep `ItemType` to a primitive (`String | Integer | Boolean | Expression | MultilineString`).
 
 Reference your plugin from BPMN:
 

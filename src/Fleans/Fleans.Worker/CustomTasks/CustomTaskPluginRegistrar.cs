@@ -61,7 +61,7 @@ internal sealed partial class CustomTaskPluginRegistrar : ILifecycleParticipant<
                 await catalog.Register(new CustomTaskRegistration(
                     descriptor.TaskType,
                     descriptor.DisplayName,
-                    descriptor.ParameterSchemaJson,
+                    descriptor.ParameterSchema,
                     _siloDetails.Name));
                 LogRegistered(descriptor.TaskType, _siloDetails.Name);
                 return;

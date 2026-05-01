@@ -68,7 +68,7 @@ public sealed partial class CustomTaskCatalogGrain : Grain, ICustomTaskCatalogGr
                 return new CustomTaskCatalogEntry(
                     first.TaskType,
                     first.DisplayName,
-                    first.ParameterSchemaJson,
+                    first.ParameterSchema,
                     g.Select(e => e.SiloName).Distinct(StringComparer.Ordinal).ToList());
             })
             .ToList();
@@ -88,7 +88,7 @@ public sealed partial class CustomTaskCatalogGrain : Grain, ICustomTaskCatalogGr
         var entry = new CustomTaskCatalogEntry(
             first.TaskType,
             first.DisplayName,
-            first.ParameterSchemaJson,
+            first.ParameterSchema,
             matches.Select(e => e.SiloName).Distinct(StringComparer.Ordinal).ToList());
         return Task.FromResult<CustomTaskCatalogEntry?>(entry);
     }

@@ -8,5 +8,5 @@ namespace Fleans.Application.CustomTasks;
 public sealed record CustomTaskRegistration(
     [property: Id(0)] string TaskType,
     [property: Id(1)] string? DisplayName,
-    [property: Id(2)] string? ParameterSchemaJson,
+    [property: Id(2)] CustomTaskParameterSchema? ParameterSchema,
     [property: Id(3)] string SiloName);

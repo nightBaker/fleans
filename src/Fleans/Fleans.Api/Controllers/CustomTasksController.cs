@@ -24,9 +24,7 @@ public sealed class CustomTasksController : ControllerBase
     {
         var catalog = _grainFactory.GetGrain<ICustomTaskCatalogGrain>(0);
         var entries = await catalog.GetAll();
-        return entries
-            .Select(e => new CustomTaskCatalogEntryDto(e.TaskType, e.DisplayName, e.ParameterSchemaJson, e.SiloNames))
-            .ToList();
+        return entries.Select(CustomTaskCatalogMappers.ToDto).ToList();
     }
 
     /// <summary>Returns the entry for one task type, 404 if no plugin claims it.</summary>
@@ -37,6 +35,19 @@ public sealed class CustomTasksController : ControllerBase
         var entry = await catalog.Get(taskType);
         if (entry is null)
             return NotFound();
-        return new CustomTaskCatalogEntryDto(entry.TaskType, entry.DisplayName, entry.ParameterSchemaJson, entry.SiloNames);
+        return entry.ToDto();
     }
+}
+
+internal static class CustomTaskCatalogMappers
+{
+    public static CustomTaskCatalogEntryDto ToDto(this CustomTaskCatalogEntry entry) =>
+        new(entry.TaskType, entry.DisplayName, entry.ParameterSchema?.ToDto(), entry.SiloNames);
+
+    public static CustomTaskParameterSchemaDto ToDto(this CustomTaskParameterSchema schema) =>
+        new(schema.Parameters.Select(p => p.ToDto()).ToList());
+
+    public static CustomTaskParameterSpecDto ToDto(this CustomTaskParameterSpec spec) =>
+        new(spec.Name, spec.DisplayName, spec.Type, spec.Required,
+            spec.Description, spec.DefaultValue, spec.ItemType);
 }
