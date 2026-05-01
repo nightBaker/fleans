@@ -1,0 +1,92 @@
+@page "/admin/custom-tasks"
+@inject IGrainFactory GrainFactory
+@implements IDisposable
+
+<PageTitle>Custom Tasks — Fleans</PageTitle>
+
+<AuthorizeView Context="auth">
+    <Authorized>
+        <div class="custom-task-catalog-page" style="padding: 24px;">
+            <FluentLabel Typo="Typography.H3">Custom Tasks</FluentLabel>
+            <FluentLabel Typo="Typography.Body" Style="color: var(--neutral-foreground-hint); margin: 8px 0 24px;">
+                Custom-task plugins registered in the cluster. Page auto-refreshes every 5 seconds.
+            </FluentLabel>
+
+            @if (_loadError is not null)
+            {
+                <FluentMessageBar Intent="MessageIntent.Error">
+                    Failed to load catalog: @_loadError
+                </FluentMessageBar>
+            }
+            else if (_entries is null)
+            {
+                <FluentProgressRing />
+            }
+            else if (_entries.Count == 0)
+            {
+                <FluentMessageBar Intent="MessageIntent.Info">
+                    No custom-task plugins registered. Start a Worker silo with
+                    <code>services.AddCustomTaskPlugin&lt;T&gt;()</code> to populate this list.
+                </FluentMessageBar>
+            }
+            else
+            {
+                <FluentDataGrid Items="@(_entries.AsQueryable())" GridTemplateColumns="200px 220px 1fr 100px"
+                                ResizableColumns="true" Style="width: 100%;">
+                    <PropertyColumn Title="Task Type" Property="@(e => e.TaskType)" />
+                    <PropertyColumn Title="Display Name" Property="@(e => e.DisplayName ?? "—")" />
+                    <TemplateColumn Title="Silos">
+                        @if (context.SiloNames.Count == 0)
+                        {
+                            <span style="color: var(--error);">No silos</span>
+                        }
+                        else
+                        {
+                            <span>@string.Join(", ", context.SiloNames)</span>
+                        }
+                    </TemplateColumn>
+                    <TemplateColumn Title="Parameters" Align="Align.End">
+                        <span>@(context.ParameterSchema?.Parameters.Count ?? 0)</span>
+                    </TemplateColumn>
+                </FluentDataGrid>
+            }
+        </div>
+    </Authorized>
+    <NotAuthorized>
+        <FluentMessageBar Intent="MessageIntent.Error">You must be signed in to view this page.</FluentMessageBar>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private List<CustomTaskCatalogEntry>? _entries;
+    private string? _loadError;
+    private System.Threading.Timer? _refreshTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        _refreshTimer = new System.Threading.Timer(async _ => await InvokeAsync(LoadAsync),
+            state: null, dueTime: TimeSpan.FromSeconds(5), period: TimeSpan.FromSeconds(5));
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            var catalog = GrainFactory.GetGrain<ICustomTaskCatalogGrain>(0);
+            var entries = await catalog.GetAll();
+            _entries = entries.ToList();
+            _loadError = null;
+        }
+        catch (Exception ex)
+        {
+            _loadError = ex.Message;
+        }
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        _refreshTimer?.Dispose();
+    }
+}
