@@ -36,7 +36,7 @@ public class EfCoreProcessDefinitionGrainStorageTests : PersistenceTestBase
         Assert.AreEqual(id, readState.State.ProcessDefinitionId);
         Assert.AreEqual("myProcess", readState.State.ProcessDefinitionKey);
         Assert.AreEqual(1, readState.State.Version);
-        Assert.AreEqual(deployedAt, readState.State.DeployedAt);
+        Assert.AreEqual(TruncateToMicroseconds(deployedAt), TruncateToMicroseconds(readState.State.DeployedAt));
         Assert.AreEqual("<bpmn/>", readState.State.BpmnXml);
         Assert.AreEqual(state.ETag, readState.ETag);
         Assert.IsTrue(readState.RecordExists);
@@ -333,6 +333,11 @@ public class EfCoreProcessDefinitionGrainStorageTests : PersistenceTestBase
 
     private static GrainId NewGrainId(string key)
         => GrainId.Create("processDefinition", key);
+
+    // PostgreSQL `timestamptz` stores microseconds; .NET DateTimeOffset has 100ns ticks.
+    // Round-trip equality must be checked at microsecond resolution.
+    private static DateTimeOffset TruncateToMicroseconds(DateTimeOffset value)
+        => new(value.Ticks - value.Ticks % 10, value.Offset);
 
     private static TestGrainState<ProcessDefinition> CreateGrainState(
         string id, string key, int version)
