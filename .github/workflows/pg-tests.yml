@@ -1,0 +1,45 @@
+# Runs Fleans.Persistence.Tests against a real PostgreSQL container via
+# Testcontainers. Default `dotnet test` (in dotnet.yml) skips the PG rows
+# because FLEANS_PG_TESTS is not set there; this job exercises them.
+#
+# `[TestCategory("Postgres")]` is on the parametrised test classes, so the
+# filter below picks up every parametrised class (both SQLite and PG rows
+# of those classes — running them twice is cheap and proves the pattern).
+name: PostgreSQL tests
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+defaults:
+  run:
+    working-directory: src/Fleans
+
+jobs:
+  pg-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore
+
+      - name: Test (PostgreSQL category)
+        env:
+          FLEANS_PG_TESTS: "1"
+        run: >-
+          dotnet test Fleans.Persistence.Tests/Fleans.Persistence.Tests.csproj
+          --no-build
+          --verbosity normal
+          --filter "TestCategory=Postgres"

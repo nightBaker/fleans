@@ -1,57 +1,35 @@
 using Fleans.Domain.States;
-using Microsoft.Data.Sqlite;
-using Fleans.Persistence.Sqlite;
-using Microsoft.EntityFrameworkCore;
+using Fleans.Persistence.Tests.Infrastructure;
 using Orleans.Runtime;
 using Orleans.Storage;
 
 namespace Fleans.Persistence.Tests;
 
 [TestClass]
-public class EfCoreSignalCorrelationGrainStorageTests
+[TestCategory("Postgres")]
+public class EfCoreSignalCorrelationGrainStorageTests : PersistenceTestBase
 {
-    private SqliteConnection _connection = null!;
-    private IDbContextFactory<FleanCommandDbContext> _dbContextFactory = null!;
-    private EfCoreSignalCorrelationGrainStorage _storage = null!;
     private const string StateName = "state";
 
-    [TestInitialize]
-    public void Setup()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task WriteAndRead_RoundTrip_ReturnsStoredState(PersistenceProvider provider)
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
-        _connection.Open();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var storage = new EfCoreSignalCorrelationGrainStorage(fixture.CommandFactory);
 
-        var options = new DbContextOptionsBuilder<FleanCommandDbContext>()
-            .UseFleansSqlite(_connection)
-            .Options;
-
-        _dbContextFactory = new TestDbContextFactory(options);
-        _storage = new EfCoreSignalCorrelationGrainStorage(_dbContextFactory);
-
-        using var db = _dbContextFactory.CreateDbContext();
-        db.Database.EnsureCreated();
-    }
-
-    [TestCleanup]
-    public void Cleanup()
-    {
-        _connection.Dispose();
-    }
-
-    [TestMethod]
-    public async Task WriteAndRead_RoundTrip_ReturnsStoredState()
-    {
         var grainId = NewGrainId("approvalSignal");
         var sub1 = new SignalSubscription(Guid.NewGuid(), "waitApproval", Guid.NewGuid());
         var sub2 = new SignalSubscription(Guid.NewGuid(), "waitConfirm", Guid.NewGuid());
         var state = CreateGrainState(sub1, sub2);
 
-        await _storage.WriteStateAsync(StateName, grainId, state);
+        await storage.WriteStateAsync(StateName, grainId, state);
         Assert.IsNotNull(state.ETag);
         Assert.IsTrue(state.RecordExists);
 
         var readState = CreateEmptyGrainState();
-        await _storage.ReadStateAsync(StateName, grainId, readState);
+        await storage.ReadStateAsync(StateName, grainId, readState);
 
         Assert.AreEqual(2, readState.State.Subscriptions.Count);
         Assert.IsTrue(readState.State.Subscriptions.Any(s => s.ActivityId == "waitApproval"));
@@ -60,19 +38,24 @@ public class EfCoreSignalCorrelationGrainStorageTests
         Assert.IsTrue(readState.RecordExists);
     }
 
-    [TestMethod]
-    public async Task WriteAndRead_RoundTrip_PreservesSubscriptionDetails()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task WriteAndRead_RoundTrip_PreservesSubscriptionDetails(PersistenceProvider provider)
     {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var storage = new EfCoreSignalCorrelationGrainStorage(fixture.CommandFactory);
+
         var instanceId = Guid.NewGuid();
         var hostId = Guid.NewGuid();
         var grainId = NewGrainId("detailSignal");
         var state = CreateGrainState(
             new SignalSubscription(instanceId, "activity-1", hostId));
 
-        await _storage.WriteStateAsync(StateName, grainId, state);
+        await storage.WriteStateAsync(StateName, grainId, state);
 
         var readState = CreateEmptyGrainState();
-        await _storage.ReadStateAsync(StateName, grainId, readState);
+        await storage.ReadStateAsync(StateName, grainId, readState);
 
         var sub = readState.State.Subscriptions[0];
         Assert.AreEqual(instanceId, sub.WorkflowInstanceId);
@@ -81,123 +64,163 @@ public class EfCoreSignalCorrelationGrainStorageTests
         Assert.AreEqual("detailSignal", sub.SignalName);
     }
 
-    [TestMethod]
-    public async Task Write_WithCorrectETag_Succeeds()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task Write_WithCorrectETag_Succeeds(PersistenceProvider provider)
     {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var storage = new EfCoreSignalCorrelationGrainStorage(fixture.CommandFactory);
+
         var grainId = NewGrainId("sig1");
         var state = CreateGrainState(
             new SignalSubscription(Guid.NewGuid(), "act1", Guid.NewGuid()));
-        await _storage.WriteStateAsync(StateName, grainId, state);
+        await storage.WriteStateAsync(StateName, grainId, state);
         var firstETag = state.ETag;
 
         state.State.Subscriptions.Add(new SignalSubscription(Guid.NewGuid(), "act2", Guid.NewGuid()));
-        await _storage.WriteStateAsync(StateName, grainId, state);
+        await storage.WriteStateAsync(StateName, grainId, state);
 
         Assert.AreNotEqual(firstETag, state.ETag);
 
         var readState = CreateEmptyGrainState();
-        await _storage.ReadStateAsync(StateName, grainId, readState);
+        await storage.ReadStateAsync(StateName, grainId, readState);
         Assert.AreEqual(2, readState.State.Subscriptions.Count);
     }
 
-    [TestMethod]
-    public async Task Write_WithStaleETag_ThrowsInconsistentStateException()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task Write_WithStaleETag_ThrowsInconsistentStateException(PersistenceProvider provider)
     {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var storage = new EfCoreSignalCorrelationGrainStorage(fixture.CommandFactory);
+
         var grainId = NewGrainId("staleSig");
         var state = CreateGrainState(
             new SignalSubscription(Guid.NewGuid(), "act1", Guid.NewGuid()));
-        await _storage.WriteStateAsync(StateName, grainId, state);
+        await storage.WriteStateAsync(StateName, grainId, state);
 
         var concurrentState = CreateEmptyGrainState();
-        await _storage.ReadStateAsync(StateName, grainId, concurrentState);
+        await storage.ReadStateAsync(StateName, grainId, concurrentState);
         concurrentState.State.Subscriptions.Add(new SignalSubscription(Guid.NewGuid(), "act2", Guid.NewGuid()));
-        await _storage.WriteStateAsync(StateName, grainId, concurrentState);
+        await storage.WriteStateAsync(StateName, grainId, concurrentState);
 
         state.State.Subscriptions.Add(new SignalSubscription(Guid.NewGuid(), "act3", Guid.NewGuid()));
         await Assert.ThrowsExactlyAsync<InconsistentStateException>(
-            () => _storage.WriteStateAsync(StateName, grainId, state));
+            () => storage.WriteStateAsync(StateName, grainId, state));
     }
 
-    [TestMethod]
-    public async Task Write_DiffRemovesSubscription()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task Write_DiffRemovesSubscription(PersistenceProvider provider)
     {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var storage = new EfCoreSignalCorrelationGrainStorage(fixture.CommandFactory);
+
         var grainId = NewGrainId("diffRemove");
         var sub1 = new SignalSubscription(Guid.NewGuid(), "act1", Guid.NewGuid());
         var sub2 = new SignalSubscription(Guid.NewGuid(), "act2", Guid.NewGuid());
         var state = CreateGrainState(sub1, sub2);
-        await _storage.WriteStateAsync(StateName, grainId, state);
+        await storage.WriteStateAsync(StateName, grainId, state);
 
         state.State.Subscriptions.Remove(sub1);
-        await _storage.WriteStateAsync(StateName, grainId, state);
+        await storage.WriteStateAsync(StateName, grainId, state);
 
         var readState = CreateEmptyGrainState();
-        await _storage.ReadStateAsync(StateName, grainId, readState);
+        await storage.ReadStateAsync(StateName, grainId, readState);
         Assert.AreEqual(1, readState.State.Subscriptions.Count);
         Assert.AreEqual("act2", readState.State.Subscriptions[0].ActivityId);
     }
 
-    [TestMethod]
-    public async Task Clear_RemovesState_SubsequentReadReturnsDefault()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task Clear_RemovesState_SubsequentReadReturnsDefault(PersistenceProvider provider)
     {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var storage = new EfCoreSignalCorrelationGrainStorage(fixture.CommandFactory);
+
         var grainId = NewGrainId("clearSig");
         var state = CreateGrainState(
             new SignalSubscription(Guid.NewGuid(), "act1", Guid.NewGuid()));
-        await _storage.WriteStateAsync(StateName, grainId, state);
+        await storage.WriteStateAsync(StateName, grainId, state);
 
-        await _storage.ClearStateAsync(StateName, grainId, state);
+        await storage.ClearStateAsync(StateName, grainId, state);
         Assert.IsNull(state.ETag);
         Assert.IsFalse(state.RecordExists);
 
         var readState = CreateEmptyGrainState();
-        await _storage.ReadStateAsync(StateName, grainId, readState);
+        await storage.ReadStateAsync(StateName, grainId, readState);
         Assert.IsNull(readState.ETag);
         Assert.IsFalse(readState.RecordExists);
     }
 
-    [TestMethod]
-    public async Task Clear_WithStaleETag_ThrowsInconsistentStateException()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task Clear_WithStaleETag_ThrowsInconsistentStateException(PersistenceProvider provider)
     {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var storage = new EfCoreSignalCorrelationGrainStorage(fixture.CommandFactory);
+
         var grainId = NewGrainId("clearStale");
         var state = CreateGrainState(
             new SignalSubscription(Guid.NewGuid(), "act1", Guid.NewGuid()));
-        await _storage.WriteStateAsync(StateName, grainId, state);
+        await storage.WriteStateAsync(StateName, grainId, state);
 
         var concurrentState = CreateEmptyGrainState();
-        await _storage.ReadStateAsync(StateName, grainId, concurrentState);
+        await storage.ReadStateAsync(StateName, grainId, concurrentState);
         concurrentState.State.Subscriptions.Add(new SignalSubscription(Guid.NewGuid(), "act2", Guid.NewGuid()));
-        await _storage.WriteStateAsync(StateName, grainId, concurrentState);
+        await storage.WriteStateAsync(StateName, grainId, concurrentState);
 
         await Assert.ThrowsExactlyAsync<InconsistentStateException>(
-            () => _storage.ClearStateAsync(StateName, grainId, state));
+            () => storage.ClearStateAsync(StateName, grainId, state));
     }
 
-    [TestMethod]
-    public async Task Clear_NonExistentGrain_IsNoOp()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task Clear_NonExistentGrain_IsNoOp(PersistenceProvider provider)
     {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var storage = new EfCoreSignalCorrelationGrainStorage(fixture.CommandFactory);
+
         var grainId = NewGrainId("noop");
         var state = CreateEmptyGrainState();
 
-        await _storage.ClearStateAsync(StateName, grainId, state);
+        await storage.ClearStateAsync(StateName, grainId, state);
 
         Assert.IsNull(state.ETag);
         Assert.IsFalse(state.RecordExists);
     }
 
-    [TestMethod]
-    public async Task Read_NonExistentKey_LeavesStateUnchanged()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task Read_NonExistentKey_LeavesStateUnchanged(PersistenceProvider provider)
     {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var storage = new EfCoreSignalCorrelationGrainStorage(fixture.CommandFactory);
+
         var grainId = NewGrainId("missing");
         var state = CreateEmptyGrainState();
 
-        await _storage.ReadStateAsync(StateName, grainId, state);
+        await storage.ReadStateAsync(StateName, grainId, state);
 
         Assert.IsNull(state.ETag);
         Assert.IsFalse(state.RecordExists);
     }
 
-    [TestMethod]
-    public async Task DifferentGrainIds_AreIsolated()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task DifferentGrainIds_AreIsolated(PersistenceProvider provider)
     {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var storage = new EfCoreSignalCorrelationGrainStorage(fixture.CommandFactory);
+
         var grainId1 = NewGrainId("sigA");
         var grainId2 = NewGrainId("sigB");
 
@@ -209,13 +232,13 @@ public class EfCoreSignalCorrelationGrainStorageTests
         var state2 = CreateGrainState(
             new SignalSubscription(id2, "actB", Guid.NewGuid()));
 
-        await _storage.WriteStateAsync(StateName, grainId1, state1);
-        await _storage.WriteStateAsync(StateName, grainId2, state2);
+        await storage.WriteStateAsync(StateName, grainId1, state1);
+        await storage.WriteStateAsync(StateName, grainId2, state2);
 
         var read1 = CreateEmptyGrainState();
         var read2 = CreateEmptyGrainState();
-        await _storage.ReadStateAsync(StateName, grainId1, read1);
-        await _storage.ReadStateAsync(StateName, grainId2, read2);
+        await storage.ReadStateAsync(StateName, grainId1, read1);
+        await storage.ReadStateAsync(StateName, grainId2, read2);
 
         Assert.AreEqual(1, read1.State.Subscriptions.Count);
         Assert.AreEqual(id1, read1.State.Subscriptions[0].WorkflowInstanceId);
@@ -223,22 +246,27 @@ public class EfCoreSignalCorrelationGrainStorageTests
         Assert.AreEqual(id2, read2.State.Subscriptions[0].WorkflowInstanceId);
     }
 
-    [TestMethod]
-    public async Task WriteClearWrite_ReCreatesSameGrainId()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task WriteClearWrite_ReCreatesSameGrainId(PersistenceProvider provider)
     {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var storage = new EfCoreSignalCorrelationGrainStorage(fixture.CommandFactory);
+
         var grainId = NewGrainId("recreate");
         var state = CreateGrainState(
             new SignalSubscription(Guid.NewGuid(), "act1", Guid.NewGuid()));
-        await _storage.WriteStateAsync(StateName, grainId, state);
+        await storage.WriteStateAsync(StateName, grainId, state);
 
-        await _storage.ClearStateAsync(StateName, grainId, state);
+        await storage.ClearStateAsync(StateName, grainId, state);
 
         var newState = CreateGrainState(
             new SignalSubscription(Guid.NewGuid(), "act2", Guid.NewGuid()));
-        await _storage.WriteStateAsync(StateName, grainId, newState);
+        await storage.WriteStateAsync(StateName, grainId, newState);
 
         var readState = CreateEmptyGrainState();
-        await _storage.ReadStateAsync(StateName, grainId, readState);
+        await storage.ReadStateAsync(StateName, grainId, readState);
 
         Assert.AreEqual(1, readState.State.Subscriptions.Count);
         Assert.AreEqual("act2", readState.State.Subscriptions[0].ActivityId);

@@ -2,57 +2,28 @@ using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Persistence;
 using Fleans.Domain.Sequences;
-using Microsoft.Data.Sqlite;
-using Fleans.Persistence.Sqlite;
-using Microsoft.EntityFrameworkCore;
+using Fleans.Persistence.Tests.Infrastructure;
 
 namespace Fleans.Persistence.Tests;
 
 [TestClass]
-public class EfCoreProcessDefinitionRepositoryTests
+[TestCategory("Postgres")]
+public class EfCoreProcessDefinitionRepositoryTests : PersistenceTestBase
 {
-    private SqliteConnection _connection = null!;
-    private IDbContextFactory<FleanCommandDbContext> _dbContextFactory = null!;
-    private IDbContextFactory<FleanQueryDbContext> _queryDbContextFactory = null!;
-    private IProcessDefinitionRepository _repository = null!;
-
-    [TestInitialize]
-    public void Setup()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task SaveAndGetById_RoundTrip_ReturnsAllScalarFields(PersistenceProvider provider)
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
-        _connection.Open();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryFactory);
 
-        var commandOptions = new DbContextOptionsBuilder<FleanCommandDbContext>()
-            .UseFleansSqlite(_connection)
-            .Options;
-
-        var queryOptions = new DbContextOptionsBuilder<FleanQueryDbContext>()
-            .UseFleansSqlite(_connection)
-            .Options;
-
-        _dbContextFactory = new TestDbContextFactory(commandOptions);
-        _queryDbContextFactory = new TestQueryDbContextFactory(queryOptions);
-        _repository = new EfCoreProcessDefinitionRepository(_dbContextFactory, _queryDbContextFactory);
-
-        using var db = _dbContextFactory.CreateDbContext();
-        db.Database.EnsureCreated();
-    }
-
-    [TestCleanup]
-    public void Cleanup()
-    {
-        _connection.Dispose();
-    }
-
-    [TestMethod]
-    public async Task SaveAndGetById_RoundTrip_ReturnsAllScalarFields()
-    {
         var deployedAt = DateTimeOffset.UtcNow;
         var definition = CreateDefinition("key1:1:ts", "key1", 1, deployedAt);
 
-        await _repository.SaveAsync(definition);
+        await repository.SaveAsync(definition);
 
-        var result = await _repository.GetByIdAsync("key1:1:ts");
+        var result = await repository.GetByIdAsync("key1:1:ts");
 
         Assert.IsNotNull(result);
         Assert.AreEqual("key1:1:ts", result.ProcessDefinitionId);
@@ -62,14 +33,19 @@ public class EfCoreProcessDefinitionRepositoryTests
         Assert.AreEqual("<bpmn/>", result.BpmnXml);
     }
 
-    [TestMethod]
-    public async Task SaveAndGetById_WorkflowJsonRoundTrip_PolymorphicActivityTypes()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task SaveAndGetById_WorkflowJsonRoundTrip_PolymorphicActivityTypes(PersistenceProvider provider)
     {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryFactory);
+
         var definition = CreateDefinitionWithMixedActivities();
 
-        await _repository.SaveAsync(definition);
+        await repository.SaveAsync(definition);
 
-        var result = await _repository.GetByIdAsync(definition.ProcessDefinitionId);
+        var result = await repository.GetByIdAsync(definition.ProcessDefinitionId);
 
         Assert.IsNotNull(result);
         var workflow = result.Workflow;
@@ -84,14 +60,19 @@ public class EfCoreProcessDefinitionRepositoryTests
         Assert.AreEqual("csharp", scriptTask.ScriptFormat);
     }
 
-    [TestMethod]
-    public async Task SaveAndGetById_WorkflowJsonRoundTrip_PolymorphicSequenceFlowTypes()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task SaveAndGetById_WorkflowJsonRoundTrip_PolymorphicSequenceFlowTypes(PersistenceProvider provider)
     {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryFactory);
+
         var definition = CreateDefinitionWithMixedActivities();
 
-        await _repository.SaveAsync(definition);
+        await repository.SaveAsync(definition);
 
-        var result = await _repository.GetByIdAsync(definition.ProcessDefinitionId);
+        var result = await repository.GetByIdAsync(definition.ProcessDefinitionId);
 
         Assert.IsNotNull(result);
         var workflow = result.Workflow;
@@ -106,39 +87,46 @@ public class EfCoreProcessDefinitionRepositoryTests
         Assert.AreEqual("x > 10", conditionalFlow.Condition);
     }
 
-    [TestMethod]
-    public async Task SaveAndGetById_WorkflowJsonRoundTrip_SharedActivityReferences()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task SaveAndGetById_WorkflowJsonRoundTrip_SharedActivityReferences(PersistenceProvider provider)
     {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryFactory);
+
         var definition = CreateDefinitionWithMixedActivities();
 
-        await _repository.SaveAsync(definition);
+        await repository.SaveAsync(definition);
 
-        var result = await _repository.GetByIdAsync(definition.ProcessDefinitionId);
+        var result = await repository.GetByIdAsync(definition.ProcessDefinitionId);
 
         Assert.IsNotNull(result);
         var workflow = result.Workflow;
 
-        // SequenceFlow[0].Source should be the same object as Activities[0] (StartEvent)
         Assert.IsTrue(ReferenceEquals(workflow.SequenceFlows[0].Source, workflow.Activities[0]),
             "SequenceFlow.Source should reference the same Activity instance from the Activities list");
 
-        // SequenceFlow[0].Target should be the same object as Activities[1] (ScriptTask)
         Assert.IsTrue(ReferenceEquals(workflow.SequenceFlows[0].Target, workflow.Activities[1]),
             "SequenceFlow.Target should reference the same Activity instance from the Activities list");
 
-        // ConditionalSequenceFlow[1].Source should be the same as Activities[2] (ExclusiveGateway)
         Assert.IsTrue(ReferenceEquals(workflow.SequenceFlows[1].Source, workflow.Activities[2]),
             "ConditionalSequenceFlow.Source should reference the same gateway Activity instance");
     }
 
-    [TestMethod]
-    public async Task GetByKey_ReturnsVersionsOrderedByVersion()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetByKey_ReturnsVersionsOrderedByVersion(PersistenceProvider provider)
     {
-        await _repository.SaveAsync(CreateDefinition("key1:3:ts", "key1", 3, DateTimeOffset.UtcNow));
-        await _repository.SaveAsync(CreateDefinition("key1:1:ts", "key1", 1, DateTimeOffset.UtcNow));
-        await _repository.SaveAsync(CreateDefinition("key1:2:ts", "key1", 2, DateTimeOffset.UtcNow));
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryFactory);
 
-        var results = await _repository.GetByKeyAsync("key1");
+        await repository.SaveAsync(CreateDefinition("key1:3:ts", "key1", 3, DateTimeOffset.UtcNow));
+        await repository.SaveAsync(CreateDefinition("key1:1:ts", "key1", 1, DateTimeOffset.UtcNow));
+        await repository.SaveAsync(CreateDefinition("key1:2:ts", "key1", 2, DateTimeOffset.UtcNow));
+
+        var results = await repository.GetByKeyAsync("key1");
 
         Assert.AreEqual(3, results.Count);
         Assert.AreEqual(1, results[0].Version);
@@ -146,15 +134,20 @@ public class EfCoreProcessDefinitionRepositoryTests
         Assert.AreEqual(3, results[2].Version);
     }
 
-    [TestMethod]
-    public async Task GetAll_ReturnsAllDefinitionsOrderedByKeyThenVersion()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetAll_ReturnsAllDefinitionsOrderedByKeyThenVersion(PersistenceProvider provider)
     {
-        await _repository.SaveAsync(CreateDefinition("beta:2:ts", "beta", 2, DateTimeOffset.UtcNow));
-        await _repository.SaveAsync(CreateDefinition("alpha:1:ts", "alpha", 1, DateTimeOffset.UtcNow));
-        await _repository.SaveAsync(CreateDefinition("beta:1:ts", "beta", 1, DateTimeOffset.UtcNow));
-        await _repository.SaveAsync(CreateDefinition("alpha:2:ts", "alpha", 2, DateTimeOffset.UtcNow));
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryFactory);
 
-        var results = await _repository.GetAllAsync();
+        await repository.SaveAsync(CreateDefinition("beta:2:ts", "beta", 2, DateTimeOffset.UtcNow));
+        await repository.SaveAsync(CreateDefinition("alpha:1:ts", "alpha", 1, DateTimeOffset.UtcNow));
+        await repository.SaveAsync(CreateDefinition("beta:1:ts", "beta", 1, DateTimeOffset.UtcNow));
+        await repository.SaveAsync(CreateDefinition("alpha:2:ts", "alpha", 2, DateTimeOffset.UtcNow));
+
+        var results = await repository.GetAllAsync();
 
         Assert.AreEqual(4, results.Count);
         Assert.AreEqual("alpha", results[0].ProcessDefinitionKey);
@@ -167,112 +160,151 @@ public class EfCoreProcessDefinitionRepositoryTests
         Assert.AreEqual(2, results[3].Version);
     }
 
-    [TestMethod]
-    public async Task GetById_NonExistent_ReturnsNull()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetById_NonExistent_ReturnsNull(PersistenceProvider provider)
     {
-        var result = await _repository.GetByIdAsync("does-not-exist");
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryFactory);
+
+        var result = await repository.GetByIdAsync("does-not-exist");
 
         Assert.IsNull(result);
     }
 
-    [TestMethod]
-    public async Task Delete_RemovesDefinition_SubsequentGetByIdReturnsNull()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task Delete_RemovesDefinition_SubsequentGetByIdReturnsNull(PersistenceProvider provider)
     {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryFactory);
+
         var definition = CreateDefinition("key1:1:ts", "key1", 1, DateTimeOffset.UtcNow);
-        await _repository.SaveAsync(definition);
+        await repository.SaveAsync(definition);
 
-        await _repository.DeleteAsync("key1:1:ts");
+        await repository.DeleteAsync("key1:1:ts");
 
-        var result = await _repository.GetByIdAsync("key1:1:ts");
+        var result = await repository.GetByIdAsync("key1:1:ts");
         Assert.IsNull(result);
     }
 
-    [TestMethod]
-    public async Task Delete_NonExistentId_IsNoOp()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task Delete_NonExistentId_IsNoOp(PersistenceProvider provider)
     {
-        await _repository.DeleteAsync("does-not-exist");
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryFactory);
 
-        // Should not throw — just a no-op
+        await repository.DeleteAsync("does-not-exist");
     }
 
-    [TestMethod]
-    public async Task Save_DuplicateProcessDefinitionId_ThrowsInvalidOperationException()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task Save_DuplicateProcessDefinitionId_ThrowsInvalidOperationException(PersistenceProvider provider)
     {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryFactory);
+
         var definition = CreateDefinition("key1:1:ts", "key1", 1, DateTimeOffset.UtcNow);
-        await _repository.SaveAsync(definition);
+        await repository.SaveAsync(definition);
 
         await Assert.ThrowsExactlyAsync<InvalidOperationException>(
-            () => _repository.SaveAsync(definition));
+            () => repository.SaveAsync(definition));
     }
 
-    [TestMethod]
-    public async Task SaveAndGetById_DisabledProcess_IsActiveFalseRoundTrip()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task SaveAndGetById_DisabledProcess_IsActiveFalseRoundTrip(PersistenceProvider provider)
     {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryFactory);
+
         var definition = CreateDefinition("disabled:1:ts", "disabled", 1, DateTimeOffset.UtcNow);
         definition.Disable();
 
-        await _repository.SaveAsync(definition);
+        await repository.SaveAsync(definition);
 
-        var result = await _repository.GetByIdAsync("disabled:1:ts");
+        var result = await repository.GetByIdAsync("disabled:1:ts");
 
         Assert.IsNotNull(result);
         Assert.IsFalse(result.IsActive, "IsActive should be false after round-trip");
     }
 
-    [TestMethod]
-    public async Task SaveAndGetById_EnabledProcess_IsActiveTrueByDefault()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task SaveAndGetById_EnabledProcess_IsActiveTrueByDefault(PersistenceProvider provider)
     {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryFactory);
+
         var definition = CreateDefinition("enabled:1:ts", "enabled", 1, DateTimeOffset.UtcNow);
 
-        await _repository.SaveAsync(definition);
+        await repository.SaveAsync(definition);
 
-        var result = await _repository.GetByIdAsync("enabled:1:ts");
+        var result = await repository.GetByIdAsync("enabled:1:ts");
 
         Assert.IsNotNull(result);
         Assert.IsTrue(result.IsActive, "IsActive should be true by default");
     }
 
-    [TestMethod]
-    public async Task UpdateAsync_DisableExistingProcess_PersistsIsActiveFalse()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task UpdateAsync_DisableExistingProcess_PersistsIsActiveFalse(PersistenceProvider provider)
     {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryFactory);
+
         var definition = CreateDefinition("upd:1:ts", "upd", 1, DateTimeOffset.UtcNow);
-        await _repository.SaveAsync(definition);
+        await repository.SaveAsync(definition);
 
         definition.Disable();
-        await _repository.UpdateAsync(definition);
+        await repository.UpdateAsync(definition);
 
-        var result = await _repository.GetByIdAsync("upd:1:ts");
+        var result = await repository.GetByIdAsync("upd:1:ts");
         Assert.IsNotNull(result);
         Assert.IsFalse(result.IsActive, "IsActive should be false after UpdateAsync with Disable()");
     }
 
-    [TestMethod]
-    public async Task UpdateAsync_EnableDisabledProcess_PersistsIsActiveTrue()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task UpdateAsync_EnableDisabledProcess_PersistsIsActiveTrue(PersistenceProvider provider)
     {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryFactory);
+
         var definition = CreateDefinition("upd2:1:ts", "upd2", 1, DateTimeOffset.UtcNow);
         definition.Disable();
-        await _repository.SaveAsync(definition);
+        await repository.SaveAsync(definition);
 
         definition.Enable();
-        await _repository.UpdateAsync(definition);
+        await repository.UpdateAsync(definition);
 
-        var result = await _repository.GetByIdAsync("upd2:1:ts");
+        var result = await repository.GetByIdAsync("upd2:1:ts");
         Assert.IsNotNull(result);
         Assert.IsTrue(result.IsActive, "IsActive should be true after UpdateAsync with Enable()");
     }
 
-    [TestMethod]
-    public async Task UpdateAsync_NonExistentDefinition_ThrowsInvalidOperationException()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task UpdateAsync_NonExistentDefinition_ThrowsInvalidOperationException(PersistenceProvider provider)
     {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryFactory);
+
         var definition = CreateDefinition("missing:1:ts", "missing", 1, DateTimeOffset.UtcNow);
 
         await Assert.ThrowsExactlyAsync<InvalidOperationException>(
-            () => _repository.UpdateAsync(definition));
+            () => repository.UpdateAsync(definition));
     }
-
-    // ───────────────────────────────────────────────
-    // Helpers
-    // ───────────────────────────────────────────────
 
     private static ProcessDefinition CreateDefinition(
         string id, string key, int version, DateTimeOffset deployedAt)
@@ -326,5 +358,4 @@ public class EfCoreProcessDefinitionRepositoryTests
             }
         };
     }
-
 }
