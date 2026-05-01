@@ -25,7 +25,7 @@ namespace Fleans.Worker.CustomTasks;
 /// </summary>
 [ImplicitStreamSubscription(WorkflowEventsPublisher.ExecuteCustomTaskStreamNamespace)]
 [WorkerPlacement]
-public abstract partial class CustomTaskHandlerBase : Grain, IAsyncObserver<ExecuteCustomTaskEvent>
+public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey, IAsyncObserver<ExecuteCustomTaskEvent>
 {
     private readonly ILogger _logger;
     private readonly IGrainFactory _grainFactory;
