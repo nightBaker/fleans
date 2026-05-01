@@ -145,6 +145,71 @@ Targets must be valid identifiers (`^[a-zA-Z_][a-zA-Z0-9_]*$`). The target `__re
 - The catalog polls `IManagementGrain.GetDetailedHosts()` every 30 s and drops entries whose silo is no longer in `{Joining, Active, ShuttingDown}`. No heartbeats from workers.
 - Catalog state is in-memory only in v1. After a Core silo restart, the catalog repopulates as Worker silos restart and re-register; persistence (so the UI is correct immediately after Core restart) is a v2 follow-up.
 
+## REST Caller (built-in plugin)
+
+Fleans ships one custom-task plugin out of the box: `Fleans.Plugins.RestCaller`. It backs `<serviceTask type="rest-call">` and is wired into the API host by default (`services.AddRestCallerPlugin()`), so any workflow can call it.
+
+### Parameters
+
+| Name | Type | Required | Default | Notes |
+|---|---|---|---|---|
+| `url` | `String` | yes | — | Absolute URI |
+| `method` | `String` | yes | `GET` | One of GET / POST / PUT / PATCH / DELETE / HEAD / OPTIONS |
+| `headers` | `Map<String>` | no | `null` | Each `(name, value)` pair sent as a header. **v1 only sources from a workflow variable** (e.g. `<zeebe:input source="=requestHeaders" target="headers" />`). |
+| `body` | `MultilineString` | no | `null` | Sent verbatim. If non-empty and no `Content-Type` header is supplied, defaults to `application/json` |
+| `successCodes` | `List<Integer>` | no | `null` | When null/empty, defaults to `200..299`. Pass an explicit list (e.g. `[200, 201, 404]`) when you want non-2xx codes treated as success. **v1 only sources from a workflow variable.** |
+| `timeoutSec` | `Integer` | yes | `30` | Whole seconds; clamped to `[1, 300]`. Timeout fails the activity with `code="504"` |
+| `idempotencyKeyHeader` | `String` | no | `null` | When set, plugin sends `<header>: <activityInstanceId-guid>` so server-side dedupe is keyed on the activity instance id (mitigates retries under silo failure) |
+
+### Failure semantics
+
+| Outcome | `ErrorState.Code` | Message |
+|---|---|---|
+| HTTP status outside `successCodes` | `<status>` (e.g. `"404"`) | response body, truncated to 1024 chars |
+| Network error (`HttpRequestException`) | `"502"` | `ex.Message` |
+| Timeout (per `timeoutSec`) | `"504"` | `"timeout after Ns calling <uri>"` |
+| Bad URL / unsupported method / `timeoutSec` out of `[1, 300]` | `"400"` | descriptive message |
+
+Workflow authors route via boundary error events with `errorCode="404"`, `errorCode="504"`, etc.
+
+### Worked example
+
+```xml
+<bpmn:serviceTask id="getUser" type="rest-call">
+  <bpmn:extensionElements>
+    <zeebe:ioMapping>
+      <zeebe:input  source="=userApiUrl"        target="url" />
+      <zeebe:input  source="GET"                target="method" />
+      <zeebe:input  source="=requestHeaders"    target="headers" />
+      <zeebe:input  source="10"                 target="timeoutSec" />
+      <zeebe:output source="=__response.body"   target="user" />
+      <zeebe:output source="=__response.statusCode" target="status" />
+    </zeebe:ioMapping>
+  </bpmn:extensionElements>
+</bpmn:serviceTask>
+```
+
+Start the workflow with the variables that populate the inputs:
+
+```json
+{
+  "WorkflowId": "fetch-user",
+  "Variables": {
+    "userApiUrl": "https://api.example.com/users/42",
+    "requestHeaders": { "Authorization": "Bearer abc", "Accept": "application/json" }
+  }
+}
+```
+
+The activity completes with `user` (the parsed JSON body) and `status` (the integer status code) merged into the workflow scope. Author can route subsequent gateways on `status`.
+
+### v1 limitations
+
+- `headers` and `successCodes` (Map / List parameters) can only come from workflow variables. The mapping grammar doesn't support literal `=[200, 404]` or `={"X-Foo":"bar"}` syntax in BPMN. Authors who need static values seed them via `POST /Workflow/start` `Variables` or build them in a preceding `<scriptTask>`. The management UI editor (sub-issue C) is the long-term fix.
+- No OAuth / mTLS / certificate auth — pass static `Authorization` headers.
+- No HTTP-level retry — workflow authors retry via boundary error events.
+- No streaming (SSE / WebSocket / chunked).
+
 ## Limitations
 
 - Plugins are .NET assemblies referenced from the Worker silo's host project. Hot-loading is out of scope.
