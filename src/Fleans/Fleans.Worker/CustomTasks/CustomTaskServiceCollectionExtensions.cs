@@ -31,10 +31,19 @@ public static class CustomTaskServiceCollectionExtensions
 
         services.AddSingleton(new CustomTaskPluginDescriptor(taskType, displayName, parameterSchema));
 
-        // Register the lifecycle participant exactly once even if multiple plugins are added.
-        services.TryAddSingleton<CustomTaskPluginRegistrar>();
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<ILifecycleParticipant<ISiloLifecycle>>(
-            sp => sp.GetRequiredService<CustomTaskPluginRegistrar>()));
+        // Register the registrar singleton + its ILifecycleParticipant facet exactly once,
+        // regardless of how many plugins are added. We can't use TryAddEnumerable for the
+        // facet — the factory-form ServiceDescriptor has no ImplementationType, so
+        // TryAddEnumerable's dedupe check throws "Implementation type … is indistinguishable
+        // from other services" the moment a second AddCustomTaskPlugin call lands. Manual
+        // check on the descriptor list is unambiguous and lets the lifecycle participant
+        // share the same instance as the singleton.
+        if (services.All(d => d.ServiceType != typeof(CustomTaskPluginRegistrar)))
+        {
+            services.AddSingleton<CustomTaskPluginRegistrar>();
+            services.AddSingleton<ILifecycleParticipant<ISiloLifecycle>>(
+                sp => sp.GetRequiredService<CustomTaskPluginRegistrar>());
+        }
 
         return services;
     }
