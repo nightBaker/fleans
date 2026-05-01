@@ -3,6 +3,10 @@ title: Service Tasks
 description: How to complete service tasks in Fleans using external workers and the REST API.
 ---
 
+:::tip[Looking for in-process plugins?]
+This guide covers the **external completion** pattern — any-language workers complete tasks via REST. If your worker is .NET and you'd rather ship it in-process on a Worker silo (with typed parameter editor support in the management UI), see [Writing custom-task plugins](/guides/writing-custom-tasks/) instead.
+:::
+
 ## What are service tasks?
 
 A **service task** (`<bpmn:serviceTask>`) represents automated work in a BPMN process — calling an API, processing a payment, sending an email, etc.

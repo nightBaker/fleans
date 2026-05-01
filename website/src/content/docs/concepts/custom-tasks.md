@@ -17,99 +17,30 @@ This is the recommended pattern for anything Fleans doesn't ship in the box: RES
 
 ## Authoring a plugin
 
-A minimal "say hi" plugin:
+A plugin is a .NET class library deriving from `CustomTaskHandlerBase`. The base class provides stream subscription, task-type filtering, and the success/failure callback paths; the author overrides `TaskType` and `ExecuteAsync` only. Plugin metadata is registered via `services.AddCustomTaskPlugin<THandler>(taskType, displayName?, parameterSchema?)` from the Worker silo's host.
 
-```csharp
-using Fleans.Worker.CustomTasks;
+For a step-by-step tutorial — project setup, handler, schema, DI wiring, BPMN authoring, and troubleshooting — see [Writing custom-task plugins](/guides/writing-custom-tasks/).
 
-public sealed class HiPluginHandler(
-    ILogger<HiPluginHandler> logger,
-    IGrainFactory grainFactory)
-    : CustomTaskHandlerBase(logger, grainFactory)
-{
-    protected override string TaskType => "hi";
-    protected override string? DisplayName => "Say hi";
+## Parameter types
 
-    protected override Task<IDictionary<string, object?>> ExecuteAsync(
-        IDictionary<string, object?> resolvedInputs,
-        ExpandoObject variables,
-        CancellationToken cancellationToken)
-    {
-        var name = resolvedInputs.TryGetValue("name", out var n) ? n?.ToString() : "world";
-        return Task.FromResult<IDictionary<string, object?>>(new Dictionary<string, object?>
-        {
-            ["__response"] = $"hi, {name}!",
-        });
-    }
-}
-```
+Parameter schemas drive what the management UI's BPMN editor renders for each `<zeebe:input>` row. The five primitive types map to typed widgets:
 
-`[ImplicitStreamSubscription]` and `[WorkerPlacement]` are inherited from the base class — you do not need to repeat them on the subclass.
+| Type | Widget | Notes |
+|---|---|---|
+| `String` | Single-line text | Accepts a literal value or `=variableName` for a workflow-variable reference. |
+| `Integer` | Number field | Whole numbers. |
+| `Boolean` | Checkbox | `"true"` / `"false"` written as the source. |
+| `Expression` | Multi-line text (monospace) | Always `=`-prefixed; evaluated against the workflow scope at dispatch time. |
+| `MultilineString` | Textarea | For JSON request bodies, etc. |
 
-Register the plugin in the Worker silo's host:
+Repeat-allowed parameters (e.g. REST headers — multiple `(key, value)` pairs) use:
 
-```csharp
-services.AddCustomTaskPlugin<HiPluginHandler>(
-    taskType: "hi",
-    displayName: "Say hi",
-    parameterSchema: new CustomTaskParameterSchema(new[]
-    {
-        new CustomTaskParameterSpec(
-            Name: "name",
-            DisplayName: "Recipient name",
-            Type: CustomTaskParameterType.String,
-            Required: false,
-            Description: "Greeting target; defaults to \"world\".",
-            DefaultValue: "world"),
-    }));
-```
+| Type | Editor | Notes |
+|---|---|---|
+| `List` (with `ItemType`) | Single-column list with "+ Add" / "remove" | `ItemType` must be a primitive. |
+| `Map` (with `ItemType`) | Two-column `(Key, Value)` table with "+ Add" / "remove" | Value column rendered per `ItemType`. |
 
-The `parameterSchema` is optional. When supplied, the management UI's BPMN editor (sub-issue C) renders a typed editor for each parameter (`String` → text field, `Boolean` → checkbox, `Expression` → multi-line `=`-prefixed input, etc.). Pass `CustomTaskParameterSchema.Empty` for plugins that take no inputs; omit the argument entirely to leave the editor opaque (UI falls back to a free-form key/value editor).
-
-### Repeat-allowed parameters: `List` and `Map`
-
-Parameters that accept multiple values (e.g. a REST plugin's HTTP headers, where each header is a separate `(key, value)` pair) use `Type = List` or `Type = Map` plus an `ItemType` describing each entry. `List` is "N values of `ItemType`"; `Map` is "N `(string-key, ItemType-value)` entries":
-
-```csharp
-services.AddCustomTaskPlugin<RestCallerHandler>(
-    taskType: "rest-call",
-    displayName: "REST Caller",
-    parameterSchema: new CustomTaskParameterSchema(new[]
-    {
-        new CustomTaskParameterSpec("url", "URL",
-            CustomTaskParameterType.String,
-            Required: true, Description: null, DefaultValue: null),
-
-        // multiple (header-name, header-value) pairs
-        new CustomTaskParameterSpec("headers", "HTTP Headers",
-            CustomTaskParameterType.Map,
-            Required: false, Description: "Repeat for each header.", DefaultValue: null,
-            ItemType: CustomTaskParameterType.String),
-
-        // multiple HTTP status codes treated as success
-        new CustomTaskParameterSpec("successCodes", "Success Codes",
-            CustomTaskParameterType.List,
-            Required: false, Description: "Defaults to 200..299.", DefaultValue: null,
-            ItemType: CustomTaskParameterType.Integer),
-    }));
-```
-
-The editor renders `Map` as a two-column table (Key, Value) with an "+ Add row" button; `List` as a single-column list with "+ Add" / "remove". The value column is rendered per `ItemType`. Nested `List`/`Map` (e.g. a list whose items are themselves objects with three fields) is **not** supported in v1 — keep `ItemType` to a primitive (`String | Integer | Boolean | Expression | MultilineString`).
-
-Reference your plugin from BPMN:
-
-```xml
-<bpmn:serviceTask id="greet" type="hi">
-  <bpmn:extensionElements>
-    <zeebe:ioMapping>
-      <zeebe:input  source="=customerName" target="name" />
-      <zeebe:output source="=__response"   target="greeting" />
-    </zeebe:ioMapping>
-  </bpmn:extensionElements>
-</bpmn:serviceTask>
-```
-
-When the workflow reaches `greet`, the plugin runs, and the variable `greeting` ends up holding `"hi, alice!"` (assuming `customerName` was `"alice"`).
+Nested `List`/`Map` (a list whose items are themselves objects with three fields) is **not** supported in v1 — keep `ItemType` to a primitive (`String | Integer | Boolean | Expression | MultilineString`).
 
 ## Mapping grammar
 

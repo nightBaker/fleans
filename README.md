@@ -37,7 +37,7 @@ For now, next elements are implemented
 | **Activities**       |                                                                             |             |
 | Task                 | A single unit of work.                                                      |     [x]     |
 | Script Task          | A task that executes an inline script.                                       |     [x]     |
-| Service Task         | A task whose execution is supplied by a custom plugin (`<serviceTask type="…">`); plain `<serviceTask>` (no `type`) is a no-op. | [x] custom-task framework |
+| Service Task         | A task whose execution is supplied by a custom plugin (`<serviceTask type="…">`); plain `<serviceTask>` (no `type`) is a no-op. See the [plugin author guide](https://nightbaker.github.io/fleans/guides/writing-custom-tasks/). | [x] custom-task framework |
 | Sub-Process          | A group of tasks that are treated as a single unit.                         |     [x]     |
 | Call Activity        | A type of sub-process that calls another process.                            |     [x]     |
 | User Task            | A task that requires human interaction with claim lifecycle.                 |     [x]     |
