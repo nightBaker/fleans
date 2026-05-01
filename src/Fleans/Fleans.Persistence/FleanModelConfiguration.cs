@@ -334,6 +334,17 @@ internal static class FleanModelConfiguration
             entity.Property(e => e.ConditionExpression).HasMaxLength(4000);
         });
 
+        modelBuilder.Entity<CustomTaskCatalogRowState>(entity =>
+        {
+            entity.ToTable("CustomTaskCatalogEntries");
+            entity.HasKey(e => new { e.TaskType, e.SiloName });
+            entity.Property(e => e.TaskType).HasMaxLength(128);
+            entity.Property(e => e.SiloName).HasMaxLength(256);
+            entity.Property(e => e.DisplayName).HasMaxLength(256);
+            // ParameterSchemaJson is the JSON-serialized CustomTaskParameterSchema; provider
+            // default text type (TEXT on SQLite, text on PostgreSQL) handles the size.
+        });
+
         modelBuilder.Entity<WorkflowEventEntity>(entity =>
         {
             entity.ToTable("WorkflowEvents");

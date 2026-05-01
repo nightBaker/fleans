@@ -3,6 +3,7 @@ using System;
 using Fleans.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Fleans.Persistence.PostgreSql.Migrations.Command
 {
     [DbContext(typeof(FleanCommandDbContext))]
-    partial class FleanCommandDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260501162400_AddCustomTaskCatalog")]
+    partial class AddCustomTaskCatalog
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -92,9 +95,8 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                     b.Property<DateTimeOffset?>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("ErrorCode")
-                        .HasMaxLength(256)
-                        .HasColumnType("text");
+                    b.Property<int?>("ErrorCode")
+                        .HasColumnType("integer");
 
                     b.Property<string>("ErrorMessage")
                         .HasMaxLength(2000)

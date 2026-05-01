@@ -186,6 +186,7 @@ public abstract class WorkflowTestBase
                 .AddMemoryGrainStorage(GrainStorageNames.UserTasks)
                 .AddMemoryGrainStorage(GrainStorageNames.ConditionalStartEventListeners)
                 .AddMemoryGrainStorage(GrainStorageNames.ConditionalStartEventRegistry)
+                .AddMemoryGrainStorage(GrainStorageNames.CustomTaskCatalog)
                 .AddCustomStorageBasedLogConsistencyProviderAsDefault()
                 .UseInMemoryReminderService()
                 .ConfigureServices(services =>

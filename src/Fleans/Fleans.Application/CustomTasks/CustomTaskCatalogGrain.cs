@@ -1,24 +1,23 @@
+using System.Text.Json;
 using Fleans.Application.Placement;
+using Fleans.Domain;
+using Fleans.Domain.States;
 using Microsoft.Extensions.Logging;
 using Orleans.Runtime;
 
 namespace Fleans.Application.CustomTasks;
 
 /// <summary>
-/// In-memory catalog of custom-task plugin registrations announced by Worker silos.
-/// Membership-reconciliation timer prunes entries whose silo has left the cluster.
-///
-/// State is intentionally ephemeral in this v1: on Core silo restart the catalog is
-/// rebuilt as Worker silos restart and re-register. EF-backed persistence is a v2
-/// follow-up — design v12 originally specified <c>IPersistentState</c>, deferred here
-/// because the per-entry table + migrations dwarf the rest of sub-issue A and the
-/// in-memory model is sufficient for the dev/aspire path where Core and Worker silos
-/// share a process.
+/// Catalog of custom-task plugin registrations announced by Worker silos.
+/// State is persisted via <see cref="IPersistentState{T}"/> backed by an EF Core
+/// grain-storage provider (sub-issue A2 of #357 / PR #434), so the catalog survives
+/// Core silo restart. The membership-reconciliation timer prunes entries whose silo
+/// has left the cluster.
 /// </summary>
 [CorePlacement]
 public sealed partial class CustomTaskCatalogGrain : Grain, ICustomTaskCatalogGrain
 {
-    private readonly Dictionary<(string TaskType, string SiloName), CustomTaskRegistration> _entries = new();
+    private readonly IPersistentState<CustomTaskCatalogState> _state;
     private readonly IGrainFactory _grainFactory;
     private readonly ILogger<CustomTaskCatalogGrain> _logger;
 
@@ -32,35 +31,50 @@ public sealed partial class CustomTaskCatalogGrain : Grain, ICustomTaskCatalogGr
         SiloStatus.ShuttingDown,
     ];
 
-    public CustomTaskCatalogGrain(IGrainFactory grainFactory, ILogger<CustomTaskCatalogGrain> logger)
+    public CustomTaskCatalogGrain(
+        [PersistentState("state", GrainStorageNames.CustomTaskCatalog)] IPersistentState<CustomTaskCatalogState> state,
+        IGrainFactory grainFactory,
+        ILogger<CustomTaskCatalogGrain> logger)
     {
+        _state = state;
         _grainFactory = grainFactory;
         _logger = logger;
     }
 
-    public override Task OnActivateAsync(CancellationToken cancellationToken)
+    public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
+        // Reconcile persisted state against current cluster membership immediately so
+        // entries from silos that left while Core was down are dropped before the
+        // first request lands. Subsequent ticks happen on the timer below.
+        await ReconcileWithMembership();
         this.RegisterGrainTimer(_ => ReconcileWithMembership(),
             new GrainTimerCreationOptions
             {
                 DueTime = ReconcileFirstDelay,
                 Period = ReconcileInterval,
             });
-        return base.OnActivateAsync(cancellationToken);
+        await base.OnActivateAsync(cancellationToken);
     }
 
-    public Task Register(CustomTaskRegistration entry)
+    public async Task Register(CustomTaskRegistration entry)
     {
         ArgumentNullException.ThrowIfNull(entry);
-        var key = (entry.TaskType, entry.SiloName);
-        _entries[key] = entry;
-        LogRegistered(entry.TaskType, entry.SiloName);
-        return Task.CompletedTask;
+
+        var schemaJson = entry.ParameterSchema is null
+            ? null
+            : JsonSerializer.Serialize(entry.ParameterSchema);
+
+        var changed = _state.State.Upsert(entry.TaskType, entry.SiloName, entry.DisplayName, schemaJson);
+        if (changed)
+        {
+            await _state.WriteStateAsync();
+            LogRegistered(entry.TaskType, entry.SiloName);
+        }
     }
 
     public Task<IReadOnlyList<CustomTaskCatalogEntry>> GetAll()
     {
-        var aggregated = _entries.Values
+        var aggregated = _state.State.Entries
             .GroupBy(e => e.TaskType, StringComparer.OrdinalIgnoreCase)
             .Select(g =>
             {
@@ -68,7 +82,7 @@ public sealed partial class CustomTaskCatalogGrain : Grain, ICustomTaskCatalogGr
                 return new CustomTaskCatalogEntry(
                     first.TaskType,
                     first.DisplayName,
-                    first.ParameterSchema,
+                    DeserializeSchema(first.TaskType, first.ParameterSchemaJson),
                     g.Select(e => e.SiloName).Distinct(StringComparer.Ordinal).ToList());
             })
             .ToList();
@@ -78,7 +92,7 @@ public sealed partial class CustomTaskCatalogGrain : Grain, ICustomTaskCatalogGr
     public Task<CustomTaskCatalogEntry?> Get(string taskType)
     {
         ArgumentNullException.ThrowIfNull(taskType);
-        var matches = _entries.Values
+        var matches = _state.State.Entries
             .Where(e => string.Equals(e.TaskType, taskType, StringComparison.OrdinalIgnoreCase))
             .ToList();
         if (matches.Count == 0)
@@ -88,9 +102,27 @@ public sealed partial class CustomTaskCatalogGrain : Grain, ICustomTaskCatalogGr
         var entry = new CustomTaskCatalogEntry(
             first.TaskType,
             first.DisplayName,
-            first.ParameterSchema,
+            DeserializeSchema(first.TaskType, first.ParameterSchemaJson),
             matches.Select(e => e.SiloName).Distinct(StringComparer.Ordinal).ToList());
         return Task.FromResult<CustomTaskCatalogEntry?>(entry);
+    }
+
+    /// <summary>
+    /// Skip-and-warn: malformed schema JSON returns <c>null</c> (UI shows the plugin
+    /// without parameter widgets) rather than throwing and breaking the entire catalog.
+    /// </summary>
+    private CustomTaskParameterSchema? DeserializeSchema(string taskType, string? json)
+    {
+        if (string.IsNullOrEmpty(json)) return null;
+        try
+        {
+            return JsonSerializer.Deserialize<CustomTaskParameterSchema>(json);
+        }
+        catch (JsonException ex)
+        {
+            LogSchemaDeserializeFailed(ex, taskType);
+            return null;
+        }
     }
 
     private async Task ReconcileWithMembership()
@@ -105,14 +137,12 @@ public sealed partial class CustomTaskCatalogGrain : Grain, ICustomTaskCatalogGr
                 .Where(n => !string.IsNullOrEmpty(n))
                 .ToHashSet(StringComparer.Ordinal);
 
-            var stale = _entries.Keys
-                .Where(k => !aliveSilos.Contains(k.SiloName))
-                .ToList();
-            foreach (var key in stale)
-                _entries.Remove(key);
-
-            if (stale.Count > 0)
-                LogReconciled(stale.Count);
+            var removed = _state.State.RemoveWhere(e => !aliveSilos.Contains(e.SiloName));
+            if (removed > 0)
+            {
+                await _state.WriteStateAsync();
+                LogReconciled(removed);
+            }
         }
         catch (Exception ex)
         {
@@ -131,4 +161,8 @@ public sealed partial class CustomTaskCatalogGrain : Grain, ICustomTaskCatalogGr
     [LoggerMessage(EventId = 9322, Level = LogLevel.Warning,
         Message = "Custom-task catalog reconcile failed; will retry next tick")]
     private partial void LogReconcileFailed(Exception ex);
+
+    [LoggerMessage(EventId = 9325, Level = LogLevel.Warning,
+        Message = "Custom-task catalog: failed to deserialize ParameterSchemaJson for taskType='{TaskType}'; returning null schema (UI will hide parameter widgets for this plugin)")]
+    private partial void LogSchemaDeserializeFailed(Exception ex, string taskType);
 }
