@@ -44,6 +44,9 @@
                                      Placeholder="@(spec.DefaultValue ?? "")"
                                      ValueChanged="@(v => OnValueChanged(spec.Name, v))"
                                      Style="@($"width: 100%; {(hasError ? "border-color: var(--error);" : "")}")" />
+                    <FluentLabel Typo="Typography.Body" Style="color: var(--neutral-foreground-hint); font-size: 0.8em;">
+                        Type a literal value, or <code>=variableName</code> to reference a workflow variable.
+                    </FluentLabel>
                     break;
                 case CustomTaskParameterType.Integer:
                     <FluentNumberField TValue="int?"
@@ -51,6 +54,9 @@
                                        Placeholder="@(spec.DefaultValue ?? "")"
                                        ValueChanged="@(v => OnValueChanged(spec.Name, v?.ToString() ?? ""))"
                                        Style="@($"width: 100%; {(hasError ? "border-color: var(--error);" : "")}")" />
+                    <FluentLabel Typo="Typography.Body" Style="color: var(--neutral-foreground-hint); font-size: 0.8em;">
+                        Type a literal number, or use the parameter as <code>=variableName</code> in raw BPMN to reference a workflow variable.
+                    </FluentLabel>
                     break;
                 case CustomTaskParameterType.Boolean:
                     <FluentCheckbox Value="@(string.Equals(currentValue, "true", StringComparison.OrdinalIgnoreCase))"
@@ -72,6 +78,9 @@
                                     ValueChanged="@(v => OnValueChanged(spec.Name, v))"
                                     Style="@($"width: 100%; {(hasError ? "border-color: var(--error);" : "")}")"
                                     Rows="4" />
+                    <FluentLabel Typo="Typography.Body" Style="color: var(--neutral-foreground-hint); font-size: 0.8em;">
+                        Type a literal value, or <code>=variableName</code> to reference a workflow variable.
+                    </FluentLabel>
                     break;
                 case CustomTaskParameterType.List:
                 case CustomTaskParameterType.Map:
