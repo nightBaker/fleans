@@ -15,4 +15,5 @@ public static class GrainStorageNames
     public const string UserTasks = "userTasks";
     public const string ConditionalStartEventListeners = "conditionalStartEventListeners";
     public const string ConditionalStartEventRegistry = "conditionalStartEventRegistry";
+    public const string CustomTaskCatalog = "customTaskCatalog";
 }

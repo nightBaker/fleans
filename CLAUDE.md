@@ -75,6 +75,22 @@ The splash page (`website/src/content/docs/index.mdx`) loads an interactive Thre
    - **Fail tests:** error state set with correct code/message (500 for generic Exception, 400 for BadRequestActivityException), failed activity still transitions to next activity, no variables merged on failure
 4. Update the BPMN elements table in `README.md`
 
+## How to Add a Custom Task Plugin
+
+A *custom task* is a `<bpmn:serviceTask type="…">` whose execution is supplied by a user-written plugin grain on a Worker silo. Use this — **not** "Add a New BPMN Activity" — when the new behavior is plugin-shaped (REST call, email, custom external system).
+
+1. Add a new project (e.g. `Fleans.Plugins.MyThing`) referencing `Fleans.Worker`. Inside it, write a class deriving from `Fleans.Worker.CustomTasks.CustomTaskHandlerBase`. Override `TaskType` and `ExecuteAsync(...)`. The base class carries `[ImplicitStreamSubscription("events")]` and `[WorkerPlacement]` — subclasses inherit both.
+2. Throw `Fleans.Domain.Errors.CustomTaskFailedActivityException(int code, string message)` from `ExecuteAsync` to fail with a typed error; any other thrown exception fails with code 500.
+3. The plugin's `ExecuteAsync` returns an `IDictionary<string, object?>`. Output mappings (`<zeebe:output source="=__response.body" target="…"/>`) walk that dictionary.
+4. Expose a DI extension method on the plugin assembly:
+   ```csharp
+   public static IServiceCollection AddMyThingPlugin(this IServiceCollection services) =>
+       services.AddCustomTaskPlugin<MyThingHandler>(taskType: "my-thing", displayName: "My Thing");
+   ```
+   Plugin authors who want their plugin to live in the catalog UI must call this from the Worker silo's host registration.
+5. Tests: write unit tests for the plugin's logic (call `ExecuteAsync` directly with stub inputs); end-to-end TestCluster integration is exercised by manual test plan #37 once a real plugin ships.
+6. Documentation: update `website/src/content/docs/concepts/custom-tasks.md` with the plugin's parameter schema and any limitations.
+
 ## How to Add a New API Endpoint
 
 Add it to `Fleans.Api/Controllers/WorkflowController.cs`. DTOs go in `Fleans.ServiceDefaults/`.
@@ -179,6 +195,7 @@ The full regression suite is the union of every plan under `tests/manual/`. Each
 34. **Management UI Authentication** — `tests/manual/30-web-auth/test-plan.md`. Opt-in OIDC for the Blazor Server admin UI; verifies (a) anonymous browse is allowed when no `Authentication` config is present, (b) `/dashboard` and any cascading-`AuthorizeView` page return 302 → IdP when auth is enabled, (c) login round-trip lands on the requested page (including `?query` parameters), (d) `/Account/Logout` is antiforgery-protected (bare POST is rejected, form-bound POST signs out and clears both schemes).
 35. **Kafka Streaming Provider** — `tests/manual/35-kafka-streaming/test-plan.md` (`kafka-streams.bpmn`). Opt-in Kafka stream provider via `FLEANS_STREAMING_PROVIDER=Kafka`; verifies (a) Aspire dashboard provisions a `fleans-kafka` resource and forwards `Fleans__Streaming__Provider`/`Fleans__Streaming__Kafka__Brokers` env vars to the silo, (b) chained-script-task workflow completes after the silo is killed and restarted between tasks (at-least-once delivery), (c) the client-side `AdminClient.CreateTopicsAsync` ensure step auto-creates topics with the configured prefix.
 36. **Cancel Event (Transaction Cancellation)** — `tests/manual/30-cancel-event/test-plan.md` (`cancel-transaction.bpmn`). Cancel End Event inside a Transaction triggers: active scope activities cancelled, Cancel Boundary Event fires, recovery flow runs to completion. Verifies transaction outcome is Cancelled.
+37. **Custom Task Framework** — `tests/manual/37-custom-task-framework/test-plan.md` (`stub-custom-task.bpmn`). `<serviceTask type="...">` parses to `CustomTaskActivity`; with no plugin registered the activity stays Active indefinitely (manual `complete-activity` API call resumes it); registered plugin via `services.AddCustomTaskPlugin<T>()` claims the event, runs, and completes the activity; `GET /custom-tasks` reflects registered/dropped plugins as silos join/leave.
 
 > When adding a new manual test folder under `tests/manual/`, append a numbered entry here so the regression skill picks it up.
 
