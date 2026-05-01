@@ -25,6 +25,34 @@ Run the full stack (Api + Web + Redis) via Aspire:
 dotnet run --project Fleans.Aspire
 ```
 
+## Container Builds
+
+Container images are produced by the .NET SDK's built-in `SdkContainerSupport` — no Dockerfiles. Each deployable service has a `<ContainerRepository>fleans-<svc></ContainerRepository>` property in its csproj, and `src/Fleans/Directory.Build.props` is the single source of truth for `<VersionPrefix>` and `<ContainerImageTag>`.
+
+**Local build (one image):**
+
+```bash
+cd src/Fleans
+dotnet publish Fleans.Api/Fleans.Api.csproj /t:PublishContainer /p:Version=0.1.0-test
+# → produces local Docker image  fleans-api:0.1.0-test
+```
+
+The same command works against `Fleans.Web/Fleans.Web.csproj`, `Fleans.WorkerHost/Fleans.WorkerHost.csproj`, and `Fleans.Mcp/Fleans.Mcp.csproj` — they each emit `fleans-{web,worker,mcp}:0.1.0-test`.
+
+`/p:Version=...` overrides `<VersionPrefix>` from `Directory.Build.props`, so CI invocations that pass `/p:Version=$(git tag without v)` stamp the image and the assembly version with the same string.
+
+**Aspire publish (full topology):**
+
+```bash
+cd src/Fleans
+aspire publish --project Fleans.Aspire -t docker-compose -o out/compose
+aspire publish --project Fleans.Aspire -t kubernetes -o out/k8s   # Aspire.Hosting.Kubernetes
+```
+
+`Fleans.Aspire/Program.cs` registers `AddKubernetesEnvironment("k8s")` and conditionally registers `Fleans.WorkerHost` in publish mode (it stays out of the dev `dotnet run` topology — Combined-role `Fleans.Api` already hosts worker grains there). The publish output therefore covers all four services (api/web/worker/mcp) plus their dependencies (Redis, optional PostgreSQL, optional Kafka).
+
+`Aspire.Hosting.Kubernetes` ships only as preview NuGet builds; the version is pinned to `13.2.3-preview.1.26217.6` to track the rest of the Aspire 13.2.3 stack — bump it together with the other `Aspire.Hosting.*` packages on Aspire upgrades.
+
 ## Git Workflow
 
 - **Never commit directly to `main`.** Always create a feature branch for any new feature, bug fix, or change.
@@ -116,6 +144,7 @@ Add it to `Fleans.Api/Controllers/WorkflowController.cs`. DTOs go in `Fleans.Ser
 - **Fluent UI Blazor (Fleans.Web)**: Only use components that exist in the library (https://www.fluentui-blazor.net/). Use `IconStart`/`IconEnd` parameters on `FluentButton` — never place `<FluentIcon>` as child content. Use the `Loading` parameter for buttons with loading states.
 - **Cache-busting for local Razor host assets**: every `<script>` or `<link>` in `App.razor` (or any other Razor host file) that references an asset under `wwwroot/` MUST go through `@Assets["..."]` so the URL carries a content hash. Externally-versioned CDN URLs (e.g. `https://unpkg.com/bpmn-js@17.11.1/...`) are exempt because the version segment in the URL already serves the same purpose. Without this, a published JS API addition can be invisible to browsers that cached the old file (root cause of #373).
 - **Core / Worker role split (`Fleans:Role`)**: `Fleans.Api` reads `Fleans:Role` at startup (values: `Core`, `Worker`, `Combined` — case-insensitive, default `Combined`; invalid values throw). The role is stamped into `SiloOptions.SiloName` as `{role}-{machine}-{guid}` so other silos see it via Orleans membership. `Fleans.Worker` hosts the `[StatelessWorker]` script/condition grain **implementations** (`ScriptExecutorGrain`, `ConditionExpressionEvaluatorGrain`); their interfaces remain in `Fleans.Application` so callers don't need a Worker reference. **When adding a new worker-type grain** (e.g. the upcoming REST-call service task), put the implementation in `Fleans.Worker` and keep the interface next to the caller in `Fleans.Application`. Placement strategies that would route worker grains only to silos with the `worker-` / `combined-` prefix are a follow-up — today the split is structural (separate assembly, separate role config) without runtime placement filtering, so a `Core`-tagged silo will still host a worker grain if one is needed there.
+- **`Fleans.WorkerHost`** is the dedicated deployable for the Worker role — a thin Web SDK Exe that boots an Orleans silo with `Fleans:Role=Worker` by default, references the `Fleans.Worker` class library for grain implementations + placement directors, and wires the same persistence/streaming/Redis stack as `Fleans.Api`. It is registered with Aspire **only in publish mode** (`builder.ExecutionContext.IsPublishMode`), so `dotnet run --project Fleans.Aspire` keeps the original 3-process dev topology and `aspire publish -t kubernetes` / `-t docker-compose` emits a fourth `fleans-worker` deployment alongside `fleans-core` (Api), `fleans-management` (Web), and `fleans-mcp` (Mcp). Container image name: `fleans-worker` via `<ContainerRepository>` in `Fleans.WorkerHost.csproj`.
 - **BPMN Editor tabs (`/editor`)**: multi-tab state lives in `Editor.razor` (private `tabs: List<TabSession>` + `activeTabId`). Only one `bpmn-js` modeler exists at a time — switching tabs calls `bpmnEditor.getXml` on the outgoing tab and `bpmnEditor.loadXml(incoming.BpmnXml)` on the incoming. Dirty tracking subscribes to bpmn-js `commandStack.changed` via `bpmnEditor.registerDirtyCallback` and flips the active tab's flag (cleared on deploy). Persistence is localStorage-only under key `fleans.editor.tabs.v1` (versioned so future schema changes don't crash old sessions). The cap is 10 tabs; closing the last tab opens a fresh blank one so the editor is never empty.
 
 ## Design Constraints

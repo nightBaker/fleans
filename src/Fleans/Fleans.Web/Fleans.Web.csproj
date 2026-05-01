@@ -5,6 +5,7 @@
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
         <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+        <ContainerRepository>fleans-web</ContainerRepository>
     </PropertyGroup>
 
     <ItemGroup>

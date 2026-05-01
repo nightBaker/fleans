@@ -18,14 +18,16 @@
 ## Step 1 — Build and push the API image (run locally, once)
 
 ```bash
-# From repo root
-docker build \
-  -t ghcr.io/nightbaker/fleans-api:load-test \
-  -f src/Fleans/Fleans.Api/Dockerfile \
-  src/Fleans/
+# From src/Fleans/
+dotnet publish Fleans.Api/Fleans.Api.csproj /t:PublishContainer \
+  /p:Version=load-test \
+  /p:ContainerRegistry=ghcr.io/nightbaker
 
 docker push ghcr.io/nightbaker/fleans-api:load-test
 ```
+
+Container builds use the .NET SDK's built-in `SdkContainerSupport` — there is no Dockerfile.
+`Directory.Build.props` carries the version metadata; `/p:Version=…` overrides it for this run.
 
 Make the package public on ghcr.io (Settings → Package → Change visibility → Public), or
 on the test host VM run `docker login ghcr.io` with a PAT that has `read:packages` scope.

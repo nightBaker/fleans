@@ -16,6 +16,10 @@
     <PackageReference Include="Aspire.Hosting.AppHost" Version="13.2.3" />
     <PackageReference Include="Aspire.Hosting.Docker" Version="13.2.3" />
     <PackageReference Include="Aspire.Hosting.Kafka" Version="13.2.3" />
+    <!-- Aspire.Hosting.Kubernetes is preview-only on NuGet (no stable release at 13.2.x).
+         13.2.3-preview.1.26217.6 is the build line that matches the rest of the Aspire stack
+         pinned at 13.2.3. Bump alongside the other Aspire.Hosting.* packages on releases. -->
+    <PackageReference Include="Aspire.Hosting.Kubernetes" Version="13.2.3-preview.1.26217.6" />
     <PackageReference Include="Aspire.Hosting.Orleans" Version="13.2.3" />
     <PackageReference Include="Aspire.Hosting.PostgreSQL" Version="13.2.3" />
     <PackageReference Include="Aspire.Hosting.Redis" Version="13.2.3" />
@@ -25,6 +29,7 @@
     <ProjectReference Include="..\Fleans.Api\Fleans.Api.csproj" />
     <ProjectReference Include="..\Fleans.Mcp\Fleans.Mcp.csproj" />
     <ProjectReference Include="..\Fleans.Web\Fleans.Web.csproj" />
+    <ProjectReference Include="..\Fleans.WorkerHost\Fleans.WorkerHost.csproj" />
   </ItemGroup>
 
 </Project>
