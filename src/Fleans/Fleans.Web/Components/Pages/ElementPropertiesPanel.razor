@@ -1,5 +1,6 @@
 @using Microsoft.FluentUI.AspNetCore.Components
 @inject IJSRuntime JS
+@inject IGrainFactory GrainFactory
 
 <div class="properties-panel">
     <div class="properties-panel-header">
@@ -233,6 +234,62 @@
                 </div>
             }
 
+            @if (Element.Type == "bpmn:ServiceTask" && !ReadOnly)
+            {
+                <div>
+                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Plugin (custom task)</FluentLabel>
+                    @if (catalogEntries.Count == 0)
+                    {
+                        <FluentSelect TOption="string" Disabled="true" Style="width: 100%;">
+                            <FluentOption TOption="string" Value="" Selected="true">No plugins registered</FluentOption>
+                        </FluentSelect>
+                        <FluentMessageBar Intent="MessageIntent.Info" Class="margin-top-8">
+                            No custom-task plugins are registered. Start a Worker silo with
+                            <code>services.AddCustomTaskPlugin&lt;T&gt;()</code> to populate this list.
+                        </FluentMessageBar>
+                    }
+                    else
+                    {
+                        <FluentSelect TOption="string" Value="@(currentPluginType ?? "")" @onchange="OnPluginTypeChange" Style="width: 100%;">
+                            <FluentOption TOption="string" Value="" Selected="@(string.IsNullOrEmpty(currentPluginType))">Select a plugin…</FluentOption>
+                            @foreach (var entry in catalogEntries)
+                            {
+                                <FluentOption TOption="string" Value="@entry.TaskType" Selected="@(entry.TaskType == currentPluginType)">
+                                    @(string.IsNullOrEmpty(entry.DisplayName) ? entry.TaskType : $"{entry.DisplayName} ({entry.TaskType})")
+                                </FluentOption>
+                            }
+                        </FluentSelect>
+                        @if (!string.IsNullOrEmpty(currentPluginType) && currentSchema is null)
+                        {
+                            <FluentMessageBar Intent="MessageIntent.Warning" Class="margin-top-8">
+                                Task type "<strong>@currentPluginType</strong>" is not registered in the catalog.
+                                The workflow may hang if no plugin claims this task type at runtime.
+                            </FluentMessageBar>
+                        }
+                    }
+                </div>
+
+                @if (currentSchema is not null)
+                {
+                    <CustomTaskParameterEditor Schema="@currentSchema"
+                                               Values="@currentParameterValues"
+                                               OnInputChanged="OnParameterChanged" />
+                }
+            }
+
+            <FluentDialog @ref="confirmReplaceDialog" Hidden="true" Modal="true" TrapFocus="true">
+                <FluentDialogHeader Visible="true">Replace plugin?</FluentDialogHeader>
+                <FluentDialogBody>
+                    <FluentLabel Typo="Typography.Body">
+                        Existing parameters will be cleared because targets don't match between plugins.
+                    </FluentLabel>
+                </FluentDialogBody>
+                <FluentDialogFooter>
+                    <FluentButton Appearance="Appearance.Neutral" @onclick="CancelReplacePlugin">Cancel</FluentButton>
+                    <FluentButton Appearance="Appearance.Accent" @onclick="ConfirmReplacePlugin">Replace</FluentButton>
+                </FluentDialogFooter>
+            </FluentDialog>
+
             @if (SupportsMultiInstance)
             {
                 <div>
@@ -326,6 +383,15 @@
     private string outputCollection = "";
     private string outputDataItem = "";
 
+    // --- Custom-task plugin editor state (sub-issue C of #357) ---
+    private List<CustomTaskCatalogEntry> catalogEntries = new();
+    private string? currentPluginType;
+    private CustomTaskParameterSchema? currentSchema;
+    private Dictionary<string, string> currentParameterValues = new();
+    private FluentDialog? confirmReplaceDialog;
+    private string? pendingPluginType;
+    private string? lastLoadedElementId;
+
     private static readonly Dictionary<string, string> TaskTypes = new()
     {
         ["bpmn:Task"] = "Task",
@@ -381,6 +447,119 @@
         inputDataItem = Element.InputDataItem;
         outputCollection = Element.OutputCollection;
         outputDataItem = Element.OutputDataItem;
+
+        // Custom-task plugin section: load catalog + current task type/parameters
+        // when the selected element is a service task and the element id changed
+        // (avoids re-fetching on every render of the same element).
+        if (Element.Type == "bpmn:ServiceTask" && Element.Id != lastLoadedElementId)
+        {
+            lastLoadedElementId = Element.Id;
+            _ = LoadCustomTaskStateAsync();
+        }
+        else if (Element.Type != "bpmn:ServiceTask")
+        {
+            currentPluginType = null;
+            currentSchema = null;
+            currentParameterValues = new();
+        }
+    }
+
+    private async Task LoadCustomTaskStateAsync()
+    {
+        try
+        {
+            var catalog = GrainFactory.GetGrain<ICustomTaskCatalogGrain>(0);
+            var entries = await catalog.GetAll();
+            catalogEntries = entries.ToList();
+
+            // Read current type from the BPMN element via JS interop.
+            currentPluginType = await JS.InvokeAsync<string?>("bpmnEditor.getServiceTaskType", Element.Id);
+            currentSchema = !string.IsNullOrEmpty(currentPluginType)
+                ? entries.FirstOrDefault(e => string.Equals(e.TaskType, currentPluginType, StringComparison.OrdinalIgnoreCase))?.ParameterSchema
+                : null;
+
+            // Read current input mappings from the BPMN element.
+            var ioMappings = await JS.InvokeAsync<List<IoMappingDto>>("bpmnEditor.getIoMappings", Element.Id) ?? new();
+            currentParameterValues = ioMappings
+                .Where(m => m.kind == "input" && !string.IsNullOrEmpty(m.target))
+                .ToDictionary(m => m.target, m => m.source ?? "", StringComparer.Ordinal);
+        }
+        catch
+        {
+            // Catalog/JS unreachable; fall through to a reduced UI (selector + warning).
+            catalogEntries = new();
+        }
+        StateHasChanged();
+    }
+
+    private record IoMappingDto(string kind, string source, string target);
+
+    private async Task OnPluginTypeChange(ChangeEventArgs e)
+    {
+        var newType = e.Value?.ToString();
+        if (string.IsNullOrEmpty(newType) || newType == currentPluginType) return;
+
+        if (!string.IsNullOrEmpty(currentPluginType) && currentParameterValues.Count > 0)
+        {
+            // Confirm before discarding existing parameters.
+            pendingPluginType = newType;
+            confirmReplaceDialog?.Show();
+            return;
+        }
+
+        await ApplyPluginTypeAsync(newType);
+    }
+
+    private async Task CancelReplacePlugin()
+    {
+        pendingPluginType = null;
+        confirmReplaceDialog?.Hide();
+        StateHasChanged();
+    }
+
+    private async Task ConfirmReplacePlugin()
+    {
+        var newType = pendingPluginType;
+        pendingPluginType = null;
+        confirmReplaceDialog?.Hide();
+        if (string.IsNullOrEmpty(newType)) return;
+
+        await JS.InvokeVoidAsync("bpmnEditor.clearAllIoMappings", Element.Id);
+        await ApplyPluginTypeAsync(newType);
+    }
+
+    private async Task ApplyPluginTypeAsync(string newType)
+    {
+        currentPluginType = newType;
+        currentSchema = catalogEntries
+            .FirstOrDefault(e => string.Equals(e.TaskType, newType, StringComparison.OrdinalIgnoreCase))?.ParameterSchema;
+        currentParameterValues = new();
+
+        await JS.InvokeVoidAsync("bpmnEditor.setServiceTaskType", Element.Id, newType);
+
+        // Seed defaults from the schema (one-time on plugin selection).
+        if (currentSchema is not null)
+        {
+            foreach (var spec in currentSchema.Parameters)
+            {
+                if (!string.IsNullOrEmpty(spec.DefaultValue))
+                {
+                    currentParameterValues[spec.Name] = spec.DefaultValue;
+                    await JS.InvokeVoidAsync("bpmnEditor.setIoMappingInput", Element.Id, spec.Name, spec.DefaultValue);
+                }
+            }
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task OnParameterChanged((string Target, string Source) change)
+    {
+        currentParameterValues[change.Target] = change.Source;
+        if (string.IsNullOrEmpty(change.Source))
+            await JS.InvokeVoidAsync("bpmnEditor.removeIoMappingInput", Element.Id, change.Target);
+        else
+            await JS.InvokeVoidAsync("bpmnEditor.setIoMappingInput", Element.Id, change.Target, change.Source);
     }
 
     private Dictionary<string, string>? GetReplaceOptions()

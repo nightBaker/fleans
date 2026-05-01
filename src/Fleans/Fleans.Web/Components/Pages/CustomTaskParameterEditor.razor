@@ -1,0 +1,142 @@
+@* Renders a typed editor for the parameters of a registered custom-task plugin.
+   Parent (ElementPropertiesPanel) supplies the schema, current values (read from
+   the BPMN's <zeebe:input> rows via JS interop), and the BPMN element id; child
+   raises OnInputChanged(target, source) for every persistence-worthy edit.
+
+   Debounce: 300ms per parameter so rapid keystrokes don't thrash the bpmn-js
+   command stack and undo history. *@
+
+@if (Schema is null || Schema.Parameters.Count == 0)
+{
+    <FluentMessageBar Intent="MessageIntent.Info" Class="margin-top-8">
+        This plugin has no parameters.
+    </FluentMessageBar>
+    return;
+}
+
+<div class="custom-task-parameter-editor">
+    @foreach (var spec in Schema.Parameters)
+    {
+        <div class="param-row" style="margin-top: 12px;">
+            <FluentLabel Typo="Typography.Body" Style="font-weight: 600;">
+                @(spec.DisplayName ?? spec.Name)
+                @if (spec.Required)
+                {
+                    <span style="color: var(--error); margin-left: 4px;" title="Required">*</span>
+                }
+            </FluentLabel>
+            @if (!string.IsNullOrEmpty(spec.Description))
+            {
+                <FluentLabel Typo="Typography.Body" Style="color: var(--neutral-foreground-hint); font-size: 0.85em;">
+                    @spec.Description
+                </FluentLabel>
+            }
+
+            @{
+                var currentValue = GetCurrentValue(spec.Name);
+                var hasError = spec.Required && string.IsNullOrEmpty(currentValue);
+            }
+
+            @switch (spec.Type)
+            {
+                case CustomTaskParameterType.String:
+                    <FluentTextField Value="@currentValue"
+                                     Placeholder="@(spec.DefaultValue ?? "")"
+                                     ValueChanged="@(v => OnValueChanged(spec.Name, v))"
+                                     Style="@($"width: 100%; {(hasError ? "border-color: var(--error);" : "")}")" />
+                    <FluentLabel Typo="Typography.Body" Style="color: var(--neutral-foreground-hint); font-size: 0.8em;">
+                        Type a literal value, or <code>=variableName</code> to reference a workflow variable.
+                    </FluentLabel>
+                    break;
+                case CustomTaskParameterType.Integer:
+                    <FluentNumberField TValue="int?"
+                                       Value="@(int.TryParse(currentValue, out var n) ? n : (int?)null)"
+                                       Placeholder="@(spec.DefaultValue ?? "")"
+                                       ValueChanged="@(v => OnValueChanged(spec.Name, v?.ToString() ?? ""))"
+                                       Style="@($"width: 100%; {(hasError ? "border-color: var(--error);" : "")}")" />
+                    <FluentLabel Typo="Typography.Body" Style="color: var(--neutral-foreground-hint); font-size: 0.8em;">
+                        Type a literal number, or use the parameter as <code>=variableName</code> in raw BPMN to reference a workflow variable.
+                    </FluentLabel>
+                    break;
+                case CustomTaskParameterType.Boolean:
+                    <FluentCheckbox Value="@(string.Equals(currentValue, "true", StringComparison.OrdinalIgnoreCase))"
+                                    ValueChanged="@(v => OnValueChanged(spec.Name, v ? "true" : "false"))" />
+                    break;
+                case CustomTaskParameterType.Expression:
+                    <FluentTextArea Value="@currentValue"
+                                    Placeholder="=workflowVar  or  literal"
+                                    ValueChanged="@(v => OnValueChanged(spec.Name, v))"
+                                    Style="@($"width: 100%; font-family: monospace; {(hasError ? "border-color: var(--error);" : "")}")"
+                                    Rows="2" />
+                    <FluentLabel Typo="Typography.Body" Style="color: var(--neutral-foreground-hint); font-size: 0.8em;">
+                        Prefix with <code>=</code> for an expression evaluated against workflow variables.
+                    </FluentLabel>
+                    break;
+                case CustomTaskParameterType.MultilineString:
+                    <FluentTextArea Value="@currentValue"
+                                    Placeholder="@(spec.DefaultValue ?? "")"
+                                    ValueChanged="@(v => OnValueChanged(spec.Name, v))"
+                                    Style="@($"width: 100%; {(hasError ? "border-color: var(--error);" : "")}")"
+                                    Rows="4" />
+                    <FluentLabel Typo="Typography.Body" Style="color: var(--neutral-foreground-hint); font-size: 0.8em;">
+                        Type a literal value, or <code>=variableName</code> to reference a workflow variable.
+                    </FluentLabel>
+                    break;
+                case CustomTaskParameterType.List:
+                case CustomTaskParameterType.Map:
+                    @* v1: Map/List parameters are sourced from a workflow variable.
+                       Mapping grammar doesn't support literal map/list values; tracked as a follow-up. *@
+                    <FluentTextField Value="@currentValue"
+                                     Placeholder="=workflowVariableName"
+                                     ValueChanged="@(v => OnValueChanged(spec.Name, v))"
+                                     Style="@($"width: 100%; {(hasError ? "border-color: var(--error);" : "")}")" />
+                    <FluentLabel Typo="Typography.Body" Style="color: var(--neutral-foreground-hint); font-size: 0.8em;">
+                        @(spec.Type == CustomTaskParameterType.List ? "List" : "Map") parameter — reference a workflow variable
+                        (e.g. <code>=requestHeaders</code>). Literal authoring inside BPMN is a v2 follow-up.
+                    </FluentLabel>
+                    break;
+            }
+
+            @if (hasError)
+            {
+                <FluentLabel Typo="Typography.Body" Style="color: var(--error); font-size: 0.8em;">
+                    Required.
+                </FluentLabel>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public CustomTaskParameterSchema? Schema { get; set; }
+    [Parameter, EditorRequired] public IReadOnlyDictionary<string, string> Values { get; set; } = new Dictionary<string, string>();
+    [Parameter] public EventCallback<(string Target, string Source)> OnInputChanged { get; set; }
+
+    private readonly Dictionary<string, CancellationTokenSource> _debounceTokens = new();
+    private static readonly TimeSpan DebounceInterval = TimeSpan.FromMilliseconds(300);
+
+    private string GetCurrentValue(string target) =>
+        Values.TryGetValue(target, out var v) ? v ?? "" : "";
+
+    private async Task OnValueChanged(string target, string value)
+    {
+        if (_debounceTokens.TryGetValue(target, out var existing))
+            existing.Cancel();
+
+        var cts = new CancellationTokenSource();
+        _debounceTokens[target] = cts;
+
+        try
+        {
+            await Task.Delay(DebounceInterval, cts.Token);
+            if (OnInputChanged.HasDelegate)
+                await OnInputChanged.InvokeAsync((target, value ?? ""));
+        }
+        catch (OperationCanceledException) { /* superseded by a later edit */ }
+        finally
+        {
+            if (_debounceTokens.TryGetValue(target, out var current) && current == cts)
+                _debounceTokens.Remove(target);
+        }
+    }
+}
