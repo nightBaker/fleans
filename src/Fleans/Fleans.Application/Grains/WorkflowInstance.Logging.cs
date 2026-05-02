@@ -399,4 +399,8 @@ public partial class WorkflowInstance
         Message = "Transaction completed: transactionInstanceId={TransactionInstanceId} activityId={ActivityId}")]
     private partial void LogTransactionCompleted(Guid transactionInstanceId, string activityId);
 
+    [LoggerMessage(EventId = 3033, Level = LogLevel.Debug,
+        Message = "Compensation log returned: {EntryCount} entries")]
+    private partial void LogCompensationLogReturned(int entryCount);
+
 }

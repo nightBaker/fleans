@@ -126,6 +126,16 @@ When the workflow reaches `compensate_all`, the engine:
 - A `CompensationEndEvent` also triggers compensation but ends the process (no resumption after the walk). It is typically used inside an error sub-process or error boundary handler.
 - Compensation state (`CompensationLog`, `ActiveCompensationWalk`) is rebuilt from domain events on grain activation — it is **not stored in the relational database** directly.
 
+### Visualising the compensation log in the admin UI
+
+Open `https://localhost:7124/instances/{instanceId}` and switch to the **Compensation** tab to see, per workflow instance:
+
+- **Sequence**, **Compensable Activity**, **Handler**, **Scope** (or `(root)` if attached at the root scope), **Variables** (count summary; click for full key/value dialog), and a **Status** badge: `Accent="Compensated"` for handlers that have already run, `Neutral="Pending"` for entries the engine knows about but hasn't compensated yet.
+- Rows are ordered **newest-first** by completion sequence. After a broadcast-throw walk over the example above, the top row is `cancel_flight` and the second is `cancel_hotel`.
+- The tab is always rendered; an empty-state message appears when no compensable activities have completed on the instance yet. There is no auto-refresh — re-render the page to take a fresh snapshot.
+
+The tab fetches via the `ICompensationLogService` application service which activates the workflow grain on every call. It is intended for admin-UI inspection only — list views and analytics endpoints continue reading from the EF projection.
+
 ## Cancel Events
 
 Cancel events implement the **transaction cancellation** path in BPMN: when a Cancel End Event fires inside a Transaction Sub-Process, the engine rolls back the transaction's scope and routes execution to a recovery flow via the Cancel Boundary Event.

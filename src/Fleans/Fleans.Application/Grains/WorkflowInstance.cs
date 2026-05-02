@@ -8,6 +8,7 @@ using Fleans.Application.Adapters;
 using Fleans.Application.Effects;
 using Fleans.Application.Logging;
 using Fleans.Application.Placement;
+using Fleans.Application.QueryModels;
 using Microsoft.Extensions.Logging;
 using Orleans;
 using Orleans.EventSourcing;
@@ -588,6 +589,38 @@ public partial class WorkflowInstance :
         IReadOnlyDictionary<Guid, TransactionOutcomeRecord> result =
             State.TransactionOutcomes.AsReadOnly();
         return ValueTask.FromResult(result);
+    }
+
+    public ValueTask<IReadOnlyList<CompensationLogEntrySnapshot>> GetCompensationLog()
+    {
+        IReadOnlyList<CompensationLogEntrySnapshot> result = State.CompensationLog
+            .OrderBy(e => e.CompletedAtSequence)
+            .Select(ToCompensationSnapshot)
+            .ToList()
+            .AsReadOnly();
+        LogCompensationLogReturned(result.Count);
+        return ValueTask.FromResult(result);
+    }
+
+    private CompensationLogEntrySnapshot ToCompensationSnapshot(CompletedActivitySnapshot entry)
+    {
+        // Handler resolution: walk the cached BPMN definition to the enclosing scope of the
+        // compensable activity, then read the boundary event's pre-resolved HandlerActivityId.
+        // Returns null when the model has drifted or no compensation boundary exists.
+        var scopeDef = _workflowDefinition?.FindScopeForActivity(entry.ActivityDefinitionId);
+        var handlerId = scopeDef?.FindCompensationBoundary(entry.ActivityDefinitionId)?.HandlerActivityId;
+
+        var variables = ((IDictionary<string, object?>)entry.VariablesSnapshot)
+            .ToDictionary(kvp => kvp.Key, kvp => VariableValueFormatter.Format(kvp.Value));
+
+        return new CompensationLogEntrySnapshot(
+            entry.ActivityInstanceId,
+            entry.ActivityDefinitionId,
+            handlerId,
+            entry.CompletedAtSequence,
+            entry.ScopeId,
+            entry.IsCompensated,
+            variables);
     }
 
     public async ValueTask SetConditionSequenceResult(Guid activityInstanceId, string sequenceId, bool result)
