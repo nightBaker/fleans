@@ -24,6 +24,7 @@ export default defineConfig({
             { label: 'Introduction', slug: 'guides/introduction' },
             { label: 'Quick Start', slug: 'guides/quick-start' },
             { label: 'Service Tasks', slug: 'guides/service-tasks' },
+            { label: 'User Tasks', slug: 'guides/user-tasks' },
             { label: 'Writing Custom-Task Plugins', slug: 'guides/writing-custom-tasks' },
             { label: 'BPMN Editor', slug: 'guides/editor' },
             { label: 'Add to Existing Project', slug: 'guides/add-to-existing-project' },

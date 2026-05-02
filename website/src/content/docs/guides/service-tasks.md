@@ -162,6 +162,6 @@ builder.Services.AddHostedService<PaymentWorker>();
 ## Best practices
 
 - **Idempotency** — design workers so that completing the same task twice is harmless. The engine rejects duplicate completions (409 Conflict), but your side effects should be safe to retry.
-- **Error handling** — if your worker encounters an error, decide whether to retry or to call the fail-activity path so the workflow can route through an error boundary event.
+- **Error handling** — Fleans has no `/fail-activity` endpoint. To surface a failure, throw from your worker (the engine returns 409 from `complete-activity`) or call `complete-activity` with a flag the next gateway routes on. Pair the service task with a BPMN error or escalation boundary event to recover; see the [Error Handling guide (#394)](https://github.com/nightBaker/fleans/issues/394) for the full pattern.
 - **Scaling** — because workers are decoupled from the engine, you can run multiple replicas without any coordination.
 - **Discovery** — Fleans does not expose a "list pending service tasks" API. Design your integration so that the caller who starts the workflow instance passes the `WorkflowInstanceId` to the worker via a message queue or callback URL.

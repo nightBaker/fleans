@@ -235,7 +235,7 @@ The rate limiter uses a **fixed window** algorithm, partitioned by the client's 
 | Policy | Endpoints | Description |
 |--------|-----------|-------------|
 | `WorkflowMutation` | `POST /start`, `/complete-activity`, `/message`, `/signal`, `/deploy`, `/evaluate-conditions` | Workflow write operations |
-| `TaskOperation` | `POST /claim-user-task`, `/unclaim-user-task`, `/complete-user-task` | User task operations |
+| `TaskOperation` | `POST /Workflow/tasks/{id}/claim`, `/unclaim`, `/complete` | User task operations — see [User Tasks guide](/fleans/guides/user-tasks/) |
 | `Read` | `GET /definitions` | Read-only queries |
 | `Admin` | `POST /upload-bpmn`, `/disable`, `/enable` | Admin operations |
 | `Polling` | `GET /instances/{id}/state` | High-frequency state polling |
