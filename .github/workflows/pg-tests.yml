@@ -43,3 +43,44 @@ jobs:
           --no-build
           --verbosity normal
           --filter "TestCategory=Postgres"
+          --logger "trx;LogFileName=pg.trx"
+
+      # Silent-green guard for #445. `dotnet test --filter "TestCategory=Postgres"`
+      # exits 0 when the filter matches zero tests — a refactor that drops the
+      # [TestCategory("Postgres")] attribute from every parametrised class would
+      # silently neutralise this workflow with no CI failure. The captured TRX
+      # surfaces this as <ResultSummary><Counters total="0" .../> and a
+      # <RunInfos><RunInfo @outcome="Warning"> with the literal "No test matches"
+      # text — i.e. the orange-not-red status the guard flips into a hard fail.
+      - name: Assert Postgres tests actually ran (silent-green guard — #445)
+        if: always()
+        run: |
+          set -e
+
+          # CI uses actions/checkout@v4 (clean tree). For local `act` runs with
+          # accumulating TestResults dirs, swap to: `find ... | sort -r | head -1`.
+          trx_file=$(find Fleans.Persistence.Tests/TestResults -name pg.trx | head -1)
+          if [ -z "$trx_file" ]; then
+            echo "::error::no pg.trx produced — '--logger \"trx;LogFileName=pg.trx\"' may be misconfigured, or the test runner crashed before emitting results"
+            exit 1
+          fi
+
+          # Two layered signals on the same TRX. The TRX namespace requires
+          # local-name() in the XPath. Empirical: zero-match emits total="0"
+          # exactly, with zero <UnitTestResult> children (verified locally on
+          # `dotnet test --filter "TestCategory=NonExistentCategory"` — see
+          # #445 v2 design's "Source-of-truth verifications" section).
+          total=$(xmllint --xpath 'string(//*[local-name()="Counters"]/@total)' "$trx_file")
+          unit=$(xmllint --xpath 'count(//*[local-name()="UnitTestResult"])' "$trx_file")
+
+          echo "Postgres tests considered: total=${total} unit_results=${unit}"
+
+          # OR semantics intentional. ${var:-0} keeps shell math from erroring
+          # if a future MSTest TRX revision splits/renames <Counters> — `total`
+          # would resolve empty and the OR short-circuits to a guard fire while
+          # the count(UnitTestResult) fallback still produces a number. Do NOT
+          # tighten this to AND.
+          if [ "${total:-0}" -eq 0 ] || [ "${unit:-0}" -eq 0 ]; then
+            echo "::error::Zero Postgres tests considered — TestCategory(Postgres) filter matched nothing. Did a refactor drop the [TestCategory(\"Postgres\")] attribute from the parametrised classes? (Counters/@total=${total}, UnitTestResult count=${unit})"
+            exit 1
+          fi
