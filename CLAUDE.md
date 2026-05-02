@@ -243,6 +243,7 @@ Website-specific manual tests live under `tests/manual/website/`. These run in a
 
 1. **3D Silo Landing Background** — `tests/manual/website/3d-landing/test-plan.md`. Splash page renders birds-eye Three.js silo scene as background; clicking outside the hero enters interactive orbit/zoom/pan mode with a close (×) button; mobile and reduced-motion users see a static WebP poster instead.
 2. **Hero BPMN SVG** — `tests/manual/website/hero-bpmn-svg/test-plan.md`. The pre-rendered `public/hero-workflow-{light,dark}.svg` files parse as strict XML (no `</g>` imbalance, no leftover `djs-hit` / `djs-outline` / `djs-dragger` classes, XML prolog + SVG 1.1 DOCTYPE preserved); landing page hero renders in both themes; regeneration is reproducible. Regression home for #366.
+3. **Landing Deployment-Posture Cards** — `tests/manual/website/landing-deployment-cards/test-plan.md`. The "Why Fleans?" `<CardGrid>` on `/fleans/` renders 9 cards (six runtime/engine + three deployment-posture); the `setting`, `list-format`, `puzzle` icons resolve to real glyphs in light AND dark themes (not silent Starlight fallbacks); each new card's "Learn how →" link returns 200 to `reference/self-hosting/`, `reference/persistence/`, `reference/streaming/`; mobile (≤ 480 px) single-column flow is readable.
 
 > When adding a new website test folder, append a numbered entry here.
 
