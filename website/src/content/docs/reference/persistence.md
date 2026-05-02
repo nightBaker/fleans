@@ -79,3 +79,43 @@ Example `appsettings.json`:
 ## Aspire Auto-Provisioning (PostgreSQL)
 
 When `FLEANS_PERSISTENCE_PROVIDER=Postgres`, Aspire provisions a Docker-based Postgres container named `postgres` with a database named `fleans`. Connection strings are injected into all three services (`fleans-core`, `fleans-management`, `fleans-mcp`) automatically — no manual `ConnectionStrings` config is needed in development.
+
+## Test parity with SQLite
+
+Every EF/grain-storage test class in `Fleans.Persistence.Tests` is parametrised across both providers. A regression in PostgreSQL behaviour (JSON column, `timestamptz` round-trip, migration script) fails the build the same way a SQLite regression does.
+
+The pattern (see [`Infrastructure/PersistenceTestBase.cs`](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Persistence.Tests/Infrastructure/PersistenceTestBase.cs)):
+
+```csharp
+[DataTestMethod]
+[DataRow(PersistenceProvider.Sqlite)]
+[DataRow(PersistenceProvider.Postgres)]
+public async Task WriteAndRead_RoundTrip(PersistenceProvider provider)
+{
+    await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+    var storage = new EfCoreSignalCorrelationGrainStorage(fixture.CommandFactory);
+    // ... assertions identical for both providers ...
+}
+```
+
+### Default developer loop (no Docker)
+
+```bash
+cd src/Fleans
+dotnet test
+```
+
+The PostgreSQL rows surface as `Inconclusive` (a non-failing MSTest outcome). SQLite rows execute normally. No Docker is required.
+
+### Reproducing a PostgreSQL-only failure locally
+
+```bash
+cd src/Fleans
+FLEANS_PG_TESTS=1 dotnet test --filter "TestCategory=Postgres"
+```
+
+`Testcontainers.PostgreSql` boots a single `postgres:16-alpine` container per test assembly (lazy start on first PG fixture access). Each parametrised test class owns a fresh `fleans_test_<guid>` database that runs the production `MigrateAsync()` path and is dropped via `DROP DATABASE WITH (FORCE)` on `[ClassCleanup]`. Per-test isolation comes from `TRUNCATE TABLE … RESTART IDENTITY CASCADE` on the model-derived table list.
+
+### CI
+
+The dedicated [`PostgreSQL tests`](https://github.com/nightBaker/fleans/blob/main/.github/workflows/pg-tests.yml) GitHub Actions workflow runs on every PR + push to `main`, sets `FLEANS_PG_TESTS=1`, and executes `dotnet test --filter "TestCategory=Postgres"` against the Testcontainers-managed image.
