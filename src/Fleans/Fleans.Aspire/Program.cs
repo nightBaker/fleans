@@ -1,5 +1,10 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
+// Kubernetes publish target — `aspire publish -t kubernetes -o out/k8s` emits manifests for
+// every Aspire-hosted service plus its dependencies (Redis, optional PostgreSQL/Kafka). The
+// "k8s" name is the resource id in the AppHost model; the publish target type is "kubernetes".
+builder.AddKubernetesEnvironment("k8s");
+
 // Persistence provider — set FLEANS_PERSISTENCE_PROVIDER=Postgres to use PostgreSQL.
 // Default is SQLite (fast local dev, no container required).
 var persistenceProvider = builder.Configuration["FLEANS_PERSISTENCE_PROVIDER"] ?? "Sqlite";
@@ -120,10 +125,26 @@ WithPersistence(
         .WithReplicas(1),
     usePostgres, pg, sqliteConnectionString);
 
-// Load-testing topology: 2 silo replicas behind nginx, forced Postgres.
-// Activated by: dotnet run --project Fleans.Aspire -- --publisher docker-compose --output-path <dir>
+// Publish-only topology: registers the dedicated Fleans.WorkerHost silo and the load-test
+// nginx fan-out. Both are publish-time artifacts (aspire publish -t docker-compose / kubernetes
+// or `dotnet run -- --publisher docker-compose ...`). Local dev (`dotnet run --project
+// Fleans.Aspire`) keeps the original 3-process layout — Fleans.Api with the default Combined
+// role still hosts worker grains there.
 if (builder.ExecutionContext.IsPublishMode)
 {
+    // Worker silo — separate deployable so production/k8s topologies can scale Core and
+    // Worker independently. Joins the same Orleans cluster via Redis clustering; worker grains
+    // (script executor, condition evaluator, custom-task plugins) place onto it preferentially
+    // via WorkerPlacementDirector.
+    var workerHost = builder.AddProject<Projects.Fleans_WorkerHost>("fleans-worker")
+        .WithReference(orleans)
+        .WaitFor(redis)
+        .WithEnvironment("Fleans__Role", "Worker")
+        .WithReplicas(1);
+    if (usePostgres) workerHost = workerHost.WaitFor(pg!);
+    workerHost = WithPersistence(workerHost, usePostgres, pg, sqliteConnectionString);
+    workerHost = WithStreaming(workerHost, useKafka, kafka);
+
     // Override the container listen port to 8080 so nginx (tests/load/nginx.conf) can
     // reach each replica at fleans-core:8080. WithHttpEndpoint cannot be used here because
     // AddProject<> already registers the default "http" endpoint — re-using that name throws.
