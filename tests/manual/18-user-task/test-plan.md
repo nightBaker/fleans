@@ -75,6 +75,7 @@ curl -X POST https://localhost:7140/Workflow/tasks/{activityInstanceId}/complete
 - [ ] Instance status: **Completed**
 - [ ] Activities tab: 5 completed activities (start, prepare, review, postReview, end)
 - [ ] Variables tab: `approved` = **true**, `reviewComment` = **"Looks good"**, `processed` = **true**
+- [ ] Variables tab: `outcome` = **"approved"** (when `complete` was called with `approved=true`) or **"rejected"** (when `approved=false`). Confirms the user-task output `approved` was merged into the enclosing scope before the downstream `<bpmn:scriptTask>` ran.
 - [ ] No active activities remain
 
 ### 11. Verify task unregistered from registry
