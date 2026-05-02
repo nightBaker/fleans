@@ -166,6 +166,7 @@ Add it to `Fleans.Api/Controllers/WorkflowController.cs`. DTOs go in `Fleans.Ser
 - **Message events require the Zeebe namespace** — add `xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"` to `<definitions>` and include `<zeebe:subscription correlationKey="= varName" />` inside `<extensionElements>` which is a child of `<message>` (not a direct child of `<message>`). Example: `<message id="..." name="..."><extensionElements><zeebe:subscription correlationKey="= varName" /></extensionElements></message>`.
 - **Every fixture must include a `<bpmndi:BPMNDiagram>` section** — the BPMN editor requires diagram info to render. Without it, the import silently produces a blank canvas.
 - **Use short timer durations** for test fixtures (PT5S–PT10S) so tests complete quickly.
+- **`<script>` content is a DynamicExpresso expression, not a C# statement.** `_context.x = value` is valid; `return …;` and `var x = …;` are not. Silent script failures auto-complete the enclosing Event Sub-Process scope and manifest as the inner `EndEvent` missing from `CompletedActivities` (root cause of #285 — see `EventSubProcess*Tests` for regression guards across all four ESP trigger variants).
 
 ### API Endpoints for Manual Tests
 - Deploy process: `POST https://localhost:7140/Workflow/deploy` — body: `{"BpmnXml":"<raw BPMN XML string>"}` — returns `{"ProcessDefinitionKey":"...","Version":1}` on success, 400 with `{"Error":"..."}` on parse failure

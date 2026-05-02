@@ -73,6 +73,22 @@ public class EventSubProcessErrorTests : WorkflowTestBase
         Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "evtSub1"),
             "EventSubProcess host should be marked completed");
 
+        // 4a. The EndEvent inside the error event sub-process must be recorded.
+        // Closes the coverage gap in #285 plan v2 — Error ESPs were never broken,
+        // but we want a regression guard if the shared completion path drifts.
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "evtSub1_errEnd"
+                                                              && a.ErrorState == null
+                                                              && !a.IsCancelled),
+            "Error EventSubProcess inner EndEvent 'evtSub1_errEnd' should be completed");
+
+        // NOTE: the v2 plan additionally proposed an ordering invariant
+        // (EndEvent index < host index in CompletedActivities). Implementation
+        // revealed the projection's Entries collection has no OrderBy clause
+        // (see WorkflowQueryService.GetStateSnapshot), so its list ordering is
+        // not a stable invariant — the assertion was flaky across runs even on
+        // the interrupting path. Presence is what catches the regression; a
+        // stable-ordering surface is tracked as a follow-up.
+
         // 5. Sibling 'end' was NOT reached
         Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId == "end"),
             "Normal 'end' event should not be reached when the error handler interrupts flow");

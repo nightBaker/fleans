@@ -79,11 +79,18 @@ public class EventSubProcessTimerTests : WorkflowTestBase
             "EventSubProcess host should be completed");
 
         // The EndEvent inside the event sub-process must also be reached
-        // (closes the visibility gap flagged in #283 review round 2).
+        // (closes the visibility gap flagged in #283 review round 2 and the
+        // #285 coverage check for Timer ESPs).
         Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "evtSub1_end"
                                                               && a.ErrorState == null
                                                               && !a.IsCancelled),
             "EventSubProcess inner EndEvent 'evtSub1_end' should be completed");
+
+        // NOTE: an ordering invariant was proposed in the #285 plan v2
+        // (EndEvent index < host index in CompletedActivities). It cannot be
+        // asserted reliably — the projection's Entries collection is loaded
+        // without an OrderBy clause, so list ordering races even within a
+        // single completed scope. Presence is the load-bearing assertion.
 
         // Normal 'end' was NOT reached
         Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId == "end"),
