@@ -29,7 +29,7 @@ public class EfCoreProcessDefinitionRepositoryTests : PersistenceTestBase
         Assert.AreEqual("key1:1:ts", result.ProcessDefinitionId);
         Assert.AreEqual("key1", result.ProcessDefinitionKey);
         Assert.AreEqual(1, result.Version);
-        Assert.AreEqual(deployedAt, result.DeployedAt);
+        Assert.AreEqual(TruncateToMicroseconds(deployedAt), TruncateToMicroseconds(result.DeployedAt));
         Assert.AreEqual("<bpmn/>", result.BpmnXml);
     }
 
@@ -305,6 +305,9 @@ public class EfCoreProcessDefinitionRepositoryTests : PersistenceTestBase
         await Assert.ThrowsExactlyAsync<InvalidOperationException>(
             () => repository.UpdateAsync(definition));
     }
+
+    private static DateTimeOffset TruncateToMicroseconds(DateTimeOffset value)
+        => new(value.Ticks - value.Ticks % 10, value.Offset);
 
     private static ProcessDefinition CreateDefinition(
         string id, string key, int version, DateTimeOffset deployedAt)
