@@ -137,7 +137,7 @@ public class TransactionSubProcessTests
     }
 
     [TestMethod]
-    public async Task Transaction_NestedImmediately_ThrowsInvalidOperation()
+    public async Task Transaction_NestedImmediately_ParsesAsNestedTransactions()
     {
         var bpmn = MakeBpmn("""
             <transaction id="tx_outer">
@@ -155,9 +155,16 @@ public class TransactionSubProcessTests
             <sequenceFlow id="f2" sourceRef="tx_outer" targetRef="end" />
             """);
 
-        await Assert.ThrowsExactlyAsync<InvalidOperationException>(
-            () => ParseBpmn(bpmn),
-            "Nested Transaction Sub-Process should throw InvalidOperationException");
+        var workflow = await ParseBpmn(bpmn);
+
+        var outer = workflow.Activities.OfType<Transaction>()
+            .FirstOrDefault(t => t.ActivityId == "tx_outer");
+        Assert.IsNotNull(outer, "Outer transaction should be parsed as a Transaction");
+        var inner = outer.Activities.OfType<Transaction>()
+            .FirstOrDefault(t => t.ActivityId == "tx_inner");
+        Assert.IsNotNull(inner, "Inner transaction should be parsed as a Transaction nested in the outer");
+        Assert.IsFalse(workflow.Activities.OfType<Transaction>().Any(t => t.ActivityId == "tx_inner"),
+            "Inner transaction must not appear at root scope");
     }
 
     [TestMethod]
@@ -191,9 +198,10 @@ public class TransactionSubProcessTests
     }
 
     [TestMethod]
-    public async Task Transaction_NestedInsideTransaction_ViaSubProcess_ThrowsInvalidOperation()
+    public async Task Transaction_NestedInsideTransaction_ViaSubProcess_ParsesSuccessfully()
     {
-        // transaction > subProcess > transaction — should fail because insideTransaction=true propagates
+        // transaction > subProcess > transaction — parses; the inner transaction is reachable
+        // through the intermediate subProcess and lives inside the outer transaction's scope tree.
         var bpmn = MakeBpmn("""
             <transaction id="tx_outer">
               <startEvent id="outer_start" />
@@ -216,9 +224,17 @@ public class TransactionSubProcessTests
             <sequenceFlow id="f2" sourceRef="tx_outer" targetRef="end" />
             """);
 
-        await Assert.ThrowsExactlyAsync<InvalidOperationException>(
-            () => ParseBpmn(bpmn),
-            "Transaction nested inside a Transaction (via subProcess) should throw");
+        var workflow = await ParseBpmn(bpmn);
+
+        var outer = workflow.Activities.OfType<Transaction>()
+            .FirstOrDefault(t => t.ActivityId == "tx_outer");
+        Assert.IsNotNull(outer, "Outer transaction should be parsed");
+        var midSp = outer.Activities.OfType<SubProcess>()
+            .FirstOrDefault(s => s.ActivityId == "sp_mid" && s is not Transaction);
+        Assert.IsNotNull(midSp, "Intermediate subProcess should be parsed inside the outer transaction");
+        var inner = midSp.Activities.OfType<Transaction>()
+            .FirstOrDefault(t => t.ActivityId == "tx_inner");
+        Assert.IsNotNull(inner, "Inner transaction should be parsed inside the intermediate subProcess");
     }
 
     [TestMethod]
