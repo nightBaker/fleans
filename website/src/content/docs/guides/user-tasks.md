@@ -184,9 +184,9 @@ After `complete` posts `{"Variables": {"approved": true}}`, `LogDecision` sees `
 
 There is **no `/fail-activity` endpoint** for user tasks (or for service tasks — see the [Service Tasks guide](/fleans/guides/service-tasks/)). Programmatic failure is not exposed as an HTTP verb. To surface a failure path from a user task, use one of:
 
-1. **BPMN error or escalation boundary event** — attach a `<bpmn:boundaryEvent>` of type error or escalation to the user task and route the recovery flow to a handler. Throw the error from a script task that runs after the user-task `complete` (e.g., a script that inspects `_context.approved` and throws when it is `false`).
-2. **Conditional gateway after the task** — let the user task complete normally, then branch on its output variables via an exclusive gateway. This keeps the lifecycle simple and avoids boundary-event complexity for plain decision routing.
-3. **Timer / escalation boundary** — attach a non-interrupting timer to surface SLA breaches; combine with a separate cancellation handler if you also need to interrupt the task.
+1. **Conditional gateway after the task** — let the user task complete normally, then branch on its output variables (e.g., `_context.approved`) via an exclusive gateway. This is the simplest pattern for "approved vs rejected" routing and is what most decision-style user tasks need.
+2. **Sub-process + error boundary** — wrap the user task and a downstream script task inside a `<bpmn:subProcess>`, have the script task throw when the decision indicates failure, and attach an `errorBoundaryEvent` to the **sub-process** (not the user task — boundary events catch only errors raised by the activity they are attached to). The handler flow then runs the recovery path.
+3. **Timer / escalation boundary on the user task** — for SLA breaches (a human is taking too long to act), attach an interrupting timer or escalation boundary to the user task itself. The boundary cancels the user task and routes to a handler. Combine with a non-interrupting timer first if you want a warning before the cut-off.
 
 The full error-handling pattern is the subject of the [Error Handling guide (#394)](https://github.com/nightBaker/fleans/issues/394).
 
