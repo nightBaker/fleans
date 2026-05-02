@@ -52,6 +52,11 @@ jobs:
       # surfaces this as <ResultSummary><Counters total="0" .../> and a
       # <RunInfos><RunInfo @outcome="Warning"> with the literal "No test matches"
       # text — i.e. the orange-not-red status the guard flips into a hard fail.
+      #
+      # Implementation note: ubuntu-latest does NOT pre-install xmllint
+      # (libxml2-utils). python3 IS pre-installed and ships
+      # xml.etree.ElementTree in stdlib, which is enough to read the two
+      # XPath signals we need with namespace handling.
       - name: Assert Postgres tests actually ran (silent-green guard — #445)
         if: always()
         run: |
@@ -65,13 +70,22 @@ jobs:
             exit 1
           fi
 
-          # Two layered signals on the same TRX. The TRX namespace requires
-          # local-name() in the XPath. Empirical: zero-match emits total="0"
-          # exactly, with zero <UnitTestResult> children (verified locally on
-          # `dotnet test --filter "TestCategory=NonExistentCategory"` — see
-          # #445 v2 design's "Source-of-truth verifications" section).
-          total=$(xmllint --xpath 'string(//*[local-name()="Counters"]/@total)' "$trx_file")
-          unit=$(xmllint --xpath 'count(//*[local-name()="UnitTestResult"])' "$trx_file")
+          # Two layered signals on the same TRX. The TRX uses the namespace
+          # http://microsoft.com/schemas/VisualStudio/TeamTest/2010 — the
+          # python lookup binds it explicitly. Empirical: zero-match emits
+          # total="0" exactly, with zero <UnitTestResult> children (verified
+          # locally on `dotnet test --filter "TestCategory=NonExistentCategory"` —
+          # see #445 v2 design's "Source-of-truth verifications" section).
+          read total unit < <(python3 - "$trx_file" <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          ns = {"t": "http://microsoft.com/schemas/VisualStudio/TeamTest/2010"}
+          root = ET.parse(sys.argv[1]).getroot()
+          counters = root.find(".//t:Counters", ns)
+          total = counters.get("total", "0") if counters is not None else "0"
+          unit = len(root.findall(".//t:UnitTestResult", ns))
+          print(total, unit)
+          PY
+          )
 
           echo "Postgres tests considered: total=${total} unit_results=${unit}"
 
