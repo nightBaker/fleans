@@ -15,6 +15,7 @@ namespace Fleans.Persistence;
 public class WorkflowQueryService : IWorkflowQueryService
 {
     private readonly IDbContextFactory<FleanQueryDbContext> _dbContextFactory;
+    private readonly IDbContextFactory<FleanCommandDbContext> _commandFactory;
     private readonly ISieveProcessor _sieveProcessor;
 
     private static readonly JsonSerializerSettings JsonSettings = new()
@@ -26,9 +27,11 @@ public class WorkflowQueryService : IWorkflowQueryService
 
     public WorkflowQueryService(
         IDbContextFactory<FleanQueryDbContext> dbContextFactory,
+        IDbContextFactory<FleanCommandDbContext> commandFactory,
         ISieveProcessor sieveProcessor)
     {
         _dbContextFactory = dbContextFactory;
+        _commandFactory = commandFactory;
         _sieveProcessor = sieveProcessor;
     }
 
@@ -432,4 +435,53 @@ public class WorkflowQueryService : IWorkflowQueryService
             t.Assignee, t.CandidateGroups, t.CandidateUsers,
             t.ClaimedBy, t.TaskState.ToString(), t.CreatedAt,
             t.ExpectedOutputVariables);
+
+    public async Task<RegisteredEventsSnapshot> GetRegisteredEventsAsync(CancellationToken ct = default)
+    {
+        // Subscription/registration tables live in the command context, not
+        // the query context. Both factories are registered in DI; we open a
+        // single short-lived context for all five reads.
+        await using var db = await _commandFactory.CreateDbContextAsync(ct);
+
+        var messageStartEvents = await db.MessageStartEventRegistrations
+            .AsNoTracking()
+            .Select(r => new MessageStartEventRow(r.MessageName, r.ProcessDefinitionKey))
+            .ToListAsync(ct);
+
+        var signalStartEvents = await db.SignalStartEventRegistrations
+            .AsNoTracking()
+            .Select(r => new SignalStartEventRow(r.SignalName, r.ProcessDefinitionKey))
+            .ToListAsync(ct);
+
+        // Filter to IsRegistered=true: a listener row may persist with the
+        // flag flipped off after un-deploy but before the row is deleted.
+        var conditionalStartEvents = await db.ConditionalStartEventListeners
+            .AsNoTracking()
+            .Where(l => l.IsRegistered)
+            .Select(l => new ConditionalStartEventRow(
+                l.ProcessDefinitionKey, l.ActivityId, l.ConditionExpression))
+            .ToListAsync(ct);
+
+        // Subscription tables are delete-on-completion: every row present is
+        // an active subscription. No row-level filter is applied.
+        var activeMessageSubscriptions = await db.MessageSubscriptions
+            .AsNoTracking()
+            .Select(s => new MessageSubscriptionRow(
+                s.MessageName, s.CorrelationKey, s.WorkflowInstanceId,
+                s.ActivityId, s.HostActivityInstanceId))
+            .ToListAsync(ct);
+
+        var activeSignalSubscriptions = await db.SignalSubscriptions
+            .AsNoTracking()
+            .Select(s => new SignalSubscriptionRow(
+                s.SignalName, s.WorkflowInstanceId, s.ActivityId, s.HostActivityInstanceId))
+            .ToListAsync(ct);
+
+        return new RegisteredEventsSnapshot(
+            messageStartEvents,
+            signalStartEvents,
+            conditionalStartEvents,
+            activeMessageSubscriptions,
+            activeSignalSubscriptions);
+    }
 }

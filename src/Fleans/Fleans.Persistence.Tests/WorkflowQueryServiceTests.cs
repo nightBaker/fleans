@@ -27,7 +27,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
             MaxPageSize = 100
         });
         ISieveProcessor sieveProcessor = new ApplicationSieveProcessor(sieveOptions);
-        var service = new WorkflowQueryService(fixture.QueryFactory, sieveProcessor);
+        var service = new WorkflowQueryService(fixture.QueryFactory, fixture.CommandFactory, sieveProcessor);
         return (service, fixture.CommandFactory);
     }
 
@@ -1098,5 +1098,181 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
         await db.SaveChangesAsync();
     }
 
+    // ─────────────────────────────────────────────────
+    // GetRegisteredEventsAsync (#374)
+    // ─────────────────────────────────────────────────
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetRegisteredEventsAsync_EmptyDb_AllListsEmpty(PersistenceProvider provider)
+    {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, _) = BuildService(fixture);
+
+        var snap = await service.GetRegisteredEventsAsync();
+
+        Assert.AreEqual(0, snap.MessageStartEvents.Count);
+        Assert.AreEqual(0, snap.SignalStartEvents.Count);
+        Assert.AreEqual(0, snap.ConditionalStartEvents.Count);
+        Assert.AreEqual(0, snap.ActiveMessageSubscriptions.Count);
+        Assert.AreEqual(0, snap.ActiveSignalSubscriptions.Count);
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetRegisteredEventsAsync_SeedOneOfEach_SnapshotMirrorsSeed(PersistenceProvider provider)
+    {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        var workflowId = Guid.NewGuid();
+        var hostActivityId = Guid.NewGuid();
+        await using (var db = await commandFactory.CreateDbContextAsync())
+        {
+            db.MessageStartEventRegistrations.Add(new MessageStartEventRegistration("order-placed", "order-process"));
+            db.SignalStartEventRegistrations.Add(new SignalStartEventRegistration("system-alert", "alert-process"));
+            db.ConditionalStartEventListeners.Add(new ConditionalStartEventListenerState
+            {
+                Key = "alert-process|cond-start",
+                ProcessDefinitionKey = "alert-process",
+                ActivityId = "cond-start",
+                ConditionExpression = "= amount > 1000",
+                IsRegistered = true
+            });
+            db.MessageCorrelations.Add(new MessageCorrelationState { Key = "payment-received" });
+            db.SignalCorrelations.Add(new SignalCorrelationState { Key = "cancel" });
+            db.MessageSubscriptions.Add(new MessageSubscription(
+                workflowId, "wait-payment", hostActivityId, "order-123")
+            { MessageName = "payment-received" });
+            db.SignalSubscriptions.Add(new SignalSubscription(
+                workflowId, "wait-cancel", hostActivityId)
+            { SignalName = "cancel" });
+            await db.SaveChangesAsync();
+        }
+
+        var snap = await service.GetRegisteredEventsAsync();
+
+        Assert.AreEqual(1, snap.MessageStartEvents.Count);
+        Assert.AreEqual("order-placed", snap.MessageStartEvents[0].MessageName);
+        Assert.AreEqual("order-process", snap.MessageStartEvents[0].ProcessDefinitionKey);
+
+        Assert.AreEqual(1, snap.SignalStartEvents.Count);
+        Assert.AreEqual("system-alert", snap.SignalStartEvents[0].SignalName);
+
+        Assert.AreEqual(1, snap.ConditionalStartEvents.Count);
+        Assert.AreEqual("= amount > 1000", snap.ConditionalStartEvents[0].ConditionExpression);
+
+        Assert.AreEqual(1, snap.ActiveMessageSubscriptions.Count);
+        var msgSub = snap.ActiveMessageSubscriptions[0];
+        Assert.AreEqual("payment-received", msgSub.MessageName);
+        Assert.AreEqual("order-123", msgSub.CorrelationKey);
+        Assert.AreEqual(workflowId, msgSub.WorkflowInstanceId);
+        Assert.AreEqual("wait-payment", msgSub.ActivityId);
+        Assert.AreEqual(hostActivityId, msgSub.ActivityInstanceId);
+
+        Assert.AreEqual(1, snap.ActiveSignalSubscriptions.Count);
+        var sigSub = snap.ActiveSignalSubscriptions[0];
+        Assert.AreEqual("cancel", sigSub.SignalName);
+        Assert.AreEqual(workflowId, sigSub.WorkflowInstanceId);
+        Assert.AreEqual(hostActivityId, sigSub.ActivityInstanceId);
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetRegisteredEventsAsync_ConditionalIsRegisteredFalse_Excluded(PersistenceProvider provider)
+    {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        await using (var db = await commandFactory.CreateDbContextAsync())
+        {
+            db.ConditionalStartEventListeners.Add(new ConditionalStartEventListenerState
+            {
+                Key = "p|active",
+                ProcessDefinitionKey = "p",
+                ActivityId = "active",
+                ConditionExpression = "= true",
+                IsRegistered = true
+            });
+            db.ConditionalStartEventListeners.Add(new ConditionalStartEventListenerState
+            {
+                Key = "p|disabled",
+                ProcessDefinitionKey = "p",
+                ActivityId = "disabled",
+                ConditionExpression = "= false",
+                IsRegistered = false
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var snap = await service.GetRegisteredEventsAsync();
+
+        Assert.AreEqual(1, snap.ConditionalStartEvents.Count);
+        Assert.AreEqual("active", snap.ConditionalStartEvents[0].ActivityId);
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetRegisteredEventsAsync_MessageSubscription_DeleteThenRoundTrip(PersistenceProvider provider)
+    {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        // Insert → snapshot includes it
+        await using (var db = await commandFactory.CreateDbContextAsync())
+        {
+            db.MessageCorrelations.Add(new MessageCorrelationState { Key = "ephemeral" });
+            db.MessageSubscriptions.Add(new MessageSubscription(
+                Guid.NewGuid(), "wait", Guid.NewGuid(), "k1")
+            { MessageName = "ephemeral" });
+            await db.SaveChangesAsync();
+        }
+        var afterInsert = await service.GetRegisteredEventsAsync();
+        Assert.AreEqual(1, afterInsert.ActiveMessageSubscriptions.Count);
+
+        // Delete → snapshot excludes it (proves delete-on-completion semantic surfaces with no row-level filter)
+        await using (var db = await commandFactory.CreateDbContextAsync())
+        {
+            var row = await db.MessageSubscriptions.FirstAsync(s => s.MessageName == "ephemeral");
+            db.MessageSubscriptions.Remove(row);
+            await db.SaveChangesAsync();
+        }
+        var afterDelete = await service.GetRegisteredEventsAsync();
+        Assert.AreEqual(0, afterDelete.ActiveMessageSubscriptions.Count);
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetRegisteredEventsAsync_SignalSubscription_DeleteThenRoundTrip(PersistenceProvider provider)
+    {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        var wfId = Guid.NewGuid();
+        await using (var db = await commandFactory.CreateDbContextAsync())
+        {
+            db.SignalCorrelations.Add(new SignalCorrelationState { Key = "ephemeral-signal" });
+            db.SignalSubscriptions.Add(new SignalSubscription(
+                wfId, "wait", Guid.NewGuid())
+            { SignalName = "ephemeral-signal" });
+            await db.SaveChangesAsync();
+        }
+        var afterInsert = await service.GetRegisteredEventsAsync();
+        Assert.AreEqual(1, afterInsert.ActiveSignalSubscriptions.Count);
+
+        await using (var db = await commandFactory.CreateDbContextAsync())
+        {
+            var row = await db.SignalSubscriptions.FirstAsync(s => s.SignalName == "ephemeral-signal");
+            db.SignalSubscriptions.Remove(row);
+            await db.SaveChangesAsync();
+        }
+        var afterDelete = await service.GetRegisteredEventsAsync();
+        Assert.AreEqual(0, afterDelete.ActiveSignalSubscriptions.Count);
+    }
 }
 

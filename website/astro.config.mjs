@@ -27,6 +27,7 @@ export default defineConfig({
             { label: 'User Tasks', slug: 'guides/user-tasks' },
             { label: 'Writing Custom-Task Plugins', slug: 'guides/writing-custom-tasks' },
             { label: 'BPMN Editor', slug: 'guides/editor' },
+            { label: 'Events Page', slug: 'guides/events-page' },
             { label: 'Add to Existing Project', slug: 'guides/add-to-existing-project' },
           ],
         },
