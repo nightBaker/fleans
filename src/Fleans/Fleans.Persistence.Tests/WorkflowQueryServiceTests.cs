@@ -27,7 +27,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
             MaxPageSize = 100
         });
         ISieveProcessor sieveProcessor = new ApplicationSieveProcessor(sieveOptions);
-        var service = new WorkflowQueryService(fixture.QueryFactory, fixture.CommandFactory, sieveProcessor);
+        var service = new WorkflowQueryService(fixture.QueryFactory, sieveProcessor);
         return (service, fixture.CommandFactory);
     }
 

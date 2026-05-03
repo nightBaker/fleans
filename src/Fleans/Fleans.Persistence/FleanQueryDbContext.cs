@@ -13,6 +13,15 @@ public class FleanQueryDbContext : DbContext
     public DbSet<WorkflowEventEntity> WorkflowEvents => Set<WorkflowEventEntity>();
     public DbSet<WorkflowSnapshotEntity> WorkflowSnapshots => Set<WorkflowSnapshotEntity>();
 
+    // Read-side projections of event-registration / subscription tables.
+    // The /events admin page reads from these via WorkflowQueryService —
+    // CQRS query path must not reach into the command context.
+    public DbSet<MessageStartEventRegistration> MessageStartEventRegistrations => Set<MessageStartEventRegistration>();
+    public DbSet<SignalStartEventRegistration> SignalStartEventRegistrations => Set<SignalStartEventRegistration>();
+    public DbSet<ConditionalStartEventListenerState> ConditionalStartEventListeners => Set<ConditionalStartEventListenerState>();
+    public DbSet<MessageSubscription> MessageSubscriptions => Set<MessageSubscription>();
+    public DbSet<SignalSubscription> SignalSubscriptions => Set<SignalSubscription>();
+
     public FleanQueryDbContext(DbContextOptions<FleanQueryDbContext> options) : base(options)
     {
         ChangeTracker.QueryTrackingBehavior = QueryTrackingBehavior.NoTracking;

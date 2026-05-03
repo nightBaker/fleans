@@ -15,7 +15,6 @@ namespace Fleans.Persistence;
 public class WorkflowQueryService : IWorkflowQueryService
 {
     private readonly IDbContextFactory<FleanQueryDbContext> _dbContextFactory;
-    private readonly IDbContextFactory<FleanCommandDbContext> _commandFactory;
     private readonly ISieveProcessor _sieveProcessor;
 
     private static readonly JsonSerializerSettings JsonSettings = new()
@@ -27,11 +26,9 @@ public class WorkflowQueryService : IWorkflowQueryService
 
     public WorkflowQueryService(
         IDbContextFactory<FleanQueryDbContext> dbContextFactory,
-        IDbContextFactory<FleanCommandDbContext> commandFactory,
         ISieveProcessor sieveProcessor)
     {
         _dbContextFactory = dbContextFactory;
-        _commandFactory = commandFactory;
         _sieveProcessor = sieveProcessor;
     }
 
@@ -438,10 +435,11 @@ public class WorkflowQueryService : IWorkflowQueryService
 
     public async Task<RegisteredEventsSnapshot> GetRegisteredEventsAsync(CancellationToken ct = default)
     {
-        // Subscription/registration tables live in the command context, not
-        // the query context. Both factories are registered in DI; we open a
-        // single short-lived context for all five reads.
-        await using var db = await _commandFactory.CreateDbContextAsync(ct);
+        // CQRS: query-side methods read from the query context. The
+        // event-registration/subscription tables are exposed as read-side
+        // DbSets on FleanQueryDbContext (same physical schema as the command
+        // context — query context just exposes them with NoTracking by default).
+        await using var db = await _dbContextFactory.CreateDbContextAsync(ct);
 
         var messageStartEvents = await db.MessageStartEventRegistrations
             .AsNoTracking()
