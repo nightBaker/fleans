@@ -28,6 +28,16 @@ public record ChildVariableScopeCreated(Guid ScopeId, Guid ParentScopeId) : IDom
 public record VariableScopeCloned(Guid NewScopeId, Guid SourceScopeId) : IDomainEvent;
 public record VariableScopesRemoved(IReadOnlyList<Guid> ScopeIds) : IDomainEvent;
 
+/// <summary>
+/// Tracks the binding between a scope-host activity instance (SubProcess or
+/// Transaction) and its own execution-scope variables id, so that scope
+/// completion can disambiguate the host's own scope from sibling
+/// EventSubProcess handler scopes that share the host's parent variables id.
+/// Emitted from <c>ProcessOpenSubProcess</c>; cleanup is folded into
+/// <c>ApplyActivityCompleted</c>/<c>ApplyActivityCancelled</c>.
+/// </summary>
+public record ScopeHostExecutionScopeOpened(Guid HostInstanceId, Guid ExecutionScopeId) : IDomainEvent;
+
 // Gateway/token management
 public record ConditionSequencesAdded(
     Guid GatewayInstanceId, string[] SequenceFlowIds) : IDomainEvent;

@@ -125,6 +125,17 @@ public class WorkflowInstanceState
     public List<ConditionalEventWatcherState> ConditionalWatchers { get; private set; } = [];
 
     /// <summary>
+    /// Maps each open SubProcess (and Transaction) host's ActivityInstanceId →
+    /// its own execution-scope variables id. Populated by the
+    /// <c>ScopeHostExecutionScopeOpened</c> projection; pruned by
+    /// <c>ApplyActivityCompleted</c>/<c>ApplyActivityCancelled</c> for SubProcess
+    /// hosts. In-memory — excluded from EF Core schema; rebuilt from the event
+    /// log on activation, like <see cref="TransactionOutcomes"/>.
+    /// </summary>
+    [Id(24)]
+    public Dictionary<Guid, Guid> ScopeHostExecutionScopes { get; private set; } = new();
+
+    /// <summary>
     /// Append-only log of completed, compensable activities (those with a CompensationBoundaryEvent attached).
     /// Keyed implicitly by ScopeId on each entry. Used as input to compensation walks.
     /// </summary>
