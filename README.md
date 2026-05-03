@@ -16,6 +16,8 @@ It runs 2 applications :
 - Fleans.Api - workflow engine - orleans silo 
 - Fleans.Web - blazor application - admin panel for workflow
 
+> **Note:** Aspire is the dev orchestrator. For production deployments (Docker Compose, Kubernetes, bare VM), see the [deployment guide](https://nightbaker.github.io/fleans/reference/self-hosting/) on the website.
+
 ## Bpmn elements 
 For now, next elements are implemented 
 

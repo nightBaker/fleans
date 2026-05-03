@@ -56,10 +56,15 @@ var builder = WebApplication.CreateBuilder(args);
 // Orleans silo
 builder.UseOrleans(siloBuilder =>
 {
-    // Use localhost clustering for development
+    // Use localhost clustering for development.
+    // For production deployments — Docker Compose, Kubernetes, or bare VM — see the
+    // Deployment guide at /fleans/reference/deployment/. At minimum, swap
+    // UseLocalhostClustering() + AddMemoryGrainStorage("PubSubStore") for
+    // UseRedisClustering(...) + AddRedisGrainStorage(...) (or your chosen production
+    // cluster) and configure ConnectionStrings:orleans-redis.
     siloBuilder.UseLocalhostClustering();
 
-    // In-memory storage for development (replace with Redis/SQL for production)
+    // In-memory storage for development.
     siloBuilder.AddMemoryGrainStorage("PubSubStore");
     siloBuilder.UseInMemoryReminderService();
 

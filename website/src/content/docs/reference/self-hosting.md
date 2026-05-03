@@ -185,6 +185,68 @@ ingress:
 - **Persistent volumes are kept on uninstall.** The Postgres `Secret` carries `helm.sh/resource-policy: keep`. Delete the PVC and Secret manually for a clean reinstall.
 - **CI guardrail.** Every PR that touches `charts/` is gated by [`helm-lint.yml`](https://github.com/nightBaker/fleans/blob/main/.github/workflows/helm-lint.yml), which runs `helm lint` and `helm template` against both default values and the full feature set.
 
+## Plugin packages on NuGet
+
+Fleans publishes three plugin-author packages to nuget.org on every tagged GitHub Release. They are the supported way to write a custom-task plugin or stand up your own plugin host (`Fleans.CustomWorkerHost`-style deployable) without depending on the Fleans repo as a Git submodule.
+
+| Package | When to use it |
+| --- | --- |
+| [`Fleans.Application.Abstractions`](https://www.nuget.org/packages/Fleans.Application.Abstractions/) | Leaf abstractions package — stream namespace constants and other interfaces shared between the engine and plugin authors. Pulled in transitively by `Fleans.Worker`; rarely referenced directly. |
+| [`Fleans.Worker`](https://www.nuget.org/packages/Fleans.Worker/) | Worker-side primitives: `CustomTaskHandlerBase`, `[WorkerPlacement]`, the placement directors. Reference this from any project that defines a custom-task plugin. |
+| [`Fleans.Plugins.RestCaller`](https://www.nuget.org/packages/Fleans.Plugins.RestCaller/) | Worked-example plugin — the `<serviceTask type="rest-call">` HTTP caller. Useful as a copy-template for new plugins, or to register the REST caller directly in your own worker host. |
+
+All three packages share the engine's `<VersionPrefix>` track — every Fleans release bumps every plugin's NuGet version even when the plugin source is bit-identical (same precedent as `Aspire.Hosting.*` and `Microsoft.Orleans.*`). Pin to the same version across the three when you upgrade.
+
+### Why we publish to NuGet
+
+A plugin is just a class that derives from `Fleans.Worker.CustomTasks.CustomTaskHandlerBase`. Pre-NuGet, plugin authors had to either fork the engine repo or vendor `Fleans.Worker.csproj` as a submodule — both forced a coupling between plugin code and the engine repo's branch layout. Publishing the three plugin packages to nuget.org makes the plugin host a normal .NET project: `dotnet new console`, `dotnet add package Fleans.Worker`, write your handler, ship.
+
+The packages include SourceLink + `.snupkg` symbols, so debugging into the engine's worker primitives Just Works in Visual Studio / Rider with "Enable Source Link" + "Enable source server support" turned on.
+
+### How to consume them
+
+The minimum plugin-host project file:
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Pin all three to the same Fleans engine version. -->
+    <PackageReference Include="Fleans.Worker" Version="0.1.0-beta" />
+    <PackageReference Include="Fleans.Plugins.RestCaller" Version="0.1.0-beta" />
+  </ItemGroup>
+</Project>
+```
+
+A minimal `Program.cs` for a custom worker host:
+
+```csharp
+using Fleans.Plugins.RestCaller;        // ships the rest-call handler
+
+var builder = Host.CreateApplicationBuilder(args);
+
+builder.UseOrleans(silo =>
+{
+    silo.UseRedisClustering(opts => opts.ConfigurationOptions = ...);
+    silo.AddRedisGrainStorageAsDefault(opts => opts.ConfigurationOptions = ...);
+    silo.Configure<SiloOptions>(o => o.SiloName = $"plugin-host-{Environment.MachineName}");
+});
+
+// Register every plugin you ship in this host.
+builder.Services.AddRestCallerPlugin();
+
+await builder.Build().RunAsync();
+```
+
+When the silo joins the Orleans cluster, `<bpmn:serviceTask type="rest-call">` activities are automatically claimed by your plugin handler. See [Custom Tasks](../../concepts/custom-tasks/) for the handler authoring guide and the [`Fleans.CustomWorkerHost`](https://github.com/nightBaker/fleans/tree/main/src/Fleans/Fleans.CustomWorkerHost) project for a complete worked example.
+
+### Release cadence
+
+The packages are published by [`.github/workflows/nuget-publish.yml`](https://github.com/nightBaker/fleans/blob/main/.github/workflows/nuget-publish.yml) on `release.published`. The workflow can also be invoked manually with `workflow_dispatch` and `version=0.0.0-ci-test` to dry-run pack + upload-artifact without touching nuget.org. Re-runs against an already-published version are no-ops via `dotnet nuget push --skip-duplicate`.
+
 ## Limitations
 
 - **SQLite is not supported in production.** SQLite is the default `persistence.provider` for local Aspire-based dev only. The chart accepts the override but you would have to wire a writable per-pod volume yourself, and Orleans clustering across silos against a per-pod SQLite file is not a supported configuration. Use Postgres for any multi-replica deployment.

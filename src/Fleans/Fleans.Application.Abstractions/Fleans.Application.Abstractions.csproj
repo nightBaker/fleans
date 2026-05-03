@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>14</LangVersion>
+    <!-- NuGet packaging: this is the leaf abstractions package consumed by plugin
+         authors. It carries only stream-namespace constants today; plan v3 expects
+         interfaces / event DTOs to migrate here in follow-up issues. -->
+    <IsPackable>true</IsPackable>
+    <PackageId>Fleans.Application.Abstractions</PackageId>
+    <Description>Public abstractions for Fleans worker plugins (stream namespaces, etc.). Leaf package, no Application/Domain dependencies.</Description>
+    <PackageTags>fleans;workflow;orleans;bpmn;abstractions</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Orleans.Sdk" Version="10.0.1" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>

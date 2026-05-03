@@ -145,6 +145,19 @@ if (builder.ExecutionContext.IsPublishMode)
     workerHost = WithPersistence(workerHost, usePostgres, pg, sqliteConnectionString);
     workerHost = WithStreaming(workerHost, useKafka, kafka);
 
+    // Custom worker host — worked example for the "host-your-own custom-task plugins"
+    // pattern. Identical Orleans-cluster wiring to fleans-worker; differs in that this
+    // host references ONLY Fleans.Worker + plugin assemblies (no Application/Domain refs).
+    // Plugin authors copy this project as a starting template; the in-tree CustomWorkerHost
+    // is what `aspire publish` emits as a separate fleans-custom-worker container so
+    // operators can scale plugin workers independently from the engine workers.
+    var customWorkerHost = builder.AddProject<Projects.Fleans_CustomWorkerHost>("fleans-custom-worker")
+        .WithReference(orleans)
+        .WaitFor(redis)
+        .WithEnvironment("Fleans__Role", "Worker")
+        .WithReplicas(1);
+    customWorkerHost = WithStreaming(customWorkerHost, useKafka, kafka);
+
     // Override the container listen port to 8080 so nginx (tests/load/nginx.conf) can
     // reach each replica at fleans-core:8080. WithHttpEndpoint cannot be used here because
     // AddProject<> already registers the default "http" endpoint — re-using that name throws.

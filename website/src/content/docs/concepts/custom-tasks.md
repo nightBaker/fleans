@@ -148,8 +148,17 @@ The activity completes with `user` (the parsed JSON body) and `status` (the inte
 - Per-plugin placement filters (route `rest-call` only to silos with that plugin) are out of scope; today the Worker placement director routes any `[WorkerPlacement]` grain to any worker silo. Operators choose topology by DI-registering only the plugins they want on each worker.
 - Per-task-type stream partitioning (one Orleans stream per `taskType`) is deferred — for now every plugin handler receives every event and discards mismatches with an `if (...) return;` early-out.
 
+## Hosting plugins outside the engine repo
+
+If you want to run your custom-task plugins in their own deployable (separate from the engine
+image) — see the [Hosting Plugins (Custom Worker Host)](/fleans/guides/custom-worker-host/) guide.
+The in-tree `Fleans.CustomWorkerHost` project is a worked example you can fork as a starting
+template; it references **only** `Fleans.Worker` + plugin assemblies (no `Fleans.Application` /
+`Fleans.Domain` dependencies).
+
 ## Reference
 
 - [Issue #357](https://github.com/nightBaker/fleans/issues/357) — design history (v1–v12).
+- [Issue #448](https://github.com/nightBaker/fleans/issues/448) — `Fleans.CustomWorkerHost` worked example + NuGet packaging.
 - The script-task event handler (`Fleans.Application/Events/Handlers/WorkflowExecuteScriptEventHandler.cs`) is the structural model `CustomTaskHandlerBase` follows.
-- Manual test plan: `tests/manual/37-custom-task-framework/test-plan.md`.
+- Manual test plans: `tests/manual/37-custom-task-framework/test-plan.md`, `tests/manual/40-custom-worker-host/test-plan.md`.

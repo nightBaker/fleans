@@ -123,3 +123,5 @@ The dedicated [`PostgreSQL tests`](https://github.com/nightBaker/fleans/blob/mai
 ## See also
 
 - [Observability](/fleans/reference/observability/) — health checks, metrics, logging, tracing, dashboards, alerting
+- [Deployment](/fleans/reference/deployment/) — how to wire the `ConnectionStrings:fleans` / `ConnectionStrings:fleans-query` env vars into Docker Compose, Kubernetes, and bare-VM deployments.
+- [Self-Hosting on Kubernetes](/fleans/reference/self-hosting/) — bring-your-own Postgres on the Helm chart.

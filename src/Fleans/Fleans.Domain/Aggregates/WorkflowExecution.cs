@@ -884,6 +884,11 @@ public class WorkflowExecution
     {
         var newScopeId = Guid.NewGuid();
         Emit(new ChildVariableScopeCreated(newScopeId, openSub.ParentVariablesId));
+        // Bind the host activity instance to its own execution scope so that
+        // CompleteFinishedSubProcessScopes can disambiguate the host scope
+        // from sibling EventSubProcess handler scopes that share the same
+        // ParentVariablesId. See issue #284.
+        Emit(new ScopeHostExecutionScopeOpened(hostActivityInstanceId, newScopeId));
 
         var startEvent = openSub.SubProcess.Activities.OfType<StartEvent>().FirstOrDefault()
             ?? throw new InvalidOperationException(
@@ -1384,22 +1389,49 @@ public class WorkflowExecution
 
                 if (isSubProcess)
                 {
-                    // SubProcess: merge child scope variables into parent before completing.
-                    // Use ParentVariablesId lookup (not entry-based collection) because
-                    // internal fork-join may have already removed branch scopes from state.
-                    var childScopes = _state.VariableStates
+                    // SubProcess: merge the host's OWN execution-scope into the
+                    // parent before completing. A nested EventSubProcess may have
+                    // emitted a sibling handler scope with the same ParentVariablesId
+                    // (issue #284), so we cannot assume Count <= 1 here. Resolve the
+                    // host's own scope by ownership lookup; fall back to topology if
+                    // the lookup is empty (e.g., replay before the fix shipped).
+                    var allChildScopes = _state.VariableStates
                         .Where(vs => vs.ParentVariablesId == entry.VariablesId)
                         .ToList();
-                    if (childScopes.Count > 1)
-                        throw new InvalidOperationException(
-                            $"Expected at most one child scope for subprocess host {entry.ActivityId}, found {childScopes.Count}");
-                    var childScope = childScopes.FirstOrDefault();
-                    if (childScope is not null)
+
+                    WorkflowVariablesState? ownExecutionScope = null;
+                    if (_state.ScopeHostExecutionScopes.TryGetValue(entry.ActivityInstanceId, out var ownId))
                     {
-                        Emit(new VariablesMerged(entry.VariablesId, childScope.Variables));
+                        ownExecutionScope = allChildScopes.FirstOrDefault(s => s.Id == ownId);
+                    }
+                    if (ownExecutionScope is null)
+                    {
+                        ownExecutionScope = DeriveOwnExecutionScopeFallback(entry, allChildScopes);
+                    }
+
+                    if (ownExecutionScope is null && allChildScopes.Count > 0)
+                    {
+                        throw new InvalidOperationException(
+                            $"Cannot identify own execution scope for SubProcess host {entry.ActivityId} " +
+                            $"(instance {entry.ActivityInstanceId}); candidates: " +
+                            $"[{string.Join(", ", allChildScopes.Select(c => c.Id))}]. " +
+                            "ScopeHostExecutionScopes lookup missed and fallback could not disambiguate.");
+                    }
+
+                    if (ownExecutionScope is not null)
+                    {
+                        Emit(new VariablesMerged(entry.VariablesId, ownExecutionScope.Variables));
                         // Defer scope removal: nested subprocess transitions (resolved after
                         // this method returns) may still reference the child scope.
-                        allOrphanedScopeIds.Add(childScope.Id);
+                        allOrphanedScopeIds.Add(ownExecutionScope.Id);
+                    }
+
+                    // Any other child scopes are sibling EventSubProcess handler scopes —
+                    // discard them (mirrors the EventSubProcess branch below).
+                    foreach (var orphan in allChildScopes)
+                    {
+                        if (ownExecutionScope is not null && orphan.Id == ownExecutionScope.Id) continue;
+                        allOrphanedScopeIds.Add(orphan.Id);
                     }
                 }
                 else if (isEventSubProcess)
@@ -1475,6 +1507,32 @@ public class WorkflowExecution
         }
 
         return (allEffects.AsReadOnly(), allCompletedHostIds.AsReadOnly(), allOrphanedScopeIds.AsReadOnly());
+    }
+
+    /// <summary>
+    /// Topology-based deterministic fallback used when
+    /// <see cref="WorkflowInstanceState.ScopeHostExecutionScopes"/> does not
+    /// resolve a SubProcess host's own execution scope (e.g. replay over an
+    /// event log produced before issue #284's fix shipped). Walks the entries
+    /// in the host's child container, skipping any whose definition is an
+    /// <see cref="EventSubProcess"/>, and returns the first candidate scope
+    /// that matches a non-ESP child entry's <c>VariablesId</c>.
+    /// </summary>
+    private WorkflowVariablesState? DeriveOwnExecutionScopeFallback(
+        ActivityInstanceEntry hostEntry,
+        IReadOnlyList<WorkflowVariablesState> candidates)
+    {
+        if (candidates.Count == 0) return null;
+        if (candidates.Count == 1) return candidates[0];
+
+        foreach (var e in _state.GetEntriesInScope(hostEntry.ActivityInstanceId))
+        {
+            var act = _definition.GetActivityAcrossScopes(e.ActivityId);
+            if (act is EventSubProcess) continue;
+            var hit = candidates.FirstOrDefault(c => c.Id == e.VariablesId);
+            if (hit is not null) return hit;
+        }
+        return null;
     }
 
     // --- User Task Handling ---
@@ -2803,6 +2861,9 @@ public class WorkflowExecution
             case ChildVariableScopeCreated e:
                 _state.AddChildVariableState(e.ScopeId, e.ParentScopeId);
                 break;
+            case ScopeHostExecutionScopeOpened e:
+                _state.ScopeHostExecutionScopes[e.HostInstanceId] = e.ExecutionScopeId;
+                break;
             case VariableScopeCloned e:
                 _state.AddCloneOfVariableState(e.NewScopeId, e.SourceScopeId);
                 break;
@@ -2935,6 +2996,13 @@ public class WorkflowExecution
     private void ApplyActivityCompleted(ActivityCompleted e)
     {
         _state.CompleteEntry(e.ActivityInstanceId, e.Variables, e.VariablesId);
+        // Bound ScopeHostExecutionScopes growth across long-running workflows
+        // by removing the host's entry on terminal transition. Idempotent on
+        // replay: Remove is a no-op when the key is absent. The ActivityType
+        // check is replay-safe (no dependency on _definition, which is null
+        // during replay-mode reconstruction).
+        if (IsSubProcessActivityType(_state.GetEntry(e.ActivityInstanceId).ActivityType))
+            _state.ScopeHostExecutionScopes.Remove(e.ActivityInstanceId);
     }
 
     private void ApplyActivityFailed(ActivityFailed e)
@@ -2945,7 +3013,20 @@ public class WorkflowExecution
     private void ApplyActivityCancelled(ActivityCancelled e)
     {
         _state.CancelEntry(e.ActivityInstanceId, e.Reason);
+        if (IsSubProcessActivityType(_state.GetEntry(e.ActivityInstanceId).ActivityType))
+            _state.ScopeHostExecutionScopes.Remove(e.ActivityInstanceId);
     }
+
+    /// <summary>
+    /// Returns true when the activity-instance entry's <c>ActivityType</c>
+    /// (set from <c>GetType().Name</c> at spawn time) matches a SubProcess host
+    /// — i.e. <see cref="SubProcess"/> or its sealed subclass <see cref="Transaction"/>.
+    /// Used to keep the <see cref="WorkflowInstanceState.ScopeHostExecutionScopes"/>
+    /// dictionary bounded as host activity instances reach a terminal state.
+    /// Replay-safe: does not touch <c>_definition</c>.
+    /// </summary>
+    private static bool IsSubProcessActivityType(string? activityType)
+        => activityType == nameof(SubProcess) || activityType == nameof(Transaction);
 
     private void ApplyGatewayForkTokenAdded(GatewayForkTokenAdded e)
     {

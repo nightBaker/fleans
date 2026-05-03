@@ -125,3 +125,5 @@ broker topic before the handler runs.
 ## See also
 
 - [Observability](/fleans/reference/observability/) — health checks, metrics, logging, tracing, dashboards, alerting
+- [Deployment](/fleans/reference/deployment/) — how to wire `Fleans:Streaming:Provider` / `Fleans:Streaming:Kafka:Brokers` into Docker Compose, Kubernetes, and bare-VM deployments.
+- [Self-Hosting on Kubernetes](/fleans/reference/self-hosting/) — Kafka opt-in on the Helm chart.

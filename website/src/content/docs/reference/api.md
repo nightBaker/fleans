@@ -16,6 +16,11 @@ All endpoints are served from `https://localhost:7140/Workflow/*` by default.
 | `/complete-activity` | POST | `{"WorkflowInstanceId":"guid", "ActivityId":"activity-id", "Variables":{}}` |
 | `/evaluate-conditions` | POST | `{"WorkflowId":"process-id", "Variables":{"key":"value"}}` — Evaluates all conditional start events (or only those for the given `WorkflowId` if provided) against the supplied variables. Returns `{"StartedInstanceIds":["guid",...], "Errors":["..."]}`. `Errors` is present only when one or more listeners failed during evaluation. |
 | `/instances/{instanceId}/state` | GET | *(none)* — Returns the current state snapshot for a specific workflow instance |
+| `/tasks` | GET | *(query string)* — Paginated list of pending user tasks. See [User Task endpoints](#user-task-endpoints). |
+| `/tasks/{activityInstanceId}` | GET | *(none)* — Single user-task lookup. |
+| `/tasks/{activityInstanceId}/claim` | POST | `{"UserId":"alice"}` |
+| `/tasks/{activityInstanceId}/unclaim` | POST | *(empty body)* |
+| `/tasks/{activityInstanceId}/complete` | POST | `{"UserId":"alice", "Variables":{"approved":true}}` |
 
 ## Endpoint details
 
@@ -188,6 +193,230 @@ Content-Type: application/json
   "Error": "WorkflowInstanceId is required"
 }
 ```
+
+### User Task endpoints
+
+<!-- DRIFT-GUARD: route + body shapes verified against src/Fleans/Fleans.Api/Controllers/WorkflowController.cs lines 174-260 (commit e7f37a6). Re-verify when controller changes. -->
+
+User-task endpoints expose the human-in-the-loop lifecycle of `<bpmn:userTask>` activities. The conceptual model (states, who-can-claim, expected outputs) lives in the [User Tasks guide](/fleans/guides/user-tasks/) — this section is the authoritative wire reference.
+
+**User Task operations summary**
+
+| Verb | Path | Surface | Auth | Success |
+| --- | --- | --- | --- | --- |
+| GET  | `/Workflow/tasks`                            | Query    | optional | `200 OK` |
+| GET  | `/Workflow/tasks/{activityInstanceId}`       | Query    | optional | `200 OK` |
+| POST | `/Workflow/tasks/{activityInstanceId}/claim`    | Mutation | `UserId` required in body | `200 OK` |
+| POST | `/Workflow/tasks/{activityInstanceId}/unclaim`  | Mutation | NONE — see below | `200 OK` |
+| POST | `/Workflow/tasks/{activityInstanceId}/complete` | Mutation | `UserId` required in body | `200 OK` |
+
+`Auth` above refers to API-level JWT bearer auth, which is opt-in for the entire API — see [Authentication](/fleans/reference/authentication/#quick-start). The `UserId` field in claim/complete bodies is **caller identity**, not authentication: the engine treats whatever value it receives as the acting user.
+
+#### Error response shapes
+
+The User Task endpoints emit two distinct error wire shapes depending on which layer rejects the request:
+
+| Status | Surface | Wire shape |
+| --- | --- | --- |
+| `400` (model-binding) | ASP.NET auto via `[ApiController]` + `AddProblemDetails()` | `application/problem+json` (RFC 7807) |
+| `400` (controller-emitted, e.g. `UserId is required`) | Custom `ErrorResponse` | `{"error":"..."}` |
+| `404` (task not found) | Custom `ErrorResponse` | `{"error":"..."}` |
+| `409` (wrong claimer / missing required outputs) | Custom `ErrorResponse` | `{"error":"..."}` (the two cases discriminate only by message text — see the `/complete` section below) |
+| `5xx` (unhandled exception) | `GlobalExceptionHandler` ProblemDetails | `application/problem+json` (RFC 7807) |
+
+Property casing in the controller-emitted `{"error":"..."}` shape is camelCase — the Fleans API serializes via the System.Text.Json default policy.
+
+#### `GET /Workflow/tasks`
+
+Lists pending user tasks across all running workflow instances, with optional filters and standard pagination/sort/filter query parameters.
+
+**Request**
+
+```
+GET /Workflow/tasks?assignee=alice&candidateGroup=approvers&page=1&pageSize=20&sorts=&filters=
+```
+
+| Query param | Type | Description |
+|---|---|---|
+| `assignee` | `string?` | Restrict to tasks assigned to this user (matches `Assignee` field). |
+| `candidateGroup` | `string?` | Restrict to tasks where this group is a candidate. |
+| `page` | `int` (default `1`) | 1-based page index. |
+| `pageSize` | `int` (default `20`) | Page size. |
+| `sorts` | `string?` | Sieve-style sort expression (e.g. `createdAt`, `-createdAt`). |
+| `filters` | `string?` | Sieve-style filter expression. |
+
+**Success response (200)** — paginated envelope with a `data: UserTaskResponse[]` payload:
+
+```json
+{
+  "data": [
+    {
+      "workflowInstanceId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "activityInstanceId": "8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8",
+      "activityId": "review-task",
+      "assignee": "alice",
+      "candidateGroups": ["approvers"],
+      "candidateUsers": [],
+      "claimedBy": null,
+      "taskState": "Created",
+      "createdAt": "2026-05-03T10:30:00+00:00",
+      "expectedOutputVariables": ["approved"]
+    }
+  ],
+  "page": 1,
+  "pageSize": 20,
+  "totalCount": 1
+}
+```
+
+**Curl example**
+
+```bash
+curl -k "https://localhost:7140/Workflow/tasks?assignee=alice&page=1&pageSize=20"
+```
+
+#### `GET /Workflow/tasks/{activityInstanceId}`
+
+Returns a single user task by its activity-instance id, or `404` if the id is unknown / no longer pending.
+
+**Request**
+
+```
+GET /Workflow/tasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8
+```
+
+**Success response (200)** — single `UserTaskResponse` (same shape as the array element above).
+
+**Error response (404)**
+
+```json
+{ "error": "User task '8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8' not found" }
+```
+
+**Curl example**
+
+```bash
+curl -k https://localhost:7140/Workflow/tasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8
+```
+
+#### `POST /Workflow/tasks/{activityInstanceId}/claim`
+
+Claims a pending task for `UserId`. Subsequent claims by a different user overwrite the claim — Fleans does not enforce first-claim-wins (see the [User Tasks guide](/fleans/guides/user-tasks/) for the lifecycle table).
+
+**Request**
+
+```json
+POST /Workflow/tasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/claim
+Content-Type: application/json
+
+{ "UserId": "alice" }
+```
+
+| Body field | Type | Required | Description |
+|---|---|---|---|
+| `UserId` | `string` | yes | Caller identity attached to the claim. |
+
+**Success response (200)** — empty body.
+
+**Error responses**
+
+- **400** — `{"error": "UserId is required"}` — body missing or `UserId` empty/whitespace.
+- **404** — `{"error": "User task '<id>' not found"}` — no pending task with that activity-instance id.
+- **409** — claim rejected by the domain layer (e.g. caller is not in `Assignee` / `CandidateUsers` / `CandidateGroups`); the body is the underlying `InvalidOperationException` message.
+
+**Curl example**
+
+```bash
+curl -k -X POST https://localhost:7140/Workflow/tasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/claim \
+  -H "Content-Type: application/json" \
+  -d '{"UserId":"alice"}'
+```
+
+#### `POST /Workflow/tasks/{activityInstanceId}/unclaim`
+
+Releases an existing claim so another user can claim the task. The body is empty.
+
+:::caution[No authorization on unclaim]
+Unlike `/claim`, `/unclaim` does **not** verify that the caller is the current claimer — any caller with API access can unclaim a task that was claimed by another user. Treat the API as administrative and gate it via API-level auth — see [Authentication](/fleans/reference/authentication/#quick-start).
+:::
+
+**Request**
+
+```
+POST /Workflow/tasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/unclaim
+Content-Type: application/json
+```
+
+**Success response (200)** — empty body. Note: succeeds whether the task was previously claimed or not.
+
+**Error response (404)**
+
+```json
+{ "error": "User task '8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8' not found" }
+```
+
+**Curl example**
+
+```bash
+curl -k -X POST https://localhost:7140/Workflow/tasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/unclaim \
+  -H "Content-Type: application/json"
+```
+
+#### `POST /Workflow/tasks/{activityInstanceId}/complete`
+
+Completes the task on behalf of `UserId`, merging `Variables` into the enclosing scope and advancing the token. The caller **must** be the current claimer, and **all** variables declared in `<fleans:expectedOutputs>` must be present.
+
+**Request**
+
+```json
+POST /Workflow/tasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/complete
+Content-Type: application/json
+
+{
+  "UserId": "alice",
+  "Variables": { "approved": true, "reviewerComment": "looks good" }
+}
+```
+
+| Body field | Type | Required | Description |
+|---|---|---|---|
+| `UserId` | `string` | yes | Caller identity — must match `claimedBy` on the task. |
+| `Variables` | `object?` | optional unless the task declares `expectedOutputVariables` | Output variables merged into the workflow's enclosing scope. Every entry in `expectedOutputVariables` must have a value here. |
+
+**Success response (200)** — empty body. The task is removed from the registry; subsequent `GET /Workflow/tasks/{id}` returns `404`.
+
+**Error responses**
+
+- **400** — `{"error": "UserId is required"}`
+- **404** — `{"error": "User task '<id>' not found"}` — already completed, never existed, or wrong id.
+- **409 — wrong claimer**:
+
+  ```json
+  { "error": "Task is claimed by bob, not alice" }
+  ```
+
+  Distinguishable by the `Task is claimed by …, not …` prefix.
+
+- **409 — missing required outputs**:
+
+  ```json
+  { "error": "Missing required output variables: approved, reviewerComment" }
+  ```
+
+  Distinguishable by the `Missing required output variables:` prefix. The list is the comma-joined set of declared `<fleans:expectedOutputs>` entries that are absent from the supplied `Variables`.
+
+**Curl example**
+
+```bash
+curl -k -X POST https://localhost:7140/Workflow/tasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/complete \
+  -H "Content-Type: application/json" \
+  -d '{"UserId":"alice","Variables":{"approved":true}}'
+```
+
+#### See also
+
+- [User Tasks guide](/fleans/guides/user-tasks/) — conceptual model, state diagram, BPMN authoring (`<fleans:expectedOutputs>`).
+- [Authentication](/fleans/reference/authentication/) — opt-in JWT bearer auth that gates every `/Workflow/*` endpoint, including the User Task surface.
 
 ### Instance State endpoint
 

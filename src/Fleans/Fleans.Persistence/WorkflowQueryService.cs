@@ -432,4 +432,54 @@ public class WorkflowQueryService : IWorkflowQueryService
             t.Assignee, t.CandidateGroups, t.CandidateUsers,
             t.ClaimedBy, t.TaskState.ToString(), t.CreatedAt,
             t.ExpectedOutputVariables);
+
+    public async Task<RegisteredEventsSnapshot> GetRegisteredEventsAsync(CancellationToken ct = default)
+    {
+        // CQRS: query-side methods read from the query context. The
+        // event-registration/subscription tables are exposed as read-side
+        // DbSets on FleanQueryDbContext (same physical schema as the command
+        // context — query context just exposes them with NoTracking by default).
+        await using var db = await _dbContextFactory.CreateDbContextAsync(ct);
+
+        var messageStartEvents = await db.MessageStartEventRegistrations
+            .AsNoTracking()
+            .Select(r => new MessageStartEventRow(r.MessageName, r.ProcessDefinitionKey))
+            .ToListAsync(ct);
+
+        var signalStartEvents = await db.SignalStartEventRegistrations
+            .AsNoTracking()
+            .Select(r => new SignalStartEventRow(r.SignalName, r.ProcessDefinitionKey))
+            .ToListAsync(ct);
+
+        // Filter to IsRegistered=true: a listener row may persist with the
+        // flag flipped off after un-deploy but before the row is deleted.
+        var conditionalStartEvents = await db.ConditionalStartEventListeners
+            .AsNoTracking()
+            .Where(l => l.IsRegistered)
+            .Select(l => new ConditionalStartEventRow(
+                l.ProcessDefinitionKey, l.ActivityId, l.ConditionExpression))
+            .ToListAsync(ct);
+
+        // Subscription tables are delete-on-completion: every row present is
+        // an active subscription. No row-level filter is applied.
+        var activeMessageSubscriptions = await db.MessageSubscriptions
+            .AsNoTracking()
+            .Select(s => new MessageSubscriptionRow(
+                s.MessageName, s.CorrelationKey, s.WorkflowInstanceId,
+                s.ActivityId, s.HostActivityInstanceId))
+            .ToListAsync(ct);
+
+        var activeSignalSubscriptions = await db.SignalSubscriptions
+            .AsNoTracking()
+            .Select(s => new SignalSubscriptionRow(
+                s.SignalName, s.WorkflowInstanceId, s.ActivityId, s.HostActivityInstanceId))
+            .ToListAsync(ct);
+
+        return new RegisteredEventsSnapshot(
+            messageStartEvents,
+            signalStartEvents,
+            conditionalStartEvents,
+            activeMessageSubscriptions,
+            activeSignalSubscriptions);
+    }
 }
