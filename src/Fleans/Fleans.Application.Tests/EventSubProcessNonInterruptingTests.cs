@@ -84,6 +84,15 @@ public class EventSubProcessNonInterruptingTests : WorkflowTestBase
         Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "evtSub1"),
             "EventSubProcess host should be completed");
 
+        // Coverage gap closed by #285 plan v2: the inner EndEvent must be
+        // recorded for non-interrupting ESPs too — they share the scope-
+        // completion code path with the interrupting variants. (Ordering
+        // invariant from the plan was dropped — see EventSubProcessTimerTests.)
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "evtSub1_end"
+                                                              && a.ErrorState == null
+                                                              && !a.IsCancelled),
+            "Non-interrupting EventSubProcess inner EndEvent 'evtSub1_end' should be completed");
+
         // Normal 'end' WAS reached (non-interrupting doesn't block the normal flow)
         Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "end"),
             "Normal 'end' event should be reached in the non-interrupting variant");
@@ -153,6 +162,14 @@ public class EventSubProcessNonInterruptingTests : WorkflowTestBase
             "handlerTask should have completed");
         Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "evtSub1"),
             "EventSubProcess host should be completed");
+
+        // Coverage gap closed by #285 plan v2: inner EndEvent presence for
+        // non-interrupting signal ESPs.
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "evtSub1_end"
+                                                              && a.ErrorState == null
+                                                              && !a.IsCancelled),
+            "Non-interrupting signal EventSubProcess inner EndEvent 'evtSub1_end' should be completed");
+
         Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "end"),
             "Normal 'end' event should be reached");
     }
@@ -234,6 +251,15 @@ public class EventSubProcessNonInterruptingTests : WorkflowTestBase
             "handlerTask must be completed (not cancelled)");
         Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "parentTask" && !a.IsCancelled),
             "parentTask must be completed (not cancelled)");
+
+        // Coverage gap closed by #285 plan v2: scope-isolated ESP host and
+        // inner EndEvent are both recorded.
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "evtSubScope"),
+            "Non-interrupting EventSubProcess host 'evtSubScope' should be completed");
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "evtSubScope_end"
+                                                              && a.ErrorState == null
+                                                              && !a.IsCancelled),
+            "Non-interrupting EventSubProcess inner EndEvent 'evtSubScope_end' should be completed");
 
         // Scope isolation: 'handlerVar' must NOT appear in any remaining variable
         // scope — the EventSubProcess's isolated handler scope is orphaned on
