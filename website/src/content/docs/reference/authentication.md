@@ -225,3 +225,8 @@ The manual regression test plans for authentication live at:
 ## Related
 
 - Role-based authorization for both API and Management UI — tracked in [#341](https://github.com/nightBaker/fleans/issues/341).
+
+## See also
+
+- [Deployment](/fleans/reference/deployment/) — how to wire `Authentication:Authority` / `Authentication:Audience` (and the OIDC client id/secret for the admin UI) into Docker Compose, Kubernetes, and bare-VM deployments, including reverse-proxy + `KnownProxies` notes.
+- [Self-Hosting on Kubernetes](/fleans/reference/self-hosting/) — OIDC opt-in on the Helm chart.
