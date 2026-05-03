@@ -568,8 +568,9 @@ public partial class BpmnConverter : IBpmnConverter
         }
 
         // Parse transaction sub-processes (recursive). A <transaction> is a distinct
-        // BPMN 2.0 element — not a flag on <subProcess>. Multi-instance and nested
-        // transactions are rejected at parse time.
+        // BPMN 2.0 element — not a flag on <subProcess>. Multi-instance is rejected
+        // at parse time; nested transactions parse but their cancel-path semantics
+        // are completed in later phases of #307 (only the happy path is covered today).
         foreach (var transactionEl in scopeElement.Elements(Bpmn + "transaction"))
         {
             var id = GetId(transactionEl);
@@ -578,11 +579,6 @@ public partial class BpmnConverter : IBpmnConverter
                 throw new InvalidOperationException(
                     $"Transaction Sub-Process '{id}' does not support multi-instance loop characteristics. " +
                     "Remove the multiInstanceLoopCharacteristics element, or use a regular Sub-Process.");
-
-            if (insideTransaction)
-                throw new InvalidOperationException(
-                    $"Nested Transaction Sub-Process '{id}' is not supported. " +
-                    "A <transaction> cannot contain another <transaction>.");
 
             var childActivities = new List<Activity>();
             var childDefaultFlowIds = new HashSet<string>();
