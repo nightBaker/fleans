@@ -350,6 +350,7 @@ jobs:
     needs: [setup, images, compose, helm-drift]
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment: release
     # Skip the actual gh release create on workflow_dispatch dry-run.
     if: ${{ needs.setup.outputs.is_dispatch_dry_run != 'true' && github.event_name == 'push' }}
     permissions:
