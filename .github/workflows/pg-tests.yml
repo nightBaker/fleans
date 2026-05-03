@@ -1,0 +1,100 @@
+# Runs Fleans.Persistence.Tests against a real PostgreSQL container via
+# Testcontainers. Default `dotnet test` (in dotnet.yml) skips the PG rows
+# because FLEANS_PG_TESTS is not set there; this job exercises them.
+#
+# `[TestCategory("Postgres")]` is on the parametrised test classes, so the
+# filter below picks up every parametrised class (both SQLite and PG rows
+# of those classes — running them twice is cheap and proves the pattern).
+name: PostgreSQL tests
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+defaults:
+  run:
+    working-directory: src/Fleans
+
+jobs:
+  pg-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore
+
+      - name: Test (PostgreSQL category)
+        env:
+          FLEANS_PG_TESTS: "1"
+        run: >-
+          dotnet test Fleans.Persistence.Tests/Fleans.Persistence.Tests.csproj
+          --no-build
+          --verbosity normal
+          --filter "TestCategory=Postgres"
+          --logger "trx;LogFileName=pg.trx"
+
+      # Silent-green guard for #445. `dotnet test --filter "TestCategory=Postgres"`
+      # exits 0 when the filter matches zero tests — a refactor that drops the
+      # [TestCategory("Postgres")] attribute from every parametrised class would
+      # silently neutralise this workflow with no CI failure. The captured TRX
+      # surfaces this as <ResultSummary><Counters total="0" .../> and a
+      # <RunInfos><RunInfo @outcome="Warning"> with the literal "No test matches"
+      # text — i.e. the orange-not-red status the guard flips into a hard fail.
+      #
+      # Implementation note: ubuntu-latest does NOT pre-install xmllint
+      # (libxml2-utils). python3 IS pre-installed and ships
+      # xml.etree.ElementTree in stdlib, which is enough to read the two
+      # XPath signals we need with namespace handling.
+      - name: Assert Postgres tests actually ran (silent-green guard — #445)
+        if: always()
+        run: |
+          set -e
+
+          # CI uses actions/checkout@v4 (clean tree). For local `act` runs with
+          # accumulating TestResults dirs, swap to: `find ... | sort -r | head -1`.
+          trx_file=$(find Fleans.Persistence.Tests/TestResults -name pg.trx | head -1)
+          if [ -z "$trx_file" ]; then
+            echo "::error::no pg.trx produced — '--logger \"trx;LogFileName=pg.trx\"' may be misconfigured, or the test runner crashed before emitting results"
+            exit 1
+          fi
+
+          # Two layered signals on the same TRX. The TRX uses the namespace
+          # http://microsoft.com/schemas/VisualStudio/TeamTest/2010 — the
+          # python lookup binds it explicitly. Empirical: zero-match emits
+          # total="0" exactly, with zero <UnitTestResult> children (verified
+          # locally on `dotnet test --filter "TestCategory=NonExistentCategory"` —
+          # see #445 v2 design's "Source-of-truth verifications" section).
+          read total unit < <(python3 - "$trx_file" <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          ns = {"t": "http://microsoft.com/schemas/VisualStudio/TeamTest/2010"}
+          root = ET.parse(sys.argv[1]).getroot()
+          counters = root.find(".//t:Counters", ns)
+          total = counters.get("total", "0") if counters is not None else "0"
+          unit = len(root.findall(".//t:UnitTestResult", ns))
+          print(total, unit)
+          PY
+          )
+
+          echo "Postgres tests considered: total=${total} unit_results=${unit}"
+
+          # OR semantics intentional. ${var:-0} keeps shell math from erroring
+          # if a future MSTest TRX revision splits/renames <Counters> — `total`
+          # would resolve empty and the OR short-circuits to a guard fire while
+          # the count(UnitTestResult) fallback still produces a number. Do NOT
+          # tighten this to AND.
+          if [ "${total:-0}" -eq 0 ] || [ "${unit:-0}" -eq 0 ]; then
+            echo "::error::Zero Postgres tests considered — TestCategory(Postgres) filter matched nothing. Did a refactor drop the [TestCategory(\"Postgres\")] attribute from the parametrised classes? (Counters/@total=${total}, UnitTestResult count=${unit})"
+            exit 1
+          fi

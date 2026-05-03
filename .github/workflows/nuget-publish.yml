@@ -1,0 +1,130 @@
+name: nuget-publish
+
+# Publishes the three NuGet plugin packages — Fleans.Application.Abstractions,
+# Fleans.Worker, Fleans.Plugins.RestCaller — to nuget.org. Triggered when a
+# maintainer publishes a GitHub Release; can also be invoked manually
+# (workflow_dispatch) with `version=0.0.0-ci-test` for a dry-run that exercises
+# pack + upload-artifact without ever calling `dotnet nuget push`.
+#
+# See `tests/manual/41-nuget-publish/test-plan.md` and CLAUDE.md "NuGet package
+# publishing" for the full runbook.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Override version (e.g. 0.1.0-beta). Use 0.0.0-ci-test for a dry-run that skips push."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: nuget-publish
+    if: ${{ github.repository == 'nightBaker/fleans' }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: src/Fleans
+    env:
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # SourceLink + git describe need full history
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          elif [ "${{ github.event_name }}" = "release" ]; then
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"
+          else
+            TAG="${GITHUB_REF_NAME#v}"
+            VERSION="${TAG}"
+          fi
+          # SemVer 2.0.0 with optional prerelease + build metadata.
+          # Rejects '0.1', 'vfoo'; accepts '0.1.0', '0.1.0-beta.1', '0.1.0+sha.abc'.
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid version: '$VERSION'"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $VERSION"
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Pack publishable plugin packages
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/nuget
+          for proj in \
+            Fleans.Application.Abstractions/Fleans.Application.Abstractions.csproj \
+            Fleans.Worker/Fleans.Worker.csproj \
+            Fleans.Plugins.RestCaller/Fleans.Plugins.RestCaller.csproj
+          do
+            dotnet pack "$proj" \
+              --configuration Release \
+              --no-restore \
+              /p:Version=${{ steps.ver.outputs.version }} \
+              -o artifacts/nuget
+          done
+          ls -la artifacts/nuget
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages-${{ steps.ver.outputs.version }}
+          path: src/Fleans/artifacts/nuget/*
+          retention-days: 30
+
+      # Dry-run gate: workflow_dispatch with version=0.0.0-ci-test exits here
+      # (artifacts uploaded above). Real release.published runs always push.
+      - name: Verify NUGET_API_KEY is set
+        if: github.event_name != 'workflow_dispatch' || inputs.version != '0.0.0-ci-test'
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          if [ -z "${NUGET_API_KEY:-}" ]; then
+            echo "::error::NUGET_API_KEY secret is not set on the nuget-publish environment"
+            exit 1
+          fi
+
+      - name: Push packages + symbols to nuget.org
+        if: github.event_name != 'workflow_dispatch' || inputs.version != '0.0.0-ci-test'
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          set -euo pipefail
+          # Per-file loop: passing each .nupkg by name lets `dotnet nuget push`
+          # auto-pair the sibling .snupkg from the same directory and forward it
+          # to the symbol server. A `*.nupkg` glob does NOT do that pairing on
+          # every dotnet SDK, hence the explicit loop. (Documented:
+          # https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-nuget-push)
+          for pkg in artifacts/nuget/*.nupkg; do
+            echo "Pushing $pkg"
+            dotnet nuget push "$pkg" \
+              --api-key "$NUGET_API_KEY" \
+              --source https://api.nuget.org/v3/index.json \
+              --skip-duplicate
+          done

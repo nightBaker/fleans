@@ -63,4 +63,23 @@ import SiloBackground from '../../components/SiloBackground.astro';
     Admin UI and state queries read a pre-built EF projection.
     No event replay to render a list or poll for completion.
   </Card>
+  <Card title="Run in your infrastructure" icon="setting">
+    Fleans ships as a container image you can run anywhere — laptop, VM, or
+    Kubernetes. Your data never leaves your network, and there is no SaaS
+    dependency to ramp.
+    [Learn how →](/fleans/reference/self-hosting/)
+  </Card>
+  <Card title="Bring your own database" icon="list-format">
+    SQLite for laptops, PostgreSQL for production — selected at startup via a
+    single config key, no code change. The provider model is open if you need
+    to add another.
+    [Learn how →](/fleans/reference/persistence/)
+  </Card>
+  <Card title="Plug in your stream provider" icon="puzzle">
+    Domain events flow through Orleans Streams. Default is in-memory; flip
+    `Fleans:Streaming:Provider=kafka` to use the bundled Kafka adapter for
+    cross-silo durability — or ship your own provider against the same
+    extension point.
+    [Learn how →](/fleans/reference/streaming/)
+  </Card>
 </CardGrid>

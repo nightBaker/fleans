@@ -10,6 +10,10 @@ description: Run Fleans locally in under 5 minutes.
 
 ## Clone and run
 
+:::tip[Aspire is for development, not production]
+`dotnet run --project Fleans.Aspire` boots Fleans on your laptop with everything wired up — perfect for trying things out and developing workflows. To deploy Fleans for staging or production, see the [Self-Hosting on Kubernetes](/fleans/reference/self-hosting/) guide for the recommended Helm-chart path.
+:::
+
 ```bash
 git clone https://github.com/nightBaker/fleans.git
 cd fleans/src/Fleans

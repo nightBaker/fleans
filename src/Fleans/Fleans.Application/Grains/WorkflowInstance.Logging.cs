@@ -301,6 +301,10 @@ public partial class WorkflowInstance
         Message = "Escalation parent result missing: expected _pendingEscalationParentResult to be set for EscalationCode={EscalationCode}, WorkflowInstanceId={WorkflowInstanceId} — defaulting to Unhandled")]
     private partial void LogEscalationParentResultMissing(string? escalationCode, Guid workflowInstanceId);
 
+    [LoggerMessage(EventId = 3033, Level = LogLevel.Information,
+        Message = "Published ExecuteCustomTaskEvent for activity {ActivityId} (taskType={TaskType}, activityInstanceId={ActivityInstanceId})")]
+    private partial void LogCustomTaskEventPublished(string activityId, string taskType, Guid activityInstanceId);
+
     // Compensation event lifecycle (EventId 1110-1119)
     [LoggerMessage(EventId = 1110, Level = LogLevel.Debug,
         Message = "Compensable activity snapshot recorded: ActivityDefinitionId={ActivityDefinitionId}, Sequence={Sequence}, ScopeId={ScopeId}")]

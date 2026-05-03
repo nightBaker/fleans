@@ -1,0 +1,157 @@
+@page "/events"
+@rendermode InteractiveServer
+@using Fleans.Application
+@using Fleans.Application.QueryModels
+@using Microsoft.FluentUI.AspNetCore.Components
+@inject IWorkflowQueryService QueryService
+
+<PageTitle>Events</PageTitle>
+
+<FluentStack Orientation="Orientation.Vertical" Gap="20px">
+    <PageHeader Title="Registered Events">
+        <Actions>
+            <FluentButton Appearance="Appearance.Neutral"
+                          IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowSync())"
+                          @onclick="RefreshAsync"
+                          Loading="@isLoading">
+                Refresh
+            </FluentButton>
+        </Actions>
+    </PageHeader>
+
+    @if (!string.IsNullOrWhiteSpace(loadErrorMessage))
+    {
+        <FluentMessageBar Intent="MessageIntent.Error" Dismissible="true" OnDismissed="@(() => loadErrorMessage = null)">
+            <FluentStack Orientation="Orientation.Horizontal" Gap="10px" AlignItems="AlignItems.Center">
+                <span>@loadErrorMessage</span>
+                <FluentButton Appearance="Appearance.Neutral" @onclick="RefreshAsync" Disabled="@isLoading">
+                    Retry
+                </FluentButton>
+            </FluentStack>
+        </FluentMessageBar>
+    }
+
+    @* Message Start Events *@
+    <FluentLabel Typo="Typography.H4">Message Start Events</FluentLabel>
+    @if (snapshot is null || snapshot.MessageStartEvents.Count == 0)
+    {
+        <FluentLabel Typo="Typography.Body" Color="Color.Neutral">No message start events registered.</FluentLabel>
+    }
+    else
+    {
+        <FluentDataGrid Items="@snapshot.MessageStartEvents.AsQueryable()" GridTemplateColumns="1fr 1fr">
+            <PropertyColumn Title="Message Name" Property="@(r => r.MessageName)" />
+            <PropertyColumn Title="Process Definition Key" Property="@(r => r.ProcessDefinitionKey)" />
+        </FluentDataGrid>
+    }
+
+    @* Signal Start Events *@
+    <FluentLabel Typo="Typography.H4">Signal Start Events</FluentLabel>
+    @if (snapshot is null || snapshot.SignalStartEvents.Count == 0)
+    {
+        <FluentLabel Typo="Typography.Body" Color="Color.Neutral">No signal start events registered.</FluentLabel>
+    }
+    else
+    {
+        <FluentDataGrid Items="@snapshot.SignalStartEvents.AsQueryable()" GridTemplateColumns="1fr 1fr">
+            <PropertyColumn Title="Signal Name" Property="@(r => r.SignalName)" />
+            <PropertyColumn Title="Process Definition Key" Property="@(r => r.ProcessDefinitionKey)" />
+        </FluentDataGrid>
+    }
+
+    @* Conditional Start Events *@
+    <FluentLabel Typo="Typography.H4">Conditional Start Events</FluentLabel>
+    @if (snapshot is null || snapshot.ConditionalStartEvents.Count == 0)
+    {
+        <FluentLabel Typo="Typography.Body" Color="Color.Neutral">No conditional start events registered.</FluentLabel>
+    }
+    else
+    {
+        <FluentDataGrid Items="@snapshot.ConditionalStartEvents.AsQueryable()" GridTemplateColumns="1fr 1fr 2fr">
+            <PropertyColumn Title="Process Definition Key" Property="@(r => r.ProcessDefinitionKey)" />
+            <PropertyColumn Title="Activity Id" Property="@(r => r.ActivityId)" />
+            <PropertyColumn Title="Condition Expression" Property="@(r => r.ConditionExpression)" />
+        </FluentDataGrid>
+    }
+
+    @* Active Message Subscriptions *@
+    <FluentLabel Typo="Typography.H4">Active Message Subscriptions</FluentLabel>
+    @if (snapshot is null || snapshot.ActiveMessageSubscriptions.Count == 0)
+    {
+        <FluentLabel Typo="Typography.Body" Color="Color.Neutral">No active message subscriptions.</FluentLabel>
+    }
+    else
+    {
+        <FluentDataGrid Items="@snapshot.ActiveMessageSubscriptions.AsQueryable()" GridTemplateColumns="1.2fr 1fr 1fr 1fr 1fr">
+            <PropertyColumn Title="Message Name" Property="@(r => r.MessageName)" />
+            <PropertyColumn Title="Correlation Key" Property="@(r => r.CorrelationKey)" />
+            <TemplateColumn Title="Workflow Instance">
+                @{ var wfId = context.WorkflowInstanceId.ToString(); }
+                <span id="@($"msg-wf-{context.WorkflowInstanceId}")">@Truncate(wfId)</span>
+                <FluentTooltip Anchor="@($"msg-wf-{context.WorkflowInstanceId}")">@wfId</FluentTooltip>
+            </TemplateColumn>
+            <PropertyColumn Title="Activity Id" Property="@(r => r.ActivityId)" />
+            <TemplateColumn Title="Activity Instance">
+                @{ var aiId = context.ActivityInstanceId.ToString(); }
+                <span id="@($"msg-ai-{context.ActivityInstanceId}")">@Truncate(aiId)</span>
+                <FluentTooltip Anchor="@($"msg-ai-{context.ActivityInstanceId}")">@aiId</FluentTooltip>
+            </TemplateColumn>
+        </FluentDataGrid>
+    }
+
+    @* Active Signal Subscriptions *@
+    <FluentLabel Typo="Typography.H4">Active Signal Subscriptions</FluentLabel>
+    @if (snapshot is null || snapshot.ActiveSignalSubscriptions.Count == 0)
+    {
+        <FluentLabel Typo="Typography.Body" Color="Color.Neutral">No active signal subscriptions.</FluentLabel>
+    }
+    else
+    {
+        <FluentDataGrid Items="@snapshot.ActiveSignalSubscriptions.AsQueryable()" GridTemplateColumns="1.2fr 1fr 1fr 1fr">
+            <PropertyColumn Title="Signal Name" Property="@(r => r.SignalName)" />
+            <TemplateColumn Title="Workflow Instance">
+                @{ var wfId = context.WorkflowInstanceId.ToString(); }
+                <span id="@($"sig-wf-{context.WorkflowInstanceId}")">@Truncate(wfId)</span>
+                <FluentTooltip Anchor="@($"sig-wf-{context.WorkflowInstanceId}")">@wfId</FluentTooltip>
+            </TemplateColumn>
+            <PropertyColumn Title="Activity Id" Property="@(r => r.ActivityId)" />
+            <TemplateColumn Title="Activity Instance">
+                @{ var aiId = context.ActivityInstanceId.ToString(); }
+                <span id="@($"sig-ai-{context.ActivityInstanceId}")">@Truncate(aiId)</span>
+                <FluentTooltip Anchor="@($"sig-ai-{context.ActivityInstanceId}")">@aiId</FluentTooltip>
+            </TemplateColumn>
+        </FluentDataGrid>
+    }
+</FluentStack>
+
+@code {
+    private RegisteredEventsSnapshot? snapshot;
+    private bool isLoading;
+    private string? loadErrorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        isLoading = true;
+        loadErrorMessage = null;
+        try
+        {
+            snapshot = await QueryService.GetRegisteredEventsAsync();
+        }
+        catch (Exception ex)
+        {
+            loadErrorMessage = $"Failed to load registered events: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private static string Truncate(string id) =>
+        id.Length <= 8 ? id : id[..8] + "…";
+}

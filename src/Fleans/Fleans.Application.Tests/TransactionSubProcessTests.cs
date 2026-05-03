@@ -263,4 +263,101 @@ public class TransactionSubProcessTests : WorkflowTestBase
         Assert.AreEqual(1, finalSnap.VariableStates.Count,
             "Only root scope should remain after Transaction scope cleanup");
     }
+
+    [TestMethod]
+    public async Task NestedTransaction_HappyPath_BothComplete_AndVariablesMergeOutwards()
+    {
+        // Phase A acceptance test for #307: a <transaction> nested inside another <transaction>
+        // runs the happy path end-to-end and records `Completed` for both transactions. The
+        // inner transaction's variable surfaces at the workflow root, which transitively proves
+        // the existing scope/variable-merge plumbing carries values inner → outer → root for
+        // nested transactions — the precondition the design plan calls out before the
+        // compensation-walk refactor lands.
+        //
+        // start → outer_tx(outer_start → inner_tx(inner_start → inner_task → inner_end) → outer_end) → end
+        var start = new StartEvent("start");
+
+        var innerStart = new StartEvent("inner_start");
+        var innerTask = new TaskActivity("inner_task");
+        var innerEnd = new EndEvent("inner_end");
+        var innerTx = new Transaction("inner_tx")
+        {
+            Activities = [innerStart, innerTask, innerEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("isf1", innerStart, innerTask),
+                new SequenceFlow("isf2", innerTask, innerEnd)
+            ]
+        };
+
+        var outerStart = new StartEvent("outer_start");
+        var outerEnd = new EndEvent("outer_end");
+        var outerTx = new Transaction("outer_tx")
+        {
+            Activities = [outerStart, innerTx, outerEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("osf1", outerStart, innerTx),
+                new SequenceFlow("osf2", innerTx, outerEnd)
+            ]
+        };
+
+        var end = new EndEvent("end");
+
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "nested-tx-happy-path",
+            Activities = [start, outerTx, end],
+            SequenceFlows =
+            [
+                new SequenceFlow("f1", start, outerTx),
+                new SequenceFlow("f2", outerTx, end)
+            ]
+        };
+
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await workflowInstance.SetWorkflow(workflow);
+        await workflowInstance.StartWorkflow();
+
+        var instanceId = workflowInstance.GetPrimaryKey();
+
+        // inner_task should be the first task to become active (inside the inner transaction's scope).
+        var snapInner = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsNotNull(snapInner);
+        Assert.IsTrue(snapInner.ActiveActivities.Any(a => a.ActivityId == "inner_task"),
+            "inner_task should be active inside the inner transaction");
+
+        // Mid-flight: at least 3 scopes should coexist — root, outer_tx, inner_tx — proving
+        // the engine creates an independent scope for each transaction depth.
+        Assert.IsTrue(snapInner.VariableStates.Count >= 3,
+            $"Expected at least 3 nested scopes (root + outer_tx + inner_tx), got {snapInner.VariableStates.Count}");
+
+        // Set a variable on inner_task — it must surface at the workflow root after both
+        // transactions commit (inner → outer → root merge).
+        dynamic innerVars = new ExpandoObject();
+        innerVars.innerValue = "from-inner";
+        await workflowInstance.CompleteActivity("inner_task", innerVars);
+
+        var finalSnap = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsNotNull(finalSnap);
+        Assert.IsTrue(finalSnap.IsCompleted,
+            "Workflow should complete after the inner task — both transactions auto-commit on the happy path");
+        Assert.AreEqual(1, finalSnap.VariableStates.Count,
+            "Only the root scope should remain after both transaction scopes clean up");
+
+        var rootScope = finalSnap.VariableStates.Single();
+        Assert.IsTrue(rootScope.Variables.TryGetValue("innerValue", out var innerAtRoot),
+            "Inner transaction variable should reach the workflow root scope (inner → outer → root merge)");
+        Assert.AreEqual("from-inner", innerAtRoot);
+
+        // Both transactions must have recorded Completed outcomes — proving each nested instance
+        // is independently tracked by the existing TransactionOutcomes plumbing.
+        var outcomes = await workflowInstance.GetTransactionOutcomes();
+        Assert.AreEqual(2, outcomes.Count,
+            "Two transaction outcomes should be recorded — one for inner, one for outer");
+        Assert.IsTrue(outcomes.Values.All(o => o.Outcome == TransactionOutcome.Completed),
+            "Both nested transactions must record Completed outcomes on the happy path");
+        Assert.IsTrue(outcomes.Values.All(o => o.ErrorCode is null && o.ErrorMessage is null),
+            "Completed outcomes must carry no error code or message");
+    }
 }

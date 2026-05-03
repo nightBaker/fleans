@@ -25,6 +25,36 @@ Run the full stack (Api + Web + Redis) via Aspire:
 dotnet run --project Fleans.Aspire
 ```
 
+## Container Builds
+
+Container images are produced by the .NET SDK's built-in `SdkContainerSupport` — no Dockerfiles. Each deployable service has a `<ContainerRepository>fleans-<svc></ContainerRepository>` property in its csproj, and `src/Fleans/Directory.Build.props` is the single source of truth for `<VersionPrefix>` and `<ContainerImageTag>`.
+
+**Local build (one image):**
+
+```bash
+cd src/Fleans
+dotnet publish Fleans.Api/Fleans.Api.csproj /t:PublishContainer /p:Version=0.1.0-test
+# → produces local Docker image  fleans-api:0.1.0-test
+```
+
+The same command works against `Fleans.Web/Fleans.Web.csproj`, `Fleans.WorkerHost/Fleans.WorkerHost.csproj`, `Fleans.CustomWorkerHost/Fleans.CustomWorkerHost.csproj`, and `Fleans.Mcp/Fleans.Mcp.csproj` — they each emit `fleans-{web,worker,custom-worker,mcp}:0.1.0-test`.
+
+**Plugin packages share the engine's `<VersionPrefix>` track** — every Fleans release bumps every plugin's NuGet version even when the plugin source is bit-identical (same precedent as `Aspire.Hosting.*` / `Microsoft.Orleans.*`). This applies to `Fleans.Application.Abstractions`, `Fleans.Worker`, and `Fleans.Plugins.RestCaller`.
+
+`/p:Version=...` overrides `<VersionPrefix>` from `Directory.Build.props`, so CI invocations that pass `/p:Version=$(git tag without v)` stamp the image and the assembly version with the same string.
+
+**Aspire publish (full topology):**
+
+```bash
+cd src/Fleans
+aspire publish --project Fleans.Aspire -t docker-compose -o out/compose
+aspire publish --project Fleans.Aspire -t kubernetes -o out/k8s   # Aspire.Hosting.Kubernetes
+```
+
+`Fleans.Aspire/Program.cs` registers `AddKubernetesEnvironment("k8s")` and conditionally registers `Fleans.WorkerHost` in publish mode (it stays out of the dev `dotnet run` topology — Combined-role `Fleans.Api` already hosts worker grains there). The publish output therefore covers all four services (api/web/worker/mcp) plus their dependencies (Redis, optional PostgreSQL, optional Kafka).
+
+`Aspire.Hosting.Kubernetes` ships only as preview NuGet builds; the version is pinned to `13.2.3-preview.1.26217.6` to track the rest of the Aspire 13.2.3 stack — bump it together with the other `Aspire.Hosting.*` packages on Aspire upgrades.
+
 ## Git Workflow
 
 - **Never commit directly to `main`.** Always create a feature branch for any new feature, bug fix, or change.
@@ -75,6 +105,22 @@ The splash page (`website/src/content/docs/index.mdx`) loads an interactive Thre
    - **Fail tests:** error state set with correct code/message (500 for generic Exception, 400 for BadRequestActivityException), failed activity still transitions to next activity, no variables merged on failure
 4. Update the BPMN elements table in `README.md`
 
+## How to Add a Custom Task Plugin
+
+A *custom task* is a `<bpmn:serviceTask type="…">` whose execution is supplied by a user-written plugin grain on a Worker silo. Use this — **not** "Add a New BPMN Activity" — when the new behavior is plugin-shaped (REST call, email, custom external system).
+
+1. Add a new project (e.g. `Fleans.Plugins.MyThing`) referencing `Fleans.Worker`. Inside it, write a class deriving from `Fleans.Worker.CustomTasks.CustomTaskHandlerBase`. Override `TaskType` and `ExecuteAsync(...)`. The base class carries `[ImplicitStreamSubscription("events")]` and `[WorkerPlacement]` — subclasses inherit both.
+2. Throw `Fleans.Domain.Errors.CustomTaskFailedActivityException(int code, string message)` from `ExecuteAsync` to fail with a typed error; any other thrown exception fails with code 500.
+3. The plugin's `ExecuteAsync` returns an `IDictionary<string, object?>`. Output mappings (`<zeebe:output source="=__response.body" target="…"/>`) walk that dictionary.
+4. Expose a DI extension method on the plugin assembly:
+   ```csharp
+   public static IServiceCollection AddMyThingPlugin(this IServiceCollection services) =>
+       services.AddCustomTaskPlugin<MyThingHandler>(taskType: "my-thing", displayName: "My Thing");
+   ```
+   Plugin authors who want their plugin to live in the catalog UI must call this from the Worker silo's host registration.
+5. Tests: write unit tests for the plugin's logic (call `ExecuteAsync` directly with stub inputs); end-to-end TestCluster integration is exercised by manual test plan #37 once a real plugin ships.
+6. Documentation: update `website/src/content/docs/concepts/custom-tasks.md` with the plugin's parameter schema and any limitations.
+
 ## How to Add a New API Endpoint
 
 Add it to `Fleans.Api/Controllers/WorkflowController.cs`. DTOs go in `Fleans.ServiceDefaults/`.
@@ -100,6 +146,8 @@ Add it to `Fleans.Api/Controllers/WorkflowController.cs`. DTOs go in `Fleans.Ser
 - **Fluent UI Blazor (Fleans.Web)**: Only use components that exist in the library (https://www.fluentui-blazor.net/). Use `IconStart`/`IconEnd` parameters on `FluentButton` — never place `<FluentIcon>` as child content. Use the `Loading` parameter for buttons with loading states.
 - **Cache-busting for local Razor host assets**: every `<script>` or `<link>` in `App.razor` (or any other Razor host file) that references an asset under `wwwroot/` MUST go through `@Assets["..."]` so the URL carries a content hash. Externally-versioned CDN URLs (e.g. `https://unpkg.com/bpmn-js@17.11.1/...`) are exempt because the version segment in the URL already serves the same purpose. Without this, a published JS API addition can be invisible to browsers that cached the old file (root cause of #373).
 - **Core / Worker role split (`Fleans:Role`)**: `Fleans.Api` reads `Fleans:Role` at startup (values: `Core`, `Worker`, `Combined` — case-insensitive, default `Combined`; invalid values throw). The role is stamped into `SiloOptions.SiloName` as `{role}-{machine}-{guid}` so other silos see it via Orleans membership. `Fleans.Worker` hosts the `[StatelessWorker]` script/condition grain **implementations** (`ScriptExecutorGrain`, `ConditionExpressionEvaluatorGrain`); their interfaces remain in `Fleans.Application` so callers don't need a Worker reference. **When adding a new worker-type grain** (e.g. the upcoming REST-call service task), put the implementation in `Fleans.Worker` and keep the interface next to the caller in `Fleans.Application`. Placement strategies that would route worker grains only to silos with the `worker-` / `combined-` prefix are a follow-up — today the split is structural (separate assembly, separate role config) without runtime placement filtering, so a `Core`-tagged silo will still host a worker grain if one is needed there.
+- **`Fleans.WorkerHost`** is the dedicated deployable for the Worker role — a thin Web SDK Exe that boots an Orleans silo with `Fleans:Role=Worker` by default, references the `Fleans.Worker` class library for grain implementations + placement directors, and wires the same persistence/streaming/Redis stack as `Fleans.Api`. It is registered with Aspire **only in publish mode** (`builder.ExecutionContext.IsPublishMode`), so `dotnet run --project Fleans.Aspire` keeps the original 3-process dev topology and `aspire publish -t kubernetes` / `-t docker-compose` emits a fourth `fleans-worker` deployment alongside `fleans-core` (Api), `fleans-management` (Web), and `fleans-mcp` (Mcp). Container image name: `fleans-worker` via `<ContainerRepository>` in `Fleans.WorkerHost.csproj`.
+- **`Fleans.CustomWorkerHost`** is a worked-example deployable for the "host your own custom-task plugins" pattern — same shape as `Fleans.WorkerHost` but with a deliberately narrower reference set: **only** `Fleans.Worker` + the chosen plugin assemblies (`Fleans.Plugins.RestCaller` today). It does NOT reference `Fleans.Application`, `Fleans.Domain`, `Fleans.Infrastructure`, or any persistence project, demonstrating the structural isolation guarantee that plugin authors get. Registered with Aspire **only in publish mode** as `fleans-custom-worker` (`<ContainerRepository>fleans-custom-worker</ContainerRepository>`). Plugin authors should fork this project as a starting template, swap the plugin-registration lines, and ship the resulting image alongside the engine. **`Fleans.Application.Abstractions`** is the leaf abstractions package consumed by plugin authors — today it carries only stream-namespace constants (`WorkflowEventStreams`); follow-up issues track migrating the remaining interfaces / event DTOs into it so `Fleans.Worker` can drop its transitive `Fleans.Application` reference and become a true leaf NuGet.
 - **BPMN Editor tabs (`/editor`)**: multi-tab state lives in `Editor.razor` (private `tabs: List<TabSession>` + `activeTabId`). Only one `bpmn-js` modeler exists at a time — switching tabs calls `bpmnEditor.getXml` on the outgoing tab and `bpmnEditor.loadXml(incoming.BpmnXml)` on the incoming. Dirty tracking subscribes to bpmn-js `commandStack.changed` via `bpmnEditor.registerDirtyCallback` and flips the active tab's flag (cleared on deploy). Persistence is localStorage-only under key `fleans.editor.tabs.v1` (versioned so future schema changes don't crash old sessions). The cap is 10 tabs; closing the last tab opens a fresh blank one so the editor is never empty.
 
 ## Design Constraints
@@ -121,6 +169,7 @@ Add it to `Fleans.Api/Controllers/WorkflowController.cs`. DTOs go in `Fleans.Ser
 - **Message events require the Zeebe namespace** — add `xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"` to `<definitions>` and include `<zeebe:subscription correlationKey="= varName" />` inside `<extensionElements>` which is a child of `<message>` (not a direct child of `<message>`). Example: `<message id="..." name="..."><extensionElements><zeebe:subscription correlationKey="= varName" /></extensionElements></message>`.
 - **Every fixture must include a `<bpmndi:BPMNDiagram>` section** — the BPMN editor requires diagram info to render. Without it, the import silently produces a blank canvas.
 - **Use short timer durations** for test fixtures (PT5S–PT10S) so tests complete quickly.
+- **`<script>` content is a DynamicExpresso expression, not a C# statement.** `_context.x = value` is valid; `return …;` and `var x = …;` are not. Silent script failures auto-complete the enclosing Event Sub-Process scope and manifest as the inner `EndEvent` missing from `CompletedActivities` (root cause of #285 — see `EventSubProcess*Tests` for regression guards across all four ESP trigger variants).
 
 ### API Endpoints for Manual Tests
 - Deploy process: `POST https://localhost:7140/Workflow/deploy` — body: `{"BpmnXml":"<raw BPMN XML string>"}` — returns `{"ProcessDefinitionKey":"...","Version":1}` on success, 400 with `{"Error":"..."}` on parse failure
@@ -179,6 +228,12 @@ The full regression suite is the union of every plan under `tests/manual/`. Each
 34. **Management UI Authentication** — `tests/manual/30-web-auth/test-plan.md`. Opt-in OIDC for the Blazor Server admin UI; verifies (a) anonymous browse is allowed when no `Authentication` config is present, (b) `/dashboard` and any cascading-`AuthorizeView` page return 302 → IdP when auth is enabled, (c) login round-trip lands on the requested page (including `?query` parameters), (d) `/Account/Logout` is antiforgery-protected (bare POST is rejected, form-bound POST signs out and clears both schemes).
 35. **Kafka Streaming Provider** — `tests/manual/35-kafka-streaming/test-plan.md` (`kafka-streams.bpmn`). Opt-in Kafka stream provider via `FLEANS_STREAMING_PROVIDER=Kafka`; verifies (a) Aspire dashboard provisions a `fleans-kafka` resource and forwards `Fleans__Streaming__Provider`/`Fleans__Streaming__Kafka__Brokers` env vars to the silo, (b) chained-script-task workflow completes after the silo is killed and restarted between tasks (at-least-once delivery), (c) the client-side `AdminClient.CreateTopicsAsync` ensure step auto-creates topics with the configured prefix.
 36. **Cancel Event (Transaction Cancellation)** — `tests/manual/30-cancel-event/test-plan.md` (`cancel-transaction.bpmn`). Cancel End Event inside a Transaction triggers: active scope activities cancelled, Cancel Boundary Event fires, recovery flow runs to completion. Verifies transaction outcome is Cancelled.
+37. **Custom Task Framework** — `tests/manual/37-custom-task-framework/test-plan.md` (`stub-custom-task.bpmn`). `<serviceTask type="...">` parses to `CustomTaskActivity`; with no plugin registered the activity stays Active indefinitely (manual `complete-activity` API call resumes it); registered plugin via `services.AddCustomTaskPlugin<T>()` claims the event, runs, and completes the activity; `GET /custom-tasks` reflects registered/dropped plugins as silos join/leave.
+38. **Custom Task Editor (UI)** — `tests/manual/38-custom-task-editor/test-plan.md`. Management UI BPMN editor: `/admin/custom-tasks` admin page lists registered plugins with 5s auto-refresh; selecting a `<bpmn:serviceTask>` shows a plugin dropdown and typed widgets per `CustomTaskParameterSchema`; defaults seed as `<zeebe:input>` rows on plugin selection; required-field validation; replace-plugin confirmation dialog; unregistered task type shows warning bar; empty-state UI when no plugins registered.
+39. **REST Caller plugin** — `tests/manual/39-rest-caller/test-plan.md` (`rest-call.bpmn`). `<serviceTask type="rest-call">` makes an outbound HTTP call: GET happy path returns body to the workflow; POST sends body and headers; 404 outside `successCodes` Fails the activity with code "404" and routes via boundary error event; timeout fails with "504"; `idempotencyKeyHeader="X-Request-Id"` causes the request to carry the activity instance id as the dedup key.
+40. **Custom Worker Host** — `tests/manual/40-custom-worker-host/test-plan.md` (`rest-call.bpmn`). `Fleans.CustomWorkerHost` is the worked-example plugin-host deployable. Two modes: (i) standalone — `dotnet run --project Fleans.CustomWorkerHost` against dev-Aspire's Redis claims a `<serviceTask type="rest-call">` activity end-to-end; (ii) docker-compose — `aspire publish -t docker-compose` emits a `fleans-custom-worker` service and the same workflow runs through the published stack. Verifies the host references ONLY `Fleans.Worker` + plugin assemblies (no `Fleans.Application` / `Fleans.Domain` references).
+41. **NuGet publish on release** — `tests/manual/41-nuget-publish/test-plan.md` (no BPMN — release-infrastructure plan). `.github/workflows/nuget-publish.yml` triggers on `release.published` and `workflow_dispatch`; packs `Fleans.Application.Abstractions`, `Fleans.Worker`, and `Fleans.Plugins.RestCaller`; pushes per-file so `.snupkg` symbols auto-pair to the nuget.org symbol server. Verifies (a) local pack smoke produces 3 `.nupkg` + 3 `.snupkg`, (b) `workflow_dispatch` with `version=0.0.0-ci-test` is a dry-run that uploads artifacts but skips push, (c) a real `gh release create v<VERSION>` run publishes to nuget.org with README + MIT license + repo URL, (d) re-runs are idempotent under `--skip-duplicate`, (e) external consumers can `dotnet add package` and build, (f) `.snupkg` symbols are reachable, (g) two consecutive `dotnet pack` runs produce bit-identical packages.
+42. **Events Page (Admin UI)** — `tests/manual/31-events-page/test-plan.md`. New `/events` admin page renders five read-only sections (Message / Signal / Conditional Start Events + Active Message / Signal Subscriptions) projected directly from `IWorkflowQueryService.GetRegisteredEventsAsync`. **Refresh** re-queries without a full page reload; conditional listeners with `IsRegistered=false` are filtered out; subscription rows surface delete-on-completion (a row vanishes after Refresh once the engine deletes it). No per-page auth markup — route-level `AuthorizeRouteView` covers it (cross-link `tests/manual/30-web-auth/test-plan.md`). 8-char + ellipsis truncation with `<FluentTooltip>` on workflow / activity instance IDs.
 
 > When adding a new manual test folder under `tests/manual/`, append a numbered entry here so the regression skill picks it up.
 
@@ -195,6 +250,8 @@ Website-specific manual tests live under `tests/manual/website/`. These run in a
 
 1. **3D Silo Landing Background** — `tests/manual/website/3d-landing/test-plan.md`. Splash page renders birds-eye Three.js silo scene as background; clicking outside the hero enters interactive orbit/zoom/pan mode with a close (×) button; mobile and reduced-motion users see a static WebP poster instead.
 2. **Hero BPMN SVG** — `tests/manual/website/hero-bpmn-svg/test-plan.md`. The pre-rendered `public/hero-workflow-{light,dark}.svg` files parse as strict XML (no `</g>` imbalance, no leftover `djs-hit` / `djs-outline` / `djs-dragger` classes, XML prolog + SVG 1.1 DOCTYPE preserved); landing page hero renders in both themes; regeneration is reproducible. Regression home for #366.
+3. **Landing Deployment-Posture Cards** — `tests/manual/website/landing-deployment-cards/test-plan.md`. The "Why Fleans?" `<CardGrid>` on `/fleans/` renders 9 cards (six runtime/engine + three deployment-posture); the `setting`, `list-format`, `puzzle` icons resolve to real glyphs in light AND dark themes (not silent Starlight fallbacks); each new card's "Learn how →" link returns 200 to `reference/self-hosting/`, `reference/persistence/`, `reference/streaming/`; mobile (≤ 480 px) single-column flow is readable.
+4. **Error Handling guide** — `tests/manual/website/error-handling-guide/test-plan.md`. The `guides/error-handling/` page renders under the *Getting Started* sidebar between *Hosting Plugins (Custom Worker Host)* and *BPMN Editor* in both themes; both `:::caution` admonitions (child-process error propagation KNOWN BUG, compensation variable-scope invariant) display correctly; all four cited fixture folders (#11, #19, #24-escalation, #24-compensation) are referenced by name; drift-guard line pins (`WorkflowExecution.cs:723-784`, `BpmnConverter.cs:132,209-269,665-710,759-815`, `BadRequestActivityException.cs:5-13`, `CustomTaskFailedActivityException.cs:5-22`, `DynamicExpressoScriptExpressionExecutor.cs:46`) still resolve to the named symbols at the current branch SHA.
 
 > When adding a new website test folder, append a numbered entry here.
 
@@ -209,6 +266,13 @@ Two providers: **SQLite** (default, local dev) and **PostgreSQL** (production/lo
 - **Migrations live per-provider:** `Fleans.Persistence.Sqlite/Migrations/Command/` and `Fleans.Persistence.PostgreSql/Migrations/Command/`. Only command-context migrations are maintained (command and query share the same database).
 - **Provider packages:** `Fleans.Persistence.Sqlite` and `Fleans.Persistence.PostgreSql` — each registers a `RelationalModelCustomizer` subclass via `ReplaceService<IModelCustomizer>` for provider-specific model tweaks (e.g., SQLite stores `DateTimeOffset` as string; PostgreSQL uses native `timestamptz`).
 - **Adding a new provider:** Create a new `Fleans.Persistence.<Provider>` project, implement a `<Provider>ModelCustomizer : RelationalModelCustomizer`, add an `Add<Provider>Persistence()` extension, generate initial migrations, and wire into host `Program.cs` files.
+- **Custom-task catalog persistence:** `CustomTaskCatalogGrain` uses `IPersistentState<CustomTaskCatalogState>` keyed by `GrainStorageNames.CustomTaskCatalog`, backed by `EfCoreCustomTaskCatalogGrainStorage` and the `CustomTaskCatalogEntries` table (composite PK on `(TaskType, SiloName)`; `ParameterSchemaJson` stored as a JSON text column via `System.Text.Json`). Test clusters must register memory grain storage for this name in `WorkflowTestBase` alongside the other registries.
+- **Test parity (Sqlite ↔ PostgreSQL):** every EF/grain-storage class in `Fleans.Persistence.Tests` is parametrised via `[DataTestMethod] [DataRow(PersistenceProvider.Sqlite)] [DataRow(PersistenceProvider.Postgres)]` against the `Infrastructure/PersistenceTestBase` fixture. Default `dotnet test` runs only the SQLite rows (no Docker). To exercise the PG rows locally:
+  ```bash
+  cd src/Fleans
+  FLEANS_PG_TESTS=1 dotnet test --filter "TestCategory=Postgres"
+  ```
+  Requires Docker (Testcontainers boots `postgres:16-alpine`). Without `FLEANS_PG_TESTS=1` the PG rows surface as `Inconclusive` (non-failing) — never `Failed`. CI runs the dedicated `PostgreSQL tests` job (`.github/workflows/pg-tests.yml`) on every PR. **Bump `PostgresImage` in `Infrastructure/PostgresContainerFixture.cs` whenever the production deploy target moves** — today it tracks Aspire's `Aspire.Hosting.PostgreSQL` default (PG 16).
 
 ## Things to Know
 

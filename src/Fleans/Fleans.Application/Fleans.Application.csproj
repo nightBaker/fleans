@@ -16,6 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Fleans.Application.Abstractions\Fleans.Application.Abstractions.csproj" />
     <ProjectReference Include="..\Fleans.Domain\Fleans.Domain.csproj" />
   </ItemGroup>
 

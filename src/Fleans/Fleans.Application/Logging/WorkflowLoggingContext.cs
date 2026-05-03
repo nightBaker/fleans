@@ -3,7 +3,7 @@ using Orleans.Runtime;
 
 namespace Fleans.Application.Logging;
 
-internal static class WorkflowLoggingContext
+public static class WorkflowLoggingContext
 {
     public static IDisposable? BeginWorkflowScope(
         ILogger logger, string workflowId, string? processDefinitionId,

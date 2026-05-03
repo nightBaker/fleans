@@ -94,7 +94,7 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
 
                     b.Property<string>("ErrorCode")
                         .HasMaxLength(256)
-                        .HasColumnType("text");
+                        .HasColumnType("character varying(256)");
 
                     b.Property<string>("ErrorMessage")
                         .HasMaxLength(2000)
@@ -243,6 +243,28 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                     b.HasKey("Key");
 
                     b.ToTable("ConditionalStartEventListeners", (string)null);
+                });
+
+            modelBuilder.Entity("Fleans.Domain.States.CustomTaskCatalogRowState", b =>
+                {
+                    b.Property<string>("TaskType")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("SiloName")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("DisplayName")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("ParameterSchemaJson")
+                        .HasColumnType("text");
+
+                    b.HasKey("TaskType", "SiloName");
+
+                    b.ToTable("CustomTaskCatalogEntries", (string)null);
                 });
 
             modelBuilder.Entity("Fleans.Domain.States.GatewayForkState", b =>

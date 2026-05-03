@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+                  id="defs_rest_call" targetNamespace="http://fleans.io/bpmn">
+  <bpmn:process id="rest-call-demo" isExecutable="true">
+    <bpmn:startEvent id="start" />
+    <bpmn:serviceTask id="callApi" type="rest-call">
+      <bpmn:extensionElements>
+        <zeebe:ioMapping>
+          <zeebe:input  source="=apiUrl"                target="url" />
+          <zeebe:input  source="GET"                    target="method" />
+          <zeebe:input  source="=apiHeaders"            target="headers" />
+          <zeebe:input  source="10"                     target="timeoutSec" />
+          <zeebe:output source="=__response.body"       target="apiBody" />
+          <zeebe:output source="=__response.statusCode" target="apiStatus" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="end" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start"   targetRef="callApi" />
+    <bpmn:sequenceFlow id="f2" sourceRef="callApi" targetRef="end" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="diag">
+    <bpmndi:BPMNPlane id="plane" bpmnElement="rest-call-demo">
+      <bpmndi:BPMNShape id="s_start"   bpmnElement="start"><dc:Bounds x="100" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_callApi" bpmnElement="callApi"><dc:Bounds x="200" y="80"  width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_end"     bpmnElement="end"><dc:Bounds x="350" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="e_f1" bpmnElement="f1"><di:waypoint x="136" y="118" /><di:waypoint x="200" y="118" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="e_f2" bpmnElement="f2"><di:waypoint x="300" y="118" /><di:waypoint x="350" y="118" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

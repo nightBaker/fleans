@@ -57,6 +57,11 @@ internal static class FleanModelConfiguration
             // TransactionOutcomes is rebuilt from TransactionOutcomeSet events on grain activation.
             entity.Ignore(e => e.TransactionOutcomes);
 
+            // ScopeHostExecutionScopes is rebuilt from ScopeHostExecutionScopeOpened events
+            // (and pruned by ApplyActivityCompleted/ApplyActivityCancelled) on grain activation.
+            // See issue #284.
+            entity.Ignore(e => e.ScopeHostExecutionScopes);
+
             entity.HasMany(e => e.TimerCycleTracking)
                 .WithOne()
                 .HasForeignKey(e => e.WorkflowInstanceId)
@@ -332,6 +337,17 @@ internal static class FleanModelConfiguration
             entity.Property(e => e.ProcessDefinitionKey).HasMaxLength(256);
             entity.Property(e => e.ActivityId).HasMaxLength(256);
             entity.Property(e => e.ConditionExpression).HasMaxLength(4000);
+        });
+
+        modelBuilder.Entity<CustomTaskCatalogRowState>(entity =>
+        {
+            entity.ToTable("CustomTaskCatalogEntries");
+            entity.HasKey(e => new { e.TaskType, e.SiloName });
+            entity.Property(e => e.TaskType).HasMaxLength(128);
+            entity.Property(e => e.SiloName).HasMaxLength(256);
+            entity.Property(e => e.DisplayName).HasMaxLength(256);
+            // ParameterSchemaJson is the JSON-serialized CustomTaskParameterSchema; provider
+            // default text type (TEXT on SQLite, text on PostgreSQL) handles the size.
         });
 
         modelBuilder.Entity<WorkflowEventEntity>(entity =>

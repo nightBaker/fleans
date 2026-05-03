@@ -174,8 +174,9 @@ For the Azure run specifically, you'll need:
   (auto-register on first use).
 - Either local `az` CLI (Python 3.13 may have a `pyexpat` issue depending on platform; if so,
   use `mcr.microsoft.com/azure-cli` from Docker), or just the Azure portal.
-- The compose-stack image (`Fleans.Api/Dockerfile`) pushed to ACR; **add a Dockerfile for
-  `Fleans.Web` only if you also want the management UI in Azure** — it isn't strictly needed
-  for the tests themselves.
+- The `fleans-api` container image (built locally with
+  `dotnet publish Fleans.Api/Fleans.Api.csproj /t:PublishContainer …`) pushed to ACR.
+  **Add `fleans-web` only if you also want the management UI in Azure** — it isn't strictly
+  needed for the tests themselves.
 
 Estimated cost: ~$3 / day idle for the resource group, ~$5 in test runs.

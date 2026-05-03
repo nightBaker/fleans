@@ -15,9 +15,11 @@ window.bpmnEditor = {
         this._modeler = new BpmnModeler({
             container: container,
             keyboard: { bindTo: container },
-            moddleExtensions: window.fleansModdleExtension
-                ? { fleans: window.fleansModdleExtension }
-                : {},
+            moddleExtensions: Object.assign(
+                {},
+                window.fleansModdleExtension ? { fleans: window.fleansModdleExtension } : {},
+                window.zeebeModdleExtension ? { zeebe: window.zeebeModdleExtension } : {}
+            ),
             additionalModules: window.boundaryEventContextPadModule
                 ? [window.boundaryEventContextPadModule]
                 : []
@@ -671,6 +673,174 @@ window.bpmnEditor = {
             mappings[index].source = source;
             mappings[index].target = target;
         }
+    },
+
+    // --- Custom-task plugin support (sub-issue C of #357) ---
+    //
+    // The framework parses <zeebe:taskDefinition type="…"> as the plugin discriminator
+    // and <zeebe:ioMapping><zeebe:input target="…" source="…"/></zeebe:ioMapping> as the
+    // per-parameter inputs. These functions read/write through the zeebe moddle extension
+    // (loaded by App.razor); for hand-authored BPMN that lacks the moddle's structured
+    // types, $type-string fallbacks keep the editor working.
+
+    getServiceTaskType: function (elementId) {
+        if (!this._modeler) return null;
+        var elementRegistry = this._modeler.get('elementRegistry');
+        var element = elementRegistry.get(elementId);
+        if (!element) return null;
+        var bo = element.businessObject;
+
+        var ext = bo.extensionElements && bo.extensionElements.values;
+        if (ext && ext.length) {
+            for (var i = 0; i < ext.length; i++) {
+                if (ext[i].$type === 'zeebe:TaskDefinition') return ext[i].type || null;
+            }
+        }
+        // Fallback: bare `type=` attribute on <serviceTask> from hand-authored BPMN.
+        if (bo.$attrs && typeof bo.$attrs.type === 'string') return bo.$attrs.type;
+        if (typeof bo.type === 'string' && bo.type !== bo.$type) return bo.type;
+        return null;
+    },
+
+    setServiceTaskType: function (elementId, taskType) {
+        if (!this._modeler) return;
+        var elementRegistry = this._modeler.get('elementRegistry');
+        var modeling = this._modeler.get('modeling');
+        var moddle = this._modeler.get('moddle');
+        var element = elementRegistry.get(elementId);
+        if (!element) return;
+        var bo = element.businessObject;
+
+        var ext = bo.extensionElements;
+        if (!ext) {
+            ext = moddle.create('bpmn:ExtensionElements', { values: [] });
+            ext.$parent = bo;
+        }
+        var values = ext.values || [];
+
+        // Upsert the zeebe:TaskDefinition entry.
+        var taskDef = null;
+        for (var i = 0; i < values.length; i++) {
+            if (values[i].$type === 'zeebe:TaskDefinition') { taskDef = values[i]; break; }
+        }
+        if (!taskType) {
+            // Clear case — remove the entry.
+            ext.values = values.filter(function (v) { return v.$type !== 'zeebe:TaskDefinition'; });
+        } else if (!taskDef) {
+            taskDef = moddle.create('zeebe:TaskDefinition', { type: taskType });
+            taskDef.$parent = ext;
+            ext.values = values.concat([taskDef]);
+        } else {
+            taskDef.type = taskType;
+        }
+
+        modeling.updateProperties(element, { extensionElements: ext });
+    },
+
+    getIoMappings: function (elementId) {
+        if (!this._modeler) return [];
+        var elementRegistry = this._modeler.get('elementRegistry');
+        var element = elementRegistry.get(elementId);
+        if (!element) return [];
+        var bo = element.businessObject;
+        var ext = bo.extensionElements && bo.extensionElements.values;
+        if (!ext || !ext.length) return [];
+
+        var ioMapping = null;
+        for (var i = 0; i < ext.length; i++) {
+            if (ext[i].$type === 'zeebe:IoMapping') { ioMapping = ext[i]; break; }
+        }
+        if (!ioMapping) return [];
+
+        var inputs = (ioMapping.inputs || []).map(function (m) {
+            return { kind: 'input', source: m.source || '', target: m.target || '' };
+        });
+        var outputs = (ioMapping.outputs || []).map(function (m) {
+            return { kind: 'output', source: m.source || '', target: m.target || '' };
+        });
+        return inputs.concat(outputs);
+    },
+
+    setIoMappingInput: function (elementId, target, source) {
+        if (!this._modeler) return;
+        if (!target) return;
+        var elementRegistry = this._modeler.get('elementRegistry');
+        var modeling = this._modeler.get('modeling');
+        var moddle = this._modeler.get('moddle');
+        var element = elementRegistry.get(elementId);
+        if (!element) return;
+        var bo = element.businessObject;
+
+        var ext = bo.extensionElements;
+        if (!ext) {
+            ext = moddle.create('bpmn:ExtensionElements', { values: [] });
+            ext.$parent = bo;
+        }
+        var values = ext.values || [];
+
+        var ioMapping = null;
+        for (var i = 0; i < values.length; i++) {
+            if (values[i].$type === 'zeebe:IoMapping') { ioMapping = values[i]; break; }
+        }
+        if (!ioMapping) {
+            ioMapping = moddle.create('zeebe:IoMapping', { inputs: [], outputs: [] });
+            ioMapping.$parent = ext;
+            ext.values = values.concat([ioMapping]);
+        }
+
+        var inputs = ioMapping.inputs || [];
+        var existing = null;
+        for (var j = 0; j < inputs.length; j++) {
+            if (inputs[j].target === target) { existing = inputs[j]; break; }
+        }
+        if (existing) {
+            existing.source = source || '';
+        } else {
+            var input = moddle.create('zeebe:Input', { source: source || '', target: target });
+            input.$parent = ioMapping;
+            ioMapping.inputs = inputs.concat([input]);
+        }
+
+        modeling.updateProperties(element, { extensionElements: ext });
+    },
+
+    removeIoMappingInput: function (elementId, target) {
+        if (!this._modeler) return;
+        if (!target) return;
+        var elementRegistry = this._modeler.get('elementRegistry');
+        var modeling = this._modeler.get('modeling');
+        var element = elementRegistry.get(elementId);
+        if (!element) return;
+        var bo = element.businessObject;
+
+        var ext = bo.extensionElements && bo.extensionElements.values;
+        if (!ext || !ext.length) return;
+
+        var ioMapping = null;
+        for (var i = 0; i < ext.length; i++) {
+            if (ext[i].$type === 'zeebe:IoMapping') { ioMapping = ext[i]; break; }
+        }
+        if (!ioMapping || !ioMapping.inputs) return;
+
+        ioMapping.inputs = ioMapping.inputs.filter(function (m) { return m.target !== target; });
+
+        modeling.updateProperties(element, { extensionElements: bo.extensionElements });
+    },
+
+    clearAllIoMappings: function (elementId) {
+        if (!this._modeler) return;
+        var elementRegistry = this._modeler.get('elementRegistry');
+        var modeling = this._modeler.get('modeling');
+        var element = elementRegistry.get(elementId);
+        if (!element) return;
+        var bo = element.businessObject;
+
+        var ext = bo.extensionElements && bo.extensionElements.values;
+        if (!ext || !ext.length) return;
+
+        var newValues = ext.filter(function (v) { return v.$type !== 'zeebe:IoMapping'; });
+        bo.extensionElements.values = newValues;
+        modeling.updateProperties(element, { extensionElements: bo.extensionElements });
     },
 
     loadXml: async function (bpmnXml) {

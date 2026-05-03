@@ -25,7 +25,8 @@
     </userTask>
 
     <scriptTask id="postReview" scriptFormat="csharp">
-      <script>_context.processed = true</script>
+      <script>_context.outcome = _context.approved ? "approved" : "rejected";
+_context.processed = true;</script>
     </scriptTask>
 
     <endEvent id="end" />

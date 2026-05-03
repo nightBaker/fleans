@@ -6,8 +6,7 @@ using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
 using Fleans.Domain.States;
 using Fleans.Persistence;
-using Microsoft.Data.Sqlite;
-using Fleans.Persistence.Sqlite;
+using Fleans.Persistence.Tests.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Sieve.Models;
@@ -16,63 +15,48 @@ using Sieve.Services;
 namespace Fleans.Persistence.Tests;
 
 [TestClass]
-public class WorkflowQueryServiceTests
+[TestCategory("Postgres")]
+public class WorkflowQueryServiceTests : PersistenceTestBase
 {
-    private SqliteConnection _connection = null!;
-    private IDbContextFactory<FleanCommandDbContext> _commandDbContextFactory = null!;
-    private IDbContextFactory<FleanQueryDbContext> _queryDbContextFactory = null!;
-    private IWorkflowQueryService _service = null!;
-
-    [TestInitialize]
-    public void Setup()
+    private static (IWorkflowQueryService Service, IDbContextFactory<FleanCommandDbContext> CommandFactory)
+        BuildService(IPersistenceTestFixture fixture)
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
-        _connection.Open();
-
-        var commandOptions = new DbContextOptionsBuilder<FleanCommandDbContext>()
-            .UseFleansSqlite(_connection)
-            .Options;
-
-        var queryOptions = new DbContextOptionsBuilder<FleanQueryDbContext>()
-            .UseFleansSqlite(_connection)
-            .Options;
-
-        _commandDbContextFactory = new TestCommandDbContextFactory(commandOptions);
-        _queryDbContextFactory = new TestQueryDbContextFactory(queryOptions);
         var sieveOptions = Options.Create(new SieveOptions
         {
             DefaultPageSize = 20,
             MaxPageSize = 100
         });
         ISieveProcessor sieveProcessor = new ApplicationSieveProcessor(sieveOptions);
-        _service = new WorkflowQueryService(_queryDbContextFactory, sieveProcessor);
-
-        using var db = _commandDbContextFactory.CreateDbContext();
-        db.Database.EnsureCreated();
-    }
-
-    [TestCleanup]
-    public void Cleanup()
-    {
-        _connection.Dispose();
+        var service = new WorkflowQueryService(fixture.QueryFactory, sieveProcessor);
+        return (service, fixture.CommandFactory);
     }
 
     // ─────────────────────────────────────────────────
     // GetStateSnapshot
     // ─────────────────────────────────────────────────
 
-    [TestMethod]
-    public async Task GetStateSnapshot_ReturnsNull_WhenInstanceDoesNotExist()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetStateSnapshot_ReturnsNull_WhenInstanceDoesNotExist(PersistenceProvider provider)
     {
-        var result = await _service.GetStateSnapshot(Guid.NewGuid());
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        var result = await service.GetStateSnapshot(Guid.NewGuid());
 
         Assert.IsNull(result);
     }
 
-    [TestMethod]
-    public async Task GetStateSnapshot_ReturnsSnapshot_WithActiveAndCompletedActivities()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetStateSnapshot_ReturnsSnapshot_WithActiveAndCompletedActivities(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         var instanceId = Guid.NewGuid();
         var processDefId = "proc:1:ts";
@@ -97,7 +81,7 @@ public class WorkflowQueryServiceTests
         db.WorkflowActivityInstanceEntries.Add(completedEntry);
         await db.SaveChangesAsync();
 
-        var result = await _service.GetStateSnapshot(instanceId);
+        var result = await service.GetStateSnapshot(instanceId);
 
         Assert.IsNotNull(result);
         Assert.AreEqual(1, result.ActiveActivityIds.Count);
@@ -112,10 +96,15 @@ public class WorkflowQueryServiceTests
         Assert.IsTrue(result.CompletedActivities[0].IsCompleted);
     }
 
-    [TestMethod]
-    public async Task GetStateSnapshot_ReturnsSnapshot_WithVariables()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetStateSnapshot_ReturnsSnapshot_WithVariables(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         var instanceId = Guid.NewGuid();
         await SeedWorkflowInstance(db, instanceId, isStarted: true);
@@ -132,7 +121,7 @@ public class WorkflowQueryServiceTests
         db.Entry(vars).Property(e => e.Variables).CurrentValue = (ExpandoObject)expando;
         await db.SaveChangesAsync();
 
-        var result = await _service.GetStateSnapshot(instanceId);
+        var result = await service.GetStateSnapshot(instanceId);
 
         Assert.IsNotNull(result);
         Assert.AreEqual(1, result.VariableStates.Count);
@@ -141,10 +130,15 @@ public class WorkflowQueryServiceTests
         Assert.AreEqual("42", result.VariableStates[0].Variables["key2"]);
     }
 
-    [TestMethod]
-    public async Task GetStateSnapshot_ReturnsSnapshot_WithConditionSequences()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetStateSnapshot_ReturnsSnapshot_WithConditionSequences(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         var instanceId = Guid.NewGuid();
         var processDefId = "proc:1:ts";
@@ -159,7 +153,7 @@ public class WorkflowQueryServiceTests
         db.Entry(cs).Property(e => e.IsEvaluated).CurrentValue = true;
         await db.SaveChangesAsync();
 
-        var result = await _service.GetStateSnapshot(instanceId);
+        var result = await service.GetStateSnapshot(instanceId);
 
         Assert.IsNotNull(result);
         Assert.AreEqual(1, result.ConditionSequences.Count);
@@ -169,26 +163,36 @@ public class WorkflowQueryServiceTests
         Assert.AreEqual("x > 10", result.ConditionSequences[0].Condition);
     }
 
-    [TestMethod]
-    public async Task GetStateSnapshot_ReturnsSnapshot_WithProcessDefinitionId()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetStateSnapshot_ReturnsSnapshot_WithProcessDefinitionId(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         var instanceId = Guid.NewGuid();
         var processDefId = "myproc:1:ts";
         await SeedProcessDefinition(db, processDefId, "myproc", 1);
         await SeedWorkflowInstance(db, instanceId, processDefinitionId: processDefId, isStarted: true);
 
-        var result = await _service.GetStateSnapshot(instanceId);
+        var result = await service.GetStateSnapshot(instanceId);
 
         Assert.IsNotNull(result);
         Assert.AreEqual("myproc:1:ts", result.ProcessDefinitionId);
     }
 
-    [TestMethod]
-    public async Task GetStateSnapshot_ReturnsSnapshot_WithTimestamps()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetStateSnapshot_ReturnsSnapshot_WithTimestamps(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         var instanceId = Guid.NewGuid();
         var createdAt = new DateTimeOffset(2026, 1, 1, 10, 0, 0, TimeSpan.Zero);
@@ -199,7 +203,7 @@ public class WorkflowQueryServiceTests
             isStarted: true, isCompleted: true,
             createdAt: createdAt, executionStartedAt: executionStartedAt, completedAt: completedAt);
 
-        var result = await _service.GetStateSnapshot(instanceId);
+        var result = await service.GetStateSnapshot(instanceId);
 
         Assert.IsNotNull(result);
         Assert.IsTrue(result.IsStarted);
@@ -209,10 +213,15 @@ public class WorkflowQueryServiceTests
         Assert.AreEqual(completedAt, result.CompletedAt);
     }
 
-    [TestMethod]
-    public async Task GetStateSnapshot_ReturnsErrorState_OnFailedActivity()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetStateSnapshot_ReturnsErrorState_OnFailedActivity(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         var instanceId = Guid.NewGuid();
         await SeedWorkflowInstance(db, instanceId, isStarted: true);
@@ -225,7 +234,7 @@ public class WorkflowQueryServiceTests
         db.WorkflowActivityInstanceEntries.Add(entry);
         await db.SaveChangesAsync();
 
-        var result = await _service.GetStateSnapshot(instanceId);
+        var result = await service.GetStateSnapshot(instanceId);
 
         Assert.IsNotNull(result);
         Assert.AreEqual(1, result.CompletedActivities.Count);
@@ -239,17 +248,22 @@ public class WorkflowQueryServiceTests
     // GetAllProcessDefinitions
     // ─────────────────────────────────────────────────
 
-    [TestMethod]
-    public async Task GetAllProcessDefinitions_ReturnsAll_OrderedByKeyThenVersion()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetAllProcessDefinitions_ReturnsAll_OrderedByKeyThenVersion(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         await SeedProcessDefinition(db, "beta:2:ts", "beta", 2);
         await SeedProcessDefinition(db, "alpha:1:ts", "alpha", 1);
         await SeedProcessDefinition(db, "beta:1:ts", "beta", 1);
         await SeedProcessDefinition(db, "alpha:2:ts", "alpha", 2);
 
-        var results = await _service.GetAllProcessDefinitions();
+        var results = await service.GetAllProcessDefinitions();
 
         Assert.AreEqual(4, results.Count);
         Assert.AreEqual("alpha", results[0].ProcessDefinitionKey);
@@ -262,10 +276,15 @@ public class WorkflowQueryServiceTests
         Assert.AreEqual(2, results[3].Version);
     }
 
-    [TestMethod]
-    public async Task GetAllProcessDefinitions_ReturnsEmpty_WhenNoneExist()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetAllProcessDefinitions_ReturnsEmpty_WhenNoneExist(PersistenceProvider provider)
     {
-        var results = await _service.GetAllProcessDefinitions();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        var results = await service.GetAllProcessDefinitions();
 
         Assert.AreEqual(0, results.Count);
     }
@@ -274,10 +293,15 @@ public class WorkflowQueryServiceTests
     // GetInstancesByKey
     // ─────────────────────────────────────────────────
 
-    [TestMethod]
-    public async Task GetInstancesByKey_ReturnsMatchingInstances()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetInstancesByKey_ReturnsMatchingInstances(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         await SeedProcessDefinition(db, "mykey:1:ts", "mykey", 1);
         await SeedProcessDefinition(db, "mykey:2:ts", "mykey", 2);
@@ -290,7 +314,7 @@ public class WorkflowQueryServiceTests
         await SeedWorkflowInstance(db, id2, processDefinitionId: "mykey:2:ts", isStarted: true, isCompleted: true);
         await SeedWorkflowInstance(db, id3, processDefinitionId: "other:1:ts", isStarted: true);
 
-        var results = await _service.GetInstancesByKey("mykey", new PageRequest(PageSize: 100));
+        var results = await service.GetInstancesByKey("mykey", new PageRequest(PageSize: 100));
 
         Assert.AreEqual(2, results.Items.Count);
         var instanceIds = results.Items.Select(r => r.InstanceId).ToList();
@@ -299,15 +323,20 @@ public class WorkflowQueryServiceTests
         CollectionAssert.DoesNotContain(instanceIds, id3);
     }
 
-    [TestMethod]
-    public async Task GetInstancesByKey_ReturnsEmpty_WhenNoMatch()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetInstancesByKey_ReturnsEmpty_WhenNoMatch(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         await SeedProcessDefinition(db, "existing:1:ts", "existing", 1);
         await SeedWorkflowInstance(db, Guid.NewGuid(), processDefinitionId: "existing:1:ts", isStarted: true);
 
-        var results = await _service.GetInstancesByKey("nonexistent", new PageRequest());
+        var results = await service.GetInstancesByKey("nonexistent", new PageRequest());
 
         Assert.AreEqual(0, results.Items.Count);
     }
@@ -316,10 +345,15 @@ public class WorkflowQueryServiceTests
     // GetInstancesByKeyAndVersion
     // ─────────────────────────────────────────────────
 
-    [TestMethod]
-    public async Task GetInstancesByKeyAndVersion_ReturnsMatchingInstances()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetInstancesByKeyAndVersion_ReturnsMatchingInstances(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         await SeedProcessDefinition(db, "key:1:ts", "key", 1);
         await SeedProcessDefinition(db, "key:2:ts", "key", 2);
@@ -329,22 +363,27 @@ public class WorkflowQueryServiceTests
         await SeedWorkflowInstance(db, v1Instance, processDefinitionId: "key:1:ts", isStarted: true);
         await SeedWorkflowInstance(db, v2Instance, processDefinitionId: "key:2:ts", isStarted: true);
 
-        var results = await _service.GetInstancesByKeyAndVersion("key", 1, new PageRequest());
+        var results = await service.GetInstancesByKeyAndVersion("key", 1, new PageRequest());
 
         Assert.AreEqual(1, results.Items.Count);
         Assert.AreEqual(v1Instance, results.Items[0].InstanceId);
         Assert.AreEqual("key:1:ts", results.Items[0].ProcessDefinitionId);
     }
 
-    [TestMethod]
-    public async Task GetInstancesByKeyAndVersion_ReturnsEmpty_WhenVersionNotFound()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetInstancesByKeyAndVersion_ReturnsEmpty_WhenVersionNotFound(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         await SeedProcessDefinition(db, "key:1:ts", "key", 1);
         await SeedWorkflowInstance(db, Guid.NewGuid(), processDefinitionId: "key:1:ts", isStarted: true);
 
-        var results = await _service.GetInstancesByKeyAndVersion("key", 99, new PageRequest());
+        var results = await service.GetInstancesByKeyAndVersion("key", 99, new PageRequest());
 
         Assert.AreEqual(0, results.Items.Count);
     }
@@ -353,16 +392,21 @@ public class WorkflowQueryServiceTests
     // GetInstancesByKey (paginated)
     // ─────────────────────────────────────────────────
 
-    [TestMethod]
-    public async Task GetInstancesByKey_Paginated_ReturnsPagedResult()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetInstancesByKey_Paginated_ReturnsPagedResult(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         await SeedProcessDefinition(db, "paged:1:ts", "paged", 1);
         for (int i = 0; i < 5; i++)
             await SeedWorkflowInstance(db, Guid.NewGuid(), processDefinitionId: "paged:1:ts", isStarted: true);
 
-        var page1 = await _service.GetInstancesByKey("paged", new PageRequest(Page: 1, PageSize: 2));
+        var page1 = await service.GetInstancesByKey("paged", new PageRequest(Page: 1, PageSize: 2));
 
         Assert.AreEqual(2, page1.Items.Count);
         Assert.AreEqual(5, page1.TotalCount);
@@ -370,50 +414,70 @@ public class WorkflowQueryServiceTests
         Assert.AreEqual(2, page1.PageSize);
     }
 
-    [TestMethod]
-    public async Task GetInstancesByKey_Paginated_ReturnsSecondPage()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetInstancesByKey_Paginated_ReturnsSecondPage(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         await SeedProcessDefinition(db, "paged2:1:ts", "paged2", 1);
         for (int i = 0; i < 5; i++)
             await SeedWorkflowInstance(db, Guid.NewGuid(), processDefinitionId: "paged2:1:ts", isStarted: true);
 
-        var page2 = await _service.GetInstancesByKey("paged2", new PageRequest(Page: 2, PageSize: 2));
+        var page2 = await service.GetInstancesByKey("paged2", new PageRequest(Page: 2, PageSize: 2));
 
         Assert.AreEqual(2, page2.Items.Count);
         Assert.AreEqual(5, page2.TotalCount);
         Assert.AreEqual(2, page2.Page);
     }
 
-    [TestMethod]
-    public async Task GetInstancesByKey_Paginated_ReturnsLastPartialPage()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetInstancesByKey_Paginated_ReturnsLastPartialPage(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         await SeedProcessDefinition(db, "paged3:1:ts", "paged3", 1);
         for (int i = 0; i < 5; i++)
             await SeedWorkflowInstance(db, Guid.NewGuid(), processDefinitionId: "paged3:1:ts", isStarted: true);
 
-        var page3 = await _service.GetInstancesByKey("paged3", new PageRequest(Page: 3, PageSize: 2));
+        var page3 = await service.GetInstancesByKey("paged3", new PageRequest(Page: 3, PageSize: 2));
 
         Assert.AreEqual(1, page3.Items.Count);
         Assert.AreEqual(5, page3.TotalCount);
     }
 
-    [TestMethod]
-    public async Task GetInstancesByKey_Paginated_ReturnsEmpty_WhenNoMatch()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetInstancesByKey_Paginated_ReturnsEmpty_WhenNoMatch(PersistenceProvider provider)
     {
-        var result = await _service.GetInstancesByKey("nonexistent", new PageRequest());
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        var result = await service.GetInstancesByKey("nonexistent", new PageRequest());
 
         Assert.AreEqual(0, result.Items.Count);
         Assert.AreEqual(0, result.TotalCount);
     }
 
-    [TestMethod]
-    public async Task GetInstancesByKey_Paginated_SortsByCreatedAtDescending()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetInstancesByKey_Paginated_SortsByCreatedAtDescending(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         await SeedProcessDefinition(db, "sorted:1:ts", "sorted", 1);
         var oldest = Guid.NewGuid();
@@ -423,7 +487,7 @@ public class WorkflowQueryServiceTests
         await SeedWorkflowInstance(db, newest, processDefinitionId: "sorted:1:ts", isStarted: true,
             createdAt: new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero));
 
-        var result = await _service.GetInstancesByKey("sorted",
+        var result = await service.GetInstancesByKey("sorted",
             new PageRequest(Sorts: "-CreatedAt"));
 
         Assert.AreEqual(2, result.Items.Count);
@@ -431,10 +495,15 @@ public class WorkflowQueryServiceTests
         Assert.AreEqual(oldest, result.Items[1].InstanceId);
     }
 
-    [TestMethod]
-    public async Task GetInstancesByKey_Paginated_FiltersCompleted()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetInstancesByKey_Paginated_FiltersCompleted(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         await SeedProcessDefinition(db, "filtered:1:ts", "filtered", 1);
         await SeedWorkflowInstance(db, Guid.NewGuid(), processDefinitionId: "filtered:1:ts",
@@ -444,7 +513,7 @@ public class WorkflowQueryServiceTests
         await SeedWorkflowInstance(db, Guid.NewGuid(), processDefinitionId: "filtered:1:ts",
             isStarted: true, isCompleted: false);
 
-        var result = await _service.GetInstancesByKey("filtered",
+        var result = await service.GetInstancesByKey("filtered",
             new PageRequest(Filters: "IsCompleted==true"));
 
         Assert.AreEqual(1, result.Items.Count);
@@ -452,15 +521,20 @@ public class WorkflowQueryServiceTests
         Assert.IsTrue(result.Items[0].IsCompleted);
     }
 
-    [TestMethod]
-    public async Task GetInstancesByKey_Paginated_NormalizesInvalidPage()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetInstancesByKey_Paginated_NormalizesInvalidPage(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         await SeedProcessDefinition(db, "norm:1:ts", "norm", 1);
         await SeedWorkflowInstance(db, Guid.NewGuid(), processDefinitionId: "norm:1:ts", isStarted: true);
 
-        var result = await _service.GetInstancesByKey("norm",
+        var result = await service.GetInstancesByKey("norm",
             new PageRequest(Page: -1, PageSize: 0));
 
         Assert.AreEqual(1, result.Page);
@@ -471,10 +545,15 @@ public class WorkflowQueryServiceTests
     // GetInstancesByKeyAndVersion (paginated)
     // ─────────────────────────────────────────────────
 
-    [TestMethod]
-    public async Task GetInstancesByKeyAndVersion_Paginated_ReturnsPagedResult()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetInstancesByKeyAndVersion_Paginated_ReturnsPagedResult(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         await SeedProcessDefinition(db, "pvkey:1:ts", "pvkey", 1);
         await SeedProcessDefinition(db, "pvkey:2:ts", "pvkey", 2);
@@ -483,22 +562,27 @@ public class WorkflowQueryServiceTests
             await SeedWorkflowInstance(db, Guid.NewGuid(), processDefinitionId: "pvkey:1:ts", isStarted: true);
         await SeedWorkflowInstance(db, Guid.NewGuid(), processDefinitionId: "pvkey:2:ts", isStarted: true);
 
-        var result = await _service.GetInstancesByKeyAndVersion("pvkey", 1,
+        var result = await service.GetInstancesByKeyAndVersion("pvkey", 1,
             new PageRequest(Page: 1, PageSize: 2));
 
         Assert.AreEqual(2, result.Items.Count);
         Assert.AreEqual(3, result.TotalCount);
     }
 
-    [TestMethod]
-    public async Task GetInstancesByKeyAndVersion_Paginated_ReturnsEmpty_WhenVersionNotFound()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetInstancesByKeyAndVersion_Paginated_ReturnsEmpty_WhenVersionNotFound(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         await SeedProcessDefinition(db, "pvkey2:1:ts", "pvkey2", 1);
         await SeedWorkflowInstance(db, Guid.NewGuid(), processDefinitionId: "pvkey2:1:ts", isStarted: true);
 
-        var result = await _service.GetInstancesByKeyAndVersion("pvkey2", 99, new PageRequest());
+        var result = await service.GetInstancesByKeyAndVersion("pvkey2", 99, new PageRequest());
 
         Assert.AreEqual(0, result.Items.Count);
         Assert.AreEqual(0, result.TotalCount);
@@ -508,10 +592,15 @@ public class WorkflowQueryServiceTests
     // GetBpmnXml
     // ─────────────────────────────────────────────────
 
-    [TestMethod]
-    public async Task GetBpmnXml_ReturnsBpmn_WhenInstanceExists()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetBpmnXml_ReturnsBpmn_WhenInstanceExists(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         var bpmn = "<bpmn:definitions>full xml here</bpmn:definitions>";
         await SeedProcessDefinition(db, "proc:1:ts", "proc", 1, bpmnXml: bpmn);
@@ -519,15 +608,20 @@ public class WorkflowQueryServiceTests
         var instanceId = Guid.NewGuid();
         await SeedWorkflowInstance(db, instanceId, processDefinitionId: "proc:1:ts", isStarted: true);
 
-        var result = await _service.GetBpmnXml(instanceId);
+        var result = await service.GetBpmnXml(instanceId);
 
         Assert.AreEqual(bpmn, result);
     }
 
-    [TestMethod]
-    public async Task GetBpmnXml_ReturnsNull_WhenInstanceNotFound()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetBpmnXml_ReturnsNull_WhenInstanceNotFound(PersistenceProvider provider)
     {
-        var result = await _service.GetBpmnXml(Guid.NewGuid());
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        var result = await service.GetBpmnXml(Guid.NewGuid());
 
         Assert.IsNull(result);
     }
@@ -536,16 +630,21 @@ public class WorkflowQueryServiceTests
     // GetBpmnXmlByKey
     // ─────────────────────────────────────────────────
 
-    [TestMethod]
-    public async Task GetBpmnXmlByKey_ReturnsLatestVersion()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetBpmnXmlByKey_ReturnsLatestVersion(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         await SeedProcessDefinition(db, "proc:1:ts", "proc", 1, bpmnXml: "<bpmn>v1</bpmn>");
         await SeedProcessDefinition(db, "proc:2:ts", "proc", 2, bpmnXml: "<bpmn>v2</bpmn>");
         await SeedProcessDefinition(db, "proc:3:ts", "proc", 3, bpmnXml: "<bpmn>v3</bpmn>");
 
-        var result = await _service.GetBpmnXmlByKey("proc");
+        var result = await service.GetBpmnXmlByKey("proc");
 
         Assert.AreEqual("<bpmn>v3</bpmn>", result);
     }
@@ -554,15 +653,20 @@ public class WorkflowQueryServiceTests
     // GetBpmnXmlByKeyAndVersion
     // ─────────────────────────────────────────────────
 
-    [TestMethod]
-    public async Task GetBpmnXmlByKeyAndVersion_ReturnsExactVersion()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetBpmnXmlByKeyAndVersion_ReturnsExactVersion(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         await SeedProcessDefinition(db, "proc:1:ts", "proc", 1, bpmnXml: "<bpmn>v1</bpmn>");
         await SeedProcessDefinition(db, "proc:2:ts", "proc", 2, bpmnXml: "<bpmn>v2</bpmn>");
 
-        var result = await _service.GetBpmnXmlByKeyAndVersion("proc", 1);
+        var result = await service.GetBpmnXmlByKeyAndVersion("proc", 1);
 
         Assert.AreEqual("<bpmn>v1</bpmn>", result);
     }
@@ -571,15 +675,20 @@ public class WorkflowQueryServiceTests
     // GetAllProcessDefinitions (paginated)
     // ─────────────────────────────────────────────────
 
-    [TestMethod]
-    public async Task GetAllProcessDefinitions_Paginated_ReturnsPagedResult()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetAllProcessDefinitions_Paginated_ReturnsPagedResult(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         for (int i = 1; i <= 5; i++)
             await SeedProcessDefinition(db, $"pagdef:key{i}:1:ts", $"key{i}", 1);
 
-        var result = await _service.GetAllProcessDefinitions(new PageRequest(Page: 1, PageSize: 2));
+        var result = await service.GetAllProcessDefinitions(new PageRequest(Page: 1, PageSize: 2));
 
         Assert.AreEqual(2, result.Items.Count);
         Assert.AreEqual(5, result.TotalCount);
@@ -587,25 +696,35 @@ public class WorkflowQueryServiceTests
         Assert.AreEqual(2, result.PageSize);
     }
 
-    [TestMethod]
-    public async Task GetAllProcessDefinitions_Paginated_ReturnsSecondPage()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetAllProcessDefinitions_Paginated_ReturnsSecondPage(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         for (int i = 1; i <= 5; i++)
             await SeedProcessDefinition(db, $"pagdef2:key{i}:1:ts", $"pagdef2key{i}", 1);
 
-        var result = await _service.GetAllProcessDefinitions(new PageRequest(Page: 2, PageSize: 2));
+        var result = await service.GetAllProcessDefinitions(new PageRequest(Page: 2, PageSize: 2));
 
         Assert.AreEqual(2, result.Items.Count);
         Assert.AreEqual(5, result.TotalCount);
         Assert.AreEqual(2, result.Page);
     }
 
-    [TestMethod]
-    public async Task GetAllProcessDefinitions_Paginated_FiltersByIsActive()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetAllProcessDefinitions_Paginated_FiltersByIsActive(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         await SeedProcessDefinition(db, "active:1:ts", "activeproc", 1);
         await SeedProcessDefinition(db, "inactive:1:ts", "inactiveproc", 1);
@@ -614,7 +733,7 @@ public class WorkflowQueryServiceTests
         def!.Disable();
         await db.SaveChangesAsync();
 
-        var result = await _service.GetAllProcessDefinitions(
+        var result = await service.GetAllProcessDefinitions(
             new PageRequest(Filters: "IsActive==true"));
 
         Assert.AreEqual(1, result.Items.Count);
@@ -625,10 +744,15 @@ public class WorkflowQueryServiceTests
     // GetProcessDefinitionGroups
     // ─────────────────────────────────────────────────
 
-    [TestMethod]
-    public async Task GetProcessDefinitionGroups_ReturnsCorrectPage()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetProcessDefinitionGroups_ReturnsCorrectPage(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         for (int i = 1; i <= 5; i++)
         {
@@ -636,7 +760,7 @@ public class WorkflowQueryServiceTests
             await SeedProcessDefinition(db, $"grp:key{i}:2:ts", $"grpkey{i}", 2);
         }
 
-        var result = await _service.GetProcessDefinitionGroups(
+        var result = await service.GetProcessDefinitionGroups(
             new PageRequest(Page: 1, PageSize: 2));
 
         Assert.AreEqual(2, result.Items.Count);
@@ -645,41 +769,56 @@ public class WorkflowQueryServiceTests
         Assert.AreEqual(2, result.PageSize);
     }
 
-    [TestMethod]
-    public async Task GetProcessDefinitionGroups_LastPage_ReturnsRemainder()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetProcessDefinitionGroups_LastPage_ReturnsRemainder(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         for (int i = 1; i <= 5; i++)
             await SeedProcessDefinition(db, $"grplast:key{i}:1:ts", $"grplastkey{i}", 1);
 
-        var result = await _service.GetProcessDefinitionGroups(
+        var result = await service.GetProcessDefinitionGroups(
             new PageRequest(Page: 3, PageSize: 2));
 
         Assert.AreEqual(1, result.Items.Count);
         Assert.AreEqual(5, result.TotalCount);
     }
 
-    [TestMethod]
-    public async Task GetProcessDefinitionGroups_SearchByKey_FiltersCorrectly()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetProcessDefinitionGroups_SearchByKey_FiltersCorrectly(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         await SeedProcessDefinition(db, "grpsrch:order:1:ts", "order-process", 1);
         await SeedProcessDefinition(db, "grpsrch:payment:1:ts", "payment-process", 1);
         await SeedProcessDefinition(db, "grpsrch:user:1:ts", "user-signup", 1);
 
-        var result = await _service.GetProcessDefinitionGroups(
+        var result = await service.GetProcessDefinitionGroups(
             new PageRequest(Filters: "ProcessDefinitionKey@=order"));
 
         Assert.AreEqual(1, result.Items.Count);
         Assert.AreEqual("order-process", result.Items[0].ProcessDefinitionKey);
     }
 
-    [TestMethod]
-    public async Task GetProcessDefinitionGroups_FilterByActive_FiltersCorrectly()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetProcessDefinitionGroups_FilterByActive_FiltersCorrectly(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         await SeedProcessDefinition(db, "grpact:active:1:ts", "grpactiveproc", 1);
         await SeedProcessDefinition(db, "grpact:inactive:1:ts", "grpinactiveproc", 1);
@@ -687,24 +826,29 @@ public class WorkflowQueryServiceTests
         def!.Disable();
         await db.SaveChangesAsync();
 
-        var result = await _service.GetProcessDefinitionGroups(
+        var result = await service.GetProcessDefinitionGroups(
             new PageRequest(Filters: "IsActive==true"));
 
         Assert.AreEqual(1, result.Items.Count);
         Assert.AreEqual("grpactiveproc", result.Items[0].ProcessDefinitionKey);
     }
 
-    [TestMethod]
-    public async Task GetProcessDefinitionGroups_SortByDeployedAt_CorrectOrder()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetProcessDefinitionGroups_SortByDeployedAt_CorrectOrder(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         await SeedProcessDefinition(db, "grpsort:old:1:ts", "grpsortold", 1,
             deployedAt: new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
         await SeedProcessDefinition(db, "grpsort:new:1:ts", "grpsortnew", 1,
             deployedAt: new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero));
 
-        var result = await _service.GetProcessDefinitionGroups(
+        var result = await service.GetProcessDefinitionGroups(
             new PageRequest(Sorts: "-DeployedAt"));
 
         Assert.AreEqual(2, result.Items.Count);
@@ -712,26 +856,36 @@ public class WorkflowQueryServiceTests
         Assert.AreEqual("grpsortold", result.Items[1].ProcessDefinitionKey);
     }
 
-    [TestMethod]
-    public async Task GetProcessDefinitionGroups_EmptyResult_ReturnsEmptyPage()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetProcessDefinitionGroups_EmptyResult_ReturnsEmptyPage(PersistenceProvider provider)
     {
-        var result = await _service.GetProcessDefinitionGroups(
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        var result = await service.GetProcessDefinitionGroups(
             new PageRequest(Filters: "ProcessDefinitionKey@=nonexistent"));
 
         Assert.AreEqual(0, result.Items.Count);
         Assert.AreEqual(0, result.TotalCount);
     }
 
-    [TestMethod]
-    public async Task GetProcessDefinitionGroups_GroupContainsAllVersions()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetProcessDefinitionGroups_GroupContainsAllVersions(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         await SeedProcessDefinition(db, "grpver:mykey:1:ts", "grpvermykey", 1);
         await SeedProcessDefinition(db, "grpver:mykey:2:ts", "grpvermykey", 2);
         await SeedProcessDefinition(db, "grpver:mykey:3:ts", "grpvermykey", 3);
 
-        var result = await _service.GetProcessDefinitionGroups(new PageRequest());
+        var result = await service.GetProcessDefinitionGroups(new PageRequest());
 
         Assert.AreEqual(1, result.Items.Count);
         var group = result.Items[0];
@@ -746,10 +900,15 @@ public class WorkflowQueryServiceTests
     // GetPendingUserTasks (paginated)
     // ─────────────────────────────────────────────────
 
-    [TestMethod]
-    public async Task GetPendingUserTasks_Paginated_ReturnsPagedResult()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetPendingUserTasks_Paginated_ReturnsPagedResult(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         var instanceId = Guid.NewGuid();
         await SeedWorkflowInstance(db, instanceId, isStarted: true);
@@ -757,7 +916,7 @@ public class WorkflowQueryServiceTests
         for (int i = 0; i < 5; i++)
             await SeedUserTask(db, Guid.NewGuid(), instanceId, $"task{i}");
 
-        var result = await _service.GetPendingUserTasks(null, null,
+        var result = await service.GetPendingUserTasks(null, null,
             new PageRequest(Page: 1, PageSize: 2));
 
         Assert.AreEqual(2, result.Items.Count);
@@ -766,10 +925,15 @@ public class WorkflowQueryServiceTests
         Assert.AreEqual(2, result.PageSize);
     }
 
-    [TestMethod]
-    public async Task GetPendingUserTasks_Paginated_FiltersByAssignee()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetPendingUserTasks_Paginated_FiltersByAssignee(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         var instanceId = Guid.NewGuid();
         await SeedWorkflowInstance(db, instanceId, isStarted: true);
@@ -779,17 +943,22 @@ public class WorkflowQueryServiceTests
         await SeedUserTask(db, Guid.NewGuid(), instanceId, "task3",
             candidateUsers: new List<string> { "alice", "charlie" });
 
-        var result = await _service.GetPendingUserTasks("alice", null, new PageRequest());
+        var result = await service.GetPendingUserTasks("alice", null, new PageRequest());
 
         // Should return task1 (direct assignment) and task3 (candidate user)
         Assert.AreEqual(2, result.Items.Count);
         Assert.AreEqual(2, result.TotalCount);
     }
 
-    [TestMethod]
-    public async Task GetPendingUserTasks_Paginated_FiltersByCandidateGroup()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetPendingUserTasks_Paginated_FiltersByCandidateGroup(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         var instanceId = Guid.NewGuid();
         await SeedWorkflowInstance(db, instanceId, isStarted: true);
@@ -799,16 +968,21 @@ public class WorkflowQueryServiceTests
         await SeedUserTask(db, Guid.NewGuid(), instanceId, "task2",
             candidateGroups: new List<string> { "engineers" });
 
-        var result = await _service.GetPendingUserTasks(null, "managers", new PageRequest());
+        var result = await service.GetPendingUserTasks(null, "managers", new PageRequest());
 
         Assert.AreEqual(1, result.Items.Count);
         Assert.AreEqual(1, result.TotalCount);
     }
 
-    [TestMethod]
-    public async Task GetPendingUserTasks_Paginated_ExcludesCompleted()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetPendingUserTasks_Paginated_ExcludesCompleted(PersistenceProvider provider)
     {
-        using var db = _commandDbContextFactory.CreateDbContext();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        using var db = commandFactory.CreateDbContext();
 
         var instanceId = Guid.NewGuid();
         await SeedWorkflowInstance(db, instanceId, isStarted: true);
@@ -820,7 +994,7 @@ public class WorkflowQueryServiceTests
 
         // Default Sieve filter is not set, but the existing behavior filters by
         // TaskState != Completed via Sieve filter
-        var result = await _service.GetPendingUserTasks(null, null,
+        var result = await service.GetPendingUserTasks(null, null,
             new PageRequest(Filters: "TaskState!=Completed"));
 
         Assert.AreEqual(1, result.Items.Count);
@@ -924,33 +1098,181 @@ public class WorkflowQueryServiceTests
         await db.SaveChangesAsync();
     }
 
-    private class TestCommandDbContextFactory : IDbContextFactory<FleanCommandDbContext>
+    // ─────────────────────────────────────────────────
+    // GetRegisteredEventsAsync (#374)
+    // ─────────────────────────────────────────────────
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetRegisteredEventsAsync_EmptyDb_AllListsEmpty(PersistenceProvider provider)
     {
-        private readonly DbContextOptions<FleanCommandDbContext> _options;
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, _) = BuildService(fixture);
 
-        public TestCommandDbContextFactory(DbContextOptions<FleanCommandDbContext> options)
-        {
-            _options = options;
-        }
+        var snap = await service.GetRegisteredEventsAsync();
 
-        public FleanCommandDbContext CreateDbContext() => new(_options);
-
-        public Task<FleanCommandDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(CreateDbContext());
+        Assert.AreEqual(0, snap.MessageStartEvents.Count);
+        Assert.AreEqual(0, snap.SignalStartEvents.Count);
+        Assert.AreEqual(0, snap.ConditionalStartEvents.Count);
+        Assert.AreEqual(0, snap.ActiveMessageSubscriptions.Count);
+        Assert.AreEqual(0, snap.ActiveSignalSubscriptions.Count);
     }
 
-    private class TestQueryDbContextFactory : IDbContextFactory<FleanQueryDbContext>
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetRegisteredEventsAsync_SeedOneOfEach_SnapshotMirrorsSeed(PersistenceProvider provider)
     {
-        private readonly DbContextOptions<FleanQueryDbContext> _options;
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
 
-        public TestQueryDbContextFactory(DbContextOptions<FleanQueryDbContext> options)
+        var workflowId = Guid.NewGuid();
+        var hostActivityId = Guid.NewGuid();
+        await using (var db = await commandFactory.CreateDbContextAsync())
         {
-            _options = options;
+            db.MessageStartEventRegistrations.Add(new MessageStartEventRegistration("order-placed", "order-process"));
+            db.SignalStartEventRegistrations.Add(new SignalStartEventRegistration("system-alert", "alert-process"));
+            db.ConditionalStartEventListeners.Add(new ConditionalStartEventListenerState
+            {
+                Key = "alert-process|cond-start",
+                ProcessDefinitionKey = "alert-process",
+                ActivityId = "cond-start",
+                ConditionExpression = "= amount > 1000",
+                IsRegistered = true
+            });
+            db.MessageCorrelations.Add(new MessageCorrelationState { Key = "payment-received" });
+            db.SignalCorrelations.Add(new SignalCorrelationState { Key = "cancel" });
+            db.MessageSubscriptions.Add(new MessageSubscription(
+                workflowId, "wait-payment", hostActivityId, "order-123")
+            { MessageName = "payment-received" });
+            db.SignalSubscriptions.Add(new SignalSubscription(
+                workflowId, "wait-cancel", hostActivityId)
+            { SignalName = "cancel" });
+            await db.SaveChangesAsync();
         }
 
-        public FleanQueryDbContext CreateDbContext() => new(_options);
+        var snap = await service.GetRegisteredEventsAsync();
 
-        public Task<FleanQueryDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(CreateDbContext());
+        Assert.AreEqual(1, snap.MessageStartEvents.Count);
+        Assert.AreEqual("order-placed", snap.MessageStartEvents[0].MessageName);
+        Assert.AreEqual("order-process", snap.MessageStartEvents[0].ProcessDefinitionKey);
+
+        Assert.AreEqual(1, snap.SignalStartEvents.Count);
+        Assert.AreEqual("system-alert", snap.SignalStartEvents[0].SignalName);
+
+        Assert.AreEqual(1, snap.ConditionalStartEvents.Count);
+        Assert.AreEqual("= amount > 1000", snap.ConditionalStartEvents[0].ConditionExpression);
+
+        Assert.AreEqual(1, snap.ActiveMessageSubscriptions.Count);
+        var msgSub = snap.ActiveMessageSubscriptions[0];
+        Assert.AreEqual("payment-received", msgSub.MessageName);
+        Assert.AreEqual("order-123", msgSub.CorrelationKey);
+        Assert.AreEqual(workflowId, msgSub.WorkflowInstanceId);
+        Assert.AreEqual("wait-payment", msgSub.ActivityId);
+        Assert.AreEqual(hostActivityId, msgSub.ActivityInstanceId);
+
+        Assert.AreEqual(1, snap.ActiveSignalSubscriptions.Count);
+        var sigSub = snap.ActiveSignalSubscriptions[0];
+        Assert.AreEqual("cancel", sigSub.SignalName);
+        Assert.AreEqual(workflowId, sigSub.WorkflowInstanceId);
+        Assert.AreEqual(hostActivityId, sigSub.ActivityInstanceId);
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetRegisteredEventsAsync_ConditionalIsRegisteredFalse_Excluded(PersistenceProvider provider)
+    {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        await using (var db = await commandFactory.CreateDbContextAsync())
+        {
+            db.ConditionalStartEventListeners.Add(new ConditionalStartEventListenerState
+            {
+                Key = "p|active",
+                ProcessDefinitionKey = "p",
+                ActivityId = "active",
+                ConditionExpression = "= true",
+                IsRegistered = true
+            });
+            db.ConditionalStartEventListeners.Add(new ConditionalStartEventListenerState
+            {
+                Key = "p|disabled",
+                ProcessDefinitionKey = "p",
+                ActivityId = "disabled",
+                ConditionExpression = "= false",
+                IsRegistered = false
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var snap = await service.GetRegisteredEventsAsync();
+
+        Assert.AreEqual(1, snap.ConditionalStartEvents.Count);
+        Assert.AreEqual("active", snap.ConditionalStartEvents[0].ActivityId);
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetRegisteredEventsAsync_MessageSubscription_DeleteThenRoundTrip(PersistenceProvider provider)
+    {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        // Insert → snapshot includes it
+        await using (var db = await commandFactory.CreateDbContextAsync())
+        {
+            db.MessageCorrelations.Add(new MessageCorrelationState { Key = "ephemeral" });
+            db.MessageSubscriptions.Add(new MessageSubscription(
+                Guid.NewGuid(), "wait", Guid.NewGuid(), "k1")
+            { MessageName = "ephemeral" });
+            await db.SaveChangesAsync();
+        }
+        var afterInsert = await service.GetRegisteredEventsAsync();
+        Assert.AreEqual(1, afterInsert.ActiveMessageSubscriptions.Count);
+
+        // Delete → snapshot excludes it (proves delete-on-completion semantic surfaces with no row-level filter)
+        await using (var db = await commandFactory.CreateDbContextAsync())
+        {
+            var row = await db.MessageSubscriptions.FirstAsync(s => s.MessageName == "ephemeral");
+            db.MessageSubscriptions.Remove(row);
+            await db.SaveChangesAsync();
+        }
+        var afterDelete = await service.GetRegisteredEventsAsync();
+        Assert.AreEqual(0, afterDelete.ActiveMessageSubscriptions.Count);
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetRegisteredEventsAsync_SignalSubscription_DeleteThenRoundTrip(PersistenceProvider provider)
+    {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture);
+
+        var wfId = Guid.NewGuid();
+        await using (var db = await commandFactory.CreateDbContextAsync())
+        {
+            db.SignalCorrelations.Add(new SignalCorrelationState { Key = "ephemeral-signal" });
+            db.SignalSubscriptions.Add(new SignalSubscription(
+                wfId, "wait", Guid.NewGuid())
+            { SignalName = "ephemeral-signal" });
+            await db.SaveChangesAsync();
+        }
+        var afterInsert = await service.GetRegisteredEventsAsync();
+        Assert.AreEqual(1, afterInsert.ActiveSignalSubscriptions.Count);
+
+        await using (var db = await commandFactory.CreateDbContextAsync())
+        {
+            var row = await db.SignalSubscriptions.FirstAsync(s => s.SignalName == "ephemeral-signal");
+            db.SignalSubscriptions.Remove(row);
+            await db.SaveChangesAsync();
+        }
+        var afterDelete = await service.GetRegisteredEventsAsync();
+        Assert.AreEqual(0, afterDelete.ActiveSignalSubscriptions.Count);
     }
 }
+

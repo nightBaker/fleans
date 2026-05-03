@@ -1,80 +1,63 @@
 using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
-using Microsoft.Data.Sqlite;
-using Fleans.Persistence.Sqlite;
-using Microsoft.EntityFrameworkCore;
+using Fleans.Persistence.Tests.Infrastructure;
 using Orleans.Runtime;
 using Orleans.Storage;
 
 namespace Fleans.Persistence.Tests;
 
 [TestClass]
-public class EfCoreProcessDefinitionGrainStorageTests
+[TestCategory("Postgres")]
+public class EfCoreProcessDefinitionGrainStorageTests : PersistenceTestBase
 {
-    private SqliteConnection _connection = null!;
-    private IDbContextFactory<FleanCommandDbContext> _dbContextFactory = null!;
-    private EfCoreProcessDefinitionGrainStorage _storage = null!;
     private const string StateName = "state";
 
-    [TestInitialize]
-    public void Setup()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task WriteAndRead_RoundTrip_ReturnsStoredState(PersistenceProvider provider)
     {
-        _connection = new SqliteConnection("DataSource=:memory:");
-        _connection.Open();
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var storage = new EfCoreProcessDefinitionGrainStorage(fixture.CommandFactory);
 
-        var options = new DbContextOptionsBuilder<FleanCommandDbContext>()
-            .UseFleansSqlite(_connection)
-            .Options;
-
-        _dbContextFactory = new TestDbContextFactory(options);
-        _storage = new EfCoreProcessDefinitionGrainStorage(_dbContextFactory);
-
-        using var db = _dbContextFactory.CreateDbContext();
-        db.Database.EnsureCreated();
-    }
-
-    [TestCleanup]
-    public void Cleanup()
-    {
-        _connection.Dispose();
-    }
-
-    [TestMethod]
-    public async Task WriteAndRead_RoundTrip_ReturnsStoredState()
-    {
         var id = "myProcess:1:ts";
         var grainId = NewGrainId(id);
         var state = CreateGrainState(id, "myProcess", 1);
         var deployedAt = state.State.DeployedAt;
 
-        await _storage.WriteStateAsync(StateName, grainId, state);
+        await storage.WriteStateAsync(StateName, grainId, state);
         Assert.IsNotNull(state.ETag);
         Assert.IsTrue(state.RecordExists);
 
         var readState = CreateEmptyGrainState();
-        await _storage.ReadStateAsync(StateName, grainId, readState);
+        await storage.ReadStateAsync(StateName, grainId, readState);
 
         Assert.AreEqual(id, readState.State.ProcessDefinitionId);
         Assert.AreEqual("myProcess", readState.State.ProcessDefinitionKey);
         Assert.AreEqual(1, readState.State.Version);
-        Assert.AreEqual(deployedAt, readState.State.DeployedAt);
+        Assert.AreEqual(TruncateToMicroseconds(deployedAt), TruncateToMicroseconds(readState.State.DeployedAt));
         Assert.AreEqual("<bpmn/>", readState.State.BpmnXml);
         Assert.AreEqual(state.ETag, readState.ETag);
         Assert.IsTrue(readState.RecordExists);
     }
 
-    [TestMethod]
-    public async Task WriteAndRead_RoundTrip_WorkflowJsonPreserved()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task WriteAndRead_RoundTrip_WorkflowJsonPreserved(PersistenceProvider provider)
     {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var storage = new EfCoreProcessDefinitionGrainStorage(fixture.CommandFactory);
+
         var id = "poly:1:ts";
         var grainId = NewGrainId(id);
         var state = CreateGrainStateWithMixedActivities(id);
 
-        await _storage.WriteStateAsync(StateName, grainId, state);
+        await storage.WriteStateAsync(StateName, grainId, state);
 
         var readState = CreateEmptyGrainState();
-        await _storage.ReadStateAsync(StateName, grainId, readState);
+        await storage.ReadStateAsync(StateName, grainId, readState);
 
         var workflow = readState.State.Workflow;
         Assert.AreEqual(4, workflow.Activities.Count);
@@ -88,130 +71,175 @@ public class EfCoreProcessDefinitionGrainStorageTests
         Assert.IsInstanceOfType<DefaultSequenceFlow>(workflow.SequenceFlows[3]);
     }
 
-    [TestMethod]
-    public async Task Write_WithCorrectETag_Succeeds()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task Write_WithCorrectETag_Succeeds(PersistenceProvider provider)
     {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var storage = new EfCoreProcessDefinitionGrainStorage(fixture.CommandFactory);
+
         var id = "upd:1:ts";
         var grainId = NewGrainId(id);
         var state = CreateGrainState(id, "upd", 1);
-        await _storage.WriteStateAsync(StateName, grainId, state);
+        await storage.WriteStateAsync(StateName, grainId, state);
         var firstETag = state.ETag;
 
         state.State = WithBpmnXml(state.State, "<bpmn updated/>");
-        await _storage.WriteStateAsync(StateName, grainId, state);
+        await storage.WriteStateAsync(StateName, grainId, state);
 
         Assert.AreNotEqual(firstETag, state.ETag);
 
         var readState = CreateEmptyGrainState();
-        await _storage.ReadStateAsync(StateName, grainId, readState);
+        await storage.ReadStateAsync(StateName, grainId, readState);
         Assert.AreEqual("<bpmn updated/>", readState.State.BpmnXml);
     }
 
-    [TestMethod]
-    public async Task Write_WithStaleETag_ThrowsInconsistentStateException()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task Write_WithStaleETag_ThrowsInconsistentStateException(PersistenceProvider provider)
     {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var storage = new EfCoreProcessDefinitionGrainStorage(fixture.CommandFactory);
+
         var id = "stale:1:ts";
         var grainId = NewGrainId(id);
         var state = CreateGrainState(id, "stale", 1);
-        await _storage.WriteStateAsync(StateName, grainId, state);
+        await storage.WriteStateAsync(StateName, grainId, state);
 
         var concurrentState = CreateEmptyGrainState();
-        await _storage.ReadStateAsync(StateName, grainId, concurrentState);
+        await storage.ReadStateAsync(StateName, grainId, concurrentState);
         concurrentState.State = WithBpmnXml(concurrentState.State, "<concurrent/>");
-        await _storage.WriteStateAsync(StateName, grainId, concurrentState);
+        await storage.WriteStateAsync(StateName, grainId, concurrentState);
 
         state.State = WithBpmnXml(state.State, "<stale/>");
         await Assert.ThrowsExactlyAsync<InconsistentStateException>(
-            () => _storage.WriteStateAsync(StateName, grainId, state));
+            () => storage.WriteStateAsync(StateName, grainId, state));
     }
 
-    [TestMethod]
-    public async Task FirstWrite_WithoutETag_Succeeds()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task FirstWrite_WithoutETag_Succeeds(PersistenceProvider provider)
     {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var storage = new EfCoreProcessDefinitionGrainStorage(fixture.CommandFactory);
+
         var id = "first:1:ts";
         var grainId = NewGrainId(id);
         var state = CreateGrainState(id, "first", 1);
         Assert.IsNull(state.ETag);
 
-        await _storage.WriteStateAsync(StateName, grainId, state);
+        await storage.WriteStateAsync(StateName, grainId, state);
 
         Assert.IsNotNull(state.ETag);
         Assert.IsTrue(state.RecordExists);
     }
 
-    [TestMethod]
-    public async Task Write_WithStaleETagToNonExistentKey_ThrowsInconsistentStateException()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task Write_WithStaleETagToNonExistentKey_ThrowsInconsistentStateException(PersistenceProvider provider)
     {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var storage = new EfCoreProcessDefinitionGrainStorage(fixture.CommandFactory);
+
         var grainId = NewGrainId("nope:1:ts");
         var state = CreateGrainState("nope:1:ts", "nope", 1);
         state.ETag = "stale-etag";
 
         await Assert.ThrowsExactlyAsync<InconsistentStateException>(
-            () => _storage.WriteStateAsync(StateName, grainId, state));
+            () => storage.WriteStateAsync(StateName, grainId, state));
     }
 
-    [TestMethod]
-    public async Task Clear_RemovesState_SubsequentReadReturnsDefault()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task Clear_RemovesState_SubsequentReadReturnsDefault(PersistenceProvider provider)
     {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var storage = new EfCoreProcessDefinitionGrainStorage(fixture.CommandFactory);
+
         var id = "clr:1:ts";
         var grainId = NewGrainId(id);
         var state = CreateGrainState(id, "clr", 1);
-        await _storage.WriteStateAsync(StateName, grainId, state);
+        await storage.WriteStateAsync(StateName, grainId, state);
 
-        await _storage.ClearStateAsync(StateName, grainId, state);
+        await storage.ClearStateAsync(StateName, grainId, state);
         Assert.IsNull(state.ETag);
         Assert.IsFalse(state.RecordExists);
 
         var readState = CreateEmptyGrainState();
-        await _storage.ReadStateAsync(StateName, grainId, readState);
+        await storage.ReadStateAsync(StateName, grainId, readState);
         Assert.IsNull(readState.ETag);
         Assert.IsFalse(readState.RecordExists);
     }
 
-    [TestMethod]
-    public async Task Clear_WithStaleETag_ThrowsInconsistentStateException()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task Clear_WithStaleETag_ThrowsInconsistentStateException(PersistenceProvider provider)
     {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var storage = new EfCoreProcessDefinitionGrainStorage(fixture.CommandFactory);
+
         var id = "clrstale:1:ts";
         var grainId = NewGrainId(id);
         var state = CreateGrainState(id, "clrstale", 1);
-        await _storage.WriteStateAsync(StateName, grainId, state);
+        await storage.WriteStateAsync(StateName, grainId, state);
 
         var concurrentState = CreateEmptyGrainState();
-        await _storage.ReadStateAsync(StateName, grainId, concurrentState);
+        await storage.ReadStateAsync(StateName, grainId, concurrentState);
         concurrentState.State = WithBpmnXml(concurrentState.State, "<concurrent/>");
-        await _storage.WriteStateAsync(StateName, grainId, concurrentState);
+        await storage.WriteStateAsync(StateName, grainId, concurrentState);
 
         await Assert.ThrowsExactlyAsync<InconsistentStateException>(
-            () => _storage.ClearStateAsync(StateName, grainId, state));
+            () => storage.ClearStateAsync(StateName, grainId, state));
     }
 
-    [TestMethod]
-    public async Task Clear_NonExistentGrain_IsNoOp()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task Clear_NonExistentGrain_IsNoOp(PersistenceProvider provider)
     {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var storage = new EfCoreProcessDefinitionGrainStorage(fixture.CommandFactory);
+
         var grainId = NewGrainId("noop:1:ts");
         var state = CreateEmptyGrainState();
 
-        await _storage.ClearStateAsync(StateName, grainId, state);
+        await storage.ClearStateAsync(StateName, grainId, state);
 
         Assert.IsNull(state.ETag);
         Assert.IsFalse(state.RecordExists);
     }
 
-    [TestMethod]
-    public async Task Read_NonExistentKey_LeavesStateUnchanged()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task Read_NonExistentKey_LeavesStateUnchanged(PersistenceProvider provider)
     {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var storage = new EfCoreProcessDefinitionGrainStorage(fixture.CommandFactory);
+
         var grainId = NewGrainId("missing:1:ts");
         var state = CreateEmptyGrainState();
 
-        await _storage.ReadStateAsync(StateName, grainId, state);
+        await storage.ReadStateAsync(StateName, grainId, state);
 
         Assert.IsNull(state.ETag);
         Assert.IsFalse(state.RecordExists);
     }
 
-    [TestMethod]
-    public async Task DifferentGrainIds_AreIsolated()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task DifferentGrainIds_AreIsolated(PersistenceProvider provider)
     {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var storage = new EfCoreProcessDefinitionGrainStorage(fixture.CommandFactory);
+
         var id1 = "iso1:1:ts";
         var id2 = "iso2:1:ts";
         var grainId1 = NewGrainId(id1);
@@ -220,13 +248,13 @@ public class EfCoreProcessDefinitionGrainStorageTests
         var state1 = CreateGrainState(id1, "iso1", 1);
         var state2 = CreateGrainState(id2, "iso2", 2);
 
-        await _storage.WriteStateAsync(StateName, grainId1, state1);
-        await _storage.WriteStateAsync(StateName, grainId2, state2);
+        await storage.WriteStateAsync(StateName, grainId1, state1);
+        await storage.WriteStateAsync(StateName, grainId2, state2);
 
         var read1 = CreateEmptyGrainState();
         var read2 = CreateEmptyGrainState();
-        await _storage.ReadStateAsync(StateName, grainId1, read1);
-        await _storage.ReadStateAsync(StateName, grainId2, read2);
+        await storage.ReadStateAsync(StateName, grainId1, read1);
+        await storage.ReadStateAsync(StateName, grainId2, read2);
 
         Assert.AreEqual("iso1", read1.State.ProcessDefinitionKey);
         Assert.AreEqual(1, read1.State.Version);
@@ -234,17 +262,22 @@ public class EfCoreProcessDefinitionGrainStorageTests
         Assert.AreEqual(2, read2.State.Version);
     }
 
-    [TestMethod]
-    public async Task WriteAndRead_UserTaskWithListProperties_RoundTripsCorrectly()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task WriteAndRead_UserTaskWithListProperties_RoundTripsCorrectly(PersistenceProvider provider)
     {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var storage = new EfCoreProcessDefinitionGrainStorage(fixture.CommandFactory);
+
         var id = "usertask:1:ts";
         var grainId = NewGrainId(id);
         var state = CreateGrainStateWithUserTask(id);
 
-        await _storage.WriteStateAsync(StateName, grainId, state);
+        await storage.WriteStateAsync(StateName, grainId, state);
 
         var readState = CreateEmptyGrainState();
-        await _storage.ReadStateAsync(StateName, grainId, readState);
+        await storage.ReadStateAsync(StateName, grainId, readState);
 
         var workflow = readState.State.Workflow;
         Assert.AreEqual(3, workflow.Activities.Count);
@@ -262,21 +295,26 @@ public class EfCoreProcessDefinitionGrainStorageTests
             new[] { "approved", "comments" }, userTask.ExpectedOutputVariables!.ToList());
     }
 
-    [TestMethod]
-    public async Task WriteClearWrite_ReCreatesSameGrainId()
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task WriteClearWrite_ReCreatesSameGrainId(PersistenceProvider provider)
     {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var storage = new EfCoreProcessDefinitionGrainStorage(fixture.CommandFactory);
+
         var id = "recreate:1:ts";
         var grainId = NewGrainId(id);
         var state = CreateGrainState(id, "recreate", 1);
-        await _storage.WriteStateAsync(StateName, grainId, state);
+        await storage.WriteStateAsync(StateName, grainId, state);
 
-        await _storage.ClearStateAsync(StateName, grainId, state);
+        await storage.ClearStateAsync(StateName, grainId, state);
 
         var newState = CreateGrainState(id, "recreate", 2);
-        await _storage.WriteStateAsync(StateName, grainId, newState);
+        await storage.WriteStateAsync(StateName, grainId, newState);
 
         var readState = CreateEmptyGrainState();
-        await _storage.ReadStateAsync(StateName, grainId, readState);
+        await storage.ReadStateAsync(StateName, grainId, readState);
 
         Assert.AreEqual("recreate", readState.State.ProcessDefinitionKey);
         Assert.AreEqual(2, readState.State.Version);
@@ -295,6 +333,11 @@ public class EfCoreProcessDefinitionGrainStorageTests
 
     private static GrainId NewGrainId(string key)
         => GrainId.Create("processDefinition", key);
+
+    // PostgreSQL `timestamptz` stores microseconds; .NET DateTimeOffset has 100ns ticks.
+    // Round-trip equality must be checked at microsecond resolution.
+    private static DateTimeOffset TruncateToMicroseconds(DateTimeOffset value)
+        => new(value.Ticks - value.Ticks % 10, value.Offset);
 
     private static TestGrainState<ProcessDefinition> CreateGrainState(
         string id, string key, int version)

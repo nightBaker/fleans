@@ -1,0 +1,43 @@
+<Project>
+
+  <PropertyGroup>
+    <!--
+      Single source of truth for Fleans repository version metadata. Local builds emit
+      assemblies and SdkContainerSupport images tagged 0.1.0. The release workflow overrides
+      with /p:Version=<git-tag-without-v> (e.g. /p:Version=0.1.0-beta) so assembly versions
+      and the published container tag agree with the git tag.
+
+      ContainerImageTag = $(Version) is the explicit "tag suffix overrides on release"
+      mechanism: when MSBuild is invoked with /p:Version=X, $(Version) wins over $(VersionPrefix)
+      and SdkContainerSupport stamps the image accordingly.
+    -->
+    <VersionPrefix>0.1.0</VersionPrefix>
+    <ContainerImageTag>$(Version)</ContainerImageTag>
+
+    <!--
+      NuGet packaging metadata applied repo-wide; per-csproj <IsPackable>true</IsPackable>
+      opts a project in to actually producing a .nupkg + .snupkg.
+
+      Plugin packages share this <VersionPrefix> track — every Fleans release bumps every
+      plugin's NuGet version even when the plugin source is bit-identical (same precedent
+      as Aspire.Hosting.* / Microsoft.Orleans.*).
+    -->
+    <Authors>Fleans contributors</Authors>
+    <Company>Fleans</Company>
+    <Copyright>Copyright (c) Fleans contributors</Copyright>
+    <PackageProjectUrl>https://github.com/nightBaker/fleans</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/nightBaker/fleans</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+
+    <!-- SourceLink + deterministic build switches. ContinuousIntegrationBuild is a no-op
+         locally and turns on in GitHub Actions runs (env var GITHUB_ACTIONS=true). -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+</Project>

@@ -656,6 +656,12 @@ public partial class WorkflowInstance
             case EscalationUncaughtRaised escUncaught:
                 LogEscalationUncaught(escUncaught.EscalationCode, escUncaught.SourceActivityId);
                 break;
+            case ExecuteCustomTaskEvent customTaskEvent:
+                LogCustomTaskEventPublished(
+                    customTaskEvent.ActivityId,
+                    customTaskEvent.TaskType,
+                    customTaskEvent.ActivityInstanceId);
+                break;
         }
     }
 }
