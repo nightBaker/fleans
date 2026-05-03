@@ -307,7 +307,9 @@ When `Fleans.Web` runs behind a TLS-terminating proxy, set the `KnownProxies` / 
 
 ## Configuration reference
 
-All keys are read by every silo / host that needs them. `:` in config keys becomes `__` in environment variables (e.g. `Fleans:Role` → `Fleans__Role`).
+The full canonical list of every configuration key — what it does, where it's read in source, and which environment-variable equivalent operators set on a container or systemd unit — is on the dedicated **[Configuration](/fleans/reference/configuration/)** page. The summary tables below cover the deployment-relevant subset; cross-link to that page for the per-host applicability matrix and source pins.
+
+`:` in config keys becomes `__` (double underscore) in environment variables — see [Configuration / The naming rule](/fleans/reference/configuration/#the-naming-rule).
 
 ### Silo role and identity
 
