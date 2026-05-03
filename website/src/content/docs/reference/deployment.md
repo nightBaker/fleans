@@ -24,6 +24,10 @@ A production Fleans cluster has these components:
 | **PostgreSQL** | `postgres:16` or managed | recommended for prod | Workflow event store + read model. SQLite is local-dev only. |
 | **Kafka** | any Kafka broker | optional | Replaces in-memory streaming when at-least-once durability is required. |
 
+:::caution[Streaming: do not point Kafka at managed services in v1]
+The Kafka provider is plaintext-only — see [Streaming → Production-readiness gaps](/fleans/reference/streaming/#production-readiness-gaps) before pointing `Fleans:Streaming:Kafka:Brokers` at Confluent Cloud, MSK, Aiven, or Redpanda Cloud. The Memory provider has no production-readiness gaps.
+:::
+
 All silo and host processes expose two health endpoints, wired through `MapDefaultEndpoints()` in `Fleans.ServiceDefaults`:
 
 - `/alive` — liveness only (process up). **Use for Kubernetes liveness probes.**
