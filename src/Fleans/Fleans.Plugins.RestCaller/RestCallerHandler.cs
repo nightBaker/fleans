@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Dynamic;
 using System.Net.Http.Headers;
 using System.Text;
+using Fleans.Application.Abstractions.Events;
 using Fleans.Application.Events;
 using Fleans.Domain.Errors;
 using Fleans.Worker.CustomTasks;
@@ -23,7 +24,7 @@ namespace Fleans.Plugins.RestCaller;
 /// from an abstract base is not reliably honored. Plugin authors should repeat both
 /// attributes on every concrete <c>CustomTaskHandlerBase</c> subclass they ship.
 /// </summary>
-[ImplicitStreamSubscription(WorkflowEventsPublisher.ExecuteCustomTaskStreamNamespace)]
+[ImplicitStreamSubscription(WorkflowEventStreams.ExecuteCustomTaskStreamNamespace)]
 [WorkerPlacement]
 public sealed partial class RestCallerHandler : CustomTaskHandlerBase
 {
