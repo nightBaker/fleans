@@ -57,6 +57,11 @@ internal static class FleanModelConfiguration
             // TransactionOutcomes is rebuilt from TransactionOutcomeSet events on grain activation.
             entity.Ignore(e => e.TransactionOutcomes);
 
+            // ScopeHostExecutionScopes is rebuilt from ScopeHostExecutionScopeOpened events
+            // (and pruned by ApplyActivityCompleted/ApplyActivityCancelled) on grain activation.
+            // See issue #284.
+            entity.Ignore(e => e.ScopeHostExecutionScopes);
+
             entity.HasMany(e => e.TimerCycleTracking)
                 .WithOne()
                 .HasForeignKey(e => e.WorkflowInstanceId)

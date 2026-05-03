@@ -721,6 +721,140 @@ public class WorkflowExecutionScopeCompletionTests
         Assert.IsFalse(hostEntry.IsCompleted);
     }
 
+    // ===== Issue #284: Nested EventSubProcess fail-fast / disambiguation =====
+
+    [TestMethod]
+    public void CompleteFinishedSubProcessScopes_SubProcessWithMultipleChildScopes_LookupResolvesOwnScope()
+    {
+        // Regression for issue #284. Build a SubProcess host that has a sibling
+        // EventSubProcess handler scope (same ParentVariablesId as its own
+        // execution scope). With ScopeHostExecutionScopes populated, the host's
+        // own execution-scope must be unambiguously merged into the parent and
+        // the ESP handler scope must be discarded — no exception thrown.
+        var subStart = new StartEvent("subStart1");
+        var subEnd = new EndEvent("subEnd1");
+        var subProcess = new SubProcess("sub1")
+        {
+            Activities = [subStart, subEnd],
+            SequenceFlows = [new SequenceFlow("subSeq1", subStart, subEnd)]
+        };
+        var start = new StartEvent("start1");
+        var end = new EndEvent("end1");
+
+        var (execution, state, hostEntry) = CreateWithExecutingHost(
+            [start, subProcess, end],
+            [new("seq1", start, subProcess), new("seq2", subProcess, end)],
+            subProcess);
+
+        // Open the SubProcess via the proper command path so ScopeHostExecutionScopes
+        // is populated by the new ScopeHostExecutionScopeOpened projection.
+        execution.ProcessCommands(
+            [new OpenSubProcessCommand(subProcess, hostEntry.VariablesId)],
+            hostEntry.ActivityInstanceId);
+
+        // Manually emulate a sibling EventSubProcess handler scope hung off
+        // hostEntry.VariablesId (this is what TryActivateXxxEventSubProcess does
+        // when an ESP nested in this SubProcess fires).
+        var espHandlerScopeId = Guid.NewGuid();
+        state.AddChildVariableState(espHandlerScopeId, hostEntry.VariablesId);
+
+        // Complete the subStart so the SubProcess's only inner activity is done.
+        var subStartEntry = state.Entries.First(e => e.ActivityId == "subStart1");
+        execution.MarkExecuting(subStartEntry.ActivityInstanceId);
+        execution.MarkCompleted(subStartEntry.ActivityInstanceId, new ExpandoObject());
+        execution.ResolveTransitions(
+        [
+            new CompletedActivityTransitions(subStartEntry.ActivityInstanceId, "subStart1",
+                [new ActivityTransition(subEnd)])
+        ]);
+        var subEndEntry = state.Entries.First(e => e.ActivityId == "subEnd1");
+        execution.MarkExecuting(subEndEntry.ActivityInstanceId);
+        execution.MarkCompleted(subEndEntry.ActivityInstanceId, new ExpandoObject());
+        execution.ClearUncommittedEvents();
+
+        // Two child scopes share hostEntry.VariablesId: the SubProcess's own
+        // execution scope (registered via ScopeHostExecutionScopeOpened) and
+        // the simulated ESP handler scope. The lookup must pick the right one.
+        var siblingCount = state.VariableStates.Count(vs => vs.ParentVariablesId == hostEntry.VariablesId);
+        Assert.AreEqual(2, siblingCount,
+            "Test scenario must have two sibling child scopes under the SubProcess host");
+        Assert.IsTrue(state.ScopeHostExecutionScopes.ContainsKey(hostEntry.ActivityInstanceId),
+            "ScopeHostExecutionScopes must record the host's own execution scope");
+
+        var (effects, completedHostIds, orphanedScopeIds) = execution.CompleteFinishedSubProcessScopes();
+
+        Assert.AreEqual(1, completedHostIds.Count, "Host must complete with two child scopes present");
+        Assert.IsTrue(hostEntry.IsCompleted);
+        // Both child scopes should be queued for removal.
+        Assert.AreEqual(2, orphanedScopeIds.Count,
+            "Both the own execution scope and the ESP handler scope should be queued for removal");
+        Assert.IsTrue(orphanedScopeIds.Contains(espHandlerScopeId),
+            "ESP handler scope must be discarded");
+    }
+
+    [TestMethod]
+    public void CompleteFinishedSubProcessScopes_FallbackFailsFast_WhenLookupAndTopologyDisagree()
+    {
+        // Regression for issue #284 fail-fast branch. Build a SubProcess host
+        // whose ScopeHostExecutionScopes lookup misses (simulating replay over
+        // an event log produced before the fix shipped) AND whose only inner
+        // activities are EventSubProcess hosts (so the topology fallback can
+        // not pick a non-ESP scope). The new structured exception must fire.
+        var espStart = new TimerStartEvent("espTimer",
+            new TimerDefinition(TimerType.Duration, "PT5S"));
+        var espEnd = new EndEvent("espEnd");
+        var nestedEsp = new EventSubProcess("nestedEsp")
+        {
+            Activities = [espStart, espEnd],
+            SequenceFlows = [new SequenceFlow("esp_sf1", espStart, espEnd)],
+            IsInterrupting = true,
+        };
+
+        var subProcess = new SubProcess("sub1")
+        {
+            Activities = [nestedEsp],
+            SequenceFlows = []
+        };
+        var start = new StartEvent("start1");
+        var end = new EndEvent("end1");
+
+        var (execution, state, hostEntry) = CreateWithExecutingHost(
+            [start, subProcess, end],
+            [new("seq1", start, subProcess), new("seq2", subProcess, end)],
+            subProcess);
+
+        // Hand-build the SubProcess host's child scopes WITHOUT going through
+        // OpenSubProcessCommand so ScopeHostExecutionScopes stays empty.
+        var ownScopeId = Guid.NewGuid();
+        state.AddChildVariableState(ownScopeId, hostEntry.VariablesId);
+        var espHandlerScopeId = Guid.NewGuid();
+        state.AddChildVariableState(espHandlerScopeId, hostEntry.VariablesId);
+
+        // Spawn an ESP host entry inside the SubProcess so the topology fallback
+        // sees only ESP children — and therefore returns null.
+        var espEntry = new ActivityInstanceEntry(
+            Guid.NewGuid(), nestedEsp.ActivityId, state.Id, hostEntry.ActivityInstanceId);
+        espEntry.SetActivityType(nameof(EventSubProcess));
+        espEntry.SetVariablesId(espHandlerScopeId);
+        state.AddEntries([espEntry]);
+        // Mark the only inner entry as completed so the SubProcess "all
+        // children completed" gate passes.
+        espEntry.Execute();
+        espEntry.Complete();
+        execution.ClearUncommittedEvents();
+
+        Assert.IsFalse(state.ScopeHostExecutionScopes.ContainsKey(hostEntry.ActivityInstanceId),
+            "Test scenario must have an empty ScopeHostExecutionScopes lookup");
+
+        var ex = Assert.ThrowsExactly<InvalidOperationException>(() =>
+            execution.CompleteFinishedSubProcessScopes());
+
+        Assert.IsTrue(ex.Message.Contains("Cannot identify own execution scope"),
+            $"Fail-fast message must explain the disambiguation gap. Got: {ex.Message}");
+        Assert.IsTrue(ex.Message.Contains("ScopeHostExecutionScopes lookup missed"),
+            "Fail-fast message must point at the lookup miss as the root cause");
+    }
+
     // ===== Apply VariableScopesRemoved Tests =====
 
     [TestMethod]

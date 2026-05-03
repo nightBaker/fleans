@@ -165,11 +165,6 @@ public class EventSubProcessTimerTests : WorkflowTestBase
     }
 
     [TestMethod]
-    [Ignore("Tracks a newly discovered nested-scope defect — see #284. "
-        + "When a timer EventSubProcess is declared inside a SubProcess, firing "
-        + "the timer throws 'Expected at most one child scope for subprocess host' "
-        + "from WorkflowExecution.CompleteFinishedSubProcessScopes. Re-enable when "
-        + "#284 is fixed.")]
     public async Task TimerEventSubProcess_NestedInsideSubProcess_CompletesScope()
     {
         // Regression for #283 review round 2: ensures scope-id resolution and
