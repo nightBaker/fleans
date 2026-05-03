@@ -119,3 +119,7 @@ FLEANS_PG_TESTS=1 dotnet test --filter "TestCategory=Postgres"
 ### CI
 
 The dedicated [`PostgreSQL tests`](https://github.com/nightBaker/fleans/blob/main/.github/workflows/pg-tests.yml) GitHub Actions workflow runs on every PR + push to `main`, sets `FLEANS_PG_TESTS=1`, and executes `dotnet test --filter "TestCategory=Postgres"` against the Testcontainers-managed image.
+
+## See also
+
+- [Observability](/fleans/reference/observability/) — health checks, metrics, logging, tracing, dashboards, alerting

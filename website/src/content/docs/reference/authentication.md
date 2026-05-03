@@ -225,3 +225,7 @@ The manual regression test plans for authentication live at:
 ## Related
 
 - Role-based authorization for both API and Management UI — tracked in [#341](https://github.com/nightBaker/fleans/issues/341).
+
+## See also
+
+- [Observability](/fleans/reference/observability/) — health checks, metrics, logging, tracing, dashboards, alerting

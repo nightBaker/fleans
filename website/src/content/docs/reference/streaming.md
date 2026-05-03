@@ -121,3 +121,7 @@ broker topic before the handler runs.
 
 `Confluent.Kafka` 2.6.1 / librdkafka 2.6.x are the supported versions. The adapter targets
 `net10.0` (matching every other silo csproj in this repo).
+
+## See also
+
+- [Observability](/fleans/reference/observability/) — health checks, metrics, logging, tracing, dashboards, alerting
