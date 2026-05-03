@@ -26,6 +26,7 @@ export default defineConfig({
             { label: 'Service Tasks', slug: 'guides/service-tasks' },
             { label: 'User Tasks', slug: 'guides/user-tasks' },
             { label: 'Variables and Scope', slug: 'guides/variables-and-scope' },
+            { label: 'Multi-Instance Activities', slug: 'guides/multi-instance-activities' },
             { label: 'Writing Custom-Task Plugins', slug: 'guides/writing-custom-tasks' },
             { label: 'Hosting Plugins (Custom Worker Host)', slug: 'guides/custom-worker-host' },
             { label: 'Error Handling', slug: 'guides/error-handling' },
