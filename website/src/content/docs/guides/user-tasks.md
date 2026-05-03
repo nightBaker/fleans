@@ -7,6 +7,8 @@ description: How to model human-in-the-loop steps in Fleans — claim, complete,
 Reach for `<bpmn:userTask>` when a step needs a human decision before the workflow can advance — approvals, manual review, data-entry steps. For automated work (an API call, an email, a payment) use a [service task](/fleans/guides/service-tasks/) or a [custom-task plugin](/fleans/guides/writing-custom-tasks/) instead.
 :::
 
+> See also: the [User Task API reference](/fleans/reference/api/#user-task-endpoints) for exact wire shapes, status codes, and curl examples.
+
 ## What are user tasks?
 
 A **user task** (`<bpmn:userTask>`) represents work a human operator must perform. The engine pauses the token at the task and exposes it to the outside world through `GET /Workflow/tasks` so a UI (or any other client) can list, claim, and complete it. Once a human posts the result, the engine merges the result into the workflow scope and advances the token.
