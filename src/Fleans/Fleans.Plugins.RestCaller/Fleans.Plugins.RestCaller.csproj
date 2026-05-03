@@ -5,16 +5,29 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>14</LangVersion>
+    <!-- NuGet packaging for the REST-caller plugin (the canonical example shipped
+         with Fleans). Operators wanting to host this plugin outside the engine repo
+         consume it via PackageReference + AddRestCallerPlugin(). -->
+    <IsPackable>true</IsPackable>
+    <PackageId>Fleans.Plugins.RestCaller</PackageId>
+    <Description>Fleans REST caller plugin — backs &lt;serviceTask type="rest-call"&gt; with an HTTP request.</Description>
+    <PackageTags>fleans;workflow;orleans;bpmn;plugin;rest;http</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Orleans.Sdk" Version="10.0.1" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Fleans.Worker\Fleans.Worker.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>

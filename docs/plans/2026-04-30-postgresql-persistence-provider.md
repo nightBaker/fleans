@@ -91,7 +91,7 @@ PostgreSQL integration tests use [Testcontainers](https://dotnet.testcontainers.
 - The CI workflow filters with `dotnet test --filter "TestCategory=Postgres"` and sets `FLEANS_PG_TESTS=1` so the Testcontainers fixture activates.
 - Locally, a developer runs `dotnet test` (default — Postgres tests are skipped without `FLEANS_PG_TESTS=1`) or `FLEANS_PG_TESTS=1 dotnet test --filter "TestCategory=Postgres"` (Postgres lane only, requires Docker).
 
-**Silent-green failure mode (deferred to Phase 5b):** `dotnet test --filter "TestCategory=Postgres"` matching zero tests passes silently. The Phase 5b CI workflow must guard against this — either by parsing the `.trx` for `executed=0`, or by running `dotnet test --list-tests` as a pre-check that asserts a non-empty test list. This is captured in the Phase 5b issue and cross-referenced [in §11](#11-known-follow-ups).
+**Phase 5b silent-green guard (landed):** `dotnet test --filter "TestCategory=Postgres"` matching zero tests passes silently. The Phase 5b CI workflow runs `dotnet test` with `--logger "trx;LogFileName=pg.trx"`, then asserts via `xmllint` that the TRX's `<ResultSummary>/<Counters/@total>` is greater than zero (with a `count(//UnitTestResult) > 0` belt-and-braces fallback). **Failure mode:** the job fails (with a clear log message naming the likely root cause — the `[TestCategory("Postgres")]` attribute being dropped from the parametrised classes) if zero tests were considered. Tracked at [#445](https://github.com/nightBaker/fleans/issues/445); see `.github/workflows/pg-tests.yml` for the implementation.
 
 ## 9. Phase log
 
