@@ -1,4 +1,5 @@
 using System.Dynamic;
+using Fleans.Application.Abstractions.Events;
 using Fleans.Application.CustomTasks;
 using Fleans.Application.Events;
 using Fleans.Application.Grains;
@@ -23,7 +24,7 @@ namespace Fleans.Worker.CustomTasks;
 /// stream subscription, filtering, error path, and completion callback are all owned
 /// by the base.
 /// </summary>
-[ImplicitStreamSubscription(WorkflowEventsPublisher.ExecuteCustomTaskStreamNamespace)]
+[ImplicitStreamSubscription(WorkflowEventStreams.ExecuteCustomTaskStreamNamespace)]
 [WorkerPlacement]
 public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey, IAsyncObserver<ExecuteCustomTaskEvent>
 {
@@ -54,8 +55,8 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
 
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
-        var streamProvider = this.GetStreamProvider(WorkflowEventsPublisher.StreamProvider);
-        var streamId = StreamId.Create(WorkflowEventsPublisher.ExecuteCustomTaskStreamNamespace, nameof(ExecuteCustomTaskEvent));
+        var streamProvider = this.GetStreamProvider(WorkflowEventStreams.StreamProvider);
+        var streamId = StreamId.Create(WorkflowEventStreams.ExecuteCustomTaskStreamNamespace, nameof(ExecuteCustomTaskEvent));
         var stream = streamProvider.GetStream<ExecuteCustomTaskEvent>(streamId);
 
         var handles = await stream.GetAllSubscriptionHandles();

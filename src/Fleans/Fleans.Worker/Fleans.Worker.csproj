@@ -5,14 +5,30 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>14</LangVersion>
+    <!-- NuGet packaging: Fleans.Worker is the Orleans-side base for plugin authors
+         (CustomTaskHandlerBase, [WorkerPlacement], stateless-worker grain implementations).
+         Today it still has a ProjectReference to Fleans.Application; v3 follow-up #
+         tracks the structural refactor that moves the remaining interfaces into
+         Fleans.Application.Abstractions so this package can be a true leaf NuGet. -->
+    <IsPackable>true</IsPackable>
+    <PackageId>Fleans.Worker</PackageId>
+    <Description>Orleans worker-side primitives for Fleans plugin authors: CustomTaskHandlerBase, [WorkerPlacement], placement directors.</Description>
+    <PackageTags>fleans;workflow;orleans;bpmn;worker;plugin</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Orleans.Sdk" Version="10.0.1" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Fleans.Application.Abstractions\Fleans.Application.Abstractions.csproj" />
     <ProjectReference Include="..\Fleans.Application\Fleans.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>

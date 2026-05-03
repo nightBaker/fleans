@@ -26,6 +26,7 @@ export default defineConfig({
             { label: 'Service Tasks', slug: 'guides/service-tasks' },
             { label: 'User Tasks', slug: 'guides/user-tasks' },
             { label: 'Writing Custom-Task Plugins', slug: 'guides/writing-custom-tasks' },
+            { label: 'Hosting Plugins (Custom Worker Host)', slug: 'guides/custom-worker-host' },
             { label: 'BPMN Editor', slug: 'guides/editor' },
             { label: 'Add to Existing Project', slug: 'guides/add-to-existing-project' },
           ],
