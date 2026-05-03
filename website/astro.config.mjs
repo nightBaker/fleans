@@ -30,6 +30,7 @@ export default defineConfig({
             { label: 'Hosting Plugins (Custom Worker Host)', slug: 'guides/custom-worker-host' },
             { label: 'Error Handling', slug: 'guides/error-handling' },
             { label: 'BPMN Editor', slug: 'guides/editor' },
+            { label: 'Events Page', slug: 'guides/events-page' },
             { label: 'Add to Existing Project', slug: 'guides/add-to-existing-project' },
           ],
         },
