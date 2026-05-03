@@ -42,6 +42,7 @@ service (the Admin UI).
 Fleans deploys workflows through the **Admin UI** (Blazor editor), not via a REST endpoint.
 
 1. Open the **Web app** — find its URL on the Aspire dashboard
+   *(tip: append `/dashboard` to that URL to see the [Orleans Dashboard](/fleans/reference/observability/#orleans-dashboard) — silo membership, grain activations, request latencies — useful for "is the workflow engine alive?" sanity checks).*
 2. Navigate to the **Editor** page
 3. Import or paste your BPMN XML, then click **Deploy**
 
