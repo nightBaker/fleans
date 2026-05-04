@@ -49,7 +49,7 @@ Fleans deploys workflows through the **Admin UI** (Blazor editor), not via a RES
 3. Import or paste your BPMN XML, then click **Deploy**
 
 A sample BPMN file is available to get you started:
-[**my-process.bpmn**](/samples/my-process.bpmn) — a minimal workflow with a single script task
+[**my-process.bpmn**](/fleans/samples/my-process.bpmn) — a minimal workflow with a single script task
 that sets a `greeting` variable.
 
 ```xml
