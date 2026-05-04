@@ -48,6 +48,7 @@ export default defineConfig({
             { label: 'Variables and Scope', slug: 'guides/variables-and-scope' },
             { label: 'Error Handling', slug: 'guides/error-handling' },
             { label: 'Multi-Instance Activities', slug: 'guides/multi-instance-activities' },
+            { label: 'Message Correlation', slug: 'guides/message-correlation' },
           ],
         },
         {
