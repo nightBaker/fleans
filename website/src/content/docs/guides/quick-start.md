@@ -35,6 +35,8 @@ Both `<port>` (default `15888` unless overridden by `ASPNETCORE_URLS` or your
 run-to-run — use whatever the console prints. Open that URL to reach the
 Aspire dashboard, from which you can click through to the `Fleans.Web`
 service (the Admin UI).
+
+*(tip: the `:` in config keys becomes `__` in environment variables — `Fleans:Role` → `Fleans__Role`. See [Configuration](/fleans/reference/configuration/) for the canonical key reference.)*
 :::
 
 ## Deploy a workflow

@@ -94,7 +94,7 @@ disable it by default and the client-side path is what we ship.
 
 ## Aspire opt-in
 
-The Aspire AppHost reads `FLEANS_STREAMING_PROVIDER` (default `Memory`). Setting it to `Kafka`
+The Aspire AppHost reads `FLEANS_STREAMING_PROVIDER` (default `Memory`). **Note:** this is an Aspire-only convenience knob — silos read the runtime equivalent `Fleans__Streaming__Provider` instead (see [Configuration / Streaming](/fleans/reference/configuration/#streaming)). Setting it to `Kafka`
 provisions a Kafka container and forwards two environment variables onto the silo:
 
 ```bash
