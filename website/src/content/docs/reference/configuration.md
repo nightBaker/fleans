@@ -81,7 +81,7 @@ Allowed values: `Core`, `Worker`, `Combined` (case-insensitive). Invalid values 
 | --- | --- | --- | --- |
 | `Persistence__Provider` | `Persistence:Provider` | `Fleans.ServiceDefaults/FleansPersistenceExtensions.cs:23` | `"Sqlite"` (case-insensitive; accepts `Sqlite` or `Postgres`) |
 
-The provider toggle. `Postgres` runs `MigrateAsync()` at startup; `Sqlite` runs `EnsureCreated()`. SQLite is dev-only and ignored in container/k8s deployments.
+The provider toggle. `Postgres` runs `MigrateAsync()` at startup; `Sqlite` runs `EnsureCreated()`. SQLite is dev-only and ignored in container/k8s deployments. Any other value (typo like `PostgreSQL`, empty string, whitespace) throws `ArgumentException` at silo startup so misconfigured deployments fail fast instead of silently falling back to an in-pod SQLite file.
 
 ### Streaming
 
