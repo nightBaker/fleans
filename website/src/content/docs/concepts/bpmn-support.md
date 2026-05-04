@@ -105,7 +105,7 @@ This page is the canonical coverage matrix for BPMN 2.0 elements in Fleans. Ever
 |---|---|---|---|---|---|
 | Embedded Sub-Process | `<bpmn:subProcess>` | ✅ | `BpmnConverter.cs:517` | [#07](../../../tests/manual/07-subprocess/) | Own start/end, isolated variable scope. |
 | Event Sub-Process | `<bpmn:subProcess triggeredByEvent="true">` | ✅ | `BpmnConverter.cs:517 + :527-530` | [#19](../../../tests/manual/19-event-subprocess-error/), [#20-tm](../../../tests/manual/20-event-subprocess-timer/), [#21](../../../tests/manual/21-event-subprocess-message/), [#22](../../../tests/manual/22-event-subprocess-signal/), [#23](../../../tests/manual/23-event-subprocess-non-interrupting/) | Error-/timer-/message-/signal-triggered; interrupting + non-interrupting. |
-| Transaction Sub-Process | `<bpmn:transaction>` | ⚠️ | `BpmnConverter.cs:574 + :578` | [#26](../../../tests/manual/26-transaction-subprocess/), [#30-cancel](../../../tests/manual/30-cancel-event/) | Completed + Cancelled paths supported. Hazard path pending [#231](https://github.com/nightBaker/fleans/issues/231). Multi-instance transactions rejected at parse time. |
+| Transaction Sub-Process | `<bpmn:transaction>` | ⚠️ | `BpmnConverter.cs:574 + :578` | [#26](../../../tests/manual/26-transaction-subprocess/), [#30-cancel](../../../tests/manual/30-cancel-event/) | Completed + Cancelled supported; Hazard pending. See [Transaction Sub-Process status](#transaction-sub-process-status) for the supported/unsupported matrix, workaround pattern, and the new Hazard tracker. |
 | Multi-Instance (any host) | `<bpmn:*><multiInstanceLoopCharacteristics>` | ⚠️ | `BpmnConverter.cs:1132 + :1138` | [#13](../../../tests/manual/13-multi-instance/) | `loopCardinality` + `inputCollection` supported; `completionCondition` and `nrOf*` pending [#470](https://github.com/nightBaker/fleans/issues/470). |
 
 ### Gateways
@@ -141,7 +141,7 @@ This page is the canonical coverage matrix for BPMN 2.0 elements in Fleans. Ever
 ## Notes that span multiple rows
 
 - **Multi-Instance** can wrap any task or sub-process — see the [Multi-Instance Activities](/fleans/guides/multi-instance-activities/) guide.
-- **Transaction Sub-Process** terminal outcomes (Completed / Cancelled / Hazard) are detailed below in the [Cancel Events](#cancel-events) section.
+- **Transaction Sub-Process** terminal outcomes (Completed / Cancelled / Hazard) — see the [Transaction Sub-Process status](#transaction-sub-process-status) callout under Cancel Events for the supported/unsupported matrix and workaround pattern.
 - **Conditional Events** (start, intermediate catch, boundary) share the same evaluation engine — see the [Conditional Events](#conditional-events) section.
 - **Event Sub-Processes** support all four trigger types (error / timer / message / signal) in both interrupting and non-interrupting variants. Error sub-processes are always interrupting per BPMN 2.0 §10.2.4.
 - **Compensation Events** (boundary, intermediate throw, end event) — see the [Compensation Events](#compensation-events) section for execution-order rules.
@@ -256,6 +256,20 @@ When the workflow reaches `compensate_all`, the engine:
 - Compensation state (`CompensationLog`, `ActiveCompensationWalk`) is rebuilt from domain events on grain activation — it is **not stored in the relational database** directly.
 
 ## Cancel Events
+
+### Transaction Sub-Process status
+
+:::caution[Phase-1 status — Transaction Sub-Process]
+- ✅ **Completed outcome** — normal end event reached. Variables merge into the parent scope. **Fully supported.**
+- ✅ **Cancelled outcome** — `<bpmn:cancelEndEvent>` reached inside the `<bpmn:transaction>`. Active siblings cancel; compensation handlers run in reverse completion order; the Cancel Boundary Event fires. **Fully supported** (regression test [#36](https://github.com/nightBaker/fleans/blob/main/tests/manual/30-cancel-event/test-plan.md)).
+- ❌ **Hazard outcome** — an unhandled, non-`Cancel` failure (uncaught exception, infrastructure failure, timer with no boundary) inside the transaction. **Not yet implemented.** The transaction will stay `Running` or transition to `Failed` without firing compensation handlers and without firing any boundary event. Tracked in [#492](https://github.com/nightBaker/fleans/issues/492).
+
+**Workaround if you need Hazard-style cleanup today:** wrap the transaction in a `<bpmn:callActivity>` calling a child process that contains the transaction as its body. Attach an **error boundary event** (catch-all, no `errorRef`) to the call activity, and route it to a compensation throw event that targets the activities you need to roll back. This pattern gives you Cancel-equivalent semantics for the catch-all error case at the cost of an extra process boundary.
+
+**Constraint:** **Multi-instance transactions** are rejected at parse time (`BpmnConverter.cs:578-581` — typed exception). This is a deliberate phase-1 restriction, not a bug — multi-instance + atomicity has subtle interactions with compensation walk ordering that #307 will address.
+
+**Nested transactions:** parse and run on the happy path. **Do not place a Cancel End Event inside an inner nested transaction** — cancel-path semantics for nested transactions land in later phases of [#307](https://github.com/nightBaker/fleans/issues/307).
+:::
 
 Cancel events implement the **transaction cancellation** path in BPMN: when a Cancel End Event fires inside a Transaction Sub-Process, the engine rolls back the transaction's scope and routes execution to a recovery flow via the Cancel Boundary Event.
 

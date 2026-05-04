@@ -252,8 +252,10 @@ For the cancel-driven flow plus compensation handler walk semantics, see
 [Error Handling — Compensation](/fleans/guides/error-handling/) — the
 variable-scope merge invariant for handler walks lives there.
 
-The hazard path (unhandled error inside a transaction) is tracked in
-issue #231; today it's flagged `KNOWN BUG` in the regression suite.
+For the full phase-1 status (Completed ✅ / Cancelled ✅ / Hazard ❌)
+plus the recommended workaround for Hazard-style cleanup, see the
+[Transaction Sub-Process status](/fleans/concepts/bpmn-support/#transaction-sub-process-status)
+callout on the BPMN coverage page.
 
 ## Best-practice cookbook
 
@@ -331,9 +333,10 @@ handler side-effects visible to subsequent handlers — are in
   In-flight parents pick up new versions on their next call-activity
   execution. Use distinct `calledElement` keys per version if you need
   pinning today.
-- **Transaction Hazard path pending #231.** Unhandled errors inside a
-  transaction are not yet wired to the cancel-and-compensate path; the
-  happy path and explicit Cancel End Event flow are fully supported.
+- **Transaction Hazard path** — see the
+  [Transaction Sub-Process status](/fleans/concepts/bpmn-support/#transaction-sub-process-status)
+  callout on the BPMN coverage page for the supported/unsupported
+  outcome matrix and the workaround pattern.
 
 ## See also
 
