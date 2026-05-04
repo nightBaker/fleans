@@ -204,7 +204,48 @@ Spans propagate W3C `traceparent` automatically — if your upstream sets a trac
 
 ### Orleans Dashboard
 
-For a quick operational view of cluster state — silos, grains, request throughput, exception counts — the [OrleansDashboard](https://github.com/OrleansContrib/OrleansDashboard) project is the easiest first step. A dedicated Fleans page covering deployment patterns is tracked in issue #402; until then, follow the upstream Orleans Dashboard docs.
+{/* drift-guard: Fleans.Web/Program.cs:200 (`MapOrleansDashboard(routePrefix: "/dashboard")`); Microsoft.Orleans.Dashboard 10.0.1; Fleans.Application/Grains/TimerCallbackGrain.cs:8,22,79 (IRemindable + RegisterOrUpdateReminder — guards the Reminders-page claim); Fleans.ServiceDefaults/Extensions.cs:55,65 (AddAspNetCoreInstrumentation() with no path filter — guards the OTLP caveat); pinned at branch=docs/402-orleans-dashboard SHA=b7d80af; refresh if any of the above change */}
+
+The Orleans Dashboard ships with Fleans's Web app at `/dashboard`. It's a real-time operational view of the cluster (silo membership, grain activations, call latencies, reminder schedules) backed by `Microsoft.Orleans.Dashboard` 10.0.1. The mount lives at `Fleans.Web/Program.cs:200` (`app.MapOrleansDashboard(routePrefix: "/dashboard")`).
+
+#### What it shows
+
+| Page | What you see |
+|---|---|
+| **Cluster** | Live silo membership table (silo id, host, status, role, version). Useful for confirming a `Core` + `Worker` split is functioning, or that a rolling restart placed each new silo into the membership table cleanly. |
+| **Grains** | Activation counts per grain class. The `WorkflowInstance` row tells you how many in-flight workflow instances live across the cluster; spikes correlate with throughput surges. |
+| **Reminders** | Scheduled timer reminders per grain. Useful when investigating "did my timer event sub-process actually arm?" — the reminder shows up here within seconds. Fleans uses Orleans persistent reminders for all BPMN timer events (verified at `TimerCallbackGrain.cs:8,22,79`), so every timer arming is visible. |
+| **Methods** | Per-method call counts, average / p99 latency, and exception counts. The `WorkflowInstance.CompleteActivity` and `…HandleMessageDelivery` rows are the high-volume paths. |
+
+#### Accessing it in development (no auth)
+
+When `Authentication` is unconfigured (the default `dotnet run --project Fleans.Aspire`), the dashboard is anonymously accessible:
+
+```
+https://localhost:<fleans-web-port>/dashboard
+```
+
+The Aspire dashboard URL prints the `<fleans-web-port>` at startup. Click through to the Web service in the Aspire dashboard, then append `/dashboard` to the URL.
+
+#### Accessing it under authentication
+
+When `Authentication:Authority` is configured (production OIDC mode — see [Authentication](/fleans/reference/authentication/)), the dashboard is gated by **the same OIDC challenge as every other Web page**, despite the upstream Orleans dashboard middleware not honouring `[Authorize]`. Fleans wires an explicit middleware branch that fires *before* `MapOrleansDashboard` to enforce auth. Behavior:
+
+1. Anonymous request → 302 → IdP login.
+2. IdP callback → cookie issued.
+3. Bounce to `/dashboard?<original-querystring>`.
+
+See [Authentication § Behaviour when enabled](/fleans/reference/authentication/#behaviour-when-enabled) for the full guard.
+
+#### Multi-replica deployments
+
+When `Fleans.Web` runs as more than one replica, **each replica serves its own `/dashboard`**. The membership data is identical because all silos read the same Orleans cluster table from `orleans-redis`. ASP.NET Data Protection keys are persisted to `orleans-redis` so cookies issued by replica A decrypt on replica B (cookie session continuity is preserved across replicas).
+
+#### Operational caveats
+
+- The dashboard pulls data **from the silo it runs in**. In a Combined-role single-silo deploy, that's the only silo's view (sufficient because the `Cluster` page enumerates *all* silos via Orleans's gossip table).
+- The dashboard's HTTP traffic **is** instrumented — `Fleans.ServiceDefaults` wires `AddAspNetCoreInstrumentation()` for both metrics and tracing without a path filter, so `/dashboard/*` requests appear in `http.server.request.duration` and the trace exporter alongside every other Web route. When reading the §Grafana / Aspire dashboard board described below, dashboard polling shows up under the Web-service host metrics — bear that in mind when interpreting request volume on a deployment that has frequent operator dashboard refreshes.
+- For per-tenant access controls beyond "authenticated/anonymous", roll your own middleware in `Fleans.Web/Program.cs` between auth and `MapOrleansDashboard`. (Not in scope for v1.)
 
 ### Grafana / Aspire dashboard
 
