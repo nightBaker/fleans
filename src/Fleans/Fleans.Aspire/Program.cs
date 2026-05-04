@@ -97,7 +97,16 @@ static IResourceBuilder<ProjectResource> WithStreaming(
 }
 
 // Api = Orleans silo
+// Match the Helm chart's deployment-core.yaml: Aspire publish-mode tags fleans-core as
+// Core (publish topology has dedicated fleans-worker / fleans-custom-worker for worker
+// grains), while dev runs (3-process) stay at Combined so fleans-core continues to
+// host worker grains. FLEANS_ROLE env override applies in either mode for local
+// experimentation.
+var defaultCoreRole = builder.ExecutionContext.IsPublishMode ? "Core" : "Combined";
+var coreRole = builder.Configuration["FLEANS_ROLE"] ?? defaultCoreRole;
+
 var apiProject = builder.AddProject<Projects.Fleans_Api>("fleans-core")
+    .WithEnvironment("Fleans__Role", coreRole)
     .WithReference(orleans)
     .WaitFor(redis)
     .WithReplicas(1);

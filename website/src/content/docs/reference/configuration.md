@@ -13,7 +13,7 @@ sidebar:
   - Fleans.ServiceDefaults/FleansPersistenceExtensions.cs:23,29,32,38,39 (Persistence:Provider, ConnectionStrings:fleans, ConnectionStrings:fleans-query, FLEANS_SQLITE_CONNECTION, FLEANS_QUERY_CONNECTION)
   - Fleans.ServiceDefaults/FleanStreamingExtensions.cs:18,25 (Fleans:Streaming:Provider, Fleans:Streaming:Kafka section binding)
   - Fleans.Streaming.Kafka/KafkaStreamingOptions.cs:8 (Brokers property)
-  - Fleans.Aspire/Program.cs:10,15,76,77,95,96,113-115,142,157,165 (Aspire-only knobs + WithEnvironment forwarding)
+  - Fleans.Aspire/Program.cs:10,15,76,77,95,96,106,109,122-124,151,166,174 (Aspire-only knobs + WithEnvironment forwarding)
   pinned at branch=docs/403-config-reference SHA=329b0f3; refresh if any of the above change */}
 
 This page is the canonical lookup for every Fleans configuration key, what it does, where the value is read from in source, and which environment variable equivalent operators set on a container or systemd unit. If you're trying to figure out why setting `FLEANS_PERSISTENCE_PROVIDER` on a production silo doesn't work, or whether `Authentication__ClientId` belongs on the API or the Web host, this is the right page.
@@ -49,7 +49,7 @@ If you're deploying to production, you'll set Tier 2 keys. If you're running `do
 
 ## Tier 1 — Aspire / SQLite-mode dev knobs
 
-These five keys are read with the literal `FLEANS_X` form; they don't map onto any `appsettings.json` hierarchy. The first two control what Aspire provisions; the next two are the SQLite connection strings that `Fleans.ServiceDefaults` reads at runtime when SQLite is the active provider; the last is a test-only flag.
+These keys are read with the literal `FLEANS_X` form; they don't map onto any `appsettings.json` hierarchy. The first two control what Aspire provisions; the next two are the SQLite connection strings that `Fleans.ServiceDefaults` reads at runtime when SQLite is the active provider; `FLEANS_ROLE` overrides the role label Aspire stamps on `fleans-core`; the last is a test-only flag.
 
 | Env var | Read at | Effect |
 | --- | --- | --- |
@@ -57,6 +57,7 @@ These five keys are read with the literal `FLEANS_X` form; they don't map onto a
 | `FLEANS_STREAMING_PROVIDER` | `Fleans.Aspire/Program.cs:15` | `Memory` (default) or `Kafka` — controls Kafka container provisioning. Read **only** by the Aspire AppHost; the silo-side equivalent is `Fleans__Streaming__Provider`. |
 | `FLEANS_SQLITE_CONNECTION` | `Fleans.ServiceDefaults/FleansPersistenceExtensions.cs:38` | SQLite write-side connection string. Read by every silo when `Persistence:Provider=Sqlite`. Defaults to `DataSource=fleans-dev.db`. |
 | `FLEANS_QUERY_CONNECTION` | `Fleans.ServiceDefaults/FleansPersistenceExtensions.cs:39` | SQLite read-replica connection string. Optional; falls back to the write connection when unset. |
+| `FLEANS_ROLE` | `Fleans.Aspire/Program.cs:106` | Overrides the Aspire-default `Fleans__Role` injection on `fleans-core`. Default: `Combined` in dev mode (`dotnet run --project Fleans.Aspire`), `Core` in publish mode (`aspire publish ...`) — the publish-mode default matches the Helm chart's `deployment-core.yaml`. Useful for testing the Core/Worker placement split locally without editing source. |
 | `FLEANS_PG_TESTS=1` | EF / Testcontainers tests | When set, `dotnet test` runs the parametrised `[DataRow(PersistenceProvider.Postgres)]` rows against a Testcontainers-managed Postgres image. Without it, those rows surface as `Inconclusive`. |
 
 :::note
