@@ -25,7 +25,7 @@ cd src/Fleans
 dotnet publish Fleans.Api/Fleans.Api.csproj \
   /t:PublishContainer \
   /p:Version=0.0.0-rc-test \
-  /p:ContainerRuntimeIdentifiers="linux-x64;linux-arm64"
+  /p:ContainerRuntimeIdentifiers=linux-x64%3Blinux-arm64
 docker buildx imagetools inspect fleans-api:0.0.0-rc-test
 ```
 
@@ -108,6 +108,13 @@ gh run watch
 **Expect:** the `helm-drift` job **fails** with a `::error::` message naming the exact resource path (e.g., `Drift: Deployment/fleans-api differs between Aspire and Helm`). The diff in the job log shows the env-var rename. Revert the rename, re-run, confirm the job passes again.
 
 This validates the deep-diff algorithm catches the failure mode that motivated the maintainer's "deep diff" decision.
+
+## Pitfalls
+
+Two issues hit the first dispatch (run #25436562303) and were fixed before any tag shipped — keep them in mind when editing `release.yml`:
+
+1. **Aspire CLI is a dotnet tool, not a workload.** Aspire 9+/13.x ships the CLI as the `Aspire.Cli` global tool; the .NET 8/Aspire 8 era `dotnet workload install aspire` is a no-op for CLI installation now. Use `dotnet tool install -g Aspire.Cli --prerelease` and prepend `$HOME/.dotnet/tools` to `$GITHUB_PATH`. Applies to both the `compose` and `helm-drift` jobs.
+2. **Semicolons in MSBuild property values must be `%3B`-escaped.** `dotnet publish /p:ContainerRuntimeIdentifiers="linux-x64;linux-arm64"` fails on Linux (`MSB1006: Property is not valid. Switch: linux-arm64`) because MSBuild's CLI parser splits on `;`. Use `/p:ContainerRuntimeIdentifiers=linux-x64%3Blinux-arm64` (URL-escaped) — works in bash, in `run: |` blocks, and in zsh.
 
 ## Verdict
 
