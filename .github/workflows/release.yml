@@ -140,7 +140,7 @@ jobs:
             /p:ContainerRegistry=ghcr.io \
             /p:ContainerRepository=nightbaker/${{ matrix.service.repo }} \
             /p:ContainerImageTag=${{ needs.setup.outputs.version }} \
-            /p:ContainerRuntimeIdentifiers="linux-x64;linux-arm64" \
+            /p:ContainerRuntimeIdentifiers=linux-x64%3Blinux-arm64 \
             --configuration Release
 
       - name: Tag :latest on stable releases
@@ -185,7 +185,10 @@ jobs:
           dotnet-version: '10.0.x'
 
       - name: Install Aspire CLI
-        run: dotnet workload install aspire
+        run: |
+          set -euo pipefail
+          dotnet tool install -g Aspire.Cli --prerelease
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
 
       - name: Restore
         run: dotnet restore
@@ -226,7 +229,10 @@ jobs:
           dotnet-version: '10.0.x'
 
       - name: Install Aspire CLI
-        run: dotnet workload install aspire
+        run: |
+          set -euo pipefail
+          dotnet tool install -g Aspire.Cli --prerelease
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
 
       - name: Setup Helm
         uses: azure/setup-helm@v4
