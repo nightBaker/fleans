@@ -52,6 +52,13 @@ export default defineConfig({
           ],
         },
         {
+          label: 'Self-host',
+          items: [
+            { label: 'Docker Compose', slug: 'guides/self-host-docker-compose' },
+            { label: 'Helm Chart', slug: 'guides/self-host-helm' },
+          ],
+        },
+        {
           label: 'Reference',
           autogenerate: { directory: 'reference' },
         },

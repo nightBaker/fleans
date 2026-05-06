@@ -180,6 +180,71 @@ Add it to `Fleans.Api/Controllers/WorkflowController.cs`. DTOs go in `Fleans.Ser
 - Evaluate conditions: `POST https://localhost:7140/Workflow/evaluate-conditions` — body: `{"WorkflowId":"process-id", "Variables":{"key":"value"}}` — `WorkflowId` is optional; evaluates conditional start events against supplied variables
 - Instance state: `GET https://localhost:7140/Workflow/instances/{instanceId}/state` — returns per-instance state snapshot (activeActivityIds, completedActivityIds, isStarted, isCompleted). Diagnostics/load-test endpoint; reads from the eventually-consistent EF projection.
 
+## Cutting a Release
+
+The release pipeline at `.github/workflows/release.yml` triggers on `git push origin v<SemVer>`. This is the maintainer runbook for cutting a release. Manual test plan: `tests/manual/42-release-pipeline/test-plan.md`.
+
+### Pre-tag checklist
+
+1. **Manual regression suite green** — run the full BPMN regression list (`tests/manual/01-…/` through the latest entry) plus the website regression list against `main`. Document any KNOWN-BUG verdicts in the release notes draft.
+2. **Version bump in `Directory.Build.props`** — `<VersionPrefix>` only needs a hand-bump for *local development builds* (so dev images get reasonable tags). The release workflow overrides `/p:Version=<git-tag-without-v>` regardless, so the assembly + container tag always match the git tag.
+3. **Changelog draft** — start from `git log v<PREV>..main --oneline --no-merges`. The workflow auto-generates release notes via `gh release create --generate-notes`; a hand-authored "Highlights" section makes the post readable.
+4. **Pre-release dry-runs (BOTH workflows — different sentinels):**
+   - **`release.yml` dry-run:** `gh workflow run release.yml -f version=0.0.0-rc-test`. Uploads compose-zip + helm-tgz artifacts but skips `gh release create` (gated on `is_dispatch_dry_run`). Download the artifacts and smoke-test compose + helm against a `kind` cluster.
+   - **`nuget-publish.yml` dry-run:** `gh workflow run nuget-publish.yml -f version=0.0.0-ci-test`. Packs the 3 plugin packages and uploads them as workflow artifacts but skips the actual `dotnet nuget push` (gated by `inputs.version != '0.0.0-ci-test'` on push/pack steps).
+
+   **The two sentinels are deliberately different** — `-rc-test` for the release pipeline and `-ci-test` for nuget-publish. A complete release dry-run requires running BOTH.
+
+### Tag command
+
+```bash
+git tag v0.1.0-beta && git push origin v0.1.0-beta
+```
+
+The release workflow runs setup → images → compose → helm-drift → release in a single CI run. The `release.published` event then triggers `nuget-publish.yml` automatically.
+
+### Post-tag verification
+
+1. **Workflow run green** — `gh run list --workflow=release.yml --limit 1` should show the tagged run as ✅ on every job.
+2. **All 4 images pullable, multi-arch** — `docker buildx imagetools inspect ghcr.io/nightbaker/fleans-{api,web,worker,mcp}:0.1.0-beta` should resolve `linux/amd64` + `linux/arm64`.
+3. **Release assets attached** — `gh release view v0.1.0-beta --json assets` should list `docker-compose-v0.1.0-beta.zip` + `fleans-0.1.0-beta.tgz`.
+4. **Notes look right** — auto-generated notes group commits per `.github/release.yml` categories.
+5. **NuGet publish triggered + green** — the `release.published` event triggers `nuget-publish.yml`. Verify via `gh run list --workflow=nuget-publish.yml --limit 1`. Verify each of the 3 packages on nuget.org: `Fleans.Application.Abstractions`, `Fleans.Worker`, `Fleans.Plugins.RestCaller`.
+
+### Rollback
+
+If a release ships broken:
+
+```bash
+# 1. Remove the GH release + tag (deleting the release deletes the remote tag too).
+gh release delete v0.1.0-beta --cleanup-tag --yes
+
+# Drop the local tag if still present.
+git tag -d v0.1.0-beta 2>/dev/null || true
+
+# 2. Delete the four ghcr.io image versions for the broken tag.
+#    (`docker buildx imagetools` has no `remove` subcommand — use the GH Packages REST API.)
+for IMG in fleans-api fleans-web fleans-worker fleans-mcp; do
+  VID=$(gh api "/user/packages/container/$IMG/versions" \
+    --jq '.[] | select(.metadata.container.tags | index("0.1.0-beta")) | .id' \
+    | head -1)
+  if [ -n "$VID" ]; then
+    gh api -X DELETE "/user/packages/container/$IMG/versions/$VID"
+    echo "Deleted $IMG version $VID (tag 0.1.0-beta)"
+  else
+    echo "No version of $IMG with tag 0.1.0-beta — skipping"
+  fi
+done
+```
+
+If the org name on ghcr.io ever changes from a user account to an organization, swap `/user/packages/...` for `/orgs/<org>/packages/...`. The token that runs this needs the `delete:packages` scope.
+
+NuGet packages **cannot be deleted** from nuget.org — only unlisted (`dotnet nuget delete <package> <version> --source https://api.nuget.org/v3/index.json -k <KEY>`). If a broken plugin shipped, ship a hotfix release immediately rather than relying on unlisting.
+
+### Documentation rule reminder
+
+Every release that introduces user-visible changes MUST update the self-host guides (`website/src/content/docs/guides/self-host-docker-compose.md`, `guides/self-host-helm.md`) in the same PR per the existing "Documentation rule". The release-asset URLs in those guides reference the *current* tag — bumping `v0.1.0-beta` → `v0.2.0` requires a docs sweep.
+
 ## Regression tests
 
 The full regression suite is the union of every plan under `tests/manual/`. Each plan has its own `.bpmn` fixture(s) and a step-by-step `test-plan.md` (deploy, start, trigger events, verify checkbox list).
@@ -263,6 +328,7 @@ Website-specific manual tests live under `tests/manual/website/`. These run in a
 12. **Message Correlation guide** — `tests/manual/website/message-correlation-guide/test-plan.md`. The `guides/message-correlation/` page renders under the *Patterns* sidebar group after *Multi-Instance Activities* in both themes; the canonical BPMN snippet shows `<extensionElements>` as a direct child of `<bpmn:message>` with an explicit `:::caution` flagging the placement gotcha; the page documents that the `= ` prefix is stripped and the remainder is treated as a plain variable name (no expression evaluation, so `= a + b` is unsupported); all three cited fixture files (#09 `message-catch.bpmn`, #16 `message-start-event.bpmn`, #21 `message-event-subprocess.bpmn`) are referenced by name; the regression #9 KNOWN BUG disclosure (boundary on `IntermediateCatchEvent`) appears under §Limitations; drift-guard line pins (`WorkflowExecution.cs:2778-2790`, `WorkflowExecution.cs:989-1011`, `BpmnConverter.cs:895-925`, `WorkflowController.cs:50-65`, `SendMessageRequest.cs:5`) still resolve to the named symbols at the current branch SHA.
 13. **Kafka production-readiness warning** — `tests/manual/website/kafka-production-warning/test-plan.md`. The `reference/streaming/` page surfaces a top `:::caution[Kafka provider is not production-ready]` admonition before `## Provider switch` naming Confluent Cloud, MSK, Aiven, Redpanda Cloud and quoting the librdkafka error string `Disconnected: SASL authentication required`; the new `## Production-readiness gaps` section renders three severity-tiered tables (🔴 4 rows / 🟡 3 rows / 🟢 4 rows); `deployment.md` carries a one-line `:::caution` cross-linking back to the streaming.md anchor; tracking issue [#474](https://github.com/nightBaker/fleans/issues/474) is referenced and resolves; drift-guard line pins (`KafkaStreamingOptions.cs:4-23`, `Fleans.Aspire/Program.cs:13-15,57`) still resolve at the current branch SHA, and `grep -rE 'SecurityProtocol|SaslMechanism|SaslUsername|SslCa' src/Fleans/Fleans.Streaming.Kafka/` returns 0 matches (the load-bearing claim).
 14. **Quick Start sample BPMN link** — `tests/manual/website/quick-start-sample-link/test-plan.md`. The Quick Start guide's link to the sample BPMN file (`quick-start.md:49`) resolves under the `/fleans/` base path: `dist/guides/quick-start/index.html` contains `href="/fleans/samples/my-process.bpmn"` (≥1) and does NOT contain the broken form `href="/samples/my-process.bpmn"` (=0); `dist/samples/my-process.bpmn` is deployed alongside the page; clicking the link in dev-server mode downloads the file; drift-guard pins `base: '/fleans'` in `astro.config.mjs` — if base ever changes, sweep `src/content/docs/**/*.{md,mdx}` for the `/fleans/` literal in the same PR.
+15. **Self-host runbook + release pipeline** — `tests/manual/website/self-host-runbook/test-plan.md`. The new `guides/self-host-docker-compose.md` and `guides/self-host-helm.md` pages render under a NEW *Self-host* sidebar group (positioned between *Patterns* and *Reference*, 2 items: Docker Compose, Helm Chart); both guides cite the future tag `v0.1.0-beta` for `gh release download` examples and cross-link to `reference/{deployment,self-hosting,configuration,persistence,authentication,streaming}/`; the Helm guide's values-table has ≥20 rows extracted from `charts/fleans/values.yaml`; the Compose guide's `.env`-table has ≥10 rows; both guides match the existing `reference/self-hosting.md:36` floor of *Helm 3.12+*. `src/Fleans/CLAUDE.md` carries a new `## Cutting a Release` H2 (immediately before `## Regression tests`) with sub-sections Pre-tag checklist (4 items, BOTH dry-run sentinels documented — `0.0.0-rc-test` for `release.yml`, `0.0.0-ci-test` for `nuget-publish.yml`), Tag command, Post-tag verification (5 items), Rollback (uses `gh api -X DELETE /user/packages/container/<name>/versions/<id>` with `| head -1` to handle multi-version edge case — NOT the non-existent `docker buildx imagetools remove`), Documentation rule reminder. Drift-guard pins (`release.yml:30,82,187,194,340,345,388`, `nuget-publish.yml:18,101,104,114`, `Directory.Build.props:14-15`) still resolve at the current branch SHA.
 
 > When adding a new website test folder, append a numbered entry here.
 
