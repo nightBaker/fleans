@@ -4,7 +4,7 @@ End-to-end validation that a `git push origin v<SemVer>` produces:
 - 4 multi-arch (`linux/amd64` + `linux/arm64`) container images on `ghcr.io/nightbaker/fleans-{api,web,worker,mcp}:v<VERSION>`.
 - A `:latest` tag movement only when the version is non-prerelease.
 - A docker-compose zip + Helm chart tgz attached to the GitHub Release.
-- A green deep-diff between Aspire-published k8s output and the rendered Helm chart.
+- A clean `helm lint` + smoke render of the chart (with `worker.enabled=true` and `customWorker.enabled=true`).
 - `release.published` triggering `nuget-publish.yml` for the plugin packages.
 
 ## Prerequisites
@@ -43,7 +43,7 @@ gh run watch
 **Expect:**
 - (a) All 4 image legs of the `images` matrix succeed.
 - (b) The `compose` job succeeds and `docker-compose-v0.0.0-rc-test.zip` is uploaded as a workflow artifact.
-- (c) The `helm-drift` job succeeds with `Drift check passed.` in the log.
+- (c) The `helm-package` job succeeds: `helm lint charts/fleans` exits 0, the `--set worker.enabled=true --set customWorker.enabled=true` smoke render produces non-empty output, `helm package` writes `/tmp/fleans-0.0.0-rc-test.tgz`, and `cosign sign-blob` emits `tlog entry created with index:`.
 - (d) The `release` job is **skipped** (`if: needs.setup.outputs.is_dispatch_dry_run != 'true' && github.event_name == 'push'`). Verify with `gh run view --log` that the release step says "skipped".
 - (e) No `v0.0.0-rc-test` tag or GitHub Release is created on the repo.
 
@@ -96,29 +96,30 @@ gh release delete v0.0.1-rc-test --cleanup-tag --yes
 
 **Expect:** the next real `0.1.0-beta` rehearsal starts from a clean slate.
 
-### 8. Drift-detection trip wire (regression-guard)
+### 8. Helm-template regression (regression-guard)
 
-Branch off `main`. In `Fleans.Aspire/Program.cs`, rename one env-var passed to `Fleans.Api` (e.g., `Fleans__Persistence__Provider` → `Fleans__Persistence__Mode`). Push the branch and dispatch the workflow:
+Branch off `main`. In `charts/fleans/templates/deployment-core.yaml`, introduce a deliberate template error (e.g., `{{ .Values.notARealField | required "deliberate break" }}` or unbalanced `{{- if }}`). Push the branch and dispatch the workflow:
 
 ```bash
-gh workflow run release.yml --ref feature/drift-trip-wire -f version=0.0.0-rc-test
+gh workflow run release.yml --ref feature/helm-template-trip-wire -f version=0.0.0-rc-test
 gh run watch
 ```
 
-**Expect:** the `helm-drift` job **fails** with a `::error::` message naming the exact resource path (e.g., `Drift: Deployment/fleans-api differs between Aspire and Helm`). The diff in the job log shows the env-var rename. Revert the rename, re-run, confirm the job passes again.
+**Expect:** the `helm-package` job **fails** at the `Lint helm chart` step (or, for required-value breaks, at `Smoke render with all components enabled`) with the exact line and template name. Revert the break, re-run, confirm the job passes again.
 
-This validates the deep-diff algorithm catches the failure mode that motivated the maintainer's "deep diff" decision.
+This is a lint-shaped regression-guard — not a drift comparison. The prior "deep diff" design (Aspire-published k8s YAML diffed against the rendered chart) was abandoned: the chart is hand-written for end-user ergonomics (single Deployment+Service per service, inline env vars), while the Aspire K8s publisher emits per-service `<name>-deployment` / `<name>-service` / `<name>-config` (ConfigMap) / `<name>-secrets` shapes. The two were never the same shape; the deep-diff was checking an alignment that did not exist.
 
 ## Pitfalls
 
-Six issues hit early dispatches and were fixed before any tag shipped — keep them in mind when editing `release.yml` or `Fleans.Aspire/Program.cs`:
+Seven issues hit early dispatches and were fixed before any tag shipped — keep them in mind when editing `release.yml` or `Fleans.Aspire/Program.cs`:
 
-1. **Aspire CLI is a dotnet tool, not a workload.** Aspire 9+/13.x ships the CLI as the `Aspire.Cli` global tool; the .NET 8/Aspire 8 era `dotnet workload install aspire` is a no-op for CLI installation now. Use `dotnet tool install -g Aspire.Cli --prerelease` and prepend `$HOME/.dotnet/tools` to `$GITHUB_PATH`. Applies to both the `compose` and `helm-drift` jobs.
+1. **Aspire CLI is a dotnet tool, not a workload.** Aspire 9+/13.x ships the CLI as the `Aspire.Cli` global tool; the .NET 8/Aspire 8 era `dotnet workload install aspire` is a no-op for CLI installation now. Use `dotnet tool install -g Aspire.Cli --prerelease` and prepend `$HOME/.dotnet/tools` to `$GITHUB_PATH`. Applies to the `compose` job (the `helm-package` job no longer runs `aspire publish`).
 2. **`Aspire.AppHost.Sdk` must match the Aspire.Hosting.* package version.** Aspire CLI 13.x rejects an apphost whose `<Sdk Name="Aspire.AppHost.Sdk" Version="…">` does not match the host packages (`The app host is not compatible. Aspire.Hosting version: 9.0.0`, exit code 9). Bump the SDK pin in `Fleans.Aspire.csproj` whenever the `Aspire.Hosting.*` packages move; today both should be `13.2.3`. The dev-mode `dotnet run --project Fleans.Aspire` does NOT surface this — only `aspire publish` validates the SDK pin.
 3. **Semicolons in MSBuild property values must be `%3B`-escaped.** `dotnet publish /p:ContainerRuntimeIdentifiers="linux-x64;linux-arm64"` fails on Linux (`MSB1006: Property is not valid. Switch: linux-arm64`) because MSBuild's CLI parser splits on `;`. Use `/p:ContainerRuntimeIdentifiers=linux-x64%3Blinux-arm64` (URL-escaped) — works in bash, in `run: |` blocks, and in zsh.
 4. **`ContainerRuntimeIdentifiers` (plural) breaks scalar `OutputPath` targets.** Even with the `%3B` escape, .NET 10 SDK 10.0.203 expands the multi-RID list into `$(OutputPath)` so a downstream MSBuild target (`HasTrailingSlash`) trips with `MSB4115: only accepts a scalar value`. Use the canonical multi-arch pattern instead: publish each RID separately at a per-RID image tag (`/p:RuntimeIdentifier=linux-x64 /p:ContainerImageTag=$VERSION-x64`) and assemble the manifest list with `docker buildx imagetools create --tag $REPO:$VERSION $REPO:$VERSION-x64 $REPO:$VERSION-arm64`. Cosign signs the manifest-list digest.
 5. **Both publishers' `BeforeStart` hooks run regardless of `-t` target.** Referencing both `Aspire.Hosting.Docker` and `Aspire.Hosting.Kubernetes` causes both to subscribe their hooks at apphost startup — so `aspire publish -t docker-compose` still runs the K8s publisher's resource generation, and any K8s-incompatible primitive (e.g. `WithBindMount`) crashes the run with `Bind mounts are not supported by the Kubernetes publisher` even when the user asked for compose. Conversely, the load-test nginx fan-out (`tests/load/nginx.conf` bind-mounted into `nginx:1.27`) is a developer-only concern that doesn't belong in release artifacts. Gate it behind an opt-in env var (`FLEANS_LOAD_TEST_MODE=true`) read via `builder.Configuration["FLEANS_LOAD_TEST_MODE"]`. The load-test runbook (`tests/load/README.md`) flips the flag; the release pipeline leaves it off.
-6. **Aspire-published Deployments must exist on the helm side.** The `helm-drift` job's directional check fails with `::error::Drift: Aspire publishes <kind>/<name> but Helm does not.` whenever a name not in `ASPIRE_ONLY_ALLOWLIST` (`fleans-postgres orleans-redis fleans-kafka`) is missing from the chart. When you add a new Deployment in `Fleans.Aspire/Program.cs` (e.g. `fleans-custom-worker`), add a matching `charts/fleans/templates/deployment-<name>.yaml` AND default the `enabled` flag in the helm-drift `helm template` invocation (`--set <name>.enabled=true`) so the drift check renders it. Do NOT default `enabled: true` in `values.yaml` — keep user-facing defaults conservative.
+6. **Aspire-published Deployments need a matching helm template.** Even after demoting the deep-diff to a lint, every deployable (e.g. `fleans-core`, `fleans-worker`, `fleans-custom-worker`) needs a `charts/fleans/templates/deployment-<name>.yaml` so end-users actually get it on `helm install`. New Aspire deployables must ship with the matching chart template AND a values block. Default the values' `enabled` flag to `false` (small/single-node installs use Combined silos), and update the `helm-package` job's smoke-render `--set <name>.enabled=true` list so lint/render exercises the template.
+7. **Aspire's K8s publisher and the helm chart are intentionally different shapes.** The Aspire 13.x `Aspire.Hosting.Kubernetes` publisher emits per-service `<name>-deployment`, `<name>-service`, `<name>-config` (ConfigMap), and `<name>-secrets` (Secret) — verbose, env-vars externalized. The helm chart uses single-resource-per-service naming (`<name>` Deployment + Service) with inline `env:` blocks. They were never the same shape; the original `helm-drift` deep-diff was checking an alignment that did not exist and would always fail. Keep the helm path as `helm lint` + `helm template` smoke render; do not re-introduce the deep-diff.
 
 ## Verdict
 
