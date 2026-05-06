@@ -18,18 +18,18 @@ End-to-end validation that a `git push origin v<SemVer>` produces:
 
 ### 1. Local pack smoke (developer-box, no GitHub Actions)
 
-For each of the 4 services (api/web/worker/mcp):
+For each of the 4 services (api/web/worker/mcp), run a single-arch publish to the local Docker daemon:
 
 ```bash
 cd src/Fleans
 dotnet publish Fleans.Api/Fleans.Api.csproj \
   /t:PublishContainer \
   /p:Version=0.0.0-rc-test \
-  /p:ContainerRuntimeIdentifiers=linux-x64%3Blinux-arm64
-docker buildx imagetools inspect fleans-api:0.0.0-rc-test
+  /p:RuntimeIdentifier=linux-x64
+docker image inspect fleans-api:0.0.0-rc-test
 ```
 
-**Expect:** the manifest list shows both `linux/amd64` and `linux/arm64` digests.
+**Expect:** `dotnet publish` exits 0 and `docker image inspect` returns a non-empty result. Multi-arch manifest assembly is exercised in CI only (Scenario 2) — locally that requires QEMU + buildx and isn't worth the per-machine setup for a smoke test.
 
 Repeat for `Fleans.Web`, `Fleans.WorkerHost`, `Fleans.Mcp`.
 
@@ -111,10 +111,12 @@ This validates the deep-diff algorithm catches the failure mode that motivated t
 
 ## Pitfalls
 
-Two issues hit the first dispatch (run #25436562303) and were fixed before any tag shipped — keep them in mind when editing `release.yml`:
+Four issues hit early dispatches and were fixed before any tag shipped — keep them in mind when editing `release.yml`:
 
 1. **Aspire CLI is a dotnet tool, not a workload.** Aspire 9+/13.x ships the CLI as the `Aspire.Cli` global tool; the .NET 8/Aspire 8 era `dotnet workload install aspire` is a no-op for CLI installation now. Use `dotnet tool install -g Aspire.Cli --prerelease` and prepend `$HOME/.dotnet/tools` to `$GITHUB_PATH`. Applies to both the `compose` and `helm-drift` jobs.
-2. **Semicolons in MSBuild property values must be `%3B`-escaped.** `dotnet publish /p:ContainerRuntimeIdentifiers="linux-x64;linux-arm64"` fails on Linux (`MSB1006: Property is not valid. Switch: linux-arm64`) because MSBuild's CLI parser splits on `;`. Use `/p:ContainerRuntimeIdentifiers=linux-x64%3Blinux-arm64` (URL-escaped) — works in bash, in `run: |` blocks, and in zsh.
+2. **`Aspire.AppHost.Sdk` must match the Aspire.Hosting.* package version.** Aspire CLI 13.x rejects an apphost whose `<Sdk Name="Aspire.AppHost.Sdk" Version="…">` does not match the host packages (`The app host is not compatible. Aspire.Hosting version: 9.0.0`, exit code 9). Bump the SDK pin in `Fleans.Aspire.csproj` whenever the `Aspire.Hosting.*` packages move; today both should be `13.2.3`. The dev-mode `dotnet run --project Fleans.Aspire` does NOT surface this — only `aspire publish` validates the SDK pin.
+3. **Semicolons in MSBuild property values must be `%3B`-escaped.** `dotnet publish /p:ContainerRuntimeIdentifiers="linux-x64;linux-arm64"` fails on Linux (`MSB1006: Property is not valid. Switch: linux-arm64`) because MSBuild's CLI parser splits on `;`. Use `/p:ContainerRuntimeIdentifiers=linux-x64%3Blinux-arm64` (URL-escaped) — works in bash, in `run: |` blocks, and in zsh.
+4. **`ContainerRuntimeIdentifiers` (plural) breaks scalar `OutputPath` targets.** Even with the `%3B` escape, .NET 10 SDK 10.0.203 expands the multi-RID list into `$(OutputPath)` so a downstream MSBuild target (`HasTrailingSlash`) trips with `MSB4115: only accepts a scalar value`. Use the canonical multi-arch pattern instead: publish each RID separately at a per-RID image tag (`/p:RuntimeIdentifier=linux-x64 /p:ContainerImageTag=$VERSION-x64`) and assemble the manifest list with `docker buildx imagetools create --tag $REPO:$VERSION $REPO:$VERSION-x64 $REPO:$VERSION-arm64`. Cosign signs the manifest-list digest.
 
 ## Verdict
 

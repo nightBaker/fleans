@@ -67,14 +67,16 @@ Manual verification that the release pipeline (`.github/workflows/release.yml`) 
 
 ## Cleanup after dry-run
 
-Each `0.0.0-rc-test` invocation publishes 4 images tagged `0.0.0-rc-test` to ghcr.io and emits 4 immutable Rekor entries. Use the `## Cutting a Release` rollback loop to clean up ghcr.io after each dry-run iteration:
+Each `0.0.0-rc-test` invocation publishes 12 image versions per dispatch (4 services × { manifest list `0.0.0-rc-test`, per-RID `0.0.0-rc-test-x64`, per-RID `0.0.0-rc-test-arm64` }) and emits 4 immutable Rekor entries (manifest-list digests are what cosign signs). Use the `## Cutting a Release` rollback loop to clean up ghcr.io after each dry-run iteration:
 
 ```bash
 for IMG in fleans-api fleans-web fleans-worker fleans-mcp; do
-  VID=$(gh api "/user/packages/container/$IMG/versions" \
-    --jq '.[] | select(.metadata.container.tags | index("0.0.0-rc-test")) | .id' \
-    | head -1)
-  [ -n "$VID" ] && gh api -X DELETE "/user/packages/container/$IMG/versions/$VID"
+  for TAG in 0.0.0-rc-test 0.0.0-rc-test-x64 0.0.0-rc-test-arm64; do
+    VID=$(gh api "/user/packages/container/$IMG/versions" \
+      --jq '.[] | select(.metadata.container.tags | index("'"$TAG"'")) | .id' \
+      | head -1)
+    [ -n "$VID" ] && gh api -X DELETE "/user/packages/container/$IMG/versions/$VID"
+  done
 done
 ```
 
@@ -84,9 +86,9 @@ Rekor entries cannot be deleted — that's by design (transparency-log invariant
 
 These line-pinned references back the CLAUDE.md regression entry. If any pin no longer resolves to the named symbol at the current branch SHA, update the test-plan and the regression entry together.
 
-- `release.yml:154-166` — `Resolve image digest` → `Install cosign` → `Sign container image (keyless)` block inside the `images` matrix job.
-- `release.yml:356-374` — `Install cosign` + `Sign helm chart tarball (keyless blob)` block in the `helm-drift` job, plus the `actions/upload-artifact` `path:` glob that picks up `*.tgz.sig` / `*.tgz.crt`.
-- `release.yml:420-421` — `gh release create` asset list inside the `release` job (`./artifacts/*.sig` and `./artifacts/*.crt`).
+- `release.yml:173-185` — `Resolve image digest` → `Install cosign` → `Sign container image (keyless)` block inside the `images` matrix job, sitting after `Assemble multi-arch manifest list` so the digest captured is the manifest-list digest.
+- `release.yml:381-400` — `Install cosign` + `Sign helm chart tarball (keyless blob)` block in the `helm-drift` job, plus the `actions/upload-artifact` `path:` glob that picks up `*.tgz.sig` / `*.tgz.crt`.
+- `release.yml:445-446` — `gh release create` asset list inside the `release` job (`./artifacts/*.sig` and `./artifacts/*.crt`).
 
 ## Reporting
 
