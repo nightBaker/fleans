@@ -209,6 +209,26 @@ The release workflow runs setup → images → compose → helm-drift → releas
 3. **Release assets attached** — `gh release view v0.1.0-beta --json assets` should list `docker-compose-v0.1.0-beta.zip` + `fleans-0.1.0-beta.tgz`.
 4. **Notes look right** — auto-generated notes group commits per `.github/release.yml` categories.
 5. **NuGet publish triggered + green** — the `release.published` event triggers `nuget-publish.yml`. Verify via `gh run list --workflow=nuget-publish.yml --limit 1`. Verify each of the 3 packages on nuget.org: `Fleans.Application.Abstractions`, `Fleans.Worker`, `Fleans.Plugins.RestCaller`.
+6. **Cosign verify smoke test** — pick one of the published images and verify the signature against Sigstore. The output should include a `Bundle` block with a `tlogEntries[0].logIndex` proving the signature was logged to the public Rekor transparency log.
+
+   ```bash
+   cosign verify \
+     --certificate-identity-regexp "https://github.com/nightBaker/fleans/.github/workflows/release.yml@refs/tags/v.*" \
+     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+     ghcr.io/nightbaker/fleans-api:0.1.0-beta | jq
+   ```
+
+   For the helm chart, verify the blob signature using the `.sig` and `.crt` attached to the release (see `self-host-helm.md` for the exact command):
+
+   ```bash
+   gh release download v0.1.0-beta -p 'fleans-0.1.0-beta.tgz*'
+   cosign verify-blob \
+     --certificate fleans-0.1.0-beta.tgz.crt \
+     --signature   fleans-0.1.0-beta.tgz.sig \
+     --certificate-identity-regexp "https://github.com/nightBaker/fleans/.github/workflows/release.yml@refs/tags/v.*" \
+     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+     fleans-0.1.0-beta.tgz
+   ```
 
 ### Rollback
 
@@ -328,6 +348,7 @@ Website-specific manual tests live under `tests/manual/website/`. These run in a
 13. **Kafka production-readiness warning** — `tests/manual/website/kafka-production-warning/test-plan.md`. The `reference/streaming/` page surfaces a top `:::caution[Kafka provider is not production-ready]` admonition before `## Provider switch` naming Confluent Cloud, MSK, Aiven, Redpanda Cloud and quoting the librdkafka error string `Disconnected: SASL authentication required`; the new `## Production-readiness gaps` section renders three severity-tiered tables (🔴 4 rows / 🟡 3 rows / 🟢 4 rows); `deployment.md` carries a one-line `:::caution` cross-linking back to the streaming.md anchor; tracking issue [#474](https://github.com/nightBaker/fleans/issues/474) is referenced and resolves; `grep -rE 'SecurityProtocol|SaslMechanism|SaslUsername|SslCa' src/Fleans/Fleans.Streaming.Kafka/` returns 0 matches (the load-bearing claim). Source-line drift-guard pins live inside the test-plan.
 14. **Quick Start sample BPMN link** — `tests/manual/website/quick-start-sample-link/test-plan.md`. The Quick Start guide's link to the sample BPMN file resolves under the `/fleans/` base path: `dist/guides/quick-start/index.html` contains `href="/fleans/samples/my-process.bpmn"` (≥1) and does NOT contain the broken form `href="/samples/my-process.bpmn"` (=0); `dist/samples/my-process.bpmn` is deployed alongside the page; clicking the link in dev-server mode downloads the file. Note: if `base` in `astro.config.mjs` ever changes, sweep `src/content/docs/**/*.{md,mdx}` for the `/fleans/` literal in the same PR. Source-line drift-guard pins live inside the test-plan.
 15. **Self-host runbook + release pipeline** — `tests/manual/website/self-host-runbook/test-plan.md`. The `guides/self-host-docker-compose.md` and `guides/self-host-helm.md` pages render under the *Self-host* sidebar group (between *Patterns* and *Reference*, 2 items: Docker Compose, Helm Chart); both guides cite the current release tag for `gh release download` examples and cross-link to `reference/{deployment,self-hosting,configuration,persistence,authentication,streaming}/`; the Helm guide's values-table has ≥20 rows extracted from `charts/fleans/values.yaml`; the Compose guide's `.env`-table has ≥10 rows; both guides match the `reference/self-hosting.md` floor of *Helm 3.12+*. CLAUDE.md's `## Cutting a Release` section is intact (Pre-tag checklist, Tag command, Post-tag verification, Rollback, Documentation rule reminder). Source-line drift-guard pins live inside the test-plan.
+16. **Cosign keyless signing for release artifacts** — `tests/manual/website/cosign-signing/test-plan.md`. The release pipeline signs all 4 container images by manifest digest and the Helm chart tarball as a blob using cosign keyless (Sigstore Fulcio CA, public Rekor transparency log). The `images` matrix job at `release.yml` runs `Resolve image digest` → `Install cosign` → `Sign container image (keyless)` for each of `api / web / worker / mcp`; the `helm-drift` job runs `Install cosign` → `Sign helm chart tarball (keyless blob)` after `helm package` and the `actions/upload-artifact` `path:` includes `*.tgz.sig` and `*.tgz.crt`; the `release` job's `gh release create` asset list adds `./artifacts/*.sig` and `./artifacts/*.crt`. The `self-host-docker-compose.md` "Verify the images the bundle pulls" section iterates 4 services with a `cosign verify` loop; the `self-host-helm.md` "Verify the chart and images" section runs `cosign verify-blob` for the chart plus the same 4-service `cosign verify` loop. The `## Cutting a Release` Post-tag verification step 6 runs a `cosign verify | jq` smoke test for the api image plus a `cosign verify-blob` for the chart. Source-line drift-guard pins live inside the test-plan.
 
 > When adding a new website test folder, append a numbered entry here.
 

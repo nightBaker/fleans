@@ -151,6 +151,20 @@ jobs:
             --tag ghcr.io/nightbaker/${{ matrix.service.repo }}:latest \
             ghcr.io/nightbaker/${{ matrix.service.repo }}:${{ needs.setup.outputs.version }}
 
+      - name: Resolve image digest
+        id: digest
+        run: |
+          set -euo pipefail
+          REF="ghcr.io/nightbaker/${{ matrix.service.repo }}:${{ needs.setup.outputs.version }}"
+          DIGEST=$(docker buildx imagetools inspect "$REF" --format '{{.Manifest.Digest}}')
+          echo "ref_digest=ghcr.io/nightbaker/${{ matrix.service.repo }}@$DIGEST" >> "$GITHUB_OUTPUT"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign container image (keyless)
+        run: cosign sign --yes "${{ steps.digest.outputs.ref_digest }}"
+
   compose:
     name: Aspire docker-compose bundle
     needs: setup
@@ -339,10 +353,26 @@ jobs:
           helm package charts/fleans --version "${{ needs.setup.outputs.version }}" --app-version "${{ needs.setup.outputs.version }}" -d /tmp/
           ls -la /tmp/fleans-*.tgz
 
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign helm chart tarball (keyless blob)
+        run: |
+          set -euo pipefail
+          cd /tmp
+          cosign sign-blob --yes \
+            --output-signature   "fleans-${{ needs.setup.outputs.version }}.tgz.sig" \
+            --output-certificate "fleans-${{ needs.setup.outputs.version }}.tgz.crt" \
+            "fleans-${{ needs.setup.outputs.version }}.tgz"
+          ls -la fleans-${{ needs.setup.outputs.version }}.tgz*
+
       - uses: actions/upload-artifact@v4
         with:
           name: fleans-helm-v${{ needs.setup.outputs.version }}
-          path: /tmp/fleans-*.tgz
+          path: |
+            /tmp/fleans-*.tgz
+            /tmp/fleans-*.tgz.sig
+            /tmp/fleans-*.tgz.crt
           retention-days: 90
 
   release:
@@ -386,4 +416,6 @@ jobs:
             --generate-notes \
             $PRE_FLAG \
             ./artifacts/*.zip \
-            ./artifacts/*.tgz
+            ./artifacts/*.tgz \
+            ./artifacts/*.sig \
+            ./artifacts/*.crt
