@@ -131,17 +131,36 @@ jobs:
       - name: Restore
         run: dotnet restore
 
-      - name: Publish multi-arch container
+      # SDK Container Support's `ContainerRuntimeIdentifiers` (plural) injects the
+      # multi-RID list into `$(OutputPath)` and breaks scalar-only MSBuild targets
+      # (HasTrailingSlash → MSB4115). Canonical fix: publish each RID separately
+      # at a per-RID image tag, then assemble the manifest list with
+      # `docker buildx imagetools create`. The per-RID tags stay in the registry
+      # as harmless garbage; cosign signs the manifest-list digest.
+      - name: Publish per-RID containers
         run: |
           set -euo pipefail
-          dotnet publish ${{ matrix.service.project }}/${{ matrix.service.project }}.csproj \
-            /t:PublishContainer \
-            /p:Version=${{ needs.setup.outputs.version }} \
-            /p:ContainerRegistry=ghcr.io \
-            /p:ContainerRepository=nightbaker/${{ matrix.service.repo }} \
-            /p:ContainerImageTag=${{ needs.setup.outputs.version }} \
-            /p:ContainerRuntimeIdentifiers=linux-x64%3Blinux-arm64 \
-            --configuration Release
+          for RID in linux-x64 linux-arm64; do
+            ARCH=${RID#linux-}
+            dotnet publish ${{ matrix.service.project }}/${{ matrix.service.project }}.csproj \
+              /t:PublishContainer \
+              /p:Version=${{ needs.setup.outputs.version }} \
+              /p:ContainerRegistry=ghcr.io \
+              /p:ContainerRepository=nightbaker/${{ matrix.service.repo }} \
+              /p:ContainerImageTag=${{ needs.setup.outputs.version }}-$ARCH \
+              /p:RuntimeIdentifier=$RID \
+              --configuration Release
+          done
+
+      - name: Assemble multi-arch manifest list
+        run: |
+          set -euo pipefail
+          REPO=ghcr.io/nightbaker/${{ matrix.service.repo }}
+          VERSION=${{ needs.setup.outputs.version }}
+          docker buildx imagetools create \
+            --tag $REPO:$VERSION \
+            $REPO:$VERSION-x64 \
+            $REPO:$VERSION-arm64
 
       - name: Tag :latest on stable releases
         if: needs.setup.outputs.is_prerelease == 'false'
