@@ -38,8 +38,10 @@ The load-testing Docker stack is generated from the Aspire AppHost using the Doc
 ### Generate
 
 ```bash
-dotnet run --project src/Fleans/Fleans.Aspire -- --publisher docker-compose --output-path tests/load/generated
+FLEANS_LOAD_TEST_MODE=true dotnet run --project src/Fleans/Fleans.Aspire -- --publisher docker-compose --output-path tests/load/generated
 ```
+
+The `FLEANS_LOAD_TEST_MODE=true` env var opts in to the load-test fan-out: nginx fronting 2 `fleans-core` replicas (config from `tests/load/nginx.conf`). Released compose / helm artifacts deliberately omit this — it's a developer-only concern and the K8s publisher rejects the bind mount that nginx requires.
 
 ### Start
 

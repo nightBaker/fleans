@@ -134,11 +134,24 @@ WithPersistence(
         .WithReplicas(1),
     usePostgres, pg, sqliteConnectionString);
 
-// Publish-only topology: registers the dedicated Fleans.WorkerHost silo and the load-test
-// nginx fan-out. Both are publish-time artifacts (aspire publish -t docker-compose / kubernetes
-// or `dotnet run -- --publisher docker-compose ...`). Local dev (`dotnet run --project
-// Fleans.Aspire`) keeps the original 3-process layout — Fleans.Api with the default Combined
-// role still hosts worker grains there.
+// Publish-only topology: registers the dedicated Fleans.WorkerHost silo (always) and,
+// optionally, the load-test nginx fan-out (gated by FLEANS_LOAD_TEST_MODE=true). Local dev
+// (`dotnet run --project Fleans.Aspire`) keeps the original 3-process layout — Fleans.Api
+// with the default Combined role still hosts worker grains there.
+//
+// FLEANS_LOAD_TEST_MODE gates the nginx + 2-replica fan-out because:
+//   1. nginx uses WithBindMount(tests/load/nginx.conf, ...) which Aspire's Kubernetes
+//      publisher rejects (Bind mounts are not supported by the Kubernetes publisher).
+//      Both publisher hooks register whenever both packages are referenced, so the K8s
+//      target crashes on bind mounts even when invoked with `-t docker-compose`.
+//   2. End-user release artifacts (compose bundle / helm chart) should not contain a
+//      load-test nginx fronting 2 fleans-core replicas — that's a developer concern.
+// The load-test runbook (tests/load/README.md) sets the flag to opt in for compose only.
+var loadTestMode = string.Equals(
+    builder.Configuration["FLEANS_LOAD_TEST_MODE"],
+    "true",
+    StringComparison.OrdinalIgnoreCase);
+
 if (builder.ExecutionContext.IsPublishMode)
 {
     // Worker silo — separate deployable so production/k8s topologies can scale Core and
@@ -167,17 +180,23 @@ if (builder.ExecutionContext.IsPublishMode)
         .WithReplicas(1);
     customWorkerHost = WithStreaming(customWorkerHost, useKafka, kafka);
 
-    // Override the container listen port to 8080 so nginx (tests/load/nginx.conf) can
-    // reach each replica at fleans-core:8080. WithHttpEndpoint cannot be used here because
-    // AddProject<> already registers the default "http" endpoint — re-using that name throws.
-    apiProject = apiProject
-        .WithEnvironment("ASPNETCORE_HTTP_PORTS", "8080")
-        .WithReplicas(2);
+    // Load-test fan-out — opt-in via FLEANS_LOAD_TEST_MODE=true. Targets the docker-compose
+    // publisher only; the K8s publisher rejects the bind mount and Kubernetes Services
+    // already load-balance replicas natively, so the nginx fan-out is unnecessary there.
+    if (loadTestMode)
+    {
+        // Override the container listen port to 8080 so nginx (tests/load/nginx.conf) can
+        // reach each replica at fleans-core:8080. WithHttpEndpoint cannot be used here because
+        // AddProject<> already registers the default "http" endpoint — re-using that name throws.
+        apiProject = apiProject
+            .WithEnvironment("ASPNETCORE_HTTP_PORTS", "8080")
+            .WithReplicas(2);
 
-    builder.AddContainer("nginx", "nginx:1.27")
-        .WithBindMount("../../tests/load/nginx.conf", "/etc/nginx/nginx.conf", isReadOnly: true)
-        .WithHttpEndpoint(port: 80, targetPort: 80, name: "http")
-        .WaitFor(apiProject);
+        builder.AddContainer("nginx", "nginx:1.27")
+            .WithBindMount("../../tests/load/nginx.conf", "/etc/nginx/nginx.conf", isReadOnly: true)
+            .WithHttpEndpoint(port: 80, targetPort: 80, name: "http")
+            .WaitFor(apiProject);
+    }
 }
 
 using var app = builder.Build();

@@ -275,7 +275,15 @@ jobs:
       - name: Render Helm chart
         run: |
           set -euo pipefail
-          helm template fleans charts/fleans > /tmp/helm-rendered.yaml
+          # Drift comparison must render every Deployment that Aspire publishes.
+          # The user-facing chart defaults keep `worker` and `customWorker` off
+          # (Combined silos host worker grains for small/single-node installs),
+          # but the published Aspire topology always includes both — so the
+          # drift check enables them explicitly.
+          helm template fleans charts/fleans \
+            --set worker.enabled=true \
+            --set customWorker.enabled=true \
+            > /tmp/helm-rendered.yaml
 
       - name: Deep diff
         run: |

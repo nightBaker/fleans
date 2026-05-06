@@ -59,6 +59,25 @@ worker:
   tolerations: []
   affinity: {}
 
+# Custom-worker silo (hosts user-written custom-task plugins via the
+# Fleans.CustomWorkerHost worked-example deployable). Disabled by default —
+# enable when shipping `<bpmn:serviceTask type="...">` plugins. The release
+# pipeline's helm-drift job requires this Deployment to exist on the helm
+# side because Aspire publishes it unconditionally in publish mode.
+customWorker:
+  enabled: false
+  replicas: 1
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
 # Blazor Server admin UI.
 web:
   enabled: true
