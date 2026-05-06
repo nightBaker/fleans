@@ -11,7 +11,7 @@ Manual verification that the release pipeline (`.github/workflows/release.yml`) 
 
 ## Scenarios
 
-1. **Dry-run signs images successfully.** Trigger `gh workflow run release.yml -f version=0.0.0-rc-test` and `gh run watch <run-id>`. The `images` matrix job logs lines containing `Successfully verified SCT receipt` and `tlog entry created with index:` for **all 4** services (`api`, `web`, `worker`, `mcp`). No `secret not found` / `gpg-key not configured` errors. The `helm-drift` job emits the same Rekor lines for the chart blob.
+1. **Dry-run signs images successfully.** Trigger `gh workflow run release.yml -f version=0.0.0-rc-test` and `gh run watch <run-id>`. The `images` matrix job logs lines containing `Successfully verified SCT receipt` and `tlog entry created with index:` for **all 4** services (`api`, `web`, `worker`, `mcp`). No `secret not found` / `gpg-key not configured` errors. The `helm-package` job emits the same Rekor lines for the chart blob.
 
 2. **Real tag produces signed images.** `git tag v0.1.0-beta && git push origin v0.1.0-beta`. After the workflow completes:
 
@@ -87,8 +87,8 @@ Rekor entries cannot be deleted — that's by design (transparency-log invariant
 These line-pinned references back the CLAUDE.md regression entry. If any pin no longer resolves to the named symbol at the current branch SHA, update the test-plan and the regression entry together.
 
 - `release.yml:173-185` — `Resolve image digest` → `Install cosign` → `Sign container image (keyless)` block inside the `images` matrix job, sitting after `Assemble multi-arch manifest list` so the digest captured is the manifest-list digest.
-- `release.yml:381-400` — `Install cosign` + `Sign helm chart tarball (keyless blob)` block in the `helm-drift` job, plus the `actions/upload-artifact` `path:` glob that picks up `*.tgz.sig` / `*.tgz.crt`.
-- `release.yml:445-446` — `gh release create` asset list inside the `release` job (`./artifacts/*.sig` and `./artifacts/*.crt`).
+- `release.yml:273-292` — `Install cosign` + `Sign helm chart tarball (keyless blob)` block in the `helm-package` job (formerly `helm-drift`; renamed when the deep-diff was demoted to a lint), plus the `actions/upload-artifact` `path:` glob that picks up `*.tgz.sig` / `*.tgz.crt`.
+- `release.yml:337-338` — `gh release create` asset list inside the `release` job (`./artifacts/*.sig` and `./artifacts/*.crt`).
 
 ## Reporting
 

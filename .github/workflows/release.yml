@@ -231,156 +231,40 @@ jobs:
           path: src/Fleans/docker-compose-v${{ needs.setup.outputs.version }}.zip
           retention-days: 90
 
-  helm-drift:
-    name: Helm vs Aspire-k8s deep-diff
+  helm-package:
+    name: Helm chart package + sign
     needs: setup
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      DOTNET_NOLOGO: 'true'
-      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-
-      - name: Install Aspire CLI
-        run: |
-          set -euo pipefail
-          dotnet tool install -g Aspire.Cli --prerelease
-          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
 
       - name: Setup Helm
         uses: azure/setup-helm@v4
         with:
           version: v3.15.0
 
-      - name: Setup yq
-        run: |
-          set -euo pipefail
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
-          yq --version
+      - name: Lint helm chart
+        run: helm lint charts/fleans
 
-      - name: Render Aspire k8s output
-        working-directory: src/Fleans
+      - name: Smoke render with all components enabled
         run: |
           set -euo pipefail
-          dotnet restore
-          aspire publish --project Fleans.Aspire -t kubernetes -o out/k8s
-
-      - name: Render Helm chart
-        run: |
-          set -euo pipefail
-          # Drift comparison must render every Deployment that Aspire publishes.
-          # The user-facing chart defaults keep `worker` and `customWorker` off
-          # (Combined silos host worker grains for small/single-node installs),
-          # but the published Aspire topology always includes both — so the
-          # drift check enables them explicitly.
+          # Smoke render: assert templates produce non-empty, well-formed YAML
+          # with every component enabled. This is NOT a drift comparison
+          # against Aspire's K8s publisher: the chart is hand-written for
+          # end-user ergonomics (single Deployment per service, inline env
+          # vars), while the Aspire K8s publisher emits per-service
+          # ConfigMap + Secret + `<name>-deployment` shapes. They were never
+          # the same shape — the prior deep-diff was checking an alignment
+          # that did not exist (see tests/manual/42-release-pipeline/test-plan.md).
           helm template fleans charts/fleans \
             --set worker.enabled=true \
             --set customWorker.enabled=true \
             > /tmp/helm-rendered.yaml
+          test -s /tmp/helm-rendered.yaml
 
-      - name: Deep diff
-        run: |
-          set -euo pipefail
-
-          # Splits a multi-doc YAML into per-resource files keyed by kind/name.
-          split_yaml() {
-            local src="$1" dest="$2"
-            mkdir -p "$dest"
-            yq -s '.kind + "_" + .metadata.name | sub("/"; "_")' "$src"
-            mv *.yml "$dest/" 2>/dev/null || true
-          }
-
-          mkdir -p /tmp/aspire-split /tmp/helm-split
-          # Aspire emits separate YAML files; concatenate then split.
-          find src/Fleans/out/k8s -name '*.yaml' -exec cat {} \; -exec echo --- \; > /tmp/aspire-merged.yaml
-          (cd /tmp/aspire-split && yq -s '.kind + "_" + .metadata.name' /tmp/aspire-merged.yaml || true)
-          (cd /tmp/helm-split   && yq -s '.kind + "_" + .metadata.name' /tmp/helm-rendered.yaml || true)
-
-          # Strip legitimate-difference axes from a single YAML doc, output JSON.
-          normalize() {
-            local in="$1" out="$2"
-            yq -o=json '
-              # Image refs (containers + initContainers).
-              (.spec.template.spec.containers[]?.image)     |= "__FLEANS_DRIFT_PLACEHOLDER_IMAGE__" |
-              (.spec.template.spec.initContainers[]?.image) |= "__FLEANS_DRIFT_PLACEHOLDER_IMAGE__" |
-              # Strip Helm-only / Aspire-only labels at every label-bearing path.
-              (.metadata.labels                       | with_entries(select(.key | (test("^app\\.kubernetes\\.io/") and . != "app.kubernetes.io/name") or test("^helm\\.sh/") | not))) as $l1 |
-              .metadata.labels = $l1 |
-              (.spec.template.metadata.labels // {}   | with_entries(select(.key | (test("^app\\.kubernetes\\.io/") and . != "app.kubernetes.io/name") or test("^helm\\.sh/") | not))) as $l2 |
-              .spec.template.metadata.labels = $l2 |
-              (.spec.selector.matchLabels // {}       | with_entries(select(.key | (test("^app\\.kubernetes\\.io/") and . != "app.kubernetes.io/name") or test("^helm\\.sh/") | not))) as $l3 |
-              .spec.selector.matchLabels = $l3 |
-              # Sort env-vars by name for stable comparison.
-              (.spec.template.spec.containers[]?.env // []) |= sort_by(.name)
-            ' "$in" > "$out"
-          }
-
-          # Aspire-only resources excluded by name (externally-managed deps).
-          ASPIRE_ONLY_ALLOWLIST="fleans-postgres orleans-redis fleans-kafka"
-          # Helm-only kinds whitelisted (RBAC scaffolding).
-          HELM_ONLY_KINDS="ServiceAccount Role RoleBinding"
-
-          FAILED=0
-
-          # Scan Aspire's set; for each resource, find the Helm match or fail.
-          for f in /tmp/aspire-split/*.yml; do
-            [ -f "$f" ] || continue
-            base=$(basename "$f" .yml)
-            kind=$(echo "$base" | cut -d_ -f1)
-            name=$(echo "$base" | cut -d_ -f2-)
-
-            # Skip excluded Aspire-only resources.
-            for allowed in $ASPIRE_ONLY_ALLOWLIST; do
-              [ "$name" = "$allowed" ] && continue 2
-            done
-
-            helm_match="/tmp/helm-split/${base}.yml"
-            if [ ! -f "$helm_match" ]; then
-              echo "::error::Drift: Aspire publishes $kind/$name but Helm does not."
-              FAILED=1
-              continue
-            fi
-
-            normalize "$f"          "/tmp/aspire-${base}.json"
-            normalize "$helm_match" "/tmp/helm-${base}.json"
-            if ! diff -u "/tmp/aspire-${base}.json" "/tmp/helm-${base}.json"; then
-              echo "::error::Drift: $kind/$name differs between Aspire and Helm (above diff)."
-              FAILED=1
-            fi
-          done
-
-          # Scan Helm's set for resources NOT in Aspire — fail unless whitelisted by kind.
-          for f in /tmp/helm-split/*.yml; do
-            [ -f "$f" ] || continue
-            base=$(basename "$f" .yml)
-            kind=$(echo "$base" | cut -d_ -f1)
-            name=$(echo "$base" | cut -d_ -f2-)
-
-            [ -f "/tmp/aspire-split/${base}.yml" ] && continue
-
-            allowed=0
-            for ok in $HELM_ONLY_KINDS; do
-              [ "$kind" = "$ok" ] && allowed=1 && break
-            done
-            if [ "$allowed" = "0" ]; then
-              echo "::error::Drift: Helm has $kind/$name but Aspire does not (kind not in whitelist $HELM_ONLY_KINDS)."
-              FAILED=1
-            fi
-          done
-
-          if [ "$FAILED" = "1" ]; then
-            exit 1
-          fi
-          echo "Drift check passed."
-
-      - name: Upload helm chart artifact
+      - name: Package helm chart
         run: |
           set -euo pipefail
           helm package charts/fleans --version "${{ needs.setup.outputs.version }}" --app-version "${{ needs.setup.outputs.version }}" -d /tmp/
@@ -410,7 +294,7 @@ jobs:
 
   release:
     name: GitHub release
-    needs: [setup, images, compose, helm-drift]
+    needs: [setup, images, compose, helm-package]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: release
