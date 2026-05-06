@@ -26,13 +26,36 @@ public partial class SignalEffectHandler : IEffectHandler
 
             case UnsubscribeSignalEffect unsubSig:
                 var unsubSigGrain = context.GrainFactory.GetGrain<ISignalCorrelationGrain>(unsubSig.SignalName);
-                await unsubSigGrain.Unsubscribe(unsubSig.WorkflowInstanceId, unsubSig.ActivityId);
+                try
+                {
+                    await unsubSigGrain.Unsubscribe(unsubSig.WorkflowInstanceId, unsubSig.ActivityId);
+                }
+                catch (Exception ex)
+                {
+                    // Cleanup-path failure: the activity that owned this signal subscription
+                    // has already completed or been cancelled by the time we reach this
+                    // handler, so failing the workflow now would violate the "Each activity
+                    // instance executes at most once" invariant (CLAUDE.md Design Constraints).
+                    // Log only.
+                    LogSignalUnsubscribeFailed(unsubSig.ActivityId, unsubSig.SignalName, ex);
+                }
                 break;
 
             case ThrowSignalEffect throwSig:
                 var throwSigGrain = context.GrainFactory.GetGrain<ISignalCorrelationGrain>(throwSig.SignalName);
-                var deliveredCount = await throwSigGrain.BroadcastSignal();
-                LogSignalThrown(throwSig.SignalName, deliveredCount);
+                try
+                {
+                    var deliveredCount = await throwSigGrain.BroadcastSignal();
+                    LogSignalThrown(throwSig.SignalName, deliveredCount);
+                }
+                catch (Exception ex)
+                {
+                    // Side-effect failure: signal broadcast is best-effort. The activity that
+                    // emitted the throw has already transitioned past its "throw" step by the
+                    // time we dispatch this effect; failing the workflow on a missed broadcast
+                    // delivery doesn't sensibly attribute back to a single activity. Log only.
+                    LogSignalThrowFailed(throwSig.SignalName, ex);
+                }
                 break;
 
             default:
@@ -68,4 +91,12 @@ public partial class SignalEffectHandler : IEffectHandler
     [LoggerMessage(EventId = 1030, Level = LogLevel.Information,
         Message = "Signal thrown: signalName={SignalName}, deliveredTo={DeliveredCount} subscribers")]
     private partial void LogSignalThrown(string signalName, int deliveredCount);
+
+    [LoggerMessage(EventId = 1031, Level = LogLevel.Warning,
+        Message = "Signal unsubscribe failed for activity {ActivityId}: signalName={SignalName} (cleanup-path; not failing workflow)")]
+    private partial void LogSignalUnsubscribeFailed(string activityId, string signalName, Exception exception);
+
+    [LoggerMessage(EventId = 1032, Level = LogLevel.Warning,
+        Message = "Signal throw broadcast failed: signalName={SignalName} (best-effort; not failing workflow)")]
+    private partial void LogSignalThrowFailed(string signalName, Exception exception);
 }

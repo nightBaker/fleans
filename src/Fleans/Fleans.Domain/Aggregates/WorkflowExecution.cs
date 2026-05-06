@@ -484,7 +484,25 @@ public class WorkflowExecution
                     break;
 
                 case RegisterMessageCommand msg:
-                    effects.Add(ProcessRegisterMessage(msg, activityInstanceId));
+                    // Build-time exception (e.g. correlation variable missing in
+                    // ProcessRegisterMessage) routes to FailActivity inline so the workflow
+                    // surfaces the failure in state, not just logs (#425). Subsequent commands
+                    // targeting the same activity are naturally no-op'd by the aggregate's
+                    // "Each activity instance executes at most once" invariant
+                    // (FailActivity's IsCompleted stale-guard).
+                    // The other three Process*-call cases (StartChildWorkflowCommand,
+                    // AddConditionsCommand, EvaluateActivationConditionCommand) are tracked
+                    // by #497 — their command records lack a direct ActivityId field and need
+                    // a reverse-lookup helper or a schema change to support the same pattern.
+                    try
+                    {
+                        effects.Add(ProcessRegisterMessage(msg, activityInstanceId));
+                    }
+                    catch (Exception ex)
+                    {
+                        var failEffects = FailActivity(msg.ActivityId, activityInstanceId, ex);
+                        effects.AddRange(failEffects);
+                    }
                     break;
 
                 case RegisterSignalCommand signal:
