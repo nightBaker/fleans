@@ -42,6 +42,34 @@ is tracked in [#410](https://github.com/nightBaker/fleans/issues/410). Until
 then, the GitHub-Release-asset path is the supported install vector.
 :::
 
+## Verify the chart and images
+
+The release pipeline signs both the chart tarball (as a blob) and every container image (by manifest digest). Run two checks before `helm install`:
+
+**1. Verify the helm chart tarball.** Download `fleans-0.1.0-beta.tgz`, `fleans-0.1.0-beta.tgz.sig`, and `fleans-0.1.0-beta.tgz.crt` from the same GitHub Release, then:
+
+```bash
+cosign verify-blob \
+  --certificate fleans-0.1.0-beta.tgz.crt \
+  --signature   fleans-0.1.0-beta.tgz.sig \
+  --certificate-identity-regexp "https://github.com/nightBaker/fleans/.github/workflows/release.yml@refs/tags/v.*" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  fleans-0.1.0-beta.tgz
+```
+
+**2. Verify each container image.** The chart pulls four images (one of which — `fleans-api` — is reused by the `core` and `worker` Deployments per the chart's `values.yaml` design; even though the Helm chart pulls only `image.api` for both `core` and `worker` Deployments at runtime, the release pipeline publishes all four as distinct signed images for users who want a Worker silo deployable in non-chart deployments):
+
+```bash
+for SVC in api web worker mcp; do
+  cosign verify \
+    --certificate-identity-regexp "https://github.com/nightBaker/fleans/.github/workflows/release.yml@refs/tags/v.*" \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+    ghcr.io/nightbaker/fleans-$SVC:0.1.0-beta
+done
+```
+
+For production Kubernetes installs, the recommended enforcement is the Sigstore Policy Controller (`policy.sigstore.dev/v1beta1 ClusterImagePolicy`) or Kyverno's `verifyImages`/`verifyManifests` rules.
+
 ## 2. Quick install
 
 ```bash

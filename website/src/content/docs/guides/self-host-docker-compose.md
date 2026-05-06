@@ -40,6 +40,23 @@ current release tag when you run these commands — see the `## Cutting a
 Release` runbook in `CLAUDE.md` for the maintainer-side bump cadence.
 :::
 
+## Verify the images the bundle pulls
+
+The compose bundle itself is just declarative YAML — its bytes aren't signed. The substantive supply-chain risk lives in the four container images the YAML references; those images ARE signed by the release pipeline using cosign keyless signing (Sigstore Fulcio CA). Verify each image before `docker compose up`:
+
+```bash
+for SVC in api web worker mcp; do
+  cosign verify \
+    --certificate-identity-regexp "https://github.com/nightBaker/fleans/.github/workflows/release.yml@refs/tags/v.*" \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+    ghcr.io/nightbaker/fleans-$SVC:0.1.0-beta
+done
+```
+
+Each `cosign verify` exits 0 and prints a JSON object containing a `Bundle` block with `tlogEntries` proving the signature was logged to the public Rekor transparency log.
+
+`docker compose pull` does NOT verify signatures by default; for enforcement, run an admission controller (Kyverno + Sigstore policy) or pre-pull via `docker pull --policy=verify` (Docker 25+ with content trust enabled).
+
 ## 2. Run the stack
 
 ```bash
