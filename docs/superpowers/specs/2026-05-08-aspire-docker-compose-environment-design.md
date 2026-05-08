@@ -24,18 +24,34 @@ Rejected alternatives:
 
 ### `src/Fleans/Fleans.Aspire/Program.cs`
 
-Add one line near the top, alongside the existing `AddKubernetesEnvironment("k8s")`:
+> **Spec amendment (post-implementation):** The original spec proposed registering BOTH `AddKubernetesEnvironment("k8s")` AND `AddDockerComposeEnvironment("compose")` simultaneously. Implementation uncovered that Aspire 13.2.3 does not support dual-registration without every resource calling `WithComputeEnvironment(...)` to disambiguate, which is impractical for a multi-resource apphost. The implemented design is a runtime switch instead. The user-visible outcome is equivalent: `aspire publish -t docker-compose` produces a real `compose.yaml`, and `aspire publish -t kubernetes` is still reachable (under an explicit env-var gesture) for ad-hoc dev usage.
+
+Replace the unconditional `AddKubernetesEnvironment("k8s")` call with a runtime switch on the `ASPIRE_PUBLISH_ENV` configuration value (default `"compose"`):
 
 ```csharp
-builder.AddDockerComposeEnvironment("compose");
+var publishEnv = builder.Configuration["ASPIRE_PUBLISH_ENV"] ?? "compose";
+if (publishEnv.Equals("compose", StringComparison.OrdinalIgnoreCase))
+{
+    builder.AddDockerComposeEnvironment("compose");
+}
+else if (publishEnv.Equals("kubernetes", StringComparison.OrdinalIgnoreCase))
+{
+    builder.AddKubernetesEnvironment("k8s");
+}
+else
+{
+    throw new InvalidOperationException(
+        $"Unknown ASPIRE_PUBLISH_ENV value '{publishEnv}'. Valid values: 'compose' (default), 'kubernetes'.");
+}
 ```
 
-Both publishers stay registered. The apphost continues to work in dev mode (`dotnet run --project Fleans.Aspire`) unchanged — `AddDockerComposeEnvironment` is a publish-time-only registration. With both environments present:
+Default behaviour:
+- `aspire publish -t docker-compose` (release pipeline path) → registers Compose env → real `compose.yaml`.
+- `ASPIRE_PUBLISH_ENV=kubernetes aspire publish -t kubernetes` (ad-hoc dev path) → registers K8s env → Aspire-flavored Helm chart (currently unused as a release artifact; that is fine).
+- Dev mode (`dotnet run --project Fleans.Aspire`) unchanged — both extension methods are publish-only no-ops in non-publish execution contexts.
+- Unknown values fail fast with `InvalidOperationException`, matching the project's fail-fast convention for `FLEANS_PERSISTENCE_PROVIDER` / `FLEANS_STREAMING_PROVIDER`.
 
-- `aspire publish -t docker-compose` dispatches to the Compose publisher → real `compose.yaml`.
-- `aspire publish -t kubernetes` continues to dispatch to the K8s publisher → Helm-shaped output (currently unused as a release artifact; that is fine).
-
-The existing `FLEANS_LOAD_TEST_MODE` gate around the nginx + 2-replica fan-out stays as-is. The gate exists because the K8s publisher rejects bind mounts; the Compose publisher accepts them natively, but both publishers' `BeforeStart` hooks fire on every `aspire publish` regardless of `-t` target. So the gate is still required when load-testers run `FLEANS_LOAD_TEST_MODE=true ... -t kubernetes` (uncommon, but possible).
+The existing `FLEANS_LOAD_TEST_MODE` gate around the nginx + 2-replica fan-out stays as-is. Reason for the guard under the runtime-switch model: keep the load-test nginx out of end-user release artifacts (a developer concern, not an end-user concern), and protect the rare `ASPIRE_PUBLISH_ENV=kubernetes` path from the K8s publisher's bind-mount rejection.
 
 ### `.github/workflows/release.yml`
 
