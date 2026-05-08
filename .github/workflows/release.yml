@@ -88,7 +88,7 @@ jobs:
           echo "Resolved: VERSION=$VERSION IS_PRE=$IS_PRE IS_DRY=$IS_DRY"
 
   images:
-    name: Publish ${{ matrix.service }} image
+    name: Publish ${{ matrix.service.name }} image
     needs: setup
     runs-on: ubuntu-latest
     timeout-minutes: 30
