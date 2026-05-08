@@ -16,6 +16,7 @@ public class WorkflowQueryService : IWorkflowQueryService
 {
     private readonly IDbContextFactory<FleanQueryDbContext> _dbContextFactory;
     private readonly ISieveProcessor _sieveProcessor;
+    private readonly IUserTaskFilterStrategy _userTaskFilter;
 
     private static readonly JsonSerializerSettings JsonSettings = new()
     {
@@ -26,10 +27,12 @@ public class WorkflowQueryService : IWorkflowQueryService
 
     public WorkflowQueryService(
         IDbContextFactory<FleanQueryDbContext> dbContextFactory,
-        ISieveProcessor sieveProcessor)
+        ISieveProcessor sieveProcessor,
+        IUserTaskFilterStrategy userTaskFilter)
     {
         _dbContextFactory = dbContextFactory;
         _sieveProcessor = sieveProcessor;
+        _userTaskFilter = userTaskFilter;
     }
 
     public async Task<InstanceStateSnapshot?> GetStateSnapshot(Guid workflowInstanceId)
@@ -362,23 +365,42 @@ public class WorkflowQueryService : IWorkflowQueryService
         };
         var sievedQuery = _sieveProcessor.Apply(sieveModel, baseQuery, applyPagination: false);
 
-        // Materialize — assignee/candidateGroup filtering must happen in memory
-        // because CandidateUsers/CandidateGroups are JSON arrays not queryable in SQLite
-        var tasks = await sievedQuery.ToListAsync();
+        // Layer 2: provider-specific assignee/candidateGroup pushdown.
+        // PG impl appends LIKE clauses against the JSON-serialized columns; SQLite is a no-op
+        // and falls back to in-memory filtering after materialization.
+        sievedQuery = _userTaskFilter.Apply(sievedQuery, assignee, candidateGroup);
 
-        // Layer 2: Memory-level — assignee/candidateGroup filtering (preserves existing OR semantics)
-        var filteredList = ApplyUserTaskFilters(tasks, assignee, candidateGroup).ToList();
-        var totalCount = filteredList.Count;
+        if (_userTaskFilter.PushesToSql)
+        {
+            // PG path: filter, count, and pagination all push to SQL.
+            // The silo materializes only PageSize rows regardless of total matching count.
+            var totalCount = await sievedQuery.CountAsync();
+            var items = (await sievedQuery
+                    .Skip((page.Page - 1) * page.PageSize)
+                    .Take(page.PageSize)
+                    .ToListAsync())
+                .Select(ToUserTaskDto)
+                .ToList();
 
-        // Layer 3: Memory-level pagination
-        var items = filteredList
-            .Skip((page.Page - 1) * page.PageSize)
-            .Take(page.PageSize)
-            .Select(ToUserTaskDto)
-            .ToList();
+            return new PagedResult<UserTaskResponse>(
+                items, totalCount, page.Page, page.PageSize);
+        }
+        else
+        {
+            // SQLite path: materialize, then filter and paginate in memory.
+            // Existing behavior preserved when no SQL pushdown is available.
+            var tasks = await sievedQuery.ToListAsync();
+            var filteredList = ApplyUserTaskFilters(tasks, assignee, candidateGroup).ToList();
+            var totalCount = filteredList.Count;
+            var items = filteredList
+                .Skip((page.Page - 1) * page.PageSize)
+                .Take(page.PageSize)
+                .Select(ToUserTaskDto)
+                .ToList();
 
-        return new PagedResult<UserTaskResponse>(
-            items, totalCount, page.Page, page.PageSize);
+            return new PagedResult<UserTaskResponse>(
+                items, totalCount, page.Page, page.PageSize);
+        }
     }
 
     private static IEnumerable<UserTaskState> ApplyUserTaskFilters(

@@ -51,6 +51,9 @@ public static class PostgresPersistenceDependencyInjection
                 ? options => options.UseFleansPostgres(effectiveQueryDataSource)
                 : null);
 
+        // Override the default in-memory strategy with the SQL-pushdown impl. See #415.
+        services.AddSingleton<IUserTaskFilterStrategy, PostgresUserTaskFilterStrategy>();
+
         return services;
     }
 }

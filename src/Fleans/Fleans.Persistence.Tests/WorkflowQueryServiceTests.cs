@@ -19,7 +19,7 @@ namespace Fleans.Persistence.Tests;
 public class WorkflowQueryServiceTests : PersistenceTestBase
 {
     private static (IWorkflowQueryService Service, IDbContextFactory<FleanCommandDbContext> CommandFactory)
-        BuildService(IPersistenceTestFixture fixture)
+        BuildService(IPersistenceTestFixture fixture, PersistenceProvider provider = PersistenceProvider.Sqlite)
     {
         var sieveOptions = Options.Create(new SieveOptions
         {
@@ -27,7 +27,10 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
             MaxPageSize = 100
         });
         ISieveProcessor sieveProcessor = new ApplicationSieveProcessor(sieveOptions);
-        var service = new WorkflowQueryService(fixture.QueryFactory, sieveProcessor);
+        IUserTaskFilterStrategy filterStrategy = provider == PersistenceProvider.Postgres
+            ? new Fleans.Persistence.PostgreSql.PostgresUserTaskFilterStrategy()
+            : new InMemoryUserTaskFilterStrategy();
+        var service = new WorkflowQueryService(fixture.QueryFactory, sieveProcessor, filterStrategy);
         return (service, fixture.CommandFactory);
     }
 
@@ -41,7 +44,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetStateSnapshot_ReturnsNull_WhenInstanceDoesNotExist(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         var result = await service.GetStateSnapshot(Guid.NewGuid());
 
@@ -54,7 +57,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetStateSnapshot_ReturnsSnapshot_WithActiveAndCompletedActivities(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -102,7 +105,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetStateSnapshot_ReturnsSnapshot_WithVariables(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -136,7 +139,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetStateSnapshot_ReturnsSnapshot_WithConditionSequences(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -169,7 +172,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetStateSnapshot_ReturnsSnapshot_WithProcessDefinitionId(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -190,7 +193,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetStateSnapshot_ReturnsSnapshot_WithTimestamps(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -219,7 +222,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetStateSnapshot_ReturnsErrorState_OnFailedActivity(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -254,7 +257,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetAllProcessDefinitions_ReturnsAll_OrderedByKeyThenVersion(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -282,7 +285,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetAllProcessDefinitions_ReturnsEmpty_WhenNoneExist(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         var results = await service.GetAllProcessDefinitions();
 
@@ -299,7 +302,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetInstancesByKey_ReturnsMatchingInstances(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -329,7 +332,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetInstancesByKey_ReturnsEmpty_WhenNoMatch(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -351,7 +354,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetInstancesByKeyAndVersion_ReturnsMatchingInstances(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -376,7 +379,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetInstancesByKeyAndVersion_ReturnsEmpty_WhenVersionNotFound(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -398,7 +401,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetInstancesByKey_Paginated_ReturnsPagedResult(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -420,7 +423,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetInstancesByKey_Paginated_ReturnsSecondPage(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -441,7 +444,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetInstancesByKey_Paginated_ReturnsLastPartialPage(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -461,7 +464,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetInstancesByKey_Paginated_ReturnsEmpty_WhenNoMatch(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         var result = await service.GetInstancesByKey("nonexistent", new PageRequest());
 
@@ -475,7 +478,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetInstancesByKey_Paginated_SortsByCreatedAtDescending(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -501,7 +504,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetInstancesByKey_Paginated_FiltersCompleted(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -527,7 +530,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetInstancesByKey_Paginated_NormalizesInvalidPage(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -551,7 +554,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetInstancesByKeyAndVersion_Paginated_ReturnsPagedResult(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -575,7 +578,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetInstancesByKeyAndVersion_Paginated_ReturnsEmpty_WhenVersionNotFound(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -598,7 +601,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetBpmnXml_ReturnsBpmn_WhenInstanceExists(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -619,7 +622,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetBpmnXml_ReturnsNull_WhenInstanceNotFound(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         var result = await service.GetBpmnXml(Guid.NewGuid());
 
@@ -636,7 +639,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetBpmnXmlByKey_ReturnsLatestVersion(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -659,7 +662,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetBpmnXmlByKeyAndVersion_ReturnsExactVersion(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -681,7 +684,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetAllProcessDefinitions_Paginated_ReturnsPagedResult(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -702,7 +705,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetAllProcessDefinitions_Paginated_ReturnsSecondPage(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -722,7 +725,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetAllProcessDefinitions_Paginated_FiltersByIsActive(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -750,7 +753,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetProcessDefinitionGroups_ReturnsCorrectPage(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -775,7 +778,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetProcessDefinitionGroups_LastPage_ReturnsRemainder(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -795,7 +798,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetProcessDefinitionGroups_SearchByKey_FiltersCorrectly(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -816,7 +819,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetProcessDefinitionGroups_FilterByActive_FiltersCorrectly(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -839,7 +842,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetProcessDefinitionGroups_SortByDeployedAt_CorrectOrder(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -862,7 +865,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetProcessDefinitionGroups_EmptyResult_ReturnsEmptyPage(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         var result = await service.GetProcessDefinitionGroups(
             new PageRequest(Filters: "ProcessDefinitionKey@=nonexistent"));
@@ -877,7 +880,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetProcessDefinitionGroups_GroupContainsAllVersions(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -906,7 +909,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetPendingUserTasks_Paginated_ReturnsPagedResult(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -931,7 +934,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetPendingUserTasks_Paginated_FiltersByAssignee(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -956,7 +959,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetPendingUserTasks_Paginated_FiltersByCandidateGroup(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -980,7 +983,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetPendingUserTasks_Paginated_ExcludesCompleted(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         using var db = commandFactory.CreateDbContext();
 
@@ -999,6 +1002,187 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
 
         Assert.AreEqual(1, result.Items.Count);
         Assert.AreEqual(1, result.TotalCount);
+    }
+
+    // ─────────────────────────────────────────────────
+    // GetPendingUserTasks (paginated) — #415 SQL pushdown
+    // ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// #415 prototype gate. Verifies the Postgres strategy emits a SQL LIKE clause
+    /// against the CandidateUsers column. White-box test on the strategy itself —
+    /// uses ToQueryString() (EF Core 5+) to inspect the generated SQL without
+    /// executing it. Requires FLEANS_PG_TESTS=1 because ToQueryString needs an
+    /// Npgsql provider configured on the DbContext.
+    /// </summary>
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetPendingUserTasks_Paginated_FiltersByAssignee_PushesToSql_OnPostgres(PersistenceProvider provider)
+    {
+        Skip.IfPostgresUnavailable(provider);
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+
+        var strategy = new Fleans.Persistence.PostgreSql.PostgresUserTaskFilterStrategy();
+        await using var db = await fixture.QueryFactory.CreateDbContextAsync();
+
+        string sql;
+        try
+        {
+            var query = strategy.Apply(db.UserTasks.AsQueryable(), "alice", null);
+            sql = query.ToQueryString();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"§6.1 PROTOTYPE FAILURE — EF could not translate EF.Functions.Like+EF.Property against value-converted property: {ex.GetType().Name}: {ex.Message}");
+            throw;
+        }
+
+        Console.WriteLine($"§6.1 PROTOTYPE captured SQL:\n{sql}\n");
+
+        Assert.IsTrue(sql.Contains("LIKE", StringComparison.OrdinalIgnoreCase),
+            $"Expected SQL to contain LIKE clause; got:\n{sql}");
+        Assert.IsTrue(sql.Contains("CandidateUsers"),
+            $"Expected SQL to reference CandidateUsers column; got:\n{sql}");
+    }
+
+    /// <summary>
+    /// #415 prototype gate (CandidateGroups mirror). Same as the assignee test but
+    /// for the CandidateGroups column.
+    /// </summary>
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetPendingUserTasks_Paginated_FiltersByCandidateGroup_PushesToSql_OnPostgres(PersistenceProvider provider)
+    {
+        Skip.IfPostgresUnavailable(provider);
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+
+        var strategy = new Fleans.Persistence.PostgreSql.PostgresUserTaskFilterStrategy();
+        await using var db = await fixture.QueryFactory.CreateDbContextAsync();
+
+        var query = strategy.Apply(db.UserTasks.AsQueryable(), null, "managers");
+        var sql = query.ToQueryString();
+
+        Assert.IsTrue(sql.Contains("LIKE", StringComparison.OrdinalIgnoreCase),
+            $"Expected SQL to contain LIKE clause; got:\n{sql}");
+        Assert.IsTrue(sql.Contains("CandidateGroups"),
+            $"Expected SQL to reference CandidateGroups column; got:\n{sql}");
+    }
+
+    /// <summary>
+    /// #415 escape correctness. Assignee names containing LIKE metacharacters
+    /// (%, _, \) MUST be escaped so they match literally, not as wildcards.
+    /// End-to-end: seeds tasks with metacharacter-laden assignees and verifies
+    /// only the exact match is returned.
+    /// </summary>
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetPendingUserTasks_Paginated_FiltersByAssignee_HandlesLikeMetacharacters(PersistenceProvider provider)
+    {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture, provider);
+
+        using var db = commandFactory.CreateDbContext();
+        var instanceId = Guid.NewGuid();
+        await SeedWorkflowInstance(db, instanceId, isStarted: true);
+
+        // Three tasks, each with a candidate user containing a different LIKE metacharacter.
+        await SeedUserTask(db, Guid.NewGuid(), instanceId, "task1",
+            candidateUsers: new List<string> { "al%ce" });
+        await SeedUserTask(db, Guid.NewGuid(), instanceId, "task2",
+            candidateUsers: new List<string> { "al_ce" });
+        await SeedUserTask(db, Guid.NewGuid(), instanceId, "task3",
+            candidateUsers: new List<string> { "al\\ce" });
+
+        // Search for "al%ce" — should match only task1, NOT task2 (which would match
+        // if % were treated as wildcard) and NOT task3.
+        var result = await service.GetPendingUserTasks("al%ce", null, new PageRequest());
+        Assert.AreEqual(1, result.Items.Count, "Only the exact-match task should be returned");
+    }
+
+    /// <summary>
+    /// #415 JSON-escape correctness. Assignee names containing double quotes —
+    /// after JsonConvert.ToString, these are escaped as \". Verifies the LIKE
+    /// pattern correctly matches the stored escaped form.
+    /// </summary>
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetPendingUserTasks_Paginated_FiltersByAssignee_HandlesJsonEscapes(PersistenceProvider provider)
+    {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture, provider);
+
+        using var db = commandFactory.CreateDbContext();
+        var instanceId = Guid.NewGuid();
+        await SeedWorkflowInstance(db, instanceId, isStarted: true);
+
+        // Assignee with embedded double-quote — JSON-serialized as "al\"ice".
+        await SeedUserTask(db, Guid.NewGuid(), instanceId, "task1",
+            candidateUsers: new List<string> { "al\"ice" });
+        await SeedUserTask(db, Guid.NewGuid(), instanceId, "task2",
+            candidateUsers: new List<string> { "alice" });
+
+        var result = await service.GetPendingUserTasks("al\"ice", null, new PageRequest());
+        Assert.AreEqual(1, result.Items.Count, "Only the quoted-name task should match");
+    }
+
+    /// <summary>
+    /// #415 substring collision guard. The JSON-quote bracketing of LIKE patterns
+    /// MUST distinguish "alice" from "alice2": searching for assignee "alice" against
+    /// a candidate-users array of ["alice2"] should NOT match.
+    /// </summary>
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetPendingUserTasks_Paginated_FiltersByAssignee_AvoidsSubstringCollision(PersistenceProvider provider)
+    {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture, provider);
+
+        using var db = commandFactory.CreateDbContext();
+        var instanceId = Guid.NewGuid();
+        await SeedWorkflowInstance(db, instanceId, isStarted: true);
+
+        await SeedUserTask(db, Guid.NewGuid(), instanceId, "task1",
+            candidateUsers: new List<string> { "alice" });
+        await SeedUserTask(db, Guid.NewGuid(), instanceId, "task2",
+            candidateUsers: new List<string> { "alice2" });
+
+        var result = await service.GetPendingUserTasks("alice", null, new PageRequest());
+        Assert.AreEqual(1, result.Items.Count, "Substring 'alice' should not match 'alice2'");
+    }
+
+    /// <summary>
+    /// #415 AND composition. Both assignee and candidateGroup filters set;
+    /// only tasks matching BOTH should be returned.
+    /// </summary>
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetPendingUserTasks_Paginated_FiltersByBoth(PersistenceProvider provider)
+    {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture, provider);
+
+        using var db = commandFactory.CreateDbContext();
+        var instanceId = Guid.NewGuid();
+        await SeedWorkflowInstance(db, instanceId, isStarted: true);
+
+        // task1 matches both; task2 matches assignee only; task3 matches group only.
+        await SeedUserTask(db, Guid.NewGuid(), instanceId, "task1",
+            assignee: "alice",
+            candidateGroups: new List<string> { "managers" });
+        await SeedUserTask(db, Guid.NewGuid(), instanceId, "task2",
+            assignee: "alice",
+            candidateGroups: new List<string> { "engineers" });
+        await SeedUserTask(db, Guid.NewGuid(), instanceId, "task3",
+            assignee: "bob",
+            candidateGroups: new List<string> { "managers" });
+
+        var result = await service.GetPendingUserTasks("alice", "managers", new PageRequest());
+        Assert.AreEqual(1, result.Items.Count, "Only task matching both filters should be returned");
+        Assert.AreEqual("task1", result.Items[0].ActivityId);
     }
 
     // ─────────────────────────────────────────────────
@@ -1108,7 +1292,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetRegisteredEventsAsync_EmptyDb_AllListsEmpty(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, _) = BuildService(fixture);
+        var (service, _) = BuildService(fixture, provider);
 
         var snap = await service.GetRegisteredEventsAsync();
 
@@ -1125,7 +1309,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetRegisteredEventsAsync_SeedOneOfEach_SnapshotMirrorsSeed(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         var workflowId = Guid.NewGuid();
         var hostActivityId = Guid.NewGuid();
@@ -1185,7 +1369,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetRegisteredEventsAsync_ConditionalIsRegisteredFalse_Excluded(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         await using (var db = await commandFactory.CreateDbContextAsync())
         {
@@ -1220,7 +1404,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetRegisteredEventsAsync_MessageSubscription_DeleteThenRoundTrip(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         // Insert → snapshot includes it
         await using (var db = await commandFactory.CreateDbContextAsync())
@@ -1251,7 +1435,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     public async Task GetRegisteredEventsAsync_SignalSubscription_DeleteThenRoundTrip(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture);
+        var (service, commandFactory) = BuildService(fixture, provider);
 
         var wfId = Guid.NewGuid();
         await using (var db = await commandFactory.CreateDbContextAsync())

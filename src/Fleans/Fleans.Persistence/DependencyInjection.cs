@@ -68,6 +68,9 @@ public static class EfCorePersistenceDependencyInjection
             options.DefaultPageSize = 20;
             options.MaxPageSize = 100;
         });
+        // Default in-memory user-task filter strategy; provider-specific extensions
+        // (e.g. AddPostgresPersistence) override this with a SQL-pushdown impl. See #415.
+        services.AddSingleton<IUserTaskFilterStrategy, InMemoryUserTaskFilterStrategy>();
         services.AddSingleton<IWorkflowQueryService, WorkflowQueryService>();
         services.AddSingleton<IWorkflowStateProjection, EfCoreWorkflowStateProjection>();
         services.AddSingleton<EfCoreEventStore>();
