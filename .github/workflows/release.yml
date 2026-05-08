@@ -220,6 +220,16 @@ jobs:
       - name: Zip the compose bundle
         run: |
           set -euo pipefail
+          # Aspire 13.x emits compose.yaml; fall back to docker-compose.yaml in case a
+          # future Aspire version renames it. If neither exists, AddDockerComposeEnvironment
+          # is missing in Program.cs (or the publisher silently routed to a different env)
+          # — fail loudly rather than ship a wrong-shape artifact.
+          if [ ! -f out/compose/compose.yaml ] && [ ! -f out/compose/docker-compose.yaml ]; then
+            echo "::error::aspire publish -t docker-compose produced no compose file in out/compose/"
+            echo "  out/compose/ contents:"
+            ls -la out/compose/ 2>&1 || echo "  (out/compose/ directory does not exist)"
+            exit 1
+          fi
           ZIP="docker-compose-v${{ needs.setup.outputs.version }}.zip"
           (cd out/compose && zip -r "../../$ZIP" .)
           ls -la "$ZIP"

@@ -1,9 +1,38 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
-// Kubernetes publish target — `aspire publish -t kubernetes -o out/k8s` emits manifests for
-// every Aspire-hosted service plus its dependencies (Redis, optional PostgreSQL/Kafka). The
-// "k8s" name is the resource id in the AppHost model; the publish target type is "kubernetes".
-builder.AddKubernetesEnvironment("k8s");
+// Publish target selection — only ONE compute environment may be registered at a time; if both
+// AddKubernetesEnvironment and AddDockerComposeEnvironment are called, Aspire requires every
+// resource to call WithComputeEnvironment(...) to disambiguate, which is impractical.
+//
+// The release pipeline's `compose` job runs `aspire publish -t docker-compose -o out/compose`.
+// The `helm-package` job uses hand-written charts (helm package charts/fleans), NOT aspire
+// publish -t kubernetes, so the k8s environment is only needed for ad-hoc `aspire publish
+// -t kubernetes` runs (e.g. debugging manifest shape locally).
+//
+// Set ASPIRE_PUBLISH_ENV=kubernetes to get k8s manifests; default is compose.
+// In dev mode (dotnet run) neither registration fires — both are publish-only no-ops.
+var publishEnv = builder.Configuration["ASPIRE_PUBLISH_ENV"] ?? "compose";
+if (publishEnv.Equals("compose", StringComparison.OrdinalIgnoreCase))
+{
+    // Docker Compose publish target — `aspire publish -t docker-compose -o out/compose` emits a
+    // Compose Spec YAML referencing every Aspire-hosted service plus its dependencies. Required
+    // for the release pipeline's `compose` job; without this call, `aspire publish -t docker-compose`
+    // silently routes to whichever publisher IS registered (Kubernetes here) and produces unusable
+    // output. See tests/manual/42-release-pipeline/test-plan.md Pitfall #8.
+    builder.AddDockerComposeEnvironment("compose");
+}
+else if (publishEnv.Equals("kubernetes", StringComparison.OrdinalIgnoreCase))
+{
+    // Kubernetes publish target — `aspire publish -t kubernetes -o out/k8s` emits manifests for
+    // every Aspire-hosted service plus its dependencies (Redis, optional PostgreSQL/Kafka). The
+    // "k8s" name is the resource id in the AppHost model; the publish target type is "kubernetes".
+    builder.AddKubernetesEnvironment("k8s");
+}
+else
+{
+    throw new InvalidOperationException(
+        $"Unknown ASPIRE_PUBLISH_ENV value '{publishEnv}'. Valid values: 'compose' (default), 'kubernetes'.");
+}
 
 // Persistence provider — set FLEANS_PERSISTENCE_PROVIDER=Postgres to use PostgreSQL.
 // Default is SQLite (fast local dev, no container required).
@@ -139,14 +168,16 @@ WithPersistence(
 // (`dotnet run --project Fleans.Aspire`) keeps the original 3-process layout — Fleans.Api
 // with the default Combined role still hosts worker grains there.
 //
-// FLEANS_LOAD_TEST_MODE gates the nginx + 2-replica fan-out because:
-//   1. nginx uses WithBindMount(tests/load/nginx.conf, ...) which Aspire's Kubernetes
-//      publisher rejects (Bind mounts are not supported by the Kubernetes publisher).
-//      Both publisher hooks register whenever both packages are referenced, so the K8s
-//      target crashes on bind mounts even when invoked with `-t docker-compose`.
-//   2. End-user release artifacts (compose bundle / helm chart) should not contain a
-//      load-test nginx fronting 2 fleans-core replicas — that's a developer concern.
-// The load-test runbook (tests/load/README.md) sets the flag to opt in for compose only.
+// FLEANS_LOAD_TEST_MODE gates the nginx + 2-replica fan-out from end-user release
+// artifacts. End-user `docker-compose-v<VERSION>.zip` and the hand-written helm chart
+// should not contain a load-test nginx fronting 2 fleans-core replicas — that's a
+// developer concern. The load-test runbook (tests/load/README.md) sets the flag to
+// opt in.
+//
+// The guard also protects the (rare) `ASPIRE_PUBLISH_ENV=kubernetes` path: nginx uses
+// WithBindMount(tests/load/nginx.conf, ...) which Aspire's Kubernetes publisher rejects
+// (Bind mounts are not supported by the Kubernetes publisher). With the load-test mode
+// off, the bind-mounted container is never registered.
 var loadTestMode = string.Equals(
     builder.Configuration["FLEANS_LOAD_TEST_MODE"],
     "true",
