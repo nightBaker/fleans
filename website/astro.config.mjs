@@ -43,6 +43,10 @@ export default defineConfig({
           ],
         },
         {
+          label: 'BPMN Elements',
+          autogenerate: { directory: 'concepts/activities' },
+        },
+        {
           label: 'Patterns',
           items: [
             { label: 'Variables and Scope', slug: 'guides/variables-and-scope' },

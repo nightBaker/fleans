@@ -1,19 +1,29 @@
 /**
- * render-bpmn.mjs — Renders a BPMN fixture to themed SVG files for the landing page.
+ * render-bpmn.mjs — Renders BPMN fixtures to themed SVG files.
  *
  * Prerequisites: npx playwright install chromium (one-time)
  * Usage: node scripts/render-bpmn.mjs
- * Output: public/hero-workflow-light.svg, public/hero-workflow-dark.svg
+ * Output:
+ *   public/hero-workflow-light.svg, public/hero-workflow-dark.svg  (hero)
+ *   public/activities/{slug}-light.svg, public/activities/{slug}-dark.svg  (per-activity)
  */
 
 import { chromium } from 'playwright';
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURE = resolve(__dirname, '../../tests/manual/04-parallel-gateway/fork-join.bpmn');
 const OUT_DIR = resolve(__dirname, '../public');
+
+// Per-activity fixtures — Phase 0: Tasks
+const ACTIVITY_FIXTURES = [
+  { fixture: resolve(__dirname, '../../tests/manual/01-basic-workflow/simple-workflow.bpmn'),             slug: 'task-plain' },
+  { fixture: resolve(__dirname, '../../tests/manual/02-script-tasks/script-variable-manipulation.bpmn'), slug: 'task-script' },
+  { fixture: resolve(__dirname, '../../tests/manual/18-user-task/user-task-approval.bpmn'),               slug: 'task-user' },
+  { fixture: resolve(__dirname, '../../tests/manual/37-custom-task-framework/stub-custom-task.bpmn'),     slug: 'task-service' },
+];
 
 // Theme palettes
 const THEMES = {
@@ -168,9 +178,7 @@ async function main() {
     return prolog + body;
   }, bpmnXml);
 
-  await browser.close();
-
-  // Generate themed variants
+  // Generate hero themed variants
   for (const [name, theme] of Object.entries(THEMES)) {
     const processed = postProcess(svgResult, theme);
     const outPath = resolve(OUT_DIR, theme.file);
@@ -179,6 +187,53 @@ async function main() {
   }
 
   console.log('\nGenerated hero-workflow-{light,dark}.svg — please visually inspect before committing.');
+
+  // Render per-activity fixtures
+  const activitiesDir = resolve(OUT_DIR, 'activities');
+  mkdirSync(activitiesDir, { recursive: true });
+
+  console.log('\nRendering per-activity fixtures...');
+  for (const { fixture, slug } of ACTIVITY_FIXTURES) {
+    const xml = readFileSync(fixture, 'utf-8');
+
+    const activitySvg = await page.evaluate(async (bpmnXml) => {
+      const viewer = new BpmnJS({ container: '#canvas' });
+      await viewer.importXML(bpmnXml);
+      const canvas = viewer.get('canvas');
+      canvas.zoom('fit-viewport');
+
+      const { svg: rawSvg } = await viewer.saveSVG();
+
+      const doc = new DOMParser().parseFromString(rawSvg, 'image/svg+xml');
+      const svgEl = doc.documentElement;
+      svgEl.querySelectorAll('.djs-hit, .djs-outline, .djs-dragger').forEach(el => el.remove());
+      svgEl.querySelectorAll('text').forEach(el => {
+        const t = (el.textContent || '').trim();
+        if (t.length === 1) {
+          const c = t.charCodeAt(0);
+          if (c >= 0xE800 && c <= 0xE900) el.remove();
+        }
+      });
+
+      const body = new XMLSerializer().serializeToString(svgEl);
+      const prolog =
+        '<?xml version="1.0" encoding="utf-8"?>\n' +
+        '<!-- created with bpmn-js / http://bpmn.io -->\n' +
+        '<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">\n';
+      return prolog + body;
+    }, xml);
+
+    for (const [name, theme] of Object.entries(THEMES)) {
+      const processed = postProcess(activitySvg, theme);
+      const outPath = resolve(activitiesDir, `${slug}-${name}.svg`);
+      writeFileSync(outPath, processed, 'utf-8');
+      console.log(`  ${slug}-${name}: ${outPath} (${(Buffer.byteLength(processed) / 1024).toFixed(1)} KB)`);
+    }
+  }
+
+  console.log('\nGenerated per-activity SVGs — please visually inspect before committing.');
+
+  await browser.close();
 }
 
 main().catch((err) => {
