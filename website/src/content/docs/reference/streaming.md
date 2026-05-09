@@ -27,18 +27,26 @@ Memory-provider deployments are unaffected — that path is the supported defaul
 
 The provider name is read once at silo startup from configuration:
 
-| Configuration key                              | Values            | Default  |
-| ---------------------------------------------- | ----------------- | -------- |
-| `Fleans:Streaming:Provider`                    | `memory`, `kafka` | `memory` |
-| `Fleans:Streaming:Kafka:Brokers`               | `host:port[,…]`   | —        |
-| `Fleans:Streaming:Kafka:ConsumerGroup`         | string            | `fleans` |
-| `Fleans:Streaming:Kafka:TopicPrefix`           | string            | `fleans-` |
-| `Fleans:Streaming:Kafka:QueueCount`            | integer           | `1`      |
-| `Fleans:Streaming:Kafka:NumPartitions`         | integer           | `1`      |
-| `Fleans:Streaming:Kafka:ReplicationFactor`     | integer           | `1`      |
+| Configuration key                                       | Values                           | Default  |
+| ------------------------------------------------------- | -------------------------------- | -------- |
+| `Fleans:Streaming:Provider`                             | `memory`, `kafka`, `azurequeue`  | `memory` |
+| `Fleans:Streaming:Kafka:Brokers`                        | `host:port[,…]`                  | —        |
+| `Fleans:Streaming:Kafka:ConsumerGroup`                  | string                           | `fleans` |
+| `Fleans:Streaming:Kafka:TopicPrefix`                    | string                           | `fleans-` |
+| `Fleans:Streaming:Kafka:QueueCount`                     | integer                          | `1`      |
+| `Fleans:Streaming:Kafka:NumPartitions`                  | integer                          | `1`      |
+| `Fleans:Streaming:Kafka:ReplicationFactor`              | integer                          | `1`      |
+| `Fleans:Streaming:AzureQueue:ConnectionString`          | Azure Storage connection string  | —        |
+| `Fleans:Streaming:AzureQueue:AccountName`               | Azure Storage account name       | —        |
+| `Fleans:Streaming:AzureQueue:QueueNames`                | JSON array of strings            | `["fleans-stream-0"…"fleans-stream-7"]` |
+| `Fleans:Streaming:AzureQueue:MessageVisibilityTimeout`  | TimeSpan string (e.g. `00:01:00`) | Azure SDK default (30 s) |
 
 Match is case-insensitive. Any other value throws `ArgumentException` at startup —
 add a new case to `FleanStreamingExtensions.AddFleanStreaming` if you ship another provider.
+
+For `azurequeue`, exactly one of `ConnectionString` or `AccountName` must be set.
+`ConnectionString` is used for local dev (Azurite). `AccountName` enables Managed Identity
+(`DefaultAzureCredential`) for production Azure deployments.
 
 ## Choosing a provider
 
@@ -58,6 +66,20 @@ Backed by an in-repo `Fleans.Streaming.Kafka` adapter built on `Confluent.Kafka`
 Right for: production rollouts that need event durability beyond a single silo, CI environments
 that want broker parity with production, and topologies where a non-Orleans consumer may join
 the topics later (note: the codec is currently the Orleans codec — see *limitations* below).
+
+### `azurequeue` — opt-in cross-silo durability (Azure-native)
+
+Backed by `Microsoft.Orleans.Streaming.AzureStorage` — the first-party Microsoft Orleans
+adapter for Azure Queue Storage. This is a thin wrapper, not a custom adapter, so behaviour,
+retry semantics, and dead-letter handling are governed by the Microsoft package.
+
+Right for: Azure-native deployments that need cross-silo event durability without running Kafka.
+Uses Azure Queue Storage (cheaper than Service Bus at scale; Orleans `StreamSequenceToken`
+provides per-queue ordering). In dev mode, Aspire auto-provisions Azurite so no Azure
+subscription is needed.
+
+For auth options: set `ConnectionString` for Azurite or an explicit connection string; set
+`AccountName` to use `DefaultAzureCredential` (Managed Identity, recommended for Container Apps).
 
 ## Production-readiness gaps
 
@@ -99,6 +121,20 @@ These won't break a deploy, but they will cost you operationally.
 
 [Manual test plan #35](https://github.com/nightBaker/fleans/tree/main/tests/manual/35-kafka-streaming) exercises the happy path against a single-broker Aspire-provisioned `fleans-kafka` resource — it validates that the at-least-once contract holds across a silo restart, but it does **not** test any production failure mode listed above.
 
+### Production-readiness gaps — Azure Queue Storage
+
+The Azure Queue provider is backed by the Microsoft-maintained `Microsoft.Orleans.Streaming.AzureStorage` package, which covers several production concerns automatically.
+
+| Concern | Status |
+|---|---|
+| Managed Identity (`AccountName` path) | ✅ Covered — uses `DefaultAzureCredential` |
+| Message retry / poison-message handling | ✅ Covered — MS provider retries up to configurable limit; exhausted messages move to `*-poison` queue automatically |
+| OTLP monitoring | ✅ Covered — Orleans Streams telemetry emitted via `Orleans.Telemetry`; no extra wiring needed |
+| Managed Identity token rotation | ✅ `DefaultAzureCredential` handles refresh transparently |
+| Cross-queue message ordering | ⚠️ Per-queue FIFO only — ordering across the 8 default `fleans-stream-*` queues is not guaranteed (same trade-off as Kafka partitions) |
+
+[Manual test plan #44](https://github.com/nightBaker/fleans/tree/main/tests/manual/44-azure-queue-streaming) exercises the happy path with Azurite.
+
 ## Delivery contract — at-least-once
 
 The Kafka adapter checkpoints offsets **after** the consumer-side handler completes. On a silo
@@ -138,17 +174,22 @@ disable it by default and the client-side path is what we ship.
 
 ## Aspire opt-in
 
-The Aspire AppHost reads `FLEANS_STREAMING_PROVIDER` (default `Memory`). **Note:** this is an Aspire-only convenience knob — silos read the runtime equivalent `Fleans__Streaming__Provider` instead (see [Configuration / Streaming](/fleans/reference/configuration/#streaming)). Setting it to `Kafka`
-provisions a Kafka container and forwards two environment variables onto the silo:
+The Aspire AppHost reads `FLEANS_STREAMING_PROVIDER` (default `Memory`). **Note:** this is an Aspire-only convenience knob — silos read the runtime equivalent `Fleans__Streaming__Provider` instead (see [Configuration / Streaming](/fleans/reference/configuration/#streaming)).
 
 ```bash
+# Kafka-backed streams
 FLEANS_STREAMING_PROVIDER=Kafka dotnet run --project Fleans.Aspire
+
+# Azure Queue-backed streams (provisions Azurite emulator automatically)
+FLEANS_STREAMING_PROVIDER=AzureQueue dotnet run --project Fleans.Aspire
 ```
 
-The forwarded vars (`Fleans__Streaming__Provider=Kafka`,
-`Fleans__Streaming__Kafka__Brokers=<endpoint>`) are visible in the Aspire dashboard's env tab.
-Default-mode Aspire (`dotnet run --project Fleans.Aspire` with no env var) provisions no Kafka
-container.
+Setting it to `Kafka` provisions a `fleans-kafka` container and forwards `Fleans__Streaming__Provider=Kafka` + `Fleans__Streaming__Kafka__Brokers` onto the silo.
+
+Setting it to `AzureQueue` provisions a `fleans-azurite` container (Azurite emulator) and forwards `Fleans__Streaming__Provider=AzureQueue` + `Fleans__Streaming__AzureQueue__ConnectionString` onto the silo.
+
+The forwarded vars are visible in the Aspire dashboard's env tab for each project.
+Default-mode Aspire (`dotnet run --project Fleans.Aspire` with no env var) provisions no streaming container.
 
 ## PubSubStore vs. event durability
 

@@ -1,3 +1,5 @@
+using Aspire.Hosting.Azure;
+
 var builder = DistributedApplication.CreateBuilder(args);
 
 // Publish target selection — only ONE compute environment may be registered at a time; if both
@@ -39,10 +41,11 @@ else
 var persistenceProvider = builder.Configuration["FLEANS_PERSISTENCE_PROVIDER"] ?? "Sqlite";
 var usePostgres = persistenceProvider.Equals("Postgres", StringComparison.OrdinalIgnoreCase);
 
-// Streaming provider — set FLEANS_STREAMING_PROVIDER=Kafka to opt into Kafka-backed Orleans Streams.
+// Streaming provider — set FLEANS_STREAMING_PROVIDER=Kafka or AzureQueue to opt into multi-silo-safe streams.
 // Default is in-memory (matches the v1 design — zero-infra `dotnet run --project Fleans.Aspire`).
 var streamingProvider = builder.Configuration["FLEANS_STREAMING_PROVIDER"] ?? "Memory";
 var useKafka = streamingProvider.Equals("Kafka", StringComparison.OrdinalIgnoreCase);
+var useAzureQueue = streamingProvider.Equals("AzureQueue", StringComparison.OrdinalIgnoreCase);
 
 // Add Redis for Orleans clustering and storage.
 // Aspire 13.1+ auto-configures TLS for Redis containers, but the Orleans Redis
@@ -86,6 +89,16 @@ if (useKafka)
     kafka = builder.AddKafka("fleans-kafka").WithKafkaUI();
 }
 
+// Azure Queue resource — only provisioned when streaming provider is AzureQueue.
+// In dev mode, Aspire auto-provisions Azurite (the Azure Storage emulator) so no
+// real Azure subscription is needed. In production, set AccountName for Managed Identity.
+IResourceBuilder<AzureQueueStorageResource>? azureQueues = null;
+if (useAzureQueue)
+{
+    var azurite = builder.AddAzureStorage("fleans-azurite").RunAsEmulator();
+    azureQueues = azurite.AddQueues("fleans-queues");
+}
+
 // Local helper: wires persistence env-vars / resource references onto a project.
 // WaitFor(pg) is intentionally omitted — startup ordering is the caller's responsibility.
 // Web and Mcp already wait for fleansSilo, which waits for pg when using Postgres.
@@ -106,23 +119,33 @@ static IResourceBuilder<ProjectResource> WithPersistence(
         .WithEnvironment("FLEANS_QUERY_CONNECTION", sqliteConn!);
 }
 
-// Local helper: wires Kafka streaming env-vars / resource references onto a silo project.
+// Local helper: wires streaming env-vars / resource references onto a silo project.
 // Memory provider is the default and requires no env-vars (Fleans.ServiceDefaults reads
 // `Fleans:Streaming:Provider` and falls back to "memory" when unset).
 static IResourceBuilder<ProjectResource> WithStreaming(
     IResourceBuilder<ProjectResource> project,
     bool isKafka,
-    IResourceBuilder<KafkaServerResource>? kafkaResource)
+    IResourceBuilder<KafkaServerResource>? kafkaResource,
+    bool isAzureQueue,
+    IResourceBuilder<AzureQueueStorageResource>? azureQueuesResource)
 {
-    if (!isKafka)
+    if (isKafka)
     {
-        return project;
+        return project
+            .WithReference(kafkaResource!)
+            .WaitFor(kafkaResource!)
+            .WithEnvironment("Fleans__Streaming__Provider", "Kafka")
+            .WithEnvironment("Fleans__Streaming__Kafka__Brokers", kafkaResource!.Resource.ConnectionStringExpression);
     }
-    return project
-        .WithReference(kafkaResource!)
-        .WaitFor(kafkaResource!)
-        .WithEnvironment("Fleans__Streaming__Provider", "Kafka")
-        .WithEnvironment("Fleans__Streaming__Kafka__Brokers", kafkaResource!.Resource.ConnectionStringExpression);
+    if (isAzureQueue)
+    {
+        return project
+            .WithReference(azureQueuesResource!)
+            .WaitFor(azureQueuesResource!)
+            .WithEnvironment("Fleans__Streaming__Provider", "AzureQueue")
+            .WithEnvironment("Fleans__Streaming__AzureQueue__ConnectionString", azureQueuesResource!.Resource.ConnectionStringExpression);
+    }
+    return project;
 }
 
 // Api = Orleans silo
@@ -141,7 +164,7 @@ var apiProject = builder.AddProject<Projects.Fleans_Api>("fleans-core")
     .WithReplicas(1);
 if (usePostgres) apiProject = apiProject.WaitFor(pg!);
 var fleansSilo = WithPersistence(apiProject, usePostgres, pg, sqliteConnectionString);
-fleansSilo = WithStreaming(fleansSilo, useKafka, kafka);
+fleansSilo = WithStreaming(fleansSilo, useKafka, kafka, useAzureQueue, azureQueues);
 
 // Web = Orleans client
 WithPersistence(
@@ -196,7 +219,7 @@ if (builder.ExecutionContext.IsPublishMode)
         .WithReplicas(1);
     if (usePostgres) workerHost = workerHost.WaitFor(pg!);
     workerHost = WithPersistence(workerHost, usePostgres, pg, sqliteConnectionString);
-    workerHost = WithStreaming(workerHost, useKafka, kafka);
+    workerHost = WithStreaming(workerHost, useKafka, kafka, useAzureQueue, azureQueues);
 
     // Custom worker host — worked example for the "host-your-own custom-task plugins"
     // pattern. Identical Orleans-cluster wiring to fleans-worker; differs in that this
@@ -209,7 +232,7 @@ if (builder.ExecutionContext.IsPublishMode)
         .WaitFor(redis)
         .WithEnvironment("Fleans__Role", "Worker")
         .WithReplicas(1);
-    customWorkerHost = WithStreaming(customWorkerHost, useKafka, kafka);
+    customWorkerHost = WithStreaming(customWorkerHost, useKafka, kafka, useAzureQueue, azureQueues);
 
     // Load-test fan-out — opt-in via FLEANS_LOAD_TEST_MODE=true. Targets the docker-compose
     // publisher only; the K8s publisher rejects the bind mount and Kubernetes Services
