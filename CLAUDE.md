@@ -229,5 +229,6 @@ Two providers: **SQLite** (default, local dev) and **PostgreSQL** (production/lo
 
 - **Aspire is the startup project**, not Api or Web
 - **WorkflowInstance uses JournaledGrain with event sourcing** — events are persisted via EfCoreEventStore, read-side state is projected via EfCoreWorkflowStateProjection (CQRS pattern). Other grains (ProcessDefinition, correlations, timers, start event listeners, user tasks) use IPersistentState with EF Core IGrainStorage.
+- **Three stream providers**: Memory (default, dev-only), Kafka (`FLEANS_STREAMING_PROVIDER=Kafka`), Azure Queue Storage (`FLEANS_STREAMING_PROVIDER=AzureQueue`). Only Memory is zero-infra; Kafka and AzureQueue are multi-silo-safe.
 - **BPMN coverage is partial** — see the table in `README.md` for what's implemented
 - **Design docs** live in `docs/plans/` — check them before making architectural changes

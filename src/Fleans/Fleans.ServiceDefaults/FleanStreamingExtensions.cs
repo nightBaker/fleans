@@ -1,3 +1,4 @@
+using Fleans.Streaming.AzureQueue;
 using Fleans.Streaming.Kafka;
 using Microsoft.Extensions.Configuration;
 using Orleans.Hosting;
@@ -10,7 +11,7 @@ public static class FleanStreamingExtensions
 
     /// <summary>
     /// Configures the Orleans stream provider. Reads <c>Fleans:Streaming:Provider</c> from config
-    /// (default: <c>memory</c>; supported: <c>memory</c>, <c>kafka</c>; matched case-insensitively).
+    /// (default: <c>memory</c>; supported: <c>memory</c>, <c>kafka</c>, <c>azurequeue</c>; matched case-insensitively).
     /// Requires <c>PubSubStore</c> grain storage to be configured by the Aspire AppHost.
     /// </summary>
     public static ISiloBuilder AddFleanStreaming(this ISiloBuilder builder, IConfiguration configuration)
@@ -23,8 +24,11 @@ public static class FleanStreamingExtensions
             "kafka" => builder.AddKafkaStreams(
                 StreamProviderName,
                 configuration.GetSection("Fleans:Streaming:Kafka")),
+            "azurequeue" => builder.AddAzureQueueStreaming(
+                StreamProviderName,
+                configuration.GetSection("Fleans:Streaming:AzureQueue")),
             _ => throw new ArgumentException(
-                $"Unknown streaming provider '{provider}'. Supported: memory, kafka. " +
+                $"Unknown streaming provider '{provider}'. Supported: memory, kafka, azurequeue. " +
                 $"To add a provider, install its NuGet package and add a case to {nameof(FleanStreamingExtensions)}.{nameof(AddFleanStreaming)}.")
         };
     }
