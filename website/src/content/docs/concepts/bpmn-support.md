@@ -89,7 +89,7 @@ This page is the canonical coverage matrix for BPMN 2.0 elements in Fleans. Ever
 | Cancel Boundary *(Transaction only)* | `<bpmn:boundaryEvent><cancelEventDefinition>` | ✅ | `BpmnConverter.cs:638 + :727` | [#30-cancel](../../../tests/manual/30-cancel-event/) | Always interrupting. Fires when Cancel End Event executes. |
 | Multiple Boundary | `<bpmn:boundaryEvent>` w/ multiple event-defs | ✅ | `BpmnConverter.cs:638` (multi-def) | [#24-multiple](../../../tests/manual/24-multiple-event/) | First-fires-wins cancels host activity. |
 
-### Tasks
+### Tasks ([details](./activities/tasks))
 
 | Element | BPMN XML | Status | Source pin | Tested by | Notes |
 |---|---|---|---|---|---|

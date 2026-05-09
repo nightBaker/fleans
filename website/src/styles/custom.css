@@ -601,3 +601,8 @@ h2#starlight__on-this-page,
 .fleans-footer a:hover {
   text-decoration: underline;
 }
+
+/* Per-activity BPMN diagram theming — default: light visible, dark hidden */
+.bpmn-activity-img-dark                            { display: none; }
+:root[data-theme='dark']  .bpmn-activity-img-dark  { display: block; }
+:root[data-theme='dark']  .bpmn-activity-img-light { display: none; }
