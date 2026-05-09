@@ -18,6 +18,32 @@ using System.Dynamic;
 
 namespace Fleans.Application.Grains;
 
+// WorkflowInstance is a thin coordinator grain split into 3 partial files.
+// Place new methods in the correct file:
+//   * WorkflowInstance.cs               — fields, constructor, lifecycle overrides (OnActivateAsync,
+//                                         OnDeactivateAsync, TransitionState), ICustomStorageInterface
+//                                         (ReadStateFromStorage, ApplyUpdatesToStorage), and all public
+//                                         entry points: workflow lifecycle (SetWorkflow, StartWorkflow);
+//                                         activity completion/failure (CompleteActivity, FailActivity,
+//                                         CompleteConditionSequence); child-workflow coordination
+//                                         (SetParentInfo, SetInitialVariables, OnChildWorkflowCompleted,
+//                                         OnChildWorkflowFailed); external events (HandleTimerFired,
+//                                         HandleMessageDelivery, HandleBoundaryMessageFired,
+//                                         HandleSignalDelivery, HandleBoundarySignalFired); user tasks
+//                                         (ClaimUserTask, UnclaimUserTask, CompleteUserTask); state
+//                                         queries (GetState, GetVariable, GetVariables,
+//                                         GetActiveActivities, GetCompletedActivities,
+//                                         GetConditionSequenceStates, SetConditionSequenceResult,
+//                                         FindForkByToken); request-context / scope utilities.
+//   * WorkflowInstance.Infrastructure.cs — private infrastructure (RunExecutionLoop,
+//                                         ResolveExternalCompletions, ComputeTransitionsForEntries,
+//                                         HandleScopeCompletions, PerformEffects, PerformMessageSubscribe,
+//                                         PerformSignalSubscribe, PerformStartChildWorkflow,
+//                                         PublishDomainEvent, ProcessPendingEvents,
+//                                         ProcessPendingEventsTimer, DisposePendingEventsTimerIfTerminal,
+//                                         EnsurePendingEventsTimerRegistered, DrainAndRaiseEvents,
+//                                         LogEvent).
+//   * WorkflowInstance.Logging.cs       — all [LoggerMessage] partial method declarations.
 [CorePlacement]
 public partial class WorkflowInstance :
     JournaledGrain<WorkflowInstanceState, IDomainEvent>,
