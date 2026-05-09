@@ -305,13 +305,8 @@ public class WorkflowQueryService : IWorkflowQueryService
             entry.ChildWorkflowInstanceId);
     }
 
-    private static string FormatVariableValue(object? value) => value switch
-    {
-        null => "",
-        string s => s,
-        IList<object> or IDictionary<string, object> => JsonConvert.SerializeObject(value, Formatting.None),
-        _ => value.ToString() ?? ""
-    };
+    private static string FormatVariableValue(object? value)
+        => VariableValueFormatter.Format(value);
 
     private static ConditionSequenceSnapshot ToConditionSnapshot(
         ConditionSequenceState cs,

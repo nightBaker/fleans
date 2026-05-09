@@ -6,6 +6,7 @@
 @using Microsoft.FluentUI.AspNetCore.Components
 @using Microsoft.JSInterop
 @inject IWorkflowQueryService QueryService
+@inject ICompensationLogService CompensationLogService
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 @inject ILogger<ProcessInstance> Logger
@@ -231,6 +232,86 @@
                             </FluentDataGrid>
                         }
                     </FluentTab>
+
+                    <FluentTab Label="Compensation">
+                        @if (compensationEntries == null || compensationEntries.Count == 0)
+                        {
+                            <FluentMessageBar Intent="MessageIntent.Info">
+                                No compensation activity recorded for this instance.
+                            </FluentMessageBar>
+                        }
+                        else
+                        {
+                            <FluentDataGrid Items="@compensationRows" GridTemplateColumns="0.5fr 1fr 1fr 1fr 0.7fr 1fr"
+                                            TGridItem="CompensationLogEntrySnapshot"
+                                            OnRowClick="@OnCompensationRowClick"
+                                            RowClass="@GetCompensationRowClass">
+                                <PropertyColumn Property="@(e => e.CompletedAtSequence)" Title="Sequence" Sortable="true" />
+                                <PropertyColumn Property="@(e => e.CompensableActivityId)" Title="Compensable Activity" Sortable="true" />
+                                <TemplateColumn Title="Handler">
+                                    <ChildContent>
+                                        @if (!string.IsNullOrEmpty(context.HandlerActivityId))
+                                        {
+                                            <span>@context.HandlerActivityId</span>
+                                        }
+                                        else
+                                        {
+                                            <span>—</span>
+                                        }
+                                    </ChildContent>
+                                </TemplateColumn>
+                                <TemplateColumn Title="Scope">
+                                    <ChildContent>
+                                        @if (context.ScopeId.HasValue)
+                                        {
+                                            <span title="@context.ScopeId.Value">@context.ScopeId.Value.ToString()[..8]…</span>
+                                        }
+                                        else
+                                        {
+                                            <span>(root)</span>
+                                        }
+                                    </ChildContent>
+                                </TemplateColumn>
+                                <TemplateColumn Title="Variables">
+                                    <ChildContent>
+                                        <span>@context.Variables.Count vars</span>
+                                    </ChildContent>
+                                </TemplateColumn>
+                                <TemplateColumn Title="Status">
+                                    <ChildContent>
+                                        @if (context.IsCompensated)
+                                        {
+                                            <FluentBadge Color="Color.Success">Compensated</FluentBadge>
+                                        }
+                                        else
+                                        {
+                                            <FluentBadge Color="Color.Lightweight">Pending</FluentBadge>
+                                        }
+                                    </ChildContent>
+                                </TemplateColumn>
+                            </FluentDataGrid>
+
+                            @if (selectedCompensationEntry != null)
+                            {
+                                <FluentLabel Typo="Typography.Subject" Style="margin-top: 12px;">
+                                    Variables snapshot for sequence #@selectedCompensationEntry.CompletedAtSequence
+                                </FluentLabel>
+                                @if (selectedCompensationEntry.Variables.Count == 0)
+                                {
+                                    <FluentMessageBar Intent="MessageIntent.Info">
+                                        No variables captured at completion time.
+                                    </FluentMessageBar>
+                                }
+                                else
+                                {
+                                    <FluentDataGrid Items="@selectedCompensationVariableRows" GridTemplateColumns="1fr 2fr">
+                                        <PropertyColumn Property="@(v => v.Key)" Title="Key" Sortable="true" />
+                                        <PropertyColumn Property="@(v => v.Value)" Title="Value" Sortable="true" />
+                                    </FluentDataGrid>
+                                }
+                            }
+                        }
+                    </FluentTab>
                 </FluentTabs>
             </div>
 
@@ -289,6 +370,12 @@
 
     private record VariableRow(string Key, string Value);
 
+    // Compensation tab — DESC by sequence (newest first); selected row drives the variables sub-grid.
+    private IReadOnlyList<CompensationLogEntrySnapshot>? compensationEntries;
+    private IQueryable<CompensationLogEntrySnapshot> compensationRows = Enumerable.Empty<CompensationLogEntrySnapshot>().AsQueryable();
+    private CompensationLogEntrySnapshot? selectedCompensationEntry;
+    private IQueryable<VariableRow> selectedCompensationVariableRows = Enumerable.Empty<VariableRow>().AsQueryable();
+
     protected override async Task OnInitializedAsync()
     {
         await LoadInstance();
@@ -311,6 +398,7 @@
 
             snapshot = await QueryService.GetStateSnapshot(InstanceId);
             bpmnXml = await QueryService.GetBpmnXml(InstanceId);
+            await LoadCompensationLog();
 
             BuildDerivedState();
         }
@@ -322,6 +410,35 @@
         finally
         {
             isLoading = false;
+        }
+    }
+
+    private async Task LoadCompensationLog()
+    {
+        try
+        {
+            compensationEntries = await CompensationLogService.GetCompensationLog(InstanceId);
+            compensationRows = compensationEntries
+                .OrderByDescending(e => e.CompletedAtSequence)
+                .AsQueryable();
+            // Refresh selected variables view if a row is currently selected.
+            if (selectedCompensationEntry != null)
+            {
+                selectedCompensationEntry = compensationEntries
+                    .FirstOrDefault(e => e.ActivityInstanceId == selectedCompensationEntry.ActivityInstanceId);
+                selectedCompensationVariableRows = selectedCompensationEntry != null
+                    ? selectedCompensationEntry.Variables
+                        .Select(kvp => new VariableRow(kvp.Key, kvp.Value))
+                        .AsQueryable()
+                    : Enumerable.Empty<VariableRow>().AsQueryable();
+            }
+        }
+        catch (Exception ex)
+        {
+            // Non-fatal: log it and leave the tab empty rather than failing the whole page.
+            Logger.LogWarning(ex, "Failed to load compensation log for instance {InstanceId}", InstanceId);
+            compensationEntries = Array.Empty<CompensationLogEntrySnapshot>();
+            compensationRows = Enumerable.Empty<CompensationLogEntrySnapshot>().AsQueryable();
         }
     }
 
@@ -418,6 +535,7 @@
         {
             errorMessage = null;
             snapshot = await QueryService.GetStateSnapshot(InstanceId);
+            await LoadCompensationLog();
             BuildDerivedState();
             StateHasChanged();
             await Task.Yield();
@@ -520,6 +638,21 @@
 
     private string? GetActivityRowClass(ActivityInstanceSnapshot item)
         => selectedActivityId != null && item.ActivityId == selectedActivityId ? "activity-row-selected" : null;
+
+    private void OnCompensationRowClick(FluentDataGridRow<CompensationLogEntrySnapshot> row)
+    {
+        if (row.Item is null) return;
+        selectedCompensationEntry = row.Item;
+        selectedCompensationVariableRows = row.Item.Variables
+            .Select(kvp => new VariableRow(kvp.Key, kvp.Value))
+            .AsQueryable();
+    }
+
+    private string? GetCompensationRowClass(CompensationLogEntrySnapshot item)
+        => selectedCompensationEntry != null
+           && item.ActivityInstanceId == selectedCompensationEntry.ActivityInstanceId
+            ? "activity-row-selected"
+            : null;
 
     private static string GetStatusLabel(ActivityInstanceSnapshot a)
     {
