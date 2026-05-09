@@ -35,6 +35,8 @@ Both `<port>` (default `15888` unless overridden by `ASPNETCORE_URLS` or your
 run-to-run — use whatever the console prints. Open that URL to reach the
 Aspire dashboard, from which you can click through to the `Fleans.Web`
 service (the Admin UI).
+
+*(tip: the `:` in config keys becomes `__` in environment variables — `Fleans:Role` → `Fleans__Role`. See [Configuration](/fleans/reference/configuration/) for the canonical key reference.)*
 :::
 
 ## Deploy a workflow
@@ -42,11 +44,12 @@ service (the Admin UI).
 Fleans deploys workflows through the **Admin UI** (Blazor editor), not via a REST endpoint.
 
 1. Open the **Web app** — find its URL on the Aspire dashboard
+   *(tip: append `/dashboard` to that URL to see the [Orleans Dashboard](/fleans/reference/observability/#orleans-dashboard) — silo membership, grain activations, request latencies — useful for "is the workflow engine alive?" sanity checks).*
 2. Navigate to the **Editor** page
 3. Import or paste your BPMN XML, then click **Deploy**
 
 A sample BPMN file is available to get you started:
-[**my-process.bpmn**](/samples/my-process.bpmn) — a minimal workflow with a single script task
+[**my-process.bpmn**](/fleans/samples/my-process.bpmn) — a minimal workflow with a single script task
 that sets a `greeting` variable.
 
 ```xml

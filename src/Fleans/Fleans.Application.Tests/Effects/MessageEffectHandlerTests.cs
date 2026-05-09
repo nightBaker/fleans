@@ -98,4 +98,31 @@ public class MessageEffectHandlerTests
         // Assert
         await corrGrain.Received(1).Unsubscribe();
     }
+
+    [TestMethod]
+    public async Task HandleAsync_UnsubscribeMessageFails_DoesNotCallProcessFailureEffects()
+    {
+        // #425: cleanup-path failures are log-only, not workflow-failing.
+        var context = Substitute.For<IEffectContext>();
+        var grainFactory = Substitute.For<IGrainFactory>();
+        var corrGrain = Substitute.For<IMessageCorrelationGrain>();
+
+        var messageName = "OrderReceived";
+        var correlationKey = "order-123";
+
+        var grainKey = MessageCorrelationKey.Build(messageName, correlationKey);
+        grainFactory.GetGrain<IMessageCorrelationGrain>(grainKey, null)
+            .Returns(corrGrain);
+        corrGrain.When(g => g.Unsubscribe())
+            .Do(_ => throw new Exception("connection lost"));
+        context.GrainFactory.Returns(grainFactory);
+
+        var handler = new MessageEffectHandler(Substitute.For<ILogger<MessageEffectHandler>>());
+        var effect = new UnsubscribeMessageEffect(messageName, correlationKey);
+
+        await handler.HandleAsync(effect, context);
+
+        await context.DidNotReceive().ProcessFailureEffects(
+            Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<Exception>());
+    }
 }

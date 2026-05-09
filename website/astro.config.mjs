@@ -25,10 +25,9 @@ export default defineConfig({
             { label: 'Quick Start', slug: 'guides/quick-start' },
             { label: 'Service Tasks', slug: 'guides/service-tasks' },
             { label: 'User Tasks', slug: 'guides/user-tasks' },
-            { label: 'Variables and Scope', slug: 'guides/variables-and-scope' },
+            { label: 'Call Activities and Sub-Processes', slug: 'guides/call-activities-and-subprocesses' },
             { label: 'Writing Custom-Task Plugins', slug: 'guides/writing-custom-tasks' },
             { label: 'Hosting Plugins (Custom Worker Host)', slug: 'guides/custom-worker-host' },
-            { label: 'Error Handling', slug: 'guides/error-handling' },
             { label: 'BPMN Editor', slug: 'guides/editor' },
             { label: 'Events Page', slug: 'guides/events-page' },
             { label: 'Add to Existing Project', slug: 'guides/add-to-existing-project' },
@@ -41,6 +40,22 @@ export default defineConfig({
             { label: 'What is BPMN?', slug: 'concepts/bpmn-overview' },
             { label: 'BPMN Support', slug: 'concepts/bpmn-support' },
             { label: 'Custom Tasks', slug: 'concepts/custom-tasks' },
+          ],
+        },
+        {
+          label: 'Patterns',
+          items: [
+            { label: 'Variables and Scope', slug: 'guides/variables-and-scope' },
+            { label: 'Error Handling', slug: 'guides/error-handling' },
+            { label: 'Multi-Instance Activities', slug: 'guides/multi-instance-activities' },
+            { label: 'Message Correlation', slug: 'guides/message-correlation' },
+          ],
+        },
+        {
+          label: 'Self-host',
+          items: [
+            { label: 'Docker Compose', slug: 'guides/self-host-docker-compose' },
+            { label: 'Helm Chart', slug: 'guides/self-host-helm' },
           ],
         },
         {

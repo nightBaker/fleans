@@ -32,11 +32,17 @@ public static class FleansPersistenceExtensions
             var queryConnStr = builder.Configuration.GetConnectionString("fleans-query");
             builder.Services.AddPostgresPersistence(connStr, queryConnStr);
         }
-        else
+        else if (provider.Equals("Sqlite", StringComparison.OrdinalIgnoreCase))
         {
             var connStr = builder.Configuration["FLEANS_SQLITE_CONNECTION"] ?? "DataSource=fleans-dev.db";
             var queryConnStr = builder.Configuration["FLEANS_QUERY_CONNECTION"];
             builder.Services.AddSqlitePersistence(connStr, queryConnStr);
+        }
+        else
+        {
+            throw new ArgumentException(
+                $"Unknown persistence provider '{provider}'. Supported: Sqlite, Postgres. " +
+                $"Set Persistence:Provider in configuration.");
         }
 
         return builder;

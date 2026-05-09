@@ -49,3 +49,17 @@ curl -X POST http://localhost:<port>/workflow/message \
 - [ ] `cancelPath` in completed activities (boundary message interrupted the timer)
 - [ ] `normalPath` NOT in completed activities
 - [ ] Variables: `cancelled` = **true**
+
+## Scenario C: Missing correlation variable fails the workflow (#425)
+
+The `<zeebe:subscription correlationKey="= requestId" />` references a variable that the workflow never sets. Building the message-correlation effect throws at build-time inside `WorkflowExecution.PerformEffects` (the `RegisterMessageCommand` branch). Per the registration-vs-cleanup asymmetry rule (CLAUDE.md "Design Constraints"), this MUST surface as a Failed activity + Failed workflow — not silently stay Running.
+
+### 1. Deploy and start
+- Import `message-catch-missing-correlation.bpmn`, deploy, start `message-catch-missing-correlation`
+- Do NOT supply variables — the missing-`requestId` is the test condition
+
+### 2. Verify outcome (no API message needed)
+- [ ] `beforeWait` script task: **Completed** (it ran and set `before=true` before the catch event tried to register)
+- [ ] `waitApproval` intermediate catch event: **Failed** (NOT stuck Active) with an `InvalidOperationException` carrying the missing-variable message
+- [ ] `afterApproval` is **NOT** in active or completed activities (workflow short-circuited on the failure)
+- [ ] Workflow instance status: **Failed**

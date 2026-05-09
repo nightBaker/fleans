@@ -8,6 +8,21 @@ Fleans publishes domain events (`EvaluateConditionEvent`, `EvaluateActivationCon
 the default is Orleans' in-memory provider, and a Kafka-backed provider ships alongside it for
 cross-silo event durability.
 
+{/* drift-guard: KafkaStreamingOptions.cs:4-23 + grep "SecurityProtocol|Sasl|Ssl" returns 0 matches across Fleans.Streaming.Kafka/ + Fleans.Aspire/Program.cs:13-15,57; pinned at branch=docs/399-kafka-production-warning SHA=b7d80af; refresh if these line ranges or files are renamed */}
+
+:::caution[Kafka provider is not production-ready]
+The v1 `Fleans.Streaming.Kafka` adapter ships **plaintext brokers only**, defaults to
+`ReplicationFactor=1`, and offers no DLQ or schema-registry integration. **Do not point
+this at Confluent Cloud, Amazon MSK, Aiven, Redpanda Cloud, or any managed Kafka
+service yet** — the silo will fail to connect with `Disconnected: SASL authentication required`
+because no `SecurityProtocol` / SASL / TLS configuration knobs exist
+(`KafkaStreamingOptions.cs` confirms the surface today).
+
+See [§ Production-readiness gaps](#production-readiness-gaps) below for the full
+matrix and tracking issue [#474](https://github.com/nightBaker/fleans/issues/474).
+Memory-provider deployments are unaffected — that path is the supported default for v1.
+:::
+
 ## Provider switch
 
 The provider name is read once at silo startup from configuration:
@@ -44,16 +59,45 @@ Right for: production rollouts that need event durability beyond a single silo, 
 that want broker parity with production, and topologies where a non-Orleans consumer may join
 the topics later (note: the codec is currently the Orleans codec — see *limitations* below).
 
-#### What v1 does NOT give you
+## Production-readiness gaps
 
-- **Production-managed Kafka with SASL/TLS authentication.** v1 ships **plaintext brokers
-  only**. `Confluent Cloud`, `MSK with IAM`, `Aiven`, and `Redpanda Cloud` all require a
-  follow-up that exposes `SecurityProtocol`, SASL keys, and TLS material — until that ships,
-  do not point this at a managed broker.
-- **Exactly-once delivery.** Orleans Streams over `IQueueAdapterFactory` + Kafka offsets is
-  **at-least-once** — see *Delivery contract* below.
-- **Multi-broker topic replication.** `ReplicationFactor` defaults to `1`. Lose the broker, lose
-  unflushed events. Tunables for partition count and replication factor are a follow-up.
+The Kafka adapter shipped in v1 is intentionally minimal. The following gaps are
+tracked under [#474 — Production-ready Kafka streaming](https://github.com/nightBaker/fleans/issues/474);
+pick the tier that matches your risk tolerance.
+
+### 🔴 Won't connect
+
+These are deploy-day blockers — your silo will fail to connect, period.
+
+| Gap | Failure mode | Affected services |
+|---|---|---|
+| No `SecurityProtocol` knob | librdkafka prints `Disconnected: SASL authentication required` and the silo health check goes red | Confluent Cloud, Aiven, Redpanda Cloud, any TLS-only listener |
+| No SASL/PLAIN, SCRAM, or OAUTHBEARER | librdkafka cannot authenticate; broker rejects the connection during the AdminClient `GetMetadata` warm-up | All managed brokers requiring credential auth |
+| No AWS MSK IAM | librdkafka `ssl.ca.location` + token vendor not wired | Amazon MSK with IAM auth |
+| No client-cert / mTLS | No `ssl.certificate.pem` / `ssl.key.pem` config | Self-managed clusters with mutual TLS |
+
+### 🟡 Will lose data on failure
+
+These are SLO trade-offs — connection succeeds but the durability profile is below production-typical.
+
+| Gap | Failure mode | Mitigation today |
+|---|---|---|
+| `ReplicationFactor=1` default | Broker crash with unflushed log segments → events permanently lost | Set `Fleans:Streaming:Kafka:ReplicationFactor=3` once you have a 3-broker cluster |
+| At-least-once delivery (offset commit after handler success) | Silo crash between handler success and offset commit → event replays | Safe by design — every consumer routes to a `WorkflowInstance` method guarded by `HasActiveEntry`. **Do not remove that guard.** See [Delivery contract](#delivery-contract--at-least-once) |
+| No idempotent producer | Producer retries can reorder messages within a partition | None today; consumer-side guard above absorbs duplicates |
+
+### 🟢 Operational gaps
+
+These won't break a deploy, but they will cost you operationally.
+
+| Gap | Why it hurts | Workaround |
+|---|---|---|
+| `QueueCount=1`, `NumPartitions=1` defaults | All consumers share one partition → no horizontal fan-out | Tune both up before scaling out the silo |
+| No schema registry integration | Codec is the Orleans codec; non-Orleans consumers cannot decode the stream | Treat Kafka topics as silo-internal until a follow-up adds Avro/Protobuf framing |
+| No DLQ for poison messages | A consistently-failing handler replays forever | Manual offset commit via `AdminClient` is your only escape today |
+| No metrics/health-check for consumer lag | Lag is invisible to the Aspire dashboard's health UI | Run `kafka-consumer-groups.sh --describe --group fleans` against the broker |
+
+[Manual test plan #35](https://github.com/nightBaker/fleans/tree/main/tests/manual/35-kafka-streaming) exercises the happy path against a single-broker Aspire-provisioned `fleans-kafka` resource — it validates that the at-least-once contract holds across a silo restart, but it does **not** test any production failure mode listed above.
 
 ## Delivery contract — at-least-once
 
@@ -94,7 +138,7 @@ disable it by default and the client-side path is what we ship.
 
 ## Aspire opt-in
 
-The Aspire AppHost reads `FLEANS_STREAMING_PROVIDER` (default `Memory`). Setting it to `Kafka`
+The Aspire AppHost reads `FLEANS_STREAMING_PROVIDER` (default `Memory`). **Note:** this is an Aspire-only convenience knob — silos read the runtime equivalent `Fleans__Streaming__Provider` instead (see [Configuration / Streaming](/fleans/reference/configuration/#streaming)). Setting it to `Kafka`
 provisions a Kafka container and forwards two environment variables onto the silo:
 
 ```bash
@@ -124,5 +168,6 @@ broker topic before the handler runs.
 
 ## See also
 
+- [Observability](/fleans/reference/observability/) — health checks, metrics, logging, tracing, dashboards, alerting
 - [Deployment](/fleans/reference/deployment/) — how to wire `Fleans:Streaming:Provider` / `Fleans:Streaming:Kafka:Brokers` into Docker Compose, Kubernetes, and bare-VM deployments.
 - [Self-Hosting on Kubernetes](/fleans/reference/self-hosting/) — Kafka opt-in on the Helm chart.
