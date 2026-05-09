@@ -27,7 +27,19 @@ public partial class MessageEffectHandler : IEffectHandler
             case UnsubscribeMessageEffect unsubMsg:
                 var unsubMsgKey = MessageCorrelationKey.Build(unsubMsg.MessageName, unsubMsg.CorrelationKey);
                 var unsubMsgGrain = context.GrainFactory.GetGrain<IMessageCorrelationGrain>(unsubMsgKey);
-                await unsubMsgGrain.Unsubscribe();
+                try
+                {
+                    await unsubMsgGrain.Unsubscribe();
+                }
+                catch (Exception ex)
+                {
+                    // Cleanup-path failure: the activity that owned this subscription has
+                    // already completed or been cancelled by the time we reach this handler,
+                    // so failing the workflow now would violate the "Each activity instance
+                    // executes at most once" invariant (CLAUDE.md Design Constraints).
+                    // Log only.
+                    LogMessageUnsubscribeFailed(unsubMsg.MessageName, unsubMsg.CorrelationKey, ex);
+                }
                 break;
 
             default:
@@ -60,4 +72,8 @@ public partial class MessageEffectHandler : IEffectHandler
     [LoggerMessage(EventId = 1023, Level = LogLevel.Warning,
         Message = "Message subscription failed for activity {ActivityId}: messageName={MessageName}, correlationKey={CorrelationKey}")]
     private partial void LogMessageSubscriptionFailed(string activityId, string messageName, string correlationKey, Exception exception);
+
+    [LoggerMessage(EventId = 1025, Level = LogLevel.Warning,
+        Message = "Message unsubscribe failed for messageName={MessageName}, correlationKey={CorrelationKey} (cleanup-path; not failing workflow)")]
+    private partial void LogMessageUnsubscribeFailed(string messageName, string correlationKey, Exception exception);
 }

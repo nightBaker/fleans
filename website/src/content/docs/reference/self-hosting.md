@@ -252,3 +252,7 @@ The packages are published by [`.github/workflows/nuget-publish.yml`](https://gi
 - **SQLite is not supported in production.** SQLite is the default `persistence.provider` for local Aspire-based dev only. The chart accepts the override but you would have to wire a writable per-pod volume yourself, and Orleans clustering across silos against a per-pod SQLite file is not a supported configuration. Use Postgres for any multi-replica deployment.
 - **No cosign image signing yet.** Signing of the published images is tracked in [#410](https://github.com/nightBaker/fleans/issues/410).
 - **Chart not yet published to an OCI registry.** Install from the repo (`helm install fleans charts/fleans/`) or from a `helm package`-produced `.tgz` attached to the matching GitHub Release.
+
+## See also
+
+- [Observability](/fleans/reference/observability/) — health checks, metrics, logging, tracing, dashboards, alerting

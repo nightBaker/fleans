@@ -6,7 +6,7 @@ BPMN workflow engine built on Orleans.
 
 **After completing each feature or fix, update this CLAUDE.md** with any lessons learned, patterns discovered, or pitfalls encountered during the work. The goal is to capture hard-won knowledge so the same problems are never solved twice. Add entries to the relevant section (conventions, constraints, lessons learned, etc.) or create a new section if needed.
 
-**After completing each feature or fix, update the website documentation** (`website/src/content/docs/`) with: (1) the reason/motivation behind the change, (2) how to use it, and (3) a best-practice example showing real-world usage. Documentation should help users understand not just *what* exists but *why* it exists and *how* to use it correctly.
+**After completing each feature or fix, also update the website documentation** under `website/src/content/docs/` — see the **Documentation rule** in the *Documentation Website* section below for the routing details.
 
 ## Build & Test
 
@@ -105,27 +105,112 @@ Add it to `Fleans.Api/Controllers/WorkflowController.cs`. DTOs go in `Fleans.Ser
 - **Log all workflow instance state changes.** Every grain method that mutates state (adds/removes activities, changes condition results, completes/fails instances) must have a `[LoggerMessage]` log call. No silent state mutations.
 - **Fluent UI Blazor (Fleans.Web)**: Only use components that exist in the library (https://www.fluentui-blazor.net/). Use `IconStart`/`IconEnd` parameters on `FluentButton` — never place `<FluentIcon>` as child content. Use the `Loading` parameter for buttons with loading states.
 - **Cache-busting for local Razor host assets**: every `<script>` or `<link>` in `App.razor` (or any other Razor host file) that references an asset under `wwwroot/` MUST go through `@Assets["..."]` so the URL carries a content hash. Externally-versioned CDN URLs (e.g. `https://unpkg.com/bpmn-js@17.11.1/...`) are exempt because the version segment in the URL already serves the same purpose. Without this, a published JS API addition can be invisible to browsers that cached the old file (root cause of #373).
-- **Core / Worker role split (`Fleans:Role`)**: `Fleans.Api` reads `Fleans:Role` at startup (values: `Core`, `Worker`, `Combined` — case-insensitive, default `Combined`; invalid values throw). The role is stamped into `SiloOptions.SiloName` as `{role}-{machine}-{guid}` so other silos see it via Orleans membership. `Fleans.Worker` hosts the `[StatelessWorker]` script/condition grain **implementations** (`ScriptExecutorGrain`, `ConditionExpressionEvaluatorGrain`); their interfaces remain in `Fleans.Application` so callers don't need a Worker reference. **When adding a new worker-type grain** (e.g. the upcoming REST-call service task), put the implementation in `Fleans.Worker` and keep the interface next to the caller in `Fleans.Application`. Placement strategies that would route worker grains only to silos with the `worker-` / `combined-` prefix are a follow-up — today the split is structural (separate assembly, separate role config) without runtime placement filtering, so a `Core`-tagged silo will still host a worker grain if one is needed there.
+- **Core / Worker role split (`Fleans:Role`)**: `Fleans.Api` reads `Fleans:Role` at startup (values: `Core`, `Worker`, `Combined` — case-insensitive, default `Combined`; invalid values throw). The role is stamped into `SiloOptions.SiloName` as `{role}-{machine}-{guid}` so other silos see it via Orleans membership. `Fleans.Worker` hosts the `[StatelessWorker]` script/condition grain **implementations** (`ScriptExecutorGrain`, `ConditionExpressionEvaluatorGrain`); their interfaces remain in `Fleans.Application` so callers don't need a Worker reference. **When adding a new worker-type grain**, put the implementation in `Fleans.Worker` and keep the interface next to the caller in `Fleans.Application`. The split is structural only (separate assembly, separate role config) — there is no runtime placement filtering, so a `Core`-tagged silo will still host a worker grain if one is needed there. Aspire stamps `Fleans__Role` on every project: dev mode tags `fleans-core` as `Combined` (3-process topology must host worker grains in-process), publish mode tags it `Core` to match `deployment-core.yaml` in the Helm chart. Set `FLEANS_ROLE=<value>` in the Aspire host's environment to override either default — useful for testing the Core/Worker split locally without editing source.
 - **`Fleans.WorkerHost`** is the dedicated deployable for the Worker role — a thin Web SDK Exe that boots an Orleans silo with `Fleans:Role=Worker` by default, references the `Fleans.Worker` class library for grain implementations + placement directors, and wires the same persistence/streaming/Redis stack as `Fleans.Api`. It is registered with Aspire **only in publish mode** (`builder.ExecutionContext.IsPublishMode`), so `dotnet run --project Fleans.Aspire` keeps the original 3-process dev topology and `aspire publish -t kubernetes` / `-t docker-compose` emits a fourth `fleans-worker` deployment alongside `fleans-core` (Api), `fleans-management` (Web), and `fleans-mcp` (Mcp). Container image name: `fleans-worker` via `<ContainerRepository>` in `Fleans.WorkerHost.csproj`.
-- **`Fleans.CustomWorkerHost`** is a worked-example deployable for the "host your own custom-task plugins" pattern — same shape as `Fleans.WorkerHost` but with a deliberately narrower reference set: **only** `Fleans.Worker` + the chosen plugin assemblies (`Fleans.Plugins.RestCaller` today). It does NOT reference `Fleans.Application`, `Fleans.Domain`, `Fleans.Infrastructure`, or any persistence project, demonstrating the structural isolation guarantee that plugin authors get. Registered with Aspire **only in publish mode** as `fleans-custom-worker` (`<ContainerRepository>fleans-custom-worker</ContainerRepository>`). Plugin authors should fork this project as a starting template, swap the plugin-registration lines, and ship the resulting image alongside the engine. **`Fleans.Application.Abstractions`** is the leaf abstractions package consumed by plugin authors — today it carries only stream-namespace constants (`WorkflowEventStreams`); follow-up issues track migrating the remaining interfaces / event DTOs into it so `Fleans.Worker` can drop its transitive `Fleans.Application` reference and become a true leaf NuGet.
+- **`Fleans.CustomWorkerHost`** is a worked-example deployable for the "host your own custom-task plugins" pattern — same shape as `Fleans.WorkerHost` but with a deliberately narrower reference set: **only** `Fleans.Worker` + the chosen plugin assemblies (`Fleans.Plugins.RestCaller` today). It does NOT reference `Fleans.Application`, `Fleans.Domain`, `Fleans.Infrastructure`, or any persistence project, demonstrating the structural isolation guarantee that plugin authors get. Registered with Aspire **only in publish mode** as `fleans-custom-worker` (`<ContainerRepository>fleans-custom-worker</ContainerRepository>`). Plugin authors should fork this project as a starting template, swap the plugin-registration lines, and ship the resulting image alongside the engine. **`Fleans.Application.Abstractions`** is the leaf abstractions package consumed by plugin authors — it currently carries only stream-namespace constants (`WorkflowEventStreams`). The wider abstractions still live in `Fleans.Application`; the goal is for `Fleans.Worker` to drop its transitive `Fleans.Application` reference once those are migrated.
 - **BPMN Editor tabs (`/editor`)**: multi-tab state lives in `Editor.razor` (private `tabs: List<TabSession>` + `activeTabId`). Only one `bpmn-js` modeler exists at a time — switching tabs calls `bpmnEditor.getXml` on the outgoing tab and `bpmnEditor.loadXml(incoming.BpmnXml)` on the incoming. Dirty tracking subscribes to bpmn-js `commandStack.changed` via `bpmnEditor.registerDirtyCallback` and flips the active tab's flag (cleared on deploy). Persistence is localStorage-only under key `fleans.editor.tabs.v1` (versioned so future schema changes don't crash old sessions). The cap is 10 tabs; closing the last tab opens a fresh blank one so the editor is never empty.
 
 ## Design Constraints
 
 - **Each activity instance executes at most once** — every non-boundary activity instance runs exactly once (completes or fails). An activity definition can be visited multiple times (e.g., in a loop), creating a new instance each time. `TimerCallbackGrain` keying uses `hostActivityInstanceId` to distinguish instances of the same activity.
 - **Compensation handlers run in isolated child scopes** — each handler gets a fresh variable scope seeded with the compensable activity's completion-time snapshot, overlaying the enclosing scope. After a handler completes successfully, its variable changes MUST be merged back into the enclosing scope before the next handler spawns. Otherwise: (a) later handlers in the walk see stale variables, and (b) compensation side-effects vanish after the walk finishes. `WorkflowExecution.AdvanceCompensationWalkIfHandlerCompleted` emits a `VariablesMerged` event with the handler's full variable map targeting the parent scope's variables ID (root scope's if the walk is at root). Do not break this invariant when refactoring the compensation path.
+- **Registration-vs-cleanup error asymmetry (#425)** — registration-path failures (build-time `ProcessRegisterMessage` throws, handler-time `RegisterTimerEffect` Activate throws, handler-time `SubscribeMessageEffect` / `SubscribeSignalEffect` throws) MUST route to `FailActivity` so the workflow surfaces the failure in state. Cleanup-path failures (`UnsubscribeMessageEffect`, `UnsubscribeSignalEffect`, `UnregisterTimerEffect`, `ThrowSignalEffect`) MUST be log-only — the activity that owned the registration has already completed or been cancelled by the time these run, and failing the workflow now would violate the "Each activity instance executes at most once" invariant. Effect handlers in `Fleans.Application/Effects/{Message,Signal,Timer}EffectHandler.cs` enforce this.
 
 ## Manual Test Plans & Regression
 
 - **Every new feature must have a manual test plan.** After writing the design doc and implementation plan, create a numbered folder under `tests/manual/NN-feature-name/` containing the `.bpmn` fixture(s) and a `test-plan.md` (deploy / start / trigger events / verify checklist). Test plans are verified via Chrome (Web UI) + API calls for messages/signals. See `docs/plans/2026-02-25-manual-test-plan-design.md` for the template.
-- **The full regression suite** (41 BPMN scenarios + 4 website scenarios), the BPMN fixture authoring rules, and the manual-test API endpoint reference live in [`tests/manual/README.md`](tests/manual/README.md). That file is the canonical catalog — when adding a new manual test folder, append an entry there.
+- **The full regression suite** (43 BPMN scenarios + 16 website scenarios), the BPMN fixture authoring rules, and the manual-test API endpoint reference live in [`tests/manual/README.md`](tests/manual/README.md). That file is the canonical catalog — when adding a new manual test folder, append an entry there.
 - Universal backend prerequisite for any plan: Aspire stack running via `dotnet run --project Fleans.Aspire` (from `src/Fleans/`).
+
+## Cutting a Release
+
+The release pipeline at `.github/workflows/release.yml` triggers on `git push origin v<SemVer>`. This is the maintainer runbook for cutting a release. Manual test plan: `tests/manual/42-release-pipeline/test-plan.md`.
+
+### Pre-tag checklist
+
+1. **Manual regression suite green** — run the full BPMN regression list (`tests/manual/01-…/` through the latest entry) plus the website regression list against `main`. Document any KNOWN-BUG verdicts in the release notes draft.
+2. **Version bump in `Directory.Build.props`** — `<VersionPrefix>` only needs a hand-bump for *local development builds* (so dev images get reasonable tags). The release workflow overrides `/p:Version=<git-tag-without-v>` regardless, so the assembly + container tag always match the git tag.
+3. **Changelog draft** — start from `git log v<PREV>..main --oneline --no-merges`. The workflow auto-generates release notes via `gh release create --generate-notes`; a hand-authored "Highlights" section makes the post readable.
+4. **Pre-release dry-runs — run BOTH workflows (the sentinels are intentionally different):**
+   - **`release.yml` dry-run:** `gh workflow run release.yml -f version=0.0.0-rc-test`. Uploads compose-zip + helm-tgz artifacts but skips `gh release create` (gated on `is_dispatch_dry_run`). Download the artifacts and smoke-test compose + helm against a `kind` cluster.
+   - **`nuget-publish.yml` dry-run:** `gh workflow run nuget-publish.yml -f version=0.0.0-ci-test`. Packs the 3 plugin packages and uploads them as workflow artifacts but skips the actual `dotnet nuget push` (gated by `inputs.version != '0.0.0-ci-test'` on push/pack steps).
+
+### Tag command
+
+```bash
+git tag v0.1.0-beta && git push origin v0.1.0-beta
+```
+
+The release workflow runs setup → images → compose → helm-package → release in a single CI run. The `release.published` event then triggers `nuget-publish.yml` automatically.
+
+### Post-tag verification
+
+1. **Workflow run green** — `gh run list --workflow=release.yml --limit 1` should show the tagged run as ✅ on every job.
+2. **All 4 images pullable, multi-arch** — `docker buildx imagetools inspect ghcr.io/nightbaker/fleans-{api,web,worker,mcp}:0.1.0-beta` should resolve `linux/amd64` + `linux/arm64`.
+3. **Release assets attached** — `gh release view v0.1.0-beta --json assets` should list `docker-compose-v0.1.0-beta.zip` + `fleans-0.1.0-beta.tgz`.
+4. **Notes look right** — auto-generated notes group commits per `.github/release.yml` categories.
+5. **NuGet publish triggered + green** — the `release.published` event triggers `nuget-publish.yml`. Verify via `gh run list --workflow=nuget-publish.yml --limit 1`. Verify each of the 3 packages on nuget.org: `Fleans.Application.Abstractions`, `Fleans.Worker`, `Fleans.Plugins.RestCaller`.
+6. **Cosign verify smoke test** — pick one of the published images and verify the signature against Sigstore. The output should include a `Bundle` block with a `tlogEntries[0].logIndex` proving the signature was logged to the public Rekor transparency log.
+
+   ```bash
+   cosign verify \
+     --certificate-identity-regexp "https://github.com/nightBaker/fleans/.github/workflows/release.yml@refs/tags/v.*" \
+     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+     ghcr.io/nightbaker/fleans-api:0.1.0-beta | jq
+   ```
+
+   For the helm chart, verify the blob signature using the `.sig` and `.crt` attached to the release (see `self-host-helm.md` for the exact command):
+
+   ```bash
+   gh release download v0.1.0-beta -p 'fleans-0.1.0-beta.tgz*'
+   cosign verify-blob \
+     --certificate fleans-0.1.0-beta.tgz.crt \
+     --signature   fleans-0.1.0-beta.tgz.sig \
+     --certificate-identity-regexp "https://github.com/nightBaker/fleans/.github/workflows/release.yml@refs/tags/v.*" \
+     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+     fleans-0.1.0-beta.tgz
+   ```
+
+### Rollback
+
+If a release ships broken:
+
+```bash
+# 1. Remove the GH release + tag (deleting the release deletes the remote tag too).
+gh release delete v0.1.0-beta --cleanup-tag --yes
+
+# Drop the local tag if still present.
+git tag -d v0.1.0-beta 2>/dev/null || true
+
+# 2. Delete the four ghcr.io image versions for the broken tag.
+#    (`docker buildx imagetools` has no `remove` subcommand — use the GH Packages REST API.)
+for IMG in fleans-api fleans-web fleans-worker fleans-mcp; do
+  VID=$(gh api "/user/packages/container/$IMG/versions" \
+    --jq '.[] | select(.metadata.container.tags | index("0.1.0-beta")) | .id' \
+    | head -1)
+  if [ -n "$VID" ]; then
+    gh api -X DELETE "/user/packages/container/$IMG/versions/$VID"
+    echo "Deleted $IMG version $VID (tag 0.1.0-beta)"
+  else
+    echo "No version of $IMG with tag 0.1.0-beta — skipping"
+  fi
+done
+```
+
+If the org name on ghcr.io ever changes from a user account to an organization, swap `/user/packages/...` for `/orgs/<org>/packages/...`. The token that runs this needs the `delete:packages` scope.
+
+NuGet packages **cannot be deleted** from nuget.org — only unlisted (`dotnet nuget delete <package> <version> --source https://api.nuget.org/v3/index.json -k <KEY>`). If a broken plugin shipped, ship a hotfix release immediately rather than relying on unlisting.
+
+### Documentation rule reminder
+
+Every release that introduces user-visible changes MUST update the self-host guides (`website/src/content/docs/guides/self-host-docker-compose.md`, `guides/self-host-helm.md`) in the same PR per the existing "Documentation rule". The release-asset URLs in those guides reference the *current* tag — bumping `v0.1.0-beta` → `v0.2.0` requires a docs sweep.
+
 
 ## Persistence Providers
 
 Two providers: **SQLite** (default, local dev) and **PostgreSQL** (production/load testing). Selected via configuration — no code changes needed.
 
-- **Config key:** `Persistence:Provider` (values: `Sqlite` | `Postgres`, case-insensitive, default `Sqlite`)
+- **Config key:** `Persistence:Provider` (values: `Sqlite` | `Postgres`, case-insensitive, default `Sqlite`). `AddFleansPersistence` throws `ArgumentException` on any other value (typos, empty, whitespace) so misconfigured deployments fail fast — mirrors the validation pattern in `FleanStreamingExtensions.cs:26`.
 - **Aspire:** set `FLEANS_PERSISTENCE_PROVIDER=Postgres` env var before launch to auto-provision a Postgres container
 - **Connection strings:** SQLite uses `FLEANS_SQLITE_CONNECTION` / `FLEANS_QUERY_CONNECTION` env vars. PostgreSQL uses `ConnectionStrings:fleans` (required) and `ConnectionStrings:fleans-query` (optional read replica).
 - **Migration strategy:** SQLite uses `EnsureCreated()`. PostgreSQL uses `MigrateAsync()` (migrations applied automatically by `Fleans.Api` on startup).

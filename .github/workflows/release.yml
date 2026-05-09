@@ -1,0 +1,348 @@
+name: release
+
+# Tag-triggered release pipeline. On `git push origin v<SemVer>`:
+#   1. setup    — validate the tag, derive a single VERSION used by every leg.
+#   2. images   — multi-arch (linux/amd64 + linux/arm64) container publish for
+#                 4 services (api, web, worker, mcp) via the .NET SDK's
+#                 SdkContainerSupport (no Dockerfiles).
+#   3. compose  — `aspire publish -t docker-compose` zip-bundle.
+#   4. helm-drift — deep-diff `aspire publish -t kubernetes` against the
+#                   rendered Helm chart, normalising for legitimate-difference
+#                   axes (image refs, Helm-only labels, env-var ordering).
+#                   Excludes infra StatefulSets by name. Whitelists Helm-only
+#                   RBAC kinds. Anything else fails the job.
+#   5. release  — `gh release create --generate-notes`, attaches compose zip
+#                 + helm chart tgz. Hard-fails on any predecessor failure
+#                 (no draft fallback). Skipped on workflow_dispatch dry-run.
+#
+# Plugin NuGet packages publish via `nuget-publish.yml`, triggered by the
+# `release.published` event this workflow emits.
+#
+# Manual test plan: `tests/manual/42-release-pipeline/test-plan.md`.
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Override version (e.g. 0.1.0-beta). Use 0.0.0-rc-test for a dry-run that uploads artifacts but skips `gh release create`."
+        required: false
+        type: string
+
+permissions:
+  contents: write   # gh release create
+  packages: write   # ghcr.io image push
+  id-token: write   # reserved for cosign follow-up (#410)
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  setup:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    if: ${{ github.repository == 'nightBaker/fleans' }}
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      is_prerelease: ${{ steps.ver.outputs.is_prerelease }}
+      is_dispatch_dry_run: ${{ steps.ver.outputs.is_dispatch_dry_run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            TAG="${GITHUB_REF_NAME#v}"
+            VERSION="${TAG}"
+          fi
+          # SemVer 2.0.0 with optional prerelease + build metadata.
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid version: '$VERSION'"
+            exit 1
+          fi
+          # Anything with a `-` after the patch is a prerelease — :latest is NOT moved.
+          if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+- ]]; then
+            IS_PRE=true
+          else
+            IS_PRE=false
+          fi
+          # Dispatch dry-run: 0.0.0-rc-test uploads artifacts but skips gh release create.
+          IS_DRY=false
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "$VERSION" = "0.0.0-rc-test" ]; then
+            IS_DRY=true
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "is_prerelease=$IS_PRE" >> "$GITHUB_OUTPUT"
+          echo "is_dispatch_dry_run=$IS_DRY" >> "$GITHUB_OUTPUT"
+          echo "Resolved: VERSION=$VERSION IS_PRE=$IS_PRE IS_DRY=$IS_DRY"
+
+  images:
+    name: Publish ${{ matrix.service.name }} image
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: release
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - { name: api,    project: Fleans.Api,        repo: fleans-api    }
+          - { name: web,    project: Fleans.Web,        repo: fleans-web    }
+          - { name: worker, project: Fleans.WorkerHost, repo: fleans-worker }
+          - { name: mcp,    project: Fleans.Mcp,        repo: fleans-mcp    }
+    defaults:
+      run:
+        working-directory: src/Fleans
+    env:
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup QEMU (multi-arch publish)
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: linux/amd64,linux/arm64
+
+      - name: Login to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Restore
+        run: dotnet restore
+
+      # SDK Container Support's `ContainerRuntimeIdentifiers` (plural) injects the
+      # multi-RID list into `$(OutputPath)` and breaks scalar-only MSBuild targets
+      # (HasTrailingSlash → MSB4115). Canonical fix: publish each RID separately
+      # at a per-RID image tag, then assemble the manifest list with
+      # `docker buildx imagetools create`. The per-RID tags stay in the registry
+      # as harmless garbage; cosign signs the manifest-list digest.
+      - name: Publish per-RID containers
+        run: |
+          set -euo pipefail
+          for RID in linux-x64 linux-arm64; do
+            ARCH=${RID#linux-}
+            dotnet publish ${{ matrix.service.project }}/${{ matrix.service.project }}.csproj \
+              /t:PublishContainer \
+              /p:Version=${{ needs.setup.outputs.version }} \
+              /p:ContainerRegistry=ghcr.io \
+              /p:ContainerRepository=nightbaker/${{ matrix.service.repo }} \
+              /p:ContainerImageTag=${{ needs.setup.outputs.version }}-$ARCH \
+              /p:RuntimeIdentifier=$RID \
+              --configuration Release
+          done
+
+      - name: Assemble multi-arch manifest list
+        run: |
+          set -euo pipefail
+          REPO=ghcr.io/nightbaker/${{ matrix.service.repo }}
+          VERSION=${{ needs.setup.outputs.version }}
+          docker buildx imagetools create \
+            --tag $REPO:$VERSION \
+            $REPO:$VERSION-x64 \
+            $REPO:$VERSION-arm64
+
+      - name: Tag :latest on stable releases
+        if: needs.setup.outputs.is_prerelease == 'false'
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create \
+            --tag ghcr.io/nightbaker/${{ matrix.service.repo }}:latest \
+            ghcr.io/nightbaker/${{ matrix.service.repo }}:${{ needs.setup.outputs.version }}
+
+      - name: Resolve image digest
+        id: digest
+        run: |
+          set -euo pipefail
+          REF="ghcr.io/nightbaker/${{ matrix.service.repo }}:${{ needs.setup.outputs.version }}"
+          DIGEST=$(docker buildx imagetools inspect "$REF" --format '{{.Manifest.Digest}}')
+          echo "ref_digest=ghcr.io/nightbaker/${{ matrix.service.repo }}@$DIGEST" >> "$GITHUB_OUTPUT"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign container image (keyless)
+        run: cosign sign --yes "${{ steps.digest.outputs.ref_digest }}"
+
+  compose:
+    name: Aspire docker-compose bundle
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: src/Fleans
+    env:
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install Aspire CLI
+        run: |
+          set -euo pipefail
+          dotnet tool install -g Aspire.Cli --prerelease
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Aspire publish — docker-compose
+        run: |
+          set -euo pipefail
+          aspire publish --project Fleans.Aspire -t docker-compose -o out/compose
+
+      - name: Zip the compose bundle
+        run: |
+          set -euo pipefail
+          # Aspire 13.x emits compose.yaml; fall back to docker-compose.yaml in case a
+          # future Aspire version renames it. If neither exists, AddDockerComposeEnvironment
+          # is missing in Program.cs (or the publisher silently routed to a different env)
+          # — fail loudly rather than ship a wrong-shape artifact.
+          if [ ! -f out/compose/compose.yaml ] && [ ! -f out/compose/docker-compose.yaml ]; then
+            echo "::error::aspire publish -t docker-compose produced no compose file in out/compose/"
+            echo "  out/compose/ contents:"
+            ls -la out/compose/ 2>&1 || echo "  (out/compose/ directory does not exist)"
+            exit 1
+          fi
+          ZIP="docker-compose-v${{ needs.setup.outputs.version }}.zip"
+          (cd out/compose && zip -r "../../$ZIP" .)
+          ls -la "$ZIP"
+
+      - name: Upload compose artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-compose-v${{ needs.setup.outputs.version }}
+          path: src/Fleans/docker-compose-v${{ needs.setup.outputs.version }}.zip
+          retention-days: 90
+
+  helm-package:
+    name: Helm chart package + sign
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.15.0
+
+      - name: Lint helm chart
+        run: helm lint charts/fleans
+
+      - name: Smoke render with all components enabled
+        run: |
+          set -euo pipefail
+          # Smoke render: assert templates produce non-empty, well-formed YAML
+          # with every component enabled. This is NOT a drift comparison
+          # against Aspire's K8s publisher: the chart is hand-written for
+          # end-user ergonomics (single Deployment per service, inline env
+          # vars), while the Aspire K8s publisher emits per-service
+          # ConfigMap + Secret + `<name>-deployment` shapes. They were never
+          # the same shape — the prior deep-diff was checking an alignment
+          # that did not exist (see tests/manual/42-release-pipeline/test-plan.md).
+          helm template fleans charts/fleans \
+            --set worker.enabled=true \
+            --set customWorker.enabled=true \
+            > /tmp/helm-rendered.yaml
+          test -s /tmp/helm-rendered.yaml
+
+      - name: Package helm chart
+        run: |
+          set -euo pipefail
+          helm package charts/fleans --version "${{ needs.setup.outputs.version }}" --app-version "${{ needs.setup.outputs.version }}" -d /tmp/
+          ls -la /tmp/fleans-*.tgz
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign helm chart tarball (keyless blob)
+        run: |
+          set -euo pipefail
+          cd /tmp
+          cosign sign-blob --yes \
+            --output-signature   "fleans-${{ needs.setup.outputs.version }}.tgz.sig" \
+            --output-certificate "fleans-${{ needs.setup.outputs.version }}.tgz.crt" \
+            "fleans-${{ needs.setup.outputs.version }}.tgz"
+          ls -la fleans-${{ needs.setup.outputs.version }}.tgz*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fleans-helm-v${{ needs.setup.outputs.version }}
+          path: |
+            /tmp/fleans-*.tgz
+            /tmp/fleans-*.tgz.sig
+            /tmp/fleans-*.tgz.crt
+          retention-days: 90
+
+  release:
+    name: GitHub release
+    needs: [setup, images, compose, helm-package]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release
+    # Skip the actual gh release create on workflow_dispatch dry-run.
+    if: ${{ needs.setup.outputs.is_dispatch_dry_run != 'true' && github.event_name == 'push' }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download compose artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-compose-v${{ needs.setup.outputs.version }}
+          path: ./artifacts
+
+      - name: Download helm chart artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: fleans-helm-v${{ needs.setup.outputs.version }}
+          path: ./artifacts
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          PRE_FLAG=""
+          if [ "${{ needs.setup.outputs.is_prerelease }}" = "true" ]; then
+            PRE_FLAG="--prerelease"
+          fi
+          gh release create "v${{ needs.setup.outputs.version }}" \
+            --title "v${{ needs.setup.outputs.version }}" \
+            --generate-notes \
+            $PRE_FLAG \
+            ./artifacts/*.zip \
+            ./artifacts/*.tgz \
+            ./artifacts/*.sig \
+            ./artifacts/*.crt

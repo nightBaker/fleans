@@ -24,6 +24,10 @@ A production Fleans cluster has these components:
 | **PostgreSQL** | `postgres:16` or managed | recommended for prod | Workflow event store + read model. SQLite is local-dev only. |
 | **Kafka** | any Kafka broker | optional | Replaces in-memory streaming when at-least-once durability is required. |
 
+:::caution[Streaming: do not point Kafka at managed services in v1]
+The Kafka provider is plaintext-only — see [Streaming → Production-readiness gaps](/fleans/reference/streaming/#production-readiness-gaps) before pointing `Fleans:Streaming:Kafka:Brokers` at Confluent Cloud, MSK, Aiven, or Redpanda Cloud. The Memory provider has no production-readiness gaps.
+:::
+
 All silo and host processes expose two health endpoints, wired through `MapDefaultEndpoints()` in `Fleans.ServiceDefaults`:
 
 - `/alive` — liveness only (process up). **Use for Kubernetes liveness probes.**
@@ -307,7 +311,9 @@ When `Fleans.Web` runs behind a TLS-terminating proxy, set the `KnownProxies` / 
 
 ## Configuration reference
 
-All keys are read by every silo / host that needs them. `:` in config keys becomes `__` in environment variables (e.g. `Fleans:Role` → `Fleans__Role`).
+The full canonical list of every configuration key — what it does, where it's read in source, and which environment-variable equivalent operators set on a container or systemd unit — is on the dedicated **[Configuration](/fleans/reference/configuration/)** page. The summary tables below cover the deployment-relevant subset; cross-link to that page for the per-host applicability matrix and source pins.
+
+`:` in config keys becomes `__` (double underscore) in environment variables — see [Configuration / The naming rule](/fleans/reference/configuration/#the-naming-rule).
 
 ### Silo role and identity
 

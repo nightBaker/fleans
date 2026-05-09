@@ -461,13 +461,17 @@ The rate limiter uses a **fixed window** algorithm, partitioned by the client's 
 
 #### Policy → endpoint mapping
 
+{/* drift-guard: WorkflowController.cs:32-285 — verify each method's [EnableRateLimiting(...)] + [HttpGet|HttpPost(...)] route attribute matches one row. Pinned at branch=docs/401-rate-limit-table-audit SHA=b7d80af; refresh if any method's policy attribute is renamed. */}
+
+All paths below are relative to the `/Workflow` controller route.
+
 | Policy | Endpoints | Description |
 |--------|-----------|-------------|
-| `WorkflowMutation` | `POST /start`, `/complete-activity`, `/message`, `/signal`, `/deploy`, `/evaluate-conditions` | Workflow write operations |
-| `TaskOperation` | `POST /Workflow/tasks/{id}/claim`, `/unclaim`, `/complete` | User task operations — see [User Tasks guide](/fleans/guides/user-tasks/) |
-| `Read` | `GET /definitions` | Read-only queries |
-| `Admin` | `POST /upload-bpmn`, `/disable`, `/enable` | Admin operations |
-| `Polling` | `GET /instances/{id}/state` | High-frequency state polling |
+| `WorkflowMutation` | `POST /start`, `/message`, `/signal`, `/evaluate-conditions`, `/deploy` | Workflow lifecycle write operations (start instance, deliver event, evaluate conditions, deploy BPMN) |
+| `TaskOperation` | `POST /complete-activity`, `/tasks/{activityInstanceId}/claim`, `/tasks/{activityInstanceId}/unclaim`, `/tasks/{activityInstanceId}/complete` | Activity-completion + user-task operations — see [User Tasks guide](/fleans/guides/user-tasks/) |
+| `Read` | `GET /definitions`, `/definitions/{key}/instances`, `/definitions/{key}/{version}/instances`, `/tasks`, `/tasks/{activityInstanceId}` | Read-only queries |
+| `Admin` | `POST /disable`, `/enable` | Admin operations on process definitions |
+| `Polling` | `GET /instances/{instanceId}/state` | High-frequency state polling |
 
 #### Environment variable overrides
 
