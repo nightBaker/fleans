@@ -137,27 +137,13 @@
     <sequenceFlow id="sf4" sourceRef="outer-tx-error-boundary" targetRef="hazard-recovery-end" />
   </process>
 
-  <!-- Messages (all use empty correlationKey — broadcast for single-instance manual tests) -->
-  <message id="msgResumeInner" name="resume-inner">
-    <extensionElements>
-      <zeebe:subscription correlationKey="" />
-    </extensionElements>
-  </message>
-  <message id="msgTriggerInnerCancel" name="trigger-inner-cancel">
-    <extensionElements>
-      <zeebe:subscription correlationKey="" />
-    </extensionElements>
-  </message>
-  <message id="msgTriggerOuterComplete" name="trigger-outer-complete">
-    <extensionElements>
-      <zeebe:subscription correlationKey="" />
-    </extensionElements>
-  </message>
-  <message id="msgTriggerOuterCancel" name="trigger-outer-cancel">
-    <extensionElements>
-      <zeebe:subscription correlationKey="" />
-    </extensionElements>
-  </message>
+  <!-- Messages — no zeebe:subscription needed for broadcast (match by name only).
+       Same pattern as nested-tx-hazard.bpmn. With zeebe:subscription correlationKey="",
+       the engine silently skips registration; without it, name-only matching works. -->
+  <message id="msgResumeInner" name="resume-inner" />
+  <message id="msgTriggerInnerCancel" name="trigger-inner-cancel" />
+  <message id="msgTriggerOuterComplete" name="trigger-outer-complete" />
+  <message id="msgTriggerOuterCancel" name="trigger-outer-cancel" />
 
   <!-- Error for outer TX Hazard boundary (errorCode 503 = Hazard cascade) -->
   <error id="hazardError" name="HazardError" errorCode="503" />
