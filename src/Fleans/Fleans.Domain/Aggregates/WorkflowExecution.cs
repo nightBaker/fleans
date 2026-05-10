@@ -223,9 +223,10 @@ public class WorkflowExecution
             var activity = scopeDef.GetActivity(txEntry.ActivityId);
             if (activity is not Activities.Transaction) continue;
 
-            // Idempotent: if already Cancelled, skip
+            // Idempotent: if already Cancelled or Hazard, skip
             if (_state.TransactionOutcomes.TryGetValue(txEntry.ActivityInstanceId, out var existing)
-                && existing.Outcome == TransactionOutcome.Cancelled) continue;
+                && (existing.Outcome == TransactionOutcome.Cancelled
+                    || existing.Outcome == TransactionOutcome.Hazard)) continue;
 
             // Look for a completed CancelEndEvent among this Transaction's scope entries
             var cancelEntry = _state.GetEntriesInScope(txEntry.ActivityInstanceId)
@@ -233,6 +234,17 @@ public class WorkflowExecution
                     && _definition.GetActivityAcrossScopes(e.ActivityId) is Activities.CancelEndEvent);
 
             if (cancelEntry is null) continue;
+
+            // Phase C: if any descendant TX ended in Hazard, propagate Hazard upward and skip the walk
+            var hazardDescendantId = FindDescendantHazardTx(txEntry.ActivityInstanceId);
+            if (hazardDescendantId.HasValue)
+            {
+                SetTransactionOutcomeHazard(txEntry.ActivityInstanceId, "503",
+                    $"Cancellation aborted: descendant transaction {hazardDescendantId.Value} ended in Hazard");
+                // CancelScopeChildren still runs so CompleteFinishedSubProcessScopes can fire
+                effects.AddRange(CancelScopeChildren(txEntry.ActivityInstanceId, "HazardCascade"));
+                continue; // skip compensation walk
+            }
 
             // 1. Mark outcome as Cancelled
             SetTransactionOutcomeCancelled(txEntry.ActivityInstanceId);
@@ -2611,6 +2623,17 @@ public class WorkflowExecution
         }
 
         return effects.AsReadOnly();
+    }
+
+    private Guid? FindDescendantHazardTx(Guid outerTxScopeId)
+    {
+        foreach (var (txId, outcome) in _state.TransactionOutcomes)
+        {
+            if (outcome.Outcome != TransactionOutcome.Hazard) continue;
+            if (IsDescendantOfScope(txId, outerTxScopeId))
+                return txId;
+        }
+        return null;
     }
 
     private IEnumerable<Guid> DescendantScopesWithActiveWalk(Guid rootScopeId)
