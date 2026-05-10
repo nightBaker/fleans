@@ -1,3 +1,15 @@
+// Match either fleans:* or zeebe:* on a moddle element's $type for a given local name.
+function _isExt(el, localName) {
+    if (!el || !el.$type) return false;
+    return el.$type === 'fleans:' + localName || el.$type === 'zeebe:' + localName;
+}
+
+// Read a namespaced extension attribute from a $attrs map, preferring fleans over zeebe.
+function _extAttr(attrs, localName) {
+    if (!attrs) return undefined;
+    return attrs['fleans:' + localName] || attrs['zeebe:' + localName];
+}
+
 window.bpmnEditor = {
     _modeler: null,
     _dotNetRef: null,
@@ -117,6 +129,8 @@ window.bpmnEditor = {
             if (bo.extensionElements && bo.extensionElements.values) {
                 bo.extensionElements.values.forEach(function (ext) {
                     if (ext.$type === 'fleans:ExpectedOutputs' && ext.outputs) {
+                        // Children are 'fleans:ExpectedOutput' (current) or 'fleans:Output' (legacy);
+                        // bpmn-js exposes both via the .outputs collection regardless of inner type.
                         ext.outputs.forEach(function (output) {
                             if (output.name) data.expectedOutputVariables.push(output.name);
                         });
@@ -148,11 +162,21 @@ window.bpmnEditor = {
                     if (msgDef.messageRef) {
                         data.messageName = msgDef.messageRef.name || '';
                     }
-                    var attrs = bo.$attrs || {};
-                    data.correlationKey = attrs['fleans:correlationKey'] || '';
+                    // Priority 1: fleans:Subscription or zeebe:Subscription in the message's extension elements.
+                    // Strip the FEEL expression prefix ("= varName" → "varName") — Fleans normalizes
+                    // to plain variable names; BpmnConverter.ParseMessages already does TrimStart('=', ' ').
+                    if (msgDef.messageRef && msgDef.messageRef.extensionElements) {
+                        var extVals = msgDef.messageRef.extensionElements.values || [];
+                        for (var j = 0; j < extVals.length; j++) {
+                            if (_isExt(extVals[j], 'Subscription')) {
+                                data.correlationKey = (extVals[j].correlationKey || '').replace(/^=\s*/, '');
+                                break;
+                            }
+                        }
+                    }
+                    // Priority 2: legacy fleans:correlationKey / zeebe:correlationKey attribute on the event element.
                     if (!data.correlationKey) {
-                        var zeebeKey = attrs['zeebe:correlationKey'] || '';
-                        if (zeebeKey) data.correlationKey = zeebeKey;
+                        data.correlationKey = _extAttr(bo.$attrs, 'correlationKey') || '';
                     }
                     break;
                 }
@@ -188,21 +212,22 @@ window.bpmnEditor = {
                 data.loopCardinality = miElement.loopCardinality.body;
             }
 
-            // Zeebe-namespaced attributes may land on the moddle object directly
-            // or in $attrs depending on how bpmn-js stored them. Check both
-            // locations and fall back to the standard (un-prefixed) form.
+            // Namespaced attributes may land on the moddle object directly or in $attrs depending
+            // on how bpmn-js stored them. Probe fleans:* first, then zeebe:*, then the unprefixed form.
             var miAttrs = miElement.$attrs || {};
-            var readNs = function (zeebeKey, stdKey) {
-                return miElement[zeebeKey]
-                    || miAttrs[zeebeKey]
+            var readNs = function (localName, stdKey) {
+                return miElement['fleans:' + localName]
+                    || miAttrs['fleans:' + localName]
+                    || miElement['zeebe:' + localName]
+                    || miAttrs['zeebe:' + localName]
                     || miElement[stdKey]
                     || miAttrs[stdKey]
                     || '';
             };
-            data.inputCollection  = readNs('zeebe:collection',       'collection');
-            data.inputDataItem    = readNs('zeebe:elementVariable',  'elementVariable');
-            data.outputCollection = readNs('zeebe:outputCollection', 'outputCollection');
-            data.outputDataItem   = readNs('zeebe:outputElement',    'outputElement');
+            data.inputCollection  = readNs('collection',       'collection');
+            data.inputDataItem    = readNs('elementVariable',  'elementVariable');
+            data.outputCollection = readNs('outputCollection', 'outputCollection');
+            data.outputDataItem   = readNs('outputElement',    'outputElement');
         }
 
         // Collect available variable names from ScriptTasks (only when a UserTask is selected)
@@ -314,7 +339,7 @@ window.bpmnEditor = {
 
         if (variableNames && variableNames.length > 0) {
             var outputs = variableNames.map(function (name) {
-                return moddle.create('fleans:Output', { name: name });
+                return moddle.create('fleans:ExpectedOutput', { name: name });
             });
             var expectedOutputs = moddle.create('fleans:ExpectedOutputs', { outputs: outputs });
             expectedOutputs.$parent = bo.extensionElements;
@@ -411,13 +436,29 @@ window.bpmnEditor = {
             modeling.updateModdleProperties(element, msgDef, { messageRef: messageEl });
         }
 
-        // Store correlation key as fleans:correlationKey attribute on the event element
-        if (!bo.$attrs) bo.$attrs = {};
-        if (correlationKey) {
-            bo.$attrs['fleans:correlationKey'] = correlationKey;
-        } else {
-            delete bo.$attrs['fleans:correlationKey'];
+        // Write correlation key as fleans:Subscription in the message element's extensionElements
+        // (round-tripped structurally by bpmn-js via fleansModdleExtension). The parser also reads
+        // zeebe:Subscription so legacy-prefixed siblings round-trip cleanly without our help.
+        var msgEl = msgDef.messageRef;
+        if (msgEl) {
+            var existingExt = msgEl.extensionElements;
+            // Strip BOTH prefixes when rewriting so we don't end up with two Subscription siblings.
+            var otherExts = (existingExt && existingExt.values || []).filter(
+                function(v) { return !_isExt(v, 'Subscription'); }
+            );
+            if (correlationKey) {
+                var subscription = moddle.create('fleans:Subscription', { correlationKey: correlationKey });
+                otherExts.push(subscription);
+            }
+            var newExt = moddle.create('bpmn:ExtensionElements', { values: otherExts });
+            modeling.updateModdleProperties(element, msgEl, { extensionElements: newExt });
         }
+
+        // Remove legacy *:correlationKey attribute from the event element so it cannot shadow
+        // the Subscription value on the next read cycle (migration path for old BPMNs).
+        if (!bo.$attrs) bo.$attrs = {};
+        delete bo.$attrs['fleans:correlationKey'];
+        delete bo.$attrs['zeebe:correlationKey'];
     },
 
     updateSignalDefinition: function (elementId, signalName) {
@@ -569,16 +610,18 @@ window.bpmnEditor = {
             case 'outputCollection':
             case 'outputDataItem': {
                 var keyMap = {
-                    inputCollection:  { zeebe: 'zeebe:collection',       std: 'collection' },
-                    inputDataItem:    { zeebe: 'zeebe:elementVariable',  std: 'elementVariable' },
-                    outputCollection: { zeebe: 'zeebe:outputCollection', std: 'outputCollection' },
-                    outputDataItem:   { zeebe: 'zeebe:outputElement',    std: 'outputElement' }
+                    inputCollection:  'collection',
+                    inputDataItem:    'elementVariable',
+                    outputCollection: 'outputCollection',
+                    outputDataItem:   'outputElement'
                 };
-                var keys = keyMap[property];
+                var localName = keyMap[property];
                 var normalized = (value && value.trim() !== '') ? value : undefined;
                 var attrUpdate = {};
-                attrUpdate[keys.zeebe] = normalized;
-                attrUpdate[keys.std] = undefined;
+                attrUpdate['fleans:' + localName] = normalized;
+                // Clear any legacy zeebe-prefixed or unprefixed copies so reads stay deterministic.
+                attrUpdate['zeebe:' + localName] = undefined;
+                attrUpdate[localName] = undefined;
                 modeling.updateModdleProperties(element, mi, attrUpdate);
                 break;
             }
@@ -677,11 +720,10 @@ window.bpmnEditor = {
 
     // --- Custom-task plugin support (sub-issue C of #357) ---
     //
-    // The framework parses <zeebe:taskDefinition type="…"> as the plugin discriminator
-    // and <zeebe:ioMapping><zeebe:input target="…" source="…"/></zeebe:ioMapping> as the
-    // per-parameter inputs. These functions read/write through the zeebe moddle extension
-    // (loaded by App.razor); for hand-authored BPMN that lacks the moddle's structured
-    // types, $type-string fallbacks keep the editor working.
+    // The framework parses <fleans:taskDefinition type="…"> (preferred) or <zeebe:taskDefinition>
+    // (legacy/imported) as the plugin discriminator, and <fleans:ioMapping>/<zeebe:ioMapping>
+    // children as per-parameter inputs/outputs. These helpers create new elements with the
+    // fleans: prefix and read either prefix so existing BPMN round-trips cleanly.
 
     getServiceTaskType: function (elementId) {
         if (!this._modeler) return null;
@@ -693,7 +735,7 @@ window.bpmnEditor = {
         var ext = bo.extensionElements && bo.extensionElements.values;
         if (ext && ext.length) {
             for (var i = 0; i < ext.length; i++) {
-                if (ext[i].$type === 'zeebe:TaskDefinition') return ext[i].type || null;
+                if (_isExt(ext[i], 'TaskDefinition')) return ext[i].type || null;
             }
         }
         // Fallback: bare `type=` attribute on <serviceTask> from hand-authored BPMN.
@@ -718,16 +760,17 @@ window.bpmnEditor = {
         }
         var values = ext.values || [];
 
-        // Upsert the zeebe:TaskDefinition entry.
+        // Upsert the TaskDefinition entry. Edits in place if a (zeebe-)prefixed entry exists,
+        // otherwise creates a new fleans:TaskDefinition.
         var taskDef = null;
         for (var i = 0; i < values.length; i++) {
-            if (values[i].$type === 'zeebe:TaskDefinition') { taskDef = values[i]; break; }
+            if (_isExt(values[i], 'TaskDefinition')) { taskDef = values[i]; break; }
         }
         if (!taskType) {
-            // Clear case — remove the entry.
-            ext.values = values.filter(function (v) { return v.$type !== 'zeebe:TaskDefinition'; });
+            // Clear case — remove any TaskDefinition entry regardless of prefix.
+            ext.values = values.filter(function (v) { return !_isExt(v, 'TaskDefinition'); });
         } else if (!taskDef) {
-            taskDef = moddle.create('zeebe:TaskDefinition', { type: taskType });
+            taskDef = moddle.create('fleans:TaskDefinition', { type: taskType });
             taskDef.$parent = ext;
             ext.values = values.concat([taskDef]);
         } else {
@@ -748,7 +791,7 @@ window.bpmnEditor = {
 
         var ioMapping = null;
         for (var i = 0; i < ext.length; i++) {
-            if (ext[i].$type === 'zeebe:IoMapping') { ioMapping = ext[i]; break; }
+            if (_isExt(ext[i], 'IoMapping')) { ioMapping = ext[i]; break; }
         }
         if (!ioMapping) return [];
 
@@ -780,13 +823,17 @@ window.bpmnEditor = {
 
         var ioMapping = null;
         for (var i = 0; i < values.length; i++) {
-            if (values[i].$type === 'zeebe:IoMapping') { ioMapping = values[i]; break; }
+            if (_isExt(values[i], 'IoMapping')) { ioMapping = values[i]; break; }
         }
         if (!ioMapping) {
-            ioMapping = moddle.create('zeebe:IoMapping', { inputs: [], outputs: [] });
+            ioMapping = moddle.create('fleans:IoMapping', { inputs: [], outputs: [] });
             ioMapping.$parent = ext;
             ext.values = values.concat([ioMapping]);
         }
+
+        // Match incoming children's prefix to the IoMapping container's prefix so the saved XML stays
+        // namespace-consistent (avoids mixed-prefix children inside a single ioMapping).
+        var prefix = ioMapping.$type.indexOf('fleans:') === 0 ? 'fleans' : 'zeebe';
 
         var inputs = ioMapping.inputs || [];
         var existing = null;
@@ -796,7 +843,7 @@ window.bpmnEditor = {
         if (existing) {
             existing.source = source || '';
         } else {
-            var input = moddle.create('zeebe:Input', { source: source || '', target: target });
+            var input = moddle.create(prefix + ':Input', { source: source || '', target: target });
             input.$parent = ioMapping;
             ioMapping.inputs = inputs.concat([input]);
         }
@@ -818,7 +865,7 @@ window.bpmnEditor = {
 
         var ioMapping = null;
         for (var i = 0; i < ext.length; i++) {
-            if (ext[i].$type === 'zeebe:IoMapping') { ioMapping = ext[i]; break; }
+            if (_isExt(ext[i], 'IoMapping')) { ioMapping = ext[i]; break; }
         }
         if (!ioMapping || !ioMapping.inputs) return;
 
@@ -838,7 +885,7 @@ window.bpmnEditor = {
         var ext = bo.extensionElements && bo.extensionElements.values;
         if (!ext || !ext.length) return;
 
-        var newValues = ext.filter(function (v) { return v.$type !== 'zeebe:IoMapping'; });
+        var newValues = ext.filter(function (v) { return !_isExt(v, 'IoMapping'); });
         bo.extensionElements.values = newValues;
         modeling.updateProperties(element, { extensionElements: bo.extensionElements });
     },

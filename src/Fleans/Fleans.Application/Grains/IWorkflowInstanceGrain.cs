@@ -1,3 +1,4 @@
+using Fleans.Application.QueryModels;
 using Fleans.Domain;
 using Fleans.Domain.States;
 using Orleans.Concurrency;
@@ -65,4 +66,13 @@ public interface IWorkflowInstanceGrain : IGrainWithGuidKey, IWorkflowExecutionC
     /// </summary>
     [ReadOnly]
     ValueTask<IReadOnlyDictionary<Guid, TransactionOutcomeRecord>> GetTransactionOutcomes();
+
+    /// <summary>
+    /// Returns the compensation log — one entry per completed compensable activity,
+    /// ordered ascending by <see cref="CompensationLogEntrySnapshot.CompletedAtSequence"/>.
+    /// Each entry is annotated with its handler activity ID (resolved from the BPMN model)
+    /// and the variable snapshot captured at the activity's completion time.
+    /// </summary>
+    [ReadOnly]
+    ValueTask<IReadOnlyList<CompensationLogEntrySnapshot>> GetCompensationLog();
 }

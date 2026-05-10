@@ -88,7 +88,7 @@ jobs:
           echo "Resolved: VERSION=$VERSION IS_PRE=$IS_PRE IS_DRY=$IS_DRY"
 
   images:
-    name: Publish ${{ matrix.service }} image
+    name: Publish ${{ matrix.service.name }} image
     needs: setup
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -131,17 +131,36 @@ jobs:
       - name: Restore
         run: dotnet restore
 
-      - name: Publish multi-arch container
+      # SDK Container Support's `ContainerRuntimeIdentifiers` (plural) injects the
+      # multi-RID list into `$(OutputPath)` and breaks scalar-only MSBuild targets
+      # (HasTrailingSlash → MSB4115). Canonical fix: publish each RID separately
+      # at a per-RID image tag, then assemble the manifest list with
+      # `docker buildx imagetools create`. The per-RID tags stay in the registry
+      # as harmless garbage; cosign signs the manifest-list digest.
+      - name: Publish per-RID containers
         run: |
           set -euo pipefail
-          dotnet publish ${{ matrix.service.project }}/${{ matrix.service.project }}.csproj \
-            /t:PublishContainer \
-            /p:Version=${{ needs.setup.outputs.version }} \
-            /p:ContainerRegistry=ghcr.io \
-            /p:ContainerRepository=nightbaker/${{ matrix.service.repo }} \
-            /p:ContainerImageTag=${{ needs.setup.outputs.version }} \
-            /p:ContainerRuntimeIdentifiers="linux-x64;linux-arm64" \
-            --configuration Release
+          for RID in linux-x64 linux-arm64; do
+            ARCH=${RID#linux-}
+            dotnet publish ${{ matrix.service.project }}/${{ matrix.service.project }}.csproj \
+              /t:PublishContainer \
+              /p:Version=${{ needs.setup.outputs.version }} \
+              /p:ContainerRegistry=ghcr.io \
+              /p:ContainerRepository=nightbaker/${{ matrix.service.repo }} \
+              /p:ContainerImageTag=${{ needs.setup.outputs.version }}-$ARCH \
+              /p:RuntimeIdentifier=$RID \
+              --configuration Release
+          done
+
+      - name: Assemble multi-arch manifest list
+        run: |
+          set -euo pipefail
+          REPO=ghcr.io/nightbaker/${{ matrix.service.repo }}
+          VERSION=${{ needs.setup.outputs.version }}
+          docker buildx imagetools create \
+            --tag $REPO:$VERSION \
+            $REPO:$VERSION-x64 \
+            $REPO:$VERSION-arm64
 
       - name: Tag :latest on stable releases
         if: needs.setup.outputs.is_prerelease == 'false'
@@ -150,6 +169,20 @@ jobs:
           docker buildx imagetools create \
             --tag ghcr.io/nightbaker/${{ matrix.service.repo }}:latest \
             ghcr.io/nightbaker/${{ matrix.service.repo }}:${{ needs.setup.outputs.version }}
+
+      - name: Resolve image digest
+        id: digest
+        run: |
+          set -euo pipefail
+          REF="ghcr.io/nightbaker/${{ matrix.service.repo }}:${{ needs.setup.outputs.version }}"
+          DIGEST=$(docker buildx imagetools inspect "$REF" --format '{{.Manifest.Digest}}')
+          echo "ref_digest=ghcr.io/nightbaker/${{ matrix.service.repo }}@$DIGEST" >> "$GITHUB_OUTPUT"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign container image (keyless)
+        run: cosign sign --yes "${{ steps.digest.outputs.ref_digest }}"
 
   compose:
     name: Aspire docker-compose bundle
@@ -171,7 +204,10 @@ jobs:
           dotnet-version: '10.0.x'
 
       - name: Install Aspire CLI
-        run: dotnet workload install aspire
+        run: |
+          set -euo pipefail
+          dotnet tool install -g Aspire.Cli --prerelease
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
 
       - name: Restore
         run: dotnet restore
@@ -184,6 +220,16 @@ jobs:
       - name: Zip the compose bundle
         run: |
           set -euo pipefail
+          # Aspire 13.x emits compose.yaml; fall back to docker-compose.yaml in case a
+          # future Aspire version renames it. If neither exists, AddDockerComposeEnvironment
+          # is missing in Program.cs (or the publisher silently routed to a different env)
+          # — fail loudly rather than ship a wrong-shape artifact.
+          if [ ! -f out/compose/compose.yaml ] && [ ! -f out/compose/docker-compose.yaml ]; then
+            echo "::error::aspire publish -t docker-compose produced no compose file in out/compose/"
+            echo "  out/compose/ contents:"
+            ls -la out/compose/ 2>&1 || echo "  (out/compose/ directory does not exist)"
+            exit 1
+          fi
           ZIP="docker-compose-v${{ needs.setup.outputs.version }}.zip"
           (cd out/compose && zip -r "../../$ZIP" .)
           ls -la "$ZIP"
@@ -195,159 +241,70 @@ jobs:
           path: src/Fleans/docker-compose-v${{ needs.setup.outputs.version }}.zip
           retention-days: 90
 
-  helm-drift:
-    name: Helm vs Aspire-k8s deep-diff
+  helm-package:
+    name: Helm chart package + sign
     needs: setup
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      DOTNET_NOLOGO: 'true'
-      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-
-      - name: Install Aspire CLI
-        run: dotnet workload install aspire
 
       - name: Setup Helm
         uses: azure/setup-helm@v4
         with:
           version: v3.15.0
 
-      - name: Setup yq
+      - name: Lint helm chart
+        run: helm lint charts/fleans
+
+      - name: Smoke render with all components enabled
         run: |
           set -euo pipefail
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
-          yq --version
+          # Smoke render: assert templates produce non-empty, well-formed YAML
+          # with every component enabled. This is NOT a drift comparison
+          # against Aspire's K8s publisher: the chart is hand-written for
+          # end-user ergonomics (single Deployment per service, inline env
+          # vars), while the Aspire K8s publisher emits per-service
+          # ConfigMap + Secret + `<name>-deployment` shapes. They were never
+          # the same shape — the prior deep-diff was checking an alignment
+          # that did not exist (see tests/manual/42-release-pipeline/test-plan.md).
+          helm template fleans charts/fleans \
+            --set worker.enabled=true \
+            --set customWorker.enabled=true \
+            > /tmp/helm-rendered.yaml
+          test -s /tmp/helm-rendered.yaml
 
-      - name: Render Aspire k8s output
-        working-directory: src/Fleans
-        run: |
-          set -euo pipefail
-          dotnet restore
-          aspire publish --project Fleans.Aspire -t kubernetes -o out/k8s
-
-      - name: Render Helm chart
-        run: |
-          set -euo pipefail
-          helm template fleans charts/fleans > /tmp/helm-rendered.yaml
-
-      - name: Deep diff
-        run: |
-          set -euo pipefail
-
-          # Splits a multi-doc YAML into per-resource files keyed by kind/name.
-          split_yaml() {
-            local src="$1" dest="$2"
-            mkdir -p "$dest"
-            yq -s '.kind + "_" + .metadata.name | sub("/"; "_")' "$src"
-            mv *.yml "$dest/" 2>/dev/null || true
-          }
-
-          mkdir -p /tmp/aspire-split /tmp/helm-split
-          # Aspire emits separate YAML files; concatenate then split.
-          find src/Fleans/out/k8s -name '*.yaml' -exec cat {} \; -exec echo --- \; > /tmp/aspire-merged.yaml
-          (cd /tmp/aspire-split && yq -s '.kind + "_" + .metadata.name' /tmp/aspire-merged.yaml || true)
-          (cd /tmp/helm-split   && yq -s '.kind + "_" + .metadata.name' /tmp/helm-rendered.yaml || true)
-
-          # Strip legitimate-difference axes from a single YAML doc, output JSON.
-          normalize() {
-            local in="$1" out="$2"
-            yq -o=json '
-              # Image refs (containers + initContainers).
-              (.spec.template.spec.containers[]?.image)     |= "__FLEANS_DRIFT_PLACEHOLDER_IMAGE__" |
-              (.spec.template.spec.initContainers[]?.image) |= "__FLEANS_DRIFT_PLACEHOLDER_IMAGE__" |
-              # Strip Helm-only / Aspire-only labels at every label-bearing path.
-              (.metadata.labels                       | with_entries(select(.key | (test("^app\\.kubernetes\\.io/") and . != "app.kubernetes.io/name") or test("^helm\\.sh/") | not))) as $l1 |
-              .metadata.labels = $l1 |
-              (.spec.template.metadata.labels // {}   | with_entries(select(.key | (test("^app\\.kubernetes\\.io/") and . != "app.kubernetes.io/name") or test("^helm\\.sh/") | not))) as $l2 |
-              .spec.template.metadata.labels = $l2 |
-              (.spec.selector.matchLabels // {}       | with_entries(select(.key | (test("^app\\.kubernetes\\.io/") and . != "app.kubernetes.io/name") or test("^helm\\.sh/") | not))) as $l3 |
-              .spec.selector.matchLabels = $l3 |
-              # Sort env-vars by name for stable comparison.
-              (.spec.template.spec.containers[]?.env // []) |= sort_by(.name)
-            ' "$in" > "$out"
-          }
-
-          # Aspire-only resources excluded by name (externally-managed deps).
-          ASPIRE_ONLY_ALLOWLIST="fleans-postgres orleans-redis fleans-kafka"
-          # Helm-only kinds whitelisted (RBAC scaffolding).
-          HELM_ONLY_KINDS="ServiceAccount Role RoleBinding"
-
-          FAILED=0
-
-          # Scan Aspire's set; for each resource, find the Helm match or fail.
-          for f in /tmp/aspire-split/*.yml; do
-            [ -f "$f" ] || continue
-            base=$(basename "$f" .yml)
-            kind=$(echo "$base" | cut -d_ -f1)
-            name=$(echo "$base" | cut -d_ -f2-)
-
-            # Skip excluded Aspire-only resources.
-            for allowed in $ASPIRE_ONLY_ALLOWLIST; do
-              [ "$name" = "$allowed" ] && continue 2
-            done
-
-            helm_match="/tmp/helm-split/${base}.yml"
-            if [ ! -f "$helm_match" ]; then
-              echo "::error::Drift: Aspire publishes $kind/$name but Helm does not."
-              FAILED=1
-              continue
-            fi
-
-            normalize "$f"          "/tmp/aspire-${base}.json"
-            normalize "$helm_match" "/tmp/helm-${base}.json"
-            if ! diff -u "/tmp/aspire-${base}.json" "/tmp/helm-${base}.json"; then
-              echo "::error::Drift: $kind/$name differs between Aspire and Helm (above diff)."
-              FAILED=1
-            fi
-          done
-
-          # Scan Helm's set for resources NOT in Aspire — fail unless whitelisted by kind.
-          for f in /tmp/helm-split/*.yml; do
-            [ -f "$f" ] || continue
-            base=$(basename "$f" .yml)
-            kind=$(echo "$base" | cut -d_ -f1)
-            name=$(echo "$base" | cut -d_ -f2-)
-
-            [ -f "/tmp/aspire-split/${base}.yml" ] && continue
-
-            allowed=0
-            for ok in $HELM_ONLY_KINDS; do
-              [ "$kind" = "$ok" ] && allowed=1 && break
-            done
-            if [ "$allowed" = "0" ]; then
-              echo "::error::Drift: Helm has $kind/$name but Aspire does not (kind not in whitelist $HELM_ONLY_KINDS)."
-              FAILED=1
-            fi
-          done
-
-          if [ "$FAILED" = "1" ]; then
-            exit 1
-          fi
-          echo "Drift check passed."
-
-      - name: Upload helm chart artifact
+      - name: Package helm chart
         run: |
           set -euo pipefail
           helm package charts/fleans --version "${{ needs.setup.outputs.version }}" --app-version "${{ needs.setup.outputs.version }}" -d /tmp/
           ls -la /tmp/fleans-*.tgz
 
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign helm chart tarball (keyless blob)
+        run: |
+          set -euo pipefail
+          cd /tmp
+          cosign sign-blob --yes \
+            --output-signature   "fleans-${{ needs.setup.outputs.version }}.tgz.sig" \
+            --output-certificate "fleans-${{ needs.setup.outputs.version }}.tgz.crt" \
+            "fleans-${{ needs.setup.outputs.version }}.tgz"
+          ls -la fleans-${{ needs.setup.outputs.version }}.tgz*
+
       - uses: actions/upload-artifact@v4
         with:
           name: fleans-helm-v${{ needs.setup.outputs.version }}
-          path: /tmp/fleans-*.tgz
+          path: |
+            /tmp/fleans-*.tgz
+            /tmp/fleans-*.tgz.sig
+            /tmp/fleans-*.tgz.crt
           retention-days: 90
 
   release:
     name: GitHub release
-    needs: [setup, images, compose, helm-drift]
+    needs: [setup, images, compose, helm-package]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: release
@@ -386,4 +343,6 @@ jobs:
             --generate-notes \
             $PRE_FLAG \
             ./artifacts/*.zip \
-            ./artifacts/*.tgz
+            ./artifacts/*.tgz \
+            ./artifacts/*.sig \
+            ./artifacts/*.crt

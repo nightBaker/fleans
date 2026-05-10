@@ -8,7 +8,7 @@ using Orleans.Streams;
 
 namespace Fleans.Application.Events.Handlers;
 
-[ImplicitStreamSubscription(WorkflowEventsPublisher.StreamNameSpace)]
+[ImplicitStreamSubscription(WorkflowEventsPublisher.ExecuteScriptStreamNamespace)]
 [CorePlacement]
 public partial class WorkflowExecuteScriptEventHandler : Grain, IWorkflowExecuteScriptEventHandler, IAsyncObserver<ExecuteScriptEvent>
 {
@@ -24,7 +24,7 @@ public partial class WorkflowExecuteScriptEventHandler : Grain, IWorkflowExecute
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
         var streamProvider = this.GetStreamProvider(WorkflowEventsPublisher.StreamProvider);
-        var streamId = StreamId.Create(WorkflowEventsPublisher.StreamNameSpace, nameof(ExecuteScriptEvent));
+        var streamId = StreamId.Create(WorkflowEventsPublisher.ExecuteScriptStreamNamespace, nameof(ExecuteScriptEvent));
         var stream = streamProvider.GetStream<ExecuteScriptEvent>(streamId);
 
         var handles = await stream.GetAllSubscriptionHandles();

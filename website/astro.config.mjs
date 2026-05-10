@@ -43,12 +43,23 @@ export default defineConfig({
           ],
         },
         {
+          label: 'BPMN Elements',
+          autogenerate: { directory: 'concepts/activities' },
+        },
+        {
           label: 'Patterns',
           items: [
             { label: 'Variables and Scope', slug: 'guides/variables-and-scope' },
             { label: 'Error Handling', slug: 'guides/error-handling' },
             { label: 'Multi-Instance Activities', slug: 'guides/multi-instance-activities' },
             { label: 'Message Correlation', slug: 'guides/message-correlation' },
+          ],
+        },
+        {
+          label: 'Self-host',
+          items: [
+            { label: 'Docker Compose', slug: 'guides/self-host-docker-compose' },
+            { label: 'Helm Chart', slug: 'guides/self-host-helm' },
           ],
         },
         {

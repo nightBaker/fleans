@@ -59,6 +59,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Fleans.Application.Abstract
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Fleans.CustomWorkerHost", "Fleans.CustomWorkerHost\Fleans.CustomWorkerHost.csproj", "{9878DB71-CBC4-45E9-B11B-E564D44022F1}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Fleans.Streaming.AzureQueue", "Fleans.Streaming.AzureQueue\Fleans.Streaming.AzureQueue.csproj", "{A0331D1C-43D7-447F-9AE6-644C33B31899}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -345,6 +347,18 @@ Global
 		{9878DB71-CBC4-45E9-B11B-E564D44022F1}.Release|x64.Build.0 = Release|Any CPU
 		{9878DB71-CBC4-45E9-B11B-E564D44022F1}.Release|x86.ActiveCfg = Release|Any CPU
 		{9878DB71-CBC4-45E9-B11B-E564D44022F1}.Release|x86.Build.0 = Release|Any CPU
+		{A0331D1C-43D7-447F-9AE6-644C33B31899}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A0331D1C-43D7-447F-9AE6-644C33B31899}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A0331D1C-43D7-447F-9AE6-644C33B31899}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{A0331D1C-43D7-447F-9AE6-644C33B31899}.Debug|x64.Build.0 = Debug|Any CPU
+		{A0331D1C-43D7-447F-9AE6-644C33B31899}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{A0331D1C-43D7-447F-9AE6-644C33B31899}.Debug|x86.Build.0 = Debug|Any CPU
+		{A0331D1C-43D7-447F-9AE6-644C33B31899}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A0331D1C-43D7-447F-9AE6-644C33B31899}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A0331D1C-43D7-447F-9AE6-644C33B31899}.Release|x64.ActiveCfg = Release|Any CPU
+		{A0331D1C-43D7-447F-9AE6-644C33B31899}.Release|x64.Build.0 = Release|Any CPU
+		{A0331D1C-43D7-447F-9AE6-644C33B31899}.Release|x86.ActiveCfg = Release|Any CPU
+		{A0331D1C-43D7-447F-9AE6-644C33B31899}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

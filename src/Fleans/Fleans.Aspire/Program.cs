@@ -1,19 +1,51 @@
+using Aspire.Hosting.Azure;
+
 var builder = DistributedApplication.CreateBuilder(args);
 
-// Kubernetes publish target — `aspire publish -t kubernetes -o out/k8s` emits manifests for
-// every Aspire-hosted service plus its dependencies (Redis, optional PostgreSQL/Kafka). The
-// "k8s" name is the resource id in the AppHost model; the publish target type is "kubernetes".
-builder.AddKubernetesEnvironment("k8s");
+// Publish target selection — only ONE compute environment may be registered at a time; if both
+// AddKubernetesEnvironment and AddDockerComposeEnvironment are called, Aspire requires every
+// resource to call WithComputeEnvironment(...) to disambiguate, which is impractical.
+//
+// The release pipeline's `compose` job runs `aspire publish -t docker-compose -o out/compose`.
+// The `helm-package` job uses hand-written charts (helm package charts/fleans), NOT aspire
+// publish -t kubernetes, so the k8s environment is only needed for ad-hoc `aspire publish
+// -t kubernetes` runs (e.g. debugging manifest shape locally).
+//
+// Set ASPIRE_PUBLISH_ENV=kubernetes to get k8s manifests; default is compose.
+// In dev mode (dotnet run) neither registration fires — both are publish-only no-ops.
+var publishEnv = builder.Configuration["ASPIRE_PUBLISH_ENV"] ?? "compose";
+if (publishEnv.Equals("compose", StringComparison.OrdinalIgnoreCase))
+{
+    // Docker Compose publish target — `aspire publish -t docker-compose -o out/compose` emits a
+    // Compose Spec YAML referencing every Aspire-hosted service plus its dependencies. Required
+    // for the release pipeline's `compose` job; without this call, `aspire publish -t docker-compose`
+    // silently routes to whichever publisher IS registered (Kubernetes here) and produces unusable
+    // output. See tests/manual/42-release-pipeline/test-plan.md Pitfall #8.
+    builder.AddDockerComposeEnvironment("compose");
+}
+else if (publishEnv.Equals("kubernetes", StringComparison.OrdinalIgnoreCase))
+{
+    // Kubernetes publish target — `aspire publish -t kubernetes -o out/k8s` emits manifests for
+    // every Aspire-hosted service plus its dependencies (Redis, optional PostgreSQL/Kafka). The
+    // "k8s" name is the resource id in the AppHost model; the publish target type is "kubernetes".
+    builder.AddKubernetesEnvironment("k8s");
+}
+else
+{
+    throw new InvalidOperationException(
+        $"Unknown ASPIRE_PUBLISH_ENV value '{publishEnv}'. Valid values: 'compose' (default), 'kubernetes'.");
+}
 
 // Persistence provider — set FLEANS_PERSISTENCE_PROVIDER=Postgres to use PostgreSQL.
 // Default is SQLite (fast local dev, no container required).
 var persistenceProvider = builder.Configuration["FLEANS_PERSISTENCE_PROVIDER"] ?? "Sqlite";
 var usePostgres = persistenceProvider.Equals("Postgres", StringComparison.OrdinalIgnoreCase);
 
-// Streaming provider — set FLEANS_STREAMING_PROVIDER=Kafka to opt into Kafka-backed Orleans Streams.
+// Streaming provider — set FLEANS_STREAMING_PROVIDER=Kafka or AzureQueue to opt into multi-silo-safe streams.
 // Default is in-memory (matches the v1 design — zero-infra `dotnet run --project Fleans.Aspire`).
 var streamingProvider = builder.Configuration["FLEANS_STREAMING_PROVIDER"] ?? "Memory";
 var useKafka = streamingProvider.Equals("Kafka", StringComparison.OrdinalIgnoreCase);
+var useAzureQueue = streamingProvider.Equals("AzureQueue", StringComparison.OrdinalIgnoreCase);
 
 // Add Redis for Orleans clustering and storage.
 // Aspire 13.1+ auto-configures TLS for Redis containers, but the Orleans Redis
@@ -57,6 +89,16 @@ if (useKafka)
     kafka = builder.AddKafka("fleans-kafka").WithKafkaUI();
 }
 
+// Azure Queue resource — only provisioned when streaming provider is AzureQueue.
+// In dev mode, Aspire auto-provisions Azurite (the Azure Storage emulator) so no
+// real Azure subscription is needed. In production, set AccountName for Managed Identity.
+IResourceBuilder<AzureQueueStorageResource>? azureQueues = null;
+if (useAzureQueue)
+{
+    var azurite = builder.AddAzureStorage("fleans-azurite").RunAsEmulator();
+    azureQueues = azurite.AddQueues("fleans-queues");
+}
+
 // Local helper: wires persistence env-vars / resource references onto a project.
 // WaitFor(pg) is intentionally omitted — startup ordering is the caller's responsibility.
 // Web and Mcp already wait for fleansSilo, which waits for pg when using Postgres.
@@ -77,33 +119,52 @@ static IResourceBuilder<ProjectResource> WithPersistence(
         .WithEnvironment("FLEANS_QUERY_CONNECTION", sqliteConn!);
 }
 
-// Local helper: wires Kafka streaming env-vars / resource references onto a silo project.
+// Local helper: wires streaming env-vars / resource references onto a silo project.
 // Memory provider is the default and requires no env-vars (Fleans.ServiceDefaults reads
 // `Fleans:Streaming:Provider` and falls back to "memory" when unset).
 static IResourceBuilder<ProjectResource> WithStreaming(
     IResourceBuilder<ProjectResource> project,
     bool isKafka,
-    IResourceBuilder<KafkaServerResource>? kafkaResource)
+    IResourceBuilder<KafkaServerResource>? kafkaResource,
+    bool isAzureQueue,
+    IResourceBuilder<AzureQueueStorageResource>? azureQueuesResource)
 {
-    if (!isKafka)
+    if (isKafka)
     {
-        return project;
+        return project
+            .WithReference(kafkaResource!)
+            .WaitFor(kafkaResource!)
+            .WithEnvironment("Fleans__Streaming__Provider", "Kafka")
+            .WithEnvironment("Fleans__Streaming__Kafka__Brokers", kafkaResource!.Resource.ConnectionStringExpression);
     }
-    return project
-        .WithReference(kafkaResource!)
-        .WaitFor(kafkaResource!)
-        .WithEnvironment("Fleans__Streaming__Provider", "Kafka")
-        .WithEnvironment("Fleans__Streaming__Kafka__Brokers", kafkaResource!.Resource.ConnectionStringExpression);
+    if (isAzureQueue)
+    {
+        return project
+            .WithReference(azureQueuesResource!)
+            .WaitFor(azureQueuesResource!)
+            .WithEnvironment("Fleans__Streaming__Provider", "AzureQueue")
+            .WithEnvironment("Fleans__Streaming__AzureQueue__ConnectionString", azureQueuesResource!.Resource.ConnectionStringExpression);
+    }
+    return project;
 }
 
 // Api = Orleans silo
+// Match the Helm chart's deployment-core.yaml: Aspire publish-mode tags fleans-core as
+// Core (publish topology has dedicated fleans-worker / fleans-custom-worker for worker
+// grains), while dev runs (3-process) stay at Combined so fleans-core continues to
+// host worker grains. FLEANS_ROLE env override applies in either mode for local
+// experimentation.
+var defaultCoreRole = builder.ExecutionContext.IsPublishMode ? "Core" : "Combined";
+var coreRole = builder.Configuration["FLEANS_ROLE"] ?? defaultCoreRole;
+
 var apiProject = builder.AddProject<Projects.Fleans_Api>("fleans-core")
+    .WithEnvironment("Fleans__Role", coreRole)
     .WithReference(orleans)
     .WaitFor(redis)
     .WithReplicas(1);
 if (usePostgres) apiProject = apiProject.WaitFor(pg!);
 var fleansSilo = WithPersistence(apiProject, usePostgres, pg, sqliteConnectionString);
-fleansSilo = WithStreaming(fleansSilo, useKafka, kafka);
+fleansSilo = WithStreaming(fleansSilo, useKafka, kafka, useAzureQueue, azureQueues);
 
 // Web = Orleans client
 WithPersistence(
@@ -125,11 +186,26 @@ WithPersistence(
         .WithReplicas(1),
     usePostgres, pg, sqliteConnectionString);
 
-// Publish-only topology: registers the dedicated Fleans.WorkerHost silo and the load-test
-// nginx fan-out. Both are publish-time artifacts (aspire publish -t docker-compose / kubernetes
-// or `dotnet run -- --publisher docker-compose ...`). Local dev (`dotnet run --project
-// Fleans.Aspire`) keeps the original 3-process layout — Fleans.Api with the default Combined
-// role still hosts worker grains there.
+// Publish-only topology: registers the dedicated Fleans.WorkerHost silo (always) and,
+// optionally, the load-test nginx fan-out (gated by FLEANS_LOAD_TEST_MODE=true). Local dev
+// (`dotnet run --project Fleans.Aspire`) keeps the original 3-process layout — Fleans.Api
+// with the default Combined role still hosts worker grains there.
+//
+// FLEANS_LOAD_TEST_MODE gates the nginx + 2-replica fan-out from end-user release
+// artifacts. End-user `docker-compose-v<VERSION>.zip` and the hand-written helm chart
+// should not contain a load-test nginx fronting 2 fleans-core replicas — that's a
+// developer concern. The load-test runbook (tests/load/README.md) sets the flag to
+// opt in.
+//
+// The guard also protects the (rare) `ASPIRE_PUBLISH_ENV=kubernetes` path: nginx uses
+// WithBindMount(tests/load/nginx.conf, ...) which Aspire's Kubernetes publisher rejects
+// (Bind mounts are not supported by the Kubernetes publisher). With the load-test mode
+// off, the bind-mounted container is never registered.
+var loadTestMode = string.Equals(
+    builder.Configuration["FLEANS_LOAD_TEST_MODE"],
+    "true",
+    StringComparison.OrdinalIgnoreCase);
+
 if (builder.ExecutionContext.IsPublishMode)
 {
     // Worker silo — separate deployable so production/k8s topologies can scale Core and
@@ -143,7 +219,7 @@ if (builder.ExecutionContext.IsPublishMode)
         .WithReplicas(1);
     if (usePostgres) workerHost = workerHost.WaitFor(pg!);
     workerHost = WithPersistence(workerHost, usePostgres, pg, sqliteConnectionString);
-    workerHost = WithStreaming(workerHost, useKafka, kafka);
+    workerHost = WithStreaming(workerHost, useKafka, kafka, useAzureQueue, azureQueues);
 
     // Custom worker host — worked example for the "host-your-own custom-task plugins"
     // pattern. Identical Orleans-cluster wiring to fleans-worker; differs in that this
@@ -156,19 +232,25 @@ if (builder.ExecutionContext.IsPublishMode)
         .WaitFor(redis)
         .WithEnvironment("Fleans__Role", "Worker")
         .WithReplicas(1);
-    customWorkerHost = WithStreaming(customWorkerHost, useKafka, kafka);
+    customWorkerHost = WithStreaming(customWorkerHost, useKafka, kafka, useAzureQueue, azureQueues);
 
-    // Override the container listen port to 8080 so nginx (tests/load/nginx.conf) can
-    // reach each replica at fleans-core:8080. WithHttpEndpoint cannot be used here because
-    // AddProject<> already registers the default "http" endpoint — re-using that name throws.
-    apiProject = apiProject
-        .WithEnvironment("ASPNETCORE_HTTP_PORTS", "8080")
-        .WithReplicas(2);
+    // Load-test fan-out — opt-in via FLEANS_LOAD_TEST_MODE=true. Targets the docker-compose
+    // publisher only; the K8s publisher rejects the bind mount and Kubernetes Services
+    // already load-balance replicas natively, so the nginx fan-out is unnecessary there.
+    if (loadTestMode)
+    {
+        // Override the container listen port to 8080 so nginx (tests/load/nginx.conf) can
+        // reach each replica at fleans-core:8080. WithHttpEndpoint cannot be used here because
+        // AddProject<> already registers the default "http" endpoint — re-using that name throws.
+        apiProject = apiProject
+            .WithEnvironment("ASPNETCORE_HTTP_PORTS", "8080")
+            .WithReplicas(2);
 
-    builder.AddContainer("nginx", "nginx:1.27")
-        .WithBindMount("../../tests/load/nginx.conf", "/etc/nginx/nginx.conf", isReadOnly: true)
-        .WithHttpEndpoint(port: 80, targetPort: 80, name: "http")
-        .WaitFor(apiProject);
+        builder.AddContainer("nginx", "nginx:1.27")
+            .WithBindMount("../../tests/load/nginx.conf", "/etc/nginx/nginx.conf", isReadOnly: true)
+            .WithHttpEndpoint(port: 80, targetPort: 80, name: "http")
+            .WaitFor(apiProject);
+    }
 }
 
 using var app = builder.Build();

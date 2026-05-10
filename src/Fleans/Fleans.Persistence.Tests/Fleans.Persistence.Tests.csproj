@@ -19,9 +19,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Fleans.Persistence\Fleans.Persistence.csproj" />
     <ProjectReference Include="..\Fleans.Persistence.Sqlite\Fleans.Persistence.Sqlite.csproj" />
     <ProjectReference Include="..\Fleans.Persistence.PostgreSql\Fleans.Persistence.PostgreSql.csproj" />
+    <ProjectReference Include="..\Fleans.ServiceDefaults\Fleans.ServiceDefaults.csproj" />
   </ItemGroup>
 
 </Project>

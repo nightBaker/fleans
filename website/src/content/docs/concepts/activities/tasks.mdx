@@ -1,0 +1,136 @@
+---
+title: Tasks
+description: Plain, Script, User, and Service task types supported by Fleans, with BPMN diagram examples.
+sidebar:
+  order: 1
+---
+
+Tasks are the atomic units of work in a Fleans workflow. Each task maps to a `<bpmn:*Task>` element
+and runs exactly once per activation. Fleans supports four task variants; a fifth (Send Task) is not
+yet implemented — see [Send Task](#send-task) below.
+
+See also: [BPMN Support matrix](../bpmn-support) for the full coverage table.
+
+---
+
+## Plain Task
+
+A **Plain Task** (`<bpmn:task>`) completes immediately with no executor — the engine advances to
+the next element as soon as activation is recorded. Use it for modelling a human activity or a
+placeholder that will be replaced later.
+
+**BPMN:**
+```xml
+<bpmn:task id="Task_1" name="Do something" />
+```
+
+<div class="bpmn-activity-diagram-pair">
+  <img src="/fleans/activities/task-plain-light.svg"
+       class="bpmn-activity-img-light" alt="Plain Task BPMN diagram" />
+  <img src="/fleans/activities/task-plain-dark.svg"
+       class="bpmn-activity-img-dark"  alt="Plain Task BPMN diagram" />
+</div>
+
+:::note
+Plain Tasks auto-complete — they never block the workflow. Source: `BpmnConverter.cs:303`.
+:::
+
+---
+
+## Script Task
+
+A **Script Task** (`<bpmn:scriptTask scriptFormat="csharp">`) executes a C# expression via
+[DynamicExpresso](https://github.com/dynamicexpresso/DynamicExpresso). The expression string is
+read from `<camunda:script>` and evaluated against a `_context` variable bag that exposes the
+current workflow variables.
+
+**BPMN:**
+```xml
+<bpmn:scriptTask id="Task_1" name="Compute total" scriptFormat="csharp">
+  <bpmn:extensionElements>
+    <camunda:script><![CDATA[_context.total = _context.price * _context.qty]]></camunda:script>
+  </bpmn:extensionElements>
+</bpmn:scriptTask>
+```
+
+<div class="bpmn-activity-diagram-pair">
+  <img src="/fleans/activities/task-script-light.svg"
+       class="bpmn-activity-img-light" alt="Script Task BPMN diagram" />
+  <img src="/fleans/activities/task-script-dark.svg"
+       class="bpmn-activity-img-dark"  alt="Script Task BPMN diagram" />
+</div>
+
+:::note
+`_context` is an `ExpandoObject` backed by the workflow's variable store. Mutations are merged
+back after completion. Source: `BpmnConverter.cs:354`.
+:::
+
+---
+
+## User Task
+
+A **User Task** (`<bpmn:userTask>`) suspends the workflow and waits for a human to act. Fleans
+exposes a claim → complete (or fail / cancel) lifecycle via REST and the admin UI.
+
+**BPMN:**
+```xml
+<bpmn:userTask id="Task_1" name="Approve request">
+  <bpmn:extensionElements>
+    <zeebe:assignmentDefinition assignee="manager" candidateGroups="approvers" />
+  </bpmn:extensionElements>
+</bpmn:userTask>
+```
+
+<div class="bpmn-activity-diagram-pair">
+  <img src="/fleans/activities/task-user-light.svg"
+       class="bpmn-activity-img-light" alt="User Task BPMN diagram" />
+  <img src="/fleans/activities/task-user-dark.svg"
+       class="bpmn-activity-img-dark"  alt="User Task BPMN diagram" />
+</div>
+
+:::note
+`assignee` and `candidateGroups` are stored as task metadata. The workflow is paused until the
+task is completed via `POST /Workflow/{id}/complete-activity`. Source: `BpmnConverter.cs:313`.
+:::
+
+---
+
+## Service Task (Custom Task)
+
+A **Service Task** (`<bpmn:serviceTask type="…">`) delegates execution to a plugin grain
+identified by the `type` attribute. Plugins live on a Worker silo and implement
+`CustomTaskHandlerBase`. Output variables are mapped back via `<zeebe:output>` bindings.
+
+**BPMN:**
+```xml
+<bpmn:serviceTask id="Task_1" name="Call external API">
+  <bpmn:extensionElements>
+    <zeebe:taskDefinition type="rest-caller" />
+    <zeebe:ioMapping>
+      <zeebe:input source="=apiUrl"  target="url" />
+      <zeebe:output source="=__response.body" target="result" />
+    </zeebe:ioMapping>
+  </bpmn:extensionElements>
+</bpmn:serviceTask>
+```
+
+<div class="bpmn-activity-diagram-pair">
+  <img src="/fleans/activities/task-service-light.svg"
+       class="bpmn-activity-img-light" alt="Service Task BPMN diagram" />
+  <img src="/fleans/activities/task-service-dark.svg"
+       class="bpmn-activity-img-dark"  alt="Service Task BPMN diagram" />
+</div>
+
+:::note
+The `type` value must match a registered plugin's `TaskType`. See
+[Writing Custom-Task Plugins](/fleans/guides/writing-custom-tasks) for the full authoring guide.
+Source: `BpmnConverter.cs:333`.
+:::
+
+---
+
+## Send Task
+
+Send Task (`<bpmn:sendTask>`) is **not yet implemented** in Fleans. If a BPMN file contains a
+Send Task, the converter will not recognise it and the element will be skipped or cause a parse
+error. A dedicated fixture and implementation are tracked in issue [#420-E](https://github.com/nightBaker/fleans/issues/420).

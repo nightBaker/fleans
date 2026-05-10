@@ -8,6 +8,7 @@ using Fleans.Application.Adapters;
 using Fleans.Application.Effects;
 using Fleans.Application.Logging;
 using Fleans.Application.Placement;
+using Fleans.Application.QueryModels;
 using Microsoft.Extensions.Logging;
 using Orleans;
 using Orleans.EventSourcing;
@@ -18,6 +19,32 @@ using System.Dynamic;
 
 namespace Fleans.Application.Grains;
 
+// WorkflowInstance is a thin coordinator grain split into 3 partial files.
+// Place new methods in the correct file:
+//   * WorkflowInstance.cs               — fields, constructor, lifecycle overrides (OnActivateAsync,
+//                                         OnDeactivateAsync, TransitionState), ICustomStorageInterface
+//                                         (ReadStateFromStorage, ApplyUpdatesToStorage), and all public
+//                                         entry points: workflow lifecycle (SetWorkflow, StartWorkflow);
+//                                         activity completion/failure (CompleteActivity, FailActivity,
+//                                         CompleteConditionSequence); child-workflow coordination
+//                                         (SetParentInfo, SetInitialVariables, OnChildWorkflowCompleted,
+//                                         OnChildWorkflowFailed); external events (HandleTimerFired,
+//                                         HandleMessageDelivery, HandleBoundaryMessageFired,
+//                                         HandleSignalDelivery, HandleBoundarySignalFired); user tasks
+//                                         (ClaimUserTask, UnclaimUserTask, CompleteUserTask); state
+//                                         queries (GetState, GetVariable, GetVariables,
+//                                         GetActiveActivities, GetCompletedActivities,
+//                                         GetConditionSequenceStates, SetConditionSequenceResult,
+//                                         FindForkByToken); request-context / scope utilities.
+//   * WorkflowInstance.Infrastructure.cs — private infrastructure (RunExecutionLoop,
+//                                         ResolveExternalCompletions, ComputeTransitionsForEntries,
+//                                         HandleScopeCompletions, PerformEffects, PerformMessageSubscribe,
+//                                         PerformSignalSubscribe, PerformStartChildWorkflow,
+//                                         PublishDomainEvent, ProcessPendingEvents,
+//                                         ProcessPendingEventsTimer, DisposePendingEventsTimerIfTerminal,
+//                                         EnsurePendingEventsTimerRegistered, DrainAndRaiseEvents,
+//                                         LogEvent).
+//   * WorkflowInstance.Logging.cs       — all [LoggerMessage] partial method declarations.
 [CorePlacement]
 public partial class WorkflowInstance :
     JournaledGrain<WorkflowInstanceState, IDomainEvent>,
@@ -588,6 +615,38 @@ public partial class WorkflowInstance :
         IReadOnlyDictionary<Guid, TransactionOutcomeRecord> result =
             State.TransactionOutcomes.AsReadOnly();
         return ValueTask.FromResult(result);
+    }
+
+    public ValueTask<IReadOnlyList<CompensationLogEntrySnapshot>> GetCompensationLog()
+    {
+        IReadOnlyList<CompensationLogEntrySnapshot> result = State.CompensationLog
+            .OrderBy(e => e.CompletedAtSequence)
+            .Select(ToCompensationSnapshot)
+            .ToList()
+            .AsReadOnly();
+        LogCompensationLogReturned(result.Count);
+        return ValueTask.FromResult(result);
+    }
+
+    private CompensationLogEntrySnapshot ToCompensationSnapshot(CompletedActivitySnapshot entry)
+    {
+        // Handler resolution: walk the cached BPMN definition to the enclosing scope of the
+        // compensable activity, then read the boundary event's pre-resolved HandlerActivityId.
+        // Returns null when the model has drifted or no compensation boundary exists.
+        var scopeDef = _workflowDefinition?.FindScopeForActivity(entry.ActivityDefinitionId);
+        var handlerId = scopeDef?.FindCompensationBoundary(entry.ActivityDefinitionId)?.HandlerActivityId;
+
+        var variables = ((IDictionary<string, object?>)entry.VariablesSnapshot)
+            .ToDictionary(kvp => kvp.Key, kvp => VariableValueFormatter.Format(kvp.Value));
+
+        return new CompensationLogEntrySnapshot(
+            entry.ActivityInstanceId,
+            entry.ActivityDefinitionId,
+            handlerId,
+            entry.CompletedAtSequence,
+            entry.ScopeId,
+            entry.IsCompensated,
+            variables);
     }
 
     public async ValueTask SetConditionSequenceResult(Guid activityInstanceId, string sequenceId, bool result)

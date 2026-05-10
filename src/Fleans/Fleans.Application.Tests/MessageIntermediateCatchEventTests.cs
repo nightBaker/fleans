@@ -122,6 +122,66 @@ public class MessageIntermediateCatchEventTests : WorkflowTestBase
     }
 
     [TestMethod]
+    public async Task MessageCatch_WithMissingCorrelationVariable_ShouldFailWorkflow()
+    {
+        // #425: building the message-correlation effect throws at build-time
+        // when the correlation variable is missing from the workflow scope.
+        // §1's try/catch around ProcessRegisterMessage routes the throw to
+        // FailActivity so the failure surfaces in state instead of leaving
+        // the catch event stuck Active.
+
+        var start = new StartEvent("start");
+        var task = new TaskActivity("task1");
+        var msgDef = new MessageDefinition("msg1", "paymentReceived", "orderId");
+        var msgCatch = new MessageIntermediateCatchEvent("waitPayment", "msg1");
+        var end = new EndEvent("end");
+
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "msg-catch-missing-correlation",
+            Activities = [start, task, msgCatch, end],
+            SequenceFlows =
+            [
+                new SequenceFlow("f1", start, task),
+                new SequenceFlow("f2", task, msgCatch),
+                new SequenceFlow("f3", msgCatch, end)
+            ],
+            Messages = [msgDef]
+        };
+
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await workflowInstance.SetWorkflow(workflow);
+        await workflowInstance.StartWorkflow();
+
+        // Complete task WITHOUT setting orderId — the catch event's correlation
+        // variable reference will fail to resolve at build time.
+        await workflowInstance.CompleteActivity("task1", new ExpandoObject());
+
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+
+        // task1 ran to completion before the catch event tried to register.
+        var taskActivity = snapshot!.CompletedActivities.FirstOrDefault(a => a.ActivityId == "task1");
+        Assert.IsNotNull(taskActivity, "task1 should be in completed activities");
+        Assert.IsNull(taskActivity.ErrorState, "task1 should have completed cleanly");
+
+        // The catch event must surface the build-time throw via FailActivity —
+        // it should NOT be stuck Active and it should carry an ErrorState.
+        Assert.IsFalse(
+            snapshot.ActiveActivities.Any(a => a.ActivityId == "waitPayment"),
+            "Message catch event should NOT be stuck Active after a registration failure");
+        var failedCatch = snapshot.CompletedActivities.FirstOrDefault(a => a.ActivityId == "waitPayment");
+        Assert.IsNotNull(failedCatch, "Failed catch event must appear in completed activities list");
+        Assert.IsNotNull(failedCatch.ErrorState, "Failed catch event must carry an ErrorState");
+
+        // The workflow must not silently complete — the registration failure
+        // is workflow-failing, not workflow-skipping.
+        Assert.IsFalse(snapshot.IsCompleted, "Workflow should not complete after a failed registration");
+        Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId == "end"),
+            "End event should not have been reached");
+    }
+
+    [TestMethod]
     public async Task MessageCatch_WrongCorrelationKey_ShouldNotDeliver()
     {
         // Arrange
