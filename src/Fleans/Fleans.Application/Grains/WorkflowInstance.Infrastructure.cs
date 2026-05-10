@@ -222,14 +222,16 @@ public partial class WorkflowInstance
         // before CompleteFinishedSubProcessScopes can auto-complete the Transaction as Completed.
         var cancelEventCountBefore = _execution.GetUncommittedEvents().Count;
         var cancelEffects = _execution.InitiateTransactionCancelFlowIfNeeded();
-        // Log each transaction cancel that was just initiated
-        foreach (var cancelledTx in _execution.GetUncommittedEvents()
-            .Skip(cancelEventCountBefore)
-            .OfType<TransactionOutcomeSet>()
+        // Log each transaction cancel that was just initiated, including descendant walk aborts
+        var postCancelEvents = _execution.GetUncommittedEvents().Skip(cancelEventCountBefore).ToList();
+        foreach (var cancelledTx in postCancelEvents.OfType<TransactionOutcomeSet>()
             .Where(e => e.Outcome == TransactionOutcome.Cancelled))
         {
             var txEntry = State.FindEntry(cancelledTx.TransactionInstanceId);
             LogTransactionCancelInitiated(cancelledTx.TransactionInstanceId, txEntry?.ActivityId ?? "unknown");
+            var abortCount = postCancelEvents.OfType<CompensationWalkAborted>().Count();
+            if (abortCount > 0)
+                LogAbortingDescendantWalks(abortCount, cancelledTx.TransactionInstanceId);
         }
         if (cancelEffects.Count > 0)
             await PerformEffects(cancelEffects);
@@ -649,6 +651,9 @@ public partial class WorkflowInstance
                 break;
             case CompensationWalkFailed walkFailed:
                 LogCompensationHandlerFailed(walkFailed.HandlerInstanceId, walkFailed.ErrorCode, walkFailed.ErrorMessage);
+                break;
+            case CompensationWalkAborted walkAborted:
+                LogCompensationWalkAborted(walkAborted.ScopeId, walkAborted.Reason);
                 break;
             case WorkflowCancelled wfCancelled:
                 LogWorkflowCancelled(wfCancelled.Reason);

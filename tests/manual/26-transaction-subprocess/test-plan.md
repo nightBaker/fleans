@@ -9,8 +9,8 @@ transaction-scoped variables must be merged into the parent scope, and the engin
 must record a `Completed` transaction outcome for the Transaction activity instance.
 
 > **Phase 1 scope:** This test covers only the Completed outcome (happy path).
-> Cancel (triggered by Cancel End Event — issue #230) and Hazard (unhandled error
-> escape — issue #231) paths are tested when those features land.
+> The Cancel path is verified by regression test #36 (`tests/manual/30-cancel-event/`).
+> Hazard (unhandled error escape) is `KNOWN BUG` pending issue #492.
 
 ## Prerequisites
 

@@ -314,8 +314,9 @@ goes here" — typically routing to a generic failure handler that logs and page
   duplicates fail the BPMN parse.
 - The Hazard outcome of a Transaction Sub-Process (an unhandled error escaping
   the transaction scope) is tracked separately under the Cancel-events feature
-  and is out of scope for this guide. See [BPMN Support — Transaction Sub-Process](/fleans/concepts/bpmn-support/)
-  for status.
+  and is out of scope for this guide. See the
+  [Transaction Sub-Process status](/fleans/concepts/bpmn-support/#transaction-sub-process-status)
+  callout for current Hazard-path status and workaround.
 
 ## Related guides
 

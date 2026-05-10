@@ -21,6 +21,9 @@ public partial class WorkflowEventsPublisher : Grain, IEventPublisher
     public const string StreamProvider = WorkflowEventStreams.StreamProvider;
     public const string StreamNameSpace = WorkflowEventStreams.StreamNameSpace;
     public const string ExecuteCustomTaskStreamNamespace = WorkflowEventStreams.ExecuteCustomTaskStreamNamespace;
+    public const string ExecuteScriptStreamNamespace = WorkflowEventStreams.ExecuteScriptStreamNamespace;
+    public const string EvaluateConditionStreamNamespace = WorkflowEventStreams.EvaluateConditionStreamNamespace;
+    public const string EvaluateActivationConditionStreamNamespace = WorkflowEventStreams.EvaluateActivationConditionStreamNamespace;
 
     public WorkflowEventsPublisher(ILogger<WorkflowEventsPublisher> logger)
     {
@@ -42,18 +45,18 @@ public partial class WorkflowEventsPublisher : Grain, IEventPublisher
         {
             case EvaluateConditionEvent evaluateConditionEvent:
 
-                var streamId = StreamId.Create(WorkflowEventStreams.StreamNameSpace, nameof(EvaluateConditionEvent));
+                var streamId = StreamId.Create(WorkflowEventStreams.EvaluateConditionStreamNamespace, nameof(EvaluateConditionEvent));
                 var stream = _streamProvider.GetStream<EvaluateConditionEvent>(streamId);
                 await stream.OnNextAsync(evaluateConditionEvent);
                 break;
             case EvaluateActivationConditionEvent evaluateActivationConditionEvent:
-                var activationStreamId = StreamId.Create(WorkflowEventStreams.StreamNameSpace, nameof(EvaluateActivationConditionEvent));
+                var activationStreamId = StreamId.Create(WorkflowEventStreams.EvaluateActivationConditionStreamNamespace, nameof(EvaluateActivationConditionEvent));
                 var activationStream = _streamProvider.GetStream<EvaluateActivationConditionEvent>(activationStreamId);
                 await activationStream.OnNextAsync(evaluateActivationConditionEvent);
                 break;
             case ExecuteScriptEvent executeScriptEvent:
 
-                var scriptStreamId = StreamId.Create(WorkflowEventStreams.StreamNameSpace, nameof(ExecuteScriptEvent));
+                var scriptStreamId = StreamId.Create(WorkflowEventStreams.ExecuteScriptStreamNamespace, nameof(ExecuteScriptEvent));
                 var scriptStream = _streamProvider.GetStream<ExecuteScriptEvent>(scriptStreamId);
                 await scriptStream.OnNextAsync(executeScriptEvent);
                 break;
@@ -62,6 +65,11 @@ public partial class WorkflowEventsPublisher : Grain, IEventPublisher
                 var customTaskStreamId = StreamId.Create(WorkflowEventStreams.ExecuteCustomTaskStreamNamespace, nameof(ExecuteCustomTaskEvent));
                 var customTaskStream = _streamProvider.GetStream<ExecuteCustomTaskEvent>(customTaskStreamId);
                 await customTaskStream.OnNextAsync(executeCustomTaskEvent);
+                break;
+            case EvaluateCompletionConditionEvent evaluateCompletionConditionEvent:
+                var completionStreamId = StreamId.Create(WorkflowEventStreams.EvaluateCompletionConditionStreamNamespace, nameof(EvaluateCompletionConditionEvent));
+                var completionStream = _streamProvider.GetStream<EvaluateCompletionConditionEvent>(completionStreamId);
+                await completionStream.OnNextAsync(evaluateCompletionConditionEvent);
                 break;
             default:
                 var defaultStreamId = StreamId.Create(WorkflowEventStreams.StreamNameSpace, nameof(IDomainEvent));

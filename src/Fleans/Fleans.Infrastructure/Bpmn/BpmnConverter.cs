@@ -10,22 +10,19 @@ namespace Fleans.Infrastructure.Bpmn;
 public partial class BpmnConverter : IBpmnConverter
 {
     private const int MaxConversionDepth = 10;
-    private const string BpmnNamespace = "http://www.omg.org/spec/BPMN/20100524/MODEL";
-    private const string BpmndiNamespace = "http://www.omg.org/spec/BPMN/20100524/DI";
-    private const string ZeebeNamespace = "http://camunda.org/schema/zeebe/1.0";
-    private const string FleansNamespace = "http://fleans.io/schema/bpmn/fleans";
-    private const string CamundaNamespace = "http://camunda.org/schema/1.0/bpmn";
-    private static readonly XNamespace Bpmn = BpmnNamespace;
-    private static readonly XNamespace Bpmndi = BpmndiNamespace;
-    private static readonly XNamespace Zeebe = ZeebeNamespace;
-    private static readonly XNamespace Fleans = FleansNamespace;
-    private static readonly XNamespace Camunda = CamundaNamespace;
+    private static readonly XNamespace Bpmn    = BpmnNamespaces.Bpmn;
+    private static readonly XNamespace Bpmndi  = BpmnNamespaces.Bpmndi;
+    private static readonly XNamespace Zeebe   = BpmnNamespaces.Zeebe;
+    private static readonly XNamespace Fleans  = BpmnNamespaces.Fleans;
+    private static readonly XNamespace Camunda = BpmnNamespaces.Camunda;
 
     private readonly ILogger<BpmnConverter> _logger;
+    private readonly CustomTaskRoutingResolver _resolver;
 
     public BpmnConverter(ILogger<BpmnConverter> logger)
     {
         _logger = logger;
+        _resolver = new CustomTaskRoutingResolver();
     }
 
     public async Task<WorkflowDefinition> ConvertFromXmlAsync(Stream bpmnXmlStream)
@@ -333,12 +330,12 @@ public partial class BpmnConverter : IBpmnConverter
         foreach (var serviceTask in scopeElement.Elements(Bpmn + "serviceTask"))
         {
             var id = GetId(serviceTask);
-            var taskType = ResolveServiceTaskType(serviceTask);
+            var taskType = _resolver.ResolveTaskType(serviceTask);
             Activity activity;
             if (!string.IsNullOrEmpty(taskType))
             {
-                var inputMappings = ParseInputMappings(serviceTask);
-                var outputMappings = ParseOutputMappings(serviceTask);
+                var inputMappings = _resolver.ParseInputMappings(serviceTask);
+                var outputMappings = _resolver.ParseOutputMappings(serviceTask);
                 activity = new CustomTaskActivity(id, taskType, inputMappings, outputMappings);
             }
             else
@@ -894,23 +891,14 @@ public partial class BpmnConverter : IBpmnConverter
 
             string? correlationKey = null;
 
-            // 1. Check <message> extension elements (Camunda 8 zeebe:subscription, fleans:subscription)
+            // 1. Check <message> extension elements (zeebe:subscription, fleans:subscription)
             var extensions = msgEl.Element(Bpmn + "extensionElements");
             if (extensions != null)
             {
-                var zeebeSubscription = extensions.Element(Zeebe + "subscription");
-                if (zeebeSubscription != null)
+                var subscription = BpmnNamespaces.FindExtensionElement(extensions, "subscription");
+                if (subscription != null)
                 {
-                    correlationKey = zeebeSubscription.Attribute("correlationKey")?.Value?.TrimStart('=', ' ');
-                }
-
-                if (correlationKey == null)
-                {
-                    var fleansSubscription = extensions.Element(Fleans + "subscription");
-                    if (fleansSubscription != null)
-                    {
-                        correlationKey = fleansSubscription.Attribute("correlationKey")?.Value?.TrimStart('=', ' ');
-                    }
+                    correlationKey = subscription.Attribute("correlationKey")?.Value?.TrimStart('=', ' ');
                 }
             }
 
@@ -985,7 +973,7 @@ public partial class BpmnConverter : IBpmnConverter
             var msgDef = eventEl.Element(Bpmn + "messageEventDefinition");
             if (msgDef?.Attribute("messageRef")?.Value == messageId)
             {
-                var key = eventEl.Attribute(Fleans + "correlationKey")?.Value;
+                var key = BpmnNamespaces.GetExtensionAttributeValue(eventEl, "correlationKey");
                 if (key != null) return key;
             }
         }
@@ -1139,14 +1127,16 @@ public partial class BpmnConverter : IBpmnConverter
         if (cardinalityEl is not null && int.TryParse(cardinalityEl.Value.Trim(), out var card))
             loopCardinality = card;
 
-        var inputCollection = miElement.Attribute(Zeebe + "collection")?.Value
+        var inputCollection = BpmnNamespaces.GetExtensionAttributeValue(miElement, "collection")
             ?? miElement.Attribute("collection")?.Value;
-        var inputDataItem = miElement.Attribute(Zeebe + "elementVariable")?.Value
+        var inputDataItem = BpmnNamespaces.GetExtensionAttributeValue(miElement, "elementVariable")
             ?? miElement.Attribute("elementVariable")?.Value;
-        var outputCollection = miElement.Attribute(Zeebe + "outputCollection")?.Value
+        var outputCollection = BpmnNamespaces.GetExtensionAttributeValue(miElement, "outputCollection")
             ?? miElement.Attribute("outputCollection")?.Value;
-        var outputDataItem = miElement.Attribute(Zeebe + "outputElement")?.Value
+        var outputDataItem = BpmnNamespaces.GetExtensionAttributeValue(miElement, "outputElement")
             ?? miElement.Attribute("outputElement")?.Value;
+
+        var completionCondition = miElement.Element(Bpmn + "completionCondition")?.Value?.Trim();
 
         return new MultiInstanceActivity(
             innerActivity.ActivityId,
@@ -1156,7 +1146,8 @@ public partial class BpmnConverter : IBpmnConverter
             inputCollection,
             inputDataItem,
             outputCollection,
-            outputDataItem);
+            outputDataItem,
+            completionCondition);
     }
 
     private string GetId(XElement element)
@@ -1173,12 +1164,19 @@ public partial class BpmnConverter : IBpmnConverter
 
     private static List<string>? ParseExpectedOutputs(XElement element)
     {
-        var outputsElement = element.Descendants(Fleans + "expectedOutputs")
-            .FirstOrDefault();
+        var outputsElement = element.Descendants()
+            .FirstOrDefault(e => e.Name.LocalName == "expectedOutputs"
+                && (e.Name.Namespace == BpmnNamespaces.Fleans
+                    || e.Name.Namespace == BpmnNamespaces.FleansLegacy));
         if (outputsElement is null)
             return null;
 
-        var outputs = outputsElement.Elements(Fleans + "output")
+        // Accept both `<fleans:expectedOutput name="…">` (current) and `<fleans:output name="…">` (legacy
+        // shape used before the namespace bump renamed the child type).
+        var outputs = outputsElement.Elements()
+            .Where(e => (e.Name.LocalName == "expectedOutput" || e.Name.LocalName == "output")
+                && (e.Name.Namespace == BpmnNamespaces.Fleans
+                    || e.Name.Namespace == BpmnNamespaces.FleansLegacy))
             .Select(e => e.Attribute("name")?.Value)
             .Where(name => !string.IsNullOrWhiteSpace(name))
             .ToList();
@@ -1241,118 +1239,4 @@ public partial class BpmnConverter : IBpmnConverter
         Message = "Complex gateway '{GatewayId}' has activationCondition but is detected as a fork — activationCondition is ignored on fork gateways")]
     private partial void LogActivationConditionIgnoredOnFork(string gatewayId);
 
-    private static readonly System.Text.RegularExpressions.Regex IdentifierRegex =
-        new("^[a-zA-Z_][a-zA-Z0-9_]*$", System.Text.RegularExpressions.RegexOptions.Compiled);
-
-    private static string? ResolveServiceTaskType(XElement serviceTask)
-    {
-        var attr = serviceTask.Attribute("type")?.Value;
-        if (!string.IsNullOrWhiteSpace(attr))
-            return attr;
-
-        var taskDef = serviceTask.Element(Bpmn + "extensionElements")?.Element(Zeebe + "taskDefinition");
-        var zType = taskDef?.Attribute("type")?.Value;
-        if (!string.IsNullOrWhiteSpace(zType))
-            return zType;
-
-        return null;
-    }
-
-    private static List<InputMapping> ParseInputMappings(XElement serviceTask)
-    {
-        var mappings = new List<InputMapping>();
-        var ioMapping = serviceTask.Element(Bpmn + "extensionElements")?.Element(Zeebe + "ioMapping");
-        if (ioMapping is null) return mappings;
-
-        foreach (var input in ioMapping.Elements(Zeebe + "input"))
-            mappings.Add(ParseInputMapping(input));
-
-        return mappings;
-    }
-
-    private static List<OutputMapping> ParseOutputMappings(XElement serviceTask)
-    {
-        var mappings = new List<OutputMapping>();
-        var ioMapping = serviceTask.Element(Bpmn + "extensionElements")?.Element(Zeebe + "ioMapping");
-        if (ioMapping is null) return mappings;
-
-        foreach (var output in ioMapping.Elements(Zeebe + "output"))
-            mappings.Add(ParseOutputMapping(output));
-
-        return mappings;
-    }
-
-    private static InputMapping ParseInputMapping(XElement input)
-    {
-        var source = input.Attribute("source")?.Value
-            ?? throw new InvalidOperationException("<zeebe:input> missing required 'source' attribute");
-        var target = input.Attribute("target")?.Value
-            ?? throw new InvalidOperationException("<zeebe:input> missing required 'target' attribute");
-
-        if (string.IsNullOrWhiteSpace(target))
-            throw new InvalidOperationException("<zeebe:input> 'target' is empty or whitespace-only");
-
-        if (!IdentifierRegex.IsMatch(target))
-            throw new InvalidOperationException(
-                $"<zeebe:input target=\"{target}\"> target must be a valid identifier (^[a-zA-Z_][a-zA-Z0-9_]*$)");
-
-        ValidateMappingSource(source, $"<zeebe:input target=\"{target}\">");
-
-        return new InputMapping(source, target);
-    }
-
-    private static OutputMapping ParseOutputMapping(XElement output)
-    {
-        var source = output.Attribute("source")?.Value
-            ?? throw new InvalidOperationException("<zeebe:output> missing required 'source' attribute");
-        var target = output.Attribute("target")?.Value
-            ?? throw new InvalidOperationException("<zeebe:output> missing required 'target' attribute");
-
-        if (string.IsNullOrWhiteSpace(target))
-            throw new InvalidOperationException("<zeebe:output> 'target' is empty or whitespace-only");
-
-        if (!IdentifierRegex.IsMatch(target))
-            throw new InvalidOperationException(
-                $"<zeebe:output target=\"{target}\"> target must be a valid identifier (^[a-zA-Z_][a-zA-Z0-9_]*$)");
-
-        if (target == "__response")
-            throw new InvalidOperationException(
-                "<zeebe:output target=\"__response\"> is reserved — providers populate it during execution; output mapping cannot target it directly");
-
-        ValidateMappingSource(source, $"<zeebe:output target=\"{target}\">");
-
-        return new OutputMapping(source, target);
-    }
-
-    private static void ValidateMappingSource(string source, string errorPrefix)
-    {
-        if (string.IsNullOrEmpty(source))
-            throw new InvalidOperationException($"{errorPrefix} has empty 'source' attribute");
-
-        if (source[0] != '=')
-            return;
-
-        var expr = source.Substring(1);
-        if (expr.Length == 0)
-            throw new InvalidOperationException($"{errorPrefix} 'source' is bare '=' with no expression");
-
-        if (expr[0] == '"')
-        {
-            if (expr.Length < 2 || expr[expr.Length - 1] != '"')
-                throw new InvalidOperationException($"{errorPrefix} has unmatched quote in source: '{source}'");
-            return;
-        }
-
-        if (expr == "true" || expr == "false" || expr == "null") return;
-        if (long.TryParse(expr, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out _)) return;
-        if (double.TryParse(expr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _)) return;
-
-        var segments = expr.Split('.');
-        foreach (var seg in segments)
-        {
-            if (!IdentifierRegex.IsMatch(seg))
-                throw new InvalidOperationException(
-                    $"{errorPrefix} has invalid path segment '{seg}' in source: '{source}'");
-        }
-    }
 }

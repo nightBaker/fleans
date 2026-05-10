@@ -49,8 +49,8 @@ A minimal user task with required-output declarations:
                camunda:assignee="alice">
   <bpmn:extensionElements>
     <fleans:expectedOutputs>
-      <fleans:output name="approved" />
-      <fleans:output name="reviewComment" />
+      <fleans:expectedOutput name="approved" />
+      <fleans:expectedOutput name="reviewComment" />
     </fleans:expectedOutputs>
   </bpmn:extensionElements>
 </bpmn:userTask>
@@ -168,7 +168,7 @@ Variables passed to `complete` are merged into the enclosing variable scope befo
 <bpmn:userTask id="Approval" name="Approve request">
   <bpmn:extensionElements>
     <fleans:expectedOutputs>
-      <fleans:output name="approved" />
+      <fleans:expectedOutput name="approved" />
     </fleans:expectedOutputs>
   </bpmn:extensionElements>
 </bpmn:userTask>

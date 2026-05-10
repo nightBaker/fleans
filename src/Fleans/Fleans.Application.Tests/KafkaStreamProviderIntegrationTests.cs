@@ -1,3 +1,4 @@
+using Fleans.Application.Abstractions.Events;
 using Fleans.Domain.Events;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
@@ -20,7 +21,7 @@ public class KafkaStreamProviderIntegrationTests
         string.Equals(Environment.GetEnvironmentVariable("FLEANS_KAFKA_TESTS"), "1", StringComparison.Ordinal);
 
     private const string ProviderName = "StreamProvider";
-    private const string Namespace = "events";
+    private const string Namespace = WorkflowEventStreams.ExecuteScriptStreamNamespace;
 
     [TestMethod]
     public async Task Smoke_publish_then_receive_round_trips_via_kafka()

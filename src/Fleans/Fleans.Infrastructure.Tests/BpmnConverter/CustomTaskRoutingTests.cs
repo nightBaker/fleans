@@ -1,39 +1,26 @@
 using Fleans.Domain.Activities;
+using Fleans.Infrastructure.Bpmn;
 using System.Text;
+using System.Xml.Linq;
 
 namespace Fleans.Infrastructure.Tests.BpmnConverter;
 
 [TestClass]
 public class CustomTaskRoutingTests : BpmnConverterTestBase
 {
-    private const string ZeebeNs = "xmlns:zeebe=\"http://camunda.org/schema/zeebe/1.0\"";
-    private const string BpmnNs = "xmlns=\"http://www.omg.org/spec/BPMN/20100524/MODEL\"";
+    private static readonly XNamespace Bpmn   = BpmnNamespaces.Bpmn;
+    private static readonly XNamespace Zeebe  = BpmnNamespaces.Zeebe;
+    private static readonly XNamespace Fleans = BpmnNamespaces.Fleans;
 
-    private static string CreateBpmnWithCustomServiceTask(string taskType, string ioMappingXml = "")
+    private CustomTaskRoutingResolver _resolver = null!;
+
+    [TestInitialize]
+    public void SetupResolver()
     {
-        return $@"<?xml version=""1.0"" encoding=""UTF-8""?>
-<definitions {BpmnNs} {ZeebeNs}>
-  <process id=""wf"">
-    <startEvent id=""start"" />
-    <serviceTask id=""ct1"" type=""{taskType}"">
-      <extensionElements>
-        <zeebe:ioMapping>{ioMappingXml}</zeebe:ioMapping>
-      </extensionElements>
-    </serviceTask>
-    <endEvent id=""end"" />
-    <sequenceFlow id=""f1"" sourceRef=""start"" targetRef=""ct1"" />
-    <sequenceFlow id=""f2"" sourceRef=""ct1"" targetRef=""end"" />
-  </process>
-</definitions>";
+        _resolver = new CustomTaskRoutingResolver();
     }
 
-    private async Task<CustomTaskActivity> ParseSingleCustomTask(string taskType, string ioMappingXml)
-    {
-        var bpmn = CreateBpmnWithCustomServiceTask(taskType, ioMappingXml);
-        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmn)));
-        return workflow.Activities.OfType<CustomTaskActivity>().Single();
-    }
-
+    // Integration: verifies BpmnConverter creates TaskActivity when resolver returns null
     [TestMethod]
     public async Task ServiceTask_WithoutTypeAttribute_ParsesAsTaskActivity()
     {
@@ -44,49 +31,57 @@ public class CustomTaskRoutingTests : BpmnConverterTestBase
     }
 
     [TestMethod]
-    public async Task ServiceTask_WithTypeAttribute_ParsesAsCustomTaskActivity()
+    public void ResolveTaskType_WithTypeAttribute_ReturnsType()
     {
-        var ct = await ParseSingleCustomTask("rest-call", "");
-        Assert.AreEqual("rest-call", ct.TaskType);
-        Assert.AreEqual(0, ct.InputMappings.Count);
-        Assert.AreEqual(0, ct.OutputMappings.Count);
+        var el = new XElement(Bpmn + "serviceTask",
+            new XAttribute("id", "ct1"),
+            new XAttribute("type", "rest-call"));
+        Assert.AreEqual("rest-call", _resolver.ResolveTaskType(el));
     }
 
     [TestMethod]
-    public async Task ServiceTask_WithZeebeTaskDefinition_ParsesAsCustomTaskActivity()
+    public void ResolveTaskType_WithoutTypeAttribute_ReturnsNull()
     {
-        var bpmn = $@"<?xml version=""1.0"" encoding=""UTF-8""?>
-<definitions {BpmnNs} {ZeebeNs}>
-  <process id=""wf"">
-    <startEvent id=""start"" />
-    <serviceTask id=""ct1"">
-      <extensionElements>
-        <zeebe:taskDefinition type=""rest-call"" />
-      </extensionElements>
-    </serviceTask>
-    <endEvent id=""end"" />
-    <sequenceFlow id=""f1"" sourceRef=""start"" targetRef=""ct1"" />
-    <sequenceFlow id=""f2"" sourceRef=""ct1"" targetRef=""end"" />
-  </process>
-</definitions>";
-        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmn)));
-        var ct = workflow.Activities.OfType<CustomTaskActivity>().Single();
-        Assert.AreEqual("rest-call", ct.TaskType);
+        var el = new XElement(Bpmn + "serviceTask", new XAttribute("id", "ct1"));
+        Assert.IsNull(_resolver.ResolveTaskType(el));
     }
 
     [TestMethod]
-    public async Task ServiceTask_WithInputAndOutputMappings_ParsesBothLists()
+    public void ResolveTaskType_WithZeebeTaskDefinition_ReturnsType()
     {
-        var io = @"
-          <zeebe:input source=""=userId"" target=""user_id"" />
-          <zeebe:input source=""=&quot;literal&quot;"" target=""label"" />
-          <zeebe:output source=""=__response.body.id"" target=""created_id"" />";
-        var ct = await ParseSingleCustomTask("rest-call", io);
-        Assert.AreEqual(2, ct.InputMappings.Count);
-        Assert.AreEqual(1, ct.OutputMappings.Count);
-        Assert.AreEqual("user_id", ct.InputMappings[0].Target);
-        Assert.AreEqual("=userId", ct.InputMappings[0].Source);
-        Assert.AreEqual("created_id", ct.OutputMappings[0].Target);
+        var el = new XElement(Bpmn + "serviceTask",
+            new XAttribute("id", "ct1"),
+            new XElement(Bpmn + "extensionElements",
+                new XElement(Zeebe + "taskDefinition",
+                    new XAttribute("type", "rest-call"))));
+        Assert.AreEqual("rest-call", _resolver.ResolveTaskType(el));
+    }
+
+    [TestMethod]
+    public void ParseMappings_ParsesInputAndOutputLists()
+    {
+        var el = new XElement(Bpmn + "serviceTask",
+            new XAttribute("id", "ct1"),
+            new XElement(Bpmn + "extensionElements",
+                new XElement(Zeebe + "ioMapping",
+                    new XElement(Zeebe + "input",
+                        new XAttribute("source", "=userId"),
+                        new XAttribute("target", "user_id")),
+                    new XElement(Zeebe + "input",
+                        new XAttribute("source", "=\"literal\""),
+                        new XAttribute("target", "label")),
+                    new XElement(Zeebe + "output",
+                        new XAttribute("source", "=__response.body.id"),
+                        new XAttribute("target", "created_id")))));
+
+        var inputs = _resolver.ParseInputMappings(el);
+        var outputs = _resolver.ParseOutputMappings(el);
+
+        Assert.AreEqual(2, inputs.Count);
+        Assert.AreEqual(1, outputs.Count);
+        Assert.AreEqual("user_id", inputs[0].Target);
+        Assert.AreEqual("=userId", inputs[0].Source);
+        Assert.AreEqual("created_id", outputs[0].Target);
     }
 
     // ---- Output mapping deploy-time validation (9 scenarios) ----
@@ -101,12 +96,16 @@ public class CustomTaskRoutingTests : BpmnConverterTestBase
     [DataRow("=valid.path", "with-dash", DisplayName = "Output: hyphen in target")]
     [DataRow("=valid.path", "with space", DisplayName = "Output: space in target")]
     [DataRow("=valid.path", "__response", DisplayName = "Output: __response is reserved")]
-    public async Task DeployTime_RejectsMalformedOutputMapping(string source, string target)
+    public void DeployTime_RejectsMalformedOutputMapping(string source, string target)
     {
-        var io = $@"<zeebe:output source=""{System.Security.SecurityElement.Escape(source)}"" target=""{System.Security.SecurityElement.Escape(target)}"" />";
-        var bpmn = CreateBpmnWithCustomServiceTask("rest-call", io);
-        await Assert.ThrowsExactlyAsync<InvalidOperationException>(async () =>
-            await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmn))));
+        var el = new XElement(Bpmn + "serviceTask",
+            new XAttribute("id", "ct1"),
+            new XElement(Bpmn + "extensionElements",
+                new XElement(Zeebe + "ioMapping",
+                    new XElement(Zeebe + "output",
+                        new XAttribute("source", source),
+                        new XAttribute("target", target)))));
+        Assert.ThrowsExactly<InvalidOperationException>(() => _resolver.ParseOutputMappings(el));
     }
 
     // ---- Input mapping deploy-time validation (8 scenarios) ----
@@ -120,11 +119,55 @@ public class CustomTaskRoutingTests : BpmnConverterTestBase
     [DataRow("=valid.path", "", DisplayName = "Input: empty target")]
     [DataRow("=valid.path", "with-dash", DisplayName = "Input: hyphen in target")]
     [DataRow("=valid.path", "with space", DisplayName = "Input: space in target")]
-    public async Task DeployTime_RejectsMalformedInputMapping(string source, string target)
+    public void DeployTime_RejectsMalformedInputMapping(string source, string target)
     {
-        var io = $@"<zeebe:input source=""{System.Security.SecurityElement.Escape(source)}"" target=""{System.Security.SecurityElement.Escape(target)}"" />";
-        var bpmn = CreateBpmnWithCustomServiceTask("rest-call", io);
-        await Assert.ThrowsExactlyAsync<InvalidOperationException>(async () =>
-            await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmn))));
+        var el = new XElement(Bpmn + "serviceTask",
+            new XAttribute("id", "ct1"),
+            new XElement(Bpmn + "extensionElements",
+                new XElement(Zeebe + "ioMapping",
+                    new XElement(Zeebe + "input",
+                        new XAttribute("source", source),
+                        new XAttribute("target", target)))));
+        Assert.ThrowsExactly<InvalidOperationException>(() => _resolver.ParseInputMappings(el));
+    }
+
+    // ---- fleans:* companion cases (parser must accept either prefix with identical semantics) ----
+
+    [TestMethod]
+    public void ResolveTaskType_WithFleansTaskDefinition_ReturnsType()
+    {
+        var el = new XElement(Bpmn + "serviceTask",
+            new XAttribute("id", "ct1"),
+            new XElement(Bpmn + "extensionElements",
+                new XElement(Fleans + "taskDefinition",
+                    new XAttribute("type", "rest-call"))));
+        Assert.AreEqual("rest-call", _resolver.ResolveTaskType(el));
+    }
+
+    [TestMethod]
+    public void ParseMappings_WithFleansNamespace_ParsesInputAndOutputLists()
+    {
+        var el = new XElement(Bpmn + "serviceTask",
+            new XAttribute("id", "ct1"),
+            new XElement(Bpmn + "extensionElements",
+                new XElement(Fleans + "ioMapping",
+                    new XElement(Fleans + "input",
+                        new XAttribute("source", "=userId"),
+                        new XAttribute("target", "user_id")),
+                    new XElement(Fleans + "input",
+                        new XAttribute("source", "=\"literal\""),
+                        new XAttribute("target", "label")),
+                    new XElement(Fleans + "output",
+                        new XAttribute("source", "=__response.body.id"),
+                        new XAttribute("target", "created_id")))));
+
+        var inputs = _resolver.ParseInputMappings(el);
+        var outputs = _resolver.ParseOutputMappings(el);
+
+        Assert.AreEqual(2, inputs.Count);
+        Assert.AreEqual(1, outputs.Count);
+        Assert.AreEqual("user_id", inputs[0].Target);
+        Assert.AreEqual("=userId", inputs[0].Source);
+        Assert.AreEqual("created_id", outputs[0].Target);
     }
 }

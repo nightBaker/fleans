@@ -414,4 +414,46 @@ public class WorkflowExecutionProcessCommandsTests
         var spawned = events.OfType<ActivitySpawned>().Single();
         Assert.AreEqual(scopeId, spawned.ScopeId);
     }
+
+    // --- #497: Process* build-time throw paths ---
+    // All three cases below trigger the catch handler introduced in #497.
+    // A non-existent activityInstanceId causes GetActiveEntry to throw inside the
+    // Process* method; the catch uses FindEntry (nullable) which returns null, so
+    // FailActivity is skipped and no exception propagates to the caller.
+
+    [TestMethod]
+    public void ProcessCommands_StartChildWorkflowCommand_UnknownActivityInstanceId_DoesNotThrow()
+    {
+        // BuildChildInputVariables silently skips missing variables (TryGetValue).
+        // The realistic throw trigger is GetActiveEntry on a non-existent instance.
+        var callActivity = new CallActivity("call1", "childProcess", [], []);
+        var (execution, _, _) = CreateStartedExecution(extraActivities: [callActivity]);
+
+        var effects = execution.ProcessCommands(
+            [new StartChildWorkflowCommand(callActivity)], Guid.NewGuid());
+
+        Assert.AreEqual(0, effects.Count);
+    }
+
+    [TestMethod]
+    public void ProcessCommands_AddConditionsCommand_UnknownActivityInstanceId_DoesNotThrow()
+    {
+        var (execution, _, _) = CreateStartedExecution();
+
+        var effects = execution.ProcessCommands(
+            [new AddConditionsCommand(["seq1"], [])], Guid.NewGuid());
+
+        Assert.AreEqual(0, effects.Count);
+    }
+
+    [TestMethod]
+    public void ProcessCommands_EvaluateActivationConditionCommand_UnknownActivityInstanceId_DoesNotThrow()
+    {
+        var (execution, _, _) = CreateStartedExecution();
+
+        var effects = execution.ProcessCommands(
+            [new EvaluateActivationConditionCommand("= x > 0", 1)], Guid.NewGuid());
+
+        Assert.AreEqual(0, effects.Count);
+    }
 }

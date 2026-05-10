@@ -241,6 +241,10 @@ public class WorkflowExecution
             //    (the CancelEndEvent is already completed, so it is not in GetActiveActivities)
             effects.AddRange(CancelScopeChildren(txEntry.ActivityInstanceId, "CancelledByTransaction"));
 
+            // 3b. Abort any descendant TX compensation walks that are mid-flight (Scenario E)
+            foreach (var descendantScope in DescendantScopesWithActiveWalk(txEntry.ActivityInstanceId))
+                AbortCompensationWalk(descendantScope, "OuterTransactionCancellation");
+
             // 3. Initiate compensation walk — CancelEndEvent is the thrower, broadcast (null target)
             PerformCompensationWalk(cancelEntry.ActivityInstanceId, targetActivityRef: null);
         }
@@ -490,10 +494,6 @@ public class WorkflowExecution
                     // targeting the same activity are naturally no-op'd by the aggregate's
                     // "Each activity instance executes at most once" invariant
                     // (FailActivity's IsCompleted stale-guard).
-                    // The other three Process*-call cases (StartChildWorkflowCommand,
-                    // AddConditionsCommand, EvaluateActivationConditionCommand) are tracked
-                    // by #497 — their command records lack a direct ActivityId field and need
-                    // a reverse-lookup helper or a schema change to support the same pattern.
                     try
                     {
                         effects.Add(ProcessRegisterMessage(msg, activityInstanceId));
@@ -511,15 +511,45 @@ public class WorkflowExecution
                     break;
 
                 case StartChildWorkflowCommand startChild:
-                    effects.Add(ProcessStartChildWorkflow(startChild, activityInstanceId));
+                    // Note: ProcessStartChildWorkflow emits ChildWorkflowLinked before
+                    // BuildChildInputVariables runs; a throw leaves a phantom link entry.
+                    // This is acceptable — the child grain never receives StartWorkflow.
+                    try
+                    {
+                        effects.Add(ProcessStartChildWorkflow(startChild, activityInstanceId));
+                    }
+                    catch (Exception ex)
+                    {
+                        var activityId = _state.FindEntry(activityInstanceId)?.ActivityId;
+                        if (activityId is not null)
+                            effects.AddRange(FailActivity(activityId, activityInstanceId, ex));
+                    }
                     break;
 
                 case AddConditionsCommand conditions:
-                    effects.AddRange(ProcessAddConditions(conditions, activityInstanceId));
+                    try
+                    {
+                        effects.AddRange(ProcessAddConditions(conditions, activityInstanceId));
+                    }
+                    catch (Exception ex)
+                    {
+                        var activityId = _state.FindEntry(activityInstanceId)?.ActivityId;
+                        if (activityId is not null)
+                            effects.AddRange(FailActivity(activityId, activityInstanceId, ex));
+                    }
                     break;
 
                 case EvaluateActivationConditionCommand evalActivation:
-                    effects.Add(ProcessEvaluateActivationCondition(evalActivation, activityInstanceId));
+                    try
+                    {
+                        effects.Add(ProcessEvaluateActivationCondition(evalActivation, activityInstanceId));
+                    }
+                    catch (Exception ex)
+                    {
+                        var activityId = _state.FindEntry(activityInstanceId)?.ActivityId;
+                        if (activityId is not null)
+                            effects.AddRange(FailActivity(activityId, activityInstanceId, ex));
+                    }
                     break;
 
                 case RegisterUserTaskCommand regUserTask:
@@ -663,7 +693,7 @@ public class WorkflowExecution
     private void AdvanceCompensationWalk(Guid? scopeId, IWorkflowDefinition scopeDef,
         List<CompletedActivitySnapshot> orderedSnapshots)
     {
-        var walk = _state.ActiveCompensationWalk;
+        var walk = _state.GetCompensationWalk(scopeId);
         if (walk is null) return;
 
         // Find the next uncompensated snapshot that has a compensation handler
@@ -740,8 +770,8 @@ public class WorkflowExecution
     /// </summary>
     public Guid? AdvanceCompensationWalkIfHandlerCompleted()
     {
-        var walk = _state.ActiveCompensationWalk;
-        if (walk is null || walk.CurrentHandlerInstanceId is null) return null;
+        var walk = _state.GetActiveWalkWithHandler();
+        if (walk is null) return null;
 
         var handlerEntry = _state.FindEntry(walk.CurrentHandlerInstanceId.Value);
         if (handlerEntry is null || !handlerEntry.IsCompleted) return null;
@@ -795,7 +825,7 @@ public class WorkflowExecution
 
         // If the walk completed (no more handlers), the thrower was completed inside AdvanceCompensationWalk.
         // Return its instance ID so the caller can compute transitions for it.
-        if (_state.ActiveCompensationWalk is null)
+        if (_state.GetCompensationWalk(scopeId) is null)
             return walk.ThrowerActivityInstanceId;
 
         return null;
@@ -1382,14 +1412,34 @@ public class WorkflowExecution
 
                 if (isMultiInstanceHost)
                 {
-                    var miResult = _multiInstance.TryComplete(
-                        entry, (MultiInstanceActivity)activity, scopeEntries);
+                    var mi = (MultiInstanceActivity)activity;
+                    var miResult = _multiInstance.TryComplete(entry, mi, scopeEntries);
                     if (miResult.HostCompleted)
                     {
                         var boundaryEffects = BuildBoundaryUnsubscribeEffects(miResult.HostActivityId!, entry);
                         allEffects.AddRange(boundaryEffects);
                         allCompletedHostIds.Add(entry.ActivityInstanceId);
                         anyCompleted = true;
+                    }
+                    else if (mi.CompletionCondition is not null)
+                    {
+                        // Re-query scope after any sequential spawn to get current counts
+                        var freshScope = _state.GetEntriesInScope(entry.ActivityInstanceId);
+                        var activeCount = freshScope.Count(e => !e.IsCompleted);
+                        var completedCount = freshScope.Count(e => e.IsCompleted);
+                        if (activeCount > 0 && completedCount > 0)
+                        {
+                            allEffects.Add(new PublishDomainEventEffect(new EvaluateCompletionConditionEvent(
+                                _state.Id,
+                                _definition.WorkflowId,
+                                _definition.ProcessDefinitionId,
+                                entry.ActivityInstanceId,
+                                mi.ActivityId,
+                                mi.CompletionCondition,
+                                entry.MultiInstanceTotal ?? 0,
+                                activeCount,
+                                completedCount)));
+                        }
                     }
                     continue;
                 }
@@ -1626,6 +1676,51 @@ public class WorkflowExecution
             return [new CompleteUserTaskPersistenceEffect(activityInstanceId)];
         }
         return [];
+    }
+
+    // --- Multi-Instance Early Completion ---
+
+    public IReadOnlyList<IInfrastructureEffect> CompleteMultiInstanceEarly(
+        string hostActivityId, Guid hostActivityInstanceId)
+    {
+        var entry = _state.GetFirstActive(hostActivityId);
+        // Stale guard: host already completed (normal path or prior early-completion callback)
+        if (entry is null || entry.IsCompleted || entry.ActivityInstanceId != hostActivityInstanceId)
+            return [];
+
+        var effects = new List<IInfrastructureEffect>();
+
+        // Cancel remaining active child iterations
+        effects.AddRange(CancelScopeChildren(hostActivityInstanceId));
+
+        // Aggregate outputs from completed iterations only, then clean up child scopes
+        var mi = (MultiInstanceActivity)_definition.GetActivity(hostActivityId);
+        var scopeEntries = _state.GetEntriesInScope(hostActivityInstanceId).ToList();
+        var completedEntries = scopeEntries.Where(e => e.IsCompleted).ToList();
+
+        if (mi.OutputDataItem is not null && mi.OutputCollection is not null)
+        {
+            var outputList = completedEntries
+                .OrderBy(e => e.MultiInstanceIndex!.Value)
+                .Select(e => _state.GetVariable(e.VariablesId, mi.OutputDataItem))
+                .ToList();
+            var outputVars = new ExpandoObject();
+            ((IDictionary<string, object?>)outputVars)[mi.OutputCollection] = outputList;
+            Emit(new VariablesMerged(entry.VariablesId, outputVars));
+        }
+
+        var allChildVarIds = scopeEntries
+            .Where(e => e.MultiInstanceIndex.HasValue)
+            .Select(e => e.VariablesId)
+            .ToList();
+        if (allChildVarIds.Count > 0)
+            Emit(new VariableScopesRemoved(allChildVarIds));
+
+        Emit(new ActivityCompleted(entry.ActivityInstanceId, entry.VariablesId, new ExpandoObject()));
+
+        effects.AddRange(BuildBoundaryUnsubscribeEffects(hostActivityId, entry));
+
+        return effects;
     }
 
     // --- Condition Sequence Handling ---
@@ -2556,6 +2651,40 @@ public class WorkflowExecution
         return effects.AsReadOnly();
     }
 
+    private IEnumerable<Guid> DescendantScopesWithActiveWalk(Guid rootScopeId)
+    {
+        foreach (var scopeKey in _state.ActiveCompensationWalks.Keys)
+        {
+            if (scopeKey == Guid.Empty) continue;
+            if (IsDescendantOfScope(scopeKey, rootScopeId))
+                yield return scopeKey;
+        }
+    }
+
+    private bool IsDescendantOfScope(Guid childScopeId, Guid ancestorScopeId)
+    {
+        var entry = _state.FindEntry(childScopeId);
+        if (entry is null) return false;
+        if (entry.ScopeId == ancestorScopeId) return true;
+        if (!entry.ScopeId.HasValue) return false;
+        return IsDescendantOfScope(entry.ScopeId.Value, ancestorScopeId);
+    }
+
+    private void AbortCompensationWalk(Guid? scopeId, string reason)
+    {
+        var walk = _state.GetCompensationWalk(scopeId);
+        if (walk is null) return;
+
+        if (walk.CurrentHandlerInstanceId.HasValue)
+        {
+            var handlerEntry = _state.FindEntry(walk.CurrentHandlerInstanceId.Value);
+            if (handlerEntry is not null && !handlerEntry.IsCompleted && !handlerEntry.IsCancelled)
+                Emit(new ActivityCancelled(walk.CurrentHandlerInstanceId.Value, "CompensationHandlerAborted"));
+        }
+
+        Emit(new CompensationWalkAborted(scopeId, reason));
+    }
+
     /// <summary>
     /// Recursively cancels all active entries within a scope (and their nested scope children).
     /// </summary>
@@ -3003,20 +3132,23 @@ public class WorkflowExecution
                 break;
             case CompensationWalkStarted e:
                 if (e.HandlerCount > 0)
-                    _state.StartCompensationWalk(new CompensationWalkState(e.ScopeId, e.TargetActivityRef, e.ThrowerActivityInstanceId));
+                    _state.StartCompensationWalk(e.ScopeId, new CompensationWalkState(e.ScopeId, e.TargetActivityRef, e.ThrowerActivityInstanceId));
                 break;
             case CompensationHandlerSpawned e:
-                _state.SetCompensationHandlerInstanceId(e.HandlerInstanceId);
+                _state.SetCompensationHandlerInstanceId(e.ScopeId, e.HandlerInstanceId);
                 _state.MarkCurrentHandlerEntry(e.HandlerInstanceId);
                 break;
             case CompensationEntryMarkedCompensated e:
                 _state.MarkSnapshotCompensated(e.ActivityDefinitionId, e.ScopeId);
                 break;
-            case CompensationWalkCompleted:
-                _state.ClearCompensationWalk();
+            case CompensationWalkCompleted e:
+                _state.ClearCompensationWalk(e.ScopeId);
                 break;
             case CompensationWalkFailed:
                 // Walk state intentionally NOT cleared — preserved for observability
+                break;
+            case CompensationWalkAborted e:
+                _state.ClearCompensationWalk(e.ScopeId);
                 break;
             case TransactionOutcomeSet e:
                 _state.TransactionOutcomes[e.TransactionInstanceId] =

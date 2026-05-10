@@ -227,6 +227,11 @@ public partial class WorkflowInstance
         Message = "User task cancel attempt: ActivityInstanceId={ActivityInstanceId}, Reason={Reason}")]
     private partial void LogUserTaskCancelAttempt(Guid activityInstanceId, string? reason);
 
+    // Multi-instance early completion (EventId 1080)
+    [LoggerMessage(EventId = 1080, Level = LogLevel.Information,
+        Message = "Multi-instance early completion: HostActivityInstanceId={HostActivityInstanceId}, HostActivityId={HostActivityId}")]
+    private partial void LogMultiInstanceEarlyCompletion(Guid hostActivityInstanceId, string hostActivityId);
+
     // User task domain events (EventId 3024-3029)
     [LoggerMessage(EventId = 3024, Level = LogLevel.Information,
         Message = "User task registered: ActivityInstanceId={ActivityInstanceId}, Assignee={Assignee}")]
@@ -341,6 +346,14 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1116, Level = LogLevel.Error,
         Message = "Compensation handler failed: HandlerInstanceId={HandlerInstanceId}, ErrorCode={ErrorCode}, ErrorMessage={ErrorMessage}")]
     private partial void LogCompensationHandlerFailed(Guid handlerInstanceId, string errorCode, string errorMessage);
+
+    [LoggerMessage(EventId = 1117, Level = LogLevel.Warning,
+        Message = "Compensation walk for scope {ScopeId} aborted: {Reason}")]
+    private partial void LogCompensationWalkAborted(Guid? scopeId, string reason);
+
+    [LoggerMessage(EventId = 1118, Level = LogLevel.Information,
+        Message = "Aborting {Count} descendant compensation walk(s) for outer transaction {TxInstanceId}")]
+    private partial void LogAbortingDescendantWalks(int count, Guid txInstanceId);
 
     // Complex gateway lifecycle (EventId 1080-1089)
     [LoggerMessage(EventId = 1080, Level = LogLevel.Debug,
