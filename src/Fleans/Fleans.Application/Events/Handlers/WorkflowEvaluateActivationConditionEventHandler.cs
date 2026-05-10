@@ -11,7 +11,7 @@ using Orleans.Streams;
 
 namespace Fleans.Application.Events.Handlers;
 
-[ImplicitStreamSubscription(WorkflowEventsPublisher.StreamNameSpace)]
+[ImplicitStreamSubscription(WorkflowEventsPublisher.EvaluateActivationConditionStreamNamespace)]
 [CorePlacement]
 public partial class WorkflowEvaluateActivationConditionEventHandler : Grain, IWorkflowEvaluateActivationConditionEventHandler, IAsyncObserver<EvaluateActivationConditionEvent>
 {
@@ -29,7 +29,7 @@ public partial class WorkflowEvaluateActivationConditionEventHandler : Grain, IW
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
         var streamProvider = this.GetStreamProvider(WorkflowEventsPublisher.StreamProvider);
-        var streamId = StreamId.Create(WorkflowEventsPublisher.StreamNameSpace, nameof(EvaluateActivationConditionEvent));
+        var streamId = StreamId.Create(WorkflowEventsPublisher.EvaluateActivationConditionStreamNamespace, nameof(EvaluateActivationConditionEvent));
         var stream = streamProvider.GetStream<EvaluateActivationConditionEvent>(streamId);
 
         var handles = await stream.GetAllSubscriptionHandles();
