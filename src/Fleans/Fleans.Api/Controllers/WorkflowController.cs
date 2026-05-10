@@ -268,7 +268,11 @@ namespace Fleans.Api.Controllers
 
             var task = await _workflowQueryService.GetUserTask(activityInstanceId);
             if (task == null)
+            {
+                if (await _workflowQueryService.UserTaskExists(activityInstanceId))
+                    return Ok();
                 return NotFound(new ErrorResponse($"User task '{activityInstanceId}' not found"));
+            }
 
             LogUserTaskFail(activityInstanceId, request.ErrorCode);
             await _commandService.FailUserTask(
@@ -282,7 +286,11 @@ namespace Fleans.Api.Controllers
         {
             var task = await _workflowQueryService.GetUserTask(activityInstanceId);
             if (task == null)
+            {
+                if (await _workflowQueryService.UserTaskExists(activityInstanceId))
+                    return Ok();
                 return NotFound(new ErrorResponse($"User task '{activityInstanceId}' not found"));
+            }
 
             LogUserTaskCancel(activityInstanceId);
             await _commandService.CancelUserTask(task.WorkflowInstanceId, activityInstanceId, request?.Reason);
