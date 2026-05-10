@@ -1382,14 +1382,34 @@ public class WorkflowExecution
 
                 if (isMultiInstanceHost)
                 {
-                    var miResult = _multiInstance.TryComplete(
-                        entry, (MultiInstanceActivity)activity, scopeEntries);
+                    var mi = (MultiInstanceActivity)activity;
+                    var miResult = _multiInstance.TryComplete(entry, mi, scopeEntries);
                     if (miResult.HostCompleted)
                     {
                         var boundaryEffects = BuildBoundaryUnsubscribeEffects(miResult.HostActivityId!, entry);
                         allEffects.AddRange(boundaryEffects);
                         allCompletedHostIds.Add(entry.ActivityInstanceId);
                         anyCompleted = true;
+                    }
+                    else if (mi.CompletionCondition is not null)
+                    {
+                        // Re-query scope after any sequential spawn to get current counts
+                        var freshScope = _state.GetEntriesInScope(entry.ActivityInstanceId);
+                        var activeCount = freshScope.Count(e => !e.IsCompleted);
+                        var completedCount = freshScope.Count(e => e.IsCompleted);
+                        if (activeCount > 0 && completedCount > 0)
+                        {
+                            allEffects.Add(new PublishDomainEventEffect(new EvaluateCompletionConditionEvent(
+                                _state.Id,
+                                _definition.WorkflowId,
+                                _definition.ProcessDefinitionId,
+                                entry.ActivityInstanceId,
+                                mi.ActivityId,
+                                mi.CompletionCondition,
+                                entry.MultiInstanceTotal ?? 0,
+                                activeCount,
+                                completedCount)));
+                        }
                     }
                     continue;
                 }
@@ -1588,6 +1608,51 @@ public class WorkflowExecution
             return [new CompleteUserTaskPersistenceEffect(activityInstanceId)];
         }
         return [];
+    }
+
+    // --- Multi-Instance Early Completion ---
+
+    public IReadOnlyList<IInfrastructureEffect> CompleteMultiInstanceEarly(
+        string hostActivityId, Guid hostActivityInstanceId)
+    {
+        var entry = _state.GetFirstActive(hostActivityId);
+        // Stale guard: host already completed (normal path or prior early-completion callback)
+        if (entry is null || entry.IsCompleted || entry.ActivityInstanceId != hostActivityInstanceId)
+            return [];
+
+        var effects = new List<IInfrastructureEffect>();
+
+        // Cancel remaining active child iterations
+        effects.AddRange(CancelScopeChildren(hostActivityInstanceId));
+
+        // Aggregate outputs from completed iterations only, then clean up child scopes
+        var mi = (MultiInstanceActivity)_definition.GetActivity(hostActivityId);
+        var scopeEntries = _state.GetEntriesInScope(hostActivityInstanceId).ToList();
+        var completedEntries = scopeEntries.Where(e => e.IsCompleted).ToList();
+
+        if (mi.OutputDataItem is not null && mi.OutputCollection is not null)
+        {
+            var outputList = completedEntries
+                .OrderBy(e => e.MultiInstanceIndex!.Value)
+                .Select(e => _state.GetVariable(e.VariablesId, mi.OutputDataItem))
+                .ToList();
+            var outputVars = new ExpandoObject();
+            ((IDictionary<string, object?>)outputVars)[mi.OutputCollection] = outputList;
+            Emit(new VariablesMerged(entry.VariablesId, outputVars));
+        }
+
+        var allChildVarIds = scopeEntries
+            .Where(e => e.MultiInstanceIndex.HasValue)
+            .Select(e => e.VariablesId)
+            .ToList();
+        if (allChildVarIds.Count > 0)
+            Emit(new VariableScopesRemoved(allChildVarIds));
+
+        Emit(new ActivityCompleted(entry.ActivityInstanceId, entry.VariablesId, new ExpandoObject()));
+
+        effects.AddRange(BuildBoundaryUnsubscribeEffects(hostActivityId, entry));
+
+        return effects;
     }
 
     // --- Condition Sequence Handling ---

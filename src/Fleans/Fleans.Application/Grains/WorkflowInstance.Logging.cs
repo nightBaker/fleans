@@ -219,6 +219,11 @@ public partial class WorkflowInstance
         Message = "User task complete attempt: ActivityInstanceId={ActivityInstanceId}, UserId={UserId}")]
     private partial void LogUserTaskCompleteAttempt(Guid activityInstanceId, string userId);
 
+    // Multi-instance early completion (EventId 1080)
+    [LoggerMessage(EventId = 1080, Level = LogLevel.Information,
+        Message = "Multi-instance early completion: HostActivityInstanceId={HostActivityInstanceId}, HostActivityId={HostActivityId}")]
+    private partial void LogMultiInstanceEarlyCompletion(Guid hostActivityInstanceId, string hostActivityId);
+
     // User task domain events (EventId 3024-3029)
     [LoggerMessage(EventId = 3024, Level = LogLevel.Information,
         Message = "User task registered: ActivityInstanceId={ActivityInstanceId}, Assignee={Assignee}")]

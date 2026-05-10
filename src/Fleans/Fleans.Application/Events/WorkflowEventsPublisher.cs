@@ -63,6 +63,11 @@ public partial class WorkflowEventsPublisher : Grain, IEventPublisher
                 var customTaskStream = _streamProvider.GetStream<ExecuteCustomTaskEvent>(customTaskStreamId);
                 await customTaskStream.OnNextAsync(executeCustomTaskEvent);
                 break;
+            case EvaluateCompletionConditionEvent evaluateCompletionConditionEvent:
+                var completionStreamId = StreamId.Create(WorkflowEventStreams.EvaluateCompletionConditionStreamNamespace, nameof(EvaluateCompletionConditionEvent));
+                var completionStream = _streamProvider.GetStream<EvaluateCompletionConditionEvent>(completionStreamId);
+                await completionStream.OnNextAsync(evaluateCompletionConditionEvent);
+                break;
             default:
                 var defaultStreamId = StreamId.Create(WorkflowEventStreams.StreamNameSpace, nameof(IDomainEvent));
                 var defaultStream = _streamProvider.GetStream<IDomainEvent>(defaultStreamId);

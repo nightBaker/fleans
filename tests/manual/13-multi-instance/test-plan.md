@@ -72,3 +72,29 @@ Tests that when a multi-instance iteration fails, remaining sibling iterations a
 - [ ] MI host entry is completed (failed)
 - [ ] No active activities remain
 - [ ] Workflow does not proceed to the next activity after the MI
+
+---
+
+## Scenario 13e: Completion condition — 1-of-N early exit
+
+Tests that a `completionCondition` short-circuits a parallel multi-instance loop before all instances complete.
+
+### Prerequisites
+
+Deploy `completion-condition-1-of-N.bpmn`:
+- 3 parallel iterations over `approvers = ["alice","bob","charlie"]`
+- Each iteration produces `approval = "<approver> approved"`
+- `completionCondition` is `_context.nrOfCompletedInstances >= 1`
+
+### Steps
+
+1. Deploy `completion-condition-1-of-N.bpmn`
+2. Start an instance with variables `{ "approvers": ["alice","bob","charlie"] }`
+3. Wait for the first iteration to complete
+
+### Expected
+
+- [ ] Instance status: Completed (not stuck waiting for all 3 approvers)
+- [ ] Only 1 approval appears in the output — the remaining 2 iterations are cancelled before they start or are cancelled mid-flight
+- [ ] Workflow proceeds to the end event
+- [ ] `_context.nrOfCompletedInstances` referenced in the condition resolves to `1` when the condition fires

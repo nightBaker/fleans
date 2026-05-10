@@ -31,4 +31,10 @@ public static class WorkflowEventStreams
     /// subscriber for that stream. Dropping on the floor." on each cross-event delivery.
     /// </summary>
     public const string ExecuteCustomTaskStreamNamespace = "events.ExecuteCustomTaskEvent";
+
+    /// <summary>
+    /// Dedicated namespace for <c>EvaluateCompletionConditionEvent</c>. Scoped separately
+    /// so the handler grain is only activated on multi-instance completion-condition events.
+    /// </summary>
+    public const string EvaluateCompletionConditionStreamNamespace = "events.EvaluateCompletionConditionEvent";
 }
