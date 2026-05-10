@@ -105,7 +105,7 @@ Every iteration's child scope is seeded with `_context.loopCounter` set to the *
 - Parallel and sequential first iteration: `Fleans.Domain/Aggregates/WorkflowExecution.cs:855` (inside `ProcessSpawnActivity`, `iterDict["loopCounter"] = spawn.MultiInstanceIndex!.Value;`).
 - Sequential subsequent iterations: `Fleans.Domain/Aggregates/Services/MultiInstanceCoordinator.cs:118` (inside `SpawnNextSequentialIteration`, `iterDict["loopCounter"] = nextIndex;`).
 
-`loopCounter` is the **only** implicit iteration variable Fleans exposes today. The BPMN-spec variables `nrOfInstances`, `nrOfActiveInstances`, and `nrOfCompletedInstances` are not bound — see *Limitations*.
+`loopCounter` and the three BPMN-spec aggregate variables — `nrOfInstances`, `nrOfActiveInstances`, `nrOfCompletedInstances` — are available on the multi-instance host scope. Access them via `_context.nrOfCompletedInstances` etc. in scripts and condition expressions.
 
 ## Loop-variable scope
 
@@ -137,26 +137,39 @@ If you need fan-out with transactional semantics, wrap individual transactions i
 
 Event sub-processes also do not support multi-instance — by BPMN spec, not a Fleans limitation. The converter explicitly skips `TryWrapMultiInstance` for event sub-processes (`BpmnConverter.cs:547-548`).
 
+## Completion condition
+
+`<bpmn:completionCondition>` is fully supported. It lets you finish a multi-instance activity early — before all spawned iterations complete:
+
+```xml
+<bpmn:multiInstanceLoopCharacteristics zeebe:collection="approvers" zeebe:elementVariable="approver">
+  <bpmn:completionCondition>_context.nrOfCompletedInstances >= 1</bpmn:completionCondition>
+</bpmn:multiInstanceLoopCharacteristics>
+```
+
+**Semantics:** after each iteration completes, Fleans evaluates the condition against the current aggregate counts (`nrOfInstances`, `nrOfActiveInstances`, `nrOfCompletedInstances`). If the condition returns `true`, all remaining active iterations are cancelled and the multi-instance host completes with the outputs aggregated from the iterations that finished.
+
+**Expression syntax:** use `_context.<variable>` (DynamicExpresso convention):
+- `_context.nrOfCompletedInstances >= 1` — 1-of-N approval
+- `_context.nrOfCompletedInstances >= 2` — majority (2-of-3)
+- `_context.nrOfActiveInstances == 0` — equivalent to "wait for all" (same as no condition)
+
+**Output collection:** only outputs from *completed* iterations are included in `outputCollection`. Cancelled iterations contribute nothing.
+
 ## Limitations
 
-:::caution
-Two BPMN multi-instance features are not implemented today. Both are tracked under [#470 — `[feat] Honor <completionCondition> + nrOf* loop variables in multi-instance activities`](https://github.com/nightBaker/fleans/issues/470).
-
-- **`<completionCondition>` is not honoured.** The classic "1-of-N approval" pattern — finish the multi-instance activity as soon as a predicate over the completed iterations becomes true — is not supported. The element parses without error in some BPMN tools, but Fleans's `MultiInstanceCoordinator.TryComplete` (`Fleans.Domain/Aggregates/Services/MultiInstanceCoordinator.cs:34`) only completes when **all** spawned iterations have completed. There is no early-exit predicate today.
-- **Only `loopCounter` is exposed.** The BPMN-spec variables `nrOfInstances`, `nrOfActiveInstances`, and `nrOfCompletedInstances` are **not** bound on iteration scopes. Scripts that reference them will see `null`.
-
-If you need 1-of-N or N-of-M semantics today, the workaround is to model the gate explicitly: have each iteration write to a shared variable or send a message, and place a downstream gateway / event-based gateway that reacts to the count. Subscribe to issue [#470](https://github.com/nightBaker/fleans/issues/470) for native `<completionCondition>` support.
-:::
+- **Transactions reject multi-instance at parse time.** `<transaction>` elements cannot carry `<multiInstanceLoopCharacteristics>` — the converter throws an explicit error. Wrap individual transactions in an outer multi-instance subprocess instead.
+- **Event sub-processes cannot be multi-instance** — by BPMN spec, not a Fleans limitation.
 
 ## Try it locally
 
-The three fixtures in `tests/manual/13-multi-instance/` are runnable end-to-end against a freshly-started Aspire stack:
+The fixtures in `tests/manual/13-multi-instance/` are runnable end-to-end against a freshly-started Aspire stack:
 
 1. `dotnet run --project src/Fleans/Fleans.Aspire` (from the repo root).
 2. Open the [Web UI](https://localhost:7124) and navigate to **Editor**.
-3. Paste in one of the three `.bpmn` files (`parallel-cardinality.bpmn`, `parallel-collection.bpmn`, `sequential-collection.bpmn`) and click **Deploy**.
-4. From the **Workflows** page, **Start** the deployed process.
-5. Open the resulting instance and confirm that `results` resolves to the expected array per `tests/manual/13-multi-instance/test-plan.md`.
+3. Paste in one of the `.bpmn` files and click **Deploy**.
+4. From the **Workflows** page, **Start** the deployed process (set `approvers: ["alice","bob","charlie"]` for `completion-condition-1-of-N.bpmn`).
+5. Open the resulting instance and confirm the expected state per `tests/manual/13-multi-instance/test-plan.md`.
 
 ## Related guides
 

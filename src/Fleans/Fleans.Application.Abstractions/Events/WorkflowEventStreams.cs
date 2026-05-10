@@ -40,4 +40,10 @@ public static class WorkflowEventStreams
 
     /// <summary>Dedicated namespace for <c>EvaluateActivationConditionEvent</c>.</summary>
     public const string EvaluateActivationConditionStreamNamespace = "events.EvaluateActivationConditionEvent";
+
+    /// <summary>
+    /// Dedicated namespace for <c>EvaluateCompletionConditionEvent</c>. Scoped separately
+    /// so the handler grain is only activated on multi-instance completion-condition events.
+    /// </summary>
+    public const string EvaluateCompletionConditionStreamNamespace = "events.EvaluateCompletionConditionEvent";
 }

@@ -47,6 +47,8 @@ public interface IWorkflowInstanceGrain : IGrainWithGuidKey, IWorkflowExecutionC
         Guid childWorkflowInstanceId, string hostActivityId,
         string escalationCode, ExpandoObject variables);
 
+    Task CompleteMultiInstanceEarly(string hostActivityId, Guid hostActivityInstanceId);
+
     // User task lifecycle
     Task ClaimUserTask(Guid activityInstanceId, string userId);
     Task UnclaimUserTask(Guid activityInstanceId);

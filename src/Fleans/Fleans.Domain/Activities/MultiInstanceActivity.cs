@@ -13,6 +13,7 @@ public record MultiInstanceActivity : BoundarableActivity
     [Id(5)] public string? InputDataItem { get; init; }
     [Id(6)] public string? OutputCollection { get; init; }
     [Id(7)] public string? OutputDataItem { get; init; }
+    [Id(8)] public string? CompletionCondition { get; init; }
 
     public MultiInstanceActivity(
         string ActivityId,
@@ -22,7 +23,8 @@ public record MultiInstanceActivity : BoundarableActivity
         string? InputCollection = null,
         string? InputDataItem = null,
         string? OutputCollection = null,
-        string? OutputDataItem = null) : base(ActivityId)
+        string? OutputDataItem = null,
+        string? CompletionCondition = null) : base(ActivityId)
     {
         if (LoopCardinality is null && InputCollection is null)
             throw new ArgumentException("MultiInstanceActivity must have either LoopCardinality or InputCollection");
@@ -36,6 +38,7 @@ public record MultiInstanceActivity : BoundarableActivity
         this.InputDataItem = InputDataItem;
         this.OutputCollection = OutputCollection;
         this.OutputDataItem = OutputDataItem;
+        this.CompletionCondition = CompletionCondition;
     }
 
     internal override async Task<List<IExecutionCommand>> ExecuteAsync(

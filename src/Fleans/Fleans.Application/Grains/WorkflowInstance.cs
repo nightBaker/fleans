@@ -578,6 +578,20 @@ public partial class WorkflowInstance :
         await ProcessPendingEvents();
     }
 
+    public async Task CompleteMultiInstanceEarly(string hostActivityId, Guid hostActivityInstanceId)
+    {
+        await EnsureExecution();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+        LogMultiInstanceEarlyCompletion(hostActivityInstanceId, hostActivityId);
+
+        var effects = _execution!.CompleteMultiInstanceEarly(hostActivityId, hostActivityInstanceId);
+        await PerformEffects(effects);
+        await ResolveExternalCompletions();
+        await RunExecutionLoop();
+        await ProcessPendingEvents();
+    }
+
     // ── State Facade ────────────────────────────────────────────────────
 
     public ValueTask<object?> GetVariable(Guid variablesId, string variableName)

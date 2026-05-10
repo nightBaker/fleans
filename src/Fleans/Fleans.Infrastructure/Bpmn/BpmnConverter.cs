@@ -1136,6 +1136,8 @@ public partial class BpmnConverter : IBpmnConverter
         var outputDataItem = BpmnNamespaces.GetExtensionAttributeValue(miElement, "outputElement")
             ?? miElement.Attribute("outputElement")?.Value;
 
+        var completionCondition = miElement.Element(Bpmn + "completionCondition")?.Value?.Trim();
+
         return new MultiInstanceActivity(
             innerActivity.ActivityId,
             innerActivity,
@@ -1144,7 +1146,8 @@ public partial class BpmnConverter : IBpmnConverter
             inputCollection,
             inputDataItem,
             outputCollection,
-            outputDataItem);
+            outputDataItem,
+            completionCondition);
     }
 
     private string GetId(XElement element)
