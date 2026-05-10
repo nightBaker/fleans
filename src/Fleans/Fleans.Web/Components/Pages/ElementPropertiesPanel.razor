@@ -646,6 +646,7 @@
     private bool HasMessage => Element.HasMessageDefinition;
     private bool HasSignal => Element.HasSignalDefinition;
     private bool HasError => Element.HasErrorDefinition;
+    private bool HasCancel => Element.HasCancelDefinition;
     private bool IsBoundaryEvent => Element.Type == "bpmn:BoundaryEvent";
 
     private static readonly Dictionary<string, string> TimerTypesAll = new()
@@ -902,6 +903,15 @@
                 _ => Element.Type.Replace("bpmn:", "")
             };
         }
+        if (HasCancel)
+        {
+            return Element.Type switch
+            {
+                "bpmn:EndEvent" => "Cancel End Event",
+                "bpmn:BoundaryEvent" => "Cancel Boundary Event",
+                _ => Element.Type.Replace("bpmn:", "")
+            };
+        }
         return Element.Type switch
         {
             "bpmn:StartEvent" => "Start Event",
@@ -945,6 +955,7 @@
         public string SignalName { get; set; } = "";
         public bool HasErrorDefinition { get; set; }
         public string ErrorCode { get; set; } = "";
+        public bool HasCancelDefinition { get; set; }
         public bool IsInterrupting { get; set; } = true;
         public string Assignee { get; set; } = "";
         public List<string> CandidateGroups { get; set; } = [];
