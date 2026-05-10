@@ -1,0 +1,245 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+             id="Definitions_nested_tx_cancel_paths"
+             targetNamespace="http://bpmn.io/schema/bpmn">
+
+  <!--
+    Fixture for test 46: Nested Transaction Sub-Process cancel paths.
+    Covers Scenarios A (both TX commit), B (inner CancelEndEvent, outer commits),
+    C (outer CancelEndEvent after inner commits), F (cross-reference nested-tx-hazard.bpmn).
+    Scenarios D/E are covered by domain tests (NestedTxPhaseBDomainTests, NestedTxPhaseCDomainTests).
+
+    Message-driven design — all four messages use empty correlationKey (broadcast):
+      resume-inner          → inner TX completes normally (Scenarios A, C)
+      trigger-inner-cancel  → inner TX fires CancelEndEvent (Scenario B)
+      trigger-outer-complete→ outer TX ends normally (Scenarios A, B)
+      trigger-outer-cancel  → outer TX fires CancelEndEvent (Scenario C)
+  -->
+
+  <process id="nested-tx-cancel-paths" isExecutable="true">
+
+    <startEvent id="start" name="Start" />
+
+    <!-- ═══════════════════════════════════════════
+         Outer Transaction
+         ═══════════════════════════════════════════ -->
+    <transaction id="outer-tx" name="Outer TX">
+      <startEvent id="outer-start" />
+
+      <!-- ─────────────────────────────────────────
+           Inner Transaction
+           ───────────────────────────────────────── -->
+      <transaction id="inner-tx" name="Inner TX">
+        <startEvent id="inner-start" />
+
+        <!-- Compensable task — records completion, can be rolled back -->
+        <scriptTask id="inner-work" name="Inner Work" scriptFormat="csharp">
+          <script>_context.innerDone = true;</script>
+        </scriptTask>
+
+        <!-- Compensation handler for inner-work -->
+        <scriptTask id="inner-compensate" name="Inner Compensate" scriptFormat="csharp">
+          <script>_context.innerCompensated = true;</script>
+        </scriptTask>
+
+        <!-- After inner-work: choose normal or cancel path -->
+        <eventBasedGateway id="inner-decision" name="Inner Decision" />
+
+        <!-- Branch A: normal inner completion -->
+        <intermediateCatchEvent id="resume-inner-catch" name="Resume Inner">
+          <messageEventDefinition messageRef="msgResumeInner" />
+        </intermediateCatchEvent>
+        <endEvent id="inner-end" name="Inner End" />
+
+        <!-- Branch B: inner cancels -->
+        <intermediateCatchEvent id="trigger-inner-cancel-catch" name="Trigger Inner Cancel">
+          <messageEventDefinition messageRef="msgTriggerInnerCancel" />
+        </intermediateCatchEvent>
+        <endEvent id="inner-cancel-end" name="Inner Cancel">
+          <cancelEventDefinition />
+        </endEvent>
+
+        <!-- Compensation boundary on inner-work -->
+        <boundaryEvent id="inner-compensate-boundary" attachedToRef="inner-work" cancelActivity="false">
+          <compensateEventDefinition />
+        </boundaryEvent>
+
+        <sequenceFlow id="isf1" sourceRef="inner-start" targetRef="inner-work" />
+        <sequenceFlow id="isf2" sourceRef="inner-work" targetRef="inner-decision" />
+        <sequenceFlow id="isf3" sourceRef="inner-decision" targetRef="resume-inner-catch" />
+        <sequenceFlow id="isf4" sourceRef="resume-inner-catch" targetRef="inner-end" />
+        <sequenceFlow id="isf5" sourceRef="inner-decision" targetRef="trigger-inner-cancel-catch" />
+        <sequenceFlow id="isf6" sourceRef="trigger-inner-cancel-catch" targetRef="inner-cancel-end" />
+
+        <!-- Compensation association: boundary → handler (not a sequence flow) -->
+        <association id="ca-inner-compensate" associationDirection="One"
+                     sourceRef="inner-compensate-boundary" targetRef="inner-compensate" />
+      </transaction>
+
+      <!-- Cancel boundary on inner-tx (fires when inner TX cancels) -->
+      <boundaryEvent id="inner-tx-cancel-boundary" attachedToRef="inner-tx" cancelActivity="true">
+        <cancelEventDefinition />
+      </boundaryEvent>
+
+      <!-- Merge both inner-tx exit paths before outer decision -->
+      <exclusiveGateway id="join-after-inner" name="Join After Inner" gatewayDirection="Converging" />
+
+      <!-- Outer decision: normal completion vs cancel -->
+      <eventBasedGateway id="outer-decision" name="Outer Decision" />
+
+      <!-- Branch A: outer completes normally -->
+      <intermediateCatchEvent id="trigger-outer-complete-catch" name="Trigger Outer Complete">
+        <messageEventDefinition messageRef="msgTriggerOuterComplete" />
+      </intermediateCatchEvent>
+      <endEvent id="outer-end" name="Outer End" />
+
+      <!-- Branch B: outer cancels -->
+      <intermediateCatchEvent id="trigger-outer-cancel-catch" name="Trigger Outer Cancel">
+        <messageEventDefinition messageRef="msgTriggerOuterCancel" />
+      </intermediateCatchEvent>
+      <endEvent id="outer-cancel-end" name="Outer Cancel">
+        <cancelEventDefinition />
+      </endEvent>
+
+      <sequenceFlow id="osf1" sourceRef="outer-start" targetRef="inner-tx" />
+      <sequenceFlow id="osf2" sourceRef="inner-tx" targetRef="join-after-inner" />
+      <sequenceFlow id="osf3" sourceRef="inner-tx-cancel-boundary" targetRef="join-after-inner" />
+      <sequenceFlow id="osf4" sourceRef="join-after-inner" targetRef="outer-decision" />
+      <sequenceFlow id="osf5" sourceRef="outer-decision" targetRef="trigger-outer-complete-catch" />
+      <sequenceFlow id="osf6" sourceRef="trigger-outer-complete-catch" targetRef="outer-end" />
+      <sequenceFlow id="osf7" sourceRef="outer-decision" targetRef="trigger-outer-cancel-catch" />
+      <sequenceFlow id="osf8" sourceRef="trigger-outer-cancel-catch" targetRef="outer-cancel-end" />
+    </transaction>
+
+    <!-- Cancel boundary on outer-tx → recovery flow -->
+    <boundaryEvent id="outer-tx-cancel-boundary" attachedToRef="outer-tx" cancelActivity="true">
+      <cancelEventDefinition />
+    </boundaryEvent>
+    <endEvent id="cancel-recovery-end" name="Cancelled End" />
+
+    <!-- Error boundary on outer-tx (errorCode 503 = Hazard cascade from inner TX) -->
+    <boundaryEvent id="outer-tx-error-boundary" attachedToRef="outer-tx" cancelActivity="true">
+      <errorEventDefinition errorRef="hazardError" />
+    </boundaryEvent>
+    <endEvent id="hazard-recovery-end" name="Hazard End">
+      <errorEventDefinition />
+    </endEvent>
+
+    <endEvent id="process-end" name="Process End" />
+
+    <sequenceFlow id="sf1" sourceRef="start" targetRef="outer-tx" />
+    <sequenceFlow id="sf2" sourceRef="outer-tx" targetRef="process-end" />
+    <sequenceFlow id="sf3" sourceRef="outer-tx-cancel-boundary" targetRef="cancel-recovery-end" />
+    <sequenceFlow id="sf4" sourceRef="outer-tx-error-boundary" targetRef="hazard-recovery-end" />
+  </process>
+
+  <!-- Messages (all use empty correlationKey — broadcast for single-instance manual tests) -->
+  <message id="msgResumeInner" name="resume-inner">
+    <extensionElements>
+      <zeebe:subscription correlationKey="" />
+    </extensionElements>
+  </message>
+  <message id="msgTriggerInnerCancel" name="trigger-inner-cancel">
+    <extensionElements>
+      <zeebe:subscription correlationKey="" />
+    </extensionElements>
+  </message>
+  <message id="msgTriggerOuterComplete" name="trigger-outer-complete">
+    <extensionElements>
+      <zeebe:subscription correlationKey="" />
+    </extensionElements>
+  </message>
+  <message id="msgTriggerOuterCancel" name="trigger-outer-cancel">
+    <extensionElements>
+      <zeebe:subscription correlationKey="" />
+    </extensionElements>
+  </message>
+
+  <!-- Error for outer TX Hazard boundary (errorCode 503 = Hazard cascade) -->
+  <error id="hazardError" name="HazardError" errorCode="503" />
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="nested-tx-cancel-paths">
+      <bpmndi:BPMNShape id="Shape_start" bpmnElement="start">
+        <dc:Bounds x="152" y="82" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_outer-tx" bpmnElement="outer-tx" isExpanded="true">
+        <dc:Bounds x="240" y="40" width="860" height="540" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_outer-start" bpmnElement="outer-start">
+        <dc:Bounds x="272" y="282" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_inner-tx" bpmnElement="inner-tx" isExpanded="true">
+        <dc:Bounds x="360" y="100" width="500" height="380" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_inner-start" bpmnElement="inner-start">
+        <dc:Bounds x="392" y="282" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_inner-work" bpmnElement="inner-work">
+        <dc:Bounds x="480" y="260" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_inner-compensate" bpmnElement="inner-compensate">
+        <dc:Bounds x="480" y="380" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_inner-decision" bpmnElement="inner-decision">
+        <dc:Bounds x="635" y="275" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_resume-inner-catch" bpmnElement="resume-inner-catch">
+        <dc:Bounds x="742" y="182" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_inner-end" bpmnElement="inner-end">
+        <dc:Bounds x="832" y="182" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_trigger-inner-cancel-catch" bpmnElement="trigger-inner-cancel-catch">
+        <dc:Bounds x="742" y="382" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_inner-cancel-end" bpmnElement="inner-cancel-end">
+        <dc:Bounds x="832" y="382" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_inner-compensate-boundary" bpmnElement="inner-compensate-boundary">
+        <dc:Bounds x="512" y="322" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_inner-tx-cancel-boundary" bpmnElement="inner-tx-cancel-boundary">
+        <dc:Bounds x="592" y="462" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_join-after-inner" bpmnElement="join-after-inner">
+        <dc:Bounds x="905" y="275" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_outer-decision" bpmnElement="outer-decision">
+        <dc:Bounds x="1005" y="275" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_trigger-outer-complete-catch" bpmnElement="trigger-outer-complete-catch">
+        <dc:Bounds x="1015" y="142" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_outer-end" bpmnElement="outer-end">
+        <dc:Bounds x="1015" y="82" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_trigger-outer-cancel-catch" bpmnElement="trigger-outer-cancel-catch">
+        <dc:Bounds x="1015" y="432" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_outer-cancel-end" bpmnElement="outer-cancel-end">
+        <dc:Bounds x="1015" y="512" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_outer-tx-cancel-boundary" bpmnElement="outer-tx-cancel-boundary">
+        <dc:Bounds x="692" y="562" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_outer-tx-error-boundary" bpmnElement="outer-tx-error-boundary">
+        <dc:Bounds x="762" y="562" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_cancel-recovery-end" bpmnElement="cancel-recovery-end">
+        <dc:Bounds x="692" y="650" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_hazard-recovery-end" bpmnElement="hazard-recovery-end">
+        <dc:Bounds x="762" y="650" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_process-end" bpmnElement="process-end">
+        <dc:Bounds x="1152" y="82" width="36" height="36" />
+      </bpmndi:BPMNShape>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>
