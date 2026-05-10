@@ -88,7 +88,9 @@ window.bpmnEditor = {
             inputCollection: '',
             inputDataItem: '',
             outputCollection: '',
-            outputDataItem: ''
+            outputDataItem: '',
+            isExecutable: false,
+            documentation: ''
         };
 
         if (bo.$type === 'bpmn:ScriptTask') {
@@ -228,6 +230,11 @@ window.bpmnEditor = {
             data.inputDataItem    = readNs('elementVariable',  'elementVariable');
             data.outputCollection = readNs('outputCollection', 'outputCollection');
             data.outputDataItem   = readNs('outputElement',    'outputElement');
+        }
+
+        if (bo.$type === 'bpmn:Process') {
+            data.isExecutable = bo.isExecutable !== false;
+            data.documentation = (bo.documentation && bo.documentation[0] && bo.documentation[0].text) || '';
         }
 
         // Collect available variable names from ScriptTasks (only when a UserTask is selected)
@@ -625,6 +632,31 @@ window.bpmnEditor = {
                 modeling.updateModdleProperties(element, mi, attrUpdate);
                 break;
             }
+        }
+    },
+
+    setIsExecutable: function (elementId, value) {
+        if (!this._modeler) return;
+        var elementRegistry = this._modeler.get('elementRegistry');
+        var modeling = this._modeler.get('modeling');
+        var element = elementRegistry.get(elementId);
+        if (!element) return;
+        modeling.updateProperties(element, { isExecutable: !!value });
+    },
+
+    setDocumentation: function (elementId, text) {
+        if (!this._modeler) return;
+        var elementRegistry = this._modeler.get('elementRegistry');
+        var modeling = this._modeler.get('modeling');
+        var element = elementRegistry.get(elementId);
+        if (!element) return;
+        var bo = element.businessObject;
+        var moddle = this._modeler.get('moddle');
+        if (text) {
+            var docEl = moddle.create('bpmn:Documentation', { text: text });
+            modeling.updateModdleProperties(element, bo, { documentation: [docEl] });
+        } else {
+            modeling.updateModdleProperties(element, bo, { documentation: [] });
         }
     },
 
