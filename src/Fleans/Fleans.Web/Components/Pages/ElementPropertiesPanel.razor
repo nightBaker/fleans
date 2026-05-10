@@ -157,6 +157,26 @@
                 </div>
             }
 
+            @if (HasDefaultFlowSelector)
+            {
+                <div>
+                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Default Flow</FluentLabel>
+                    <FluentSelect TOption="string" Value="@defaultFlow" @onchange="OnDefaultFlowChange"
+                                  Disabled="@ReadOnly" Style="width: 100%;">
+                        <FluentOption TOption="string" Value="">(none)</FluentOption>
+                        @foreach (var flow in Element.OutgoingFlows)
+                        {
+                            <FluentOption TOption="string" Value="@flow.Id" Selected="@(flow.Id == defaultFlow)">
+                                @(string.IsNullOrEmpty(flow.Name) ? flow.Id : flow.Name)
+                            </FluentOption>
+                        }
+                    </FluentSelect>
+                    <FluentLabel Style="color: var(--neutral-foreground-hint); margin-top: 4px; font-size: 12px;">
+                        Outgoing flow taken when no condition matches.
+                    </FluentLabel>
+                </div>
+            }
+
             @if (IsBoundaryEvent)
             {
                 <div>
@@ -490,6 +510,7 @@
     private string errorCode = "";
     private string escalationCode = "";
     private string activationCondition = "";
+    private string defaultFlow = "";
     private bool isInterrupting = true;
     private bool isEventSubProcess;
     private string assignee = "";
@@ -561,6 +582,7 @@
         errorCode = Element.ErrorCode;
         escalationCode = Element.EscalationCode;
         activationCondition = Element.ActivationCondition;
+        defaultFlow = Element.DefaultFlow;
         isInterrupting = Element.IsInterrupting;
         isEventSubProcess = Element.IsEventSubProcess;
         assignee = Element.Assignee;
@@ -780,6 +802,8 @@
     private bool HasConditional => Element.HasConditionalDefinition;
     private bool HasEscalation => Element.HasEscalationDefinition;
     private bool HasActivationCondition => Element.Type == "bpmn:ComplexGateway";
+    private bool HasDefaultFlowSelector =>
+        Element.Type is "bpmn:ExclusiveGateway" or "bpmn:InclusiveGateway" or "bpmn:ComplexGateway";
     private bool IsBoundaryEvent => Element.Type == "bpmn:BoundaryEvent";
 
     private static readonly Dictionary<string, string> TimerTypesAll = new()
@@ -887,6 +911,12 @@
     {
         activationCondition = e.Value?.ToString() ?? "";
         await JS.InvokeVoidAsync("bpmnEditor.updateActivationCondition", Element.Id, activationCondition);
+    }
+
+    private async Task OnDefaultFlowChange(ChangeEventArgs e)
+    {
+        defaultFlow = e.Value?.ToString() ?? "";
+        await JS.InvokeVoidAsync("bpmnEditor.updateDefaultFlow", Element.Id, defaultFlow);
     }
 
     private void OnAssigneeInput(ChangeEventArgs e) => assignee = e.Value?.ToString() ?? "";
@@ -1180,6 +1210,14 @@
         public string Documentation { get; set; } = "";
         public string CompletionCondition { get; set; } = "";
         public string ActivationCondition { get; set; } = "";
+        public string DefaultFlow { get; set; } = "";
+        public List<FlowReferenceOption> OutgoingFlows { get; set; } = [];
+    }
+
+    public class FlowReferenceOption
+    {
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
     }
 
     public class MappingData

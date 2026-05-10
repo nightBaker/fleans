@@ -72,6 +72,7 @@ Each numbered entry below is one regression "step". For each one, follow the lin
 47. **Event Sub-Process editor toggle** — `47-event-subprocess-editor/test-plan.md`. Editor panel for `bpmn:SubProcess` shows "Triggered by event (Event Sub-Process)" checkbox; checking it sets `triggeredByEvent="true"` and redraws the element with a dashed border; unchecking reverts; panel header label updates to "Event Sub-Process" / "Sub-Process" accordingly.
 48. **IO Mapping editor** — `48-io-mapping-editor/test-plan.md`. CallActivity shows Input/Output Mappings from imported BPMNs (including `zeebe:ioMapping` nested format); ServiceTask with unregistered plugin type shows raw IO mapping table with existing entries visible; adding/removing rows works correctly.
 49. **Complex Gateway Activation Condition Editor** — `49-complex-gateway-activation-condition/test-plan.md`. Activation Condition text area on ComplexGateway; reuses `20-complex-gateway/join-activation-condition.bpmn`. Verifies pre-population, editing, clearing, and that other gateway types have no field.
+50. **Gateway Default Flow Editor** — `50-gateway-default-flow/test-plan.md`. Default outgoing-flow dropdown on ExclusiveGateway / InclusiveGateway / ComplexGateway; reuses `03-exclusive-gateway/conditional-branching.bpmn` and `14-inclusive-gateway/default-flow.bpmn`. Verifies pre-population from XML, editing, clearing, and that ParallelGateway has no field.
 
 ## Website regression suite
 

@@ -115,7 +115,9 @@ window.bpmnEditor = {
             completionCondition: '',
             hasEscalationDefinition: false,
             escalationCode: '',
-            activationCondition: ''
+            activationCondition: '',
+            defaultFlow: '',
+            outgoingFlows: []
         };
 
         if (bo.$type === 'bpmn:ScriptTask') {
@@ -311,6 +313,17 @@ window.bpmnEditor = {
 
         if (bo.$type === 'bpmn:ComplexGateway' && bo.activationCondition) {
             data.activationCondition = bo.activationCondition.body || '';
+        }
+
+        if (bo.$type === 'bpmn:ExclusiveGateway' ||
+            bo.$type === 'bpmn:InclusiveGateway' ||
+            bo.$type === 'bpmn:ComplexGateway') {
+            data.defaultFlow = bo.default ? bo.default.id : '';
+            if (bo.outgoing) {
+                bo.outgoing.forEach(function (flow) {
+                    data.outgoingFlows.push({ id: flow.id, name: flow.name || '' });
+                });
+            }
         }
 
         return data;
@@ -702,6 +715,20 @@ window.bpmnEditor = {
             modeling.updateProperties(element, { activationCondition: expr });
         } else {
             modeling.updateProperties(element, { activationCondition: undefined });
+        }
+    },
+
+    updateDefaultFlow: function (elementId, flowId) {
+        if (!this._modeler) return;
+        var elementRegistry = this._modeler.get('elementRegistry');
+        var modeling = this._modeler.get('modeling');
+        var element = elementRegistry.get(elementId);
+        if (!element) return;
+        if (flowId) {
+            var flowEl = elementRegistry.get(flowId);
+            modeling.updateProperties(element, { default: flowEl ? flowEl.businessObject : undefined });
+        } else {
+            modeling.updateProperties(element, { default: undefined });
         }
     },
 
