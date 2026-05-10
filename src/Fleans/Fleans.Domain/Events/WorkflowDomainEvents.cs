@@ -112,6 +112,10 @@ public record CompensationWalkFailed(
     string ErrorCode,
     string ErrorMessage) : IDomainEvent;
 
+public record CompensationWalkAborted(
+    Guid? ScopeId,
+    string Reason) : IDomainEvent;
+
 // Transaction Sub-Process outcome
 // Plain record — no [GenerateSerializer] — stored via Newtonsoft.Json in EfCoreEventStore,
 // consistent with all other JournaledGrain events in this file.
