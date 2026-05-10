@@ -10,7 +10,7 @@ using Orleans.Streams;
 
 namespace Fleans.Application.Events.Handlers;
 
-[ImplicitStreamSubscription(WorkflowEventsPublisher.StreamNameSpace)]
+[ImplicitStreamSubscription(WorkflowEventsPublisher.EvaluateConditionStreamNamespace)]
 [CorePlacement]
 public partial class WorfklowEvaluateConditionEventHandler : Grain, IWorfklowEvaluateConditionEventHandler, IAsyncObserver<EvaluateConditionEvent>
 {
@@ -27,7 +27,7 @@ public partial class WorfklowEvaluateConditionEventHandler : Grain, IWorfklowEva
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
         var streamProvider = this.GetStreamProvider(WorkflowEventsPublisher.StreamProvider);
-        var streamId = StreamId.Create(WorkflowEventsPublisher.StreamNameSpace, nameof(EvaluateConditionEvent));
+        var streamId = StreamId.Create(WorkflowEventsPublisher.EvaluateConditionStreamNamespace, nameof(EvaluateConditionEvent));
         var stream = streamProvider.GetStream<EvaluateConditionEvent>(streamId);
 
         var handles = await stream.GetAllSubscriptionHandles();
