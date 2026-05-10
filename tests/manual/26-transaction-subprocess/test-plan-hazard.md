@@ -85,3 +85,80 @@ The fixture contains:
   - A ScriptTask that throws when `trigger-inner-fail` message is received
   - No boundary events catching the error → error escapes inner TX → inner TX ends in Hazard
 - Sequence flows routing Cancel boundary → end, Error boundary → error end
+
+---
+
+# Manual Test 26b — Transaction Sub-Process (Hazard Path)
+
+## Scenario
+
+A process enters a **Transaction Sub-Process** whose inner task deliberately throws an error.
+The unhandled error escapes the TX scope (Hazard outcome per BPMN §10.4.3), triggering the
+compensation walk, and then the **Error Boundary Event** on the TX host catches it.
+A recovery task runs and the workflow terminates via the error-handled path.
+
+## Prerequisites
+
+- Aspire host running: `dotnet run --project Fleans.Aspire`
+- `hazard-path.bpmn` available in this folder
+- A clean dev DB (delete SQLite file or set a fresh `FLEANS_SQLITE_CONNECTION`)
+
+## Steps
+
+1. **Deploy** the BPMN via the Web UI or:
+   ```
+   POST https://localhost:7140/Workflow/upload-bpmn
+   Body: (attach hazard-path.bpmn)
+   ```
+   Confirm `txHazardPathProcess` appears in the deployments list.
+
+2. **Start an instance**:
+   ```
+   POST https://localhost:7140/Workflow/start
+   Body: {"WorkflowId":"txHazardPathProcess"}
+   ```
+   Note the returned `workflowInstanceId`.
+
+3. **Observe automatic execution** — all tasks are script tasks. The `processTask`
+   throws intentionally. Within a second the engine should reach a terminal state.
+   Open the instance in the Web UI and confirm it is **Completed** (via recovery path).
+
+4. **Verify activity states** in the Web UI instance detail:
+   - `setupTask` — Completed (outside TX, runs before TX)
+   - `validateTask` — Completed (inside TX, succeeds)
+   - `processTask` — Failed (inside TX, throws)
+   - `paymentTransaction` — Cancelled (TX host cancelled by error boundary interrupt)
+   - `errBoundary` — Completed (error boundary fired)
+   - `recoveryTask` — Completed (recovery handler ran)
+   - `errorEnd` — Completed
+
+5. **Inspect variables** in the Web UI:
+   - `requestId = "tx-hazard-001"`
+   - `amount = 500`
+   - `validated = true` (from validateTask inside TX — merged before TX cancelled)
+   - `errorHandled = true`
+   - `fallbackResult = "DECLINED"`
+
+6. **Check Aspire dashboard logs** for this instance:
+   - Look for log messages containing `TransactionHazardInitiated` — confirms hazard
+     detection fired with the correct `errorCode`.
+   - Look for `TransactionHazardBoundaryActivated` — confirms the Error Boundary
+     on `paymentTransaction` was correctly located and spawned.
+   - No unexpected exceptions or `CRITICAL` entries.
+
+## Expected Outcomes Checklist
+
+- [ ] Workflow instance state is **Completed** (terminated via recovery path, not Failed).
+- [ ] `setupTask` shows as **Completed**.
+- [ ] `validateTask` shows as **Completed** (inside the transaction scope — succeeded before error).
+- [ ] `processTask` shows as **Failed** with error code `500`.
+- [ ] `paymentTransaction` shows as **Cancelled** (interrupted by error boundary).
+- [ ] `errBoundary` shows as **Completed** (boundary event fired).
+- [ ] `recoveryTask` shows as **Completed**.
+- [ ] `errorEnd` shows as **Completed**.
+- [ ] Normal `end` event is **NOT** in the completed list (skipped — error took the boundary path).
+- [ ] Variables `errorHandled = true` and `fallbackResult = "DECLINED"` visible in root scope.
+- [ ] Log entry for `TransactionHazardInitiated` is present.
+- [ ] Log entry for `TransactionHazardBoundaryActivated` is present.
+- [ ] No residual active activities remain.
+- [ ] No unhandled exceptions in Aspire dashboard logs.

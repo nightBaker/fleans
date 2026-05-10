@@ -222,7 +222,8 @@ public partial class WorkflowInstance
         // before CompleteFinishedSubProcessScopes can auto-complete the Transaction as Completed.
         var cancelEventCountBefore = _execution.GetUncommittedEvents().Count;
         var cancelEffects = _execution.InitiateTransactionCancelFlowIfNeeded();
-        // Log each transaction cancel that was just initiated, including descendant walk aborts
+        var hazardEffects = _execution.InitiateTransactionHazardFlowIfNeeded();
+        // Log each transaction outcome just initiated
         var postCancelEvents = _execution.GetUncommittedEvents().Skip(cancelEventCountBefore).ToList();
         foreach (var cancelledTx in postCancelEvents.OfType<TransactionOutcomeSet>()
             .Where(e => e.Outcome == TransactionOutcome.Cancelled))
@@ -235,9 +236,15 @@ public partial class WorkflowInstance
         }
         foreach (var hazardTx in postCancelEvents.OfType<TransactionOutcomeSet>()
             .Where(e => e.Outcome == TransactionOutcome.Hazard))
+        {
+            var txEntry = State.FindEntry(hazardTx.TransactionInstanceId);
+            LogTransactionHazardInitiated(hazardTx.TransactionInstanceId, txEntry?.ActivityId ?? "unknown", hazardTx.ErrorCode ?? "?");
             LogHazardCascadeToOuter(hazardTx.TransactionInstanceId, hazardTx.ErrorMessage);
+        }
         if (cancelEffects.Count > 0)
             await PerformEffects(cancelEffects);
+        if (hazardEffects.Count > 0)
+            await PerformEffects(hazardEffects);
 
         var (scopeEffects, completedHostIds, orphanedScopeIds) = _execution!.CompleteFinishedSubProcessScopes();
 
@@ -266,6 +273,28 @@ public partial class WorkflowInstance
         }
 
         await PerformEffects(scopeEffects);
+
+        // Activate Error Boundaries for Hazard TX hosts whose compensation walk just completed
+        var hazardBoundaryCountBefore = _execution.GetUncommittedEvents().Count;
+        var hazardBoundaryEffects = _execution.ActivatePendingHazardBoundaries();
+        if (hazardBoundaryEffects.Count > 0 || _execution.GetUncommittedEvents().Count > hazardBoundaryCountBefore)
+        {
+            var postHazardEvents = _execution.GetUncommittedEvents().Skip(hazardBoundaryCountBefore).ToList();
+            foreach (var failedTx in postHazardEvents.OfType<ActivityFailed>())
+            {
+                var txEntry = State.FindEntry(failedTx.ActivityInstanceId);
+                if (txEntry is not null)
+                    LogTransactionHazardHostFailed(failedTx.ActivityInstanceId, failedTx.ErrorCode);
+            }
+            foreach (var cancelledTx in postHazardEvents.OfType<ActivityCancelled>())
+            {
+                var spawned = postHazardEvents.OfType<ActivitySpawned>().FirstOrDefault();
+                if (spawned is not null)
+                    LogTransactionHazardBoundaryActivated(cancelledTx.ActivityInstanceId, spawned.ActivityId);
+            }
+            if (hazardBoundaryEffects.Count > 0)
+                await PerformEffects(hazardBoundaryEffects);
+        }
 
         if (completedHostIds.Count > 0)
         {
