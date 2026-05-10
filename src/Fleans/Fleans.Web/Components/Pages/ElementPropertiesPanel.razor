@@ -232,6 +232,18 @@
                 </div>
             }
 
+            @if (HasEscalation)
+            {
+                <div>
+                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Escalation Code</FluentLabel>
+                    <FluentTextField Value="@escalationCode" @oninput="OnEscalationCodeInput" @onchange="OnEscalationCodeChange"
+                                     Disabled="@ReadOnly" Placeholder="e.g. ESC-001 (leave empty for catch-all)" Style="width: 100%;" />
+                    <FluentLabel Style="color: var(--neutral-foreground-hint); margin-top: 4px; font-size: 12px;">
+                        Specific escalation code to catch. Leave empty to catch all escalations.
+                    </FluentLabel>
+                </div>
+            }
+
             @if (Element.Type == "bpmn:UserTask")
             {
                 <div>
@@ -462,6 +474,7 @@
     private string correlationKey = "";
     private string signalName = "";
     private string errorCode = "";
+    private string escalationCode = "";
     private bool isInterrupting = true;
     private bool isEventSubProcess;
     private string assignee = "";
@@ -531,6 +544,7 @@
         correlationKey = Element.CorrelationKey;
         signalName = Element.SignalName;
         errorCode = Element.ErrorCode;
+        escalationCode = Element.EscalationCode;
         isInterrupting = Element.IsInterrupting;
         isEventSubProcess = Element.IsEventSubProcess;
         assignee = Element.Assignee;
@@ -748,6 +762,7 @@
     private bool HasError => Element.HasErrorDefinition;
     private bool HasCancel => Element.HasCancelDefinition;
     private bool HasConditional => Element.HasConditionalDefinition;
+    private bool HasEscalation => Element.HasEscalationDefinition;
     private bool IsBoundaryEvent => Element.Type == "bpmn:BoundaryEvent";
 
     private static readonly Dictionary<string, string> TimerTypesAll = new()
@@ -841,6 +856,13 @@
     {
         conditionExpression = e.Value?.ToString() ?? "";
         await JS.InvokeVoidAsync("bpmnEditor.updateConditionalDefinition", Element.Id, conditionExpression);
+    }
+
+    private void OnEscalationCodeInput(ChangeEventArgs e) => escalationCode = e.Value?.ToString() ?? "";
+    private async Task OnEscalationCodeChange(ChangeEventArgs e)
+    {
+        escalationCode = e.Value?.ToString() ?? "";
+        await JS.InvokeVoidAsync("bpmnEditor.updateEscalationDefinition", Element.Id, escalationCode);
     }
 
     private void OnAssigneeInput(ChangeEventArgs e) => assignee = e.Value?.ToString() ?? "";
@@ -1056,6 +1078,18 @@
                 _ => Element.Type.Replace("bpmn:", "")
             };
         }
+        if (HasEscalation)
+        {
+            return Element.Type switch
+            {
+                "bpmn:StartEvent" => "Escalation Start Event",
+                "bpmn:EndEvent" => "Escalation End Event",
+                "bpmn:BoundaryEvent" => "Escalation Boundary Event",
+                "bpmn:IntermediateThrowEvent" => "Escalation Intermediate Throw Event",
+                "bpmn:IntermediateCatchEvent" => "Escalation Intermediate Catch Event",
+                _ => Element.Type.Replace("bpmn:", "")
+            };
+        }
         return Element.Type switch
         {
             "bpmn:StartEvent" => "Start Event",
@@ -1102,6 +1136,8 @@
         public string ErrorCode { get; set; } = "";
         public bool HasCancelDefinition { get; set; }
         public bool HasConditionalDefinition { get; set; }
+        public bool HasEscalationDefinition { get; set; }
+        public string EscalationCode { get; set; } = "";
         public bool IsInterrupting { get; set; } = true;
         public bool IsEventSubProcess { get; set; }
         public string Assignee { get; set; } = "";

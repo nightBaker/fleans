@@ -112,7 +112,9 @@ window.bpmnEditor = {
             documentation: '',
             isEventSubProcess: false,
             hasConditionalDefinition: false,
-            completionCondition: ''
+            completionCondition: '',
+            hasEscalationDefinition: false,
+            escalationCode: ''
         };
 
         if (bo.$type === 'bpmn:ScriptTask') {
@@ -233,6 +235,14 @@ window.bpmnEditor = {
                     data.hasConditionalDefinition = true;
                     var condDef = bo.eventDefinitions[i];
                     data.conditionExpression = (condDef.condition && condDef.condition.body) || '';
+                    break;
+                }
+                if (bo.eventDefinitions[i].$type === 'bpmn:EscalationEventDefinition') {
+                    data.hasEscalationDefinition = true;
+                    var escDef = bo.eventDefinitions[i];
+                    if (escDef.escalationRef) {
+                        data.escalationCode = escDef.escalationRef.escalationCode || '';
+                    }
                     break;
                 }
             }
@@ -625,6 +635,51 @@ window.bpmnEditor = {
             modeling.updateModdleProperties(element, errDef, { errorRef: errorEl });
         } else {
             modeling.updateModdleProperties(element, errDef, { errorRef: undefined });
+        }
+    },
+
+    updateEscalationDefinition: function (elementId, escalationCode) {
+        if (!this._modeler) return;
+        var elementRegistry = this._modeler.get('elementRegistry');
+        var modeling = this._modeler.get('modeling');
+        var moddle = this._modeler.get('moddle');
+        var element = elementRegistry.get(elementId);
+        if (!element) return;
+
+        var bo = element.businessObject;
+        if (!bo.eventDefinitions || bo.eventDefinitions.length === 0) return;
+
+        var escDef = null;
+        for (var i = 0; i < bo.eventDefinitions.length; i++) {
+            if (bo.eventDefinitions[i].$type === 'bpmn:EscalationEventDefinition') {
+                escDef = bo.eventDefinitions[i];
+                break;
+            }
+        }
+        if (!escDef) return;
+
+        var canvas = this._modeler.get('canvas');
+        var definitions = canvas.getRootElement().businessObject.$parent;
+
+        if (escalationCode) {
+            var escEl = escDef.escalationRef;
+
+            if (!escEl) {
+                var escId = 'Escalation_' + elementId;
+                escEl = moddle.create('bpmn:Escalation', { id: escId, escalationCode: escalationCode });
+                escEl.$parent = definitions;
+
+                var rootElements = definitions.get('rootElements');
+                rootElements.push(escEl);
+
+                moddle.ids.claim(escId, escEl);
+            } else {
+                escEl.escalationCode = escalationCode;
+            }
+
+            modeling.updateModdleProperties(element, escDef, { escalationRef: escEl });
+        } else {
+            modeling.updateModdleProperties(element, escDef, { escalationRef: undefined });
         }
     },
 
