@@ -492,10 +492,6 @@ public class WorkflowExecution
                     // targeting the same activity are naturally no-op'd by the aggregate's
                     // "Each activity instance executes at most once" invariant
                     // (FailActivity's IsCompleted stale-guard).
-                    // The other three Process*-call cases (StartChildWorkflowCommand,
-                    // AddConditionsCommand, EvaluateActivationConditionCommand) are tracked
-                    // by #497 — their command records lack a direct ActivityId field and need
-                    // a reverse-lookup helper or a schema change to support the same pattern.
                     try
                     {
                         effects.Add(ProcessRegisterMessage(msg, activityInstanceId));
@@ -513,15 +509,45 @@ public class WorkflowExecution
                     break;
 
                 case StartChildWorkflowCommand startChild:
-                    effects.Add(ProcessStartChildWorkflow(startChild, activityInstanceId));
+                    // Note: ProcessStartChildWorkflow emits ChildWorkflowLinked before
+                    // BuildChildInputVariables runs; a throw leaves a phantom link entry.
+                    // This is acceptable — the child grain never receives StartWorkflow.
+                    try
+                    {
+                        effects.Add(ProcessStartChildWorkflow(startChild, activityInstanceId));
+                    }
+                    catch (Exception ex)
+                    {
+                        var activityId = _state.FindEntry(activityInstanceId)?.ActivityId;
+                        if (activityId is not null)
+                            effects.AddRange(FailActivity(activityId, activityInstanceId, ex));
+                    }
                     break;
 
                 case AddConditionsCommand conditions:
-                    effects.AddRange(ProcessAddConditions(conditions, activityInstanceId));
+                    try
+                    {
+                        effects.AddRange(ProcessAddConditions(conditions, activityInstanceId));
+                    }
+                    catch (Exception ex)
+                    {
+                        var activityId = _state.FindEntry(activityInstanceId)?.ActivityId;
+                        if (activityId is not null)
+                            effects.AddRange(FailActivity(activityId, activityInstanceId, ex));
+                    }
                     break;
 
                 case EvaluateActivationConditionCommand evalActivation:
-                    effects.Add(ProcessEvaluateActivationCondition(evalActivation, activityInstanceId));
+                    try
+                    {
+                        effects.Add(ProcessEvaluateActivationCondition(evalActivation, activityInstanceId));
+                    }
+                    catch (Exception ex)
+                    {
+                        var activityId = _state.FindEntry(activityInstanceId)?.ActivityId;
+                        if (activityId is not null)
+                            effects.AddRange(FailActivity(activityId, activityInstanceId, ex));
+                    }
                     break;
 
                 case RegisterUserTaskCommand regUserTask:
