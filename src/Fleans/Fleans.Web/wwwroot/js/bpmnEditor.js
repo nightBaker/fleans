@@ -10,6 +10,24 @@ function _extAttr(attrs, localName) {
     return attrs['fleans:' + localName] || attrs['zeebe:' + localName];
 }
 
+// Read input/output mappings from a zeebe:IoMapping or fleans:IoMapping container into data.
+function _readIoMappingContainer(bo, data) {
+    if (!bo.extensionElements || !bo.extensionElements.values) return;
+    var vals = bo.extensionElements.values;
+    for (var i = 0; i < vals.length; i++) {
+        if (_isExt(vals[i], 'IoMapping')) {
+            var container = vals[i];
+            (container.inputs || []).forEach(function(m) {
+                data.inputMappings.push({ source: m.source || '', target: m.target || '' });
+            });
+            (container.outputs || []).forEach(function(m) {
+                data.outputMappings.push({ source: m.source || '', target: m.target || '' });
+            });
+            break;
+        }
+    }
+}
+
 window.bpmnEditor = {
     _modeler: null,
     _dotNetRef: null,
@@ -122,6 +140,11 @@ window.bpmnEditor = {
                     }
                 });
             }
+            _readIoMappingContainer(bo, data);
+        }
+
+        if (bo.$type === 'bpmn:ServiceTask') {
+            _readIoMappingContainer(bo, data);
         }
 
         if (bo.$type === 'bpmn:UserTask') {
