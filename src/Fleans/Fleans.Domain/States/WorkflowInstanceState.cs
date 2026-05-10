@@ -146,9 +146,13 @@ public class WorkflowInstanceState
     [Id(21)]
     public int NextCompensationSequence { get; private set; }
 
-    /// <summary>Non-null while a compensation walk is in progress. At most one walk at a time.</summary>
-    [Id(22)]
-    public CompensationWalkState? ActiveCompensationWalk { get; private set; }
+    /// <summary>
+    /// Active compensation walks keyed by scope id. <see cref="Guid.Empty"/> is the root-scope sentinel.
+    /// Rebuilt from <c>CompensationWalkStarted</c> / <c>CompensationWalkCompleted</c> events on replay.
+    /// Preserved (not removed) on <c>CompensationWalkFailed</c> for observability.
+    /// </summary>
+    [Id(25)]
+    public Dictionary<Guid, CompensationWalkState> ActiveCompensationWalks { get; private set; } = new();
 
     internal int GetDirtyFlags() => _dirtyFlags;
 
@@ -590,21 +594,31 @@ public class WorkflowInstanceState
         _dirtyFlags |= DirtyCompensationLog;
     }
 
-    public void StartCompensationWalk(CompensationWalkState walk)
+    public void StartCompensationWalk(Guid? scopeId, CompensationWalkState walk)
     {
-        ActiveCompensationWalk = walk;
+        ActiveCompensationWalks[scopeId ?? Guid.Empty] = walk;
         _dirtyFlags |= DirtyCompensationLog;
     }
 
-    public void ClearCompensationWalk()
+    public void ClearCompensationWalk(Guid? scopeId)
     {
-        ActiveCompensationWalk = null;
+        ActiveCompensationWalks.Remove(scopeId ?? Guid.Empty);
         _dirtyFlags |= DirtyCompensationLog;
     }
 
-    public void SetCompensationHandlerInstanceId(Guid handlerInstanceId)
+    public CompensationWalkState? GetCompensationWalk(Guid? scopeId)
+        => ActiveCompensationWalks.TryGetValue(scopeId ?? Guid.Empty, out var w) ? w : null;
+
+    /// <summary>
+    /// Returns the walk that has an active handler, or null if none.
+    /// At most one walk has a non-null <c>CurrentHandlerInstanceId</c> at any time.
+    /// </summary>
+    public CompensationWalkState? GetActiveWalkWithHandler()
+        => ActiveCompensationWalks.Values.FirstOrDefault(w => w.CurrentHandlerInstanceId != null);
+
+    public void SetCompensationHandlerInstanceId(Guid? scopeId, Guid handlerInstanceId)
     {
-        ActiveCompensationWalk?.SetCurrentHandler(handlerInstanceId);
+        GetCompensationWalk(scopeId)?.SetCurrentHandler(handlerInstanceId);
         _dirtyFlags |= DirtyCompensationLog;
     }
 

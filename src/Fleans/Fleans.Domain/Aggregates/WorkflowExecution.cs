@@ -18,6 +18,8 @@ public record CompletedActivityTransitions(
 
 public class WorkflowExecution
 {
+    private static Guid ScopeKey(Guid? scopeId) => scopeId ?? Guid.Empty;
+
     private readonly WorkflowInstanceState _state;
     private readonly IWorkflowDefinition _definition;
     private readonly List<IDomainEvent> _uncommittedEvents = [];
@@ -663,7 +665,7 @@ public class WorkflowExecution
     private void AdvanceCompensationWalk(Guid? scopeId, IWorkflowDefinition scopeDef,
         List<CompletedActivitySnapshot> orderedSnapshots)
     {
-        var walk = _state.ActiveCompensationWalk;
+        var walk = _state.GetCompensationWalk(scopeId);
         if (walk is null) return;
 
         // Find the next uncompensated snapshot that has a compensation handler
@@ -740,8 +742,8 @@ public class WorkflowExecution
     /// </summary>
     public Guid? AdvanceCompensationWalkIfHandlerCompleted()
     {
-        var walk = _state.ActiveCompensationWalk;
-        if (walk is null || walk.CurrentHandlerInstanceId is null) return null;
+        var walk = _state.GetActiveWalkWithHandler();
+        if (walk is null) return null;
 
         var handlerEntry = _state.FindEntry(walk.CurrentHandlerInstanceId.Value);
         if (handlerEntry is null || !handlerEntry.IsCompleted) return null;
@@ -795,7 +797,7 @@ public class WorkflowExecution
 
         // If the walk completed (no more handlers), the thrower was completed inside AdvanceCompensationWalk.
         // Return its instance ID so the caller can compute transitions for it.
-        if (_state.ActiveCompensationWalk is null)
+        if (_state.GetCompensationWalk(scopeId) is null)
             return walk.ThrowerActivityInstanceId;
 
         return null;
@@ -2957,17 +2959,17 @@ public class WorkflowExecution
                 break;
             case CompensationWalkStarted e:
                 if (e.HandlerCount > 0)
-                    _state.StartCompensationWalk(new CompensationWalkState(e.ScopeId, e.TargetActivityRef, e.ThrowerActivityInstanceId));
+                    _state.StartCompensationWalk(e.ScopeId, new CompensationWalkState(e.ScopeId, e.TargetActivityRef, e.ThrowerActivityInstanceId));
                 break;
             case CompensationHandlerSpawned e:
-                _state.SetCompensationHandlerInstanceId(e.HandlerInstanceId);
+                _state.SetCompensationHandlerInstanceId(e.ScopeId, e.HandlerInstanceId);
                 _state.MarkCurrentHandlerEntry(e.HandlerInstanceId);
                 break;
             case CompensationEntryMarkedCompensated e:
                 _state.MarkSnapshotCompensated(e.ActivityDefinitionId, e.ScopeId);
                 break;
-            case CompensationWalkCompleted:
-                _state.ClearCompensationWalk();
+            case CompensationWalkCompleted e:
+                _state.ClearCompensationWalk(e.ScopeId);
                 break;
             case CompensationWalkFailed:
                 // Walk state intentionally NOT cleared — preserved for observability
