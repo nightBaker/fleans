@@ -259,6 +259,36 @@ namespace Fleans.Api.Controllers
             }
         }
 
+        [EnableRateLimiting("task-operation")]
+        [HttpPost("tasks/{activityInstanceId:guid}/fail", Name = "FailTask")]
+        public async Task<IActionResult> FailTask(Guid activityInstanceId, [FromBody] FailTaskRequest request)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.ErrorMessage))
+                return BadRequest(new ErrorResponse("ErrorMessage is required"));
+
+            var task = await _workflowQueryService.GetUserTask(activityInstanceId);
+            if (task == null)
+                return NotFound(new ErrorResponse($"User task '{activityInstanceId}' not found"));
+
+            LogUserTaskFail(activityInstanceId, request.ErrorCode);
+            await _commandService.FailUserTask(
+                task.WorkflowInstanceId, activityInstanceId, request.ErrorCode, request.ErrorMessage);
+            return Ok();
+        }
+
+        [EnableRateLimiting("task-operation")]
+        [HttpPost("tasks/{activityInstanceId:guid}/cancel", Name = "CancelTask")]
+        public async Task<IActionResult> CancelTask(Guid activityInstanceId, [FromBody] CancelTaskRequest? request)
+        {
+            var task = await _workflowQueryService.GetUserTask(activityInstanceId);
+            if (task == null)
+                return NotFound(new ErrorResponse($"User task '{activityInstanceId}' not found"));
+
+            LogUserTaskCancel(activityInstanceId);
+            await _commandService.CancelUserTask(task.WorkflowInstanceId, activityInstanceId, request?.Reason);
+            return Ok();
+        }
+
         [EnableRateLimiting("admin")]
         [HttpPost("disable", Name = "DisableProcess")]
         public async Task<IActionResult> DisableProcess([FromBody] ProcessDefinitionKeyRequest request)
@@ -302,5 +332,13 @@ namespace Fleans.Api.Controllers
         [LoggerMessage(EventId = 8006, Level = LogLevel.Information,
             Message = "Completing user task {ActivityInstanceId} by user {UserId}")]
         private partial void LogUserTaskComplete(Guid activityInstanceId, string userId);
+
+        [LoggerMessage(EventId = 8007, Level = LogLevel.Information,
+            Message = "Failing user task {ActivityInstanceId} with error code {ErrorCode}")]
+        private partial void LogUserTaskFail(Guid activityInstanceId, string errorCode);
+
+        [LoggerMessage(EventId = 8008, Level = LogLevel.Information,
+            Message = "Cancelling user task {ActivityInstanceId}")]
+        private partial void LogUserTaskCancel(Guid activityInstanceId);
     }
 }

@@ -51,6 +51,8 @@ public interface IWorkflowInstanceGrain : IGrainWithGuidKey, IWorkflowExecutionC
     Task ClaimUserTask(Guid activityInstanceId, string userId);
     Task UnclaimUserTask(Guid activityInstanceId);
     Task CompleteUserTask(Guid activityInstanceId, string userId, ExpandoObject variables);
+    Task FailUserTask(Guid activityInstanceId, string errorCode, string errorMessage);
+    Task CancelUserTask(Guid activityInstanceId, string? reason);
 
     Task HandleMessageDelivery(string activityId, Guid hostActivityInstanceId, ExpandoObject variables);
     Task HandleBoundaryMessageFired(string boundaryActivityId, Guid hostActivityInstanceId);

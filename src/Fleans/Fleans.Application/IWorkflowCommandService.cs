@@ -17,6 +17,8 @@ public interface IWorkflowCommandService
     Task ClaimUserTask(Guid workflowInstanceId, Guid activityInstanceId, string userId);
     Task UnclaimUserTask(Guid workflowInstanceId, Guid activityInstanceId);
     Task CompleteUserTask(Guid workflowInstanceId, Guid activityInstanceId, string userId, ExpandoObject variables);
+    Task FailUserTask(Guid workflowInstanceId, Guid activityInstanceId, string errorCode, string errorMessage);
+    Task CancelUserTask(Guid workflowInstanceId, Guid activityInstanceId, string? reason);
 
     Task<ProcessDefinitionSummary> DisableProcess(string processDefinitionKey);
     Task<ProcessDefinitionSummary> EnableProcess(string processDefinitionKey);

@@ -578,6 +578,31 @@ public partial class WorkflowInstance :
         await ProcessPendingEvents();
     }
 
+    public async Task FailUserTask(Guid activityInstanceId, string errorCode, string errorMessage)
+    {
+        await EnsureExecution();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+        LogUserTaskFailAttempt(activityInstanceId, errorCode);
+
+        var effects = _execution!.FailUserTask(activityInstanceId, errorCode, errorMessage);
+        await PerformEffects(effects);
+        await RunExecutionLoop();
+        await ProcessPendingEvents();
+    }
+
+    public async Task CancelUserTask(Guid activityInstanceId, string? reason)
+    {
+        await EnsureExecution();
+        SetWorkflowRequestContext();
+        using var scope = BeginWorkflowScope();
+        LogUserTaskCancelAttempt(activityInstanceId, reason);
+
+        var effects = _execution!.CancelUserTask(activityInstanceId, reason);
+        await PerformEffects(effects);
+        await ProcessPendingEvents();
+    }
+
     // ── State Facade ────────────────────────────────────────────────────
 
     public ValueTask<object?> GetVariable(Guid variablesId, string variableName)

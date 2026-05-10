@@ -63,6 +63,8 @@ public record UserTaskRegistered(
 public record UserTaskClaimed(Guid ActivityInstanceId, string UserId, DateTimeOffset ClaimedAt) : IDomainEvent;
 public record UserTaskUnclaimed(Guid ActivityInstanceId) : IDomainEvent;
 public record UserTaskUnregistered(Guid ActivityInstanceId) : IDomainEvent;
+public record UserTaskFailed(Guid ActivityInstanceId, string ActivityId, string ErrorCode, string ErrorMessage) : IDomainEvent;
+public record UserTaskCancelled(Guid ActivityInstanceId, string ActivityId, string? Reason) : IDomainEvent;
 
 // Escalation
 public record EscalationUncaughtRaised(

@@ -1580,6 +1580,44 @@ public class WorkflowExecution
         return CompleteActivityInternal(entry, variables);
     }
 
+    public IReadOnlyList<IInfrastructureEffect> FailUserTask(
+        Guid activityInstanceId, string errorCode, string errorMessage)
+    {
+        var metadata = _state.UserTasks.GetValueOrDefault(activityInstanceId);
+        // Idempotency: already in a terminal state or already cleaned up
+        if (metadata is null || metadata.TaskState
+            is UserTaskLifecycleState.Completed
+            or UserTaskLifecycleState.Failed
+            or UserTaskLifecycleState.Cancelled)
+            return [];
+
+        var entry = _state.GetActiveEntry(activityInstanceId);
+        Emit(new UserTaskFailed(entry.ActivityInstanceId, entry.ActivityId, errorCode, errorMessage));
+
+        return FailActivity(entry.ActivityId, activityInstanceId,
+            new CustomTaskFailedActivityException(errorCode, errorMessage));
+    }
+
+    public IReadOnlyList<IInfrastructureEffect> CancelUserTask(
+        Guid activityInstanceId, string? reason)
+    {
+        var metadata = _state.UserTasks.GetValueOrDefault(activityInstanceId);
+        // Idempotency: already in a terminal state or already cleaned up
+        if (metadata is null || metadata.TaskState
+            is UserTaskLifecycleState.Completed
+            or UserTaskLifecycleState.Failed
+            or UserTaskLifecycleState.Cancelled)
+            return [];
+
+        var entry = _state.GetActiveEntry(activityInstanceId);
+        Emit(new UserTaskCancelled(entry.ActivityInstanceId, entry.ActivityId, reason));
+        Emit(new ActivityCancelled(entry.ActivityInstanceId, reason ?? "User task cancelled by operator"));
+
+        var effects = new List<IInfrastructureEffect>();
+        effects.AddRange(BuildUserTaskCleanupEffects(entry.ActivityInstanceId));
+        return effects;
+    }
+
     private List<IInfrastructureEffect> BuildUserTaskCleanupEffects(Guid activityInstanceId)
     {
         if (_state.UserTasks.ContainsKey(activityInstanceId))
@@ -2934,6 +2972,14 @@ public class WorkflowExecution
                 break;
             case UserTaskUnregistered e:
                 _state.UserTasks.Remove(e.ActivityInstanceId);
+                break;
+            case UserTaskFailed e:
+                if (_state.UserTasks.TryGetValue(e.ActivityInstanceId, out var failedTask))
+                    failedTask.Fail();
+                break;
+            case UserTaskCancelled e:
+                if (_state.UserTasks.TryGetValue(e.ActivityInstanceId, out var cancelledTask))
+                    cancelledTask.Cancel();
                 break;
             case TimerCycleUpdated e:
                 _state.SetTimerCycleState(e.HostActivityInstanceId, e.TimerActivityId, e.RemainingCycle);
