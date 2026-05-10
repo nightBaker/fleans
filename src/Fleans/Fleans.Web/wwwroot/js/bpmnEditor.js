@@ -148,11 +148,22 @@ window.bpmnEditor = {
                     if (msgDef.messageRef) {
                         data.messageName = msgDef.messageRef.name || '';
                     }
-                    var attrs = bo.$attrs || {};
-                    data.correlationKey = attrs['fleans:correlationKey'] || '';
+                    // Priority 1: zeebe:Subscription in message extension elements (canonical Zeebe format).
+                    // Strip the Zeebe FEEL expression prefix ("= varName" → "varName") — Fleans normalizes
+                    // to plain variable names; BpmnConverter.ParseMessages already does TrimStart('=', ' ').
+                    if (msgDef.messageRef && msgDef.messageRef.extensionElements) {
+                        var extVals = msgDef.messageRef.extensionElements.values || [];
+                        for (var j = 0; j < extVals.length; j++) {
+                            if (extVals[j].$type === 'zeebe:Subscription') {
+                                data.correlationKey = (extVals[j].correlationKey || '').replace(/^=\s*/, '');
+                                break;
+                            }
+                        }
+                    }
+                    // Priority 2: legacy fleans:correlationKey attribute on the event element
+                    // (written by older Fleans editor versions — preserved for backward compatibility).
                     if (!data.correlationKey) {
-                        var zeebeKey = attrs['zeebe:correlationKey'] || '';
-                        if (zeebeKey) data.correlationKey = zeebeKey;
+                        data.correlationKey = (bo.$attrs || {})['fleans:correlationKey'] || '';
                     }
                     break;
                 }
@@ -411,13 +422,27 @@ window.bpmnEditor = {
             modeling.updateModdleProperties(element, msgDef, { messageRef: messageEl });
         }
 
-        // Store correlation key as fleans:correlationKey attribute on the event element
-        if (!bo.$attrs) bo.$attrs = {};
-        if (correlationKey) {
-            bo.$attrs['fleans:correlationKey'] = correlationKey;
-        } else {
-            delete bo.$attrs['fleans:correlationKey'];
+        // Write correlation key as zeebe:Subscription in the message element's extensionElements
+        // (canonical Zeebe format, round-tripped structurally by bpmn-js via zeebeModdleExtension).
+        var msgEl = msgDef.messageRef;
+        if (msgEl) {
+            var existingExt = msgEl.extensionElements;
+            // Preserve non-Subscription extension elements when replacing.
+            var otherExts = (existingExt && existingExt.values || []).filter(
+                function(v) { return v.$type !== 'zeebe:Subscription'; }
+            );
+            if (correlationKey) {
+                var subscription = moddle.create('zeebe:Subscription', { correlationKey: correlationKey });
+                otherExts.push(subscription);
+            }
+            var newExt = moddle.create('bpmn:ExtensionElements', { values: otherExts });
+            modeling.updateModdleProperties(element, msgEl, { extensionElements: newExt });
         }
+
+        // Remove legacy fleans:correlationKey from the event element so it cannot shadow
+        // the zeebe:Subscription value on the next read cycle (migration path for old BPMNs).
+        if (!bo.$attrs) bo.$attrs = {};
+        delete bo.$attrs['fleans:correlationKey'];
     },
 
     updateSignalDefinition: function (elementId, signalName) {
