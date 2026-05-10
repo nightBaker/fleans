@@ -178,6 +178,7 @@ namespace Fleans.Application.Tests
             public Task<IReadOnlyList<DTOs.UserTaskResponse>> GetPendingUserTasks(string? assignee = null, string? candidateGroup = null) => Task.FromResult<IReadOnlyList<DTOs.UserTaskResponse>>([]);
             public Task<PagedResult<DTOs.UserTaskResponse>> GetPendingUserTasks(string? assignee, string? candidateGroup, PageRequest page) => Task.FromResult(new PagedResult<DTOs.UserTaskResponse>([], 0, page.Page, page.PageSize));
             public Task<DTOs.UserTaskResponse?> GetUserTask(Guid activityInstanceId) => Task.FromResult<DTOs.UserTaskResponse?>(null);
+            public Task<bool> UserTaskExists(Guid activityInstanceId) => Task.FromResult(false);
             public Task<IReadOnlyList<Domain.States.UserTaskState>> GetActiveUserTasksForWorkflow(Guid workflowInstanceId) => Task.FromResult<IReadOnlyList<Domain.States.UserTaskState>>([]);
             public Task<RegisteredEventsSnapshot> GetRegisteredEventsAsync(CancellationToken ct = default) =>
                 Task.FromResult(new RegisteredEventsSnapshot([], [], [], [], []));
