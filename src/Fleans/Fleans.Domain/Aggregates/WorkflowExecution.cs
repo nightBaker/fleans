@@ -18,8 +18,6 @@ public record CompletedActivityTransitions(
 
 public class WorkflowExecution
 {
-    private static Guid ScopeKey(Guid? scopeId) => scopeId ?? Guid.Empty;
-
     private readonly WorkflowInstanceState _state;
     private readonly IWorkflowDefinition _definition;
     private readonly List<IDomainEvent> _uncommittedEvents = [];
@@ -242,6 +240,10 @@ public class WorkflowExecution
             // 2. Cancel all remaining active activities in the transaction scope
             //    (the CancelEndEvent is already completed, so it is not in GetActiveActivities)
             effects.AddRange(CancelScopeChildren(txEntry.ActivityInstanceId, "CancelledByTransaction"));
+
+            // 3b. Abort any descendant TX compensation walks that are mid-flight (Scenario E)
+            foreach (var descendantScope in DescendantScopesWithActiveWalk(txEntry.ActivityInstanceId))
+                AbortCompensationWalk(descendantScope, "OuterTransactionCancellation");
 
             // 3. Initiate compensation walk — CancelEndEvent is the thrower, broadcast (null target)
             PerformCompensationWalk(cancelEntry.ActivityInstanceId, targetActivityRef: null);
@@ -2611,6 +2613,40 @@ public class WorkflowExecution
         return effects.AsReadOnly();
     }
 
+    private IEnumerable<Guid> DescendantScopesWithActiveWalk(Guid rootScopeId)
+    {
+        foreach (var scopeKey in _state.ActiveCompensationWalks.Keys)
+        {
+            if (scopeKey == Guid.Empty) continue;
+            if (IsDescendantOfScope(scopeKey, rootScopeId))
+                yield return scopeKey;
+        }
+    }
+
+    private bool IsDescendantOfScope(Guid childScopeId, Guid ancestorScopeId)
+    {
+        var entry = _state.FindEntry(childScopeId);
+        if (entry is null) return false;
+        if (entry.ScopeId == ancestorScopeId) return true;
+        if (!entry.ScopeId.HasValue) return false;
+        return IsDescendantOfScope(entry.ScopeId.Value, ancestorScopeId);
+    }
+
+    private void AbortCompensationWalk(Guid? scopeId, string reason)
+    {
+        var walk = _state.GetCompensationWalk(scopeId);
+        if (walk is null) return;
+
+        if (walk.CurrentHandlerInstanceId.HasValue)
+        {
+            var handlerEntry = _state.FindEntry(walk.CurrentHandlerInstanceId.Value);
+            if (handlerEntry is not null && !handlerEntry.IsCompleted && !handlerEntry.IsCancelled)
+                Emit(new ActivityCancelled(walk.CurrentHandlerInstanceId.Value, "CompensationHandlerAborted"));
+        }
+
+        Emit(new CompensationWalkAborted(scopeId, reason));
+    }
+
     /// <summary>
     /// Recursively cancels all active entries within a scope (and their nested scope children).
     /// </summary>
@@ -3064,6 +3100,9 @@ public class WorkflowExecution
                 break;
             case CompensationWalkFailed:
                 // Walk state intentionally NOT cleared — preserved for observability
+                break;
+            case CompensationWalkAborted e:
+                _state.ClearCompensationWalk(e.ScopeId);
                 break;
             case TransactionOutcomeSet e:
                 _state.TransactionOutcomes[e.TransactionInstanceId] =

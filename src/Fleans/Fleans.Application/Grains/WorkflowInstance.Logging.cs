@@ -339,6 +339,14 @@ public partial class WorkflowInstance
         Message = "Compensation handler failed: HandlerInstanceId={HandlerInstanceId}, ErrorCode={ErrorCode}, ErrorMessage={ErrorMessage}")]
     private partial void LogCompensationHandlerFailed(Guid handlerInstanceId, string errorCode, string errorMessage);
 
+    [LoggerMessage(EventId = 1117, Level = LogLevel.Warning,
+        Message = "Compensation walk for scope {ScopeId} aborted: {Reason}")]
+    private partial void LogCompensationWalkAborted(Guid? scopeId, string reason);
+
+    [LoggerMessage(EventId = 1118, Level = LogLevel.Information,
+        Message = "Aborting {Count} descendant compensation walk(s) for outer transaction {TxInstanceId}")]
+    private partial void LogAbortingDescendantWalks(int count, Guid txInstanceId);
+
     // Complex gateway lifecycle (EventId 1080-1089)
     [LoggerMessage(EventId = 1080, Level = LogLevel.Debug,
         Message = "Complex gateway activation condition late callback — join instance {ActivityInstanceId} has already fired or was removed")]
