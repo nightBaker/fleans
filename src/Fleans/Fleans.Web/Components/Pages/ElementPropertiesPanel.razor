@@ -309,6 +309,14 @@
                 </FluentDialogFooter>
             </FluentDialog>
 
+            @if (Element.Type == "bpmn:SubProcess")
+            {
+                <div>
+                    <FluentCheckbox Value="@isEventSubProcess" @onchange="OnIsEventSubProcessChange"
+                                    Disabled="@ReadOnly" Label="Triggered by event (Event Sub-Process)" />
+                </div>
+            }
+
             @if (SupportsMultiInstance)
             {
                 <div>
@@ -390,6 +398,7 @@
     private string signalName = "";
     private string errorCode = "";
     private bool isInterrupting = true;
+    private bool isEventSubProcess;
     private string assignee = "";
     private List<string> candidateGroups = [];
     private List<string> candidateUsers = [];
@@ -457,6 +466,7 @@
         signalName = Element.SignalName;
         errorCode = Element.ErrorCode;
         isInterrupting = Element.IsInterrupting;
+        isEventSubProcess = Element.IsEventSubProcess;
         assignee = Element.Assignee;
         candidateGroups = new List<string>(Element.CandidateGroups);
         candidateUsers = new List<string>(Element.CandidateUsers);
@@ -708,6 +718,12 @@
     {
         isInterrupting = bool.TryParse(e.Value?.ToString(), out var v) && v;
         await JS.InvokeVoidAsync("bpmnEditor.updateElementProperty", Element.Id, "cancelActivity", isInterrupting);
+    }
+
+    private async Task OnIsEventSubProcessChange(ChangeEventArgs e)
+    {
+        isEventSubProcess = bool.TryParse(e.Value?.ToString(), out var v) && v;
+        await JS.InvokeVoidAsync("bpmnEditor.updateElementProperty", Element.Id, "triggeredByEvent", isEventSubProcess);
     }
 
     private async Task OnTimerTypeChange(ChangeEventArgs e)
@@ -963,6 +979,7 @@
             "bpmn:Process" => "Process",
             "bpmn:IntermediateThrowEvent" => "Intermediate Throw Event",
             "bpmn:IntermediateCatchEvent" => "Intermediate Catch Event",
+            "bpmn:SubProcess" => Element.IsEventSubProcess ? "Event Sub-Process" : "Sub-Process",
             "bpmn:BoundaryEvent" => "Boundary Event",
             _ => Element.Type.Replace("bpmn:", "")
         };
@@ -993,6 +1010,7 @@
         public string ErrorCode { get; set; } = "";
         public bool HasCancelDefinition { get; set; }
         public bool IsInterrupting { get; set; } = true;
+        public bool IsEventSubProcess { get; set; }
         public string Assignee { get; set; } = "";
         public List<string> CandidateGroups { get; set; } = [];
         public List<string> CandidateUsers { get; set; } = [];
