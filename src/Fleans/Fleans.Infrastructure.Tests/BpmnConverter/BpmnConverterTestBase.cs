@@ -70,7 +70,7 @@ public abstract class BpmnConverterTestBase
         if (expectedOutputs is { Length: > 0 })
         {
             var outputElements = string.Join("\n        ",
-                expectedOutputs.Select(o => $@"<fleans:output name=""{o}"" />"));
+                expectedOutputs.Select(o => $@"<fleans:expectedOutput name=""{o}"" />"));
             outputsXml = $@"
       <extensionElements>
         <fleans:expectedOutputs>
@@ -82,7 +82,7 @@ public abstract class BpmnConverterTestBase
         return $@"<?xml version=""1.0"" encoding=""UTF-8""?>
 <definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL""
              xmlns:camunda=""http://camunda.org/schema/1.0/bpmn""
-             xmlns:fleans=""http://fleans.io/schema/bpmn/fleans"">
+             xmlns:fleans=""https://fleans.io/schema/bpmn/1.0"">
   <process id=""{processId}"">
     <startEvent id=""start"" />
     <userTask id=""{userTaskId}""{camundaAttrs}>{outputsXml}

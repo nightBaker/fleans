@@ -891,23 +891,14 @@ public partial class BpmnConverter : IBpmnConverter
 
             string? correlationKey = null;
 
-            // 1. Check <message> extension elements (Camunda 8 zeebe:subscription, fleans:subscription)
+            // 1. Check <message> extension elements (zeebe:subscription, fleans:subscription)
             var extensions = msgEl.Element(Bpmn + "extensionElements");
             if (extensions != null)
             {
-                var zeebeSubscription = extensions.Element(Zeebe + "subscription");
-                if (zeebeSubscription != null)
+                var subscription = BpmnNamespaces.FindExtensionElement(extensions, "subscription");
+                if (subscription != null)
                 {
-                    correlationKey = zeebeSubscription.Attribute("correlationKey")?.Value?.TrimStart('=', ' ');
-                }
-
-                if (correlationKey == null)
-                {
-                    var fleansSubscription = extensions.Element(Fleans + "subscription");
-                    if (fleansSubscription != null)
-                    {
-                        correlationKey = fleansSubscription.Attribute("correlationKey")?.Value?.TrimStart('=', ' ');
-                    }
+                    correlationKey = subscription.Attribute("correlationKey")?.Value?.TrimStart('=', ' ');
                 }
             }
 
@@ -982,7 +973,7 @@ public partial class BpmnConverter : IBpmnConverter
             var msgDef = eventEl.Element(Bpmn + "messageEventDefinition");
             if (msgDef?.Attribute("messageRef")?.Value == messageId)
             {
-                var key = eventEl.Attribute(Fleans + "correlationKey")?.Value;
+                var key = BpmnNamespaces.GetExtensionAttributeValue(eventEl, "correlationKey");
                 if (key != null) return key;
             }
         }
@@ -1136,13 +1127,13 @@ public partial class BpmnConverter : IBpmnConverter
         if (cardinalityEl is not null && int.TryParse(cardinalityEl.Value.Trim(), out var card))
             loopCardinality = card;
 
-        var inputCollection = miElement.Attribute(Zeebe + "collection")?.Value
+        var inputCollection = BpmnNamespaces.GetExtensionAttributeValue(miElement, "collection")
             ?? miElement.Attribute("collection")?.Value;
-        var inputDataItem = miElement.Attribute(Zeebe + "elementVariable")?.Value
+        var inputDataItem = BpmnNamespaces.GetExtensionAttributeValue(miElement, "elementVariable")
             ?? miElement.Attribute("elementVariable")?.Value;
-        var outputCollection = miElement.Attribute(Zeebe + "outputCollection")?.Value
+        var outputCollection = BpmnNamespaces.GetExtensionAttributeValue(miElement, "outputCollection")
             ?? miElement.Attribute("outputCollection")?.Value;
-        var outputDataItem = miElement.Attribute(Zeebe + "outputElement")?.Value
+        var outputDataItem = BpmnNamespaces.GetExtensionAttributeValue(miElement, "outputElement")
             ?? miElement.Attribute("outputElement")?.Value;
 
         return new MultiInstanceActivity(
@@ -1170,12 +1161,19 @@ public partial class BpmnConverter : IBpmnConverter
 
     private static List<string>? ParseExpectedOutputs(XElement element)
     {
-        var outputsElement = element.Descendants(Fleans + "expectedOutputs")
-            .FirstOrDefault();
+        var outputsElement = element.Descendants()
+            .FirstOrDefault(e => e.Name.LocalName == "expectedOutputs"
+                && (e.Name.Namespace == BpmnNamespaces.Fleans
+                    || e.Name.Namespace == BpmnNamespaces.FleansLegacy));
         if (outputsElement is null)
             return null;
 
-        var outputs = outputsElement.Elements(Fleans + "output")
+        // Accept both `<fleans:expectedOutput name="…">` (current) and `<fleans:output name="…">` (legacy
+        // shape used before the namespace bump renamed the child type).
+        var outputs = outputsElement.Elements()
+            .Where(e => (e.Name.LocalName == "expectedOutput" || e.Name.LocalName == "output")
+                && (e.Name.Namespace == BpmnNamespaces.Fleans
+                    || e.Name.Namespace == BpmnNamespaces.FleansLegacy))
             .Select(e => e.Attribute("name")?.Value)
             .Where(name => !string.IsNullOrWhiteSpace(name))
             .ToList();

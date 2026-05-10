@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:fleans="https://fleans.io/schema/bpmn/1.0"
+                  id="defs_fleans_namespace" targetNamespace="http://fleans.io/bpmn">
+  <bpmn:process id="fleans-service-task" isExecutable="true">
+    <bpmn:startEvent id="start" />
+
+    <bpmn:scriptTask id="seed" scriptFormat="csharp">
+      <bpmn:script>_context.items = new[] { 1, 2, 3 };</bpmn:script>
+    </bpmn:scriptTask>
+
+    <!-- Service task uses fleans:taskDefinition + fleans:ioMapping (the new shape). -->
+    <bpmn:serviceTask id="ct1">
+      <bpmn:extensionElements>
+        <fleans:taskDefinition type="stub-task" />
+        <fleans:ioMapping>
+          <fleans:input  source="hello"        target="greeting" />
+          <fleans:output source="=__response"  target="echo" />
+        </fleans:ioMapping>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+
+    <!-- Multi-instance script using fleans-namespaced loop attributes. -->
+    <bpmn:scriptTask id="iterate" scriptFormat="csharp">
+      <bpmn:script>_context.doubled = _context.item * 2;</bpmn:script>
+      <bpmn:multiInstanceLoopCharacteristics isSequential="true"
+        fleans:collection="items" fleans:elementVariable="item"
+        fleans:outputCollection="doubled_results" fleans:outputElement="doubled" />
+    </bpmn:scriptTask>
+
+    <bpmn:endEvent id="end" />
+
+    <bpmn:sequenceFlow id="f1" sourceRef="start"   targetRef="seed" />
+    <bpmn:sequenceFlow id="f2" sourceRef="seed"    targetRef="ct1" />
+    <bpmn:sequenceFlow id="f3" sourceRef="ct1"     targetRef="iterate" />
+    <bpmn:sequenceFlow id="f4" sourceRef="iterate" targetRef="end" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="diag">
+    <bpmndi:BPMNPlane id="plane" bpmnElement="fleans-service-task">
+      <bpmndi:BPMNShape id="s_start"   bpmnElement="start"><dc:Bounds x="100" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_seed"    bpmnElement="seed"><dc:Bounds x="200" y="80"  width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_ct1"     bpmnElement="ct1"><dc:Bounds x="350" y="80"  width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_iterate" bpmnElement="iterate"><dc:Bounds x="500" y="80"  width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_end"     bpmnElement="end"><dc:Bounds x="650" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="e_f1" bpmnElement="f1"><di:waypoint x="136" y="118" /><di:waypoint x="200" y="118" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="e_f2" bpmnElement="f2"><di:waypoint x="300" y="118" /><di:waypoint x="350" y="118" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="e_f3" bpmnElement="f3"><di:waypoint x="450" y="118" /><di:waypoint x="500" y="118" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="e_f4" bpmnElement="f4"><di:waypoint x="600" y="118" /><di:waypoint x="650" y="118" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

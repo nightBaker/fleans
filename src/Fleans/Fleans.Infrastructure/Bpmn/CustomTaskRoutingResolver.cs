@@ -14,12 +14,13 @@ internal sealed class CustomTaskRoutingResolver
         if (!string.IsNullOrWhiteSpace(attr))
             return attr;
 
-        var taskDef = serviceTask
-            .Element(BpmnNamespaces.Bpmn + "extensionElements")?
-            .Element(BpmnNamespaces.Zeebe + "taskDefinition");
-        var zType = taskDef?.Attribute("type")?.Value;
-        if (!string.IsNullOrWhiteSpace(zType))
-            return zType;
+        var extensions = serviceTask.Element(BpmnNamespaces.Bpmn + "extensionElements");
+        if (extensions is null) return null;
+
+        var taskDef = BpmnNamespaces.FindExtensionElement(extensions, "taskDefinition");
+        var taskType = taskDef?.Attribute("type")?.Value;
+        if (!string.IsNullOrWhiteSpace(taskType))
+            return taskType;
 
         return null;
     }
@@ -27,12 +28,13 @@ internal sealed class CustomTaskRoutingResolver
     public List<InputMapping> ParseInputMappings(XElement serviceTask)
     {
         var mappings = new List<InputMapping>();
-        var ioMapping = serviceTask
-            .Element(BpmnNamespaces.Bpmn + "extensionElements")?
-            .Element(BpmnNamespaces.Zeebe + "ioMapping");
+        var extensions = serviceTask.Element(BpmnNamespaces.Bpmn + "extensionElements");
+        if (extensions is null) return mappings;
+
+        var ioMapping = BpmnNamespaces.FindExtensionElement(extensions, "ioMapping");
         if (ioMapping is null) return mappings;
 
-        foreach (var input in ioMapping.Elements(BpmnNamespaces.Zeebe + "input"))
+        foreach (var input in BpmnNamespaces.FindExtensionElements(ioMapping, "input"))
             mappings.Add(ParseInputMapping(input));
 
         return mappings;
@@ -41,12 +43,13 @@ internal sealed class CustomTaskRoutingResolver
     public List<OutputMapping> ParseOutputMappings(XElement serviceTask)
     {
         var mappings = new List<OutputMapping>();
-        var ioMapping = serviceTask
-            .Element(BpmnNamespaces.Bpmn + "extensionElements")?
-            .Element(BpmnNamespaces.Zeebe + "ioMapping");
+        var extensions = serviceTask.Element(BpmnNamespaces.Bpmn + "extensionElements");
+        if (extensions is null) return mappings;
+
+        var ioMapping = BpmnNamespaces.FindExtensionElement(extensions, "ioMapping");
         if (ioMapping is null) return mappings;
 
-        foreach (var output in ioMapping.Elements(BpmnNamespaces.Zeebe + "output"))
+        foreach (var output in BpmnNamespaces.FindExtensionElements(ioMapping, "output"))
             mappings.Add(ParseOutputMapping(output));
 
         return mappings;
@@ -55,18 +58,18 @@ internal sealed class CustomTaskRoutingResolver
     private static InputMapping ParseInputMapping(XElement input)
     {
         var source = input.Attribute("source")?.Value
-            ?? throw new InvalidOperationException("<zeebe:input> missing required 'source' attribute");
+            ?? throw new InvalidOperationException("<input> missing required 'source' attribute");
         var target = input.Attribute("target")?.Value
-            ?? throw new InvalidOperationException("<zeebe:input> missing required 'target' attribute");
+            ?? throw new InvalidOperationException("<input> missing required 'target' attribute");
 
         if (string.IsNullOrWhiteSpace(target))
-            throw new InvalidOperationException("<zeebe:input> 'target' is empty or whitespace-only");
+            throw new InvalidOperationException("<input> 'target' is empty or whitespace-only");
 
         if (!IdentifierRegex.IsMatch(target))
             throw new InvalidOperationException(
-                $"<zeebe:input target=\"{target}\"> target must be a valid identifier (^[a-zA-Z_][a-zA-Z0-9_]*$)");
+                $"<input target=\"{target}\"> target must be a valid identifier (^[a-zA-Z_][a-zA-Z0-9_]*$)");
 
-        ValidateMappingSource(source, $"<zeebe:input target=\"{target}\">");
+        ValidateMappingSource(source, $"<input target=\"{target}\">");
 
         return new InputMapping(source, target);
     }
@@ -74,22 +77,22 @@ internal sealed class CustomTaskRoutingResolver
     private static OutputMapping ParseOutputMapping(XElement output)
     {
         var source = output.Attribute("source")?.Value
-            ?? throw new InvalidOperationException("<zeebe:output> missing required 'source' attribute");
+            ?? throw new InvalidOperationException("<output> missing required 'source' attribute");
         var target = output.Attribute("target")?.Value
-            ?? throw new InvalidOperationException("<zeebe:output> missing required 'target' attribute");
+            ?? throw new InvalidOperationException("<output> missing required 'target' attribute");
 
         if (string.IsNullOrWhiteSpace(target))
-            throw new InvalidOperationException("<zeebe:output> 'target' is empty or whitespace-only");
+            throw new InvalidOperationException("<output> 'target' is empty or whitespace-only");
 
         if (!IdentifierRegex.IsMatch(target))
             throw new InvalidOperationException(
-                $"<zeebe:output target=\"{target}\"> target must be a valid identifier (^[a-zA-Z_][a-zA-Z0-9_]*$)");
+                $"<output target=\"{target}\"> target must be a valid identifier (^[a-zA-Z_][a-zA-Z0-9_]*$)");
 
         if (target == "__response")
             throw new InvalidOperationException(
-                "<zeebe:output target=\"__response\"> is reserved — providers populate it during execution; output mapping cannot target it directly");
+                "<output target=\"__response\"> is reserved — providers populate it during execution; output mapping cannot target it directly");
 
-        ValidateMappingSource(source, $"<zeebe:output target=\"{target}\">");
+        ValidateMappingSource(source, $"<output target=\"{target}\">");
 
         return new OutputMapping(source, target);
     }

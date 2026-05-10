@@ -4,7 +4,7 @@
              xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
              xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
              xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
-             xmlns:fleans="http://fleans.io/schema/bpmn/fleans">
+             xmlns:fleans="https://fleans.io/schema/bpmn/1.0">
   <process id="user-task-approval" isExecutable="true">
     <startEvent id="start" />
 
@@ -18,8 +18,8 @@
               camunda:candidateUsers="john,bob">
       <extensionElements>
         <fleans:expectedOutputs>
-          <fleans:output name="approved" />
-          <fleans:output name="reviewComment" />
+          <fleans:expectedOutput name="approved" />
+          <fleans:expectedOutput name="reviewComment" />
         </fleans:expectedOutputs>
       </extensionElements>
     </userTask>
