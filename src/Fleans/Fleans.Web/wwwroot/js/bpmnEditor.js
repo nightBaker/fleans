@@ -92,7 +92,8 @@ window.bpmnEditor = {
             outputDataItem: '',
             isExecutable: false,
             documentation: '',
-            isEventSubProcess: false
+            isEventSubProcess: false,
+            hasConditionalDefinition: false
         };
 
         if (bo.$type === 'bpmn:ScriptTask') {
@@ -202,6 +203,12 @@ window.bpmnEditor = {
                 }
                 if (bo.eventDefinitions[i].$type === 'bpmn:CancelEventDefinition') {
                     data.hasCancelDefinition = true;
+                    break;
+                }
+                if (bo.eventDefinitions[i].$type === 'bpmn:ConditionalEventDefinition') {
+                    data.hasConditionalDefinition = true;
+                    var condDef = bo.eventDefinitions[i];
+                    data.conditionExpression = (condDef.condition && condDef.condition.body) || '';
                     break;
                 }
             }
@@ -406,6 +413,31 @@ window.bpmnEditor = {
         }
 
         modeling.updateModdleProperties(element, timerDef, newProps);
+    },
+
+    updateConditionalDefinition: function (elementId, expression) {
+        if (!this._modeler) return;
+        var elementRegistry = this._modeler.get('elementRegistry');
+        var modeling = this._modeler.get('modeling');
+        var moddle = this._modeler.get('moddle');
+        var element = elementRegistry.get(elementId);
+        if (!element) return;
+        var bo = element.businessObject;
+        if (!bo.eventDefinitions || bo.eventDefinitions.length === 0) return;
+        var condDef = null;
+        for (var i = 0; i < bo.eventDefinitions.length; i++) {
+            if (bo.eventDefinitions[i].$type === 'bpmn:ConditionalEventDefinition') {
+                condDef = bo.eventDefinitions[i]; break;
+            }
+        }
+        if (!condDef) return;
+        if (expression && expression.trim() !== '') {
+            var formalExpr = moddle.create('bpmn:FormalExpression', { body: expression });
+            formalExpr.$parent = condDef;
+            modeling.updateModdleProperties(element, condDef, { condition: formalExpr });
+        } else {
+            modeling.updateModdleProperties(element, condDef, { condition: undefined });
+        }
     },
 
     updateMessageDefinition: function (elementId, messageName, correlationKey) {

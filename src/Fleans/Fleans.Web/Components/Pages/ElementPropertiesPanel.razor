@@ -222,6 +222,16 @@
                 </div>
             }
 
+            @if (HasConditional)
+            {
+                <div>
+                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Condition Expression</FluentLabel>
+                    <FluentTextArea Value="@conditionExpression" @oninput="OnConditionInput" @onchange="OnConditionalDefinitionChange"
+                                    Disabled="@ReadOnly" Rows="3" Resize="TextAreaResize.Vertical"
+                                    Placeholder="e.g. $context.amount > 100" Style="width: 100%;" />
+                </div>
+            }
+
             @if (Element.Type == "bpmn:UserTask")
             {
                 <div>
@@ -680,6 +690,7 @@
     private bool HasSignal => Element.HasSignalDefinition;
     private bool HasError => Element.HasErrorDefinition;
     private bool HasCancel => Element.HasCancelDefinition;
+    private bool HasConditional => Element.HasConditionalDefinition;
     private bool IsBoundaryEvent => Element.Type == "bpmn:BoundaryEvent";
 
     private static readonly Dictionary<string, string> TimerTypesAll = new()
@@ -767,6 +778,12 @@
     {
         errorCode = e.Value?.ToString() ?? "";
         await JS.InvokeVoidAsync("bpmnEditor.updateErrorDefinition", Element.Id, errorCode);
+    }
+
+    private async Task OnConditionalDefinitionChange(ChangeEventArgs e)
+    {
+        conditionExpression = e.Value?.ToString() ?? "";
+        await JS.InvokeVoidAsync("bpmnEditor.updateConditionalDefinition", Element.Id, conditionExpression);
     }
 
     private void OnAssigneeInput(ChangeEventArgs e) => assignee = e.Value?.ToString() ?? "";
@@ -964,6 +981,16 @@
                 _ => Element.Type.Replace("bpmn:", "")
             };
         }
+        if (HasConditional)
+        {
+            return Element.Type switch
+            {
+                "bpmn:StartEvent" => "Conditional Start Event",
+                "bpmn:IntermediateCatchEvent" => "Conditional Intermediate Catch Event",
+                "bpmn:BoundaryEvent" => "Conditional Boundary Event",
+                _ => Element.Type.Replace("bpmn:", "")
+            };
+        }
         return Element.Type switch
         {
             "bpmn:StartEvent" => "Start Event",
@@ -1009,6 +1036,7 @@
         public bool HasErrorDefinition { get; set; }
         public string ErrorCode { get; set; } = "";
         public bool HasCancelDefinition { get; set; }
+        public bool HasConditionalDefinition { get; set; }
         public bool IsInterrupting { get; set; } = true;
         public bool IsEventSubProcess { get; set; }
         public string Assignee { get; set; } = "";
