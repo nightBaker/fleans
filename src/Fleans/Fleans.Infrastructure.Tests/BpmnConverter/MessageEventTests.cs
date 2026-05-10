@@ -61,11 +61,42 @@ public class MessageEventTests : BpmnConverterTestBase
     }
 
     [TestMethod]
+    public async Task ConvertFromXmlAsync_ShouldParseFleansCorrelationKey_LegacyUri()
+    {
+        // Validates that the parser still accepts the pre-1.0 fleans URI for backward compat
+        // (BpmnNamespaces.FleansLegacy). Remove this test alongside the FleansLegacy constant
+        // once the grace period ends.
+        var bpmnXml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL""
+             xmlns:fleans=""http://fleans.io/schema/bpmn/fleans"">
+  <message id=""msg1"" name=""paymentReceived"">
+    <extensionElements>
+      <fleans:subscription correlationKey=""orderId"" />
+    </extensionElements>
+  </message>
+  <process id=""proc1"">
+    <startEvent id=""start"" />
+    <intermediateCatchEvent id=""waitPayment"">
+      <messageEventDefinition messageRef=""msg1"" />
+    </intermediateCatchEvent>
+    <endEvent id=""end"" />
+    <sequenceFlow id=""f1"" sourceRef=""start"" targetRef=""waitPayment"" />
+    <sequenceFlow id=""f2"" sourceRef=""waitPayment"" targetRef=""end"" />
+  </process>
+</definitions>";
+
+        var workflow = await _converter.ConvertFromXmlAsync(new MemoryStream(Encoding.UTF8.GetBytes(bpmnXml)));
+
+        Assert.AreEqual(1, workflow.Messages.Count);
+        Assert.AreEqual("orderId", workflow.Messages[0].CorrelationKeyExpression);
+    }
+
+    [TestMethod]
     public async Task ConvertFromXmlAsync_ShouldParseFleansCorrelationKey()
     {
         var bpmnXml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
 <definitions xmlns=""http://www.omg.org/spec/BPMN/20100524/MODEL""
-             xmlns:fleans=""http://fleans.io/schema/bpmn/fleans"">
+             xmlns:fleans=""https://fleans.io/schema/bpmn/1.0"">
   <message id=""msg1"" name=""paymentReceived"">
     <extensionElements>
       <fleans:subscription correlationKey=""orderId"" />

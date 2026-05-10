@@ -8,8 +8,9 @@ namespace Fleans.Infrastructure.Tests.BpmnConverter;
 [TestClass]
 public class CustomTaskRoutingTests : BpmnConverterTestBase
 {
-    private static readonly XNamespace Bpmn  = BpmnNamespaces.Bpmn;
-    private static readonly XNamespace Zeebe = BpmnNamespaces.Zeebe;
+    private static readonly XNamespace Bpmn   = BpmnNamespaces.Bpmn;
+    private static readonly XNamespace Zeebe  = BpmnNamespaces.Zeebe;
+    private static readonly XNamespace Fleans = BpmnNamespaces.Fleans;
 
     private CustomTaskRoutingResolver _resolver = null!;
 
@@ -128,5 +129,45 @@ public class CustomTaskRoutingTests : BpmnConverterTestBase
                         new XAttribute("source", source),
                         new XAttribute("target", target)))));
         Assert.ThrowsExactly<InvalidOperationException>(() => _resolver.ParseInputMappings(el));
+    }
+
+    // ---- fleans:* companion cases (parser must accept either prefix with identical semantics) ----
+
+    [TestMethod]
+    public void ResolveTaskType_WithFleansTaskDefinition_ReturnsType()
+    {
+        var el = new XElement(Bpmn + "serviceTask",
+            new XAttribute("id", "ct1"),
+            new XElement(Bpmn + "extensionElements",
+                new XElement(Fleans + "taskDefinition",
+                    new XAttribute("type", "rest-call"))));
+        Assert.AreEqual("rest-call", _resolver.ResolveTaskType(el));
+    }
+
+    [TestMethod]
+    public void ParseMappings_WithFleansNamespace_ParsesInputAndOutputLists()
+    {
+        var el = new XElement(Bpmn + "serviceTask",
+            new XAttribute("id", "ct1"),
+            new XElement(Bpmn + "extensionElements",
+                new XElement(Fleans + "ioMapping",
+                    new XElement(Fleans + "input",
+                        new XAttribute("source", "=userId"),
+                        new XAttribute("target", "user_id")),
+                    new XElement(Fleans + "input",
+                        new XAttribute("source", "=\"literal\""),
+                        new XAttribute("target", "label")),
+                    new XElement(Fleans + "output",
+                        new XAttribute("source", "=__response.body.id"),
+                        new XAttribute("target", "created_id")))));
+
+        var inputs = _resolver.ParseInputMappings(el);
+        var outputs = _resolver.ParseOutputMappings(el);
+
+        Assert.AreEqual(2, inputs.Count);
+        Assert.AreEqual(1, outputs.Count);
+        Assert.AreEqual("user_id", inputs[0].Target);
+        Assert.AreEqual("=userId", inputs[0].Source);
+        Assert.AreEqual("created_id", outputs[0].Target);
     }
 }
