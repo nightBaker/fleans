@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+             id="Definitions_user_task_simple"
+             targetNamespace="http://bpmn.io/schema/bpmn">
+
+  <!-- Fixture for test 45: user task fail/cancel endpoints.
+       A minimal workflow with a user task + Error Boundary Event to verify
+       that fail routes via the boundary and cancel terminates the branch. -->
+  <process id="user-task-test" isExecutable="true">
+
+    <startEvent id="start" name="Start" />
+
+    <userTask id="review-task" name="Review Task">
+      <extensionElements>
+        <zeebe:assignmentDefinition assignee="test-user" />
+      </extensionElements>
+    </userTask>
+
+    <!-- Error boundary catches fail with code "400" -->
+    <boundaryEvent id="error-boundary" attachedToRef="review-task" cancelActivity="true">
+      <errorEventDefinition errorRef="validationError" />
+    </boundaryEvent>
+
+    <endEvent id="end" name="End" />
+    <endEvent id="error-end" name="Error End">
+      <errorEventDefinition />
+    </endEvent>
+    <endEvent id="cancel-end" name="Cancelled" />
+
+    <sequenceFlow id="sf1" sourceRef="start" targetRef="review-task" />
+    <sequenceFlow id="sf2" sourceRef="review-task" targetRef="end" />
+    <sequenceFlow id="sf-error" sourceRef="error-boundary" targetRef="error-end" />
+  </process>
+
+  <error id="validationError" name="ValidationError" errorCode="400" />
+
+</definitions>
