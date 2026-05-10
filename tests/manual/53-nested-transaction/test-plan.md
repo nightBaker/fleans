@@ -1,8 +1,8 @@
 # 46 — Nested Transaction Sub-Process (cancel paths)
 
-Tests the cancel-path semantics of nested `<transaction>` elements. All four scenarios use `nested-tx-cancel-paths.bpmn`. Scenario F cross-references `tests/manual/26-transaction-subprocess/nested-tx-hazard.bpmn`.
+Tests the cancel-path semantics of nested `<transaction>` elements.
 
-Scenarios D and E (outer cancel while inner active or mid-walk) are covered by domain tests (`NestedTxPhaseBDomainTests`, `NestedTxPhaseCDomainTests`) and excluded from the manual regression suite.
+**Design note:** The inner TX uses an ExclusiveGateway driven by the `innerShouldCancel` startup variable. This is required because the Fleans engine does not register message subscriptions for events inside a doubly-nested Transaction (EventBasedGateway inside inner-tx inside outer-tx). The outer TX uses an EventBasedGateway with two messages — this works because the gateway is only 1 level deep inside a Transaction. Scenario F cross-references `26-transaction-subprocess/nested-tx-hazard.bpmn`.
 
 ## Universal prerequisite
 
@@ -21,7 +21,7 @@ API base: `https://localhost:7140`
    POST /Workflow/deploy  { "BpmnXml": "<contents of nested-tx-cancel-paths.bpmn>" }
    ```
 
-2. Start an instance:
+2. Start an instance (no special variables — inner TX takes normal path):
    ```
    POST /Workflow/start  { "WorkflowId": "nested-tx-cancel-paths" }
    ```
@@ -29,10 +29,7 @@ API base: `https://localhost:7140`
 
 ### Steps
 
-3. Wait ~1 second, then send `resume-inner` to let the inner TX complete normally:
-   ```
-   POST /Workflow/message  { "MessageName": "resume-inner", "CorrelationKey": "" }
-   ```
+3. Wait ~1–2 seconds for the inner TX to complete (ExclusiveGateway takes default path → `inner-work` → `inner-end`).
 
 4. Send `trigger-outer-complete` to complete the outer TX normally:
    ```
@@ -47,11 +44,11 @@ API base: `https://localhost:7140`
 ### Expected results
 
 - `isCompleted: true`
-- `activeActivityIds`: empty
-- `completedActivityIds` includes: `inner-work`, `inner-end`, `inner-tx`, `outer-end`, `outer-tx`, `process-end`
+- `completedActivityIds` includes: `inner-fork`, `inner-work`, `inner-end`, `inner-tx`, `trigger-outer-complete-catch`, `outer-end`, `outer-tx`, `process-end`
 - `innerDone = true` in workflow variables
-- No `innerCompensated` variable (compensation did not run)
-- Transaction outcomes: both inner-tx and outer-tx = `Completed`
+- `innerShouldCancel` not set or false
+- No `innerCompensated` variable
+- Transaction outcomes: inner-tx = Completed, outer-tx = Completed
 
 ---
 
@@ -59,31 +56,29 @@ API base: `https://localhost:7140`
 
 ### Setup
 
-Fresh instance (repeat steps 1–2 above).
+Fresh instance — start with `innerShouldCancel=true`:
+```
+POST /Workflow/start  { "WorkflowId": "nested-tx-cancel-paths", "Variables": {"innerShouldCancel": true} }
+```
 
 ### Steps
 
-3. Send `trigger-inner-cancel` to route the inner TX to its CancelEndEvent:
-   ```
-   POST /Workflow/message  { "MessageName": "trigger-inner-cancel", "CorrelationKey": "" }
-   ```
+3. Wait ~1–2 seconds. The inner TX ExclusiveGateway takes the cancel branch → `inner-cancel-end` (CancelEndEvent) fires → inner TX runs compensation → inner TX Cancelled → Cancel Boundary on inner-tx fires → outer TX proceeds to outer-decision gateway.
 
-4. Wait ~1–2 seconds for the inner TX compensation walk to complete.
-
-5. Send `trigger-outer-complete` to complete the outer TX normally:
+4. Send `trigger-outer-complete`:
    ```
    POST /Workflow/message  { "MessageName": "trigger-outer-complete", "CorrelationKey": "" }
    ```
 
-6. Check instance state.
+5. Check instance state.
 
 ### Expected results
 
 - `isCompleted: true`
-- `completedActivityIds` includes: `inner-work`, `inner-cancel-end`, `inner-compensate`, `inner-tx`, `outer-end`, `outer-tx`, `process-end`
+- `completedActivityIds` includes: `inner-fork`, `inner-cancel-end`, `inner-compensate`, `inner-tx`, `trigger-outer-complete-catch`, `outer-end`, `outer-tx`, `process-end`
 - `innerCompensated = true` (compensation handler ran)
-- Transaction outcomes: inner-tx = `Cancelled`, outer-tx = `Completed`
-- Cancel Boundary on outer-tx did **not** fire (outer completed normally)
+- Transaction outcomes: inner-tx = Cancelled, outer-tx = Completed
+- Cancel Boundary on outer-tx did NOT fire
 
 ---
 
@@ -91,16 +86,16 @@ Fresh instance (repeat steps 1–2 above).
 
 ### Setup
 
-Fresh instance (repeat steps 1–2 above).
+Fresh instance (default variables, no `innerShouldCancel`):
+```
+POST /Workflow/start  { "WorkflowId": "nested-tx-cancel-paths" }
+```
 
 ### Steps
 
-3. Send `resume-inner` to let the inner TX complete normally:
-   ```
-   POST /Workflow/message  { "MessageName": "resume-inner", "CorrelationKey": "" }
-   ```
+3. Wait ~1–2 seconds for inner TX to complete normally.
 
-4. Send `trigger-outer-cancel` to fire the outer TX CancelEndEvent:
+4. Send `trigger-outer-cancel`:
    ```
    POST /Workflow/message  { "MessageName": "trigger-outer-cancel", "CorrelationKey": "" }
    ```
@@ -110,16 +105,16 @@ Fresh instance (repeat steps 1–2 above).
 ### Expected results
 
 - `isCompleted: true`
-- `completedActivityIds` includes: `inner-work`, `inner-end`, `inner-tx`, `outer-cancel-end`, `cancel-recovery-end`
-- Transaction outcomes: inner-tx = `Completed`, outer-tx = `Cancelled`
+- `completedActivityIds` includes: `inner-fork`, `inner-work`, `inner-end`, `inner-tx`, `trigger-outer-cancel-catch`, `outer-cancel-end`, `cancel-recovery-end`
+- Transaction outcomes: inner-tx = Completed, outer-tx = Cancelled
 - Outer Cancel Boundary fired → `cancel-recovery-end` reached
-- Outer Error Boundary did **not** fire
+- Outer Error Boundary did NOT fire
 
 ---
 
 ## Scenario F — Inner Hazard cascades to outer (cross-reference)
 
-Uses `tests/manual/26-transaction-subprocess/nested-tx-hazard.bpmn` and its test plan at `tests/manual/26-transaction-subprocess/test-plan-hazard.md` (Test A: Scenario F).
+Uses `tests/manual/26-transaction-subprocess/nested-tx-hazard.bpmn` and the test plan at `tests/manual/26-transaction-subprocess/test-plan-hazard.md` (Test A — Scenario F).
 
 Expected: outer TX outcome is Hazard (error code 503), outer Error Boundary fires, no compensation walk runs for the outer TX.
 
@@ -127,9 +122,9 @@ Expected: outer TX outcome is Hazard (error code 503), outer Error Boundary fire
 
 ## Summary table
 
-| Scenario | Inner outcome | Outer outcome | Outer boundary that fires |
-|---|---|---|---|
-| A | Completed | Completed | (none — normal exit) |
-| B | Cancelled | Completed | Cancel on inner-tx only |
-| C | Completed | Cancelled | Cancel on outer-tx → `cancel-recovery-end` |
-| F | Hazard | Hazard | Error on outer-tx → `hazard-recovery-end` |
+| Scenario | Start variables | Outer message | Inner outcome | Outer outcome | Outer boundary |
+|---|---|---|---|---|---|
+| A | (none) | `trigger-outer-complete` | Completed | Completed | (none) |
+| B | `innerShouldCancel=true` | `trigger-outer-complete` | Cancelled | Completed | Cancel on inner-tx only |
+| C | (none) | `trigger-outer-cancel` | Completed | Cancelled | Cancel on outer-tx → `cancel-recovery-end` |
+| F | (see nested-tx-hazard.bpmn) | — | Hazard | Hazard | Error on outer-tx → `hazard-recovery-end` |
