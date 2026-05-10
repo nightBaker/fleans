@@ -19,9 +19,12 @@ Orleans cluster as the engine via Redis clustering.
   the plugin packages. It does not reference `Fleans.Application`, `Fleans.Domain`,
   `Fleans.Infrastructure`, or any persistence project. This is the structural guarantee
   that your plugin host doesn't accidentally execute engine grains.
-- **Container co-location** — Aspire's publish output (`aspire publish -t docker-compose` or
-  `-t kubernetes`) emits a separate `fleans-custom-worker` service so you can scale plugin
-  workers independently from engine workers (`fleans-worker`).
+- **Container co-location** — when you fork `Fleans.CustomWorkerHost` and register it in
+  your fork's Aspire host, `aspire publish -t docker-compose` (or `-t kubernetes`) emits a
+  separate `fleans-custom-worker` service so you can scale plugin workers independently from
+  engine workers (`fleans-worker`). The Fleans engine repo's own publish output does not
+  include `fleans-custom-worker` — the release pipeline only ships `api/web/worker/mcp`,
+  because the in-tree project is intended as a starting template, not a default deployable.
 
 ## Comparison with Fleans.WorkerHost
 

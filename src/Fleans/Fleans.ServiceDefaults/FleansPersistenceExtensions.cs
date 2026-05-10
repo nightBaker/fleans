@@ -51,13 +51,13 @@ public static class FleansPersistenceExtensions
     /// <summary>
     /// Ensures the database schema is ready. Call after builder.Build().
     /// For SQLite: EnsureCreated (idempotent, race-safe).
-    /// For PostgreSQL: MigrateAsync (idempotent, uses EF Core migration lock).
+    /// For PostgreSQL: MigrateAsync wrapped in a Postgres advisory lock so multiple silos
+    /// (Api / Web / Mcp / Worker) all calling this concurrently serialize cleanly.
     ///
-    /// Note: All apps (Api, Web, Mcp) call this uniformly. For Postgres, all three apps
-    /// call MigrateAsync — this is safe because MigrateAsync is idempotent and EF Core
-    /// serializes concurrent migration attempts via __EFMigrationsLock.
-    /// Under Aspire, Web and Mcp wait for the Api silo to start (which applies migrations
-    /// first), so in practice their MigrateAsync calls are no-ops.
+    /// Without the lock, concurrent MigrateAsync calls race — EF Core's per-migration lock
+    /// is acquired only while writing __EFMigrationsHistory, not while running migration
+    /// SQL. Two silos that both observe a migration as pending can therefore both try to
+    /// CREATE TABLE, and the loser fails with `relation "X" already exists`.
     /// </summary>
     public static async Task EnsureDatabaseSchemaAsync(this IHost app)
     {
@@ -70,7 +70,31 @@ public static class FleansPersistenceExtensions
         if (options.Provider.Equals("Postgres", StringComparison.OrdinalIgnoreCase))
         {
             await using var db = dbFactory.CreateDbContext();
-            await db.Database.MigrateAsync();
+
+            // Pin the connection so the session-level advisory lock survives across
+            // MigrateAsync's internal transactions. The key is arbitrary but must be the
+            // same across all silos in the cluster.
+            const long migrationLockKey = 8723547283L;
+            await db.Database.OpenConnectionAsync();
+            try
+            {
+                await db.Database.ExecuteSqlRawAsync(
+                    $"SELECT pg_advisory_lock({migrationLockKey})");
+                await db.Database.MigrateAsync();
+            }
+            finally
+            {
+                try
+                {
+                    await db.Database.ExecuteSqlRawAsync(
+                        $"SELECT pg_advisory_unlock({migrationLockKey})");
+                }
+                catch
+                {
+                    // Lock will be released on connection close anyway.
+                }
+                await db.Database.CloseConnectionAsync();
+            }
         }
         else
         {

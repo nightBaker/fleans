@@ -66,62 +66,78 @@ docker compose up -d
 docker compose ps
 ```
 
-`docker compose ps` should show all services as `running` (or `healthy` once
-Redis + Postgres start passing their healthchecks). The default port map:
+`docker compose ps` should show all services as `running`. The default port map:
 
 | Service | Container port | Host port | Purpose |
 | --- | --- | --- | --- |
-| `fleans-web` | 8080 | 8080 | Blazor Server admin UI |
-| `fleans-api` | 5000 | (internal — fronted by web) | Orleans Core silo + REST API |
-| `fleans-mcp` | 5200 | (internal) | MCP server for AI-agent integration |
-| `redis` | 6379 | (internal) | Orleans clustering + grain storage |
+| `fleans-management` | 8080 | 8080 | Blazor Server admin UI |
+| `fleans-core` | 8080 | 8081 | Orleans Core silo + REST API (`/workflow/*`) |
+| `fleans-mcp` | 8080 | (internal) | MCP server for AI-agent integration |
+| `fleans-worker` | (none) | (internal) | Worker silo (script/condition grains, custom-task plugins) |
+| `orleans-redis` | 6379 | (internal) | Orleans clustering + PubSub grain storage |
 | `postgres` | 5432 | (internal) | Workflow event store + read model |
+| `compose-dashboard` | 18888 | (random) | Aspire dashboard for OTel traces (dev tool) |
 
 Open [http://localhost:8080](http://localhost:8080) — the admin UI lands on
-the dashboard.
+the dashboard. Programmatic clients hit the REST API at
+[http://localhost:8081/workflow/...](http://localhost:8081).
 
 ## 3. `.env` reference
 
-The bundle ships an `.env` file populated with safe defaults. Override values
-before `docker compose up` to customise the install. Variables follow the
-.NET hierarchical naming rule — `:` becomes `__` (e.g. `Authentication:Audience`
-→ `Authentication__Audience`); see [Configuration](/fleans/reference/configuration/)
-for the full convention.
+The bundle ships an `.env` file populated with sensible defaults — the release
+pipeline post-processes Aspire's compose output to bake in version-pinned image
+refs, randomly generated secrets, and conventional ports so `docker compose up
+-d` works out of the box. Override values before bringing the stack up to
+customise the install. Variables follow the .NET hierarchical naming rule — `:`
+becomes `__` (e.g. `Authentication:Audience` → `Authentication__Audience`); see
+[Configuration](/fleans/reference/configuration/) for the full convention.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `FLEANS_PERSISTENCE_PROVIDER` | `Postgres` | `Postgres` (default) or `Sqlite`. Sqlite single-replica only; see [Persistence](/fleans/reference/persistence/). |
-| `FLEANS_STREAMING_PROVIDER` | `Memory` | `Memory` (in-process) or `Kafka` (durable). When `Kafka`, set `Fleans__Streaming__Kafka__Brokers`. |
-| `Fleans__Streaming__Kafka__Brokers` | *(empty)* | Comma-separated brokers, e.g. `kafka:9092,kafka2:9092`. Required when `FLEANS_STREAMING_PROVIDER=Kafka`. |
-| `ConnectionStrings__fleans` | *(in-cluster Postgres)* | Override to point at an external Postgres. See §5 below. |
-| `ConnectionStrings__fleans-query` | *(same as `fleans`)* | Optional read-replica for the EF projection. |
-| `ConnectionStrings__orleans-redis` | `redis:6379` | Orleans clustering + grain storage. |
-| `Authentication__Authority` | *(empty — auth disabled)* | OIDC issuer URL. Set together with `Audience`/`ClientId` to enable auth. |
-| `Authentication__Audience` | *(empty)* | API audience claim (Fleans.Api JWT validation). |
+| `FLEANS_CORE_IMAGE` | `ghcr.io/nightbaker/fleans-api:<release-tag>` | Orleans Core silo image. Change to pin a different version or registry. |
+| `FLEANS_MANAGEMENT_IMAGE` | `ghcr.io/nightbaker/fleans-web:<release-tag>` | Blazor admin UI image. |
+| `FLEANS_MCP_IMAGE` | `ghcr.io/nightbaker/fleans-mcp:<release-tag>` | MCP server image. |
+| `FLEANS_WORKER_IMAGE` | `ghcr.io/nightbaker/fleans-worker:<release-tag>` | Worker silo image. |
+| `FLEANS_CORE_PORT` | `8080` | Container port the API listens on. The bundle maps host `8081 → container 8080`. |
+| `FLEANS_MANAGEMENT_PORT` | `8080` | Container port the Web UI listens on. The bundle maps host `8080 → container 8080`. |
+| `FLEANS_MCP_PORT` | `8080` | Container port the MCP server listens on (no host binding by default). |
+| `ORLEANS_REDIS_PASSWORD` | *(random per release)* | **Override in production.** Defaults to a random secret baked into `.env` at release time, identical across silos. |
+| `POSTGRES_PASSWORD` | *(random per release)* | **Override in production.** Same caveat as the redis password. |
+| `CLUSTER_CLUSTER_ID` / `CLUSTER_SERVICE_ID` | `fleans` / `fleans` | Orleans cluster identity. Change if running multiple Fleans clusters against shared Redis/Postgres. |
+| `Authentication__Authority` | *(empty — auth disabled)* | OIDC issuer URL. Set together with `ClientId`/`ClientSecret` to enable auth. |
 | `Authentication__ClientId` | *(empty)* | Web admin UI OIDC client ID (Fleans.Web). |
 | `Authentication__ClientSecret` | *(empty)* | Web OIDC client secret. **Use a Docker secret in production**; do not commit. |
-| `ASPNETCORE_ENVIRONMENT` | `Production` | `Development` enables verbose logs and dev exception page; never set in prod. |
-| `Fleans__Role` | *(unset, equivalent to `Combined`)* | `Core`, `Worker`, or `Combined`. Compose ships a single Combined silo by default. |
+| `Fleans__Role` | `Core` (api) / `Worker` (worker) | Internal role per service. Don't change unless you understand the [Core/Worker split](/fleans/reference/deployment/). |
 
 Inspect the effective env at any time with `docker compose config | less`.
 
 ## 4. Persistence
 
-Two named volumes hold workflow state:
+The bundle uses Postgres as the workflow event store + read-model, backed by a
+single named volume that Aspire generates per release (the volume name embeds
+an Aspire-internal hash, e.g. `fleans.aspire-<hash>-postgres-data`). Find the
+exact name with:
 
-- **`postgres-data`** — workflow event store + EF read-model.
-  Backed up via:
-  ```bash
-  docker compose exec -T postgres \
-    pg_dump -U fleans fleans > fleans-backup-$(date +%Y%m%d).sql
-  ```
-  Restore with `docker compose exec -T postgres psql -U fleans fleans < fleans-backup-YYYYMMDD.sql`.
-- **`redis-data`** — optional. Redis is configured for `appendonly no` by
-  default; Orleans grain state is rebuilt from the Postgres event store on
-  silo restart, so wiping Redis is non-destructive. **Never** wipe Postgres
-  without a backup.
+```bash
+docker volume ls --filter name=postgres-data
+```
 
-`docker compose down -v` removes BOTH volumes. Use `docker compose down`
+Back up the database with `pg_dump`:
+
+```bash
+docker compose exec -T postgres \
+  pg_dump -U postgres fleans > fleans-backup-$(date +%Y%m%d).sql
+```
+
+Restore with `docker compose exec -T postgres psql -U postgres fleans < fleans-backup-YYYYMMDD.sql`.
+
+Redis (Orleans clustering + PubSub grain storage) is in-memory only — the
+bundle does not configure persistence on the Redis container. Orleans
+re-bootstraps cluster membership and PubSub state from Postgres + the Redis
+clustering provider on silo restart, so a Redis wipe is non-destructive.
+**Never** wipe Postgres without a backup.
+
+`docker compose down -v` removes the Postgres volume. Use `docker compose down`
 (without `-v`) to stop the stack while preserving state.
 
 ## 5. External Postgres
@@ -163,24 +179,26 @@ notes — they call out any migration steps Compose itself does not perform
 
 ## 7. Troubleshooting
 
-- **Port 8080 already in use.** Override the host-port map in
-  `docker-compose.yml` (e.g. `8080:8080` → `9080:8080`) or stop the conflicting
-  process. There is no `FLEANS_WEB_PORT` env in the bundled compose; the port
-  binding lives in the YAML itself.
-- **`fleans-api` exits with `Postgres connection refused`.** Postgres
-  health-check hasn't passed yet. Tail logs (`docker compose logs -f postgres
-  fleans-api`) and wait — first boot creates the schema and runs migrations,
-  which can take 20-40s on slow disks. If it never settles, check
-  `ConnectionStrings__fleans` for the right host (`postgres` for in-cluster,
-  the external host for managed PG).
-- **`fleans-web` returns 502 Bad Gateway.** The Web app waits for the API to
-  be reachable. Same root cause as above — let Postgres + API stabilise.
+- **Port 8080 already in use.** Edit the host port in `docker-compose.yaml` —
+  e.g. `8080:${FLEANS_MANAGEMENT_PORT}` → `9080:${FLEANS_MANAGEMENT_PORT}` —
+  or stop the conflicting process. The container-side port stays unchanged.
+- **`fleans-core` restarts a few times before becoming stable.** The Postgres
+  container takes 20–40s to initialise on first run. The silos use Compose's
+  `restart: always` policy and retry connecting until Postgres is ready. As
+  long as `docker compose ps` eventually shows them all as `Up` and stable,
+  this is expected. Watch with `docker compose logs -f fleans-core postgres`.
+- **Migration errors like `relation "X" already exists`.** All silos
+  (`fleans-core`, `fleans-management`, `fleans-mcp`, `fleans-worker`) call
+  `MigrateAsync` at startup; they serialize via a Postgres advisory lock so
+  concurrent migrations are safe. If you ever see a "relation already exists"
+  error, the lock acquisition was likely skipped (e.g. running an out-of-tree
+  fork without the fix shipped in `Fleans.ServiceDefaults`); upgrade to a
+  release ≥ 0.1.0-beta.
 - **`docker compose config` shows blank values for `Authentication__*`.** The
-  `.env` file isn't being read. `docker compose` reads `.env` from the same
-  directory as the YAML by default; pass `--env-file path/to/.env` if you put
-  it elsewhere.
+  bundle ships those empty by default (auth-disabled mode). Fill them in `.env`
+  to enable OIDC.
 - **Linux SELinux/AppArmor permission denied on volumes.** Add the `:Z` suffix
-  to bind-mount paths in `docker-compose.yml` (e.g. `./data:/var/lib/postgresql/data:Z`)
+  to bind-mount paths in `docker-compose.yaml` (e.g. `./data:/var/lib/postgresql/data:Z`)
   to relabel for SELinux, or run with `--privileged` in dev.
 
 If a specific error is not covered here, the Aspire-emitted compose YAML

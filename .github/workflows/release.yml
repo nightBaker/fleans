@@ -217,6 +217,15 @@ jobs:
           set -euo pipefail
           aspire publish --project Fleans.Aspire -t docker-compose -o out/compose
 
+      - name: Post-process compose bundle
+        # Aspire emits a compose bundle with empty .env placeholders and random-host-port
+        # mappings, which gives end users a broken first-run experience. The script fills
+        # in version-pinned image refs, sane container/host port defaults, and randomly
+        # generated secrets so `docker compose up -d` works out of the box.
+        run: |
+          set -euo pipefail
+          ./scripts/postprocess-compose-bundle.sh out/compose "${{ needs.setup.outputs.version }}"
+
       - name: Zip the compose bundle
         run: |
           set -euo pipefail
