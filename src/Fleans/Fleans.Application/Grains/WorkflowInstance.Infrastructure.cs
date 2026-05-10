@@ -233,6 +233,9 @@ public partial class WorkflowInstance
             if (abortCount > 0)
                 LogAbortingDescendantWalks(abortCount, cancelledTx.TransactionInstanceId);
         }
+        foreach (var hazardTx in postCancelEvents.OfType<TransactionOutcomeSet>()
+            .Where(e => e.Outcome == TransactionOutcome.Hazard))
+            LogHazardCascadeToOuter(hazardTx.TransactionInstanceId, hazardTx.ErrorMessage);
         if (cancelEffects.Count > 0)
             await PerformEffects(cancelEffects);
 

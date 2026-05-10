@@ -416,6 +416,10 @@ public partial class WorkflowInstance
         Message = "Transaction completed: transactionInstanceId={TransactionInstanceId} activityId={ActivityId}")]
     private partial void LogTransactionCompleted(Guid transactionInstanceId, string activityId);
 
+    [LoggerMessage(EventId = 1104, Level = LogLevel.Warning,
+        Message = "Outer transaction {OuterTxId} cancel aborted — Hazard propagated to outer TX; {ErrorMessage}")]
+    private partial void LogHazardCascadeToOuter(Guid outerTxId, string? errorMessage);
+
     [LoggerMessage(EventId = 3033, Level = LogLevel.Debug,
         Message = "Compensation log returned: {EntryCount} entries")]
     private partial void LogCompensationLogReturned(int entryCount);

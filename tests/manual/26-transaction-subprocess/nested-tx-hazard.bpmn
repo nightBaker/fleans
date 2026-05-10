@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+             id="Definitions_nested_tx_hazard"
+             targetNamespace="http://bpmn.io/schema/bpmn">
+
+  <!-- Scenario F test fixture: outer TX fires CancelEndEvent after inner TX ended in Hazard.
+       Expected: outer TX outcome is Hazard (not Cancelled), no compensation walk runs. -->
+  <process id="nested-tx-hazard" isExecutable="true">
+
+    <startEvent id="start" name="Start" />
+
+    <!-- Outer Transaction -->
+    <transaction id="outer-tx" name="Outer TX">
+
+      <!-- Inner Transaction — has no error boundary, so errors escape to Hazard -->
+      <transaction id="inner-tx" name="Inner TX">
+        <startEvent id="inner-start" />
+
+        <!-- Script that throws when shouldFail variable is set -->
+        <scriptTask id="inner-task" name="Inner Task (may fail)" scriptFormat="csharp">
+          <script>
+if (_context.shouldFail == true)
+    throw new Fleans.Domain.Errors.CustomTaskFailedActivityException("500", "Inner task failed — Hazard path");
+          </script>
+        </scriptTask>
+
+        <endEvent id="inner-end" />
+
+        <sequenceFlow id="isf1" sourceRef="inner-start" targetRef="inner-task" />
+        <sequenceFlow id="isf2" sourceRef="inner-task" targetRef="inner-end" />
+      </transaction>
+
+      <!-- After inner TX completes (normally), wait for cancel signal -->
+      <intermediateCatchEvent id="wait-for-cancel" name="Wait for Cancel">
+        <messageEventDefinition messageRef="triggerOuterCancel" />
+      </intermediateCatchEvent>
+
+      <cancelEndEvent id="cancel-end" name="Cancel End" />
+
+      <startEvent id="outer-start" />
+      <endEvent id="outer-end" />
+
+      <sequenceFlow id="osf1" sourceRef="outer-start" targetRef="inner-tx" />
+      <sequenceFlow id="osf2" sourceRef="inner-tx" targetRef="wait-for-cancel" />
+      <sequenceFlow id="osf3" sourceRef="wait-for-cancel" targetRef="cancel-end" />
+    </transaction>
+
+    <!-- Cancel boundary on outer TX — fires on normal TX cancellation -->
+    <boundaryEvent id="cancel-boundary" attachedToRef="outer-tx" cancelActivity="true">
+      <cancelEventDefinition />
+    </boundaryEvent>
+
+    <!-- Error boundary on outer TX — fires on Hazard (error code 503) -->
+    <boundaryEvent id="error-boundary" attachedToRef="outer-tx" cancelActivity="true">
+      <errorEventDefinition errorRef="hazardError" />
+    </boundaryEvent>
+
+    <endEvent id="cancel-path-end" name="Cancelled End" />
+    <endEvent id="hazard-path-end" name="Hazard End">
+      <errorEventDefinition />
+    </endEvent>
+    <endEvent id="process-end" name="Process End" />
+
+    <sequenceFlow id="sf1" sourceRef="start" targetRef="outer-tx" />
+    <sequenceFlow id="sf-cancel-boundary" sourceRef="cancel-boundary" targetRef="cancel-path-end" />
+    <sequenceFlow id="sf-error-boundary" sourceRef="error-boundary" targetRef="hazard-path-end" />
+    <sequenceFlow id="sf-normal" sourceRef="outer-tx" targetRef="process-end" />
+  </process>
+
+  <message id="triggerOuterCancel" name="trigger-outer-cancel" />
+  <error id="hazardError" name="HazardError" errorCode="503" />
+
+</definitions>
