@@ -10,22 +10,19 @@ namespace Fleans.Infrastructure.Bpmn;
 public partial class BpmnConverter : IBpmnConverter
 {
     private const int MaxConversionDepth = 10;
-    private const string BpmnNamespace = "http://www.omg.org/spec/BPMN/20100524/MODEL";
-    private const string BpmndiNamespace = "http://www.omg.org/spec/BPMN/20100524/DI";
-    private const string ZeebeNamespace = "http://camunda.org/schema/zeebe/1.0";
-    private const string FleansNamespace = "http://fleans.io/schema/bpmn/fleans";
-    private const string CamundaNamespace = "http://camunda.org/schema/1.0/bpmn";
-    private static readonly XNamespace Bpmn = BpmnNamespace;
-    private static readonly XNamespace Bpmndi = BpmndiNamespace;
-    private static readonly XNamespace Zeebe = ZeebeNamespace;
-    private static readonly XNamespace Fleans = FleansNamespace;
-    private static readonly XNamespace Camunda = CamundaNamespace;
+    private static readonly XNamespace Bpmn    = BpmnNamespaces.Bpmn;
+    private static readonly XNamespace Bpmndi  = BpmnNamespaces.Bpmndi;
+    private static readonly XNamespace Zeebe   = BpmnNamespaces.Zeebe;
+    private static readonly XNamespace Fleans  = BpmnNamespaces.Fleans;
+    private static readonly XNamespace Camunda = BpmnNamespaces.Camunda;
 
     private readonly ILogger<BpmnConverter> _logger;
+    private readonly CustomTaskRoutingResolver _resolver;
 
     public BpmnConverter(ILogger<BpmnConverter> logger)
     {
         _logger = logger;
+        _resolver = new CustomTaskRoutingResolver();
     }
 
     public async Task<WorkflowDefinition> ConvertFromXmlAsync(Stream bpmnXmlStream)
@@ -333,12 +330,12 @@ public partial class BpmnConverter : IBpmnConverter
         foreach (var serviceTask in scopeElement.Elements(Bpmn + "serviceTask"))
         {
             var id = GetId(serviceTask);
-            var taskType = ResolveServiceTaskType(serviceTask);
+            var taskType = _resolver.ResolveTaskType(serviceTask);
             Activity activity;
             if (!string.IsNullOrEmpty(taskType))
             {
-                var inputMappings = ParseInputMappings(serviceTask);
-                var outputMappings = ParseOutputMappings(serviceTask);
+                var inputMappings = _resolver.ParseInputMappings(serviceTask);
+                var outputMappings = _resolver.ParseOutputMappings(serviceTask);
                 activity = new CustomTaskActivity(id, taskType, inputMappings, outputMappings);
             }
             else
@@ -1241,118 +1238,4 @@ public partial class BpmnConverter : IBpmnConverter
         Message = "Complex gateway '{GatewayId}' has activationCondition but is detected as a fork — activationCondition is ignored on fork gateways")]
     private partial void LogActivationConditionIgnoredOnFork(string gatewayId);
 
-    private static readonly System.Text.RegularExpressions.Regex IdentifierRegex =
-        new("^[a-zA-Z_][a-zA-Z0-9_]*$", System.Text.RegularExpressions.RegexOptions.Compiled);
-
-    private static string? ResolveServiceTaskType(XElement serviceTask)
-    {
-        var attr = serviceTask.Attribute("type")?.Value;
-        if (!string.IsNullOrWhiteSpace(attr))
-            return attr;
-
-        var taskDef = serviceTask.Element(Bpmn + "extensionElements")?.Element(Zeebe + "taskDefinition");
-        var zType = taskDef?.Attribute("type")?.Value;
-        if (!string.IsNullOrWhiteSpace(zType))
-            return zType;
-
-        return null;
-    }
-
-    private static List<InputMapping> ParseInputMappings(XElement serviceTask)
-    {
-        var mappings = new List<InputMapping>();
-        var ioMapping = serviceTask.Element(Bpmn + "extensionElements")?.Element(Zeebe + "ioMapping");
-        if (ioMapping is null) return mappings;
-
-        foreach (var input in ioMapping.Elements(Zeebe + "input"))
-            mappings.Add(ParseInputMapping(input));
-
-        return mappings;
-    }
-
-    private static List<OutputMapping> ParseOutputMappings(XElement serviceTask)
-    {
-        var mappings = new List<OutputMapping>();
-        var ioMapping = serviceTask.Element(Bpmn + "extensionElements")?.Element(Zeebe + "ioMapping");
-        if (ioMapping is null) return mappings;
-
-        foreach (var output in ioMapping.Elements(Zeebe + "output"))
-            mappings.Add(ParseOutputMapping(output));
-
-        return mappings;
-    }
-
-    private static InputMapping ParseInputMapping(XElement input)
-    {
-        var source = input.Attribute("source")?.Value
-            ?? throw new InvalidOperationException("<zeebe:input> missing required 'source' attribute");
-        var target = input.Attribute("target")?.Value
-            ?? throw new InvalidOperationException("<zeebe:input> missing required 'target' attribute");
-
-        if (string.IsNullOrWhiteSpace(target))
-            throw new InvalidOperationException("<zeebe:input> 'target' is empty or whitespace-only");
-
-        if (!IdentifierRegex.IsMatch(target))
-            throw new InvalidOperationException(
-                $"<zeebe:input target=\"{target}\"> target must be a valid identifier (^[a-zA-Z_][a-zA-Z0-9_]*$)");
-
-        ValidateMappingSource(source, $"<zeebe:input target=\"{target}\">");
-
-        return new InputMapping(source, target);
-    }
-
-    private static OutputMapping ParseOutputMapping(XElement output)
-    {
-        var source = output.Attribute("source")?.Value
-            ?? throw new InvalidOperationException("<zeebe:output> missing required 'source' attribute");
-        var target = output.Attribute("target")?.Value
-            ?? throw new InvalidOperationException("<zeebe:output> missing required 'target' attribute");
-
-        if (string.IsNullOrWhiteSpace(target))
-            throw new InvalidOperationException("<zeebe:output> 'target' is empty or whitespace-only");
-
-        if (!IdentifierRegex.IsMatch(target))
-            throw new InvalidOperationException(
-                $"<zeebe:output target=\"{target}\"> target must be a valid identifier (^[a-zA-Z_][a-zA-Z0-9_]*$)");
-
-        if (target == "__response")
-            throw new InvalidOperationException(
-                "<zeebe:output target=\"__response\"> is reserved — providers populate it during execution; output mapping cannot target it directly");
-
-        ValidateMappingSource(source, $"<zeebe:output target=\"{target}\">");
-
-        return new OutputMapping(source, target);
-    }
-
-    private static void ValidateMappingSource(string source, string errorPrefix)
-    {
-        if (string.IsNullOrEmpty(source))
-            throw new InvalidOperationException($"{errorPrefix} has empty 'source' attribute");
-
-        if (source[0] != '=')
-            return;
-
-        var expr = source.Substring(1);
-        if (expr.Length == 0)
-            throw new InvalidOperationException($"{errorPrefix} 'source' is bare '=' with no expression");
-
-        if (expr[0] == '"')
-        {
-            if (expr.Length < 2 || expr[expr.Length - 1] != '"')
-                throw new InvalidOperationException($"{errorPrefix} has unmatched quote in source: '{source}'");
-            return;
-        }
-
-        if (expr == "true" || expr == "false" || expr == "null") return;
-        if (long.TryParse(expr, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out _)) return;
-        if (double.TryParse(expr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _)) return;
-
-        var segments = expr.Split('.');
-        foreach (var seg in segments)
-        {
-            if (!IdentifierRegex.IsMatch(seg))
-                throw new InvalidOperationException(
-                    $"{errorPrefix} has invalid path segment '{seg}' in source: '{source}'");
-        }
-    }
 }
