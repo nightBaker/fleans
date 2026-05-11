@@ -294,6 +294,55 @@
                                 Task type "<strong>@currentPluginType</strong>" is not registered in the catalog.
                                 The workflow may hang if no plugin claims this task type at runtime.
                             </FluentMessageBar>
+                            <FluentMessageBar Intent="MessageIntent.Info" Class="margin-top-8">
+                                Showing raw IO mappings from BPMN. Edits create <code>fleans:InputMapping</code> elements alongside any existing <code>zeebe:ioMapping</code> container.
+                            </FluentMessageBar>
+                            <div>
+                                <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Input Mappings</FluentLabel>
+                                @for (var i = 0; i < Element.InputMappings.Count; i++)
+                                {
+                                    var index = i;
+                                    <FluentStack Orientation="Orientation.Horizontal" Gap="4px" Style="align-items: end;">
+                                        <FluentTextField Value="@Element.InputMappings[index].Source"
+                                                         @onchange="@(e => OnMappingSourceChange(e, "input", index))"
+                                                         Disabled="@ReadOnly" Placeholder="Source" Style="flex: 1;" />
+                                        <FluentTextField Value="@Element.InputMappings[index].Target"
+                                                         @onchange="@(e => OnMappingTargetChange(e, "input", index))"
+                                                         Disabled="@ReadOnly" Placeholder="Target" Style="flex: 1;" />
+                                        @if (!ReadOnly)
+                                        {
+                                            <FluentButton Appearance="Appearance.Outline" OnClick="@(() => RemoveMapping("input", index))">Remove</FluentButton>
+                                        }
+                                    </FluentStack>
+                                }
+                                @if (!ReadOnly)
+                                {
+                                    <FluentButton Appearance="Appearance.Outline" OnClick="@(() => AddMapping("input"))">Add Input Mapping</FluentButton>
+                                }
+                            </div>
+                            <div>
+                                <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Output Mappings</FluentLabel>
+                                @for (var i = 0; i < Element.OutputMappings.Count; i++)
+                                {
+                                    var index = i;
+                                    <FluentStack Orientation="Orientation.Horizontal" Gap="4px" Style="align-items: end;">
+                                        <FluentTextField Value="@Element.OutputMappings[index].Source"
+                                                         @onchange="@(e => OnMappingSourceChange(e, "output", index))"
+                                                         Disabled="@ReadOnly" Placeholder="Source" Style="flex: 1;" />
+                                        <FluentTextField Value="@Element.OutputMappings[index].Target"
+                                                         @onchange="@(e => OnMappingTargetChange(e, "output", index))"
+                                                         Disabled="@ReadOnly" Placeholder="Target" Style="flex: 1;" />
+                                        @if (!ReadOnly)
+                                        {
+                                            <FluentButton Appearance="Appearance.Outline" OnClick="@(() => RemoveMapping("output", index))">Remove</FluentButton>
+                                        }
+                                    </FluentStack>
+                                }
+                                @if (!ReadOnly)
+                                {
+                                    <FluentButton Appearance="Appearance.Outline" OnClick="@(() => AddMapping("output"))">Add Output Mapping</FluentButton>
+                                }
+                            </div>
                         }
                     }
                 </div>
