@@ -17,7 +17,7 @@ A production Fleans cluster has these components:
 | --- | --- | --- | --- |
 | **Core silo** (`fleans-api`) | `ghcr.io/nightbaker/fleans-api` with `Fleans__Role=Core` | yes | API endpoints, coordinator grains, workflow state. The same image hosts a `Combined` silo if `Fleans__Role` is unset or `Combined`. |
 | **Worker silo** (`fleans-worker`) | `ghcr.io/nightbaker/fleans-worker` (defaults `Fleans__Role=Worker`) | optional | `[StatelessWorker]` script + condition grains. Skip if a Combined-role API silo handles them. |
-| **Custom-task worker** (`fleans-custom-worker`) | `ghcr.io/nightbaker/fleans-custom-worker` | optional | Hosts custom-task plugin grains (REST caller, user plugins). Adds isolation for plugin failures. |
+| **Custom-task worker** (your-fork-of-`fleans-custom-worker`) | not published by Fleans — see [Custom Worker Host](/fleans/guides/custom-worker-host/) | optional | Plugin authors fork `Fleans.CustomWorkerHost` and ship their own image. Provides isolation for plugin failures and lets plugin code live outside the engine repo. |
 | **Web admin UI** (`fleans-web`) | `ghcr.io/nightbaker/fleans-web` | optional | Blazor Server admin UI on port `8080`. |
 | **MCP server** (`fleans-mcp`) | `ghcr.io/nightbaker/fleans-mcp` | optional | MCP server on port `5200` for AI-agent integration. |
 | **Redis** | `redis:7-alpine` or managed | yes | Orleans clustering, grain storage, key-protection keys. |

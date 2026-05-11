@@ -36,9 +36,12 @@ else
         $"Unknown ASPIRE_PUBLISH_ENV value '{publishEnv}'. Valid values: 'compose' (default), 'kubernetes'.");
 }
 
-// Persistence provider — set FLEANS_PERSISTENCE_PROVIDER=Postgres to use PostgreSQL.
-// Default is SQLite (fast local dev, no container required).
-var persistenceProvider = builder.Configuration["FLEANS_PERSISTENCE_PROVIDER"] ?? "Sqlite";
+// Persistence provider — set FLEANS_PERSISTENCE_PROVIDER=Postgres / Sqlite to override.
+// Defaults: Sqlite in dev (fast local dev, no container required); Postgres in publish mode
+// (release-asset compose bundle and Helm chart both target Postgres — SQLite without a shared
+// volume cannot back a multi-silo deployment, see fix/compose-bundle-defects).
+var defaultPersistenceProvider = builder.ExecutionContext.IsPublishMode ? "Postgres" : "Sqlite";
+var persistenceProvider = builder.Configuration["FLEANS_PERSISTENCE_PROVIDER"] ?? defaultPersistenceProvider;
 var usePostgres = persistenceProvider.Equals("Postgres", StringComparison.OrdinalIgnoreCase);
 
 // Streaming provider — set FLEANS_STREAMING_PROVIDER=Kafka or AzureQueue to opt into multi-silo-safe streams.
@@ -163,19 +166,29 @@ var apiProject = builder.AddProject<Projects.Fleans_Api>("fleans-core")
     .WaitFor(redis)
     .WithReplicas(1);
 if (usePostgres) apiProject = apiProject.WaitFor(pg!);
+// Mark the API endpoint as externally accessible so the docker-compose publisher emits a
+// host port mapping (`ports:`) rather than internal-only `expose:`. Without this, the
+// release-asset compose bundle is unreachable from the host even after `docker compose up`.
+if (builder.ExecutionContext.IsPublishMode)
+{
+    apiProject = apiProject.WithExternalHttpEndpoints();
+}
 var fleansSilo = WithPersistence(apiProject, usePostgres, pg, sqliteConnectionString);
 fleansSilo = WithStreaming(fleansSilo, useKafka, kafka, useAzureQueue, azureQueues);
 
 // Web = Orleans client
-WithPersistence(
-    builder.AddProject<Projects.Fleans_Web>("fleans-management")
-        .WithReference(orleans.AsClient())
-        .WaitFor(fleansSilo)
-        .WithEnvironment("Authentication__Authority", authAuthority)
-        .WithEnvironment("Authentication__ClientId", authClientId)
-        .WithEnvironment("Authentication__ClientSecret", authClientSecret)
-        .WithReplicas(1),
-    usePostgres, pg, sqliteConnectionString);
+var webProject = builder.AddProject<Projects.Fleans_Web>("fleans-management")
+    .WithReference(orleans.AsClient())
+    .WaitFor(fleansSilo)
+    .WithEnvironment("Authentication__Authority", authAuthority)
+    .WithEnvironment("Authentication__ClientId", authClientId)
+    .WithEnvironment("Authentication__ClientSecret", authClientSecret)
+    .WithReplicas(1);
+if (builder.ExecutionContext.IsPublishMode)
+{
+    webProject = webProject.WithExternalHttpEndpoints();
+}
+WithPersistence(webProject, usePostgres, pg, sqliteConnectionString);
 
 // MCP = Orleans client (for Claude Code)
 WithPersistence(
@@ -221,18 +234,13 @@ if (builder.ExecutionContext.IsPublishMode)
     workerHost = WithPersistence(workerHost, usePostgres, pg, sqliteConnectionString);
     workerHost = WithStreaming(workerHost, useKafka, kafka, useAzureQueue, azureQueues);
 
-    // Custom worker host — worked example for the "host-your-own custom-task plugins"
-    // pattern. Identical Orleans-cluster wiring to fleans-worker; differs in that this
-    // host references ONLY Fleans.Worker + plugin assemblies (no Application/Domain refs).
-    // Plugin authors copy this project as a starting template; the in-tree CustomWorkerHost
-    // is what `aspire publish` emits as a separate fleans-custom-worker container so
-    // operators can scale plugin workers independently from the engine workers.
-    var customWorkerHost = builder.AddProject<Projects.Fleans_CustomWorkerHost>("fleans-custom-worker")
-        .WithReference(orleans)
-        .WaitFor(redis)
-        .WithEnvironment("Fleans__Role", "Worker")
-        .WithReplicas(1);
-    customWorkerHost = WithStreaming(customWorkerHost, useKafka, kafka, useAzureQueue, azureQueues);
+    // NOTE: Fleans.CustomWorkerHost is intentionally NOT registered here. It is a
+    // worked-example template for plugin authors (host your own custom-task plugins —
+    // see the "How to Add a Custom Task Plugin" section of CLAUDE.md), not a default
+    // deployable. Shipping it would force the release pipeline to publish a
+    // fleans-custom-worker image alongside api/web/worker/mcp, which it does not
+    // (release.yml's image matrix builds 4 images). Plugin authors fork
+    // Fleans.CustomWorkerHost, register their plugins, and run their own publish.
 
     // Load-test fan-out — opt-in via FLEANS_LOAD_TEST_MODE=true. Targets the docker-compose
     // publisher only; the K8s publisher rejects the bind mount and Kubernetes Services
