@@ -356,19 +356,18 @@ public class WorkflowQueryService : IWorkflowQueryService
         page = page.Normalize();
         await using var db = await _dbContextFactory.CreateDbContextAsync();
 
-        // Layer 1: DB-level — Sieve for TaskState filter + CreatedAt sort
-        var baseQuery = db.UserTasks.AsQueryable();
+        // Layer 1: provider-specific base query. PG injects JSON-text LIKE conditions via
+        // raw SQL (FromSqlInterpolated); SQLite returns a plain AsQueryable() and relies on
+        // the in-memory filter path below. See IUserTaskFilterStrategy / #415.
+        var baseQuery = _userTaskFilter.GetFilteredBase(db, assignee, candidateGroup);
+
+        // Layer 2: Sieve for sort + any caller-supplied filters (e.g. TaskState).
         var sieveModel = new SieveModel
         {
             Sorts = page.Sorts ?? "-CreatedAt",
             Filters = page.Filters
         };
         var sievedQuery = _sieveProcessor.Apply(sieveModel, baseQuery, applyPagination: false);
-
-        // Layer 2: provider-specific assignee/candidateGroup pushdown.
-        // PG impl appends LIKE clauses against the JSON-serialized columns; SQLite is a no-op
-        // and falls back to in-memory filtering after materialization.
-        sievedQuery = _userTaskFilter.Apply(sievedQuery, assignee, candidateGroup);
 
         if (_userTaskFilter.PushesToSql)
         {

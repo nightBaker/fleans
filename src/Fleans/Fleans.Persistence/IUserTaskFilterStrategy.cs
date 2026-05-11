@@ -23,22 +23,22 @@ public interface IUserTaskFilterStrategy
     bool PushesToSql { get; }
 
     /// <summary>
-    /// Returns a query with the assignee/candidateGroup filter applied (or unchanged
-    /// when <see cref="PushesToSql"/> is false). Null filters are no-ops regardless of
-    /// provider.
+    /// Returns the base <see cref="IQueryable{UserTaskState}"/> for the paged overload.
+    /// PostgreSQL implementations use <c>FromSqlInterpolated</c> to inject a JSON-text
+    /// LIKE filter directly into SQL. SQLite returns <c>db.UserTasks.AsQueryable()</c>
+    /// unchanged and the caller falls back to in-memory filtering after materialisation.
     /// </summary>
-    IQueryable<UserTaskState> Apply(IQueryable<UserTaskState> query, string? assignee, string? candidateGroup);
+    IQueryable<UserTaskState> GetFilteredBase(FleanQueryDbContext db, string? assignee, string? candidateGroup);
 }
 
 /// <summary>
-/// Default no-op strategy. Returns the query unchanged; the caller's existing
-/// in-memory <c>ApplyUserTaskFilters</c> path continues to apply the filter.
-/// Used by SQLite (no SQL pushdown for the JSON columns) and by host configurations
-/// that have not registered a provider-specific strategy.
+/// Default no-op strategy for SQLite. Returns the plain <c>db.UserTasks</c> set;
+/// the caller's in-memory <c>ApplyUserTaskFilters</c> path still applies the filter.
 /// </summary>
 public sealed class InMemoryUserTaskFilterStrategy : IUserTaskFilterStrategy
 {
     public bool PushesToSql => false;
 
-    public IQueryable<UserTaskState> Apply(IQueryable<UserTaskState> query, string? assignee, string? candidateGroup) => query;
+    public IQueryable<UserTaskState> GetFilteredBase(FleanQueryDbContext db, string? assignee, string? candidateGroup)
+        => db.UserTasks.AsQueryable();
 }

@@ -1025,19 +1025,10 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
         var strategy = new Fleans.Persistence.PostgreSql.PostgresUserTaskFilterStrategy();
         await using var db = await fixture.QueryFactory.CreateDbContextAsync();
 
-        string sql;
-        try
-        {
-            var query = strategy.Apply(db.UserTasks.AsQueryable(), "alice", null);
-            sql = query.ToQueryString();
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"§6.1 PROTOTYPE FAILURE — EF could not translate EF.Functions.Like+EF.Property against value-converted property: {ex.GetType().Name}: {ex.Message}");
-            throw;
-        }
-
-        Console.WriteLine($"§6.1 PROTOTYPE captured SQL:\n{sql}\n");
+        // Path C: GetFilteredBase returns a FromSqlInterpolated query — verify LIKE is in the SQL.
+        var query = strategy.GetFilteredBase(db, "alice", null);
+        var sql = query.ToQueryString();
+        Console.WriteLine($"Path C captured SQL:\n{sql}\n");
 
         Assert.IsTrue(sql.Contains("LIKE", StringComparison.OrdinalIgnoreCase),
             $"Expected SQL to contain LIKE clause; got:\n{sql}");
@@ -1059,7 +1050,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
         var strategy = new Fleans.Persistence.PostgreSql.PostgresUserTaskFilterStrategy();
         await using var db = await fixture.QueryFactory.CreateDbContextAsync();
 
-        var query = strategy.Apply(db.UserTasks.AsQueryable(), null, "managers");
+        var query = strategy.GetFilteredBase(db, null, "managers");
         var sql = query.ToQueryString();
 
         Assert.IsTrue(sql.Contains("LIKE", StringComparison.OrdinalIgnoreCase),
