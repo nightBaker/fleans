@@ -170,6 +170,20 @@ public partial class WorkflowCommandService : IWorkflowCommandService
         await grain.CompleteUserTask(activityInstanceId, userId, variables);
     }
 
+    public async Task FailUserTask(Guid workflowInstanceId, Guid activityInstanceId, string errorCode, string errorMessage)
+    {
+        LogFailingUserTask(workflowInstanceId, activityInstanceId, errorCode);
+        var grain = _grainFactory.GetGrain<IWorkflowInstanceGrain>(workflowInstanceId);
+        await grain.FailUserTask(activityInstanceId, errorCode, errorMessage);
+    }
+
+    public async Task CancelUserTask(Guid workflowInstanceId, Guid activityInstanceId, string? reason)
+    {
+        LogCancellingUserTask(workflowInstanceId, activityInstanceId);
+        var grain = _grainFactory.GetGrain<IWorkflowInstanceGrain>(workflowInstanceId);
+        await grain.CancelUserTask(activityInstanceId, reason);
+    }
+
     public async Task<ProcessDefinitionSummary> DisableProcess(string processDefinitionKey)
     {
         LogDisablingProcess(processDefinitionKey);
@@ -195,6 +209,14 @@ public partial class WorkflowCommandService : IWorkflowCommandService
     [LoggerMessage(EventId = 7010, Level = LogLevel.Information,
         Message = "Completing user task: WorkflowInstanceId={WorkflowInstanceId}, ActivityInstanceId={ActivityInstanceId}, UserId={UserId}")]
     private partial void LogCompletingUserTask(Guid workflowInstanceId, Guid activityInstanceId, string userId);
+
+    [LoggerMessage(EventId = 7015, Level = LogLevel.Information,
+        Message = "Failing user task: WorkflowInstanceId={WorkflowInstanceId}, ActivityInstanceId={ActivityInstanceId}, ErrorCode={ErrorCode}")]
+    private partial void LogFailingUserTask(Guid workflowInstanceId, Guid activityInstanceId, string errorCode);
+
+    [LoggerMessage(EventId = 7016, Level = LogLevel.Information,
+        Message = "Cancelling user task: WorkflowInstanceId={WorkflowInstanceId}, ActivityInstanceId={ActivityInstanceId}")]
+    private partial void LogCancellingUserTask(Guid workflowInstanceId, Guid activityInstanceId);
 
     public async Task<EvaluateConditionsResult> EvaluateConditions(string? workflowId, ExpandoObject variables)
     {

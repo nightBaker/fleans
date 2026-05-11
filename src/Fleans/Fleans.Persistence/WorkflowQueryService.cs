@@ -412,6 +412,12 @@ public class WorkflowQueryService : IWorkflowQueryService
         return task is null ? null : ToUserTaskDto(task);
     }
 
+    public async Task<bool> UserTaskExists(Guid activityInstanceId)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        return await db.UserTasks.AnyAsync(t => t.ActivityInstanceId == activityInstanceId);
+    }
+
     public async Task<IReadOnlyList<UserTaskState>> GetActiveUserTasksForWorkflow(Guid workflowInstanceId)
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync();

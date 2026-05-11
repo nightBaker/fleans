@@ -517,4 +517,66 @@ public class UserTaskIntegrationTests : WorkflowTestBase
         Assert.IsNotNull(taskState);
         Assert.AreEqual(Domain.States.UserTaskLifecycleState.Completed, taskState.TaskState);
     }
+
+    // --- Idempotency tests for FailUserTask / CancelUserTask ---
+
+    [TestMethod]
+    public async Task FailUserTask_Idempotent_SecondCallDoesNotThrow()
+    {
+        var grain = await StartUserTaskWorkflow(assignee: "john");
+        var activeActivities = await grain.GetActiveActivities();
+        Guid instanceId = default;
+        foreach (var a in activeActivities)
+        {
+            if (await a.GetActivityId() == "userTask1") { instanceId = await a.GetActivityInstanceId(); break; }
+        }
+
+        await grain.FailUserTask(instanceId, "ERR-001", "First failure");
+        await grain.FailUserTask(instanceId, "ERR-001", "Second failure");
+
+        var taskGrain = Cluster.GrainFactory.GetGrain<IUserTaskGrain>(instanceId);
+        var taskState = await taskGrain.GetState();
+        Assert.IsNotNull(taskState);
+        Assert.AreEqual(Domain.States.UserTaskLifecycleState.Completed, taskState.TaskState);
+    }
+
+    [TestMethod]
+    public async Task CancelUserTask_Idempotent_SecondCallDoesNotThrow()
+    {
+        var grain = await StartUserTaskWorkflow(assignee: "john");
+        var activeActivities = await grain.GetActiveActivities();
+        Guid instanceId = default;
+        foreach (var a in activeActivities)
+        {
+            if (await a.GetActivityId() == "userTask1") { instanceId = await a.GetActivityInstanceId(); break; }
+        }
+
+        await grain.CancelUserTask(instanceId, "First cancel");
+        await grain.CancelUserTask(instanceId, "Second cancel");
+
+        var taskGrain = Cluster.GrainFactory.GetGrain<IUserTaskGrain>(instanceId);
+        var taskState = await taskGrain.GetState();
+        Assert.IsNotNull(taskState);
+        Assert.AreEqual(Domain.States.UserTaskLifecycleState.Completed, taskState.TaskState);
+    }
+
+    [TestMethod]
+    public async Task FailUserTask_ThenCancel_SecondCallDoesNotThrow()
+    {
+        var grain = await StartUserTaskWorkflow(assignee: "john");
+        var activeActivities = await grain.GetActiveActivities();
+        Guid instanceId = default;
+        foreach (var a in activeActivities)
+        {
+            if (await a.GetActivityId() == "userTask1") { instanceId = await a.GetActivityInstanceId(); break; }
+        }
+
+        await grain.FailUserTask(instanceId, "ERR-001", "Task failed");
+        await grain.CancelUserTask(instanceId, "Cancel after fail");
+
+        var taskGrain = Cluster.GrainFactory.GetGrain<IUserTaskGrain>(instanceId);
+        var taskState = await taskGrain.GetState();
+        Assert.IsNotNull(taskState);
+        Assert.AreEqual(Domain.States.UserTaskLifecycleState.Completed, taskState.TaskState);
+    }
 }

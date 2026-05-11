@@ -21,6 +21,8 @@ All endpoints are served from `https://localhost:7140/Workflow/*` by default.
 | `/tasks/{activityInstanceId}/claim` | POST | `{"UserId":"alice"}` |
 | `/tasks/{activityInstanceId}/unclaim` | POST | *(empty body)* |
 | `/tasks/{activityInstanceId}/complete` | POST | `{"UserId":"alice", "Variables":{"approved":true}}` |
+| `/tasks/{activityInstanceId}/fail` | POST | `{"errorMessage":"reason", "errorCode":"400"}` — fails the task; routes via Error Boundary Event if one matches. |
+| `/tasks/{activityInstanceId}/cancel` | POST | `{"reason":"optional"}` — cancels the task; no error propagation. Idempotent. |
 
 ## Endpoint details
 
@@ -209,6 +211,8 @@ User-task endpoints expose the human-in-the-loop lifecycle of `<bpmn:userTask>` 
 | POST | `/Workflow/tasks/{activityInstanceId}/claim`    | Mutation | `UserId` required in body | `200 OK` |
 | POST | `/Workflow/tasks/{activityInstanceId}/unclaim`  | Mutation | NONE — see below | `200 OK` |
 | POST | `/Workflow/tasks/{activityInstanceId}/complete` | Mutation | `UserId` required in body | `200 OK` |
+| POST | `/Workflow/tasks/{activityInstanceId}/fail`     | Mutation | `ErrorMessage` required in body | `200 OK` |
+| POST | `/Workflow/tasks/{activityInstanceId}/cancel`   | Mutation | body optional | `200 OK` |
 
 `Auth` above refers to API-level JWT bearer auth, which is opt-in for the entire API — see [Authentication](/fleans/reference/authentication/#quick-start). The `UserId` field in claim/complete bodies is **caller identity**, not authentication: the engine treats whatever value it receives as the acting user.
 
@@ -413,6 +417,67 @@ curl -k -X POST https://localhost:7140/Workflow/tasks/8b2e1a7c-9d3f-4e5b-a1c2-d3
   -d '{"UserId":"alice","Variables":{"approved":true}}'
 ```
 
+#### `POST /Workflow/tasks/{activityInstanceId}/fail`
+
+Fails a pending user task with an error code and message. The engine routes the failure through the standard `FailActivity` path — if an Error Boundary Event is attached to the task and its error code matches, the workflow continues via that boundary; otherwise the workflow instance enters a top-level error state.
+
+Both operations are **idempotent**: calling them on a task that is already in a terminal state (`Completed`, `Failed`, or `Cancelled`) returns `200 OK` without re-emitting events.
+
+**Request body**
+
+```json
+{
+  "errorMessage": "User rejected the task",
+  "errorCode": "400"
+}
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `errorMessage` | `string` | **Yes** | Human-readable failure reason. |
+| `errorCode` | `string` | No (default `"500"`) | Error code matched against Error Boundary Events. |
+
+**Response codes**
+
+- **200** — task failed (or was already terminal — idempotent).
+- **400** — `{"error": "ErrorMessage is required"}`.
+- **404** — `{"error": "User task '<id>' not found"}` — task never existed.
+
+**Curl example**
+
+```bash
+curl -k -X POST https://localhost:7140/Workflow/tasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/fail \
+  -H "Content-Type: application/json" \
+  -d '{"errorMessage":"User rejected the task","errorCode":"400"}'
+```
+
+#### `POST /Workflow/tasks/{activityInstanceId}/cancel`
+
+Cancels a pending user task. The activity is marked terminal with `ActivityCancelled` and removed from the task list. No error propagation occurs — the workflow branch simply stops at the cancelled task. The request body is optional.
+
+**Request body (optional)**
+
+```json
+{ "reason": "Operator cancelled" }
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `reason` | `string?` | No | Free-text cancellation reason stored in logs. |
+
+**Response codes**
+
+- **200** — task cancelled (or was already terminal — idempotent).
+- **404** — `{"error": "User task '<id>' not found"}` — task never existed.
+
+**Curl example**
+
+```bash
+curl -k -X POST https://localhost:7140/Workflow/tasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/cancel \
+  -H "Content-Type: application/json" \
+  -d '{"reason":"Operator cancelled"}'
+```
+
 #### See also
 
 - [User Tasks guide](/fleans/guides/user-tasks/) — conceptual model, state diagram, BPMN authoring (`<fleans:expectedOutputs>`).
@@ -468,7 +533,7 @@ All paths below are relative to the `/Workflow` controller route.
 | Policy | Endpoints | Description |
 |--------|-----------|-------------|
 | `WorkflowMutation` | `POST /start`, `/message`, `/signal`, `/evaluate-conditions`, `/deploy` | Workflow lifecycle write operations (start instance, deliver event, evaluate conditions, deploy BPMN) |
-| `TaskOperation` | `POST /complete-activity`, `/tasks/{activityInstanceId}/claim`, `/tasks/{activityInstanceId}/unclaim`, `/tasks/{activityInstanceId}/complete` | Activity-completion + user-task operations — see [User Tasks guide](/fleans/guides/user-tasks/) |
+| `TaskOperation` | `POST /complete-activity`, `/tasks/{activityInstanceId}/claim`, `/tasks/{activityInstanceId}/unclaim`, `/tasks/{activityInstanceId}/complete`, `/tasks/{activityInstanceId}/fail`, `/tasks/{activityInstanceId}/cancel` | Activity-completion + user-task operations — see [User Tasks guide](/fleans/guides/user-tasks/) |
 | `Read` | `GET /definitions`, `/definitions/{key}/instances`, `/definitions/{key}/{version}/instances`, `/tasks`, `/tasks/{activityInstanceId}` | Read-only queries |
 | `Admin` | `POST /disable`, `/enable` | Admin operations on process definitions |
 | `Polling` | `GET /instances/{instanceId}/state` | High-frequency state polling |

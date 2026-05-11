@@ -45,6 +45,16 @@ public class UserTaskMetadata
             throw new InvalidOperationException("Task must be in Claimed state to complete");
         TaskState = UserTaskLifecycleState.Completed;
     }
+
+    public void Fail()
+    {
+        TaskState = UserTaskLifecycleState.Failed;
+    }
+
+    public void Cancel()
+    {
+        TaskState = UserTaskLifecycleState.Cancelled;
+    }
 }
 
 [GenerateSerializer]
@@ -52,5 +62,7 @@ public enum UserTaskLifecycleState
 {
     Created,
     Claimed,
-    Completed
+    Completed,
+    Failed,
+    Cancelled
 }
