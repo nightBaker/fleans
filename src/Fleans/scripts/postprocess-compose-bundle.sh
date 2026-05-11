@@ -88,4 +88,73 @@ if grep -q '^  postgres:' "$yaml_file" && ! grep -q '^      POSTGRES_DB:' "$yaml
   ' "$yaml_file" > "$yaml_file.tmp" && mv "$yaml_file.tmp" "$yaml_file"
 fi
 
+# Helper: does the named service block already contain a given top-level key?
+# Used for idempotency on §4 and §5 so re-running the script (or operators who
+# hand-edited the bundle) doesn't get their config clobbered.
+service_has_key() {
+  local file="$1" svc="$2" key="$3"
+  awk -v svc_line="  $svc:" -v key_pat="^    $key:" '
+    $0 == svc_line { in_svc = 1; next }
+    in_svc && /^  [A-Za-z]/ { in_svc = 0 }
+    in_svc && $0 ~ key_pat { found = 1 }
+    END { exit found ? 0 : 1 }
+  ' "$file"
+}
+
+# 4) postgres healthcheck — required so the `depends_on { condition: service_healthy }`
+#    we add in §5 has a source of truth. Without this, fleans-* services boot in parallel
+#    with postgres and crash their EF Core migration at startup with `Connection refused`
+#    when postgres hasn't opened TCP yet. The crash zombies the .NET process at 99% CPU
+#    (other DI services prevent clean exit), leaving the container "Up" but unresponsive.
+if grep -q '^  postgres:' "$yaml_file" && ! service_has_key "$yaml_file" postgres healthcheck; then
+  awk '
+    /^  postgres:$/ { in_pg = 1 }
+    in_pg && /^    image:/ {
+      print
+      print "    healthcheck:"
+      print "      test: [\"CMD-SHELL\", \"pg_isready -U postgres -d fleans\"]"
+      print "      interval: 5s"
+      print "      timeout: 3s"
+      print "      retries: 30"
+      print "      start_period: 5s"
+      in_pg = 0
+      next
+    }
+    { print }
+  ' "$yaml_file" > "$yaml_file.tmp" && mv "$yaml_file.tmp" "$yaml_file"
+fi
+
+# 5) Upgrade `depends_on { postgres: condition: service_started }` (Aspire's default)
+#    to `condition: service_healthy` so the §4 healthcheck is actually consulted. Without
+#    this, the existing depends_on only waits for postgres's CONTAINER to launch, not for
+#    postgres to be accepting connections — the race window is ~10-15s on first-init.
+#    Targets a 2-line YAML pattern: "      postgres:\n        condition: \"service_started\"".
+awk '
+  /^      postgres:$/ { saw_pg = 1; print; next }
+  saw_pg && /^        condition: "service_started"$/ {
+    print "        condition: \"service_healthy\""
+    saw_pg = 0
+    next
+  }
+  { saw_pg = 0; print }
+' "$yaml_file" > "$yaml_file.tmp" && mv "$yaml_file.tmp" "$yaml_file"
+
+# 6) restart: on-failure on every fleans-* service — self-heals on transient failures
+#    (e.g., postgres restart mid-run). Aspire does NOT emit any restart policy by default,
+#    so a crash anywhere downstream of startup is permanent until the operator intervenes.
+for svc in fleans-core fleans-management fleans-mcp fleans-worker; do
+  if grep -q "^  ${svc}:" "$yaml_file" && ! service_has_key "$yaml_file" "$svc" restart; then
+    awk -v svc="$svc" '
+      $0 == "  " svc ":" { in_svc = 1 }
+      in_svc && /^    image:/ {
+        print
+        print "    restart: on-failure"
+        in_svc = 0
+        next
+      }
+      { print }
+    ' "$yaml_file" > "$yaml_file.tmp" && mv "$yaml_file.tmp" "$yaml_file"
+  fi
+done
+
 echo "Compose bundle post-processed at $bundle_dir (version=$version)."
