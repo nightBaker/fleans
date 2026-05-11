@@ -144,7 +144,7 @@ The release pipeline at `.github/workflows/release.yml` triggers on `git push or
 git tag v0.1.0-beta && git push origin v0.1.0-beta
 ```
 
-The release workflow runs setup → images → compose → helm-package → release in a single CI run. The `release.published` event then triggers `nuget-publish.yml` automatically.
+The release workflow runs setup → images → compose → helm-package → release in a single CI run. The same `v<SemVer>` tag push triggers `nuget-publish.yml` in parallel; that workflow waits for the GitHub Release object to exist before publishing to nuget.org, so a failed `release.yml` never produces orphan NuGet packages. (We can't use `on.release.published` here: releases created by the default `GITHUB_TOKEN` do not trigger downstream workflows — GitHub anti-recursion safeguard.)
 
 ### Post-tag verification
 
@@ -152,7 +152,7 @@ The release workflow runs setup → images → compose → helm-package → rele
 2. **All 4 images pullable, multi-arch** — `docker buildx imagetools inspect ghcr.io/nightbaker/fleans-{api,web,worker,mcp}:0.1.0-beta` should resolve `linux/amd64` + `linux/arm64`.
 3. **Release assets attached** — `gh release view v0.1.0-beta --json assets` should list `docker-compose-v0.1.0-beta.zip` + `fleans-0.1.0-beta.tgz`.
 4. **Notes look right** — auto-generated notes group commits per `.github/release.yml` categories.
-5. **NuGet publish triggered + green** — the `release.published` event triggers `nuget-publish.yml`. Verify via `gh run list --workflow=nuget-publish.yml --limit 1`. Verify each of the 3 packages on nuget.org: `Fleans.Application.Abstractions`, `Fleans.Worker`, `Fleans.Plugins.RestCaller`.
+5. **NuGet publish triggered + green** — pushing the tag fires `nuget-publish.yml` in parallel with `release.yml`. It blocks on the GitHub Release existing (max 20 min wait) before pushing to nuget.org. Verify via `gh run list --workflow=nuget-publish.yml --limit 1`. Verify each of the 3 packages on nuget.org: `Fleans.Application.Abstractions`, `Fleans.Worker`, `Fleans.Plugins.RestCaller`.
 6. **Cosign verify smoke test** — pick one of the published images and verify the signature against Sigstore. The output should include a `Bundle` block with a `tlogEntries[0].logIndex` proving the signature was logged to the public Rekor transparency log.
 
    ```bash
