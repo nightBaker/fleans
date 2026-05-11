@@ -76,12 +76,12 @@
 
                 <div>
                     <FluentCheckbox Value="@propagateAllParentVariables" @onchange="OnPropagateParentChange"
-                                    Disabled="@ReadOnly" Label="Propagate all parent variables" />
+                                    Disabled="@ReadOnly" Label="Propagate all parent variables to child process" />
                 </div>
 
                 <div>
                     <FluentCheckbox Value="@propagateAllChildVariables" @onchange="OnPropagateChildChange"
-                                    Disabled="@ReadOnly" Label="Propagate all child variables" />
+                                    Disabled="@ReadOnly" Label="Propagate all child variables back to parent" />
                 </div>
 
                 <div>
