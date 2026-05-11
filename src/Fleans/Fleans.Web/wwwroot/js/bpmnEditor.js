@@ -76,6 +76,7 @@ window.bpmnEditor = {
             correlationKey: '',
             hasSignalDefinition: false,
             signalName: '',
+            hasCancelDefinition: false,
             isInterrupting: true,
             assignee: '',
             candidateGroups: [],
@@ -196,6 +197,10 @@ window.bpmnEditor = {
                     if (errDef.errorRef) {
                         data.errorCode = errDef.errorRef.errorCode || '';
                     }
+                    break;
+                }
+                if (bo.eventDefinitions[i].$type === 'bpmn:CancelEventDefinition') {
+                    data.hasCancelDefinition = true;
                     break;
                 }
             }
