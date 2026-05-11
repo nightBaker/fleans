@@ -1,17 +1,24 @@
 name: nuget-publish
 
 # Publishes the three NuGet plugin packages — Fleans.Application.Abstractions,
-# Fleans.Worker, Fleans.Plugins.RestCaller — to nuget.org. Triggered when a
-# maintainer publishes a GitHub Release; can also be invoked manually
+# Fleans.Worker, Fleans.Plugins.RestCaller — to nuget.org. Triggered by the
+# same `v<SemVer>` tag push that triggers release.yml, then blocks on the
+# GitHub Release object existing before publishing (so a failed release.yml
+# never leaks orphan NuGet packages). Can also be invoked manually
 # (workflow_dispatch) with `version=0.0.0-ci-test` for a dry-run that exercises
 # pack + upload-artifact without ever calling `dotnet nuget push`.
+#
+# Why not `on.release.published`? Releases created by the default `GITHUB_TOKEN`
+# (which release.yml uses for `gh release create`) do NOT trigger downstream
+# workflows — a GitHub anti-recursion safeguard. Tag-trigger + wait-for-release
+# sidesteps it without requiring a PAT.
 #
 # See `tests/manual/41-nuget-publish/test-plan.md` and CLAUDE.md "NuGet package
 # publishing" for the full runbook.
 
 on:
-  release:
-    types: [published]
+  push:
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       version:
@@ -54,10 +61,8 @@ jobs:
           set -euo pipefail
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.version }}" ]; then
             VERSION="${{ inputs.version }}"
-          elif [ "${{ github.event_name }}" = "release" ]; then
-            VERSION="${{ github.event.release.tag_name }}"
-            VERSION="${VERSION#v}"
           else
+            # push.tags trigger — derive from refs/tags/v<SemVer>
             TAG="${GITHUB_REF_NAME#v}"
             VERSION="${TAG}"
           fi
@@ -69,6 +74,31 @@ jobs:
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Resolved version: $VERSION"
+
+      # On tag-push, release.yml runs in parallel. Block here until the GitHub
+      # Release object exists so we never publish NuGet packages for a release
+      # that ultimately failed (e.g., image push or helm-package failure).
+      # workflow_dispatch (including the 0.0.0-ci-test dry-run) skips this step.
+      - name: Wait for GitHub Release to exist
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          DEADLINE=$(( $(date +%s) + 1200 ))   # 20 min — release.yml ran ~9 min historically; doubled for safety
+          while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+            if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --silent 2>/dev/null; then
+              echo "::notice::GitHub Release ${TAG} confirmed — proceeding with NuGet publish."
+              exit 0
+            fi
+            echo "Release ${TAG} not yet present — sleeping 30s"
+            sleep 30
+          done
+          echo "::error::GitHub Release ${TAG} did not appear within 20 minutes — release.yml likely failed. Aborting NuGet publish."
+          exit 1
 
       - name: Restore
         run: dotnet restore
