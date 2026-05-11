@@ -4,6 +4,7 @@ using Fleans.Domain.States;
 using Fleans.Persistence.Events;
 using Fleans.Persistence.Tests.Infrastructure;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace Fleans.Persistence.Tests;
 
@@ -11,10 +12,11 @@ namespace Fleans.Persistence.Tests;
 [TestCategory("Postgres")]
 public class EfCoreEventStoreTests : PersistenceTestBase
 {
-    private static EfCoreEventStore CreateStore(IPersistenceTestFixture fixture)
+    private static EfCoreEventStore CreateStore(IPersistenceTestFixture fixture, int? maxEventsPerLoad = null)
     {
         var projection = new EfCoreWorkflowStateProjection(fixture.CommandFactory);
-        return new EfCoreEventStore(fixture.CommandFactory, projection);
+        var opts = Options.Create(new FleansPersistenceOptions { MaxEventsPerLoad = maxEventsPerLoad ?? 1000 });
+        return new EfCoreEventStore(fixture.CommandFactory, projection, opts);
     }
 
     [DataTestMethod]
@@ -280,6 +282,91 @@ public class EfCoreEventStoreTests : PersistenceTestBase
         Assert.IsInstanceOfType<WorkflowStarted>(all[0]);
         Assert.IsInstanceOfType<ExecutionStarted>(all[1]);
         Assert.IsInstanceOfType<WorkflowCompleted>(all[2]);
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task ReadEventsAsync_AtCap_ReturnsAllEvents(PersistenceProvider provider)
+    {
+        const int cap = 5;
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var store = CreateStore(fixture, maxEventsPerLoad: cap);
+
+        var grainId = "grain/cap-exact";
+        var events = Enumerable.Range(0, cap).Select(_ => (IDomainEvent)new ExecutionStarted()).ToList();
+        await store.AppendEventsAsync(grainId, events, startVersion: 1);
+
+        var loaded = await store.ReadEventsAsync(grainId, afterVersion: 0);
+        Assert.AreEqual(cap, loaded.Count);
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task ReadEventsAsync_OneOverCap_ThrowsInvalidOperation(PersistenceProvider provider)
+    {
+        const int cap = 5;
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var store = CreateStore(fixture, maxEventsPerLoad: cap);
+
+        var grainId = "grain/cap-over";
+        var events = Enumerable.Range(0, cap + 1).Select(_ => (IDomainEvent)new ExecutionStarted()).ToList();
+        await store.AppendEventsAsync(grainId, events, startVersion: 1);
+
+        InvalidOperationException? caught = null;
+        try { await store.ReadEventsAsync(grainId, afterVersion: 0); }
+        catch (InvalidOperationException ex) { caught = ex; }
+        Assert.IsNotNull(caught, "Expected InvalidOperationException was not thrown");
+        StringAssert.Contains(caught.Message, grainId);
+        StringAssert.Contains(caught.Message, "afterVersion=0");
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task ReadEventsAsync_WithAfterVersion_RespectsCap(PersistenceProvider provider)
+    {
+        const int cap = 5;
+        const int offset = 3;
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var store = CreateStore(fixture, maxEventsPerLoad: cap);
+
+        // cap + offset total events; afterVersion=offset leaves exactly cap events — should not throw
+        var grainId = "grain/cap-offset";
+        var events = Enumerable.Range(0, cap + offset).Select(_ => (IDomainEvent)new ExecutionStarted()).ToList();
+        await store.AppendEventsAsync(grainId, events, startVersion: 1);
+
+        var loaded = await store.ReadEventsAsync(grainId, afterVersion: offset);
+        Assert.AreEqual(cap, loaded.Count);
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task ReadEventsAsync_UnboundedWhenCapSetHigh_NoThrow(PersistenceProvider provider)
+    {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var store = CreateStore(fixture, maxEventsPerLoad: int.MaxValue);
+
+        var grainId = "grain/cap-high";
+        var events = new List<IDomainEvent>
+        {
+            new WorkflowStarted(Guid.NewGuid(), "p1", Guid.NewGuid()),
+            new ExecutionStarted(),
+            new WorkflowCompleted()
+        };
+        await store.AppendEventsAsync(grainId, events, startVersion: 1);
+
+        var loaded = await store.ReadEventsAsync(grainId, afterVersion: 0);
+        Assert.AreEqual(3, loaded.Count);
+    }
+
+    [TestMethod]
+    public void Default_MaxEventsPerLoad_Is1000()
+    {
+        var opts = new FleansPersistenceOptions();
+        Assert.AreEqual(1000, opts.MaxEventsPerLoad);
     }
 
     private static WorkflowInstanceState CreateTestState(Guid? id = null)

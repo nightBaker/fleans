@@ -3,6 +3,7 @@ using Fleans.Domain;
 using Fleans.Domain.Events;
 using Fleans.Domain.States;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
 
@@ -18,6 +19,7 @@ public class EfCoreEventStore : IEventStore
 {
     private readonly IDbContextFactory<FleanCommandDbContext> _dbContextFactory;
     private readonly IWorkflowStateProjection _stateProjection;
+    private readonly int _maxEventsPerLoad;
 
     internal static readonly JsonSerializerSettings JsonSettings = new()
     {
@@ -31,10 +33,12 @@ public class EfCoreEventStore : IEventStore
 
     public EfCoreEventStore(
         IDbContextFactory<FleanCommandDbContext> dbContextFactory,
-        IWorkflowStateProjection stateProjection)
+        IWorkflowStateProjection stateProjection,
+        IOptions<FleansPersistenceOptions> options)
     {
         _dbContextFactory = dbContextFactory;
         _stateProjection = stateProjection;
+        _maxEventsPerLoad = options.Value.MaxEventsPerLoad;
     }
 
     /// <summary>
@@ -67,11 +71,21 @@ public class EfCoreEventStore : IEventStore
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync();
 
+        // Take one extra row so we can detect "would exceed cap" without reading all rows.
+        var limit = _maxEventsPerLoad < int.MaxValue ? _maxEventsPerLoad + 1 : int.MaxValue;
         var eventEntities = await db.WorkflowEvents
             .AsNoTracking()
             .Where(e => e.GrainId == grainId && e.Version > afterVersion)
             .OrderBy(e => e.Version)
+            .Take(limit)
             .ToListAsync();
+
+        if (eventEntities.Count > _maxEventsPerLoad)
+            throw new InvalidOperationException(
+                $"Refusing to load more than {_maxEventsPerLoad} events for grain '{grainId}' " +
+                $"(afterVersion={afterVersion}). This indicates snapshotting is broken — " +
+                $"investigate WorkflowInstance.ApplyUpdatesToStorage / WriteSnapshotAsync. " +
+                $"Increase Persistence:MaxEventsPerLoad if this is intentional.");
 
         return eventEntities
             .Select(e => EventTypeRegistry.Deserialize(e.EventType, e.Payload, JsonSettings))
