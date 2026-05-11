@@ -191,122 +191,218 @@
                 </div>
             }
 
-            @if (HasTimer)
+            @if (Element.EventDefinitions.Count <= 1)
             {
-                <div>
-                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Timer Type</FluentLabel>
-                    <FluentSelect TOption="string" Value="@timerType" @onchange="OnTimerTypeChange"
-                                  Disabled="@ReadOnly" Style="width: 100%;">
-                        @foreach (var opt in GetTimerTypeOptions())
-                        {
-                            <FluentOption TOption="string" Value="@opt.Key" Selected="@(timerType == opt.Key)">@opt.Value</FluentOption>
-                        }
-                    </FluentSelect>
-                </div>
-
-                <div>
-                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Timer Expression</FluentLabel>
-                    <FluentTextField Value="@timerExpression" @oninput="OnTimerExpressionInput" @onchange="OnTimerExpressionChange"
-                                     Disabled="@ReadOnly" Placeholder="@GetTimerPlaceholder()" Style="width: 100%;" />
-                    <FluentLabel Style="color: var(--neutral-foreground-hint); margin-top: 4px; font-size: 12px;">
-                        @GetTimerHelpText()
-                    </FluentLabel>
-                </div>
-            }
-
-            @if (HasMessage)
-            {
-                <div>
-                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Message Name</FluentLabel>
-                    <FluentTextField Value="@messageName" @oninput="OnMessageNameInput" @onchange="OnMessageNameChange"
-                                     Disabled="@ReadOnly" Placeholder="e.g. cancelOrder" Style="width: 100%;" />
-                </div>
-
-                @if (Element.Type != "bpmn:StartEvent" && Element.Type != "bpmn:EndEvent" && Element.Type != "bpmn:IntermediateThrowEvent")
+                @if (HasTimer)
                 {
                     <div>
-                        <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Correlation Key</FluentLabel>
-                        <FluentTextField Value="@correlationKey" @oninput="OnCorrelationKeyInput" @onchange="OnCorrelationKeyChange"
-                                         Disabled="@ReadOnly" Placeholder="e.g. orderId" Style="width: 100%;" />
-                        <FluentLabel Style="color: var(--neutral-foreground-hint); margin-top: 4px; font-size: 12px;">
-                            Variable name used to correlate incoming messages to this workflow instance
-                        </FluentLabel>
-                    </div>
-                }
-            }
-
-            @if (HasSignal)
-            {
-                <div>
-                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Signal Name</FluentLabel>
-                    <FluentTextField Value="@signalName" @oninput="OnSignalNameInput" @onchange="OnSignalNameChange"
-                                     Disabled="@ReadOnly" Placeholder="e.g. approvalGranted" Style="width: 100%;" />
-                </div>
-            }
-
-            @if (HasError)
-            {
-                <div>
-                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Error Code</FluentLabel>
-                    <FluentTextField Value="@errorCode" @oninput="OnErrorCodeInput" @onchange="OnErrorCodeChange"
-                                     Disabled="@ReadOnly" Placeholder="e.g. 400 (leave empty for catch-all)" Style="width: 100%;" />
-                    <FluentLabel Style="color: var(--neutral-foreground-hint); margin-top: 4px; font-size: 12px;">
-                        Specific error code to catch. Leave empty to catch all errors.
-                    </FluentLabel>
-                </div>
-            }
-
-            @if (HasConditional)
-            {
-                <div>
-                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Condition Expression</FluentLabel>
-                    <FluentTextArea Value="@conditionExpression" @oninput="OnConditionInput" @onchange="OnConditionalDefinitionChange"
-                                    Disabled="@ReadOnly" Rows="3" Resize="TextAreaResize.Vertical"
-                                    Placeholder="e.g. $context.amount > 100" Style="width: 100%;" />
-                </div>
-            }
-
-            @if (HasEscalation)
-            {
-                <div>
-                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Escalation Code</FluentLabel>
-                    <FluentTextField Value="@escalationCode" @oninput="OnEscalationCodeInput" @onchange="OnEscalationCodeChange"
-                                     Disabled="@ReadOnly" Placeholder="e.g. ESC-001 (leave empty for catch-all)" Style="width: 100%;" />
-                    <FluentLabel Style="color: var(--neutral-foreground-hint); margin-top: 4px; font-size: 12px;">
-                        Specific escalation code to catch. Leave empty to catch all escalations.
-                    </FluentLabel>
-                </div>
-            }
-
-            @if (HasCompensate)
-            {
-                @if (Element.Type == "bpmn:IntermediateThrowEvent")
-                {
-                    <div>
-                        <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Activity Reference</FluentLabel>
-                        <FluentSelect TOption="string" Value="@compensateActivityRef"
-                                      @onchange="OnCompensateActivityRefChange" Disabled="@ReadOnly" Style="width: 100%;">
-                            <FluentOption TOption="string" Value="">Broadcast (all compensable activities)</FluentOption>
-                            @foreach (var act in Element.CompensateActivities)
+                        <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Timer Type</FluentLabel>
+                        <FluentSelect TOption="string" Value="@timerType" @onchange="OnTimerTypeChange"
+                                      Disabled="@ReadOnly" Style="width: 100%;">
+                            @foreach (var opt in GetTimerTypeOptions())
                             {
-                                <FluentOption TOption="string" Value="@act.Id" Selected="@(act.Id == compensateActivityRef)">
-                                    @(string.IsNullOrEmpty(act.Name) ? act.Id : act.Name)
-                                </FluentOption>
+                                <FluentOption TOption="string" Value="@opt.Key" Selected="@(timerType == opt.Key)">@opt.Value</FluentOption>
                             }
                         </FluentSelect>
                     </div>
+
                     <div>
-                        <FluentCheckbox Value="@compensateWaitForCompletion" @onchange="OnCompensateWaitForCompletionChange"
-                                        Disabled="@ReadOnly" Label="Wait For Completion" />
+                        <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Timer Expression</FluentLabel>
+                        <FluentTextField Value="@timerExpression" @oninput="OnTimerExpressionInput" @onchange="OnTimerExpressionChange"
+                                         Disabled="@ReadOnly" Placeholder="@GetTimerPlaceholder()" Style="width: 100%;" />
+                        <FluentLabel Style="color: var(--neutral-foreground-hint); margin-top: 4px; font-size: 12px;">
+                            @GetTimerHelpText()
+                        </FluentLabel>
                     </div>
                 }
-                @if (Element.Type == "bpmn:BoundaryEvent")
+
+                @if (HasMessage)
                 {
                     <div>
-                        <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Attached To</FluentLabel>
-                        <FluentTextField Value="@Element.CompensateAttachedTo" Disabled="true" Style="width: 100%;" />
+                        <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Message Name</FluentLabel>
+                        <FluentTextField Value="@messageName" @oninput="OnMessageNameInput" @onchange="OnMessageNameChange"
+                                         Disabled="@ReadOnly" Placeholder="e.g. cancelOrder" Style="width: 100%;" />
+                    </div>
+
+                    @if (Element.Type != "bpmn:StartEvent" && Element.Type != "bpmn:EndEvent" && Element.Type != "bpmn:IntermediateThrowEvent")
+                    {
+                        <div>
+                            <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Correlation Key</FluentLabel>
+                            <FluentTextField Value="@correlationKey" @oninput="OnCorrelationKeyInput" @onchange="OnCorrelationKeyChange"
+                                             Disabled="@ReadOnly" Placeholder="e.g. orderId" Style="width: 100%;" />
+                            <FluentLabel Style="color: var(--neutral-foreground-hint); margin-top: 4px; font-size: 12px;">
+                                Variable name used to correlate incoming messages to this workflow instance
+                            </FluentLabel>
+                        </div>
+                    }
+                }
+
+                @if (HasSignal)
+                {
+                    <div>
+                        <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Signal Name</FluentLabel>
+                        <FluentTextField Value="@signalName" @oninput="OnSignalNameInput" @onchange="OnSignalNameChange"
+                                         Disabled="@ReadOnly" Placeholder="e.g. approvalGranted" Style="width: 100%;" />
                     </div>
                 }
+
+                @if (HasError)
+                {
+                    <div>
+                        <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Error Code</FluentLabel>
+                        <FluentTextField Value="@errorCode" @oninput="OnErrorCodeInput" @onchange="OnErrorCodeChange"
+                                         Disabled="@ReadOnly" Placeholder="e.g. 400 (leave empty for catch-all)" Style="width: 100%;" />
+                        <FluentLabel Style="color: var(--neutral-foreground-hint); margin-top: 4px; font-size: 12px;">
+                            Specific error code to catch. Leave empty to catch all errors.
+                        </FluentLabel>
+                    </div>
+                }
+
+                @if (HasConditional)
+                {
+                    <div>
+                        <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Condition Expression</FluentLabel>
+                        <FluentTextArea Value="@conditionExpression" @oninput="OnConditionInput" @onchange="OnConditionalDefinitionChange"
+                                        Disabled="@ReadOnly" Rows="3" Resize="TextAreaResize.Vertical"
+                                        Placeholder="e.g. $context.amount > 100" Style="width: 100%;" />
+                    </div>
+                }
+
+                @if (HasEscalation)
+                {
+                    <div>
+                        <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Escalation Code</FluentLabel>
+                        <FluentTextField Value="@escalationCode" @oninput="OnEscalationCodeInput" @onchange="OnEscalationCodeChange"
+                                         Disabled="@ReadOnly" Placeholder="e.g. ESC-001 (leave empty for catch-all)" Style="width: 100%;" />
+                        <FluentLabel Style="color: var(--neutral-foreground-hint); margin-top: 4px; font-size: 12px;">
+                            Specific escalation code to catch. Leave empty to catch all escalations.
+                        </FluentLabel>
+                    </div>
+                }
+
+                @if (HasCompensate)
+                {
+                    @if (Element.Type == "bpmn:IntermediateThrowEvent")
+                    {
+                        <div>
+                            <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Activity Reference</FluentLabel>
+                            <FluentSelect TOption="string" Value="@compensateActivityRef"
+                                          @onchange="OnCompensateActivityRefChange" Disabled="@ReadOnly" Style="width: 100%;">
+                                <FluentOption TOption="string" Value="">Broadcast (all compensable activities)</FluentOption>
+                                @foreach (var act in Element.CompensateActivities)
+                                {
+                                    <FluentOption TOption="string" Value="@act.Id" Selected="@(act.Id == compensateActivityRef)">
+                                        @(string.IsNullOrEmpty(act.Name) ? act.Id : act.Name)
+                                    </FluentOption>
+                                }
+                            </FluentSelect>
+                        </div>
+                        <div>
+                            <FluentCheckbox Value="@compensateWaitForCompletion" @onchange="OnCompensateWaitForCompletionChange"
+                                            Disabled="@ReadOnly" Label="Wait For Completion" />
+                        </div>
+                    }
+                    @if (Element.Type == "bpmn:BoundaryEvent")
+                    {
+                        <div>
+                            <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Attached To</FluentLabel>
+                            <FluentTextField Value="@Element.CompensateAttachedTo" Disabled="true" Style="width: 100%;" />
+                        </div>
+                    }
+                }
+            }
+            else
+            {
+                @for (int i = 0; i < Element.EventDefinitions.Count; i++)
+                {
+                    var def = Element.EventDefinitions[i];
+                    <div style="border: 1px solid var(--neutral-stroke-rest); border-radius: 4px; padding: 8px; margin-bottom: 8px;">
+                        <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">
+                            Definition #@(i + 1) — @def.Kind
+                        </FluentLabel>
+                        @if (def.Kind == "Timer")
+                        {
+                            <div>
+                                <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Timer Type</FluentLabel>
+                                <FluentSelect TOption="string" Value="@timerType" @onchange="OnTimerTypeChange"
+                                              Disabled="@ReadOnly" Style="width: 100%;">
+                                    @foreach (var opt in GetTimerTypeOptions())
+                                    {
+                                        <FluentOption TOption="string" Value="@opt.Key" Selected="@(timerType == opt.Key)">@opt.Value</FluentOption>
+                                    }
+                                </FluentSelect>
+                            </div>
+                            <div>
+                                <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Timer Expression</FluentLabel>
+                                <FluentTextField Value="@timerExpression" @oninput="OnTimerExpressionInput" @onchange="OnTimerExpressionChange"
+                                                 Disabled="@ReadOnly" Placeholder="@GetTimerPlaceholder()" Style="width: 100%;" />
+                            </div>
+                        }
+                        else if (def.Kind == "Message")
+                        {
+                            <div>
+                                <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Message Name</FluentLabel>
+                                <FluentTextField Value="@messageName" @oninput="OnMessageNameInput" @onchange="OnMessageNameChange"
+                                                 Disabled="@ReadOnly" Placeholder="e.g. cancelOrder" Style="width: 100%;" />
+                            </div>
+                            @if (Element.Type != "bpmn:StartEvent" && Element.Type != "bpmn:EndEvent" && Element.Type != "bpmn:IntermediateThrowEvent")
+                            {
+                                <div>
+                                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Correlation Key</FluentLabel>
+                                    <FluentTextField Value="@correlationKey" @oninput="OnCorrelationKeyInput" @onchange="OnCorrelationKeyChange"
+                                                     Disabled="@ReadOnly" Placeholder="e.g. orderId" Style="width: 100%;" />
+                                </div>
+                            }
+                        }
+                        else if (def.Kind == "Signal")
+                        {
+                            <div>
+                                <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Signal Name</FluentLabel>
+                                <FluentTextField Value="@signalName" @oninput="OnSignalNameInput" @onchange="OnSignalNameChange"
+                                                 Disabled="@ReadOnly" Placeholder="e.g. approvalGranted" Style="width: 100%;" />
+                            </div>
+                        }
+                        else if (def.Kind == "Error")
+                        {
+                            <div>
+                                <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Error Code</FluentLabel>
+                                <FluentTextField Value="@errorCode" @oninput="OnErrorCodeInput" @onchange="OnErrorCodeChange"
+                                                 Disabled="@ReadOnly" Placeholder="e.g. 400 (leave empty for catch-all)" Style="width: 100%;" />
+                            </div>
+                        }
+                        else if (def.Kind == "Conditional")
+                        {
+                            <div>
+                                <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Condition Expression</FluentLabel>
+                                <FluentTextArea Value="@conditionExpression" @oninput="OnConditionInput" @onchange="OnConditionalDefinitionChange"
+                                                Disabled="@ReadOnly" Rows="3" Resize="TextAreaResize.Vertical"
+                                                Placeholder="e.g. $context.amount > 100" Style="width: 100%;" />
+                            </div>
+                        }
+                        else if (def.Kind == "Escalation")
+                        {
+                            <div>
+                                <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Escalation Code</FluentLabel>
+                                <FluentTextField Value="@escalationCode" @oninput="OnEscalationCodeInput" @onchange="OnEscalationCodeChange"
+                                                 Disabled="@ReadOnly" Placeholder="e.g. ESC-001 (leave empty for catch-all)" Style="width: 100%;" />
+                            </div>
+                        }
+                        else if (def.Kind == "Compensate")
+                        {
+                            <div>
+                                <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Activity Reference</FluentLabel>
+                                <FluentTextField Value="@compensateActivityRef" Disabled="true" Style="width: 100%;" />
+                            </div>
+                            <div>
+                                <FluentCheckbox Value="@compensateWaitForCompletion" @onchange="OnCompensateWaitForCompletionChange"
+                                                Disabled="@ReadOnly" Label="Wait For Completion" />
+                            </div>
+                        }
+                    </div>
+                }
+                <FluentMessageBar Intent="MessageIntent.Info" Style="margin-top: 4px;">
+                    Editing updates the first matching definition of each type. Two definitions of the same type require hand-editing the XML. Activity Reference dropdown for Compensate events is not available in multi-definition view.
+                </FluentMessageBar>
             }
 
             @if (Element.Type == "bpmn:UserTask")
@@ -1273,6 +1369,7 @@
         public List<string> CandidateUsers { get; set; } = [];
         public List<string> ExpectedOutputVariables { get; set; } = [];
         public List<string> AvailableVariables { get; set; } = [];
+        public List<EventDefinitionData> EventDefinitions { get; set; } = [];
         public bool HasMultiInstance { get; set; }
         public bool IsSequential { get; set; }
         public string LoopCardinality { get; set; } = "";
@@ -1304,5 +1401,21 @@
     {
         public string Source { get; set; } = "";
         public string Target { get; set; } = "";
+    }
+
+    public class EventDefinitionData
+    {
+        public int Index { get; set; }
+        public string Kind { get; set; } = "";
+        public string TimerType { get; set; } = "";
+        public string TimerExpression { get; set; } = "";
+        public string MessageName { get; set; } = "";
+        public string CorrelationKey { get; set; } = "";
+        public string SignalName { get; set; } = "";
+        public string ErrorCode { get; set; } = "";
+        public string ConditionExpression { get; set; } = "";
+        public string EscalationCode { get; set; } = "";
+        public string ActivityRef { get; set; } = "";
+        public bool WaitForCompletion { get; set; } = true;
     }
 }
