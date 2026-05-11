@@ -114,7 +114,8 @@ window.bpmnEditor = {
             hasConditionalDefinition: false,
             completionCondition: '',
             hasEscalationDefinition: false,
-            escalationCode: ''
+            escalationCode: '',
+            activationCondition: ''
         };
 
         if (bo.$type === 'bpmn:ScriptTask') {
@@ -306,6 +307,10 @@ window.bpmnEditor = {
                 }
             });
             data.availableVariables = Array.from(vars).sort();
+        }
+
+        if (bo.$type === 'bpmn:ComplexGateway' && bo.activationCondition) {
+            data.activationCondition = bo.activationCondition.body || '';
         }
 
         return data;
@@ -680,6 +685,23 @@ window.bpmnEditor = {
             modeling.updateModdleProperties(element, escDef, { escalationRef: escEl });
         } else {
             modeling.updateModdleProperties(element, escDef, { escalationRef: undefined });
+        }
+    },
+
+    updateActivationCondition: function (elementId, expression) {
+        if (!this._modeler) return;
+        var elementRegistry = this._modeler.get('elementRegistry');
+        var modeling = this._modeler.get('modeling');
+        var moddle = this._modeler.get('moddle');
+        var element = elementRegistry.get(elementId);
+        if (!element) return;
+        var bo = element.businessObject;
+        if (bo.$type !== 'bpmn:ComplexGateway') return;
+        if (expression) {
+            var expr = moddle.create('bpmn:FormalExpression', { body: expression });
+            modeling.updateProperties(element, { activationCondition: expr });
+        } else {
+            modeling.updateProperties(element, { activationCondition: undefined });
         }
     },
 

@@ -143,6 +143,20 @@
                 </div>
             }
 
+            @if (HasActivationCondition)
+            {
+                <div>
+                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Activation Condition</FluentLabel>
+                    <FluentTextArea Value="@activationCondition" @oninput="OnActivationConditionInput"
+                                    @onchange="OnActivationConditionChange"
+                                    Disabled="@ReadOnly" Rows="3" Resize="TextAreaResize.Vertical"
+                                    Placeholder="e.g. _context.activeBranches >= 2" Style="width: 100%;" />
+                    <FluentLabel Style="color: var(--neutral-foreground-hint); margin-top: 4px; font-size: 12px;">
+                        Expression that controls when the join fires. Leave empty for default join behaviour.
+                    </FluentLabel>
+                </div>
+            }
+
             @if (IsBoundaryEvent)
             {
                 <div>
@@ -475,6 +489,7 @@
     private string signalName = "";
     private string errorCode = "";
     private string escalationCode = "";
+    private string activationCondition = "";
     private bool isInterrupting = true;
     private bool isEventSubProcess;
     private string assignee = "";
@@ -545,6 +560,7 @@
         signalName = Element.SignalName;
         errorCode = Element.ErrorCode;
         escalationCode = Element.EscalationCode;
+        activationCondition = Element.ActivationCondition;
         isInterrupting = Element.IsInterrupting;
         isEventSubProcess = Element.IsEventSubProcess;
         assignee = Element.Assignee;
@@ -763,6 +779,7 @@
     private bool HasCancel => Element.HasCancelDefinition;
     private bool HasConditional => Element.HasConditionalDefinition;
     private bool HasEscalation => Element.HasEscalationDefinition;
+    private bool HasActivationCondition => Element.Type == "bpmn:ComplexGateway";
     private bool IsBoundaryEvent => Element.Type == "bpmn:BoundaryEvent";
 
     private static readonly Dictionary<string, string> TimerTypesAll = new()
@@ -863,6 +880,13 @@
     {
         escalationCode = e.Value?.ToString() ?? "";
         await JS.InvokeVoidAsync("bpmnEditor.updateEscalationDefinition", Element.Id, escalationCode);
+    }
+
+    private void OnActivationConditionInput(ChangeEventArgs e) => activationCondition = e.Value?.ToString() ?? "";
+    private async Task OnActivationConditionChange(ChangeEventArgs e)
+    {
+        activationCondition = e.Value?.ToString() ?? "";
+        await JS.InvokeVoidAsync("bpmnEditor.updateActivationCondition", Element.Id, activationCondition);
     }
 
     private void OnAssigneeInput(ChangeEventArgs e) => assignee = e.Value?.ToString() ?? "";
@@ -1155,6 +1179,7 @@
         public bool IsExecutable { get; set; } = true;
         public string Documentation { get; set; } = "";
         public string CompletionCondition { get; set; } = "";
+        public string ActivationCondition { get; set; } = "";
     }
 
     public class MappingData
