@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/nightBaker/fleans/actions/workflows/dotnet.yml"><img src="https://github.com/nightBaker/fleans/actions/workflows/dotnet.yml/badge.svg?branch=main" alt="Build"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm--NC--1.0-blue.svg" alt="License: PolyForm Noncommercial 1.0"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-PolyForm--IU--1.0-blue.svg" alt="License: PolyForm Internal Use 1.0"></a>
   <img src="https://img.shields.io/badge/.NET-10-512BD4" alt=".NET 10">
   <a href="https://www.nuget.org/packages/Fleans.Worker"><img src="https://img.shields.io/nuget/v/Fleans.Worker?label=nuget" alt="NuGet"></a>
   <a href="https://github.com/nightBaker/fleans/stargazers"><img src="https://img.shields.io/github/stars/nightBaker/fleans?style=social" alt="GitHub stars"></a>
@@ -117,6 +117,8 @@ For larger changes, open an issue first to align on the design. Design docs live
 
 ## License
 
-Fleans is licensed under **[PolyForm Noncommercial 1.0.0](LICENSE)** — source-available, free for non-commercial use (personal, research, evaluation, internal at non-profits). For commercial deployment, contact the maintainer for a commercial license.
+Fleans is licensed under **[PolyForm Internal Use 1.0.0](LICENSE)** — source-available, free for the internal business operations of any organisation (companies, non-profits, individuals alike). Use it, modify it for your own needs, run it on your own infrastructure, integrate it with your internal systems — all free, no licence fee, no user count cap, no contact required.
 
-PolyForm Noncommercial is a tech-industry-lawyer-drafted source-available licence — see [polyformproject.org](https://polyformproject.org/licenses/noncommercial/1.0.0/). It keeps the source open for inspection, learning, and contribution while reserving commercial revenue to fund sustained development.
+What's **not** permitted under this licence: distributing fleans (modified or unmodified) to anyone outside your organisation, hosting it as a managed service for third-party customers, or embedding it in a product you ship to others. For those use cases, contact the maintainer for a commercial licence.
+
+PolyForm Internal Use is a tech-industry-lawyer-drafted source-available licence — canonical text at [polyformproject.org/licenses/internal-use/1.0.0](https://polyformproject.org/licenses/internal-use/1.0.0/). It keeps the source open for inspection, learning, and internal modification while reserving distribution rights to fund sustained development.
