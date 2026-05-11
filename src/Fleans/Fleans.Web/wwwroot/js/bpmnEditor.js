@@ -118,7 +118,12 @@ window.bpmnEditor = {
             escalationCode: '',
             activationCondition: '',
             defaultFlow: '',
-            outgoingFlows: []
+            outgoingFlows: [],
+            hasCompensateDefinition: false,
+            compensateActivityRef: '',
+            compensateWaitForCompletion: true,
+            compensateAttachedTo: '',
+            compensateActivities: []
         };
 
         if (bo.$type === 'bpmn:ScriptTask') {
@@ -253,6 +258,30 @@ window.bpmnEditor = {
                     data.hasTerminateDefinition = true;
                     break;
                 }
+                if (bo.eventDefinitions[i].$type === 'bpmn:CompensateEventDefinition') {
+                    data.hasCompensateDefinition = true;
+                    var compDef = bo.eventDefinitions[i];
+                    data.compensateActivityRef = compDef.activityRef ? compDef.activityRef.id : '';
+                    data.compensateWaitForCompletion = compDef.waitForCompletion !== false;
+                    break;
+                }
+            }
+        }
+
+        if (data.hasCompensateDefinition) {
+            if (bo.$type === 'bpmn:BoundaryEvent' && bo.attachedToRef) {
+                data.compensateAttachedTo = bo.attachedToRef.name || bo.attachedToRef.id || '';
+            }
+            if (bo.$type === 'bpmn:IntermediateThrowEvent' && this._modeler) {
+                var compReg = this._modeler.get('elementRegistry');
+                var COMPENSABLE = ['bpmn:Task', 'bpmn:UserTask', 'bpmn:ServiceTask', 'bpmn:ScriptTask',
+                    'bpmn:ManualTask', 'bpmn:SendTask', 'bpmn:ReceiveTask', 'bpmn:BusinessRuleTask',
+                    'bpmn:SubProcess', 'bpmn:CallActivity', 'bpmn:Transaction'];
+                compReg.forEach(function (el) {
+                    if (COMPENSABLE.indexOf(el.businessObject.$type) !== -1) {
+                        data.compensateActivities.push({ id: el.id, name: el.businessObject.name || el.id });
+                    }
+                });
             }
         }
 
@@ -735,6 +764,31 @@ window.bpmnEditor = {
         } else {
             modeling.updateProperties(element, { default: undefined });
         }
+    },
+
+    updateCompensateDefinition: function (elementId, activityRefId, waitForCompletion) {
+        if (!this._modeler) return;
+        var elementRegistry = this._modeler.get('elementRegistry');
+        var modeling = this._modeler.get('modeling');
+        var element = elementRegistry.get(elementId);
+        if (!element) return;
+        var bo = element.businessObject;
+        if (!bo.eventDefinitions || !bo.eventDefinitions.length) return;
+        var compDef = null;
+        for (var i = 0; i < bo.eventDefinitions.length; i++) {
+            if (bo.eventDefinitions[i].$type === 'bpmn:CompensateEventDefinition') {
+                compDef = bo.eventDefinitions[i]; break;
+            }
+        }
+        if (!compDef) return;
+        var props = { waitForCompletion: !!waitForCompletion };
+        if (activityRefId) {
+            var targetEl = elementRegistry.get(activityRefId);
+            props.activityRef = targetEl ? targetEl.businessObject : undefined;
+        } else {
+            props.activityRef = undefined;
+        }
+        modeling.updateModdleProperties(element, compDef, props);
     },
 
     enableMultiInstance: function (elementId) {

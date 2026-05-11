@@ -278,6 +278,37 @@
                 </div>
             }
 
+            @if (HasCompensate)
+            {
+                @if (Element.Type == "bpmn:IntermediateThrowEvent")
+                {
+                    <div>
+                        <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Activity Reference</FluentLabel>
+                        <FluentSelect TOption="string" Value="@compensateActivityRef"
+                                      @onchange="OnCompensateActivityRefChange" Disabled="@ReadOnly" Style="width: 100%;">
+                            <FluentOption TOption="string" Value="">Broadcast (all compensable activities)</FluentOption>
+                            @foreach (var act in Element.CompensateActivities)
+                            {
+                                <FluentOption TOption="string" Value="@act.Id" Selected="@(act.Id == compensateActivityRef)">
+                                    @(string.IsNullOrEmpty(act.Name) ? act.Id : act.Name)
+                                </FluentOption>
+                            }
+                        </FluentSelect>
+                    </div>
+                    <div>
+                        <FluentCheckbox Value="@compensateWaitForCompletion" @onchange="OnCompensateWaitForCompletionChange"
+                                        Disabled="@ReadOnly" Label="Wait For Completion" />
+                    </div>
+                }
+                @if (Element.Type == "bpmn:BoundaryEvent")
+                {
+                    <div>
+                        <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Attached To</FluentLabel>
+                        <FluentTextField Value="@Element.CompensateAttachedTo" Disabled="true" Style="width: 100%;" />
+                    </div>
+                }
+            }
+
             @if (Element.Type == "bpmn:UserTask")
             {
                 <div>
@@ -511,6 +542,8 @@
     private string escalationCode = "";
     private string activationCondition = "";
     private string defaultFlow = "";
+    private string compensateActivityRef = "";
+    private bool compensateWaitForCompletion = true;
     private bool isInterrupting = true;
     private bool isEventSubProcess;
     private string assignee = "";
@@ -583,6 +616,8 @@
         escalationCode = Element.EscalationCode;
         activationCondition = Element.ActivationCondition;
         defaultFlow = Element.DefaultFlow;
+        compensateActivityRef = Element.CompensateActivityRef;
+        compensateWaitForCompletion = Element.CompensateWaitForCompletion;
         isInterrupting = Element.IsInterrupting;
         isEventSubProcess = Element.IsEventSubProcess;
         assignee = Element.Assignee;
@@ -805,6 +840,7 @@
     private bool HasDefaultFlowSelector =>
         Element.Type is "bpmn:ExclusiveGateway" or "bpmn:InclusiveGateway" or "bpmn:ComplexGateway";
     private bool HasTerminate => Element.HasTerminateDefinition;
+    private bool HasCompensate => Element.HasCompensateDefinition;
     private bool IsBoundaryEvent => Element.Type == "bpmn:BoundaryEvent";
 
     private static readonly Dictionary<string, string> TimerTypesAll = new()
@@ -918,6 +954,18 @@
     {
         defaultFlow = e.Value?.ToString() ?? "";
         await JS.InvokeVoidAsync("bpmnEditor.updateDefaultFlow", Element.Id, defaultFlow);
+    }
+
+    private async Task OnCompensateActivityRefChange(ChangeEventArgs e)
+    {
+        compensateActivityRef = e.Value?.ToString() ?? "";
+        await JS.InvokeVoidAsync("bpmnEditor.updateCompensateDefinition", Element.Id, compensateActivityRef, compensateWaitForCompletion);
+    }
+
+    private async Task OnCompensateWaitForCompletionChange(ChangeEventArgs e)
+    {
+        compensateWaitForCompletion = e.Value is bool b && b;
+        await JS.InvokeVoidAsync("bpmnEditor.updateCompensateDefinition", Element.Id, compensateActivityRef, compensateWaitForCompletion);
     }
 
     private void OnAssigneeInput(ChangeEventArgs e) => assignee = e.Value?.ToString() ?? "";
@@ -1155,6 +1203,15 @@
                 _ => Element.Type.Replace("bpmn:", "")
             };
         }
+        if (HasCompensate)
+        {
+            return Element.Type switch
+            {
+                "bpmn:IntermediateThrowEvent" => "Compensation Throw Event",
+                "bpmn:BoundaryEvent" => "Compensation Boundary Event",
+                _ => Element.Type.Replace("bpmn:", "")
+            };
+        }
         return Element.Type switch
         {
             "bpmn:StartEvent" => "Start Event",
@@ -1204,6 +1261,11 @@
         public bool HasEscalationDefinition { get; set; }
         public string EscalationCode { get; set; } = "";
         public bool HasTerminateDefinition { get; set; }
+        public bool HasCompensateDefinition { get; set; }
+        public string CompensateActivityRef { get; set; } = "";
+        public bool CompensateWaitForCompletion { get; set; } = true;
+        public string CompensateAttachedTo { get; set; } = "";
+        public List<ActivityReferenceOption> CompensateActivities { get; set; } = [];
         public bool IsInterrupting { get; set; } = true;
         public bool IsEventSubProcess { get; set; }
         public string Assignee { get; set; } = "";
@@ -1227,6 +1289,12 @@
     }
 
     public class FlowReferenceOption
+    {
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
+    }
+
+    public class ActivityReferenceOption
     {
         public string Id { get; set; } = "";
         public string Name { get; set; } = "";
