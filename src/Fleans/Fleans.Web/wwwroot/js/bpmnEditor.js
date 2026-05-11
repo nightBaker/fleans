@@ -109,6 +109,7 @@ window.bpmnEditor = {
             inputDataItem: '',
             outputCollection: '',
             outputDataItem: '',
+            eventDefinitions: [],
             isExecutable: false,
             documentation: '',
             isEventSubProcess: false,
@@ -181,91 +182,73 @@ window.bpmnEditor = {
 
         if (bo.eventDefinitions && bo.eventDefinitions.length > 0) {
             for (var i = 0; i < bo.eventDefinitions.length; i++) {
-                if (bo.eventDefinitions[i].$type === 'bpmn:TimerEventDefinition') {
-                    data.hasTimerDefinition = true;
-                    var timerDef = bo.eventDefinitions[i];
-                    if (timerDef.timeDuration) {
-                        data.timerType = 'duration';
-                        data.timerExpression = timerDef.timeDuration.body || '';
-                    } else if (timerDef.timeDate) {
-                        data.timerType = 'date';
-                        data.timerExpression = timerDef.timeDate.body || '';
-                    } else if (timerDef.timeCycle) {
-                        data.timerType = 'cycle';
-                        data.timerExpression = timerDef.timeCycle.body || '';
-                    }
-                    break;
-                }
-                if (bo.eventDefinitions[i].$type === 'bpmn:MessageEventDefinition') {
-                    data.hasMessageDefinition = true;
-                    var msgDef = bo.eventDefinitions[i];
-                    if (msgDef.messageRef) {
-                        data.messageName = msgDef.messageRef.name || '';
-                    }
+                var def = bo.eventDefinitions[i];
+                var entry = { index: i, kind: '' };
+
+                if (def.$type === 'bpmn:TimerEventDefinition') {
+                    entry.kind = 'Timer';
+                    if (def.timeDuration)   { entry.timerType = 'duration'; entry.timerExpression = def.timeDuration.body || ''; }
+                    else if (def.timeDate)  { entry.timerType = 'date';     entry.timerExpression = def.timeDate.body || ''; }
+                    else if (def.timeCycle) { entry.timerType = 'cycle';    entry.timerExpression = def.timeCycle.body || ''; }
+                    else                    { entry.timerType = 'duration'; entry.timerExpression = ''; }
+                } else if (def.$type === 'bpmn:MessageEventDefinition') {
+                    entry.kind = 'Message';
+                    entry.messageName = def.messageRef ? (def.messageRef.name || '') : '';
+                    entry.correlationKey = '';
                     // Priority 1: fleans:Subscription or zeebe:Subscription in the message's extension elements.
                     // Strip the FEEL expression prefix ("= varName" → "varName") — Fleans normalizes
                     // to plain variable names; BpmnConverter.ParseMessages already does TrimStart('=', ' ').
-                    if (msgDef.messageRef && msgDef.messageRef.extensionElements) {
-                        var extVals = msgDef.messageRef.extensionElements.values || [];
+                    if (def.messageRef && def.messageRef.extensionElements) {
+                        var extVals = def.messageRef.extensionElements.values || [];
                         for (var j = 0; j < extVals.length; j++) {
                             if (_isExt(extVals[j], 'Subscription')) {
-                                data.correlationKey = (extVals[j].correlationKey || '').replace(/^=\s*/, '');
+                                entry.correlationKey = (extVals[j].correlationKey || '').replace(/^=\s*/, '');
                                 break;
                             }
                         }
                     }
                     // Priority 2: legacy fleans:correlationKey / zeebe:correlationKey attribute on the event element.
-                    if (!data.correlationKey) {
-                        data.correlationKey = _extAttr(bo.$attrs, 'correlationKey') || '';
-                    }
-                    break;
+                    if (!entry.correlationKey) entry.correlationKey = _extAttr(bo.$attrs, 'correlationKey') || '';
+                } else if (def.$type === 'bpmn:SignalEventDefinition') {
+                    entry.kind = 'Signal';
+                    entry.signalName = def.signalRef ? (def.signalRef.name || '') : '';
+                } else if (def.$type === 'bpmn:ErrorEventDefinition') {
+                    entry.kind = 'Error';
+                    entry.errorCode = def.errorRef ? (def.errorRef.errorCode || '') : '';
+                } else if (def.$type === 'bpmn:CancelEventDefinition') {
+                    entry.kind = 'Cancel';
+                } else if (def.$type === 'bpmn:ConditionalEventDefinition') {
+                    entry.kind = 'Conditional';
+                    entry.conditionExpression = (def.condition && def.condition.body) ? def.condition.body : '';
+                } else if (def.$type === 'bpmn:EscalationEventDefinition') {
+                    entry.kind = 'Escalation';
+                    entry.escalationCode = def.escalationRef ? (def.escalationRef.escalationCode || '') : '';
+                } else if (def.$type === 'bpmn:TerminateEventDefinition') {
+                    entry.kind = 'Terminate';
+                } else if (def.$type === 'bpmn:CompensateEventDefinition') {
+                    entry.kind = 'Compensate';
+                    entry.activityRef = def.activityRef ? def.activityRef.id : '';
+                    entry.waitForCompletion = def.waitForCompletion !== false;
+                } else {
+                    entry.kind = def.$type.replace('bpmn:', '').replace('EventDefinition', '');
                 }
-                if (bo.eventDefinitions[i].$type === 'bpmn:SignalEventDefinition') {
-                    data.hasSignalDefinition = true;
-                    var sigDef = bo.eventDefinitions[i];
-                    if (sigDef.signalRef) {
-                        data.signalName = sigDef.signalRef.name || '';
-                    }
-                    break;
-                }
-                if (bo.eventDefinitions[i].$type === 'bpmn:ErrorEventDefinition') {
-                    data.hasErrorDefinition = true;
-                    var errDef = bo.eventDefinitions[i];
-                    if (errDef.errorRef) {
-                        data.errorCode = errDef.errorRef.errorCode || '';
-                    }
-                    break;
-                }
-                if (bo.eventDefinitions[i].$type === 'bpmn:CancelEventDefinition') {
-                    data.hasCancelDefinition = true;
-                    break;
-                }
-                if (bo.eventDefinitions[i].$type === 'bpmn:ConditionalEventDefinition') {
-                    data.hasConditionalDefinition = true;
-                    var condDef = bo.eventDefinitions[i];
-                    data.conditionExpression = (condDef.condition && condDef.condition.body) || '';
-                    break;
-                }
-                if (bo.eventDefinitions[i].$type === 'bpmn:EscalationEventDefinition') {
-                    data.hasEscalationDefinition = true;
-                    var escDef = bo.eventDefinitions[i];
-                    if (escDef.escalationRef) {
-                        data.escalationCode = escDef.escalationRef.escalationCode || '';
-                    }
-                    break;
-                }
-                if (bo.eventDefinitions[i].$type === 'bpmn:TerminateEventDefinition') {
-                    data.hasTerminateDefinition = true;
-                    break;
-                }
-                if (bo.eventDefinitions[i].$type === 'bpmn:CompensateEventDefinition') {
-                    data.hasCompensateDefinition = true;
-                    var compDef = bo.eventDefinitions[i];
-                    data.compensateActivityRef = compDef.activityRef ? compDef.activityRef.id : '';
-                    data.compensateWaitForCompletion = compDef.waitForCompletion !== false;
-                    break;
-                }
+
+                data.eventDefinitions.push(entry);
             }
+
+            // Populate ALL flat backward-compatible aliases by scanning every entry.
+            // Last-write-wins for same-type multi-event (known limitation).
+            data.eventDefinitions.forEach(function(entry) {
+                if (entry.kind === 'Timer')       { data.hasTimerDefinition = true; data.timerType = entry.timerType; data.timerExpression = entry.timerExpression; }
+                if (entry.kind === 'Message')     { data.hasMessageDefinition = true; data.messageName = entry.messageName; data.correlationKey = entry.correlationKey; }
+                if (entry.kind === 'Signal')      { data.hasSignalDefinition = true; data.signalName = entry.signalName; }
+                if (entry.kind === 'Error')       { data.hasErrorDefinition = true; data.errorCode = entry.errorCode; }
+                if (entry.kind === 'Cancel')      { data.hasCancelDefinition = true; }
+                if (entry.kind === 'Conditional') { data.hasConditionalDefinition = true; data.conditionExpression = entry.conditionExpression; }
+                if (entry.kind === 'Escalation')  { data.hasEscalationDefinition = true; data.escalationCode = entry.escalationCode; }
+                if (entry.kind === 'Terminate')   { data.hasTerminateDefinition = true; }
+                if (entry.kind === 'Compensate')  { data.hasCompensateDefinition = true; data.compensateActivityRef = entry.activityRef; data.compensateWaitForCompletion = entry.waitForCompletion; }
+            });
         }
 
         if (data.hasCompensateDefinition) {
