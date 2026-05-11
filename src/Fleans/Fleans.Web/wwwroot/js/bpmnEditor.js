@@ -93,7 +93,8 @@ window.bpmnEditor = {
             isExecutable: false,
             documentation: '',
             isEventSubProcess: false,
-            hasConditionalDefinition: false
+            hasConditionalDefinition: false,
+            completionCondition: ''
         };
 
         if (bo.$type === 'bpmn:ScriptTask') {
@@ -247,6 +248,10 @@ window.bpmnEditor = {
             data.inputDataItem    = readNs('elementVariable',  'elementVariable');
             data.outputCollection = readNs('outputCollection', 'outputCollection');
             data.outputDataItem   = readNs('outputElement',    'outputElement');
+
+            if (miElement.completionCondition && miElement.completionCondition.body) {
+                data.completionCondition = miElement.completionCondition.body;
+            }
         }
 
         if (bo.$type === 'bpmn:Process') {
@@ -653,6 +658,17 @@ window.bpmnEditor = {
                     modeling.updateModdleProperties(element, mi, { loopCardinality: undefined });
                 }
                 break;
+
+            case 'completionCondition': {
+                if (value && value.trim() !== '') {
+                    var ccExpr = moddle.create('bpmn:FormalExpression', { body: value });
+                    ccExpr.$parent = mi;
+                    modeling.updateModdleProperties(element, mi, { completionCondition: ccExpr });
+                } else {
+                    modeling.updateModdleProperties(element, mi, { completionCondition: undefined });
+                }
+                break;
+            }
 
             case 'inputCollection':
             case 'inputDataItem':
