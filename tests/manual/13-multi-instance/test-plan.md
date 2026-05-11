@@ -98,3 +98,30 @@ Deploy `completion-condition-1-of-N.bpmn`:
 - [ ] Only 1 approval appears in the output — the remaining 2 iterations are cancelled before they start or are cancelled mid-flight
 - [ ] Workflow proceeds to the end event
 - [ ] `_context.nrOfCompletedInstances` referenced in the condition resolves to `1` when the condition fires
+
+---
+
+## Scenario 13f: Editor displays completionCondition field
+
+Tests that the BPMN editor property panel shows the Completion Condition field and round-trips the value correctly.
+
+### Prerequisites
+
+Aspire stack running: `dotnet run --project Fleans.Aspire` from `src/Fleans/`
+
+### Steps
+
+1. Open `http://localhost:5104/editor`
+2. Import `completion-condition-1-of-N.bpmn`
+3. Click the ScriptTask node (`processApproval`)
+4. Verify the Multi-Instance section shows a **Completion Condition** field containing `_context.nrOfCompletedInstances >= 1`
+5. Clear the field and type `_context.nrOfCompletedInstances >= 2`, then click elsewhere to commit
+6. Export the BPMN (Download button)
+7. Open the downloaded XML and verify `<completionCondition>_context.nrOfCompletedInstances &gt;= 2</completionCondition>` is present
+
+### Expected
+
+- [ ] "Completion Condition" field is visible in the Multi-Instance section
+- [ ] Field initially shows `_context.nrOfCompletedInstances >= 1`
+- [ ] After editing, the exported BPMN contains the new value
+- [ ] No "Correlation Key" field appears (not applicable to multi-instance activities)

@@ -376,6 +376,12 @@
                                          Disabled="@ReadOnly" Placeholder="e.g. result" Style="width: 100%;" />
                     </div>
 
+                    <div>
+                        <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Completion Condition</FluentLabel>
+                        <FluentTextField Value="@completionCondition" @oninput="OnCompletionConditionInput" @onchange="OnCompletionConditionChange"
+                                         Disabled="@ReadOnly" Placeholder="e.g. _context.nrOfCompletedInstances >= 1" Style="width: 100%;" />
+                    </div>
+
                     @if (string.IsNullOrWhiteSpace(loopCardinality) && string.IsNullOrWhiteSpace(inputCollection))
                     {
                         <FluentLabel Style="color: var(--warning); margin-top: 4px; font-size: 12px;">
@@ -422,6 +428,7 @@
     private string outputDataItem = "";
     private bool isExecutable = true;
     private string documentation = "";
+    private string completionCondition = "";
 
     // --- Custom-task plugin editor state (sub-issue C of #357) ---
     private List<CustomTaskCatalogEntry> catalogEntries = new();
@@ -490,6 +497,7 @@
         outputDataItem = Element.OutputDataItem;
         isExecutable = Element.IsExecutable;
         documentation = Element.Documentation;
+        completionCondition = Element.CompletionCondition;
 
         // Custom-task plugin section: load catalog + current task type/parameters
         // when the selected element is a service task and the element id changed
@@ -882,6 +890,7 @@
             inputDataItem = "";
             outputCollection = "";
             outputDataItem = "";
+            completionCondition = "";
             await JS.InvokeVoidAsync("bpmnEditor.enableMultiInstance", Element.Id);
         }
         else
@@ -929,6 +938,13 @@
     {
         outputDataItem = e.Value?.ToString() ?? "";
         await JS.InvokeVoidAsync("bpmnEditor.updateMultiInstanceProperty", Element.Id, "outputDataItem", outputDataItem);
+    }
+
+    private void OnCompletionConditionInput(ChangeEventArgs e) => completionCondition = e.Value?.ToString() ?? "";
+    private async Task OnCompletionConditionChange(ChangeEventArgs e)
+    {
+        completionCondition = e.Value?.ToString() ?? "";
+        await JS.InvokeVoidAsync("bpmnEditor.updateMultiInstanceProperty", Element.Id, "completionCondition", completionCondition);
     }
 
     private string GetTypeLabel()
@@ -1053,6 +1069,7 @@
         public string OutputDataItem { get; set; } = "";
         public bool IsExecutable { get; set; } = true;
         public string Documentation { get; set; } = "";
+        public string CompletionCondition { get; set; } = "";
     }
 
     public class MappingData

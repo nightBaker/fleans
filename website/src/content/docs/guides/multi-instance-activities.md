@@ -156,6 +156,8 @@ Event sub-processes also do not support multi-instance — by BPMN spec, not a F
 
 **Output collection:** only outputs from *completed* iterations are included in `outputCollection`. Cancelled iterations contribute nothing.
 
+**Editor:** the BPMN editor exposes a **Completion Condition** field in the Multi-Instance section of the properties panel, so you can view and edit the expression without touching the XML directly.
+
 ## Limitations
 
 - **Transactions reject multi-instance at parse time.** `<transaction>` elements cannot carry `<multiInstanceLoopCharacteristics>` — the converter throws an explicit error. Wrap individual transactions in an outer multi-instance subprocess instead.
