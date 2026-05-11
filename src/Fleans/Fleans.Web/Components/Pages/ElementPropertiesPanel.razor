@@ -32,6 +32,25 @@
                 <FluentTextField Value="@name" @oninput="OnNameInput" @onchange="OnNameChange" Disabled="@ReadOnly" Style="width: 100%;" />
             </div>
 
+            @if (Element.Type == "bpmn:Process")
+            {
+                <div>
+                    <FluentCheckbox Value="@isExecutable"
+                                    @onchange="OnIsExecutableChange"
+                                    Disabled="@ReadOnly"
+                                    Label="Executable" />
+                </div>
+                <div>
+                    <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Documentation</FluentLabel>
+                    <FluentTextArea Value="@documentation"
+                                    @oninput="OnDocumentationInput"
+                                    @onchange="OnDocumentationChange"
+                                    Disabled="@ReadOnly"
+                                    Style="width: 100%;" Rows="3"
+                                    Placeholder="Optional process description…" />
+                </div>
+            }
+
             @if (Element.Type == "bpmn:ScriptTask")
             {
                 <div>
@@ -382,6 +401,8 @@
     private string inputDataItem = "";
     private string outputCollection = "";
     private string outputDataItem = "";
+    private bool isExecutable = true;
+    private string documentation = "";
 
     // --- Custom-task plugin editor state (sub-issue C of #357) ---
     private List<CustomTaskCatalogEntry> catalogEntries = new();
@@ -447,6 +468,8 @@
         inputDataItem = Element.InputDataItem;
         outputCollection = Element.OutputCollection;
         outputDataItem = Element.OutputDataItem;
+        isExecutable = Element.IsExecutable;
+        documentation = Element.Documentation;
 
         // Custom-task plugin section: load catalog + current task type/parameters
         // when the selected element is a service task and the element id changed
@@ -756,6 +779,19 @@
         await JS.InvokeVoidAsync("bpmnEditor.updateExpectedOutputs", Element.Id, tags);
     }
 
+    private async Task OnIsExecutableChange(ChangeEventArgs e)
+    {
+        isExecutable = e.Value is bool b ? b : bool.TryParse(e.Value?.ToString(), out var v) && v;
+        await JS.InvokeVoidAsync("bpmnEditor.setIsExecutable", Element.Id, isExecutable);
+    }
+
+    private void OnDocumentationInput(ChangeEventArgs e) => documentation = e.Value?.ToString() ?? "";
+    private async Task OnDocumentationChange(ChangeEventArgs e)
+    {
+        documentation = e.Value?.ToString() ?? "";
+        await JS.InvokeVoidAsync("bpmnEditor.setDocumentation", Element.Id, documentation);
+    }
+
     private async Task AddMapping(string type)
     {
         await JS.InvokeVoidAsync("bpmnEditor.addMapping", Element.Id, type);
@@ -958,6 +994,8 @@
         public string InputDataItem { get; set; } = "";
         public string OutputCollection { get; set; } = "";
         public string OutputDataItem { get; set; } = "";
+        public bool IsExecutable { get; set; } = true;
+        public string Documentation { get; set; } = "";
     }
 
     public class MappingData
