@@ -95,6 +95,7 @@ window.bpmnEditor = {
             hasSignalDefinition: false,
             signalName: '',
             hasCancelDefinition: false,
+            hasTerminateDefinition: false,
             isInterrupting: true,
             assignee: '',
             candidateGroups: [],
@@ -246,6 +247,10 @@ window.bpmnEditor = {
                     if (escDef.escalationRef) {
                         data.escalationCode = escDef.escalationRef.escalationCode || '';
                     }
+                    break;
+                }
+                if (bo.eventDefinitions[i].$type === 'bpmn:TerminateEventDefinition') {
+                    data.hasTerminateDefinition = true;
                     break;
                 }
             }

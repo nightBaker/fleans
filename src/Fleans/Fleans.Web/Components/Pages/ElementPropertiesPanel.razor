@@ -222,7 +222,7 @@
                                      Disabled="@ReadOnly" Placeholder="e.g. cancelOrder" Style="width: 100%;" />
                 </div>
 
-                @if (Element.Type != "bpmn:StartEvent")
+                @if (Element.Type != "bpmn:StartEvent" && Element.Type != "bpmn:EndEvent" && Element.Type != "bpmn:IntermediateThrowEvent")
                 {
                     <div>
                         <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Correlation Key</FluentLabel>
@@ -804,6 +804,7 @@
     private bool HasActivationCondition => Element.Type == "bpmn:ComplexGateway";
     private bool HasDefaultFlowSelector =>
         Element.Type is "bpmn:ExclusiveGateway" or "bpmn:InclusiveGateway" or "bpmn:ComplexGateway";
+    private bool HasTerminate => Element.HasTerminateDefinition;
     private bool IsBoundaryEvent => Element.Type == "bpmn:BoundaryEvent";
 
     private static readonly Dictionary<string, string> TimerTypesAll = new()
@@ -1088,6 +1089,7 @@
         {
             return Element.Type switch
             {
+                "bpmn:EndEvent" => "Message End Event",
                 "bpmn:IntermediateCatchEvent" => "Message Intermediate Catch Event",
                 "bpmn:BoundaryEvent" => "Message Boundary Event",
                 _ => Element.Type.Replace("bpmn:", "")
@@ -1097,6 +1099,7 @@
         {
             return Element.Type switch
             {
+                "bpmn:EndEvent" => "Signal End Event",
                 "bpmn:IntermediateCatchEvent" => "Signal Intermediate Catch Event",
                 "bpmn:IntermediateThrowEvent" => "Signal Intermediate Throw Event",
                 "bpmn:BoundaryEvent" => "Signal Boundary Event",
@@ -1141,6 +1144,14 @@
                 "bpmn:BoundaryEvent" => "Escalation Boundary Event",
                 "bpmn:IntermediateThrowEvent" => "Escalation Intermediate Throw Event",
                 "bpmn:IntermediateCatchEvent" => "Escalation Intermediate Catch Event",
+                _ => Element.Type.Replace("bpmn:", "")
+            };
+        }
+        if (HasTerminate)
+        {
+            return Element.Type switch
+            {
+                "bpmn:EndEvent" => "Terminate End Event",
                 _ => Element.Type.Replace("bpmn:", "")
             };
         }
@@ -1192,6 +1203,7 @@
         public bool HasConditionalDefinition { get; set; }
         public bool HasEscalationDefinition { get; set; }
         public string EscalationCode { get; set; } = "";
+        public bool HasTerminateDefinition { get; set; }
         public bool IsInterrupting { get; set; } = true;
         public bool IsEventSubProcess { get; set; }
         public string Assignee { get; set; } = "";
