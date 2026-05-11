@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             id="Definitions_nested_tx_normal_inner"
+             targetNamespace="http://bpmn.io/schema/bpmn">
+
+  <!--
+    Fixture for test 46 — Scenarios A and C: inner TX completes normally.
+    Scenario A: start({}) → send "trigger-outer-complete" → both TX Completed
+    Scenario C: start({}) → send "trigger-outer-cancel"  → inner Completed, outer Cancelled
+
+    Design: inner TX uses a direct linear flow (start → work → end) — no gateways.
+    Doubly-nested TX does not support gateway routing (engine limitation; both
+    ExclusiveGateway and EventBasedGateway targets fail to activate inside inner-tx).
+    Outer TX uses EventBasedGateway at 1-level depth (supported).
+  -->
+
+  <process id="nested-tx-normal-inner" isExecutable="true">
+
+    <startEvent id="start" name="Start" />
+
+    <!-- ═══════════════════════════════════════════
+         Outer Transaction
+         ═══════════════════════════════════════════ -->
+    <transaction id="outer-tx" name="Outer TX">
+      <startEvent id="outer-start" />
+
+      <!-- ─────────────────────────────────────────
+           Inner Transaction — linear, no gateway
+           ───────────────────────────────────────── -->
+      <transaction id="inner-tx" name="Inner TX">
+        <startEvent id="inner-start" />
+
+        <!-- Compensable work task -->
+        <scriptTask id="inner-work" name="Inner Work" scriptFormat="csharp">
+          <script>_context.innerDone = true</script>
+        </scriptTask>
+
+        <!-- Compensation handler (fires when inner TX is cancelled — but not in Scenarios A/C) -->
+        <scriptTask id="inner-compensate" name="Inner Compensate" scriptFormat="csharp">
+          <script>_context.innerCompensated = true</script>
+        </scriptTask>
+
+        <endEvent id="inner-end" name="Inner End" />
+
+        <!-- Compensation boundary on inner-work -->
+        <boundaryEvent id="inner-compensate-boundary" attachedToRef="inner-work" cancelActivity="false">
+          <compensateEventDefinition />
+        </boundaryEvent>
+
+        <sequenceFlow id="isf1" sourceRef="inner-start" targetRef="inner-work" />
+        <sequenceFlow id="isf2" sourceRef="inner-work" targetRef="inner-end" />
+
+        <!-- Compensation association: boundary → handler -->
+        <association id="ca-inner-compensate" associationDirection="One"
+                     sourceRef="inner-compensate-boundary" targetRef="inner-compensate" />
+      </transaction>
+
+      <!-- Outer decision: normal completion vs cancel (1-level-deep ICE — supported) -->
+      <eventBasedGateway id="outer-decision" name="Outer Decision" />
+
+      <!-- Branch A: outer completes normally -->
+      <intermediateCatchEvent id="trigger-outer-complete-catch" name="Trigger Outer Complete">
+        <messageEventDefinition messageRef="msgTriggerOuterComplete" />
+      </intermediateCatchEvent>
+      <endEvent id="outer-end" name="Outer End" />
+
+      <!-- Branch C: outer cancels -->
+      <intermediateCatchEvent id="trigger-outer-cancel-catch" name="Trigger Outer Cancel">
+        <messageEventDefinition messageRef="msgTriggerOuterCancel" />
+      </intermediateCatchEvent>
+      <endEvent id="outer-cancel-end" name="Outer Cancel">
+        <cancelEventDefinition />
+      </endEvent>
+
+      <sequenceFlow id="osf1" sourceRef="outer-start" targetRef="inner-tx" />
+      <sequenceFlow id="osf2" sourceRef="inner-tx" targetRef="outer-decision" />
+      <sequenceFlow id="osf3" sourceRef="outer-decision" targetRef="trigger-outer-complete-catch" />
+      <sequenceFlow id="osf4" sourceRef="trigger-outer-complete-catch" targetRef="outer-end" />
+      <sequenceFlow id="osf5" sourceRef="outer-decision" targetRef="trigger-outer-cancel-catch" />
+      <sequenceFlow id="osf6" sourceRef="trigger-outer-cancel-catch" targetRef="outer-cancel-end" />
+    </transaction>
+
+    <!-- Cancel boundary on outer-tx → recovery flow (Scenario C) -->
+    <boundaryEvent id="outer-tx-cancel-boundary" attachedToRef="outer-tx" cancelActivity="true">
+      <cancelEventDefinition />
+    </boundaryEvent>
+    <endEvent id="cancel-recovery-end" name="Cancelled End" />
+
+    <!-- Error boundary on outer-tx (errorCode 503 = Hazard cascade) -->
+    <boundaryEvent id="outer-tx-error-boundary" attachedToRef="outer-tx" cancelActivity="true">
+      <errorEventDefinition errorRef="hazardError" />
+    </boundaryEvent>
+    <endEvent id="hazard-recovery-end" name="Hazard End">
+      <errorEventDefinition />
+    </endEvent>
+
+    <endEvent id="process-end" name="Process End" />
+
+    <sequenceFlow id="sf1" sourceRef="start" targetRef="outer-tx" />
+    <sequenceFlow id="sf2" sourceRef="outer-tx" targetRef="process-end" />
+    <sequenceFlow id="sf3" sourceRef="outer-tx-cancel-boundary" targetRef="cancel-recovery-end" />
+    <sequenceFlow id="sf4" sourceRef="outer-tx-error-boundary" targetRef="hazard-recovery-end" />
+  </process>
+
+  <!-- Messages for the outer EventBasedGateway (1-level deep — supported) -->
+  <message id="msgTriggerOuterComplete" name="trigger-outer-complete" />
+  <message id="msgTriggerOuterCancel" name="trigger-outer-cancel" />
+
+  <!-- Error for outer TX Hazard boundary -->
+  <error id="hazardError" name="HazardError" errorCode="503" />
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="nested-tx-normal-inner">
+      <bpmndi:BPMNShape id="Shape_start" bpmnElement="start">
+        <dc:Bounds x="152" y="82" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_outer-tx" bpmnElement="outer-tx" isExpanded="true">
+        <dc:Bounds x="240" y="40" width="820" height="500" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_outer-start" bpmnElement="outer-start">
+        <dc:Bounds x="272" y="262" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_inner-tx" bpmnElement="inner-tx" isExpanded="true">
+        <dc:Bounds x="360" y="100" width="380" height="320" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_inner-start" bpmnElement="inner-start">
+        <dc:Bounds x="392" y="242" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_inner-work" bpmnElement="inner-work">
+        <dc:Bounds x="472" y="220" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_inner-compensate" bpmnElement="inner-compensate">
+        <dc:Bounds x="472" y="322" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_inner-end" bpmnElement="inner-end">
+        <dc:Bounds x="630" y="242" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_inner-compensate-boundary" bpmnElement="inner-compensate-boundary">
+        <dc:Bounds x="504" y="282" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_outer-decision" bpmnElement="outer-decision">
+        <dc:Bounds x="805" y="255" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_trigger-outer-complete-catch" bpmnElement="trigger-outer-complete-catch">
+        <dc:Bounds x="920" y="122" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_outer-end" bpmnElement="outer-end">
+        <dc:Bounds x="990" y="122" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_trigger-outer-cancel-catch" bpmnElement="trigger-outer-cancel-catch">
+        <dc:Bounds x="920" y="412" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_outer-cancel-end" bpmnElement="outer-cancel-end">
+        <dc:Bounds x="990" y="412" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_outer-tx-cancel-boundary" bpmnElement="outer-tx-cancel-boundary">
+        <dc:Bounds x="600" y="522" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_outer-tx-error-boundary" bpmnElement="outer-tx-error-boundary">
+        <dc:Bounds x="670" y="522" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_cancel-recovery-end" bpmnElement="cancel-recovery-end">
+        <dc:Bounds x="600" y="610" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_hazard-recovery-end" bpmnElement="hazard-recovery-end">
+        <dc:Bounds x="670" y="610" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_process-end" bpmnElement="process-end">
+        <dc:Bounds x="1110" y="62" width="36" height="36" />
+      </bpmndi:BPMNShape>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</definitions>

@@ -406,7 +406,7 @@ public partial class WorkflowInstance
         Message = "Conditional expression evaluation failed: expression={ConditionExpression}, activityId={ActivityId}, error={ErrorMessage}")]
     private partial void LogConditionalExpressionEvaluationFailed(string conditionExpression, string activityId, string errorMessage);
 
-    // ── Transaction Sub-Process lifecycle (EventId range 1100–1103; 1101–1102 reserved for Phase 2) ──
+    // ── Transaction Sub-Process lifecycle (EventId range 1100–1109) ──
 
     [LoggerMessage(EventId = 1100, Level = LogLevel.Debug,
         Message = "Transaction scope opened: activityId={ActivityId} instanceId={TransactionInstanceId} parentScopeId={ParentScopeId}")]
@@ -427,6 +427,18 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1104, Level = LogLevel.Warning,
         Message = "Outer transaction {OuterTxId} cancel aborted — Hazard propagated to outer TX; {ErrorMessage}")]
     private partial void LogHazardCascadeToOuter(Guid outerTxId, string? errorMessage);
+
+    [LoggerMessage(EventId = 1105, Level = LogLevel.Warning,
+        Message = "Transaction hazard initiated: transactionInstanceId={TransactionInstanceId} activityId={ActivityId} errorCode={ErrorCode}")]
+    private partial void LogTransactionHazardInitiated(Guid transactionInstanceId, string activityId, string errorCode);
+
+    [LoggerMessage(EventId = 1106, Level = LogLevel.Warning,
+        Message = "Transaction hazard boundary activated: transactionInstanceId={TransactionInstanceId} boundaryActivityId={BoundaryActivityId}")]
+    private partial void LogTransactionHazardBoundaryActivated(Guid transactionInstanceId, string boundaryActivityId);
+
+    [LoggerMessage(EventId = 1107, Level = LogLevel.Warning,
+        Message = "Transaction hazard host failed (no boundary): transactionInstanceId={TransactionInstanceId} errorCode={ErrorCode}")]
+    private partial void LogTransactionHazardHostFailed(Guid transactionInstanceId, string errorCode);
 
     [LoggerMessage(EventId = 3033, Level = LogLevel.Debug,
         Message = "Compensation log returned: {EntryCount} entries")]

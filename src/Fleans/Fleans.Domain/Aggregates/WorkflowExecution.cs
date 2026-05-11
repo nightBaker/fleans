@@ -299,6 +299,119 @@ public class WorkflowExecution
         return [];
     }
 
+    /// <summary>
+    /// Scans for active Transaction scopes where all scope entries are completed and at least one
+    /// failed (error escaped without an inner catch), and for each not yet in a Hazard/Cancelled
+    /// outcome, initiates the Hazard flow: sets outcome to Hazard and starts the compensation walk.
+    /// Must be called after InitiateTransactionCancelFlowIfNeeded and before
+    /// CompleteFinishedSubProcessScopes so the auto-complete path does not race.
+    /// </summary>
+    public List<IInfrastructureEffect> InitiateTransactionHazardFlowIfNeeded()
+    {
+        var effects = new List<IInfrastructureEffect>();
+
+        foreach (var txEntry in _state.GetActiveActivities().ToList())
+        {
+            var scopeDef = _definition.GetScopeForActivity(txEntry.ActivityId);
+            var activity = scopeDef.GetActivity(txEntry.ActivityId);
+            if (activity is not Activities.Transaction) continue;
+
+            // Idempotent: skip if already in a terminal outcome
+            if (_state.TransactionOutcomes.TryGetValue(txEntry.ActivityInstanceId, out var existing)
+                && existing.Outcome != TransactionOutcome.Completed) continue;
+
+            var scopeEntries = _state.GetEntriesInScope(txEntry.ActivityInstanceId).ToList();
+            if (!scopeEntries.All(e => e.IsCompleted)) continue;
+
+            var failedEntry = scopeEntries.FirstOrDefault(e => e.ErrorCode is not null);
+            if (failedEntry is null) continue;
+
+            SetTransactionOutcomeHazard(txEntry.ActivityInstanceId, failedEntry.ErrorCode!, failedEntry.ErrorState?.Message);
+            effects.AddRange(CancelScopeChildren(txEntry.ActivityInstanceId, "CancelledByHazard"));
+            PerformCompensationWalk(failedEntry.ActivityInstanceId, targetActivityRef: null);
+        }
+
+        return effects;
+    }
+
+    /// <summary>
+    /// Activates the ErrorBoundaryEvent on the Transaction host after the Hazard compensation walk
+    /// completes. Spawns the boundary in the parent scope (if defined), or fails the TX host so
+    /// the error propagates normally. Analog of ActivateCancelBoundaryEvent for the Hazard path.
+    /// </summary>
+    public List<IInfrastructureEffect> ActivateHazardErrorBoundaryEvent(
+        ActivityInstanceEntry txHostEntry,
+        IWorkflowDefinition parentScopeDef,
+        string errorCode,
+        string? errorMessage)
+    {
+        var effects = new List<IInfrastructureEffect>();
+
+        var errorBoundary = parentScopeDef.Activities
+            .OfType<Activities.BoundaryErrorEvent>()
+            .Where(b => b.AttachedToActivityId == txHostEntry.ActivityId
+                && (b.ErrorCode == null || b.ErrorCode == errorCode))
+            .OrderByDescending(b => b.ErrorCode != null)
+            .FirstOrDefault();
+
+        if (errorBoundary is null)
+        {
+            // No Error Boundary on TX host — fail it so the error propagates to parent scope
+            Emit(new ActivityFailed(txHostEntry.ActivityInstanceId, errorCode, errorMessage ?? string.Empty));
+            effects.AddRange(BuildBoundaryUnsubscribeEffects(txHostEntry.ActivityId, txHostEntry));
+            return effects;
+        }
+
+        Emit(new ActivityCancelled(
+            txHostEntry.ActivityInstanceId,
+            $"Interrupted by error boundary '{errorBoundary.ActivityId}'"));
+        effects.AddRange(BuildBoundaryUnsubscribeEffects(txHostEntry.ActivityId, txHostEntry));
+
+        var parentVariablesId = txHostEntry.ScopeId.HasValue
+            ? _state.GetEntry(txHostEntry.ScopeId.Value).VariablesId
+            : _state.GetRootVariablesId();
+
+        Emit(new ActivitySpawned(
+            ActivityInstanceId: Guid.NewGuid(),
+            ActivityId: errorBoundary.ActivityId,
+            ActivityType: errorBoundary.GetType().Name,
+            VariablesId: parentVariablesId,
+            ScopeId: txHostEntry.ScopeId,
+            MultiInstanceIndex: null,
+            TokenId: null));
+
+        return effects;
+    }
+
+    /// <summary>
+    /// Scans active Transaction entries in Hazard state whose compensation walk is complete and
+    /// all scope entries are done, and activates the Error Boundary Event (or fails the TX host).
+    /// Called on every HandleScopeCompletions iteration so comp walk completion is not missed.
+    /// </summary>
+    public List<IInfrastructureEffect> ActivatePendingHazardBoundaries()
+    {
+        var effects = new List<IInfrastructureEffect>();
+
+        foreach (var txEntry in _state.GetActiveActivities().ToList())
+        {
+            if (!_state.TransactionOutcomes.TryGetValue(txEntry.ActivityInstanceId, out var outcome)
+                || outcome.Outcome != TransactionOutcome.Hazard) continue;
+
+            if (_state.ActiveCompensationWalks.ContainsKey(txEntry.ActivityInstanceId)) continue;
+
+            var scopeEntries = _state.GetEntriesInScope(txEntry.ActivityInstanceId).ToList();
+            if (!scopeEntries.All(e => e.IsCompleted)) continue;
+
+            var failedChild = scopeEntries.First(e => e.ErrorCode is not null);
+            var parentScopeDef = _definition.GetScopeForActivity(txEntry.ActivityId);
+
+            effects.AddRange(ActivateHazardErrorBoundaryEvent(
+                txEntry, parentScopeDef, failedChild.ErrorCode!, failedChild.ErrorState?.Message));
+        }
+
+        return effects;
+    }
+
     public void ResolveTransitions(IReadOnlyList<CompletedActivityTransitions> completedTransitions)
     {
         foreach (var completed in completedTransitions)
@@ -2105,6 +2218,22 @@ public class WorkflowExecution
             // Find the attached-to entry (may differ from the failed activity if
             // the boundary is on a parent subprocess)
             var attachedEntry = _state.GetFirstActive(attachedToActivityId);
+
+            // Suppress premature Error Boundary fire when the boundary is on a Transaction host.
+            // FindBoundaryErrorHandler() bubbles past TX scope boundaries and would fire immediately,
+            // but BPMN §10.4.3 requires the compensation walk to complete first.
+            // Comp walk handler failures emit CompensationWalkFailed (not FailActivity), so the
+            // Hazard-state case here is defensive-only.
+            var attachedActivity = scope.GetActivity(attachedToActivityId);
+            if (attachedActivity is Activities.Transaction && attachedEntry is not null
+                && (!_state.TransactionOutcomes.TryGetValue(attachedEntry.ActivityInstanceId, out var priorTxOutcome)
+                    || priorTxOutcome.Outcome == TransactionOutcome.Completed))
+            {
+                // Cancel remaining active TX scope siblings so all scope entries reach IsCompleted,
+                // enabling InitiateTransactionHazardFlowIfNeeded() to detect the Hazard condition.
+                effects.AddRange(CancelScopeChildren(attachedEntry.ActivityInstanceId, "CancelledByHazard"));
+                return effects.AsReadOnly();
+            }
 
             var scopeIdForCancel = attachedEntry?.ActivityInstanceId ?? entry.ActivityInstanceId;
 
