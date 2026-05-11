@@ -91,7 +91,8 @@ window.bpmnEditor = {
             outputCollection: '',
             outputDataItem: '',
             isExecutable: false,
-            documentation: ''
+            documentation: '',
+            isEventSubProcess: false
         };
 
         if (bo.$type === 'bpmn:ScriptTask') {
@@ -208,6 +209,10 @@ window.bpmnEditor = {
 
         if (bo.$type === 'bpmn:BoundaryEvent') {
             data.isInterrupting = bo.cancelActivity !== false;
+        }
+
+        if (bo.$type === 'bpmn:SubProcess') {
+            data.isEventSubProcess = bo.triggeredByEvent === true;
         }
 
         var miElement = bo.loopCharacteristics;
