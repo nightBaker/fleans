@@ -16,6 +16,7 @@ public class WorkflowQueryService : IWorkflowQueryService
 {
     private readonly IDbContextFactory<FleanQueryDbContext> _dbContextFactory;
     private readonly ISieveProcessor _sieveProcessor;
+    private readonly IUserTaskFilterStrategy _userTaskFilter;
 
     private static readonly JsonSerializerSettings JsonSettings = new()
     {
@@ -26,10 +27,12 @@ public class WorkflowQueryService : IWorkflowQueryService
 
     public WorkflowQueryService(
         IDbContextFactory<FleanQueryDbContext> dbContextFactory,
-        ISieveProcessor sieveProcessor)
+        ISieveProcessor sieveProcessor,
+        IUserTaskFilterStrategy userTaskFilter)
     {
         _dbContextFactory = dbContextFactory;
         _sieveProcessor = sieveProcessor;
+        _userTaskFilter = userTaskFilter;
     }
 
     public async Task<InstanceStateSnapshot?> GetStateSnapshot(Guid workflowInstanceId)
@@ -353,8 +356,12 @@ public class WorkflowQueryService : IWorkflowQueryService
         page = page.Normalize();
         await using var db = await _dbContextFactory.CreateDbContextAsync();
 
-        // Layer 1: DB-level — Sieve for TaskState filter + CreatedAt sort
-        var baseQuery = db.UserTasks.AsQueryable();
+        // Layer 1: provider-specific base query. PG injects JSON-text LIKE conditions via
+        // raw SQL (FromSqlInterpolated); SQLite returns a plain AsQueryable() and relies on
+        // the in-memory filter path below. See IUserTaskFilterStrategy / #415.
+        var baseQuery = _userTaskFilter.GetFilteredBase(db, assignee, candidateGroup);
+
+        // Layer 2: Sieve for sort + any caller-supplied filters (e.g. TaskState).
         var sieveModel = new SieveModel
         {
             Sorts = page.Sorts ?? "-CreatedAt",
@@ -362,23 +369,37 @@ public class WorkflowQueryService : IWorkflowQueryService
         };
         var sievedQuery = _sieveProcessor.Apply(sieveModel, baseQuery, applyPagination: false);
 
-        // Materialize — assignee/candidateGroup filtering must happen in memory
-        // because CandidateUsers/CandidateGroups are JSON arrays not queryable in SQLite
-        var tasks = await sievedQuery.ToListAsync();
+        if (_userTaskFilter.PushesToSql)
+        {
+            // PG path: filter, count, and pagination all push to SQL.
+            // The silo materializes only PageSize rows regardless of total matching count.
+            var totalCount = await sievedQuery.CountAsync();
+            var items = (await sievedQuery
+                    .Skip((page.Page - 1) * page.PageSize)
+                    .Take(page.PageSize)
+                    .ToListAsync())
+                .Select(ToUserTaskDto)
+                .ToList();
 
-        // Layer 2: Memory-level — assignee/candidateGroup filtering (preserves existing OR semantics)
-        var filteredList = ApplyUserTaskFilters(tasks, assignee, candidateGroup).ToList();
-        var totalCount = filteredList.Count;
+            return new PagedResult<UserTaskResponse>(
+                items, totalCount, page.Page, page.PageSize);
+        }
+        else
+        {
+            // SQLite path: materialize, then filter and paginate in memory.
+            // Existing behavior preserved when no SQL pushdown is available.
+            var tasks = await sievedQuery.ToListAsync();
+            var filteredList = ApplyUserTaskFilters(tasks, assignee, candidateGroup).ToList();
+            var totalCount = filteredList.Count;
+            var items = filteredList
+                .Skip((page.Page - 1) * page.PageSize)
+                .Take(page.PageSize)
+                .Select(ToUserTaskDto)
+                .ToList();
 
-        // Layer 3: Memory-level pagination
-        var items = filteredList
-            .Skip((page.Page - 1) * page.PageSize)
-            .Take(page.PageSize)
-            .Select(ToUserTaskDto)
-            .ToList();
-
-        return new PagedResult<UserTaskResponse>(
-            items, totalCount, page.Page, page.PageSize);
+            return new PagedResult<UserTaskResponse>(
+                items, totalCount, page.Page, page.PageSize);
+        }
     }
 
     private static IEnumerable<UserTaskState> ApplyUserTaskFilters(

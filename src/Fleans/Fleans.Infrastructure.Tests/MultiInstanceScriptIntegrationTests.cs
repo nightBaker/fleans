@@ -369,6 +369,7 @@ public class MultiInstanceScriptIntegrationTests
                         options.DefaultPageSize = 20;
                         options.MaxPageSize = 100;
                     });
+                    services.AddSingleton<IUserTaskFilterStrategy, InMemoryUserTaskFilterStrategy>();
                     services.AddSingleton<IWorkflowQueryService, WorkflowQueryService>();
                     services.AddSingleton<IScriptExpressionExecutor, DynamicExpressoScriptExpressionExecutor>();
                     services.AddSingleton<IConditionExpressionEvaluator, DynamicExpressoConditionExpressionEvaluator>();
