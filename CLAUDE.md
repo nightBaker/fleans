@@ -224,6 +224,7 @@ Two providers: **SQLite** (default, local dev) and **PostgreSQL** (production/lo
   FLEANS_PG_TESTS=1 dotnet test --filter "TestCategory=Postgres"
   ```
   Requires Docker (Testcontainers boots `postgres:16-alpine`). Without `FLEANS_PG_TESTS=1` the PG rows surface as `Inconclusive` (non-failing) — never `Failed`. CI runs the dedicated `PostgreSQL tests` job (`.github/workflows/pg-tests.yml`) on every PR. **Bump `PostgresImage` in `Infrastructure/PostgresContainerFixture.cs` whenever the production deploy target moves** — today it tracks Aspire's `Aspire.Hosting.PostgreSQL` default (PG 16).
+- **`Persistence:MaxEventsPerLoad` safety valve (default `1000`):** `EfCoreEventStore.ReadEventsAsync` throws `InvalidOperationException` if the unread event delta exceeds this cap, surfacing broken-snapshotting scenarios before they OOM the silo. Increase via `Persistence__MaxEventsPerLoad` env var for deployments with legitimately large deltas. `FleansPersistenceOptions` lives in `Fleans.Persistence` (not `Fleans.ServiceDefaults`) to avoid a circular project reference.
 
 ## Things to Know
 

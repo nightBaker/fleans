@@ -22,7 +22,12 @@ public static class FleansPersistenceExtensions
     {
         var provider = builder.Configuration["Persistence:Provider"] ?? "Sqlite";
 
-        builder.Services.Configure<FleansPersistenceOptions>(opts => opts.Provider = provider);
+        builder.Services.Configure<FleansPersistenceOptions>(opts =>
+        {
+            opts.Provider = provider;
+            builder.Configuration.GetSection("Persistence").Bind(opts);
+            if (string.IsNullOrWhiteSpace(opts.Provider)) opts.Provider = provider;
+        });
 
         if (provider.Equals("Postgres", StringComparison.OrdinalIgnoreCase))
         {
