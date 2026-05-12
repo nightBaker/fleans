@@ -1,94 +1,78 @@
 ---
 title: Hosting Your Own Custom-Task Plugins
-description: Use Fleans.CustomWorkerHost as a starting template to run your own custom-task plugins outside the engine repository.
+description: Use the fleans-custom-worker-example GitHub template to run your own custom-task plugins outside the engine repository.
 ---
 
 When you ship a custom-task plugin (e.g. an in-house "send-slack-notification" plugin), you
 typically want it to run in **your own deployable** — not inside the Fleans engine image.
-`Fleans.CustomWorkerHost` is the worked example that shows the minimum-viable shape for
-that deployable: a Web-SDK Exe that boots an Orleans silo with `Fleans:Role=Worker`,
-references **only** `Fleans.Worker` and the chosen plugin assemblies, and joins the same
-Orleans cluster as the engine via Redis clustering.
+
+The **[`fleans-custom-worker-example`](https://github.com/nightBaker/fleans-custom-worker-example)**
+repository is a GitHub template that shows the minimum-viable shape for that deployable:
+a Web-SDK Exe that boots an Orleans silo with `Fleans:Role=Worker`, references **only**
+`Fleans.Worker` and the chosen plugin assemblies via NuGet, and joins the same Orleans
+cluster as the engine via Redis clustering.
+
+## Quick start
+
+Click **Use this template** on the [example repo](https://github.com/nightBaker/fleans-custom-worker-example),
+or via gh CLI:
+
+```bash
+gh repo create my-plugin-host --template nightBaker/fleans-custom-worker-example --public
+cd my-plugin-host
+ConnectionStrings__orleans-redis="localhost:6379" dotnet run --project src/Fleans.CustomWorkerHost
+```
+
+That gives you a working silo claiming the bundled `Fleans.Plugins.RestCaller` handler.
+Swap in your own plugin (see [Writing Custom-Task Plugins](/fleans/guides/writing-custom-tasks/))
+and ship the resulting container image alongside the engine.
 
 ## Why a separate host?
 
 - **Operational isolation** — you can deploy, scale, and roll back your plugin worker
   independently from the engine. Engine releases don't force you to rebuild the plugin
   worker; plugin source changes don't force you to redeploy the engine.
-- **Reference hygiene** — `Fleans.CustomWorkerHost` references **only** `Fleans.Worker` and
-  the plugin packages. It does not reference `Fleans.Application`, `Fleans.Domain`,
-  `Fleans.Infrastructure`, or any persistence project. This is the structural guarantee
-  that your plugin host doesn't accidentally execute engine grains.
-- **Container co-location** — when you fork `Fleans.CustomWorkerHost` and register it in
-  your fork's Aspire host, `aspire publish -t docker-compose` (or `-t kubernetes`) emits a
-  separate `fleans-custom-worker` service so you can scale plugin workers independently from
-  engine workers (`fleans-worker`). The Fleans engine repo's own publish output does not
-  include `fleans-custom-worker` — the release pipeline only ships `api/web/worker/mcp`,
-  because the in-tree project is intended as a starting template, not a default deployable.
+- **Reference hygiene** — the example template depends only on `Fleans.Worker` (a leaf
+  NuGet) and the plugin packages. **No `Fleans.Application` / `Fleans.Domain` /
+  `Fleans.Infrastructure` / persistence references** — structurally guaranteed by a CI
+  leaf-package guard in the template repo. This means your plugin host cannot accidentally
+  execute engine grains.
+- **Independent release cadence** — your plugin host repo lives outside the engine repo, so
+  you bump it on your own schedule and contributors don't need engine commit access.
 
-## Comparison with Fleans.WorkerHost
+## Plugin-author NuGet stack
 
-| | `Fleans.WorkerHost` | `Fleans.CustomWorkerHost` |
-|--|--|--|
-| Purpose | Internal worker silo for the Fleans engine itself (script tasks, condition evaluators, custom-task plugins shipped in-tree) | Worked example for end users hosting their own custom-task plugins |
-| References | Application + Domain + Infrastructure + Persistence (Sqlite + PostgreSQL) + Plugins.RestCaller + ServiceDefaults + Worker | **Only** Worker + chosen plugin assemblies + ServiceDefaults |
-| Container image | `fleans-worker` | `fleans-custom-worker` |
-| When to use | You are the engine maintainer, or you want a single deployable that bundles the engine's worker grains | You are a plugin author / operator who wants to ship plugins as a separate image |
+Three NuGet packages compose the plugin-author surface, layered strictly:
 
-## Minimum viable Program.cs
-
-```csharp
-using Fleans.Plugins.RestCaller;
-using Fleans.ServiceDefaults;
-using Fleans.Worker.Placement;
-using StackExchange.Redis;
-
-var builder = WebApplication.CreateBuilder(args);
-
-builder.AddServiceDefaults();
-builder.AddKeyedRedisClient("orleans-redis");
-
-if (string.IsNullOrEmpty(builder.Configuration["Fleans:Role"]))
-{
-    builder.Configuration["Fleans:Role"] = "Worker";
-}
-
-var orleansRedisConnection = builder.Configuration.GetConnectionString("orleans-redis");
-var siloName = $"worker-{Environment.MachineName}-{Guid.NewGuid():N}".ToLowerInvariant();
-
-builder.UseOrleans(siloBuilder =>
-{
-    siloBuilder.Configure<Orleans.Configuration.SiloOptions>(o => o.SiloName = siloName);
-
-    if (!string.IsNullOrEmpty(orleansRedisConnection))
-    {
-        siloBuilder.UseRedisClustering(orleansRedisConnection);
-        siloBuilder.AddRedisGrainStorage("PubSubStore",
-            o => o.ConfigurationOptions = ConfigurationOptions.Parse(orleansRedisConnection));
-        siloBuilder.UseInMemoryReminderService();
-    }
-
-    siloBuilder.AddFleanStreaming(builder.Configuration);
-    siloBuilder.AddPlacementDirector<WorkerPlacementStrategy, WorkerPlacementDirector>();
-});
-
-// Plugin registration — operator-controlled. Add or remove .Add*Plugin() calls here to
-// pick which BPMN <serviceTask type="..."> values this host claims.
-builder.Services.AddRestCallerPlugin();
-
-var app = builder.Build();
-app.MapDefaultEndpoints();
-app.Run();
+```
+Fleans.Worker  →  Fleans.Application.Abstractions  →  Fleans.Domain.Abstractions
 ```
 
-## Sequencing — adding a new plugin
+| Package | Holds |
+|---------|-------|
+| `Fleans.Domain.Abstractions` | `IDomainEvent`, `ExecuteCustomTaskEvent`, `InputMapping`/`OutputMapping`, `CustomTaskFailedActivityException` + exception hierarchy. True leaf — depends only on `Microsoft.Orleans.Sdk`. |
+| `Fleans.Application.Abstractions` | Grain interfaces (`IScriptExecutorGrain`, `IConditionExpressionEvaluatorGrain`, `ICustomTaskCatalogGrain`, narrow `IWorkflowInstanceCallback`), `CustomTaskParameterSchema`, `MappingResolver`, `WorkflowEventStreams`, `WorkflowLoggingContext`. |
+| `Fleans.Worker` | `CustomTaskHandlerBase`, `[WorkerPlacement]`, placement directors. |
+
+Your plugin host references `Fleans.Worker` + each plugin package; the rest comes in
+transitively. Verify the closure with:
+
+```bash
+dotnet list package --include-transitive --project src/Fleans.CustomWorkerHost | grep -i fleans
+```
+
+You should see only `Fleans.*.Abstractions`, `Fleans.Worker`, and your plugin packages — no
+`Fleans.Application` or `Fleans.Domain` (without the `.Abstractions` suffix).
+
+## Adding a new plugin
 
 1. Author your plugin grain by deriving from `CustomTaskHandlerBase` (see
    [Writing Custom-Task Plugins](/fleans/guides/writing-custom-tasks/)).
-2. Publish your plugin as a NuGet package (recommended) or reference the project locally.
-3. Add a `<PackageReference>` (or `<ProjectReference>`) to your `CustomWorkerHost`-fork csproj.
+2. Publish your plugin as a NuGet package, or `<ProjectReference>` if it lives in your
+   monorepo.
+3. Add the reference to your `CustomWorkerHost` csproj.
 4. Add `services.AddYourPlugin();` to the registration block in `Program.cs`.
-5. Rebuild and redeploy the worker.
+5. Rebuild and redeploy the worker container.
 
 ## Plugin SemVer caveat
 
@@ -99,7 +83,6 @@ app.Run();
 
 ## Cross-references
 
+- [`fleans-custom-worker-example`](https://github.com/nightBaker/fleans-custom-worker-example) — the GitHub template repo.
 - [Custom Tasks concept page](/fleans/concepts/custom-tasks/) — the BPMN-side picture.
 - [Writing Custom-Task Plugins](/fleans/guides/writing-custom-tasks/) — handler authoring.
-- The in-tree project at `src/Fleans/Fleans.CustomWorkerHost/` is the reference
-  implementation you can fork.

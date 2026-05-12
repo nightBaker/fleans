@@ -154,9 +154,10 @@ The activity completes with `user` (the parsed JSON body) and `status` (the inte
 
 If you want to run your custom-task plugins in their own deployable (separate from the engine
 image) — see the [Hosting Plugins (Custom Worker Host)](/fleans/guides/custom-worker-host/) guide.
-The in-tree `Fleans.CustomWorkerHost` project is a worked example you can fork as a starting
-template; it references **only** `Fleans.Worker` + plugin assemblies (no `Fleans.Application` /
-`Fleans.Domain` dependencies).
+The [`fleans-custom-worker-example`](https://github.com/nightBaker/fleans-custom-worker-example)
+GitHub template is the supported starting point; it references **only** `Fleans.Worker`
+(via NuGet) + plugin assemblies, with no `Fleans.Application` / `Fleans.Domain` in the
+dependency closure.
 
 ## Reference
 

@@ -31,7 +31,6 @@
     <ProjectReference Include="..\Fleans.Mcp\Fleans.Mcp.csproj" />
     <ProjectReference Include="..\Fleans.Web\Fleans.Web.csproj" />
     <ProjectReference Include="..\Fleans.WorkerHost\Fleans.WorkerHost.csproj" />
-    <ProjectReference Include="..\Fleans.CustomWorkerHost\Fleans.CustomWorkerHost.csproj" />
   </ItemGroup>
 
 </Project>
