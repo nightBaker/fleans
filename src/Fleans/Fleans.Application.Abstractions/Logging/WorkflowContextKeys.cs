@@ -4,7 +4,7 @@ namespace Fleans.Application.Logging;
 /// Constants for Orleans RequestContext keys used to propagate
 /// workflow correlation identifiers across grain calls.
 /// </summary>
-internal static class WorkflowContextKeys
+public static class WorkflowContextKeys
 {
     public const string WorkflowId = "WorkflowId";
     public const string ProcessDefinitionId = "ProcessDefinitionId";

@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- Leaf NuGet for Fleans plugin authors: marker interfaces, event records carried
+         on Orleans streams, the exception hierarchy plugins may throw, and value records
+         those events reference. Depends only on Microsoft.Orleans.Sdk so the package
+         dependency closure is minimal. Other Fleans projects compose on top of this:
+         Fleans.Domain → adds business logic / aggregates / state machines.
+         Fleans.Application.Abstractions → adds grain interfaces + plugin scaffolding.
+         Fleans.Worker → adds the Orleans-side base classes for plugin authors. -->
+    <IsPackable>true</IsPackable>
+    <PackageId>Fleans.Domain.Abstractions</PackageId>
+    <Description>Leaf abstractions for Fleans plugin authors: marker interfaces, event records, exception hierarchy, value records.</Description>
+    <PackageTags>fleans;workflow;orleans;bpmn;abstractions</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Orleans.Sdk" Version="10.0.1" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>

@@ -1,11 +1,26 @@
 # Fleans.Application.Abstractions
 
-Leaf abstractions package for Fleans worker plugins. Contains the Orleans stream-namespace
-constants that plugin handlers need to subscribe to engine-published events
-(`ExecuteCustomTaskEvent`, etc.) without taking a transitive reference on
-`Fleans.Application` / `Fleans.Domain`.
+Abstractions package for Fleans worker plugins. Contains the Orleans grain interfaces that
+span Core ↔ Worker silos (`IScriptExecutorGrain`, `IConditionExpressionEvaluatorGrain`,
+`ICustomTaskCatalogGrain`, narrow `IWorkflowInstanceCallback`), the custom-task schema
+records (`CustomTaskParameterSchema`, `CustomTaskRegistration`, `CustomTaskCatalogEntry`),
+`MappingResolver`, `WorkflowLoggingContext` / `WorkflowContextKeys`, and the stream-namespace
+constants (`WorkflowEventStreams`).
 
-This package has zero `<ProjectReference>` dependencies — only `Microsoft.Orleans.Sdk`.
+Depends only on `Fleans.Domain.Abstractions` (the true leaf) + `Microsoft.Orleans.Sdk` +
+`Microsoft.Extensions.Logging.Abstractions`. No reference to `Fleans.Application`,
+`Fleans.Domain`, or any persistence project.
+
+## Dependency closure
+
+```
+Fleans.Application.Abstractions  →  Fleans.Domain.Abstractions
+```
+
+Used by:
+- **`Fleans.Worker`** — depends on this package, which transitively pulls Domain.Abstractions.
+- **`Fleans.Application`** — internal engine implementation, depends on this package for the
+  shared grain interfaces it implements.
 
 ## Minimum consumer usage
 

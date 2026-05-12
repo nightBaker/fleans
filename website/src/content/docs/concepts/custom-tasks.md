@@ -59,8 +59,10 @@ Targets must be valid identifiers (`^[a-zA-Z_][a-zA-Z0-9_]*$`). The target `__re
 
 | Piece | Project | Purpose |
 |-------|---------|---------|
-| `CustomTaskActivity`, `InputMapping`, `OutputMapping`, `ExecuteCustomTaskEvent`, `CustomTaskFailedActivityException` | `Fleans.Domain` | Pure data contracts crossing grain boundaries. |
-| `MappingResolver`, `ICustomTaskCatalogGrain`, `CustomTaskCatalogGrain`, `CustomTaskRegistration`, `CustomTaskCatalogEntry` | `Fleans.Application` | Core-side catalog grain; the only Core-hosted custom-task piece. |
+| `InputMapping`, `OutputMapping`, `ExecuteCustomTaskEvent`, `CustomTaskFailedActivityException`, `ActivityException`, `ActivityErrorState` | `Fleans.Domain.Abstractions` | Pure data contracts crossing grain boundaries. Leaf NuGet — no dependencies beyond Orleans SDK. |
+| `CustomTaskActivity` | `Fleans.Domain` | Domain aggregate for the custom-task activity (internal to the engine). |
+| `MappingResolver`, `ICustomTaskCatalogGrain`, `CustomTaskRegistration`, `CustomTaskCatalogEntry`, `CustomTaskParameterSchema`, `IWorkflowInstanceCallback` | `Fleans.Application.Abstractions` | Plugin-author surface: schema records, grain interfaces Worker calls back into, mapping resolution utility. |
+| `CustomTaskCatalogGrain` | `Fleans.Application` | Core-side catalog grain implementation. |
 | `CustomTaskHandlerBase`, `CustomTaskPluginRegistrar`, `CustomTaskPluginDescriptor`, `AddCustomTaskPlugin<T>(…)` | `Fleans.Worker` | Worker-side base class your plugin extends, plus the lifecycle hook that announces plugins to the catalog. |
 | `CustomTasksController` (`GET /custom-tasks`, `GET /custom-tasks/{type}`) | `Fleans.Api` | Reads the catalog for the management UI. |
 

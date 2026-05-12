@@ -5,6 +5,17 @@ implement a custom BPMN service-task plugin: it provides `CustomTaskHandlerBase`
 `[WorkerPlacement]` attribute, and the placement directors that route worker grains onto
 silos with `Fleans:Role=Worker` (or `Combined`).
 
+## Dependency closure
+
+```
+Fleans.Worker  →  Fleans.Application.Abstractions  →  Fleans.Domain.Abstractions
+```
+
+True leaf — depends only on `Fleans.Application.Abstractions` + Orleans SDK packages. No
+reference to `Fleans.Application`, `Fleans.Domain`, `Fleans.Infrastructure`, or any
+persistence project. Plugin authors get the surface they need with none of the engine
+internals.
+
 ## Minimum consumer usage
 
 ```csharp

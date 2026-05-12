@@ -1,7 +1,6 @@
 using System.Dynamic;
 using Fleans.Application.Abstractions.Events;
 using Fleans.Application.CustomTasks;
-using Fleans.Application.Events;
 using Fleans.Application.Grains;
 using Fleans.Application.Logging;
 using Fleans.Domain.Events;
@@ -16,8 +15,8 @@ namespace Fleans.Worker.CustomTasks;
 /// Base class for plugin-supplied custom-task handlers. Subscribes to the shared
 /// <c>events/ExecuteCustomTaskEvent</c> stream, filters incoming events by <c>TaskType</c>,
 /// resolves input mappings, invokes the plugin's <see cref="ExecuteAsync"/>, projects
-/// outputs, and calls <see cref="IWorkflowInstanceGrain.CompleteActivity"/> /
-/// <see cref="IWorkflowInstanceGrain.FailActivity"/> using the same shape as
+/// outputs, and calls <see cref="IWorkflowInstanceCallback.CompleteActivity"/> /
+/// <see cref="IWorkflowInstanceCallback.FailActivity"/> using the same shape as
 /// <c>WorkflowExecuteScriptEventHandler</c>.
 ///
 /// Plugin authors override <see cref="TaskType"/> and <see cref="ExecuteAsync"/>; the
@@ -83,7 +82,7 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
 
         LogHandling(item.ActivityId, item.TaskType);
 
-        var workflowInstance = _grainFactory.GetGrain<IWorkflowInstanceGrain>(item.WorkflowInstanceId);
+        var workflowInstance = _grainFactory.GetGrain<IWorkflowInstanceCallback>(item.WorkflowInstanceId);
 
         try
         {

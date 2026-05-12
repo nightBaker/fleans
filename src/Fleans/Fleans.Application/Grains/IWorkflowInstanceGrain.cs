@@ -6,7 +6,7 @@ using System.Dynamic;
 
 namespace Fleans.Application.Grains;
 
-public interface IWorkflowInstanceGrain : IGrainWithGuidKey, IWorkflowExecutionContext
+public interface IWorkflowInstanceGrain : IWorkflowInstanceCallback, IWorkflowExecutionContext
 {
     // Re-declare inherited read-only methods with [ReadOnly] for Orleans concurrency optimization
     [ReadOnly]
@@ -25,16 +25,15 @@ public interface IWorkflowInstanceGrain : IGrainWithGuidKey, IWorkflowExecutionC
     new ValueTask<object?> GetVariable(Guid variablesId, string variableName);
 
     Task CompleteActivity(string activityId, ExpandoObject variables);
-    Task CompleteActivity(string activityId, Guid activityInstanceId, ExpandoObject variables);
+    // CompleteActivity(activityId, activityInstanceId, variables) inherited from IWorkflowInstanceCallback
     Task CompleteConditionSequence(string activityId, string conditionSequenceId, bool result);
     Task CompleteActivationCondition(string activityId, Guid activityInstanceId, bool result);
     Task FailActivity(string activityId, Exception exception);
-    Task FailActivity(string activityId, Guid activityInstanceId, Exception exception);
+    // FailActivity(activityId, activityInstanceId, exception) inherited from IWorkflowInstanceCallback
     Task StartWorkflow();
     Task SetWorkflow(IWorkflowDefinition workflow, string? startActivityId = null);
 
-    [ReadOnly]
-    ValueTask<ExpandoObject> GetVariables(Guid variablesStateId);
+    // GetVariables(variablesStateId) inherited from IWorkflowInstanceCallback
 
     Task SetParentInfo(Guid parentWorkflowInstanceId, string parentActivityId);
     Task SetInitialVariables(ExpandoObject variables);
