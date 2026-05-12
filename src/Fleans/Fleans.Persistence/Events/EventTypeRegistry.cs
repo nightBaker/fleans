@@ -6,7 +6,7 @@ namespace Fleans.Persistence.Events;
 
 /// <summary>
 /// Serializes/deserializes domain events for the event store using GetType().Name as the discriminator.
-/// Event types are discovered automatically from the domain assembly — no manual registration needed.
+/// Event types are discovered automatically from the two domain assemblies — no manual registration needed.
 /// </summary>
 public static class EventTypeRegistry
 {
@@ -14,8 +14,17 @@ public static class EventTypeRegistry
 
     private static Dictionary<string, Type> BuildTypeCache()
     {
-        var domainAssembly = typeof(IDomainEvent).Assembly;
-        return domainAssembly.GetTypes()
+        // Event types live across two assemblies:
+        //   • Fleans.Domain.Abstractions — IDomainEvent + ExecuteCustomTaskEvent (plugin-facing surface)
+        //   • Fleans.Domain               — every other concrete event (WorkflowStarted, ActivitySpawned, …)
+        // Use WorkflowStarted as a stable anchor for the second assembly; it has lived in
+        // Fleans.Domain.Events since the engine's first commit and is referenced by core aggregates.
+        var abstractionsAssembly = typeof(IDomainEvent).Assembly;
+        var domainAssembly = typeof(WorkflowStarted).Assembly;
+
+        return new[] { abstractionsAssembly, domainAssembly }
+            .Distinct()
+            .SelectMany(a => a.GetTypes())
             .Where(t => typeof(IDomainEvent).IsAssignableFrom(t)
                         && t.IsClass
                         && !t.IsAbstract)
@@ -36,5 +45,5 @@ public static class EventTypeRegistry
             ? (IDomainEvent)JsonConvert.DeserializeObject(payload, type, settings)!
             : throw new KeyNotFoundException(
                 $"Unknown event type discriminator: '{eventType}'. " +
-                "No IDomainEvent implementation with this name found in the domain assembly.");
+                "No IDomainEvent implementation with this name found in Fleans.Domain or Fleans.Domain.Abstractions.");
 }

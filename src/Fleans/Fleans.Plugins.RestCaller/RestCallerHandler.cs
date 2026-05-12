@@ -3,7 +3,6 @@ using System.Dynamic;
 using System.Net.Http.Headers;
 using System.Text;
 using Fleans.Application.Abstractions.Events;
-using Fleans.Application.Events;
 using Fleans.Domain.Errors;
 using Fleans.Worker.CustomTasks;
 using Fleans.Worker.Placement;

@@ -1,7 +1,7 @@
 name: nuget-publish
 
-# Publishes the three NuGet plugin packages — Fleans.Application.Abstractions,
-# Fleans.Worker, Fleans.Plugins.RestCaller — to nuget.org. Triggered by the
+# Publishes the four NuGet plugin packages — Fleans.Domain.Abstractions,
+# Fleans.Application.Abstractions, Fleans.Worker, Fleans.Plugins.RestCaller — to nuget.org. Triggered by the
 # same `v<SemVer>` tag push that triggers release.yml, then blocks on the
 # GitHub Release object existing before publishing (so a failed release.yml
 # never leaks orphan NuGet packages). Can also be invoked manually
@@ -108,6 +108,7 @@ jobs:
           set -euo pipefail
           mkdir -p artifacts/nuget
           for proj in \
+            Fleans.Domain.Abstractions/Fleans.Domain.Abstractions.csproj \
             Fleans.Application.Abstractions/Fleans.Application.Abstractions.csproj \
             Fleans.Worker/Fleans.Worker.csproj \
             Fleans.Plugins.RestCaller/Fleans.Plugins.RestCaller.csproj
