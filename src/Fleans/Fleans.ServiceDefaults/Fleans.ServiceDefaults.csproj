@@ -25,6 +25,9 @@
     <PackageReference Include="Microsoft.Extensions.ServiceDiscovery" Version="10.1.0" />
     <PackageReference Include="Microsoft.Orleans.Sdk" Version="10.0.1" />
     <PackageReference Include="Microsoft.Orleans.Streaming" Version="10.0.1" />
+    <!-- Third-party Redis stream provider (MIT, Orleans 10.x compatible). Date-versioned;
+         bump deliberately and re-run manual test #45. See CLAUDE.md for swap-out path. -->
+    <PackageReference Include="Universley.OrleansContrib.StreamsProvider.Redis" Version="2026.4.19" />
     <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.14.0" />
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.14.0" />
     <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.14.0" />
