@@ -153,8 +153,10 @@ static IResourceBuilder<ProjectResource> WithStreaming(
 
 // Api = Orleans silo
 // Match the Helm chart's deployment-core.yaml: Aspire publish-mode tags fleans-core as
-// Core (publish topology has dedicated fleans-worker / fleans-custom-worker for worker
-// grains), while dev runs (3-process) stay at Combined so fleans-core continues to
+// Core (publish topology has a dedicated fleans-worker deployment for worker grains;
+// operators wanting a custom-task plugin host run a separate silo built from
+// github.com/nightBaker/fleans-custom-worker-example), while dev runs (3-process) stay
+// at Combined so fleans-core continues to
 // host worker grains. FLEANS_ROLE env override applies in either mode for local
 // experimentation.
 var defaultCoreRole = builder.ExecutionContext.IsPublishMode ? "Core" : "Combined";
@@ -234,13 +236,13 @@ if (builder.ExecutionContext.IsPublishMode)
     workerHost = WithPersistence(workerHost, usePostgres, pg, sqliteConnectionString);
     workerHost = WithStreaming(workerHost, useKafka, kafka, useAzureQueue, azureQueues);
 
-    // NOTE: Fleans.CustomWorkerHost is intentionally NOT registered here. It is a
-    // worked-example template for plugin authors (host your own custom-task plugins —
-    // see the "How to Add a Custom Task Plugin" section of CLAUDE.md), not a default
-    // deployable. Shipping it would force the release pipeline to publish a
-    // fleans-custom-worker image alongside api/web/worker/mcp, which it does not
-    // (release.yml's image matrix builds 4 images). Plugin authors fork
-    // Fleans.CustomWorkerHost, register their plugins, and run their own publish.
+    // NOTE: the "host your own custom-task plugins" template is intentionally NOT
+    // registered here. It lives in a separate repository as a GitHub template:
+    // https://github.com/nightBaker/fleans-custom-worker-example
+    // Click "Use this template" on that repo to scaffold your own plugin host.
+    // Shipping it from this Aspire AppHost would force the release pipeline to
+    // publish a fleans-custom-worker image alongside api/web/worker/mcp, which
+    // it does not (release.yml's image matrix builds 4 images).
 
     // Load-test fan-out — opt-in via FLEANS_LOAD_TEST_MODE=true. Targets the docker-compose
     // publisher only; the K8s publisher rejects the bind mount and Kubernetes Services

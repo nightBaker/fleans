@@ -187,13 +187,22 @@ ingress:
 
 ## Plugin packages on NuGet
 
-Fleans publishes three plugin-author packages to nuget.org on every tagged GitHub Release. They are the supported way to write a custom-task plugin or stand up your own plugin host (`Fleans.CustomWorkerHost`-style deployable) without depending on the Fleans repo as a Git submodule.
+Fleans publishes four plugin-author packages to nuget.org on every tagged GitHub Release. They are the supported way to write a custom-task plugin or stand up your own plugin host without depending on the Fleans repo as a Git submodule. The packages are layered strictly so plugin authors get only what they need:
+
+```
+Fleans.Worker  →  Fleans.Application.Abstractions  →  Fleans.Domain.Abstractions
+```
 
 | Package | When to use it |
 | --- | --- |
-| [`Fleans.Application.Abstractions`](https://www.nuget.org/packages/Fleans.Application.Abstractions/) | Leaf abstractions package — stream namespace constants and other interfaces shared between the engine and plugin authors. Pulled in transitively by `Fleans.Worker`; rarely referenced directly. |
+| [`Fleans.Domain.Abstractions`](https://www.nuget.org/packages/Fleans.Domain.Abstractions/) | True leaf — depends only on `Microsoft.Orleans.Sdk`. Holds `IDomainEvent`, `ExecuteCustomTaskEvent`, `InputMapping`/`OutputMapping`, `CustomTaskFailedActivityException` + the exception hierarchy. Pulled in transitively by `Fleans.Application.Abstractions`; rarely referenced directly. |
+| [`Fleans.Application.Abstractions`](https://www.nuget.org/packages/Fleans.Application.Abstractions/) | Grain interfaces (script/condition/custom-task/narrow `IWorkflowInstanceCallback`), schema records, mapping resolver, stream constants. Pulled in transitively by `Fleans.Worker`; rarely referenced directly. |
 | [`Fleans.Worker`](https://www.nuget.org/packages/Fleans.Worker/) | Worker-side primitives: `CustomTaskHandlerBase`, `[WorkerPlacement]`, the placement directors. Reference this from any project that defines a custom-task plugin. |
 | [`Fleans.Plugins.RestCaller`](https://www.nuget.org/packages/Fleans.Plugins.RestCaller/) | Worked-example plugin — the `<serviceTask type="rest-call">` HTTP caller. Useful as a copy-template for new plugins, or to register the REST caller directly in your own worker host. |
+
+### Starter template
+
+The **[`fleans-custom-worker-example`](https://github.com/nightBaker/fleans-custom-worker-example)** GitHub template is the supported scaffolding for "host your own custom-task plugins". Click *Use this template* to start your own plugin host repo — see the [custom-worker-host guide](/fleans/guides/custom-worker-host/) for details.
 
 All three packages share the engine's `<VersionPrefix>` track — every Fleans release bumps every plugin's NuGet version even when the plugin source is bit-identical (same precedent as `Aspire.Hosting.*` and `Microsoft.Orleans.*`). Pin to the same version across the three when you upgrade.
 
@@ -241,7 +250,7 @@ builder.Services.AddRestCallerPlugin();
 await builder.Build().RunAsync();
 ```
 
-When the silo joins the Orleans cluster, `<bpmn:serviceTask type="rest-call">` activities are automatically claimed by your plugin handler. See [Custom Tasks](../../concepts/custom-tasks/) for the handler authoring guide and the [`Fleans.CustomWorkerHost`](https://github.com/nightBaker/fleans/tree/main/src/Fleans/Fleans.CustomWorkerHost) project for a complete worked example.
+When the silo joins the Orleans cluster, `<bpmn:serviceTask type="rest-call">` activities are automatically claimed by your plugin handler. See [Custom Tasks](../../concepts/custom-tasks/) for the handler authoring guide and the [`fleans-custom-worker-example`](https://github.com/nightBaker/fleans-custom-worker-example) GitHub template for a complete worked example.
 
 ### Release cadence
 

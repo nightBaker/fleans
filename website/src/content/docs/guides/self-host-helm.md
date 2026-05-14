@@ -106,7 +106,7 @@ on the install command line via `--set` or pass a `-f my-values.yaml` overlay.
 | `worker.enabled` | `false` | Set `true` to dedicate pods to `[StatelessWorker]` script/condition grains. |
 | `worker.replicas` | `1` | Worker silo count when `worker.enabled=true`. |
 | `worker.nodeSelector` / `worker.tolerations` | `{}` / `[]` | Pin worker silos to spot/cheaper nodes. |
-| `customWorker.enabled` | `false` | Set `true` to host user-written custom-task plugins on a dedicated `Fleans.CustomWorkerHost` silo. |
+| `customWorker.enabled` | `false` | Set `true` to host user-written custom-task plugins on a dedicated silo built from the [`fleans-custom-worker-example`](https://github.com/nightBaker/fleans-custom-worker-example) template. |
 | `customWorker.replicas` | `1` | Custom-worker silo count when `customWorker.enabled=true`. |
 | `web.enabled` | `true` | Disable to ship a headless cluster (no admin UI). |
 | `web.replicas` | `1` | Blazor Server is sticky-session-friendly; HA needs careful affinity. |
