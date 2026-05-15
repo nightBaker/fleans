@@ -5,6 +5,7 @@ using Fleans.Application.Grains;
 using Fleans.Application.Logging;
 using Fleans.Application.Placement;
 using Fleans.Domain.Events;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Orleans.Runtime;
 using Orleans.Streams;
@@ -26,22 +27,23 @@ public partial class WorkflowEvaluateActivationConditionEventHandler : Grain, IW
         _grainFactory = grainFactory;
     }
 
+    // Test-only hook fired after handles are resumed. Null in production.
+    internal static Action<int>? OnImplicitActivation;
+
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
         var streamProvider = this.GetStreamProvider(WorkflowEventsPublisher.StreamProvider);
-        var streamId = StreamId.Create(WorkflowEventsPublisher.EvaluateActivationConditionStreamNamespace, nameof(EvaluateActivationConditionEvent));
+        // Stream key matches the grain's primary key — see CLAUDE.md "subscriber-side stream-id trap".
+        var streamId = StreamId.Create(WorkflowEventsPublisher.EvaluateActivationConditionStreamNamespace, this.GetPrimaryKeyString());
         var stream = streamProvider.GetStream<EvaluateActivationConditionEvent>(streamId);
 
         var handles = await stream.GetAllSubscriptionHandles();
-        if (handles is { Count: > 0 })
-        {
-            foreach (var handle in handles)
-                await handle.ResumeAsync(OnNextAsync, OnErrorAsync, OnCompletedAsync);
-        }
-        else
-        {
-            await stream.SubscribeAsync(OnNextAsync, OnErrorAsync, OnCompletedAsync);
-        }
+        foreach (var handle in handles)
+            await handle.ResumeAsync(OnNextAsync, OnErrorAsync, OnCompletedAsync);
+
+        var siloDetails = this.ServiceProvider.GetRequiredService<ILocalSiloDetails>();
+        LogActivated(siloDetails.Name, this.GetPrimaryKeyString());
+        OnImplicitActivation?.Invoke(handles.Count);
 
         await base.OnActivateAsync(cancellationToken);
     }
@@ -99,8 +101,9 @@ public partial class WorkflowEvaluateActivationConditionEventHandler : Grain, IW
         return Task.CompletedTask;
     }
 
-    // No-op: forces Orleans to activate this grain so the implicit stream subscription starts.
-    public void Ping() { }
+    [LoggerMessage(EventId = 4026, Level = LogLevel.Information,
+        Message = "Activation-condition handler activated on silo {SiloName} for stream key {StreamKey}")]
+    private partial void LogActivated(string siloName, string streamKey);
 
     [LoggerMessage(EventId = 4020, Level = LogLevel.Information,
         Message = "Handling activation condition for activity {ActivityId}, instance {ActivityInstanceId}, nrOfToken={NrOfToken}")]

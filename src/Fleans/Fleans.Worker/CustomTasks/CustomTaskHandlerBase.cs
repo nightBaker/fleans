@@ -4,6 +4,7 @@ using Fleans.Application.CustomTasks;
 using Fleans.Application.Grains;
 using Fleans.Application.Logging;
 using Fleans.Domain.Events;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Orleans.Runtime;
 using Orleans.Streams;
@@ -50,22 +51,24 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
         CustomTaskExecutionContext context,
         CancellationToken cancellationToken);
 
+    // Test-only hook fired after handles are resumed. Null in production.
+    internal static Action<int>? OnImplicitActivation;
+
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
         var streamProvider = this.GetStreamProvider(WorkflowEventStreams.StreamProvider);
-        var streamId = StreamId.Create(WorkflowEventStreams.ExecuteCustomTaskStreamNamespace, nameof(ExecuteCustomTaskEvent));
+        // Stream key matches the grain's primary key — set by Orleans implicit-subscription
+        // dispatch to the workflow-instance Guid the publisher used.
+        var streamId = StreamId.Create(WorkflowEventStreams.ExecuteCustomTaskStreamNamespace, this.GetPrimaryKeyString());
         var stream = streamProvider.GetStream<ExecuteCustomTaskEvent>(streamId);
 
         var handles = await stream.GetAllSubscriptionHandles();
-        if (handles is { Count: > 0 })
-        {
-            foreach (var handle in handles)
-                await handle.ResumeAsync(OnNextAsync, OnErrorAsync, OnCompletedAsync);
-        }
-        else
-        {
-            await stream.SubscribeAsync(OnNextAsync, OnErrorAsync, OnCompletedAsync);
-        }
+        foreach (var handle in handles)
+            await handle.ResumeAsync(OnNextAsync, OnErrorAsync, OnCompletedAsync);
+
+        var siloDetails = this.ServiceProvider.GetRequiredService<ILocalSiloDetails>();
+        LogActivated(siloDetails.Name, this.GetPrimaryKeyString());
+        OnImplicitActivation?.Invoke(handles.Count);
 
         await base.OnActivateAsync(cancellationToken);
     }
@@ -137,6 +140,10 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
     [LoggerMessage(EventId = 4030, Level = LogLevel.Information,
         Message = "Handling custom-task event for activity {ActivityId} (taskType={TaskType})")]
     private partial void LogHandling(string activityId, string taskType);
+
+    [LoggerMessage(EventId = 4035, Level = LogLevel.Information,
+        Message = "Custom-task handler activated on silo {SiloName} for stream key {StreamKey}")]
+    private partial void LogActivated(string siloName, string streamKey);
 
     [LoggerMessage(EventId = 4031, Level = LogLevel.Error,
         Message = "Custom-task plugin execution failed for activity {ActivityId} (taskType={TaskType})")]
