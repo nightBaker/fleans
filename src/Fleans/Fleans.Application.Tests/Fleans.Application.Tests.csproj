@@ -33,6 +33,7 @@
     <ProjectReference Include="..\Fleans.Application\Fleans.Application.csproj" />
     <ProjectReference Include="..\Fleans.Persistence\Fleans.Persistence.csproj" />
     <ProjectReference Include="..\Fleans.Persistence.Sqlite\Fleans.Persistence.Sqlite.csproj" />
+    <ProjectReference Include="..\Fleans.Plugins.RestCaller\Fleans.Plugins.RestCaller.csproj" />
     <ProjectReference Include="..\Fleans.ServiceDefaults\Fleans.ServiceDefaults.csproj" />
     <ProjectReference Include="..\Fleans.Streaming.Kafka\Fleans.Streaming.Kafka.csproj" />
     <ProjectReference Include="..\Fleans.Worker\Fleans.Worker.csproj" />
