@@ -3,6 +3,8 @@ title: Quick Start
 description: Run Fleans locally from the released Docker Compose bundle in under 5 minutes.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
 This walkthrough brings up the full Fleans stack from a published release, deploys a
 sample workflow through the admin UI, and starts an instance via the REST API.
 
@@ -19,21 +21,24 @@ No .NET SDK, no source checkout — the bundle pulls signed container images fro
 The release pipeline attaches `docker-compose-v<VER>.zip` to every GitHub Release.
 Grab the latest:
 
-```bash
-gh release download v0.3.0 --repo nightBaker/fleans -p 'docker-compose-*.zip'
-unzip docker-compose-v0.3.0.zip -d fleans
-cd fleans
-docker compose up -d
-```
-
-Or, without the `gh` CLI:
-
-```bash
-curl -LO https://github.com/nightBaker/fleans/releases/download/v0.3.0/docker-compose-v0.3.0.zip
-unzip docker-compose-v0.3.0.zip -d fleans
-cd fleans
-docker compose up -d
-```
+<Tabs syncKey="release-download-tool">
+  <TabItem label="gh CLI">
+    ```bash
+    gh release download v0.3.0 --repo nightBaker/fleans -p 'docker-compose-*.zip'
+    unzip docker-compose-v0.3.0.zip -d fleans
+    cd fleans
+    docker compose up -d
+    ```
+  </TabItem>
+  <TabItem label="curl">
+    ```bash
+    curl -LO https://github.com/nightBaker/fleans/releases/download/v0.3.0/docker-compose-v0.3.0.zip
+    unzip docker-compose-v0.3.0.zip -d fleans
+    cd fleans
+    docker compose up -d
+    ```
+  </TabItem>
+</Tabs>
 
 :::tip[Pick the latest tag]
 Substitute the current release tag (see
