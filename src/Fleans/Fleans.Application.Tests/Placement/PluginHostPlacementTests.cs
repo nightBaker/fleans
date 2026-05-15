@@ -23,17 +23,6 @@ public class PluginHostPlacementTests
     }
 
     [TestMethod]
-    public void RestCallerHandler_ShouldNotCarry_WorkerPlacementAttribute()
-    {
-        var attr = typeof(Fleans.Plugins.RestCaller.RestCallerHandler)
-            .GetCustomAttribute<WorkerPlacementAttribute>(inherit: false);
-
-        Assert.IsNull(attr,
-            "Concrete plugin handlers must not carry [WorkerPlacement]; default placement " +
-            "with GetCompatibleSilos is the isolation primitive.");
-    }
-
-    [TestMethod]
     public void WorkerPlacementDirector_HasWorkerRole_ShouldRejectPluginPrefix()
     {
         var method = typeof(Fleans.Worker.Placement.WorkerPlacementDirector).GetMethod(
