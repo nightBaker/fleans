@@ -51,6 +51,13 @@ builder.AddKeyedRedisClient("orleans-redis");
 // other silos (and the Orleans dashboard) can see it via membership.
 var roleRaw = builder.Configuration["Fleans:Role"] ?? "Combined";
 var role = roleRaw.ToLowerInvariant();
+if (role == "plugin")
+{
+    throw new InvalidOperationException(
+        "Fleans.Api does not support Fleans:Role=Plugin. The 'Plugin' role is reserved " +
+        "for external custom worker hosts (see docs/concepts/custom-tasks.md). Use Core, " +
+        "Worker, or Combined for engine silos.");
+}
 if (role != "core" && role != "worker" && role != "combined")
 {
     throw new InvalidOperationException(
