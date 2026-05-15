@@ -196,14 +196,26 @@ default placement:
 ```csharp
 using Fleans.Worker.Hosting;
 using Fleans.Plugins.MyThing;
+using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
 builder.AddKeyedRedisClient("orleans-redis");
 
+var orleansRedis = builder.Configuration.GetConnectionString("orleans-redis");
+
 builder.UseOrleans(siloBuilder =>
 {
-    siloBuilder.AddFleansPluginHost(builder.Configuration); // role validation + silo-name stamping
+    siloBuilder.AddFleansPluginHost(builder.Configuration); // role + silo name + placement director
+
+    if (!string.IsNullOrEmpty(orleansRedis))
+    {
+        siloBuilder.UseRedisClustering(orleansRedis);
+        siloBuilder.AddRedisGrainStorage("PubSubStore",
+            opt => opt.ConfigurationOptions = ConfigurationOptions.Parse(orleansRedis));
+        siloBuilder.UseInMemoryReminderService();
+    }
+
     siloBuilder.AddFleanStreaming(builder.Configuration);   // matches engine stream provider
 });
 
@@ -218,8 +230,13 @@ app.Run();
   with `InvalidOperationException`.
 - Stamps the silo name as `plugin-<machine>-<guid>` so other silos see the prefix via Orleans
   membership.
-- Wires up the Orleans defaults that plugin grains need (default placement, Redis clustering
-  via `Fleans.ServiceDefaults`).
+- Registers `WorkerPlacementDirector` so the plugin silo participates correctly in cluster-wide
+  placement decisions for `[WorkerPlacement]` grains it doesn't host.
+
+Everything else — Redis clustering, `PubSubStore`, stream provider, `Fleans.ServiceDefaults` —
+is wired separately. The minimal `Program.cs` above (`AddKeyedRedisClient`, `UseRedisClustering`,
+`AddFleanStreaming`) is the complete operator-facing setup. Match the engine's Redis connection
+string so plugin grains share the same Orleans cluster.
 
 ### The isolation guarantee
 

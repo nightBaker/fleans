@@ -1,3 +1,4 @@
+using Fleans.Worker.Placement;
 using Microsoft.Extensions.Configuration;
 using Orleans.Hosting;
 
@@ -11,6 +12,7 @@ public static class PluginHostExtensions
         var siloName = BuildSiloName(role, Environment.MachineName, Guid.NewGuid());
 
         siloBuilder.Configure<Orleans.Configuration.SiloOptions>(o => o.SiloName = siloName);
+        siloBuilder.AddPlacementDirector<WorkerPlacementStrategy, WorkerPlacementDirector>();
         return siloBuilder;
     }
 
