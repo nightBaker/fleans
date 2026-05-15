@@ -64,6 +64,12 @@ The public docs site lives in `website/` — an Astro + Starlight project deploy
 
 When deciding where a new doc belongs, ask: *does it require working in the source checkout, or does it only require a released artifact?* Source-checkout docs → repo `README.md` / `CLAUDE.md` / `docs/plans/`. Released-artifact docs → website. Quick Start on the website MUST use a released artifact (container pull, Helm install) — not `git clone && dotnet run`, which is a source-tree workflow.
 
+**Tabs for interchangeable approaches.** When a page documents two or more **interchangeable** tools or commands that produce the same outcome (e.g. `gh release download` vs `curl -LO`, `docker compose up` vs `helm install`, `apt` vs `brew`), use Starlight's [`<Tabs>`](https://starlight.astro.build/components/tabs/) component instead of stacking *"Or, without X:"* sections — keeps the page compact and lets the reader focus on the path they actually use. Convention:
+
+- Pages that import components must use the `.mdx` extension. Add `import { Tabs, TabItem } from '@astrojs/starlight/components';` after the frontmatter.
+- Set a `syncKey` so the tool choice persists across pages (e.g. `<Tabs syncKey="release-download-tool">` on every gh-vs-curl block, `syncKey="package-manager"` on every npm-vs-yarn block).
+- **Don't use tabs for non-interchangeable content** — dev vs prod configs, SQLite vs PostgreSQL, compose vs Helm are *different workflows* the reader needs to see both of, not a one-of-two choice.
+
 For website-build infrastructure (Hero BPMN diagram regeneration, 3D landing background, load-test publishing rule), see [`website/README.md`](website/README.md).
 
 ## How to Add a New BPMN Activity
