@@ -44,11 +44,13 @@ var defaultPersistenceProvider = builder.ExecutionContext.IsPublishMode ? "Postg
 var persistenceProvider = builder.Configuration["FLEANS_PERSISTENCE_PROVIDER"] ?? defaultPersistenceProvider;
 var usePostgres = persistenceProvider.Equals("Postgres", StringComparison.OrdinalIgnoreCase);
 
-// Streaming provider — set FLEANS_STREAMING_PROVIDER=Kafka or AzureQueue to opt into multi-silo-safe streams.
-// Default is in-memory (matches the v1 design — zero-infra `dotnet run --project Fleans.Aspire`).
-var streamingProvider = builder.Configuration["FLEANS_STREAMING_PROVIDER"] ?? "Memory";
+// Streaming provider — defaults to Redis (durable, reuses the existing orleans-redis container).
+// Override with FLEANS_STREAMING_PROVIDER=Memory (in-process, single-silo only — debug-only),
+// FLEANS_STREAMING_PROVIDER=Kafka (separate Kafka cluster), or FLEANS_STREAMING_PROVIDER=AzureQueue (Azurite/Azure Storage).
+var streamingProvider = builder.Configuration["FLEANS_STREAMING_PROVIDER"] ?? "Redis";
 var useKafka = streamingProvider.Equals("Kafka", StringComparison.OrdinalIgnoreCase);
 var useAzureQueue = streamingProvider.Equals("AzureQueue", StringComparison.OrdinalIgnoreCase);
+var useRedisStreaming = streamingProvider.Equals("Redis", StringComparison.OrdinalIgnoreCase);
 
 // Add Redis for Orleans clustering and storage.
 // Aspire 13.1+ auto-configures TLS for Redis containers, but the Orleans Redis
@@ -123,14 +125,17 @@ static IResourceBuilder<ProjectResource> WithPersistence(
 }
 
 // Local helper: wires streaming env-vars / resource references onto a silo project.
-// Memory provider is the default and requires no env-vars (Fleans.ServiceDefaults reads
-// `Fleans:Streaming:Provider` and falls back to "memory" when unset).
+// Redis provider is the default — reuses the existing orleans-redis container (no new
+// infrastructure). Memory falls back when FLEANS_STREAMING_PROVIDER=Memory is set (Fleans.ServiceDefaults
+// reads `Fleans:Streaming:Provider`, so injecting "Redis" explicitly here ensures the publish
+// output carries the same default as dev mode).
 static IResourceBuilder<ProjectResource> WithStreaming(
     IResourceBuilder<ProjectResource> project,
     bool isKafka,
     IResourceBuilder<KafkaServerResource>? kafkaResource,
     bool isAzureQueue,
-    IResourceBuilder<AzureQueueStorageResource>? azureQueuesResource)
+    IResourceBuilder<AzureQueueStorageResource>? azureQueuesResource,
+    bool isRedis = false)
 {
     if (isKafka)
     {
@@ -147,6 +152,15 @@ static IResourceBuilder<ProjectResource> WithStreaming(
             .WaitFor(azureQueuesResource!)
             .WithEnvironment("Fleans__Streaming__Provider", "AzureQueue")
             .WithEnvironment("Fleans__Streaming__AzureQueue__ConnectionString", azureQueuesResource!.Resource.ConnectionStringExpression);
+    }
+    if (isRedis)
+    {
+        // Redis is already wired as the keyed orleans-redis client via WithReference(orleans) /
+        // AddKeyedRedisClient. FleanStreamingExtensions.AddRedisStreams aliases it to a non-keyed
+        // IConnectionMultiplexer for the third-party stream provider. No new env-vars needed —
+        // the connection string lives in ConnectionStrings:orleans-redis.
+        return project
+            .WithEnvironment("Fleans__Streaming__Provider", "Redis");
     }
     return project;
 }
@@ -176,7 +190,7 @@ if (builder.ExecutionContext.IsPublishMode)
     apiProject = apiProject.WithExternalHttpEndpoints();
 }
 var fleansSilo = WithPersistence(apiProject, usePostgres, pg, sqliteConnectionString);
-fleansSilo = WithStreaming(fleansSilo, useKafka, kafka, useAzureQueue, azureQueues);
+fleansSilo = WithStreaming(fleansSilo, useKafka, kafka, useAzureQueue, azureQueues, useRedisStreaming);
 
 // Web = Orleans client
 var webProject = builder.AddProject<Projects.Fleans_Web>("fleans-management")
@@ -234,7 +248,7 @@ if (builder.ExecutionContext.IsPublishMode)
         .WithReplicas(1);
     if (usePostgres) workerHost = workerHost.WaitFor(pg!);
     workerHost = WithPersistence(workerHost, usePostgres, pg, sqliteConnectionString);
-    workerHost = WithStreaming(workerHost, useKafka, kafka, useAzureQueue, azureQueues);
+    workerHost = WithStreaming(workerHost, useKafka, kafka, useAzureQueue, azureQueues, useRedisStreaming);
 
     // NOTE: the "host your own custom-task plugins" template is intentionally NOT
     // registered here. It lives in a separate repository as a GitHub template:

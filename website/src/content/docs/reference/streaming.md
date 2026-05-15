@@ -174,22 +174,36 @@ disable it by default and the client-side path is what we ship.
 
 ## Aspire opt-in
 
-The Aspire AppHost reads `FLEANS_STREAMING_PROVIDER` (default `Memory`). **Note:** this is an Aspire-only convenience knob — silos read the runtime equivalent `Fleans__Streaming__Provider` instead (see [Configuration / Streaming](/fleans/reference/configuration/#streaming)).
+The Aspire AppHost reads `FLEANS_STREAMING_PROVIDER` (default **`Redis`** since v0.3.0). **Note:** this is an Aspire-only convenience knob — silos read the runtime equivalent `Fleans__Streaming__Provider` instead (see [Configuration / Streaming](/fleans/reference/configuration/#streaming)).
 
 ```bash
-# Kafka-backed streams
+# Redis-backed streams — DEFAULT, no env var needed. Reuses the orleans-redis
+# container that already powers clustering + PubSubStore.
+dotnet run --project Fleans.Aspire
+
+# Memory-backed (single-silo, debug-only — drops in-flight events on restart)
+FLEANS_STREAMING_PROVIDER=Memory dotnet run --project Fleans.Aspire
+
+# Kafka-backed streams (separate Kafka cluster — provisions a fleans-kafka container)
 FLEANS_STREAMING_PROVIDER=Kafka dotnet run --project Fleans.Aspire
 
 # Azure Queue-backed streams (provisions Azurite emulator automatically)
 FLEANS_STREAMING_PROVIDER=AzureQueue dotnet run --project Fleans.Aspire
 ```
 
-Setting it to `Kafka` provisions a `fleans-kafka` container and forwards `Fleans__Streaming__Provider=Kafka` + `Fleans__Streaming__Kafka__Brokers` onto the silo.
+**Redis (default):** No new container — the same `orleans-redis` instance the engine already runs for clustering and `PubSubStore` also carries stream events. Uses the third-party [`Universley.OrleansContrib.StreamsProvider.Redis`](https://github.com/MichaelSL/Universley.OrleansContrib.StreamsProvider.Redis) package (MIT, Orleans 10.x-compatible), pinned in `Fleans.ServiceDefaults.csproj`. **Production requirement:** enable Redis persistence (AOF or RDB) — without it, a Redis restart loses in-flight messages (same caveat as `PubSubStore`).
 
-Setting it to `AzureQueue` provisions a `fleans-azurite` container (Azurite emulator) and forwards `Fleans__Streaming__Provider=AzureQueue` + `Fleans__Streaming__AzureQueue__ConnectionString` onto the silo.
+**Memory:** Provisions no container. Drops in-flight events on silo restart — single-silo debug-only.
+
+**Kafka:** Provisions a `fleans-kafka` container and forwards `Fleans__Streaming__Provider=Kafka` + `Fleans__Streaming__Kafka__Brokers` onto the silo.
+
+**AzureQueue:** Provisions a `fleans-azurite` container (Azurite emulator) and forwards `Fleans__Streaming__Provider=AzureQueue` + `Fleans__Streaming__AzureQueue__ConnectionString` onto the silo.
 
 The forwarded vars are visible in the Aspire dashboard's env tab for each project.
-Default-mode Aspire (`dotnet run --project Fleans.Aspire` with no env var) provisions no streaming container.
+
+### Connection multiplexer aliasing (Redis only)
+
+The third-party Redis stream provider resolves a non-keyed `IConnectionMultiplexer` from DI. Aspire registers it as a *keyed* service (`AddKeyedRedisClient("orleans-redis")`). `FleanStreamingExtensions.AddRedisStreams` bridges the two with `TryAddSingleton<IConnectionMultiplexer>(...)` — reusing the same connection pool, no duplicate sockets. If another component needs a different non-keyed multiplexer, register it explicitly before `AddFleanStreaming` runs and `TryAddSingleton` will defer.
 
 ## PubSubStore vs. event durability
 
