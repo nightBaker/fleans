@@ -4,7 +4,6 @@ using Fleans.Application.CustomTasks;
 using Fleans.Application.Grains;
 using Fleans.Application.Logging;
 using Fleans.Domain.Events;
-using Fleans.Worker.Placement;
 using Microsoft.Extensions.Logging;
 using Orleans.Runtime;
 using Orleans.Streams;
@@ -24,7 +23,6 @@ namespace Fleans.Worker.CustomTasks;
 /// by the base.
 /// </summary>
 [ImplicitStreamSubscription(WorkflowEventStreams.ExecuteCustomTaskStreamNamespace)]
-[WorkerPlacement]
 public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey, IAsyncObserver<ExecuteCustomTaskEvent>
 {
     private readonly ILogger _logger;
