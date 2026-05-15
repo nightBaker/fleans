@@ -1,0 +1,106 @@
+---
+title: Introduction
+description: What Fleans is, how it deploys, and where to start.
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Fleans is a BPMN 2.0 workflow engine built on [Microsoft Orleans](https://learn.microsoft.com/en-us/dotnet/orleans/).
+It ships as a set of containers; your application drives workflows over the REST API,
+in any language that speaks HTTP.
+
+The engine targets approvals, order flows, escalations, and other multi-step business
+logic that benefits from a visual workflow model rather than ad-hoc state machines.
+
+## What is BPMN?
+
+BPMN (Business Process Model and Notation) is the industry-standard visual language for
+describing workflows. It defines a small set of symbols — events, activities, gateways,
+and flows — that combine into executable process diagrams.
+
+<LinkCard
+  title="What is BPMN?"
+  description="A quick primer on the BPMN 2.0 standard before diving into Fleans-specific features."
+  href="/fleans/concepts/bpmn-overview/"
+/>
+
+## How it fits into your stack
+
+Fleans runs as a cluster of its own — four published container images deployed via
+Docker Compose or the Helm chart. Your application sits outside that cluster and calls
+the REST API on `fleans-api`.
+
+- **`fleans-api`** — REST API + Orleans silo (Core role); this is the surface your app talks to.
+- **`fleans-web`** — Blazor admin UI for deploying BPMN diagrams and inspecting running workflows.
+- **`fleans-worker`** — Orleans silo (Worker role) running script and condition evaluation.
+- **`fleans-mcp`** — MCP server for AI-tool integrations.
+- *(optional)* **custom worker host** — a .NET process you build to add your own task types.
+  It joins the cluster alongside `fleans-worker`. See the
+  [template repo](https://github.com/nightBaker/fleans-custom-worker-example).
+
+Extending the engine with a new task *type* is .NET-only (handlers derive from
+`CustomTaskHandlerBase`). The standard task set — Service Tasks, User Tasks, Script Tasks,
+and the built-in REST caller plugin — covers most use cases without writing a plugin.
+
+## Choose your path
+
+Three tracks. They overlap and you can mix them.
+
+<CardGrid>
+  <LinkCard
+    title="App developer"
+    description="Drive workflows from your application over REST."
+    href="/fleans/guides/quick-start/"
+  />
+  <LinkCard
+    title="Plugin author"
+    description="Write a custom worker host with your own task types (.NET)."
+    href="/fleans/concepts/custom-tasks/"
+  />
+  <LinkCard
+    title="Operator"
+    description="Deploy and run the engine on Docker Compose or Kubernetes."
+    href="/fleans/guides/self-host-docker-compose/"
+  />
+</CardGrid>
+
+**App developer** — driving workflows from your application:
+
+1. [Quick Start](/fleans/guides/quick-start/) — clone, run, deploy a sample workflow.
+2. [Service Tasks](/fleans/guides/service-tasks/) — call out to your code or HTTP endpoints.
+3. [User Tasks](/fleans/guides/user-tasks/) — human-in-the-loop steps.
+4. [Variables and scope](/fleans/guides/variables-and-scope/) — how workflow state flows between activities.
+
+**Plugin author** — adding new task types to the engine:
+
+1. [Custom Tasks](/fleans/concepts/custom-tasks/) — the plugin architecture.
+2. [Writing Custom Tasks](/fleans/guides/writing-custom-tasks/) — implement a handler.
+3. [Custom Worker Host](/fleans/guides/custom-worker-host/) — package and deploy your handler alongside the engine.
+
+**Operator** — running the engine in your environment:
+
+1. [Self-host with Docker Compose](/fleans/guides/self-host-docker-compose/) — the published bundle.
+2. [Self-host with Helm](/fleans/guides/self-host-helm/) — Kubernetes deployment.
+3. [Architecture](/fleans/concepts/architecture/) — how the engine is structured under the hood.
+
+:::tip
+The tracks overlap. An operator probably also wants the App-developer track to understand
+what they are running, and a plugin author needs the App-developer track to test their
+handler end-to-end.
+:::
+
+## What's supported today
+
+Fleans implements a growing subset of BPMN 2.0 — events, activities, gateways, sequence
+flows, plus message/signal/timer/error boundary events and compensation handlers.
+
+<LinkCard
+  title="BPMN Support"
+  description="The current coverage matrix of BPMN elements."
+  href="/fleans/concepts/bpmn-support/"
+/>
+
+:::note
+Pools and Lanes (cross-organisation collaboration) are not implemented. The core
+execution semantics cover the vast majority of orchestration use cases.
+:::
