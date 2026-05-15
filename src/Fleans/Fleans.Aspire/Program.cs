@@ -198,6 +198,8 @@ WithPersistence(
         .WithReference(orleans.AsClient())
         .WaitFor(fleansSilo)
         .WithHttpEndpoint(port: 5200, name: "mcp")
+        .WithEnvironment("Authentication__Authority", authAuthority)
+        .WithEnvironment("Authentication__ClientId", authClientId)
         .WithReplicas(1),
     usePostgres, pg, sqliteConnectionString);
 

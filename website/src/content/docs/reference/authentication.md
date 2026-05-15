@@ -208,11 +208,80 @@ A copy-paste Keycloak quickstart (Docker run, realm JSON, `dotnet user-secrets` 
 
 This slice authenticates only — every signed-in user has the same access. Role-based policies (`Admin`, `Operator`, `Viewer`) and per-page `[Authorize(Roles=…)]` are deliberately a separate slice, mirroring the same staging used for the API in [#341](https://github.com/nightBaker/fleans/issues/341). The OIDC handler already maps the `roles` claim from the token; the follow-up slice adds policy registration and component-level enforcement.
 
+## MCP server
+
+`Fleans.Mcp` exposes the engine's tools (`DeployWorkflow`, `ListDefinitions`, `GetInstanceState`, `ListInstances`) over the Model Context Protocol's Streamable HTTP transport on port `5200`. It supports the **same opt-in JWT bearer pattern** as `Fleans.Api`: when no `Authentication:Authority` is configured the MCP endpoint is anonymous; once configured, every MCP request must carry a valid `Authorization: Bearer <token>`.
+
+### Config block (MCP server)
+
+```json
+{
+  "Authentication": {
+    "Authority":            "https://your-idp.example.com/realms/fleans",
+    "Audience":             "fleans-mcp",
+    "RequireHttpsMetadata": true
+  }
+}
+```
+
+| Key | Required | Default | Description |
+|-----|----------|---------|-------------|
+| `Authority` | Yes (to enable auth) | *(absent — auth disabled)* | OIDC issuer URL. |
+| `Audience` | No | `fleans-mcp` | Expected `aud` claim. Intentionally distinct from `fleans-api` so MCP access can be revoked independently. |
+| `RequireHttpsMetadata` | No | `true` | Set to `false` only for local Keycloak dev mode (HTTP). |
+
+The MCP endpoint enforces `RequireAuthenticatedUser` as a fallback authorization policy — every signed-in Keycloak user can call every tool. Per-tool roles/scopes are deferred (same staging as the API and Management UI). Health probes (`/health`, `/alive`) registered by `MapDefaultEndpoints` remain anonymous.
+
+### Keycloak setup
+
+Reuse the existing realm (same `Authority` URL as `fleans-api`); add an audience for MCP:
+
+1. **Option A — separate client.** In your realm, create a new client `fleans-mcp` (Access Type: `bearer-only` for resource-server semantics, or `public` for user-agent flows). Add an **Audience** protocol mapper with *Included Custom Audience* = `fleans-mcp`.
+2. **Option B — audience mapper on an existing client.** Add the same protocol mapper to whichever client your MCP callers authenticate against, so the access token includes `"aud": ["fleans-api", "fleans-mcp"]`.
+
+### Calling MCP with a bearer token
+
+```bash
+# Obtain a token (client_credentials shown; password / authorization_code work too):
+TOKEN=$(curl -s -X POST http://localhost:8080/realms/fleans/protocol/openid-connect/token \
+  -d "grant_type=client_credentials" \
+  -d "client_id=fleans-mcp" \
+  -d "client_secret=YOUR_SECRET" | jq -r '.access_token')
+
+# Call the MCP endpoint:
+curl -X POST http://localhost:5200/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+Without `Authorization: Bearer <token>` — or with a token whose `aud` claim does not include `fleans-mcp` — the request receives `401 Unauthorized`.
+
+### Aspire wiring
+
+`Fleans.Aspire/Program.cs` forwards the same `auth-authority` / `auth-client-id` parameters used by `Fleans.Web` to the `fleans-mcp` resource:
+
+```csharp
+builder.AddProject<Projects.Fleans_Mcp>("fleans-mcp")
+    .WithEnvironment("Authentication__Authority", authAuthority)
+    .WithEnvironment("Authentication__ClientId", authClientId)
+    /* ... */;
+```
+
+When the parameters are unset (the default for `dotnet run --project Fleans.Aspire`), `Fleans.Mcp` receives empty strings and stays in auth-disabled mode — identical to today's local dev behaviour.
+
+### Out of scope (deferred)
+
+- **MCP RFC 9728 Protected Resource Metadata discovery** (`.well-known/oauth-protected-resource`) — would let compliant MCP clients auto-discover Keycloak; not wired today, clients attach the bearer token themselves.
+- **Per-tool scopes/roles** (e.g. `mcp:deploy` vs `mcp:read`) — same staging as the API/Web role work (#341).
+
 ## Testing & troubleshooting
 
 The manual regression test plans for authentication live at:
 - API: [`tests/manual/28-api-auth/test-plan.md`](https://github.com/nightBaker/fleans/blob/main/tests/manual/28-api-auth/test-plan.md) — verifies the API works unauthenticated by default, returns `401` when auth is on and no token is provided, and accepts valid tokens.
 - Management UI: [`tests/manual/30-web-auth/test-plan.md`](https://github.com/nightBaker/fleans/blob/main/tests/manual/30-web-auth/test-plan.md) — verifies anonymous browse is allowed when no `Authentication` section is present, every page (and `/dashboard`) returns 302 → IdP when auth is on, login round-trip preserves deep-link query strings, the open-redirect guard rejects every canonical attack input, and `/Account/Logout` is antiforgery-protected.
+- MCP server: [`tests/manual/55-mcp-keycloak-auth/test-plan.md`](https://github.com/nightBaker/fleans/blob/main/tests/manual/55-mcp-keycloak-auth/test-plan.md) — verifies the MCP endpoint at `:5200/mcp` is anonymous by default, returns `401` when auth is enabled and no token is provided, returns `401` for tokens with the wrong `aud`, accepts tokens carrying `aud: "fleans-mcp"`, and keeps `/alive` anonymous in both modes.
 
 **Common errors:**
 
