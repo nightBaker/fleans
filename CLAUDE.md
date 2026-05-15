@@ -57,6 +57,13 @@ The public docs site lives in `website/` — an Astro + Starlight project deploy
 
 **Documentation is part of "done", not a follow-up task.** Any new feature, BPMN element, API endpoint, or user-facing behavior MUST be reflected in the docs site in the same PR.
 
+**Documentation scope split.** The two surfaces have non-overlapping audiences and MUST stay separated:
+
+- **`README.md` + `CLAUDE.md` + `docs/plans/` (this repo)** — for contributors working with the Fleans **source tree**. Covers cloning, building, running tests, internal architecture, design docs, source-level conventions, manual test plans, release runbooks. Anything that assumes the reader has `git clone`d this repo belongs here.
+- **`website/src/content/docs/` (the public docs site)** — for users consuming a **released** Fleans artifact: pulling container images, running the Helm chart or compose bundle, calling the REST API, and extending the engine via published NuGet plugin packages. Anything that should still make sense to a reader who has never seen the source tree belongs here. "Writing custom-task plugins" lives here because plugin authors consume `Fleans.Worker` from nuget.org, not from source.
+
+When deciding where a new doc belongs, ask: *does it require working in the source checkout, or does it only require a released artifact?* Source-checkout docs → repo `README.md` / `CLAUDE.md` / `docs/plans/`. Released-artifact docs → website. Quick Start on the website MUST use a released artifact (container pull, Helm install) — not `git clone && dotnet run`, which is a source-tree workflow.
+
 For website-build infrastructure (Hero BPMN diagram regeneration, 3D landing background, load-test publishing rule), see [`website/README.md`](website/README.md).
 
 ## How to Add a New BPMN Activity

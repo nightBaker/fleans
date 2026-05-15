@@ -1,56 +1,60 @@
 ---
 title: Quick Start
-description: Run Fleans locally in under 5 minutes.
+description: Run Fleans locally from the released Docker Compose bundle in under 5 minutes.
 ---
+
+This walkthrough brings up the full Fleans stack from a published release, deploys a
+sample workflow through the admin UI, and starts an instance via the REST API.
 
 ## Prerequisites
 
-- .NET 10 SDK
-- Docker (for Redis via Aspire)
+- **Docker Engine 24+** with the Compose v2 plugin (`docker compose version`).
+- **~2 GB free disk** for images and the Postgres data volume.
 
-## Clone and run
+No .NET SDK, no source checkout — the bundle pulls signed container images from
+`ghcr.io/nightbaker/fleans-*`.
 
-:::tip[Aspire is for development, not production]
-`dotnet run --project Fleans.Aspire` boots Fleans on your laptop with everything wired up — perfect for trying things out and developing workflows. To deploy Fleans for staging or production, see the [Self-Hosting on Kubernetes](/fleans/reference/self-hosting/) guide for the recommended Helm-chart path.
-:::
+## 1. Download and run the release bundle
+
+The release pipeline attaches `docker-compose-v<VER>.zip` to every GitHub Release.
+Grab the latest:
 
 ```bash
-git clone https://github.com/nightBaker/fleans.git
-cd fleans/src/Fleans
-dotnet run --project Fleans.Aspire
+gh release download v0.3.0 --repo nightBaker/fleans -p 'docker-compose-*.zip'
+unzip docker-compose-v0.3.0.zip -d fleans
+cd fleans
+docker compose up -d
 ```
 
-Aspire launches the API, Blazor admin UI, and Redis. Open the Aspire dashboard URL from the console
-to find the Web app.
+Or, without the `gh` CLI:
 
-:::note[Expected output]
-Aspire prints (among other startup logs) a dashboard URL like:
-
+```bash
+curl -LO https://github.com/nightBaker/fleans/releases/download/v0.3.0/docker-compose-v0.3.0.zip
+unzip docker-compose-v0.3.0.zip -d fleans
+cd fleans
+docker compose up -d
 ```
-Login to the dashboard at https://localhost:<port>/login?t=<token>
-```
 
-Both `<port>` (default `15888` unless overridden by `ASPNETCORE_URLS` or your
-`launchSettings.json`) and `<token>` (a fresh per-boot value) will differ
-run-to-run — use whatever the console prints. Open that URL to reach the
-Aspire dashboard, from which you can click through to the `Fleans.Web`
-service (the Admin UI).
-
-*(tip: the `:` in config keys becomes `__` in environment variables — `Fleans:Role` → `Fleans__Role`. See [Configuration](/fleans/reference/configuration/) for the canonical key reference.)*
+:::tip[Pick the latest tag]
+Substitute the current release tag (see
+[Releases](https://github.com/nightBaker/fleans/releases)) for `v0.3.0`. For
+production installs and full configuration reference, see [Self-host with Docker
+Compose](/fleans/guides/self-host-docker-compose/).
 :::
 
-## Deploy a workflow
+`docker compose ps` should show every service as `running`. The admin UI lands at
+[http://localhost:8080](http://localhost:8080) and the REST API at
+[http://localhost:8081](http://localhost:8081).
 
-Fleans deploys workflows through the **Admin UI** (Blazor editor), not via a REST endpoint.
+## 2. Deploy a workflow
 
-1. Open the **Web app** — find its URL on the Aspire dashboard
-   *(tip: append `/dashboard` to that URL to see the [Orleans Dashboard](/fleans/reference/observability/#orleans-dashboard) — silo membership, grain activations, request latencies — useful for "is the workflow engine alive?" sanity checks).*
-2. Navigate to the **Editor** page
-3. Import or paste your BPMN XML, then click **Deploy**
+Fleans deploys workflows through the admin UI, not via a REST endpoint.
 
-A sample BPMN file is available to get you started:
-[**my-process.bpmn**](/fleans/samples/my-process.bpmn) — a minimal workflow with a single script task
-that sets a `greeting` variable.
+1. Open [http://localhost:8080](http://localhost:8080).
+2. Navigate to the **Editor** page.
+3. Download the sample workflow: [**my-process.bpmn**](/fleans/samples/my-process.bpmn) —
+   a minimal workflow with a single script task that sets a `greeting` variable.
+4. Import the file, then click **Deploy**.
 
 ```xml
 <!-- Excerpt from my-process.bpmn -->
@@ -59,24 +63,21 @@ that sets a `greeting` variable.
 </scriptTask>
 ```
 
-Download the file, open the Editor, import it, and click **Deploy**.
-
 After clicking **Deploy**, the Editor shows a green success message bar reading
 `Deployed 'my-process' v1 (N activities, M flows)`, the breadcrumb displays the
-process key, and an accent-colored `v1` badge appears next to it. Deploying
-again would produce `v2`, and so on.
+process key, and an accent-colored `v1` badge appears next to it. Deploying again
+produces `v2`, and so on.
 
 :::note
-Script tasks execute automatically — no external `complete-activity` call is needed.
-The engine runs the C# script inline and advances the workflow to the next element.
+Script tasks execute automatically — no external `complete-activity` call is
+needed. The engine runs the C# script inline and advances the workflow to the
+next element.
 :::
 
-## Start an instance
-
-Once the workflow is deployed, start an instance via the API:
+## 3. Start an instance
 
 ```bash
-curl -X POST https://localhost:7140/Workflow/start \
+curl -X POST http://localhost:8081/Workflow/start \
   -H "Content-Type: application/json" \
   -d '{"WorkflowId":"my-process"}'
 ```
@@ -92,8 +93,14 @@ The `<guid>` is new for every run.
 :::
 
 Because `my-process` contains only a script task, the instance runs to completion
-immediately. You can verify the result in the Admin UI. From the **Workflows**
-page, click the `my-process` row — this opens the process-instances list for
-that definition (route: `/process-instances/my-process/1`). The instance you
-just started appears there as `Completed`, and opening it shows the variables
-panel containing `greeting = "Hello from Fleans!"`.
+immediately. Verify the result in the admin UI: from the **Workflows** page, click
+the `my-process` row to open the process-instances list. The instance appears as
+`Completed`, and opening it shows the variables panel containing
+`greeting = "Hello from Fleans!"`.
+
+## Where to next
+
+- [Self-host with Docker Compose](/fleans/guides/self-host-docker-compose/) — `.env` reference, secrets, upgrades, troubleshooting.
+- [Self-host with Helm](/fleans/guides/self-host-helm/) — Kubernetes install.
+- [REST API reference](/fleans/reference/api/) — wire shapes for every endpoint.
+- [Service Tasks](/fleans/guides/service-tasks/) — start of the Building Workflows guides.
