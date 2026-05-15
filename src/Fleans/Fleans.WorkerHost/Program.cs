@@ -26,6 +26,13 @@ if (string.IsNullOrEmpty(builder.Configuration["Fleans:Role"]))
 
 var roleRaw = builder.Configuration["Fleans:Role"]!;
 var role = roleRaw.ToLowerInvariant();
+if (role == "plugin")
+{
+    throw new InvalidOperationException(
+        "Fleans.WorkerHost does not support Fleans:Role=Plugin. The 'Plugin' role is reserved " +
+        "for external custom worker hosts (see docs/concepts/custom-tasks.md). Use Core, " +
+        "Worker, or Combined for engine silos.");
+}
 if (role != "core" && role != "worker" && role != "combined")
 {
     throw new InvalidOperationException(

@@ -5,7 +5,6 @@ using System.Text;
 using Fleans.Application.Abstractions.Events;
 using Fleans.Domain.Errors;
 using Fleans.Worker.CustomTasks;
-using Fleans.Worker.Placement;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 
@@ -17,14 +16,14 @@ namespace Fleans.Plugins.RestCaller;
 /// body / headers; throws a typed <see cref="CustomTaskFailedActivityException"/> on
 /// non-success per the v2 design's failure-code mapping.
 ///
-/// <c>[ImplicitStreamSubscription]</c> and <c>[WorkerPlacement]</c> are repeated here
-/// even though <see cref="CustomTaskHandlerBase"/> already carries them: Orleans's
-/// grain-class discovery walks concrete types, and inheritance of these attributes
-/// from an abstract base is not reliably honored. Plugin authors should repeat both
-/// attributes on every concrete <c>CustomTaskHandlerBase</c> subclass they ship.
+/// <c>[ImplicitStreamSubscription]</c> is repeated here because Orleans's grain-class
+/// discovery walks concrete types, and inheritance of stream-subscription attributes
+/// from an abstract base is not reliably honored. <c>[WorkerPlacement]</c> is
+/// intentionally NOT applied: plugin grains rely on Orleans default placement so that
+/// <c>GetCompatibleSilos</c> (assembly-loading based) is the sole isolation primitive
+/// for routing plugin handlers to the silo that actually has the plugin's DLL loaded.
 /// </summary>
 [ImplicitStreamSubscription(WorkflowEventStreams.ExecuteCustomTaskStreamNamespace)]
-[WorkerPlacement]
 public sealed partial class RestCallerHandler : CustomTaskHandlerBase
 {
     private static readonly HashSet<string> AllowedMethods = new(StringComparer.OrdinalIgnoreCase)
