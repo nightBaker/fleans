@@ -23,14 +23,6 @@ export default defineConfig({
           items: [
             { label: 'Introduction', slug: 'guides/introduction' },
             { label: 'Quick Start', slug: 'guides/quick-start' },
-            { label: 'Service Tasks', slug: 'guides/service-tasks' },
-            { label: 'User Tasks', slug: 'guides/user-tasks' },
-            { label: 'Call Activities and Sub-Processes', slug: 'guides/call-activities-and-subprocesses' },
-            { label: 'Writing Custom-Task Plugins', slug: 'guides/writing-custom-tasks' },
-            { label: 'Hosting Plugins (Custom Worker Host)', slug: 'guides/custom-worker-host' },
-            { label: 'BPMN Editor', slug: 'guides/editor' },
-            { label: 'Events Page', slug: 'guides/events-page' },
-            { label: 'Add to Existing Project', slug: 'guides/add-to-existing-project' },
           ],
         },
         {
@@ -47,12 +39,29 @@ export default defineConfig({
           autogenerate: { directory: 'concepts/activities' },
         },
         {
-          label: 'Patterns',
+          label: 'Building Workflows',
           items: [
+            { label: 'Service Tasks', slug: 'guides/service-tasks' },
+            { label: 'User Tasks', slug: 'guides/user-tasks' },
+            { label: 'Call Activities and Sub-Processes', slug: 'guides/call-activities-and-subprocesses' },
             { label: 'Variables and Scope', slug: 'guides/variables-and-scope' },
             { label: 'Error Handling', slug: 'guides/error-handling' },
             { label: 'Multi-Instance Activities', slug: 'guides/multi-instance-activities' },
             { label: 'Message Correlation', slug: 'guides/message-correlation' },
+          ],
+        },
+        {
+          label: 'Admin UI',
+          items: [
+            { label: 'BPMN Editor', slug: 'guides/editor' },
+            { label: 'Events Page', slug: 'guides/events-page' },
+          ],
+        },
+        {
+          label: 'Extending Fleans',
+          items: [
+            { label: 'Writing Custom-Task Plugins', slug: 'guides/writing-custom-tasks' },
+            { label: 'Hosting Plugins (Custom Worker Host)', slug: 'guides/custom-worker-host' },
           ],
         },
         {
