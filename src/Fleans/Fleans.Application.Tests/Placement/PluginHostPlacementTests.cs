@@ -21,4 +21,15 @@ public class PluginHostPlacementTests
             "worker-/combined- silos that may not have the plugin's DLL loaded. Remove it; " +
             "rely on Orleans' GetCompatibleSilos for per-plugin isolation.");
     }
+
+    [TestMethod]
+    public void RestCallerHandler_ShouldNotCarry_WorkerPlacementAttribute()
+    {
+        var attr = typeof(Fleans.Plugins.RestCaller.RestCallerHandler)
+            .GetCustomAttribute<WorkerPlacementAttribute>(inherit: false);
+
+        Assert.IsNull(attr,
+            "Concrete plugin handlers must not carry [WorkerPlacement]; default placement " +
+            "with GetCompatibleSilos is the isolation primitive.");
+    }
 }
