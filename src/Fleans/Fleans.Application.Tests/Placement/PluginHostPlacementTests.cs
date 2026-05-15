@@ -58,4 +58,30 @@ public class PluginHostPlacementTests
         Assert.IsFalse(plugin, "plugin- prefix must be rejected by WorkerPlacementDirector");
         Assert.IsFalse(core, "core- prefix must be rejected by WorkerPlacementDirector");
     }
+
+    [TestMethod]
+    public void AddFleansPluginHost_RejectsCoreAndWorkerRoles()
+    {
+        Assert.AreEqual("plugin", Fleans.Worker.Hosting.PluginHostExtensions.ValidatePluginRole("Plugin"));
+        Assert.AreEqual("plugin", Fleans.Worker.Hosting.PluginHostExtensions.ValidatePluginRole(null));
+        Assert.AreEqual("combined", Fleans.Worker.Hosting.PluginHostExtensions.ValidatePluginRole("Combined"));
+
+        Assert.ThrowsExactly<InvalidOperationException>(
+            () => Fleans.Worker.Hosting.PluginHostExtensions.ValidatePluginRole("Worker"));
+        Assert.ThrowsExactly<InvalidOperationException>(
+            () => Fleans.Worker.Hosting.PluginHostExtensions.ValidatePluginRole("Core"));
+        Assert.ThrowsExactly<InvalidOperationException>(
+            () => Fleans.Worker.Hosting.PluginHostExtensions.ValidatePluginRole("garbage"));
+    }
+
+    [TestMethod]
+    public void BuildPluginSiloName_PrefixesWithRole()
+    {
+        var name = Fleans.Worker.Hosting.PluginHostExtensions.BuildSiloName(
+            "plugin",
+            "host42",
+            Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"));
+
+        Assert.AreEqual("plugin-host42-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", name);
+    }
 }
