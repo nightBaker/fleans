@@ -15,9 +15,6 @@ namespace Fleans.Application.Events.Handlers;
 [CorePlacement]
 public partial class WorkflowEvaluateConditionEventHandler : Grain, IWorkflowEvaluateConditionEventHandler, IAsyncObserver<EvaluateConditionEvent>
 {
-    // Test-only hook fired after handles are resumed. Null in production.
-    internal static Action<int>? OnImplicitActivation;
-
     private readonly ILogger<WorkflowEvaluateConditionEventHandler> _logger;
     private readonly IGrainFactory _grainFactory;
 
@@ -40,7 +37,6 @@ public partial class WorkflowEvaluateConditionEventHandler : Grain, IWorkflowEva
 
         var siloDetails = this.ServiceProvider.GetRequiredService<ILocalSiloDetails>();
         LogActivated(siloDetails.Name, this.GetPrimaryKeyString());
-        OnImplicitActivation?.Invoke(handles.Count);
 
         await base.OnActivateAsync(cancellationToken);
     }

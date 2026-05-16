@@ -177,38 +177,6 @@ For breaking version bumps (e.g. major release), read the GitHub Release
 notes — they call out any migration steps Compose itself does not perform
 (secret rotations, value renames, removed env vars).
 
-### 6.1. Draining workflows for stream-format-changing upgrades
-
-Releases flagged as **"stream upgrade"** in the release notes change Orleans
-stream identity — messages on the old stream key become orphaned after the
-upgrade, so in-flight workflows must drain first. Procedure (no engine
-changes required, works for any Redis-streaming adapter version):
-
-```bash
-# 1. Stop API/Web/Mcp so no new work arrives. Workers keep running and
-#    continue to consume queued events.
-docker compose stop fleans-api fleans-web fleans-mcp
-
-# 2. Wait for the Redis streams to drain. Verify the literal key pattern
-#    the streaming adapter uses against your cluster — for the default
-#    Cluster Id "fleans" with the Universley adapter it's typically
-#    "fleans/StreamProvider/…", but check yours first:
-docker exec orleans-redis redis-cli KEYS '*' | head
-
-# Then poll stream lengths until all hit 0:
-while true; do
-  L=$(docker exec orleans-redis sh -c \
-        "redis-cli --scan --pattern 'fleans/StreamProvider/*' \
-         | xargs -L 1 redis-cli XLEN | sort -u")
-  echo "stream-lengths=$L"
-  [ "$L" = "0" ] && break
-  sleep 10
-done
-
-# 3. Pull the new bundle and start.
-docker compose pull && docker compose up -d
-```
-
 ## 7. Troubleshooting
 
 - **Port 8080 already in use.** Edit the host port in `docker-compose.yaml` —

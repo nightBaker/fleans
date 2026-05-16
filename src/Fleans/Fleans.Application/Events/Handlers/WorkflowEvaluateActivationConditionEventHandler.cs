@@ -27,9 +27,6 @@ public partial class WorkflowEvaluateActivationConditionEventHandler : Grain, IW
         _grainFactory = grainFactory;
     }
 
-    // Test-only hook fired after handles are resumed. Null in production.
-    internal static Action<int>? OnImplicitActivation;
-
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
         var streamProvider = this.GetStreamProvider(WorkflowEventsPublisher.StreamProvider);
@@ -43,7 +40,6 @@ public partial class WorkflowEvaluateActivationConditionEventHandler : Grain, IW
 
         var siloDetails = this.ServiceProvider.GetRequiredService<ILocalSiloDetails>();
         LogActivated(siloDetails.Name, this.GetPrimaryKeyString());
-        OnImplicitActivation?.Invoke(handles.Count);
 
         await base.OnActivateAsync(cancellationToken);
     }

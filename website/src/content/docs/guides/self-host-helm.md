@@ -251,49 +251,6 @@ helm rollback fleans <REVISION> -n fleans
 non-destructive to Postgres; the database schema is forward-compatible
 within the documented per-release migration window.
 
-### 5.1. Draining workflows for stream-format-changing upgrades
-
-Releases flagged as **"stream upgrade"** in the release notes change Orleans
-stream identity — messages on the old stream key become orphaned after the
-upgrade, so in-flight workflows must drain first. Procedure (no engine
-changes required, works for any Redis-streaming adapter version):
-
-```bash
-# 1. Stop API/Web/Mcp so no new work arrives. Workers keep running and
-#    continue to consume queued events.
-kubectl -n fleans scale deployment/fleans-api --replicas=0
-kubectl -n fleans scale deployment/fleans-web --replicas=0
-kubectl -n fleans scale deployment/fleans-mcp --replicas=0
-
-# 2. Wait for Redis streams to drain. The redis resource ships as a
-#    StatefulSet in the chart — confirm the actual name and key pattern
-#    against your cluster:
-kubectl -n fleans get statefulset
-kubectl -n fleans exec statefulset/fleans-redis -- redis-cli KEYS '*' | head
-
-# Then poll stream lengths until all hit 0:
-while true; do
-  L=$(kubectl -n fleans exec statefulset/fleans-redis -- sh -c \
-        "redis-cli --scan --pattern 'fleans/StreamProvider/*' \
-         | xargs -L 1 redis-cli XLEN | sort -u")
-  echo "stream-lengths=$L"
-  [ "$L" = "0" ] && break
-  sleep 10
-done
-
-# 3. Apply the upgrade.
-helm upgrade fleans ./fleans-<ver>.tgz -n fleans -f values-prod.yaml
-
-# 4. Scale API/Web/Mcp back up (or rely on the chart's defaults).
-kubectl -n fleans scale deployment/fleans-api --replicas=1
-kubectl -n fleans scale deployment/fleans-web --replicas=1
-kubectl -n fleans scale deployment/fleans-mcp --replicas=1
-```
-
-The redis StatefulSet name (`fleans-redis` above) depends on the Helm release
-name and the chart's naming template. If you renamed the release or use a
-chart fork, substitute the name `kubectl get statefulset` reports.
-
 ## 6. Troubleshooting
 
 - **`ImagePullBackOff`.** Either the registry is private and `imagePullSecrets`
