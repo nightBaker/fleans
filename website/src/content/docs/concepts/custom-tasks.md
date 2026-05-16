@@ -144,6 +144,14 @@ The activity completes with `user` (the parsed JSON body) and `status` (the inte
 - No HTTP-level retry — workflow authors retry via boundary error events.
 - No streaming (SSE / WebSocket / chunked).
 
+## Cancellation
+
+Plugins receive a `CancellationToken` whose source is the handler grain's lifetime. When Orleans deactivates the grain (silo scale-down, idle collection, shutdown), the token is signalled and the in-flight `ExecuteAsync` should propagate `OperationCanceledException`. The base class catches that case, **does not** fail the activity, and lets the stream provider redeliver the event after the grain reactivates elsewhere. Plugins that perform long-running I/O should thread the token through (`HttpClient.SendAsync(request, ct)`, `Task.Delay(timeout, ct)`, etc.).
+
+Plugins that **ignore** the token block silo deactivation until Orleans's hard timeout expires (Orleans 10.x default: 30 s graceful, then force-kill). The stream event is **not lost** — at-least-once delivery causes the stream provider to redeliver to the next handler activation. The cost of ignoring the token is silo-shutdown latency, not correctness.
+
+Plugin authors should also know that an `OperationCanceledException` whose `CancellationToken` is **not** the supplied grain-lifetime token (e.g., a plugin-internal timeout that fires before the silo deactivates) is treated as a regular plugin failure and routes to `FailActivity` with code 500 — the base class only re-routes cancellation that originates from grain deactivation. See `RestCallerHandler` for the canonical layered-CTS pattern: the plugin's own per-request timeout is linked with the supplied token via `CancellationTokenSource.CreateLinkedTokenSource`.
+
 ## Limitations
 
 - Plugins are .NET assemblies referenced from the Worker silo's host project. Hot-loading is out of scope.
