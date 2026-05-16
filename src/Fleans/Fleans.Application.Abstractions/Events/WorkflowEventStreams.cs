@@ -46,4 +46,18 @@ public static class WorkflowEventStreams
     /// so the handler grain is only activated on multi-instance completion-condition events.
     /// </summary>
     public const string EvaluateCompletionConditionStreamNamespace = "events.EvaluateCompletionConditionEvent";
+
+    /// <summary>
+    /// Builds the per-<c>TaskType</c> stream namespace for custom-task events:
+    /// <c>events.ExecuteCustomTaskEvent.{taskType}</c>. The publisher routes through this
+    /// helper so each plugin's subscriber grain only sees its own traffic.
+    /// </summary>
+    /// <remarks>
+    /// Plugin subclasses cannot use this helper for their <c>[ImplicitStreamSubscription]</c>
+    /// attribute because attribute arguments must be compile-time constant expressions —
+    /// each subclass declares the literal string. <c>AddCustomTaskPlugin&lt;T&gt;</c> validates
+    /// at registration time that the attribute string matches the value returned here.
+    /// </remarks>
+    public static string GetExecuteCustomTaskNamespace(string taskType) =>
+        $"{ExecuteCustomTaskStreamNamespace}.{taskType}";
 }

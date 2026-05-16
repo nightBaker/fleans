@@ -16,14 +16,19 @@ namespace Fleans.Plugins.RestCaller;
 /// body / headers; throws a typed <see cref="CustomTaskFailedActivityException"/> on
 /// non-success per the v2 design's failure-code mapping.
 ///
-/// <c>[ImplicitStreamSubscription]</c> is repeated here because Orleans's grain-class
-/// discovery walks concrete types, and inheritance of stream-subscription attributes
-/// from an abstract base is not reliably honored. <c>[WorkerPlacement]</c> is
-/// intentionally NOT applied: plugin grains rely on Orleans default placement so that
-/// <c>GetCompatibleSilos</c> (assembly-loading based) is the sole isolation primitive
-/// for routing plugin handlers to the silo that actually has the plugin's DLL loaded.
+/// <c>[ImplicitStreamSubscription]</c> carries the per-<c>TaskType</c> namespace literal
+/// (<c>events.ExecuteCustomTaskEvent.rest-call</c>) — attribute arguments must be
+/// compile-time constants, so each plugin subclass declares its own string. The string
+/// MUST match <see cref="WorkflowEventStreams.GetExecuteCustomTaskNamespace"/> applied
+/// to <see cref="TaskType"/>; <c>AddCustomTaskPlugin&lt;RestCallerHandler&gt;("rest-call", …)</c>
+/// validates this at silo startup and throws on drift.
+///
+/// <c>[WorkerPlacement]</c> is intentionally NOT applied: plugin grains rely on Orleans
+/// default placement so that <c>GetCompatibleSilos</c> (assembly-loading based) is the
+/// sole isolation primitive for routing plugin handlers to the silo that actually has
+/// the plugin's DLL loaded.
 /// </summary>
-[ImplicitStreamSubscription(WorkflowEventStreams.ExecuteCustomTaskStreamNamespace)]
+[ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.rest-call")]
 public sealed partial class RestCallerHandler : CustomTaskHandlerBase
 {
     private static readonly HashSet<string> AllowedMethods = new(StringComparer.OrdinalIgnoreCase)
