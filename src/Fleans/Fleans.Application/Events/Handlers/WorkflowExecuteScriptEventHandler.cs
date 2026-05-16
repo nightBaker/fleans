@@ -3,7 +3,9 @@ using Fleans.Application.Logging;
 using Fleans.Application.Placement;
 using Fleans.Application.Scripts;
 using Fleans.Domain.Events;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Orleans.Runtime;
 using Orleans.Streams;
 
 namespace Fleans.Application.Events.Handlers;
@@ -24,19 +26,16 @@ public partial class WorkflowExecuteScriptEventHandler : Grain, IWorkflowExecute
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
         var streamProvider = this.GetStreamProvider(WorkflowEventsPublisher.StreamProvider);
-        var streamId = StreamId.Create(WorkflowEventsPublisher.ExecuteScriptStreamNamespace, nameof(ExecuteScriptEvent));
+        // Stream key matches the grain's primary key — see CLAUDE.md "subscriber-side stream-id trap".
+        var streamId = StreamId.Create(WorkflowEventsPublisher.ExecuteScriptStreamNamespace, this.GetPrimaryKeyString());
         var stream = streamProvider.GetStream<ExecuteScriptEvent>(streamId);
 
         var handles = await stream.GetAllSubscriptionHandles();
-        if (handles is { Count: > 0 })
-        {
-            foreach (var handle in handles)
-                await handle.ResumeAsync(OnNextAsync, OnErrorAsync, OnCompletedAsync);
-        }
-        else
-        {
-            await stream.SubscribeAsync(OnNextAsync, OnErrorAsync, OnCompletedAsync);
-        }
+        foreach (var handle in handles)
+            await handle.ResumeAsync(OnNextAsync, OnErrorAsync, OnCompletedAsync);
+
+        var siloDetails = this.ServiceProvider.GetRequiredService<ILocalSiloDetails>();
+        LogActivated(siloDetails.Name, this.GetPrimaryKeyString());
 
         await base.OnActivateAsync(cancellationToken);
     }
@@ -89,6 +88,10 @@ public partial class WorkflowExecuteScriptEventHandler : Grain, IWorkflowExecute
 
     [LoggerMessage(EventId = 4010, Level = LogLevel.Information, Message = "Handling script event for activity {ActivityId}")]
     private partial void LogHandlingScriptEvent(string activityId);
+
+    [LoggerMessage(EventId = 4015, Level = LogLevel.Information,
+        Message = "Script handler activated on silo {SiloName} for stream key {StreamKey}")]
+    private partial void LogActivated(string siloName, string streamKey);
 
     [LoggerMessage(EventId = 4011, Level = LogLevel.Error, Message = "Script execution failed for activity {ActivityId}")]
     private partial void LogScriptExecutionFailed(Exception ex, string activityId);
