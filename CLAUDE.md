@@ -153,6 +153,21 @@ Add it to `Fleans.Api/Controllers/WorkflowController.cs`. DTOs go in `Fleans.Ser
 - **The full regression suite** (43 BPMN scenarios + 16 website scenarios), the BPMN fixture authoring rules, and the manual-test API endpoint reference live in [`tests/manual/README.md`](tests/manual/README.md). That file is the canonical catalog — when adding a new manual test folder, append an entry there.
 - Universal backend prerequisite for any plan: Aspire stack running via `dotnet run --project Fleans.Aspire` (from `src/Fleans/`).
 
+## Regression tests
+
+The canonical regression catalog lives in [`tests/manual/README.md`](tests/manual/README.md). Run every numbered entry in both the **BPMN regression suite** and the **Website regression suite** in order; each entry links to a `tests/manual/NN-feature-name/test-plan.md` with the per-step deploy / start / trigger / verify checklist.
+
+**Prerequisites — BPMN suite:** Aspire stack running via `dotnet run --project Fleans.Aspire` (from `src/Fleans/`); a clean dev DB (delete the SQLite file or set a fresh `FLEANS_SQLITE_CONNECTION`); Web UI reachable at `https://localhost:7124`; API origin `https://localhost:7140`.
+
+**Prerequisites — Website suite:** `cd website && npm install` has been run at least once; `npx playwright install chromium` has been run at least once (only needed for plans that shell out to Playwright); ports `4321` / `4327` / `4328` free.
+
+**How to run:**
+
+1. Open `tests/manual/README.md` and treat each numbered entry under "BPMN regression suite" and "Website regression suite" as one regression step.
+2. For each entry, open its linked `test-plan.md` and execute the checklist end-to-end against the PR branch (not `main`).
+3. Record the result as `PASSED`, `FAILED`, `BUG` (new regression — file an issue), or `KNOWN BUG` (matches a `> **KNOWN BUG:** …` note inside the linked plan; counts as PASSED for promotion purposes).
+4. Aggregate results into the standard "Manual Regression Test Results" PR-issue comment, then promote (Review by Human) or reject (Ready) per the manual-regression-testing skill's normal flow.
+
 ## Cutting a Release
 
 The release pipeline at `.github/workflows/release.yml` triggers on `git push origin v<SemVer>`. This is the maintainer runbook for cutting a release. Manual test plan: `tests/manual/42-release-pipeline/test-plan.md`.
