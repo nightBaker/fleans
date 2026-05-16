@@ -4,6 +4,7 @@ using Fleans.Application.Grains;
 using Fleans.Application.Logging;
 using Fleans.Application.Placement;
 using Fleans.Domain.Events;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Orleans.Runtime;
 using Orleans.Streams;
@@ -12,13 +13,12 @@ namespace Fleans.Application.Events.Handlers;
 
 [ImplicitStreamSubscription(WorkflowEventsPublisher.EvaluateConditionStreamNamespace)]
 [CorePlacement]
-public partial class WorfklowEvaluateConditionEventHandler : Grain, IWorfklowEvaluateConditionEventHandler, IAsyncObserver<EvaluateConditionEvent>
+public partial class WorkflowEvaluateConditionEventHandler : Grain, IWorkflowEvaluateConditionEventHandler, IAsyncObserver<EvaluateConditionEvent>
 {
-
-    private readonly ILogger<WorfklowEvaluateConditionEventHandler> _logger;
+    private readonly ILogger<WorkflowEvaluateConditionEventHandler> _logger;
     private readonly IGrainFactory _grainFactory;
 
-    public WorfklowEvaluateConditionEventHandler(ILogger<WorfklowEvaluateConditionEventHandler> logger, IGrainFactory grainFactory)
+    public WorkflowEvaluateConditionEventHandler(ILogger<WorkflowEvaluateConditionEventHandler> logger, IGrainFactory grainFactory)
     {
         _logger = logger;
         _grainFactory = grainFactory;
@@ -27,19 +27,16 @@ public partial class WorfklowEvaluateConditionEventHandler : Grain, IWorfklowEva
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
         var streamProvider = this.GetStreamProvider(WorkflowEventsPublisher.StreamProvider);
-        var streamId = StreamId.Create(WorkflowEventsPublisher.EvaluateConditionStreamNamespace, nameof(EvaluateConditionEvent));
+        // Stream key matches the grain's primary key — see CLAUDE.md "subscriber-side stream-id trap".
+        var streamId = StreamId.Create(WorkflowEventsPublisher.EvaluateConditionStreamNamespace, this.GetPrimaryKeyString());
         var stream = streamProvider.GetStream<EvaluateConditionEvent>(streamId);
 
         var handles = await stream.GetAllSubscriptionHandles();
-        if (handles is { Count: > 0 })
-        {
-            foreach (var handle in handles)
-                await handle.ResumeAsync(OnNextAsync, OnErrorAsync, OnCompletedAsync);
-        }
-        else
-        {
-            await stream.SubscribeAsync(OnNextAsync, OnErrorAsync, OnCompletedAsync);
-        }
+        foreach (var handle in handles)
+            await handle.ResumeAsync(OnNextAsync, OnErrorAsync, OnCompletedAsync);
+
+        var siloDetails = this.ServiceProvider.GetRequiredService<ILocalSiloDetails>();
+        LogActivated(siloDetails.Name, this.GetPrimaryKeyString());
 
         await base.OnActivateAsync(cancellationToken);
     }
@@ -93,10 +90,9 @@ public partial class WorfklowEvaluateConditionEventHandler : Grain, IWorfklowEva
         return Task.CompletedTask;
     }
 
-    public void Ping()
-    {
-
-    }
+    [LoggerMessage(EventId = 4006, Level = LogLevel.Information,
+        Message = "Condition handler activated on silo {SiloName} for stream key {StreamKey}")]
+    private partial void LogActivated(string siloName, string streamKey);
 
     [LoggerMessage(EventId = 4000, Level = LogLevel.Information, Message = "Handling condition event for activity {ActivityId}, sequence {SequenceFlowId}")]
     private partial void LogHandlingConditionEvent(string activityId, string sequenceFlowId);

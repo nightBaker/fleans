@@ -45,36 +45,39 @@ public partial class WorkflowEventsPublisher : Grain, IEventPublisher
         {
             case EvaluateConditionEvent evaluateConditionEvent:
 
-                var streamId = StreamId.Create(WorkflowEventStreams.EvaluateConditionStreamNamespace, nameof(EvaluateConditionEvent));
+                // Shard the stream by WorkflowInstanceId so cross-instance traffic spreads across
+                // queue partitions and subscriber grain activations. See CLAUDE.md "Things to Know".
+                var streamId = StreamId.Create(WorkflowEventStreams.EvaluateConditionStreamNamespace, evaluateConditionEvent.WorkflowInstanceId.ToString("D"));
                 var stream = _streamProvider.GetStream<EvaluateConditionEvent>(streamId);
                 await stream.OnNextAsync(evaluateConditionEvent);
                 break;
             case EvaluateActivationConditionEvent evaluateActivationConditionEvent:
-                var activationStreamId = StreamId.Create(WorkflowEventStreams.EvaluateActivationConditionStreamNamespace, nameof(EvaluateActivationConditionEvent));
+                var activationStreamId = StreamId.Create(WorkflowEventStreams.EvaluateActivationConditionStreamNamespace, evaluateActivationConditionEvent.WorkflowInstanceId.ToString("D"));
                 var activationStream = _streamProvider.GetStream<EvaluateActivationConditionEvent>(activationStreamId);
                 await activationStream.OnNextAsync(evaluateActivationConditionEvent);
                 break;
             case ExecuteScriptEvent executeScriptEvent:
 
-                var scriptStreamId = StreamId.Create(WorkflowEventStreams.ExecuteScriptStreamNamespace, nameof(ExecuteScriptEvent));
+                var scriptStreamId = StreamId.Create(WorkflowEventStreams.ExecuteScriptStreamNamespace, executeScriptEvent.WorkflowInstanceId.ToString("D"));
                 var scriptStream = _streamProvider.GetStream<ExecuteScriptEvent>(scriptStreamId);
                 await scriptStream.OnNextAsync(executeScriptEvent);
                 break;
             case ExecuteCustomTaskEvent executeCustomTaskEvent:
 
-                var customTaskStreamId = StreamId.Create(WorkflowEventStreams.ExecuteCustomTaskStreamNamespace, nameof(ExecuteCustomTaskEvent));
+                var customTaskStreamId = StreamId.Create(WorkflowEventStreams.ExecuteCustomTaskStreamNamespace, executeCustomTaskEvent.WorkflowInstanceId.ToString("D"));
                 var customTaskStream = _streamProvider.GetStream<ExecuteCustomTaskEvent>(customTaskStreamId);
                 await customTaskStream.OnNextAsync(executeCustomTaskEvent);
                 break;
             case EvaluateCompletionConditionEvent evaluateCompletionConditionEvent:
-                var completionStreamId = StreamId.Create(WorkflowEventStreams.EvaluateCompletionConditionStreamNamespace, nameof(EvaluateCompletionConditionEvent));
+                var completionStreamId = StreamId.Create(WorkflowEventStreams.EvaluateCompletionConditionStreamNamespace, evaluateCompletionConditionEvent.WorkflowInstanceId.ToString("D"));
                 var completionStream = _streamProvider.GetStream<EvaluateCompletionConditionEvent>(completionStreamId);
                 await completionStream.OnNextAsync(evaluateCompletionConditionEvent);
                 break;
             default:
-                var defaultStreamId = StreamId.Create(WorkflowEventStreams.StreamNameSpace, nameof(IDomainEvent));
-                var defaultStream = _streamProvider.GetStream<IDomainEvent>(defaultStreamId);
-                await defaultStream.OnNextAsync(domainEvent);
+                // No subscriber exists for the default stream; logging and dropping surfaces
+                // unhandled event types at the publisher rather than fanning them out to a
+                // dead-letter stream.
+                LogUnknownEventType(domainEvent.GetType().FullName ?? "(null)");
                 break;
         }
 
@@ -82,4 +85,8 @@ public partial class WorkflowEventsPublisher : Grain, IEventPublisher
 
     [LoggerMessage(EventId = 5000, Level = LogLevel.Debug, Message = "Publishing {EventType}")]
     private partial void LogPublishing(string eventType);
+
+    [LoggerMessage(EventId = 5001, Level = LogLevel.Warning,
+        Message = "WorkflowEventsPublisher received unhandled event type {EventTypeName}; dropping. Add a case to Publish if intentional.")]
+    private partial void LogUnknownEventType(string eventTypeName);
 }
