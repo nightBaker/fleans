@@ -116,7 +116,12 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
             catch (Exception failEx)
             {
                 LogFailActivityFailed(failEx, item.ActivityId);
-                throw; // let stream provider retry — domain idempotency guards handle duplicates
+                // Redelivery duplicates are absorbed by the HasActiveEntry guard at
+                // WorkflowInstance.cs:315/:351 (CompleteActivity / FailActivity), backed by
+                // the domain-level entry.IsCompleted early-return at WorkflowExecution.cs:2135/:2186.
+                // See CLAUDE.md Design Constraints "Stream-redelivery idempotency contract" and
+                // the #569 Phase 1 audit comment for the full per-call-site guarantee.
+                throw;
             }
         }
     }
