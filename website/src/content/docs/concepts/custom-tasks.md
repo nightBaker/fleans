@@ -148,7 +148,12 @@ The activity completes with `user` (the parsed JSON body) and `status` (the inte
 
 - Plugins are .NET assemblies referenced from the Worker silo's host project. Hot-loading is out of scope.
 - Per-plugin placement filters (route `rest-call` only to silos with that plugin) are out of scope; today the Worker placement director routes any `[WorkerPlacement]` grain to any worker silo. Operators choose topology by DI-registering only the plugins they want on each worker.
-- Per-task-type stream partitioning (one Orleans stream per `taskType`) is deferred — for now every plugin handler receives every event and discards mismatches with an `if (...) return;` early-out.
+
+## Upgrade note: per-type stream namespaces
+
+The publisher routes `ExecuteCustomTaskEvent` to `events.ExecuteCustomTaskEvent.{TaskType}` per the partitioning above. Pre-v1, an engine upgrade that introduces this change orphans any `ExecuteCustomTaskEvent`s already enqueued on the previous shared `events.ExecuteCustomTaskEvent` stream — no subscriber exists for them after rollout. Operators should expect any in-flight custom tasks across the upgrade window to stall; no formal drain procedure is shipped pre-v1.
+
+Plugin authors hosting from the [`fleans-custom-worker-example`](https://github.com/nightBaker/fleans-custom-worker-example) template need to update their handlers: each concrete `CustomTaskHandlerBase` subclass must carry `[ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.<task-type>")]` with a literal string matching its `TaskType`. The Worker host's `AddCustomTaskPlugin<T>(taskType, …)` call now throws `InvalidOperationException` at startup if the attribute is missing or drifted, or if two plugins claim the same `TaskType` — diagnose against the exception message.
 
 ## Hosting plugins outside the engine repo
 
