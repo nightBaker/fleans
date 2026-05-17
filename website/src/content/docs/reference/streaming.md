@@ -114,7 +114,7 @@ These won't break a deploy, but they will cost you operationally.
 
 | Gap | Why it hurts | Workaround |
 |---|---|---|
-| `QueueCount=1`, `NumPartitions=1` defaults | All consumers share one partition → no horizontal fan-out | Tune both up before scaling out the silo |
+| `NumPartitions=1` default | New topics created with 1 partition — no broker-side write fan-out per topic | Bump `Fleans:Streaming:Kafka:NumPartitions` and re-create or `kafka-topics --alter --partitions N` existing topics (forward-only; cannot shrink). See [Tuning throughput](#tuning-throughput) |
 | No schema registry integration | Codec is the Orleans codec; non-Orleans consumers cannot decode the stream | Treat Kafka topics as silo-internal until a follow-up adds Avro/Protobuf framing |
 | No DLQ for poison messages | A consistently-failing handler replays forever | Manual offset commit via `AdminClient` is your only escape today |
 | No metrics/health-check for consumer lag | Lag is invisible to the Aspire dashboard's health UI | Run `kafka-consumer-groups.sh --describe --group fleans` against the broker |
@@ -220,6 +220,37 @@ broker topic before the handler runs.
 
 `Confluent.Kafka` 2.6.1 / librdkafka 2.6.x are the supported versions. The adapter targets
 `net10.0` (matching every other silo csproj in this repo).
+
+## Tuning throughput
+
+Throughput across the queue-backed providers is governed by two independent classes of knobs. The first is an Orleans-level concept shared by every provider; the second is Kafka-specific and does not have analogues elsewhere.
+
+### Orleans parallelism (all queue-backed providers)
+
+`Fleans:Streaming:Redis:TotalQueueCount`, `Fleans:Streaming:Kafka:QueueCount`, and the length of `Fleans:Streaming:AzureQueue:QueueNames` all set the same thing: the **number of Orleans pulling-agent grains** that activate across the cluster. Stream IDs hash across this many partitions; each partition is consumed by one pulling agent. More partitions = more parallel consumption.
+
+| Provider | Knob | Default | Notes |
+|---|---|---|---|
+| Redis | `Fleans__Streaming__Redis__TotalQueueCount` | `8` | Configurable as of v0.2.0 (#567). |
+| Kafka | `Fleans__Streaming__Kafka__QueueCount` | `8` | Was `1` before v0.2.0 (#567) — call out as a behavior change for deployments that left it unset. |
+| AzureQueue | `Fleans__Streaming__AzureQueue__QueueNames__0..N` | 8 entries (`fleans-stream-0..7`) | No scalar count — tuning above OR below 8 requires populating the explicit list by hand. Mid-deployment length changes rehash Stream IDs across queues. |
+
+**Sizing heuristic.** Start with `max(8, 2 × silo_count × cpu_per_silo)` for high-volume deployments and measure with the Orleans dashboard (wired at `Fleans.Api/Program.cs`) before raising further. In a multi-silo deployment, agents distribute across silos via the hash ring — total cluster-wide count = the configured value, per-silo count ≈ `ceil(value / silo_count)`.
+
+**Rehash caveat (all providers).** Bumping the count rehashes Stream IDs across queues. Consistent with the project's pre-v1 stance, **expect in-flight workflow stalls across the bump window — no formal drain procedure is provided**. After the bump, new workflow instances distribute over the new queue count; in-flight instances that straddle the rehash may stall until reactivation picks them up on the new queue assignment.
+
+**Tradeoff.** Each partition adds a pulling-agent grain per silo plus provider-side resource overhead (a Redis connection, a Kafka consumer, an AzureQueue receiver lease).
+
+**Production caveats already documented elsewhere.** Redis streaming requires AOF or RDB persistence — see the [Streaming](#streaming) section above; Kafka requires its own cluster lifecycle ops — see [Production-readiness gaps — Kafka](#-will-lose-data-on-failure).
+
+### Kafka-specific Kafka-side tuning
+
+These knobs control the Kafka **broker-side** topology only. They are independent of `QueueCount` and do not multiply Orleans consumer parallelism.
+
+| Knob | Default | What it does |
+|---|---|---|
+| `Fleans__Streaming__Kafka__NumPartitions` | `1` | Partition count for each Kafka topic at topic creation. Adds broker-side write parallelism (the producer can write to N partitions concurrently) and partition-level ordering granularity within one Orleans queue. **Does not** add Orleans consumer parallelism — the consumer subscribes via consumer-group `Subscribe` mode (one consumer per topic, regardless of partition count). Forward-only: `kafka-topics --alter --partitions N` can grow but not shrink, and downgrading the engine after a bump leaves topics over-partitioned. |
+| `Fleans__Streaming__Kafka__ReplicationFactor` | `1` | Per-topic replication factor at topic creation. Production deployments should set to `3` once a 3-broker cluster is available — see [the durability gap above](#-will-lose-data-on-failure). |
 
 ## See also
 
