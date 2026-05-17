@@ -3,6 +3,8 @@ title: Streaming providers
 description: How Fleans publishes domain events on Orleans Streams and how to switch between the in-memory and Kafka-backed providers.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
 Fleans publishes domain events (`EvaluateConditionEvent`, `EvaluateActivationConditionEvent`,
 `ExecuteScriptEvent`, …) through **Orleans Streams**. The stream provider is pluggable at startup:
 the default is Orleans' in-memory provider, and a Kafka-backed provider ships alongside it for
@@ -172,34 +174,79 @@ The broker-side `allow.auto.create.topics` flag is **not** required — it is do
 a fallback for self-managed clusters that prefer it, but managed clusters (Confluent Cloud, MSK)
 disable it by default and the client-side path is what we ship.
 
-## Aspire opt-in
+## Switching the streaming provider
 
-The Aspire AppHost reads `FLEANS_STREAMING_PROVIDER` (default **`Redis`** since v0.3.0). **Note:** this is an Aspire-only convenience knob — silos read the runtime equivalent `Fleans__Streaming__Provider` instead (see [Configuration / Streaming](/fleans/reference/configuration/#streaming)).
+Set `Fleans__Streaming__Provider` on every `fleans-*` workload via your deployment tool. The engine accepts four values: `Redis` (default), `Memory`, `Kafka`, `AzureQueue`. Both the Docker Compose bundle and the Helm chart ship with sensible defaults — you only need an explicit switch when moving off the default.
 
-```bash
-# Redis-backed streams — DEFAULT, no env var needed. Reuses the orleans-redis
-# container that already powers clustering + PubSubStore.
-dotnet run --project Fleans.Aspire
+<Tabs syncKey="deployment-tool">
+<TabItem label="Compose bundle">
 
-# Memory-backed (single-silo, debug-only — drops in-flight events on restart)
-FLEANS_STREAMING_PROVIDER=Memory dotnet run --project Fleans.Aspire
+The bundle ships with Redis as the default streaming provider. **You only need an override file to switch away from Redis** — for the production-default Redis behaviour, no edits are required.
 
-# Kafka-backed streams (separate Kafka cluster — provisions a fleans-kafka container)
-FLEANS_STREAMING_PROVIDER=Kafka dotnet run --project Fleans.Aspire
+Drop a `docker-compose.override.yaml` next to the bundle's `docker-compose.yaml` with the same env var on every `fleans-*` service:
 
-# Azure Queue-backed streams (provisions Azurite emulator automatically)
-FLEANS_STREAMING_PROVIDER=AzureQueue dotnet run --project Fleans.Aspire
+```yaml
+services:
+  fleans-core:
+    environment:
+      Fleans__Streaming__Provider: Memory    # or Kafka, AzureQueue
+  fleans-management:
+    environment:
+      Fleans__Streaming__Provider: Memory
+  fleans-mcp:
+    environment:
+      Fleans__Streaming__Provider: Memory
+  fleans-worker:
+    environment:
+      Fleans__Streaming__Provider: Memory
 ```
 
-**Redis (default):** No new container — the same `orleans-redis` instance the engine already runs for clustering and `PubSubStore` also carries stream events. Uses the third-party [`Universley.OrleansContrib.StreamsProvider.Redis`](https://github.com/MichaelSL/Universley.OrleansContrib.StreamsProvider.Redis) package (MIT, Orleans 10.x-compatible), pinned in `Fleans.ServiceDefaults.csproj`. **Production requirement:** enable Redis persistence (AOF or RDB) — without it, a Redis restart loses in-flight messages (same caveat as `PubSubStore`).
+For Kafka, add `Fleans__Streaming__Kafka__Brokers: "kafka:9092"` (replace with your broker host:port). For Azure Queue, add `Fleans__Streaming__AzureQueue__ConnectionString: "<your-connection-string>"`. Then `docker compose up -d` from the bundle directory — Compose merges the override automatically.
 
-**Memory:** Provisions no container. Drops in-flight events on silo restart — single-silo debug-only.
+This streaming override is a pure service-level env addition (unlike the plugin-host override in [Writing custom-task plugins](/fleans/guides/writing-custom-tasks/), which depends on the `fleans_default` network being created by an engine `up` first). You can `docker compose down && docker compose up -d` from the bundle directory at any time to apply the change — engine-first ordering is not required.
 
-**Kafka:** Provisions a `fleans-kafka` container and forwards `Fleans__Streaming__Provider=Kafka` + `Fleans__Streaming__Kafka__Brokers` onto the silo.
+</TabItem>
+<TabItem label="Helm">
 
-**AzureQueue:** Provisions a `fleans-azurite` container (Azurite emulator) and forwards `Fleans__Streaming__Provider=AzureQueue` + `Fleans__Streaming__AzureQueue__ConnectionString` onto the silo.
+:::caution
+The chart's `streaming.provider` value only switches on `kafka`. Any other value (including `Redis` and `AzureQueue`) is silently ignored — the chart emits no `Fleans__Streaming__Provider` env var and the silo defaults to Memory. Use the `extraEnv` recipe below for everything other than Kafka. Tracking the chart fix at [#599](https://github.com/nightBaker/fleans/issues/599); until that lands, `extraEnv` is the canonical Helm path for Redis / Azure Queue.
+:::
 
-The forwarded vars are visible in the Aspire dashboard's env tab for each project.
+Memory is the chart default; nothing to set unless you're switching away from it.
+
+```bash
+# Kafka — the chart's first-class supported provider.
+helm install fleans nightbaker/fleans \
+  --set streaming.provider=Kafka \
+  --set streaming.kafka.brokers="kafka.kafka.svc:9092"
+
+# Redis — via extraEnv, until #599 lands.
+helm install fleans nightbaker/fleans \
+  --set 'extraEnv[0].name=Fleans__Streaming__Provider' \
+  --set 'extraEnv[0].value=Redis'
+
+# Azure Queue Storage — via extraEnv.
+helm install fleans nightbaker/fleans \
+  --set 'extraEnv[0].name=Fleans__Streaming__Provider' \
+  --set 'extraEnv[0].value=AzureQueue' \
+  --set 'extraEnv[1].name=Fleans__Streaming__AzureQueue__ConnectionString' \
+  --set 'extraEnv[1].value=<your-connection-string>'
+```
+
+</TabItem>
+</Tabs>
+
+(For the source-tree dev workflow — only relevant if you cloned the engine repo — see the engine `CLAUDE.md`'s *Things to Know* section for the AppHost-side `FLEANS_STREAMING_PROVIDER` knob.)
+
+### Provider notes
+
+**Redis (default):** Reuses the same Redis instance the engine already runs for clustering and `PubSubStore`, so stream events cost zero extra infrastructure. Uses the third-party [`Universley.OrleansContrib.StreamsProvider.Redis`](https://github.com/MichaelSL/Universley.OrleansContrib.StreamsProvider.Redis) package (MIT, Orleans 10.x-compatible), pinned in `Fleans.ServiceDefaults.csproj`. **Production requirement:** enable Redis persistence (AOF or RDB) — without it, a Redis restart loses in-flight messages (same caveat as `PubSubStore`). The chart's bundled `fleans-redis` enables AOF by default; see [Self-host with Helm](/fleans/guides/self-host-helm/) for the Redis subchart values.
+
+**Memory:** No external infrastructure. Drops in-flight events on silo restart — single-silo debug-only. Suitable for local dev and CI smoke tests; never for production.
+
+**Kafka:** Supply your own Kafka cluster — the chart's `streaming.kafka.brokers` value takes a Kafka bootstrap-server string. For an in-cluster Kafka, the [Bitnami Kafka Helm chart](https://github.com/bitnami/charts/tree/main/bitnami/kafka) is the conventional choice. The silo forwards `Fleans__Streaming__Provider=Kafka` + `Fleans__Streaming__Kafka__Brokers` to the Kafka producer.
+
+**AzureQueue:** Supply an Azure Queue Storage connection string — see [Microsoft's Azure Storage connection-string docs](https://learn.microsoft.com/azure/storage/common/storage-configure-connection-string) for the format. For local dev, run [Azurite](https://learn.microsoft.com/azure/storage/common/storage-use-azurite) as a sibling Compose service and point the connection string at it. The silo forwards `Fleans__Streaming__Provider=AzureQueue` + `Fleans__Streaming__AzureQueue__ConnectionString` to the Azure Queue producer.
 
 ### Connection multiplexer aliasing (Redis only)
 
