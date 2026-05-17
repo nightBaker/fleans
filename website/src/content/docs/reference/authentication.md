@@ -160,29 +160,19 @@ Auth on iff **both** `Authority` AND `ClientId` are non-empty (single source of 
 |-----|----------|---------|-------------|
 | `Authority` | Yes (to enable auth) | *(absent — auth disabled)* | OIDC issuer URL. |
 | `ClientId` | Yes (to enable auth) | *(absent)* | OAuth client id registered with the IdP. Must be a confidential client. |
-| `ClientSecret` | Yes when auth on | — | Confidential-client secret. Use `dotnet user-secrets` in dev; Aspire `auth-client-secret` parameter (`secret: true`) or env var `Authentication__ClientSecret` in prod. **Never commit.** |
+| `ClientSecret` | Yes when auth on | — | Confidential-client secret. Use `dotnet user-secrets` in dev; env var `Authentication__ClientSecret` (or a Secret/Key Vault binding) in prod. **Never commit.** |
 | `RequireHttpsMetadata` | No | `true` | Set to `false` only for local Keycloak dev mode (HTTP). |
 | `CookieExpireMinutes` | No | `60` | Sliding session cookie lifetime. Mirror the IdP's access-token / management-page session lifetime so admin sessions in the UI and tokens used against the API don't drift apart. |
 | `KnownProxies` | No | `[]` | Reverse-proxy IP addresses trusted to set `X-Forwarded-For` / `X-Forwarded-Proto`. Empty list = headers ignored. |
 | `KnownNetworks` | No | `[]` | Same as above but accepts CIDR ranges (e.g. `10.0.0.0/8`). |
 
-### Aspire wiring
+**Environment variable equivalent** (for Docker Compose or container deployments):
 
-`Fleans.Aspire/Program.cs` declares three optional parameters (always present, defaulting to empty strings) that are forwarded to `Fleans.Web` as env vars:
-
-```csharp
-var authAuthority    = builder.AddParameter("auth-authority", () => "");
-var authClientId     = builder.AddParameter("auth-client-id", () => "");
-var authClientSecret = builder.AddParameter("auth-client-secret", () => "", secret: true);
-
-builder.AddProject<Projects.Fleans_Web>("fleans-management")
-    .WithEnvironment("Authentication__Authority",   authAuthority)
-    .WithEnvironment("Authentication__ClientId",    authClientId)
-    .WithEnvironment("Authentication__ClientSecret", authClientSecret)
-    /* ... */;
+```bash
+Authentication__Authority=https://your-idp.example.com/realms/fleans
+Authentication__ClientId=fleans-web
+Authentication__ClientSecret=...  # source from a Secret/Key Vault binding in prod, not literal
 ```
-
-Operators set the parameters at run-time (Aspire CLI prompt, env vars, deployment manifest). When unset, `Fleans.Web` sees empty strings and falls into auth-disabled mode automatically.
 
 ### Behaviour when enabled
 
