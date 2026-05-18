@@ -99,7 +99,14 @@ A *custom task* is a `<bpmn:serviceTask type="…">` whose execution is supplied
 
 ## How to Add a New API Endpoint
 
-Add it to `Fleans.Api/Controllers/WorkflowController.cs`. DTOs go in `Fleans.ServiceDefaults/`.
+`WorkflowController` is split across partial files by concern — see the header comment at the top of `Fleans.Api/Controllers/WorkflowController.cs` for which partial owns which endpoint group:
+
+- **`WorkflowController.Definitions.cs`** — deploy, list definitions, list instances by key, disable/enable process.
+- **`WorkflowController.Execution.cs`** — start, message, signal, evaluate-conditions, complete-activity.
+- **`WorkflowController.UserTasks.cs`** — `tasks/*` endpoints (list, get, claim, unclaim, complete, fail, cancel) and the user-task `[LoggerMessage]` declarations.
+- **`WorkflowController.Instances.cs`** — instance state snapshot.
+
+Add the endpoint to the matching partial; keep `[ApiController]` and `[Route("[controller]")]` only on the header file. DTOs go in `Fleans.ServiceDefaults/DTOs/`.
 
 ## Architecture Principles
 
