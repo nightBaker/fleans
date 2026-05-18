@@ -1,3 +1,4 @@
+using System.Globalization;
 using Fleans.Streaming.AzureQueue;
 using Fleans.Streaming.Kafka;
 using Microsoft.Extensions.Configuration;
@@ -50,7 +51,7 @@ public static class FleanStreamingExtensions
             sp.GetRequiredKeyedService<IConnectionMultiplexer>("orleans-redis"));
 
         builder.Services.AddOptions<HashRingStreamQueueMapperOptions>(StreamProviderName)
-            .Configure(options => options.TotalQueueCount = 8);
+            .Configure<IConfiguration>((options, cfg) => options.TotalQueueCount = ReadRedisTotalQueueCount(cfg));
 
         builder.Services.AddOptions<SimpleQueueCacheOptions>(StreamProviderName);
 
@@ -63,5 +64,32 @@ public static class FleanStreamingExtensions
             });
 
         return builder.AddPersistentStreams(StreamProviderName, RedisStreamFactory.Create, null);
+    }
+
+    /// <summary>
+    /// Resolves the Redis Orleans-parallelism knob from <c>Fleans:Streaming:Redis:TotalQueueCount</c>:
+    /// returns <c>8</c> when absent; throws <see cref="ArgumentException"/> when the value is not a
+    /// parseable integer or is less than <c>1</c>. Bumping the count rehashes Stream IDs across queues
+    /// — expect in-flight stalls across the bump window (no formal drain procedure pre-v1; see
+    /// <c>reference/streaming.md</c> "Tuning throughput").
+    /// </summary>
+    public static int ReadRedisTotalQueueCount(IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        var raw = configuration.GetSection("Fleans:Streaming:Redis")["TotalQueueCount"];
+        if (raw is null) return 8;
+        if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var count))
+        {
+            throw new ArgumentException(
+                $"Fleans:Streaming:Redis:TotalQueueCount must be an integer (got '{raw}'). " +
+                "Set Fleans__Streaming__Redis__TotalQueueCount to a positive integer.");
+        }
+        if (count < 1)
+        {
+            throw new ArgumentException(
+                $"Fleans:Streaming:Redis:TotalQueueCount must be >= 1 (got {count}). " +
+                "Set Fleans__Streaming__Redis__TotalQueueCount to a positive integer.");
+        }
+        return count;
     }
 }

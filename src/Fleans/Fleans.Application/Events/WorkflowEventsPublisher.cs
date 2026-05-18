@@ -64,7 +64,11 @@ public partial class WorkflowEventsPublisher : Grain, IEventPublisher
                 break;
             case ExecuteCustomTaskEvent executeCustomTaskEvent:
 
-                var customTaskStreamId = StreamId.Create(WorkflowEventStreams.ExecuteCustomTaskStreamNamespace, executeCustomTaskEvent.WorkflowInstanceId.ToString("D"));
+                // Partition the namespace by TaskType so each plugin's subscriber grain class
+                // only sees its own traffic (eliminates the N×M filter-after-deliver fanout).
+                // See CLAUDE.md "Custom-task per-type stream namespace".
+                var customTaskNs = WorkflowEventStreams.GetExecuteCustomTaskNamespace(executeCustomTaskEvent.TaskType);
+                var customTaskStreamId = StreamId.Create(customTaskNs, executeCustomTaskEvent.WorkflowInstanceId.ToString("D"));
                 var customTaskStream = _streamProvider.GetStream<ExecuteCustomTaskEvent>(customTaskStreamId);
                 await customTaskStream.OnNextAsync(executeCustomTaskEvent);
                 break;
