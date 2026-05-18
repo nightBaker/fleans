@@ -59,7 +59,7 @@ readinessProbe:
   failureThreshold: 3
 ```
 
-`Aspire.Hosting.Kubernetes` does not yet emit these probes automatically — when you `aspire publish -t kubernetes`, you'll need to patch them onto the resulting `Deployment` manifests (or add a Kustomize overlay) before applying. See the [deploy guide][deploy] for the full publish-and-deploy flow.
+The Helm chart at [`charts/fleans/`](https://github.com/nightBaker/fleans/tree/main/charts/fleans) emits these probes on every workload (`fleans-core`, `fleans-web`, `fleans-worker`, `fleans-custom-worker`, `fleans-mcp`) automatically; raw manifests extracted via `helm template` preserve them. Hand-crafted manifests should follow the snippet above.
 
 ### Adding your own health check
 
@@ -219,13 +219,13 @@ The Orleans Dashboard ships with Fleans's Web app at `/dashboard`. It's a real-t
 
 #### Accessing it in development (no auth)
 
-When `Authentication` is unconfigured (the default `dotnet run --project Fleans.Aspire`), the dashboard is anonymously accessible:
+When `Authentication__Authority` is empty — the default for the Compose bundle and an unconfigured Helm install — the dashboard is anonymously accessible:
 
 ```
 https://localhost:<fleans-web-port>/dashboard
 ```
 
-The Aspire dashboard URL prints the `<fleans-web-port>` at startup. Click through to the Web service in the Aspire dashboard, then append `/dashboard` to the URL.
+The Compose bundle binds the Web admin UI to `localhost:8080` by default — see [Deployment / Path 1](/fleans/reference/deployment/#path-1--docker-compose). For Helm installs, follow your `Ingress` host (or `kubectl port-forward svc/fleans-web 8080:8080`).
 
 #### Accessing it under authentication
 
@@ -249,7 +249,7 @@ When `Fleans.Web` runs as more than one replica, **each replica serves its own `
 
 ### Grafana / Aspire dashboard
 
-When you publish via `aspire publish -t kubernetes`, the silos export OTLP to whatever collector you point them at. A reasonable starter Grafana board for Fleans graphs:
+In any production deploy (Compose bundle, Helm chart, raw `helm template` extract), the silos export OTLP to whatever collector you point them at. A reasonable starter Grafana board for Fleans graphs:
 
 - **Cluster health:** Orleans silo count over time (alert if it drops). 
 - **Request volume + error rate:** ASP.NET Core `http.server.request.duration` count + 5xx rate.
@@ -258,7 +258,7 @@ When you publish via `aspire publish -t kubernetes`, the silos export OTLP to wh
 - **Persistence latency:** `http.client.request.duration` filtered to the Postgres / Redis hostnames, p95 / p99.
 - **Outbound HTTP (REST Caller plugin):** `http.client.request.duration` filtered to non-infra hosts, error rate.
 
-For local dev, the Aspire dashboard (`dotnet run --project Fleans.Aspire`) already shows real-time metrics, traces, and logs without any extra wiring.
+For local dev, point the silos at any OTLP-compatible collector (e.g. the [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) running alongside the Compose stack) — no source-side wiring needed; `Fleans.ServiceDefaults`'s default OTLP exporter is on whenever `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
 
 ## Alerting
 

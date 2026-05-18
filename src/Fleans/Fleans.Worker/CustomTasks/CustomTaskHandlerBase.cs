@@ -12,18 +12,22 @@ using Orleans.Streams;
 namespace Fleans.Worker.CustomTasks;
 
 /// <summary>
-/// Base class for plugin-supplied custom-task handlers. Subscribes to the shared
-/// <c>events/ExecuteCustomTaskEvent</c> stream, filters incoming events by <c>TaskType</c>,
-/// resolves input mappings, invokes the plugin's <see cref="ExecuteAsync"/>, projects
-/// outputs, and calls <see cref="IWorkflowInstanceCallback.CompleteActivity"/> /
+/// Base class for plugin-supplied custom-task handlers. Subscribes to the per-type
+/// <c>events.ExecuteCustomTaskEvent.{TaskType}</c> stream (see
+/// <see cref="WorkflowEventStreams.GetExecuteCustomTaskNamespace"/>), resolves input
+/// mappings, invokes the plugin's <see cref="ExecuteAsync"/>, projects outputs, and
+/// calls <see cref="IWorkflowInstanceCallback.CompleteActivity"/> /
 /// <see cref="IWorkflowInstanceCallback.FailActivity"/> using the same shape as
 /// <c>WorkflowExecuteScriptEventHandler</c>.
 ///
-/// Plugin authors override <see cref="TaskType"/> and <see cref="ExecuteAsync"/>; the
-/// stream subscription, filtering, error path, and completion callback are all owned
-/// by the base.
+/// Plugin authors override <see cref="TaskType"/> and <see cref="ExecuteAsync"/>, and
+/// MUST declare <c>[ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.&lt;type&gt;")]</c>
+/// on the concrete subclass with a literal string matching <see cref="TaskType"/>.
+/// <c>AddCustomTaskPlugin&lt;T&gt;</c> validates this at registration time and throws on
+/// drift or duplicate registrations. The class-level attribute is intentionally absent —
+/// Orleans only walks the concrete grain class for <c>[ImplicitStreamSubscription]</c>
+/// (inheritance is not honored), so a base-class attribute would be misleading.
 /// </summary>
-[ImplicitStreamSubscription(WorkflowEventStreams.ExecuteCustomTaskStreamNamespace)]
 public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey, IAsyncObserver<ExecuteCustomTaskEvent>
 {
     private readonly ILogger _logger;
@@ -54,9 +58,12 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
         var streamProvider = this.GetStreamProvider(WorkflowEventStreams.StreamProvider);
-        // Stream key matches the grain's primary key — set by Orleans implicit-subscription
-        // dispatch to the workflow-instance Guid the publisher used.
-        var streamId = StreamId.Create(WorkflowEventStreams.ExecuteCustomTaskStreamNamespace, this.GetPrimaryKeyString());
+        // Stream namespace is per-TaskType; stream key matches the grain's primary key
+        // (set by Orleans implicit-subscription dispatch to the WorkflowInstanceId the
+        // publisher used). See CLAUDE.md "Custom-task per-type stream namespace".
+        var streamId = StreamId.Create(
+            WorkflowEventStreams.GetExecuteCustomTaskNamespace(this.TaskType),
+            this.GetPrimaryKeyString());
         var stream = streamProvider.GetStream<ExecuteCustomTaskEvent>(streamId);
 
         var handles = await stream.GetAllSubscriptionHandles();
@@ -72,7 +79,13 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
     public async Task OnNextAsync(ExecuteCustomTaskEvent item, StreamSequenceToken? token = null)
     {
         if (!string.Equals(item.TaskType, TaskType, StringComparison.OrdinalIgnoreCase))
+        {
+            // Unreachable under normal operation now that the namespace is per-TaskType.
+            // Surface any future misrouting (publisher bug, attribute drift) as a warning
+            // instead of a silent drop.
+            LogTaskTypeMismatch(item.TaskType, TaskType);
             return;
+        }
 
         using var scope = WorkflowLoggingContext.BeginWorkflowScope(
             _logger, item.WorkflowId, item.ProcessDefinitionId, item.WorkflowInstanceId, item.ActivityId);
@@ -116,7 +129,12 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
             catch (Exception failEx)
             {
                 LogFailActivityFailed(failEx, item.ActivityId);
-                throw; // let stream provider retry — domain idempotency guards handle duplicates
+                // Redelivery duplicates are absorbed by the HasActiveEntry guard at
+                // WorkflowInstance.cs:315/:351 (CompleteActivity / FailActivity), backed by
+                // the domain-level entry.IsCompleted early-return at WorkflowExecution.cs:2135/:2186.
+                // See CLAUDE.md Design Constraints "Stream-redelivery idempotency contract" and
+                // the #569 Phase 1 audit comment for the full per-call-site guarantee.
+                throw;
             }
         }
     }
@@ -156,4 +174,9 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
     [LoggerMessage(EventId = 4034, Level = LogLevel.Critical,
         Message = "FailActivity call itself failed for activity {ActivityId} — workflow may be stalled")]
     private partial void LogFailActivityFailed(Exception ex, string activityId);
+
+    [LoggerMessage(EventId = 4037, Level = LogLevel.Warning,
+        Message = "Custom-task handler received event for TaskType '{IncomingTaskType}' but this handler claims '{HandlerTaskType}' — dropping. " +
+                  "Indicates publisher/attribute drift; the per-type stream namespace should make this unreachable.")]
+    private partial void LogTaskTypeMismatch(string incomingTaskType, string handlerTaskType);
 }

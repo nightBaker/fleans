@@ -174,8 +174,20 @@ For the Azure run specifically, you'll need:
   (auto-register on first use).
 - Either local `az` CLI (Python 3.13 may have a `pyexpat` issue depending on platform; if so,
   use `mcr.microsoft.com/azure-cli` from Docker), or just the Azure portal.
-- The `fleans-api` container image (built locally with
-  `dotnet publish Fleans.Api/Fleans.Api.csproj /t:PublishContainer …`) pushed to ACR.
+- The released `fleans-api` container image, re-tagged into your ACR. `docker pull` the image
+  from `ghcr.io/nightbaker/fleans-api:<version>`, then `docker tag` + `docker push` it to your
+  ACR (e.g. `myacr.azurecr.io/fleans-api:<version>`). Optionally verify the upstream image via
+  `cosign verify` first (see [Self-host with Docker Compose](/fleans/guides/self-host-docker-compose/)
+  for the canonical command).
+
+  ```bash
+  VERSION=v0.1.0-beta
+  ACR=myacr.azurecr.io
+  docker pull ghcr.io/nightbaker/fleans-api:$VERSION
+  docker tag ghcr.io/nightbaker/fleans-api:$VERSION $ACR/fleans-api:$VERSION
+  docker push $ACR/fleans-api:$VERSION
+  ```
+
   **Add `fleans-web` only if you also want the management UI in Azure** — it isn't strictly
   needed for the tests themselves.
 

@@ -10,14 +10,14 @@ This is the recommended pattern for anything Fleans doesn't ship in the box: RES
 ## How it works
 
 1. **BPMN parsing.** The converter sees `<serviceTask type="rest-call">` (or the Camunda equivalent `<extensionElements><zeebe:taskDefinition type="rest-call"/></extensionElements>`) and produces a `CustomTaskActivity` carrying the task type and any `<zeebe:ioMapping>` declarations.
-2. **Activity emits an event.** When the workflow reaches the activity, it publishes `ExecuteCustomTaskEvent { TaskType, InputMappings, OutputMappings, VariablesId, … }` on the shared `events/ExecuteCustomTaskEvent` Orleans stream.
-3. **Plugin handlers fan out and self-filter.** Every plugin's `CustomTaskHandlerBase` subclass on every Worker silo receives the event via Orleans implicit-stream subscription. Each handler checks `if (item.TaskType != MyTaskType) return;` and only one plugin claims the event.
+2. **Activity emits an event.** When the workflow reaches the activity, it publishes `ExecuteCustomTaskEvent { TaskType, InputMappings, OutputMappings, VariablesId, … }` on the per-type Orleans stream `events.ExecuteCustomTaskEvent.{TaskType}` — partitioned by `TaskType` so each plugin's handler grain class only receives events it actually claims.
+3. **Plugin handler is dispatched directly.** Each plugin's `CustomTaskHandlerBase` subclass implicit-subscribes to its own per-type namespace (`[ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.<task-type>")]`), so Orleans activates only the matching plugin's grain. No filter-after-deliver waste: silos no longer deserialize events for plugins they don't host.
 4. **Plugin runs.** The base class resolves input mappings against the workflow's variable scope, calls your `ExecuteAsync(...)`, projects outputs against the result, then calls `IWorkflowInstanceGrain.CompleteActivity` (or `FailActivity` on exception).
 5. **Catalog tracks who's alive.** Each Worker silo announces its plugins to a Core-side `ICustomTaskCatalogGrain` at silo startup. The catalog reconciles every 30 s against `IManagementGrain.GetDetailedHosts()` and drops entries for silos no longer in the cluster. The management UI reads `GET /custom-tasks`.
 
 ## Authoring a plugin
 
-A plugin is a .NET class library deriving from `CustomTaskHandlerBase`. The base class provides stream subscription, task-type filtering, and the success/failure callback paths; the author overrides `TaskType` and `ExecuteAsync` only. Plugin metadata is registered via `services.AddCustomTaskPlugin<THandler>(taskType, displayName?, parameterSchema?)` from the Worker silo's host.
+A plugin is a .NET class library deriving from `CustomTaskHandlerBase`. The base class provides stream subscription, error handling, and the success/failure callback paths; the author overrides `TaskType` and `ExecuteAsync` only. The concrete subclass MUST carry `[ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.<task-type>")]` as a literal string — attribute arguments must be compile-time constants, so the literal cannot be derived from `TaskType` at the attribute site. Plugin metadata is registered via `services.AddCustomTaskPlugin<THandler>(taskType, displayName?, parameterSchema?)` from the Worker silo's host. The registration call validates at silo startup that (a) no other handler already claims `taskType` and (b) the `[ImplicitStreamSubscription]` string on `THandler` matches the per-type namespace — both throw `InvalidOperationException` immediately on drift.
 
 For a step-by-step tutorial — project setup, handler, schema, DI wiring, BPMN authoring, and troubleshooting — see [Writing custom-task plugins](/guides/writing-custom-tasks/).
 
@@ -148,7 +148,12 @@ The activity completes with `user` (the parsed JSON body) and `status` (the inte
 
 - Plugins are .NET assemblies referenced from the Worker silo's host project. Hot-loading is out of scope.
 - Per-plugin placement filters (route `rest-call` only to silos with that plugin) are out of scope; today the Worker placement director routes any `[WorkerPlacement]` grain to any worker silo. Operators choose topology by DI-registering only the plugins they want on each worker.
-- Per-task-type stream partitioning (one Orleans stream per `taskType`) is deferred — for now every plugin handler receives every event and discards mismatches with an `if (...) return;` early-out.
+
+## Upgrade note: per-type stream namespaces
+
+The publisher routes `ExecuteCustomTaskEvent` to `events.ExecuteCustomTaskEvent.{TaskType}` per the partitioning above. Pre-v1, an engine upgrade that introduces this change orphans any `ExecuteCustomTaskEvent`s already enqueued on the previous shared `events.ExecuteCustomTaskEvent` stream — no subscriber exists for them after rollout. Operators should expect any in-flight custom tasks across the upgrade window to stall; no formal drain procedure is shipped pre-v1.
+
+Plugin authors hosting from the [`fleans-custom-worker-example`](https://github.com/nightBaker/fleans-custom-worker-example) template need to update their handlers: each concrete `CustomTaskHandlerBase` subclass must carry `[ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.<task-type>")]` with a literal string matching its `TaskType`. The Worker host's `AddCustomTaskPlugin<T>(taskType, …)` call now throws `InvalidOperationException` at startup if the attribute is missing or drifted, or if two plugins claim the same `TaskType` — diagnose against the exception message.
 
 ## Hosting plugins outside the engine repo
 

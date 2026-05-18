@@ -1,7 +1,10 @@
+using System.Reflection;
+using Fleans.Application.Abstractions.Events;
 using Fleans.Application.CustomTasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Orleans.Runtime;
+using Orleans.Streams;
 
 namespace Fleans.Worker.CustomTasks;
 
@@ -28,6 +31,51 @@ public static class CustomTaskServiceCollectionExtensions
         where THandler : CustomTaskHandlerBase
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(taskType);
+
+        // Validation 1: duplicate-TaskType check. Two plugins on the same TaskType would
+        // both end up on the same per-type stream namespace and both fire on every event,
+        // defeating the fanout-elimination goal of the per-type-namespace design.
+        // Note: relies on AddSingleton(new …) (instance-based registration) — the supported
+        // entry point. Factory-form registrations would have null ImplementationInstance.
+        var duplicate = services
+            .Where(d => d.ServiceType == typeof(CustomTaskPluginDescriptor))
+            .Select(d => d.ImplementationInstance as CustomTaskPluginDescriptor)
+            .FirstOrDefault(d => d is not null && string.Equals(d.TaskType, taskType, StringComparison.OrdinalIgnoreCase));
+        if (duplicate is not null)
+        {
+            throw new InvalidOperationException(
+                $"Custom-task plugin with TaskType '{taskType}' is already registered. " +
+                $"Each TaskType may be claimed by at most one CustomTaskHandlerBase subclass.");
+        }
+
+        // Validation 2: attribute-presence + namespace-correctness on THandler. Orleans
+        // walks [ImplicitStreamSubscription] only on concrete grain classes (inherit:false
+        // matches that semantic), so a missing or drifted attribute means the plugin would
+        // never receive its events at runtime. Fail loudly at silo start instead.
+        //
+        // ImplicitStreamSubscriptionAttribute exposes its namespace string via the
+        // predicate-form constructor only; the literal-string overload stores it on a
+        // private field surfaced as an IStreamNamespacePredicate. CustomAttributeData
+        // gives direct access to the original constructor argument — that's what Orleans
+        // itself reads during grain-class discovery, so matching on it is byte-equivalent.
+        var expectedNs = WorkflowEventStreams.GetExecuteCustomTaskNamespace(taskType);
+        var declaredNamespaces = typeof(THandler)
+            .GetCustomAttributesData()
+            .Where(a => a.AttributeType == typeof(ImplicitStreamSubscriptionAttribute))
+            .Select(a => a.ConstructorArguments.Count > 0 ? a.ConstructorArguments[0].Value as string : null)
+            .Where(s => s is not null)
+            .Cast<string>()
+            .ToList();
+        if (!declaredNamespaces.Any(ns => string.Equals(ns, expectedNs, StringComparison.Ordinal)))
+        {
+            var found = declaredNamespaces.Count == 0
+                ? "(none)"
+                : string.Join(", ", declaredNamespaces.Select(ns => $"\"{ns}\""));
+            throw new InvalidOperationException(
+                $"{typeof(THandler).FullName} must declare " +
+                $"[ImplicitStreamSubscription(\"{expectedNs}\")] " +
+                $"(matching its TaskType \"{taskType}\"). Found attributes: [{found}].");
+        }
 
         services.AddSingleton(new CustomTaskPluginDescriptor(taskType, displayName, parameterSchema));
 
