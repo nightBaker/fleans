@@ -1,13 +1,31 @@
 using System.Text;
+using Fleans.Application;
 using Fleans.Application.QueryModels;
+using Fleans.Infrastructure.Bpmn;
 using Fleans.ServiceDefaults.DTOs;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 
 namespace Fleans.Api.Controllers
 {
-    public partial class WorkflowController
+    [ApiController]
+    [Route("[controller]")]
+    public class WorkflowDefinitionsController : ControllerBase
     {
+        private readonly IWorkflowCommandService _commandService;
+        private readonly IWorkflowQueryService _workflowQueryService;
+        private readonly IBpmnConverter _bpmnConverter;
+
+        public WorkflowDefinitionsController(
+            IWorkflowCommandService commandService,
+            IWorkflowQueryService workflowQueryService,
+            IBpmnConverter bpmnConverter)
+        {
+            _commandService = commandService;
+            _workflowQueryService = workflowQueryService;
+            _bpmnConverter = bpmnConverter;
+        }
+
         [EnableRateLimiting("workflow-mutation")]
         [HttpPost("deploy", Name = "DeployWorkflow")]
         public async Task<IActionResult> DeployWorkflow([FromBody] DeployBpmnRequest request)
@@ -29,7 +47,7 @@ namespace Fleans.Api.Controllers
         }
 
         [EnableRateLimiting("read")]
-        [HttpGet("definitions", Name = "ListDefinitions")]
+        [HttpGet(Name = "ListDefinitions")]
         public async Task<IActionResult> ListDefinitions(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20,
@@ -42,7 +60,7 @@ namespace Fleans.Api.Controllers
         }
 
         [EnableRateLimiting("read")]
-        [HttpGet("definitions/{key}/instances", Name = "ListInstancesByKey")]
+        [HttpGet("{key}/instances", Name = "ListInstancesByKey")]
         public async Task<IActionResult> ListInstancesByKey(
             string key,
             [FromQuery] int page = 1,
@@ -56,7 +74,7 @@ namespace Fleans.Api.Controllers
         }
 
         [EnableRateLimiting("read")]
-        [HttpGet("definitions/{key}/{version:int}/instances", Name = "ListInstancesByKeyAndVersion")]
+        [HttpGet("{key}/{version:int}/instances", Name = "ListInstancesByKeyAndVersion")]
         public async Task<IActionResult> ListInstancesByKeyAndVersion(
             string key, int version,
             [FromQuery] int page = 1,

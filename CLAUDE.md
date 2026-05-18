@@ -99,14 +99,18 @@ A *custom task* is a `<bpmn:serviceTask type="…">` whose execution is supplied
 
 ## How to Add a New API Endpoint
 
-`WorkflowController` is split across partial files by concern — see the header comment at the top of `Fleans.Api/Controllers/WorkflowController.cs` for which partial owns which endpoint group:
+The workflow REST surface is split across four separate controllers by concern, each with its own DI dependencies and `[Route("[controller]")]`:
 
-- **`WorkflowController.Definitions.cs`** — deploy, list definitions, list instances by key, disable/enable process.
-- **`WorkflowController.Execution.cs`** — start, message, signal, evaluate-conditions, complete-activity.
-- **`WorkflowController.UserTasks.cs`** — `tasks/*` endpoints (list, get, claim, unclaim, complete, fail, cancel) and the user-task `[LoggerMessage]` declarations.
-- **`WorkflowController.Instances.cs`** — instance state snapshot.
+| Controller | Route prefix | Endpoints |
+|---|---|---|
+| `WorkflowDefinitionsController` | `/WorkflowDefinitions` | deploy, list definitions, list instances by key, disable/enable process |
+| `WorkflowExecutionController` | `/WorkflowExecution` | start, message, signal, evaluate-conditions, complete-activity |
+| `UserTasksController` | `/UserTasks` | list, get, claim, unclaim, complete, fail, cancel (+ user-task `[LoggerMessage]` declarations) |
+| `WorkflowInstancesController` | `/WorkflowInstances` | instance state snapshot |
 
-Add the endpoint to the matching partial; keep `[ApiController]` and `[Route("[controller]")]` only on the header file. DTOs go in `Fleans.ServiceDefaults/DTOs/`.
+Add new endpoints to whichever controller's concern matches. Each controller takes only the services it needs (e.g., `WorkflowInstancesController` only depends on `IWorkflowQueryService`, not the full Command/Query/BpmnConverter triplet). DTOs go in `Fleans.ServiceDefaults/DTOs/`.
+
+**Breaking URL change vs. pre-#587:** the prior single `WorkflowController` exposed everything under `/Workflow/*`. The split moved each endpoint group to its own `/<ControllerName>/*` prefix. Existing consumers (self-host docs, manual test plans under `tests/manual/`) that hard-code `/workflow/*` need to be updated to the new prefixes.
 
 ## Architecture Principles
 

@@ -1,11 +1,21 @@
+using Fleans.Application;
 using Fleans.ServiceDefaults.DTOs;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 
 namespace Fleans.Api.Controllers
 {
-    public partial class WorkflowController
+    [ApiController]
+    [Route("[controller]")]
+    public class WorkflowExecutionController : ControllerBase
     {
+        private readonly IWorkflowCommandService _commandService;
+
+        public WorkflowExecutionController(IWorkflowCommandService commandService)
+        {
+            _commandService = commandService;
+        }
+
         [EnableRateLimiting("workflow-mutation")]
         [HttpPost("start", Name = "StartWorkflow")]
         public async Task<IActionResult> StartWorkflow([FromBody] StartWorkflowRequest request)

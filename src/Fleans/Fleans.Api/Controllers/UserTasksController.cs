@@ -1,3 +1,4 @@
+using Fleans.Application;
 using Fleans.Application.QueryModels;
 using Fleans.ServiceDefaults.DTOs;
 using Microsoft.AspNetCore.Mvc;
@@ -5,10 +6,26 @@ using Microsoft.AspNetCore.RateLimiting;
 
 namespace Fleans.Api.Controllers
 {
-    public partial class WorkflowController
+    [ApiController]
+    [Route("[controller]")]
+    public partial class UserTasksController : ControllerBase
     {
+        private readonly ILogger<UserTasksController> _logger;
+        private readonly IWorkflowCommandService _commandService;
+        private readonly IWorkflowQueryService _workflowQueryService;
+
+        public UserTasksController(
+            ILogger<UserTasksController> logger,
+            IWorkflowCommandService commandService,
+            IWorkflowQueryService workflowQueryService)
+        {
+            _logger = logger;
+            _commandService = commandService;
+            _workflowQueryService = workflowQueryService;
+        }
+
         [EnableRateLimiting("read")]
-        [HttpGet("tasks", Name = "GetPendingTasks")]
+        [HttpGet(Name = "GetPendingTasks")]
         public async Task<IActionResult> GetPendingTasks(
             [FromQuery] string? assignee = null,
             [FromQuery] string? candidateGroup = null,
@@ -23,7 +40,7 @@ namespace Fleans.Api.Controllers
         }
 
         [EnableRateLimiting("read")]
-        [HttpGet("tasks/{activityInstanceId:guid}", Name = "GetTask")]
+        [HttpGet("{activityInstanceId:guid}", Name = "GetTask")]
         public async Task<IActionResult> GetTask(Guid activityInstanceId)
         {
             var task = await _workflowQueryService.GetUserTask(activityInstanceId);
@@ -34,7 +51,7 @@ namespace Fleans.Api.Controllers
         }
 
         [EnableRateLimiting("task-operation")]
-        [HttpPost("tasks/{activityInstanceId:guid}/claim", Name = "ClaimTask")]
+        [HttpPost("{activityInstanceId:guid}/claim", Name = "ClaimTask")]
         public async Task<IActionResult> ClaimTask(Guid activityInstanceId, [FromBody] ClaimTaskRequest request)
         {
             if (request == null || string.IsNullOrWhiteSpace(request.UserId))
@@ -57,7 +74,7 @@ namespace Fleans.Api.Controllers
         }
 
         [EnableRateLimiting("task-operation")]
-        [HttpPost("tasks/{activityInstanceId:guid}/unclaim", Name = "UnclaimTask")]
+        [HttpPost("{activityInstanceId:guid}/unclaim", Name = "UnclaimTask")]
         public async Task<IActionResult> UnclaimTask(Guid activityInstanceId)
         {
             var task = await _workflowQueryService.GetUserTask(activityInstanceId);
@@ -70,7 +87,7 @@ namespace Fleans.Api.Controllers
         }
 
         [EnableRateLimiting("task-operation")]
-        [HttpPost("tasks/{activityInstanceId:guid}/complete", Name = "CompleteTask")]
+        [HttpPost("{activityInstanceId:guid}/complete", Name = "CompleteTask")]
         public async Task<IActionResult> CompleteTask(Guid activityInstanceId, [FromBody] CompleteTaskRequest request)
         {
             if (request == null || string.IsNullOrWhiteSpace(request.UserId))
@@ -96,7 +113,7 @@ namespace Fleans.Api.Controllers
         }
 
         [EnableRateLimiting("task-operation")]
-        [HttpPost("tasks/{activityInstanceId:guid}/fail", Name = "FailTask")]
+        [HttpPost("{activityInstanceId:guid}/fail", Name = "FailTask")]
         public async Task<IActionResult> FailTask(Guid activityInstanceId, [FromBody] FailTaskRequest request)
         {
             if (request == null || string.IsNullOrWhiteSpace(request.ErrorMessage))
@@ -117,7 +134,7 @@ namespace Fleans.Api.Controllers
         }
 
         [EnableRateLimiting("task-operation")]
-        [HttpPost("tasks/{activityInstanceId:guid}/cancel", Name = "CancelTask")]
+        [HttpPost("{activityInstanceId:guid}/cancel", Name = "CancelTask")]
         public async Task<IActionResult> CancelTask(Guid activityInstanceId, [FromBody] CancelTaskRequest? request)
         {
             var task = await _workflowQueryService.GetUserTask(activityInstanceId);
