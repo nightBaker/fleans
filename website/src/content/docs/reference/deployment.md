@@ -7,7 +7,7 @@ sidebar:
 
 Aspire is Fleans' development orchestrator — not a production runtime. To run Fleans in staging or production, you need different artifacts: a Docker Compose stack, Kubernetes manifests, or a set of services managed by your VM's process supervisor. This page walks through each path.
 
-> **Helm on Kubernetes:** if you control Kubernetes, the Helm chart at [`charts/fleans/`](https://github.com/nightBaker/fleans/tree/main/charts/fleans) is the recommended path. See [Self-Hosting on Kubernetes](/fleans/reference/self-hosting/) for the Helm-specific quick start. This page covers the **non-Helm** Kubernetes story (raw `aspire publish -t kubernetes`) for users who want manifests they can edit, GitOps-commit, or extend, plus the Docker Compose and bare-VM stories the Helm chart does not cover.
+> **Helm on Kubernetes:** if you control Kubernetes, the Helm chart published to `https://nightbaker.github.io/fleans` is the recommended path. See [Self-host with Helm](/fleans/guides/self-host-helm/) for the install walkthrough. This page covers (1) the released Docker Compose bundle, (2) raw Kubernetes manifests extracted from the Helm chart via `helm template` for GitOps users who want YAML they can commit and edit.
 
 ## Topology overview
 
@@ -47,50 +47,50 @@ Invalid values throw at startup. The simplest production topology is one or more
 
 ## Path 1 — Docker Compose
 
-The Aspire AppHost ships a Compose-target publisher. From `src/Fleans/`:
+The release pipeline attaches `docker-compose-v<TAG>.zip` to every GitHub Release. Download and unpack:
 
 ```bash
-cd src/Fleans
-aspire publish --project Fleans.Aspire -t docker-compose -o out/compose
+gh release download v<TAG> --repo nightBaker/fleans -p 'docker-compose-*.zip'
+unzip docker-compose-v<TAG>.zip -d fleans-compose
+cd fleans-compose
 ```
 
-Output is a self-contained `out/compose/` folder containing `compose.yaml`, an `.env` file with generated secrets, and the build context for each service. Inspect what was generated before you bring it up:
-
-```bash
-ls out/compose
-docker compose -f out/compose/compose.yaml config | head -100
-```
+The bundle ships a self-contained `compose.yaml`, an `.env` file with generated secrets, and a `docker-compose.override.yaml` (empty by default — use it for managed-Postgres / managed-Redis overrides per [§ Override managed Postgres / Redis](#override-managed-postgres--redis) below).
 
 Bring the stack up:
 
 ```bash
-docker compose -f out/compose/compose.yaml up -d
-docker compose -f out/compose/compose.yaml ps
+docker compose up -d
+docker compose ps
 ```
 
-Service URLs (default ports — confirm in the generated `compose.yaml`):
+Service URLs (default host ports from the post-processed bundle — confirm in `.env`):
 
-- API: <http://localhost:5000> (or whatever Aspire bound)
+- API: <http://localhost:8081>
 - Admin UI: <http://localhost:8080>
-- Orleans Dashboard: hosted inside the silo on the configured port
-- Health: `curl http://localhost:5000/alive`
+- MCP server: internal-only by default
+- Health: `curl http://localhost:8081/alive`
+
+For the full lifecycle walkthrough (`.env` tuning, persistence backups, upgrade path, troubleshooting) see [Self-host with Docker Compose](/fleans/guides/self-host-docker-compose/). The sub-sections below cover the topology overrides this reference page owns.
 
 ### Override managed Postgres / Redis
 
-The published Compose includes in-cluster `postgres` and `redis` services by default. To use managed services (RDS, ElastiCache, Cloud SQL, Memorystore, …):
+The bundled `compose.yaml` includes in-cluster `postgres` and `redis` services by default. To use managed services (RDS, ElastiCache, Cloud SQL, Memorystore, …), edit `docker-compose.override.yaml`:
 
-1. Remove the `postgres` and `redis` (or `orleans-redis`) service blocks from `out/compose/compose.yaml`.
-2. Drop the `depends_on` entries that reference them on `fleans-api` / `fleans-web` / `fleans-worker`.
+1. Override `postgres` and `redis` (or `orleans-redis`) with `deploy: { replicas: 0 }` so they don't start (or drop them from `compose.yaml` if you prefer the bundle to be source-of-truth — leaving the override file as your only diff is the recommended pattern).
+2. Drop the `depends_on` entries that reference them on `fleans-core` / `fleans-management` / `fleans-mcp`.
 3. Replace the auto-generated connection strings with the managed endpoints:
 
 ```yaml
+# docker-compose.override.yaml
 services:
-  fleans-api:
+  fleans-core:
     environment:
       - ConnectionStrings__fleans=Host=db.example.internal;Database=fleans;Username=fleans;Password=${PG_PASSWORD}
       - ConnectionStrings__fleans-query=Host=db-replica.example.internal;Database=fleans;Username=fleans_ro;Password=${PG_RO_PASSWORD}
       - ConnectionStrings__orleans-redis=redis.example.internal:6379,password=${REDIS_PASSWORD}
       - Persistence__Provider=Postgres
+  # repeat for fleans-management, fleans-mcp
 ```
 
 The connection-string keys are the canonical names the silos expect: `fleans` (write), `fleans-query` (optional read replica — falls back to `fleans` when absent), and `orleans-redis` (clustering + grain storage). `ConnectionStrings__` (double underscore) is the standard .NET environment-variable form of `ConnectionStrings:fleans`.
@@ -98,7 +98,7 @@ The connection-string keys are the canonical names the silos expect: `fleans` (w
 ### Scale workers
 
 ```bash
-docker compose -f out/compose/compose.yaml up -d --scale fleans-worker=3
+docker compose up -d --scale fleans-core=3
 ```
 
 Stateless worker grains are placed across all available `Worker`/`Combined` silos automatically — Orleans handles routing through the Redis cluster table.
@@ -106,36 +106,40 @@ Stateless worker grains are placed across all available `Worker`/`Combined` silo
 ### Health checks
 
 ```bash
-docker compose -f out/compose/compose.yaml exec fleans-api curl -fsS http://localhost:8080/alive
-docker compose -f out/compose/compose.yaml exec fleans-api curl -fsS http://localhost:8080/health
+docker compose exec fleans-core curl -fsS http://localhost:8080/alive
+docker compose exec fleans-core curl -fsS http://localhost:8080/health
 ```
 
 ### Logs and teardown
 
 ```bash
-docker compose -f out/compose/compose.yaml logs -f fleans-api
-docker compose -f out/compose/compose.yaml down               # keep volumes
-docker compose -f out/compose/compose.yaml down -v            # also drop data
+docker compose logs -f fleans-core
+docker compose down               # keep volumes
+docker compose down -v            # also drop data
 ```
 
-## Path 2 — Kubernetes (non-Helm, manifests via Aspire publish)
+## Path 2 — Kubernetes (raw manifests via `helm template`)
 
-> **Preview notice.** `aspire publish -t kubernetes` is powered by `Aspire.Hosting.Kubernetes`, which is currently a **preview-only NuGet package** (`13.2.3-preview.1.26217.6` at the time of writing — pinned alongside the rest of the Aspire 13.2.3 stack). Its output schema can change between Aspire releases. The Helm chart at [`charts/fleans/`](https://github.com/nightBaker/fleans/tree/main/charts/fleans) is the **supported** production path — see [Self-Hosting on Kubernetes](/fleans/reference/self-hosting/). Choose this section when you need raw manifests for GitOps, manual editing, or environments where Helm isn't an option.
+For GitOps repos or environments where Helm isn't on the cluster-side install path, extract raw manifests from the released chart using `helm template`. The output is plain YAML you can commit, diff, and edit by hand — but produced from a released artifact, so you stay on a maintained chart version.
 
 ### Generate manifests
 
 ```bash
-cd src/Fleans
-aspire publish --project Fleans.Aspire -t kubernetes -o out/k8s
+helm repo add nightbaker https://nightbaker.github.io/fleans
+helm repo update
+
+helm template fleans nightbaker/fleans -n fleans \
+  --set persistence.provider=Postgres \
+  > out/k8s/manifests.yaml
 ```
 
-Output is a folder of `.yaml` files: a `Deployment` + `Service` per Fleans process (`fleans-api`, `fleans-web`, `fleans-worker`, `fleans-custom-worker`, `fleans-mcp`), a `ConfigMap` per service, and `StatefulSet` resources for the in-cluster Postgres + Redis if you didn't disable them.
+The output contains a `Deployment` + `Service` for each Fleans workload (`fleans-core`, `fleans-management`, `fleans-mcp`), a `Secret` for the Postgres connection string, and `StatefulSet` resources for the in-cluster Postgres + Redis when the chart's `postgres.enabled` / `redis.enabled` defaults aren't overridden. Re-run `helm template` whenever you bump the chart version.
 
 ### Apply
 
 ```bash
 kubectl create namespace fleans
-kubectl apply -n fleans -f out/k8s/
+kubectl apply -n fleans -f out/k8s/manifests.yaml
 kubectl get -n fleans pods -w
 ```
 
@@ -143,39 +147,26 @@ Wait until every pod reaches `Running` with both containers `1/1`.
 
 ### Use managed Postgres and Redis
 
-For any production cluster, point the silos at managed databases instead of in-cluster StatefulSets:
-
-1. **Delete the StatefulSets** (`postgres.yaml`, `redis.yaml`, or whatever Aspire emitted) and their PVC claims from `out/k8s/`.
-2. **Create Secrets** with the connection strings:
+For any production cluster, point the silos at managed databases instead of in-cluster StatefulSets. Pass the override at `helm template` time:
 
 ```bash
-kubectl create secret generic fleans-pg \
-  --from-literal=connection-string='Host=db.example.internal;Database=fleans;Username=fleans;Password=...'
-kubectl create secret generic fleans-redis \
-  --from-literal=connection-string='redis.example.internal:6379,password=...'
+helm template fleans nightbaker/fleans -n fleans \
+  --set persistence.provider=Postgres \
+  --set postgres.enabled=true \
+  --set 'extraEnv[0].name=ConnectionStrings__fleans' \
+  --set 'extraEnv[0].value=Host=db.example.internal;Database=fleans;Username=fleans;Password=...' \
+  --set 'extraEnv[1].name=ConnectionStrings__orleans-redis' \
+  --set 'extraEnv[1].value=redis.example.internal:6379,password=...' \
+  > out/k8s/manifests.yaml
 ```
 
-3. **Patch the Deployments** to source the env vars from the Secrets:
-
-```yaml
-env:
-  - name: ConnectionStrings__fleans
-    valueFrom:
-      secretKeyRef:
-        name: fleans-pg
-        key: connection-string
-  - name: ConnectionStrings__orleans-redis
-    valueFrom:
-      secretKeyRef:
-        name: fleans-redis
-        key: connection-string
-  - name: Persistence__Provider
-    value: Postgres
-```
+:::caution
+The chart currently couples `persistence.provider=postgres` to the bundled-Postgres secret. Setting `postgres.enabled=false` while keeping `persistence.provider=Postgres` produces a pod stuck in `CreateContainerConfigError` referencing a non-existent secret. Until the chart fix lands ([#601](https://github.com/nightBaker/fleans/issues/601)), keep `postgres.enabled=true` even when supplying an external `ConnectionStrings__fleans` via `extraEnv` — the chart-managed Secret is harmlessly unused but the chart references it.
+:::
 
 ### Probes and resources
 
-Aspire emits placeholder probes; replace with the canonical Fleans probes on every silo + host:
+The chart emits the canonical Fleans probes on every silo + host. Confirm in the generated manifests:
 
 ```yaml
 livenessProbe:
@@ -193,91 +184,16 @@ readinessProbe:
 ### Scale and ingress
 
 ```bash
-kubectl -n fleans scale deployment fleans-worker --replicas=3
+kubectl -n fleans scale deployment fleans-core --replicas=3
 ```
 
-For external access to the admin UI, add an `Ingress` (or a `LoadBalancer` Service) targeting `fleans-web` on port 8080. The Helm chart's [Ingress template](https://github.com/nightBaker/fleans/blob/main/charts/fleans/templates/ingress.yaml) is a useful reference.
+For external access to the admin UI, add an `Ingress` (or a `LoadBalancer` Service) targeting `fleans-management` on port 8080. The chart ships an [Ingress template](https://github.com/nightBaker/fleans/blob/main/charts/fleans/templates/ingress.yaml) you can re-extract via `helm template ... --set ingress.enabled=true`.
 
-### Helm chart vs. raw manifests
+### When to prefer the chart directly
 
-| Question | Helm chart | Raw manifests |
-| --- | --- | --- |
-| Stable across Aspire releases? | Yes | No (preview pin) |
-| GitOps-friendly diff? | Values file | Full manifest |
-| Custom resource shapes? | Limited to chart's surface | Edit anything |
-| Built-in OIDC / TLS templates? | Yes | DIY |
-| Recommended? | **Yes** | When Helm isn't an option |
+`helm install` is the lower-friction path when Helm IS on the cluster-side install path — `helm upgrade` gracefully handles config changes; `helm rollback` exists. Use `helm template` only when (a) you commit YAML to a GitOps repo, (b) you need to hand-edit manifests Helm doesn't expose as values, or (c) Helm isn't available cluster-side. See [Self-host with Helm](/fleans/guides/self-host-helm/) for the install walkthrough.
 
-## Path 3 — Bare VM
-
-For users who can't or won't run a container runtime, build the services as plain .NET 10 binaries and let `systemd` (Linux) or Windows Service Manager keep them up.
-
-### Publish
-
-```bash
-cd src/Fleans
-dotnet publish Fleans.Api/Fleans.Api.csproj         -c Release -o /opt/fleans/api
-dotnet publish Fleans.Web/Fleans.Web.csproj         -c Release -o /opt/fleans/web
-dotnet publish Fleans.WorkerHost/Fleans.WorkerHost.csproj -c Release -o /opt/fleans/worker
-dotnet publish Fleans.Mcp/Fleans.Mcp.csproj         -c Release -o /opt/fleans/mcp
-```
-
-> **Aspire-free path.** This route uses raw `dotnet publish` only — no Aspire CLI required at deploy time. Per-service `dotnet publish /t:PublishContainer` is also Aspire-free if you want OCI images on the VM (`fleans-api:0.1.0` etc.) without orchestrator output. Only the Docker Compose and Kubernetes paths above need `aspire publish` to materialise multi-service manifests.
-
-### systemd unit — Fleans.Api (Core silo)
-
-Save as `/etc/systemd/system/fleans-api.service`:
-
-```ini
-[Unit]
-Description=Fleans API (Orleans Core silo)
-After=network-online.target redis.service postgresql.service
-Wants=network-online.target
-
-[Service]
-Type=notify
-User=fleans
-Group=fleans
-WorkingDirectory=/opt/fleans/api
-ExecStart=/usr/bin/dotnet /opt/fleans/api/Fleans.Api.dll
-Restart=always
-RestartSec=10
-KillSignal=SIGINT
-SyslogIdentifier=fleans-api
-
-# .NET runtime
-Environment=DOTNET_PRINT_TELEMETRY_MESSAGE=false
-Environment=ASPNETCORE_URLS=http://0.0.0.0:8080
-
-# Fleans config
-Environment=Fleans__Role=Core
-Environment=Persistence__Provider=Postgres
-Environment=ConnectionStrings__fleans=Host=db.internal;Database=fleans;Username=fleans;Password=__PG_PWD__
-Environment=ConnectionStrings__fleans-query=Host=db-replica.internal;Database=fleans;Username=fleans_ro;Password=__PG_RO_PWD__
-Environment=ConnectionStrings__orleans-redis=redis.internal:6379,password=__REDIS_PWD__
-
-# Optional: streaming
-# Environment=Fleans__Streaming__Provider=Kafka
-# Environment=Fleans__Streaming__Kafka__Brokers=kafka1.internal:9092,kafka2.internal:9092
-
-# Optional: API auth (any OIDC provider)
-# Environment=Authentication__Authority=https://idp.example.com/realms/fleans
-# Environment=Authentication__Audience=fleans-api
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Repeat for `fleans-web`, `fleans-worker`, and `fleans-mcp` (different `WorkingDirectory`, `ExecStart`, and `Description`; same env block; `Fleans__Role=Worker` for the worker; web/mcp don't read `Fleans__Role`). Enable and start:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now fleans-api fleans-web fleans-worker fleans-mcp
-sudo systemctl status fleans-api
-journalctl -u fleans-api -f
-```
-
-### Reverse proxy (nginx)
+## Reverse proxy and TLS termination
 
 Terminate TLS at nginx (or Caddy, HAProxy, Traefik) and forward to the admin UI / API:
 
@@ -299,7 +215,7 @@ server {
   }
 
   location /api/ {
-    proxy_pass http://127.0.0.1:5000/;       # Fleans.Api
+    proxy_pass http://127.0.0.1:8081/;       # Fleans.Api
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
@@ -308,6 +224,10 @@ server {
 ```
 
 When `Fleans.Web` runs behind a TLS-terminating proxy, set the `KnownProxies` / `KnownNetworks` allowlist (see [Authentication](/fleans/reference/authentication/)) so OIDC redirect URIs are built from the public host.
+
+### Containerless bare-VM hosts
+
+The engine ships only OCI container images and the Helm chart. To run on a bare VM without a container runtime, the supported path is to run the released images under `podman` or rootless `docker` driven by systemd — once the container is launched, the rest of this page applies. The engine does not publish standalone `.tar.gz` binaries.
 
 ## Configuration reference
 
@@ -396,7 +316,9 @@ PostgreSQL: migrations apply automatically on `Fleans.Api` startup via `MigrateA
 
 ## See also
 
-- [Self-Hosting on Kubernetes](/fleans/reference/self-hosting/) — Helm chart path for K8s.
+- [Self-host with Docker Compose](/fleans/guides/self-host-docker-compose/) — full Compose install walkthrough (download, run, `.env`, persistence, upgrade, troubleshooting).
+- [Self-host with Helm](/fleans/guides/self-host-helm/) — Helm install walkthrough (verify chart + images, `values.yaml` reference, production checklist).
+- [Self-Hosting on Kubernetes](/fleans/reference/self-hosting/) — Helm-specific quick start and chart values reference.
 - [Persistence](/fleans/reference/persistence/) — SQLite vs PostgreSQL provider config and migration model.
 - [Streaming](/fleans/reference/streaming/) — Memory vs Kafka provider config and at-least-once semantics.
 - [Authentication](/fleans/reference/authentication/) — OIDC + JWT setup for API and admin UI, reverse-proxy notes.
