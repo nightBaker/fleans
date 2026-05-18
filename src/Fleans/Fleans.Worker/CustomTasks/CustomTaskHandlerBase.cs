@@ -33,6 +33,11 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
     private readonly ILogger _logger;
     private readonly IGrainFactory _grainFactory;
 
+    // Cancel-only — no Timer, no unmanaged handles to dispose. GC reclaims with the grain
+    // instance after deactivation. If a future change adds CancelAfter / linked-with-timeout,
+    // revisit Dispose semantics (CTS lazily allocates a Timer on those paths).
+    private CancellationTokenSource? _grainLifetimeCts;
+
     protected CustomTaskHandlerBase(ILogger logger, IGrainFactory grainFactory)
     {
         _logger = logger;
@@ -57,6 +62,8 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
 
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
+        _grainLifetimeCts = new CancellationTokenSource();
+
         var streamProvider = this.GetStreamProvider(WorkflowEventStreams.StreamProvider);
         // Stream namespace is per-TaskType; stream key matches the grain's primary key
         // (set by Orleans implicit-subscription dispatch to the WorkflowInstanceId the
@@ -74,6 +81,15 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
         LogActivated(siloDetails.Name, this.GetPrimaryKeyString());
 
         await base.OnActivateAsync(cancellationToken);
+    }
+
+    public override Task OnDeactivateAsync(DeactivationReason reason, CancellationToken cancellationToken)
+    {
+        // Cancel propagates to the token threaded into ExecuteAsync. Orleans is turn-based per
+        // activation — no two methods on the same activation interleave at sub-`await` granularity
+        // — so the `when` filter in OnNextAsync sees a consistent _grainLifetimeCts state.
+        _grainLifetimeCts?.Cancel();
+        return base.OnDeactivateAsync(reason, cancellationToken);
     }
 
     public async Task OnNextAsync(ExecuteCustomTaskEvent item, StreamSequenceToken? token = null)
@@ -110,7 +126,7 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
                 item.ActivityId,
                 item.TaskType);
 
-            var pluginResult = await ExecuteAsync(resolved, variables, context, CancellationToken.None);
+            var pluginResult = await ExecuteAsync(resolved, variables, context, _grainLifetimeCts!.Token);
 
             var outputs = new ExpandoObject();
             var outputsDict = (IDictionary<string, object?>)outputs;
@@ -118,6 +134,14 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
                 outputsDict[om.Target] = MappingResolver.Resolve(om.Source, pluginResult);
 
             await workflowInstance.CompleteActivity(item.ActivityId, item.ActivityInstanceId, outputs);
+        }
+        catch (OperationCanceledException) when (_grainLifetimeCts?.IsCancellationRequested == true)
+        {
+            // Our cancellation (grain deactivating). Re-throw so the stream provider redelivers
+            // after the grain reactivates elsewhere. Do NOT call FailActivity — the activity
+            // is still live and the workflow expects the redelivery to complete it.
+            LogPluginCancelledOnDeactivation(item.ActivityId, item.TaskType);
+            throw;
         }
         catch (Exception ex)
         {
@@ -174,6 +198,10 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
     [LoggerMessage(EventId = 4034, Level = LogLevel.Critical,
         Message = "FailActivity call itself failed for activity {ActivityId} — workflow may be stalled")]
     private partial void LogFailActivityFailed(Exception ex, string activityId);
+
+    [LoggerMessage(EventId = 4050, Level = LogLevel.Information,
+        Message = "Custom-task plugin {TaskType} cancelled on grain deactivation for activity {ActivityId} — stream provider will redeliver after reactivation")]
+    private partial void LogPluginCancelledOnDeactivation(string activityId, string taskType);
 
     [LoggerMessage(EventId = 4037, Level = LogLevel.Warning,
         Message = "Custom-task handler received event for TaskType '{IncomingTaskType}' but this handler claims '{HandlerTaskType}' — dropping. " +
