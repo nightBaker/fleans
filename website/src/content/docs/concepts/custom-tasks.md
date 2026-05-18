@@ -137,6 +137,8 @@ Start the workflow with the variables that populate the inputs:
 
 The activity completes with `user` (the parsed JSON body) and `status` (the integer status code) merged into the workflow scope. Author can route subsequent gateways on `status`.
 
+**Authoring in the editor.** When you select a plugin on a `<bpmn:serviceTask>` in `/editor`, the properties panel renders typed input fields driven by the plugin's `CustomTaskParameterSchema` (so for REST Caller you see `URL`, `Method`, `Timeout`, …). **Output mappings stay free-form** — the schema doesn't enumerate possible outputs because plugin results are dynamic (HTTP response bodies, SQL query shapes, etc.). Click *Add Output Mapping* to capture any key the plugin returns. By framework convention, plugin handlers expose their result under the reserved `__response` key (see the *I/O mappings* section above for the rules); the worked example uses `source="=__response.body"` / `source="=__response.statusCode"` for that reason.
+
 ### v1 limitations
 
 - `headers` and `successCodes` (Map / List parameters) can only come from workflow variables. The mapping grammar doesn't support literal `=[200, 404]` or `={"X-Foo":"bar"}` syntax in BPMN. Authors who need static values seed them via `POST /Workflow/start` `Variables` or build them in a preceding `<scriptTask>`. The management UI editor (sub-issue C) is the long-term fix.

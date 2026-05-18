@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+                  xmlns:fleans="https://fleans.io/schema/bpmn/1.0"
+                  id="Definitions_RestOutputMapping"
+                  targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="rest-output-mapping" name="REST Output Mapping" isExecutable="true">
+    <bpmn:startEvent id="StartEvent_1" name="Start">
+      <bpmn:outgoing>Flow_Start_Rest</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:serviceTask id="FetchSlideshow" name="Fetch Slideshow">
+      <bpmn:extensionElements>
+        <fleans:TaskDefinition type="rest-call" />
+        <zeebe:ioMapping>
+          <zeebe:input  source="https://httpbin.org/json" target="url" />
+          <zeebe:input  source="GET"                       target="method" />
+          <zeebe:input  source="10"                        target="timeoutSec" />
+          <zeebe:output source="=__response.body"          target="responseBody" />
+          <zeebe:output source="=__response.statusCode"    target="status" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_Start_Rest</bpmn:incoming>
+      <bpmn:outgoing>Flow_Rest_End</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="EndEvent_1" name="End">
+      <bpmn:incoming>Flow_Rest_End</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_Start_Rest" sourceRef="StartEvent_1" targetRef="FetchSlideshow" />
+    <bpmn:sequenceFlow id="Flow_Rest_End"   sourceRef="FetchSlideshow" targetRef="EndEvent_1" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="rest-output-mapping">
+      <bpmndi:BPMNShape id="StartEvent_1_di" bpmnElement="StartEvent_1">
+        <dc:Bounds x="172" y="92" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="FetchSlideshow_di" bpmnElement="FetchSlideshow">
+        <dc:Bounds x="260" y="70" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_1_di" bpmnElement="EndEvent_1">
+        <dc:Bounds x="412" y="92" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_Start_Rest_di" bpmnElement="Flow_Start_Rest">
+        <di:waypoint x="208" y="110" />
+        <di:waypoint x="260" y="110" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Rest_End_di" bpmnElement="Flow_Rest_End">
+        <di:waypoint x="360" y="110" />
+        <di:waypoint x="412" y="110" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

@@ -468,7 +468,7 @@
                                 The workflow may hang if no plugin claims this task type at runtime.
                             </FluentMessageBar>
                             <FluentMessageBar Intent="MessageIntent.Info" Class="margin-top-8">
-                                Showing raw IO mappings from BPMN. Edits create <code>fleans:InputMapping</code> elements alongside any existing <code>zeebe:ioMapping</code> container.
+                                Showing raw IO mappings from BPMN. Edits create <code>fleans:InputMapping</code> / <code>fleans:OutputMapping</code> elements alongside any existing <code>zeebe:ioMapping</code> container.
                             </FluentMessageBar>
                             <div>
                                 <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Input Mappings</FluentLabel>
@@ -493,29 +493,6 @@
                                     <FluentButton Appearance="Appearance.Outline" OnClick="@(() => AddMapping("input"))">Add Input Mapping</FluentButton>
                                 }
                             </div>
-                            <div>
-                                <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Output Mappings</FluentLabel>
-                                @for (var i = 0; i < Element.OutputMappings.Count; i++)
-                                {
-                                    var index = i;
-                                    <FluentStack Orientation="Orientation.Horizontal" Gap="4px" Style="align-items: end;">
-                                        <FluentTextField Value="@Element.OutputMappings[index].Source"
-                                                         @onchange="@(e => OnMappingSourceChange(e, "output", index))"
-                                                         Disabled="@ReadOnly" Placeholder="Source" Style="flex: 1;" />
-                                        <FluentTextField Value="@Element.OutputMappings[index].Target"
-                                                         @onchange="@(e => OnMappingTargetChange(e, "output", index))"
-                                                         Disabled="@ReadOnly" Placeholder="Target" Style="flex: 1;" />
-                                        @if (!ReadOnly)
-                                        {
-                                            <FluentButton Appearance="Appearance.Outline" OnClick="@(() => RemoveMapping("output", index))">Remove</FluentButton>
-                                        }
-                                    </FluentStack>
-                                }
-                                @if (!ReadOnly)
-                                {
-                                    <FluentButton Appearance="Appearance.Outline" OnClick="@(() => AddMapping("output"))">Add Output Mapping</FluentButton>
-                                }
-                            </div>
                         }
                     }
                 </div>
@@ -526,13 +503,49 @@
                                                Values="@currentParameterValues"
                                                OnInputChanged="OnParameterChanged" />
                 }
+
+                @* Output Mappings stay free-form — CustomTaskParameterSchema models inputs only,
+                   so even when a typed parameter editor renders above, outputs need a raw editor.
+                   Rendered whenever a plugin is selected. *@
+                @if (!string.IsNullOrEmpty(currentPluginType))
+                {
+                    @if (currentSchema is not null)
+                    {
+                        <FluentMessageBar Intent="MessageIntent.Info" Class="margin-top-8">
+                            Outputs are free-form — declare which keys from the plugin's response to capture as workflow variables. By framework convention, plugin handlers expose their result under the reserved <code>__response</code> key (e.g. <code>source="=__response.body"</code>, <code>target="responseBody"</code>).
+                        </FluentMessageBar>
+                    }
+                    <div>
+                        <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Output Mappings</FluentLabel>
+                        @for (var i = 0; i < Element.OutputMappings.Count; i++)
+                        {
+                            var index = i;
+                            <FluentStack Orientation="Orientation.Horizontal" Gap="4px" Style="align-items: end;">
+                                <FluentTextField Value="@Element.OutputMappings[index].Source"
+                                                 @onchange="@(e => OnMappingSourceChange(e, "output", index))"
+                                                 Disabled="@ReadOnly" Placeholder="Source" Style="flex: 1;" />
+                                <FluentTextField Value="@Element.OutputMappings[index].Target"
+                                                 @onchange="@(e => OnMappingTargetChange(e, "output", index))"
+                                                 Disabled="@ReadOnly" Placeholder="Target" Style="flex: 1;" />
+                                @if (!ReadOnly)
+                                {
+                                    <FluentButton Appearance="Appearance.Outline" OnClick="@(() => RemoveMapping("output", index))">Remove</FluentButton>
+                                }
+                            </FluentStack>
+                        }
+                        @if (!ReadOnly)
+                        {
+                            <FluentButton Appearance="Appearance.Outline" OnClick="@(() => AddMapping("output"))">Add Output Mapping</FluentButton>
+                        }
+                    </div>
+                }
             }
 
             <FluentDialog @ref="confirmReplaceDialog" Hidden="true" Modal="true" TrapFocus="true">
                 <FluentDialogHeader Visible="true">Replace plugin?</FluentDialogHeader>
                 <FluentDialogBody>
                     <FluentLabel Typo="Typography.Body">
-                        Existing parameters will be cleared because targets don't match between plugins.
+                        Switching plugins will clear all parameter values and output mappings on this service task. Continue?
                     </FluentLabel>
                 </FluentDialogBody>
                 <FluentDialogFooter>
@@ -782,9 +795,13 @@
         var newType = e.Value?.ToString();
         if (string.IsNullOrEmpty(newType) || newType == currentPluginType) return;
 
-        if (!string.IsNullOrEmpty(currentPluginType) && currentParameterValues.Count > 0)
+        if (!string.IsNullOrEmpty(currentPluginType)
+            && (currentParameterValues.Count > 0 || Element.OutputMappings.Count > 0))
         {
-            // Confirm before discarding existing parameters.
+            // Confirm before discarding existing parameters or output mappings.
+            // setServiceTaskType (JS) only swaps the TaskDefinition; without this gate,
+            // outputs would silently survive a plugin switch and end up shaped for the
+            // previous plugin's response — worse than a wipe. See #585.
             pendingPluginType = newType;
             confirmReplaceDialog?.Show();
             return;
