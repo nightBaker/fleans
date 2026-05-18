@@ -84,8 +84,7 @@
             {
                 isLoading = true;
                 errorMessage = null;
-                StateHasChanged();
-
+                
                 var sortString = BuildSortString(request);
                 var page = new PageRequest(
                     Page: (request.StartIndex / pagination.ItemsPerPage) + 1,
@@ -108,7 +107,6 @@
                 Logger.LogError(ex, "Error loading instances for {Key}", ProcessDefinitionKey);
                 errorMessage = $"Failed to load instances: {ex.Message}";
                 isLoading = false;
-                StateHasChanged();
                 return GridItemsProviderResult.From(
                     new List<WorkflowInstanceInfo>(), 0);
             }
