@@ -1,22 +1,11 @@
 ---
 title: Configuration
-description: Canonical reference for Fleans configuration keys and their environment-variable equivalents — covers the .NET hierarchical naming rule and the two-tier model (Aspire dev knobs vs runtime config keys).
+description: Canonical reference for Fleans configuration keys and their environment-variable equivalents — covers the .NET hierarchical naming rule and the production runtime-key surface.
 sidebar:
   order: 0
 ---
 
-{/* drift-guard:
-  - Fleans.Api/Program.cs:28,36,52,65 (Authentication:Authority, Authentication:Audience, Fleans:Role, ConnectionStrings:orleans-redis)
-  - Fleans.Web/Program.cs:55,56,82 (Authentication:Authority, ClientId, ClientSecret)
-  - Fleans.WorkerHost/Program.cs:22,24,27,36 (Fleans:Role, ConnectionStrings:orleans-redis)
-  - Fleans.CustomWorkerHost/Program.cs:19,21,24,33 (Fleans:Role, ConnectionStrings:orleans-redis)
-  - Fleans.ServiceDefaults/FleansPersistenceExtensions.cs:23,29,32,38,39 (Persistence:Provider, ConnectionStrings:fleans, ConnectionStrings:fleans-query, FLEANS_SQLITE_CONNECTION, FLEANS_QUERY_CONNECTION)
-  - Fleans.ServiceDefaults/FleanStreamingExtensions.cs:18,25 (Fleans:Streaming:Provider, Fleans:Streaming:Kafka section binding)
-  - Fleans.Streaming.Kafka/KafkaStreamingOptions.cs:8 (Brokers property)
-  - Fleans.Aspire/Program.cs:10,15,76,77,95,96,106,109,122-124,151,166,174 (Aspire-only knobs + WithEnvironment forwarding)
-  pinned at branch=docs/403-config-reference SHA=329b0f3; refresh if any of the above change */}
-
-This page is the canonical lookup for every Fleans configuration key, what it does, where the value is read from in source, and which environment variable equivalent operators set on a container or systemd unit. If you're trying to figure out why setting `FLEANS_PERSISTENCE_PROVIDER` on a production silo doesn't work, or whether `Authentication__ClientId` belongs on the API or the Web host, this is the right page.
+This page is the canonical lookup for every Fleans configuration key, what it does, and which environment variable equivalent operators set on a container or systemd unit. If you're trying to figure out why `Persistence__Provider` isn't taking effect on a production silo, or whether `Authentication__ClientId` belongs on the API or the Web host, this is the right page.
 
 ## The naming rule
 
@@ -36,43 +25,15 @@ env var:             Fleans__Role=Worker dotnet run
 
 For all keys below, the column "Env var" shows the double-underscore form; the column "Config key" shows the canonical colon form you'd put in `appsettings.json`.
 
-## Two tiers, two naming conventions
+## Configuration keys
 
-Fleans has **two distinct families of configuration values**, and they look different on purpose:
-
-| Tier | Naming | Who reads them | Purpose |
-| --- | --- | --- | --- |
-| **Tier 1** — *Aspire / SQLite-mode dev knobs* | `FLEANS_X` (uppercase, single underscore) | `Fleans.Aspire/Program.cs` (provisioning) + SQLite branch of `FleansPersistenceExtensions.cs` (runtime) | Convenience switches for `dotnet run --project Fleans.Aspire` and SQLite-mode dev silos. |
-| **Tier 2** — *Runtime configuration keys* | `Fleans__X` / `ConnectionStrings__X` / `Authentication__X` / `Persistence__X` (PascalCase, double underscore) | Every silo's `Program.cs` directly via `builder.Configuration["A:B"]` | The canonical production form. Used by docker-compose, k8s, and systemd deployments. |
-
-If you're deploying to production, you'll set Tier 2 keys. If you're running `dotnet run --project Fleans.Aspire` for local development, Tier 1 knobs are the convenience layer that drive Aspire's container-provisioning step (which then forwards Tier 2 env vars to the silos via `WithEnvironment`).
-
-## Tier 1 — Aspire / SQLite-mode dev knobs
-
-These keys are read with the literal `FLEANS_X` form; they don't map onto any `appsettings.json` hierarchy. The first two control what Aspire provisions; the next two are the SQLite connection strings that `Fleans.ServiceDefaults` reads at runtime when SQLite is the active provider; `FLEANS_ROLE` overrides the role label Aspire stamps on `fleans-core`; the last is a test-only flag.
-
-| Env var | Read at | Effect |
-| --- | --- | --- |
-| `FLEANS_PERSISTENCE_PROVIDER` | `Fleans.Aspire/Program.cs:10` | `Sqlite` (default) or `Postgres` — controls whether Aspire provisions a Postgres container and forwards `Persistence__Provider=Postgres` to the silos. Read **only** by the Aspire AppHost; setting it on a self-hosted silo does nothing — use `Persistence__Provider` instead. |
-| `FLEANS_STREAMING_PROVIDER` | `Fleans.Aspire/Program.cs:49` | `Redis` (default — reuses the existing `orleans-redis` container, no extra infrastructure), `Memory` (single-silo debug-only), `Kafka` (separate Kafka cluster), or `AzureQueue` (Azurite/Azure Storage). Read **only** by the Aspire AppHost; the silo-side equivalent is `Fleans__Streaming__Provider`. |
-| `FLEANS_SQLITE_CONNECTION` | `Fleans.ServiceDefaults/FleansPersistenceExtensions.cs:38` | SQLite write-side connection string. Read by every silo when `Persistence:Provider=Sqlite`. Defaults to `DataSource=fleans-dev.db`. |
-| `FLEANS_QUERY_CONNECTION` | `Fleans.ServiceDefaults/FleansPersistenceExtensions.cs:39` | SQLite read-replica connection string. Optional; falls back to the write connection when unset. |
-| `FLEANS_ROLE` | `Fleans.Aspire/Program.cs:106` | Overrides the Aspire-default `Fleans__Role` injection on `fleans-core`. Default: `Combined` in dev mode (`dotnet run --project Fleans.Aspire`), `Core` in publish mode (`aspire publish ...`) — the publish-mode default matches the Helm chart's `deployment-core.yaml`. Useful for testing the Core/Worker placement split locally without editing source. |
-| `FLEANS_PG_TESTS=1` | EF / Testcontainers tests | When set, `dotnet test` runs the parametrised `[DataRow(PersistenceProvider.Postgres)]` rows against a Testcontainers-managed Postgres image. Without it, those rows surface as `Inconclusive`. |
-
-:::note
-The `FLEANS_X` naming is historical. Two of the five (`FLEANS_PERSISTENCE_PROVIDER`, `FLEANS_STREAMING_PROVIDER`) are strictly Aspire opt-ins. The two SQLite connection strings are read at runtime by silo code in the SQLite branch — but production deployments use Postgres + `ConnectionStrings__fleans` instead, so they don't typically appear there.
-:::
-
-## Tier 2 — Runtime configuration keys
-
-These are the keys every production silo reads at startup. The "Read at" column points to the exact line in source where the value is consumed; if that line moves or the key is renamed, the drift-guard at the top of this page flags the doc as stale.
+These are the keys every production silo reads at startup.
 
 ### Silo role
 
 | Env var | Config key | Read at | Default |
 | --- | --- | --- | --- |
-| `Fleans__Role` | `Fleans:Role` | `Fleans.Api/Program.cs:52`, `Fleans.WorkerHost/Program.cs:27`, `Fleans.CustomWorkerHost/Program.cs:24` | `"Combined"` (Api), `"Worker"` (WorkerHost / CustomWorkerHost — defaulted at startup if absent) |
+| `Fleans__Role` | `Fleans:Role` | `Fleans.Api`, `Fleans.WorkerHost`, `Fleans.CustomWorkerHost` | `"Combined"` (Api), `"Worker"` (WorkerHost / CustomWorkerHost — defaulted at startup if absent) |
 
 Allowed values: `Core`, `Worker`, `Combined` (case-insensitive). Invalid values throw at startup. The role is stamped into the Orleans `SiloName` as `{role}-{machine}-{guid}`, visible in the Orleans Dashboard's silo membership page.
 
@@ -80,8 +41,8 @@ Allowed values: `Core`, `Worker`, `Combined` (case-insensitive). Invalid values 
 
 | Env var | Config key | Read at | Default |
 | --- | --- | --- | --- |
-| `Persistence__Provider` | `Persistence:Provider` | `Fleans.ServiceDefaults/FleansPersistenceExtensions.cs:23` | `"Sqlite"` (case-insensitive; accepts `Sqlite` or `Postgres`) |
-| `Persistence__MaxEventsPerLoad` | `Persistence:MaxEventsPerLoad` | `Fleans.Persistence/Events/EfCoreEventStore.cs` | `1000` |
+| `Persistence__Provider` | `Persistence:Provider` | `Fleans.ServiceDefaults` | `"Sqlite"` (case-insensitive; accepts `Sqlite` or `Postgres`) |
+| `Persistence__MaxEventsPerLoad` | `Persistence:MaxEventsPerLoad` | `Fleans.Persistence` | `1000` |
 
 The provider toggle. `Postgres` runs `MigrateAsync()` at startup; `Sqlite` runs `EnsureCreated()`. SQLite is dev-only and ignored in container/k8s deployments. Any other value (typo like `PostgreSQL`, empty string, whitespace) throws `ArgumentException` at silo startup so misconfigured deployments fail fast instead of silently falling back to an in-pod SQLite file.
 
@@ -89,8 +50,8 @@ The provider toggle. `Postgres` runs `MigrateAsync()` at startup; `Sqlite` runs 
 
 | Env var | Config key | Read at | Default |
 | --- | --- | --- | --- |
-| `Fleans__Streaming__Provider` | `Fleans:Streaming:Provider` | `Fleans.ServiceDefaults/FleanStreamingExtensions.cs:18` | `"memory"` (case-insensitive; accepts `memory` or `kafka`) |
-| `Fleans__Streaming__Kafka__Brokers` | `Fleans:Streaming:Kafka:Brokers` | `Fleans.ServiceDefaults/FleanStreamingExtensions.cs:25` (`GetSection("Fleans:Streaming:Kafka")` binds to `Fleans.Streaming.Kafka/KafkaStreamingOptions.cs:8`) | — |
+| `Fleans__Streaming__Provider` | `Fleans:Streaming:Provider` | `Fleans.ServiceDefaults` | `"memory"` (case-insensitive; accepts `memory` or `kafka`) |
+| `Fleans__Streaming__Kafka__Brokers` | `Fleans:Streaming:Kafka:Brokers` | `Fleans.ServiceDefaults` (binding) | — |
 | `Fleans__Streaming__Kafka__ConsumerGroup` | `Fleans:Streaming:Kafka:ConsumerGroup` | (binding) | `"fleans"` |
 | `Fleans__Streaming__Kafka__TopicPrefix` | `Fleans:Streaming:Kafka:TopicPrefix` | (binding) | `"fleans-"` |
 
@@ -102,10 +63,10 @@ Auth keys are **per-host** — the API and the Web admin UI use different OIDC f
 
 | Env var | Config key | Read at | Applies to |
 | --- | --- | --- | --- |
-| `Authentication__Authority` | `Authentication:Authority` | `Fleans.Api/Program.cs:28`, `Fleans.Web/Program.cs:55` | **Both hosts.** OIDC issuer URL. Setting this enables JWT enforcement on `/Workflow/*` (API) and OIDC sign-in on the admin UI. Auth disabled when missing. |
-| `Authentication__Audience` | `Authentication:Audience` | `Fleans.Api/Program.cs:36` | **API only.** JWT `aud` claim the API requires. Default: `"fleans-api"`. Setting on the Web silo has no effect. |
-| `Authentication__ClientId` | `Authentication:ClientId` | `Fleans.Web/Program.cs:56` | **Web only.** OIDC client identifier for the Blazor Server admin UI. Setting on the API has no effect. |
-| `Authentication__ClientSecret` | `Authentication:ClientSecret` | `Fleans.Web/Program.cs:82` | **Web only.** OIDC client secret. Source from a Secret/Key Vault, not appsettings, in production. |
+| `Authentication__Authority` | `Authentication:Authority` | `Fleans.Api`, `Fleans.Web` | **Both hosts.** OIDC issuer URL. Setting this enables JWT enforcement on `/Workflow/*` (API) and OIDC sign-in on the admin UI. Auth disabled when missing. |
+| `Authentication__Audience` | `Authentication:Audience` | `Fleans.Api` | **API only.** JWT `aud` claim the API requires. Default: `"fleans-api"`. Setting on the Web silo has no effect. |
+| `Authentication__ClientId` | `Authentication:ClientId` | `Fleans.Web` | **Web only.** OIDC client identifier for the Blazor Server admin UI. Setting on the API has no effect. |
+| `Authentication__ClientSecret` | `Authentication:ClientSecret` | `Fleans.Web` | **Web only.** OIDC client secret. Source from a Secret/Key Vault, not appsettings, in production. |
 
 See [Authentication](/fleans/reference/authentication/) for the full role-claim plan and reverse-proxy guidance.
 
@@ -113,9 +74,9 @@ See [Authentication](/fleans/reference/authentication/) for the full role-claim 
 
 | Env var | Config key | Read at | Notes |
 | --- | --- | --- | --- |
-| `ConnectionStrings__fleans` | `ConnectionStrings:fleans` | `Fleans.ServiceDefaults/FleansPersistenceExtensions.cs:29` | **Required when `Persistence:Provider=Postgres`.** Workflow command-side database (event store + write model). Throws at startup if missing. |
-| `ConnectionStrings__fleans-query` | `ConnectionStrings:fleans-query` | `Fleans.ServiceDefaults/FleansPersistenceExtensions.cs:32` | Optional read-replica for the query-side projection. Falls back to the `fleans` write connection when unset. |
-| `ConnectionStrings__orleans-redis` | `ConnectionStrings:orleans-redis` | `Fleans.Api/Program.cs:65`, `Fleans.WorkerHost/Program.cs:36`, `Fleans.CustomWorkerHost/Program.cs:33` | **Required for multi-silo clustering.** Drives `UseRedisClustering(...)` and `AddRedisGrainStorage("PubSubStore", ...)`. Note the name — it's `orleans-redis`, not bare `redis`. |
+| `ConnectionStrings__fleans` | `ConnectionStrings:fleans` | `Fleans.ServiceDefaults` | **Required when `Persistence:Provider=Postgres`.** Workflow command-side database (event store + write model). Throws at startup if missing. |
+| `ConnectionStrings__fleans-query` | `ConnectionStrings:fleans-query` | `Fleans.ServiceDefaults` | Optional read-replica for the query-side projection. Falls back to the `fleans` write connection when unset. |
+| `ConnectionStrings__orleans-redis` | `ConnectionStrings:orleans-redis` | `Fleans.Api`, `Fleans.WorkerHost`, `Fleans.CustomWorkerHost` | **Required for multi-silo clustering.** Drives `UseRedisClustering(...)` and `AddRedisGrainStorage("PubSubStore", ...)`. Note the name — it's `orleans-redis`, not bare `redis`. |
 
 ### .NET runtime
 
@@ -135,7 +96,3 @@ These are standard ASP.NET Core / .NET runtime keys, not Fleans-specific — lis
 - [Persistence](/fleans/reference/persistence/) — provider-specific connection-string semantics and migration behavior.
 - [Streaming](/fleans/reference/streaming/) — Kafka topic naming, at-least-once semantics, and the `memory`-vs-`kafka` decision.
 - [Authentication](/fleans/reference/authentication/) — full IdP setup walkthrough that consumes the four `Authentication:*` keys.
-
-## Drift-guard
-
-Every "Read at" cell above is pinned to a specific source line. If you rename a config key in source, the corresponding doc claim becomes wrong — manual regression test #N (in `CLAUDE.md`'s *Website regression tests*) re-greps each pinned line and fails noisily if the symbol is gone.
