@@ -163,16 +163,6 @@ Event sub-processes also do not support multi-instance — by BPMN spec, not a F
 - **Transactions reject multi-instance at parse time.** `<transaction>` elements cannot carry `<multiInstanceLoopCharacteristics>` — the converter throws an explicit error. Wrap individual transactions in an outer multi-instance subprocess instead.
 - **Event sub-processes cannot be multi-instance** — by BPMN spec, not a Fleans limitation.
 
-## Try it locally
-
-The fixtures in `tests/manual/13-multi-instance/` are runnable end-to-end against a freshly-started Aspire stack:
-
-1. `dotnet run --project src/Fleans/Fleans.Aspire` (from the repo root).
-2. Open the [Web UI](https://localhost:7124) and navigate to **Editor**.
-3. Paste in one of the `.bpmn` files and click **Deploy**.
-4. From the **Workflows** page, **Start** the deployed process (set `approvers: ["alice","bob","charlie"]` for `completion-condition-1-of-N.bpmn`).
-5. Open the resulting instance and confirm the expected state per `tests/manual/13-multi-instance/test-plan.md`.
-
 ## Related guides
 
 - [Variables and Scope](/fleans/guides/variables-and-scope/) — full model for child-scope inheritance and merge-back.
