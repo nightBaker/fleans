@@ -7,11 +7,11 @@ namespace Fleans.Api.Controllers
 {
     [ApiController]
     [Route("[controller]")]
-    public class WorkflowInstancesController : ControllerBase
+    public class InstancesController : ControllerBase
     {
         private readonly IWorkflowQueryService _workflowQueryService;
 
-        public WorkflowInstancesController(IWorkflowQueryService workflowQueryService)
+        public InstancesController(IWorkflowQueryService workflowQueryService)
         {
             _workflowQueryService = workflowQueryService;
         }

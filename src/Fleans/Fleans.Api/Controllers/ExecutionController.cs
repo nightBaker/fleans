@@ -7,11 +7,11 @@ namespace Fleans.Api.Controllers
 {
     [ApiController]
     [Route("[controller]")]
-    public class WorkflowExecutionController : ControllerBase
+    public class ExecutionController : ControllerBase
     {
         private readonly IWorkflowCommandService _commandService;
 
-        public WorkflowExecutionController(IWorkflowCommandService commandService)
+        public ExecutionController(IWorkflowCommandService commandService)
         {
             _commandService = commandService;
         }

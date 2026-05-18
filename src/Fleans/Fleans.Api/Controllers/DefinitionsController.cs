@@ -10,13 +10,13 @@ namespace Fleans.Api.Controllers
 {
     [ApiController]
     [Route("[controller]")]
-    public class WorkflowDefinitionsController : ControllerBase
+    public class DefinitionsController : ControllerBase
     {
         private readonly IWorkflowCommandService _commandService;
         private readonly IWorkflowQueryService _workflowQueryService;
         private readonly IBpmnConverter _bpmnConverter;
 
-        public WorkflowDefinitionsController(
+        public DefinitionsController(
             IWorkflowCommandService commandService,
             IWorkflowQueryService workflowQueryService,
             IBpmnConverter bpmnConverter)
