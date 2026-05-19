@@ -78,7 +78,7 @@ public class UserTaskIntegrationTests : WorkflowTestBase
             }
         }
 
-        await grain.ClaimUserTask(instanceId, "john");
+        await grain.ClaimUserTask(instanceId, "john", []);
 
         // Verify task is still active (not completed yet)
         var snapshot = await QueryService.GetStateSnapshot(grain.GetPrimaryKey());
@@ -105,7 +105,7 @@ public class UserTaskIntegrationTests : WorkflowTestBase
 
         await Assert.ThrowsAsync<Exception>(async () =>
         {
-            await grain.ClaimUserTask(instanceId, "alice");
+            await grain.ClaimUserTask(instanceId, "alice", []);
         });
     }
 
@@ -127,7 +127,7 @@ public class UserTaskIntegrationTests : WorkflowTestBase
 
         await Assert.ThrowsAsync<Exception>(async () =>
         {
-            await grain.ClaimUserTask(instanceId, "charlie");
+            await grain.ClaimUserTask(instanceId, "charlie", []);
         });
     }
 
@@ -149,7 +149,7 @@ public class UserTaskIntegrationTests : WorkflowTestBase
             }
         }
 
-        await grain.ClaimUserTask(instanceId, "john");
+        await grain.ClaimUserTask(instanceId, "john", []);
         await grain.UnclaimUserTask(instanceId);
 
         // Task should still be active
@@ -176,7 +176,7 @@ public class UserTaskIntegrationTests : WorkflowTestBase
             }
         }
 
-        await grain.ClaimUserTask(instanceId, "john");
+        await grain.ClaimUserTask(instanceId, "john", []);
         await grain.CompleteUserTask(instanceId, "john", new ExpandoObject());
 
         var snapshot = await QueryService.GetStateSnapshot(grain.GetPrimaryKey());
@@ -200,7 +200,7 @@ public class UserTaskIntegrationTests : WorkflowTestBase
             }
         }
 
-        await grain.ClaimUserTask(instanceId, "john");
+        await grain.ClaimUserTask(instanceId, "john", []);
 
         dynamic vars = new ExpandoObject();
         vars.approval = "approved";
@@ -254,7 +254,7 @@ public class UserTaskIntegrationTests : WorkflowTestBase
             }
         }
 
-        await grain.ClaimUserTask(instanceId, "john");
+        await grain.ClaimUserTask(instanceId, "john", []);
 
         await Assert.ThrowsAsync<Exception>(async () =>
         {
@@ -280,7 +280,7 @@ public class UserTaskIntegrationTests : WorkflowTestBase
             }
         }
 
-        await grain.ClaimUserTask(instanceId, "john");
+        await grain.ClaimUserTask(instanceId, "john", []);
 
         // Complete with missing variables should fail
         await Assert.ThrowsAsync<Exception>(async () =>
@@ -307,7 +307,7 @@ public class UserTaskIntegrationTests : WorkflowTestBase
             }
         }
 
-        await grain.ClaimUserTask(instanceId, "john");
+        await grain.ClaimUserTask(instanceId, "john", []);
 
         dynamic vars = new ExpandoObject();
         vars.approval = "approved";
@@ -376,7 +376,7 @@ public class UserTaskIntegrationTests : WorkflowTestBase
             }
         }
 
-        await grain.ClaimUserTask(instanceId, "john");
+        await grain.ClaimUserTask(instanceId, "john", []);
         await grain.CompleteUserTask(instanceId, "john", new ExpandoObject());
 
         var taskGrain = Cluster.GrainFactory.GetGrain<IUserTaskGrain>(instanceId);
@@ -402,7 +402,7 @@ public class UserTaskIntegrationTests : WorkflowTestBase
             }
         }
 
-        await grain.ClaimUserTask(instanceId, "john");
+        await grain.ClaimUserTask(instanceId, "john", []);
 
         var taskGrain = Cluster.GrainFactory.GetGrain<IUserTaskGrain>(instanceId);
         var taskState = await taskGrain.GetState();

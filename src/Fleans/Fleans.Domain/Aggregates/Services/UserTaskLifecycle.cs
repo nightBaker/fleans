@@ -20,36 +20,34 @@ public class UserTaskLifecycle
     }
 
     public IReadOnlyList<IInfrastructureEffect> Claim(
-        Guid activityInstanceId, string userId)
+        Guid activityInstanceId, string userId, IReadOnlyList<string> userGroups)
     {
         _state.GetActiveEntry(activityInstanceId);
         var metadata = _state.UserTasks.GetValueOrDefault(activityInstanceId)
             ?? throw new InvalidOperationException(
                 $"Activity instance '{activityInstanceId}' is not a user task.");
 
-        // Authorization: user must match assignee OR be in candidate users list.
-        // When both are set, satisfying either condition is sufficient.
-        var matchesAssignee = metadata.Assignee is null || metadata.Assignee == userId;
-        var matchesCandidateUsers = metadata.CandidateUsers.Count == 0
-            || metadata.CandidateUsers.Contains(userId);
+        // Authorization: any-of-three "OR" model (#588). When no constraint is set,
+        // the task is unrestricted. When any constraint is set, the caller must satisfy
+        // at least one of: Assignee match, CandidateUsers contains userId, or
+        // CandidateGroups intersects userGroups (ordinal case-sensitive).
+        //
+        // Rejection messages are deliberately identifier-free — they never enumerate
+        // the task's Assignee or candidate sets. Audit detail lives in the structured
+        // log (EventId 1066) where deployment-level filtering can be applied.
+        var hasAssignee = metadata.Assignee is not null;
+        var hasCandidateUsers = metadata.CandidateUsers.Count > 0;
+        var hasCandidateGroups = metadata.CandidateGroups.Count > 0;
+        var anyConstraint = hasAssignee || hasCandidateUsers || hasCandidateGroups;
 
-        if (metadata.Assignee is not null && metadata.CandidateUsers.Count > 0)
-        {
-            // Both constraints set — OR logic
-            if (!matchesAssignee && !matchesCandidateUsers)
-                throw new InvalidOperationException(
-                    $"User {userId} is neither the assignee ({metadata.Assignee}) nor in the candidate users list");
-        }
-        else
-        {
-            // Only one constraint set — must satisfy it
-            if (!matchesAssignee)
-                throw new InvalidOperationException(
-                    $"Task is assigned to {metadata.Assignee}, not {userId}");
-            if (!matchesCandidateUsers)
-                throw new InvalidOperationException(
-                    $"User {userId} is not in candidate users list");
-        }
+        var matchesAssignee = hasAssignee && metadata.Assignee == userId;
+        var matchesCandidateUsers = hasCandidateUsers && metadata.CandidateUsers.Contains(userId);
+        var matchesCandidateGroups = hasCandidateGroups
+            && userGroups.Any(g => metadata.CandidateGroups.Contains(g, StringComparer.Ordinal));
+
+        if (anyConstraint && !(matchesAssignee || matchesCandidateUsers || matchesCandidateGroups))
+            throw new InvalidOperationException(
+                $"User {userId} is not authorized to claim this task");
 
         var claimedAt = DateTimeOffset.UtcNow;
         _emit(new UserTaskClaimed(activityInstanceId, userId, claimedAt));

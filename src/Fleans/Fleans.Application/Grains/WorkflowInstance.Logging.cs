@@ -211,6 +211,10 @@ public partial class WorkflowInstance
         Message = "User task claim attempt: ActivityInstanceId={ActivityInstanceId}, UserId={UserId}")]
     private partial void LogUserTaskClaimAttempt(Guid activityInstanceId, string userId);
 
+    [LoggerMessage(EventId = 1066, Level = LogLevel.Warning,
+        Message = "User task claim rejected: ActivityInstanceId={ActivityInstanceId}, UserId={UserId}, UserGroupCount={UserGroupCount}")]
+    private partial void LogUserTaskClaimRejected(Guid activityInstanceId, string userId, int userGroupCount);
+
     [LoggerMessage(EventId = 1061, Level = LogLevel.Information,
         Message = "User task unclaim attempt: ActivityInstanceId={ActivityInstanceId}")]
     private partial void LogUserTaskUnclaimAttempt(Guid activityInstanceId);

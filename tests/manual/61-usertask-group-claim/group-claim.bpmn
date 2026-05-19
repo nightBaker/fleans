@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+             id="defs_group_claim" targetNamespace="http://fleans.io/bpmn">
+  <process id="group-claim" isExecutable="true">
+    <startEvent id="start" />
+
+    <!-- User task gated by candidateGroups only — no assignee, no candidateUsers.
+         Pre-#588 this was the silent-bypass case: any authenticated caller could claim.
+         Post-#588 the caller must supply a userGroups intersecting {managers, supervisors}. -->
+    <userTask id="ApproveTask" name="Approve"
+              camunda:candidateGroups="managers,supervisors" />
+
+    <endEvent id="end" />
+
+    <sequenceFlow id="f1" sourceRef="start"       targetRef="ApproveTask" />
+    <sequenceFlow id="f2" sourceRef="ApproveTask" targetRef="end" />
+  </process>
+  <bpmndi:BPMNDiagram id="diag">
+    <bpmndi:BPMNPlane id="plane" bpmnElement="group-claim">
+      <bpmndi:BPMNShape id="s_start"   bpmnElement="start"><dc:Bounds x="100" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_approve" bpmnElement="ApproveTask"><dc:Bounds x="200" y="80"  width="120" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_end"     bpmnElement="end"><dc:Bounds x="370" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="e_f1" bpmnElement="f1"><di:waypoint x="136" y="118" /><di:waypoint x="200" y="118" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="e_f2" bpmnElement="f2"><di:waypoint x="320" y="118" /><di:waypoint x="370" y="118" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

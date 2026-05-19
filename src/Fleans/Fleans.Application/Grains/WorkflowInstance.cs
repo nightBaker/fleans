@@ -540,16 +540,24 @@ public partial class WorkflowInstance :
 
     // ── User Task Lifecycle ──────────────────────────────────────────────
 
-    public async Task ClaimUserTask(Guid activityInstanceId, string userId)
+    public async Task ClaimUserTask(Guid activityInstanceId, string userId, IReadOnlyList<string> userGroups)
     {
         await EnsureExecution();
         SetWorkflowRequestContext();
         using var scope = BeginWorkflowScope();
         LogUserTaskClaimAttempt(activityInstanceId, userId);
 
-        var effects = _execution!.ClaimUserTask(activityInstanceId, userId);
-        await PerformEffects(effects);
-        await ProcessPendingEvents();
+        try
+        {
+            var effects = _execution!.ClaimUserTask(activityInstanceId, userId, userGroups);
+            await PerformEffects(effects);
+            await ProcessPendingEvents();
+        }
+        catch (InvalidOperationException)
+        {
+            LogUserTaskClaimRejected(activityInstanceId, userId, userGroups.Count);
+            throw;
+        }
     }
 
     public async Task UnclaimUserTask(Guid activityInstanceId)
