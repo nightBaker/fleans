@@ -6,6 +6,7 @@ using Fleans.Persistence.PostgreSql;
 using Fleans.Persistence.Sqlite;
 using Fleans.Plugins.RestCaller;
 using Fleans.ServiceDefaults;
+using Fleans.ServiceDefaults.Observability;
 using Fleans.Worker.Placement;
 using Orleans.Dashboard;
 using Orleans.EventSourcing.CustomStorage;
@@ -68,6 +69,7 @@ builder.UseOrleans(siloBuilder =>
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure();
 builder.Services.AddRestCallerPlugin();
+builder.Services.AddImplicitSubMetrics();
 builder.AddFleansPersistence();
 
 var app = builder.Build();

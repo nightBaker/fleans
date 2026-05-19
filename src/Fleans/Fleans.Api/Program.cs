@@ -8,6 +8,7 @@ using Fleans.Infrastructure;
 using Fleans.Persistence.PostgreSql;
 using Fleans.Persistence.Sqlite;
 using Fleans.ServiceDefaults;
+using Fleans.ServiceDefaults.Observability;
 using Fleans.Worker.Placement;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
@@ -119,6 +120,7 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure();
 builder.Services.AddRestCallerPlugin();
+builder.Services.AddImplicitSubMetrics();
 
 // Rate limiting — opt-in: only enabled when RateLimiting section is configured
 var rateLimitSection = builder.Configuration.GetSection("RateLimiting");
