@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>14</LangVersion>
+    <!-- Test-tree-only plugin used by tests/manual/60-streaming-shard-throughput
+         to drive the load-test workload referenced in #593. Never published to
+         nuget.org and never referenced from production engine images. The
+         MSBuild conditional in Fleans.WorkerHost.csproj is the build-time gate
+         that keeps the resulting DLL out of production worker images. -->
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Orleans.Sdk" Version="10.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Fleans.Worker\Fleans.Worker.csproj" />
+  </ItemGroup>
+
+</Project>

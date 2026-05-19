@@ -29,4 +29,16 @@
     <ProjectReference Include="..\Fleans.Worker\Fleans.Worker.csproj" />
   </ItemGroup>
 
+  <!-- Load-test-only plugin wiring. Set FleansLoadTestMode=true via
+       /p:FleansLoadTestMode=true (Aspire publish-mode does this automatically) so
+       Fleans.Plugins.LoadDelay ships in the worker image used by
+       tests/manual/60-streaming-shard-throughput. Production tags omit the
+       property → the plugin DLL never reaches production worker images. -->
+  <PropertyGroup Condition="'$(FleansLoadTestMode)' == 'true'">
+    <DefineConstants>$(DefineConstants);FLEANS_LOAD_TEST_MODE</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(FleansLoadTestMode)' == 'true'">
+    <ProjectReference Include="..\Fleans.Plugins.LoadDelay\Fleans.Plugins.LoadDelay.csproj" />
+  </ItemGroup>
+
 </Project>

@@ -5,6 +5,9 @@ using Fleans.Infrastructure;
 using Fleans.Persistence.PostgreSql;
 using Fleans.Persistence.Sqlite;
 using Fleans.Plugins.RestCaller;
+#if FLEANS_LOAD_TEST_MODE
+using Fleans.Plugins.LoadDelay;
+#endif
 using Fleans.ServiceDefaults;
 using Fleans.Worker.Placement;
 using Orleans.Dashboard;
@@ -68,6 +71,9 @@ builder.UseOrleans(siloBuilder =>
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure();
 builder.Services.AddRestCallerPlugin();
+#if FLEANS_LOAD_TEST_MODE
+builder.Services.AddLoadDelayPlugin();
+#endif
 builder.AddFleansPersistence();
 
 var app = builder.Build();

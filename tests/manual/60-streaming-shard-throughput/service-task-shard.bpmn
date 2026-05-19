@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:fleans="https://fleans.io/schema/bpmn/1.0"
+                  id="defs_load_delay_shard" targetNamespace="http://fleans.io/bpmn">
+  <bpmn:process id="load-delay-100ms-shard" isExecutable="true">
+    <bpmn:startEvent id="start" />
+
+    <!-- Single service task invoking the load-delay-100ms plugin. The plugin
+         awaits Task.Delay(100, ct) and returns. Sequential start → delay → end
+         is intentional: parallel/multi-instance variants obscure the per-instance
+         stream-sharding signal we are measuring. -->
+    <bpmn:serviceTask id="DelayTask">
+      <bpmn:extensionElements>
+        <fleans:taskDefinition type="load-delay-100ms" />
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+
+    <bpmn:endEvent id="end" />
+
+    <bpmn:sequenceFlow id="f1" sourceRef="start"     targetRef="DelayTask" />
+    <bpmn:sequenceFlow id="f2" sourceRef="DelayTask" targetRef="end" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="diag">
+    <bpmndi:BPMNPlane id="plane" bpmnElement="load-delay-100ms-shard">
+      <bpmndi:BPMNShape id="s_start" bpmnElement="start"><dc:Bounds x="100" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_delay" bpmnElement="DelayTask"><dc:Bounds x="200" y="80"  width="120" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_end"   bpmnElement="end"><dc:Bounds x="370" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="e_f1" bpmnElement="f1"><di:waypoint x="136" y="118" /><di:waypoint x="200" y="118" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="e_f2" bpmnElement="f2"><di:waypoint x="320" y="118" /><di:waypoint x="370" y="118" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
