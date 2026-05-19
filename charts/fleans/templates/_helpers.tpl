@@ -99,7 +99,7 @@ ASPNETCORE_URLS is intentionally excluded — each workload sets its own port.
   value: "{{ include "fleans.fullname" . }}-redis:{{ .Values.redis.service.port }}"
 - name: Persistence__Provider
   value: {{ .Values.persistence.provider | quote }}
-{{- if eq (lower .Values.persistence.provider) "postgres" }}
+{{- if and (eq (lower .Values.persistence.provider) "postgres") .Values.postgres.enabled }}
 - name: ConnectionStrings__fleans
   valueFrom:
     secretKeyRef:

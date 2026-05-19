@@ -43,10 +43,6 @@ services:
 </TabItem>
 <TabItem label="Helm">
 
-:::caution
-The chart currently couples `persistence.provider=postgres` to the bundled-Postgres secret. Setting `postgres.enabled=false` while keeping `persistence.provider=Postgres` produces a pod stuck in `CreateContainerConfigError` referencing a non-existent secret — there is **no working external-Postgres recipe today**. Tracking the chart fix at [#601](https://github.com/nightBaker/fleans/issues/601); until it lands, use the chart's bundled Postgres (`postgres.enabled=true`, the default).
-:::
-
 ```bash
 # SQLite (chart default — single-host debug)
 helm install fleans nightbaker/fleans
@@ -56,7 +52,31 @@ helm install fleans nightbaker/fleans \
   --set persistence.provider=Postgres
 ```
 
-The chart emits `Persistence__Provider` unconditionally and injects `ConnectionStrings__fleans` from the chart-managed secret when `persistence.provider=Postgres`. Provider switching across all four workloads (`fleans-core`, `fleans-management`, `fleans-mcp`, `fleans-worker`) is handled by the chart's `commonEnv` helper.
+The chart emits `Persistence__Provider` unconditionally. When `persistence.provider=Postgres` AND `postgres.enabled=true` (the default), `ConnectionStrings__fleans` is injected from the chart-managed secret. When `postgres.enabled=false`, the chart skips that injection so you can supply the connection string yourself via `extraEnv` — see below.
+
+**External PostgreSQL (managed RDS, Cloud SQL, …):**
+
+```yaml
+# values-external-pg.yaml
+postgres:
+  enabled: false
+persistence:
+  provider: Postgres
+extraEnv:
+  - name: ConnectionStrings__fleans
+    valueFrom:
+      secretKeyRef:
+        name: my-external-pg-secret
+        key: connection-string
+```
+
+```bash
+kubectl create secret generic my-external-pg-secret \
+  --from-literal=connection-string='Host=my-external-pg.example.com;Port=5432;Database=fleans;Username=fleans;Password=...'
+helm install fleans nightbaker/fleans -f values-external-pg.yaml
+```
+
+`extraEnv` accepts either `value: "..."` (literal — convenient for `--set` one-liners) or `valueFrom.secretKeyRef` (GitOps-friendly — recommended for production credentials). Both shapes propagate to every fleans-* workload via the chart's `commonEnv` helper.
 
 </TabItem>
 </Tabs>
