@@ -87,6 +87,8 @@ Each numbered entry below is one regression "step". For each one, follow the lin
 
 62. **Chart streaming-provider wiring** — `62-chart-streaming-providers/test-plan.md`. Verifies #599: `_helpers.tpl` emits `Fleans__Streaming__Provider` for Memory / Redis / Kafka / AzureQueue (the prior bug emitted only for Kafka, silently downgrading the other three to the engine default). Pre-fix Memory + non-Kafka all silently ran Redis; post-fix all four are explicit, and an unknown `streaming.provider` value aborts `helm template` via `{{- fail }}` rather than silently rendering no env var. Chart default rebased Memory → Redis to match the engine default. 7 `helm template` assertion steps including the typo-validation guard.
 
+63. **Chart external-Postgres support** — `63-chart-external-postgres/test-plan.md`. Verifies #601: pre-fix, `persistence.provider=Postgres` + `postgres.enabled=false` emitted `ConnectionStrings__fleans` from a chart-managed `secretKeyRef` referencing a non-existent secret → pod stuck in `CreateContainerConfigError`. Post-fix, the conditional gates emission on `postgres.enabled=true`; external operators supply the connection string via `extraEnv` (either literal `value:` or `valueFrom.secretKeyRef:`) without conflict. 4 `helm template | grep` assertions including both extraEnv shapes.
+
 ## Website regression suite
 
 Website-specific manual tests live under `website/`. These run in a local dev server, not against the .NET stack.
