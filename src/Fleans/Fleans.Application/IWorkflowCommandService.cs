@@ -14,7 +14,7 @@ public interface IWorkflowCommandService
     Task<SendSignalResult> SendSignal(string signalName);
 
     // User task lifecycle
-    Task ClaimUserTask(Guid workflowInstanceId, Guid activityInstanceId, string userId);
+    Task ClaimUserTask(Guid workflowInstanceId, Guid activityInstanceId, string userId, IReadOnlyList<string> userGroups);
     Task UnclaimUserTask(Guid workflowInstanceId, Guid activityInstanceId);
     Task CompleteUserTask(Guid workflowInstanceId, Guid activityInstanceId, string userId, ExpandoObject variables);
     Task FailUserTask(Guid workflowInstanceId, Guid activityInstanceId, string errorCode, string errorMessage);

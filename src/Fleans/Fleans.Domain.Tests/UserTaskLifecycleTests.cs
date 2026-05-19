@@ -140,7 +140,7 @@ public class UserTaskLifecycleTests
         var (execution, state, taskEntry) = CreateWithExecutingUserTask(assignee: "alice");
 
         // Act
-        var effects = execution.ClaimUserTask(taskEntry.ActivityInstanceId, "alice");
+        var effects = execution.ClaimUserTask(taskEntry.ActivityInstanceId, "alice", []);
 
         // Assert
         var events = execution.GetUncommittedEvents();
@@ -162,7 +162,7 @@ public class UserTaskLifecycleTests
 
         // Act & Assert
         Assert.ThrowsExactly<InvalidOperationException>(
-            () => execution.ClaimUserTask(taskEntry.ActivityInstanceId, "bob"));
+            () => execution.ClaimUserTask(taskEntry.ActivityInstanceId, "bob", []));
     }
 
     [TestMethod]
@@ -175,7 +175,83 @@ public class UserTaskLifecycleTests
 
         // Act & Assert
         Assert.ThrowsExactly<InvalidOperationException>(
-            () => execution.ClaimUserTask(taskEntry.ActivityInstanceId, "bob"));
+            () => execution.ClaimUserTask(taskEntry.ActivityInstanceId, "bob", []));
+    }
+
+    // --- CandidateGroups (#588) ---
+
+    [TestMethod]
+    public void ClaimUserTask_OnlyCandidateGroups_UserMatchesGroup_ShouldEmitClaimed()
+    {
+        var (execution, state, taskEntry) = CreateWithExecutingUserTask(
+            assignee: null,
+            candidateGroups: ["managers", "supervisors"]);
+
+        var effects = execution.ClaimUserTask(taskEntry.ActivityInstanceId, "alice", ["managers"]);
+
+        var claimed = execution.GetUncommittedEvents().OfType<UserTaskClaimed>().Single();
+        Assert.AreEqual("alice", claimed.UserId);
+        Assert.AreEqual(taskEntry.ActivityInstanceId, effects.OfType<UpdateUserTaskClaimEffect>().Single().ActivityInstanceId);
+    }
+
+    [TestMethod]
+    public void ClaimUserTask_OnlyCandidateGroups_UserMatchesNoGroup_ShouldThrow()
+    {
+        var (execution, state, taskEntry) = CreateWithExecutingUserTask(
+            assignee: null,
+            candidateGroups: ["managers"]);
+
+        var ex = Assert.ThrowsExactly<InvalidOperationException>(
+            () => execution.ClaimUserTask(taskEntry.ActivityInstanceId, "bob", ["unrelated"]));
+        Assert.AreEqual("User bob is not authorized to claim this task", ex.Message);
+    }
+
+    [TestMethod]
+    public void ClaimUserTask_OnlyCandidateGroups_EmptyUserGroups_ShouldThrow()
+    {
+        var (execution, state, taskEntry) = CreateWithExecutingUserTask(
+            assignee: null,
+            candidateGroups: ["managers"]);
+
+        Assert.ThrowsExactly<InvalidOperationException>(
+            () => execution.ClaimUserTask(taskEntry.ActivityInstanceId, "bob", []));
+    }
+
+    [TestMethod]
+    public void ClaimUserTask_AssigneeAndCandidateGroups_MatchesAssigneeNotGroup_ShouldEmitClaimed()
+    {
+        var (execution, state, taskEntry) = CreateWithExecutingUserTask(
+            assignee: "alice",
+            candidateGroups: ["managers"]);
+
+        execution.ClaimUserTask(taskEntry.ActivityInstanceId, "alice", ["unrelated"]);
+
+        var claimed = execution.GetUncommittedEvents().OfType<UserTaskClaimed>().Single();
+        Assert.AreEqual("alice", claimed.UserId);
+    }
+
+    [TestMethod]
+    public void ClaimUserTask_AssigneeAndCandidateGroups_MatchesGroupNotAssignee_ShouldEmitClaimed()
+    {
+        var (execution, state, taskEntry) = CreateWithExecutingUserTask(
+            assignee: "alice",
+            candidateGroups: ["managers"]);
+
+        execution.ClaimUserTask(taskEntry.ActivityInstanceId, "bob", ["managers"]);
+
+        var claimed = execution.GetUncommittedEvents().OfType<UserTaskClaimed>().Single();
+        Assert.AreEqual("bob", claimed.UserId);
+    }
+
+    [TestMethod]
+    public void ClaimUserTask_GroupMatchIsOrdinalCaseSensitive_ShouldThrow()
+    {
+        var (execution, state, taskEntry) = CreateWithExecutingUserTask(
+            assignee: null,
+            candidateGroups: ["managers"]);
+
+        Assert.ThrowsExactly<InvalidOperationException>(
+            () => execution.ClaimUserTask(taskEntry.ActivityInstanceId, "alice", ["Managers"]));
     }
 
     // --- UnclaimUserTask ---
@@ -185,7 +261,7 @@ public class UserTaskLifecycleTests
     {
         // Arrange
         var (execution, state, taskEntry) = CreateWithExecutingUserTask(assignee: "alice");
-        execution.ClaimUserTask(taskEntry.ActivityInstanceId, "alice");
+        execution.ClaimUserTask(taskEntry.ActivityInstanceId, "alice", []);
         execution.ClearUncommittedEvents();
 
         // Act
@@ -209,7 +285,7 @@ public class UserTaskLifecycleTests
     {
         // Arrange
         var (execution, state, taskEntry) = CreateWithExecutingUserTask(assignee: "alice");
-        execution.ClaimUserTask(taskEntry.ActivityInstanceId, "alice");
+        execution.ClaimUserTask(taskEntry.ActivityInstanceId, "alice", []);
         execution.ClearUncommittedEvents();
 
         // Act
@@ -246,7 +322,7 @@ public class UserTaskLifecycleTests
     {
         // Arrange
         var (execution, state, taskEntry) = CreateWithExecutingUserTask(assignee: "alice");
-        execution.ClaimUserTask(taskEntry.ActivityInstanceId, "alice");
+        execution.ClaimUserTask(taskEntry.ActivityInstanceId, "alice", []);
         execution.ClearUncommittedEvents();
 
         // Act & Assert
@@ -261,7 +337,7 @@ public class UserTaskLifecycleTests
         var (execution, state, taskEntry) = CreateWithExecutingUserTask(
             assignee: "alice",
             expectedOutputs: ["approvalDecision", "comments"]);
-        execution.ClaimUserTask(taskEntry.ActivityInstanceId, "alice");
+        execution.ClaimUserTask(taskEntry.ActivityInstanceId, "alice", []);
         execution.ClearUncommittedEvents();
 
         var incompleteVars = new ExpandoObject();

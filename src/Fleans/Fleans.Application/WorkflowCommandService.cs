@@ -149,11 +149,11 @@ public partial class WorkflowCommandService : IWorkflowCommandService
     [LoggerMessage(EventId = 7007, Level = LogLevel.Error, Message = "Failed to fire signal start event for '{SignalName}'")]
     private partial void LogSignalStartEventFireFailed(string signalName, Exception ex);
 
-    public async Task ClaimUserTask(Guid workflowInstanceId, Guid activityInstanceId, string userId)
+    public async Task ClaimUserTask(Guid workflowInstanceId, Guid activityInstanceId, string userId, IReadOnlyList<string> userGroups)
     {
         LogClaimingUserTask(workflowInstanceId, activityInstanceId, userId);
         var grain = _grainFactory.GetGrain<IWorkflowInstanceGrain>(workflowInstanceId);
-        await grain.ClaimUserTask(activityInstanceId, userId);
+        await grain.ClaimUserTask(activityInstanceId, userId, userGroups);
     }
 
     public async Task UnclaimUserTask(Guid workflowInstanceId, Guid activityInstanceId)

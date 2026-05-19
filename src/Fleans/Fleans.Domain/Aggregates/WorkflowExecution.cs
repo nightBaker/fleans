@@ -1731,9 +1731,9 @@ public class WorkflowExecution
     // --- User Task Handling ---
 
     public IReadOnlyList<IInfrastructureEffect> ClaimUserTask(
-        Guid activityInstanceId, string userId)
+        Guid activityInstanceId, string userId, IReadOnlyList<string> userGroups)
     {
-        return _userTasks.Claim(activityInstanceId, userId);
+        return _userTasks.Claim(activityInstanceId, userId, userGroups);
     }
 
     /// <summary>

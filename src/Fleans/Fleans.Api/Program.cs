@@ -1,5 +1,6 @@
 using System.Threading.RateLimiting;
 using Fleans.Api;
+using Fleans.Api.Authorization;
 using Fleans.Application;
 using Fleans.Application.Logging;
 using Fleans.Application.Placement;
@@ -40,6 +41,18 @@ if (authEnabled)
         .SetFallbackPolicy(new AuthorizationPolicyBuilder()
             .RequireAuthenticatedUser()
             .Build());
+}
+
+// User-task group resolver (#588): JWT-derived when auth is enabled, body-derived
+// otherwise. Mirrors the IUserTaskFilterStrategy precedent — chosen by config at
+// startup; controller takes the interface.
+if (authEnabled)
+{
+    builder.Services.AddSingleton<IUserGroupResolver, JwtUserGroupResolver>();
+}
+else
+{
+    builder.Services.AddSingleton<IUserGroupResolver, BodyUserGroupResolver>();
 }
 
 // Register Redis client for Aspire-managed Orleans

@@ -49,7 +49,7 @@ public interface IWorkflowInstanceGrain : IWorkflowInstanceCallback, IWorkflowEx
     Task CompleteMultiInstanceEarly(string hostActivityId, Guid hostActivityInstanceId);
 
     // User task lifecycle
-    Task ClaimUserTask(Guid activityInstanceId, string userId);
+    Task ClaimUserTask(Guid activityInstanceId, string userId, IReadOnlyList<string> userGroups);
     Task UnclaimUserTask(Guid activityInstanceId);
     Task CompleteUserTask(Guid activityInstanceId, string userId, ExpandoObject variables);
     Task FailUserTask(Guid activityInstanceId, string errorCode, string errorMessage);

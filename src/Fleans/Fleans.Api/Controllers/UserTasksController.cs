@@ -1,3 +1,4 @@
+using Fleans.Api.Authorization;
 using Fleans.Application;
 using Fleans.Application.QueryModels;
 using Fleans.ServiceDefaults.DTOs;
@@ -13,15 +14,18 @@ namespace Fleans.Api.Controllers
         private readonly ILogger<UserTasksController> _logger;
         private readonly IWorkflowCommandService _commandService;
         private readonly IWorkflowQueryService _workflowQueryService;
+        private readonly IUserGroupResolver _userGroupResolver;
 
         public UserTasksController(
             ILogger<UserTasksController> logger,
             IWorkflowCommandService commandService,
-            IWorkflowQueryService workflowQueryService)
+            IWorkflowQueryService workflowQueryService,
+            IUserGroupResolver userGroupResolver)
         {
             _logger = logger;
             _commandService = commandService;
             _workflowQueryService = workflowQueryService;
+            _userGroupResolver = userGroupResolver;
         }
 
         [EnableRateLimiting("read")]
@@ -63,8 +67,9 @@ namespace Fleans.Api.Controllers
 
             try
             {
+                var userGroups = _userGroupResolver.Resolve(HttpContext, request);
                 LogUserTaskClaim(activityInstanceId, request.UserId);
-                await _commandService.ClaimUserTask(task.WorkflowInstanceId, activityInstanceId, request.UserId);
+                await _commandService.ClaimUserTask(task.WorkflowInstanceId, activityInstanceId, request.UserId, userGroups);
                 return Ok();
             }
             catch (InvalidOperationException ex)
