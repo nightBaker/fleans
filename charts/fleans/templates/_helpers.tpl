@@ -106,11 +106,26 @@ ASPNETCORE_URLS is intentionally excluded — each workload sets its own port.
       name: {{ include "fleans.postgres.secretName" . }}
       key: connection-string
 {{- end }}
-{{- if eq (lower .Values.streaming.provider) "kafka" }}
+{{- $provider := lower .Values.streaming.provider }}
+{{- if not (has $provider (list "memory" "redis" "kafka" "azurequeue")) }}
+{{- fail (printf "Unsupported streaming.provider %q. Valid: Memory, Redis, Kafka, AzureQueue (case-insensitive)." .Values.streaming.provider) }}
+{{- end }}
+{{- if eq $provider "memory" }}
+- name: Fleans__Streaming__Provider
+  value: "Memory"
+{{- else if eq $provider "redis" }}
+- name: Fleans__Streaming__Provider
+  value: "Redis"
+{{- else if eq $provider "kafka" }}
 - name: Fleans__Streaming__Provider
   value: "Kafka"
 - name: Fleans__Streaming__Kafka__Brokers
   value: {{ .Values.streaming.kafka.brokers | quote }}
+{{- else if eq $provider "azurequeue" }}
+- name: Fleans__Streaming__Provider
+  value: "AzureQueue"
+- name: Fleans__Streaming__AzureQueue__ConnectionString
+  value: {{ .Values.streaming.azureQueue.connectionString | quote }}
 {{- end }}
 {{- with .Values.extraEnv }}
 {{ toYaml . }}

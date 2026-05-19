@@ -201,14 +201,21 @@ auth:
   clientSecret: ""
 
 # -----------------------------------------------------------------------------
-# Streaming (Kafka for Orleans Streams; optional, in-memory by default).
+# Streaming (Orleans Streams; defaults to Redis to match the engine default and
+# reuse the chart-bundled Redis instance for both PubSubStore and streams).
 # -----------------------------------------------------------------------------
 streaming:
-  # Memory | Kafka
-  provider: Memory
+  # Memory | Redis | Kafka | AzureQueue (case-insensitive)
+  # WARNING: Memory is single-silo debug-only — DO NOT use in multi-silo deployments.
+  provider: Redis
   kafka:
     # Comma-separated brokers list, e.g. "kafka.kafka.svc:9092"
     brokers: ""
+  azureQueue:
+    # Azurite or Azure Storage account connection string.
+    # Inline value here for simplicity; for production use the existingSecret
+    # pattern (follow-up tracked separately).
+    connectionString: ""
 
 # -----------------------------------------------------------------------------
 # Common pod settings

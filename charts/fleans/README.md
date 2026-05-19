@@ -90,6 +90,39 @@ auth:
 
 Leave `auth.authority` empty to ship without authentication (single-tenant / dev).
 
+### Streaming provider
+
+Set `streaming.provider` to one of `Memory`, `Redis`, `Kafka`, or `AzureQueue` (case-insensitive). Default: `Redis` (reuses the chart-bundled Redis for streams AND `PubSubStore`, no extra infrastructure).
+
+> **WARNING:** `Memory` is single-silo debug-only. Multi-silo deployments must NOT use Memory — events published on one silo will not reach handlers on others.
+
+| Provider | When to use | Extra config |
+|----------|-------------|---------------|
+| `Redis` (default) | The common case. Reuses the chart-bundled Redis. | None. |
+| `Memory` | Single-silo dev/test only. | None. |
+| `Kafka` | You already operate Kafka and want streams there. | `streaming.kafka.brokers` (comma-separated `host:port` list). |
+| `AzureQueue` | Azure-native deployments using Storage Queue or Azurite. | `streaming.azureQueue.connectionString` (inline; production should use the `existingSecret` pattern — follow-up tracked separately). |
+
+Unknown values abort `helm template` at render time with a message naming the valid providers — typos can't silently ship.
+
+```yaml
+# Redis (default — usually nothing to set)
+streaming:
+  provider: Redis
+
+# Kafka
+streaming:
+  provider: Kafka
+  kafka:
+    brokers: "kafka.kafka.svc:9092"
+
+# AzureQueue
+streaming:
+  provider: AzureQueue
+  azureQueue:
+    connectionString: "DefaultEndpointsProtocol=https;AccountName=...;AccountKey=..."
+```
+
 ### Worker silos on dedicated nodes
 
 ```yaml
