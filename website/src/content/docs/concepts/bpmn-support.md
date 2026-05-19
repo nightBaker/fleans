@@ -5,21 +5,20 @@ description: Canonical coverage matrix for BPMN 2.0 elements in Fleans.
 
 {/* drift-guard:
   Parent foreach handlers in src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs:
-    :94 (startEvent), :153 (intermediateCatchEvent), :206 (intermediateThrowEvent),
-    :254 (endEvent), :303 (task), :313 (userTask), :333 (serviceTask), :354 (scriptTask),
-    :369 (exclusiveGateway), :382 (parallelGateway), :420 (inclusiveGateway),
-    :459 (complexGateway), :507 (eventBasedGateway), :517 (subProcess),
-    :574 (transaction), :601 (callActivity), :638 (boundaryEvent), :845 (ParseSequenceFlows)
+    :91 (startEvent), :150 (intermediateCatchEvent), :203 (intermediateThrowEvent),
+    :251 (endEvent), :300 (task), :310 (userTask), :330 (serviceTask), :351 (scriptTask),
+    :366 (exclusiveGateway), :379 (parallelGateway), :417 (inclusiveGateway),
+    :456 (complexGateway), :504 (eventBasedGateway), :514 (subProcess),
+    :571 (transaction), :598 (callActivity), :635 (boundaryEvent), :842 (ParseSequenceFlows)
   Child event-definition / loop / attribute detections — same file:
-    :107,113,120,129,132,536 (start-event variants),
-    :165,166,167,191 (intermediate-catch variants),
-    :209,225,226 (intermediate-throw variants),
-    :259,263,271 (end-event variants),
-    :527-530 (event-sub-process triggeredByEvent),
-    :578 (transaction multi-instance reject),
-    :661,672,689,690,691,692,693,727 (boundary variants),
-    :1132,1138 (multi-instance loopCharacteristics + loopCardinality)
-  pinned at branch=docs/404-bpmn-matrix; refresh if any of the above change */}
+    :104 (timerDef), :114 (messageRef-throw), :121 (signalRef-throw), :124 (conditionalEventDefinition), :129 (errorStart), :527-536 (triggeredByEvent block) — start-event variants
+    :162 (timerDef), :163 (messageDef), :164 (signalDef), :165 (condDef; block continues to ~:200) — intermediate-catch variants
+    :206 (compensateDef), :222 (signalDef), :223 (escalationDef) — intermediate-throw variants
+    :256 (compEndDef), :260 (escEndDef), :268 (cancelEventDefinition) — end-event variants
+    :575 (transaction multi-instance reject)
+    :658 (compensateDefBoundary), :660 (condDef), :686 (timerDef), :687 (errorDef), :688 (messageDef), :689 (signalDef), :690 (escalationDef), :724 (cancelEventDef) — boundary variants
+    :1120 (multiInstanceLoopCharacteristics), :1126 (loopCardinality), :1140 (completionCondition)
+  refresh if any of the above change */}
 
 This page is the canonical coverage matrix for BPMN 2.0 elements in Fleans. Every row is pinned to the parser code that handles it (`Fleans.Infrastructure/Bpmn/BpmnConverter.cs`) and the manual fixture that exercises it end-to-end (`tests/manual/NN-*/`).
 
@@ -38,91 +37,91 @@ This page is the canonical coverage matrix for BPMN 2.0 elements in Fleans. Ever
 
 | Element | BPMN XML | Status | Source pin | Tested by | Notes |
 |---|---|---|---|---|---|
-| Plain Start Event | `<bpmn:startEvent>` | ✅ | `BpmnConverter.cs:94` | [#01](../../../tests/manual/01-basic-workflow/) | Default start of any process. |
-| Timer Start Event | `<bpmn:startEvent><timerEventDefinition>` | ✅ | `BpmnConverter.cs:94 + :107` | unit tests only | Schedules a process instance via `RegisterOrUpdateReminder`. |
-| Message Start Event | `<bpmn:startEvent><messageEventDefinition>` | ✅ | `BpmnConverter.cs:94 + :113` | [#16](../../../tests/manual/16-message-start-event/) | Auto-creates an instance on matching message delivery. |
-| Signal Start Event | `<bpmn:startEvent><signalEventDefinition>` | ✅ | `BpmnConverter.cs:94 + :120` | [#17](../../../tests/manual/17-signal-start-event/) | Broadcast match creates an instance. |
-| Error Start Event *(Event Sub-Process only)* | `<bpmn:startEvent><errorEventDefinition>` | ✅ | `BpmnConverter.cs:94 + :132, :536` | [#19](../../../tests/manual/19-event-subprocess-error/) | Only valid inside `triggeredByEvent="true"` sub-processes. |
-| Conditional Start Event | `<bpmn:startEvent><conditionalEventDefinition>` | ✅ | `BpmnConverter.cs:94 + :129` | [#24-conditional](../../../tests/manual/24-conditional-event/) | Triggered via `POST /Workflow/evaluate-conditions`. |
-| Multiple Start Event | `<bpmn:startEvent>` with multiple event definitions | ✅ | `BpmnConverter.cs:94` (multi-def detection) | [#24-multiple](../../../tests/manual/24-multiple-event/) | First-fires-wins; surplus subscriptions cancelled. |
+| Plain Start Event | `<bpmn:startEvent>` | ✅ | `BpmnConverter.cs:91` | [#01](../../../tests/manual/01-basic-workflow/) | Default start of any process. |
+| Timer Start Event | `<bpmn:startEvent><timerEventDefinition>` | ✅ | `BpmnConverter.cs:91 + :104` | unit tests only | Schedules a process instance via `RegisterOrUpdateReminder`. |
+| Message Start Event | `<bpmn:startEvent><messageEventDefinition>` | ✅ | `BpmnConverter.cs:91 + :114` | [#16](../../../tests/manual/16-message-start-event/) | Auto-creates an instance on matching message delivery. |
+| Signal Start Event | `<bpmn:startEvent><signalEventDefinition>` | ✅ | `BpmnConverter.cs:91 + :121` | [#17](../../../tests/manual/17-signal-start-event/) | Broadcast match creates an instance. |
+| Error Start Event *(Event Sub-Process only)* | `<bpmn:startEvent><errorEventDefinition>` | ✅ | `BpmnConverter.cs:91 + :129, :527-536` | [#19](../../../tests/manual/19-event-subprocess-error/) | Only valid inside `triggeredByEvent="true"` sub-processes. |
+| Conditional Start Event | `<bpmn:startEvent><conditionalEventDefinition>` | ✅ | `BpmnConverter.cs:91 + :124` | [#24-conditional](../../../tests/manual/24-conditional-event/) | Triggered via `POST /Workflow/evaluate-conditions`. |
+| Multiple Start Event | `<bpmn:startEvent>` with multiple event definitions | ✅ | `BpmnConverter.cs:91` (multi-def detection) | [#24-multiple](../../../tests/manual/24-multiple-event/) | First-fires-wins; surplus subscriptions cancelled. |
 
 ### Intermediate Catch Events
 
 | Element | BPMN XML | Status | Source pin | Tested by | Notes |
 |---|---|---|---|---|---|
-| Message Intermediate Catch | `<bpmn:intermediateCatchEvent><messageEventDefinition>` | ✅ | `BpmnConverter.cs:153 + :166` | [#09](../../../tests/manual/09-message-events/) | Correlates by `=variable` extension. |
-| Signal Intermediate Catch | `<bpmn:intermediateCatchEvent><signalEventDefinition>` | ✅ | `BpmnConverter.cs:153 + :167` | [#10](../../../tests/manual/10-signal-events/) | Broadcast match unblocks. |
-| Timer Intermediate Catch | `<bpmn:intermediateCatchEvent><timerEventDefinition>` | ✅ | `BpmnConverter.cs:153 + :165` | [#08](../../../tests/manual/08-timer-events/) | ISO 8601 duration / cycle / date. |
-| Conditional Intermediate Catch | `<bpmn:intermediateCatchEvent><conditionalEventDefinition>` | ✅ | `BpmnConverter.cs:153 + :191` | [#24-conditional](../../../tests/manual/24-conditional-event/) | Re-evaluated on every activity completion. |
-| Multiple Intermediate Catch | `<bpmn:intermediateCatchEvent>` w/ multiple event-defs | ✅ | `BpmnConverter.cs:153` (multi-def) | [#24-multiple](../../../tests/manual/24-multiple-event/) | First-fires-wins. |
+| Message Intermediate Catch | `<bpmn:intermediateCatchEvent><messageEventDefinition>` | ✅ | `BpmnConverter.cs:150 + :163` | [#09](../../../tests/manual/09-message-events/) | Correlates by `=variable` extension. |
+| Signal Intermediate Catch | `<bpmn:intermediateCatchEvent><signalEventDefinition>` | ✅ | `BpmnConverter.cs:150 + :164` | [#10](../../../tests/manual/10-signal-events/) | Broadcast match unblocks. |
+| Timer Intermediate Catch | `<bpmn:intermediateCatchEvent><timerEventDefinition>` | ✅ | `BpmnConverter.cs:150 + :162` | [#08](../../../tests/manual/08-timer-events/) | ISO 8601 duration / cycle / date. |
+| Conditional Intermediate Catch | `<bpmn:intermediateCatchEvent><conditionalEventDefinition>` | ✅ | `BpmnConverter.cs:150 + :165` | [#24-conditional](../../../tests/manual/24-conditional-event/) | Re-evaluated on every activity completion. |
+| Multiple Intermediate Catch | `<bpmn:intermediateCatchEvent>` w/ multiple event-defs | ✅ | `BpmnConverter.cs:150` (multi-def) | [#24-multiple](../../../tests/manual/24-multiple-event/) | First-fires-wins. |
 
 ### Intermediate Throw Events
 
 | Element | BPMN XML | Status | Source pin | Tested by | Notes |
 |---|---|---|---|---|---|
-| Signal Intermediate Throw | `<bpmn:intermediateThrowEvent><signalEventDefinition>` | ✅ | `BpmnConverter.cs:206 + :225` | [#10](../../../tests/manual/10-signal-events/) | Broadcasts cluster-wide. |
-| Escalation Intermediate Throw | `<bpmn:intermediateThrowEvent><escalationEventDefinition>` | ✅ | `BpmnConverter.cs:206 + :226` | [#24-escalation](../../../tests/manual/24-escalation-event/) | Mid-flow throw, continues execution after. |
-| Compensation Intermediate Throw | `<bpmn:intermediateThrowEvent><compensateEventDefinition>` | ✅ | `BpmnConverter.cs:206 + :209` | [#24-compensation](../../../tests/manual/24-compensation-event/) | Broadcast or targeted (`activityRef`). |
-| Multiple Intermediate Throw | `<bpmn:intermediateThrowEvent>` w/ multiple event-defs | ✅ | `BpmnConverter.cs:206` (multi-def) | [#24-multiple](../../../tests/manual/24-multiple-event/) | Fires every defined signal. |
+| Signal Intermediate Throw | `<bpmn:intermediateThrowEvent><signalEventDefinition>` | ✅ | `BpmnConverter.cs:203 + :222` | [#10](../../../tests/manual/10-signal-events/) | Broadcasts cluster-wide. |
+| Escalation Intermediate Throw | `<bpmn:intermediateThrowEvent><escalationEventDefinition>` | ✅ | `BpmnConverter.cs:203 + :223` | [#24-escalation](../../../tests/manual/24-escalation-event/) | Mid-flow throw, continues execution after. |
+| Compensation Intermediate Throw | `<bpmn:intermediateThrowEvent><compensateEventDefinition>` | ✅ | `BpmnConverter.cs:203 + :206` | [#24-compensation](../../../tests/manual/24-compensation-event/) | Broadcast or targeted (`activityRef`). |
+| Multiple Intermediate Throw | `<bpmn:intermediateThrowEvent>` w/ multiple event-defs | ✅ | `BpmnConverter.cs:203` (multi-def) | [#24-multiple](../../../tests/manual/24-multiple-event/) | Fires every defined signal. |
 
 ### End Events
 
 | Element | BPMN XML | Status | Source pin | Tested by | Notes |
 |---|---|---|---|---|---|
-| Plain End Event | `<bpmn:endEvent>` | ✅ | `BpmnConverter.cs:254` | [#01](../../../tests/manual/01-basic-workflow/) | Terminates the enclosing scope. |
-| Error End Event | `<bpmn:endEvent><errorEventDefinition>` | ✅ | `BpmnConverter.cs:254` (default error path) | [#11](../../../tests/manual/11-error-boundary/) | Throws to nearest matching error boundary. |
-| Cancel End Event *(Transaction only)* | `<bpmn:endEvent><cancelEventDefinition>` | ✅ | `BpmnConverter.cs:254 + :271` | [#30-cancel](../../../tests/manual/30-cancel-event/) | Triggers transaction Cancel boundary. |
-| Compensation End Event | `<bpmn:endEvent><compensateEventDefinition>` | ✅ | `BpmnConverter.cs:254 + :259` | [#24-compensation](../../../tests/manual/24-compensation-event/) | Broadcasts compensation throw on terminate. |
-| Escalation End Event | `<bpmn:endEvent><escalationEventDefinition>` | ✅ | `BpmnConverter.cs:254 + :263` | [#24-escalation](../../../tests/manual/24-escalation-event/) | Throws escalation; uncaught escalation is non-faulting. |
+| Plain End Event | `<bpmn:endEvent>` | ✅ | `BpmnConverter.cs:251` | [#01](../../../tests/manual/01-basic-workflow/) | Terminates the enclosing scope. |
+| Error End Event | `<bpmn:endEvent><errorEventDefinition>` | ✅ | `BpmnConverter.cs:251` (default error path) | [#11](../../../tests/manual/11-error-boundary/) | Throws to nearest matching error boundary. |
+| Cancel End Event *(Transaction only)* | `<bpmn:endEvent><cancelEventDefinition>` | ✅ | `BpmnConverter.cs:251 + :268` | [#30-cancel](../../../tests/manual/30-cancel-event/) | Triggers transaction Cancel boundary. |
+| Compensation End Event | `<bpmn:endEvent><compensateEventDefinition>` | ✅ | `BpmnConverter.cs:251 + :256` | [#24-compensation](../../../tests/manual/24-compensation-event/) | Broadcasts compensation throw on terminate. |
+| Escalation End Event | `<bpmn:endEvent><escalationEventDefinition>` | ✅ | `BpmnConverter.cs:251 + :260` | [#24-escalation](../../../tests/manual/24-escalation-event/) | Throws escalation; uncaught escalation is non-faulting. |
 
 ### Boundary Events
 
 | Element | BPMN XML | Status | Source pin | Tested by | Notes |
 |---|---|---|---|---|---|
-| Error Boundary | `<bpmn:boundaryEvent><errorEventDefinition>` | ✅ | `BpmnConverter.cs:638 + :690` | [#11](../../../tests/manual/11-error-boundary/) | Always interrupting per BPMN spec. Optional `errorRef` filters by code. |
-| Timer Boundary | `<bpmn:boundaryEvent><timerEventDefinition>` | ✅ | `BpmnConverter.cs:638 + :689` | [#15](../../../tests/manual/15-non-interrupting-boundaries/) | Interrupting + non-interrupting variants. Cycle timers re-register on non-interrupting. |
-| Message Boundary | `<bpmn:boundaryEvent><messageEventDefinition>` | ⚠️ | `BpmnConverter.cs:638 + :691` | [#09](../../../tests/manual/09-message-events/) | **KNOWN BUG:** boundary events on `IntermediateCatchEvent` don't register subscriptions. |
-| Signal Boundary | `<bpmn:boundaryEvent><signalEventDefinition>` | ⚠️ | `BpmnConverter.cs:638 + :692` | [#10](../../../tests/manual/10-signal-events/) | Same KNOWN BUG as Message Boundary. |
-| Escalation Boundary | `<bpmn:boundaryEvent><escalationEventDefinition>` | ✅ | `BpmnConverter.cs:638 + :693` | [#24-escalation](../../../tests/manual/24-escalation-event/) | Interrupting + non-interrupting variants. Specific code matches take priority over catch-all. |
-| Compensation Boundary | `<bpmn:boundaryEvent><compensateEventDefinition>` | ✅ | `BpmnConverter.cs:638 + :661` | [#24-compensation](../../../tests/manual/24-compensation-event/) | Attached to compensable activity. |
-| Conditional Boundary | `<bpmn:boundaryEvent><conditionalEventDefinition>` | ✅ | `BpmnConverter.cs:638 + :672` | [#24-conditional](../../../tests/manual/24-conditional-event/) | Interrupting + non-interrupting; non-interrupting is edge-triggered. |
-| Cancel Boundary *(Transaction only)* | `<bpmn:boundaryEvent><cancelEventDefinition>` | ✅ | `BpmnConverter.cs:638 + :727` | [#30-cancel](../../../tests/manual/30-cancel-event/) | Always interrupting. Fires when Cancel End Event executes. |
-| Multiple Boundary | `<bpmn:boundaryEvent>` w/ multiple event-defs | ✅ | `BpmnConverter.cs:638` (multi-def) | [#24-multiple](../../../tests/manual/24-multiple-event/) | First-fires-wins cancels host activity. |
+| Error Boundary | `<bpmn:boundaryEvent><errorEventDefinition>` | ✅ | `BpmnConverter.cs:635 + :687` | [#11](../../../tests/manual/11-error-boundary/) | Always interrupting per BPMN spec. Optional `errorRef` filters by code. |
+| Timer Boundary | `<bpmn:boundaryEvent><timerEventDefinition>` | ✅ | `BpmnConverter.cs:635 + :686` | [#15](../../../tests/manual/15-non-interrupting-boundaries/) | Interrupting + non-interrupting variants. Cycle timers re-register on non-interrupting. |
+| Message Boundary | `<bpmn:boundaryEvent><messageEventDefinition>` | ⚠️ | `BpmnConverter.cs:635 + :688` | [#09](../../../tests/manual/09-message-events/) | **KNOWN BUG:** boundary events on `IntermediateCatchEvent` don't register subscriptions. |
+| Signal Boundary | `<bpmn:boundaryEvent><signalEventDefinition>` | ⚠️ | `BpmnConverter.cs:635 + :689` | [#10](../../../tests/manual/10-signal-events/) | Same KNOWN BUG as Message Boundary. |
+| Escalation Boundary | `<bpmn:boundaryEvent><escalationEventDefinition>` | ✅ | `BpmnConverter.cs:635 + :690` | [#24-escalation](../../../tests/manual/24-escalation-event/) | Interrupting + non-interrupting variants. Specific code matches take priority over catch-all. |
+| Compensation Boundary | `<bpmn:boundaryEvent><compensateEventDefinition>` | ✅ | `BpmnConverter.cs:635 + :658` | [#24-compensation](../../../tests/manual/24-compensation-event/) | Attached to compensable activity. |
+| Conditional Boundary | `<bpmn:boundaryEvent><conditionalEventDefinition>` | ✅ | `BpmnConverter.cs:635 + :660` | [#24-conditional](../../../tests/manual/24-conditional-event/) | Interrupting + non-interrupting; non-interrupting is edge-triggered. |
+| Cancel Boundary *(Transaction only)* | `<bpmn:boundaryEvent><cancelEventDefinition>` | ✅ | `BpmnConverter.cs:635 + :724` | [#30-cancel](../../../tests/manual/30-cancel-event/) | Always interrupting. Fires when Cancel End Event executes. |
+| Multiple Boundary | `<bpmn:boundaryEvent>` w/ multiple event-defs | ✅ | `BpmnConverter.cs:635` (multi-def) | [#24-multiple](../../../tests/manual/24-multiple-event/) | First-fires-wins cancels host activity. |
 
 ### Tasks ([details](./activities/tasks))
 
 | Element | BPMN XML | Status | Source pin | Tested by | Notes |
 |---|---|---|---|---|---|
-| Plain Task | `<bpmn:task>` | ✅ | `BpmnConverter.cs:303` | [#01](../../../tests/manual/01-basic-workflow/) | Auto-completes immediately (no executor). |
-| Script Task | `<bpmn:scriptTask scriptFormat="csharp">` | ✅ | `BpmnConverter.cs:354` | [#02](../../../tests/manual/02-script-tasks/) | DynamicExpresso expressions on `_context`. |
-| Service Task / Custom Task | `<bpmn:serviceTask type="…">` | ✅ | `BpmnConverter.cs:333` | [#37](../../../tests/manual/37-custom-task-framework/), [#39](../../../tests/manual/39-rest-caller/) | Plugin-based execution. |
-| User Task | `<bpmn:userTask>` | ✅ | `BpmnConverter.cs:313` | [#19-user-task](../../../tests/manual/18-user-task/) | Claim/unclaim/complete lifecycle. |
-| Call Activity | `<bpmn:callActivity calledElement="…">` | ✅ | `BpmnConverter.cs:601` | [#06](../../../tests/manual/06-call-activity/) | Cross-process variable mapping. |
+| Plain Task | `<bpmn:task>` | ✅ | `BpmnConverter.cs:300` | [#01](../../../tests/manual/01-basic-workflow/) | Auto-completes immediately (no executor). |
+| Script Task | `<bpmn:scriptTask scriptFormat="csharp">` | ✅ | `BpmnConverter.cs:351` | [#02](../../../tests/manual/02-script-tasks/) | DynamicExpresso expressions on `_context`. |
+| Service Task / Custom Task | `<bpmn:serviceTask type="…">` | ✅ | `BpmnConverter.cs:330` | [#37](../../../tests/manual/37-custom-task-framework/), [#39](../../../tests/manual/39-rest-caller/) | Plugin-based execution. |
+| User Task | `<bpmn:userTask>` | ✅ | `BpmnConverter.cs:310` | [#19-user-task](../../../tests/manual/18-user-task/) | Claim/unclaim/complete lifecycle. |
+| Call Activity | `<bpmn:callActivity calledElement="…">` | ✅ | `BpmnConverter.cs:598` | [#06](../../../tests/manual/06-call-activity/) | Cross-process variable mapping. |
 
 ### Sub-Processes
 
 | Element | BPMN XML | Status | Source pin | Tested by | Notes |
 |---|---|---|---|---|---|
-| Embedded Sub-Process | `<bpmn:subProcess>` | ✅ | `BpmnConverter.cs:517` | [#07](../../../tests/manual/07-subprocess/) | Own start/end, isolated variable scope. |
-| Event Sub-Process | `<bpmn:subProcess triggeredByEvent="true">` | ✅ | `BpmnConverter.cs:517 + :527-530` | [#19](../../../tests/manual/19-event-subprocess-error/), [#20-tm](../../../tests/manual/20-event-subprocess-timer/), [#21](../../../tests/manual/21-event-subprocess-message/), [#22](../../../tests/manual/22-event-subprocess-signal/), [#23](../../../tests/manual/23-event-subprocess-non-interrupting/) | Error-/timer-/message-/signal-triggered; interrupting + non-interrupting. |
-| Transaction Sub-Process | `<bpmn:transaction>` | ✅ | `BpmnConverter.cs:574 + :578` | [#26](../../../tests/manual/26-transaction-subprocess/), [#30-cancel](../../../tests/manual/30-cancel-event/), [#53-nested](../../../tests/manual/53-nested-transaction/) | Completed ✅, Cancelled ✅, Hazard ✅. All three terminal outcomes supported. See [Transaction Sub-Process status](#transaction-sub-process-status). |
-| Multi-Instance (any host) | `<bpmn:*><multiInstanceLoopCharacteristics>` | ⚠️ | `BpmnConverter.cs:1132 + :1138` | [#13](../../../tests/manual/13-multi-instance/) | `loopCardinality` + `inputCollection` supported; `completionCondition` and `nrOf*` pending [#470](https://github.com/nightBaker/fleans/issues/470). |
+| Embedded Sub-Process | `<bpmn:subProcess>` | ✅ | `BpmnConverter.cs:514` | [#07](../../../tests/manual/07-subprocess/) | Own start/end, isolated variable scope. |
+| Event Sub-Process | `<bpmn:subProcess triggeredByEvent="true">` | ✅ | `BpmnConverter.cs:514 + :527-536` | [#19](../../../tests/manual/19-event-subprocess-error/), [#20-tm](../../../tests/manual/20-event-subprocess-timer/), [#21](../../../tests/manual/21-event-subprocess-message/), [#22](../../../tests/manual/22-event-subprocess-signal/), [#23](../../../tests/manual/23-event-subprocess-non-interrupting/) | Error-/timer-/message-/signal-triggered; interrupting + non-interrupting. |
+| Transaction Sub-Process | `<bpmn:transaction>` | ✅ | `BpmnConverter.cs:571 + :575` | [#26](../../../tests/manual/26-transaction-subprocess/), [#30-cancel](../../../tests/manual/30-cancel-event/), [#53-nested](../../../tests/manual/53-nested-transaction/) | Completed ✅, Cancelled ✅, Hazard ✅. All three terminal outcomes supported. See [Transaction Sub-Process status](#transaction-sub-process-status). |
+| Multi-Instance (any host) | `<bpmn:*><multiInstanceLoopCharacteristics>` | ✅ | `BpmnConverter.cs:1120 + :1126` | [#13](../../../tests/manual/13-multi-instance/) | `loopCardinality`, `inputCollection`, `completionCondition`, and `nrOf*` loop variables all supported (parser: `BpmnConverter.cs:1120, :1140`; runtime: `WorkflowEvaluateCompletionConditionEventHandler.cs:58-60`). |
 
 ### Gateways
 
 | Element | BPMN XML | Status | Source pin | Tested by | Notes |
 |---|---|---|---|---|---|
-| Exclusive | `<bpmn:exclusiveGateway>` | ✅ | `BpmnConverter.cs:369` | [#03](../../../tests/manual/03-exclusive-gateway/) | XOR — first true condition wins; default flow as fallback. |
-| Inclusive | `<bpmn:inclusiveGateway>` | ✅ | `BpmnConverter.cs:420` | [#14](../../../tests/manual/14-inclusive-gateway/) | OR — every true branch fires; join syncs all live tokens. |
-| Parallel | `<bpmn:parallelGateway>` | ✅ | `BpmnConverter.cs:382` | [#04](../../../tests/manual/04-parallel-gateway/) | AND — fork all branches; join waits for all. |
-| Complex | `<bpmn:complexGateway>` | ✅ | `BpmnConverter.cs:459` | [#20-cg](../../../tests/manual/20-complex-gateway/) | Conditional outgoing flows + optional `activationCondition` on join. |
-| Event-Based | `<bpmn:eventBasedGateway>` | ✅ | `BpmnConverter.cs:507` | [#05](../../../tests/manual/05-event-based-gateway/) | First arriving event wins; loser subscriptions cancelled. |
+| Exclusive | `<bpmn:exclusiveGateway>` | ✅ | `BpmnConverter.cs:366` | [#03](../../../tests/manual/03-exclusive-gateway/) | XOR — first true condition wins; default flow as fallback. |
+| Inclusive | `<bpmn:inclusiveGateway>` | ✅ | `BpmnConverter.cs:417` | [#14](../../../tests/manual/14-inclusive-gateway/) | OR — every true branch fires; join syncs all live tokens. |
+| Parallel | `<bpmn:parallelGateway>` | ✅ | `BpmnConverter.cs:379` | [#04](../../../tests/manual/04-parallel-gateway/) | AND — fork all branches; join waits for all. |
+| Complex | `<bpmn:complexGateway>` | ✅ | `BpmnConverter.cs:456` | [#20-cg](../../../tests/manual/20-complex-gateway/) | Conditional outgoing flows + optional `activationCondition` on join. |
+| Event-Based | `<bpmn:eventBasedGateway>` | ✅ | `BpmnConverter.cs:504` | [#05](../../../tests/manual/05-event-based-gateway/) | First arriving event wins; loser subscriptions cancelled. |
 
 ### Connecting Objects
 
 | Element | BPMN XML | Status | Source pin | Tested by | Notes |
 |---|---|---|---|---|---|
-| Sequence Flow | `<bpmn:sequenceFlow>` | ✅ | `BpmnConverter.cs:845` (`ParseSequenceFlows`) | every fixture | Optional `<conditionExpression>` for guarded flows. |
+| Sequence Flow | `<bpmn:sequenceFlow>` | ✅ | `BpmnConverter.cs:842` (`ParseSequenceFlows`) | every fixture | Optional `<conditionExpression>` for guarded flows. |
 | Message Flow | `<bpmn:messageFlow>` | ❌ | — | — | Cross-pool messaging not implemented. |
 | Association | `<bpmn:association>` | ❌ | — | — | Annotation-to-flow links not parsed. |
 | Data Association | `<bpmn:dataInputAssociation>` / `<bpmn:dataOutputAssociation>` | ❌ | — | — | Data-object flow links not parsed. |
@@ -279,7 +278,7 @@ The tab fetches via the `ICompensationLogService` application service which acti
 2. Runs the compensation walk for any compensable activities that completed before the failure.
 3. Once compensation finishes, activates the Error Boundary Event attached to the TX host (if present), or fails the TX host to propagate the error to the parent scope.
 
-**Constraint:** **Multi-instance transactions** are rejected at parse time (`BpmnConverter.cs:578-581` — typed exception). This is a deliberate restriction, not a bug — multi-instance + atomicity has subtle interactions with compensation walk ordering that #307 will address.
+**Constraint:** **Multi-instance transactions** are rejected at parse time (`BpmnConverter.cs:575-578` — typed exception). This is a deliberate restriction, not a bug — multi-instance + atomicity has subtle interactions with compensation walk ordering that #307 will address.
 
 **Nested transactions:** parse and run on the happy path. **Do not place a Cancel End Event inside an inner nested transaction** — cancel-path semantics for nested transactions land in later phases of [#307](https://github.com/nightBaker/fleans/issues/307).
 :::
