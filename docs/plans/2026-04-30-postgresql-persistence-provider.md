@@ -108,7 +108,7 @@ PostgreSQL integration tests use [Testcontainers](https://dotnet.testcontainers.
 
 ## 10. Adding a new provider
 
-Mirror the per-provider shape established by SQLite and PostgreSQL — this checklist matches the entry in `CLAUDE.md` ("Adding a new provider"):
+Mirror the per-provider shape established by SQLite and PostgreSQL — this checklist matches the entry in [`docs/conventions/persistence.md`](../conventions/persistence.md#adding-a-new-provider):
 
 1. Create a new `Fleans.Persistence.<Provider>` class library that references `Fleans.Persistence` (shared model) and the EF Core provider package.
 2. Add a `<Provider>ModelCustomizer : RelationalModelCustomizer` that handles whatever the shared model cannot store natively for that engine (string conversion, JSON shape, etc.). Document that decision in a class-level XML comment, the way `SqliteModelCustomizer` and `PostgresModelCustomizer` do.

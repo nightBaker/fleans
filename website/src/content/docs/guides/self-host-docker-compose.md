@@ -36,8 +36,9 @@ curl -LO https://github.com/nightBaker/fleans/releases/download/v0.1.0-beta/dock
 
 :::note[Future-tag references]
 The literal `v0.1.0-beta` above is the first published release. Substitute the
-current release tag when you run these commands — see the `## Cutting a
-Release` runbook in `CLAUDE.md` for the maintainer-side bump cadence.
+current release tag when you run these commands — see the
+[`docs/runbooks/release.md`](https://github.com/nightBaker/fleans/blob/main/docs/runbooks/release.md)
+runbook for the maintainer-side bump cadence.
 :::
 
 ## Verify the images the bundle pulls
@@ -217,5 +218,5 @@ check that page for component-level explanations.
   selection, external-Postgres connection-string contract, migration model.
 - [Authentication](/fleans/reference/authentication/) — OIDC setup for the
   admin UI, JWT validation for the API.
-- [Cutting a Release](https://github.com/nightBaker/fleans/blob/main/CLAUDE.md#cutting-a-release) —
+- [Cutting a Release](https://github.com/nightBaker/fleans/blob/main/docs/runbooks/release.md) —
   maintainer runbook for publishing a new compose bundle.
