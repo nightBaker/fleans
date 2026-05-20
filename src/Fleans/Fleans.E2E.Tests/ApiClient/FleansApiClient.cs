@@ -58,6 +58,72 @@ public sealed class FleansApiClient
         return await response.Content.ReadFromJsonAsync<InstanceStateSnapshot>(JsonOptions, ct);
     }
 
+    public async Task<SendMessageResponse> SendMessageAsync(
+        string messageName,
+        string? correlationKey = null,
+        IDictionary<string, object?>? variables = null,
+        CancellationToken ct = default)
+    {
+        // Controller expects ExpandoObject? for Variables; hand-build one from the dict so callers
+        // don't have to construct ExpandoObjects directly.
+        System.Dynamic.ExpandoObject? expando = null;
+        if (variables is not null)
+        {
+            expando = new System.Dynamic.ExpandoObject();
+            var sink = (IDictionary<string, object?>)expando;
+            foreach (var kvp in variables)
+            {
+                sink[kvp.Key] = kvp.Value;
+            }
+        }
+
+        var response = await _http.PostAsJsonAsync(
+            "/Execution/message",
+            new SendMessageRequest(messageName, correlationKey, expando),
+            JsonOptions,
+            ct);
+        response.EnsureSuccessStatusCode();
+        var result = await response.Content.ReadFromJsonAsync<SendMessageResponse>(JsonOptions, ct);
+        return result ?? throw new InvalidOperationException("SendMessage returned an empty body.");
+    }
+
+    public async Task<SendSignalResponse> SendSignalAsync(string signalName, CancellationToken ct = default)
+    {
+        var response = await _http.PostAsJsonAsync(
+            "/Execution/signal",
+            new SendSignalRequest(signalName),
+            JsonOptions,
+            ct);
+        response.EnsureSuccessStatusCode();
+        var result = await response.Content.ReadFromJsonAsync<SendSignalResponse>(JsonOptions, ct);
+        return result ?? throw new InvalidOperationException("SendSignal returned an empty body.");
+    }
+
+    public async Task<InstanceStateSnapshot> WaitForStateAsync(
+        Guid workflowInstanceId,
+        Func<InstanceStateSnapshot, bool> predicate,
+        TimeSpan? timeout = null,
+        CancellationToken ct = default)
+    {
+        var deadline = DateTimeOffset.UtcNow + (timeout ?? TimeSpan.FromSeconds(30));
+        InstanceStateSnapshot? last = null;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            ct.ThrowIfCancellationRequested();
+            last = await GetStateAsync(workflowInstanceId, ct);
+            if (last is not null && predicate(last))
+            {
+                return last;
+            }
+            await Task.Delay(TimeSpan.FromMilliseconds(250), ct);
+        }
+        throw new TimeoutException(
+            $"Workflow instance {workflowInstanceId} did not reach the expected state within {timeout ?? TimeSpan.FromSeconds(30)}. " +
+            $"Last snapshot: IsStarted={last?.IsStarted}, IsCompleted={last?.IsCompleted}, " +
+            $"Active=[{string.Join(",", last?.ActiveActivityIds ?? new List<string>())}], " +
+            $"Completed=[{string.Join(",", last?.CompletedActivityIds ?? new List<string>())}].");
+    }
+
     public async Task<InstanceStateSnapshot> WaitForCompletionAsync(
         Guid workflowInstanceId,
         TimeSpan? timeout = null,
