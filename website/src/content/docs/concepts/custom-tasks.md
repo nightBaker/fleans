@@ -9,7 +9,7 @@ This is the recommended pattern for anything Fleans doesn't ship in the box: RES
 
 ## How it works
 
-1. **BPMN parsing.** The converter sees `<serviceTask type="rest-call">` (or the Camunda equivalent `<extensionElements><zeebe:taskDefinition type="rest-call"/></extensionElements>`) and produces a `CustomTaskActivity` carrying the task type and any `<zeebe:ioMapping>` declarations.
+1. **BPMN parsing.** The converter sees `<serviceTask type="rest-call">` (or the Camunda equivalent `<extensionElements><zeebe:taskDefinition type="rest-call"/></extensionElements>`) and produces a `CustomTaskActivity` carrying the task type and any `<fleans:ioMapping>` declarations.
 2. **Activity emits an event.** When the workflow reaches the activity, it publishes `ExecuteCustomTaskEvent { TaskType, InputMappings, OutputMappings, VariablesId, … }` on the per-type Orleans stream `events.ExecuteCustomTaskEvent.{TaskType}` — partitioned by `TaskType` so each plugin's handler grain class only receives events it actually claims.
 3. **Plugin handler is dispatched directly.** Each plugin's `CustomTaskHandlerBase` subclass implicit-subscribes to its own per-type namespace (`[ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.<task-type>")]`), so Orleans activates only the matching plugin's grain. No filter-after-deliver waste: silos no longer deserialize events for plugins they don't host.
 4. **Plugin runs.** The base class resolves input mappings against the workflow's variable scope, calls your `ExecuteAsync(...)`, projects outputs against the result, then calls `IWorkflowInstanceGrain.CompleteActivity` (or `FailActivity` on exception).
@@ -23,7 +23,7 @@ For a step-by-step tutorial — project setup, handler, schema, DI wiring, BPMN 
 
 ## Parameter types
 
-Parameter schemas drive what the management UI's BPMN editor renders for each `<zeebe:input>` row. The five primitive types map to typed widgets:
+Parameter schemas drive what the management UI's BPMN editor renders for each `<fleans:input>` row. The five primitive types map to typed widgets:
 
 | Type | Widget | Notes |
 |---|---|---|
@@ -44,7 +44,7 @@ Nested `List`/`Map` (a list whose items are themselves objects with three fields
 
 ## Mapping grammar
 
-Sources and targets in `<zeebe:input>` / `<zeebe:output>` follow this grammar (validated at BPMN deploy time):
+Sources and targets in `<fleans:input>` / `<fleans:output>` follow this grammar (validated at BPMN deploy time):
 
 | Form | Example | Meaning |
 |------|---------|---------|
@@ -53,7 +53,7 @@ Sources and targets in `<zeebe:input>` / `<zeebe:output>` follow this grammar (v
 | `=42` / `=3.14` / `=true` / `=false` / `=null` | `=true` | Primitive literal |
 | Bare string | `application/json` | Treated as a string literal |
 
-Targets must be valid identifiers (`^[a-zA-Z_][a-zA-Z0-9_]*$`). The target `__response` is **reserved** on `<zeebe:output>` — plugins write their result under that key in the dictionary they return, and your output mappings reference it via `=__response.body` or similar.
+Targets must be valid identifiers (`^[a-zA-Z_][a-zA-Z0-9_]*$`). The target `__response` is **reserved** on `<fleans:output>` — plugins write their result under that key in the dictionary they return, and your output mappings reference it via `=__response.body` or similar.
 
 ## What lives where
 
@@ -89,7 +89,7 @@ Fleans ships one custom-task plugin out of the box: `Fleans.Plugins.RestCaller`.
 |---|---|---|---|---|
 | `url` | `String` | yes | — | Absolute URI |
 | `method` | `String` | yes | `GET` | One of GET / POST / PUT / PATCH / DELETE / HEAD / OPTIONS |
-| `headers` | `Map<String>` | no | `null` | Each `(name, value)` pair sent as a header. **v1 only sources from a workflow variable** (e.g. `<zeebe:input source="=requestHeaders" target="headers" />`). |
+| `headers` | `Map<String>` | no | `null` | Each `(name, value)` pair sent as a header. **v1 only sources from a workflow variable** (e.g. `<fleans:input source="=requestHeaders" target="headers" />`). |
 | `body` | `MultilineString` | no | `null` | Sent verbatim. If non-empty and no `Content-Type` header is supplied, defaults to `application/json` |
 | `successCodes` | `List<Integer>` | no | `null` | When null/empty, defaults to `200..299`. Pass an explicit list (e.g. `[200, 201, 404]`) when you want non-2xx codes treated as success. **v1 only sources from a workflow variable.** |
 | `timeoutSec` | `Integer` | yes | `30` | Whole seconds; clamped to `[1, 300]`. Timeout fails the activity with `code="504"` |
@@ -109,16 +109,17 @@ Workflow authors route via boundary error events with `errorCode="404"`, `errorC
 ### Worked example
 
 ```xml
+<!-- Requires xmlns:fleans="https://fleans.io/schema/bpmn/1.0" on <bpmn:definitions> -->
 <bpmn:serviceTask id="getUser" type="rest-call">
   <bpmn:extensionElements>
-    <zeebe:ioMapping>
-      <zeebe:input  source="=userApiUrl"        target="url" />
-      <zeebe:input  source="GET"                target="method" />
-      <zeebe:input  source="=requestHeaders"    target="headers" />
-      <zeebe:input  source="10"                 target="timeoutSec" />
-      <zeebe:output source="=__response.body"   target="user" />
-      <zeebe:output source="=__response.statusCode" target="status" />
-    </zeebe:ioMapping>
+    <fleans:ioMapping>
+      <fleans:input  source="=userApiUrl"        target="url" />
+      <fleans:input  source="GET"                target="method" />
+      <fleans:input  source="=requestHeaders"    target="headers" />
+      <fleans:input  source="10"                 target="timeoutSec" />
+      <fleans:output source="=__response.body"   target="user" />
+      <fleans:output source="=__response.statusCode" target="status" />
+    </fleans:ioMapping>
   </bpmn:extensionElements>
 </bpmn:serviceTask>
 ```

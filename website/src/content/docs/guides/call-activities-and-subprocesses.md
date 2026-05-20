@@ -112,18 +112,19 @@ foreach (var output in extensionElements.Elements()
     .Where(e => e.Name.LocalName == "outputMapping"))
 ```
 
-:::caution[`<zeebe:input>` / `<zeebe:output>` are NOT accepted by CallActivity]
-The `<zeebe:input>` / `<zeebe:output>` form is reserved for **service tasks
-and custom tasks** — its parser is at `BpmnConverter.cs:1286-1322` and is
-never invoked for `<callActivity>`.
+:::caution[`<fleans:input>` / `<fleans:output>` are NOT accepted by CallActivity]
+The `<fleans:input>` / `<fleans:output>` form is reserved for **service tasks
+and custom tasks** (and the equivalent `<zeebe:input>` / `<zeebe:output>` from
+Camunda exports, accepted via the same parser). Its parser is at
+`BpmnConverter.cs:1286-1322` and is never invoked for `<callActivity>`.
 
 Mixing the two forms — for example writing
-`<zeebe:input source="…" target="…"/>` inside a
+`<fleans:input source="…" target="…"/>` inside a
 `<callActivity><extensionElements>` block — will silently produce **zero
 mappings**: the call-activity parser only walks elements whose local-name
 is `inputMapping` / `outputMapping`, and the engine emits no parse warning
-for stray zeebe elements there. The child workflow will start with whatever
-the propagation flags pull in (and nothing else).
+for stray service-task-style elements there. The child workflow will start with
+whatever the propagation flags pull in (and nothing else).
 
 If you copy mapping XML from a service task into a call activity, you must
 rename the elements.

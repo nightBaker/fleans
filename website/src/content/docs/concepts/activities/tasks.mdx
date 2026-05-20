@@ -74,9 +74,10 @@ exposes a claim → complete (or fail / cancel) lifecycle via REST and the admin
 
 **BPMN:**
 ```xml
+<!-- Requires xmlns:fleans="https://fleans.io/schema/bpmn/1.0" on <bpmn:definitions> -->
 <bpmn:userTask id="Task_1" name="Approve request">
   <bpmn:extensionElements>
-    <zeebe:assignmentDefinition assignee="manager" candidateGroups="approvers" />
+    <fleans:assignmentDefinition assignee="manager" candidateGroups="approvers" />
   </bpmn:extensionElements>
 </bpmn:userTask>
 ```
@@ -99,17 +100,18 @@ task is completed via `POST /Workflow/{id}/complete-activity`. Source: `BpmnConv
 
 A **Service Task** (`<bpmn:serviceTask type="…">`) delegates execution to a plugin grain
 identified by the `type` attribute. Plugins live on a Worker silo and implement
-`CustomTaskHandlerBase`. Output variables are mapped back via `<zeebe:output>` bindings.
+`CustomTaskHandlerBase`. Output variables are mapped back via `<fleans:output>` bindings.
 
 **BPMN:**
 ```xml
+<!-- Requires xmlns:fleans="https://fleans.io/schema/bpmn/1.0" on <bpmn:definitions> -->
 <bpmn:serviceTask id="Task_1" name="Call external API">
   <bpmn:extensionElements>
-    <zeebe:taskDefinition type="rest-caller" />
-    <zeebe:ioMapping>
-      <zeebe:input source="=apiUrl"  target="url" />
-      <zeebe:output source="=__response.body" target="result" />
-    </zeebe:ioMapping>
+    <fleans:taskDefinition type="rest-caller" />
+    <fleans:ioMapping>
+      <fleans:input source="=apiUrl"  target="url" />
+      <fleans:output source="=__response.body" target="result" />
+    </fleans:ioMapping>
   </bpmn:extensionElements>
 </bpmn:serviceTask>
 ```

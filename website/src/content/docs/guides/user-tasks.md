@@ -194,7 +194,7 @@ The full error-handling pattern is the subject of the [Error Handling guide (#39
 
 ## Limitations & roadmap
 
-- **`camunda:formKey`, `dueDate`, `zeebe:assignmentDefinition` not honoured today.** Each is parsed by `BpmnConverter.cs` but has no engine wiring; document them in your BPMN for future-tool readers but do not rely on them at runtime.
+- **Several attributes are parsed but not honoured today.** See the *Recognised attributes* table above for the complete list (currently `camunda:formKey`, `dueDate`, and the Camunda-export `zeebe:assignmentDefinition`). Each is read by the parser but has no engine wiring; document them in your BPMN for future-tool readers but do not rely on them at runtime.
 - **`candidateGroups` is advisory (filter-only).** It scopes the `GET /Workflow/tasks?candidateGroup=…` response so a UI can show the right inbox, but it does **not** prevent a non-member from claiming a task they got the `activityInstanceId` for some other way. Enforce group membership at the front-end or gateway.
 - **Unclaim accepts any caller.** Enforce ownership in your front-end / gateway. Do not rely on the engine to refuse cross-user unclaims.
 - **Claim is not exclusive.** Any caller authorized per [Who can claim?](#who-can-claim) can `claim` a task that is already in the `Claimed` state; the previous `claimedBy` is silently overwritten without a 409 or a domain event distinguishing it from a fresh claim. If your workflow needs first-claim-wins semantics, enforce it in the front-end / API gateway by gating `claim` calls on `task.state == "Created"` from the read model.

@@ -19,8 +19,8 @@ This guide is the developer's tour, anchored to the runnable fixtures under `tes
 | Situation | Pick this |
 | --- | --- |
 | Run a task exactly *N* times, where *N* is a fixed compile-time number. | Parallel + `<loopCardinality>` |
-| Iterate over a workflow-variable list/array; iterations are independent. | Parallel + `zeebe:collection` |
-| Iterate over a list, but iteration *N+1* must observe iteration *N*'s side effects on the enclosing scope. | Sequential + `zeebe:collection` |
+| Iterate over a workflow-variable list/array; iterations are independent. | Parallel + `fleans:collection` |
+| Iterate over a list, but iteration *N+1* must observe iteration *N*'s side effects on the enclosing scope. | Sequential + `fleans:collection` |
 
 Two short rules of thumb:
 
@@ -32,11 +32,11 @@ Two short rules of thumb:
 Multi-instance configuration lives inside `<bpmn:multiInstanceLoopCharacteristics>` nested in the activity element. Fleans honours four attributes:
 
 - `isSequential="true|false"` — defaults to `false` (parallel).
-- **One of**: `<loopCardinality>N</loopCardinality>` (static count) **or** `zeebe:collection="varName"` (iterate over a workflow variable that resolves to a `List`/array).
-- `zeebe:elementVariable="..."` — names the per-iteration item variable inside the iteration's child scope. Only meaningful with `zeebe:collection`.
-- `zeebe:outputCollection="..."` + `zeebe:outputElement="..."` — names the aggregated output array on the **enclosing** scope and the per-iteration value to harvest from each child scope on completion.
+- **One of**: `<loopCardinality>N</loopCardinality>` (static count) **or** `fleans:collection="varName"` (iterate over a workflow variable that resolves to a `List`/array).
+- `fleans:elementVariable="..."` — names the per-iteration item variable inside the iteration's child scope. Only meaningful with `fleans:collection`.
+- `fleans:outputCollection="..."` + `fleans:outputElement="..."` — names the aggregated output array on the **enclosing** scope and the per-iteration value to harvest from each child scope on completion.
 
-Both bare-name and `zeebe:`-prefixed attributes are accepted by the parser (`zeebe:collection` ↔ `collection`, `zeebe:elementVariable` ↔ `elementVariable`, `zeebe:outputCollection` ↔ `outputCollection`, `zeebe:outputElement` ↔ `outputElement`). The fixtures in this guide use the `zeebe:` prefix to match what the BPMN editor emits.
+Both bare-name and `fleans:`-prefixed attributes are accepted by the parser (`fleans:collection` ↔ `collection`, `fleans:elementVariable` ↔ `elementVariable`, `fleans:outputCollection` ↔ `outputCollection`, `fleans:outputElement` ↔ `outputElement`). The editor and the canonical examples in this guide use the `fleans:` prefix; files exported from Camunda's modeler may use `zeebe:` and parse via the same back-compat probe.
 
 The constructor on `MultiInstanceActivity` (`Fleans.Domain/Activities/MultiInstanceActivity.cs:1-126`) enforces that exactly one of `LoopCardinality` or `InputCollection` is set, and that cardinality is non-negative. Violations throw at deploy time, not at runtime.
 
@@ -45,11 +45,12 @@ The constructor on `MultiInstanceActivity` (`Fleans.Domain/Activities/MultiInsta
 Citation: [`tests/manual/13-multi-instance/parallel-collection.bpmn`](https://github.com/nightBaker/fleans/blob/main/tests/manual/13-multi-instance/parallel-collection.bpmn).
 
 ```xml
+<!-- Requires xmlns:fleans="https://fleans.io/schema/bpmn/1.0" on <bpmn:definitions> -->
 <scriptTask id="processItem" scriptFormat="csharp">
   <script>_context.result = "processed-" + _context.item</script>
   <multiInstanceLoopCharacteristics isSequential="false"
-    zeebe:collection="items" zeebe:elementVariable="item"
-    zeebe:outputCollection="results" zeebe:outputElement="result" />
+    fleans:collection="items" fleans:elementVariable="item"
+    fleans:outputCollection="results" fleans:outputElement="result" />
 </scriptTask>
 ```
 
@@ -77,7 +78,7 @@ Citation: [`tests/manual/13-multi-instance/parallel-cardinality.bpmn`](https://g
 </scriptTask>
 ```
 
-With `<loopCardinality>3</loopCardinality>` and no `zeebe:collection`, three iterations spawn but only `loopCounter` is bound on each child scope — there is no per-iteration item variable. The script body uses `_context.loopCounter` directly to differentiate iterations. After completion `_context.results == ["iter-0", "iter-1", "iter-2"]`.
+With `<loopCardinality>3</loopCardinality>` and no `fleans:collection`, three iterations spawn but only `loopCounter` is bound on each child scope — there is no per-iteration item variable. The script body uses `_context.loopCounter` directly to differentiate iterations. After completion `_context.results == ["iter-0", "iter-1", "iter-2"]`.
 
 This is the right pattern when you need exactly *N* concurrent runs of the same logic and the iterations can be distinguished by index alone (e.g. quorum reads, fanout to *N* identical workers).
 
@@ -86,11 +87,12 @@ This is the right pattern when you need exactly *N* concurrent runs of the same 
 Citation: [`tests/manual/13-multi-instance/sequential-collection.bpmn`](https://github.com/nightBaker/fleans/blob/main/tests/manual/13-multi-instance/sequential-collection.bpmn).
 
 ```xml
+<!-- Requires xmlns:fleans="https://fleans.io/schema/bpmn/1.0" on <bpmn:definitions> -->
 <scriptTask id="processItem" scriptFormat="csharp">
   <script>_context.result = "seq-" + _context.item</script>
   <multiInstanceLoopCharacteristics isSequential="true"
-    zeebe:collection="items" zeebe:elementVariable="item"
-    zeebe:outputCollection="results" zeebe:outputElement="result" />
+    fleans:collection="items" fleans:elementVariable="item"
+    fleans:outputCollection="results" fleans:outputElement="result" />
 </scriptTask>
 ```
 
@@ -142,7 +144,8 @@ Event sub-processes also do not support multi-instance — by BPMN spec, not a F
 `<bpmn:completionCondition>` is fully supported. It lets you finish a multi-instance activity early — before all spawned iterations complete:
 
 ```xml
-<bpmn:multiInstanceLoopCharacteristics zeebe:collection="approvers" zeebe:elementVariable="approver">
+<!-- Requires xmlns:fleans="https://fleans.io/schema/bpmn/1.0" on <bpmn:definitions> -->
+<bpmn:multiInstanceLoopCharacteristics fleans:collection="approvers" fleans:elementVariable="approver">
   <bpmn:completionCondition>_context.nrOfCompletedInstances >= 1</bpmn:completionCondition>
 </bpmn:multiInstanceLoopCharacteristics>
 ```

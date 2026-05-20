@@ -32,10 +32,10 @@ The canonical XML shape is taken verbatim from `tests/manual/09-message-events/m
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
-             xmlns:zeebe="http://camunda.org/schema/zeebe/1.0">
+             xmlns:fleans="https://fleans.io/schema/bpmn/1.0">
   <message id="msg1" name="approvalReceived">
     <extensionElements>
-      <zeebe:subscription correlationKey="= requestId" />
+      <fleans:subscription correlationKey="= requestId" />
     </extensionElements>
   </message>
   <process id="message-catch-test" isExecutable="true">
@@ -57,12 +57,12 @@ The canonical XML shape is taken verbatim from `tests/manual/09-message-events/m
 
 Three load-bearing details:
 
-1. **The `xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"` namespace declaration** must appear on `<definitions>`. Without it, `<zeebe:subscription>` is parsed as an unknown element and silently ignored (no correlation key, no error).
+1. **The `xmlns:fleans="https://fleans.io/schema/bpmn/1.0"` namespace declaration** must appear on `<definitions>`. Without it, `<fleans:subscription>` is parsed as an unknown element and silently ignored (no correlation key, no error). Files exported from Camunda's modeler may use `xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"` instead — that's also accepted via Fleans's back-compat probe order.
 2. **The `=` prefix** is the Zeebe expression marker. Fleans strips a literal `"= "` (equals-sign + space) at parse time and treats the remainder as a single variable name. The engine does **not** evaluate arbitrary expressions — see [Variable resolution semantics](#variable-resolution-semantics) below.
 3. **Placement of `<extensionElements>` is project-specific** — read the caution that follows.
 
 :::caution[Place `<extensionElements>` inside `<bpmn:message>`, not inside the message-event element]
-Fleans only walks `<extensionElements>` that are **direct children of `<bpmn:message>`** (parser at `BpmnConverter.cs:895-925`). Putting the `<zeebe:subscription>` block under the `<intermediateCatchEvent>` or the `<startEvent>` is **silently ignored** — the engine treats the message as "no correlation key" and your `POST /Workflow/message` will never match.
+Fleans only walks `<extensionElements>` that are **direct children of `<bpmn:message>`** (parser at `BpmnConverter.cs:895-925`). Putting the `<fleans:subscription>` block under the `<intermediateCatchEvent>` or the `<startEvent>` is **silently ignored** — the engine treats the message as "no correlation key" and your `POST /Workflow/message` will never match.
 
 This is the single most common authoring mistake. The pattern is captured as a canonical rule in `CLAUDE.md` under *BPMN Fixture Authoring Rules*. Always check fixture #09 / #21 before authoring a new message-event workflow.
 :::
@@ -110,7 +110,7 @@ public record SendMessageRequest(string MessageName, string? CorrelationKey, Exp
 Field semantics:
 
 - **`MessageName`** (required, **case-sensitive**) — must match the BPMN `<message name="...">` exactly. Capitalization mismatch returns 404.
-- **`CorrelationKey`** (optional) — the runtime string the subscriber's correlation expression resolved to. May be omitted only for messages whose BPMN definition has no `<zeebe:subscription>` (e.g. message start events with no key).
+- **`CorrelationKey`** (optional) — the runtime string the subscriber's correlation expression resolved to. May be omitted only for messages whose BPMN definition has no `<fleans:subscription>` (e.g. message start events with no key).
 - **`Variables`** (optional) — extra variables to merge into the receiving workflow's scope before it resumes. Useful for delivering response payloads (e.g. an `approvalDecision` field).
 
 Responses:
@@ -157,9 +157,10 @@ If you change `req-456` to `req-999` in the third request, the response is `404 
 A workflow kicks off some external work, then waits for the result keyed by a per-instance request id. This is fixture #09's pattern.
 
 ```xml
+<!-- Requires xmlns:fleans="https://fleans.io/schema/bpmn/1.0" on <bpmn:definitions> -->
 <message id="responseMsg" name="serviceResponse">
   <extensionElements>
-    <zeebe:subscription correlationKey="= requestId" />
+    <fleans:subscription correlationKey="= requestId" />
   </extensionElements>
 </message>
 <process id="rpc-pattern" isExecutable="true">
@@ -198,11 +199,12 @@ The process is created **by** the message, not waiting for one. Each unique corr
 A long-running workflow correlates against more than one message at different points. Each correlation value is set by a script task before the relevant catch.
 
 ```xml
+<!-- Requires xmlns:fleans="https://fleans.io/schema/bpmn/1.0" on <bpmn:definitions> -->
 <message id="paymentMsg" name="paymentReceived">
-  <extensionElements><zeebe:subscription correlationKey="= orderId" /></extensionElements>
+  <extensionElements><fleans:subscription correlationKey="= orderId" /></extensionElements>
 </message>
 <message id="shipMsg" name="shipmentDispatched">
-  <extensionElements><zeebe:subscription correlationKey="= shipmentId" /></extensionElements>
+  <extensionElements><fleans:subscription correlationKey="= shipmentId" /></extensionElements>
 </message>
 <process id="order-saga" isExecutable="true">
   <!-- seed orderId on /start, await paymentReceived, allocate shipmentId, await shipmentDispatched -->
@@ -226,7 +228,7 @@ The engine performs a **plain variable lookup**, not expression evaluation. `cor
 </scriptTask>
 <!-- ... then ... -->
 <message id="m" name="something">
-  <extensionElements><zeebe:subscription correlationKey="= compositeKey" /></extensionElements>
+  <extensionElements><fleans:subscription correlationKey="= compositeKey" /></extensionElements>
 </message>
 ```
 :::
