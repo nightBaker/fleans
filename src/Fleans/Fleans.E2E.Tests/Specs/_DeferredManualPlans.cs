@@ -41,10 +41,10 @@ public class DeferredManualPlans : WorkflowE2ETestBase_None
 
     // tests/manual/35-kafka-streaming/test-plan.md — OUT OF SCOPE per plan (silo kill).
 
-    // tests/manual/37-custom-task-framework/test-plan.md — custom task plugins.
-    [TestMethod]
-    [Ignore("Needs Worker silo with plugin host registered (AddFleansPluginHost + AddCustomTaskPlugin<T>).")]
-    public void Plan37_CustomTaskFramework_StubPluginExecutes() { }
+    // tests/manual/37-custom-task-framework/test-plan.md — Scenario 1 (unregistered
+    // plugin: activity stays Active, manual complete unblocks) is automated in
+    // CustomTaskFrameworkTests. Scenario 2 (registered plugin auto-completes) and
+    // Scenario 3 (multi-silo catalog reconcile) remain manual.
 
     // tests/manual/38-custom-task-editor/test-plan.md — editor properties panel
     // for custom-task service tasks.
@@ -52,10 +52,9 @@ public class DeferredManualPlans : WorkflowE2ETestBase_None
     [Ignore("Needs EditorPage POM + plugin catalog assertion.")]
     public void Plan38_CustomTaskEditor_ParameterSchemaRoundTrip() { }
 
-    // tests/manual/39-rest-caller/test-plan.md — Fleans.Plugins.RestCaller end-to-end.
-    [TestMethod]
-    [Ignore("Needs Worker silo + RestCaller plugin host + a test HTTP server.")]
-    public void Plan39_RestCaller_EndToEnd() { }
+    // tests/manual/39-rest-caller/test-plan.md — Scenario 1 (GET happy path against
+    // an in-process echo server) is automated in RestCallerTests. Scenarios 2 (POST),
+    // 3 (404 → boundary error), 4 (timeout), 5 (idempotency-key) need extra fixtures.
 
     // tests/manual/41-nuget-publish/test-plan.md — release pipeline. OUT OF SCOPE.
     // tests/manual/42-release-pipeline/test-plan.md — release pipeline. OUT OF SCOPE.
