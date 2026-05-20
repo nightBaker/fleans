@@ -17,7 +17,7 @@ description: Canonical coverage matrix for BPMN 2.0 elements in Fleans.
     :256 (compEndDef), :260 (escEndDef), :268 (cancelEventDefinition) — end-event variants
     :575 (transaction multi-instance reject)
     :658 (compensateDefBoundary), :660 (condDef), :686 (timerDef), :687 (errorDef), :688 (messageDef), :689 (signalDef), :690 (escalationDef), :724 (cancelEventDef) — boundary variants
-    :1120 (multiInstanceLoopCharacteristics), :1126 (loopCardinality), :1140 (completionCondition)
+    :1120 (multiInstanceLoopCharacteristics), :1126 (loopCardinality), :1139 (completionCondition)
   refresh if any of the above change */}
 
 This page is the canonical coverage matrix for BPMN 2.0 elements in Fleans. Every row is pinned to the parser code that handles it (`Fleans.Infrastructure/Bpmn/BpmnConverter.cs`) and the manual fixture that exercises it end-to-end (`tests/manual/NN-*/`).
@@ -105,7 +105,7 @@ This page is the canonical coverage matrix for BPMN 2.0 elements in Fleans. Ever
 | Embedded Sub-Process | `<bpmn:subProcess>` | ✅ | `BpmnConverter.cs:514` | [#07](../../../tests/manual/07-subprocess/) | Own start/end, isolated variable scope. |
 | Event Sub-Process | `<bpmn:subProcess triggeredByEvent="true">` | ✅ | `BpmnConverter.cs:514 + :527-536` | [#19](../../../tests/manual/19-event-subprocess-error/), [#20-tm](../../../tests/manual/20-event-subprocess-timer/), [#21](../../../tests/manual/21-event-subprocess-message/), [#22](../../../tests/manual/22-event-subprocess-signal/), [#23](../../../tests/manual/23-event-subprocess-non-interrupting/) | Error-/timer-/message-/signal-triggered; interrupting + non-interrupting. |
 | Transaction Sub-Process | `<bpmn:transaction>` | ✅ | `BpmnConverter.cs:571 + :575` | [#26](../../../tests/manual/26-transaction-subprocess/), [#30-cancel](../../../tests/manual/30-cancel-event/), [#53-nested](../../../tests/manual/53-nested-transaction/) | Completed ✅, Cancelled ✅, Hazard ✅. All three terminal outcomes supported. See [Transaction Sub-Process status](#transaction-sub-process-status). |
-| Multi-Instance (any host) | `<bpmn:*><multiInstanceLoopCharacteristics>` | ✅ | `BpmnConverter.cs:1120 + :1126` | [#13](../../../tests/manual/13-multi-instance/) | `loopCardinality`, `inputCollection`, `completionCondition`, and `nrOf*` loop variables all supported (parser: `BpmnConverter.cs:1120, :1140`; runtime: `WorkflowEvaluateCompletionConditionEventHandler.cs:58-60`). |
+| Multi-Instance (any host) | `<bpmn:*><multiInstanceLoopCharacteristics>` | ✅ | `BpmnConverter.cs:1120 + :1126` | [#13](../../../tests/manual/13-multi-instance/) | `loopCardinality`, `inputCollection`, `completionCondition`, and `nrOf*` loop variables all supported (parser: `BpmnConverter.cs:1120, :1139`; runtime: `WorkflowEvaluateCompletionConditionEventHandler.cs:58-60`). |
 
 ### Gateways
 
