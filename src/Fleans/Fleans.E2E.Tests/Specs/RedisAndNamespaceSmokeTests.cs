@@ -25,20 +25,34 @@ public class RedisAndNamespaceSmokeTests : WorkflowE2ETestBase
         Assert.IsFalse(state.IsCancelled);
     }
 
-    // TODO: workflow stalls after `seed` task; the fixture's serviceTask presumably needs a
-    // custom-task plugin handler registered on a Worker silo, which the test cluster doesn't
-    // ship. Treat as "deploys without throwing" until the plugin host is wired into the fixture.
+    // TODO: workflow stalls after `seed` with Active=[] — `ct1` (`<bpmn:serviceTask>`
+    // with `<fleans:taskDefinition type="stub-task" />`) is never activated. The engine
+    // appears to silently drop the serviceTask when only the fleans namespace shape is
+    // present (zeebe variant is parsed cleanly per plan #37). Pending engine investigation.
     [TestMethod]
-    [Ignore("Pending: fixture's serviceTask needs a plugin handler on the Worker silo.")]
+    [Ignore("fleans:taskDefinition serviceTask never activates after upstream seed task; ct1 silently dropped. Pending engine investigation.")]
     public async Task FleansNamespace_ServiceTaskDeploysAndCompletes()
     {
         var xml = BpmnFixtureLoader.Load("45-fleans-namespace", "fleans-service-task.bpmn");
         var deployed = await ApiClient.DeployAsync(xml);
         var started = await ApiClient.StartAsync(deployed.ProcessDefinitionKey);
 
+        // Wait for the unregistered serviceTask to become active.
+        await ApiClient.WaitForStateAsync(
+            started.WorkflowInstanceId,
+            s => s.IsStarted && s.ActiveActivityIds.Contains("ct1"),
+            timeout: TimeSpan.FromSeconds(10));
+
+        using (var resp = await ApiClient.CompleteActivityAsync(
+            started.WorkflowInstanceId, "ct1"))
+        {
+            Assert.IsTrue(resp.IsSuccessStatusCode,
+                $"complete-activity on stub serviceTask should succeed; got {resp.StatusCode}.");
+        }
+
         var state = await ApiClient.WaitForCompletionAsync(
             started.WorkflowInstanceId,
-            timeout: TimeSpan.FromSeconds(15));
+            timeout: TimeSpan.FromSeconds(20));
         Assert.IsTrue(state.IsCompleted);
         Assert.IsFalse(state.IsCancelled);
     }
