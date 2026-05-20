@@ -198,7 +198,7 @@ Content-Type: application/json
 
 ### User Task endpoints
 
-<!-- DRIFT-GUARD: route + body shapes verified against src/Fleans/Fleans.Api/Controllers/UserTasksController.cs lines 32-160 (controller split landed in PR #614 / issue #587). Re-verify when controller changes. -->
+<!-- DRIFT-GUARD: route + body shapes verified against the [UserTasksController](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Api/Controllers/UserTasksController.cs) (controller split landed in PR #614 / issue #587). Re-verify when controller changes. -->
 
 User-task endpoints expose the human-in-the-loop lifecycle of `<bpmn:userTask>` activities. The conceptual model (states, who-can-claim, expected outputs) lives in the [User Tasks guide](/fleans/guides/user-tasks/) — this section is the authoritative wire reference.
 
