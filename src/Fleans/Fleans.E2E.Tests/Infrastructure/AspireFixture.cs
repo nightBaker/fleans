@@ -41,9 +41,21 @@ public static class AspireFixture
         _application = await builder.BuildAsync();
         await _application.StartAsync();
 
-        ApiBaseUri = _application.GetEndpoint("fleans-core");
-        WebBaseUri = _application.GetEndpoint("fleans-management");
-        ApiHttpClient = _application.CreateHttpClient("fleans-core");
+        // Use HTTP endpoint as the base — Fleans.Api/Web call UseHttpsRedirection() so HTTP
+        // requests redirect (307) to HTTPS. The HttpClient follows the redirect with the
+        // same handler, which is configured below to bypass TLS validation. The redirected
+        // HTTPS URL uses the ASP.NET Core dev cert that isn't trusted on Linux CI runners
+        // (UntrustedRoot); bypassing validation is safe because this is a local-only test
+        // cluster with no production exposure.
+        ApiBaseUri = _application.GetEndpoint("fleans-core", "http");
+        WebBaseUri = _application.GetEndpoint("fleans-management", "http");
+
+        var handler = new HttpClientHandler
+        {
+            ServerCertificateCustomValidationCallback =
+                HttpClientHandler.DangerousAcceptAnyServerCertificateValidator,
+        };
+        ApiHttpClient = new HttpClient(handler) { BaseAddress = ApiBaseUri };
 
         _playwright = await Playwright.CreateAsync();
         _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
