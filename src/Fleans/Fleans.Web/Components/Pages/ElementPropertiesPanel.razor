@@ -436,7 +436,7 @@
                 </div>
             }
 
-            @if (Element.Type == "bpmn:ServiceTask" && !ReadOnly)
+            @if (Element.Type == "bpmn:ServiceTask")
             {
                 <div>
                     <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Plugin (custom task)</FluentLabel>
@@ -452,7 +452,7 @@
                     }
                     else
                     {
-                        <FluentSelect TOption="string" Value="@(currentPluginType ?? "")" @onchange="OnPluginTypeChange" Style="width: 100%;">
+                        <FluentSelect TOption="string" Value="@(currentPluginType ?? "")" @onchange="OnPluginTypeChange" Disabled="@ReadOnly" Style="width: 100%;">
                             <FluentOption TOption="string" Value="" Selected="@(string.IsNullOrEmpty(currentPluginType))">Select a plugin…</FluentOption>
                             @foreach (var entry in catalogEntries)
                             {
@@ -501,7 +501,8 @@
                 {
                     <CustomTaskParameterEditor Schema="@currentSchema"
                                                Values="@currentParameterValues"
-                                               OnInputChanged="OnParameterChanged" />
+                                               OnInputChanged="OnParameterChanged"
+                                               ReadOnly="@ReadOnly" />
                 }
 
                 @* Output Mappings stay free-form — CustomTaskParameterSchema models inputs only,
@@ -768,14 +769,17 @@
             var entries = await catalog.GetAll();
             catalogEntries = entries.ToList();
 
-            // Read current type from the BPMN element via JS interop.
-            currentPluginType = await JS.InvokeAsync<string?>("bpmnEditor.getServiceTaskType", Element.Id);
+            // Read current type from the BPMN element via JS interop. The
+            // instance page has no modeler — use the viewer's read-only
+            // mirrors of these helpers when ReadOnly is true.
+            var jsBpmn = ReadOnly ? "bpmnViewer" : "bpmnEditor";
+            currentPluginType = await JS.InvokeAsync<string?>($"{jsBpmn}.getServiceTaskType", Element.Id);
             currentSchema = !string.IsNullOrEmpty(currentPluginType)
                 ? entries.FirstOrDefault(e => string.Equals(e.TaskType, currentPluginType, StringComparison.OrdinalIgnoreCase))?.ParameterSchema
                 : null;
 
             // Read current input mappings from the BPMN element.
-            var ioMappings = await JS.InvokeAsync<List<IoMappingDto>>("bpmnEditor.getIoMappings", Element.Id) ?? new();
+            var ioMappings = await JS.InvokeAsync<List<IoMappingDto>>($"{jsBpmn}.getIoMappings", Element.Id) ?? new();
             currentParameterValues = ioMappings
                 .Where(m => m.kind == "input" && !string.IsNullOrEmpty(m.target))
                 .ToDictionary(m => m.target, m => m.source ?? "", StringComparer.Ordinal);

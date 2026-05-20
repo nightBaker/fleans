@@ -43,6 +43,7 @@
                     <FluentTextField Value="@currentValue"
                                      Placeholder="@(spec.DefaultValue ?? "")"
                                      ValueChanged="@(v => OnValueChanged(spec.Name, v))"
+                                     Disabled="@ReadOnly"
                                      Style="@($"width: 100%; {(hasError ? "border-color: var(--error);" : "")}")" />
                     <FluentLabel Typo="Typography.Body" Style="color: var(--neutral-foreground-hint); font-size: 0.8em;">
                         Type a literal value, or <code>=variableName</code> to reference a workflow variable.
@@ -53,19 +54,22 @@
                                        Value="@(int.TryParse(currentValue, out var n) ? n : (int?)null)"
                                        Placeholder="@(spec.DefaultValue ?? "")"
                                        ValueChanged="@(v => OnValueChanged(spec.Name, v?.ToString() ?? ""))"
-                                       Style="@($"width: 100%; {(hasError ? "border-color: var(--error);" : "")}")" />
+                                       Disabled="@ReadOnly"
+                                     Style="@($"width: 100%; {(hasError ? "border-color: var(--error);" : "")}")" />
                     <FluentLabel Typo="Typography.Body" Style="color: var(--neutral-foreground-hint); font-size: 0.8em;">
                         Type a literal number, or use the parameter as <code>=variableName</code> in raw BPMN to reference a workflow variable.
                     </FluentLabel>
                     break;
                 case CustomTaskParameterType.Boolean:
                     <FluentCheckbox Value="@(string.Equals(currentValue, "true", StringComparison.OrdinalIgnoreCase))"
+                                    Disabled="@ReadOnly"
                                     ValueChanged="@(v => OnValueChanged(spec.Name, v ? "true" : "false"))" />
                     break;
                 case CustomTaskParameterType.Expression:
                     <FluentTextArea Value="@currentValue"
                                     Placeholder="=workflowVar  or  literal"
                                     ValueChanged="@(v => OnValueChanged(spec.Name, v))"
+                                    Disabled="@ReadOnly"
                                     Style="@($"width: 100%; font-family: monospace; {(hasError ? "border-color: var(--error);" : "")}")"
                                     Rows="2" />
                     <FluentLabel Typo="Typography.Body" Style="color: var(--neutral-foreground-hint); font-size: 0.8em;">
@@ -76,6 +80,7 @@
                     <FluentTextArea Value="@currentValue"
                                     Placeholder="@(spec.DefaultValue ?? "")"
                                     ValueChanged="@(v => OnValueChanged(spec.Name, v))"
+                                    Disabled="@ReadOnly"
                                     Style="@($"width: 100%; {(hasError ? "border-color: var(--error);" : "")}")"
                                     Rows="4" />
                     <FluentLabel Typo="Typography.Body" Style="color: var(--neutral-foreground-hint); font-size: 0.8em;">
@@ -89,6 +94,7 @@
                     <FluentTextField Value="@currentValue"
                                      Placeholder="=workflowVariableName"
                                      ValueChanged="@(v => OnValueChanged(spec.Name, v))"
+                                     Disabled="@ReadOnly"
                                      Style="@($"width: 100%; {(hasError ? "border-color: var(--error);" : "")}")" />
                     <FluentLabel Typo="Typography.Body" Style="color: var(--neutral-foreground-hint); font-size: 0.8em;">
                         @(spec.Type == CustomTaskParameterType.List ? "List" : "Map") parameter — reference a workflow variable
@@ -111,6 +117,7 @@
     [Parameter, EditorRequired] public CustomTaskParameterSchema? Schema { get; set; }
     [Parameter, EditorRequired] public IReadOnlyDictionary<string, string> Values { get; set; } = new Dictionary<string, string>();
     [Parameter] public EventCallback<(string Target, string Source)> OnInputChanged { get; set; }
+    [Parameter] public bool ReadOnly { get; set; }
 
     private readonly Dictionary<string, CancellationTokenSource> _debounceTokens = new();
     private static readonly TimeSpan DebounceInterval = TimeSpan.FromMilliseconds(300);
