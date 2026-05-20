@@ -12,13 +12,39 @@ Fleans is built on .NET Aspire's `ServiceDefaults`, which means every silo (`Fle
 Out of the box, every silo exposes:
 
 - **HTTP probes** at `/health` (readiness — runs all registered health checks) and `/alive` (liveness — only checks tagged `live`). Both endpoints are anonymous so probes work even when JWT/OIDC auth is enabled.
-- **OpenTelemetry metrics** from the `Microsoft.Orleans` meter plus the standard ASP.NET Core, HttpClient, and .NET runtime instrumentation.
-- **OpenTelemetry traces** from the `Microsoft.Orleans.Runtime` and `Microsoft.Orleans.Application` activity sources, plus ASP.NET Core and HttpClient.
+- **OpenTelemetry metrics** from the `Microsoft.Orleans` and `Fleans` meters plus the standard ASP.NET Core, HttpClient, and .NET runtime instrumentation.
+- **OpenTelemetry traces** from the `Microsoft.Orleans.Runtime`, `Microsoft.Orleans.Application`, and `Fleans` activity sources, plus ASP.NET Core and HttpClient.
 - **Structured logs** with workflow-aware scopes (workflow id, process definition, instance id) generated via `[LoggerMessage]`.
 
-Wiring lives in [`Fleans.ServiceDefaults/Extensions.cs`](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.ServiceDefaults/Extensions.cs) — `ConfigureOpenTelemetry`, `AddDefaultHealthChecks`, and `MapDefaultEndpoints`.
+Wiring lives in [`Fleans.ServiceDefaults/Extensions.cs`](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.ServiceDefaults/Extensions.cs) — `ConfigureOpenTelemetry`, `AddDefaultHealthChecks`, and `MapDefaultEndpoints`. The Fleans-defined `Meter` and `ActivitySource` themselves live in [`Fleans.Application/Observability/FleansDiagnostics.cs`](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Application/Observability/FleansDiagnostics.cs) and are registered by name (no project reference required).
 
-> **Future work — Fleans-defined Meter and ActivitySource.** Today Fleans piggy-backs on the Orleans meters and activity sources. Workflow-level metrics (workflow start rate, completion latency, active-instance gauge, custom-task duration) and Fleans-internal trace spans are not yet exported. A follow-up issue tracks adding a `Fleans` `System.Diagnostics.Metrics.Meter` and `System.Diagnostics.ActivitySource` so workflow telemetry shows up alongside the Orleans data: see the linked issue in the Fleans GitHub project.
+### Fleans-defined metrics
+
+Meter name: `Fleans` (instrumentation version `1.0.0`).
+
+| Metric | Kind | Unit | Description | Attributes |
+|---|---|---|---|---|
+| `fleans.workflow.started`    | Counter   | `{instances}` | Workflow instances started. | none |
+| `fleans.workflow.terminated` | Counter   | `{instances}` | Workflow instances that reached a terminal state. | `result={completed,cancelled}` |
+| `fleans.activity.duration`   | Histogram | `ms`          | Per-activity wall-clock duration. Explicit buckets: `[10, 50, 100, 250, 500, 1000, 5000, 10000, 30000, 60000, 300000, 600000]` ms — sub-millisecond script tasks through 10-minute REST calls. | `activity.type` |
+
+> **Deferred to a follow-up:** `fleans.workflow.active` (a non-terminal-count gauge) requires engine-side cooperation to seed from persistence at silo startup so the count survives silo restarts. It is intentionally not shipped in this initial Meter to avoid a known-broken metric. Track via the Fleans GitHub project.
+
+> **Best-effort caveat (`fleans.activity.duration`).** Start times are kept per-grain in memory. If a silo restarts mid-workflow, in-flight activities whose `ActivitySpawned` event landed before the restart will not record a duration on completion. The counters above are unaffected — they emit on the journaled event, not in-memory timing.
+
+> **Activity source `Fleans` (tracing).** Declared and registered today; dedicated per-event spans (timer fired, message correlated, compensation walk advanced, custom task plugin executed) are a follow-up — plugin authors can already attach spans to `FleansDiagnostics.ActivitySource` from their own handlers.
+
+#### Sample Prometheus alert rules
+
+```yaml
+- alert: FleansWorkflowFailureSpike
+  expr: rate(fleans_workflow_terminated_total{result="cancelled"}[5m]) > 0.5
+  for: 5m
+
+- alert: FleansActivityP99Slow
+  expr: histogram_quantile(0.99, rate(fleans_activity_duration_bucket[5m])) > 30000
+  for: 10m
+```
 
 ## Health checks
 
@@ -83,11 +109,13 @@ Tag with `live` if a check should also gate `/alive`; otherwise it only affects 
 - `AddHttpClientInstrumentation()` — outgoing HTTP client metrics
 - `AddRuntimeInstrumentation()` — .NET runtime metrics (GC, threadpool, JIT)
 - `AddMeter("Microsoft.Orleans")` — Orleans runtime metrics
+- `AddMeter("Fleans")` — Fleans workflow-level metrics (see catalog above)
 
 ### Useful metric families
 
 | Source | What it measures | Example metric names (verify per-version) |
 |--------|------------------|-------------------------------------------|
+| `Fleans` | Workflow lifecycle + activity duration | `fleans.workflow.started`, `fleans.workflow.terminated{result=…}`, `fleans.activity.duration{activity.type=…}` |
 | `Microsoft.Orleans` | Orleans scheduler, directory, lifecycle | `orleans.scheduler.work-item.queue.length`, `orleans.directory.lookups.count`, `orleans.lifecycle.error.count` |
 | `Microsoft.AspNetCore.*` | Kestrel + ASP.NET request pipeline | `Microsoft.AspNetCore.Server.Kestrel.connection.duration`, `http.server.request.duration` |
 | `System.Net.Http` | Outgoing HTTP from grains and controllers | `http.client.request.duration`, `http.client.active_requests` |
@@ -184,6 +212,7 @@ Tracing is wired in `ConfigureOpenTelemetry`:
 {
     tracing.AddSource("Microsoft.Orleans.Runtime");
     tracing.AddSource("Microsoft.Orleans.Application");
+    tracing.AddSource("Fleans");
     tracing.AddAspNetCoreInstrumentation()
            .AddHttpClientInstrumentation();
 });
@@ -193,12 +222,11 @@ What that gets you:
 
 - **`Microsoft.Orleans.Runtime`** — internal Orleans request flow, including grain method invocation (caller silo → callee silo), and built-in resilience around grain calls.
 - **`Microsoft.Orleans.Application`** — application-level grain call activity, including exceptions thrown by grain code.
+- **`Fleans`** — Fleans-defined activity source. Declared and registered today; plugin authors can attach their own spans via `FleansDiagnostics.ActivitySource`. Dedicated per-event spans for engine-internal lifecycle (timer fired, message correlated, compensation walk advanced, custom task plugin executed) are a follow-up.
 - **ASP.NET Core** — incoming HTTP request spans for the API and the Web management app, with route + status code attributes.
 - **HttpClient** — outbound HTTP, useful for observing the REST Caller plugin's calls.
 
 Spans propagate W3C `traceparent` automatically — if your upstream sets a trace context (e.g. an API gateway), the resulting Fleans trace stitches into the same distributed trace.
-
-> **Not yet traced.** Workflow-internal events such as "timer fired", "message correlated", "compensation walk advanced", "custom task plugin executed" do not produce dedicated spans today. Adding a Fleans `ActivitySource` is part of the follow-up tracked in the metrics caveat above.
 
 ## Dashboards
 

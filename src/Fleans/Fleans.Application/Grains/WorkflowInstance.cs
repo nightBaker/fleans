@@ -81,6 +81,14 @@ public partial class WorkflowInstance :
     /// </summary>
     private WorkflowExecution? _replayAggregate;
 
+    /// <summary>
+    /// In-memory map of activity-instance start times for the <c>fleans.activity.duration</c> histogram.
+    /// Populated on <c>ActivitySpawned</c>, drained on <c>ActivityCompleted</c>/<c>ActivityFailed</c>/<c>ActivityCancelled</c>.
+    /// Per-grain in-memory state — silo restart loses in-flight entries; the histogram is
+    /// best-effort and skips activities that started before the current grain activation.
+    /// </summary>
+    private readonly Dictionary<Guid, (DateTimeOffset StartedAt, string ActivityType)> _activityStartedAt = new();
+
     public WorkflowInstance(
         IGrainFactory grainFactory,
         ILogger<WorkflowInstance> logger,
