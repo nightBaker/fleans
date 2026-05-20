@@ -51,13 +51,13 @@ jobs:
           #   1. `.cs:NNN` line pins
           #   2. `src/Fleans/...` inline paths (NOT inside a github.com/.../blob/ URL)
           # Excludes carve-out: full GitHub blob/tree URLs that include src/Fleans/.
-          violations=$(
-            grep -rEn '\.cs:[0-9]+|(^|[^/])src/Fleans/' website/src/content/docs/ \
-              | grep -vE 'github\.com/[^/]+/[^/]+/(blob|tree)/[^)]*src/Fleans/' \
-              | sort \
-              || true
-          )
-          printf '%s' "$violations" > /tmp/website-pin-current.txt
+          # sort emits each line with a trailing newline; redirect directly so the
+          # generated file has a final newline, matching `tools/website-pin-allowlist.txt`.
+          # Avoid `printf '%s'` here — it strips the final newline and creates a
+          # spurious "No newline at end of file" diff against the allow-list.
+          grep -rEn '\.cs:[0-9]+|(^|[^/])src/Fleans/' website/src/content/docs/ \
+            | grep -vE 'github\.com/[^/]+/[^/]+/(blob|tree)/[^)]*src/Fleans/' \
+            | sort > /tmp/website-pin-current.txt || true
           echo "count=$(wc -l < /tmp/website-pin-current.txt | tr -d ' ')" >> "$GITHUB_OUTPUT"
 
       - name: Compare against allow-list
