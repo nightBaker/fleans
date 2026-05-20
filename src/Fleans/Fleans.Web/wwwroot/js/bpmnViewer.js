@@ -21,7 +21,20 @@ window.bpmnViewer = {
         }
 
         this._clickHandlerRegistered = false;
-        this._viewer = new BpmnViewer({ container: container });
+        // Register the same moddle extensions as the editor so that bpmn-js
+        // parses <fleans:taskDefinition>, <fleans:ioMapping>, <zeebe:*>, etc.
+        // as typed moddle elements instead of opaque $children blobs. Without
+        // this, the property-extraction helpers (which match on PascalCase
+        // $type and read typed `.inputs`/`.outputs`/`.type` properties) come
+        // back empty even though the XML has the data.
+        this._viewer = new BpmnViewer({
+            container: container,
+            moddleExtensions: Object.assign(
+                {},
+                window.fleansModdleExtension ? { fleans: window.fleansModdleExtension } : {},
+                window.zeebeModdleExtension ? { zeebe: window.zeebeModdleExtension } : {}
+            )
+        });
 
         try {
             await this._viewer.importXML(bpmnXml);
@@ -283,58 +296,26 @@ window.bpmnViewer = {
         var element = elementRegistry.get(elementId);
         if (!element) return null;
 
-        var bo = element.businessObject;
-        var data = {
-            id: bo.id || '',
-            type: element.type || '',
-            name: bo.name || '',
-            scriptFormat: bo.scriptFormat || '',
-            script: bo.script || '',
-            conditionExpression: (bo.conditionExpression && bo.conditionExpression.body) || '',
-            timerType: '',
-            timerExpression: '',
-            hasTimerDefinition: false,
-            hasMessageDefinition: false,
-            messageName: '',
-            correlationKey: '',
-            isInterrupting: true
-        };
+        // Reuse the editor's full extractor so the read-only instance panel
+        // surfaces the same schema as the editor — task-definition type,
+        // input/output mappings, expected outputs, user-task fields,
+        // multi-instance loop characteristics, etc. The extractor only
+        // touches `this._modeler.get('elementRegistry')`; bpmn-js Modeler
+        // and Viewer expose the same registry surface, so binding `this`
+        // to a stub with `_modeler` pointing at the viewer works.
+        return window.bpmnEditor._extractElementData.call({ _modeler: this._viewer }, element);
+    },
 
-        if (bo.eventDefinitions && bo.eventDefinitions.length > 0) {
-            for (var i = 0; i < bo.eventDefinitions.length; i++) {
-                if (bo.eventDefinitions[i].$type === 'bpmn:TimerEventDefinition') {
-                    data.hasTimerDefinition = true;
-                    var timerDef = bo.eventDefinitions[i];
-                    if (timerDef.timeDuration) {
-                        data.timerType = 'duration';
-                        data.timerExpression = timerDef.timeDuration.body || '';
-                    } else if (timerDef.timeDate) {
-                        data.timerType = 'date';
-                        data.timerExpression = timerDef.timeDate.body || '';
-                    } else if (timerDef.timeCycle) {
-                        data.timerType = 'cycle';
-                        data.timerExpression = timerDef.timeCycle.body || '';
-                    }
-                    break;
-                }
-                if (bo.eventDefinitions[i].$type === 'bpmn:MessageEventDefinition') {
-                    data.hasMessageDefinition = true;
-                    var msgDef = bo.eventDefinitions[i];
-                    if (msgDef.messageRef) {
-                        data.messageName = msgDef.messageRef.name || '';
-                    }
-                    var attrs = bo.$attrs || {};
-                    data.correlationKey = attrs['fleans:correlationKey'] || attrs['zeebe:correlationKey'] || '';
-                    break;
-                }
-            }
-        }
+    // Read-only counterparts of bpmnEditor.getServiceTaskType / getIoMappings
+    // for the instance page's properties panel (which has no modeler).
+    getServiceTaskType: function (elementId) {
+        if (!this._viewer) return null;
+        return window.bpmnEditor.getServiceTaskType.call({ _modeler: this._viewer }, elementId);
+    },
 
-        if (bo.$type === 'bpmn:BoundaryEvent') {
-            data.isInterrupting = bo.cancelActivity !== false;
-        }
-
-        return data;
+    getIoMappings: function (elementId) {
+        if (!this._viewer) return [];
+        return window.bpmnEditor.getIoMappings.call({ _modeler: this._viewer }, elementId);
     },
 
     destroy: function () {
