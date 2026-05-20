@@ -16,6 +16,7 @@ public static class AspireFixture
     private static DistributedApplication? _application;
     private static IPlaywright? _playwright;
     private static IBrowser? _browser;
+    private static TestHttpServer? _testHttpServer;
 
     public static Uri ApiBaseUri { get; private set; } = null!;
 
@@ -25,6 +26,14 @@ public static class AspireFixture
 
     public static IBrowser Browser =>
         _browser ?? throw new InvalidOperationException("AspireFixture is not initialised.");
+
+    /// <summary>
+    /// Base URL of an in-process HTTP echo server reachable from the Fleans.Api process
+    /// (RestCaller plugin handler hits this from inside the workflow). Bound to a random
+    /// localhost port; serves <c>GET /echo</c> and <c>GET /status/{code}</c>.
+    /// </summary>
+    public static string TestHttpServerBaseUrl =>
+        _testHttpServer?.BaseUrl ?? throw new InvalidOperationException("AspireFixture is not initialised.");
 
     [AssemblyInitialize]
     public static async Task InitializeAsync(TestContext _)
@@ -62,11 +71,16 @@ public static class AspireFixture
         {
             Headless = PlaywrightSettings.Headless,
         });
+
+        _testHttpServer = TestHttpServer.Start();
     }
 
     [AssemblyCleanup]
     public static async Task CleanupAsync()
     {
+        _testHttpServer?.Dispose();
+        _testHttpServer = null;
+
         if (_browser is not null)
         {
             await _browser.DisposeAsync();
