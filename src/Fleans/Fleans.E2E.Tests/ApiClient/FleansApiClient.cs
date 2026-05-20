@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using Fleans.Application.DTOs;
 using Fleans.Application.QueryModels;
 using Fleans.ServiceDefaults.DTOs;
 
@@ -45,6 +46,118 @@ public sealed class FleansApiClient
         response.EnsureSuccessStatusCode();
         var started = await response.Content.ReadFromJsonAsync<StartWorkflowResponse>(JsonOptions, ct);
         return started ?? throw new InvalidOperationException("Start returned an empty body.");
+    }
+
+    public async Task<HttpResponseMessage> DisableAsync(string processDefinitionKey, CancellationToken ct = default)
+    {
+        return await _http.PostAsJsonAsync(
+            "/Definitions/disable",
+            new ProcessDefinitionKeyRequest(processDefinitionKey),
+            JsonOptions,
+            ct);
+    }
+
+    public async Task<HttpResponseMessage> EnableAsync(string processDefinitionKey, CancellationToken ct = default)
+    {
+        return await _http.PostAsJsonAsync(
+            "/Definitions/enable",
+            new ProcessDefinitionKeyRequest(processDefinitionKey),
+            JsonOptions,
+            ct);
+    }
+
+    public async Task<HttpResponseMessage> CompleteActivityAsync(
+        Guid workflowInstanceId,
+        string activityId,
+        Dictionary<string, object>? variables = null,
+        CancellationToken ct = default)
+    {
+        return await _http.PostAsJsonAsync(
+            "/Execution/complete-activity",
+            new CompleteActivityRequest(workflowInstanceId, activityId, variables),
+            JsonOptions,
+            ct);
+    }
+
+    public async Task<EvaluateConditionsResponse> EvaluateConditionsAsync(
+        string? workflowId,
+        Dictionary<string, object>? variables,
+        CancellationToken ct = default)
+    {
+        var response = await _http.PostAsJsonAsync(
+            "/Execution/evaluate-conditions",
+            new EvaluateConditionsRequest(workflowId, variables),
+            JsonOptions,
+            ct);
+        response.EnsureSuccessStatusCode();
+        var result = await response.Content.ReadFromJsonAsync<EvaluateConditionsResponse>(JsonOptions, ct);
+        return result ?? throw new InvalidOperationException("EvaluateConditions returned an empty body.");
+    }
+
+    public async Task<HttpResponseMessage> SendMessageRawAsync(
+        string messageName,
+        string? correlationKey = null,
+        IDictionary<string, object?>? variables = null,
+        CancellationToken ct = default)
+    {
+        System.Dynamic.ExpandoObject? expando = null;
+        if (variables is not null)
+        {
+            expando = new System.Dynamic.ExpandoObject();
+            var sink = (IDictionary<string, object?>)expando;
+            foreach (var kvp in variables)
+            {
+                sink[kvp.Key] = kvp.Value;
+            }
+        }
+        return await _http.PostAsJsonAsync(
+            "/Execution/message",
+            new SendMessageRequest(messageName, correlationKey, expando),
+            JsonOptions,
+            ct);
+    }
+
+    public async Task<UserTaskResponse?> GetUserTaskAsync(Guid activityInstanceId, CancellationToken ct = default)
+    {
+        var response = await _http.GetAsync($"/UserTasks/{activityInstanceId:D}", ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<UserTaskResponse>(JsonOptions, ct);
+    }
+
+    public async Task<HttpResponseMessage> ClaimUserTaskAsync(
+        Guid activityInstanceId,
+        string userId,
+        IReadOnlyList<string>? userGroups = null,
+        CancellationToken ct = default)
+    {
+        return await _http.PostAsJsonAsync(
+            $"/UserTasks/{activityInstanceId:D}/claim",
+            new ClaimTaskRequest(userId, userGroups),
+            JsonOptions,
+            ct);
+    }
+
+    public async Task<HttpResponseMessage> CompleteUserTaskAsync(
+        Guid activityInstanceId,
+        string userId,
+        Dictionary<string, object?>? variables = null,
+        CancellationToken ct = default)
+    {
+        return await _http.PostAsJsonAsync(
+            $"/UserTasks/{activityInstanceId:D}/complete",
+            new CompleteTaskRequest(userId, variables),
+            JsonOptions,
+            ct);
+    }
+
+    public async Task<HttpResponseMessage> SendSignalRawAsync(string signalName, CancellationToken ct = default)
+    {
+        return await _http.PostAsJsonAsync(
+            "/Execution/signal",
+            new SendSignalRequest(signalName),
+            JsonOptions,
+            ct);
     }
 
     public async Task<InstanceStateSnapshot?> GetStateAsync(Guid workflowInstanceId, CancellationToken ct = default)

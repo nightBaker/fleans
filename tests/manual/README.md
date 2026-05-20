@@ -4,6 +4,25 @@ Each `NN-feature-name/` subfolder contains a manual test plan: one or more `.bpm
 
 See `docs/plans/2026-02-25-manual-test-plan-design.md` for the template and rationale.
 
+## Automation status
+
+**Most BPMN plans are now automated** under `src/Fleans/Fleans.E2E.Tests/Specs/*.cs`. Each spec class includes a `// Ports tests/manual/NN-*/test-plan.md` doc comment linking it back to the manual plan it derives from. Run the automated suite via:
+
+```bash
+cd src/Fleans
+dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --filter "TestCategory=E2E"
+```
+
+CI runs the same filter on every PR (`e2e` job in `.github/workflows/dotnet.yml`).
+
+**When to still run a manual plan in this folder:**
+
+- The corresponding automated spec is `[Ignore]`'d (KNOWN BUG, fixture-type pending investigation, or capability gap documented in `Fleans.E2E.Tests/Specs/_DeferredManualPlans.cs`).
+- You want to spot-check the **UI-driven path** — most automated specs drive Deploy + Start via the REST API for speed; the manual plan exercises the bpmn-js drag-drop editor + Fluent UI Start button.
+- The plan is **out of scope** for automation (Docker-compose-only flows, Helm chart tests, release pipeline, OIDC/JWT auth setup).
+
+See `CLAUDE.md` *Regression tests* for the release-gating sweep procedure.
+
 ## Universal prerequisites (BPMN suite)
 
 - Aspire stack running: `dotnet run --project Fleans.Aspire` (from `src/Fleans/`).
