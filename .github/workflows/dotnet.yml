@@ -29,4 +29,31 @@ jobs:
     - name: Build
       run: dotnet build --no-restore
     - name: Test
-      run: dotnet test --no-build --verbosity normal
+      run: dotnet test --no-build --verbosity normal --filter "TestCategory!=E2E"
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.0.x
+    - name: Build E2E project
+      run: dotnet build Fleans.E2E.Tests/Fleans.E2E.Tests.csproj
+    - name: Install Playwright browsers
+      run: |
+        # Microsoft.Playwright ships a PowerShell install script; ubuntu-latest has pwsh preinstalled.
+        pwsh Fleans.E2E.Tests/bin/Debug/net10.0/playwright.ps1 install --with-deps chromium
+    - name: Run E2E tests
+      run: dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --no-build --filter "TestCategory=E2E" --logger "trx;LogFileName=e2e.trx" --results-directory TestResults
+    - name: Upload Playwright artifacts on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: e2e-failure-artifacts
+        path: |
+          src/Fleans/TestResults/**/*.trx
+          src/Fleans/Fleans.E2E.Tests/bin/Debug/net10.0/playwright-traces/
