@@ -42,14 +42,15 @@ If your situation isn't on this list, lean toward external completion — it's t
 A trivial "say hello" plugin. The workflow author writes:
 
 ```xml
+<!-- Requires xmlns:fleans="https://fleans.io/schema/bpmn/1.0" on <bpmn:definitions> -->
 <bpmn:serviceTask id="greet" type="hello">
   <bpmn:extensionElements>
-    <zeebe:taskDefinition type="hello" />
-    <zeebe:ioMapping>
-      <zeebe:input  source="=customerName"     target="name" />
-      <zeebe:input  source="true"              target="excitement" />
-      <zeebe:output source="=__response.text"  target="greeting" />
-    </zeebe:ioMapping>
+    <fleans:taskDefinition type="hello" />
+    <fleans:ioMapping>
+      <fleans:input  source="=customerName"     target="name" />
+      <fleans:input  source="true"              target="excitement" />
+      <fleans:output source="=__response.text"  target="greeting" />
+    </fleans:ioMapping>
   </bpmn:extensionElements>
 </bpmn:serviceTask>
 ```
@@ -322,11 +323,11 @@ URLs use plain HTTP because the compose bundle does not terminate TLS — front 
 
 Open `http://localhost:8080/editor`. Drag a Service Task onto the canvas and click it.
 
-In the right-hand properties panel, find the "Plugin (custom task)" dropdown and pick **Say hello (hello)**. The editor seeds the defaults — your task now has `<zeebe:input source="world" target="name"/>` and `<zeebe:input source="false" target="excitement"/>` written under `<zeebe:ioMapping>`.
+In the right-hand properties panel, find the "Plugin (custom task)" dropdown and pick **Say hello (hello)**. The editor seeds the defaults — your task now has `<fleans:input source="world" target="name"/>` and `<fleans:input source="false" target="excitement"/>` written under `<fleans:ioMapping>`.
 
 Type `=customerName` into the `name` field. The help text under each primitive widget reminds you the field accepts either a literal value or `=variableName`. Toggle `excitement` on with the checkbox.
 
-Add an `<zeebe:output source="=__response.text" target="greeting"/>` row by editing the BPMN XML directly (the editor's UI for output mappings is shared with `expectedOutputs` on User Tasks; see [BPMN Editor](/guides/editor/)).
+Add an `<fleans:output source="=__response.text" target="greeting"/>` row by editing the BPMN XML directly (the editor's UI for output mappings is shared with `expectedOutputs` on User Tasks; see [BPMN Editor](/guides/editor/)).
 
 Save the diagram. The BPMN XML now contains the snippet from the [What you'll build](#what-youll-build) section above.
 
@@ -376,10 +377,10 @@ Three common causes:
 
 The exception's first argument is a string for the code (`"400"`, `"503"`, etc.). Boundary error events match by `errorCode` string equality, so authors typically choose HTTP-shaped codes. Codes outside `[100, 599]` will surface but won't be matched by HTTP-style boundary events.
 
-**`<zeebe:input>` not parsed at deploy time.**
+**`<fleans:input>` not parsed at deploy time.**
 
 Two possible causes:
-1. The BPMN file is missing `xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"` on `<bpmn:definitions>`. Add the namespace declaration.
+1. The BPMN file is missing `xmlns:fleans="https://fleans.io/schema/bpmn/1.0"` on `<bpmn:definitions>`. Add the namespace declaration. (Files exported from Camunda's modeler may use `xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"` instead — that's also accepted via Fleans's back-compat probe order.)
 2. The `target` attribute isn't a valid identifier (`^[a-zA-Z_][a-zA-Z0-9_]*$`). Rename or fix the typo.
 
 **Catalog shows the plugin on a stopped silo.**
