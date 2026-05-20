@@ -174,17 +174,28 @@ Add new endpoints to whichever controller's concern matches. Each controller tak
 
 ## Regression tests
 
-The canonical regression catalog lives in [`tests/manual/README.md`](tests/manual/README.md). Run every numbered entry in both the **BPMN regression suite** and the **Website regression suite** in order; each entry links to a `tests/manual/NN-feature-name/test-plan.md` with the per-step deploy / start / trigger / verify checklist.
+**Primary gate — automated E2E suite (`Fleans.E2E.Tests`).** The bulk of the BPMN regression catalog is now automated under `src/Fleans/Fleans.E2E.Tests/`, driven by Playwright .NET + `Aspire.Hosting.Testing` against an in-process Aspire stack. CI runs the suite on every PR (job `e2e` in `.github/workflows/dotnet.yml`); locally:
 
-**Prerequisites — BPMN suite:** Aspire stack running via `dotnet run --project Fleans.Aspire` (from `src/Fleans/`); a clean dev DB (delete the SQLite file or set a fresh `FLEANS_SQLITE_CONNECTION`); Web UI reachable at `https://localhost:7124`; API origin `https://localhost:7140`.
+```bash
+cd src/Fleans
+dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --filter "TestCategory=E2E"
+```
 
-**Prerequisites — Website suite:** `cd website && npm install` has been run at least once; `npx playwright install chromium` has been run at least once (only needed for plans that shell out to Playwright); ports `4321` / `4327` / `4328` free.
+Each spec class under `Fleans.E2E.Tests/Specs/` carries a `// Ports tests/manual/NN-*/test-plan.md` doc comment linking back to the human-readable plan it derives from. The `Specs/_DeferredManualPlans.cs` file documents every plan that doesn't yet have an active spec (editor-UI plans, custom-task plugin plans, OIDC/JWT auth plans, Helm/release-pipeline plans, etc.), each `[Ignore]`'d with a specific reason.
 
-**How to run:**
+**Fallback gate — manual catalog.** The canonical manual catalog still lives in [`tests/manual/README.md`](tests/manual/README.md). Run a plan's `test-plan.md` manually when (a) the corresponding automated spec is `[Ignore]`'d with a pending-investigation reason, (b) the plan is out-of-scope for automation (Docker-compose-only flows, Helm chart tests, release pipeline), or (c) you want to spot-check the UI-driven path (most automated specs drive Deploy + Start via API for speed; the manual plan exercises the bpmn-js drag-drop import + Fluent UI Start button).
 
-1. Open `tests/manual/README.md` and treat each numbered entry under "BPMN regression suite" and "Website regression suite" as one regression step.
-2. For each entry, open its linked `test-plan.md` and execute the checklist end-to-end against the PR branch (not `main`).
-3. Record the result as `PASSED`, `FAILED`, `BUG` (new regression — file an issue), or `KNOWN BUG` (matches a `> **KNOWN BUG:** …` note inside the linked plan; counts as PASSED for promotion purposes).
+**Prerequisites — automated suite:** Docker running (Aspire boots a Redis container); `pwsh` for the Playwright browser install (`pwsh src/Fleans/Fleans.E2E.Tests/bin/Debug/net10.0/playwright.ps1 install chromium`, or via the `Microsoft.Playwright.dll` direct-invocation pattern on macOS without pwsh — see `.github/workflows/dotnet.yml` for the canonical CI invocation).
+
+**Prerequisites — manual fallback (BPMN suite):** Aspire stack running via `dotnet run --project Fleans.Aspire` (from `src/Fleans/`); a clean dev DB (delete the SQLite file or set a fresh `FLEANS_SQLITE_CONNECTION`); Web UI reachable at `https://localhost:7124`; API origin `https://localhost:7140`.
+
+**Prerequisites — Website suite (always manual):** `cd website && npm install` has been run at least once; `npx playwright install chromium` has been run at least once (only needed for plans that shell out to Playwright); ports `4321` / `4327` / `4328` free.
+
+**How to run a release-gating regression sweep:**
+
+1. **CI** — confirm the `e2e` job on the PR branch is ✅ before promoting.
+2. **Manual residual** — for any plan whose spec is `[Ignore]`'d in `_DeferredManualPlans` or carries a per-test `[Ignore]`, open the linked `test-plan.md` and execute the checklist end-to-end. Record results as `PASSED`, `FAILED`, `BUG` (new regression — file an issue), or `KNOWN BUG` (matches a `> **KNOWN BUG:** …` note inside the linked plan; counts as PASSED for promotion purposes).
+3. **Website suite** — always manual; see `tests/manual/README.md#website-regression-suite`.
 4. Aggregate results into the standard "Manual Regression Test Results" PR-issue comment, then promote (Review by Human) or reject (Ready) per the manual-regression-testing skill's normal flow.
 
 ## Cutting a Release
