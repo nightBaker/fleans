@@ -85,15 +85,15 @@ public class DeferredManualPlans : WorkflowE2ETestBase_None
     [Ignore("Needs EditorPage POM + property-panel inspection.")]
     public void Plan48_IoMappingEditor_AddEditRemove() { }
 
-    // tests/manual/49-complex-gateway-activation-condition/test-plan.md — editor UI.
-    [TestMethod]
-    [Ignore("Needs EditorPage POM (activation-condition field round-trip).")]
-    public void Plan49_ComplexGatewayActivationConditionEditor() { }
+    // tests/manual/49-complex-gateway-activation-condition/test-plan.md — the model-level
+    // round-trip lives in EditorPropertiesTests.ActivationCondition_WriteReadClear_…
+    // (currently [Ignore]'d pending investigation into a bpmn-js elementRegistry-inconsistent
+    // state after modeling.updateProperties on default-namespace BPMN). The panel-DOM half
+    // still needs an ElementPropertiesPanel POM.
 
-    // tests/manual/50-gateway-default-flow/test-plan.md — editor UI default-flow toggle.
-    [TestMethod]
-    [Ignore("Needs EditorPage POM (default-flow toggle round-trip).")]
-    public void Plan50_GatewayDefaultFlowEditor() { }
+    // tests/manual/50-gateway-default-flow/test-plan.md — the model-level round-trip is
+    // automated in EditorPropertiesTests.DefaultFlow_PrePopulatedFromXml_…. The panel-DOM
+    // half (dropdown population + click-to-select) still needs an ElementPropertiesPanel POM.
 
     // tests/manual/52-compensation-editor/test-plan.md — editor UI compensation panel.
     [TestMethod]
