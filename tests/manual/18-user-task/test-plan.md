@@ -25,7 +25,7 @@ A workflow with a script task that sets variables, followed by a user task with 
 
 ### 4. Query pending tasks via API
 ```bash
-curl https://localhost:7140/Workflow/tasks
+curl https://localhost:7140/UserTasks
 ```
 - [ ] Response contains a task with `activityId` = **"review"**
 - [ ] `assignee` = **"john"**
@@ -35,13 +35,13 @@ curl https://localhost:7140/Workflow/tasks
 
 ### 5. Query single task
 ```bash
-curl https://localhost:7140/Workflow/tasks/{activityInstanceId}
+curl https://localhost:7140/UserTasks/{activityInstanceId}
 ```
 - [ ] Returns the task details matching step 4
 
 ### 6. Attempt claim by unauthorized user (should fail)
 ```bash
-curl -X POST https://localhost:7140/Workflow/tasks/{activityInstanceId}/claim \
+curl -X POST https://localhost:7140/UserTasks/{activityInstanceId}/claim \
   -H "Content-Type: application/json" \
   -d '{"UserId": "charlie"}'
 ```
@@ -49,7 +49,7 @@ curl -X POST https://localhost:7140/Workflow/tasks/{activityInstanceId}/claim \
 
 ### 7. Claim the task
 ```bash
-curl -X POST https://localhost:7140/Workflow/tasks/{activityInstanceId}/claim \
+curl -X POST https://localhost:7140/UserTasks/{activityInstanceId}/claim \
   -H "Content-Type: application/json" \
   -d '{"UserId": "john"}'
 ```
@@ -57,7 +57,7 @@ curl -X POST https://localhost:7140/Workflow/tasks/{activityInstanceId}/claim \
 
 ### 8. Attempt complete without required variables (should fail)
 ```bash
-curl -X POST https://localhost:7140/Workflow/tasks/{activityInstanceId}/complete \
+curl -X POST https://localhost:7140/UserTasks/{activityInstanceId}/complete \
   -H "Content-Type: application/json" \
   -d '{"UserId": "john", "Variables": {}}'
 ```
@@ -65,7 +65,7 @@ curl -X POST https://localhost:7140/Workflow/tasks/{activityInstanceId}/complete
 
 ### 9. Complete the task with required variables
 ```bash
-curl -X POST https://localhost:7140/Workflow/tasks/{activityInstanceId}/complete \
+curl -X POST https://localhost:7140/UserTasks/{activityInstanceId}/complete \
   -H "Content-Type: application/json" \
   -d '{"UserId": "john", "Variables": {"approved": true, "reviewComment": "Looks good"}}'
 ```
@@ -80,6 +80,6 @@ curl -X POST https://localhost:7140/Workflow/tasks/{activityInstanceId}/complete
 
 ### 11. Verify task unregistered from registry
 ```bash
-curl https://localhost:7140/Workflow/tasks/{activityInstanceId}
+curl https://localhost:7140/UserTasks/{activityInstanceId}
 ```
 - [ ] Returns **404 Not Found**
