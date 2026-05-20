@@ -338,6 +338,7 @@
     private ElementPropertiesPanel.BpmnElementData? selectedElementData;
     private int canvasHeight = 400;
     private DotNetObjectReference<ProcessInstance>? dotNetRef;
+    private bool diagramRendered;
 
     // Activities tab
     private List<ActivityInstanceSnapshot> allActivitiesList = [];
@@ -383,8 +384,14 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender && bpmnXml != null)
+        // Don't gate on firstRender: with InteractiveServer, the first await in
+        // LoadInstance suspends OnInitializedAsync, so firstRender fires once
+        // with bpmnXml/snapshot still null — and subsequent renders have
+        // firstRender=false, so the diagram would never initialize. Gate on
+        // the fields being populated and a "done it once" flag instead.
+        if (!diagramRendered && bpmnXml != null && snapshot != null)
         {
+            diagramRendered = true;
             await RenderDiagram();
         }
     }
