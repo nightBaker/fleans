@@ -9,19 +9,16 @@ namespace Fleans.E2E.Tests.Specs;
 [TestCategory("E2E")]
 public class SignalStartEventTests : WorkflowE2ETestBase
 {
-    // TODO: flaky locally — first signal after Deploy returns DeliveredCount=0; the
-    // disable/enable spec (plan 18) which exercises the same code path passes. Suspect a
-    // start-event subscription registration race on first deploy. Revisit with a short
-    // retry or polling for the subscription to be live.
     [TestMethod]
-    [Ignore("Pending investigation: signal-start subscription doesn't fire on first broadcast in test cluster.")]
     public async Task SignalStartEvent_CreatesInstanceFromBroadcast()
     {
         var xml = BpmnFixtureLoader.Load("17-signal-start-event", "signal-start-event.bpmn");
         await ApiClient.DeployAsync(xml);
 
+        // Signal start events route newly-created instances through `WorkflowInstanceIds`
+        // rather than `DeliveredCount` (the latter counts already-subscribed catch events).
+        // So the assertion is "at least one of the two is non-empty".
         var d1 = await ApiClient.SendSignalAsync("orderSignal");
-        Assert.IsGreaterThanOrEqualTo(1, d1.DeliveredCount);
         Assert.IsNotNull(d1.WorkflowInstanceIds);
         Assert.HasCount(1, d1.WorkflowInstanceIds);
 
