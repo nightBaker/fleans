@@ -13,7 +13,7 @@ internal static class PostgresContainerFixture
     /// <summary>
     /// Image pinned for reproducible tests. Bump when the production deployment target
     /// (Aspire <c>Aspire.Hosting.PostgreSQL</c> default) moves; see
-    /// <c>CLAUDE.md § Persistence Providers</c>.
+    /// <c>docs/conventions/persistence.md § Test parity</c>.
     /// </summary>
     public const string PostgresImage = "postgres:16-alpine";
 

@@ -80,7 +80,7 @@ When a future change requires a new `IDomainEvent` to traverse the streaming pip
    - Builds `StreamId.Create(MyNewEventStreamNamespace, evt.WorkflowInstanceId.ToString("D"))` (or another shard key if the event genuinely needs different ordering).
    - Calls `_streamProvider.GetStream<MyNewEvent>(streamId).OnNextAsync(evt)`.
 3. **Add a handler grain** implementing `IAsyncObserver<MyNewEvent>` + `IGrainWithStringKey`, decorated with `[ImplicitStreamSubscription(WorkflowEventStreams.MyNewEventStreamNamespace)]`.
-4. **Inside `OnActivateAsync`**, rebuild the stream id from the grain's primary key — **NOT** from `nameof(...)` or a literal — per CLAUDE.md *"Subscriber-side stream-id trap"* (the L143 bullet). Example:
+4. **Inside `OnActivateAsync`**, rebuild the stream id from the grain's primary key — **NOT** from `nameof(...)` or a literal — per the *"Subscriber-side stream-id trap"* in [`docs/conventions/streaming.md`](../conventions/streaming.md#subscriber-side-stream-id-trap). Example:
    ```csharp
    var streamId = StreamId.Create(WorkflowEventStreams.MyNewEventStreamNamespace, this.GetPrimaryKeyString());
    var stream = streamProvider.GetStream<MyNewEvent>(streamId);
@@ -89,10 +89,10 @@ When a future change requires a new `IDomainEvent` to traverse the streaming pip
    ```
 5. **Add a manual regression step** to `tests/manual/44-stream-sharding-parallelism/test-plan.md` exercising the new event type's dispatch — at minimum a two-silo distribution check (≥2 distinct silo names in the activation log).
 
-## Invariants (cross-references to CLAUDE.md)
+## Invariants (cross-references)
 
-This doc is *design intent*. The runtime invariants are in CLAUDE.md and must stay in sync:
+This doc is *design intent*. The runtime invariants live in [`docs/conventions/streaming.md`](../conventions/streaming.md) and must stay in sync:
 
-- **Stream-id sharding by `WorkflowInstanceId`** (CLAUDE.md): *"The default `IDomainEvent` switch branch in `Publish` logs at warning level (`LogUnknownEventType`, EventId 5001) and drops — adding a new engine event type requires a new `switch` case."*
-- **Subscriber-side stream-id trap** (CLAUDE.md): *"Implicit-subscription handler grains MUST reconstruct the stream id from `this.GetPrimaryKeyString()` inside `OnActivateAsync` — hard-coding `nameof(<Event>)` (the old, pre-sharding key) silently breaks dispatch."*
-- **Custom-task per-type stream namespace** (CLAUDE.md): explains why `ExecuteCustomTaskEvent` is the only one with a per-`TaskType` namespace; other event types share the `events.{EventName}` pattern.
+- **Stream-id sharding by `WorkflowInstanceId`** — *"The default `IDomainEvent` switch branch in `Publish` logs at warning level (`LogUnknownEventType`, EventId 5001) and drops — adding a new engine event type requires a new `switch` case."*
+- **Subscriber-side stream-id trap** — *"Implicit-subscription handler grains MUST reconstruct the stream id from `this.GetPrimaryKeyString()` inside `OnActivateAsync` — hard-coding `nameof(<Event>)` (the old, pre-sharding key) silently breaks dispatch."*
+- **Custom-task per-type stream namespace** — explains why `ExecuteCustomTaskEvent` is the only one with a per-`TaskType` namespace; other event types share the `events.{EventName}` pattern.

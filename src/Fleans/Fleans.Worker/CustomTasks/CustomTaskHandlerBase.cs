@@ -67,7 +67,7 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
         var streamProvider = this.GetStreamProvider(WorkflowEventStreams.StreamProvider);
         // Stream namespace is per-TaskType; stream key matches the grain's primary key
         // (set by Orleans implicit-subscription dispatch to the WorkflowInstanceId the
-        // publisher used). See CLAUDE.md "Custom-task per-type stream namespace".
+        // publisher used). See docs/conventions/streaming.md "Custom-task per-type stream namespace".
         var streamId = StreamId.Create(
             WorkflowEventStreams.GetExecuteCustomTaskNamespace(this.TaskType),
             this.GetPrimaryKeyString());
