@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using Fleans.Application.DTOs;
 using Fleans.Application.QueryModels;
 using Fleans.ServiceDefaults.DTOs;
 
@@ -112,6 +113,40 @@ public sealed class FleansApiClient
         return await _http.PostAsJsonAsync(
             "/Execution/message",
             new SendMessageRequest(messageName, correlationKey, expando),
+            JsonOptions,
+            ct);
+    }
+
+    public async Task<UserTaskResponse?> GetUserTaskAsync(Guid activityInstanceId, CancellationToken ct = default)
+    {
+        var response = await _http.GetAsync($"/UserTasks/{activityInstanceId:D}", ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<UserTaskResponse>(JsonOptions, ct);
+    }
+
+    public async Task<HttpResponseMessage> ClaimUserTaskAsync(
+        Guid activityInstanceId,
+        string userId,
+        IReadOnlyList<string>? userGroups = null,
+        CancellationToken ct = default)
+    {
+        return await _http.PostAsJsonAsync(
+            $"/UserTasks/{activityInstanceId:D}/claim",
+            new ClaimTaskRequest(userId, userGroups),
+            JsonOptions,
+            ct);
+    }
+
+    public async Task<HttpResponseMessage> CompleteUserTaskAsync(
+        Guid activityInstanceId,
+        string userId,
+        Dictionary<string, object?>? variables = null,
+        CancellationToken ct = default)
+    {
+        return await _http.PostAsJsonAsync(
+            $"/UserTasks/{activityInstanceId:D}/complete",
+            new CompleteTaskRequest(userId, variables),
             JsonOptions,
             ct);
     }
