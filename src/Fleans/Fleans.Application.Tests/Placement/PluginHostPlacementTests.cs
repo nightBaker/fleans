@@ -1,8 +1,14 @@
 using System.Reflection;
+using Fleans.Application.Placement;
 using Fleans.Worker.CustomTasks;
+using Fleans.Worker.Hosting;
 using Fleans.Worker.Placement;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Orleans.Hosting;
 using Orleans.Placement;
+using Orleans.Runtime.Placement;
 
 namespace Fleans.Application.Tests.Placement;
 
@@ -72,5 +78,56 @@ public class PluginHostPlacementTests
             Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"));
 
         Assert.AreEqual("plugin-host42-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", name);
+    }
+
+    [TestMethod]
+    public void AddFleansPluginHost_RegistersBothPlacementDirectors()
+    {
+        // #627 regression guard. Removing either AddPlacementDirector<> line from
+        // AddFleansPluginHost MUST make this test fail. Without the Core registration
+        // external plugin hosts hit "KeyNotFoundException: Could not resolve placement
+        // strategy CorePlacementStrategy" when their plugins route to
+        // CustomTaskCatalogGrain ([CorePlacement]) for catalog registration.
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Fleans:Role"] = "Plugin" })
+            .Build();
+
+        var builder = new FakeSiloBuilder(configuration);
+        builder.AddFleansPluginHost(configuration);
+
+        // Orleans 10's AddPlacementDirector<TStrategy, TDirector> registers IPlacementDirector
+        // as a native .NET keyed service keyed by typeof(TStrategy), with KeyedImplementationType
+        // set to typeof(TDirector). Inspect the ServiceCollection directly so the test does not
+        // need to materialize the directors (which require IGrainFactory + ILogger<T>).
+        var coreDirector = builder.Services.FirstOrDefault(d =>
+            d.ServiceType == typeof(IPlacementDirector)
+            && d.IsKeyedService
+            && Equals(d.ServiceKey, typeof(CorePlacementStrategy)));
+        var workerDirector = builder.Services.FirstOrDefault(d =>
+            d.ServiceType == typeof(IPlacementDirector)
+            && d.IsKeyedService
+            && Equals(d.ServiceKey, typeof(WorkerPlacementStrategy)));
+
+        Assert.IsNotNull(coreDirector,
+            "AddFleansPluginHost must register CorePlacementDirector so external plugin hosts " +
+            "can route to [CorePlacement] grains like CustomTaskCatalogGrain (#627).");
+        Assert.AreEqual(typeof(CorePlacementDirector), coreDirector.KeyedImplementationType,
+            "CorePlacementStrategy must resolve to CorePlacementDirector.");
+        Assert.IsNotNull(workerDirector,
+            "AddFleansPluginHost must register WorkerPlacementDirector for engine worker grains.");
+        Assert.AreEqual(typeof(WorkerPlacementDirector), workerDirector.KeyedImplementationType,
+            "WorkerPlacementStrategy must resolve to WorkerPlacementDirector.");
+    }
+
+    private sealed class FakeSiloBuilder : ISiloBuilder
+    {
+        public FakeSiloBuilder(IConfiguration configuration)
+        {
+            Services = new ServiceCollection();
+            Configuration = configuration;
+        }
+
+        public IServiceCollection Services { get; }
+        public IConfiguration Configuration { get; }
     }
 }
