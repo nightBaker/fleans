@@ -1,0 +1,105 @@
+name: Website pin guard
+
+# CI guard that enforces CLAUDE.md "Documentation scope split" against
+# website/src/content/docs/. The website is for "users consuming a released
+# Fleans artifact" — anything that should still make sense to a reader who
+# has never seen the source tree belongs here. Source-code line pins
+# (e.g. `BpmnConverter.cs:1139`) and `src/Fleans/...` paths fail that test
+# by definition: they require the reader to have `git clone`d the repo.
+#
+# This guard is the Phase 0 ratchet from #634:
+#   * Run on every PR that touches website/src/content/docs/ or this guard.
+#   * Compare the current set of violations against tools/website-pin-allowlist.txt.
+#   * Fail if NEW violations appear, OR if the allow-list lists violations that
+#     no longer exist (forces stale allow-list entries to be removed as
+#     phases land).
+#
+# Phase 3 deletes the allow-list entirely; after that the guard fails on
+# any violation. Until then, each phase PR removes its entries from the
+# allow-list alongside the prose cleanup.
+#
+# Carve-outs (NOT counted as violations):
+#   * `github.com/<owner>/<repo>/blob/<ref>/...src/Fleans/...` URLs — clickable
+#     source links that don't require a checkout. Verified user-facing in
+#     self-host-helm.md, self-host-docker-compose.md, multi-instance-activities.md.
+#   * Pure type/method-name references with no path/line (e.g. `CustomTaskHandlerBase`,
+#     `AddCustomTaskPlugin`) — plugin authors consume these from the NuGet surface,
+#     so they're user-facing. The regex only matches `.cs:NNN` and inline
+#     `src/Fleans/...` paths, so type names pass naturally.
+
+on:
+  pull_request:
+    paths:
+      - 'website/src/content/docs/**'
+      - 'tools/website-pin-allowlist.txt'
+      - '.github/workflows/website-pin-guard.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  pin-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Collect current source-code references in website docs
+        id: scan
+        run: |
+          set -euo pipefail
+          # Two violation classes:
+          #   1. `.cs:NNN` line pins
+          #   2. `src/Fleans/...` inline paths (NOT inside a github.com/.../blob/ URL)
+          # Excludes carve-out: full GitHub blob/tree URLs that include src/Fleans/.
+          # sort emits each line with a trailing newline; redirect directly so the
+          # generated file has a final newline, matching `tools/website-pin-allowlist.txt`.
+          # Avoid `printf '%s'` here — it strips the final newline and creates a
+          # spurious "No newline at end of file" diff against the allow-list.
+          grep -rEn '\.cs:[0-9]+|(^|[^/])src/Fleans/' website/src/content/docs/ \
+            | grep -vE 'github\.com/[^/]+/[^/]+/(blob|tree)/[^)]*src/Fleans/' \
+            | sort > /tmp/website-pin-current.txt || true
+          echo "count=$(wc -l < /tmp/website-pin-current.txt | tr -d ' ')" >> "$GITHUB_OUTPUT"
+
+      - name: Compare against allow-list
+        run: |
+          set -euo pipefail
+          allowlist=tools/website-pin-allowlist.txt
+          current=/tmp/website-pin-current.txt
+
+          if [ ! -f "$allowlist" ]; then
+            # Allow-list deleted (Phase 3 complete) → any violation fails.
+            if [ -s "$current" ]; then
+              echo "::error::Website-pin guard hardened (no allow-list). Found $(wc -l < "$current") violations:"
+              sed 's/^/::error::/' "$current"
+              exit 1
+            fi
+            echo "✅ Allow-list deleted and no source-code references found in website docs."
+            exit 0
+          fi
+
+          # Diff current vs allow-list. New violations → fail. Stale allow-list entries → fail.
+          if ! diff -u "$allowlist" "$current" >/tmp/diff.txt; then
+            new=$(grep -E '^\+[^+]' /tmp/diff.txt | grep -vE '^\+\+\+' | sed 's/^.//' || true)
+            stale=$(grep -E '^-[^-]' /tmp/diff.txt | grep -vE '^---' | sed 's/^.//' || true)
+
+            if [ -n "$new" ]; then
+              echo "::error::Website docs introduce NEW source-code line pins or src/Fleans/ paths. See CLAUDE.md *Documentation scope split* — the website is for users consuming a released artifact, not a source tree."
+              echo "::error::New violations to remove (or, if user-facing, route through a github.com/<owner>/<repo>/blob/<ref>/ URL):"
+              while IFS= read -r line; do [ -n "$line" ] && echo "::error::  $line"; done <<EOF
+          $new
+          EOF
+            fi
+
+            if [ -n "$stale" ]; then
+              echo "::error::Allow-list entries no longer present in website docs. Remove these lines from tools/website-pin-allowlist.txt:"
+              while IFS= read -r line; do [ -n "$line" ] && echo "::error::  $line"; done <<EOF
+          $stale
+          EOF
+            fi
+
+            echo "::error::Full diff (allow-list → current):"
+            cat /tmp/diff.txt
+            exit 1
+          fi
+
+          echo "✅ Website-pin guard: $(wc -l < "$current" | tr -d ' ') known violations match the allow-list."
