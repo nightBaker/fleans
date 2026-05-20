@@ -47,6 +47,84 @@ public sealed class FleansApiClient
         return started ?? throw new InvalidOperationException("Start returned an empty body.");
     }
 
+    public async Task<HttpResponseMessage> DisableAsync(string processDefinitionKey, CancellationToken ct = default)
+    {
+        return await _http.PostAsJsonAsync(
+            "/Definitions/disable",
+            new ProcessDefinitionKeyRequest(processDefinitionKey),
+            JsonOptions,
+            ct);
+    }
+
+    public async Task<HttpResponseMessage> EnableAsync(string processDefinitionKey, CancellationToken ct = default)
+    {
+        return await _http.PostAsJsonAsync(
+            "/Definitions/enable",
+            new ProcessDefinitionKeyRequest(processDefinitionKey),
+            JsonOptions,
+            ct);
+    }
+
+    public async Task<HttpResponseMessage> CompleteActivityAsync(
+        Guid workflowInstanceId,
+        string activityId,
+        Dictionary<string, object>? variables = null,
+        CancellationToken ct = default)
+    {
+        return await _http.PostAsJsonAsync(
+            "/Execution/complete-activity",
+            new CompleteActivityRequest(workflowInstanceId, activityId, variables),
+            JsonOptions,
+            ct);
+    }
+
+    public async Task<EvaluateConditionsResponse> EvaluateConditionsAsync(
+        string? workflowId,
+        Dictionary<string, object>? variables,
+        CancellationToken ct = default)
+    {
+        var response = await _http.PostAsJsonAsync(
+            "/Execution/evaluate-conditions",
+            new EvaluateConditionsRequest(workflowId, variables),
+            JsonOptions,
+            ct);
+        response.EnsureSuccessStatusCode();
+        var result = await response.Content.ReadFromJsonAsync<EvaluateConditionsResponse>(JsonOptions, ct);
+        return result ?? throw new InvalidOperationException("EvaluateConditions returned an empty body.");
+    }
+
+    public async Task<HttpResponseMessage> SendMessageRawAsync(
+        string messageName,
+        string? correlationKey = null,
+        IDictionary<string, object?>? variables = null,
+        CancellationToken ct = default)
+    {
+        System.Dynamic.ExpandoObject? expando = null;
+        if (variables is not null)
+        {
+            expando = new System.Dynamic.ExpandoObject();
+            var sink = (IDictionary<string, object?>)expando;
+            foreach (var kvp in variables)
+            {
+                sink[kvp.Key] = kvp.Value;
+            }
+        }
+        return await _http.PostAsJsonAsync(
+            "/Execution/message",
+            new SendMessageRequest(messageName, correlationKey, expando),
+            JsonOptions,
+            ct);
+    }
+
+    public async Task<HttpResponseMessage> SendSignalRawAsync(string signalName, CancellationToken ct = default)
+    {
+        return await _http.PostAsJsonAsync(
+            "/Execution/signal",
+            new SendSignalRequest(signalName),
+            JsonOptions,
+            ct);
+    }
+
     public async Task<InstanceStateSnapshot?> GetStateAsync(Guid workflowInstanceId, CancellationToken ct = default)
     {
         var response = await _http.GetAsync($"/Instances/{workflowInstanceId:D}/state", ct);
