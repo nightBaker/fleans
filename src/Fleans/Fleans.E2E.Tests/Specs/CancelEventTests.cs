@@ -9,25 +9,36 @@ namespace Fleans.E2E.Tests.Specs;
 [TestCategory("E2E")]
 public class CancelEventTests : WorkflowE2ETestBase
 {
-    // TODO: review_task in the fixture is a user task (not a regular task);
-    // /Execution/complete-activity returns 409. Should drive via /UserTasks/{id}/complete
-    // once the fixture's task type is confirmed.
     [TestMethod]
-    [Ignore("Pending investigation: review_task is a user task; use /UserTasks/{id}/complete after confirming fixture type.")]
     public async Task CancelEndInTransaction_FiresCancelBoundary_RecoveryRuns()
     {
         var xml = BpmnFixtureLoader.Load("30-cancel-event", "cancel-transaction.bpmn");
         var deployed = await ApiClient.DeployAsync(xml);
         var started = await ApiClient.StartAsync(deployed.ProcessDefinitionKey);
 
-        await ApiClient.WaitForStateAsync(
+        // `review_task` is a <userTask> inside the transaction. Wait for it to surface,
+        // then complete it via /UserTasks/{id}/complete (not /Execution/complete-activity —
+        // the latter returns 409 Conflict on user-task instances).
+        var withTask = await ApiClient.WaitForStateAsync(
             started.WorkflowInstanceId,
             s => s.ActiveActivityIds.Contains("review_task"));
 
-        using (var resp = await ApiClient.CompleteActivityAsync(
-            started.WorkflowInstanceId, "review_task"))
+        var reviewActivity = withTask.ActiveActivities
+            .First(a => a.ActivityId == "review_task");
+
+        // The fixture's userTask declares no assignee / candidateUsers / candidateGroups,
+        // so any caller may claim it.
+        using (var claim = await ApiClient.ClaimUserTaskAsync(reviewActivity.ActivityInstanceId, "tester"))
         {
-            Assert.IsTrue(resp.IsSuccessStatusCode);
+            Assert.IsTrue(claim.IsSuccessStatusCode,
+                $"Claim should succeed for an unconstrained user task; got {claim.StatusCode}.");
+        }
+
+        using (var complete = await ApiClient.CompleteUserTaskAsync(
+            reviewActivity.ActivityInstanceId, "tester"))
+        {
+            Assert.IsTrue(complete.IsSuccessStatusCode,
+                $"Complete should succeed; got {complete.StatusCode}.");
         }
 
         var state = await ApiClient.WaitForCompletionAsync(
