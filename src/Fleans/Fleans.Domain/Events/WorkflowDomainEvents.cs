@@ -3,24 +3,36 @@ using System.Dynamic;
 namespace Fleans.Domain.Events;
 
 // Workflow lifecycle
-public record WorkflowStarted(Guid InstanceId, string? ProcessDefinitionId, Guid RootVariablesId) : IDomainEvent;
-public record ExecutionStarted() : IDomainEvent;
-public record WorkflowCompleted() : IDomainEvent;
-public record WorkflowCancelled(string Reason) : IDomainEvent;
+// OccurredAt: emission-time wall clock (UtcNow at emit). Stored in the journal so replays
+// see a fixed timestamp instead of recomputing UtcNow inside Apply methods. Default is
+// MinValue for backward compatibility — emit sites are migrated to supply real values
+// in follow-up PRs (#651 PR A2).
+public record WorkflowStarted(Guid InstanceId, string? ProcessDefinitionId, Guid RootVariablesId,
+    DateTimeOffset OccurredAt = default) : IDomainEvent;
+public record ExecutionStarted(DateTimeOffset OccurredAt = default) : IDomainEvent;
+public record WorkflowCompleted(DateTimeOffset OccurredAt = default) : IDomainEvent;
+public record WorkflowCancelled(string Reason, DateTimeOffset OccurredAt = default) : IDomainEvent;
 
 // Activity lifecycle
 public record ActivitySpawned(
     Guid ActivityInstanceId, string ActivityId, string ActivityType,
     Guid VariablesId, Guid? ScopeId, int? MultiInstanceIndex,
-    Guid? TokenId) : IDomainEvent;
-public record ActivityExecutionStarted(Guid ActivityInstanceId) : IDomainEvent;
+    Guid? TokenId,
+    DateTimeOffset OccurredAt = default) : IDomainEvent;
+public record ActivityExecutionStarted(Guid ActivityInstanceId,
+    DateTimeOffset OccurredAt = default) : IDomainEvent;
 public record ActivityCompleted(
-    Guid ActivityInstanceId, Guid VariablesId, ExpandoObject Variables) : IDomainEvent;
+    Guid ActivityInstanceId, Guid VariablesId, ExpandoObject Variables,
+    DateTimeOffset OccurredAt = default) : IDomainEvent;
 public record ActivityFailed(
-    Guid ActivityInstanceId, string ErrorCode, string ErrorMessage) : IDomainEvent;
-public record ActivityExecutionReset(Guid ActivityInstanceId) : IDomainEvent;
-public record ActivityCancelled(Guid ActivityInstanceId, string Reason) : IDomainEvent;
-public record MultiInstanceTotalSet(Guid ActivityInstanceId, int Total) : IDomainEvent;
+    Guid ActivityInstanceId, string ErrorCode, string ErrorMessage,
+    DateTimeOffset OccurredAt = default) : IDomainEvent;
+public record ActivityExecutionReset(Guid ActivityInstanceId,
+    DateTimeOffset OccurredAt = default) : IDomainEvent;
+public record ActivityCancelled(Guid ActivityInstanceId, string Reason,
+    DateTimeOffset OccurredAt = default) : IDomainEvent;
+public record MultiInstanceTotalSet(Guid ActivityInstanceId, int Total,
+    DateTimeOffset OccurredAt = default) : IDomainEvent;
 
 // Variable management
 public record VariablesMerged(Guid VariablesId, ExpandoObject Variables) : IDomainEvent;
@@ -88,35 +100,42 @@ public record CompensableActivitySnapshotRecorded(
     Guid ActivityInstanceId,
     string ActivityDefinitionId,
     ExpandoObject VariablesSnapshot,
-    Guid? ScopeId) : IDomainEvent;
+    Guid? ScopeId,
+    DateTimeOffset OccurredAt = default) : IDomainEvent;
 
 public record CompensationWalkStarted(
     Guid? ScopeId,
     string? TargetActivityRef,
     int HandlerCount,
-    Guid ThrowerActivityInstanceId) : IDomainEvent;
+    Guid ThrowerActivityInstanceId,
+    DateTimeOffset OccurredAt = default) : IDomainEvent;
 
 public record CompensationHandlerSpawned(
     Guid HandlerInstanceId,
     string CompensableActivityDefinitionId,
     string HandlerActivityId,
-    Guid? ScopeId) : IDomainEvent;
+    Guid? ScopeId,
+    DateTimeOffset OccurredAt = default) : IDomainEvent;
 
 public record CompensationEntryMarkedCompensated(
     string ActivityDefinitionId,
-    Guid? ScopeId) : IDomainEvent;
+    Guid? ScopeId,
+    DateTimeOffset OccurredAt = default) : IDomainEvent;
 
-public record CompensationWalkCompleted(Guid? ScopeId) : IDomainEvent;
+public record CompensationWalkCompleted(Guid? ScopeId,
+    DateTimeOffset OccurredAt = default) : IDomainEvent;
 
 public record CompensationWalkFailed(
     Guid? ScopeId,
     Guid HandlerInstanceId,
     string ErrorCode,
-    string ErrorMessage) : IDomainEvent;
+    string ErrorMessage,
+    DateTimeOffset OccurredAt = default) : IDomainEvent;
 
 public record CompensationWalkAborted(
     Guid? ScopeId,
-    string Reason) : IDomainEvent;
+    string Reason,
+    DateTimeOffset OccurredAt = default) : IDomainEvent;
 
 // Transaction Sub-Process outcome
 // Plain record — no [GenerateSerializer] — stored via Newtonsoft.Json in EfCoreEventStore,

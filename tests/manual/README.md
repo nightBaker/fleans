@@ -108,6 +108,8 @@ Each numbered entry below is one regression "step". For each one, follow the lin
 
 63. **Chart external-Postgres support** — `63-chart-external-postgres/test-plan.md`. Verifies #601: pre-fix, `persistence.provider=Postgres` + `postgres.enabled=false` emitted `ConnectionStrings__fleans` from a chart-managed `secretKeyRef` referencing a non-existent secret → pod stuck in `CreateContainerConfigError`. Post-fix, the conditional gates emission on `postgres.enabled=true`; external operators supply the connection string via `extraEnv` (either literal `value:` or `valueFrom.secretKeyRef:`) without conflict. 4 `helm template | grep` assertions including both extraEnv shapes.
 
+65. **Persistent reminders** — `65-persistent-reminders/test-plan.md` (`timer-restart.bpmn`). Verifies #650: BPMN `TimerIntermediateCatchEvent(PT5M)` survives silo restart. Step A: single-silo restart against Compose-bundle. Step B: multi-silo cluster Core-only restart while Worker stays up. Plus a fail-fast regression: with `orleans-redis` unset, silo refuses to start with `InvalidOperationException` from `AddFleansReminders`.
+
 ## Website regression suite
 
 Website-specific manual tests live under `website/`. These run in a local dev server, not against the .NET stack.

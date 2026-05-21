@@ -472,7 +472,19 @@ public partial class WorkflowInstance :
         using var scope = BeginWorkflowScope();
         LogTimerReminderFired(timerActivityId);
 
-        var effects = _execution!.HandleTimerFired(timerActivityId, hostActivityInstanceId);
+        // Pre-call stale guard: catches late fires (post-completion, post-cancel,
+        // post-host-scope-completion) before aggregate dispatch. Pairs with
+        // TimerCallbackGrain.Cancel's swallow-on-failure cleanup per the
+        // registration-vs-cleanup asymmetry rule (CLAUDE.md Design constraints).
+        // Mirrors the aggregate's internal guards in HandleTimerFired and
+        // TryActivateTimerEventSubProcess — see WorkflowExecution.IsTimerFireStale.
+        if (_execution!.IsTimerFireStale(timerActivityId, hostActivityInstanceId))
+        {
+            LogTimerFiredAfterActivityResolved(timerActivityId, hostActivityInstanceId);
+            return null;
+        }
+
+        var effects = _execution.HandleTimerFired(timerActivityId, hostActivityInstanceId);
 
         // Intercept RegisterTimerEffect for cycle re-registration: return the DueTime
         // instead of calling callbackGrain.Activate() — avoids Orleans non-reentrant

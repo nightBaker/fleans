@@ -57,23 +57,42 @@ public partial class WorkflowLifecycleEffectHandler : IEffectHandler
 
     private async Task PerformStartChildWorkflow(StartChildWorkflowEffect startChild, IEffectContext context)
     {
-        var processGrain = context.GrainFactory.GetGrain<IProcessDefinitionGrain>(startChild.ProcessDefinitionKey);
-        var childDefinition = await processGrain.GetLatestDefinition();
+        try
+        {
+            var processGrain = context.GrainFactory.GetGrain<IProcessDefinitionGrain>(startChild.ProcessDefinitionKey);
+            var childDefinition = await processGrain.GetLatestDefinition();
 
-        var child = context.GrainFactory.GetGrain<IWorkflowInstanceGrain>(startChild.ChildInstanceId);
+            var child = context.GrainFactory.GetGrain<IWorkflowInstanceGrain>(startChild.ChildInstanceId);
 
-        LogStartingChildWorkflow(startChild.ProcessDefinitionKey, startChild.ChildInstanceId);
+            LogStartingChildWorkflow(startChild.ProcessDefinitionKey, startChild.ChildInstanceId);
 
-        await child.SetWorkflow(childDefinition);
-        await child.SetParentInfo(context.WorkflowInstanceId, startChild.ParentActivityId);
+            await child.SetWorkflow(childDefinition);
+            await child.SetParentInfo(context.WorkflowInstanceId, startChild.ParentActivityId);
 
-        if (((IDictionary<string, object?>)startChild.InputVariables).Count > 0)
-            await child.SetInitialVariables(startChild.InputVariables);
+            if (((IDictionary<string, object?>)startChild.InputVariables).Count > 0)
+                await child.SetInitialVariables(startChild.InputVariables);
 
-        await child.StartWorkflow();
+            await child.StartWorkflow();
+        }
+        catch (Exception ex)
+        {
+            LogChildStartFailed(
+                context.WorkflowInstanceId,
+                startChild.ChildInstanceId,
+                startChild.ProcessDefinitionKey,
+                ex.Message);
+            await context.ProcessFailureEffects(
+                startChild.ParentActivityId,
+                startChild.ParentActivityInstanceId,
+                ex);
+        }
     }
 
     [LoggerMessage(EventId = 1013, Level = LogLevel.Information,
         Message = "Starting child workflow: CalledProcessKey={CalledProcessKey}, ChildId={ChildId}")]
     private partial void LogStartingChildWorkflow(string calledProcessKey, Guid childId);
+
+    [LoggerMessage(EventId = 4070, Level = LogLevel.Error,
+        Message = "Child workflow start failed (parent={ParentInstanceId}, child={ChildInstanceId}, definition={DefinitionKey}): {Reason}")]
+    private partial void LogChildStartFailed(Guid parentInstanceId, Guid childInstanceId, string definitionKey, string reason);
 }
