@@ -284,5 +284,5 @@ within the documented per-release migration window.
   validation, the cookie + bearer flows.
 - [Streaming](/fleans/reference/streaming/) — Kafka provider configuration
   and production-readiness caveat.
-- [Cutting a Release](https://github.com/nightBaker/fleans/blob/main/CLAUDE.md#cutting-a-release) —
+- [Cutting a Release](https://github.com/nightBaker/fleans/blob/main/docs/runbooks/release.md) —
   maintainer runbook for publishing a new chart tarball.

@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-All endpoints are served from `https://localhost:7140/Workflow/*` by default.
+Workflow endpoints are served from `https://localhost:7140/Workflow/*`; user-task endpoints are served from `https://localhost:7140/UserTasks/*` by default (see [PR #614](https://github.com/nightBaker/fleans/pull/614) for the controller split).
 
 | Endpoint | Method | Body |
 |---|---|---|
@@ -16,13 +16,13 @@ All endpoints are served from `https://localhost:7140/Workflow/*` by default.
 | `/complete-activity` | POST | `{"WorkflowInstanceId":"guid", "ActivityId":"activity-id", "Variables":{}}` |
 | `/evaluate-conditions` | POST | `{"WorkflowId":"process-id", "Variables":{"key":"value"}}` — Evaluates all conditional start events (or only those for the given `WorkflowId` if provided) against the supplied variables. Returns `{"StartedInstanceIds":["guid",...], "Errors":["..."]}`. `Errors` is present only when one or more listeners failed during evaluation. |
 | `/instances/{instanceId}/state` | GET | *(none)* — Returns the current state snapshot for a specific workflow instance |
-| `/tasks` | GET | *(query string)* — Paginated list of pending user tasks. See [User Task endpoints](#user-task-endpoints). |
-| `/tasks/{activityInstanceId}` | GET | *(none)* — Single user-task lookup. |
-| `/tasks/{activityInstanceId}/claim` | POST | `{"UserId":"alice"}` |
-| `/tasks/{activityInstanceId}/unclaim` | POST | *(empty body)* |
-| `/tasks/{activityInstanceId}/complete` | POST | `{"UserId":"alice", "Variables":{"approved":true}}` |
-| `/tasks/{activityInstanceId}/fail` | POST | `{"errorMessage":"reason", "errorCode":"400"}` — fails the task; routes via Error Boundary Event if one matches. |
-| `/tasks/{activityInstanceId}/cancel` | POST | `{"reason":"optional"}` — cancels the task; no error propagation. Idempotent. |
+| `/UserTasks` | GET | *(query string)* — Paginated list of pending user tasks. See [User Task endpoints](#user-task-endpoints). |
+| `/UserTasks/{activityInstanceId}` | GET | *(none)* — Single user-task lookup. |
+| `/UserTasks/{activityInstanceId}/claim` | POST | `{"UserId":"alice"}` |
+| `/UserTasks/{activityInstanceId}/unclaim` | POST | *(empty body)* |
+| `/UserTasks/{activityInstanceId}/complete` | POST | `{"UserId":"alice", "Variables":{"approved":true}}` |
+| `/UserTasks/{activityInstanceId}/fail` | POST | `{"errorMessage":"reason", "errorCode":"400"}` — fails the task; routes via Error Boundary Event if one matches. |
+| `/UserTasks/{activityInstanceId}/cancel` | POST | `{"reason":"optional"}` — cancels the task; no error propagation. Idempotent. |
 
 ## Endpoint details
 
@@ -56,7 +56,7 @@ Content-Type: application/json
 
 ```json
 {
-  "Error": "Failed to parse BPMN: ..."
+  "error": "Failed to parse BPMN: ..."
 }
 ```
 
@@ -102,7 +102,7 @@ Content-Type: application/json
 
 ```json
 {
-  "Error": "WorkflowId is required"
+  "error": "WorkflowId is required"
 }
 ```
 
@@ -134,8 +134,8 @@ Content-Type: application/json
 
 **Error responses**
 
-- **400** — `{"Error": "MessageName is required"}`
-- **404** — `{"Error": "No active subscription found for message 'payment-received' with correlation key 'order-123'"}` — no workflow instance is currently waiting for this message/key combination
+- **400** — `{"error": "MessageName is required"}`
+- **404** — `{"error": "No active subscription found for message 'payment-received' with correlation key 'order-123'"}` — no workflow instance is currently waiting for this message/key combination
 
 ### `POST /Workflow/signal`
 
@@ -166,8 +166,8 @@ Content-Type: application/json
 
 **Error responses**
 
-- **400** — `{"Error": "SignalName is required"}`
-- **404** — `{"Error": "No active subscription found for signal 'global-alert'"}` — no workflow instance is currently listening for this signal
+- **400** — `{"error": "SignalName is required"}`
+- **404** — `{"error": "No active subscription found for signal 'global-alert'"}` — no workflow instance is currently listening for this signal
 
 ### `POST /Workflow/complete-activity`
 
@@ -192,13 +192,13 @@ Content-Type: application/json
 
 ```json
 {
-  "Error": "WorkflowInstanceId is required"
+  "error": "WorkflowInstanceId is required"
 }
 ```
 
 ### User Task endpoints
 
-<!-- DRIFT-GUARD: route + body shapes verified against src/Fleans/Fleans.Api/Controllers/WorkflowController.cs lines 174-260 (commit e7f37a6). Re-verify when controller changes. -->
+<!-- DRIFT-GUARD: route + body shapes verified against the [UserTasksController](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Api/Controllers/UserTasksController.cs) (controller split landed in PR #614 / issue #587). Re-verify when controller changes. -->
 
 User-task endpoints expose the human-in-the-loop lifecycle of `<bpmn:userTask>` activities. The conceptual model (states, who-can-claim, expected outputs) lives in the [User Tasks guide](/fleans/guides/user-tasks/) — this section is the authoritative wire reference.
 
@@ -206,13 +206,13 @@ User-task endpoints expose the human-in-the-loop lifecycle of `<bpmn:userTask>` 
 
 | Verb | Path | Surface | Auth | Success |
 | --- | --- | --- | --- | --- |
-| GET  | `/Workflow/tasks`                            | Query    | optional | `200 OK` |
-| GET  | `/Workflow/tasks/{activityInstanceId}`       | Query    | optional | `200 OK` |
-| POST | `/Workflow/tasks/{activityInstanceId}/claim`    | Mutation | `UserId` required in body | `200 OK` |
-| POST | `/Workflow/tasks/{activityInstanceId}/unclaim`  | Mutation | NONE — see below | `200 OK` |
-| POST | `/Workflow/tasks/{activityInstanceId}/complete` | Mutation | `UserId` required in body | `200 OK` |
-| POST | `/Workflow/tasks/{activityInstanceId}/fail`     | Mutation | `ErrorMessage` required in body | `200 OK` |
-| POST | `/Workflow/tasks/{activityInstanceId}/cancel`   | Mutation | body optional | `200 OK` |
+| GET  | `/UserTasks`                            | Query    | optional | `200 OK` |
+| GET  | `/UserTasks/{activityInstanceId}`       | Query    | optional | `200 OK` |
+| POST | `/UserTasks/{activityInstanceId}/claim`    | Mutation | `UserId` required in body | `200 OK` |
+| POST | `/UserTasks/{activityInstanceId}/unclaim`  | Mutation | NONE — see below | `200 OK` |
+| POST | `/UserTasks/{activityInstanceId}/complete` | Mutation | `UserId` required in body | `200 OK` |
+| POST | `/UserTasks/{activityInstanceId}/fail`     | Mutation | `ErrorMessage` required in body | `200 OK` |
+| POST | `/UserTasks/{activityInstanceId}/cancel`   | Mutation | body optional | `200 OK` |
 
 `Auth` above refers to API-level JWT bearer auth, which is opt-in for the entire API — see [Authentication](/fleans/reference/authentication/#quick-start). The `UserId` field in claim/complete bodies is **caller identity**, not authentication: the engine treats whatever value it receives as the acting user.
 
@@ -230,14 +230,14 @@ The User Task endpoints emit two distinct error wire shapes depending on which l
 
 Property casing in the controller-emitted `{"error":"..."}` shape is camelCase — the Fleans API serializes via the System.Text.Json default policy.
 
-#### `GET /Workflow/tasks`
+#### `GET /UserTasks`
 
 Lists pending user tasks across all running workflow instances, with optional filters and standard pagination/sort/filter query parameters.
 
 **Request**
 
 ```
-GET /Workflow/tasks?assignee=alice&candidateGroup=approvers&page=1&pageSize=20&sorts=&filters=
+GET /UserTasks?assignee=alice&candidateGroup=approvers&page=1&pageSize=20&sorts=&filters=
 ```
 
 | Query param | Type | Description |
@@ -276,17 +276,17 @@ GET /Workflow/tasks?assignee=alice&candidateGroup=approvers&page=1&pageSize=20&s
 **Curl example**
 
 ```bash
-curl -k "https://localhost:7140/Workflow/tasks?assignee=alice&page=1&pageSize=20"
+curl -k "https://localhost:7140/UserTasks?assignee=alice&page=1&pageSize=20"
 ```
 
-#### `GET /Workflow/tasks/{activityInstanceId}`
+#### `GET /UserTasks/{activityInstanceId}`
 
 Returns a single user task by its activity-instance id, or `404` if the id is unknown / no longer pending.
 
 **Request**
 
 ```
-GET /Workflow/tasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8
+GET /UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8
 ```
 
 **Success response (200)** — single `UserTaskResponse` (same shape as the array element above).
@@ -300,17 +300,17 @@ GET /Workflow/tasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8
 **Curl example**
 
 ```bash
-curl -k https://localhost:7140/Workflow/tasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8
+curl -k https://localhost:7140/UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8
 ```
 
-#### `POST /Workflow/tasks/{activityInstanceId}/claim`
+#### `POST /UserTasks/{activityInstanceId}/claim`
 
 Claims a pending task for `UserId`. Subsequent claims by a different user overwrite the claim — Fleans does not enforce first-claim-wins (see the [User Tasks guide](/fleans/guides/user-tasks/) for the lifecycle table).
 
 **Request**
 
 ```json
-POST /Workflow/tasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/claim
+POST /UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/claim
 Content-Type: application/json
 
 { "UserId": "alice" }
@@ -331,12 +331,12 @@ Content-Type: application/json
 **Curl example**
 
 ```bash
-curl -k -X POST https://localhost:7140/Workflow/tasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/claim \
+curl -k -X POST https://localhost:7140/UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/claim \
   -H "Content-Type: application/json" \
   -d '{"UserId":"alice"}'
 ```
 
-#### `POST /Workflow/tasks/{activityInstanceId}/unclaim`
+#### `POST /UserTasks/{activityInstanceId}/unclaim`
 
 Releases an existing claim so another user can claim the task. The body is empty.
 
@@ -347,7 +347,7 @@ Unlike `/claim`, `/unclaim` does **not** verify that the caller is the current c
 **Request**
 
 ```
-POST /Workflow/tasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/unclaim
+POST /UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/unclaim
 Content-Type: application/json
 ```
 
@@ -362,18 +362,18 @@ Content-Type: application/json
 **Curl example**
 
 ```bash
-curl -k -X POST https://localhost:7140/Workflow/tasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/unclaim \
+curl -k -X POST https://localhost:7140/UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/unclaim \
   -H "Content-Type: application/json"
 ```
 
-#### `POST /Workflow/tasks/{activityInstanceId}/complete`
+#### `POST /UserTasks/{activityInstanceId}/complete`
 
 Completes the task on behalf of `UserId`, merging `Variables` into the enclosing scope and advancing the token. The caller **must** be the current claimer, and **all** variables declared in `<fleans:expectedOutputs>` must be present.
 
 **Request**
 
 ```json
-POST /Workflow/tasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/complete
+POST /UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/complete
 Content-Type: application/json
 
 {
@@ -387,7 +387,7 @@ Content-Type: application/json
 | `UserId` | `string` | yes | Caller identity — must match `claimedBy` on the task. |
 | `Variables` | `object?` | optional unless the task declares `expectedOutputVariables` | Output variables merged into the workflow's enclosing scope. Every entry in `expectedOutputVariables` must have a value here. |
 
-**Success response (200)** — empty body. The task is removed from the registry; subsequent `GET /Workflow/tasks/{id}` returns `404`.
+**Success response (200)** — empty body. The task is removed from the registry; subsequent `GET /UserTasks/{id}` returns `404`.
 
 **Error responses**
 
@@ -412,12 +412,12 @@ Content-Type: application/json
 **Curl example**
 
 ```bash
-curl -k -X POST https://localhost:7140/Workflow/tasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/complete \
+curl -k -X POST https://localhost:7140/UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/complete \
   -H "Content-Type: application/json" \
   -d '{"UserId":"alice","Variables":{"approved":true}}'
 ```
 
-#### `POST /Workflow/tasks/{activityInstanceId}/fail`
+#### `POST /UserTasks/{activityInstanceId}/fail`
 
 Fails a pending user task with an error code and message. The engine routes the failure through the standard `FailActivity` path — if an Error Boundary Event is attached to the task and its error code matches, the workflow continues via that boundary; otherwise the workflow instance enters a top-level error state.
 
@@ -446,12 +446,12 @@ Both operations are **idempotent**: calling them on a task that is already in a 
 **Curl example**
 
 ```bash
-curl -k -X POST https://localhost:7140/Workflow/tasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/fail \
+curl -k -X POST https://localhost:7140/UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/fail \
   -H "Content-Type: application/json" \
   -d '{"errorMessage":"User rejected the task","errorCode":"400"}'
 ```
 
-#### `POST /Workflow/tasks/{activityInstanceId}/cancel`
+#### `POST /UserTasks/{activityInstanceId}/cancel`
 
 Cancels a pending user task. The activity is marked terminal with `ActivityCancelled` and removed from the task list. No error propagation occurs — the workflow branch simply stops at the cancelled task. The request body is optional.
 
@@ -473,7 +473,7 @@ Cancels a pending user task. The activity is marked terminal with `ActivityCance
 **Curl example**
 
 ```bash
-curl -k -X POST https://localhost:7140/Workflow/tasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/cancel \
+curl -k -X POST https://localhost:7140/UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a6b7c8/cancel \
   -H "Content-Type: application/json" \
   -d '{"reason":"Operator cancelled"}'
 ```

@@ -9,6 +9,7 @@ using Fleans.Infrastructure;
 using Fleans.Persistence.PostgreSql;
 using Fleans.Persistence.Sqlite;
 using Fleans.ServiceDefaults;
+using Fleans.ServiceDefaults.Reminders;
 using Fleans.Worker.Hosting;
 using Fleans.Worker.Placement;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -98,8 +99,11 @@ builder.UseOrleans(siloBuilder =>
         siloBuilder.AddRedisGrainStorage("PubSubStore",
             options => options.ConfigurationOptions =
                 ConfigurationOptions.Parse(orleansRedisConnection));
-        siloBuilder.UseInMemoryReminderService();
     }
+
+    // Fleans reminders: Redis-backed for BPMN timer durability across silo restarts (#650).
+    // Fails fast at startup if 'orleans-redis' connection string is missing.
+    siloBuilder.AddFleansReminders(builder.Configuration);
 
     // Pluggable stream provider — reads Fleans:Streaming:Provider from config (default: memory)
     siloBuilder.AddFleanStreaming(builder.Configuration);

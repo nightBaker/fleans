@@ -6,6 +6,7 @@ using Fleans.Persistence.PostgreSql;
 using Fleans.Persistence.Sqlite;
 using Fleans.Plugins.RestCaller;
 using Fleans.ServiceDefaults;
+using Fleans.ServiceDefaults.Reminders;
 using Fleans.Worker.Hosting;
 using Fleans.Worker.Placement;
 using Orleans.Dashboard;
@@ -54,8 +55,11 @@ builder.UseOrleans(siloBuilder =>
         siloBuilder.AddRedisGrainStorage("PubSubStore",
             options => options.ConfigurationOptions =
                 ConfigurationOptions.Parse(orleansRedisConnection));
-        siloBuilder.UseInMemoryReminderService();
     }
+
+    // Fleans reminders: Redis-backed for BPMN timer durability across silo restarts (#650).
+    // Fails fast at startup if 'orleans-redis' connection string is missing.
+    siloBuilder.AddFleansReminders(builder.Configuration);
 
     siloBuilder.AddFleanStreaming(builder.Configuration);
     siloBuilder.AddDashboard();

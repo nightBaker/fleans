@@ -101,37 +101,39 @@ Toggle the Starlight theme switcher. Both guides remain readable in light
 AND dark themes. No text drops below WCAG-AA contrast against either
 admonition body.
 
-### 6. CLAUDE.md `## Cutting a Release` section
+### 6. `docs/runbooks/release.md` runbook
 
 ```bash
 cd D:/Projects/fleans
-grep -nE '^## Cutting a Release$' CLAUDE.md
+test -f docs/runbooks/release.md && echo OK
 ```
 
-**Expected:** Exactly one match.
+**Expected:** `OK` (the runbook file exists; the maintainer-facing release
+content moved out of `CLAUDE.md` into `docs/runbooks/` during the
+CLAUDE.md size refactor).
 
 ```bash
-awk '/^## Cutting a Release$/,/^## /' CLAUDE.md | head -80
+awk '/^# Cutting a release$/,0' docs/runbooks/release.md | head -120
 ```
 
-**Expected:** the section contains these 5 sub-sections in order:
-- `### Pre-tag checklist` (4 numbered items, item 4 documents BOTH
+**Expected:** the file contains these sub-sections in order:
+- `## Pre-tag checklist` (4 numbered items, item 4 documents BOTH
   `0.0.0-rc-test` and `0.0.0-ci-test` dry-run sentinels with the explicit
   asymmetry callout)
-- `### Tag command`
-- `### Post-tag verification` (5 numbered items)
-- `### Rollback` (contains `gh api -X DELETE /user/packages/container/`
+- `## Tag command`
+- `## Post-tag verification` (5 numbered items + cosign smoke test)
+- `## Rollback` (contains `gh api -X DELETE /user/packages/container/`
   AND `| head -1` AND does NOT contain `docker buildx imagetools remove`)
-- `### Documentation rule reminder` (cross-links the two new self-host guide
+- `## Documentation rule reminder` (cross-links the two self-host guide
   paths)
 
 ```bash
-grep -cE 'docker buildx imagetools remove' CLAUDE.md
+grep -cE 'docker buildx imagetools remove' docs/runbooks/release.md
 ```
 
 **Expected:** `0` (zero — the non-existent subcommand is mentioned only as a
-warning comment inside a code fence, not as an actual command). To be precise
-the only allowed mention is the `# (\`docker buildx imagetools\` has no \`remove\` subcommand …)` comment.
+warning comment inside a code fence, not as an actual command). The only
+allowed mention is the `# (\`docker buildx imagetools\` has no \`remove\` subcommand …)` comment.
 
 ### 7. Internal cross-link integrity (build-time)
 
