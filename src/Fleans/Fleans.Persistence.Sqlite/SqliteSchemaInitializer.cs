@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using SQLitePCL;
 
 namespace Fleans.Persistence.Sqlite;
 
@@ -10,13 +11,22 @@ namespace Fleans.Persistence.Sqlite;
 public static class SqliteSchemaInitializer
 {
     /// <summary>
-    /// Calls <see cref="DatabaseFacade.EnsureCreated"/> and swallows
-    /// <see cref="SqliteException"/>s thrown when another process (e.g. a sibling silo
+    /// Calls <see cref="DatabaseFacade.EnsureCreated"/> and swallows the specific
+    /// <see cref="SqliteException"/> thrown when another process (e.g. a sibling silo
     /// sharing the same .db file) has already created the tables.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// This exists so host projects do not need a direct reference to
     /// <c>Microsoft.Data.Sqlite</c> just for the race-catch block.
+    /// </para>
+    /// <para>
+    /// The catch is narrowed to <c>SQLITE_ERROR (1)</c> with message containing
+    /// "already exists" — the canonical race signature. Any other
+    /// <see cref="SqliteException"/> (CANTOPEN, READONLY, CORRUPT, FULL, NOTADB, etc.)
+    /// rethrows so a misconfigured deploy surfaces as a fail-fast crash at boot
+    /// rather than silent breakage on first query. See issue #659/#660.
+    /// </para>
     /// </remarks>
     public static void EnsureCreatedIgnoreRaces(DatabaseFacade database)
     {
@@ -24,9 +34,15 @@ public static class SqliteSchemaInitializer
         {
             database.EnsureCreated();
         }
-        catch (SqliteException)
+        catch (SqliteException ex) when (
+            ex.SqliteErrorCode == raw.SQLITE_ERROR
+            && ex.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase))
         {
-            // Tables already created by a concurrent process sharing the same SQLite file.
+            // Concurrent EnsureCreated race: a sibling process created the schema
+            // first. SQLite reports SQLITE_ERROR (primary code 1) with message
+            // "<entity> already exists" (e.g. "table X already exists",
+            // "index X already exists"). Swallow only this exact signature —
+            // every other SqliteException surfaces as a startup crash.
         }
 
         // Enable WAL once. Sticky across connections via the database header — subsequent
