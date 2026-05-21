@@ -5,6 +5,7 @@ using Fleans.Domain.Effects;
 using Fleans.Domain.Events;
 using Fleans.Domain.States;
 using Fleans.Application.Adapters;
+using Fleans.Application.Observability;
 using Orleans;
 using Orleans.Runtime;
 using System.Dynamic;
@@ -579,19 +580,24 @@ public partial class WorkflowInstance
         {
             case WorkflowCompleted:
                 LogStateCompleted();
+                FleansDiagnostics.OnWorkflowCompleted();
                 break;
             case ActivitySpawned spawned:
                 LogActivitySpawned(spawned.ActivityInstanceId, spawned.ActivityId, spawned.ActivityType);
+                _activityStartedAt[spawned.ActivityInstanceId] = (DateTimeOffset.UtcNow, spawned.ActivityType);
                 break;
-            case ActivityCompleted:
+            case ActivityCompleted activityCompleted:
                 LogStateCompleteEntries(1);
+                RecordActivityDurationIfTracked(activityCompleted.ActivityInstanceId);
                 break;
             case ActivityFailed failed:
                 LogFailingActivity(failed.ActivityInstanceId.ToString());
+                RecordActivityDurationIfTracked(failed.ActivityInstanceId);
                 break;
             case ActivityCancelled cancelled:
                 LogScopeChildCancelled(cancelled.ActivityInstanceId.ToString(),
                     State.FindEntry(cancelled.ActivityInstanceId)?.ScopeId ?? Guid.Empty);
+                RecordActivityDurationIfTracked(cancelled.ActivityInstanceId);
                 break;
             case VariablesMerged merged:
                 LogStateMergeState(merged.VariablesId);
@@ -607,6 +613,7 @@ public partial class WorkflowInstance
                 break;
             case WorkflowStarted started:
                 LogWorkflowInstanceStarted(started.InstanceId);
+                FleansDiagnostics.OnWorkflowStarted();
                 break;
             case ExecutionStarted:
                 LogExecutionStarted();
@@ -689,6 +696,7 @@ public partial class WorkflowInstance
                 break;
             case WorkflowCancelled wfCancelled:
                 LogWorkflowCancelled(wfCancelled.Reason);
+                FleansDiagnostics.OnWorkflowCancelled();
                 break;
             case EscalationUncaughtRaised escUncaught:
                 LogEscalationUncaught(escUncaught.EscalationCode, escUncaught.SourceActivityId);
@@ -700,5 +708,12 @@ public partial class WorkflowInstance
                     customTaskEvent.ActivityInstanceId);
                 break;
         }
+    }
+
+    private void RecordActivityDurationIfTracked(Guid activityInstanceId)
+    {
+        if (!_activityStartedAt.Remove(activityInstanceId, out var tracked)) return;
+        var elapsed = (DateTimeOffset.UtcNow - tracked.StartedAt).TotalMilliseconds;
+        FleansDiagnostics.RecordActivityDuration(elapsed, tracked.ActivityType);
     }
 }
