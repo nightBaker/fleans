@@ -362,6 +362,7 @@ public class MultiInstanceScriptIntegrationTests
                         (sp, _) => new EfCoreTimerSchedulerGrainStorage(
                             sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
 
+                    services.AddSingleton<IFleanQueryContextFactory, FleanQueryContextFactory>();
                     services.AddSingleton<IProcessDefinitionRepository, EfCoreProcessDefinitionRepository>();
                     services.AddSingleton<ISieveProcessor, ApplicationSieveProcessor>();
                     services.Configure<SieveOptions>(options =>

@@ -203,3 +203,18 @@ public static void AddQueryServices(this IServiceCollection services)
 
 **Remove:**
 - Any tests that call `GetStateSnapshot` through the grain interface
+
+## CQRS read-side enforcement (#661)
+
+The CQRS read contract is enforced at compile time by `IFleanQueryContext` — a read-only projection of `FleanQueryDbContext` exposing only `IQueryable<T>` properties (plus `IAsyncDisposable` for `await using` compatibility). `IFleanQueryContextFactory` (Singleton, wrapping the EF Core `IDbContextFactory<FleanQueryDbContext>`) creates per-call instances for Singleton consumers.
+
+**Migrated consumer (1):** `EfCoreProcessDefinitionRepository` — all 4 read methods resolve the read-only interface.
+
+**Deliberate carve-outs (3, all keep concrete `FleanQueryDbContext`):**
+1. `WorkflowQueryService` — body delegates to `IUserTaskFilterStrategy.GetFilteredBase(db, ...)`, which by contract takes `FleanQueryDbContext`. Migrating the service would break the strategy call.
+2. `PostgresUserTaskFilterStrategy` — implementation calls `db.UserTasks.FromSqlInterpolated(...)`, an EF Core extension on `DbSet<TEntity>` only.
+3. `InMemoryUserTaskFilterStrategy` — pairs with (2) under the same `IUserTaskFilterStrategy` contract.
+
+Each production-code carve-out (`WorkflowQueryService.cs`, `PostgresUserTaskFilterStrategy.cs`) carries an explanatory comment referencing #661.
+
+Future work (separate issue): tighten `IUserTaskFilterStrategy.GetFilteredBase` to accept `DbSet<UserTaskState>` only (the one entity it needs), which would let `WorkflowQueryService` migrate to `IFleanQueryContextFactory`. Out of scope for #661.

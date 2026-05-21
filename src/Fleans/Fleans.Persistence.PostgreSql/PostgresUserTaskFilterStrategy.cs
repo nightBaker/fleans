@@ -21,6 +21,11 @@ public sealed class PostgresUserTaskFilterStrategy : IUserTaskFilterStrategy
 
     // Path C: use FromSqlInterpolated to push the JSON-text LIKE filter to PostgreSQL.
     // Sieve sort + additional LINQ WHERE clauses compose correctly on top of FromSqlInterpolated.
+    //
+    // CQRS carve-out (see #661): parameter type stays FleanQueryDbContext rather than
+    // IFleanQueryContext because FromSqlInterpolated is an EF Core extension on
+    // DbSet<TEntity>, not IQueryable<T>. The interface deliberately exposes IQueryable<T>
+    // only — see IFleanQueryContext xmldoc.
     public IQueryable<UserTaskState> GetFilteredBase(
         FleanQueryDbContext db, string? assignee, string? candidateGroup)
     {

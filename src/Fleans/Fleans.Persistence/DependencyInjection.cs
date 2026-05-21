@@ -21,6 +21,12 @@ public static class EfCorePersistenceDependencyInjection
         services.AddDbContextFactory<FleanCommandDbContext>(configureCommandDb);
         services.AddDbContextFactory<FleanQueryDbContext>(configureQueryDb ?? configureCommandDb);
 
+        // CQRS read-side wrapper (see #661): wraps the EF Core factory in an
+        // IFleanQueryContextFactory that returns IQueryable<T>-only views. Singleton lifetime
+        // matches the underlying EF Core factory; the per-call IFleanQueryContext is disposed
+        // inside the consumer's `await using` block.
+        services.AddSingleton<IFleanQueryContextFactory, FleanQueryContextFactory>();
+
         services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.ProcessDefinitions,
             (sp, _) => new EfCoreProcessDefinitionGrainStorage(
                 sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
