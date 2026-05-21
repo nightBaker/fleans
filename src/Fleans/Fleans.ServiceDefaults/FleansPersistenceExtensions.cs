@@ -27,6 +27,11 @@ public static class FleansPersistenceExtensions
             opts.Provider = provider;
             builder.Configuration.GetSection("Persistence").Bind(opts);
             if (string.IsNullOrWhiteSpace(opts.Provider)) opts.Provider = provider;
+
+            // Bind Fleans:Reminders:Provider here so EnsureDatabaseSchemaAsync can
+            // see it via IOptions without re-reading IConfiguration after Build().
+            var remindersProvider = builder.Configuration["Fleans:Reminders:Provider"];
+            if (!string.IsNullOrWhiteSpace(remindersProvider)) opts.RemindersProvider = remindersProvider;
         });
 
         if (provider.Equals("Postgres", StringComparison.OrdinalIgnoreCase))
@@ -86,6 +91,26 @@ public static class FleansPersistenceExtensions
                 await db.Database.ExecuteSqlRawAsync(
                     $"SELECT pg_advisory_lock({migrationLockKey})");
                 await db.Database.MigrateAsync();
+
+                if (options.RemindersProvider.Equals("Postgres", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Idempotent guard. ExecuteSqlRawAsync returns -1 for SELECT in Npgsql
+                    // (rows-affected is undefined for queries) so we use raw ADO.NET
+                    // ExecuteScalarAsync. The OrleansQuery table (created by Main.sql) is
+                    // the sentinel: present → already initialised → skip; absent → run both.
+                    bool alreadyInitialised;
+                    await using (var cmd = db.Database.GetDbConnection().CreateCommand())
+                    {
+                        cmd.CommandText = "SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = 'orleansquery')";
+                        alreadyInitialised = (bool)(await cmd.ExecuteScalarAsync() ?? false);
+                    }
+
+                    if (!alreadyInitialised)
+                    {
+                        await ExecuteEmbeddedScriptAsync(db, "Fleans.ServiceDefaults.Resources.PostgreSQL_Main.sql");
+                        await ExecuteEmbeddedScriptAsync(db, "Fleans.ServiceDefaults.Resources.PostgreSQL_Reminders.sql");
+                    }
+                }
             }
             finally
             {
@@ -106,5 +131,16 @@ public static class FleansPersistenceExtensions
             using var db = dbFactory.CreateDbContext();
             SqliteSchemaInitializer.EnsureCreatedIgnoreRaces(db.Database);
         }
+    }
+
+    private static async Task ExecuteEmbeddedScriptAsync(Microsoft.EntityFrameworkCore.DbContext db, string resourceName)
+    {
+        var assembly = typeof(FleansPersistenceExtensions).Assembly;
+        await using var stream = assembly.GetManifestResourceStream(resourceName)
+            ?? throw new InvalidOperationException(
+                $"Embedded SQL resource '{resourceName}' not found — check Fleans.ServiceDefaults.csproj <EmbeddedResource> entries.");
+        using var reader = new StreamReader(stream);
+        var sql = await reader.ReadToEndAsync();
+        await db.Database.ExecuteSqlRawAsync(sql);
     }
 }

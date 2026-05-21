@@ -15,4 +15,12 @@ public sealed class FleansPersistenceOptions
     /// (see WorkflowInstance.ApplyUpdatesToStorage).
     /// </summary>
     public int MaxEventsPerLoad { get; set; } = 1000;
+
+    /// <summary>
+    /// Reminder backing store. Bound from <c>Fleans:Reminders:Provider</c>; default
+    /// <c>Redis</c> (matches the #650 ship). When set to <c>Postgres</c>,
+    /// <see cref="Provider"/> must also be <c>Postgres</c> — mixed storage is
+    /// rejected at startup (see #669).
+    /// </summary>
+    public string RemindersProvider { get; set; } = "Redis";
 }
