@@ -26,17 +26,10 @@ public class EfCoreCustomTaskCatalogGrainStorage : IGrainStorage
 
         var rows = await db.CustomTaskCatalogEntries.AsNoTracking().ToListAsync();
 
-        var state = new CustomTaskCatalogState
-        {
-            Entries = rows
-        };
-
-        if (rows.Count > 0)
-        {
-            grainState.State = (T)(object)state;
-            grainState.ETag = "loaded";
-            grainState.RecordExists = true;
-        }
+        var state = new CustomTaskCatalogState { Entries = rows };
+        grainState.State = (T)(object)state;
+        grainState.ETag = rows.Count > 0 ? "loaded" : null;
+        grainState.RecordExists = rows.Count > 0;
     }
 
     public async Task WriteStateAsync<T>(string stateName, GrainId grainId, IGrainState<T> grainState)

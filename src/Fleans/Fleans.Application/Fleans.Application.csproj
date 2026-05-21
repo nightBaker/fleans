@@ -20,4 +20,8 @@
     <ProjectReference Include="..\Fleans.Domain\Fleans.Domain.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Fleans.Application.Tests" />
+  </ItemGroup>
+
 </Project>

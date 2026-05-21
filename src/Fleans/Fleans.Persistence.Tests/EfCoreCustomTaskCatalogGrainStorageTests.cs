@@ -1,5 +1,6 @@
 using Fleans.Domain.States;
 using Fleans.Persistence.Tests.Infrastructure;
+using Microsoft.EntityFrameworkCore;
 using Orleans.Runtime;
 
 namespace Fleans.Persistence.Tests;
@@ -165,6 +166,44 @@ public class EfCoreCustomTaskCatalogGrainStorageTests : PersistenceTestBase
         Assert.HasCount(2, read.State.Entries);
         var silos = read.State.Entries.Select(e => e.SiloName).OrderBy(s => s).ToList();
         CollectionAssert.AreEqual(new[] { "worker-A", "worker-B" }, silos);
+    }
+
+    [TestMethod]
+    public async Task ReadStateAsync_DbContextFactoryThrows_PropagatesException()
+    {
+        // Regression for #659: Orleans must abort grain activation when the
+        // underlying store throws on read. Caller-visible behaviour: the
+        // exception propagates AND no positive "loaded" markers are stamped
+        // onto the IGrainState — otherwise the catalog grain would be
+        // activated with State={} and the membership-reconcile timer would
+        // happily persist that empty state on the next tick.
+        var factory = new ThrowingDbContextFactory(new InvalidOperationException("simulated transient"));
+        var storage = new EfCoreCustomTaskCatalogGrainStorage(factory);
+        var read = CreateEmptyGrainState();
+
+        var ex = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            storage.ReadStateAsync(StateName, NewGrainId(), read));
+
+        Assert.AreEqual("simulated transient", ex.Message);
+        Assert.IsFalse(read.RecordExists, "grain state must not be marked as populated on read failure");
+        Assert.IsNull(read.ETag, "ETag must not be set on read failure");
+    }
+
+    /// <summary>
+    /// Inline test-only factory used by <see cref="ReadStateAsync_DbContextFactoryThrows_PropagatesException"/>.
+    /// Wraps the <see cref="IDbContextFactory{TContext}"/> surface used by
+    /// <see cref="EfCoreCustomTaskCatalogGrainStorage"/> and unconditionally
+    /// throws the configured exception on every create call.
+    /// </summary>
+    private sealed class ThrowingDbContextFactory : IDbContextFactory<FleanCommandDbContext>
+    {
+        private readonly Exception _toThrow;
+        public ThrowingDbContextFactory(Exception toThrow) => _toThrow = toThrow;
+
+        public FleanCommandDbContext CreateDbContext() => throw _toThrow;
+
+        public Task<FleanCommandDbContext> CreateDbContextAsync(CancellationToken ct = default)
+            => Task.FromException<FleanCommandDbContext>(_toThrow);
     }
 
     [DataTestMethod]
