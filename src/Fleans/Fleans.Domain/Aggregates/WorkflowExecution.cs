@@ -1197,7 +1197,8 @@ public class WorkflowExecution
 
         return new StartChildWorkflowEffect(
             childInstanceId, callActivity.CalledProcessKey,
-            inputVariables, callActivity.ActivityId);
+            inputVariables, callActivity.ActivityId,
+            activityInstanceId);
     }
 
     private IInfrastructureEffect ProcessEvaluateActivationCondition(
