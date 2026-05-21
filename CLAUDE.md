@@ -108,3 +108,4 @@ Every new feature MUST have a manual test plan under `tests/manual/NN-feature-na
 - **Design docs live in `docs/plans/`** — check before architectural changes.
 - **Streaming defaults to Redis** (already provisioned for Orleans clustering); switch via `FLEANS_STREAMING_PROVIDER`. Operator notes & tuning in [`docs/conventions/streaming.md`](docs/conventions/streaming.md).
 - **Persistence defaults to SQLite** (file-based, shared via `FLEANS_SQLITE_CONNECTION` set by Aspire). Switch to Postgres via `FLEANS_PERSISTENCE_PROVIDER=Postgres`. Details in [`docs/conventions/persistence.md`](docs/conventions/persistence.md).
+- **Reminders default to Redis** (via `Microsoft.Orleans.Reminders.Redis`, shares the `orleans-redis` connection used for clustering + streaming). Silos fail-fast on missing connection. Details in [`docs/conventions/reminders.md`](docs/conventions/reminders.md).

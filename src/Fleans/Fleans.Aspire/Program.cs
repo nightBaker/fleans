@@ -66,10 +66,11 @@ var authClientId = builder.AddParameter("auth-client-id", () => "");
 var authClientSecret = builder.AddParameter("auth-client-secret", () => "", secret: true);
 
 // Centralized Orleans configuration
+// Reminder provider is configured by the silo itself via Fleans.ServiceDefaults' AddFleansReminders,
+// which binds the persistent Redis reminder service (#650). AppHost stays orchestration-only.
 var orleans = builder.AddOrleans("cluster")
     .WithClustering(redis)
-    .WithGrainStorage("PubSubStore", redis)
-    .WithMemoryReminders();
+    .WithGrainStorage("PubSubStore", redis);
 
 IResourceBuilder<PostgresDatabaseResource>? pg = null;
 string? sqliteConnectionString = null;
