@@ -32,7 +32,8 @@ public record ThrowSignalEffect(string SignalName) : IInfrastructureEffect;
 // Child workflows
 public record StartChildWorkflowEffect(
     Guid ChildInstanceId, string ProcessDefinitionKey,
-    ExpandoObject InputVariables, string ParentActivityId) : IInfrastructureEffect;
+    ExpandoObject InputVariables, string ParentActivityId,
+    Guid ParentActivityInstanceId) : IInfrastructureEffect;
 
 // Parent notifications
 public record NotifyParentCompletedEffect(

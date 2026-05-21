@@ -18,7 +18,7 @@ public class InfrastructureEffectsTests
             new SubscribeSignalEffect("sig", Guid.NewGuid(), "act1", Guid.NewGuid()),
             new UnsubscribeSignalEffect("sig", Guid.NewGuid(), "act1"),
             new ThrowSignalEffect("sig"),
-            new StartChildWorkflowEffect(Guid.NewGuid(), "process-key", new System.Dynamic.ExpandoObject(), "callAct"),
+            new StartChildWorkflowEffect(Guid.NewGuid(), "process-key", new System.Dynamic.ExpandoObject(), "callAct", Guid.NewGuid()),
             new NotifyParentCompletedEffect(Guid.NewGuid(), "parentAct", new System.Dynamic.ExpandoObject()),
             new NotifyParentFailedEffect(Guid.NewGuid(), "parentAct", new Exception("err")),
             new PublishDomainEventEffect(new WorkflowCompleted()),
