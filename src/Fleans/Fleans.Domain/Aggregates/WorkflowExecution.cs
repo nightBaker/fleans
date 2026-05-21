@@ -1241,6 +1241,40 @@ public class WorkflowExecution
 
     // --- Event Handling (external event delivery) ---
 
+    /// <summary>
+    /// Returns true if a timer fire for the given (timerActivityId, hostActivityInstanceId)
+    /// would be caught by HandleTimerFired's internal stale guards. Used by the grain to
+    /// short-circuit late fires before aggregate dispatch — both for cycle savings and to
+    /// emit an observability warning when TimerCallbackGrain.Cancel swallowed a transient
+    /// UnregisterReminder exception (per the registration-vs-cleanup asymmetry rule).
+    ///
+    /// Mirrors the guards in HandleTimerFired and TryActivateTimerEventSubProcess. Kept as
+    /// a duplicate predicate (~25 lines) rather than extracted; a follow-up can refactor
+    /// into a shared private helper if a third caller appears.
+    /// </summary>
+    public bool IsTimerFireStale(string timerActivityId, Guid hostActivityInstanceId)
+    {
+        var espMatch = _definition.FindEventSubProcessByStartEvent(timerActivityId);
+        if (espMatch is not null && espMatch.Value.EventSubProcess.Activities
+                .OfType<TimerStartEvent>()
+                .Any(t => t.ActivityId == timerActivityId))
+        {
+            // ESP timer: root-scope guard is _state.IsCompleted; SubProcess-scoped guard
+            // is the container entry being missing or completed (mirrors
+            // TryActivateTimerEventSubProcess).
+            if (hostActivityInstanceId == _state.Id)
+                return _state.IsCompleted;
+            var containerEntry = _state.FindEntry(hostActivityInstanceId);
+            return containerEntry is null || containerEntry.IsCompleted;
+        }
+
+        // Regular timer (intermediate catch, boundary, multiple-event boundary,
+        // multiple-intermediate-catch): host entry must be present and not completed
+        // (mirrors HandleTimerFired's :1262-1265 stale guard).
+        var entry = _state.FindEntry(hostActivityInstanceId);
+        return entry is null || entry.IsCompleted;
+    }
+
     public IReadOnlyList<IInfrastructureEffect> HandleTimerFired(
         string timerActivityId, Guid hostActivityInstanceId)
     {
