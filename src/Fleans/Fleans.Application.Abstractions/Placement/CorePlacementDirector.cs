@@ -52,7 +52,7 @@ public sealed partial class CorePlacementDirector : IPlacementDirector
         return candidates[pick];
     }
 
-    internal static bool HasCoreRole(string? siloName)
+    public static bool HasCoreRole(string? siloName)
     {
         if (string.IsNullOrEmpty(siloName)) return false;
         return siloName.StartsWith(CorePrefix, StringComparison.Ordinal)

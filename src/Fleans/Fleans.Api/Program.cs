@@ -10,6 +10,7 @@ using Fleans.Persistence.PostgreSql;
 using Fleans.Persistence.Sqlite;
 using Fleans.ServiceDefaults;
 using Fleans.ServiceDefaults.Reminders;
+using Fleans.Worker.Hosting;
 using Fleans.Worker.Placement;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
@@ -122,6 +123,9 @@ builder.UseOrleans(siloBuilder =>
     // when only a single silo exists.
     siloBuilder.AddPlacementDirector<CorePlacementStrategy, CorePlacementDirector>();
     siloBuilder.AddPlacementDirector<WorkerPlacementStrategy, WorkerPlacementDirector>();
+
+    // Fail fast on Fleans:Role / placement-attribute mismatch (#457).
+    siloBuilder.AddFleansPlacementAssertion(builder.Configuration);
 });
 
 // Add services to the container.
