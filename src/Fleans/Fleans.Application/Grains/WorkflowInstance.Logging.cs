@@ -70,6 +70,9 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1018, Level = LogLevel.Information, Message = "Timer reminder fired for activity {TimerActivityId}")]
     private partial void LogTimerReminderFired(string timerActivityId);
 
+    [LoggerMessage(EventId = 3034, Level = LogLevel.Warning, Message = "Timer fire for activity {TimerActivityId} arrived after host instance {HostActivityInstanceId} was resolved; ignored late fire.")]
+    private partial void LogTimerFiredAfterActivityResolved(string timerActivityId, Guid hostActivityInstanceId);
+
     [LoggerMessage(EventId = 1024, Level = LogLevel.Debug, Message = "Stale timer ignored for activity {TimerActivityId} — activity no longer active")]
     private partial void LogStaleTimerIgnored(string timerActivityId);
 
