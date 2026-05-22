@@ -8,6 +8,24 @@ using Orleans.Runtime;
 namespace Fleans.Application.CustomTasks;
 
 /// <summary>
+/// Pure logic for the catalog reconcile sanity guard. Extracted so unit tests
+/// can target the guard's decision directly without standing up a TestCluster
+/// or mocking <see cref="IManagementGrain"/>. See #659.
+/// </summary>
+internal static class ReconcileGuard
+{
+    /// <summary>
+    /// Detects the "membership directory anomaly" case where the catalog has
+    /// entries but the management grain reports zero alive silos — almost
+    /// certainly a transient Redis/membership-table blip, not a real "every
+    /// silo left the cluster" event. The reconciler must skip writes in this
+    /// case to avoid silently wiping the persisted catalog.
+    /// </summary>
+    public static bool IsAnomalousEmptyAliveSilos(int aliveSilosCount, int currentEntryCount)
+        => aliveSilosCount == 0 && currentEntryCount > 0;
+}
+
+/// <summary>
 /// Catalog of custom-task plugin registrations announced by Worker silos.
 /// State is persisted via <see cref="IPersistentState{T}"/> backed by an EF Core
 /// grain-storage provider (sub-issue A2 of #357 / PR #434), so the catalog survives
@@ -137,6 +155,12 @@ public sealed partial class CustomTaskCatalogGrain : Grain, ICustomTaskCatalogGr
                 .Where(n => !string.IsNullOrEmpty(n))
                 .ToHashSet(StringComparer.Ordinal);
 
+            if (ReconcileGuard.IsAnomalousEmptyAliveSilos(aliveSilos.Count, _state.State.Entries.Count))
+            {
+                LogReconcileSkippedAnomalousEmptyAliveSilos(_state.State.Entries.Count);
+                return;
+            }
+
             var removed = _state.State.RemoveWhere(e => !aliveSilos.Contains(e.SiloName));
             if (removed > 0)
             {
@@ -161,6 +185,10 @@ public sealed partial class CustomTaskCatalogGrain : Grain, ICustomTaskCatalogGr
     [LoggerMessage(EventId = 9322, Level = LogLevel.Warning,
         Message = "Custom-task catalog reconcile failed; will retry next tick")]
     private partial void LogReconcileFailed(Exception ex);
+
+    [LoggerMessage(EventId = 9323, Level = LogLevel.Warning,
+        Message = "Custom-task catalog reconcile observed empty alive-silos list with {EntryCount} catalog entries still present — treating as transient membership anomaly; skipping this reconcile tick.")]
+    private partial void LogReconcileSkippedAnomalousEmptyAliveSilos(int entryCount);
 
     [LoggerMessage(EventId = 9325, Level = LogLevel.Warning,
         Message = "Custom-task catalog: failed to deserialize ParameterSchemaJson for taskType='{TaskType}'; returning null schema (UI will hide parameter widgets for this plugin)")]
