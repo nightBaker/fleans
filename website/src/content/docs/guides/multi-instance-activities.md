@@ -4,11 +4,11 @@ description: Fan out work in parallel or run iterations sequentially using BPMN 
 ---
 
 <!-- DRIFT-GUARD: cited line numbers verified against
-     - src/Fleans/Fleans.Domain/Activities/MultiInstanceActivity.cs:1-126 (record + ctor + ExecuteCoreAsync)
+     - src/Fleans/Fleans.Domain/Activities/MultiInstanceActivity.cs:1-129 (record + ctor + ExecuteCoreAsync)
      - src/Fleans/Fleans.Domain/Aggregates/Services/MultiInstanceCoordinator.cs:34,76,96,118,135,159 (TryComplete, FailHost, SpawnNextSequentialIteration, loopCounter binding, AggregateOutputVariables, CleanupChildVariableScopes)
-     - src/Fleans/Fleans.Domain/Aggregates/WorkflowExecution.cs:842-907 (ProcessSpawnActivity multi-instance branch; loopCounter seed at line 855)
-     - src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs:307,325,348,363,563,578-581,632,1130-1158 (TryWrapMultiInstance call sites + transaction reject + helper)
-     at commit aaed5ff. Re-verify when those files change. -->
+     - src/Fleans/Fleans.Domain/Aggregates/WorkflowExecution.cs:1015-1050 (ProcessSpawnActivity multi-instance branch; loopCounter seed at line 1028)
+     - src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs:304,322,345,360,560,588-593,629,1118-1158 (TryWrapMultiInstance call sites + transaction reject + helper)
+     at commit f4205f4. Re-verify when those files change. -->
 
 A **multi-instance activity** runs the same activity body multiple times — either concurrently (*parallel*) or one at a time (*sequential*). It's BPMN's answer to fan-out: "send a notification to every approver", "process each line in this CSV", "spin up a sub-process per work item". Fleans implements multi-instance for tasks, embedded subprocesses, and call activities.
 
@@ -38,7 +38,7 @@ Multi-instance configuration lives inside `<bpmn:multiInstanceLoopCharacteristic
 
 Both bare-name and `fleans:`-prefixed attributes are accepted by the parser (`fleans:collection` ↔ `collection`, `fleans:elementVariable` ↔ `elementVariable`, `fleans:outputCollection` ↔ `outputCollection`, `fleans:outputElement` ↔ `outputElement`). The editor and the canonical examples in this guide use the `fleans:` prefix; files exported from Camunda's modeler may use `zeebe:` and parse via the same back-compat probe.
 
-The constructor on `MultiInstanceActivity` (`Fleans.Domain/Activities/MultiInstanceActivity.cs:1-126`) enforces that exactly one of `LoopCardinality` or `InputCollection` is set, and that cardinality is non-negative. Violations throw at deploy time, not at runtime.
+The constructor on `MultiInstanceActivity` (`Fleans.Domain/Activities/MultiInstanceActivity.cs:1-129`) enforces that exactly one of `LoopCardinality` or `InputCollection` is set, and that cardinality is non-negative. Violations throw at deploy time, not at runtime.
 
 ## Parallel multi-instance over a collection
 
@@ -104,7 +104,7 @@ Because each iteration's `outputElement` is appended to the enclosing scope's `o
 
 Every iteration's child scope is seeded with `_context.loopCounter` set to the **0-based** iteration index, regardless of cardinality vs. collection mode. Two binding sites:
 
-- Parallel and sequential first iteration: `Fleans.Domain/Aggregates/WorkflowExecution.cs:855` (inside `ProcessSpawnActivity`, `iterDict["loopCounter"] = spawn.MultiInstanceIndex!.Value;`).
+- Parallel and sequential first iteration: `Fleans.Domain/Aggregates/WorkflowExecution.cs:1028` (inside `ProcessSpawnActivity`, `iterDict["loopCounter"] = spawn.MultiInstanceIndex!.Value;`).
 - Sequential subsequent iterations: `Fleans.Domain/Aggregates/Services/MultiInstanceCoordinator.cs:118` (inside `SpawnNextSequentialIteration`, `iterDict["loopCounter"] = nextIndex;`).
 
 `loopCounter` and the three BPMN-spec aggregate variables — `nrOfInstances`, `nrOfActiveInstances`, `nrOfCompletedInstances` — are available on the multi-instance host scope. Access them via `_context.nrOfCompletedInstances` etc. in scripts and condition expressions.
@@ -131,13 +131,13 @@ Verified against the call sites of `TryWrapMultiInstance` in `Fleans.Infrastruct
 - `<bpmn:subProcess>` — embedded subprocess (line 563)
 - `<bpmn:callActivity>` (line 632)
 
-There is one hard exclusion. **Transactions reject multi-instance at parse time** (`BpmnConverter.cs:578-581`). The converter throws:
+There is one hard exclusion. **Transactions reject multi-instance at parse time** (`BpmnConverter.cs:588-593`). The converter throws:
 
 > Transaction Sub-Process '`<id>`' does not support multi-instance loop characteristics. Remove the multiInstanceLoopCharacteristics element, or use a regular Sub-Process.
 
 If you need fan-out with transactional semantics, wrap individual transactions in an outer multi-instance subprocess (or call activity) — but a `<transaction>` element itself cannot carry `<multiInstanceLoopCharacteristics>`.
 
-Event sub-processes also do not support multi-instance — by BPMN spec, not a Fleans limitation. The converter explicitly skips `TryWrapMultiInstance` for event sub-processes (`BpmnConverter.cs:547-548`).
+Event sub-processes also do not support multi-instance — by BPMN spec, not a Fleans limitation. The converter explicitly skips `TryWrapMultiInstance` for event sub-processes (`BpmnConverter.cs:544-545`).
 
 ## Completion condition
 
