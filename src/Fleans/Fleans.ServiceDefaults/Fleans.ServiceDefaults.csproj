@@ -29,6 +29,9 @@
          for clustering + streaming). BPMN timer durability across silo restarts. See #650 +
          docs/conventions/reminders.md. -->
     <PackageReference Include="Microsoft.Orleans.Reminders.Redis" Version="10.0.1" />
+    <!-- Postgres-backed reminder service (opt-in via Fleans:Reminders:Provider=Postgres).
+         Pin to 10.0.1 to match the Microsoft.Orleans.* sibling versions. See #669. -->
+    <PackageReference Include="Microsoft.Orleans.Reminders.AdoNet" Version="10.0.1" />
     <!-- Third-party Redis stream provider (MIT, Orleans 10.x compatible). Date-versioned;
          bump deliberately and re-run manual test #45. See CLAUDE.md for swap-out path. -->
     <PackageReference Include="Universley.OrleansContrib.StreamsProvider.Redis" Version="2026.4.19" />
@@ -37,6 +40,16 @@
     <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.14.0" />
     <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.14.0" />
     <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" Version="1.14.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Vendored Orleans Postgres-reminders schema scripts. Run by EnsureDatabaseSchemaAsync
+         on first startup when Fleans:Reminders:Provider=Postgres. Re-vendor when the
+         AdoNet package version is bumped. See #669 + LICENSE-orleans-vendor. -->
+    <EmbeddedResource Include="Resources/PostgreSQL-Main.sql"
+                      LogicalName="Fleans.ServiceDefaults.Resources.PostgreSQL_Main.sql" />
+    <EmbeddedResource Include="Resources/PostgreSQL-Reminders.sql"
+                      LogicalName="Fleans.ServiceDefaults.Resources.PostgreSQL_Reminders.sql" />
   </ItemGroup>
 
 </Project>
