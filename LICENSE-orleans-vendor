@@ -1,3 +1,21 @@
+This file exists to satisfy the Apache License 2.0 attribution requirement
+for files vendored from the Microsoft Orleans project (https://github.com/dotnet/orleans).
+
+Vendored files (copied unmodified from upstream tag v10.0.1):
+  - src/Fleans/Fleans.ServiceDefaults/Resources/PostgreSQL-Main.sql
+  - src/Fleans/Fleans.ServiceDefaults/Resources/PostgreSQL-Reminders.sql
+
+These scripts are embedded as resources and executed during
+EnsureDatabaseSchemaAsync when Postgres reminders are enabled, because
+Microsoft.Orleans.Reminders.AdoNet does not ship its schema as an embedded
+resource. Section 4 of the Apache-2.0 license requires the original notice
+and a copy of the license to accompany any distribution containing the
+licensed material — that is what this file provides.
+
+When Microsoft.Orleans.Reminders.AdoNet is bumped, re-fetch both .sql files
+from the matching upstream tag and update their version-pin header comment.
+
+--------------------------------------------------------------------------------
 
                                  Apache License
                            Version 2.0, January 2004
