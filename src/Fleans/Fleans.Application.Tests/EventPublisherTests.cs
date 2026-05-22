@@ -202,6 +202,7 @@ public class EventPublisherTests
                     services.AddSingleton<IEventStore>(sp => sp.GetRequiredService<EfCoreEventStore>());
                     services.AddApplication();
 
+                    services.AddSingleton<IFleanQueryContextFactory, FleanQueryContextFactory>();
                     services.AddSingleton<IProcessDefinitionRepository, EfCoreProcessDefinitionRepository>();
                     services.AddSingleton<ISieveProcessor, ApplicationSieveProcessor>();
                     services.Configure<SieveOptions>(options =>

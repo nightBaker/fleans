@@ -14,6 +14,10 @@ namespace Fleans.Persistence;
 
 public class WorkflowQueryService : IWorkflowQueryService
 {
+    // CQRS carve-out (see #661): field type stays IDbContextFactory<FleanQueryDbContext>
+    // rather than IFleanQueryContextFactory because the body delegates to
+    // _userTaskFilter.GetFilteredBase(db, ...) which by contract takes the concrete
+    // FleanQueryDbContext (PostgresUserTaskFilterStrategy needs DbSet<T> for FromSqlInterpolated).
     private readonly IDbContextFactory<FleanQueryDbContext> _dbContextFactory;
     private readonly ISieveProcessor _sieveProcessor;
     private readonly IUserTaskFilterStrategy _userTaskFilter;

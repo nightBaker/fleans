@@ -7,11 +7,11 @@ namespace Fleans.Persistence;
 public class EfCoreProcessDefinitionRepository : IProcessDefinitionRepository
 {
     private readonly IDbContextFactory<FleanCommandDbContext> _commandDbFactory;
-    private readonly IDbContextFactory<FleanQueryDbContext> _queryDbFactory;
+    private readonly IFleanQueryContextFactory _queryDbFactory;
 
     public EfCoreProcessDefinitionRepository(
         IDbContextFactory<FleanCommandDbContext> commandDbFactory,
-        IDbContextFactory<FleanQueryDbContext> queryDbFactory)
+        IFleanQueryContextFactory queryDbFactory)
     {
         _commandDbFactory = commandDbFactory;
         _queryDbFactory = queryDbFactory;
@@ -19,14 +19,14 @@ public class EfCoreProcessDefinitionRepository : IProcessDefinitionRepository
 
     public async Task<ProcessDefinition?> GetByIdAsync(string processDefinitionId)
     {
-        await using var db = await _queryDbFactory.CreateDbContextAsync();
+        await using var db = await _queryDbFactory.CreateAsync();
         return await db.ProcessDefinitions
             .FirstOrDefaultAsync(d => d.ProcessDefinitionId == processDefinitionId);
     }
 
     public async Task<List<ProcessDefinition>> GetByKeyAsync(string processDefinitionKey)
     {
-        await using var db = await _queryDbFactory.CreateDbContextAsync();
+        await using var db = await _queryDbFactory.CreateAsync();
         return await db.ProcessDefinitions
             .Where(d => d.ProcessDefinitionKey == processDefinitionKey)
             .OrderBy(d => d.Version)
@@ -35,7 +35,7 @@ public class EfCoreProcessDefinitionRepository : IProcessDefinitionRepository
 
     public async Task<List<ProcessDefinition>> GetAllAsync()
     {
-        await using var db = await _queryDbFactory.CreateDbContextAsync();
+        await using var db = await _queryDbFactory.CreateAsync();
         return await db.ProcessDefinitions
             .OrderBy(d => d.ProcessDefinitionKey)
             .ThenBy(d => d.Version)
@@ -44,7 +44,7 @@ public class EfCoreProcessDefinitionRepository : IProcessDefinitionRepository
 
     public async Task<List<string>> GetAllDistinctKeysAsync()
     {
-        await using var db = await _queryDbFactory.CreateDbContextAsync();
+        await using var db = await _queryDbFactory.CreateAsync();
         return await db.ProcessDefinitions
             .Select(d => d.ProcessDefinitionKey)
             .Distinct()

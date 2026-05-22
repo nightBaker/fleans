@@ -12,4 +12,14 @@ public interface IPersistenceTestFixture : IAsyncDisposable
     PersistenceProvider Provider { get; }
     IDbContextFactory<FleanCommandDbContext> CommandFactory { get; }
     IDbContextFactory<FleanQueryDbContext> QueryFactory { get; }
+
+    /// <summary>
+    /// CQRS-restricted query-context factory wrapping <see cref="QueryFactory"/>.
+    /// Pass this when constructing components that depend on
+    /// <see cref="IFleanQueryContextFactory"/> (e.g.
+    /// <see cref="EfCoreProcessDefinitionRepository"/>). Default-interface-member
+    /// avoids 15 inline <c>new FleanQueryContextFactory(...)</c> sites in the
+    /// repository test class. See #661.
+    /// </summary>
+    IFleanQueryContextFactory QueryContextFactory => new FleanQueryContextFactory(QueryFactory);
 }

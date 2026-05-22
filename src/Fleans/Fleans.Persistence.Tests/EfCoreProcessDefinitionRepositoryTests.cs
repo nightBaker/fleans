@@ -16,7 +16,7 @@ public class EfCoreProcessDefinitionRepositoryTests : PersistenceTestBase
     public async Task SaveAndGetById_RoundTrip_ReturnsAllScalarFields(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryFactory);
+        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryContextFactory);
 
         var deployedAt = DateTimeOffset.UtcNow;
         var definition = CreateDefinition("key1:1:ts", "key1", 1, deployedAt);
@@ -39,7 +39,7 @@ public class EfCoreProcessDefinitionRepositoryTests : PersistenceTestBase
     public async Task SaveAndGetById_WorkflowJsonRoundTrip_PolymorphicActivityTypes(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryFactory);
+        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryContextFactory);
 
         var definition = CreateDefinitionWithMixedActivities();
 
@@ -66,7 +66,7 @@ public class EfCoreProcessDefinitionRepositoryTests : PersistenceTestBase
     public async Task SaveAndGetById_WorkflowJsonRoundTrip_PolymorphicSequenceFlowTypes(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryFactory);
+        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryContextFactory);
 
         var definition = CreateDefinitionWithMixedActivities();
 
@@ -93,7 +93,7 @@ public class EfCoreProcessDefinitionRepositoryTests : PersistenceTestBase
     public async Task SaveAndGetById_WorkflowJsonRoundTrip_SharedActivityReferences(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryFactory);
+        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryContextFactory);
 
         var definition = CreateDefinitionWithMixedActivities();
 
@@ -120,7 +120,7 @@ public class EfCoreProcessDefinitionRepositoryTests : PersistenceTestBase
     public async Task GetByKey_ReturnsVersionsOrderedByVersion(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryFactory);
+        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryContextFactory);
 
         await repository.SaveAsync(CreateDefinition("key1:3:ts", "key1", 3, DateTimeOffset.UtcNow));
         await repository.SaveAsync(CreateDefinition("key1:1:ts", "key1", 1, DateTimeOffset.UtcNow));
@@ -140,7 +140,7 @@ public class EfCoreProcessDefinitionRepositoryTests : PersistenceTestBase
     public async Task GetAll_ReturnsAllDefinitionsOrderedByKeyThenVersion(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryFactory);
+        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryContextFactory);
 
         await repository.SaveAsync(CreateDefinition("beta:2:ts", "beta", 2, DateTimeOffset.UtcNow));
         await repository.SaveAsync(CreateDefinition("alpha:1:ts", "alpha", 1, DateTimeOffset.UtcNow));
@@ -166,7 +166,7 @@ public class EfCoreProcessDefinitionRepositoryTests : PersistenceTestBase
     public async Task GetById_NonExistent_ReturnsNull(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryFactory);
+        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryContextFactory);
 
         var result = await repository.GetByIdAsync("does-not-exist");
 
@@ -179,7 +179,7 @@ public class EfCoreProcessDefinitionRepositoryTests : PersistenceTestBase
     public async Task Delete_RemovesDefinition_SubsequentGetByIdReturnsNull(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryFactory);
+        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryContextFactory);
 
         var definition = CreateDefinition("key1:1:ts", "key1", 1, DateTimeOffset.UtcNow);
         await repository.SaveAsync(definition);
@@ -196,7 +196,7 @@ public class EfCoreProcessDefinitionRepositoryTests : PersistenceTestBase
     public async Task Delete_NonExistentId_IsNoOp(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryFactory);
+        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryContextFactory);
 
         await repository.DeleteAsync("does-not-exist");
     }
@@ -207,7 +207,7 @@ public class EfCoreProcessDefinitionRepositoryTests : PersistenceTestBase
     public async Task Save_DuplicateProcessDefinitionId_ThrowsInvalidOperationException(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryFactory);
+        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryContextFactory);
 
         var definition = CreateDefinition("key1:1:ts", "key1", 1, DateTimeOffset.UtcNow);
         await repository.SaveAsync(definition);
@@ -222,7 +222,7 @@ public class EfCoreProcessDefinitionRepositoryTests : PersistenceTestBase
     public async Task SaveAndGetById_DisabledProcess_IsActiveFalseRoundTrip(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryFactory);
+        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryContextFactory);
 
         var definition = CreateDefinition("disabled:1:ts", "disabled", 1, DateTimeOffset.UtcNow);
         definition.Disable();
@@ -241,7 +241,7 @@ public class EfCoreProcessDefinitionRepositoryTests : PersistenceTestBase
     public async Task SaveAndGetById_EnabledProcess_IsActiveTrueByDefault(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryFactory);
+        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryContextFactory);
 
         var definition = CreateDefinition("enabled:1:ts", "enabled", 1, DateTimeOffset.UtcNow);
 
@@ -259,7 +259,7 @@ public class EfCoreProcessDefinitionRepositoryTests : PersistenceTestBase
     public async Task UpdateAsync_DisableExistingProcess_PersistsIsActiveFalse(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryFactory);
+        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryContextFactory);
 
         var definition = CreateDefinition("upd:1:ts", "upd", 1, DateTimeOffset.UtcNow);
         await repository.SaveAsync(definition);
@@ -278,7 +278,7 @@ public class EfCoreProcessDefinitionRepositoryTests : PersistenceTestBase
     public async Task UpdateAsync_EnableDisabledProcess_PersistsIsActiveTrue(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryFactory);
+        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryContextFactory);
 
         var definition = CreateDefinition("upd2:1:ts", "upd2", 1, DateTimeOffset.UtcNow);
         definition.Disable();
@@ -298,7 +298,7 @@ public class EfCoreProcessDefinitionRepositoryTests : PersistenceTestBase
     public async Task UpdateAsync_NonExistentDefinition_ThrowsInvalidOperationException(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryFactory);
+        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryContextFactory);
 
         var definition = CreateDefinition("missing:1:ts", "missing", 1, DateTimeOffset.UtcNow);
 

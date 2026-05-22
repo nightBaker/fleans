@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Fleans.Persistence;
 
-public class FleanQueryDbContext : DbContext
+public class FleanQueryDbContext : DbContext, IFleanQueryContext
 {
     public DbSet<WorkflowInstanceState> WorkflowInstances => Set<WorkflowInstanceState>();
     public DbSet<ProcessDefinition> ProcessDefinitions => Set<ProcessDefinition>();
@@ -31,4 +31,18 @@ public class FleanQueryDbContext : DbContext
     {
         FleanModelConfiguration.Configure(modelBuilder);
     }
+
+    // Explicit IFleanQueryContext implementation — exposes IQueryable<T> only so the
+    // CQRS-restricted view is invisible from the concrete class but reachable via the
+    // interface contract. DbContext already implements IAsyncDisposable.
+    IQueryable<WorkflowInstanceState> IFleanQueryContext.WorkflowInstances => WorkflowInstances;
+    IQueryable<ProcessDefinition> IFleanQueryContext.ProcessDefinitions => ProcessDefinitions;
+    IQueryable<UserTaskState> IFleanQueryContext.UserTasks => UserTasks;
+    IQueryable<WorkflowEventEntity> IFleanQueryContext.WorkflowEvents => WorkflowEvents;
+    IQueryable<WorkflowSnapshotEntity> IFleanQueryContext.WorkflowSnapshots => WorkflowSnapshots;
+    IQueryable<MessageStartEventRegistration> IFleanQueryContext.MessageStartEventRegistrations => MessageStartEventRegistrations;
+    IQueryable<SignalStartEventRegistration> IFleanQueryContext.SignalStartEventRegistrations => SignalStartEventRegistrations;
+    IQueryable<ConditionalStartEventListenerState> IFleanQueryContext.ConditionalStartEventListeners => ConditionalStartEventListeners;
+    IQueryable<MessageSubscription> IFleanQueryContext.MessageSubscriptions => MessageSubscriptions;
+    IQueryable<SignalSubscription> IFleanQueryContext.SignalSubscriptions => SignalSubscriptions;
 }
