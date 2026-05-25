@@ -8,12 +8,11 @@ using System.Dynamic;
 
 namespace Fleans.Application.Grains;
 
-// [Reentrant] is required to avoid deadlocks when a non-interrupting event sub-process
-// re-subscribes during BroadcastSignal delivery. The re-subscribe (SubscribeSignalEffect)
-// is emitted after the workflow grain processes the signal and awaits
-// signalGrain.Subscribe(), but BroadcastSignal is still executing (awaiting the
-// delivery tcs). Without reentrancy, Subscribe() is queued behind the current
-// BroadcastSignal activation and neither can complete.
+// [Reentrant] is required to avoid deadlocks when a non-interrupting event
+// sub-process re-subscribes during BroadcastSignal delivery. A SemaphoreSlim
+// mutex serialises all state-mutation windows (subscribe, unsubscribe,
+// snapshot+clear in broadcast). The mutex is released before fan-out delivery
+// so reentrancy can proceed without deadlock.
 [Reentrant]
 [CorePlacement]
 public partial class SignalCorrelationGrain : Grain, ISignalCorrelationGrain
@@ -21,6 +20,7 @@ public partial class SignalCorrelationGrain : Grain, ISignalCorrelationGrain
     private readonly IPersistentState<SignalCorrelationState> _state;
     private readonly IGrainFactory _grainFactory;
     private readonly ILogger<SignalCorrelationGrain> _logger;
+    private readonly SemaphoreSlim _mutex = new(1, 1);
 
     public SignalCorrelationGrain(
         [PersistentState("state", GrainStorageNames.SignalCorrelations)]
@@ -37,29 +37,46 @@ public partial class SignalCorrelationGrain : Grain, ISignalCorrelationGrain
     {
         var signalName = this.GetPrimaryKeyString();
 
-        if (_state.State.Subscriptions.Any(s =>
-            s.WorkflowInstanceId == workflowInstanceId && s.ActivityId == activityId))
+        await _mutex.WaitAsync();
+        try
         {
-            LogDuplicateSubscription(signalName, workflowInstanceId, activityId);
-            return;
-        }
+            if (_state.State.Subscriptions.Any(s =>
+                s.WorkflowInstanceId == workflowInstanceId && s.ActivityId == activityId))
+            {
+                LogDuplicateSubscription(signalName, workflowInstanceId, activityId);
+                return;
+            }
 
-        _state.State.Subscriptions.Add(new SignalSubscription(workflowInstanceId, activityId, hostActivityInstanceId)
-            { SignalName = signalName });
-        await _state.WriteStateAsync();
-        LogSubscribed(signalName, workflowInstanceId, activityId);
+            _state.State.Subscriptions.Add(new SignalSubscription(workflowInstanceId, activityId, hostActivityInstanceId)
+                { SignalName = signalName });
+            await _state.WriteStateAsync();
+            LogSubscribed(signalName, workflowInstanceId, activityId);
+        }
+        finally
+        {
+            _mutex.Release();
+        }
     }
 
     public async ValueTask Unsubscribe(Guid workflowInstanceId, string activityId)
     {
         var signalName = this.GetPrimaryKeyString();
-        var removed = _state.State.Subscriptions.RemoveAll(s =>
-            s.WorkflowInstanceId == workflowInstanceId && s.ActivityId == activityId);
 
-        if (removed > 0)
+        await _mutex.WaitAsync();
+        try
         {
-            await _state.WriteStateAsync();
-            LogUnsubscribed(signalName, workflowInstanceId, activityId);
+            var removed = _state.State.Subscriptions.RemoveAll(s =>
+                s.WorkflowInstanceId == workflowInstanceId && s.ActivityId == activityId);
+
+            if (removed > 0)
+            {
+                await _state.WriteStateAsync();
+                LogUnsubscribed(signalName, workflowInstanceId, activityId);
+            }
+        }
+        finally
+        {
+            _mutex.Release();
         }
     }
 
@@ -69,16 +86,25 @@ public partial class SignalCorrelationGrain : Grain, ISignalCorrelationGrain
     public async ValueTask<int> BroadcastSignal()
     {
         var signalName = this.GetPrimaryKeyString();
+        List<SignalSubscription> subscribers;
 
-        if (_state.State.Subscriptions.Count == 0)
+        await _mutex.WaitAsync();
+        try
         {
-            LogBroadcastNoSubscribers(signalName);
-            return 0;
-        }
+            if (_state.State.Subscriptions.Count == 0)
+            {
+                LogBroadcastNoSubscribers(signalName);
+                return 0;
+            }
 
-        var subscribers = _state.State.Subscriptions.ToList();
-        _state.State.Subscriptions.Clear();
-        await _state.WriteStateAsync();
+            subscribers = _state.State.Subscriptions.ToList();
+            _state.State.Subscriptions.Clear();
+            await _state.WriteStateAsync();
+        }
+        finally
+        {
+            _mutex.Release();
+        }
 
         if (subscribers.Count > HighSubscriberCountThreshold)
             LogBroadcastHighSubscriberCount(signalName, subscribers.Count, HighSubscriberCountThreshold);
