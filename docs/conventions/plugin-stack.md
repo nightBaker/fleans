@@ -52,3 +52,13 @@ Code that scans `typeof(IDomainEvent).Assembly.GetTypes()` (or any other anchor 
 ## Plugin NuGet versioning
 
 Plugin NuGet packages (`Fleans.Domain.Abstractions`, `Fleans.Application.Abstractions`, `Fleans.Worker`, `Fleans.Plugins.RestCaller`) share the engine's `<VersionPrefix>` track (from `src/Fleans/Directory.Build.props`) — every release bumps every plugin even if its source is bit-identical.
+
+## Iterating on plugin source against engine consumers (WorkerHost / CustomWorkerHost)
+
+`Fleans.WorkerHost` consumes `Fleans.Plugins.RestCaller` from nuget.org via `<PackageReference>`. Local edits to `src/Fleans/Fleans.Plugins.RestCaller/` source are **not visible** to WorkerHost via a plain `dotnet build`. This is intentional — the swap proves the published plugin SDK works end-to-end from a consumer's perspective.
+
+To test local RestCaller source changes against WorkerHost during development:
+
+- **Option (a) — `<ProjectReference>` override (temporary).** Edit `Fleans.WorkerHost.csproj` locally to swap the `<PackageReference>` back to the `<ProjectReference>` form. Do not commit. Revert before opening a PR.
+- **Option (b) — local NuGet feed.** Bump `src/Fleans/Fleans.Plugins.RestCaller/Fleans.Plugins.RestCaller.csproj`'s `<Version>` (e.g. `0.4.1-local`), `dotnet pack`, then `dotnet nuget push` to a local source. Update WorkerHost's `<PackageReference Version>` to match.
+- **Option (c) — release a new tag.** For substantive RestCaller changes, follow the standard release runbook (`docs/runbooks/release.md`) to cut a new tag; WorkerHost's pinned version updates in a follow-up PR.

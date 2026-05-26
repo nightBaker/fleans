@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <PackageReference Include="Aspire.StackExchange.Redis" Version="13.1.1" />
+    <PackageReference Include="Fleans.Plugins.RestCaller" Version="0.4.1" />
     <PackageReference Include="Microsoft.Orleans.Clustering.Redis" Version="10.0.1" />
     <PackageReference Include="Microsoft.Orleans.Dashboard" Version="10.0.1" />
     <PackageReference Include="Microsoft.Orleans.GrainDirectory.Redis" Version="10.0.1" />
@@ -24,7 +25,6 @@
     <ProjectReference Include="..\Fleans.Persistence\Fleans.Persistence.csproj" />
     <ProjectReference Include="..\Fleans.Persistence.Sqlite\Fleans.Persistence.Sqlite.csproj" />
     <ProjectReference Include="..\Fleans.Persistence.PostgreSql\Fleans.Persistence.PostgreSql.csproj" />
-    <ProjectReference Include="..\Fleans.Plugins.RestCaller\Fleans.Plugins.RestCaller.csproj" />
     <ProjectReference Include="..\Fleans.ServiceDefaults\Fleans.ServiceDefaults.csproj" />
     <ProjectReference Include="..\Fleans.Worker\Fleans.Worker.csproj" />
   </ItemGroup>
