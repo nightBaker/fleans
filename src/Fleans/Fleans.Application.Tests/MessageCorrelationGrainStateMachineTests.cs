@@ -127,7 +127,6 @@ public class MessageCorrelationGrainStateMachineTests : WorkflowTestBase
             await grain.Subscribe(instanceId, "activity1", hostId);
 
             // Race subscribe (new) and unsubscribe concurrently
-            var subscribeFailed = false;
             var subscribeTask = Task.Run(async () =>
             {
                 try
@@ -136,7 +135,6 @@ public class MessageCorrelationGrainStateMachineTests : WorkflowTestBase
                 }
                 catch (InvalidOperationException)
                 {
-                    subscribeFailed = true;
                 }
             });
             var unsubscribeTask = Task.Run(async () =>
@@ -211,7 +209,7 @@ public class MessageCorrelationGrainStateMachineTests : WorkflowTestBase
         // After delivery completes, the grain transitions to Empty.
         // We should be able to subscribe again.
         var correlationGrain = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>(
-            MessageCorrelationKey.Build("sm-test-resub-msg", ""));
+            MessageCorrelationKey.Build("sm-test-resub-msg", "test-key"));
         await grain_subscribe_if_empty(correlationGrain);
     }
 
