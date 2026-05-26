@@ -38,4 +38,4 @@ This page documents known bugs and behavior gaps. For the full element-level cov
 ## Related
 
 - [BPMN Support](/fleans/concepts/bpmn-support/) — full element-level status table.
-- [Error Handling](/fleans/patterns/error-handling/) — supported error handling patterns.
+- [Error Handling](/fleans/guides/error-handling/) — supported error handling patterns.
