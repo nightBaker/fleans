@@ -171,6 +171,9 @@ internal static class FleanModelConfiguration
             entity.Property(e => e.Key).HasMaxLength(1024);
             entity.Property(e => e.ETag).HasMaxLength(64);
 
+            entity.Ignore(e => e.Status);
+            entity.Ignore(e => e.Pending);
+
             entity.HasOne(e => e.Subscription)
                 .WithOne()
                 .HasForeignKey<MessageSubscription>(s => s.MessageName)
