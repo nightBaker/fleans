@@ -167,7 +167,7 @@ namespace Fleans.Application.Tests
         private class StubWorkflowQueryService : IWorkflowQueryService
         {
             public Task<InstanceStateSnapshot?> GetStateSnapshot(Guid workflowInstanceId) => Task.FromResult<InstanceStateSnapshot?>(null);
-            public Task<IReadOnlyList<ProcessDefinitionSummary>> GetAllProcessDefinitions() => Task.FromResult<IReadOnlyList<ProcessDefinitionSummary>>([]);
+            public Task<int> GetMaxVersionByKeyAsync(string processDefinitionKey) => Task.FromResult(0);
             public Task<PagedResult<ProcessDefinitionSummary>> GetAllProcessDefinitions(PageRequest page) => Task.FromResult(new PagedResult<ProcessDefinitionSummary>([], 0, page.Page, page.PageSize));
             public Task<PagedResult<ProcessDefinitionGroup>> GetProcessDefinitionGroups(PageRequest page) => Task.FromResult(new PagedResult<ProcessDefinitionGroup>([], 0, page.Page, page.PageSize));
             public Task<PagedResult<WorkflowInstanceInfo>> GetInstancesByKey(string processDefinitionKey, PageRequest page) => Task.FromResult(new PagedResult<WorkflowInstanceInfo>([], 0, page.Page, page.PageSize));

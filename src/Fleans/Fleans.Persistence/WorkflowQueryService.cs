@@ -93,16 +93,14 @@ public class WorkflowQueryService : IWorkflowQueryService
             state.CreatedAt, state.ExecutionStartedAt, state.CompletedAt);
     }
 
-    public async Task<IReadOnlyList<ProcessDefinitionSummary>> GetAllProcessDefinitions()
+    public async Task<int> GetMaxVersionByKeyAsync(string processDefinitionKey)
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync();
 
-        var definitions = await db.ProcessDefinitions
-            .OrderBy(d => d.ProcessDefinitionKey)
-            .ThenBy(d => d.Version)
-            .ToListAsync();
-
-        return definitions.Select(ProjectToSummary).ToList();
+        return await db.ProcessDefinitions
+            .Where(d => d.ProcessDefinitionKey == processDefinitionKey)
+            .Select(d => (int?)d.Version)
+            .MaxAsync() ?? 0;
     }
 
     public async Task<PagedResult<ProcessDefinitionSummary>> GetAllProcessDefinitions(PageRequest page)

@@ -432,13 +432,8 @@
             pendingWorkflow = workflow;
             deployProcessKey = workflow.WorkflowId;
 
-            var definitions = await QueryService.GetAllProcessDefinitions();
-            var existing = definitions
-                .Where(d => d.ProcessDefinitionKey == deployProcessKey)
-                .OrderByDescending(d => d.Version)
-                .FirstOrDefault();
-            var nextVersion = existing != null ? existing.Version + 1 : 1;
-            deployNextVersion = $"v{nextVersion}";
+            var maxVersion = await QueryService.GetMaxVersionByKeyAsync(deployProcessKey);
+            deployNextVersion = $"v{maxVersion + 1}";
 
             showDeployDialog = true;
         }

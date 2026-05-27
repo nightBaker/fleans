@@ -254,7 +254,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     [DataTestMethod]
     [DataRow(PersistenceProvider.Sqlite)]
     [DataRow(PersistenceProvider.Postgres)]
-    public async Task GetAllProcessDefinitions_ReturnsAll_OrderedByKeyThenVersion(PersistenceProvider provider)
+    public async Task GetAllProcessDefinitions_Paged_ReturnsAll_OrderedByKeyThenVersion(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
         var (service, commandFactory) = BuildService(fixture, provider);
@@ -266,30 +266,101 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
         await SeedProcessDefinition(db, "beta:1:ts", "beta", 1);
         await SeedProcessDefinition(db, "alpha:2:ts", "alpha", 2);
 
-        var results = await service.GetAllProcessDefinitions();
+        var paged = await service.GetAllProcessDefinitions(
+            new PageRequest(PageSize: int.MaxValue, Sorts: "processDefinitionKey,version"));
 
-        Assert.AreEqual(4, results.Count);
-        Assert.AreEqual("alpha", results[0].ProcessDefinitionKey);
-        Assert.AreEqual(1, results[0].Version);
-        Assert.AreEqual("alpha", results[1].ProcessDefinitionKey);
-        Assert.AreEqual(2, results[1].Version);
-        Assert.AreEqual("beta", results[2].ProcessDefinitionKey);
-        Assert.AreEqual(1, results[2].Version);
-        Assert.AreEqual("beta", results[3].ProcessDefinitionKey);
-        Assert.AreEqual(2, results[3].Version);
+        Assert.AreEqual(4, paged.TotalCount);
+        Assert.AreEqual(4, paged.Items.Count);
+        Assert.AreEqual("alpha", paged.Items[0].ProcessDefinitionKey);
+        Assert.AreEqual(1, paged.Items[0].Version);
+        Assert.AreEqual("alpha", paged.Items[1].ProcessDefinitionKey);
+        Assert.AreEqual(2, paged.Items[1].Version);
+        Assert.AreEqual("beta", paged.Items[2].ProcessDefinitionKey);
+        Assert.AreEqual(1, paged.Items[2].Version);
+        Assert.AreEqual("beta", paged.Items[3].ProcessDefinitionKey);
+        Assert.AreEqual(2, paged.Items[3].Version);
     }
 
     [DataTestMethod]
     [DataRow(PersistenceProvider.Sqlite)]
     [DataRow(PersistenceProvider.Postgres)]
-    public async Task GetAllProcessDefinitions_ReturnsEmpty_WhenNoneExist(PersistenceProvider provider)
+    public async Task GetAllProcessDefinitions_Paged_ReturnsEmpty_WhenNoneExist(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
         var (service, commandFactory) = BuildService(fixture, provider);
 
-        var results = await service.GetAllProcessDefinitions();
+        var paged = await service.GetAllProcessDefinitions(new PageRequest(PageSize: int.MaxValue));
 
-        Assert.AreEqual(0, results.Count);
+        Assert.AreEqual(0, paged.TotalCount);
+        Assert.AreEqual(0, paged.Items.Count);
+    }
+
+    // ─────────────────────────────────────────────────
+    // GetMaxVersionByKeyAsync
+    // ─────────────────────────────────────────────────
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetMaxVersionByKeyAsync_ReturnsZero_WhenEmpty(PersistenceProvider provider)
+    {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, _) = BuildService(fixture, provider);
+
+        var max = await service.GetMaxVersionByKeyAsync("never-deployed");
+
+        Assert.AreEqual(0, max);
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetMaxVersionByKeyAsync_ReturnsVersion_WhenSingleDeployment(PersistenceProvider provider)
+    {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture, provider);
+
+        using var db = commandFactory.CreateDbContext();
+        await SeedProcessDefinition(db, "x:1:ts", "x", 1);
+
+        var max = await service.GetMaxVersionByKeyAsync("x");
+
+        Assert.AreEqual(1, max);
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetMaxVersionByKeyAsync_ReturnsHighestVersion_WhenMultipleDeployments(PersistenceProvider provider)
+    {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture, provider);
+
+        using var db = commandFactory.CreateDbContext();
+        await SeedProcessDefinition(db, "x:1:ts", "x", 1);
+        await SeedProcessDefinition(db, "x:2:ts", "x", 2);
+        await SeedProcessDefinition(db, "x:3:ts", "x", 3);
+        await SeedProcessDefinition(db, "y:1:ts", "y", 1);
+
+        var max = await service.GetMaxVersionByKeyAsync("x");
+
+        Assert.AreEqual(3, max);
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetMaxVersionByKeyAsync_ReturnsZero_WhenUnknownKey(PersistenceProvider provider)
+    {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture, provider);
+
+        using var db = commandFactory.CreateDbContext();
+        await SeedProcessDefinition(db, "x:1:ts", "x", 1);
+
+        var max = await service.GetMaxVersionByKeyAsync("y");
+
+        Assert.AreEqual(0, max);
     }
 
     // ─────────────────────────────────────────────────
