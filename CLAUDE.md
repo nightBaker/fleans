@@ -101,6 +101,17 @@ These guard correctness. Break them and silent bugs ship.
 
 Every new feature MUST have a manual test plan under `tests/manual/NN-feature-name/` containing the `.bpmn` fixture(s) and a `test-plan.md`. The canonical catalog is [`tests/manual/README.md`](tests/manual/README.md) — append new entries there. Template: `docs/plans/2026-02-25-manual-test-plan-design.md`.
 
+## Regression tests
+
+Authoritative procedure: [`docs/conventions/regression-testing.md`](docs/conventions/regression-testing.md). The steps below are the worker-pipeline entry point — the `manual-regression-testing` skill greps this heading literally, so don't rename it.
+
+The worker only promotes a PR to "Testing" once the `e2e` job is `SUCCESS` and the bot-approve marker is fresh, so the automated catalog has already passed by the time this skill runs. The manual residual to check per PR:
+
+1. **CI is still green.** `gh pr checks <pr> --repo $REPO` — flag if any required check has flipped to FAILURE since promotion (rollup state can lag).
+2. **PR is still MERGEABLE.** `gh pr view <pr> --repo $REPO --json mergeable` — if CONFLICTING, move back to Ready per the skill's normal flow.
+3. **Diff scope.** `gh pr diff <pr> --repo $REPO --name-only`. Docs-only diffs (`docs/**`, `website/**`, root `*.md`, `tests/manual/**/test-plan.md`) have no further manual work — mark PASSED.
+4. **Code PR spot-check.** If the diff touches `src/Fleans/Fleans.{Domain,Application,Infrastructure,Persistence,Api,Web}/**`, scan `tests/manual/README.md` for any plan flagged `STATUS: NEEDS-RERUN`. If none, mark PASSED. Full UI/website sweeps remain a human task in `Review by human`.
+
 ## Things to know
 
 - **Aspire is the startup project**, not `Api` or `Web`.
