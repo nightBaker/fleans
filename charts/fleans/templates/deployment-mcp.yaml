@@ -41,12 +41,14 @@ spec:
               value: "http://+:5200"
             {{- include "fleans.commonEnv" . | nindent 12 }}
           livenessProbe:
-            tcpSocket:
+            httpGet:
+              path: /alive
               port: mcp
             initialDelaySeconds: 30
             periodSeconds: 30
           readinessProbe:
-            tcpSocket:
+            httpGet:
+              path: /health
               port: mcp
             initialDelaySeconds: 10
             periodSeconds: 10
