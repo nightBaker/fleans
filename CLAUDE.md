@@ -52,7 +52,7 @@ Full conventions (Tabs `syncKey` rules, `.mdx` imports, the CI guard that enforc
 - Records for immutable DTOs; `[GenerateSerializer]` on anything crossing grain boundaries.
   - **Collections inside serialized records must be `List<T>`** (or another Orleans-copyable collection). `[x, y, z]` collection expressions produce `ReadOnlyArray<T>` which has no Orleans copier and fails at runtime.
 - Dynamic workflow variable state: `ExpandoObject` + `Newtonsoft.Json`.
-- **Logging: `[LoggerMessage]` source generators only** — `private partial void` on partial classes. No `ILogger.Log*()` extension calls. EventId ranges in `docs/plans/2026-02-08-structured-workflow-logging.md`.
+- **Logging: `[LoggerMessage]` source generators only** — `private partial void` on partial classes. No `ILogger.Log*()` extension calls. EventId ranges allocated in [`docs/conventions/observability-eventids.md`](docs/conventions/observability-eventids.md); architecture in `docs/plans/2026-02-08-structured-workflow-logging.md`.
 - Tests: MSTest + Orleans.TestingHost, AAA. **Activity tests must verify state after both completion AND failure** (pattern: `ScriptTaskTests.cs`, `TaskActivityTests.cs`). Query state via `workflowInstance.GetState()` *after* completion/failure — never hold a pre-completion grain reference to assert on.
 - **Admin UI (`Fleans.Web`) calls Orleans grains directly via the `WorkflowEngine` service** — not through HTTP. Don't add API endpoints to back admin-UI features.
 - `WorkflowInstance` partial-class layout — see the header comment at the top of `Fleans.Application/Grains/WorkflowInstance.cs` for what goes in which of the three partial files.

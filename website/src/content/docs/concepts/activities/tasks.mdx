@@ -32,7 +32,7 @@ placeholder that will be replaced later.
 </div>
 
 :::note
-Plain Tasks auto-complete — they never block the workflow. Source: `BpmnConverter.cs:303`.
+Plain Tasks auto-complete — they never block the workflow. Source: [BpmnConverter.cs#L303](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L303).
 :::
 
 ---
@@ -62,7 +62,7 @@ current workflow variables.
 
 :::note
 `_context` is an `ExpandoObject` backed by the workflow's variable store. Mutations are merged
-back after completion. Source: `BpmnConverter.cs:354`.
+back after completion. Source: [BpmnConverter.cs#L354](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L354).
 :::
 
 ---
@@ -91,7 +91,7 @@ exposes a claim → complete (or fail / cancel) lifecycle via REST and the admin
 
 :::note
 `assignee` and `candidateGroups` are stored as task metadata. The workflow is paused until the
-task is completed via `POST /Workflow/{id}/complete-activity`. Source: `BpmnConverter.cs:313`.
+task is completed via `POST /Workflow/{id}/complete-activity`. Source: [BpmnConverter.cs#L313](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L313).
 :::
 
 ---
@@ -138,7 +138,7 @@ namespace; see [BPMN extension namespaces](/fleans/reference/bpmn-extension-name
 the convention.
 :::
 
-Source: `BpmnConverter.cs:333`.
+Source: [BpmnConverter.cs#L333](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L333).
 
 ---
 

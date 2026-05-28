@@ -3,17 +3,6 @@ title: Message Correlation
 description: How Fleans correlates incoming BPMN messages to running workflow instances — BPMN definition, variable resolution semantics, the message API, and a curl-driven cookbook.
 ---
 
-<!-- DRIFT-GUARD: cited line numbers verified at branch SHA b7d80af
-     - src/Fleans/Fleans.Domain/Aggregates/WorkflowExecution.cs:2778-2790 (ResolveCorrelationKey: strips "= " prefix, plain GetVariable lookup, throws InvalidOperationException on null)
-     - src/Fleans/Fleans.Domain/Aggregates/WorkflowExecution.cs:989-1011 (ProcessRegisterMessage: identical resolution logic for register-message commands)
-     - src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs:895-925 (zeebe:subscription / fleans:subscription parse, TrimStart('=', ' '))
-     - src/Fleans/Fleans.Api/Controllers/WorkflowController.cs:50-65 (SendMessage POST /Workflow/message)
-     - src/Fleans/Fleans.ServiceDefaults/DTOs/SendMessageRequest.cs:5 (record SendMessageRequest(MessageName, CorrelationKey, Variables))
-     - tests/manual/09-message-events/message-catch.bpmn (canonical intermediate-catch fixture)
-     - tests/manual/16-message-start-event/message-start-event.bpmn (message start event fixture; deliberately no <extensionElements>)
-     - tests/manual/21-event-subprocess-message/message-event-subprocess.bpmn (event sub-process fixture)
-     If any of these line ranges shift, re-run the audit and update both the
-     guide and this comment. -->
 
 A **message correlation key** is the runtime value that routes an incoming message to the right workflow instance. Without it, every workflow waiting on `approvalReceived` would wake up — with it, only the one whose `requestId == "req-456"` does. This guide covers what a correlation key is in BPMN, how Fleans parses it, how the engine resolves it at runtime, the `POST /Workflow/message` API, and a small cookbook of the three patterns you'll most often need.
 
@@ -62,7 +51,7 @@ Three load-bearing details:
 3. **Placement of `<extensionElements>` is project-specific** — read the caution that follows.
 
 :::caution[Place `<extensionElements>` inside `<bpmn:message>`, not inside the message-event element]
-Fleans only walks `<extensionElements>` that are **direct children of `<bpmn:message>`** (parser at `BpmnConverter.cs:895-925`). Putting the `<fleans:subscription>` block under the `<intermediateCatchEvent>` or the `<startEvent>` is **silently ignored** — the engine treats the message as "no correlation key" and your `POST /Workflow/message` will never match.
+Fleans only walks `<extensionElements>` that are **direct children of `<bpmn:message>`** (parser at [BpmnConverter.cs#L895-L925](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L895-L925)). Putting the `<fleans:subscription>` block under the `<intermediateCatchEvent>` or the `<startEvent>` is **silently ignored** — the engine treats the message as "no correlation key" and your `POST /Workflow/message` will never match.
 
 This is the single most common authoring mistake. The pattern is captured as a canonical rule in `CLAUDE.md` under *BPMN Fixture Authoring Rules*. Always check fixture #09 / #21 before authoring a new message-event workflow.
 :::
@@ -71,7 +60,7 @@ The same shape applies whether the consumer is an `<intermediateCatchEvent>` or 
 
 ## Variable resolution semantics
 
-When a workflow reaches a message-catch (or registers an event-sub-process subscription), the engine calls `ResolveCorrelationKey` (`WorkflowExecution.cs:2778-2790`):
+When a workflow reaches a message-catch (or registers an event-sub-process subscription), the engine calls `ResolveCorrelationKey` ([WorkflowExecution.cs#L2778-L2790](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Domain/Aggregates/WorkflowExecution.cs#L2778-L2790)):
 
 ```csharp
 private string ResolveCorrelationKey(MessageDefinition messageDef, Guid variablesId)
@@ -95,7 +84,7 @@ What this means in practice:
 - **The `=` prefix is stripped, then the remainder is treated as a plain variable name** — `_state.GetVariable(...)` is a dictionary lookup against the workflow's `ExpandoObject`-backed variable scope, not a Roslyn or DynamicExpresso evaluation. A correlation expression like `= requestId` looks up the variable named `requestId`. A correlation expression like `= a + b` looks up the literal variable named `a + b` (which doesn't exist) and throws.
 - **Resolution scope depends on where the subscription is registered.** For an `<intermediateCatchEvent>`, resolution happens at the host activity's variable scope at the moment execution reaches the catch — variables set by upstream script tasks in the same scope (or any ancestor scope, see [Variables and Scope](/fleans/guides/variables-and-scope/)) are visible.
 - **A null variable throws `InvalidOperationException`** with the message `Correlation variable '{name}' is null for message '{messageName}'.`. The throw aborts the workflow — there is no fallback to "empty correlation key". Either seed the correlation variable from the `/start` request's `Variables` payload, or set it via a script task that runs **before** the message-catch is reached.
-- **Twin logic for the register-message path.** The same parse-and-resolve sequence is used by `ProcessRegisterMessage` (`WorkflowExecution.cs:989-1011`) which handles register-message commands emitted when a scope opens that contains a message-event sub-process. If you change one path, change both.
+- **Twin logic for the register-message path.** The same parse-and-resolve sequence is used by `ProcessRegisterMessage` ([WorkflowExecution.cs#L989-L1011](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Domain/Aggregates/WorkflowExecution.cs#L989-L1011)) which handles register-message commands emitted when a scope opens that contains a message-event sub-process. If you change one path, change both.
 
 For message **start** events, no correlation key lives on the BPMN definition (fixture #16 deliberately omits `<extensionElements>` on the `<message>`). Routing for start events is by message *name* alone — the API caller supplies the correlation value as part of the `POST /Workflow/message` request, and a fresh workflow instance is spawned with that key recorded against its own variables.
 

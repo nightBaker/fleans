@@ -3,22 +3,6 @@ title: Error Handling
 description: How to model structured failure recovery in Fleans — BPMN error boundary events, escalations, and compensation handlers, with worked examples.
 ---
 
-<!--
-  DRIFT-GUARD: cited line numbers verified at branch SHA e7f3762
-  - src/Fleans/Fleans.Domain/Errors/BadRequestActivityException.cs:5-13 (400 mapping)
-  - src/Fleans/Fleans.Domain/Errors/CustomTaskFailedActivityException.cs:5-22 (caller-supplied code)
-  - src/Fleans/Fleans.Domain/Aggregates/WorkflowExecution.cs:723-784 (AdvanceCompensationWalkIfHandlerCompleted; VariablesMerged emit at line 767)
-  - src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs:132 (errorEventDefinition on startEvent — event sub-process trigger)
-  - src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs:209-269 (intermediateThrowEvent + endEvent: compensate/escalation parse)
-  - src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs:665-710 (boundaryEvent: compensate/error/escalation parse)
-  - src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs:759-815 (compensation validation: at-most-one boundary, handler not in flow, compensable activityRef)
-  - src/Fleans/Fleans.Infrastructure/Scripts/DynamicExpressoScriptExpressionExecutor.cs:46 (interpreter.SetVariable("_context", variables))
-  - tests/manual/11-error-boundary/{child-that-fails.bpmn,error-on-call-activity.bpmn}
-  - tests/manual/19-event-subprocess-error/error-event-subprocess.bpmn
-  - tests/manual/24-escalation-event/{child-escalation-end,child-escalation-throw,parent-escalation-interrupting,parent-escalation-non-interrupting}.bpmn
-  - tests/manual/24-compensation-event/compensation-broadcast.bpmn
-  Re-verify on every edit.
--->
 
 Workflows fail. External calls time out, data is invalid, business rules are violated.
 Fleans implements three orthogonal BPMN mechanisms for structured failure recovery —
@@ -228,7 +212,7 @@ charging fails, and you need to cancel the hotel and flight in reverse order.
 <bpmn:association sourceRef="comp-hotel" targetRef="cancel-hotel" />
 ```
 
-Two parsing rules Fleans enforces (see `BpmnConverter.cs:759-815`):
+Two parsing rules Fleans enforces (see [BpmnConverter.cs#L759-L815](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L759-L815)):
 
 1. **At most one** compensation boundary per compensable activity.
 2. The handler activity must have **no incoming sequence flow** — handlers are
@@ -263,7 +247,7 @@ This guarantees:
 - Side-effects from compensation handlers are not lost after the walk finishes.
 
 Implementation: `WorkflowExecution.AdvanceCompensationWalkIfHandlerCompleted`
-(at `WorkflowExecution.cs:723-784`) emits a `VariablesMerged` event with the
+(at [WorkflowExecution.cs#L723-L784](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Domain/Aggregates/WorkflowExecution.cs#L723-L784)) emits a `VariablesMerged` event with the
 handler's full variable map targeting the parent scope's variable ID
 (line 767). If you find yourself refactoring the compensation path, do not
 break this invariant — it is also documented as a hard rule in the project's
