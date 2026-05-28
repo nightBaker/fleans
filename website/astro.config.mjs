@@ -32,6 +32,7 @@ export default defineConfig({
             { label: 'What is BPMN?', slug: 'concepts/bpmn-overview' },
             { label: 'BPMN Support', slug: 'concepts/bpmn-support' },
             { label: 'Custom Tasks', slug: 'concepts/custom-tasks' },
+            { label: 'Hosting plugins externally', slug: 'concepts/plugin-hosting' },
           ],
         },
         {
