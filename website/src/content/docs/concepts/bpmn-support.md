@@ -3,23 +3,6 @@ title: BPMN Support
 description: Canonical coverage matrix for BPMN 2.0 elements in Fleans.
 ---
 
-{/* drift-guard:
-  Parent foreach handlers in src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs:
-    :94 (startEvent), :153 (intermediateCatchEvent), :206 (intermediateThrowEvent),
-    :254 (endEvent), :303 (task), :313 (userTask), :333 (serviceTask), :354 (scriptTask),
-    :369 (exclusiveGateway), :382 (parallelGateway), :420 (inclusiveGateway),
-    :459 (complexGateway), :507 (eventBasedGateway), :517 (subProcess),
-    :574 (transaction), :601 (callActivity), :638 (boundaryEvent), :845 (ParseSequenceFlows)
-  Child event-definition / loop / attribute detections — same file:
-    :107,113,120,129,132,536 (start-event variants),
-    :165,166,167,191 (intermediate-catch variants),
-    :209,225,226 (intermediate-throw variants),
-    :259,263,271 (end-event variants),
-    :527-530 (event-sub-process triggeredByEvent),
-    :578 (transaction multi-instance reject),
-    :661,672,689,690,691,692,693,727 (boundary variants),
-    :1132,1138 (multi-instance loopCharacteristics + loopCardinality)
-  pinned at branch=docs/404-bpmn-matrix; refresh if any of the above change */}
 
 This page is the canonical coverage matrix for BPMN 2.0 elements in Fleans. Every row is pinned to the parser code that handles it (`Fleans.Infrastructure/Bpmn/BpmnConverter.cs`) and the manual fixture that exercises it end-to-end (`tests/manual/NN-*/`).
 
@@ -38,91 +21,91 @@ This page is the canonical coverage matrix for BPMN 2.0 elements in Fleans. Ever
 
 | Element | BPMN XML | Status | Source pin | Tested by | Notes |
 |---|---|---|---|---|---|
-| Plain Start Event | `<bpmn:startEvent>` | ✅ | `BpmnConverter.cs:94` | [#01](../../../tests/manual/01-basic-workflow/) | Default start of any process. |
-| Timer Start Event | `<bpmn:startEvent><timerEventDefinition>` | ✅ | `BpmnConverter.cs:94 + :107` | unit tests only | Schedules a process instance via `RegisterOrUpdateReminder`. |
-| Message Start Event | `<bpmn:startEvent><messageEventDefinition>` | ✅ | `BpmnConverter.cs:94 + :113` | [#16](../../../tests/manual/16-message-start-event/) | Auto-creates an instance on matching message delivery. |
-| Signal Start Event | `<bpmn:startEvent><signalEventDefinition>` | ✅ | `BpmnConverter.cs:94 + :120` | [#17](../../../tests/manual/17-signal-start-event/) | Broadcast match creates an instance. |
-| Error Start Event *(Event Sub-Process only)* | `<bpmn:startEvent><errorEventDefinition>` | ✅ | `BpmnConverter.cs:94 + :132, :536` | [#19](../../../tests/manual/19-event-subprocess-error/) | Only valid inside `triggeredByEvent="true"` sub-processes. |
-| Conditional Start Event | `<bpmn:startEvent><conditionalEventDefinition>` | ✅ | `BpmnConverter.cs:94 + :129` | [#24-conditional](../../../tests/manual/24-conditional-event/) | Triggered via `POST /Workflow/evaluate-conditions`. |
-| Multiple Start Event | `<bpmn:startEvent>` with multiple event definitions | ✅ | `BpmnConverter.cs:94` (multi-def detection) | [#24-multiple](../../../tests/manual/24-multiple-event/) | First-fires-wins; surplus subscriptions cancelled. |
+| Plain Start Event | `<bpmn:startEvent>` | ✅ | [BpmnConverter.cs#L94](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L94) | [#01](../../../tests/manual/01-basic-workflow/) | Default start of any process. |
+| Timer Start Event | `<bpmn:startEvent><timerEventDefinition>` | ✅ | [BpmnConverter.cs#L94](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L94) + [#L107](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L107) | unit tests only | Schedules a process instance via `RegisterOrUpdateReminder`. |
+| Message Start Event | `<bpmn:startEvent><messageEventDefinition>` | ✅ | [BpmnConverter.cs#L94](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L94) + [#L113](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L113) | [#16](../../../tests/manual/16-message-start-event/) | Auto-creates an instance on matching message delivery. |
+| Signal Start Event | `<bpmn:startEvent><signalEventDefinition>` | ✅ | [BpmnConverter.cs#L94](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L94) + [#L120](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L120) | [#17](../../../tests/manual/17-signal-start-event/) | Broadcast match creates an instance. |
+| Error Start Event *(Event Sub-Process only)* | `<bpmn:startEvent><errorEventDefinition>` | ✅ | [BpmnConverter.cs#L94](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L94) + [#L132](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L132), [#L536](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L536) | [#19](../../../tests/manual/19-event-subprocess-error/) | Only valid inside `triggeredByEvent="true"` sub-processes. |
+| Conditional Start Event | `<bpmn:startEvent><conditionalEventDefinition>` | ✅ | [BpmnConverter.cs#L94](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L94) + [#L129](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L129) | [#24-conditional](../../../tests/manual/24-conditional-event/) | Triggered via `POST /Workflow/evaluate-conditions`. |
+| Multiple Start Event | `<bpmn:startEvent>` with multiple event definitions | ✅ | [BpmnConverter.cs#L94](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L94) (multi-def detection) | [#24-multiple](../../../tests/manual/24-multiple-event/) | First-fires-wins; surplus subscriptions cancelled. |
 
 ### Intermediate Catch Events
 
 | Element | BPMN XML | Status | Source pin | Tested by | Notes |
 |---|---|---|---|---|---|
-| Message Intermediate Catch | `<bpmn:intermediateCatchEvent><messageEventDefinition>` | ✅ | `BpmnConverter.cs:153 + :166` | [#09](../../../tests/manual/09-message-events/) | Correlates by `=variable` extension. |
-| Signal Intermediate Catch | `<bpmn:intermediateCatchEvent><signalEventDefinition>` | ✅ | `BpmnConverter.cs:153 + :167` | [#10](../../../tests/manual/10-signal-events/) | Broadcast match unblocks. |
-| Timer Intermediate Catch | `<bpmn:intermediateCatchEvent><timerEventDefinition>` | ✅ | `BpmnConverter.cs:153 + :165` | [#08](../../../tests/manual/08-timer-events/) | ISO 8601 duration / cycle / date. |
-| Conditional Intermediate Catch | `<bpmn:intermediateCatchEvent><conditionalEventDefinition>` | ✅ | `BpmnConverter.cs:153 + :191` | [#24-conditional](../../../tests/manual/24-conditional-event/) | Re-evaluated on every activity completion. |
-| Multiple Intermediate Catch | `<bpmn:intermediateCatchEvent>` w/ multiple event-defs | ✅ | `BpmnConverter.cs:153` (multi-def) | [#24-multiple](../../../tests/manual/24-multiple-event/) | First-fires-wins. |
+| Message Intermediate Catch | `<bpmn:intermediateCatchEvent><messageEventDefinition>` | ✅ | [BpmnConverter.cs#L153](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L153) + [#L166](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L166) | [#09](../../../tests/manual/09-message-events/) | Correlates by `=variable` extension. |
+| Signal Intermediate Catch | `<bpmn:intermediateCatchEvent><signalEventDefinition>` | ✅ | [BpmnConverter.cs#L153](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L153) + [#L167](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L167) | [#10](../../../tests/manual/10-signal-events/) | Broadcast match unblocks. |
+| Timer Intermediate Catch | `<bpmn:intermediateCatchEvent><timerEventDefinition>` | ✅ | [BpmnConverter.cs#L153](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L153) + [#L165](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L165) | [#08](../../../tests/manual/08-timer-events/) | ISO 8601 duration / cycle / date. |
+| Conditional Intermediate Catch | `<bpmn:intermediateCatchEvent><conditionalEventDefinition>` | ✅ | [BpmnConverter.cs#L153](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L153) + [#L191](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L191) | [#24-conditional](../../../tests/manual/24-conditional-event/) | Re-evaluated on every activity completion. |
+| Multiple Intermediate Catch | `<bpmn:intermediateCatchEvent>` w/ multiple event-defs | ✅ | [BpmnConverter.cs#L153](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L153) (multi-def) | [#24-multiple](../../../tests/manual/24-multiple-event/) | First-fires-wins. |
 
 ### Intermediate Throw Events
 
 | Element | BPMN XML | Status | Source pin | Tested by | Notes |
 |---|---|---|---|---|---|
-| Signal Intermediate Throw | `<bpmn:intermediateThrowEvent><signalEventDefinition>` | ✅ | `BpmnConverter.cs:206 + :225` | [#10](../../../tests/manual/10-signal-events/) | Broadcasts cluster-wide. |
-| Escalation Intermediate Throw | `<bpmn:intermediateThrowEvent><escalationEventDefinition>` | ✅ | `BpmnConverter.cs:206 + :226` | [#24-escalation](../../../tests/manual/24-escalation-event/) | Mid-flow throw, continues execution after. |
-| Compensation Intermediate Throw | `<bpmn:intermediateThrowEvent><compensateEventDefinition>` | ✅ | `BpmnConverter.cs:206 + :209` | [#24-compensation](../../../tests/manual/24-compensation-event/) | Broadcast or targeted (`activityRef`). |
-| Multiple Intermediate Throw | `<bpmn:intermediateThrowEvent>` w/ multiple event-defs | ✅ | `BpmnConverter.cs:206` (multi-def) | [#24-multiple](../../../tests/manual/24-multiple-event/) | Fires every defined signal. |
+| Signal Intermediate Throw | `<bpmn:intermediateThrowEvent><signalEventDefinition>` | ✅ | [BpmnConverter.cs#L206](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L206) + [#L225](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L225) | [#10](../../../tests/manual/10-signal-events/) | Broadcasts cluster-wide. |
+| Escalation Intermediate Throw | `<bpmn:intermediateThrowEvent><escalationEventDefinition>` | ✅ | [BpmnConverter.cs#L206](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L206) + [#L226](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L226) | [#24-escalation](../../../tests/manual/24-escalation-event/) | Mid-flow throw, continues execution after. |
+| Compensation Intermediate Throw | `<bpmn:intermediateThrowEvent><compensateEventDefinition>` | ✅ | [BpmnConverter.cs#L206](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L206) + [#L209](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L209) | [#24-compensation](../../../tests/manual/24-compensation-event/) | Broadcast or targeted (`activityRef`). |
+| Multiple Intermediate Throw | `<bpmn:intermediateThrowEvent>` w/ multiple event-defs | ✅ | [BpmnConverter.cs#L206](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L206) (multi-def) | [#24-multiple](../../../tests/manual/24-multiple-event/) | Fires every defined signal. |
 
 ### End Events
 
 | Element | BPMN XML | Status | Source pin | Tested by | Notes |
 |---|---|---|---|---|---|
-| Plain End Event | `<bpmn:endEvent>` | ✅ | `BpmnConverter.cs:254` | [#01](../../../tests/manual/01-basic-workflow/) | Terminates the enclosing scope. |
-| Error End Event | `<bpmn:endEvent><errorEventDefinition>` | ✅ | `BpmnConverter.cs:254` (default error path) | [#11](../../../tests/manual/11-error-boundary/) | Throws to nearest matching error boundary. |
-| Cancel End Event *(Transaction only)* | `<bpmn:endEvent><cancelEventDefinition>` | ✅ | `BpmnConverter.cs:254 + :271` | [#30-cancel](../../../tests/manual/30-cancel-event/) | Triggers transaction Cancel boundary. |
-| Compensation End Event | `<bpmn:endEvent><compensateEventDefinition>` | ✅ | `BpmnConverter.cs:254 + :259` | [#24-compensation](../../../tests/manual/24-compensation-event/) | Broadcasts compensation throw on terminate. |
-| Escalation End Event | `<bpmn:endEvent><escalationEventDefinition>` | ✅ | `BpmnConverter.cs:254 + :263` | [#24-escalation](../../../tests/manual/24-escalation-event/) | Throws escalation; uncaught escalation is non-faulting. |
+| Plain End Event | `<bpmn:endEvent>` | ✅ | [BpmnConverter.cs#L254](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L254) | [#01](../../../tests/manual/01-basic-workflow/) | Terminates the enclosing scope. |
+| Error End Event | `<bpmn:endEvent><errorEventDefinition>` | ✅ | [BpmnConverter.cs#L254](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L254) (default error path) | [#11](../../../tests/manual/11-error-boundary/) | Throws to nearest matching error boundary. |
+| Cancel End Event *(Transaction only)* | `<bpmn:endEvent><cancelEventDefinition>` | ✅ | [BpmnConverter.cs#L254](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L254) + [#L271](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L271) | [#30-cancel](../../../tests/manual/30-cancel-event/) | Triggers transaction Cancel boundary. |
+| Compensation End Event | `<bpmn:endEvent><compensateEventDefinition>` | ✅ | [BpmnConverter.cs#L254](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L254) + [#L259](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L259) | [#24-compensation](../../../tests/manual/24-compensation-event/) | Broadcasts compensation throw on terminate. |
+| Escalation End Event | `<bpmn:endEvent><escalationEventDefinition>` | ✅ | [BpmnConverter.cs#L254](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L254) + [#L263](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L263) | [#24-escalation](../../../tests/manual/24-escalation-event/) | Throws escalation; uncaught escalation is non-faulting. |
 
 ### Boundary Events
 
 | Element | BPMN XML | Status | Source pin | Tested by | Notes |
 |---|---|---|---|---|---|
-| Error Boundary | `<bpmn:boundaryEvent><errorEventDefinition>` | ✅ | `BpmnConverter.cs:638 + :690` | [#11](../../../tests/manual/11-error-boundary/) | Always interrupting per BPMN spec. Optional `errorRef` filters by code. |
-| Timer Boundary | `<bpmn:boundaryEvent><timerEventDefinition>` | ✅ | `BpmnConverter.cs:638 + :689` | [#15](../../../tests/manual/15-non-interrupting-boundaries/) | Interrupting + non-interrupting variants. Cycle timers re-register on non-interrupting. |
-| Message Boundary | `<bpmn:boundaryEvent><messageEventDefinition>` | ⚠️ | `BpmnConverter.cs:638 + :691` | [#09](../../../tests/manual/09-message-events/) | **KNOWN BUG:** boundary events on `IntermediateCatchEvent` don't register subscriptions. |
-| Signal Boundary | `<bpmn:boundaryEvent><signalEventDefinition>` | ⚠️ | `BpmnConverter.cs:638 + :692` | [#10](../../../tests/manual/10-signal-events/) | Same KNOWN BUG as Message Boundary. |
-| Escalation Boundary | `<bpmn:boundaryEvent><escalationEventDefinition>` | ✅ | `BpmnConverter.cs:638 + :693` | [#24-escalation](../../../tests/manual/24-escalation-event/) | Interrupting + non-interrupting variants. Specific code matches take priority over catch-all. |
-| Compensation Boundary | `<bpmn:boundaryEvent><compensateEventDefinition>` | ✅ | `BpmnConverter.cs:638 + :661` | [#24-compensation](../../../tests/manual/24-compensation-event/) | Attached to compensable activity. |
-| Conditional Boundary | `<bpmn:boundaryEvent><conditionalEventDefinition>` | ✅ | `BpmnConverter.cs:638 + :672` | [#24-conditional](../../../tests/manual/24-conditional-event/) | Interrupting + non-interrupting; non-interrupting is edge-triggered. |
-| Cancel Boundary *(Transaction only)* | `<bpmn:boundaryEvent><cancelEventDefinition>` | ✅ | `BpmnConverter.cs:638 + :727` | [#30-cancel](../../../tests/manual/30-cancel-event/) | Always interrupting. Fires when Cancel End Event executes. |
-| Multiple Boundary | `<bpmn:boundaryEvent>` w/ multiple event-defs | ✅ | `BpmnConverter.cs:638` (multi-def) | [#24-multiple](../../../tests/manual/24-multiple-event/) | First-fires-wins cancels host activity. |
+| Error Boundary | `<bpmn:boundaryEvent><errorEventDefinition>` | ✅ | [BpmnConverter.cs#L638](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L638) + [#L690](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L690) | [#11](../../../tests/manual/11-error-boundary/) | Always interrupting per BPMN spec. Optional `errorRef` filters by code. |
+| Timer Boundary | `<bpmn:boundaryEvent><timerEventDefinition>` | ✅ | [BpmnConverter.cs#L638](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L638) + [#L689](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L689) | [#15](../../../tests/manual/15-non-interrupting-boundaries/) | Interrupting + non-interrupting variants. Cycle timers re-register on non-interrupting. |
+| Message Boundary | `<bpmn:boundaryEvent><messageEventDefinition>` | ⚠️ | [BpmnConverter.cs#L638](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L638) + [#L691](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L691) | [#09](../../../tests/manual/09-message-events/) | **KNOWN BUG:** boundary events on `IntermediateCatchEvent` don't register subscriptions. |
+| Signal Boundary | `<bpmn:boundaryEvent><signalEventDefinition>` | ⚠️ | [BpmnConverter.cs#L638](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L638) + [#L692](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L692) | [#10](../../../tests/manual/10-signal-events/) | Same KNOWN BUG as Message Boundary. |
+| Escalation Boundary | `<bpmn:boundaryEvent><escalationEventDefinition>` | ✅ | [BpmnConverter.cs#L638](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L638) + [#L693](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L693) | [#24-escalation](../../../tests/manual/24-escalation-event/) | Interrupting + non-interrupting variants. Specific code matches take priority over catch-all. |
+| Compensation Boundary | `<bpmn:boundaryEvent><compensateEventDefinition>` | ✅ | [BpmnConverter.cs#L638](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L638) + [#L661](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L661) | [#24-compensation](../../../tests/manual/24-compensation-event/) | Attached to compensable activity. |
+| Conditional Boundary | `<bpmn:boundaryEvent><conditionalEventDefinition>` | ✅ | [BpmnConverter.cs#L638](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L638) + [#L672](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L672) | [#24-conditional](../../../tests/manual/24-conditional-event/) | Interrupting + non-interrupting; non-interrupting is edge-triggered. |
+| Cancel Boundary *(Transaction only)* | `<bpmn:boundaryEvent><cancelEventDefinition>` | ✅ | [BpmnConverter.cs#L638](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L638) + [#L727](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L727) | [#30-cancel](../../../tests/manual/30-cancel-event/) | Always interrupting. Fires when Cancel End Event executes. |
+| Multiple Boundary | `<bpmn:boundaryEvent>` w/ multiple event-defs | ✅ | [BpmnConverter.cs#L638](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L638) (multi-def) | [#24-multiple](../../../tests/manual/24-multiple-event/) | First-fires-wins cancels host activity. |
 
 ### Tasks ([details](./activities/tasks))
 
 | Element | BPMN XML | Status | Source pin | Tested by | Notes |
 |---|---|---|---|---|---|
-| Plain Task | `<bpmn:task>` | ✅ | `BpmnConverter.cs:303` | [#01](../../../tests/manual/01-basic-workflow/) | Auto-completes immediately (no executor). |
-| Script Task | `<bpmn:scriptTask scriptFormat="csharp">` | ✅ | `BpmnConverter.cs:354` | [#02](../../../tests/manual/02-script-tasks/) | DynamicExpresso expressions on `_context`. |
-| Service Task / Custom Task | `<bpmn:serviceTask type="…">` | ✅ | `BpmnConverter.cs:333` | [#37](../../../tests/manual/37-custom-task-framework/), [#39](../../../tests/manual/39-rest-caller/) | Plugin-based execution. |
-| User Task | `<bpmn:userTask>` | ✅ | `BpmnConverter.cs:313` | [#19-user-task](../../../tests/manual/18-user-task/) | Claim/unclaim/complete lifecycle. |
-| Call Activity | `<bpmn:callActivity calledElement="…">` | ✅ | `BpmnConverter.cs:601` | [#06](../../../tests/manual/06-call-activity/) | Cross-process variable mapping. |
+| Plain Task | `<bpmn:task>` | ✅ | [BpmnConverter.cs#L303](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L303) | [#01](../../../tests/manual/01-basic-workflow/) | Auto-completes immediately (no executor). |
+| Script Task | `<bpmn:scriptTask scriptFormat="csharp">` | ✅ | [BpmnConverter.cs#L354](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L354) | [#02](../../../tests/manual/02-script-tasks/) | DynamicExpresso expressions on `_context`. |
+| Service Task / Custom Task | `<bpmn:serviceTask type="…">` | ✅ | [BpmnConverter.cs#L333](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L333) | [#37](../../../tests/manual/37-custom-task-framework/), [#39](../../../tests/manual/39-rest-caller/) | Plugin-based execution. |
+| User Task | `<bpmn:userTask>` | ✅ | [BpmnConverter.cs#L313](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L313) | [#19-user-task](../../../tests/manual/18-user-task/) | Claim/unclaim/complete lifecycle. |
+| Call Activity | `<bpmn:callActivity calledElement="…">` | ✅ | [BpmnConverter.cs#L601](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L601) | [#06](../../../tests/manual/06-call-activity/) | Cross-process variable mapping. |
 
 ### Sub-Processes
 
 | Element | BPMN XML | Status | Source pin | Tested by | Notes |
 |---|---|---|---|---|---|
-| Embedded Sub-Process | `<bpmn:subProcess>` | ✅ | `BpmnConverter.cs:517` | [#07](../../../tests/manual/07-subprocess/) | Own start/end, isolated variable scope. |
-| Event Sub-Process | `<bpmn:subProcess triggeredByEvent="true">` | ✅ | `BpmnConverter.cs:517 + :527-530` | [#19](../../../tests/manual/19-event-subprocess-error/), [#20-tm](../../../tests/manual/20-event-subprocess-timer/), [#21](../../../tests/manual/21-event-subprocess-message/), [#22](../../../tests/manual/22-event-subprocess-signal/), [#23](../../../tests/manual/23-event-subprocess-non-interrupting/) | Error-/timer-/message-/signal-triggered; interrupting + non-interrupting. |
-| Transaction Sub-Process | `<bpmn:transaction>` | ✅ | `BpmnConverter.cs:574 + :578` | [#26](../../../tests/manual/26-transaction-subprocess/), [#30-cancel](../../../tests/manual/30-cancel-event/), [#53-nested](../../../tests/manual/53-nested-transaction/) | Completed ✅, Cancelled ✅, Hazard ✅. All three terminal outcomes supported. See [Transaction Sub-Process status](#transaction-sub-process-status). |
-| Multi-Instance (any host) | `<bpmn:*><multiInstanceLoopCharacteristics>` | ⚠️ | `BpmnConverter.cs:1132 + :1138` | [#13](../../../tests/manual/13-multi-instance/) | `loopCardinality` + `inputCollection` supported; `completionCondition` and `nrOf*` pending [#470](https://github.com/nightBaker/fleans/issues/470). |
+| Embedded Sub-Process | `<bpmn:subProcess>` | ✅ | [BpmnConverter.cs#L517](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L517) | [#07](../../../tests/manual/07-subprocess/) | Own start/end, isolated variable scope. |
+| Event Sub-Process | `<bpmn:subProcess triggeredByEvent="true">` | ✅ | [BpmnConverter.cs#L517](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L517) + [#L527-L530](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L527-L530) | [#19](../../../tests/manual/19-event-subprocess-error/), [#20-tm](../../../tests/manual/20-event-subprocess-timer/), [#21](../../../tests/manual/21-event-subprocess-message/), [#22](../../../tests/manual/22-event-subprocess-signal/), [#23](../../../tests/manual/23-event-subprocess-non-interrupting/) | Error-/timer-/message-/signal-triggered; interrupting + non-interrupting. |
+| Transaction Sub-Process | `<bpmn:transaction>` | ✅ | [BpmnConverter.cs#L574](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L574) + [#L578](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L578) | [#26](../../../tests/manual/26-transaction-subprocess/), [#30-cancel](../../../tests/manual/30-cancel-event/), [#53-nested](../../../tests/manual/53-nested-transaction/) | Completed ✅, Cancelled ✅, Hazard ✅. All three terminal outcomes supported. See [Transaction Sub-Process status](#transaction-sub-process-status). |
+| Multi-Instance (any host) | `<bpmn:*><multiInstanceLoopCharacteristics>` | ⚠️ | [BpmnConverter.cs#L1132](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L1132) + [#L1138](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L1138) | [#13](../../../tests/manual/13-multi-instance/) | `loopCardinality` + `inputCollection` supported; `completionCondition` and `nrOf*` pending [#470](https://github.com/nightBaker/fleans/issues/470). |
 
 ### Gateways
 
 | Element | BPMN XML | Status | Source pin | Tested by | Notes |
 |---|---|---|---|---|---|
-| Exclusive | `<bpmn:exclusiveGateway>` | ✅ | `BpmnConverter.cs:369` | [#03](../../../tests/manual/03-exclusive-gateway/) | XOR — first true condition wins; default flow as fallback. |
-| Inclusive | `<bpmn:inclusiveGateway>` | ✅ | `BpmnConverter.cs:420` | [#14](../../../tests/manual/14-inclusive-gateway/) | OR — every true branch fires; join syncs all live tokens. |
-| Parallel | `<bpmn:parallelGateway>` | ✅ | `BpmnConverter.cs:382` | [#04](../../../tests/manual/04-parallel-gateway/) | AND — fork all branches; join waits for all. |
-| Complex | `<bpmn:complexGateway>` | ✅ | `BpmnConverter.cs:459` | [#20-cg](../../../tests/manual/20-complex-gateway/) | Conditional outgoing flows + optional `activationCondition` on join. |
-| Event-Based | `<bpmn:eventBasedGateway>` | ✅ | `BpmnConverter.cs:507` | [#05](../../../tests/manual/05-event-based-gateway/) | First arriving event wins; loser subscriptions cancelled. |
+| Exclusive | `<bpmn:exclusiveGateway>` | ✅ | [BpmnConverter.cs#L369](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L369) | [#03](../../../tests/manual/03-exclusive-gateway/) | XOR — first true condition wins; default flow as fallback. |
+| Inclusive | `<bpmn:inclusiveGateway>` | ✅ | [BpmnConverter.cs#L420](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L420) | [#14](../../../tests/manual/14-inclusive-gateway/) | OR — every true branch fires; join syncs all live tokens. |
+| Parallel | `<bpmn:parallelGateway>` | ✅ | [BpmnConverter.cs#L382](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L382) | [#04](../../../tests/manual/04-parallel-gateway/) | AND — fork all branches; join waits for all. |
+| Complex | `<bpmn:complexGateway>` | ✅ | [BpmnConverter.cs#L459](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L459) | [#20-cg](../../../tests/manual/20-complex-gateway/) | Conditional outgoing flows + optional `activationCondition` on join. |
+| Event-Based | `<bpmn:eventBasedGateway>` | ✅ | [BpmnConverter.cs#L507](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L507) | [#05](../../../tests/manual/05-event-based-gateway/) | First arriving event wins; loser subscriptions cancelled. |
 
 ### Connecting Objects
 
 | Element | BPMN XML | Status | Source pin | Tested by | Notes |
 |---|---|---|---|---|---|
-| Sequence Flow | `<bpmn:sequenceFlow>` | ✅ | `BpmnConverter.cs:845` (`ParseSequenceFlows`) | every fixture | Optional `<conditionExpression>` for guarded flows. |
+| Sequence Flow | `<bpmn:sequenceFlow>` | ✅ | [BpmnConverter.cs#L845](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L845) (`ParseSequenceFlows`) | every fixture | Optional `<conditionExpression>` for guarded flows. |
 | Message Flow | `<bpmn:messageFlow>` | ❌ | — | — | Cross-pool messaging not implemented. |
 | Association | `<bpmn:association>` | ❌ | — | — | Annotation-to-flow links not parsed. |
 | Data Association | `<bpmn:dataInputAssociation>` / `<bpmn:dataOutputAssociation>` | ❌ | — | — | Data-object flow links not parsed. |
@@ -279,7 +262,7 @@ The tab fetches via the `ICompensationLogService` application service which acti
 2. Runs the compensation walk for any compensable activities that completed before the failure.
 3. Once compensation finishes, activates the Error Boundary Event attached to the TX host (if present), or fails the TX host to propagate the error to the parent scope.
 
-**Constraint:** **Multi-instance transactions** are rejected at parse time (`BpmnConverter.cs:578-581` — typed exception). This is a deliberate restriction, not a bug — multi-instance + atomicity has subtle interactions with compensation walk ordering that #307 will address.
+**Constraint:** **Multi-instance transactions** are rejected at parse time ([BpmnConverter.cs#L578-L581](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L578-L581) — typed exception). This is a deliberate restriction, not a bug — multi-instance + atomicity has subtle interactions with compensation walk ordering that #307 will address.
 
 **Nested transactions:** parse and run on the happy path. **Do not place a Cancel End Event inside an inner nested transaction** — cancel-path semantics for nested transactions land in later phases of [#307](https://github.com/nightBaker/fleans/issues/307).
 :::

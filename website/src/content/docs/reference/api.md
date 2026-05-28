@@ -526,7 +526,6 @@ The rate limiter uses a **fixed window** algorithm, partitioned by the client's 
 
 #### Policy → endpoint mapping
 
-{/* drift-guard: WorkflowController.cs:32-285 — verify each method's [EnableRateLimiting(...)] + [HttpGet|HttpPost(...)] route attribute matches one row. Pinned at branch=docs/401-rate-limit-table-audit SHA=b7d80af; refresh if any method's policy attribute is renamed. */}
 
 All paths below are relative to the `/Workflow` controller route.
 

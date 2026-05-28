@@ -3,19 +3,6 @@ title: Call Activities and Sub-Processes
 description: When to use embedded sub-processes vs call activities vs transactions in Fleans — variable mapping syntax, versioning, error propagation, and worked examples.
 ---
 
-<!--
-  DRIFT-GUARD: cited line numbers verified at branch SHA b7d80af
-  - src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs:601-635 (callActivity envelope: id, calledElement, propagate flags, extensionElements walk, ctor)
-  - src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs:616-625 (LocalName == "inputMapping" / "outputMapping" foreach — the call-activity mapping match)
-  - src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs:1286-1322 (ParseInputMapping / ParseOutputMapping for <zeebe:input> / <zeebe:output> — service-task / custom-task ONLY; NOT call-activity)
-  - src/Fleans/Fleans.Application/Effects/WorkflowLifecycleEffectHandler.cs:61 (processGrain.GetLatestDefinition() — single child-resolution call site)
-  - src/Fleans/Fleans.Domain/Activities/CallActivity.cs:8-14 (record fields incl. PropagateAllParentVariables / PropagateAllChildVariables defaults true)
-  - tests/manual/06-call-activity/{parent-process.bpmn,child-process.bpmn,test-plan.md}
-  - tests/manual/07-subprocess/{embedded-subprocess.bpmn,test-plan.md}
-  - tests/manual/26-transaction-subprocess/{happy-path.bpmn,test-plan.md}
-  - tests/manual/11-error-boundary/{child-that-fails.bpmn,error-on-call-activity.bpmn,test-plan.md} (#11 KNOWN BUG)
-  Re-verify on every edit.
--->
 
 Real workflows are rarely flat. You'll want to group related steps into a
 **sub-process**, factor out a reusable workflow into a separately-deployed
@@ -86,7 +73,7 @@ Fixture: `tests/manual/06-call-activity/parent-process.bpmn` (parent) and
 
 CallActivity input/output mappings use **bare `<inputMapping>` and
 `<outputMapping>` elements** inside the activity's `<extensionElements>`
-block. The parser at `BpmnConverter.cs:616` (inputMapping) and `:623`
+block. The parser at [BpmnConverter.cs#L616](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L616) (inputMapping) and `:623`
 (outputMapping) matches by **local-name** — any namespace prefix is fine
 as long as the local-name is `inputMapping` / `outputMapping`.
 
@@ -104,10 +91,10 @@ Verbatim from `tests/manual/06-call-activity/parent-process.bpmn`:
 Source-of-truth pin (the call-activity mapping match):
 
 ```csharp
-// BpmnConverter.cs:616
+// See: https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L616
 foreach (var input in extensionElements.Elements()
     .Where(e => e.Name.LocalName == "inputMapping"))
-// BpmnConverter.cs:623
+// See: https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L623
 foreach (var output in extensionElements.Elements()
     .Where(e => e.Name.LocalName == "outputMapping"))
 ```
@@ -116,7 +103,7 @@ foreach (var output in extensionElements.Elements()
 The `<fleans:input>` / `<fleans:output>` form is reserved for **service tasks
 and custom tasks** (and the equivalent `<zeebe:input>` / `<zeebe:output>` from
 Camunda exports, accepted via the same parser). Its parser is at
-`BpmnConverter.cs:1286-1322` and is never invoked for `<callActivity>`.
+[BpmnConverter.cs#L1286-L1322](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L1286-L1322) and is never invoked for `<callActivity>`.
 
 Mixing the two forms — for example writing
 `<fleans:input source="…" target="…"/>` inside a
@@ -132,7 +119,7 @@ rename the elements.
 
 ### Two propagation knobs
 
-`CallActivity.cs:8-14` exposes two boolean attributes that decide how the
+[CallActivity.cs#L8-L14](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Domain/Activities/CallActivity.cs#L8-L14) exposes two boolean attributes that decide how the
 parent's variables seed the child and how the child's variables flow back:
 
 ```xml
@@ -171,7 +158,7 @@ evolve.
 
 Call activities always resolve to the **latest active version** of the
 called process. The single resolution point lives at
-`Fleans.Application/Effects/WorkflowLifecycleEffectHandler.cs:61`:
+[WorkflowLifecycleEffectHandler.cs#L61](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Application/Effects/WorkflowLifecycleEffectHandler.cs#L61):
 
 ```csharp
 var processGrain = context.GrainFactory.GetGrain<IProcessDefinitionGrain>(
@@ -330,7 +317,7 @@ handler side-effects visible to subsequent handlers — are in
   `tests/manual/11-error-boundary/test-plan.md`.
 - **No `<calledElement-version>` pinning.** Call activities always resolve
   to the latest version of `calledElement`
-  (`WorkflowLifecycleEffectHandler.cs:61` — `GetLatestDefinition()`).
+  ([WorkflowLifecycleEffectHandler.cs#L61](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Application/Effects/WorkflowLifecycleEffectHandler.cs#L61) — `GetLatestDefinition()`).
   In-flight parents pick up new versions on their next call-activity
   execution. Use distinct `calledElement` keys per version if you need
   pinning today.

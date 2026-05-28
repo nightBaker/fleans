@@ -232,9 +232,8 @@ Spans propagate W3C `traceparent` automatically — if your upstream sets a trac
 
 ### Orleans Dashboard
 
-{/* drift-guard: Fleans.Web/Program.cs:200 (`MapOrleansDashboard(routePrefix: "/dashboard")`); Microsoft.Orleans.Dashboard 10.0.1; Fleans.Application/Grains/TimerCallbackGrain.cs:8,22,79 (IRemindable + RegisterOrUpdateReminder — guards the Reminders-page claim); Fleans.ServiceDefaults/Extensions.cs:55,65 (AddAspNetCoreInstrumentation() with no path filter — guards the OTLP caveat); pinned at branch=docs/402-orleans-dashboard SHA=b7d80af; refresh if any of the above change */}
 
-The Orleans Dashboard ships with Fleans's Web app at `/dashboard`. It's a real-time operational view of the cluster (silo membership, grain activations, call latencies, reminder schedules) backed by `Microsoft.Orleans.Dashboard` 10.0.1. The mount lives at `Fleans.Web/Program.cs:200` (`app.MapOrleansDashboard(routePrefix: "/dashboard")`).
+The Orleans Dashboard ships with Fleans's Web app at `/dashboard`. It's a real-time operational view of the cluster (silo membership, grain activations, call latencies, reminder schedules) backed by `Microsoft.Orleans.Dashboard` 10.0.1.
 
 #### What it shows
 
@@ -242,7 +241,7 @@ The Orleans Dashboard ships with Fleans's Web app at `/dashboard`. It's a real-t
 |---|---|
 | **Cluster** | Live silo membership table (silo id, host, status, role, version). Useful for confirming a `Core` + `Worker` split is functioning, or that a rolling restart placed each new silo into the membership table cleanly. |
 | **Grains** | Activation counts per grain class. The `WorkflowInstance` row tells you how many in-flight workflow instances live across the cluster; spikes correlate with throughput surges. |
-| **Reminders** | Scheduled timer reminders per grain. Useful when investigating "did my timer event sub-process actually arm?" — the reminder shows up here within seconds. Fleans uses Orleans persistent reminders for all BPMN timer events (verified at `TimerCallbackGrain.cs:8,22,79`), so every timer arming is visible. |
+| **Reminders** | Scheduled timer reminders per grain. Useful when investigating "did my timer event sub-process actually arm?" — the reminder shows up here within seconds. Fleans uses Orleans persistent reminders for all BPMN timer events, so every timer arming is visible. |
 | **Methods** | Per-method call counts, average / p99 latency, and exception counts. The `WorkflowInstance.CompleteActivity` and `…HandleMessageDelivery` rows are the high-volume paths. |
 
 #### Accessing it in development (no auth)

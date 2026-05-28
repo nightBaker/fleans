@@ -3,12 +3,6 @@ title: Multi-Instance Activities
 description: Fan out work in parallel or run iterations sequentially using BPMN multi-instance loops, with worked parallel-cardinality, parallel-collection, and sequential-collection examples.
 ---
 
-<!-- DRIFT-GUARD: cited line numbers verified against
-     - src/Fleans/Fleans.Domain/Activities/MultiInstanceActivity.cs:1-129 (record + ctor + ExecuteCoreAsync)
-     - src/Fleans/Fleans.Domain/Aggregates/Services/MultiInstanceCoordinator.cs:34,76,96,118,135,159 (TryComplete, FailHost, SpawnNextSequentialIteration, loopCounter binding, AggregateOutputVariables, CleanupChildVariableScopes)
-     - src/Fleans/Fleans.Domain/Aggregates/WorkflowExecution.cs:1015-1050 (ProcessSpawnActivity multi-instance branch; loopCounter seed at line 1028)
-     - src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs:304,322,345,360,560,588-593,629,1118-1158 (TryWrapMultiInstance call sites + transaction reject + helper)
-     at commit f4205f4. Re-verify when those files change. -->
 
 A **multi-instance activity** runs the same activity body multiple times — either concurrently (*parallel*) or one at a time (*sequential*). It's BPMN's answer to fan-out: "send a notification to every approver", "process each line in this CSV", "spin up a sub-process per work item". Fleans implements multi-instance for tasks, embedded subprocesses, and call activities.
 
@@ -38,7 +32,7 @@ Multi-instance configuration lives inside `<bpmn:multiInstanceLoopCharacteristic
 
 Both bare-name and `fleans:`-prefixed attributes are accepted by the parser (`fleans:collection` ↔ `collection`, `fleans:elementVariable` ↔ `elementVariable`, `fleans:outputCollection` ↔ `outputCollection`, `fleans:outputElement` ↔ `outputElement`). The editor and the canonical examples in this guide use the `fleans:` prefix; files exported from Camunda's modeler may use `zeebe:` and parse via the same back-compat probe.
 
-The constructor on `MultiInstanceActivity` (`Fleans.Domain/Activities/MultiInstanceActivity.cs:1-129`) enforces that exactly one of `LoopCardinality` or `InputCollection` is set, and that cardinality is non-negative. Violations throw at deploy time, not at runtime.
+The constructor on `MultiInstanceActivity` ([MultiInstanceActivity.cs#L1-L129](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Domain/Activities/MultiInstanceActivity.cs#L1-L129)) enforces that exactly one of `LoopCardinality` or `InputCollection` is set, and that cardinality is non-negative. Violations throw at deploy time, not at runtime.
 
 ## Parallel multi-instance over a collection
 
@@ -62,7 +56,7 @@ An upstream script task seeds `_context.items = new List<object> { "A", "B", "C"
 
 Each iteration computes `_context.result = "processed-" + _context.item`. After **all three** complete, the engine appends each child scope's `result` value to a list named `results` on the **enclosing** scope, ordered by iteration index (not completion order). The outgoing sequence flow fires once with `_context.results = ["processed-A", "processed-B", "processed-C"]`.
 
-The aggregation step lives in `MultiInstanceCoordinator.AggregateOutputVariables` (`Fleans.Domain/Aggregates/Services/MultiInstanceCoordinator.cs:135`).
+The aggregation step lives in `MultiInstanceCoordinator.AggregateOutputVariables` ([MultiInstanceCoordinator.cs#L135](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Domain/Aggregates/Services/MultiInstanceCoordinator.cs#L135)).
 
 ## Parallel multi-instance with fixed cardinality
 
@@ -96,7 +90,7 @@ Citation: [`tests/manual/13-multi-instance/sequential-collection.bpmn`](https://
 </scriptTask>
 ```
 
-The only change from the parallel-collection fixture is `isSequential="true"`. Iteration 0 runs to completion before iteration 1 spawns, and so on. `MultiInstanceCoordinator.SpawnNextSequentialIteration` (`Fleans.Domain/Aggregates/Services/MultiInstanceCoordinator.cs:96`) is the engine hook that drives this — it fires on each iteration completion and emits the next `SpawnActivityCommand` until the collection is exhausted.
+The only change from the parallel-collection fixture is `isSequential="true"`. Iteration 0 runs to completion before iteration 1 spawns, and so on. `MultiInstanceCoordinator.SpawnNextSequentialIteration` ([MultiInstanceCoordinator.cs#L96](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Domain/Aggregates/Services/MultiInstanceCoordinator.cs#L96)) is the engine hook that drives this — it fires on each iteration completion and emits the next `SpawnActivityCommand` until the collection is exhausted.
 
 Because each iteration's `outputElement` is appended to the enclosing scope's `outputCollection` on completion (before the next iteration spawns), iteration *N+1* can read iteration *N*'s aggregated state. This is the property that makes sequential the right call for "build up a running total" or "stop calling the API once we've seen 5 successes" patterns — though see *Limitations* below for the early-exit caveat.
 
@@ -104,8 +98,8 @@ Because each iteration's `outputElement` is appended to the enclosing scope's `o
 
 Every iteration's child scope is seeded with `_context.loopCounter` set to the **0-based** iteration index, regardless of cardinality vs. collection mode. Two binding sites:
 
-- Parallel and sequential first iteration: `Fleans.Domain/Aggregates/WorkflowExecution.cs:1028` (inside `ProcessSpawnActivity`, `iterDict["loopCounter"] = spawn.MultiInstanceIndex!.Value;`).
-- Sequential subsequent iterations: `Fleans.Domain/Aggregates/Services/MultiInstanceCoordinator.cs:118` (inside `SpawnNextSequentialIteration`, `iterDict["loopCounter"] = nextIndex;`).
+- Parallel and sequential first iteration: [WorkflowExecution.cs#L1028](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Domain/Aggregates/WorkflowExecution.cs#L1028) (inside `ProcessSpawnActivity`, `iterDict["loopCounter"] = spawn.MultiInstanceIndex!.Value;`).
+- Sequential subsequent iterations: [MultiInstanceCoordinator.cs#L118](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Domain/Aggregates/Services/MultiInstanceCoordinator.cs#L118) (inside `SpawnNextSequentialIteration`, `iterDict["loopCounter"] = nextIndex;`).
 
 `loopCounter` and the three BPMN-spec aggregate variables — `nrOfInstances`, `nrOfActiveInstances`, `nrOfCompletedInstances` — are available on the multi-instance host scope. Access them via `_context.nrOfCompletedInstances` etc. in scripts and condition expressions.
 
@@ -131,13 +125,13 @@ Verified against the call sites of `TryWrapMultiInstance` in `Fleans.Infrastruct
 - `<bpmn:subProcess>` — embedded subprocess (line 563)
 - `<bpmn:callActivity>` (line 632)
 
-There is one hard exclusion. **Transactions reject multi-instance at parse time** (`BpmnConverter.cs:588-593`). The converter throws:
+There is one hard exclusion. **Transactions reject multi-instance at parse time** ([BpmnConverter.cs#L588-L593](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L588-L593)). The converter throws:
 
 > Transaction Sub-Process '`<id>`' does not support multi-instance loop characteristics. Remove the multiInstanceLoopCharacteristics element, or use a regular Sub-Process.
 
 If you need fan-out with transactional semantics, wrap individual transactions in an outer multi-instance subprocess (or call activity) — but a `<transaction>` element itself cannot carry `<multiInstanceLoopCharacteristics>`.
 
-Event sub-processes also do not support multi-instance — by BPMN spec, not a Fleans limitation. The converter explicitly skips `TryWrapMultiInstance` for event sub-processes (`BpmnConverter.cs:544-545`).
+Event sub-processes also do not support multi-instance — by BPMN spec, not a Fleans limitation. The converter explicitly skips `TryWrapMultiInstance` for event sub-processes ([BpmnConverter.cs#L544-L545](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L544-L545)).
 
 ## Completion condition
 

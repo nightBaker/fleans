@@ -5,11 +5,6 @@ sidebar:
   order: 8
 ---
 
-<!-- DRIFT-GUARD: cited line numbers verified against
-     - src/Fleans/Fleans.Infrastructure/Scripts/DynamicExpressoScriptExpressionExecutor.cs:46 (_context exposure)
-     - src/Fleans/Fleans.Domain/Events/WorkflowDomainEvents.cs:26-29 (4 variable-scope events)
-     - src/Fleans/Fleans.Domain/Aggregates/WorkflowExecution.cs (22 Emit sites for variable-scope events)
-     at commit e7f37a6. Re-verify when those files change. -->
 
 Workflow variables are the data that flows through a Fleans workflow. They carry inputs from `POST /Workflow/start`, are mutated by script tasks and service tasks, get read by gateway conditions and output mappings, and end up persisted alongside the workflow's event stream.
 

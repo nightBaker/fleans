@@ -10,7 +10,6 @@ Fleans publishes domain events (`EvaluateConditionEvent`, `EvaluateActivationCon
 the default is Orleans' in-memory provider, and a Kafka-backed provider ships alongside it for
 cross-silo event durability.
 
-{/* drift-guard: KafkaStreamingOptions.cs:4-23 + grep "SecurityProtocol|Sasl|Ssl" returns 0 matches across Fleans.Streaming.Kafka/ + Fleans.Aspire/Program.cs:13-15,57; pinned at branch=docs/399-kafka-production-warning SHA=b7d80af; refresh if these line ranges or files are renamed */}
 
 :::caution[Kafka provider is not production-ready]
 The v1 `Fleans.Streaming.Kafka` adapter ships **plaintext brokers only**, defaults to
