@@ -7,7 +7,7 @@ namespace Fleans.Application;
 public interface IWorkflowQueryService
 {
     Task<InstanceStateSnapshot?> GetStateSnapshot(Guid workflowInstanceId);
-    Task<IReadOnlyList<ProcessDefinitionSummary>> GetAllProcessDefinitions();
+    Task<int> GetMaxVersionByKeyAsync(string processDefinitionKey);
     Task<PagedResult<ProcessDefinitionSummary>> GetAllProcessDefinitions(PageRequest page);
     Task<PagedResult<ProcessDefinitionGroup>> GetProcessDefinitionGroups(PageRequest page);
     Task<PagedResult<WorkflowInstanceInfo>> GetInstancesByKey(string processDefinitionKey, PageRequest page);
