@@ -208,9 +208,16 @@ streaming:
   # Memory | Redis | Kafka | AzureQueue (case-insensitive)
   # WARNING: Memory is single-silo debug-only — DO NOT use in multi-silo deployments.
   provider: Redis
+  redis:
+    # Orleans stream parallelism — pulling-agent count per cluster.
+    # Default 8 matches the engine default in FleanStreamingExtensions.ReadRedisTotalQueueCount.
+    totalQueueCount: 8
   kafka:
     # Comma-separated brokers list, e.g. "kafka.kafka.svc:9092"
     brokers: ""
+    # Orleans stream parallelism — pulling-agent count per cluster.
+    # Default 8 matches the engine default in KafkaStreamingOptions.QueueCount.
+    queueCount: 8
   azureQueue:
     # Azurite or Azure Storage account connection string.
     # Inline value here for simplicity; for production use the existingSecret
