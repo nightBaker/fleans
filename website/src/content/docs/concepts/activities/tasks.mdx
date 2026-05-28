@@ -98,9 +98,10 @@ task is completed via `POST /Workflow/{id}/complete-activity`. Source: `BpmnConv
 
 ## Service Task (Custom Task)
 
-A **Service Task** (`<bpmn:serviceTask type="…">`) delegates execution to a plugin grain
-identified by the `type` attribute. Plugins live on a Worker silo and implement
-`CustomTaskHandlerBase`. Output variables are mapped back via `<fleans:output>` bindings.
+A **Service Task** (`<bpmn:serviceTask type="…">`) delegates execution to a custom-task plugin
+identified by the `type` attribute. The plugin runs on a Worker silo — either bundled with the
+engine image or in a dedicated [external plugin host](/fleans/concepts/plugin-hosting/) — and
+publishes results back through `<fleans:output>` bindings.
 
 **BPMN:**
 ```xml
@@ -123,11 +124,21 @@ identified by the `type` attribute. Plugins live on a Worker silo and implement
        class="bpmn-activity-img-dark"  alt="Service Task BPMN diagram" />
 </div>
 
-:::note
-The `type` value must match a registered plugin's `TaskType`. See
-[Writing Custom-Task Plugins](/fleans/guides/writing-custom-tasks) for the full authoring guide.
-Source: `BpmnConverter.cs:333`.
+The `type` value must match a registered plugin's `TaskType`. To learn more:
+
+- [Custom Tasks](/fleans/concepts/custom-tasks/) — architecture, event flow, parameter mapping, and the REST Caller bundled plugin.
+- [Hosting plugins externally](/fleans/concepts/plugin-hosting/) — run plugins in a dedicated Worker silo isolated from the engine image.
+- [Writing Custom-Task Plugins](/fleans/guides/writing-custom-tasks/) — step-by-step authoring guide.
+
+:::note[Camunda back-compat]
+Files exported from Camunda Zeebe (e.g. `<extensionElements><zeebe:taskDefinition type="..."/></extensionElements>`)
+are accepted as-is — the BPMN converter understands both `<fleans:taskDefinition>` and the
+legacy `<zeebe:taskDefinition>` shape. New Fleans-authored files should use the `<fleans:...>`
+namespace; see [BPMN extension namespaces](/fleans/reference/bpmn-extension-namespaces/) for
+the convention.
 :::
+
+Source: `BpmnConverter.cs:333`.
 
 ---
 
