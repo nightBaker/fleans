@@ -134,7 +134,9 @@ on the install command line via `--set` or pass a `-f my-values.yaml` overlay.
 | `auth.clientSecretExistingSecret` | `""` | Reference a `Secret` with key `client-secret`. **Use this in production.** |
 | `auth.clientSecret` | `""` | Inline OIDC client secret. **Not recommended for production.** |
 | `streaming.provider` | `Memory` | `Memory` (in-process) or `Kafka` (durable). |
+| `streaming.redis.totalQueueCount` | `8` | Orleans pulling-agent count for Redis streaming. |
 | `streaming.kafka.brokers` | `""` | Comma-separated Kafka brokers, e.g. `kafka.kafka.svc:9092`. |
+| `streaming.kafka.queueCount` | `8` | Orleans pulling-agent count for Kafka streaming. |
 | `extraEnv` | `[]` | Extra env vars on every Fleans workload (`api`, `web`, `mcp`). Use for `ConnectionStrings__fleans` overrides. |
 
 To tune Orleans consumer parallelism (pulling-agent count per cluster) for higher throughput, set `Fleans__Streaming__Redis__TotalQueueCount` (Redis), `Fleans__Streaming__Kafka__QueueCount` (Kafka), or supply an explicit `Fleans__Streaming__AzureQueue__QueueNames__0..N` list — see [Tuning throughput](/fleans/reference/streaming/#tuning-throughput) for the sizing heuristic, rehash caveat, and Kafka-side `NumPartitions` tuning.

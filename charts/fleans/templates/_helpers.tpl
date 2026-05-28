@@ -116,11 +116,15 @@ ASPNETCORE_URLS is intentionally excluded — each workload sets its own port.
 {{- else if eq $provider "redis" }}
 - name: Fleans__Streaming__Provider
   value: "Redis"
+- name: Fleans__Streaming__Redis__TotalQueueCount
+  value: {{ .Values.streaming.redis.totalQueueCount | quote }}
 {{- else if eq $provider "kafka" }}
 - name: Fleans__Streaming__Provider
   value: "Kafka"
 - name: Fleans__Streaming__Kafka__Brokers
   value: {{ .Values.streaming.kafka.brokers | quote }}
+- name: Fleans__Streaming__Kafka__QueueCount
+  value: {{ .Values.streaming.kafka.queueCount | quote }}
 {{- else if eq $provider "azurequeue" }}
 - name: Fleans__Streaming__Provider
   value: "AzureQueue"
