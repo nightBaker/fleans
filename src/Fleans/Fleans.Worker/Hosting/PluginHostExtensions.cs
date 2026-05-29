@@ -16,6 +16,11 @@ public static class PluginHostExtensions
         var siloName = BuildSiloName(role, Environment.MachineName, Guid.NewGuid());
 
         siloBuilder.Configure<Orleans.Configuration.SiloOptions>(o => o.SiloName = siloName);
+        // Plugin hosts must not advertise as Orleans client gateways: their assembly load context
+        // intentionally lacks Fleans.Application / Fleans.Domain / Fleans.Persistence, so any
+        // engine grain call (e.g. IWorkflowInstanceGrain) forwarded *through* a plugin gateway
+        // throws "Unable to load type" at the gateway. See #703.
+        siloBuilder.Configure<Orleans.Configuration.EndpointOptions>(o => o.GatewayPort = 0);
         siloBuilder.AddPlacementDirector<CorePlacementStrategy, CorePlacementDirector>();
         siloBuilder.AddPlacementDirector<WorkerPlacementStrategy, WorkerPlacementDirector>();
         siloBuilder.AddFleansPlacementAssertion(configuration);

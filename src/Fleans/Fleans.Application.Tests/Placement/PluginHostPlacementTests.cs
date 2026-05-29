@@ -81,6 +81,30 @@ public class PluginHostPlacementTests
     }
 
     [TestMethod]
+    public void AddFleansPluginHost_DisablesGatewayPort()
+    {
+        // #703 regression guard. Plugin host silos must NOT advertise as Orleans client
+        // gateways: their assembly load context intentionally lacks Fleans.Application /
+        // Fleans.Domain / Fleans.Persistence. An engine grain call (e.g. IWorkflowInstanceGrain)
+        // forwarded *through* a plugin gateway throws "Unable to load type" at the gateway.
+        // Removing the EndpointOptions.GatewayPort = 0 line from AddFleansPluginHost MUST
+        // make this test fail.
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Fleans:Role"] = "Plugin" })
+            .Build();
+
+        var builder = new FakeSiloBuilder(configuration);
+        builder.AddFleansPluginHost(configuration);
+
+        using var provider = builder.Services.BuildServiceProvider();
+        var endpoints = provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<Orleans.Configuration.EndpointOptions>>().Value;
+
+        Assert.AreEqual(0, endpoints.GatewayPort,
+            "AddFleansPluginHost must set EndpointOptions.GatewayPort = 0 — plugin silos lack " +
+            "Fleans.Application and cannot serve as Orleans client gateways for engine grains (#703).");
+    }
+
+    [TestMethod]
     public void AddFleansPluginHost_RegistersBothPlacementDirectors()
     {
         // #627 regression guard. Removing either AddPlacementDirector<> line from
