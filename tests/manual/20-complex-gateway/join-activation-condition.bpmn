@@ -14,7 +14,9 @@
       <!-- Simulates a slow branch; in a real test this would be a timer or user task -->
       <script>_context.slow = true</script>
     </scriptTask>
-    <complexGateway id="join" activationCondition="_context._nroftoken &gt;= 1" />
+    <complexGateway id="join">
+      <activationCondition>_context._nroftoken &gt;= 1</activationCondition>
+    </complexGateway>
     <scriptTask id="afterJoin" scriptFormat="csharp">
       <script>_context.joined = true</script>
     </scriptTask>
