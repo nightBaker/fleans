@@ -38,6 +38,8 @@ Every feature/fix MUST update docs **in the same PR**.
 - **Repo docs** (`README.md`, `CLAUDE.md`, `docs/`) — for contributors with a source checkout.
 - **Website** (`website/src/content/docs/`) — for users consuming a *released* artifact (containers, Helm, REST API, plugins from nuget.org). Quick Start MUST use a released artifact, not `git clone && dotnet run`.
 
+**On a new release, sweep version-pinned docs in the release PR.** The Quick Start (`website/src/content/docs/guides/quick-start.mdx`) and the self-host guides hardcode the release tag in download URLs/commands. *Why:* nothing fails CI when a guide points at an old tag, so they drift silently and ship users stale artifacts (this is how Quick Start lagged 2 releases behind). *How:* `grep` `website/src/content/docs/guides` for the previous `vX.Y.Z` and replace; the authoritative file list lives in the release runbook's Documentation step ([`docs/runbooks/release.md`](docs/runbooks/release.md)).
+
 Full conventions (Tabs `syncKey` rules, `.mdx` imports, the CI guard that enforces this) → [`docs/conventions/documentation.md`](docs/conventions/documentation.md).
 
 ## Architecture principles

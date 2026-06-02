@@ -82,4 +82,10 @@ If the org name on ghcr.io ever changes from a user account to an organization, 
 
 ## Documentation rule reminder
 
-Every release that introduces user-visible changes MUST update the self-host guides (`website/src/content/docs/guides/self-host-docker-compose.md`, `guides/self-host-helm.md`) in the same PR per the existing **Documentation rule**. The release-asset URLs in those guides reference the *current* tag — bumping `v0.1.0-beta` → `v0.2.0` requires a docs sweep.
+Every release that introduces user-visible changes MUST update the version-pinned guides in the same PR per the existing **Documentation rule**. These reference the *current* tag in download URLs/commands — bumping `v0.1.0-beta` → `v0.2.0` requires a docs sweep:
+
+- `website/src/content/docs/guides/quick-start.mdx`
+- `website/src/content/docs/guides/self-host-docker-compose.md`
+- `website/src/content/docs/guides/self-host-helm.md`
+
+`grep -rl 'v<previous-tag>' website/src/content/docs/guides` to catch any that drifted.
