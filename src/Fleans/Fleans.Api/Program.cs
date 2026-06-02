@@ -12,6 +12,7 @@ using Fleans.ServiceDefaults;
 using Fleans.ServiceDefaults.Reminders;
 using Fleans.Worker.Hosting;
 using Fleans.Worker.Placement;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
@@ -27,9 +28,38 @@ var builder = WebApplication.CreateBuilder(args);
 // This must be called before UseOrleans when running through Aspire
 builder.AddServiceDefaults();
 
-// Authentication — opt-in: only enabled when Authentication:Authority is configured
+// Authentication — opt-in for production-grade JWT, but the auth *pipeline* is
+// always registered. With Authentication:Authority configured we wire JwtBearer
+// the usual way; without it (dev/staging only — Production is refused below)
+// we register a synthetic "DevAnonymous" scheme that always succeeds. This
+// keeps a single auth/authz pipeline across all environments so:
+//   * controllers can add [Authorize] / [Authorize(Roles = …)] without breaking
+//     the dev loop with "No authenticationScheme was specified";
+//   * the fallback policy runs identically everywhere — a future change that
+//     accidentally removes [Authorize] from a controller still gets caught;
+//   * audit logs see a single named identity ("dev-anonymous") instead of an
+//     empty principal.
+//
+// DevAnonymousAuthHandler is explicitly not a security control — it admits
+// everyone. The security boundary is the Production fail-closed guard right
+// below and the operator's network perimeter for staging.
 var authAuthority = builder.Configuration["Authentication:Authority"];
 var authEnabled = !string.IsNullOrEmpty(authAuthority);
+
+// Fail-closed in Production: refuse to start if Authentication:Authority is unset.
+// Without this, the else-branch below would silently register DevAnonymousAuthHandler
+// in prod and admit every caller as "dev-anonymous". Operators who want an
+// unauthenticated deployment must opt in by setting ASPNETCORE_ENVIRONMENT to
+// Development or Staging.
+if (!authEnabled && builder.Environment.IsProduction())
+{
+    throw new InvalidOperationException(
+        "Fleans.Api refuses to start in Production without authentication. " +
+        "Set 'Authentication:Authority' (OIDC issuer URL) and 'Authentication:Audience'. " +
+        "To run unauthenticated for local/dev use, set ASPNETCORE_ENVIRONMENT to " +
+        "Development or Staging.");
+}
+
 if (authEnabled)
 {
     builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -39,11 +69,18 @@ if (authEnabled)
             opts.Audience = builder.Configuration["Authentication:Audience"] ?? "fleans-api";
             opts.RequireHttpsMetadata = builder.Configuration.GetValue("Authentication:RequireHttpsMetadata", true);
         });
-    builder.Services.AddAuthorizationBuilder()
-        .SetFallbackPolicy(new AuthorizationPolicyBuilder()
-            .RequireAuthenticatedUser()
-            .Build());
 }
+else
+{
+    builder.Services.AddAuthentication(DevAnonymousAuthHandler.SchemeName)
+        .AddScheme<AuthenticationSchemeOptions, DevAnonymousAuthHandler>(
+            DevAnonymousAuthHandler.SchemeName, configureOptions: null);
+}
+
+builder.Services.AddAuthorizationBuilder()
+    .SetFallbackPolicy(new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build());
 
 // User-task group resolver (#588): JWT-derived when auth is enabled, body-derived
 // otherwise. Mirrors the IUserTaskFilterStrategy precedent — chosen by config at
@@ -204,11 +241,12 @@ app.UseExceptionHandler();
 if (rateLimitConfig is not null)
     app.UseRateLimiter();
 
-if (authEnabled)
-{
-    app.UseAuthentication();
-    app.UseAuthorization();
-}
+// Auth pipeline is registered unconditionally (see the auth setup block above).
+// In production with JWT this enforces real auth; in dev/staging without
+// Authentication:Authority it runs the DevAnonymousAuthHandler which admits all
+// callers under a single synthetic identity.
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapControllers();
 app.MapDefaultEndpoints();
