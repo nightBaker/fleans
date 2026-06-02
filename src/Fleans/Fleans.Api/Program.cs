@@ -30,6 +30,22 @@ builder.AddServiceDefaults();
 // Authentication — opt-in: only enabled when Authentication:Authority is configured
 var authAuthority = builder.Configuration["Authentication:Authority"];
 var authEnabled = !string.IsNullOrEmpty(authAuthority);
+
+// Fail-closed in Production: an empty Authentication:Authority in non-Development
+// environments would leave every controller anonymous (none of them carry [Authorize]
+// individually — the fallback policy is the only protection, and that is only
+// registered inside `if (authEnabled)` below). Refuse to start instead of silently
+// shipping an open admin surface. Operators who knowingly want an unauthenticated
+// deployment must opt in by setting ASPNETCORE_ENVIRONMENT=Development or Staging.
+if (!authEnabled && builder.Environment.IsProduction())
+{
+    throw new InvalidOperationException(
+        "Fleans.Api refuses to start in Production without authentication. " +
+        "Set 'Authentication:Authority' (OIDC issuer URL) and 'Authentication:Audience'. " +
+        "To run unauthenticated for local/dev use, set ASPNETCORE_ENVIRONMENT to " +
+        "Development or Staging.");
+}
+
 if (authEnabled)
 {
     builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)

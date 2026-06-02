@@ -56,6 +56,21 @@ var authAuthority = builder.Configuration["Authentication:Authority"];
 var authClientId = builder.Configuration["Authentication:ClientId"];
 var authEnabled = !string.IsNullOrEmpty(authAuthority) && !string.IsNullOrEmpty(authClientId);
 
+// Fail-closed in Production: with auth off, the fallback policy is never registered
+// (see `if (authEnabled)` block below) AND the Orleans Dashboard mapping at the bottom
+// of this file is unconditional, so an empty Authentication section in Production
+// would publish an open admin UI + cluster dashboard. Refuse to start instead.
+// Operators who knowingly want an unauthenticated deployment must opt in by setting
+// ASPNETCORE_ENVIRONMENT=Development or Staging.
+if (!authEnabled && builder.Environment.IsProduction())
+{
+    throw new InvalidOperationException(
+        "Fleans.Web refuses to start in Production without authentication. " +
+        "Set 'Authentication:Authority' (OIDC issuer URL) and 'Authentication:ClientId'. " +
+        "To run unauthenticated for local/dev use, set ASPNETCORE_ENVIRONMENT to " +
+        "Development or Staging.");
+}
+
 builder.Services.AddSingleton(new AuthOptions(authEnabled, authAuthority ?? "", authClientId ?? ""));
 
 if (authEnabled)
