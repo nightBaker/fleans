@@ -375,8 +375,12 @@ internal static class FleanModelConfiguration
 }
 
 /// <summary>
-/// Restricts TypeNameHandling deserialization to types from the Fleans.Domain assembly
-/// and BCL/system assemblies (e.g. System.Collections.Generic.List&lt;string&gt;).
+/// Restricts TypeNameHandling deserialization for the ProcessDefinitions.Workflow
+/// column to types from <see cref="Fleans.Domain"/> and the curated BCL allowlist
+/// in <see cref="JsonAssemblyAllowList"/>. The previous "any assembly whose name
+/// starts with 'System.'" check allowed classic Newtonsoft gadget types
+/// (<c>System.Diagnostics.Process</c> and friends) through; this binder closes
+/// that defense-in-depth gap.
 /// </summary>
 internal sealed class DomainAssemblySerializationBinder : DefaultSerializationBinder
 {
@@ -385,18 +389,10 @@ internal sealed class DomainAssemblySerializationBinder : DefaultSerializationBi
     public override Type BindToType(string? assemblyName, string typeName)
     {
         var type = base.BindToType(assemblyName, typeName);
-        if (type.Assembly != DomainAssembly && !IsSystemAssembly(type.Assembly))
+        if (type.Assembly != DomainAssembly && !JsonAssemblyAllowList.IsAllowedBclAssembly(type.Assembly))
             throw new JsonSerializationException(
                 $"Deserialization of type '{type.FullName}' from assembly '{type.Assembly.FullName}' is not allowed. " +
-                $"Only types from '{DomainAssembly.GetName().Name}' and system assemblies are permitted.");
+                $"Only types from '{DomainAssembly.GetName().Name}' and a curated BCL allowlist are permitted.");
         return type;
-    }
-
-    private static bool IsSystemAssembly(Assembly assembly)
-    {
-        var name = assembly.GetName().Name;
-        return name != null && (name.StartsWith("System.", StringComparison.Ordinal)
-            || name is "System" or "mscorlib" or "netstandard"
-            || name == typeof(object).Assembly.GetName().Name);
     }
 }
