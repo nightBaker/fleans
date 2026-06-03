@@ -420,3 +420,10 @@ FodyWeavers.xsd
 
 # Aspire Docker compose publisher output
 tests/load/generated/
+
+# NuGet signing — private material from tools/signing/generate-cert.sh.
+# The public certificate (fleans-signing-cert.cer) IS committed; the private
+# key, intermediate cert, and PFX (already covered by *.pfx above) are not.
+tools/signing/fleans-signing.key
+tools/signing/fleans-signing.crt
+tools/signing/*.pfx

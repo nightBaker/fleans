@@ -102,6 +102,39 @@ my-plugin-host/
 
 **Pin rule.** Plugin packages share the engine's release-train version per the engine's Container Builds convention. Use the same `<X.Y.Z>` for `Fleans.Worker` as the engine container images you pulled — if you're on `ghcr.io/nightbaker/fleans-api:0.3.0`, pin `Fleans.Worker --version 0.3.0`. When you upgrade the engine, bump the template fork and your csproj pin in lockstep.
 
+### Verifying package signatures (optional)
+
+The four published plugin packages — `Fleans.Domain.Abstractions`, `Fleans.Application.Abstractions`, `Fleans.Worker`, `Fleans.Plugins.RestCaller` — are **author-signed** with the Fleans project's certificate. Verification is optional but lets you confirm a download was produced by the project and not tampered with in transit.
+
+Fleans currently uses a **self-signed** certificate (rather than one issued by a public CA). The practical consequence: integrity is fully verifiable, but the signer is not backed by a publicly-trusted root, so `dotnet nuget verify --all` will report a trust warning unless you explicitly trust the cert first.
+
+The published certificate's SHA-256 fingerprint is:
+
+```
+<published on the GitHub release notes and in tools/signing/fleans-signing-cert.cer>
+```
+
+To verify a downloaded `.nupkg` against that fingerprint without changing any trust state:
+
+```bash
+dotnet nuget verify Fleans.Worker.0.3.0.nupkg \
+  --certificate-fingerprint <FINGERPRINT>
+```
+
+This checks that the package is signed by exactly that certificate. Because the cert is self-signed, the command still surfaces an `UntrustedRoot` notice — that is expected and does **not** mean the package is compromised; it only means the signer isn't a public CA.
+
+If you want a clean, warning-free `--all` verification (e.g. as a gate in your own CI), trust the certificate once, then verify:
+
+```bash
+# One-time: trust the Fleans cert by fingerprint (allow its self-signed root)
+dotnet nuget trust certificate fleans \
+  <FINGERPRINT> --algorithm SHA256 --allow-untrusted-root
+
+dotnet nuget verify Fleans.Worker.0.3.0.nupkg --all
+```
+
+A future move to a publicly-trusted (CA-issued) certificate would let `--all` pass with no trust step; it requires no change on your side beyond dropping the one-time `trust` command.
+
 ## Step 2 — Write the handler
 
 Delete the template `Class1.cs`. Add `src/Fleans.Plugins.HelloWorld/HelloWorldHandler.cs`:

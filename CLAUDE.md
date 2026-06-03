@@ -98,6 +98,7 @@ These guard correctness. Break them and silent bugs ship.
 | Documentation conventions (scope split, Tabs syncKey rules) | [`docs/conventions/documentation.md`](docs/conventions/documentation.md) |
 | Release runbook (pre-tag checklist, tag, post-tag verify, rollback) | [`docs/runbooks/release.md`](docs/runbooks/release.md) |
 | Compose-bundle post-processing | [`docs/runbooks/compose-bundle.md`](docs/runbooks/compose-bundle.md) |
+| NuGet signing cert setup/rotation (self-signed, trust-by-fingerprint verify) | [`docs/runbooks/nuget-signing-rotation.md`](docs/runbooks/nuget-signing-rotation.md) |
 
 ## Manual test plans
 

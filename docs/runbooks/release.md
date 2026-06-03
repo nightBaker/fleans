@@ -11,6 +11,7 @@ The release pipeline at `.github/workflows/release.yml` triggers on `git push or
 4. **Pre-release dry-runs — run BOTH workflows** (the sentinels are intentionally different):
    - **`release.yml` dry-run:** `gh workflow run release.yml -f version=0.0.0-rc-test`. Uploads compose-zip + helm-tgz artifacts but skips `gh release create` (gated on `is_dispatch_dry_run`). Download the artifacts and smoke-test compose + helm against a `kind` cluster.
    - **`nuget-publish.yml` dry-run:** `gh workflow run nuget-publish.yml -f version=0.0.0-ci-test`. Packs the 4 plugin packages and uploads them as workflow artifacts but skips the actual `dotnet nuget push` (gated by `inputs.version != '0.0.0-ci-test'` on push/pack steps).
+5. **NuGet signing material present** — the published plugin packages are author-signed. The Sign/Verify steps in `nuget-publish.yml` run only when `NUGET_SIGNING_CERT_PFX_BASE64` (+ `NUGET_SIGNING_CERT_PASSWORD`) is set on the `nuget-publish` environment and `tools/signing/fleans-signing-cert.cer` is committed. Confirm all three exist (and the cert isn't near expiry) before tagging; the `0.0.0-ci-test` dry-run above only exercises signing when the secret is set. Setup/rotation: [nuget-signing-rotation.md](nuget-signing-rotation.md).
 
 ## Tag command
 

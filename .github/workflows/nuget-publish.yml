@@ -121,6 +121,65 @@ jobs:
           done
           ls -la artifacts/nuget
 
+      # Author-sign the packages with the project's self-signed code-signing
+      # certificate (#458). Runs only when the signing secret is configured, so
+      # forks and pre-setup releases skip signing cleanly and still publish.
+      # Placed before Upload so the uploaded bundle (and the 0.0.0-ci-test
+      # dry-run, which exits after Upload) carries the signatures.
+      - name: Sign packages
+        if: env.HAS_SIGNING_CERT == 'true'
+        env:
+          HAS_SIGNING_CERT: ${{ secrets.NUGET_SIGNING_CERT_PFX_BASE64 != '' }}
+          NUGET_SIGNING_CERT_PFX_BASE64: ${{ secrets.NUGET_SIGNING_CERT_PFX_BASE64 }}
+          NUGET_SIGNING_CERT_PASSWORD: ${{ secrets.NUGET_SIGNING_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::${NUGET_SIGNING_CERT_PASSWORD}"
+          umask 077
+          cert_path="${RUNNER_TEMP}/signing-cert.pfx"
+          pw_file="${RUNNER_TEMP}/.cert-pw"
+          echo "${NUGET_SIGNING_CERT_PFX_BASE64}" | base64 -d > "${cert_path}"
+          printf '%s' "${NUGET_SIGNING_CERT_PASSWORD}" > "${pw_file}"
+          shopt -s nullglob
+          for pkg in artifacts/nuget/*.nupkg artifacts/nuget/*.snupkg; do
+            dotnet nuget sign "$pkg" \
+              --certificate-path "${cert_path}" \
+              --certificate-password "$(cat "${pw_file}")" \
+              --timestamper http://timestamp.digicert.com
+          done
+
+      # Verify each signed package was signed by *our* certificate. A self-signed
+      # cert has no path to a trusted root, so `dotnet nuget verify` reports
+      # NU3018 (UntrustedRoot) as an error unless the cert is first registered as
+      # a trusted signer with allowUntrustedRoot. We register it by the SHA-256
+      # fingerprint derived from the committed public .cer (single source of
+      # truth — no separate variable to drift), into a throwaway config so the
+      # runner's global state is untouched. This fails on an unsigned package
+      # (NU3004) and on a foreign signer (NU3034), so a silently-empty sign loop
+      # cannot slip through.
+      - name: Verify package signatures
+        if: env.HAS_SIGNING_CERT == 'true'
+        env:
+          HAS_SIGNING_CERT: ${{ secrets.NUGET_SIGNING_CERT_PFX_BASE64 != '' }}
+        run: |
+          set -euo pipefail
+          cer="${GITHUB_WORKSPACE}/tools/signing/fleans-signing-cert.cer"
+          fp="$(openssl x509 -in "${cer}" -inform DER -noout -fingerprint -sha256 | sed 's/.*=//; s/://g')"
+          cfg="${RUNNER_TEMP}/verify-nuget.config"
+          printf '<?xml version="1.0" encoding="utf-8"?>\n<configuration>\n</configuration>\n' > "${cfg}"
+          dotnet nuget trust certificate fleans-signing "${fp}" \
+            --algorithm SHA256 --allow-untrusted-root --configfile "${cfg}"
+          shopt -s nullglob
+          for pkg in artifacts/nuget/*.nupkg artifacts/nuget/*.snupkg; do
+            dotnet nuget verify "$pkg" --all --configfile "${cfg}"
+          done
+
+      - name: Cleanup signing material
+        if: always() && env.HAS_SIGNING_CERT == 'true'
+        env:
+          HAS_SIGNING_CERT: ${{ secrets.NUGET_SIGNING_CERT_PFX_BASE64 != '' }}
+        run: rm -f "${RUNNER_TEMP}/signing-cert.pfx" "${RUNNER_TEMP}/.cert-pw" "${RUNNER_TEMP}/verify-nuget.config"
+
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4

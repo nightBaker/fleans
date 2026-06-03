@@ -143,6 +143,57 @@ Expect: `diff` output is empty (bit-identical packages across two pack runs,
 backed by `Deterministic=true` + `ContinuousIntegrationBuild=true` in
 `Directory.Build.props`).
 
+### 8. Package signing + verification
+
+Author-signing runs only when `NUGET_SIGNING_CERT_PFX_BASE64` is set on the
+`nuget-publish` environment and `tools/signing/fleans-signing-cert.cer` is
+committed (setup: [docs/runbooks/nuget-signing-rotation.md](../../../docs/runbooks/nuget-signing-rotation.md)).
+
+**8a. Local sign + verify (no secrets, no network)** — validates the chain
+end-to-end with a throwaway cert:
+
+```bash
+TMP=$(mktemp -d)
+# Throwaway code-signing cert (codeSigning EKU is mandatory)
+openssl req -x509 -newkey rsa:4096 -sha256 -days 30 -nodes \
+  -keyout "$TMP/k.key" -out "$TMP/c.crt" \
+  -subj "/CN=fleans-local-test" \
+  -addext "keyUsage=critical,digitalSignature" \
+  -addext "extendedKeyUsage=critical,codeSigning"
+openssl pkcs12 -export -out "$TMP/s.pfx" -inkey "$TMP/k.key" -in "$TMP/c.crt" -passout pass:tp
+FP=$(openssl x509 -in "$TMP/c.crt" -noout -fingerprint -sha256 | sed 's/.*=//; s/://g')
+
+cd src/Fleans
+dotnet pack Fleans.Worker/Fleans.Worker.csproj -c Release /p:Version=0.0.0-sign -o "$TMP/n"
+dotnet nuget sign "$TMP"/n/*.nupkg "$TMP"/n/*.snupkg \
+  --certificate-path "$TMP/s.pfx" --certificate-password tp \
+  --timestamper http://timestamp.digicert.com
+
+CFG="$TMP/nuget.config"
+printf '<?xml version="1.0"?>\n<configuration>\n</configuration>\n' > "$CFG"
+dotnet nuget trust certificate t "$FP" --algorithm SHA256 --allow-untrusted-root --configfile "$CFG"
+dotnet nuget verify "$TMP"/n/*.nupkg --all --configfile "$CFG"
+```
+
+Expect: `dotnet nuget sign` succeeds (an `NU3018 UntrustedRoot` *warning* is
+normal for a self-signed cert); `dotnet nuget verify --all` exits 0. As a
+negative check, verifying an **unsigned** package with the same config fails
+with `NU3004`, and verifying with a *wrong* trusted fingerprint fails with
+`NU3034` — confirming the CI verify step cannot pass a silently-unsigned bundle.
+
+**8b. CI dry-run signs (secrets set)** — re-run Step 2's `0.0.0-ci-test`
+dispatch *after* the signing secret is configured. The "Sign packages" and
+"Verify package signatures" steps run (not skipped); download the
+`nuget-packages-0.0.0-ci-test` artifact and confirm each `.nupkg` carries an
+author signature:
+
+```bash
+dotnet nuget verify <downloaded>.nupkg --certificate-fingerprint <published-FP>
+```
+
+(Self-signed: the `UntrustedRoot` notice is expected; the command still
+confirms the signer matches the published fingerprint.)
+
 ## Expected outcomes checklist
 
 - [ ] Local `dotnet pack` produces 3× `.nupkg` + 3× `.snupkg` with README bundled.
@@ -153,6 +204,8 @@ backed by `Deterministic=true` + `ContinuousIntegrationBuild=true` in
 - [ ] A clean external project successfully `dotnet add package`s and builds against all three.
 - [ ] `.snupkg` symbols are reachable on the nuget.org symbol server (HTTP 200 / IDE source-stepping).
 - [ ] Two consecutive `dotnet pack` runs at the same version produce bit-identical `.nupkg` files.
+- [ ] Local sign + trust-by-fingerprint + `dotnet nuget verify --all` round-trips (Step 8a); unsigned → NU3004, wrong fingerprint → NU3034.
+- [ ] With the signing secret set, the `0.0.0-ci-test` dry-run runs the Sign + Verify steps and the artifact packages carry an author signature matching the published fingerprint (Step 8b).
 
 ## Notes
 
