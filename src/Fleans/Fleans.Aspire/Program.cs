@@ -208,11 +208,18 @@ if (builder.ExecutionContext.IsPublishMode)
 WithPersistence(webProject, usePostgres, pg, sqliteConnectionString);
 
 // MCP = Orleans client (for Claude Code)
+// Authentication__Authority is propagated so that `aspire publish` emits a
+// docker-compose / kubernetes manifest with the same auth wiring as the Helm
+// chart. The downstream Fleans.Mcp/Program.cs fail-closed guard (#709) refuses
+// to start in Production with an empty Authority, so leaving this off would
+// produce a publish artifact that crashes out of the box.
 WithPersistence(
     builder.AddProject<Projects.Fleans_Mcp>("fleans-mcp")
         .WithReference(orleans.AsClient())
         .WaitFor(fleansSilo)
         .WithHttpEndpoint(port: 5200, name: "mcp")
+        .WithEnvironment("Authentication__Authority", authAuthority)
+        .WithEnvironment("Authentication__Audience", "fleans-mcp")
         .WithReplicas(1),
     usePostgres, pg, sqliteConnectionString);
 

@@ -188,10 +188,11 @@ redis:
       memory: 256Mi
 
 # -----------------------------------------------------------------------------
-# Authentication (OIDC for the Web admin UI)
+# Authentication (OIDC for the Web admin UI, JWT bearer for Fleans.Mcp).
+# Fleans.Mcp refuses to start in Production with an empty `authority`
+# (since #709); set `appEnvironment` to "Staging" for a deliberate
+# unauthenticated deployment, or supply `authority`.
 # -----------------------------------------------------------------------------
-# Leave authority + clientId empty to disable auth (matches Fleans.Web's
-# auth-disabled fallback). Provide all three to enable.
 auth:
   authority: ""
   clientId: ""
@@ -199,6 +200,15 @@ auth:
   clientSecretExistingSecret: ""
   # Or inline (NOT recommended for production — use existingSecret).
   clientSecret: ""
+  # JWT audience claim for Fleans.Mcp tokens.
+  mcpAudience: "fleans-mcp"
+
+# -----------------------------------------------------------------------------
+# ASP.NET Core environment passed via ASPNETCORE_ENVIRONMENT. Default
+# "Production" — Fleans.Mcp refuses to start in Production without
+# `auth.authority`. Override to "Staging" for an unauthenticated install.
+# -----------------------------------------------------------------------------
+appEnvironment: "Production"
 
 # -----------------------------------------------------------------------------
 # Streaming (Orleans Streams; defaults to Redis to match the engine default and

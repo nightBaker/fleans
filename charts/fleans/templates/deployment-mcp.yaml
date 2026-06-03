@@ -39,6 +39,14 @@ spec:
           env:
             - name: ASPNETCORE_URLS
               value: "http://+:5200"
+            - name: ASPNETCORE_ENVIRONMENT
+              value: {{ .Values.appEnvironment | default "Production" | quote }}
+            {{- if .Values.auth.authority }}
+            - name: Authentication__Authority
+              value: {{ .Values.auth.authority | quote }}
+            - name: Authentication__Audience
+              value: {{ .Values.auth.mcpAudience | default "fleans-mcp" | quote }}
+            {{- end }}
             {{- include "fleans.commonEnv" . | nindent 12 }}
           livenessProbe:
             httpGet:
