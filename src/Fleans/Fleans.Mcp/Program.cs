@@ -18,22 +18,6 @@ builder.AddServiceDefaults();
 var authAuthority = builder.Configuration["Authentication:Authority"];
 var authEnabled = !string.IsNullOrEmpty(authAuthority);
 
-// Fail-closed in Production: the MCP server exposes DeployWorkflow and other
-// engine-mutating tools over HTTP. With auth off, anyone who reaches the listener
-// can upload BPMN and start workflows — and BPMN script tasks run server-side
-// (DynamicExpresso). Refuse to start in Production rather than ship an open
-// execution surface. Operators who knowingly want an unauthenticated deployment
-// must set ASPNETCORE_ENVIRONMENT to Development or Staging.
-if (!authEnabled && builder.Environment.IsProduction())
-{
-    throw new InvalidOperationException(
-        "Fleans.Mcp refuses to start in Production without authentication. " +
-        "Set 'Authentication:Authority' (OIDC issuer URL) and optionally " +
-        "'Authentication:Audience' (default 'fleans-mcp'). " +
-        "To run unauthenticated for local/dev use, set ASPNETCORE_ENVIRONMENT to " +
-        "Development or Staging.");
-}
-
 if (authEnabled)
 {
     builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
