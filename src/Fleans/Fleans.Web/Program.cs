@@ -194,10 +194,26 @@ if (authEnabled)
             }
             await next();
         }));
+
+    // Orleans Dashboard at /dashboard — mapped only when the explicit auth gate
+    // above is installed. With auth off, MapOrleansDashboard would expose silo
+    // membership, grain counts, and live call graphs to anyone reachable.
+    app.MapOrleansDashboard(routePrefix: "/dashboard");
+}
+else if (app.Environment.IsDevelopment())
+{
+    // Development convenience: keep the dashboard available for local debugging
+    // (Aspire dev loop, Combined silo). Log a loud warning so an operator who
+    // accidentally points a Development build at a multi-tenant cluster notices
+    // what they just shipped. Staging/Production with auth disabled get no
+    // dashboard at all — the only way to expose it is to enable auth.
+    app.Logger.LogWarning(
+        "Orleans Dashboard is mounted at /dashboard WITHOUT authentication " +
+        "(Development environment, auth disabled). Do not expose this listener " +
+        "to untrusted networks.");
+    app.MapOrleansDashboard(routePrefix: "/dashboard");
 }
 
-// Orleans Dashboard at /dashboard
-app.MapOrleansDashboard(routePrefix: "/dashboard");
 app.MapDefaultEndpoints();
 
 app.Run();
