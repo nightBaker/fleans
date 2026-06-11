@@ -3167,6 +3167,20 @@ public class WorkflowExecution
                 $"Correlation variable '{variableName}' is null for message '{messageDef.Name}'.");
     }
 
+    // --- Pending external events durability (#657) ---
+
+    /// <summary>Emits <see cref="PendingEventEnqueued"/>, persisting an external event in the queue ledger.</summary>
+    public void EmitPendingEventEnqueued(string opKey, PendingExternalEventPayload payload)
+        => Emit(new PendingEventEnqueued(opKey, payload, DateTimeOffset.UtcNow));
+
+    /// <summary>Emits <see cref="PendingEventDrained"/>, removing a processed external event from the queue ledger.</summary>
+    public void EmitPendingEventDrained(string opKey)
+        => Emit(new PendingEventDrained(opKey, DateTimeOffset.UtcNow));
+
+    /// <summary>Emits <see cref="PendingEventApplied"/>, recording a retried op's outcome in the dedup ledger.</summary>
+    public void EmitPendingEventApplied(string opKey, PendingEventResult? result)
+        => Emit(new PendingEventApplied(opKey, result, DateTimeOffset.UtcNow));
+
     // --- Emit / Apply pattern ---
 
     private void Emit(IDomainEvent @event)

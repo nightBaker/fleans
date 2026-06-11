@@ -1,4 +1,5 @@
 using Fleans.Application.Grains;
+using Fleans.Domain;
 using Fleans.Domain.Effects;
 using Fleans.Domain.Events;
 using Microsoft.Extensions.Logging;
@@ -28,20 +29,32 @@ public partial class WorkflowLifecycleEffectHandler : IEffectHandler
                 break;
 
             case NotifyParentCompletedEffect notifyCompleted:
-                var parentGrain = context.GrainFactory.GetGrain<IWorkflowInstanceGrain>(notifyCompleted.ParentInstanceId);
-                await parentGrain.OnChildWorkflowCompleted(notifyCompleted.ParentActivityId, notifyCompleted.Variables);
+                // Op-id is deterministic per logical call so a retried RPC dedups (#657).
+                var completedOpId = GrainFactoryRetryExtensions.ChildCompletedOpId(
+                    context.WorkflowInstanceId, notifyCompleted.ParentActivityId);
+                await context.GrainFactory.CallWithRetry<IWorkflowInstanceGrain>(
+                    notifyCompleted.ParentInstanceId, completedOpId,
+                    g => g.OnChildWorkflowCompleted(completedOpId, notifyCompleted.ParentActivityId, notifyCompleted.Variables));
                 break;
 
             case NotifyParentFailedEffect notifyFailed:
-                var parentFailGrain = context.GrainFactory.GetGrain<IWorkflowInstanceGrain>(notifyFailed.ParentInstanceId);
-                await parentFailGrain.OnChildWorkflowFailed(notifyFailed.ParentActivityId, notifyFailed.Exception);
+                var failedOpId = GrainFactoryRetryExtensions.ChildFailedOpId(
+                    context.WorkflowInstanceId, notifyFailed.ParentActivityId);
+                await context.GrainFactory.CallWithRetry<IWorkflowInstanceGrain>(
+                    notifyFailed.ParentInstanceId, failedOpId,
+                    g => g.OnChildWorkflowFailed(failedOpId, notifyFailed.ParentActivityId, notifyFailed.Exception));
                 break;
 
             case NotifyParentEscalationRaisedEffect escalation:
-                var parentEscGrain = context.GrainFactory.GetGrain<IWorkflowInstanceGrain>(escalation.ParentWorkflowInstanceId);
-                var escalationResult = await parentEscGrain.OnChildEscalationRaised(
-                    escalation.ChildWorkflowInstanceId, escalation.HostActivityId,
-                    escalation.EscalationCode, escalation.Variables);
+                // Op-id is derived once at the origin throw (carried as a raw Guid on the effect) and
+                // formatted here in the application layer; a re-escalated hop reuses the same id (#657).
+                var escalationOpId = GrainFactoryRetryExtensions.ChildEscalationOpId(escalation.EscalationInstanceId);
+                var escalationResult = await context.GrainFactory.CallWithRetry<IWorkflowInstanceGrain, EscalationHandledResult>(
+                    escalation.ParentWorkflowInstanceId, escalationOpId,
+                    g => g.OnChildEscalationRaised(
+                        escalationOpId, escalation.EscalationInstanceId,
+                        escalation.ChildWorkflowInstanceId, escalation.HostActivityId,
+                        escalation.EscalationCode, escalation.Variables));
                 context.SetEscalationParentResult(escalationResult);
                 break;
 

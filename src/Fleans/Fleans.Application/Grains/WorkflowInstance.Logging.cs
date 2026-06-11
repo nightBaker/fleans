@@ -277,6 +277,10 @@ public partial class WorkflowInstance
         Message = "Processing pending external event: {EventType}")]
     private partial void LogProcessingPendingEvent(string eventType);
 
+    [LoggerMessage(EventId = 1079, Level = LogLevel.Debug,
+        Message = "Pending external operation {OperationId} deduplicated — returning persisted outcome (retry short-circuit)")]
+    private partial void LogPendingOpDeduplicated(string operationId);
+
     // Event Sub-Process lifecycle (EventId 1075-1079)
     [LoggerMessage(EventId = 1075, Level = LogLevel.Information,
         Message = "Workflow completed via root EventSubProcess {EventSubProcessId} (no outgoing sequence flow)")]
