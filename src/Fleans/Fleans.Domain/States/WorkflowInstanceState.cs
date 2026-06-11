@@ -1,5 +1,6 @@
 using System.Dynamic;
 using Fleans.Domain.Activities;
+using Fleans.Domain.Events;
 
 namespace Fleans.Domain.States;
 
@@ -154,9 +155,60 @@ public class WorkflowInstanceState
     [Id(25)]
     public Dictionary<Guid, CompensationWalkState> ActiveCompensationWalks { get; private set; } = new();
 
+    /// <summary>
+    /// Pending external events (child completed/failed/escalation, signal delivery) that have been
+    /// enqueued via <c>PendingEventEnqueued</c> but not yet drained. Keyed by op-key. Rebuilt from the
+    /// event log on activation (like <see cref="TransactionOutcomes"/>); the in-memory queue's fresh
+    /// TaskCompletionSources are minted from this on reactivation. Issue #657.
+    /// </summary>
+    [Id(26)]
+    public Dictionary<string, PendingExternalEventPayload> PendingOperations { get; private set; } = new();
+
+    /// <summary>
+    /// Dedup ledger for caller-retried operations: op-key → durable outcome (null for void ops).
+    /// Populated only by the three retried methods (child completed/failed/escalation) via
+    /// <c>PendingEventApplied</c>; consulted on retry to short-circuit double-apply. Cleared on
+    /// terminal state (the existing IsCompleted stale guard protects post-completion retries). Issue #657.
+    /// </summary>
+    [Id(27)]
+    public Dictionary<string, PendingEventResult?> AppliedOperations { get; private set; } = new();
+
+    private const int DirtyPendingOperations = 256;
+
     internal int GetDirtyFlags() => _dirtyFlags;
 
     internal void ClearDirtyFlags() => _dirtyFlags = 0;
+
+    // ── Pending external events (issue #657) ────────────────────────────────────────
+
+    public void AddPendingOperation(string opKey, PendingExternalEventPayload payload)
+    {
+        PendingOperations[opKey] = payload;
+        _dirtyFlags |= DirtyPendingOperations;
+    }
+
+    public void RemovePendingOperation(string opKey)
+    {
+        PendingOperations.Remove(opKey);
+        _dirtyFlags |= DirtyPendingOperations;
+    }
+
+    public void RecordAppliedOperation(string opKey, PendingEventResult? result)
+    {
+        AppliedOperations[opKey] = result;
+        _dirtyFlags |= DirtyPendingOperations;
+    }
+
+    public void ClearAppliedOperations()
+    {
+        AppliedOperations.Clear();
+        _dirtyFlags |= DirtyPendingOperations;
+    }
+
+    public bool TryGetAppliedOperation(string opKey, out PendingEventResult? result)
+        => AppliedOperations.TryGetValue(opKey, out result);
+
+    public bool HasPendingOperation(string opKey) => PendingOperations.ContainsKey(opKey);
 
     public IEnumerable<ActivityInstanceEntry> GetActiveActivities()
         => ActiveEntryIds.Select(id => EntriesById[id]);
@@ -270,7 +322,8 @@ public class WorkflowInstanceState
 
         GatewayForks.Clear();
         ComplexGatewayJoinStates.Clear();
-        _dirtyFlags |= DirtyGatewayForks | DirtyComplexGatewayJoinStates;
+        AppliedOperations.Clear(); // dedup ledger GC: bounded to instance lifetime (#657, Q1')
+        _dirtyFlags |= DirtyGatewayForks | DirtyComplexGatewayJoinStates | DirtyPendingOperations;
         CompletedAt = DateTimeOffset.UtcNow;
         IsCompleted = true;
     }
@@ -282,7 +335,8 @@ public class WorkflowInstanceState
 
         GatewayForks.Clear();
         ComplexGatewayJoinStates.Clear();
-        _dirtyFlags |= DirtyGatewayForks | DirtyComplexGatewayJoinStates;
+        AppliedOperations.Clear(); // dedup ledger GC: bounded to instance lifetime (#657, Q1')
+        _dirtyFlags |= DirtyGatewayForks | DirtyComplexGatewayJoinStates | DirtyPendingOperations;
         CompletedAt = DateTimeOffset.UtcNow;
         IsCompleted = true;
         IsCancelled = true;
