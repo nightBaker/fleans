@@ -81,4 +81,12 @@ public interface IWorkflowInstanceGrain : IWorkflowInstanceCallback, IWorkflowEx
     /// </summary>
     [ReadOnly]
     ValueTask<IReadOnlyList<CompensationLogEntrySnapshot>> GetCompensationLog();
+
+    /// <summary>Op-keys currently in the durable pending-events queue (PendingOperations). #657.</summary>
+    [ReadOnly]
+    ValueTask<IReadOnlyList<string>> GetPendingOperationKeys();
+
+    /// <summary>Op-keys recorded in the dedup ledger (AppliedOperations). #657.</summary>
+    [ReadOnly]
+    ValueTask<IReadOnlyList<string>> GetAppliedOperationKeys();
 }

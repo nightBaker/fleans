@@ -804,6 +804,18 @@ public partial class WorkflowInstance :
         return ValueTask.FromResult(result);
     }
 
+    public ValueTask<IReadOnlyList<string>> GetPendingOperationKeys()
+    {
+        IReadOnlyList<string> result = State.PendingOperations.Keys.ToList().AsReadOnly();
+        return ValueTask.FromResult(result);
+    }
+
+    public ValueTask<IReadOnlyList<string>> GetAppliedOperationKeys()
+    {
+        IReadOnlyList<string> result = State.AppliedOperations.Keys.ToList().AsReadOnly();
+        return ValueTask.FromResult(result);
+    }
+
     public ValueTask<IReadOnlyList<CompensationLogEntrySnapshot>> GetCompensationLog()
     {
         IReadOnlyList<CompensationLogEntrySnapshot> result = State.CompensationLog
