@@ -62,6 +62,11 @@ internal static class FleanModelConfiguration
             // See issue #284.
             entity.Ignore(e => e.ScopeHostExecutionScopes);
 
+            // PendingOperations / AppliedOperations are rebuilt from PendingEventEnqueued/Drained/
+            // Applied events on grain activation; not projected to the relational store. See #657.
+            entity.Ignore(e => e.PendingOperations);
+            entity.Ignore(e => e.AppliedOperations);
+
             entity.HasMany(e => e.TimerCycleTracking)
                 .WithOne()
                 .HasForeignKey(e => e.WorkflowInstanceId)

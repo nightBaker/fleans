@@ -65,6 +65,21 @@ public partial class WorkflowInstance :
     private IGrainTimer? _pendingEventsTimer;
 
     /// <summary>
+    /// Serializes durable enqueue writes (RaiseEvent + ConfirmEvents) from the [AlwaysInterleave]
+    /// enqueue methods, which can otherwise overlap. Each enqueue persists a PendingEventEnqueued
+    /// event so the queue survives forced deactivation (#657).
+    /// </summary>
+    private readonly SemaphoreSlim _enqueueLock = new(1, 1);
+
+    /// <summary>
+    /// Maps op-key → in-flight completion task for enqueued-but-not-yet-drained operations,
+    /// so a concurrent retry with the same op-key awaits the original rather than double-enqueueing.
+    /// Void ops store a <see cref="Task"/>; the escalation op stores a <see cref="Task{T}"/> of
+    /// <see cref="EscalationHandledResult"/>. Cleared when the operation drains.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, Task> _inFlightOperations = new();
+
+    /// <summary>
     /// Guards against double-apply: true while draining aggregate events via RaiseEvent.
     /// When true, TransitionState skips event application (aggregate already applied).
     /// </summary>
@@ -117,6 +132,49 @@ public partial class WorkflowInstance :
         {
             await RehydrateUserTasks();
         }
+
+        RebuildPendingExternalEvents();
+    }
+
+    /// <summary>
+    /// After journal replay, rebuild the in-memory pending-events queue from State.PendingOperations
+    /// with fresh TaskCompletionSources (the originals were lost on deactivation). On retry the caller
+    /// re-calls and hits the AppliedOperations short-circuit; here we just re-process the durable queue
+    /// so no enqueued event is lost. (#657)
+    /// </summary>
+    private void RebuildPendingExternalEvents()
+    {
+        if (State.PendingOperations.Count == 0)
+            return;
+
+        foreach (var (opKey, payload) in State.PendingOperations)
+        {
+            var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            PendingExternalEvent inMemory = payload switch
+            {
+                Fleans.Domain.Events.PendingChildCompletedPayload p =>
+                    new PendingChildCompleted(p.ParentActivityId, p.ChildVariables) { OperationId = opKey },
+                Fleans.Domain.Events.PendingChildFailedPayload p =>
+                    new PendingChildFailed(p.ParentActivityId, new Exception(p.ExceptionMessage)) { OperationId = opKey },
+                Fleans.Domain.Events.PendingSignalDeliveryPayload p =>
+                    new PendingSignalDelivery(p.ActivityId, p.HostActivityInstanceId) { OperationId = opKey },
+                Fleans.Domain.Events.PendingBoundarySignalFiredPayload p =>
+                    new PendingBoundarySignalFired(p.BoundaryActivityId, p.HostActivityInstanceId) { OperationId = opKey },
+                Fleans.Domain.Events.PendingChildEscalationRaisedPayload p =>
+                    new PendingChildEscalationRaised(
+                        p.ChildWorkflowInstanceId, p.HostActivityId, p.EscalationCode, p.Variables,
+                        new TaskCompletionSource<EscalationHandledResult>(TaskCreationOptions.RunContinuationsAsynchronously))
+                    { OperationId = opKey, EscalationInstanceId = p.EscalationInstanceId },
+                _ => throw new InvalidOperationException($"Unknown pending payload type: {payload.GetType().Name}")
+            };
+
+            _inFlightOperations[opKey] = inMemory is PendingChildEscalationRaised esc
+                ? esc.Tcs.Task
+                : tcs.Task;
+            _pendingExternalEvents.Enqueue((inMemory, tcs));
+        }
+
+        EnsurePendingEventsTimerRegistered();
     }
 
     public override async Task OnDeactivateAsync(DeactivationReason reason, CancellationToken cancellationToken)
@@ -432,35 +490,88 @@ public partial class WorkflowInstance :
         await ProcessPendingEvents();
     }
 
-    public Task OnChildWorkflowCompleted(string parentActivityId, ExpandoObject childVariables)
+    public async Task OnChildWorkflowCompleted(string operationId, string parentActivityId, ExpandoObject childVariables)
     {
         LogChildWorkflowCompletedQueued(parentActivityId);
+
+        // (a) Already applied → caller is retrying; short-circuit to the persisted (void) outcome.
+        if (State.TryGetAppliedOperation(operationId, out _))
+        {
+            LogPendingOpDeduplicated(operationId);
+            return;
+        }
+
+        // (b) In-flight → return the existing TCS task (no double-enqueue).
+        if (TryGetInFlight(operationId, out var inflight))
+        {
+            await inflight;
+            return;
+        }
+
+        // (c) Fresh → durably persist + enqueue.
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        _pendingExternalEvents.Enqueue((new PendingChildCompleted(parentActivityId, childVariables), tcs));
-        EnsurePendingEventsTimerRegistered();
-        return tcs.Task;
+        await EnqueueDurable(operationId,
+            new PendingChildCompletedPayload(parentActivityId, childVariables),
+            new PendingChildCompleted(parentActivityId, childVariables) { OperationId = operationId },
+            tcs);
+        await tcs.Task;
     }
 
-    public Task OnChildWorkflowFailed(string parentActivityId, Exception exception)
+    public async Task OnChildWorkflowFailed(string operationId, string parentActivityId, Exception exception)
     {
         LogChildWorkflowFailedQueued(parentActivityId);
+
+        if (State.TryGetAppliedOperation(operationId, out _))
+        {
+            LogPendingOpDeduplicated(operationId);
+            return;
+        }
+
+        if (TryGetInFlight(operationId, out var inflight))
+        {
+            await inflight;
+            return;
+        }
+
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        _pendingExternalEvents.Enqueue((new PendingChildFailed(parentActivityId, exception), tcs));
-        EnsurePendingEventsTimerRegistered();
-        return tcs.Task;
+        await EnqueueDurable(operationId,
+            new PendingChildFailedPayload(parentActivityId, exception.Message),
+            new PendingChildFailed(parentActivityId, exception) { OperationId = operationId },
+            tcs);
+        await tcs.Task;
     }
 
-    public Task<EscalationHandledResult> OnChildEscalationRaised(
+    public async Task<EscalationHandledResult> OnChildEscalationRaised(
+        string operationId, Guid escalationInstanceId,
         Guid childWorkflowInstanceId, string hostActivityId,
         string escalationCode, ExpandoObject variables)
     {
         LogChildEscalationRaisedQueued(childWorkflowInstanceId, escalationCode);
-        var tcs = new TaskCompletionSource<EscalationHandledResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // (a) Already applied → return the persisted EscalationHandledResult without re-processing.
+        if (State.TryGetAppliedOperation(operationId, out var applied))
+        {
+            LogPendingOpDeduplicated(operationId);
+            return applied?.EscalationResult ?? EscalationHandledResult.Unhandled;
+        }
+
+        // (b) In-flight → await the existing in-memory TCS so the caller observes the same result.
+        if (TryGetInFlightEscalation(operationId, out var inflight))
+        {
+            return await inflight;
+        }
+
+        // (c) Fresh → durably persist + enqueue.
+        var resultTcs = new TaskCompletionSource<EscalationHandledResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         var wrapper = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        _pendingExternalEvents.Enqueue((new PendingChildEscalationRaised(
-            childWorkflowInstanceId, hostActivityId, escalationCode, variables, tcs), wrapper));
-        EnsurePendingEventsTimerRegistered();
-        return tcs.Task;
+        await EnqueueDurable(operationId,
+            new PendingChildEscalationRaisedPayload(
+                childWorkflowInstanceId, hostActivityId, escalationCode, variables, escalationInstanceId),
+            new PendingChildEscalationRaised(
+                childWorkflowInstanceId, hostActivityId, escalationCode, variables, resultTcs)
+            { OperationId = operationId, EscalationInstanceId = escalationInstanceId },
+            wrapper);
+        return await resultTcs.Task;
     }
 
     // ── Event Handling ──────────────────────────────────────────────────
@@ -540,22 +651,30 @@ public partial class WorkflowInstance :
         await ProcessPendingEvents();
     }
 
-    public Task HandleSignalDelivery(string activityId, Guid hostActivityInstanceId)
+    public async Task HandleSignalDelivery(string activityId, Guid hostActivityInstanceId)
     {
         LogSignalDeliveryQueued(activityId, hostActivityInstanceId);
+        // Signal path is never retried (subscription is consumed once), so a fresh-Guid op-key is
+        // generated at enqueue time and persisted in the raised event — never regenerated on replay (#657).
+        var opKey = $"signal:{Guid.NewGuid()}";
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        _pendingExternalEvents.Enqueue((new PendingSignalDelivery(activityId, hostActivityInstanceId), tcs));
-        EnsurePendingEventsTimerRegistered();
-        return tcs.Task;
+        await EnqueueDurable(opKey,
+            new PendingSignalDeliveryPayload(activityId, hostActivityInstanceId),
+            new PendingSignalDelivery(activityId, hostActivityInstanceId) { OperationId = opKey },
+            tcs);
+        await tcs.Task;
     }
 
-    public Task HandleBoundarySignalFired(string boundaryActivityId, Guid hostActivityInstanceId)
+    public async Task HandleBoundarySignalFired(string boundaryActivityId, Guid hostActivityInstanceId)
     {
         LogBoundarySignalFiredQueued(boundaryActivityId, hostActivityInstanceId);
+        var opKey = $"boundary-signal:{Guid.NewGuid()}";
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        _pendingExternalEvents.Enqueue((new PendingBoundarySignalFired(boundaryActivityId, hostActivityInstanceId), tcs));
-        EnsurePendingEventsTimerRegistered();
-        return tcs.Task;
+        await EnqueueDurable(opKey,
+            new PendingBoundarySignalFiredPayload(boundaryActivityId, hostActivityInstanceId),
+            new PendingBoundarySignalFired(boundaryActivityId, hostActivityInstanceId) { OperationId = opKey },
+            tcs);
+        await tcs.Task;
     }
 
     // ── User Task Lifecycle ──────────────────────────────────────────────
@@ -682,6 +801,18 @@ public partial class WorkflowInstance :
     {
         IReadOnlyDictionary<Guid, TransactionOutcomeRecord> result =
             State.TransactionOutcomes.AsReadOnly();
+        return ValueTask.FromResult(result);
+    }
+
+    public ValueTask<IReadOnlyList<string>> GetPendingOperationKeys()
+    {
+        IReadOnlyList<string> result = State.PendingOperations.Keys.ToList().AsReadOnly();
+        return ValueTask.FromResult(result);
+    }
+
+    public ValueTask<IReadOnlyList<string>> GetAppliedOperationKeys()
+    {
+        IReadOnlyList<string> result = State.AppliedOperations.Keys.ToList().AsReadOnly();
         return ValueTask.FromResult(result);
     }
 

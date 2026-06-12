@@ -452,6 +452,7 @@ public partial class WorkflowInstance
                 if (pending is PendingChildEscalationRaised escalation)
                 {
                     var (localEffects, localResult) = _execution!.HandleChildEscalationRaised(
+                        escalation.EscalationInstanceId,
                         escalation.ChildWorkflowInstanceId, escalation.HostActivityId,
                         escalation.EscalationCode, escalation.Variables);
                     var parentResult = await PerformEffects(localEffects);
@@ -473,6 +474,11 @@ public partial class WorkflowInstance
                     {
                         finalResult = localResult;
                     }
+
+                    // Drain the durable ledger entry and record the retried op's outcome (#657).
+                    EmitPendingDrainedAndApplied(escalation.OperationId,
+                        new Fleans.Domain.Events.PendingEventResult(finalResult));
+
                     escalation.Tcs.SetResult(finalResult);
                 }
                 else
@@ -486,6 +492,13 @@ public partial class WorkflowInstance
                         _ => throw new InvalidOperationException($"Unknown pending event type: {pending.GetType().Name}")
                     };
                     await PerformEffects(effects);
+
+                    // Drain the durable ledger entry. Child-completed/failed are caller-retried, so
+                    // also record an (empty-result) applied entry for dedup; signal paths only drain (#657).
+                    if (pending is PendingChildCompleted or PendingChildFailed)
+                        EmitPendingDrainedAndApplied(pending.OperationId, null);
+                    else
+                        _execution!.EmitPendingEventDrained(pending.OperationId);
                 }
                 await ResolveExternalCompletions();
                 await RunExecutionLoop();
@@ -494,10 +507,12 @@ public partial class WorkflowInstance
                 // This ensures callers only see "completed" after state is durably stored.
                 await DrainAndRaiseEvents();
 
+                _inFlightOperations.TryRemove(pending.OperationId, out _);
                 completion.SetResult();
             }
             catch (Exception ex)
             {
+                _inFlightOperations.TryRemove(pending.OperationId, out _);
                 completion.TrySetException(ex);
             }
         }
@@ -505,6 +520,16 @@ public partial class WorkflowInstance
         await DrainAndRaiseEvents();
 
         DisposePendingEventsTimerIfTerminal();
+    }
+
+    /// <summary>
+    /// Emits PendingEventDrained (removes from PendingOperations) plus PendingEventApplied
+    /// (records the outcome in the dedup ledger for caller-retried ops). (#657)
+    /// </summary>
+    private void EmitPendingDrainedAndApplied(string opKey, Fleans.Domain.Events.PendingEventResult? result)
+    {
+        _execution!.EmitPendingEventDrained(opKey);
+        _execution!.EmitPendingEventApplied(opKey, result);
     }
 
     /// <summary>
@@ -532,6 +557,73 @@ public partial class WorkflowInstance
             _pendingEventsTimer.Dispose();
             _pendingEventsTimer = null;
         }
+    }
+
+    /// <summary>
+    /// Durably persists a pending external event (RaiseEvent(PendingEventEnqueued) + ConfirmEvents)
+    /// and enqueues it to the in-memory drain queue with a fresh TCS. Serialized via _enqueueLock so
+    /// the [AlwaysInterleave] enqueue methods don't race on the journal. The state mutation is applied
+    /// directly (this event is independent of the _execution aggregate's uncommitted events), then
+    /// raised under the _draining guard so TransitionState does not double-apply. (#657)
+    /// </summary>
+    private async Task EnqueueDurable(
+        string opKey,
+        Fleans.Domain.Events.PendingExternalEventPayload payload,
+        PendingExternalEvent inMemory,
+        TaskCompletionSource completion)
+    {
+        await _enqueueLock.WaitAsync();
+        try
+        {
+            // Record the in-flight task BEFORE persisting so a concurrent retry sees it.
+            _inFlightOperations[opKey] = inMemory is PendingChildEscalationRaised esc
+                ? esc.Tcs.Task
+                : completion.Task;
+
+            var evt = new Fleans.Domain.Events.PendingEventEnqueued(opKey, payload, DateTimeOffset.UtcNow);
+            State.AddPendingOperation(opKey, payload);
+            LogProcessingPendingEvent(nameof(Fleans.Domain.Events.PendingEventEnqueued));
+
+            _draining = true;
+            try
+            {
+                RaiseEvent(evt);
+                await ConfirmEvents();
+            }
+            finally
+            {
+                _draining = false;
+            }
+
+            _pendingExternalEvents.Enqueue((inMemory, completion));
+            EnsurePendingEventsTimerRegistered();
+        }
+        finally
+        {
+            _enqueueLock.Release();
+        }
+    }
+
+    private bool TryGetInFlight(string opKey, out Task task)
+    {
+        if (_inFlightOperations.TryGetValue(opKey, out var t))
+        {
+            task = t;
+            return true;
+        }
+        task = Task.CompletedTask;
+        return false;
+    }
+
+    private bool TryGetInFlightEscalation(string opKey, out Task<EscalationHandledResult> task)
+    {
+        if (_inFlightOperations.TryGetValue(opKey, out var t) && t is Task<EscalationHandledResult> typed)
+        {
+            task = typed;
+            return true;
+        }
+        task = Task.FromResult(EscalationHandledResult.Unhandled);
+        return false;
     }
 
     private void EnsurePendingEventsTimerRegistered()

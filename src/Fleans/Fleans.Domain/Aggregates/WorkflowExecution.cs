@@ -1004,7 +1004,8 @@ public class WorkflowExecution
                 _state.Id,
                 _state.ParentActivityId!,
                 command.EscalationCode,
-                scopeVariables)];
+                scopeVariables,
+                EscalationInstanceId: activityInstanceId)];
         }
 
         // Uncaught at root — BPMN spec: escalation is non-faulting, just record it
@@ -2011,6 +2012,7 @@ public class WorkflowExecution
 
     public (IReadOnlyList<IInfrastructureEffect> Effects, EscalationHandledResult Result)
         HandleChildEscalationRaised(
+            Guid escalationInstanceId,
             Guid childWorkflowInstanceId,
             string hostActivityId,
             string escalationCode,
@@ -2047,7 +2049,10 @@ public class WorkflowExecution
                     _state.Id,
                     _state.ParentActivityId!,
                     escalationCode,
-                    variables)
+                    variables,
+                    // Propagate the origin throw's id unchanged so a re-escalated hop keeps the
+                    // same op-id — dedup short-circuits a retried hop (#657, round-4 fix).
+                    EscalationInstanceId: escalationInstanceId)
             };
             return (effects, EscalationHandledResult.NeedsParentLookup);
         }
@@ -3162,6 +3167,20 @@ public class WorkflowExecution
                 $"Correlation variable '{variableName}' is null for message '{messageDef.Name}'.");
     }
 
+    // --- Pending external events durability (#657) ---
+
+    /// <summary>Emits <see cref="PendingEventEnqueued"/>, persisting an external event in the queue ledger.</summary>
+    public void EmitPendingEventEnqueued(string opKey, PendingExternalEventPayload payload)
+        => Emit(new PendingEventEnqueued(opKey, payload, DateTimeOffset.UtcNow));
+
+    /// <summary>Emits <see cref="PendingEventDrained"/>, removing a processed external event from the queue ledger.</summary>
+    public void EmitPendingEventDrained(string opKey)
+        => Emit(new PendingEventDrained(opKey, DateTimeOffset.UtcNow));
+
+    /// <summary>Emits <see cref="PendingEventApplied"/>, recording a retried op's outcome in the dedup ledger.</summary>
+    public void EmitPendingEventApplied(string opKey, PendingEventResult? result)
+        => Emit(new PendingEventApplied(opKey, result, DateTimeOffset.UtcNow));
+
     // --- Emit / Apply pattern ---
 
     private void Emit(IDomainEvent @event)
@@ -3340,6 +3359,15 @@ public class WorkflowExecution
             case TransactionOutcomeSet e:
                 _state.TransactionOutcomes[e.TransactionInstanceId] =
                     new TransactionOutcomeRecord(e.Outcome, e.ErrorCode, e.ErrorMessage);
+                break;
+            case PendingEventEnqueued e:
+                _state.AddPendingOperation(e.OpKey, e.Payload);
+                break;
+            case PendingEventDrained e:
+                _state.RemovePendingOperation(e.OpKey);
+                break;
+            case PendingEventApplied e:
+                _state.RecordAppliedOperation(e.OpKey, e.Result);
                 break;
             default:
                 throw new InvalidOperationException($"Unknown domain event type: {@event.GetType().Name}");
