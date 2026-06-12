@@ -110,6 +110,27 @@ dotnet build
 
 Expect: `dotnet build` succeeds with `Build succeeded.` and zero errors.
 
+### 5b. Repository-signature verification (post-publish only)
+
+nuget.org repository-signs every accepted package **server-side**, so this signature
+exists only on a package restored from nuget.org — **not** on a dry-run or locally-packed
+`.nupkg`. Run this **only against a real published version** (skip it for the
+`0.0.0-ci-test` dry-run, where `verify` would report `NU3004` because nothing was pushed).
+
+From the same `nuget-consumer-smoke` restore:
+
+```bash
+dotnet nuget verify --all \
+  ~/.nuget/packages/fleans.worker/0.1.0-beta/fleans.worker.0.1.0-beta.nupkg
+```
+
+Expect: exit `0` with a valid **repository** signature reported (a `NU3004` here means
+the package is unsigned/tampered, not repo-signed). Then confirm the consumer docs match:
+the *Package integrity & signatures* section in
+`website/src/content/docs/reference/self-hosting.md` describes this `verify --all` check,
+the repo-vs-publisher-signature distinction, and the pre-1.0 trade-off — verify the text
+still matches observed behavior.
+
 ### 6. Symbols verification
 
 From the same `nuget-consumer-smoke` project (or any IDE configured to load
@@ -151,6 +172,7 @@ backed by `Deterministic=true` + `ContinuousIntegrationBuild=true` in
 - [ ] Each package page on nuget.org shows README, MIT license, and `nightBaker/fleans` repo URL.
 - [ ] Re-running the workflow on the same release is idempotent (`--skip-duplicate`).
 - [ ] A clean external project successfully `dotnet add package`s and builds against all three.
+- [ ] (Post-publish) `dotnet nuget verify --all` on a restored package reports a valid nuget.org **repository** signature; the `self-hosting.md` *Package integrity & signatures* section matches observed behavior.
 - [ ] `.snupkg` symbols are reachable on the nuget.org symbol server (HTTP 200 / IDE source-stepping).
 - [ ] Two consecutive `dotnet pack` runs at the same version produce bit-identical `.nupkg` files.
 

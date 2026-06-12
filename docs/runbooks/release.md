@@ -28,7 +28,13 @@ The release workflow runs setup → images → compose → helm-package → rele
 2. **All 4 images pullable, multi-arch** — `docker buildx imagetools inspect ghcr.io/nightbaker/fleans-{api,web,worker,mcp}:0.1.0-beta` should resolve `linux/amd64` + `linux/arm64`.
 3. **Release assets attached** — `gh release view v0.1.0-beta --json assets` should list `docker-compose-v0.1.0-beta.zip` + `fleans-0.1.0-beta.tgz`.
 4. **Notes look right** — auto-generated notes group commits per `.github/release.yml` categories.
-5. **NuGet publish triggered + green** — pushing the tag fires `nuget-publish.yml` in parallel with `release.yml`. It blocks on the GitHub Release existing (max 20 min wait) before pushing to nuget.org. Verify via `gh run list --workflow=nuget-publish.yml --limit 1`. Verify each of the 4 packages on nuget.org: `Fleans.Domain.Abstractions`, `Fleans.Application.Abstractions`, `Fleans.Worker`, `Fleans.Plugins.RestCaller`.
+5. **NuGet publish triggered + green** — pushing the tag fires `nuget-publish.yml` in parallel with `release.yml`. It blocks on the GitHub Release existing (max 20 min wait) before pushing to nuget.org. Verify via `gh run list --workflow=nuget-publish.yml --limit 1`. Verify each of the 4 packages on nuget.org: `Fleans.Domain.Abstractions`, `Fleans.Application.Abstractions`, `Fleans.Worker`, `Fleans.Plugins.RestCaller`. No project-managed signing certificate or secret is required — nuget.org **repository-signs** every accepted package server-side.
+   - **Repository-signature smoke (first real publish only).** Restore one published package and confirm nuget.org's repository signature is present and valid:
+     ```bash
+     dotnet add package Fleans.Worker --version 0.1.0-beta
+     dotnet nuget verify --all ~/.nuget/packages/fleans.worker/0.1.0-beta/fleans.worker.0.1.0-beta.nupkg
+     ```
+     This is a **post-publish** check — the `0.0.0-ci-test` dry-run skips `dotnet nuget push`, so the dry-run/local artifacts have no repository signature and `verify` would report `NU3004`. Publisher (author) signing is a separate planned follow-up.
 6. **Cosign verify smoke test** — pick one of the published images and verify the signature against Sigstore. The output should include a `Bundle` block with a `tlogEntries[0].logIndex` proving the signature was logged to the public Rekor transparency log.
 
    ```bash

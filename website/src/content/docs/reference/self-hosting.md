@@ -256,6 +256,21 @@ When the silo joins the Orleans cluster, `<bpmn:serviceTask type="rest-call">` a
 
 The packages are published by [`.github/workflows/nuget-publish.yml`](https://github.com/nightBaker/fleans/blob/main/.github/workflows/nuget-publish.yml) on `release.published`. The workflow can also be invoked manually with `workflow_dispatch` and `version=0.0.0-ci-test` to dry-run pack + upload-artifact without touching nuget.org. Re-runs against an already-published version are no-ops via `dotnet nuget push --skip-duplicate`.
 
+### Package integrity & signatures
+
+Every Fleans plugin package you install from nuget.org carries nuget.org's **repository signature**. nuget.org applies this signature **server-side, when it accepts the upload** — it is not produced by the Fleans build, and it is present on the package you restore, not on a locally-packed `.nupkg`. The repository signature chains to a root that .NET trusts by default, so you can verify any restored Fleans package:
+
+```bash
+# Resolve the package, then verify the signature on the restored .nupkg in your global packages cache.
+dotnet add package Fleans.Worker
+dotnet nuget verify --all \
+  ~/.nuget/packages/fleans.worker/<version>/fleans.worker.<version>.nupkg
+```
+
+`verify --all` exits `0` and reports a valid **repository** signature; it fails (`NU3004`) if the package is unsigned or has been tampered with after nuget.org signed it.
+
+**What this guarantees, and what it does not.** The repository signature gives you **integrity** — the package is exactly what nuget.org accepted and has not been altered in transit or on the feed. It does **not** assert *publisher* identity: it proves nuget.org holds the package, not that the Fleans project specifically signed it. For a pre-1.0 project this is a deliberate trade-off — repository signing delivers the tamper-resistance most consumers need at zero setup, and **publisher (author) signing** is a planned follow-up ([#728](https://github.com/nightBaker/fleans/issues/728)) for when publisher-authenticated signatures become worth the certificate onboarding. Until then, no project-managed signing certificate or per-consumer trust step is required.
+
 ## Limitations
 
 - **SQLite is not supported in production.** SQLite is the default `persistence.provider` for local Aspire-based dev only. The chart accepts the override but you would have to wire a writable per-pod volume yourself, and Orleans clustering across silos against a per-pod SQLite file is not a supported configuration. Use Postgres for any multi-replica deployment.
