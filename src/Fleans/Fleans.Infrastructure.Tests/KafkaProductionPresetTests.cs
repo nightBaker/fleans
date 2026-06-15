@@ -1,4 +1,6 @@
-namespace Fleans.Streaming.Kafka.Tests;
+using Fleans.Streaming.Kafka;
+
+namespace Fleans.Infrastructure.Tests;
 
 /// <summary>
 /// Verifies the production-preset math (issue #684). Tests target the internal
