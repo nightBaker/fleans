@@ -1,7 +1,7 @@
 using Confluent.Kafka;
 using Fleans.Streaming.Kafka;
 
-namespace Fleans.Streaming.Kafka.Tests;
+namespace Fleans.Infrastructure.Tests;
 
 /// <summary>
 /// Verifies <c>KafkaClientConfigExtensions.ApplySecurity</c> across the 11-case design matrix
@@ -117,8 +117,8 @@ public class KafkaClientConfigExtensionsTests
         var config = new ProducerConfig();
         var opts = new KafkaStreamingOptions
         {
-            SecurityProtocol      = KafkaSecurityProtocol.SaslSsl,
-            SaslMechanism         = KafkaSaslMechanism.OAuthBearer,
+            SecurityProtocol         = KafkaSecurityProtocol.SaslSsl,
+            SaslMechanism            = KafkaSaslMechanism.OAuthBearer,
             OAuthBearerTokenProvider = (_, _) => { },
         };
 
