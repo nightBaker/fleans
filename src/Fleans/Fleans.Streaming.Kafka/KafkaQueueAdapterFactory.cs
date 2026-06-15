@@ -41,8 +41,22 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory
         _cache = new SimpleQueueAdapterCache(cacheOptions, name, loggerFactory);
     }
 
+    internal static void ValidateOptions(KafkaStreamingOptions opts)
+    {
+        if (opts.EnableIdempotence && opts.Acks != KafkaAcks.All)
+            throw new InvalidOperationException(
+                $"Kafka idempotent producer requires Acks=All (configured: Acks={opts.Acks}). " +
+                "Either set Acks=All or set EnableIdempotence=false.");
+    }
+
     public async Task<IQueueAdapter> CreateAdapter()
     {
+        ValidateOptions(_options);
+        if (_options.Acks != KafkaAcks.All)
+            _logger.LogWarning(
+                "Kafka adapter: Acks={Acks} is not All. Workflow event delivery durability is " +
+                "reduced — this is only safe for non-production workloads.",
+                _options.Acks);
         await EnsureTopicsAsync().ConfigureAwait(false);
         return new KafkaQueueAdapter(_name, _options, _mapper, _serializer, _loggerFactory);
     }
@@ -77,10 +91,34 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory
         using var admin = adminBuilder.Build();
 
         HashSet<string> existing;
+        short effectiveRf;
         try
         {
             var meta = admin.GetMetadata(_options.AdminTimeout);
             existing = meta.Topics.Select(t => t.Topic).ToHashSet(StringComparer.Ordinal);
+
+            var brokerCount = meta.Brokers.Count;
+            if (brokerCount == 0)
+                throw new InvalidOperationException(
+                    $"Kafka admin reports zero brokers for '{_options.Brokers}'. " +
+                    "The cluster is unreachable or misconfigured.");
+
+            effectiveRf = _options.ReplicationFactor;
+            if (brokerCount < effectiveRf)
+            {
+                if (brokerCount == 1)
+                    _logger.LogInformation(
+                        "Kafka topic-ensure: single-broker cluster detected; " +
+                        "using ReplicationFactor=1 instead of configured {Configured}",
+                        _options.ReplicationFactor);
+                else
+                    _logger.LogWarning(
+                        "Kafka topic-ensure: configured ReplicationFactor={Configured} exceeds " +
+                        "broker count={BrokerCount}; falling back to RF={Effective}. " +
+                        "This indicates a partially-degraded or under-provisioned cluster.",
+                        _options.ReplicationFactor, brokerCount, brokerCount);
+                effectiveRf = (short)brokerCount;
+            }
         }
         catch (KafkaException ex)
         {
@@ -94,7 +132,7 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory
             {
                 Name = t,
                 NumPartitions = _options.NumPartitions,
-                ReplicationFactor = _options.ReplicationFactor,
+                ReplicationFactor = effectiveRf,
             })
             .ToList();
 

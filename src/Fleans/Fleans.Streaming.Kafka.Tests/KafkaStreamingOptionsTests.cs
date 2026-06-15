@@ -27,4 +27,31 @@ public class KafkaStreamingOptionsTests
             "Kafka NumPartitions stays at 1 — it is a Kafka-side topology knob, not an " +
             "Orleans consumer-parallelism multiplier. Operators opt into >1 deliberately.");
     }
+
+    [TestMethod]
+    public void ReplicationFactor_default_is_3()
+    {
+        var options = new KafkaStreamingOptions();
+
+        Assert.AreEqual((short)3, options.ReplicationFactor,
+            "Default RF=3 survives one broker loss; factory falls back to broker count when fewer brokers available.");
+    }
+
+    [TestMethod]
+    public void EnableIdempotence_default_is_true()
+    {
+        var options = new KafkaStreamingOptions();
+
+        Assert.IsTrue(options.EnableIdempotence,
+            "Idempotent producer is on by default for exactly-once produce semantics.");
+    }
+
+    [TestMethod]
+    public void Acks_default_is_All()
+    {
+        var options = new KafkaStreamingOptions();
+
+        Assert.AreEqual(KafkaAcks.All, options.Acks,
+            "Acks=All is required for the default idempotent producer and provides maximum durability.");
+    }
 }
