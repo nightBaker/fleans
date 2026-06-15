@@ -21,6 +21,7 @@ propagation), see [`docs/plans/2026-02-08-structured-workflow-logging.md`](../pl
 | 8000–8099 | `TimerStartEventSchedulerGrain` | |
 | 9000–9099 | `BpmnConverter` | |
 | 10000–10099 | `TimerCallbackGrain` | |
+| 11000–11099 | `KafkaProductionPresetExtensions` | 11000 preset-applied INFO |
 
 ## Adding a new range
 

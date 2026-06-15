@@ -9,6 +9,8 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Fleans.Application.Tests" />
+    <InternalsVisibleTo Include="Fleans.Infrastructure.Tests" />
+    <InternalsVisibleTo Include="Fleans.Streaming.Kafka.Tests" />
   </ItemGroup>
 
   <ItemGroup>

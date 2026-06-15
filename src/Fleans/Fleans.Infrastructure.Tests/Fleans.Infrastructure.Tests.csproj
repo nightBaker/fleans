@@ -15,6 +15,7 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
+    <PackageReference Include="Confluent.Kafka" Version="2.6.1" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
     <PackageReference Include="Microsoft.Orleans.Serialization.NewtonsoftJson" Version="10.0.1" />
     <PackageReference Include="Microsoft.Orleans.TestingHost" Version="10.0.1" />
@@ -27,6 +28,7 @@
     <ProjectReference Include="..\Fleans.Infrastructure\Fleans.Infrastructure.csproj" />
     <ProjectReference Include="..\Fleans.Persistence\Fleans.Persistence.csproj" />
     <ProjectReference Include="..\Fleans.Persistence.Sqlite\Fleans.Persistence.Sqlite.csproj" />
+    <ProjectReference Include="..\Fleans.Streaming.Kafka\Fleans.Streaming.Kafka.csproj" />
     <ProjectReference Include="..\Fleans.Worker\Fleans.Worker.csproj" />
   </ItemGroup>
 
