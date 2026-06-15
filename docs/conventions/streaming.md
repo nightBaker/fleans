@@ -23,6 +23,28 @@ If the third-party Redis-streaming package ever goes unmaintained, the swap-out 
 
 See `website/src/content/docs/reference/streaming.md#tuning-throughput` for the sizing heuristic and the per-provider operator notes.
 
+## Kafka production preset
+
+`WithProductionDefaults(name)` is an **opt-in**, chainable extension that ties both Kafka knobs to `Environment.ProcessorCount`:
+
+```csharp
+builder.AddKafkaStreams("kafka", configuration)
+       .WithProductionDefaults("kafka");
+```
+
+Applied values:
+
+| Property | Formula |
+|---|---|
+| `QueueCount` | `max(8, Environment.ProcessorCount)` — never drops below the 8-queue Orleans baseline |
+| `NumPartitions` | `max(1, Environment.ProcessorCount)` — scales broker-side write parallelism |
+
+**The `name` argument must match exactly** the name passed to `AddKafkaStreams`. A mismatch silently applies overrides to a different named-options instance and leaves the provider at defaults — the absence of EventId 11000 in startup logs is the observable signal.
+
+**Homogeneity requirement:** `QueueCount` maps to `HashRingStreamQueueMapperOptions.TotalQueueCount`, a cluster-wide hash-ring parameter. All silos must have the same `Environment.ProcessorCount`; a mismatch silently misroutes streams under rebalance. Autoscaling mixed-core or mixed-arch fleets should NOT use this preset unless core counts are pinned uniformly. A cross-silo sanity probe covering Redis, Kafka, and AzureQueue providers is tracked in #699.
+
+**`NumPartitions` is forward-only:** `kafka-topics --alter --partitions N` can grow but not shrink. Deploying with the preset and then removing it leaves topics at the preset partition count — this is the safe direction, but plan accordingly.
+
 ## Stream-id sharding by `WorkflowInstanceId`
 
 `WorkflowEventsPublisher` keys each engine-event stream by `event.WorkflowInstanceId.ToString("D")` for:
