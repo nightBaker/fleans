@@ -64,7 +64,12 @@ public sealed class KafkaQueueAdapterFactory : IQueueAdapterFactory
         var expected = KafkaTopicNaming.AllExpectedTopics(_options).ToArray();
         if (expected.Length == 0) return;
 
-        using var admin = new AdminClientBuilder(new AdminClientConfig { BootstrapServers = _options.Brokers }).Build();
+        var adminConfig = new AdminClientConfig { BootstrapServers = _options.Brokers };
+        KafkaClientConfigExtensions.ApplySecurity(adminConfig, _options);
+        var adminBuilder = new AdminClientBuilder(adminConfig);
+        if (_options.OAuthBearerTokenProvider is not null)
+            adminBuilder.SetOAuthBearerTokenRefreshHandler(_options.OAuthBearerTokenProvider);
+        using var admin = adminBuilder.Build();
 
         HashSet<string> existing;
         try
