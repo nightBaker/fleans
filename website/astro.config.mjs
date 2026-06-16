@@ -70,6 +70,7 @@ export default defineConfig({
           items: [
             { label: 'Docker Compose', slug: 'guides/self-host-docker-compose' },
             { label: 'Helm Chart', slug: 'guides/self-host-helm' },
+            { label: 'Configuring observability', slug: 'guides/configuring-observability' },
           ],
         },
         {

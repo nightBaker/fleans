@@ -5,6 +5,10 @@ sidebar:
   order: 7
 ---
 
+:::note
+Looking for setup steps? See [Configuring observability](/fleans/guides/configuring-observability/).
+:::
+
 Fleans is built on .NET Aspire's `ServiceDefaults`, which means every silo (`Fleans.Api`, `Fleans.Web`, `Fleans.WorkerHost`, `Fleans.Mcp`) ships with the same observability primitives wired in by default: health-check endpoints, OpenTelemetry metrics + traces, and structured logging via the `[LoggerMessage]` source generator. This page documents what is emitted today and how to consume it.
 
 ## What Fleans emits today
