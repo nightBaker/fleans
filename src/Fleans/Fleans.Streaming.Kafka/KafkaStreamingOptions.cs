@@ -59,6 +59,12 @@ public class KafkaStreamingOptions
 
     public TimeSpan AdminTimeout { get; set; } = TimeSpan.FromSeconds(10);
 
+    public bool EnableDeadLetterQueue { get; set; } = false;
+
+    public int MaxConsumerRetries { get; set; } = 3;
+
+    public string DeadLetterTopicSuffix { get; set; } = "-dlq";
+
     /// <summary>
     /// Kafka security protocol. Defaults to <see cref="KafkaSecurityProtocol.Plaintext"/>
     /// for backward compatibility with existing plaintext deployments.

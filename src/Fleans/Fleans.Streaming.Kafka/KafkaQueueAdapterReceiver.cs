@@ -82,7 +82,7 @@ internal sealed class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
             try
             {
                 var container = _serializer.Deserialize(result.Message.Value);
-                container.Token = new KafkaSequenceToken(result.Offset.Value, 0);
+                container.Token = new KafkaSequenceToken(result.Offset.Value, 0, result.Partition.Value);
                 batches.Add(container);
                 _lastDeliveredOffset = result.Offset.Value;
             }

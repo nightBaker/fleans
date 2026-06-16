@@ -27,4 +27,32 @@ public class KafkaStreamingOptionsTests
             "Kafka NumPartitions stays at 1 — it is a Kafka-side topology knob, not an " +
             "Orleans consumer-parallelism multiplier. Operators opt into >1 deliberately.");
     }
+
+    [TestMethod]
+    public void EnableDeadLetterQueue_default_is_false()
+    {
+        var options = new KafkaStreamingOptions();
+
+        Assert.IsFalse(options.EnableDeadLetterQueue,
+            "DLQ is opt-in — enabling it by default would create -dlq topics for every " +
+            "existing deployment on upgrade, which is a breaking change.");
+    }
+
+    [TestMethod]
+    public void MaxConsumerRetries_default_is_3()
+    {
+        var options = new KafkaStreamingOptions();
+
+        Assert.AreEqual(3, options.MaxConsumerRetries,
+            "3 retries before DLQ routing is the baseline; operators tune per-stream.");
+    }
+
+    [TestMethod]
+    public void DeadLetterTopicSuffix_default_is_dash_dlq()
+    {
+        var options = new KafkaStreamingOptions();
+
+        Assert.AreEqual("-dlq", options.DeadLetterTopicSuffix,
+            "'-dlq' suffix is the Kafka community convention for dead-letter topics.");
+    }
 }

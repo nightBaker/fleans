@@ -1,6 +1,8 @@
+using System.Collections.Concurrent;
 using Confluent.Kafka;
 using Confluent.Kafka.Admin;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Orleans.Configuration;
@@ -11,7 +13,7 @@ using Orleans.Streams;
 
 namespace Fleans.Streaming.Kafka;
 
-public sealed class KafkaQueueAdapterFactory : IQueueAdapterFactory
+public sealed class KafkaQueueAdapterFactory : IQueueAdapterFactory, IDisposable
 {
     private readonly string _name;
     private readonly KafkaStreamingOptions _options;
@@ -20,6 +22,8 @@ public sealed class KafkaQueueAdapterFactory : IQueueAdapterFactory
     private readonly ILogger<KafkaQueueAdapterFactory> _logger;
     private readonly HashRingBasedStreamQueueMapper _mapper;
     private readonly IQueueAdapterCache _cache;
+    private readonly ConcurrentDictionary<QueueId, Lazy<KafkaDlqFailureHandler>> _dlqHandlers = new();
+    private int _disposed;
 
     public KafkaQueueAdapterFactory(
         string name,
@@ -51,8 +55,28 @@ public sealed class KafkaQueueAdapterFactory : IQueueAdapterFactory
 
     public IStreamQueueMapper GetStreamQueueMapper() => _mapper;
 
-    public Task<IStreamFailureHandler> GetDeliveryFailureHandler(QueueId queueId) =>
-        Task.FromResult<IStreamFailureHandler>(new NoOpStreamDeliveryFailureHandler(false));
+    public Task<IStreamFailureHandler> GetDeliveryFailureHandler(QueueId queueId)
+    {
+        if (!_options.EnableDeadLetterQueue)
+            return Task.FromResult<IStreamFailureHandler>(new NoOpStreamDeliveryFailureHandler(false));
+
+        var handler = _dlqHandlers.GetOrAdd(queueId,
+            id => new Lazy<KafkaDlqFailureHandler>(() =>
+                new KafkaDlqFailureHandler(
+                    KafkaTopicNaming.TopicForQueue(_options, id),
+                    _options,
+                    _loggerFactory)));
+
+        return Task.FromResult<IStreamFailureHandler>(handler.Value);
+    }
+
+    public void Dispose()
+    {
+        if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0) return;
+        foreach (var lazy in _dlqHandlers.Values)
+            if (lazy.IsValueCreated)
+                lazy.Value.Dispose();
+    }
 
     /// <summary>
     /// Idempotent client-side topic ensure. Listed missing topics are created with v1 defaults
@@ -122,6 +146,12 @@ public sealed class KafkaQueueAdapterFactory : IQueueAdapterFactory
         var cacheOptions = services.GetRequiredService<IOptionsMonitor<SimpleQueueCacheOptions>>().Get(name);
         var serializer = services.GetRequiredService<Serializer<KafkaBatchContainer>>();
         var loggerFactory = services.GetRequiredService<ILoggerFactory>();
-        return new KafkaQueueAdapterFactory(name, options, cacheOptions, serializer, loggerFactory);
+        var factory = new KafkaQueueAdapterFactory(name, options, cacheOptions, serializer, loggerFactory);
+
+        // Orleans does not call Dispose on queue adapter factories; register a shutdown hook so
+        // DLQ Kafka producers are flushed and handles released on clean shutdown.
+        services.GetService<IHostApplicationLifetime>()?.ApplicationStopping.Register(factory.Dispose);
+
+        return factory;
     }
 }
