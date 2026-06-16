@@ -79,13 +79,13 @@ message's offset + 1).
 
 ### Step 7 — Verify DLQ disabled path (regression guard)
 
-Remove `EnableDeadLetterQueue` config (default `false`). Repeat steps 2–4 with a script that
-always throws.
+Remove `EnableDeadLetterQueue` config (default `false`). Repeat steps 2–4, sending the `PoisonMsg`
+message to trigger repeated delivery failures (the message event handler will fail on each delivery
+because no workflow instance can process it — the `poison-message-process` instance was already
+completed or the correlation fails, causing Orleans to call `OnSubscriptionFailure` repeatedly).
 
-**Expected:** No `-dlq` topics auto-created. Stream failure handler is `NoOpStreamDeliveryFailureHandler`;
-Orleans fault-closes the subscription after `ShouldFaultSubsriptionOnError` returns `false`…
-Actually with DLQ disabled the default handler uses `ShouldFaultSubsriptionOnError=false` too,
-so Orleans keeps retrying indefinitely. Confirm: no EventIds 12006–12015 in silo logs.
+**Expected:** No `-dlq` topics auto-created. The stream subscription retries indefinitely (no DLQ
+routing); no EventIds 12006–12015 appear in silo logs.
 
 ## Pass criteria
 

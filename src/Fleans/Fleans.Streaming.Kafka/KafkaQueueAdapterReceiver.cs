@@ -40,9 +40,12 @@ internal sealed class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
             EnableAutoCommit = false,
             EnablePartitionEof = false,
         };
-        _consumer = new ConsumerBuilder<byte[], byte[]>(config)
-            .SetErrorHandler((_, e) => _logger.LogWarning("Kafka consumer error on topic {Topic}: {Reason}", _topic, e.Reason))
-            .Build();
+        KafkaClientConfigExtensions.ApplySecurity(config, _options);
+        var consumerBuilder = new ConsumerBuilder<byte[], byte[]>(config)
+            .SetErrorHandler((_, e) => _logger.LogWarning("Kafka consumer error on topic {Topic}: {Reason}", _topic, e.Reason));
+        if (_options.OAuthBearerTokenProvider is not null)
+            consumerBuilder.SetOAuthBearerTokenRefreshHandler(_options.OAuthBearerTokenProvider);
+        _consumer = consumerBuilder.Build();
         _consumer.Subscribe(_topic);
         return Task.CompletedTask;
     }

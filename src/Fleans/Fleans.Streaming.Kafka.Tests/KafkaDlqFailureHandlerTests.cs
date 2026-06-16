@@ -85,12 +85,6 @@ public class KafkaDlqFailureHandlerTests
 
     // ----- Integration tests (require live Kafka broker) -----
 
-    /// <summary>
-    /// Verifies that IConsumer.Commit(IEnumerable&lt;TopicPartitionOffset&gt;) works without
-    /// prior Subscribe or Assign — the restart-safety guarantee's foundation.
-    /// To run: set KAFKA_BROKERS env variable to a reachable broker (e.g. localhost:9092)
-    /// and remove the [Ignore] attribute.
-    /// </summary>
     [TestMethod]
     [Ignore("Integration test — requires a live Kafka broker. Set KAFKA_BROKERS and remove [Ignore] to run.")]
     public void CommitOffset_ExplicitOffsetsWithoutAssign_DoesNotThrow()

@@ -7,11 +7,6 @@ using Orleans.Streams;
 
 namespace Fleans.Streaming.Kafka;
 
-/// <summary>
-/// Routes poison Kafka messages to a dead-letter topic after <see cref="KafkaStreamingOptions.MaxConsumerRetries"/>
-/// consecutive failures. Orleans' IStreamFailureHandler interface does not expose retryCount or the original
-/// exception, so retries are tracked per (offset, partition) using <see cref="_retryCounts"/>.
-/// </summary>
 internal sealed partial class KafkaDlqFailureHandler : IStreamFailureHandler, IDisposable
 {
     private readonly string _topic;

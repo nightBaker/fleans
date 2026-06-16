@@ -82,3 +82,23 @@ Each plugin's grain class only sees its own traffic (eliminates the N-plugins ×
 `AddCustomTaskPlugin<T>(taskType, …)` validates at silo startup that (a) no other plugin already claims `taskType` and (b) `typeof(T)` declares a matching `[ImplicitStreamSubscription]`. Both throw `InvalidOperationException` with explicit messages.
 
 The `TaskType` mismatch branch in `OnNextAsync` is unreachable under correct routing and now logs `LogTaskTypeMismatch` (EventId 4037) as a warning instead of dropping silently.
+
+## Kafka SASL / TLS
+
+Kafka security is configured via five properties on `KafkaStreamingOptions`:
+
+| Property | Type | Default | Notes |
+|---|---|---|---|
+| `SecurityProtocol` | `KafkaSecurityProtocol` | `Plaintext` | Backward-compatible default; existing deployments are unaffected |
+| `SaslMechanism` | `KafkaSaslMechanism?` | `null` | Required for `SaslPlaintext` / `SaslSsl` protocols |
+| `SaslUsername` | `string?` | `null` | Required for PLAIN / SCRAM-SHA-256 / SCRAM-SHA-512 |
+| `SaslPassword` | `string?` | `null` | Required for PLAIN / SCRAM-SHA-256 / SCRAM-SHA-512 |
+| `OAuthBearerTokenProvider` | `Action<IClient, string>?` | `null` | Required for OAuthBearer; wired via `SetOAuthBearerTokenRefreshHandler` on each client builder |
+
+**Fail-fast validation.** `KafkaClientConfigExtensions.ApplySecurity` is called on all three client builders (producer, consumer, admin) and throws `InvalidOperationException` at silo startup for any misconfigured combination — missing mechanism, empty credentials, or missing OAuthBearer provider. This surfaces configuration errors before the first broker connection.
+
+**Enum ownership.** `KafkaSecurityProtocol` and `KafkaSaslMechanism` are Fleans-owned enums (1:1 switch to Confluent types) so Confluent types stay out of the public API surface. Unknown enum values throw at startup.
+
+**OAuthBearer handler.** The `OAuthBearerTokenProvider` callback matches Confluent.Kafka's `SetOAuthBearerTokenRefreshHandler(Action<IClient, string>)` signature directly — no adapter needed. The callback is registered after `ApplySecurity` on each builder.
+
+**mTLS (client-cert auth) is deferred to #681.** Plaintext, SSL (server-side TLS), and SASL (all four mechanisms) are covered by this feature. Client-certificate mutual TLS is a separate follow-up.
