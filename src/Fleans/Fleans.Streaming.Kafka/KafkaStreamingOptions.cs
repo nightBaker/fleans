@@ -33,4 +33,10 @@ public class KafkaStreamingOptions
     public TimeSpan PollTimeout { get; set; } = TimeSpan.FromMilliseconds(50);
 
     public TimeSpan AdminTimeout { get; set; } = TimeSpan.FromSeconds(10);
+
+    public bool EnableDeadLetterQueue { get; set; } = false;
+
+    public int MaxConsumerRetries { get; set; } = 3;
+
+    public string DeadLetterTopicSuffix { get; set; } = "-dlq";
 }

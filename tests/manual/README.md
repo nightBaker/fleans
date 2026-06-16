@@ -112,6 +112,8 @@ Each numbered entry below is one regression "step". For each one, follow the lin
 
 65. **Persistent reminders** — `65-persistent-reminders/test-plan.md` (`timer-restart.bpmn`). Verifies #650: BPMN `TimerIntermediateCatchEvent(PT5M)` survives silo restart. Step A: single-silo restart against Compose-bundle. Step B: multi-silo cluster Core-only restart while Worker stays up. Plus a fail-fast regression: with `orleans-redis` unset, silo refuses to start with `InvalidOperationException` from `AddFleansReminders`.
 
+66. **Kafka DLQ (dead-letter queue)** — `66-kafka-dlq/test-plan.md`. Verifies #686: poison Kafka messages are routed to a `-dlq` suffixed topic after `MaxConsumerRetries` failures (`EnableDeadLetterQueue=true`). Checks: DLQ topics auto-created at startup; silo log EventId sequence 12006 × (retries-1) → 12012 → 12014; raw bytes + diagnostic headers present in `-dlq` topic; source offset committed past poison offset so silo restart does NOT re-deliver; DLQ disabled path (default `false`) emits no 12xxx events.
+
 ## Website regression suite
 
 Website-specific manual tests live under `website/`. These run in a local dev server, not against the .NET stack.

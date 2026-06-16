@@ -22,6 +22,7 @@ propagation), see [`docs/plans/2026-02-08-structured-workflow-logging.md`](../pl
 | 9000–9099 | `BpmnConverter` | |
 | 10000–10099 | `TimerCallbackGrain` | |
 | 11000–11099 | `KafkaProductionPresetExtensions` | 11000 preset-applied INFO |
+| 12000–12099 | `KafkaQueueAdapterFactory` / `KafkaDlqFailureHandler` | 12006 retry-attempt DEBUG; 12007 delivery-failure-dropped WARN; 12008 missing-token WARN; 12009 offset-gone WARN; 12010 re-consume-failed ERROR; 12011 re-consume-timed-out WARN; 12012 DLQ-published INFO; 12013 offset-commit-failed ERROR; 12014 offset-committed DEBUG; 12015 DLQ-publish-failed ERROR |
 
 ## Adding a new range
 
