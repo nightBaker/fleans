@@ -42,7 +42,11 @@ internal sealed class KafkaQueueAdapter : IQueueAdapter, IDisposable
             EnableIdempotence = false,
             Acks = Acks.All,
         };
-        _producer = new ProducerBuilder<byte[], byte[]>(producerConfig).Build();
+        KafkaClientConfigExtensions.ApplySecurity(producerConfig, _options);
+        var producerBuilder = new ProducerBuilder<byte[], byte[]>(producerConfig);
+        if (_options.OAuthBearerTokenProvider is not null)
+            producerBuilder.SetOAuthBearerTokenRefreshHandler(_options.OAuthBearerTokenProvider);
+        _producer = producerBuilder.Build();
     }
 
     public async Task QueueMessageBatchAsync<T>(

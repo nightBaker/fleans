@@ -112,6 +112,8 @@ Each numbered entry below is one regression "step". For each one, follow the lin
 
 65. **Persistent reminders** — `65-persistent-reminders/test-plan.md` (`timer-restart.bpmn`). Verifies #650: BPMN `TimerIntermediateCatchEvent(PT5M)` survives silo restart. Step A: single-silo restart against Compose-bundle. Step B: multi-silo cluster Core-only restart while Worker stays up. Plus a fail-fast regression: with `orleans-redis` unset, silo refuses to start with `InvalidOperationException` from `AddFleansReminders`.
 
+66. **Kafka SASL / SecurityProtocol config** — `66-kafka-sasl/test-plan.md`. Verifies #680: Kafka connections work under Plaintext, SASL_PLAINTEXT+PLAIN, and SASL_SSL+SCRAM-SHA-512. Also verifies fail-fast startup rejection when `SaslMechanism` is omitted for a SASL protocol. Default plaintext path is unaffected (backward-compat).
+
 ## Website regression suite
 
 Website-specific manual tests live under `website/`. These run in a local dev server, not against the .NET stack.
