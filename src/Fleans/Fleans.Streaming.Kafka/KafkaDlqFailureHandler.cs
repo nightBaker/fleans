@@ -24,6 +24,9 @@ internal sealed partial class KafkaDlqFailureHandler : IStreamFailureHandler, ID
     // Keyed by "{offset}:{partition}" — count of OnSubscriptionFailure calls per Kafka message.
     private readonly ConcurrentDictionary<string, int> _retryCounts = new();
 
+    // Serializes re-consume calls: _reConsumeConsumer.Value.Assign + .Consume is not thread-safe.
+    private readonly SemaphoreSlim _reConsumeLock = new(1, 1);
+
     // Keyed by "{offset}:{partition}" — set once DLQ routing fires so in-session retries are no-ops.
     // Entry count = distinct poison-message triplets per silo lifetime; no GC pass needed because
     // poison messages are assumed exceptional (memory cost = O(distinct poison-message triplets)).
@@ -105,6 +108,7 @@ internal sealed partial class KafkaDlqFailureHandler : IStreamFailureHandler, ID
     {
         var dlqTopic = KafkaTopicNaming.DeadLetterTopicForSource(_options, _topic);
         byte[]? rawValue;
+        await _reConsumeLock.WaitAsync().ConfigureAwait(false);
         try
         {
             rawValue = await Task.Run(() => ReconsumeRawBytes(kt)).ConfigureAwait(false);
@@ -120,6 +124,10 @@ internal sealed partial class KafkaDlqFailureHandler : IStreamFailureHandler, ID
             LogReconsumeFailedForDlq(ex, kt.SequenceNumber, kt.Partition);
             CommitOffset(kt.Partition, kt.SequenceNumber + 1);
             return;
+        }
+        finally
+        {
+            _reConsumeLock.Release();
         }
 
         if (rawValue is null)
@@ -193,6 +201,7 @@ internal sealed partial class KafkaDlqFailureHandler : IStreamFailureHandler, ID
         _commitConsumer.Dispose();
         if (_reConsumeConsumer.IsValueCreated)
             _reConsumeConsumer.Value.Dispose();
+        _reConsumeLock.Dispose();
     }
 
     [LoggerMessage(EventId = 12006, Level = LogLevel.Debug,

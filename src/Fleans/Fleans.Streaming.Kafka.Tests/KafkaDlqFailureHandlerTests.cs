@@ -1,15 +1,9 @@
 using Microsoft.Extensions.Logging.Abstractions;
-using NSubstitute;
 using Orleans.Runtime;
 using Orleans.Streams;
 
 namespace Fleans.Streaming.Kafka.Tests;
 
-/// <summary>
-/// Unit tests for <see cref="KafkaDlqFailureHandler"/>.
-/// Tests that require a live Kafka broker are marked [Ignore] with a note explaining
-/// how to run them in an integration environment.
-/// </summary>
 [TestClass]
 public class KafkaDlqFailureHandlerTests
 {
