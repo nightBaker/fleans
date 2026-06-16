@@ -166,7 +166,7 @@ and appear in Prometheus, Tempo, and Loki within a few seconds.
 
 ## Common alerts
 
-The [Observability reference](/fleans/reference/observability/#alerting-recipes) has ready-to-use
+The [Observability reference](/fleans/reference/observability/#alerting) has ready-to-use
 Prometheus alert rules for workflow throughput, silo availability, activity failure rate, and
 resource saturation. Copy the rules into your `rules.yaml` once you confirm metrics are flowing.
 
