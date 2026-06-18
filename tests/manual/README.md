@@ -131,6 +131,8 @@ Each numbered entry below is one regression "step". For each one, follow the lin
 
 71. **Unhandled activity failure fails the instance** — `71-unhandled-failure-fails-instance/test-plan.md` (`unhandled-script-failure.bpmn`, `handled-script-failure.bpmn`). Verifies #762: when an activity fails with no error boundary / error event sub-process and that failure leaves the instance with no active activities, the instance terminates as **Failed** (`isFailed=true`, `isCompleted=true`, status badge *Failed*, EventId 1120 Error log, `fleans.workflow.terminated{result="failed"}`) instead of silently sitting in *Running* with no active activities. Handled failures (error boundary) still complete normally. Automated coverage: `Fleans.Application.Tests/UnhandledActivityFailureTests.cs`.
 
+73. **Schema Registry dual-encoding mechanism** — `73-schema-registry-mechanism/test-plan.md`. Verifies #700: two-topic fanout scaffold (`fleans-N` primary + `fleans-N-events` external) when `IExternalEventEncoder` is registered; no fanout when encoder is absent; encoder returning `null` skips the events topic; encoder exceptions emit EventId 11113 WARNING without affecting primary delivery; `ProduceAsync` failure on events topic emits EventId 11114 WARNING without re-throwing; Basic auth wiring for Schema Registry. **Requires Kafka + Confluent Schema Registry** (local Docker or managed).
+
 ## Website regression suite
 
 Website-specific manual tests live under `website/`. These run in a local dev server, not against the .NET stack.

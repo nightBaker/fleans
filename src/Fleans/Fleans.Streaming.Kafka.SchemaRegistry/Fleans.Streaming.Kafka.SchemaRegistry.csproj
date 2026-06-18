@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>14</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Fleans.Streaming.Kafka.SchemaRegistry.Tests" />
+    <!-- Castle.DynamicProxy (used by NSubstitute) needs this to proxy internal interfaces in tests -->
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Confluent.SchemaRegistry" Version="2.6.1" />
+    <ProjectReference Include="..\Fleans.Streaming.Kafka\Fleans.Streaming.Kafka.csproj" />
+  </ItemGroup>
+
+</Project>
