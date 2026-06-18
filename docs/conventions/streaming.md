@@ -129,3 +129,19 @@ Streaming__Kafka__SslCertificateLocation=/etc/kafka/certs/client.pem
 Streaming__Kafka__SslKeyLocation=/etc/kafka/certs/client.key
 Streaming__Kafka__SslKeyPassword=s3cret
 ```
+
+## AWS MSK IAM authentication
+
+The optional package `Fleans.Streaming.Kafka.AwsMsk` (in-repo, NuGet publish tracked separately) provides one-line registration for AWS MSK clusters that use IAM auth over the standard OAUTHBEARER SASL mechanism:
+
+```csharp
+builder.AddKafkaStreamingWithMskIam("kafka", configuration, "eu-west-1");
+```
+
+IAM credentials come from the AWS workload identity chain (EC2 instance profile, EKS Pod Identity / IRSA, ECS task role, AWS SSO) — no static secrets go in configuration.
+
+**Broker endpoint port.** MSK IAM uses port `:9098`, not `:9092` (plaintext) or `:9094` (TLS-only). Set `Fleans:Streaming:Kafka:Brokers=b-1.cluster.kafka.eu-west-1.amazonaws.com:9098`. If you see persistent SASL handshake failures despite valid IAM permissions, verify the broker port is `:9098` — `:9092` and `:9094` produce the same generic "could not get OAUTH token" error.
+
+**Region resolution.** The `region` parameter takes precedence over `AWS_REGION` env var, which takes precedence over `AWS_DEFAULT_REGION`. Providing no region and neither env var throws `InvalidOperationException` at registration time.
+
+**Observable signals.** EventId 11200 (`LogTokenRefreshFailed`, ERROR) fires when a SigV4 STS call fails — the most common cause is a missing IAM policy action (`kafka-cluster:Connect`, `kafka-cluster:WriteData`, `kafka-cluster:ReadData`). EventId 11201 (`LogSetTokenFailureThrew`, WARNING) indicates a disposed-client race during shutdown; it is not actionable in isolation.

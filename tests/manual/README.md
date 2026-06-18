@@ -116,6 +116,8 @@ Each numbered entry below is one regression "step". For each one, follow the lin
 
 67. **Kafka mTLS / client-cert config** — `67-kafka-mtls/test-plan.md`. Verifies #681: OS-trust-store WARNING fires (EventId 11100) when no `SslCaLocation` is set with an SSL protocol; CA-only mode (private-CA validation) works; full mTLS (client cert + key) works against Redpanda with `require_client_auth: true`; misconfigured combinations (SSL paths with Plaintext protocol, cert without key, password without key) are rejected at startup with clear `InvalidOperationException`.
 
+68. **AWS MSK IAM authentication** — `68-kafka-msk-iam/test-plan.md`. Verifies #682: `AddKafkaStreamingWithMskIam` wires SASL_SSL+OAuthBearer via the AWS SigV4 signer; IAM token refreshes succeed under workload identity; EventId 11200 fires on IAM permission errors; missing region throws at startup; wrong broker port (`:9092` vs `:9098`) produces a clear SASL error. **Human-only — requires AWS account + MSK cluster.**
+
 ## Website regression suite
 
 Website-specific manual tests live under `website/`. These run in a local dev server, not against the .NET stack.
