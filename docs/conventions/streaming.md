@@ -13,6 +13,25 @@ Four stream providers, selected via `FLEANS_STREAMING_PROVIDER`:
 
 If the third-party Redis-streaming package ever goes unmaintained, the swap-out path is to fork it or build a custom adapter (~530 LoC mirroring `Fleans.Streaming.Kafka`).
 
+## Kafka durability defaults
+
+Three knobs on `KafkaStreamingOptions` control producer and topic durability:
+
+| Option | Default | Purpose |
+|---|---|---|
+| `EnableIdempotence` | `true` | Exactly-once produce semantics (Kafka EOS Phase 1). |
+| `Acks` | `All` | Leader + all in-sync replicas must acknowledge before produce returns. |
+| `ReplicationFactor` | `3` | Topics created at silo startup use RF=3, surviving one broker loss. |
+
+**`ValidateOptions` startup cross-check:** `KafkaQueueAdapterFactory.CreateAdapter()` throws `InvalidOperationException` when `EnableIdempotence=true && Acks != All`. Confluent.Kafka v2.x enforces this combination internally; the check surfaces it at silo startup rather than at first produce. A startup warning is emitted when `Acks != All` and idempotence is off — this is a valid but lower-durability configuration and should only be used in non-production workloads.
+
+**Broker-count fallback:** `EnsureTopicsAsync` probes the live broker count via `AdminClient.GetMetadata()` before creating topics. When `brokerCount < ReplicationFactor`, the effective RF is clamped to `brokerCount`:
+- Single-broker cluster → `effectiveRf=1`, logged at `Information` (expected in dev/CI).
+- Multi-broker cluster with fewer brokers than RF → logged at `Warning` (indicates degraded cluster).
+- Zero brokers → `InvalidOperationException` (cluster unreachable, fail-fast).
+
+The broker-count fallback applies only to **new** topics created at startup. For **existing** topics, the stored RF is set when the topic was first created. To change the RF of an existing topic use `kafka-reassign-partitions` or recreate the topic (with a drain window).
+
 ## Per-provider parallelism knobs
 
 - **Redis:** `Fleans:Streaming:Redis:TotalQueueCount` (default `8`, configurable — invalid values throw `ArgumentException` at startup via `FleanStreamingExtensions.ReadRedisTotalQueueCount`).

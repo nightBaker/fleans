@@ -53,7 +53,28 @@ public class KafkaStreamingOptions
     /// </summary>
     public int NumPartitions { get; set; } = 1;
 
-    public short ReplicationFactor { get; set; } = 1;
+    /// <summary>
+    /// Replication factor for Kafka topics created at silo startup. Defaults to <c>3</c> for
+    /// production-safe durability (survives one broker loss). The factory probes the live broker
+    /// count and falls back to a lower value when fewer brokers are available — single-broker
+    /// clusters automatically use <c>1</c>; partially-provisioned clusters emit a warning.
+    /// </summary>
+    public short ReplicationFactor { get; set; } = 3;
+
+    /// <summary>
+    /// Enables exactly-once produce semantics on the Kafka producer.
+    /// Defaults to <c>true</c>. When <c>true</c>, <see cref="Acks"/> must be
+    /// <see cref="KafkaAcks.All"/>; the factory throws <see cref="InvalidOperationException"/>
+    /// at startup if the combination is invalid.
+    /// </summary>
+    public bool EnableIdempotence { get; set; } = true;
+
+    /// <summary>
+    /// Producer acknowledgement mode. Defaults to <see cref="KafkaAcks.All"/> for maximum
+    /// durability. Downgrading below <c>All</c> is only safe when
+    /// <see cref="EnableIdempotence"/> is <c>false</c> — the factory enforces this at startup.
+    /// </summary>
+    public KafkaAcks Acks { get; set; } = KafkaAcks.All;
 
     public TimeSpan PollTimeout { get; set; } = TimeSpan.FromMilliseconds(50);
 
