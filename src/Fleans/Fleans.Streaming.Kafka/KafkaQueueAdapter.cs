@@ -15,6 +15,7 @@ internal sealed partial class KafkaQueueAdapter : IQueueAdapter, IDisposable
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<KafkaQueueAdapter> _logger;
     private readonly IProducer<byte[], byte[]> _producer;
+    private readonly IExternalEventEncoder? _encoder;
 
     public string Name { get; }
 
@@ -27,7 +28,21 @@ internal sealed partial class KafkaQueueAdapter : IQueueAdapter, IDisposable
         KafkaStreamingOptions options,
         IStreamQueueMapper mapper,
         Serializer<KafkaBatchContainer> serializer,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        IExternalEventEncoder? encoder = null) : this(
+            name, options, mapper, serializer, loggerFactory,
+            BuildProducer(options), encoder)
+    { }
+
+    // Testability overload — kept internal; tests reach it via InternalsVisibleTo.
+    internal KafkaQueueAdapter(
+        string name,
+        KafkaStreamingOptions options,
+        IStreamQueueMapper mapper,
+        Serializer<KafkaBatchContainer> serializer,
+        ILoggerFactory loggerFactory,
+        IProducer<byte[], byte[]> producer,
+        IExternalEventEncoder? encoder = null)
     {
         Name = name;
         _options = options;
@@ -35,17 +50,14 @@ internal sealed partial class KafkaQueueAdapter : IQueueAdapter, IDisposable
         _serializer = serializer;
         _loggerFactory = loggerFactory;
         _logger = loggerFactory.CreateLogger<KafkaQueueAdapter>();
+        _producer = producer;
+        _encoder = encoder;
 
-        var producerConfig = BuildProducerConfig(_options);
         if (_options.SecurityProtocol is KafkaSecurityProtocol.Ssl or KafkaSecurityProtocol.SaslSsl
             && string.IsNullOrEmpty(_options.SslCaLocation))
         {
             LogSslNoPathsOsTrustStore(_options.SecurityProtocol);
         }
-        var producerBuilder = new ProducerBuilder<byte[], byte[]>(producerConfig);
-        if (_options.OAuthBearerTokenProvider is not null)
-            producerBuilder.SetOAuthBearerTokenRefreshHandler(_options.OAuthBearerTokenProvider);
-        _producer = producerBuilder.Build();
     }
 
     public async Task QueueMessageBatchAsync<T>(
@@ -88,6 +100,34 @@ internal sealed partial class KafkaQueueAdapter : IQueueAdapter, IDisposable
             _logger.LogError(ex, "Failed to publish batch to Kafka topic {Topic}", topic);
             throw;
         }
+
+        if (_encoder is not null)
+        {
+            var eventsTopic = KafkaTopicNaming.EventsTopicForQueue(_options, queueId);
+            foreach (var @event in batch.Events)
+            {
+                byte[]? encoded;
+                try { encoded = await _encoder.EncodeAsync(@event).ConfigureAwait(false); }
+                catch (Exception ex) { LogFanoutEncodeFailed(eventsTopic, @event.GetType().Name, ex); continue; }
+                if (encoded is null) continue;
+                try
+                {
+                    await _producer.ProduceAsync(eventsTopic,
+                        new Message<byte[], byte[]> { Key = key, Value = encoded })
+                        .ConfigureAwait(false);
+                }
+                catch (ProduceException<byte[], byte[]> ex) { LogFanoutProduceFailed(eventsTopic, ex); }
+            }
+        }
+    }
+
+    private static IProducer<byte[], byte[]> BuildProducer(KafkaStreamingOptions options)
+    {
+        var producerConfig = BuildProducerConfig(options);
+        var pb = new ProducerBuilder<byte[], byte[]>(producerConfig);
+        if (options.OAuthBearerTokenProvider is not null)
+            pb.SetOAuthBearerTokenRefreshHandler(options.OAuthBearerTokenProvider);
+        return pb.Build();
     }
 
     internal static ProducerConfig BuildProducerConfig(KafkaStreamingOptions opts)
@@ -116,6 +156,14 @@ internal sealed partial class KafkaQueueAdapter : IQueueAdapter, IDisposable
     [LoggerMessage(EventId = 11100, Level = LogLevel.Warning,
         Message = "SecurityProtocol={SecurityProtocol} configured without explicit SSL paths — broker certificate will be validated against the OS trust store.")]
     private partial void LogSslNoPathsOsTrustStore(KafkaSecurityProtocol securityProtocol);
+
+    [LoggerMessage(EventId = 11107, Level = LogLevel.Warning,
+        Message = "SR fanout: encoder threw for event type '{EventType}' on topic '{Topic}'.")]
+    private partial void LogFanoutEncodeFailed(string topic, string eventType, Exception ex);
+
+    [LoggerMessage(EventId = 11108, Level = LogLevel.Warning,
+        Message = "SR fanout: ProduceAsync failed for events topic '{Topic}'.")]
+    private partial void LogFanoutProduceFailed(string topic, ProduceException<byte[], byte[]> ex);
 
     public void Dispose()
     {

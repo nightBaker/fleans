@@ -118,6 +118,8 @@ Each numbered entry below is one regression "step". For each one, follow the lin
 
 68. **AWS MSK IAM authentication** — `68-kafka-msk-iam/test-plan.md`. Verifies #682: `AddKafkaStreamingWithMskIam` wires SASL_SSL+OAuthBearer via the AWS SigV4 signer; IAM token refreshes succeed under workload identity; EventId 11200 fires on IAM permission errors; missing region throws at startup; wrong broker port (`:9092` vs `:9098`) produces a clear SASL error. **Human-only — requires AWS account + MSK cluster.**
 
+69. **Schema Registry dual-encoding mechanism** — `19-schema-registry-mechanism/test-plan.md`. Verifies #700: two-topic fanout scaffold (`fleans-N` primary + `fleans-N-events` external) when `IExternalEventEncoder` is registered; no fanout when encoder is absent; encoder returning `null` skips the events topic; encoder exceptions emit EventId 11107 WARNING without affecting primary delivery; `ProduceAsync` failure on events topic emits EventId 11108 WARNING without re-throwing; Basic auth wiring for Schema Registry. **Requires Kafka + Confluent Schema Registry** (local Docker or managed).
+
 ## Website regression suite
 
 Website-specific manual tests live under `website/`. These run in a local dev server, not against the .NET stack.

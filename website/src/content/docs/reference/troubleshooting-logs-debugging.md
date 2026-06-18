@@ -33,6 +33,15 @@ If you author a custom-task plugin, follow the same pattern (see the [adding a B
 | 5000–5099 | `WorkflowEventsPublisher` |
 | 9000–9099 | `BpmnConverter` |
 | 10000–10099 | `TimerCallbackGrain` |
+| 11100 | `KafkaQueueAdapter` / `KafkaQueueAdapterFactory` — SSL configured without explicit paths; broker cert validated against OS trust store (Warning) |
+| 11101 | `KafkaQueueAdapterFactory` — `Acks` is not `All`; durability reduced (Warning) |
+| 11102 | `KafkaQueueAdapterFactory` — single-broker cluster; `ReplicationFactor` forced to 1 (Info) |
+| 11103 | `KafkaQueueAdapterFactory` — configured `ReplicationFactor` exceeds broker count; falling back (Warning) |
+| 11104 | `KafkaQueueAdapterFactory` — `GetMetadata` failed; cluster unreachable (Error) |
+| 11105 | `KafkaQueueAdapterFactory` — topics created on first activation (Info) |
+| 11106 | `KafkaQueueAdapterFactory` — topics already existed; race with peer silo (Info) |
+| 11107 | `KafkaQueueAdapter` — SR fanout encoder threw for an event type; event not externalized (Warning). Check your `IExternalEventEncoder` implementation |
+| 11108 | `KafkaQueueAdapter` — SR fanout `ProduceAsync` failed for the `-events` topic (Warning). Primary Orleans delivery already succeeded; check broker connectivity to the events topic |
 | 11200 | `Fleans.Streaming.Kafka.AwsMsk` — MSK IAM token refresh failed (Error); check IAM policy for `kafka-cluster:Connect` / `WriteData` / `ReadData` |
 | 11201 | `Fleans.Streaming.Kafka.AwsMsk` — `OAuthBearerSetTokenFailure` threw after token-refresh failure (Warning); typically a shutdown race, not actionable |
 
