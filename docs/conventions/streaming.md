@@ -85,7 +85,7 @@ The `TaskType` mismatch branch in `OnNextAsync` is unreachable under correct rou
 
 ## Kafka SASL / TLS
 
-Kafka security is configured via five properties on `KafkaStreamingOptions`:
+Kafka security is configured via nine properties on `KafkaStreamingOptions`:
 
 | Property | Type | Default | Notes |
 |---|---|---|---|
@@ -94,11 +94,38 @@ Kafka security is configured via five properties on `KafkaStreamingOptions`:
 | `SaslUsername` | `string?` | `null` | Required for PLAIN / SCRAM-SHA-256 / SCRAM-SHA-512 |
 | `SaslPassword` | `string?` | `null` | Required for PLAIN / SCRAM-SHA-256 / SCRAM-SHA-512 |
 | `OAuthBearerTokenProvider` | `Action<IClient, string>?` | `null` | Required for OAuthBearer; wired via `SetOAuthBearerTokenRefreshHandler` on each client builder |
+| `SslCaLocation` | `string?` | `null` | Path to CA certificate (PEM). Pins the CA that signed the broker cert |
+| `SslCertificateLocation` | `string?` | `null` | Path to client certificate (PEM). Required for mTLS; must be paired with `SslKeyLocation` |
+| `SslKeyLocation` | `string?` | `null` | Path to client private key (PEM). Required for mTLS; must be paired with `SslCertificateLocation` |
+| `SslKeyPassword` | `string?` | `null` | Passphrase for the client private key. Requires `SslKeyLocation` to be set |
 
-**Fail-fast validation.** `KafkaClientConfigExtensions.ApplySecurity` is called on all three client builders (producer, consumer, admin) and throws `InvalidOperationException` at silo startup for any misconfigured combination — missing mechanism, empty credentials, or missing OAuthBearer provider. This surfaces configuration errors before the first broker connection.
+**Fail-fast validation.** `KafkaClientConfigExtensions.ApplySecurity` is called on all three client builders (producer, consumer, admin) and throws `InvalidOperationException` at silo startup for any misconfigured combination — missing mechanism, empty credentials, missing OAuthBearer provider, SSL paths with incompatible protocol, unpaired cert/key, or password without key. This surfaces configuration errors before the first broker connection.
 
 **Enum ownership.** `KafkaSecurityProtocol` and `KafkaSaslMechanism` are Fleans-owned enums (1:1 switch to Confluent types) so Confluent types stay out of the public API surface. Unknown enum values throw at startup.
 
 **OAuthBearer handler.** The `OAuthBearerTokenProvider` callback matches Confluent.Kafka's `SetOAuthBearerTokenRefreshHandler(Action<IClient, string>)` signature directly — no adapter needed. The callback is registered after `ApplySecurity` on each builder.
 
-**mTLS (client-cert auth) is deferred to #681.** Plaintext, SSL (server-side TLS), and SASL (all four mechanisms) are covered by this feature. Client-certificate mutual TLS is a separate follow-up.
+### mTLS / client-certificate authentication
+
+Two distinct SSL modes are supported:
+
+**Server-cert validation against a private CA** (no client cert): Set `SecurityProtocol = Ssl` (or `SaslSsl`) and `SslCaLocation` only. Useful when the broker cert is issued by an internal CA not in the OS trust store. Omitting all `Ssl*` paths with `SecurityProtocol = Ssl` is also valid — the OS trust store is used for broker-cert validation, and the silo logs a WARNING at startup (EventId 11100) to confirm this is intentional.
+
+**Mutual TLS (full mTLS)** — client presents a certificate to the broker: Set `SecurityProtocol = Ssl` and all three paths:
+
+- `SslCaLocation` — path to the CA that issued the broker cert
+- `SslCertificateLocation` — path to the client certificate
+- `SslKeyLocation` — path to the client private key
+- `SslKeyPassword` — passphrase (omit if the key is not passphrase-protected)
+
+> **Path resolution:** Confluent.Kafka resolves `Ssl*Location` paths relative to the **silo's working directory**, not the .NET assembly directory. In containerised deployments (Kubernetes, Docker), prefer **absolute paths** (e.g. `/etc/kafka/certs/ca.pem`) to avoid CWD-dependent failures.
+
+Example environment variables (full mTLS + passphrase-protected key):
+
+```
+Streaming__Kafka__SecurityProtocol=Ssl
+Streaming__Kafka__SslCaLocation=/etc/kafka/certs/ca.pem
+Streaming__Kafka__SslCertificateLocation=/etc/kafka/certs/client.pem
+Streaming__Kafka__SslKeyLocation=/etc/kafka/certs/client.key
+Streaming__Kafka__SslKeyPassword=s3cret
+```

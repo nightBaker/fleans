@@ -22,6 +22,7 @@ propagation), see [`docs/plans/2026-02-08-structured-workflow-logging.md`](../pl
 | 9000–9099 | `BpmnConverter` | |
 | 10000–10099 | `TimerCallbackGrain` | |
 | 11000–11099 | `KafkaProductionPresetExtensions` | 11000 preset-applied INFO |
+| 11100–11199 | `KafkaQueueAdapter`, `KafkaQueueAdapterReceiver`, `KafkaQueueAdapterFactory` | 11100 SSL-no-paths OS-trust-store WARNING (shared EventId across all three sibling classes) |
 
 ## Adding a new range
 

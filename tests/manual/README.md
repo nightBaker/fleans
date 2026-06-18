@@ -114,6 +114,8 @@ Each numbered entry below is one regression "step". For each one, follow the lin
 
 66. **Kafka SASL / SecurityProtocol config** — `66-kafka-sasl/test-plan.md`. Verifies #680: Kafka connections work under Plaintext, SASL_PLAINTEXT+PLAIN, and SASL_SSL+SCRAM-SHA-512. Also verifies fail-fast startup rejection when `SaslMechanism` is omitted for a SASL protocol. Default plaintext path is unaffected (backward-compat).
 
+67. **Kafka mTLS / client-cert config** — `67-kafka-mtls/test-plan.md`. Verifies #681: OS-trust-store WARNING fires (EventId 11100) when no `SslCaLocation` is set with an SSL protocol; CA-only mode (private-CA validation) works; full mTLS (client cert + key) works against Redpanda with `require_client_auth: true`; misconfigured combinations (SSL paths with Plaintext protocol, cert without key, password without key) are rejected at startup with clear `InvalidOperationException`.
+
 ## Website regression suite
 
 Website-specific manual tests live under `website/`. These run in a local dev server, not against the .NET stack.

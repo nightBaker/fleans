@@ -87,4 +87,38 @@ public class KafkaStreamingOptions
     /// <c>SetOAuthBearerTokenRefreshHandler</c> on each client builder.
     /// </summary>
     public Action<IClient, string>? OAuthBearerTokenProvider { get; set; }
+
+    /// <summary>
+    /// Path to the CA certificate (PEM). Required when connecting to a broker
+    /// with a certificate issued by a private CA. Resolved relative to the silo's CWD —
+    /// prefer absolute paths in containerised deployments.
+    /// </summary>
+    public string? SslCaLocation { get; set; }
+
+    /// <summary>
+    /// Path to the client certificate (PEM). Required for mutual TLS (mTLS).
+    /// Must be paired with <see cref="SslKeyLocation"/>.
+    /// </summary>
+    public string? SslCertificateLocation { get; set; }
+
+    /// <summary>
+    /// Path to the client private key (PEM). Required for mTLS.
+    /// Must be paired with <see cref="SslCertificateLocation"/>.
+    /// </summary>
+    public string? SslKeyLocation { get; set; }
+
+    /// <summary>
+    /// Optional passphrase for the client private key.
+    /// Requires <see cref="SslKeyLocation"/> to be set.
+    /// </summary>
+    public string? SslKeyPassword { get; set; }
+
+    public override string ToString() =>
+        $"Brokers={Brokers} ConsumerGroup={ConsumerGroup} TopicPrefix={TopicPrefix} " +
+        $"QueueCount={QueueCount} NumPartitions={NumPartitions} ReplicationFactor={ReplicationFactor} " +
+        $"SecurityProtocol={SecurityProtocol} SaslMechanism={SaslMechanism} " +
+        $"SaslUsername={SaslUsername} SaslPassword={(SaslPassword is null ? "null" : "***")} " +
+        // OAuthBearerTokenProvider is a delegate — excluded
+        $"SslCaLocation={SslCaLocation} SslCertificateLocation={SslCertificateLocation} " +
+        $"SslKeyLocation={SslKeyLocation} SslKeyPassword={(SslKeyPassword is null ? "null" : "***")}";
 }

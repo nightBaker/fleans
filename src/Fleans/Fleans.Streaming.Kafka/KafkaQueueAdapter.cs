@@ -7,7 +7,7 @@ using Orleans.Streams;
 
 namespace Fleans.Streaming.Kafka;
 
-internal sealed class KafkaQueueAdapter : IQueueAdapter, IDisposable
+internal sealed partial class KafkaQueueAdapter : IQueueAdapter, IDisposable
 {
     private readonly KafkaStreamingOptions _options;
     private readonly IStreamQueueMapper _mapper;
@@ -43,6 +43,11 @@ internal sealed class KafkaQueueAdapter : IQueueAdapter, IDisposable
             Acks = Acks.All,
         };
         KafkaClientConfigExtensions.ApplySecurity(producerConfig, _options);
+        if (_options.SecurityProtocol is KafkaSecurityProtocol.Ssl or KafkaSecurityProtocol.SaslSsl
+            && string.IsNullOrEmpty(_options.SslCaLocation))
+        {
+            LogSslNoPathsOsTrustStore(_options.SecurityProtocol);
+        }
         var producerBuilder = new ProducerBuilder<byte[], byte[]>(producerConfig);
         if (_options.OAuthBearerTokenProvider is not null)
             producerBuilder.SetOAuthBearerTokenRefreshHandler(_options.OAuthBearerTokenProvider);
@@ -93,6 +98,10 @@ internal sealed class KafkaQueueAdapter : IQueueAdapter, IDisposable
 
     public IQueueAdapterReceiver CreateReceiver(QueueId queueId) =>
         new KafkaQueueAdapterReceiver(queueId, _options, _serializer, _loggerFactory);
+
+    [LoggerMessage(EventId = 11100, Level = LogLevel.Warning,
+        Message = "SecurityProtocol={SecurityProtocol} configured without explicit SSL paths — broker certificate will be validated against the OS trust store.")]
+    private partial void LogSslNoPathsOsTrustStore(KafkaSecurityProtocol securityProtocol);
 
     public void Dispose()
     {

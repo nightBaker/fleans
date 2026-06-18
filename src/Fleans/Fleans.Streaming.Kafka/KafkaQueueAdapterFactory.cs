@@ -11,7 +11,7 @@ using Orleans.Streams;
 
 namespace Fleans.Streaming.Kafka;
 
-public sealed class KafkaQueueAdapterFactory : IQueueAdapterFactory
+public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory
 {
     private readonly string _name;
     private readonly KafkaStreamingOptions _options;
@@ -66,6 +66,11 @@ public sealed class KafkaQueueAdapterFactory : IQueueAdapterFactory
 
         var adminConfig = new AdminClientConfig { BootstrapServers = _options.Brokers };
         KafkaClientConfigExtensions.ApplySecurity(adminConfig, _options);
+        if (_options.SecurityProtocol is KafkaSecurityProtocol.Ssl or KafkaSecurityProtocol.SaslSsl
+            && string.IsNullOrEmpty(_options.SslCaLocation))
+        {
+            LogSslNoPathsOsTrustStore(_options.SecurityProtocol);
+        }
         var adminBuilder = new AdminClientBuilder(adminConfig);
         if (_options.OAuthBearerTokenProvider is not null)
             adminBuilder.SetOAuthBearerTokenRefreshHandler(_options.OAuthBearerTokenProvider);
@@ -115,6 +120,10 @@ public sealed class KafkaQueueAdapterFactory : IQueueAdapterFactory
                 string.Join(", ", missing.Select(m => m.Name)));
         }
     }
+
+    [LoggerMessage(EventId = 11100, Level = LogLevel.Warning,
+        Message = "SecurityProtocol={SecurityProtocol} configured without explicit SSL paths — broker certificate will be validated against the OS trust store.")]
+    private partial void LogSslNoPathsOsTrustStore(KafkaSecurityProtocol securityProtocol);
 
     public static KafkaQueueAdapterFactory Create(IServiceProvider services, string name)
     {
