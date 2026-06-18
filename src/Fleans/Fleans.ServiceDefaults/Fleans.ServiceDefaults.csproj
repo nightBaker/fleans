@@ -44,6 +44,8 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Fleans.ServiceDefaults.Tests" />
+    <!-- Castle.DynamicProxy (used by NSubstitute) needs this to proxy internal interfaces in tests -->
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
 
   <ItemGroup>
