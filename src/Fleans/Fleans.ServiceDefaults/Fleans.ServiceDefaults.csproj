@@ -43,6 +43,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Fleans.ServiceDefaults.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Vendored Orleans Postgres-reminders schema scripts. Run by EnsureDatabaseSchemaAsync
          on first startup when Fleans:Reminders:Provider=Postgres. Re-vendor when the
          AdoNet package version is bumped. See #669 + LICENSE-orleans-vendor. -->

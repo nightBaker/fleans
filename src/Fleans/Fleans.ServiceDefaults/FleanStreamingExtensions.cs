@@ -1,11 +1,16 @@
 using System.Globalization;
+using Fleans.ServiceDefaults.Streaming;
 using Fleans.Streaming.AzureQueue;
 using Fleans.Streaming.Kafka;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Orleans;
 using Orleans.Configuration;
 using Orleans.Hosting;
+using Orleans.Runtime;
 using StackExchange.Redis;
 using Universley.OrleansContrib.StreamsProvider.Redis;
 
@@ -29,12 +34,8 @@ public static class FleanStreamingExtensions
         return provider.ToLowerInvariant() switch
         {
             "memory" => builder.AddMemoryStreams(StreamProviderName),
-            "kafka" => builder.AddKafkaStreams(
-                StreamProviderName,
-                configuration.GetSection("Fleans:Streaming:Kafka")),
-            "azurequeue" => builder.AddAzureQueueStreaming(
-                StreamProviderName,
-                configuration.GetSection("Fleans:Streaming:AzureQueue")),
+            "kafka" => AddKafkaStreamingWithProbe(builder, configuration),
+            "azurequeue" => AddAzureQueueStreamingWithProbe(builder, configuration),
             "redis" => AddRedisStreams(builder, configuration),
             _ => throw new ArgumentException(
                 $"Unknown streaming provider '{provider}'. Supported: memory, kafka, azurequeue, redis. " +
@@ -63,7 +64,43 @@ public static class FleanStreamingExtensions
                 options.TrimTimeMinutes = section.GetValue<int?>("TrimTimeMinutes") ?? 5;
             });
 
+        builder.Services.AddSingleton<ILifecycleParticipant<ISiloLifecycle>>(sp =>
+            new StreamQueueCountProbe(
+                providerName: StreamProviderName,
+                localQueueCount: ReadRedisTotalQueueCount(configuration),
+                grainFactory: sp.GetRequiredService<IGrainFactory>(),
+                siloDetails: sp.GetRequiredService<ILocalSiloDetails>(),
+                logger: sp.GetRequiredService<ILogger<StreamQueueCountProbe>>()));
+
         return builder.AddPersistentStreams(StreamProviderName, RedisStreamFactory.Create, null);
+    }
+
+    private static ISiloBuilder AddKafkaStreamingWithProbe(ISiloBuilder builder, IConfiguration configuration)
+    {
+        builder.Services.AddSingleton<ILifecycleParticipant<ISiloLifecycle>>(sp =>
+            new StreamQueueCountProbe(
+                providerName: StreamProviderName,
+                localQueueCount: sp.GetRequiredService<IOptionsMonitor<KafkaStreamingOptions>>()
+                                   .Get(StreamProviderName).QueueCount,
+                grainFactory: sp.GetRequiredService<IGrainFactory>(),
+                siloDetails: sp.GetRequiredService<ILocalSiloDetails>(),
+                logger: sp.GetRequiredService<ILogger<StreamQueueCountProbe>>()));
+        return builder.AddKafkaStreams(StreamProviderName, configuration.GetSection("Fleans:Streaming:Kafka"));
+    }
+
+    private static ISiloBuilder AddAzureQueueStreamingWithProbe(ISiloBuilder builder, IConfiguration configuration)
+    {
+        var aqOpts = configuration.GetSection("Fleans:Streaming:AzureQueue")
+            .Get<AzureQueueStreamingOptions>() ?? new();
+        builder.Services.AddSingleton<ILifecycleParticipant<ISiloLifecycle>>(sp =>
+            new StreamQueueCountProbe(
+                providerName: StreamProviderName,
+                localQueueCount: aqOpts.QueueNames.Count,
+                grainFactory: sp.GetRequiredService<IGrainFactory>(),
+                siloDetails: sp.GetRequiredService<ILocalSiloDetails>(),
+                logger: sp.GetRequiredService<ILogger<StreamQueueCountProbe>>()));
+        return builder.AddAzureQueueStreaming(StreamProviderName,
+            configuration.GetSection("Fleans:Streaming:AzureQueue"));
     }
 
     /// <summary>
