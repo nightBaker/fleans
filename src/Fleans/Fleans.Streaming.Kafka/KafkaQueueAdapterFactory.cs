@@ -20,19 +20,22 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory
     private readonly ILogger<KafkaQueueAdapterFactory> _logger;
     private readonly HashRingBasedStreamQueueMapper _mapper;
     private readonly IQueueAdapterCache _cache;
+    private readonly IExternalEventEncoder? _encoder;
 
     public KafkaQueueAdapterFactory(
         string name,
         KafkaStreamingOptions options,
         SimpleQueueCacheOptions cacheOptions,
         Serializer<KafkaBatchContainer> serializer,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        IExternalEventEncoder? encoder = null)
     {
         _name = name;
         _options = options;
         _serializer = serializer;
         _loggerFactory = loggerFactory;
         _logger = loggerFactory.CreateLogger<KafkaQueueAdapterFactory>();
+        _encoder = encoder;
 
         _mapper = new HashRingBasedStreamQueueMapper(
             new HashRingStreamQueueMapperOptions { TotalQueueCount = options.QueueCount },
@@ -55,7 +58,7 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory
         if (_options.Acks != KafkaAcks.All)
             LogAcksNotAll(_options.Acks);
         await EnsureTopicsAsync().ConfigureAwait(false);
-        return new KafkaQueueAdapter(_name, _options, _mapper, _serializer, _loggerFactory);
+        return new KafkaQueueAdapter(_name, _options, _mapper, _serializer, _loggerFactory, _encoder);
     }
 
     public IQueueAdapterCache GetQueueAdapterCache() => _cache;
@@ -72,7 +75,11 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory
     /// </summary>
     private async Task EnsureTopicsAsync()
     {
-        var expected = KafkaTopicNaming.AllExpectedTopics(_options).ToArray();
+        var expected = _encoder is not null
+            ? KafkaTopicNaming.AllExpectedTopics(_options)
+                .Concat(KafkaTopicNaming.AllExpectedEventTopics(_options))
+                .ToArray()
+            : KafkaTopicNaming.AllExpectedTopics(_options).ToArray();
         if (expected.Length == 0) return;
 
         var adminConfig = new AdminClientConfig { BootstrapServers = _options.Brokers };
@@ -154,7 +161,8 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory
         var cacheOptions = services.GetRequiredService<IOptionsMonitor<SimpleQueueCacheOptions>>().Get(name);
         var serializer = services.GetRequiredService<Serializer<KafkaBatchContainer>>();
         var loggerFactory = services.GetRequiredService<ILoggerFactory>();
-        return new KafkaQueueAdapterFactory(name, options, cacheOptions, serializer, loggerFactory);
+        var encoder = services.GetService<IExternalEventEncoder>();
+        return new KafkaQueueAdapterFactory(name, options, cacheOptions, serializer, loggerFactory, encoder);
     }
 
     [LoggerMessage(EventId = 11101, Level = LogLevel.Warning,

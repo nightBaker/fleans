@@ -22,7 +22,7 @@ propagation), see [`docs/plans/2026-02-08-structured-workflow-logging.md`](../pl
 | 9000–9099 | `BpmnConverter` | |
 | 10000–10099 | `TimerCallbackGrain` | |
 | 11000–11099 | `KafkaProductionPresetExtensions` | 11000 preset-applied INFO |
-| 11100–11199 | `KafkaQueueAdapter`, `KafkaQueueAdapterReceiver`, `KafkaQueueAdapterFactory` | 11100 SSL-no-paths OS-trust-store WARNING (shared EventId across all three sibling classes); 11101 acks-not-all WARNING; 11102 single-broker RF fallback INFO; 11103 RF>brokers fallback WARNING; 11104 GetMetadata error ERROR; 11105 topics created INFO; 11106 topics already existed INFO |
+| 11100–11199 | `KafkaQueueAdapter`, `KafkaQueueAdapterReceiver`, `KafkaQueueAdapterFactory` | 11100 SSL-no-paths OS-trust-store WARNING (shared EventId across all three sibling classes); 11101 acks-not-all WARNING; 11102 single-broker RF fallback INFO; 11103 RF>brokers fallback WARNING; 11104 GetMetadata error ERROR; 11105 topics created INFO; 11106 topics already existed INFO; 11107 fanout-encode-failed WARNING; 11108 fanout-produce-failed WARNING |
 | 11200–11299 | `MskIamTokenRefresher` | 11200 token-refresh-failed ERROR, 11201 set-token-failure-threw WARNING |
 
 ## Adding a new range

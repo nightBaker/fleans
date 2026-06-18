@@ -27,4 +27,14 @@ internal static class KafkaTopicNaming
             yield return $"{prefix}-{i}";
         }
     }
+
+    public static string EventsTopicForQueue(KafkaStreamingOptions options, QueueId queueId)
+        => $"{TopicForQueue(options, queueId)}-events";
+
+    public static IEnumerable<string> AllExpectedEventTopics(KafkaStreamingOptions options)
+    {
+        var prefix = MapperPrefix(options);
+        for (var i = 0; i < options.QueueCount; i++)
+            yield return $"{prefix}-{i}-events";
+    }
 }
