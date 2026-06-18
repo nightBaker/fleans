@@ -168,6 +168,17 @@ Every workflow log message has a stable `EventId` in a documented range. This le
 
 The authoritative source is [`docs/plans/2026-02-08-structured-workflow-logging.md`](https://github.com/nightBaker/fleans/blob/main/docs/plans/2026-02-08-structured-workflow-logging.md) — when you add a new `[LoggerMessage]` declaration, allocate from the appropriate range and update the table there.
 
+### Cluster homogeneity
+
+`StreamQueueCountProbe` runs once at `ServiceLifecycleStage.Active` on every silo. It registers the silo's `(address, providerName, queueCount)` tuple in an in-memory registry grain, then cross-checks all active peers via `IManagementGrain`. Mismatches are logged at **Warning** (EventId 11300); probe errors at **Error** (EventId 11301). The check is best-effort — silo startup always continues regardless of outcome.
+
+| EventId | Level | Meaning |
+|---------|-------|---------|
+| 11300 | Warning | Queue count differs between two active silos for the same provider. Streams will misroute until all silos are aligned. |
+| 11301 | Error | Probe threw an exception. The silo started normally; investigate connectivity if the error recurs. |
+
+**What to do on EventId 11300:** compare `Fleans:Streaming:Redis:TotalQueueCount`, `Fleans:Streaming:Kafka:QueueCount`, or `Fleans:Streaming:AzureQueue:QueueNames` (depending on provider) across your silo hosts. All must be identical. After fixing, restart the mismatched silo.
+
 ### Workflow-aware scopes
 
 `WorkflowLoggingScopeFilter` (Orleans grain call filter) wraps every grain call in a `BeginScope` containing:

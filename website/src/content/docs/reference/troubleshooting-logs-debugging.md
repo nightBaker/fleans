@@ -35,6 +35,8 @@ If you author a custom-task plugin, follow the same pattern (see the [adding a B
 | 10000–10099 | `TimerCallbackGrain` |
 | 11200 | `Fleans.Streaming.Kafka.AwsMsk` — MSK IAM token refresh failed (Error); check IAM policy for `kafka-cluster:Connect` / `WriteData` / `ReadData` |
 | 11201 | `Fleans.Streaming.Kafka.AwsMsk` — `OAuthBearerSetTokenFailure` threw after token-refresh failure (Warning); typically a shutdown race, not actionable |
+| 11300 | `StreamQueueCountProbe` — queue count mismatch detected across active silos (Warning); all silos must have the same queue count for the same provider or streams will be misrouted. Check `Fleans:Streaming:Redis:TotalQueueCount` / `Fleans:Streaming:Kafka:QueueCount` / `Fleans:Streaming:AzureQueue:QueueNames` are identical on every silo. |
+| 11301 | `StreamQueueCountProbe` — homogeneity probe failed with an exception (Error); the check is best-effort and silo startup continues. Investigate connectivity to the Orleans cluster if the error persists. |
 
 For the full per-EventId deep dive and reserved bands, see [`docs/plans/2026-02-08-structured-workflow-logging.md`](https://github.com/nightBaker/fleans/blob/main/docs/plans/2026-02-08-structured-workflow-logging.md).
 

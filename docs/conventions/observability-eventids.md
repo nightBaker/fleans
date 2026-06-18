@@ -24,6 +24,8 @@ propagation), see [`docs/plans/2026-02-08-structured-workflow-logging.md`](../pl
 | 11000–11099 | `KafkaProductionPresetExtensions` | 11000 preset-applied INFO |
 | 11100–11199 | `KafkaQueueAdapter`, `KafkaQueueAdapterReceiver`, `KafkaQueueAdapterFactory` | 11100 SSL-no-paths OS-trust-store WARNING (shared EventId across all three sibling classes); 11101 acks-not-all WARNING; 11102 single-broker RF fallback INFO; 11103 RF>brokers fallback WARNING; 11104 GetMetadata error ERROR; 11105 topics created INFO; 11106 topics already existed INFO |
 | 11200–11299 | `MskIamTokenRefresher` | 11200 token-refresh-failed ERROR, 11201 set-token-failure-threw WARNING |
+| 11300–11399 | `StreamQueueCountProbe` | 11300 queue-count-mismatch WARN, 11301 probe-failed ERROR |
+| 12000–12099 | `PlacementRoleAssertion` | 12000 role-assertion-passed INFO, 12001 role-assertion-violation ERROR (moved from 11200/11201 — those IDs now exclusively identify `MskIamTokenRefresher`) |
 
 ## Adding a new range
 
