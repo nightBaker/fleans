@@ -23,6 +23,7 @@ propagation), see [`docs/plans/2026-02-08-structured-workflow-logging.md`](../pl
 | 10000–10099 | `TimerCallbackGrain` | |
 | 11000–11099 | `KafkaProductionPresetExtensions` | 11000 preset-applied INFO |
 | 11100–11199 | `KafkaQueueAdapter`, `KafkaQueueAdapterReceiver`, `KafkaQueueAdapterFactory` | 11100 SSL-no-paths OS-trust-store WARNING (shared EventId across all three sibling classes) |
+| 11200–11299 | `MskIamTokenRefresher` | 11200 token-refresh-failed ERROR, 11201 set-token-failure-threw WARNING |
 
 ## Adding a new range
 
