@@ -110,6 +110,7 @@ public sealed partial class RestCallerHandler : CustomTaskHandlerBase
         {
             if (string.Equals(name, "Content-Type", StringComparison.OrdinalIgnoreCase))
                 continue;  // already handled via StringContent
+            ValidateHeader(name, value);
             if (!request.Headers.TryAddWithoutValidation(name, value))
                 request.Content?.Headers.TryAddWithoutValidation(name, value);
         }
@@ -212,6 +213,51 @@ public sealed partial class RestCallerHandler : CustomTaskHandlerBase
     }
 
     // --- helpers for resolvedInputs coercion ---
+
+    /// <summary>
+    /// Rejects header names/values that contain CR or LF. Modern .NET handlers strip
+    /// these at send time and raise HttpRequestException, but rejecting here makes
+    /// the failure deterministic and produces a 400 CustomTaskFailedActivityException
+    /// instead of a 502 network error wrapper. Header names additionally must conform
+    /// to RFC 7230 token grammar — `TryAddWithoutValidation` lets through bytes that
+    /// silently break the upstream parser; reject up-front so workflow authors get a
+    /// clear error.
+    /// </summary>
+    private static void ValidateHeader(string name, string value)
+    {
+        if (string.IsNullOrEmpty(name))
+            throw new CustomTaskFailedActivityException("400", "header name cannot be empty");
+
+        if (ContainsCrOrLf(name))
+            throw new CustomTaskFailedActivityException("400",
+                $"header name '{name}' contains CR or LF");
+
+        foreach (var c in name)
+        {
+            // RFC 7230 token: !#$%&'*+-.^_`|~ and DIGIT / ALPHA. Excludes control chars,
+            // whitespace, separators (:,;()<>@\"/[]?={}). Conservative on purpose —
+            // headers that don't fit this grammar would be rejected by the SocketsHttpHandler
+            // anyway; failing early avoids ambiguous 502 wrappers.
+            var ok = c is (>= 'a' and <= 'z') or (>= 'A' and <= 'Z') or (>= '0' and <= '9')
+                  || c is '!' or '#' or '$' or '%' or '&' or '\'' or '*' or '+' or '-'
+                       or '.' or '^' or '_' or '`' or '|' or '~';
+            if (!ok)
+                throw new CustomTaskFailedActivityException("400",
+                    $"header name '{name}' contains invalid character '{c}' " +
+                    "(RFC 7230 token grammar required)");
+        }
+
+        if (ContainsCrOrLf(value))
+            throw new CustomTaskFailedActivityException("400",
+                $"header '{name}' value contains CR or LF");
+    }
+
+    private static bool ContainsCrOrLf(string s)
+    {
+        for (var i = 0; i < s.Length; i++)
+            if (s[i] is '\r' or '\n') return true;
+        return false;
+    }
 
     private static string? ReadString(IDictionary<string, object?> inputs, string key)
         => inputs.TryGetValue(key, out var v) ? v?.ToString() : null;

@@ -247,6 +247,79 @@ public class RestCallerHandlerTests
         Assert.AreEqual("400", ex.GetActivityErrorState().Code);
     }
 
+    // --- Header validation (CRLF + RFC 7230 token grammar) ---
+
+    [TestMethod]
+    public async Task HeaderValueContainingCrLf_FailsWith400()
+    {
+        var handler = MakeHandler(new HttpClientHandler());
+        var headers = new Dictionary<string, object?>
+        {
+            ["X-Test"] = "value\r\nHost: evil.example.com"
+        };
+        var ex = await Assert.ThrowsExactlyAsync<CustomTaskFailedActivityException>(() =>
+            handler.ExecuteForTest(
+                Inputs("http://example.com/", headers: headers), new ExpandoObject(), Ctx()));
+        var state = ex.GetActivityErrorState();
+        Assert.AreEqual("400", state.Code);
+        Assert.IsTrue(state.Message.Contains("CR or LF"),
+            $"Expected CR/LF rejection message, got: {state.Message}");
+    }
+
+    [TestMethod]
+    public async Task HeaderNameContainingCrLf_FailsWith400()
+    {
+        var handler = MakeHandler(new HttpClientHandler());
+        var headers = new Dictionary<string, object?>
+        {
+            ["X-Bad\r\nInjected"] = "value"
+        };
+        var ex = await Assert.ThrowsExactlyAsync<CustomTaskFailedActivityException>(() =>
+            handler.ExecuteForTest(
+                Inputs("http://example.com/", headers: headers), new ExpandoObject(), Ctx()));
+        Assert.AreEqual("400", ex.GetActivityErrorState().Code);
+    }
+
+    [TestMethod]
+    public async Task HeaderNameWithInvalidTokenChar_FailsWith400()
+    {
+        var handler = MakeHandler(new HttpClientHandler());
+        // Space and `:` and `=` and `<` are all outside RFC 7230 token grammar.
+        var headers = new Dictionary<string, object?>
+        {
+            ["X-Has Space"] = "v"
+        };
+        var ex = await Assert.ThrowsExactlyAsync<CustomTaskFailedActivityException>(() =>
+            handler.ExecuteForTest(
+                Inputs("http://example.com/", headers: headers), new ExpandoObject(), Ctx()));
+        var state = ex.GetActivityErrorState();
+        Assert.AreEqual("400", state.Code);
+        Assert.IsTrue(state.Message.Contains("invalid character"),
+            $"Expected token-grammar rejection, got: {state.Message}");
+    }
+
+    [TestMethod]
+    public async Task HeaderNameWithValidTokenChars_Accepted()
+    {
+        // Sanity-check: legitimate header names with the full RFC 7230 token alphabet still work.
+        await using var mock = await MockServer.StartAsync(async ctx =>
+        {
+            ctx.Response.StatusCode = 200;
+            await ctx.Response.WriteAsync("ok");
+        });
+
+        var handler = MakeHandler(new HttpClientHandler());
+        var headers = new Dictionary<string, object?>
+        {
+            ["X-Custom-Header_42!"] = "v"
+        };
+        await handler.ExecuteForTest(
+            Inputs($"{mock.BaseUrl}/", headers: headers), new ExpandoObject(), Ctx());
+
+        var rec = mock.Requests.Single();
+        Assert.AreEqual("v", rec.Headers["X-Custom-Header_42!"]);
+    }
+
     // --- JSON content-type detection ---
 
     [TestMethod]
