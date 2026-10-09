@@ -1305,10 +1305,14 @@ public class WorkflowExecution
 
         if (activity is BoundaryTimerEvent boundaryTimer)
         {
+            // Skip the fired timer: its TimerCallbackGrain is the (non-reentrant) caller of
+            // this method and unregisters its own reminder once we return. Emitting an
+            // UnregisterTimerEffect for it would call back into that busy grain and deadlock
+            // until the Orleans response timeout (#759).
             return HandleBoundaryEventFired(
                 boundaryTimer, boundaryTimer.AttachedToActivityId,
                 boundaryTimer.IsInterrupting, entry, new ExpandoObject(),
-                skipTimerActivityId: null,
+                skipTimerActivityId: boundaryTimer.ActivityId,
                 skipMessageName: null,
                 skipSignalName: null);
         }
@@ -2209,7 +2213,7 @@ public class WorkflowExecution
         effects.AddRange(BuildBoundaryUnsubscribeEffects(entry.ActivityId, entry));
 
         // Cancel event-based gateway siblings
-        effects.AddRange(CancelEventBasedGatewaySiblings(entry.ActivityId, entry));
+        effects.AddRange(CancelEventBasedGatewaySiblings(entry.ActivityId));
 
         // Clean up user task registry if applicable
         effects.AddRange(BuildUserTaskCleanupEffects(entry.ActivityInstanceId));
@@ -2827,9 +2831,52 @@ public class WorkflowExecution
             effects.AddRange(BuildBoundaryUnsubscribeEffects(
                 result.AttachedToActivityId, hostEntry,
                 skipTimerActivityId, skipMessageName, skipSignalName));
+
+            // An interrupted intermediate catch host must also drop its OWN trigger
+            // subscription. Otherwise e.g. a message catch's correlation grain stays
+            // subscribed forever and the next instance with the same correlation key fails
+            // with "Duplicate subscription" (#759).
+            var hostActivity = _definition.GetActivityAcrossScopes(result.AttachedToActivityId);
+            effects.AddRange(BuildCatchEventTriggerCleanupEffects(hostActivity, hostEntry));
         }
 
         return effects.AsReadOnly();
+    }
+
+    /// <summary>
+    /// Builds the cleanup effects for an intermediate catch event's own trigger
+    /// (timer reminder, message subscription, signal subscription) when its entry is
+    /// cancelled before the trigger fired. Returns no effects for any other activity type.
+    /// </summary>
+    private List<IInfrastructureEffect> BuildCatchEventTriggerCleanupEffects(
+        Activity catchActivity, ActivityInstanceEntry catchEntry)
+    {
+        var effects = new List<IInfrastructureEffect>();
+        switch (catchActivity)
+        {
+            case TimerIntermediateCatchEvent:
+                effects.Add(new UnregisterTimerEffect(
+                    _state.Id, catchEntry.ActivityInstanceId, catchActivity.ActivityId));
+                break;
+
+            case MessageIntermediateCatchEvent msgCatch:
+                var messageDef = _definition.GetMessageDefinition(msgCatch.MessageDefinitionId);
+                var correlationKey = ResolveCorrelationKey(messageDef, catchEntry.VariablesId);
+                effects.Add(new UnsubscribeMessageEffect(messageDef.Name, correlationKey));
+                break;
+
+            case SignalIntermediateCatchEvent sigCatch:
+                var signalDef = _definition.GetSignalDefinition(sigCatch.SignalDefinitionId);
+                effects.Add(new UnsubscribeSignalEffect(signalDef.Name, _state.Id, catchActivity.ActivityId));
+                break;
+
+            case MultipleIntermediateCatchEvent multiCatch:
+                effects.AddRange(CancelMultipleEventSiblings(
+                    multiCatch, catchEntry,
+                    skipMessageName: null, skipSignalName: null, skipTimerActivityId: null));
+                break;
+        }
+        return effects;
     }
 
     private Guid? FindDescendantHazardTx(Guid outerTxScopeId)
@@ -3018,7 +3065,7 @@ public class WorkflowExecution
     }
 
     private List<IInfrastructureEffect> CancelEventBasedGatewaySiblings(
-        string completedActivityId, ActivityInstanceEntry completedEntry)
+        string completedActivityId)
     {
         var effects = new List<IInfrastructureEffect>();
         var siblings = _definition.GetEventBasedGatewaySiblings(completedActivityId);
@@ -3036,31 +3083,7 @@ public class WorkflowExecution
 
             // Build unsubscribe effects based on sibling type
             var siblingActivity = _definition.GetActivityAcrossScopes(siblingId);
-            switch (siblingActivity)
-            {
-                case TimerIntermediateCatchEvent:
-                    effects.Add(new UnregisterTimerEffect(
-                        _state.Id, siblingEntry.ActivityInstanceId, siblingId));
-                    break;
-
-                case MessageIntermediateCatchEvent msgCatch:
-                    var messageDef = _definition.GetMessageDefinition(msgCatch.MessageDefinitionId);
-                    var correlationKey = ResolveCorrelationKey(messageDef, completedEntry.VariablesId);
-                    effects.Add(new UnsubscribeMessageEffect(messageDef.Name, correlationKey));
-                    break;
-
-                case SignalIntermediateCatchEvent sigCatch:
-                    var signalDef = _definition.GetSignalDefinition(sigCatch.SignalDefinitionId);
-                    effects.Add(new UnsubscribeSignalEffect(signalDef.Name, _state.Id, siblingId));
-                    break;
-
-                case MultipleIntermediateCatchEvent multiCatch:
-                    // Cancel all watchers for a Multiple Event sibling
-                    effects.AddRange(CancelMultipleEventSiblings(
-                        multiCatch, siblingEntry,
-                        skipMessageName: null, skipSignalName: null, skipTimerActivityId: null));
-                    break;
-            }
+            effects.AddRange(BuildCatchEventTriggerCleanupEffects(siblingActivity, siblingEntry));
         }
 
         return effects;

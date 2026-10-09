@@ -49,10 +49,10 @@ Each numbered entry below is one regression "step". For each one, follow the lin
 5. **Event-Based Gateway** — `05-event-based-gateway/test-plan.md`. Gateway races a 30s timer vs a message; sending the message via API before the timer fires wins.
 6. **Call Activity** — `06-call-activity/test-plan.md`. Parent maps `input = 21` into a child that computes `result = input * 2` and maps it back; verifies cross-process variable mapping.
 7. **Embedded SubProcess** — `07-subprocess/test-plan.md`. Embedded subprocess with its own start → script → end runs, then the parent continues.
-8. **Timer Events** — `08-timer-events/test-plan.md`. Timer catch event (5s) pauses then resumes. **Known bug:** boundary events on `IntermediateCatchEvent` don't register subscriptions.
-9. **Message Events** — `09-message-events/test-plan.md`. Scenarios A–C: workflow message delivery and correlation. Scenario D: editor panel correlation key round-trip (#428). **Known bug:** boundary on `IntermediateCatchEvent` (same root cause as #8).
-10. **Signal Events** — `10-signal-events/test-plan.md`. Workflow waits for signal `globalAlert`; broadcasting via API unblocks. **Known bug:** boundary on `IntermediateCatchEvent` (same root cause as #8).
-11. **Error Boundary Event** — `11-error-boundary/test-plan.md` (`child-that-fails.bpmn`, `error-on-call-activity.bpmn`). Child throws → parent's CallActivity error boundary catches and routes to handler. **Known bug:** child-process errors don't propagate to the parent error boundary; the CallActivity stays Running.
+8. **Timer Events** — `08-timer-events/test-plan.md`. Timer catch event (5s) pauses then resumes; an interrupting timer boundary on a message `IntermediateCatchEvent` takes the timeout path and releases the catch's message subscription so a second instance can start (#759).
+9. **Message Events** — `09-message-events/test-plan.md`. Scenarios A–C: workflow message delivery and correlation. Scenario D: editor panel correlation key round-trip (#428).
+10. **Signal Events** — `10-signal-events/test-plan.md`. Workflow waits for signal `globalAlert`; broadcasting via API unblocks.
+11. **Error Boundary Event** — `11-error-boundary/test-plan.md` (`child-that-fails.bpmn`, `error-on-call-activity.bpmn`). Child throws → parent's CallActivity error boundary catches and routes to handler.
 12. **Variable Scoping** — `12-variable-scoping/test-plan.md`. `shared` is set before a parallel fork; each branch overwrites it independently and the parent merge respects scope isolation.
 13. **Multi-Instance Activity** — `13-multi-instance/test-plan.md`. Multi-instance loop spawns N children, each with its own variables; completion waits for all.
 14. **Inclusive Gateway** — `14-inclusive-gateway/test-plan.md`. Inclusive (OR) gateway forks all conditions that evaluate true, then joins on all live tokens.
