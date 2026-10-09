@@ -164,3 +164,43 @@ IAM credentials come from the AWS workload identity chain (EC2 instance profile,
 **Region resolution.** The `region` parameter takes precedence over `AWS_REGION` env var, which takes precedence over `AWS_DEFAULT_REGION`. Providing no region and neither env var throws `InvalidOperationException` at registration time.
 
 **Observable signals.** EventId 11200 (`LogTokenRefreshFailed`, ERROR) fires when a SigV4 STS call fails — the most common cause is a missing IAM policy action (`kafka-cluster:Connect`, `kafka-cluster:WriteData`, `kafka-cluster:ReadData`). EventId 11201 (`LogSetTokenFailureThrew`, WARNING) indicates a disposed-client race during shutdown; it is not actionable in isolation.
+
+### Schema Registry integration
+
+`Fleans.Streaming.Kafka.SchemaRegistry` (in-repo, NuGet publish tracked separately) adds a `Confluent.SchemaRegistry` client and a two-topic fanout scaffold to the Kafka adapter.
+
+**Architecture — two-topic fanout:**
+
+- `fleans-N` — primary topic, Orleans codec (`KafkaBatchContainer`). All existing silos consume from this topic; behaviour is unchanged when no encoder is registered.
+- `fleans-N-events` — external events topic, Schema Registry wire format. Only created and written to when an `IExternalEventEncoder` is registered in DI.
+
+`IExternalEventEncoder` (defined in `Fleans.Streaming.Kafka`) is the extension point. `KafkaQueueAdapterFactory.Create` resolves it via `services.GetService<IExternalEventEncoder>()`. If null, no fanout — the adapter is purely silo-internal until a framing package is installed.
+
+**Registration:**
+
+```csharp
+builder
+    .AddKafkaStreams("kafka", config)
+    .AddKafkaSchemaRegistry(config.GetSection("Fleans:Streaming:Kafka:SchemaRegistry"));
+// IExternalEventEncoder registration (e.g. Avro — #685B, Protobuf — #685C) goes here.
+```
+
+`AddKafkaSchemaRegistry` registers `ISchemaRegistryClient` but deliberately does NOT register `IExternalEventEncoder` — that is the framing package's responsibility.
+
+**Auth — `KafkaSchemaRegistryOptions`:**
+
+| Property | Usage |
+|---|---|
+| `Url` | Schema Registry URL (e.g. `http://registry:8081`) |
+| `BasicAuthUsername` / `BasicAuthPassword` | HTTP Basic auth |
+| `SslCaLocation` | CA certificate for server verification (PEM path) |
+| `SslKeystoreLocation` / `SslKeystorePassword` | mTLS client cert as PKCS12 keystore |
+
+The PKCS12 format is required by `SchemaRegistryConfig`; it differs from the PEM cert+key pair used by `KafkaStreamingOptions`. Convert with:
+```
+openssl pkcs12 -export -in cert.pem -inkey key.pem -out client.p12
+```
+
+**Fanout failure handling:** Both encode failures (EventId 11107, WARNING) and produce failures to the events topic (EventId 11108, WARNING) are caught and logged without re-throwing — the primary Orleans delivery already succeeded; fanout is best-effort.
+
+**Avro / Protobuf framing:** Implemented by `#685B` and `#685C` respectively. Each installs one `IExternalEventEncoder` implementation. The encoder receives a `object @event`, checks `@event is TEventType evt`, serializes via the SR client, and returns `null` for unrecognized types.

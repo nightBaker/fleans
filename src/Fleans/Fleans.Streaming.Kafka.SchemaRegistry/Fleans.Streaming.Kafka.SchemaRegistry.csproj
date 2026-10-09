@@ -8,17 +8,14 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="Fleans.Application.Tests" />
-    <InternalsVisibleTo Include="Fleans.Infrastructure.Tests" />
-    <InternalsVisibleTo Include="Fleans.Streaming.Kafka.Tests" />
+    <InternalsVisibleTo Include="Fleans.Streaming.Kafka.SchemaRegistry.Tests" />
     <!-- Castle.DynamicProxy (used by NSubstitute) needs this to proxy internal interfaces in tests -->
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Confluent.Kafka" Version="2.6.1" />
-    <PackageReference Include="Microsoft.Orleans.Streaming" Version="10.0.1" />
-    <PackageReference Include="Microsoft.Orleans.Sdk" Version="10.0.1" />
+    <PackageReference Include="Confluent.SchemaRegistry" Version="2.6.1" />
+    <ProjectReference Include="..\Fleans.Streaming.Kafka\Fleans.Streaming.Kafka.csproj" />
   </ItemGroup>
 
 </Project>

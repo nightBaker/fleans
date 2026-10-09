@@ -116,7 +116,7 @@ These won't break a deploy, but they will cost you operationally.
 | Gap | Why it hurts | Workaround |
 |---|---|---|
 | `NumPartitions=1` default | New topics created with 1 partition — no broker-side write fan-out per topic | Bump `Fleans:Streaming:Kafka:NumPartitions` and re-create or `kafka-topics --alter --partitions N` existing topics (forward-only; cannot shrink). See [Tuning throughput](#tuning-throughput) |
-| No schema registry integration | Codec is the Orleans codec; non-Orleans consumers cannot decode the stream | Treat Kafka topics as silo-internal until a follow-up adds Avro/Protobuf framing |
+| Schema Registry integration (wiring only) | Two-topic fanout wired (`fleans-N` Orleans codec + `fleans-N-events` SR codec); Avro/Protobuf framing pending #701/#702 | Install `Fleans.Streaming.Kafka.SchemaRegistry` and a framing package to activate fanout — see [Schema Registry integration](#schema-registry-integration) |
 | No DLQ for poison messages | A consistently-failing handler replays forever | Manual offset commit via `AdminClient` is your only escape today |
 | No metrics/health-check for consumer lag | Lag is invisible to the Aspire dashboard's health UI | Run `kafka-consumer-groups.sh --describe --group fleans` against the broker |
 
@@ -135,6 +135,41 @@ The Azure Queue provider is backed by the Microsoft-maintained `Microsoft.Orlean
 | Cross-queue message ordering | ⚠️ Per-queue FIFO only — ordering across the 8 default `fleans-stream-*` queues is not guaranteed (same trade-off as Kafka partitions) |
 
 [Manual test plan #44](https://github.com/nightBaker/fleans/tree/main/tests/manual/44-azure-queue-streaming) exercises the happy path with Azurite.
+
+## Schema Registry integration
+
+`Fleans.Streaming.Kafka.SchemaRegistry` wires a two-topic fanout and a `Confluent.SchemaRegistry` client. Without it, all Kafka topics carry the silo-internal Orleans codec and cannot be read by external consumers (Kafka Connect, ksqlDB, Flink).
+
+**How it works:**
+
+- Every `QueueMessageBatchAsync` call still writes `fleans-N` with the Orleans codec (unchanged).
+- When an `IExternalEventEncoder` is registered in DI, the adapter also writes each event to `fleans-N-events` in the encoder's format (Avro, Protobuf, etc.).
+- Without a registered encoder, no `-events` topics are created or written to — zero overhead.
+
+**Registration:**
+
+```csharp
+builder
+    .AddKafkaStreams("kafka", config)
+    .AddKafkaSchemaRegistry(config.GetSection("Fleans:Streaming:Kafka:SchemaRegistry"));
+// IExternalEventEncoder (Avro or Protobuf framing package) also registered here.
+```
+
+**`appsettings.json` keys:**
+
+```json
+"Fleans:Streaming:Kafka:SchemaRegistry": {
+  "Url": "http://schema-registry:8081",
+  "BasicAuthUsername": "user",
+  "BasicAuthPassword": "pass"
+}
+```
+
+mTLS (PKCS12 keystore) is also supported via `SslKeystoreLocation` / `SslKeystorePassword` — see `KafkaSchemaRegistryOptions` in the package.
+
+**Fanout failures** (encode error or produce error to the `-events` topic) are caught, logged as Warning (EventIds 11107/11108), and silently swallowed — the primary Orleans delivery already succeeded; fanout is best-effort.
+
+**Avro / Protobuf framing** is implemented by separate packages (#701 Avro, #702 Protobuf). Each installs one `IExternalEventEncoder` that encodes recognized event types and returns `null` for others.
 
 ## Delivery contract — at-least-once
 
