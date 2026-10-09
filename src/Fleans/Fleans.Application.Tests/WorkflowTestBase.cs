@@ -1,5 +1,6 @@
 using Fleans.Application;
 using Fleans.Application.Events;
+using Fleans.Application.Grains;
 using Fleans.Application.Placement;
 using Fleans.Application.QueryModels;
 using Fleans.Application.Scripts;
@@ -127,6 +128,50 @@ public abstract class WorkflowTestBase
         Assert.IsTrue(condition(finalSnapshot),
             $"Condition not met after {timeoutMs}ms. Active: [{string.Join(", ", finalSnapshot.ActiveActivities.Select(a => $"{a.ActivityId}({a.ActivityType})"))}], Completed: [{string.Join(", ", finalSnapshot.CompletedActivityIds)}], IsCompleted: {finalSnapshot.IsCompleted}");
         return finalSnapshot;
+    }
+
+    /// <summary>
+    /// Delivers a correlated message once the subscription is registered. Subscription
+    /// registration is an effect of activating the catch/boundary/ESP, so it can land after
+    /// the grain call that started the workflow returns. <c>DeliverMessage</c> on an
+    /// unsubscribed key is a no-op returning <c>false</c>, so retrying is side-effect free.
+    /// Returns <c>false</c> only if nothing subscribed within the timeout.
+    /// </summary>
+    protected async Task<bool> DeliverMessageWhenSubscribed(
+        string messageName, string correlationValue, ExpandoObject? variables = null, int timeoutMs = 10000)
+    {
+        var correlationGrain = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>(
+            MessageCorrelationKey.Build(messageName, correlationValue));
+        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+        while (true)
+        {
+            if (await correlationGrain.DeliverMessage(variables ?? new ExpandoObject()))
+                return true;
+            if (DateTime.UtcNow >= deadline)
+                return false;
+            await Task.Delay(50);
+        }
+    }
+
+    /// <summary>
+    /// Broadcasts a signal once at least <paramref name="minSubscribers"/> subscriptions are
+    /// registered (see <see cref="DeliverMessageWhenSubscribed"/>). A broadcast with zero
+    /// subscribers is a no-op returning 0, so retrying is side-effect free. Note a broadcast
+    /// that reaches fewer than <paramref name="minSubscribers"/> still consumes them.
+    /// </summary>
+    protected async Task<int> BroadcastSignalWhenSubscribed(
+        string signalName, int minSubscribers = 1, int timeoutMs = 10000)
+    {
+        var signalGrain = Cluster.GrainFactory.GetGrain<ISignalCorrelationGrain>(signalName);
+        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+        var delivered = 0;
+        while (true)
+        {
+            delivered += await signalGrain.BroadcastSignal();
+            if (delivered >= minSubscribers || DateTime.UtcNow >= deadline)
+                return delivered;
+            await Task.Delay(50);
+        }
     }
 
     /// <summary>

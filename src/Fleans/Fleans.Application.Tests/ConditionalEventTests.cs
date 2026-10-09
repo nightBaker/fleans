@@ -419,7 +419,10 @@ public class ConditionalIntermediateCatchEventTests : WorkflowTestBase
         await instance.StartWorkflow();
 
         var instanceId = instance.GetPrimaryKey();
-        // Give it a moment, then verify it's still waiting
+        await WaitForCondition(instanceId, s => s.ActiveActivities.Any(a => a.ActivityId == "condCatch"));
+
+        // Negative assertion ("nothing else happens"): there is no state to wait on, so keep a
+        // short grace period for a wrongly-firing catch to surface before asserting.
         await Task.Delay(500);
 
         var snapshot = await QueryService.GetStateSnapshot(instanceId);

@@ -51,11 +51,9 @@ public class EventSubProcessSignalTests : WorkflowTestBase
         await workflowInstance.StartWorkflow();
 
         var instanceId = workflowInstance.GetPrimaryKey();
-        await Task.Delay(500); // let the signal subscription register
 
-        // Act — broadcast the signal.
-        var signalGrain = Cluster.GrainFactory.GetGrain<ISignalCorrelationGrain>("cancelEverything");
-        var deliveredCount = await signalGrain.BroadcastSignal();
+        // Act — broadcast the signal once the ESP subscription is registered.
+        var deliveredCount = await BroadcastSignalWhenSubscribed("cancelEverything");
 
         Assert.IsTrue(deliveredCount >= 1,
             $"Signal should be delivered to at least one subscriber (got {deliveredCount})");

@@ -97,12 +97,9 @@ public class EventSubProcessNestedInSubProcessTests : WorkflowTestBase
         await workflowInstance.StartWorkflow();
 
         var instanceId = workflowInstance.GetPrimaryKey();
-        await Task.Delay(500);
 
-        // Act — deliver correlated message.
-        var correlationKey = MessageCorrelationKey.Build("cancelOrder", "ORD-284");
-        var correlationGrain = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>(correlationKey);
-        var delivered = await correlationGrain.DeliverMessage(new ExpandoObject());
+        // Act — deliver correlated message once the nested ESP subscription is registered.
+        var delivered = await DeliverMessageWhenSubscribed("cancelOrder", "ORD-284");
 
         Assert.IsTrue(delivered, "Correlated message should deliver to nested ESP subscription");
 
@@ -141,11 +138,9 @@ public class EventSubProcessNestedInSubProcessTests : WorkflowTestBase
         await workflowInstance.StartWorkflow();
 
         var instanceId = workflowInstance.GetPrimaryKey();
-        await Task.Delay(500);
 
-        // Act — broadcast the signal.
-        var signalGrain = Cluster.GrainFactory.GetGrain<ISignalCorrelationGrain>("nestedAlert");
-        var deliveredCount = await signalGrain.BroadcastSignal();
+        // Act — broadcast the signal once the nested ESP subscription is registered.
+        var deliveredCount = await BroadcastSignalWhenSubscribed("nestedAlert");
         Assert.IsTrue(deliveredCount >= 1,
             $"Signal should reach at least one subscriber (got {deliveredCount})");
 
@@ -266,10 +261,8 @@ public class EventSubProcessNestedInSubProcessTests : WorkflowTestBase
         await workflowInstance.StartWorkflow();
 
         var instanceId = workflowInstance.GetPrimaryKey();
-        await Task.Delay(500);
-
-        var running = await QueryService.GetStateSnapshot(instanceId);
-        Assert.IsNotNull(running);
+        var running = await WaitForCondition(instanceId,
+            s => s.ActiveActivities.Any(a => a.ActivityId == "innerUserTask"));
         var outerSubEntry = running!.ActiveActivities.FirstOrDefault(a => a.ActivityId == "outerSub");
         Assert.IsNotNull(outerSubEntry, "outerSub must be active before timer fires");
         var innerUserTaskEntry = running.ActiveActivities.FirstOrDefault(a => a.ActivityId == "innerUserTask");
@@ -357,9 +350,8 @@ public class EventSubProcessNestedInSubProcessTests : WorkflowTestBase
         await workflowInstance.StartWorkflow();
 
         var instanceId = workflowInstance.GetPrimaryKey();
-        await Task.Delay(500);
-
-        var running = await QueryService.GetStateSnapshot(instanceId);
+        var running = await WaitForCondition(instanceId,
+            s => s.ActiveActivities.Any(a => a.ActivityId == "outerSub"));
         var outerSubEntry = running!.ActiveActivities.FirstOrDefault(a => a.ActivityId == "outerSub");
         Assert.IsNotNull(outerSubEntry, "outerSub must be active before timer fires");
 
@@ -430,9 +422,8 @@ public class EventSubProcessNestedInSubProcessTests : WorkflowTestBase
         await workflowInstance.StartWorkflow();
 
         var instanceId = workflowInstance.GetPrimaryKey();
-        await Task.Delay(500);
-
-        var running = await QueryService.GetStateSnapshot(instanceId);
+        var running = await WaitForCondition(instanceId,
+            s => s.ActiveActivities.Any(a => a.ActivityId == "outerTx"));
         var outerTxEntry = running!.ActiveActivities.FirstOrDefault(a => a.ActivityId == "outerTx");
         Assert.IsNotNull(outerTxEntry, "outerTx must be active before timer fires");
 
