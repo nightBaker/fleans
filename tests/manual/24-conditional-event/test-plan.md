@@ -15,11 +15,15 @@ Tests BPMN Conditional Events: a workflow with a **conditional intermediate catc
 
 1. Start Event
 2. Script Task `set-initial` — sets `amount = 0`
-3. Conditional Intermediate Catch Event `wait-for-amount` — waits for `amount > 500`
-4. Script Task `after-condition` — sets `result = "condition-met"`
-5. End Event
+3. Parallel Gateway `fork` — splits into two branches:
+   - Conditional Intermediate Catch Event `wait-for-amount` — waits for `amount > 500`, then Script Task `after-condition` (sets `result = "condition-met"`) → End Event `end`
+   - Task `update-amount` (external, completed via API) → End Event `end-update`
 
-The conditional intermediate catch event will be evaluated each time the execution loop runs after variable changes. The test requires an external `complete-activity` call with variables to trigger the condition.
+Conditional watchers are re-evaluated whenever **another activity in the same instance completes**. There is no "patch variables" API, so the fixture provides the `update-amount` task on a parallel branch: completing it with variables merges them into the instance scope and triggers the watcher evaluation. (Completing an already-completed script task such as `set-initial` returns **409 Conflict** — that is not a way to inject variables.)
+
+Conditions use the same syntax as sequence-flow conditions: bare variable names (`amount > 500`) or `${...}` placeholders are rewritten to `_context.<name>` at deploy time.
+
+`conditional-start-event.bpmn` — Process `conditional-start-test`: Conditional Start Event `condStart` (`temperature > 100`) → Script Task `process-alert` (sets `alert = "temperature-exceeded"`) → End Event.
 
 ## Steps
 
@@ -27,24 +31,26 @@ The conditional intermediate catch event will be evaluated each time the executi
 
 1. **Deploy** the BPMN fixture via Web UI (upload `conditional-event-test.bpmn`)
 2. **Start** a new workflow instance for `conditional-event-test`
-3. **Verify** the workflow pauses at `wait-for-amount` (check active activities in Web UI)
-4. **Complete** the `set-initial` script task with variables `{"amount": 600}`:
+3. **Verify** the workflow pauses with `wait-for-amount` and `update-amount` both active
+4. **Complete** `update-amount` with a value that does NOT satisfy the condition:
    ```
-   POST https://localhost:7140/Workflow/complete-activity
-   {"WorkflowInstanceId": "<id>", "ActivityId": "set-initial", "Variables": {"amount": 600}}
+   POST https://localhost:7140/Execution/complete-activity
+   {"WorkflowInstanceId": "<id>", "ActivityId": "update-amount", "Variables": {"amount": 100}}
    ```
-5. **Verify** the conditional catch event fires and the workflow completes with `result = "condition-met"`
+5. **Verify** `wait-for-amount` is still active and the instance is not completed
+6. **Start** a second instance, wait for both activities to be active, then complete `update-amount` with `{"amount": 600}`
+7. **Verify** the conditional catch event fires and the workflow completes with `result = "condition-met"`
 
 ### Test B: Conditional Start Event (via API)
 
-1. Deploy a process with a `ConditionalStartEvent`
+1. Deploy `conditional-start-event.bpmn`
 2. Call the evaluate-conditions endpoint:
    ```
-   POST https://localhost:7140/Workflow/evaluate-conditions
-   {"Variables": {"temperature": 150}}
+   POST https://localhost:7140/Execution/evaluate-conditions
+   {"WorkflowId": "conditional-start-test", "Variables": {"temperature": 150}}
    ```
-3. Verify a new workflow instance is created (condition `temperature > 100` evaluates true)
-4. Call again with `{"Variables": {"temperature": 50}}`
+3. Verify the response has exactly one `StartedInstanceIds` entry and no `Errors`; the new instance completes with `alert = "temperature-exceeded"` (condition `temperature > 100` evaluates true)
+4. Call again with `{"WorkflowId": "conditional-start-test", "Variables": {"temperature": 50}}`
 5. Verify no new instance is created (condition evaluates false)
 
 ## Expected Outcomes
