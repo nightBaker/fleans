@@ -8,6 +8,7 @@ Two providers: **SQLite** (default, local dev) and **PostgreSQL** (production / 
 - **Aspire:** set `FLEANS_PERSISTENCE_PROVIDER=Postgres` before launch to auto-provision a Postgres container.
 - **Connection strings:** SQLite uses `FLEANS_SQLITE_CONNECTION` / `FLEANS_QUERY_CONNECTION`. PostgreSQL uses `ConnectionStrings:fleans` (required) and `ConnectionStrings:fleans-query` (optional read replica).
 - **Migration strategy:** SQLite uses `EnsureCreated()`. PostgreSQL uses `MigrateAsync()` (migrations applied automatically by `Fleans.Api` on startup).
+- **Adding a column to an existing table:** generate a Postgres migration (`dotnet ef migrations add <Name> --project Fleans.Persistence.PostgreSql --context FleanCommandDbContext --output-dir Migrations/Command`) **and** add a row to `SqliteSchemaInitializer.AdditiveColumns`. `EnsureCreated()` is a no-op on an existing SQLite file (e.g. Aspire's `$TMPDIR/fleans-dev.db`, which E2E runs reuse), so without the backfill an older dev DB fails at first query with `no such column`. Additive only — NOT NULL columns need a `DEFAULT`. First used for `WorkflowInstances.IsFailed` (#762).
 - **Migrations live per-provider:** `Fleans.Persistence.Sqlite/Migrations/Command/` and `Fleans.Persistence.PostgreSql/Migrations/Command/`. Only command-context migrations are maintained (command and query share the same database).
 
 ## Provider packages

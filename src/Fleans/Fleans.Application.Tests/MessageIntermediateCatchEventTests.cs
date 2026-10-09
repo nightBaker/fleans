@@ -115,8 +115,10 @@ public class MessageIntermediateCatchEventTests : WorkflowTestBase
         Assert.AreEqual("500", failedActivity.ErrorState.Code);
         StringAssert.Contains(failedActivity.ErrorState.Message, "Duplicate subscription");
 
-        // Workflow should NOT have completed — failed activity stops the flow
-        Assert.IsFalse(snap2.IsCompleted, "Workflow should not complete after a failed activity");
+        // Workflow must not complete successfully — the unhandled failure consumed the
+        // only token, so the instance terminates as Failed (#762).
+        Assert.IsTrue(snap2.IsFailed, "Workflow should be failed after an unhandled activity failure");
+        Assert.IsTrue(snap2.IsCompleted, "A failed workflow is terminal");
         Assert.IsFalse(snap2.CompletedActivities.Any(a => a.ActivityId == "end"),
             "End event should not have been reached");
     }
@@ -176,7 +178,9 @@ public class MessageIntermediateCatchEventTests : WorkflowTestBase
 
         // The workflow must not silently complete — the registration failure
         // is workflow-failing, not workflow-skipping.
-        Assert.IsFalse(snapshot.IsCompleted, "Workflow should not complete after a failed registration");
+        // Since #762 the instance terminates visibly as Failed (terminal, IsCompleted=true).
+        Assert.IsTrue(snapshot.IsFailed, "Workflow should be failed after a failed registration");
+        Assert.IsTrue(snapshot.IsCompleted, "A failed workflow is terminal");
         Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId == "end"),
             "End event should not have been reached");
     }

@@ -12,6 +12,14 @@ public record WorkflowStarted(Guid InstanceId, string? ProcessDefinitionId, Guid
 public record ExecutionStarted(DateTimeOffset OccurredAt = default) : IDomainEvent;
 public record WorkflowCompleted(DateTimeOffset OccurredAt = default) : IDomainEvent;
 public record WorkflowCancelled(string Reason, DateTimeOffset OccurredAt = default) : IDomainEvent;
+/// <summary>
+/// The instance terminated because an unhandled activity failure left it with no live
+/// tokens (no active activities, no completed root end event). Carries the failure that
+/// ended it so the terminal state is self-describing (#762).
+/// </summary>
+public record WorkflowFailed(
+    string FailedActivityId, Guid FailedActivityInstanceId, string ErrorCode, string ErrorMessage,
+    DateTimeOffset OccurredAt = default) : IDomainEvent;
 
 // Activity lifecycle
 public record ActivitySpawned(

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  id="defs_handled_failure" targetNamespace="http://fleans.io/bpmn">
+  <bpmn:process id="handled-script-failure" isExecutable="true">
+    <bpmn:startEvent id="start" />
+
+    <!-- Same failing script as unhandled-script-failure.bpmn, but caught by a catch-all error boundary. -->
+    <bpmn:scriptTask id="boom" scriptFormat="csharp">
+      <bpmn:script>_context.items = new[] { 1, 2, 3 }</bpmn:script>
+    </bpmn:scriptTask>
+
+    <bpmn:boundaryEvent id="catchAll" attachedToRef="boom">
+      <bpmn:errorEventDefinition />
+    </bpmn:boundaryEvent>
+
+    <bpmn:scriptTask id="recover" scriptFormat="csharp">
+      <bpmn:script>_context.recovered = true</bpmn:script>
+    </bpmn:scriptTask>
+
+    <bpmn:endEvent id="end" />
+    <bpmn:endEvent id="recoveredEnd" />
+
+    <bpmn:sequenceFlow id="f1" sourceRef="start"    targetRef="boom" />
+    <bpmn:sequenceFlow id="f2" sourceRef="boom"     targetRef="end" />
+    <bpmn:sequenceFlow id="f3" sourceRef="catchAll" targetRef="recover" />
+    <bpmn:sequenceFlow id="f4" sourceRef="recover"  targetRef="recoveredEnd" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="diag">
+    <bpmndi:BPMNPlane id="plane" bpmnElement="handled-script-failure">
+      <bpmndi:BPMNShape id="s_start"        bpmnElement="start"><dc:Bounds x="100" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_boom"         bpmnElement="boom"><dc:Bounds x="200" y="80" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_catchAll"     bpmnElement="catchAll"><dc:Bounds x="232" y="142" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_end"          bpmnElement="end"><dc:Bounds x="400" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_recover"      bpmnElement="recover"><dc:Bounds x="300" y="220" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_recoveredEnd" bpmnElement="recoveredEnd"><dc:Bounds x="460" y="242" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="e_f1" bpmnElement="f1"><di:waypoint x="136" y="118" /><di:waypoint x="200" y="118" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="e_f2" bpmnElement="f2"><di:waypoint x="300" y="118" /><di:waypoint x="400" y="118" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="e_f3" bpmnElement="f3"><di:waypoint x="250" y="178" /><di:waypoint x="250" y="260" /><di:waypoint x="300" y="260" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="e_f4" bpmnElement="f4"><di:waypoint x="400" y="260" /><di:waypoint x="460" y="260" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

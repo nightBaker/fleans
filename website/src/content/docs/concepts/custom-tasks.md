@@ -70,6 +70,8 @@ Targets must be valid identifiers (`^[a-zA-Z_][a-zA-Z0-9_]*$`). The target `__re
 
 - Throw `CustomTaskFailedActivityException(int code, string message)` from `ExecuteAsync` to fail the activity with a typed error. The code surfaces in the activity's `ErrorState.Code`, so workflow authors can route via boundary error events on specific codes.
 - Any other exception fails the activity with code 500 (the standard `ActivityException` mapping).
+- If no boundary error event or error event sub-process catches the failure and it leaves the instance with no active activities, the **instance** terminates as Failed (`isFailed: true` on the state snapshot) — see [Unhandled errors fail the instance](/fleans/guides/error-handling/#unhandled-errors-fail-the-instance).
+- A plugin that is never registered does **not** fail the activity: with nobody subscribed to the per-type stream, the activity stays Active until a plugin for that `type` comes online or someone calls `POST /Workflow/complete-activity`.
 - If `FailActivity` itself fails (e.g. the workflow grain is unavailable), the handler rethrows so the Orleans stream provider retries — domain idempotency guards handle the duplicate.
 
 ## Catalog & liveness

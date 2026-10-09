@@ -29,7 +29,7 @@ Meter name: `Fleans` (instrumentation version `1.0.0`).
 | Metric | Kind | Unit | Description | Attributes |
 |---|---|---|---|---|
 | `fleans.workflow.started`    | Counter   | `{instances}` | Workflow instances started. | none |
-| `fleans.workflow.terminated` | Counter   | `{instances}` | Workflow instances that reached a terminal state. | `result={completed,cancelled}` |
+| `fleans.workflow.terminated` | Counter   | `{instances}` | Workflow instances that reached a terminal state. | `result={completed,cancelled,failed}` |
 | `fleans.activity.duration`   | Histogram | `ms`          | Per-activity wall-clock duration. Explicit buckets: `[10, 50, 100, 250, 500, 1000, 5000, 10000, 30000, 60000, 300000, 600000]` ms — sub-millisecond script tasks through 10-minute REST calls. | `activity.type` |
 
 > **Deferred to a follow-up:** `fleans.workflow.active` (a non-terminal-count gauge) requires engine-side cooperation to seed from persistence at silo startup so the count survives silo restarts. It is intentionally not shipped in this initial Meter to avoid a known-broken metric. Track via the Fleans GitHub project.

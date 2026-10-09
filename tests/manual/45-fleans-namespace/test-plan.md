@@ -5,7 +5,7 @@ End-to-end coverage that the engine deploys and runs a workflow whose extension 
 ## Prereqs
 
 - Aspire stack running: `dotnet run --project Fleans.Aspire` (from `src/Fleans/`)
-- Custom-task plugin registered for `type="stub-task"` (the same plugin used by `tests/manual/37-custom-task-framework/`). If unregistered, this plan can still verify deploy + multi-instance — the service task will simply fail at execution time with the standard "no plugin for task type 'stub-task'" error.
+- Custom-task plugin registered for `type="stub-task"` is **optional** (the same plugin used by `tests/manual/37-custom-task-framework/`). With no plugin registered, `ct1` stays **Active** (nothing claims the per-type stream) and you advance it manually with `POST /Workflow/complete-activity` (`activityId=ct1`) — this is exactly what the automated E2E port (`RedisAndNamespaceSmokeTests.FleansNamespace_ServiceTaskDeploysAndCompletes`) does.
 
 ## Steps
 
@@ -13,7 +13,9 @@ End-to-end coverage that the engine deploys and runs a workflow whose extension 
 
 2. **Inspect XML in editor:** in the editor (`/editor`), open the deployed process. Confirm the saved XML preserves `xmlns:fleans="https://fleans.io/schema/bpmn/1.0"` and all three fleans-namespaced extension shapes (`<fleans:taskDefinition>`, `<fleans:ioMapping>`, multi-instance attrs) round-trip without being silently rewritten.
 
-3. **Start instance:** start a new instance with no input variables. Watch it advance: `start → seed (sets items=[1,2,3]) → ct1 (calls stub-task) → iterate (multi-instance over items) → end`.
+3. **Start instance:** start a new instance with no input variables. Watch it advance: `start → seed (sets items=[1,2,3]) → ct1 (calls stub-task) → iterate (multi-instance over items) → end`. Without a `stub-task` plugin, `ct1` waits in **Active** — complete it via `POST /Workflow/complete-activity` (`{"WorkflowInstanceId":"<id>","ActivityId":"ct1","Variables":{}}`).
+
+   > **#762 regression guard.** The `seed` script is `_context.items = new List<object> { 1, 2, 3 }`. An earlier version used `new[] { 1, 2, 3 }`, which DynamicExpresso cannot parse: `seed` failed, and because nothing handled the error the instance used to sit with no active activities while being neither completed nor failed. It must now show `seed` with an error **and** the instance status **Failed** — never a silent "Running" with no active activities. (Scenario coverage of that failure path lives in `tests/manual/69-unhandled-failure-fails-instance/`.)
 
 4. **Verify multi-instance output:** instance state shows `doubled_results == [2, 4, 6]`. This proves the parser read the four `fleans:*` multi-instance attributes correctly.
 
@@ -28,4 +30,4 @@ End-to-end coverage that the engine deploys and runs a workflow whose extension 
 
 ## Verdict
 
-Pass / Fail / Known-bug. If failing, capture: (a) the exact error or wrong variable value, (b) the deployed XML as the engine stored it, (c) any console errors from the editor.
+Pass / Fail / Known-bug. The instance must end **Completed** (not **Failed**). If failing, capture: (a) the exact error or wrong variable value, (b) the deployed XML as the engine stored it, (c) any console errors from the editor.
