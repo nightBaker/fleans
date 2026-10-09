@@ -1,0 +1,189 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Performance Tuning Map",
+    "subtitle": "Operator knobs for stream parallelism, durability, and persistence reads (defaults shown)",
+    "quality_profile": "showcase",
+    "animation": "none",
+    "viewBox": [
+      980,
+      520
+    ],
+    "legend": {
+      "entries": {
+        "messagebus": {
+          "label": "Stream provider (QueueCount knobs)"
+        },
+        "backend": {
+          "label": "Silo: pulling agents + replay"
+        },
+        "database": {
+          "label": "Persistence (read limits, paging)"
+        }
+      }
+    }
+  },
+  "components": [
+    {
+      "id": "kafka",
+      "type": "messagebus",
+      "label": "Kafka",
+      "sublabel": "QueueCount 8 \u00b7 NumPartitions 1 \u00b7 RF 1",
+      "tag": "ReplicationFactor: 3 for multi-broker",
+      "pos": [
+        50,
+        90
+      ],
+      "size": [
+        230,
+        76
+      ]
+    },
+    {
+      "id": "redis",
+      "type": "messagebus",
+      "label": "Redis",
+      "sublabel": "TotalQueueCount 8",
+      "pos": [
+        50,
+        226
+      ],
+      "size": [
+        230,
+        64
+      ]
+    },
+    {
+      "id": "azureQueue",
+      "type": "messagebus",
+      "label": "AzureQueue",
+      "sublabel": "QueueNames list, 8 entries",
+      "pos": [
+        50,
+        340
+      ],
+      "size": [
+        230,
+        64
+      ]
+    },
+    {
+      "id": "silo",
+      "type": "backend",
+      "label": "Fleans silo",
+      "sublabel": "one pulling agent per queue",
+      "tag": "grain activation replay",
+      "pos": [
+        380,
+        220
+      ],
+      "size": [
+        220,
+        76
+      ]
+    },
+    {
+      "id": "eventStore",
+      "type": "database",
+      "label": "Event store",
+      "sublabel": "MaxEventsPerLoad 1000",
+      "tag": "warns when exceeded",
+      "pos": [
+        700,
+        90
+      ],
+      "size": [
+        230,
+        76
+      ]
+    },
+    {
+      "id": "postgres",
+      "type": "database",
+      "label": "PostgreSQL",
+      "sublabel": "user-task list, SQL filter",
+      "tag": "Sieve pagination",
+      "pos": [
+        700,
+        220
+      ],
+      "size": [
+        230,
+        76
+      ]
+    },
+    {
+      "id": "sqlite",
+      "type": "database",
+      "label": "SQLite",
+      "sublabel": "default provider",
+      "pos": [
+        700,
+        352
+      ],
+      "size": [
+        230,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Streaming: one provider",
+      "wraps": [
+        "kafka",
+        "redis",
+        "azureQueue"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "Persistence",
+      "wraps": [
+        "eventStore",
+        "postgres",
+        "sqlite"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "kafka",
+      "to": "silo",
+      "label": "queues",
+      "variant": "emphasis"
+    },
+    {
+      "from": "redis",
+      "to": "silo",
+      "variant": "emphasis"
+    },
+    {
+      "from": "azureQueue",
+      "to": "silo",
+      "variant": "emphasis"
+    },
+    {
+      "from": "silo",
+      "to": "eventStore",
+      "label": "replay",
+      "fromSide": "top",
+      "toSide": "left"
+    },
+    {
+      "from": "silo",
+      "to": "postgres",
+      "label": "paged query"
+    },
+    {
+      "from": "sqlite",
+      "to": "postgres",
+      "label": "switch at scale",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom"
+    }
+  ]
+}

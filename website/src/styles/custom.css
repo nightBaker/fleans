@@ -484,23 +484,6 @@ h2#starlight__on-this-page,
   }
 }
 
-/* --- Hero BPMN diagram --- */
-.hero-workflow {
-  max-width: 720px;
-  margin: 2rem auto;
-  text-align: center;
-}
-
-.hero-workflow figcaption {
-  font-size: 0.85rem;
-  opacity: 0.7;
-  margin-top: 0.5rem;
-}
-
-:root[data-theme='light'] .hero-workflow-dark,
-:root[data-theme='dark'] .hero-workflow-light {
-  display: none;
-}
 
 /* GitHub stars badge — theme toggle */
 :root[data-theme='light'] .github-stars-dark,
@@ -555,3 +538,29 @@ h2#starlight__on-this-page,
 .bpmn-activity-img-dark                            { display: none; }
 :root[data-theme='dark']  .bpmn-activity-img-dark  { display: block; }
 :root[data-theme='dark']  .bpmn-activity-img-light { display: none; }
+
+/* --- Archify diagrams (public/diagrams/*.html, embedded via iframe) --- */
+.arch-diagram {
+  margin: 1.5rem 0;
+}
+
+.arch-diagram iframe {
+  display: block;
+  width: 100%;
+  aspect-ratio: var(--arch-ratio, 16 / 9);
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: 0.5rem;
+  background: var(--sl-color-bg);
+}
+
+.arch-diagram figcaption {
+  font-size: var(--sl-text-sm);
+  color: var(--sl-color-gray-3);
+  margin-top: 0.5rem;
+}
+
+.hero-architecture {
+  max-width: 960px;
+  margin: 2rem auto;
+  text-align: center;
+}

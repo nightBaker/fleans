@@ -14,6 +14,26 @@ export default defineConfig({
         replacesTitle: false,
       },
       favicon: '/favicon.svg',
+      head: [
+        // Archify diagrams (public/diagrams/*.html) are embedded as iframes with
+        // `data-arch-src`; keep their `?theme=` in sync with Starlight's theme toggle.
+        {
+          tag: 'script',
+          content: `(() => {
+  const sync = () => {
+    const theme = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+    document.querySelectorAll('iframe[data-arch-src]').forEach((f) => {
+      const src = f.dataset.archSrc + '?embed=1&theme=' + theme;
+      if (f.getAttribute('src') !== src) f.setAttribute('src', src);
+    });
+  };
+  document.addEventListener('DOMContentLoaded', () => {
+    sync();
+    new MutationObserver(sync).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  });
+})();`,
+        },
+      ],
       social: [
         { icon: 'github', label: 'GitHub', href: 'https://github.com/nightBaker/fleans' },
       ],

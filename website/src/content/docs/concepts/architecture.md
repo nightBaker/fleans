@@ -7,6 +7,11 @@ description: How Fleans achieves scalability, reliability, and performance throu
 
 Fleans follows Clean Architecture / DDD layering:
 
+<figure class="arch-diagram" style="--arch-ratio: 1120 / 566">
+  <iframe data-arch-src="/fleans/diagrams/fleans-cluster.html" src="/fleans/diagrams/fleans-cluster.html?embed=1" title="Fleans deployment architecture" loading="lazy"></iframe>
+  <figcaption>A Fleans deployment: your backend calls <code>fleans-api</code>; Core, worker and custom-worker silos form one Orleans cluster backed by PostgreSQL, Redis and optional Kafka. <a href="/fleans/diagrams/fleans-cluster.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
 | Layer | Project | Responsibility |
 |-------|---------|---------------|
 | Domain | `Fleans.Domain` | Aggregates, value objects, domain events. Pure C#, no infrastructure. |
@@ -58,6 +63,11 @@ This means Fleans inherits Orleans' distributed systems guarantees without build
 ## Performance
 
 **In-memory grain state.** Mid-workflow steps read and write in-memory state on the hosting silo. Zero database round-trips until the next `ConfirmEvents()` flush.
+
+<figure class="arch-diagram" style="--arch-ratio: 1100 / 578">
+  <iframe data-arch-src="/fleans/diagrams/event-sourcing-cqrs.html" src="/fleans/diagrams/event-sourcing-cqrs.html?embed=1" title="Event sourcing and CQRS data flow in Fleans" loading="lazy"></iframe>
+  <figcaption>Commands change in-memory grain state, one <code>ConfirmEvents</code> transaction persists the batch, and reads come from a materialized projection instead of event replay. <a href="/fleans/diagrams/event-sourcing-cqrs.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
 
 **Materialized read-side projection.** The `EfCoreWorkflowStateProjection` writes a denormalized snapshot after each event batch. UI queries and `GET /instances/{id}/state` never replay events — they read the projection directly.
 
