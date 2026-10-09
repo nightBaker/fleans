@@ -373,5 +373,125 @@ public class MultiInstanceTests : WorkflowTestBase
         return await QueryService.GetStateSnapshot(instanceId);
     }
 
+    [TestMethod]
+    public async Task ParallelCollection_OnSubProcess_ShouldCompleteEachIterationAndHost()
+    {
+        // Regression: an iteration entry of a multi-instance SubProcess shares the host's
+        // ActivityId, so scope-completion looked up the MultiInstanceActivity wrapper instead
+        // of the inner SubProcess and never completed the iteration — the host hung forever.
+        var subStart = new StartEvent("subStart");
+        var body = new ScriptTask("body", "_context.result = \"sub-\" + _context.item");
+        var subEnd = new EndEvent("subEnd");
+        var subProcess = new SubProcess("perItem")
+        {
+            Activities = [subStart, body, subEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("sf1", subStart, body),
+                new SequenceFlow("sf2", body, subEnd)
+            ]
+        };
+        var start = new StartEvent("start");
+        var mi = new MultiInstanceActivity(
+            "perItem",
+            subProcess,
+            IsSequential: false,
+            InputCollection: "items",
+            InputDataItem: "item",
+            OutputCollection: "results",
+            OutputDataItem: "result");
+        var end = new EndEvent("end");
 
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "mi-subprocess-test",
+            Activities = [start, mi, end],
+            SequenceFlows =
+            [
+                new SequenceFlow("s1", start, mi),
+                new SequenceFlow("s2", mi, end)
+            ]
+        };
+
+        var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("mi-subprocess-test");
+        await processGrain.DeployVersion(workflow, "<xml/>");
+        var instance = await processGrain.CreateInstance();
+        var instanceId = instance.GetPrimaryKey();
+
+        dynamic vars = new ExpandoObject();
+        vars.items = new List<object> { "A", "B", "C" };
+        await instance.SetInitialVariables((ExpandoObject)vars);
+        await instance.StartWorkflow();
+
+        var snapshot = await PollForCompletion(instanceId);
+        Assert.IsNotNull(snapshot);
+        Assert.IsTrue(snapshot.IsCompleted,
+            $"Workflow should complete. Active: [{string.Join(",", snapshot.ActiveActivityIds)}]");
+        Assert.AreEqual(3, snapshot.CompletedActivities.Count(a => a.ActivityId == "body"));
+        Assert.AreEqual(4, snapshot.CompletedActivities.Count(a => a.ActivityId == "perItem"),
+            "3 iterations + 1 host should be completed");
+        CollectionAssert.Contains(snapshot.CompletedActivityIds, "end");
+
+        // The test cluster's SimpleScriptExecutor does not evaluate scripts, so only the
+        // presence of the aggregated collection is asserted here; values are covered by
+        // the E2E spec MultiInstanceScopeTests.
+        Assert.IsTrue(
+            snapshot.VariableStates.Any(v => v.Variables.ContainsKey("results")),
+            "Output collection 'results' should be present");
+    }
+
+    [TestMethod]
+    [Ignore("Blocked by #782: child completion is routed by ActivityId, which MI iterations share.")]
+    public async Task ParallelCardinality_OnCallActivity_ShouldSpawnChildPerIterationAndComplete()
+    {
+        var childStart = new StartEvent("childStart");
+        var childScript = new ScriptTask("childScript", "_context.result = \"child-\" + _context.loopCounter");
+        var childEnd = new EndEvent("childEnd");
+        var child = new WorkflowDefinition
+        {
+            WorkflowId = "mi-call-child",
+            Activities = [childStart, childScript, childEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("c1", childStart, childScript),
+                new SequenceFlow("c2", childScript, childEnd)
+            ]
+        };
+        await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("mi-call-child")
+            .DeployVersion(child, "<xml/>");
+
+        var start = new StartEvent("start");
+        var mi = new MultiInstanceActivity(
+            "callChild",
+            new CallActivity("callChild", "mi-call-child", [], []),
+            IsSequential: false,
+            LoopCardinality: 3,
+            OutputCollection: "results",
+            OutputDataItem: "result");
+        var end = new EndEvent("end");
+        var parent = new WorkflowDefinition
+        {
+            WorkflowId = "mi-call-parent",
+            Activities = [start, mi, end],
+            SequenceFlows =
+            [
+                new SequenceFlow("s1", start, mi),
+                new SequenceFlow("s2", mi, end)
+            ]
+        };
+        var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("mi-call-parent");
+        await processGrain.DeployVersion(parent, "<xml/>");
+        var instance = await processGrain.CreateInstance();
+        var instanceId = instance.GetPrimaryKey();
+
+        await instance.StartWorkflow();
+
+        var snapshot = await PollForCompletion(instanceId);
+        Assert.IsNotNull(snapshot);
+        Assert.IsTrue(snapshot.IsCompleted,
+            $"Workflow should complete. Active: [{string.Join(",", snapshot.ActiveActivityIds)}], " +
+            $"children: [{string.Join(",", snapshot.ActiveActivities.Select(a => a.ChildWorkflowInstanceId))}]");
+        Assert.AreEqual(4, snapshot.CompletedActivities.Count(a => a.ActivityId == "callChild"),
+            "3 iterations + 1 host should be completed");
+    }
 }

@@ -34,6 +34,17 @@ public partial class MessageStartEventListenerGrain :
             if (msgDef?.Name == eventName)
                 return activity.ActivityId;
         }
+
+        // A Multiple Start Event registers its message definitions with this listener too
+        // (IWorkflowDefinition.GetMessageStartEventNames), so it must be resolvable here.
+        foreach (var multiStart in definition.Activities.OfType<MultipleStartEvent>())
+        {
+            foreach (var msgEventDef in multiStart.Definitions.OfType<MessageEventDef>())
+            {
+                if (definition.FindMessageDefinition(msgEventDef.MessageDefinitionId)?.Name == eventName)
+                    return multiStart.ActivityId;
+            }
+        }
         return null;
     }
 

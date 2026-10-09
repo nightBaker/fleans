@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn">
+  <!-- Compensation End Event: broadcasts compensation as the process ends. -->
+  <process id="compensation-end-event-process" isExecutable="true">
+    <startEvent id="start" />
+    <scriptTask id="reserve_hotel" scriptFormat="csharp">
+      <script>_context.hotelStatus = "reserved"</script>
+    </scriptTask>
+    <scriptTask id="book_flight" scriptFormat="csharp">
+      <script>_context.flightStatus = "booked"</script>
+    </scriptTask>
+    <boundaryEvent id="cb_hotel" attachedToRef="reserve_hotel" cancelActivity="false">
+      <compensateEventDefinition />
+    </boundaryEvent>
+    <boundaryEvent id="cb_flight" attachedToRef="book_flight" cancelActivity="false">
+      <compensateEventDefinition />
+    </boundaryEvent>
+    <scriptTask id="cancel_hotel" scriptFormat="csharp">
+      <script>_context.hotelStatus = "cancelled"</script>
+    </scriptTask>
+    <scriptTask id="cancel_flight" scriptFormat="csharp">
+      <script>_context.flightStatus = "cancelled"</script>
+    </scriptTask>
+    <endEvent id="compensate_end">
+      <compensateEventDefinition />
+    </endEvent>
+    <association id="assoc_hotel" sourceRef="cb_hotel" targetRef="cancel_hotel" associationDirection="One" />
+    <association id="assoc_flight" sourceRef="cb_flight" targetRef="cancel_flight" associationDirection="One" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="reserve_hotel" />
+    <sequenceFlow id="f2" sourceRef="reserve_hotel" targetRef="book_flight" />
+    <sequenceFlow id="f3" sourceRef="book_flight" targetRef="compensate_end" />
+  </process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_compensation-end-event-process">
+    <bpmndi:BPMNPlane id="BPMNPlane_compensation-end-event-process" bpmnElement="compensation-end-event-process">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start"><dc:Bounds x="180" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="reserve_hotel_di" bpmnElement="reserve_hotel"><dc:Bounds x="276" y="100" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="cancel_hotel_di" bpmnElement="cancel_hotel"><dc:Bounds x="276" y="270" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="book_flight_di" bpmnElement="book_flight"><dc:Bounds x="436" y="100" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="cancel_flight_di" bpmnElement="cancel_flight"><dc:Bounds x="436" y="270" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="compensate_end_di" bpmnElement="compensate_end"><dc:Bounds x="596" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="cb_hotel_di" bpmnElement="cb_hotel"><dc:Bounds x="286" y="162" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="cb_flight_di" bpmnElement="cb_flight"><dc:Bounds x="446" y="162" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1"><di:waypoint x="216" y="118" /><di:waypoint x="246" y="118" /><di:waypoint x="246" y="140" /><di:waypoint x="276" y="140" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2"><di:waypoint x="376" y="140" /><di:waypoint x="436" y="140" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3"><di:waypoint x="536" y="140" /><di:waypoint x="566" y="140" /><di:waypoint x="566" y="118" /><di:waypoint x="596" y="118" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="assoc_hotel_di" bpmnElement="assoc_hotel"><di:waypoint x="304" y="198" /><di:waypoint x="304" y="310" /><di:waypoint x="276" y="310" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="assoc_flight_di" bpmnElement="assoc_flight"><di:waypoint x="464" y="198" /><di:waypoint x="464" y="310" /><di:waypoint x="436" y="310" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

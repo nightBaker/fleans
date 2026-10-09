@@ -119,3 +119,21 @@ the task completes, the workflow follows the normal path.
 - [ ] `escalation` script runs and completes.
 - [ ] Workflow reaches **Completed** via `escalationEnd`.
 - [ ] Message subscription for `cancelOrder` is cancelled.
+
+---
+
+## Scenario D — Multiple Start Event (Message or Signal)
+
+`multiple-start.bpmn` has one start event with two definitions: message `multiStartOrder` and signal `multiStartOverride`. Either trigger creates a new instance. Automated by `MultipleStartEventTests.MultipleStartEvent_EitherMessageOrSignal_CreatesAnInstance`.
+
+### Steps
+
+1. Deploy `multiple-start.bpmn` (process `multiple-start-test`). Do not start it.
+2. `POST https://localhost:7140/Execution/message` with `{"MessageName":"multiStartOrder"}`.
+3. `POST https://localhost:7140/Execution/signal` with `{"SignalName":"multiStartOverride"}`.
+
+### Expected Outcomes
+
+- [ ] Step 2 returns `delivered: true` with one `workflowInstanceIds` entry; that instance **Completed** (`multiStart`, `afterStart`, `end`)
+- [ ] Step 3 returns one new `workflowInstanceIds` entry (distinct from step 2); that instance **Completed**
+- [ ] Regression: before the fix, the start-event listeners only resolved single-definition message/signal start events, so both calls created no instance (message → 404)

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+             id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn">
+  <!-- Parallel multi-instance embedded sub-process over a collection. -->
+  <process id="mi-subprocess-test" isExecutable="true">
+    <startEvent id="start" />
+    <scriptTask id="setItems" scriptFormat="csharp">
+      <script>_context.items = new List&lt;object&gt; { "A", "B", "C" }</script>
+    </scriptTask>
+    <subProcess id="perItem">
+      <multiInstanceLoopCharacteristics isSequential="false"
+        zeebe:collection="items" zeebe:elementVariable="item"
+        zeebe:outputCollection="results" zeebe:outputElement="result" />
+      <startEvent id="subStart" />
+      <scriptTask id="processItem" scriptFormat="csharp">
+        <script>_context.result = "sub-" + _context.item</script>
+      </scriptTask>
+      <endEvent id="subEnd" />
+      <sequenceFlow id="sf1" sourceRef="subStart" targetRef="processItem" />
+      <sequenceFlow id="sf2" sourceRef="processItem" targetRef="subEnd" />
+    </subProcess>
+    <endEvent id="end" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="setItems" />
+    <sequenceFlow id="f2" sourceRef="setItems" targetRef="perItem" />
+    <sequenceFlow id="f3" sourceRef="perItem" targetRef="end" />
+  </process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_mi-subprocess-test">
+    <bpmndi:BPMNPlane id="BPMNPlane_mi-subprocess-test" bpmnElement="mi-subprocess-test">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start"><dc:Bounds x="180" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="setItems_di" bpmnElement="setItems"><dc:Bounds x="276" y="100" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="perItem_di" bpmnElement="perItem" isExpanded="true"><dc:Bounds x="436" y="100" width="392" height="210" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="subStart_di" bpmnElement="subStart"><dc:Bounds x="476" y="140" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="processItem_di" bpmnElement="processItem"><dc:Bounds x="572" y="140" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="subEnd_di" bpmnElement="subEnd"><dc:Bounds x="732" y="140" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_di" bpmnElement="end"><dc:Bounds x="888" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1"><di:waypoint x="216" y="118" /><di:waypoint x="246" y="118" /><di:waypoint x="246" y="140" /><di:waypoint x="276" y="140" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2"><di:waypoint x="376" y="140" /><di:waypoint x="406" y="140" /><di:waypoint x="406" y="205" /><di:waypoint x="436" y="205" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3"><di:waypoint x="828" y="205" /><di:waypoint x="858" y="205" /><di:waypoint x="858" y="118" /><di:waypoint x="888" y="118" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf1_di" bpmnElement="sf1"><di:waypoint x="512" y="158" /><di:waypoint x="542" y="158" /><di:waypoint x="542" y="180" /><di:waypoint x="572" y="180" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf2_di" bpmnElement="sf2"><di:waypoint x="672" y="180" /><di:waypoint x="702" y="180" /><di:waypoint x="702" y="158" /><di:waypoint x="732" y="158" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>
