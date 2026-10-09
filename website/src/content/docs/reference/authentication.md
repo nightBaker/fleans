@@ -49,6 +49,11 @@ Authentication__RequireHttpsMetadata=false
 - **Health endpoints** (`/health`, `/alive`) remain anonymous — they are exempt so that load balancers and orchestrators can probe without credentials. See [`Fleans.ServiceDefaults/Extensions.cs`](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.ServiceDefaults/Extensions.cs) for the implementation.
 - **Swagger UI** remains accessible in development mode for testing.
 
+<figure class="arch-diagram" style="--arch-ratio: 480 / 738; max-width: 520px; margin-inline: auto">
+  <iframe data-arch-src="/fleans/diagrams/api-jwt-auth.html" src="/fleans/diagrams/api-jwt-auth.html?embed=1" title="API JWT authentication sequence" loading="lazy"></iframe>
+  <figcaption>With <code>Authentication:Authority</code> set, every API call carries a bearer token; user-task claims take candidate groups from the token's <code>groups</code> claim. <a href="/fleans/diagrams/api-jwt-auth.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
 ## Identity providers
 
 ### Keycloak

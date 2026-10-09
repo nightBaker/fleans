@@ -32,6 +32,11 @@ The decision matrix:
 Use error events whenever an activity can fail in a way the workflow can recover from.
 Fleans supports the three standard BPMN forms:
 
+<figure class="arch-diagram" style="--arch-ratio: 720 / 546">
+  <iframe data-arch-src="/fleans/diagrams/error-boundary-flow.html" src="/fleans/diagrams/error-boundary-flow.html?embed=1" title="Error boundary matching and compensation flow" loading="lazy"></iframe>
+  <figcaption>A failed activity's error code is matched against its boundaries: a specific code wins over a catch-all; a compensate throw later undoes completed compensable activities in reverse order. <a href="/fleans/diagrams/error-boundary-flow.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
 1. **Error boundary event** attached to a `serviceTask` / `scriptTask` / `userTask` / `callActivity`.
 2. **Error event sub-process** (`<subProcess triggeredByEvent="true">` containing
    `<startEvent><errorEventDefinition/></startEvent>`).

@@ -60,6 +60,11 @@ Each `cosign verify` exits 0 and prints a JSON object containing a `Bundle` bloc
 
 ## 2. Run the stack
 
+<figure class="arch-diagram" style="--arch-ratio: 1120 / 566">
+  <iframe data-arch-src="/fleans/diagrams/fleans-cluster.html" src="/fleans/diagrams/fleans-cluster.html?embed=1" title="Fleans deployment architecture" loading="lazy"></iframe>
+  <figcaption>How the services fit together once the stack is up; OIDC, custom workers and Kafka are optional add-ons. <a href="/fleans/diagrams/fleans-cluster.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
 ```bash
 unzip docker-compose-v0.1.0-beta.zip -d fleans
 cd fleans

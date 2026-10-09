@@ -1,0 +1,191 @@
+{
+  "schema_version": 1,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Error Boundary Flow",
+    "subtitle": "How a failed activity is routed, and how compensation unwinds completed work",
+    "quality_profile": "showcase",
+    "animation": "none",
+    "legend": {
+      "entries": {
+        "backend": {
+          "label": "Activity / boundary event"
+        },
+        "security": {
+          "label": "Failed state"
+        },
+        "messagebus": {
+          "label": "Boundary matching"
+        },
+        "frontend": {
+          "label": "Recovery flow"
+        },
+        "database": {
+          "label": "Compensation"
+        }
+      }
+    }
+  },
+  "lanes": [
+    {
+      "id": "activity",
+      "label": "Activity"
+    },
+    {
+      "id": "routing",
+      "label": "Error boundary"
+    },
+    {
+      "id": "fallback",
+      "label": "Fallback",
+      "variant": "exception"
+    }
+  ],
+  "mainPath": [
+    "task",
+    "fail",
+    "match",
+    "specific",
+    "handler"
+  ],
+  "nodes": [
+    {
+      "id": "task",
+      "lane": "activity",
+      "col": 0,
+      "type": "backend",
+      "label": "Task",
+      "sublabel": "throws exception",
+      "width": 94
+    },
+    {
+      "id": "fail",
+      "lane": "activity",
+      "col": 1,
+      "type": "security",
+      "label": "Fails",
+      "sublabel": "typed error code",
+      "width": 104
+    },
+    {
+      "id": "unhandled",
+      "lane": "activity",
+      "col": 3,
+      "type": "security",
+      "label": "Unhandled",
+      "sublabel": "stays Failed",
+      "width": 112
+    },
+    {
+      "id": "compensate",
+      "lane": "activity",
+      "col": 5,
+      "type": "database",
+      "label": "Compensate",
+      "sublabel": "reverse-order undo",
+      "width": 108
+    },
+    {
+      "id": "match",
+      "lane": "routing",
+      "col": 2,
+      "type": "messagebus",
+      "label": "Match",
+      "sublabel": "host boundaries",
+      "width": 96
+    },
+    {
+      "id": "specific",
+      "lane": "routing",
+      "col": 3,
+      "type": "backend",
+      "label": "errorRef",
+      "sublabel": "specific code wins",
+      "width": 100
+    },
+    {
+      "id": "handler",
+      "lane": "routing",
+      "col": 5,
+      "type": "frontend",
+      "label": "Handler",
+      "sublabel": "boundary flow",
+      "width": 104
+    },
+    {
+      "id": "catchall",
+      "lane": "fallback",
+      "col": 4,
+      "type": "backend",
+      "label": "Catch-all",
+      "sublabel": "no errorRef",
+      "width": 110
+    }
+  ],
+  "edges": [
+    {
+      "from": "task",
+      "to": "fail",
+      "variant": "emphasis",
+      "role": "main"
+    },
+    {
+      "from": "fail",
+      "to": "match",
+      "variant": "emphasis",
+      "role": "main",
+      "route": "drop",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "match",
+      "to": "specific",
+      "variant": "emphasis",
+      "role": "main"
+    },
+    {
+      "from": "specific",
+      "to": "handler",
+      "variant": "emphasis",
+      "role": "main"
+    },
+    {
+      "from": "fail",
+      "to": "unhandled",
+      "role": "error",
+      "variant": "security",
+      "label": "no boundary"
+    },
+    {
+      "from": "match",
+      "to": "catchall",
+      "role": "branch",
+      "label": "no code match",
+      "route": "drop",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "catchall",
+      "to": "handler",
+      "role": "branch",
+      "fromSide": "right",
+      "toSide": "bottom",
+      "via": [
+        [
+          625,
+          367
+        ]
+      ]
+    },
+    {
+      "from": "handler",
+      "to": "compensate",
+      "role": "branch",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom"
+    }
+  ]
+}

@@ -1,0 +1,170 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Open, edit, and deploy in the BPMN editor",
+    "subtitle": "Tabs persist in localStorage; deploying a tab creates a new process version and clears its dirty flag",
+    "viewBox": [
+      580,
+      700
+    ],
+    "animation": "none",
+    "quality_profile": "showcase",
+    "legend": {
+      "entries": {
+        "default": {
+          "label": "Operator action"
+        },
+        "emphasis": {
+          "label": "Deploy"
+        },
+        "dashed": {
+          "label": "Persist tabs"
+        },
+        "return": {
+          "label": "Result"
+        }
+      }
+    }
+  },
+  "participants": [
+    {
+      "id": "operator",
+      "type": "external",
+      "label": "Operator",
+      "sublabel": "admin UI"
+    },
+    {
+      "id": "list",
+      "type": "frontend",
+      "label": "List",
+      "sublabel": "/workflows"
+    },
+    {
+      "id": "editor",
+      "type": "frontend",
+      "label": "Editor",
+      "sublabel": "bpmn-js tabs"
+    },
+    {
+      "id": "storage",
+      "type": "database",
+      "label": "Browser",
+      "sublabel": "localStorage"
+    },
+    {
+      "id": "engine",
+      "type": "backend",
+      "label": "Engine",
+      "sublabel": "new versions"
+    }
+  ],
+  "segments": [
+    {
+      "from": 160,
+      "to": 330,
+      "label": "Open"
+    },
+    {
+      "from": 350,
+      "to": 430,
+      "label": "Edit"
+    },
+    {
+      "from": 450,
+      "to": 590,
+      "label": "Deploy"
+    }
+  ],
+  "messages": [
+    {
+      "id": "new-import",
+      "from": "operator",
+      "to": "editor",
+      "y": 190,
+      "label": "New / Import BPMN"
+    },
+    {
+      "id": "pick-row",
+      "from": "operator",
+      "to": "list",
+      "y": 235,
+      "label": "click workflow"
+    },
+    {
+      "id": "open-tab",
+      "from": "list",
+      "to": "editor",
+      "y": 275,
+      "label": "open XML in tab"
+    },
+    {
+      "id": "save-open",
+      "from": "editor",
+      "to": "storage",
+      "y": 315,
+      "label": "save tabs",
+      "variant": "dashed"
+    },
+    {
+      "id": "edit",
+      "from": "operator",
+      "to": "editor",
+      "y": 375,
+      "label": "edit (● dirty)"
+    },
+    {
+      "id": "save-edit",
+      "from": "editor",
+      "to": "storage",
+      "y": 415,
+      "label": "save tabs",
+      "variant": "dashed"
+    },
+    {
+      "id": "deploy-click",
+      "from": "operator",
+      "to": "editor",
+      "y": 480,
+      "label": "Deploy"
+    },
+    {
+      "id": "deploy",
+      "from": "editor",
+      "to": "engine",
+      "y": 515,
+      "label": "deploy XML",
+      "variant": "emphasis"
+    },
+    {
+      "id": "version",
+      "from": "engine",
+      "to": "editor",
+      "y": 550,
+      "label": "new version",
+      "variant": "return"
+    },
+    {
+      "id": "clear-dirty",
+      "from": "editor",
+      "to": "storage",
+      "y": 580,
+      "label": "dirty cleared",
+      "variant": "dashed"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "editor",
+      "from": 185,
+      "to": 585,
+      "type": "frontend"
+    },
+    {
+      "participant": "engine",
+      "from": 510,
+      "to": 555,
+      "type": "backend"
+    }
+  ]
+}
