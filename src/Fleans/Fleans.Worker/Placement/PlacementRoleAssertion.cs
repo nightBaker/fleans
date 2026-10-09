@@ -113,11 +113,11 @@ public sealed partial class PlacementRoleAssertion : ILifecycleParticipant<ISilo
 
     public enum PlacementKind { Worker, Core }
 
-    [LoggerMessage(EventId = 11200, Level = LogLevel.Information,
+    [LoggerMessage(EventId = 12000, Level = LogLevel.Information,
         Message = "PlacementRoleAssertion: Fleans:Role='{Role}' on silo '{SiloName}' — checked {Count} placement-attributed grain(s); no violations.")]
     private partial void LogAssertionRan(string role, string siloName, int count);
 
-    [LoggerMessage(EventId = 11201, Level = LogLevel.Error,
+    [LoggerMessage(EventId = 12001, Level = LogLevel.Error,
         Message = "PlacementRoleAssertion VIOLATION: grain '{GrainType}' carries {Attribute} but Fleans:Role='{Role}' (requires {Expected}).")]
     private partial void LogViolation(string grainType, string attribute, string role, string expected);
 }
