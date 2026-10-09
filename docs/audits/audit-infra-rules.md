@@ -23,10 +23,10 @@
 ## scalability/user-task-full-table-materialize
 - **dimension:** scalability
 - **severity:** minor
-- **signal:** `WorkflowQueryService.GetPendingUserTasks` (the paged overload) in `src/Fleans/Fleans.Persistence/WorkflowQueryService.cs` calls `sievedQuery.ToListAsync()` before the `ApplyUserTaskFilters` call — the assignee/candidateGroup WHERE clause is applied in memory after the full non-completed user-task table is loaded. Look for `ToListAsync()` followed by `ApplyUserTaskFilters(` with no intervening DB-level WHERE on assignee or candidateGroup.
-- **remediation:** Add provider-specific EF Core expressions for `CandidateUsers`/`CandidateGroups` JSON array containment (`@>` / `?` on PostgreSQL via Npgsql's `EF.Functions`) so the filter executes server-side on the Postgres provider. The SQLite path can retain the in-memory fallback. Follow the `RelationalModelCustomizer` subclass pattern in `Fleans.Persistence.Sqlite` and `Fleans.Persistence.PostgreSql`. See issue #415.
+- **signal:** `WorkflowQueryService.GetPendingUserTasks` in `src/Fleans/Fleans.Persistence/WorkflowQueryService.cs` has two unbounded materialization paths: (1) the no-arg overload calls `.ToListAsync()` with only a `TaskState != Completed` filter before `ApplyUserTaskFilters`; (2) the paged overload's SQLite branch (`_userTaskFilter.PushesToSql == false`) calls `sievedQuery.ToListAsync()` before in-memory filtering. Look for `ToListAsync()` followed by `ApplyUserTaskFilters(` in either overload.
+- **remediation:** The Postgres paged path now pushes filters to SQL via `IUserTaskFilterStrategy.PushesToSql`. Remaining gaps: (1) extend the no-arg overload with the same strategy, or deprecate/remove it in favour of the paged overload with a large-enough page. (2) The SQLite path may retain in-memory filtering, but should at minimum apply a hard cap (`Take(maxRows)`) before materialisation. See issue #415.
 - **first seen:** 2026-04-28
-- **last matched:** 2026-04-28
+- **last matched:** 2026-06-08
 
 ## pluggability/role-env-aspire-chart-parity
 - **dimension:** pluggability
@@ -35,3 +35,27 @@
 - **remediation:** Add `WithEnvironment("Fleans__Role", builder.Configuration["FLEANS_ROLE"] ?? "Combined")` when wiring the `fleans-core` project in Aspire. Document the `FLEANS_ROLE` local-dev override in CLAUDE.md under the Core/Worker role split section. See issue #416.
 - **first seen:** 2026-04-28
 - **last matched:** 2026-04-28
+
+## pluggability/reminders-provider-chart-aspire-gap
+- **dimension:** pluggability
+- **severity:** minor
+- **signal:** `Fleans:Reminders:Provider` is read by `FleansRemindersExtensions.AddFleansReminders` in `src/Fleans/Fleans.ServiceDefaults/Reminders/FleansRemindersExtensions.cs` but absent from both `charts/fleans/values.yaml` (no `reminders.provider` key) and `src/Fleans/Fleans.Aspire/Program.cs` (no `WithEnvironment("Fleans__Reminders__Provider", ...)` call). Search for the absence of `Fleans__Reminders` in both files.
+- **remediation:** (1) Add `reminders.provider: Redis` to `values.yaml` with a `Redis | Postgres` comment. (2) Add a `fail` guard plus `Fleans__Reminders__Provider` env injection to `_helpers.tpl`'s `fleans.commonEnv`, mirroring the streaming provider pattern at lines 109-133. (3) In `Fleans.Aspire/Program.cs`, stamp `Fleans__Reminders__Provider` when the operator explicitly sets it, so local dev parity is maintained. See issue #676.
+- **first seen:** 2026-06-08
+- **last matched:** 2026-06-08
+
+## pluggability/persistence-helm-render-validation
+- **dimension:** pluggability
+- **severity:** minor
+- **signal:** `charts/fleans/templates/_helpers.tpl` injects `Persistence__Provider` at line 101 without a `fail` guard, while the streaming provider has one at lines 110-112. Search for `Persistence__Provider` in `_helpers.tpl` and check whether a `{{- if not (has` guard appears before it.
+- **remediation:** Add `{{- if not (has $persistenceProvider (list "sqlite" "postgres")) }} {{- fail ... }} {{- end }}` immediately before the `Persistence__Provider` env entry in `fleans.commonEnv`, mirroring the streaming guard. This surfaces misconfigured `persistence.provider` values at `helm template` time rather than at silo startup. See issue #675.
+- **first seen:** 2026-06-08
+- **last matched:** 2026-06-08
+
+## reliability/direct-logger-extension-calls
+- **dimension:** reliability
+- **severity:** minor
+- **signal:** Grep for `_logger\.Log` (LogError, LogWarning, LogInformation, LogDebug) in `src/Fleans/` excluding test projects — any match in a non-`partial` class violates the `[LoggerMessage]` source-generator convention in CLAUDE.md. Check `Fleans.Streaming.Kafka/` and `Fleans.Application/Effects/`.
+- **remediation:** Make each violating class `partial`. Replace every `_logger.Log*()` call with a `[LoggerMessage]`-attributed `private partial void Log<Name>(...)` method. Allocate new EventId ranges in `docs/conventions/observability-eventids.md` for the Kafka streaming provider and `EffectDispatcher`. See `Fleans.Application/Grains/WorkflowInstance.Logging.cs` for the canonical pattern. See issue #714.
+- **first seen:** 2026-06-08
+- **last matched:** 2026-06-08
