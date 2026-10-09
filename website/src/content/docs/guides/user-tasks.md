@@ -80,7 +80,7 @@ The examples in the rest of this guide target the default unauthenticated profil
 User-task endpoints live under `/UserTasks/...` (since [PR #614](https://github.com/nightBaker/fleans/pull/614)). Older guides and BPMN-tool integrations may reference `/Workflow/tasks/...` — that route is gone; replace with `/UserTasks/...`.
 :::
 
-`GET /UserTasks` returns the paginated list of active user tasks across all workflow instances:
+`GET /UserTasks` returns the paginated list of active user tasks across all workflow instances. Completed, failed and cancelled tasks are excluded (earlier releases leaked them into this list until [#765](https://github.com/nightBaker/fleans/issues/765)):
 
 ```bash
 curl 'https://localhost:7140/UserTasks?page=1&pageSize=20'

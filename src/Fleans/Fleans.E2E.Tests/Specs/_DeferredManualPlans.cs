@@ -70,11 +70,6 @@ public class DeferredManualPlans : WorkflowE2ETestBase_None
     [Ignore("Configuration + throughput observation; not a workflow-level assertion.")]
     public void Plan44_StreamShardingParallelism_QueueCountTunable() { }
 
-    // tests/manual/45-user-task-fail-cancel/test-plan.md — fail/cancel user task.
-    [TestMethod]
-    [Ignore("Needs fail-task + cancel-task DTO + client helpers; lifecycle covered partially by Plan18.")]
-    public void Plan45_UserTaskFailCancel_TerminalStatesTransition() { }
-
     // tests/manual/47-event-subprocess-editor/test-plan.md — editor UI for event sub-process.
     [TestMethod]
     [Ignore("Needs EditorPage POM + property-panel inspection.")]
@@ -125,10 +120,9 @@ public class DeferredManualPlans : WorkflowE2ETestBase_None
     [Ignore("Needs EditorPage POM + custom-task output mapping panel.")]
     public void Plan59_CustomTaskOutputMappingEditor() { }
 
-    // tests/manual/61-usertask-group-claim/test-plan.md — candidate-group claim.
-    [TestMethod]
-    [Ignore("Needs JWT 'groups' claim resolution in test cluster; spec body lives with Plan18 follow-up.")]
-    public void Plan61_UserTaskGroupClaim_AuthorizationRule() { }
+    // tests/manual/45-user-task-fail-cancel/test-plan.md and
+    // tests/manual/61-usertask-group-claim/test-plan.md — automated in UserTaskLifecycleTests
+    // (the JWT-derived-groups half of plan 61 stays manual; the test cluster runs without auth).
 
     // tests/manual/62-chart-streaming-providers/test-plan.md — Helm chart tests. OUT OF SCOPE.
     // tests/manual/63-chart-external-postgres/test-plan.md — Helm chart tests. OUT OF SCOPE.

@@ -361,7 +361,12 @@ public class WorkflowQueryService : IWorkflowQueryService
         // Layer 1: provider-specific base query. PG injects JSON-text LIKE conditions via
         // raw SQL (FromSqlInterpolated); SQLite returns a plain AsQueryable() and relies on
         // the in-memory filter path below. See IUserTaskFilterStrategy / #415.
-        var baseQuery = _userTaskFilter.GetFilteredBase(db, assignee, candidateGroup);
+        // "Pending" excludes terminal tasks. Completed / failed / cancelled tasks are all
+        // projected as TaskState=Completed (CompleteUserTaskPersistenceEffect) and retained
+        // for audit — they must not surface here (matches GetUserTask / the non-paged
+        // overload). Composes on top of the PG FromSqlInterpolated base as a WHERE clause.
+        var baseQuery = _userTaskFilter.GetFilteredBase(db, assignee, candidateGroup)
+            .Where(t => t.TaskState != UserTaskLifecycleState.Completed);
 
         // Layer 2: Sieve for sort + any caller-supplied filters (e.g. TaskState).
         var sieveModel = new SieveModel

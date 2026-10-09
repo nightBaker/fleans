@@ -2,6 +2,11 @@
 
 Verifies #588: a `<bpmn:userTask>` gated by `camunda:candidateGroups` (no assignee, no candidateUsers) is claimable only by callers whose request-supplied `userGroups` intersect the task's `CandidateGroups`. Pre-#588 the same task was silently claimable by any caller — the very gap this plan exists to regression-test.
 
+> **Automated:** steps 1–3 and 5 are covered by
+> `src/Fleans/Fleans.E2E.Tests/Specs/UserTaskLifecycleTests.cs` (`GroupClaim_*`, plus
+> `Unclaim_ThenReclaimByAnotherUser_*` and `PendingList_FiltersByAssigneeAndCandidateGroup`).
+> Step 4 (EventId 1066 log inspection) and the JWT-derived-groups variant remain manual.
+
 ## Prerequisites
 
 - Aspire stack running (`dotnet run --project Fleans.Aspire` from `src/Fleans/`).
