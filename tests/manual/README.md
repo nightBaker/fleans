@@ -118,6 +118,8 @@ Each numbered entry below is one regression "step". For each one, follow the lin
 
 68. **AWS MSK IAM authentication** — `68-kafka-msk-iam/test-plan.md`. Verifies #682: `AddKafkaStreamingWithMskIam` wires SASL_SSL+OAuthBearer via the AWS SigV4 signer; IAM token refreshes succeed under workload identity; EventId 11200 fires on IAM permission errors; missing region throws at startup; wrong broker port (`:9092` vs `:9098`) produces a clear SASL error. **Human-only — requires AWS account + MSK cluster.**
 
+72. **Process-definition versioning** — `72-definition-versioning/test-plan.md` (`versioned-order-v{1,2}.bpmn`, `versioned-child-v{1,2}.bpmn`, `versioned-parent.bpmn`). Verifies #767: instances started on v1 finish on the v1 graph after v2 of the same key is deployed (v1-only ids completed, v2-only ids not — both versions share the `approve` user-task id to catch graph migration); new starts use v2; `GET /Definitions/{key}/{version}/instances` and `GET /Definitions/{key}/instances` list each instance under the right version; a call activity resolves the **latest** child version at the moment it executes (no pinning), while an already-running v1 child finishes on v1. Automated by `DefinitionVersioningTests`.
+
 ## Website regression suite
 
 Website-specific manual tests live under `website/`. These run in a local dev server, not against the .NET stack.

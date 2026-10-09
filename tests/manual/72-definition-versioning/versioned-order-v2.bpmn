@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI">
+  <!-- Version 2 of versioned-order. Same key and same 'approve' user-task id as v1, different surrounding flow (different ids plus an extra v2Audit step). -->
+  <process id="versioned-order" isExecutable="true">
+    <startEvent id="start" />
+    <scriptTask id="v2Prepare" scriptFormat="csharp">
+      <script>_context.preparedBy = "v2"</script>
+    </scriptTask>
+    <userTask id="approve" name="Approve (v2)" />
+    <scriptTask id="v2Finish" scriptFormat="csharp">
+      <script>_context.finishedBy = "v2"</script>
+    </scriptTask>
+    <scriptTask id="v2Audit" scriptFormat="csharp">
+      <script>_context.audited = true</script>
+    </scriptTask>
+    <endEvent id="v2End" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="v2Prepare" />
+    <sequenceFlow id="f2" sourceRef="v2Prepare" targetRef="approve" />
+    <sequenceFlow id="f3" sourceRef="approve" targetRef="v2Finish" />
+    <sequenceFlow id="f4" sourceRef="v2Finish" targetRef="v2Audit" />
+    <sequenceFlow id="f5" sourceRef="v2Audit" targetRef="v2End" />
+  </process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="versioned-order">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="180" y="182" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="v2Prepare_di" bpmnElement="v2Prepare">
+        <dc:Bounds x="276" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="approve_di" bpmnElement="approve">
+        <dc:Bounds x="436" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="v2Finish_di" bpmnElement="v2Finish">
+        <dc:Bounds x="596" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="v2Audit_di" bpmnElement="v2Audit">
+        <dc:Bounds x="756" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="v2End_di" bpmnElement="v2End">
+        <dc:Bounds x="916" y="182" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="216" y="200" />
+        <di:waypoint x="276" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="376" y="200" />
+        <di:waypoint x="436" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="536" y="200" />
+        <di:waypoint x="596" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f4_di" bpmnElement="f4">
+        <di:waypoint x="696" y="200" />
+        <di:waypoint x="756" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f5_di" bpmnElement="f5">
+        <di:waypoint x="856" y="200" />
+        <di:waypoint x="916" y="200" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

@@ -6,7 +6,7 @@ using Fleans.ServiceDefaults.DTOs;
 
 namespace Fleans.E2E.Tests.ApiClient;
 
-public sealed class FleansApiClient
+public sealed partial class FleansApiClient
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
