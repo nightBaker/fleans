@@ -111,7 +111,9 @@ public class ComplexGatewayTests : WorkflowTestBase
         // Wait for both tasks to complete (confirming condition evaluation has been attempted)
         await WaitForCondition(instanceId,
             s => s.CompletedActivities.Count(a => a.ActivityId is "task1" or "task2") >= 2);
-        await Task.Delay(200); // allow time for any async side effects after condition evaluation
+        // Negative assertion ("join never fires"): no state to wait on — keep a short grace
+        // period for a wrongly-firing join to surface before asserting.
+        await Task.Delay(200);
         var snapshot = await QueryService.GetStateSnapshot(instanceId);
         Assert.IsNotNull(snapshot);
         Assert.IsFalse(snapshot.IsCompleted,
@@ -140,7 +142,8 @@ public class ComplexGatewayTests : WorkflowTestBase
         // Assert — join not yet fired (needs all tokens)
         await WaitForCondition(instanceId,
             s => s.CompletedActivities.Any(a => a.ActivityId == "task1"));
-        await Task.Delay(100); // allow time for any async side effects
+        // Negative assertion ("join not yet fired"): grace period, see above.
+        await Task.Delay(100);
         var snapshot = await QueryService.GetStateSnapshot(instanceId);
         Assert.IsNotNull(snapshot);
         Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId == "join"),

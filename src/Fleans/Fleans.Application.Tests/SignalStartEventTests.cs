@@ -189,7 +189,6 @@ public class SignalStartEventTests : WorkflowTestBase
         // Start an instance of Workflow A and wait for it to reach the catch event
         var instanceA = await processGrainA.CreateInstance();
         await instanceA.StartWorkflow();
-        await Task.Delay(500);
 
         // Workflow B: SignalStartEvent -> ScriptTask -> EndEvent
         // (this one gets created by signal)
@@ -197,8 +196,7 @@ public class SignalStartEventTests : WorkflowTestBase
         await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("fanout-start-wf").DeployVersion(workflowB, "<placeholder/>");
 
         // Act — simulate fan-out: broadcast to running instances + fire start event
-        var signalCorrelation = Cluster.GrainFactory.GetGrain<ISignalCorrelationGrain>("fanoutSignal");
-        var deliveredCount = await signalCorrelation.BroadcastSignal();
+        var deliveredCount = await BroadcastSignalWhenSubscribed("fanoutSignal");
 
         var startListener = Cluster.GrainFactory.GetGrain<ISignalStartEventListenerGrain>("fanoutSignal");
         var newInstanceIds = await startListener.FireSignalStartEvent();

@@ -227,13 +227,8 @@ public class MessageStartEventTests : WorkflowTestBase
         await instance.SetInitialVariables((ExpandoObject)initVars);
         await instance.StartWorkflow();
 
-        // Wait for subscription registration
-        await Task.Delay(500);
-
-        // Act — deliver via correlation
-        var correlationKey = MessageCorrelationKey.Build("priorityMsg", "ORD-999");
-        var correlationGrain = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>(correlationKey);
-        var delivered = await correlationGrain.DeliverMessage(new ExpandoObject());
+        // Act — deliver via correlation once the catch-event subscription is registered
+        var delivered = await DeliverMessageWhenSubscribed("priorityMsg", "ORD-999");
 
         // Assert — correlation delivery should succeed
         Assert.IsTrue(delivered, "Correlation delivery should succeed for a subscribed instance");

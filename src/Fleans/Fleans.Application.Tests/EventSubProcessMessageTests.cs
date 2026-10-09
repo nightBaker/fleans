@@ -56,14 +56,10 @@ public class EventSubProcessMessageTests : WorkflowTestBase
         await workflowInstance.SetInitialVariables((ExpandoObject)initVars);
         await workflowInstance.StartWorkflow();
 
-        // Wait for the userTask to be active and the subscription to register.
         var instanceId = workflowInstance.GetPrimaryKey();
-        await Task.Delay(500);
 
-        // Act — deliver a correlated message via the correlation grain.
-        var correlationKey = MessageCorrelationKey.Build("cancelOrder", "ORD-123");
-        var correlationGrain = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>(correlationKey);
-        var delivered = await correlationGrain.DeliverMessage(new ExpandoObject());
+        // Act — deliver a correlated message once the ESP subscription is registered.
+        var delivered = await DeliverMessageWhenSubscribed("cancelOrder", "ORD-123");
 
         Assert.IsTrue(delivered, "Correlated message should be delivered to the event sub-process subscription");
 
