@@ -23,6 +23,21 @@ FLEANS_STREAMING_PROVIDER=AzureQueue dotnet test Fleans.E2E.Tests/Fleans.E2E.Tes
 
 Tag a spec `E2E-Smoke` only when it exercises persistence or streaming in a way the default leg can't vouch for — every tagged spec runs three extra times in CI.
 
+### Split-role leg (`E2E-SplitRoles`)
+
+Specs tagged `[TestCategory(E2ECategories.SplitRoles)]` (`SplitRoleTopologyTests`) need the three-role topology and run only in the `e2e-split-roles` job; the default `e2e` job filters them out (`TestCategory=E2E&TestCategory!=E2E-SplitRoles`). With `FLEANS_SPLIT_ROLES=true`:
+
+- the AppHost runs `fleans-core` as `Core` and registers `fleans-worker` (`Fleans.WorkerHost`, `Worker`) in dev mode;
+- `AspireFixture` sets `FLEANS_PLUGIN_HOST_PROJECT` to `src/Fleans/Fleans.E2E.PluginHost` — a test-only `Plugin`-role host (template-shaped: `Fleans.Worker` + Orleans only) whose single plugin `e2e-probe` reports the silo it ran on and its start/complete/cancel lifecycle to the in-process `TestHttpServer` (`/probe`);
+- two explicit-start resources (`misroled-worker`, `misroled-plugin-host`) exist only for the role-mismatch spec;
+- every resource's console output is teed to `Fleans.E2E.Tests/bin/Debug/net10.0/resource-logs/` (uploaded by CI on failure).
+
+```bash
+FLEANS_SPLIT_ROLES=true dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --filter "TestCategory=E2E-SplitRoles"
+```
+
+Without the switch these specs report Inconclusive. The plugin host only wires Redis streaming, so the leg is not combined with the provider matrix.
+
 Each spec class under `Fleans.E2E.Tests/Specs/` carries a `// Ports tests/manual/NN-*/test-plan.md` doc comment linking back to the human-readable plan it derives from.
 
 The `Specs/_DeferredManualPlans.cs` file documents every plan that doesn't yet have an active spec (editor-UI plans, custom-task plugin plans, OIDC/JWT auth plans, Helm/release-pipeline plans, etc.), each `[Ignore]`'d with a specific reason.

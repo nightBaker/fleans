@@ -12,4 +12,11 @@ public static class E2ECategories
     /// Keep it small: every spec here runs once per provider leg.
     /// </summary>
     public const string Smoke = "E2E-Smoke";
+
+    /// <summary>
+    /// Specs that need the split Core / Worker / Plugin topology (<c>FLEANS_SPLIT_ROLES=true</c>,
+    /// see the <c>e2e-split-roles</c> job in dotnet.yml). Excluded from the default
+    /// <c>e2e</c> job; they report Inconclusive when run against the combined dev topology.
+    /// </summary>
+    public const string SplitRoles = "E2E-SplitRoles";
 }

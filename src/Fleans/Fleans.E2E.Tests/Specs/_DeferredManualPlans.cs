@@ -103,20 +103,26 @@ public class DeferredManualPlans : WorkflowE2ETestBase_None
     [Ignore("Needs EditorPage POM (multi-event definitions panel).")]
     public void Plan54_MultiEventEditor_PanelFields() { }
 
-    // tests/manual/55-plugin-host-isolation/test-plan.md — plugin host placement.
-    [TestMethod]
-    [Ignore("Needs separate Plugin-role silo in the test cluster (Fleans.CustomWorkerHost).")]
-    public void Plan55_PluginHostIsolation_GrainPlacement() { }
+    // tests/manual/41-placement-role-mismatch/test-plan.md — the PlacementRoleAssertion it
+    // targets never runs (#787). Role mismatch failing loudly is automated via the explicit
+    // Fleans:Role validation in SplitRoleTopologyTests.MisroledSilo_RefusesToStart_… (E2E-SplitRoles).
+
+    // tests/manual/55-plugin-host-isolation/test-plan.md — Scenario 3 (external plugin runs
+    // only on the plugin- silo) and the role-validation negatives are automated in
+    // SplitRoleTopologyTests (E2E-SplitRoles leg). Scenarios 1–2 (Orleans Dashboard placement
+    // of ScriptExecutorGrain / RestCallerHandler) remain manual.
 
     // tests/manual/56-streaming-queue-count-config/test-plan.md — config option round-trip.
     [TestMethod]
     [Ignore("Configuration option (Fleans:Streaming:Redis:TotalQueueCount); not a workflow assertion.")]
     public void Plan56_StreamingQueueCountConfig_RoundTrip() { }
 
-    // tests/manual/58-custom-task-cancellation/test-plan.md — plugin cancellation.
+    // tests/manual/58-custom-task-cancellation/test-plan.md — the boundary-timer interrupt of a
+    // long-running plugin task is automated in SplitRoleTopologyTests (E2E-SplitRoles); token
+    // propagation on interrupt is an engine gap (#786, spec [Ignore]'d there).
     [TestMethod]
-    [Ignore("Needs Worker silo + plugin host + cancellable plugin handler.")]
-    public void Plan58_CustomTaskCancellation_GraceefulShutdown() { }
+    [Ignore("Needs a controlled silo kill/restart mid-plugin-call and EventId 4050/4030 log assertions; the split-roles leg's plugin host is shared by other specs.")]
+    public void Plan58_CustomTaskCancellation_DeactivationRedelivery() { }
 
     // tests/manual/59-custom-task-output-mapping-editor/test-plan.md — editor UI for plugin outputs.
     [TestMethod]

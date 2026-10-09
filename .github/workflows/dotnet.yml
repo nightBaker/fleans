@@ -48,7 +48,8 @@ jobs:
         # Microsoft.Playwright ships a PowerShell install script; ubuntu-latest has pwsh preinstalled.
         pwsh Fleans.E2E.Tests/bin/Debug/net10.0/playwright.ps1 install --with-deps chromium
     - name: Run E2E tests
-      run: dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --no-build --filter "TestCategory=E2E" --logger "trx;LogFileName=e2e.trx" --results-directory TestResults
+      # E2E-SplitRoles specs need the Core/Worker/Plugin topology — they run in e2e-split-roles.
+      run: dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --no-build --filter "TestCategory=E2E&TestCategory!=E2E-SplitRoles" --logger "trx;LogFileName=e2e.trx" --results-directory TestResults
     - name: Upload Playwright artifacts on failure
       if: failure()
       uses: actions/upload-artifact@v4
@@ -124,3 +125,55 @@ jobs:
         path: |
           src/Fleans/TestResults/**/*.trx
           src/Fleans/Fleans.E2E.Tests/bin/Debug/net10.0/playwright-traces/
+
+  # Split-role topology (#770): FLEANS_SPLIT_ROLES=true makes the AppHost run fleans-core as
+  # Core plus a dedicated fleans-worker (Worker) silo, and AspireFixture attaches the test-only
+  # Plugin-role host (Fleans.E2E.PluginHost). Runs only the E2E-SplitRoles specs.
+  e2e-split-roles:
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.0.x
+    - name: Build E2E project
+      run: dotnet build Fleans.E2E.Tests/Fleans.E2E.Tests.csproj
+    - name: Install Playwright browsers
+      run: pwsh Fleans.E2E.Tests/bin/Debug/net10.0/playwright.ps1 install --with-deps chromium
+    - name: Run E2E-SplitRoles specs
+      env:
+        FLEANS_SPLIT_ROLES: "true"
+      run: dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --no-build --filter "TestCategory=E2E-SplitRoles" --logger "trx;LogFileName=e2e-split-roles.trx" --results-directory TestResults
+    # Silent-green guard: specs report Inconclusive (not failed) when the split topology isn't
+    # up, and a filter that matches nothing exits 0 — require at least one passed test.
+    - name: Assert split-roles specs actually ran
+      if: always()
+      run: |
+        trx_file=$(find TestResults -name "e2e-split-roles.trx" | head -1)
+        if [ -z "$trx_file" ]; then
+          echo "::error::no e2e-split-roles.trx produced"
+          exit 1
+        fi
+        passed=$(python3 - "$trx_file" <<'PY'
+        import sys, xml.etree.ElementTree as ET
+        ns = {"t": "http://microsoft.com/schemas/VisualStudio/TeamTest/2010"}
+        c = ET.parse(sys.argv[1]).getroot().find(".//t:Counters", ns)
+        print(c.get("passed", "0") if c is not None else "0")
+        PY
+        )
+        echo "E2E-SplitRoles: passed=${passed}"
+        if [ "${passed:-0}" -eq 0 ]; then
+          echo "::error::Zero E2E-SplitRoles tests passed — is FLEANS_SPLIT_ROLES reaching AspireFixture?"
+          exit 1
+        fi
+    - name: Upload artifacts on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: e2e-split-roles-failure-artifacts
+        path: |
+          src/Fleans/TestResults/**/*.trx
+          src/Fleans/Fleans.E2E.Tests/bin/Debug/net10.0/resource-logs/

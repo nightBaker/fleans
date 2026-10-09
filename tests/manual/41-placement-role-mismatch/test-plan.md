@@ -2,6 +2,8 @@
 
 Verifies #457: `PlacementRoleAssertion` fails fast at silo startup when `Fleans:Role` is incompatible with the placement attribute of a registered grain.
 
+> **STATUS: KNOWN BUG (#787).** `PlacementRoleAssertion` is never registered (`TryAddSingleton` is a no-op for `ILifecycleParticipant<ISiloLifecycle>`), so step 1 logs no EventId 11200 and step 2 boots instead of exiting. Role mismatch failing loudly is covered in CI by `SplitRoleTopologyTests.MisroledSilo_RefusesToStart_WithExplicitRoleError` (`E2E-SplitRoles`), which exercises the explicit `Fleans:Role` validation in `Fleans.WorkerHost` and `AddFleansPluginHost`.
+
 ## Prerequisites
 
 - Aspire publish topology built: `aspire publish --project Fleans.Aspire -t docker-compose -o out/compose`

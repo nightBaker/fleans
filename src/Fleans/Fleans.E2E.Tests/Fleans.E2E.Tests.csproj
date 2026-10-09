@@ -28,6 +28,9 @@
     <ProjectReference Include="..\Fleans.Aspire\Fleans.Aspire.csproj" />
     <ProjectReference Include="..\Fleans.ServiceDefaults\Fleans.ServiceDefaults.csproj" />
     <ProjectReference Include="..\Fleans.Application\Fleans.Application.csproj" />
+    <!-- Build-order only: the split-roles leg launches this test-only Plugin-role host via
+         FLEANS_PLUGIN_HOST_PROJECT, and Aspire runs path-based projects without building them. -->
+    <ProjectReference Include="..\Fleans.E2E.PluginHost\Fleans.E2E.PluginHost.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>

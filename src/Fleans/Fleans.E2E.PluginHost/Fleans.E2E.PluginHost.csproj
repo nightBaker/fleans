@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Test-only external plugin host for the E2E split-roles leg (#770). Mirrors the
+       github.com/nightBaker/fleans-custom-worker-example template: Fleans:Role=Plugin via
+       AddFleansPluginHost, and a dependency closure limited to Fleans.Worker (the leaf
+       plugin-author package) + Orleans server packages. It must NOT reference
+       Fleans.Application / Fleans.Domain / Fleans.ServiceDefaults — doing so would load engine
+       grain classes into this silo and void the plugin-host isolation it exists to test.
+       Generic host (no Kestrel): nothing calls it over HTTP, and a web host without a launch
+       profile would grab http://localhost:5000.
+       Launched by Fleans.Aspire only when FLEANS_PLUGIN_HOST_PROJECT points at this file
+       (AspireFixture sets it under FLEANS_SPLIT_ROLES=true). Never packed or published. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>14</LangVersion>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.StackExchange.Redis" Version="13.1.1" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Orleans.Server" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Orleans.Clustering.Redis" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Orleans.Persistence.Redis" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Orleans.Reminders.Redis" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Orleans.Streaming" Version="10.0.1" />
+    <PackageReference Include="Universley.OrleansContrib.StreamsProvider.Redis" Version="2026.4.19" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Fleans.Worker\Fleans.Worker.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Plan 58 fixture: a long-running custom task (e2e-probe, hosted on the external Plugin-role
+     silo) interrupted by a boundary timer. The probe blocks for =delayMs on its
+     CancellationToken and reports started/completed/cancelled to =callbackUrl, keyed by
+     =probeKey. Automated by SplitRoleTopologyTests (E2E-SplitRoles). -->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+                  id="defs_probe_boundary_timer" targetNamespace="http://fleans.io/bpmn">
+  <bpmn:process id="probe-boundary-timer" isExecutable="true">
+    <bpmn:startEvent id="start" />
+    <bpmn:serviceTask id="longProbe" type="e2e-probe">
+      <bpmn:extensionElements>
+        <zeebe:ioMapping>
+          <zeebe:input  source="=delayMs"             target="delayMs" />
+          <zeebe:input  source="=callbackUrl"         target="callbackUrl" />
+          <zeebe:input  source="=probeKey"            target="probeKey" />
+          <zeebe:output source="=__response.siloName" target="probeSilo" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+    <bpmn:boundaryEvent id="probeTimeout" attachedToRef="longProbe">
+      <bpmn:timerEventDefinition>
+        <bpmn:timeDuration>PT3S</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:boundaryEvent>
+    <bpmn:scriptTask id="normalPath" scriptFormat="csharp">
+      <bpmn:script>_context.normalEnd = true</bpmn:script>
+    </bpmn:scriptTask>
+    <bpmn:scriptTask id="timeoutPath" scriptFormat="csharp">
+      <bpmn:script>_context.timedOut = true</bpmn:script>
+    </bpmn:scriptTask>
+    <bpmn:endEvent id="endNormal" />
+    <bpmn:endEvent id="endTimeout" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="longProbe" />
+    <bpmn:sequenceFlow id="f2" sourceRef="longProbe" targetRef="normalPath" />
+    <bpmn:sequenceFlow id="f3" sourceRef="normalPath" targetRef="endNormal" />
+    <bpmn:sequenceFlow id="f4" sourceRef="probeTimeout" targetRef="timeoutPath" />
+    <bpmn:sequenceFlow id="f5" sourceRef="timeoutPath" targetRef="endTimeout" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="diag">
+    <bpmndi:BPMNPlane id="plane" bpmnElement="probe-boundary-timer">
+      <bpmndi:BPMNShape id="s_start" bpmnElement="start"><dc:Bounds x="100" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_longProbe" bpmnElement="longProbe"><dc:Bounds x="200" y="80" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_probeTimeout" bpmnElement="probeTimeout"><dc:Bounds x="232" y="142" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_normalPath" bpmnElement="normalPath"><dc:Bounds x="360" y="80" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_timeoutPath" bpmnElement="timeoutPath"><dc:Bounds x="360" y="220" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_endNormal" bpmnElement="endNormal"><dc:Bounds x="520" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_endTimeout" bpmnElement="endTimeout"><dc:Bounds x="520" y="242" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="e_f1" bpmnElement="f1"><di:waypoint x="136" y="118" /><di:waypoint x="200" y="118" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="e_f2" bpmnElement="f2"><di:waypoint x="300" y="118" /><di:waypoint x="360" y="118" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="e_f3" bpmnElement="f3"><di:waypoint x="460" y="118" /><di:waypoint x="520" y="118" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="e_f4" bpmnElement="f4"><di:waypoint x="250" y="178" /><di:waypoint x="250" y="260" /><di:waypoint x="360" y="260" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="e_f5" bpmnElement="f5"><di:waypoint x="460" y="260" /><di:waypoint x="520" y="260" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
