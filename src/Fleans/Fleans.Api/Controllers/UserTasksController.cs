@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Fleans.Api.Authorization;
 using Fleans.Application;
 using Fleans.Application.QueryModels;
@@ -15,17 +16,20 @@ namespace Fleans.Api.Controllers
         private readonly IWorkflowCommandService _commandService;
         private readonly IWorkflowQueryService _workflowQueryService;
         private readonly IUserGroupResolver _userGroupResolver;
+        private readonly IUserIdResolver _userIdResolver;
 
         public UserTasksController(
             ILogger<UserTasksController> logger,
             IWorkflowCommandService commandService,
             IWorkflowQueryService workflowQueryService,
-            IUserGroupResolver userGroupResolver)
+            IUserGroupResolver userGroupResolver,
+            IUserIdResolver userIdResolver)
         {
             _logger = logger;
             _commandService = commandService;
             _workflowQueryService = workflowQueryService;
             _userGroupResolver = userGroupResolver;
+            _userIdResolver = userIdResolver;
         }
 
         [EnableRateLimiting("read")]
@@ -56,10 +60,11 @@ namespace Fleans.Api.Controllers
 
         [EnableRateLimiting("task-operation")]
         [HttpPost("{activityInstanceId:guid}/claim", Name = "ClaimTask")]
-        public async Task<IActionResult> ClaimTask(Guid activityInstanceId, [FromBody] ClaimTaskRequest request)
+        public async Task<IActionResult> ClaimTask(Guid activityInstanceId, [FromBody] ClaimTaskRequest? request)
         {
-            if (request == null || string.IsNullOrWhiteSpace(request.UserId))
-                return BadRequest(new ErrorResponse("UserId is required"));
+            request ??= new ClaimTaskRequest(null);
+            if (!TryResolveUserId(activityInstanceId, request.UserId, out var userId, out var rejection))
+                return rejection;
 
             var task = await _workflowQueryService.GetUserTask(activityInstanceId);
             if (task == null)
@@ -68,8 +73,8 @@ namespace Fleans.Api.Controllers
             try
             {
                 var userGroups = _userGroupResolver.Resolve(HttpContext, request);
-                LogUserTaskClaim(activityInstanceId, request.UserId);
-                await _commandService.ClaimUserTask(task.WorkflowInstanceId, activityInstanceId, request.UserId, userGroups);
+                LogUserTaskClaim(activityInstanceId, userId);
+                await _commandService.ClaimUserTask(task.WorkflowInstanceId, activityInstanceId, userId, userGroups);
                 return Ok();
             }
             catch (InvalidOperationException ex)
@@ -93,22 +98,22 @@ namespace Fleans.Api.Controllers
 
         [EnableRateLimiting("task-operation")]
         [HttpPost("{activityInstanceId:guid}/complete", Name = "CompleteTask")]
-        public async Task<IActionResult> CompleteTask(Guid activityInstanceId, [FromBody] CompleteTaskRequest request)
+        public async Task<IActionResult> CompleteTask(Guid activityInstanceId, [FromBody] CompleteTaskRequest? request)
         {
-            if (request == null || string.IsNullOrWhiteSpace(request.UserId))
-                return BadRequest(new ErrorResponse("UserId is required"));
+            if (!TryResolveUserId(activityInstanceId, request?.UserId, out var userId, out var rejection))
+                return rejection;
 
             var task = await _workflowQueryService.GetUserTask(activityInstanceId);
             if (task == null)
                 return NotFound(new ErrorResponse($"User task '{activityInstanceId}' not found"));
 
-            var variables = VariableConverter.ToExpandoObject(request.Variables);
+            var variables = VariableConverter.ToExpandoObject(request?.Variables);
 
             try
             {
-                LogUserTaskComplete(activityInstanceId, request.UserId);
+                LogUserTaskComplete(activityInstanceId, userId);
                 await _commandService.CompleteUserTask(
-                    task.WorkflowInstanceId, activityInstanceId, request.UserId, variables);
+                    task.WorkflowInstanceId, activityInstanceId, userId, variables);
                 return Ok();
             }
             catch (InvalidOperationException ex)
@@ -155,6 +160,40 @@ namespace Fleans.Api.Controllers
             return Ok();
         }
 
+        /// <summary>
+        /// Resolves the acting user via <see cref="IUserIdResolver"/> (#793). Under JWT the
+        /// token is authoritative and a differing body <c>UserId</c> is a 403. Rejection
+        /// messages stay identifier-free.
+        /// </summary>
+        private bool TryResolveUserId(
+            Guid activityInstanceId,
+            string? bodyUserId,
+            out string userId,
+            [NotNullWhen(false)] out IActionResult? rejection)
+        {
+            var resolution = _userIdResolver.Resolve(HttpContext, bodyUserId);
+            userId = resolution.UserId ?? string.Empty;
+            switch (resolution.Status)
+            {
+                case UserIdResolutionStatus.Resolved:
+                    rejection = null;
+                    return true;
+                case UserIdResolutionStatus.Mismatch:
+                    LogUserTaskUserIdMismatch(activityInstanceId);
+                    rejection = StatusCode(StatusCodes.Status403Forbidden,
+                        new ErrorResponse("UserId does not match the authenticated user"));
+                    return false;
+                case UserIdResolutionStatus.NoIdentityClaim:
+                    LogUserTaskNoIdentityClaim(activityInstanceId);
+                    rejection = StatusCode(StatusCodes.Status403Forbidden,
+                        new ErrorResponse("Authenticated user has no user id claim"));
+                    return false;
+                default:
+                    rejection = BadRequest(new ErrorResponse("UserId is required"));
+                    return false;
+            }
+        }
+
         [LoggerMessage(EventId = 8004, Level = LogLevel.Information,
             Message = "Claiming user task {ActivityInstanceId} for user {UserId}")]
         private partial void LogUserTaskClaim(Guid activityInstanceId, string userId);
@@ -174,5 +213,13 @@ namespace Fleans.Api.Controllers
         [LoggerMessage(EventId = 8008, Level = LogLevel.Information,
             Message = "Cancelling user task {ActivityInstanceId}")]
         private partial void LogUserTaskCancel(Guid activityInstanceId);
+
+        [LoggerMessage(EventId = 8009, Level = LogLevel.Warning,
+            Message = "Rejected user task operation on {ActivityInstanceId}: body UserId does not match the authenticated user")]
+        private partial void LogUserTaskUserIdMismatch(Guid activityInstanceId);
+
+        [LoggerMessage(EventId = 8010, Level = LogLevel.Warning,
+            Message = "Rejected user task operation on {ActivityInstanceId}: authenticated principal has no user id claim (check Authentication:UserIdClaim)")]
+        private partial void LogUserTaskNoIdentityClaim(Guid activityInstanceId);
     }
 }
