@@ -59,10 +59,8 @@ public class DeferredManualPlans : WorkflowE2ETestBase_None
     // tests/manual/41-nuget-publish/test-plan.md — release pipeline. OUT OF SCOPE.
     // tests/manual/42-release-pipeline/test-plan.md — release pipeline. OUT OF SCOPE.
 
-    // tests/manual/44-azure-queue-streaming/test-plan.md — Azurite container.
-    [TestMethod]
-    [Ignore("Needs Azurite emulator container in the test cluster.")]
-    public void Plan44_AzureQueueStreaming_BasicSmoke() { }
+    // tests/manual/44-azure-queue-streaming/test-plan.md — automated: the E2E-Smoke subset
+    // runs against Azurite in dotnet.yml's e2e-providers (azurequeue) leg.
 
     // tests/manual/44-stream-sharding-parallelism/test-plan.md — config inspection +
     // throughput observation. Not browser-automatable in this scaffolding.
