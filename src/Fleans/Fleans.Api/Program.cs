@@ -45,16 +45,18 @@ if (authEnabled)
             .Build());
 }
 
-// User-task group resolver (#588): JWT-derived when auth is enabled, body-derived
+// User-task group (#588) and user-id (#793) resolvers: JWT-derived when auth is enabled, body-derived
 // otherwise. Mirrors the IUserTaskFilterStrategy precedent — chosen by config at
 // startup; controller takes the interface.
 if (authEnabled)
 {
     builder.Services.AddSingleton<IUserGroupResolver, JwtUserGroupResolver>();
+    builder.Services.AddSingleton<IUserIdResolver, JwtUserIdResolver>();
 }
 else
 {
     builder.Services.AddSingleton<IUserGroupResolver, BodyUserGroupResolver>();
+    builder.Services.AddSingleton<IUserIdResolver, BodyUserIdResolver>();
 }
 
 // Register Redis client for Aspire-managed Orleans

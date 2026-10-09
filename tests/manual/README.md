@@ -118,6 +118,8 @@ Each numbered entry below is one regression "step". For each one, follow the lin
 
 68. **AWS MSK IAM authentication** — `68-kafka-msk-iam/test-plan.md`. Verifies #682: `AddKafkaStreamingWithMskIam` wires SASL_SSL+OAuthBearer via the AWS SigV4 signer; IAM token refreshes succeed under workload identity; EventId 11200 fires on IAM permission errors; missing region throws at startup; wrong broker port (`:9092` vs `:9098`) produces a clear SASL error. **Human-only — requires AWS account + MSK cluster.**
 
+69. **User-task acting user from JWT** — `69-usertask-jwt-user-id/test-plan.md`. Verifies #793: under JWT auth, claim/complete act as the token's `Authentication:UserIdClaim` user (default `preferred_username`). A body `UserId` that differs from the token returns 403 (EventId 8009, identifier-free message), so an authenticated caller can't claim an `assignee=alice` task by naming alice. No-auth deployments still trust the body. Automated in CI's `e2e-auth` job (`AuthenticationTests.UserTaskClaimAndComplete_UseJwtUserId_BodySuppliedUserIdCannotImpersonate`).
+
 ## Website regression suite
 
 Website-specific manual tests live under `website/`. These run in a local dev server, not against the .NET stack.

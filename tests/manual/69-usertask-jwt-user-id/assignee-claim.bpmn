@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+             id="defs_assignee_claim" targetNamespace="http://fleans.io/bpmn">
+  <process id="assignee-claim" isExecutable="true">
+    <startEvent id="start" />
+
+    <!-- User task gated by assignee only (rule (a) of the claim three-rule OR).
+         #793: under JWT auth the acting user comes from the token, so another
+         authenticated user can't claim it by sending UserId="alice" in the body. -->
+    <userTask id="AssignedTask" name="Assigned to alice"
+              camunda:assignee="alice" />
+
+    <endEvent id="end" />
+
+    <sequenceFlow id="f1" sourceRef="start"        targetRef="AssignedTask" />
+    <sequenceFlow id="f2" sourceRef="AssignedTask" targetRef="end" />
+  </process>
+  <bpmndi:BPMNDiagram id="diag">
+    <bpmndi:BPMNPlane id="plane" bpmnElement="assignee-claim">
+      <bpmndi:BPMNShape id="s_start"    bpmnElement="start"><dc:Bounds x="100" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_assigned" bpmnElement="AssignedTask"><dc:Bounds x="200" y="80"  width="120" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_end"      bpmnElement="end"><dc:Bounds x="370" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="e_f1" bpmnElement="f1"><di:waypoint x="136" y="118" /><di:waypoint x="200" y="118" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="e_f2" bpmnElement="f2"><di:waypoint x="320" y="118" /><di:waypoint x="370" y="118" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

@@ -71,6 +71,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Fleans.Streaming.Kafka.AwsM
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Fleans.Streaming.Kafka.AwsMsk.Tests", "Fleans.Streaming.Kafka.AwsMsk.Tests\Fleans.Streaming.Kafka.AwsMsk.Tests.csproj", "{57A2BFEC-99CF-45BA-B668-A4AA381B75CC}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Fleans.Api.Tests", "Fleans.Api.Tests\Fleans.Api.Tests.csproj", "{F79E68A5-CDEA-43BB-A91A-9FA610B6B5B9}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -429,6 +431,18 @@ Global
 		{57A2BFEC-99CF-45BA-B668-A4AA381B75CC}.Release|x64.Build.0 = Release|Any CPU
 		{57A2BFEC-99CF-45BA-B668-A4AA381B75CC}.Release|x86.ActiveCfg = Release|Any CPU
 		{57A2BFEC-99CF-45BA-B668-A4AA381B75CC}.Release|x86.Build.0 = Release|Any CPU
+		{F79E68A5-CDEA-43BB-A91A-9FA610B6B5B9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F79E68A5-CDEA-43BB-A91A-9FA610B6B5B9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F79E68A5-CDEA-43BB-A91A-9FA610B6B5B9}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{F79E68A5-CDEA-43BB-A91A-9FA610B6B5B9}.Debug|x64.Build.0 = Debug|Any CPU
+		{F79E68A5-CDEA-43BB-A91A-9FA610B6B5B9}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{F79E68A5-CDEA-43BB-A91A-9FA610B6B5B9}.Debug|x86.Build.0 = Debug|Any CPU
+		{F79E68A5-CDEA-43BB-A91A-9FA610B6B5B9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F79E68A5-CDEA-43BB-A91A-9FA610B6B5B9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F79E68A5-CDEA-43BB-A91A-9FA610B6B5B9}.Release|x64.ActiveCfg = Release|Any CPU
+		{F79E68A5-CDEA-43BB-A91A-9FA610B6B5B9}.Release|x64.Build.0 = Release|Any CPU
+		{F79E68A5-CDEA-43BB-A91A-9FA610B6B5B9}.Release|x86.ActiveCfg = Release|Any CPU
+		{F79E68A5-CDEA-43BB-A91A-9FA610B6B5B9}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

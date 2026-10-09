@@ -123,6 +123,65 @@ public class AuthenticationTests : WorkflowE2ETestBase
     }
 
     [TestMethod]
+    public async Task UserTaskClaimAndComplete_UseJwtUserId_BodySuppliedUserIdCannotImpersonate()
+    {
+        var aliceToken = await KeycloakTokenClient.GetApiTokenAsync("alice", "alice");
+        var bobToken = await KeycloakTokenClient.GetApiTokenAsync("bob", "bob");
+        using var aliceHttp = KeycloakTokenClient.CreateApiClient(aliceToken);
+        using var bobHttp = KeycloakTokenClient.CreateApiClient(bobToken);
+        var alice = new FleansApiClient(aliceHttp);
+        var bob = new FleansApiClient(bobHttp);
+
+        // Fixture sanity: the default Authentication:UserIdClaim is preferred_username.
+        Assert.AreEqual("bob", KeycloakTokenClient.DecodePayload(bobToken).GetProperty("preferred_username").GetString());
+
+        var deployed = await alice.DeployAsync(BpmnFixtureLoader.Load("69-usertask-jwt-user-id", "assignee-claim.bpmn"));
+        var started = await alice.StartAsync(deployed.ProcessDefinitionKey);
+        var state = await alice.WaitForStateAsync(
+            started.WorkflowInstanceId, s => s.ActiveActivityIds.Contains("AssignedTask"));
+        var taskId = state.ActiveActivities.First(a => a.ActivityId == "AssignedTask").ActivityInstanceId;
+
+        // #793: bob (valid token) names alice — the task's assignee — in the body. The token is
+        // authoritative under JWT, so the mismatch is rejected before reaching the domain.
+        using (var spoofed = await bob.ClaimUserTaskAsync(taskId, "alice"))
+        {
+            Assert.AreEqual(HttpStatusCode.Forbidden, spoofed.StatusCode,
+                "A body UserId that differs from the token must be rejected under JWT.");
+            Assert.DoesNotContain("alice", await spoofed.Content.ReadAsStringAsync());
+        }
+        // Acting as himself, bob is not the assignee → domain rejection.
+        using (var asBob = await bob.ClaimUserTaskAsync(taskId, userId: null))
+        {
+            Assert.AreEqual(HttpStatusCode.Conflict, asBob.StatusCode);
+        }
+        var afterSpoof = await alice.GetUserTaskAsync(taskId);
+        Assert.IsNotNull(afterSpoof);
+        Assert.IsNull(afterSpoof.ClaimedBy, "Rejected claims must not change the task.");
+
+        // alice sends no UserId at all — the claim succeeds as the token's user.
+        using (var claim = await alice.ClaimUserTaskAsync(taskId, userId: null))
+        {
+            Assert.IsTrue(claim.IsSuccessStatusCode,
+                $"Claim as the token's user should succeed; got {(int)claim.StatusCode} {await claim.Content.ReadAsStringAsync()}.");
+        }
+        var claimed = await alice.GetUserTaskAsync(taskId);
+        Assert.IsNotNull(claimed);
+        Assert.AreEqual("alice", claimed.ClaimedBy);
+
+        // bob can't complete alice's claimed task by naming her either.
+        using (var spoofedComplete = await bob.CompleteUserTaskAsync(taskId, "alice"))
+        {
+            Assert.AreEqual(HttpStatusCode.Forbidden, spoofedComplete.StatusCode);
+        }
+        using (var complete = await alice.CompleteUserTaskAsync(taskId, userId: null))
+        {
+            Assert.IsTrue(complete.IsSuccessStatusCode,
+                $"Complete as the token's user should succeed; got {(int)complete.StatusCode} {await complete.Content.ReadAsStringAsync()}.");
+        }
+        await alice.WaitForCompletionAsync(started.WorkflowInstanceId);
+    }
+
+    [TestMethod]
     public async Task Web_RedirectsToIssuer_LoginEstablishesSession()
     {
         var keycloak = AspireFixture.KeycloakBaseUri!;
