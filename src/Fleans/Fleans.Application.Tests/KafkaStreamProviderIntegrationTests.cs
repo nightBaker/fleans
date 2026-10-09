@@ -1,7 +1,9 @@
 using Fleans.Application.Abstractions.Events;
 using Fleans.Domain.Events;
+using Fleans.Streaming.Kafka;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
+using Orleans.Configuration;
 using Orleans.Hosting;
 using Orleans.Streams;
 using Orleans.TestingHost;
@@ -37,6 +39,7 @@ public class KafkaStreamProviderIntegrationTests
 
         var cluster = new TestClusterBuilder(1)
             .AddSiloBuilderConfigurator<KafkaTestSiloConfigurator>()
+            .AddClientBuilderConfigurator<KafkaTestClientConfigurator>()
             .Build();
         await cluster.DeployAsync();
         try
@@ -85,6 +88,7 @@ public class KafkaStreamProviderIntegrationTests
         // consumer a chance to commit offsets. The event remains in the topic.
         var clusterPub = new TestClusterBuilder(1)
             .AddSiloBuilderConfigurator<KafkaTestSiloConfigurator>()
+            .AddClientBuilderConfigurator<KafkaTestClientConfigurator>()
             .Build();
         await clusterPub.DeployAsync();
         var publishProvider = clusterPub.Client.GetStreamProvider(ProviderName);
@@ -97,6 +101,7 @@ public class KafkaStreamProviderIntegrationTests
         // The published event must be redelivered (at-least-once contract).
         var clusterSub = new TestClusterBuilder(1)
             .AddSiloBuilderConfigurator<KafkaTestSiloConfigurator>()
+            .AddClientBuilderConfigurator<KafkaTestClientConfigurator>()
             .Build();
         await clusterSub.DeployAsync();
         try
@@ -164,6 +169,30 @@ public class KafkaStreamProviderIntegrationTests
             var cfg = new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
             siloBuilder.AddFleanStreaming(cfg);
             siloBuilder.AddMemoryGrainStorage("PubSubStore");
+        }
+    }
+
+    // The tests publish/subscribe through cluster.Client, so the client needs the provider
+    // too (#756) — the silo configurator alone leaves the client without a keyed
+    // IStreamProvider. Mirrors KafkaSiloBuilderExtensions.AddKafkaStreams.
+    private sealed class KafkaTestClientConfigurator : IClientBuilderConfigurator
+    {
+        public void Configure(IConfiguration configuration, IClientBuilder clientBuilder)
+        {
+            clientBuilder.AddPersistentStreams(
+                ProviderName,
+                KafkaQueueAdapterFactory.Create,
+                b =>
+                {
+                    b.Configure<KafkaStreamingOptions>(o => o.Configure(opt =>
+                    {
+                        opt.Brokers = KafkaTestSiloConfigurator.Brokers;
+                        opt.TopicPrefix = KafkaTestSiloConfigurator.TopicPrefix;
+                        opt.ConsumerGroup = $"fleans-test-client-{Guid.NewGuid():N}";
+                        opt.QueueCount = 1;
+                    }));
+                    b.ConfigureStreamPubSub(StreamPubSubType.ExplicitGrainBasedAndImplicit);
+                });
         }
     }
 }
