@@ -137,6 +137,11 @@ worker:
 
 A starting point for a real cluster — pinned tag, external managed Postgres, OIDC on the admin UI, ingress with TLS, and a small worker pool isolated to dedicated nodes. Save as `prod-values.yaml` and install with `helm install fleans charts/fleans/ -f prod-values.yaml`.
 
+<figure class="arch-diagram" style="--arch-ratio: 1390 / 646">
+  <iframe data-arch-src="/fleans/diagrams/k8s-deployment.html" src="/fleans/diagrams/k8s-deployment.html?embed=1" title="Kubernetes production topology" loading="lazy"></iframe>
+  <figcaption>Production Helm topology: TLS ingress in front of the admin UI and API, Core and Worker silos in one Orleans cluster, managed PostgreSQL and optional Kafka outside the namespace. <a href="/fleans/diagrams/k8s-deployment.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
 ```yaml
 image:
   tag: 0.1.0-beta            # pin — never let `latest` drift in prod
@@ -188,6 +193,11 @@ ingress:
 ## Plugin packages on NuGet
 
 Fleans publishes four plugin-author packages to nuget.org on every tagged GitHub Release. They are the supported way to write a custom-task plugin or stand up your own plugin host without depending on the Fleans repo as a Git submodule. The packages are layered strictly so plugin authors get only what they need:
+
+<figure class="arch-diagram" style="--arch-ratio: 1260 / 470">
+  <iframe data-arch-src="/fleans/diagrams/plugin-nuget-stack.html" src="/fleans/diagrams/plugin-nuget-stack.html?embed=1" title="Plugin-author NuGet package stack" loading="lazy"></iframe>
+  <figcaption>The NuGet packages a plugin author consumes and how a custom worker host joins the cluster. <a href="/fleans/diagrams/plugin-nuget-stack.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
 
 ```
 Fleans.Worker  →  Fleans.Application.Abstractions  →  Fleans.Domain.Abstractions

@@ -1,0 +1,118 @@
+---
+// Splash hero (overrides Starlight's Hero). Typographic, Saddle-style: eyebrow,
+// oversized light title, large lead, pill actions, "made for … by …" footer row.
+// Driven by the `hero` frontmatter of src/content/docs/index.mdx.
+const PAGE_TITLE_ID = '_top'; // Starlight's page-title anchor (not exported)
+
+const { data } = Astro.locals.starlightRoute.entry;
+const { title = data.title, tagline, actions = [] } = data.hero || {};
+---
+
+<header class="fl-hero not-content">
+  <div class="fl-hero-eyebrow">
+    <span class="fl-chip">BPMN 2.0</span>
+    <span class="fl-chip fl-chip--outline">.NET · Orleans</span>
+  </div>
+
+  <div class="fl-hero-body">
+    <h1 id={PAGE_TITLE_ID} data-page-title set:html={title} />
+    {tagline && <p class="fl-hero-lead" set:html={tagline} />}
+    {
+      actions.length > 0 && (
+        <div class="fl-hero-actions">
+          {actions.map(({ link, text, variant, attrs }) => (
+            <a
+              href={link}
+              class:list={['fl-button', variant !== 'primary' && 'fl-button--secondary']}
+              {...attrs}
+            >
+              {text}
+            </a>
+          ))}
+        </div>
+      )
+    }
+  </div>
+
+  <div class="fl-hero-foot">
+    <p><span>made for</span> <a href="https://learn.microsoft.com/dotnet/orleans/">.NET Orleans</a></p>
+    <p><span>by</span> <a href="https://github.com/nightBaker/fleans/graphs/contributors">Fleans contributors</a></p>
+  </div>
+</header>
+
+<style>
+  .fl-hero {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 4rem;
+    min-height: calc(100svh - var(--sl-nav-height) - 2rem);
+    padding-block: 3rem 2.5rem;
+  }
+  .fl-hero-eyebrow {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .fl-hero-body h1 {
+    margin: 0 0 2.5rem;
+    font-size: clamp(3.5rem, 9vw, 7.5rem);
+    font-weight: 400;
+    line-height: 1;
+    letter-spacing: -0.04em;
+    color: var(--fl-text);
+  }
+  .fl-hero-lead {
+    max-width: 64rem;
+    margin: 0;
+    font-size: clamp(1.375rem, 2.6vw, 2rem);
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+    color: var(--fl-text);
+  }
+  .fl-hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 3rem;
+  }
+  .fl-hero-foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.5rem;
+    font-size: clamp(1.125rem, 1.8vw, 1.5rem);
+  }
+  .fl-hero-foot p {
+    margin: 0;
+    color: var(--fl-text);
+  }
+  .fl-hero-foot span {
+    color: var(--fl-text-muted);
+  }
+  .fl-hero-foot a {
+    color: var(--fl-text);
+    text-decoration: none;
+    font-weight: 500;
+  }
+  .fl-hero-foot a:hover {
+    color: var(--fl-accent);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .fl-hero-body > * {
+      animation: fl-rise 600ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    }
+    .fl-hero-body > :nth-child(2) {
+      animation-delay: 90ms;
+    }
+    .fl-hero-body > :nth-child(3) {
+      animation-delay: 180ms;
+    }
+  }
+  @keyframes fl-rise {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+  }
+</style>

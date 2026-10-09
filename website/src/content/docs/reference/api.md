@@ -26,6 +26,11 @@ All paths below are relative to the API base URL (`https://localhost:7140` in th
 
 ## Endpoint details
 
+<figure class="arch-diagram" style="--arch-ratio: 1300 / 570">
+  <iframe data-arch-src="/fleans/diagrams/api-surface.html" src="/fleans/diagrams/api-surface.html?embed=1" title="REST API surface" loading="lazy"></iframe>
+  <figcaption>Every request passes the opt-in JWT and rate-limit layers, then an endpoint group hands it to a process-definition, correlation or WorkflowInstance grain, or to the read-side projection. <a href="/fleans/diagrams/api-surface.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
 ### `POST /Definitions/deploy`
 
 Deploys a BPMN process definition to the engine. The request body contains the raw BPMN XML as a string. On success the engine parses the XML, registers the process definition, and returns the assigned key and version number. If the same process ID is deployed again, the version is incremented automatically.

@@ -13,6 +13,11 @@ Aspire is Fleans' development orchestrator — not a production runtime. To run 
 
 A production Fleans cluster has these components:
 
+<figure class="arch-diagram" style="--arch-ratio: 1400 / 598">
+  <iframe data-arch-src="/fleans/diagrams/fleans-cluster.html" src="/fleans/diagrams/fleans-cluster.html?embed=1" title="Fleans deployment architecture" loading="lazy"></iframe>
+  <figcaption>The components of a production Fleans cluster and how they connect. <a href="/fleans/diagrams/fleans-cluster.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
 | Component | Image / process | Required | Purpose |
 | --- | --- | --- | --- |
 | **Core silo** (`fleans-api`) | `ghcr.io/nightbaker/fleans-api` with `Fleans__Role=Core` | yes | API endpoints, coordinator grains, workflow state. The same image hosts a `Combined` silo if `Fleans__Role` is unset or `Combined`. |

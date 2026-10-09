@@ -114,6 +114,11 @@ The endpoint is rate-limited under the `workflow-mutation` policy.
 
 This walks the full lifecycle of fixture #09 — deploy the BPMN, start an instance (which sets `requestId = "req-456"` via a script task), then deliver the matching message:
 
+<figure class="arch-diagram" style="--arch-ratio: 480 / 738; max-width: 520px; margin-inline: auto">
+  <iframe data-arch-src="/fleans/diagrams/message-correlation.html" src="/fleans/diagrams/message-correlation.html?embed=1" title="Message correlation sequence" loading="lazy"></iframe>
+  <figcaption>The waiting instance registers <code>approvalReceived/req-456</code> and resumes when <code>POST /Execution/message</code> supplies the matching key. <a href="/fleans/diagrams/message-correlation.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
 ```bash
 # 1. Deploy the workflow.
 curl -k -X POST https://localhost:7140/Definitions/deploy \

@@ -1,0 +1,225 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Load-test topology",
+    "subtitle": "Four shared scenarios drive k6 (local) or Locust (Azure Load Testing) against two fleans-api silos",
+    "quality_profile": "showcase",
+    "animation": "none",
+    "viewBox": [
+      1160,
+      560
+    ],
+    "legend": {
+      "entries": {
+        "external": {
+          "label": "load scenario"
+        },
+        "cloud": {
+          "label": "load driver"
+        },
+        "backend": {
+          "label": "Fleans silo"
+        },
+        "database": {
+          "label": "backing store"
+        },
+        "frontend": {
+          "label": "published report"
+        }
+      }
+    }
+  },
+  "components": [
+    {
+      "id": "linear",
+      "type": "external",
+      "label": "linear",
+      "sublabel": "Start, ScriptTask, End",
+      "pos": [
+        40,
+        60
+      ],
+      "size": [
+        190,
+        60
+      ]
+    },
+    {
+      "id": "parallel",
+      "type": "external",
+      "label": "parallel",
+      "sublabel": "3-branch fork/join",
+      "pos": [
+        40,
+        150
+      ],
+      "size": [
+        190,
+        60
+      ]
+    },
+    {
+      "id": "events",
+      "type": "external",
+      "label": "events",
+      "sublabel": "start, poll, message",
+      "pos": [
+        40,
+        240
+      ],
+      "size": [
+        190,
+        60
+      ]
+    },
+    {
+      "id": "mixed",
+      "type": "external",
+      "label": "mixed",
+      "sublabel": "40 / 30 / 30 blend",
+      "pos": [
+        40,
+        330
+      ],
+      "size": [
+        190,
+        60
+      ]
+    },
+    {
+      "id": "driver",
+      "type": "cloud",
+      "label": "k6 / Locust",
+      "sublabel": "500 VUs per scenario",
+      "pos": [
+        320,
+        190
+      ],
+      "size": [
+        200,
+        72
+      ],
+      "tag": "Locust on Azure LT"
+    },
+    {
+      "id": "silos",
+      "type": "backend",
+      "label": "fleans-api x2",
+      "sublabel": "2 silos",
+      "pos": [
+        660,
+        190
+      ],
+      "size": [
+        200,
+        72
+      ],
+      "tag": "compose or Container Apps"
+    },
+    {
+      "id": "postgres",
+      "type": "database",
+      "label": "PostgreSQL",
+      "sublabel": "first bottleneck locally",
+      "pos": [
+        940,
+        190
+      ],
+      "size": [
+        190,
+        72
+      ]
+    },
+    {
+      "id": "redis",
+      "type": "database",
+      "label": "Redis",
+      "sublabel": "Orleans clustering",
+      "pos": [
+        660,
+        410
+      ],
+      "size": [
+        200,
+        64
+      ]
+    },
+    {
+      "id": "results",
+      "type": "frontend",
+      "label": "tests/load/results/",
+      "sublabel": "local/ + azure-2026-04-29/",
+      "pos": [
+        320,
+        420
+      ],
+      "size": [
+        200,
+        64
+      ],
+      "tag": "report.md"
+    }
+  ],
+  "connections": [
+    {
+      "id": "s1",
+      "from": "linear",
+      "to": "driver"
+    },
+    {
+      "id": "s2",
+      "from": "parallel",
+      "to": "driver"
+    },
+    {
+      "id": "s3",
+      "from": "events",
+      "to": "driver"
+    },
+    {
+      "id": "s4",
+      "from": "mixed",
+      "to": "driver"
+    },
+    {
+      "id": "http",
+      "from": "driver",
+      "to": "silos",
+      "label": "HTTP /Execution/*",
+      "variant": "emphasis"
+    },
+    {
+      "id": "pg",
+      "from": "silos",
+      "to": "postgres",
+      "label": "state",
+      "variant": "emphasis"
+    },
+    {
+      "id": "rd",
+      "from": "silos",
+      "to": "redis",
+      "label": "membership",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        806,
+        336
+      ]
+    },
+    {
+      "id": "rep",
+      "from": "driver",
+      "to": "results",
+      "label": "report",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        452,
+        340
+      ]
+    }
+  ]
+}

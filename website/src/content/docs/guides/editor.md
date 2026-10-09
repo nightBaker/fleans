@@ -21,6 +21,11 @@ tabs. Tabs also survive a page refresh — they are persisted to the browser's
 
 ## How to use it
 
+<figure class="arch-diagram" style="--arch-ratio: 580 / 718; max-width: 620px; margin-inline: auto">
+  <iframe data-arch-src="/fleans/diagrams/editor-deploy.html" src="/fleans/diagrams/editor-deploy.html?embed=1" title="BPMN editor deploy sequence" loading="lazy"></iframe>
+  <figcaption>Open a diagram in a tab, edit it with tabs saved to localStorage, then deploy it to create a new process version and clear the tab's dirty flag. <a href="/fleans/diagrams/editor-deploy.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
 ### Open a diagram
 
 You can open a diagram in a new tab three ways:

@@ -1,0 +1,152 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "API JWT Authentication",
+    "subtitle": "Opt-in: active once Authentication:Authority is set",
+    "quality_profile": "showcase",
+    "animation": "none",
+    "viewBox": [
+      480,
+      720
+    ]
+  },
+  "participants": [
+    {
+      "id": "client",
+      "type": "external",
+      "label": "Client",
+      "sublabel": "script / service"
+    },
+    {
+      "id": "idp",
+      "type": "security",
+      "label": "OIDC IdP",
+      "sublabel": "Authority"
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "fleans-api",
+      "sublabel": "JWT bearer"
+    },
+    {
+      "id": "engine",
+      "type": "backend",
+      "label": "Engine",
+      "sublabel": "workflow grains"
+    }
+  ],
+  "segments": [
+    {
+      "from": 165,
+      "to": 215,
+      "label": "Startup"
+    },
+    {
+      "from": 235,
+      "to": 300,
+      "label": "Token"
+    },
+    {
+      "from": 320,
+      "to": 440,
+      "label": "Workflow call"
+    },
+    {
+      "from": 460,
+      "to": 635,
+      "label": "User-task claim"
+    }
+  ],
+  "messages": [
+    {
+      "id": "j-discovery",
+      "from": "api",
+      "to": "idp",
+      "y": 190,
+      "label": "OIDC discovery",
+      "variant": "dashed",
+      "note": "issuer + signing keys"
+    },
+    {
+      "id": "j-token",
+      "from": "client",
+      "to": "idp",
+      "y": 255,
+      "label": "client_credentials",
+      "variant": "security"
+    },
+    {
+      "id": "j-token-ok",
+      "from": "idp",
+      "to": "client",
+      "y": 285,
+      "label": "access_token",
+      "variant": "return"
+    },
+    {
+      "id": "j-call",
+      "from": "client",
+      "to": "api",
+      "y": 340,
+      "label": "POST /Execution/start",
+      "variant": "emphasis",
+      "note": "Authorization: Bearer; aud = Audience"
+    },
+    {
+      "id": "j-start",
+      "from": "api",
+      "to": "engine",
+      "y": 385,
+      "label": "start instance",
+      "variant": "emphasis"
+    },
+    {
+      "id": "j-call-ok",
+      "from": "api",
+      "to": "client",
+      "y": 420,
+      "label": "200 / 401 if missing or invalid",
+      "variant": "return"
+    },
+    {
+      "id": "j-claim",
+      "from": "client",
+      "to": "api",
+      "y": 480,
+      "label": "POST /UserTasks/{id}/claim",
+      "variant": "emphasis",
+      "note": "groups = token groups claim"
+    },
+    {
+      "id": "j-claim-engine",
+      "from": "api",
+      "to": "engine",
+      "y": 530,
+      "label": "claim with token groups",
+      "variant": "security",
+      "note": "body userGroups ignored"
+    },
+    {
+      "id": "j-claim-ok",
+      "from": "api",
+      "to": "client",
+      "y": 590,
+      "label": "200 / 409 if not authorized",
+      "variant": "return"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "api",
+      "from": 340,
+      "to": 595
+    },
+    {
+      "participant": "engine",
+      "from": 385,
+      "to": 540
+    }
+  ]
+}

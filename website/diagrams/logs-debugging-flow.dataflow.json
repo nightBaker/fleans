@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Logs and Debugging Flow",
+    "subtitle": "Structured log entries carry a stable EventId plus grain-call scope fields; filter on both",
+    "quality_profile": "showcase",
+    "animation": "none",
+    "legend": {
+      "entries": {
+        "emphasis": {
+          "label": "log entry path"
+        },
+        "default": {
+          "label": "scope context / query"
+        },
+        "database": {
+          "label": "structured-log backend"
+        }
+      }
+    },
+    "viewBox": [
+      1080,
+      540
+    ]
+  },
+  "stages": [
+    {
+      "label": "Emit"
+    },
+    {
+      "label": "Enrich"
+    },
+    {
+      "label": "Filter"
+    },
+    {
+      "label": "Store"
+    },
+    {
+      "label": "Narrow down"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "grainCall",
+      "type": "backend",
+      "label": "Grain call",
+      "sublabel": "state mutation",
+      "stage": 0,
+      "row": 1,
+      "width": 150
+    },
+    {
+      "id": "scopeFilter",
+      "type": "backend",
+      "label": "Scope filter",
+      "sublabel": "BeginScope per call",
+      "stage": 1,
+      "row": 0,
+      "width": 160
+    },
+    {
+      "id": "loggerMessage",
+      "type": "backend",
+      "label": "[LoggerMessage]",
+      "sublabel": "stable EventId",
+      "stage": 1,
+      "row": 2,
+      "width": 160
+    },
+    {
+      "id": "logLevel",
+      "type": "cloud",
+      "label": "LogLevel",
+      "sublabel": "per category",
+      "stage": 2,
+      "row": 1,
+      "width": 150
+    },
+    {
+      "id": "logStore",
+      "type": "database",
+      "label": "Seq / Loki / Datadog",
+      "sublabel": "JSON properties",
+      "stage": 3,
+      "row": 1,
+      "width": 170
+    },
+    {
+      "id": "byEventId",
+      "type": "frontend",
+      "label": "By EventId",
+      "sublabel": "range per component",
+      "stage": 4,
+      "row": 0,
+      "width": 160
+    },
+    {
+      "id": "byScope",
+      "type": "frontend",
+      "label": "By scope field",
+      "sublabel": "WorkflowInstanceId",
+      "stage": 4,
+      "row": 2,
+      "width": 160
+    }
+  ],
+  "flows": [
+    {
+      "from": "grainCall",
+      "to": "scopeFilter",
+      "label": "wrapped"
+    },
+    {
+      "from": "grainCall",
+      "to": "loggerMessage",
+      "label": "logs",
+      "variant": "emphasis"
+    },
+    {
+      "from": "scopeFilter",
+      "to": "logLevel",
+      "label": "scope fields"
+    },
+    {
+      "from": "loggerMessage",
+      "to": "logLevel",
+      "label": "log entry",
+      "variant": "emphasis"
+    },
+    {
+      "from": "logLevel",
+      "to": "logStore",
+      "label": "kept",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "from": "logStore",
+      "to": "byEventId",
+      "label": "EventId"
+    },
+    {
+      "from": "logStore",
+      "to": "byScope",
+      "label": "field query"
+    }
+  ]
+}

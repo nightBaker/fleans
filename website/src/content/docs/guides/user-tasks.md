@@ -19,6 +19,11 @@ User tasks are the way Fleans models human-in-the-loop steps today. There is no 
 
 When a workflow instance reaches a `<bpmn:userTask>`, the engine:
 
+<figure class="arch-diagram" style="--arch-ratio: 820 / 648">
+  <iframe data-arch-src="/fleans/diagrams/user-task-lifecycle.html" src="/fleans/diagrams/user-task-lifecycle.html?embed=1" title="User task lifecycle" loading="lazy"></iframe>
+  <figcaption>Claim/unclaim may cycle until complete, fail, or cancel removes the task from the registry. <a href="/fleans/diagrams/user-task-lifecycle.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
 1. Activates the task and writes a metadata entry into the active-task registry (queryable via `GET /UserTasks`).
 2. Records the assignee, candidate users, candidate groups, and any required output variables (`<fleans:expectedOutputs>`) declared on the task.
 3. Waits — no token movement happens until an external caller hits one of the lifecycle endpoints.
