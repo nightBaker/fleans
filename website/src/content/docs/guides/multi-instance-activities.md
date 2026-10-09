@@ -107,6 +107,11 @@ Every iteration's child scope is seeded with `_context.loopCounter` set to the *
 
 Multi-instance leans on the same scope-tree machinery covered in [Variables and Scope](/fleans/guides/variables-and-scope/) — start there for the full mental model. The multi-instance specifics:
 
+<figure class="arch-diagram" style="--arch-ratio: 720 / 546">
+  <iframe data-arch-src="/fleans/diagrams/multi-instance-execution.html" src="/fleans/diagrams/multi-instance-execution.html?embed=1" title="Multi-instance execution flow" loading="lazy"></iframe>
+  <figcaption>The host resolves its count, spawns iterations (all at once in parallel, one after another in sequential), each in its own child scope, and collects each <code>outputElement</code> into <code>outputCollection</code>; an iteration that throws fails the host. <a href="/fleans/diagrams/multi-instance-execution.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
 - Each iteration spawns into a **fresh child variable scope** (`ChildVariableScopeCreated` event), seeded by inheritance from the enclosing scope.
 - `loopCounter` plus (when applicable) `elementVariable` are written onto that child scope before the iteration body runs.
 - On iteration completion, if `outputElement` + `outputCollection` are configured, the iteration's `outputElement` value is appended to the enclosing scope's `outputCollection` array.

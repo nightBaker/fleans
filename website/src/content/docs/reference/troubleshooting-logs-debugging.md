@@ -9,6 +9,11 @@ This page documents the structured-logging contract Fleans emits via `[LoggerMes
 
 Fleans uses **`[LoggerMessage]` source-generated logging exclusively** — no `ILogger.LogInformation(...)` extension-method calls. Every state mutation in `WorkflowInstance` and `ActivityInstance` emits a structured log entry via a `private partial void` declared on a partial class. This means:
 
+<figure class="arch-diagram" style="--arch-ratio: 1080 / 558">
+  <iframe data-arch-src="/fleans/diagrams/logs-debugging-flow.html" src="/fleans/diagrams/logs-debugging-flow.html?embed=1" title="Logs debugging flow" loading="lazy"></iframe>
+  <figcaption>Each state mutation emits a source-generated log entry with a stable EventId, enriched with grain-call scope fields; filter by level, then query your log backend by EventId range or <code>WorkflowInstanceId</code>. <a href="/fleans/diagrams/logs-debugging-flow.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
 - **EventIds are stable** — filter by EventId, not by message text.
 - **Field names are typed and consistent** — log queries on `WorkflowInstanceId` always hit the same field.
 - **No format-string drift** — the source generator validates the format string against the parameters at compile time.
@@ -33,6 +38,8 @@ If you author a custom-task plugin, follow the same pattern (see the [adding a B
 | 5000–5099 | `WorkflowEventsPublisher` |
 | 9000–9099 | `BpmnConverter` |
 | 10000–10099 | `TimerCallbackGrain` |
+| 11200 | `Fleans.Streaming.Kafka.AwsMsk` — MSK IAM token refresh failed (Error); check IAM policy for `kafka-cluster:Connect` / `WriteData` / `ReadData` |
+| 11201 | `Fleans.Streaming.Kafka.AwsMsk` — `OAuthBearerSetTokenFailure` threw after token-refresh failure (Warning); typically a shutdown race, not actionable |
 
 For the full per-EventId deep dive and reserved bands, see [`docs/plans/2026-02-08-structured-workflow-logging.md`](https://github.com/nightBaker/fleans/blob/main/docs/plans/2026-02-08-structured-workflow-logging.md).
 

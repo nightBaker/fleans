@@ -7,7 +7,7 @@ using Orleans.Streams;
 
 namespace Fleans.Streaming.Kafka;
 
-internal sealed class KafkaQueueAdapter : IQueueAdapter, IDisposable
+internal sealed partial class KafkaQueueAdapter : IQueueAdapter, IDisposable
 {
     private readonly KafkaStreamingOptions _options;
     private readonly IStreamQueueMapper _mapper;
@@ -36,13 +36,12 @@ internal sealed class KafkaQueueAdapter : IQueueAdapter, IDisposable
         _loggerFactory = loggerFactory;
         _logger = loggerFactory.CreateLogger<KafkaQueueAdapter>();
 
-        var producerConfig = new ProducerConfig
+        var producerConfig = BuildProducerConfig(_options);
+        if (_options.SecurityProtocol is KafkaSecurityProtocol.Ssl or KafkaSecurityProtocol.SaslSsl
+            && string.IsNullOrEmpty(_options.SslCaLocation))
         {
-            BootstrapServers = _options.Brokers,
-            EnableIdempotence = false,
-            Acks = Acks.All,
-        };
-        KafkaClientConfigExtensions.ApplySecurity(producerConfig, _options);
+            LogSslNoPathsOsTrustStore(_options.SecurityProtocol);
+        }
         var producerBuilder = new ProducerBuilder<byte[], byte[]>(producerConfig);
         if (_options.OAuthBearerTokenProvider is not null)
             producerBuilder.SetOAuthBearerTokenRefreshHandler(_options.OAuthBearerTokenProvider);
@@ -91,8 +90,32 @@ internal sealed class KafkaQueueAdapter : IQueueAdapter, IDisposable
         }
     }
 
+    internal static ProducerConfig BuildProducerConfig(KafkaStreamingOptions opts)
+    {
+        var config = new ProducerConfig
+        {
+            BootstrapServers = opts.Brokers,
+            EnableIdempotence = opts.EnableIdempotence,
+            Acks = MapAcks(opts.Acks),
+        };
+        KafkaClientConfigExtensions.ApplySecurity(config, opts);
+        return config;
+    }
+
+    private static Acks MapAcks(KafkaAcks acks) => acks switch
+    {
+        KafkaAcks.All    => Acks.All,
+        KafkaAcks.Leader => Acks.Leader,
+        KafkaAcks.None   => Acks.None,
+        _                => throw new ArgumentOutOfRangeException(nameof(acks), acks, null),
+    };
+
     public IQueueAdapterReceiver CreateReceiver(QueueId queueId) =>
         new KafkaQueueAdapterReceiver(queueId, _options, _serializer, _loggerFactory);
+
+    [LoggerMessage(EventId = 11100, Level = LogLevel.Warning,
+        Message = "SecurityProtocol={SecurityProtocol} configured without explicit SSL paths — broker certificate will be validated against the OS trust store.")]
+    private partial void LogSslNoPathsOsTrustStore(KafkaSecurityProtocol securityProtocol);
 
     public void Dispose()
     {

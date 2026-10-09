@@ -1,0 +1,156 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "At-least-once Stream Delivery",
+    "subtitle": "Offsets commit after handler success; a crash before commit replays the event, and the HasActiveEntry guard turns the duplicate into a logged no-op",
+    "animation": "none",
+    "quality_profile": "showcase",
+    "viewBox": [
+      560,
+      660
+    ],
+    "legend": {
+      "entries": {
+        "security": {
+          "label": "crash"
+        },
+        "dashed": {
+          "label": "redelivery"
+        },
+        "default": {
+          "label": "message"
+        }
+      }
+    }
+  },
+  "participants": [
+    {
+      "id": "producer",
+      "type": "backend",
+      "label": "Producer",
+      "sublabel": "WorkflowInstance"
+    },
+    {
+      "id": "topic",
+      "type": "messagebus",
+      "label": "Kafka",
+      "sublabel": "topic offsets"
+    },
+    {
+      "id": "handler",
+      "type": "backend",
+      "label": "Handler",
+      "sublabel": "stream consumer"
+    },
+    {
+      "id": "target",
+      "type": "backend",
+      "label": "Workflow",
+      "sublabel": "HasActiveEntry"
+    }
+  ],
+  "segments": [
+    {
+      "from": 160,
+      "to": 350,
+      "label": "First delivery"
+    },
+    {
+      "from": 366,
+      "to": 560,
+      "label": "Replay after crash"
+    }
+  ],
+  "messages": [
+    {
+      "from": "producer",
+      "to": "topic",
+      "y": 186,
+      "label": "publish event",
+      "variant": "emphasis"
+    },
+    {
+      "from": "topic",
+      "to": "handler",
+      "y": 226,
+      "label": "deliver offset N",
+      "variant": "emphasis"
+    },
+    {
+      "from": "handler",
+      "to": "target",
+      "y": 266,
+      "label": "CompleteActivity",
+      "variant": "emphasis"
+    },
+    {
+      "from": "target",
+      "to": "handler",
+      "y": 306,
+      "label": "applied",
+      "variant": "return"
+    },
+    {
+      "from": "handler",
+      "to": "topic",
+      "y": 340,
+      "label": "silo crash: no commit",
+      "variant": "security"
+    },
+    {
+      "from": "topic",
+      "to": "handler",
+      "y": 392,
+      "label": "redeliver offset N",
+      "variant": "dashed"
+    },
+    {
+      "from": "handler",
+      "to": "target",
+      "y": 432,
+      "label": "CompleteActivity",
+      "variant": "default"
+    },
+    {
+      "from": "target",
+      "to": "handler",
+      "y": 472,
+      "label": "stale: logged no-op",
+      "variant": "return"
+    },
+    {
+      "from": "handler",
+      "to": "topic",
+      "y": 512,
+      "label": "commit offset N",
+      "variant": "emphasis"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "handler",
+      "from": 220,
+      "to": 346,
+      "type": "backend"
+    },
+    {
+      "participant": "target",
+      "from": 260,
+      "to": 312,
+      "type": "backend"
+    },
+    {
+      "participant": "handler",
+      "from": 386,
+      "to": 518,
+      "type": "backend"
+    },
+    {
+      "participant": "target",
+      "from": 426,
+      "to": 478,
+      "type": "backend"
+    }
+  ]
+}

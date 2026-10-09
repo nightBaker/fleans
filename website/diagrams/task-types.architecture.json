@@ -1,0 +1,184 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "How each task type executes",
+    "subtitle": "Plain, Script, User, and Service tasks all report back to the WorkflowInstance",
+    "quality_profile": "showcase",
+    "animation": "none",
+    "legend": {
+      "entries": {
+        "frontend": {
+          "label": "BPMN task element"
+        },
+        "backend": {
+          "label": "Executor on a Worker silo"
+        },
+        "external": {
+          "label": "Person acting via REST or admin UI"
+        },
+        "database": {
+          "label": "Workflow instance (variables + token)"
+        }
+      }
+    }
+  },
+  "components": [
+    {
+      "id": "plain",
+      "type": "frontend",
+      "label": "Plain Task",
+      "sublabel": "bpmn:task",
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "script",
+      "type": "frontend",
+      "label": "Script Task",
+      "sublabel": "bpmn:scriptTask",
+      "pos": [
+        40,
+        160
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "user",
+      "type": "frontend",
+      "label": "User Task",
+      "sublabel": "bpmn:userTask",
+      "pos": [
+        40,
+        280
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "service",
+      "type": "frontend",
+      "label": "Service Task",
+      "sublabel": "bpmn:serviceTask",
+      "pos": [
+        40,
+        400
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "evaluator",
+      "type": "backend",
+      "label": "Script evaluator",
+      "sublabel": "DynamicExpresso",
+      "pos": [
+        370,
+        160
+      ],
+      "size": [
+        200,
+        64
+      ]
+    },
+    {
+      "id": "human",
+      "type": "external",
+      "label": "Human",
+      "sublabel": "REST or admin UI",
+      "pos": [
+        370,
+        280
+      ],
+      "size": [
+        200,
+        64
+      ]
+    },
+    {
+      "id": "plugin",
+      "type": "backend",
+      "label": "Custom-task plugin",
+      "sublabel": "matched by type",
+      "pos": [
+        370,
+        400
+      ],
+      "size": [
+        200,
+        64
+      ]
+    },
+    {
+      "id": "wi",
+      "type": "database",
+      "label": "WorkflowInstance",
+      "sublabel": "advances token",
+      "pos": [
+        760,
+        220
+      ],
+      "size": [
+        210,
+        72
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "plain-wi",
+      "from": "plain",
+      "to": "wi",
+      "label": "auto-complete"
+    },
+    {
+      "id": "script-eval",
+      "from": "script",
+      "to": "evaluator"
+    },
+    {
+      "id": "eval-wi",
+      "from": "evaluator",
+      "to": "wi",
+      "label": "_context merged"
+    },
+    {
+      "id": "user-human",
+      "from": "user",
+      "to": "human",
+      "label": "waits for claim",
+      "variant": "dashed"
+    },
+    {
+      "id": "human-wi",
+      "from": "human",
+      "to": "wi",
+      "label": "complete",
+      "labelSegment": 0
+    },
+    {
+      "id": "service-plugin",
+      "from": "service",
+      "to": "plugin"
+    },
+    {
+      "id": "plugin-wi",
+      "from": "plugin",
+      "to": "wi",
+      "label": "fleans:output"
+    }
+  ]
+}

@@ -1,0 +1,207 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Persistence Providers",
+    "subtitle": "Persistence:Provider selects SQLite (default) or PostgreSQL; writes and reads use separate EF Core contexts",
+    "animation": "none",
+    "quality_profile": "showcase",
+    "viewBox": [
+      920,
+      560
+    ]
+  },
+  "components": [
+    {
+      "id": "config",
+      "type": "external",
+      "label": "Configuration",
+      "sublabel": "Persistence:Provider",
+      "pos": [
+        40,
+        380
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "tag": "Sqlite | Postgres"
+    },
+    {
+      "id": "silos",
+      "type": "backend",
+      "label": "Fleans silos",
+      "sublabel": "Api / Web / Mcp",
+      "pos": [
+        40,
+        180
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "cmdctx",
+      "type": "backend",
+      "label": "Command context",
+      "sublabel": "FleanCommandDbContext",
+      "pos": [
+        300,
+        120
+      ],
+      "size": [
+        190,
+        64
+      ],
+      "tag": "events + projection"
+    },
+    {
+      "id": "qryctx",
+      "type": "backend",
+      "label": "Query context",
+      "sublabel": "FleanQueryDbContext",
+      "pos": [
+        300,
+        260
+      ],
+      "size": [
+        190,
+        64
+      ],
+      "tag": "NoTracking"
+    },
+    {
+      "id": "primary",
+      "type": "database",
+      "label": "PostgreSQL primary",
+      "sublabel": "ConnectionStrings:fleans",
+      "pos": [
+        600,
+        120
+      ],
+      "size": [
+        230,
+        64
+      ],
+      "tag": "MigrateAsync"
+    },
+    {
+      "id": "replica",
+      "type": "database",
+      "label": "PostgreSQL replica",
+      "sublabel": "ConnectionStrings:fleans-query",
+      "pos": [
+        600,
+        260
+      ],
+      "size": [
+        230,
+        64
+      ],
+      "tag": "optional"
+    },
+    {
+      "id": "sqlite",
+      "type": "database",
+      "label": "SQLite file",
+      "sublabel": "fleans-dev.db",
+      "pos": [
+        600,
+        420
+      ],
+      "size": [
+        230,
+        64
+      ],
+      "tag": "EnsureCreated"
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Production: Postgres",
+      "wraps": [
+        "primary",
+        "replica"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "Local dev: Sqlite (default)",
+      "wraps": [
+        "sqlite"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "config-selects",
+      "from": "config",
+      "to": "silos",
+      "label": "selects provider",
+      "variant": "dashed"
+    },
+    {
+      "id": "silos-write",
+      "from": "silos",
+      "to": "cmdctx",
+      "label": "writes",
+      "variant": "emphasis"
+    },
+    {
+      "id": "silos-read",
+      "from": "silos",
+      "to": "qryctx",
+      "label": "reads"
+    },
+    {
+      "id": "cmd-primary",
+      "from": "cmdctx",
+      "to": "primary",
+      "variant": "emphasis"
+    },
+    {
+      "id": "qry-replica",
+      "from": "qryctx",
+      "to": "replica",
+      "label": "if set",
+      "variant": "dashed"
+    },
+    {
+      "id": "qry-sqlite",
+      "from": "qryctx",
+      "to": "sqlite",
+      "label": "Sqlite",
+      "fromSide": "bottom",
+      "toSide": "left"
+    },
+    {
+      "id": "cmd-sqlite",
+      "from": "cmdctx",
+      "to": "sqlite",
+      "label": "Sqlite",
+      "variant": "default",
+      "fromSide": "top",
+      "toSide": "right",
+      "via": [
+        [
+          395,
+          76
+        ],
+        [
+          880,
+          76
+        ],
+        [
+          880,
+          452
+        ]
+      ],
+      "labelAt": [
+        880,
+        370
+      ]
+    }
+  ]
+}

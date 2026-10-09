@@ -5,11 +5,20 @@ sidebar:
   order: 7
 ---
 
+:::note
+Looking for setup steps? See [Configuring observability](/fleans/guides/configuring-observability/).
+:::
+
 Fleans is built on .NET Aspire's `ServiceDefaults`, which means every silo (`Fleans.Api`, `Fleans.Web`, `Fleans.WorkerHost`, `Fleans.Mcp`) ships with the same observability primitives wired in by default: health-check endpoints, OpenTelemetry metrics + traces, and structured logging via the `[LoggerMessage]` source generator. This page documents what is emitted today and how to consume it.
 
 ## What Fleans emits today
 
 Out of the box, every silo exposes:
+
+<figure class="arch-diagram" style="--arch-ratio: 1080 / 658">
+  <iframe data-arch-src="/fleans/diagrams/observability-pipeline.html" src="/fleans/diagrams/observability-pipeline.html?embed=1" title="Observability pipeline" loading="lazy"></iframe>
+  <figcaption>Metrics, traces and logs leave every silo through one OTLP exporter; see Configuring observability for the wiring. <a href="/fleans/diagrams/observability-pipeline.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
 
 - **HTTP probes** at `/health` (readiness — runs all registered health checks) and `/alive` (liveness — only checks tagged `live`). Both endpoints are anonymous so probes work even when JWT/OIDC auth is enabled.
 - **OpenTelemetry metrics** from the `Microsoft.Orleans` and `Fleans` meters plus the standard ASP.NET Core, HttpClient, and .NET runtime instrumentation.

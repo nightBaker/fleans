@@ -142,6 +142,11 @@ The Kafka adapter checkpoints offsets **after** the consumer-side handler comple
 crash *between* handler success and offset commit, the next consumer instance resumes from the
 last committed offset, which means the in-flight event will replay.
 
+<figure class="arch-diagram" style="--arch-ratio: 560 / 678; max-width: 600px; margin-inline: auto">
+  <iframe data-arch-src="/fleans/diagrams/streaming-at-least-once.html" src="/fleans/diagrams/streaming-at-least-once.html?embed=1" title="At-least-once stream delivery and replay sequence" loading="lazy"></iframe>
+  <figcaption>Offsets commit only after the handler succeeds; a crash before commit replays the event and the <code>HasActiveEntry</code> guard turns the duplicate into a logged no-op. <a href="/fleans/diagrams/streaming-at-least-once.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
 The replay is safe because every Fleans consumer eventually routes to a method on
 `WorkflowInstance` (`CompleteActivity`, `FailActivity`, …) that opens with a stale-callback
 guard:

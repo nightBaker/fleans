@@ -271,6 +271,178 @@ public class KafkaClientConfigExtensionsTests
             () => KafkaClientConfigExtensions.ApplySecurity(config, opts));
     }
 
+    // --- SSL / mTLS cases (S1–S9) ---
+
+    [TestMethod]
+    public void S1_Ssl_no_ssl_paths_sets_protocol_only()
+    {
+        var config = new ProducerConfig();
+        var opts = new KafkaStreamingOptions { SecurityProtocol = KafkaSecurityProtocol.Ssl };
+
+        KafkaClientConfigExtensions.ApplySecurity(config, opts);
+
+        Assert.AreEqual(SecurityProtocol.Ssl, config.SecurityProtocol);
+        Assert.IsNull(config.SslCaLocation);
+        Assert.IsNull(config.SslCertificateLocation);
+        Assert.IsNull(config.SslKeyLocation);
+        Assert.IsNull(config.SslKeyPassword);
+    }
+
+    [TestMethod]
+    public void S1b_SaslSsl_with_full_mtls_triple_sets_both_sasl_and_ssl_props()
+    {
+        var config = new ProducerConfig();
+        var opts = new KafkaStreamingOptions
+        {
+            SecurityProtocol      = KafkaSecurityProtocol.SaslSsl,
+            SaslMechanism         = KafkaSaslMechanism.Plain,
+            SaslUsername          = "user",
+            SaslPassword          = "pass",
+            SslCaLocation         = "/etc/kafka/ca.pem",
+            SslCertificateLocation = "/etc/kafka/client.pem",
+            SslKeyLocation        = "/etc/kafka/client.key",
+        };
+
+        KafkaClientConfigExtensions.ApplySecurity(config, opts);
+
+        Assert.AreEqual(SecurityProtocol.SaslSsl, config.SecurityProtocol);
+        Assert.AreEqual(SaslMechanism.Plain, config.SaslMechanism);
+        Assert.AreEqual("/etc/kafka/ca.pem", config.SslCaLocation);
+        Assert.AreEqual("/etc/kafka/client.pem", config.SslCertificateLocation);
+        Assert.AreEqual("/etc/kafka/client.key", config.SslKeyLocation);
+    }
+
+    [TestMethod]
+    public void S2_Ssl_ca_location_only_sets_ca_only()
+    {
+        var config = new ProducerConfig();
+        var opts = new KafkaStreamingOptions
+        {
+            SecurityProtocol = KafkaSecurityProtocol.Ssl,
+            SslCaLocation    = "/etc/kafka/ca.pem",
+        };
+
+        KafkaClientConfigExtensions.ApplySecurity(config, opts);
+
+        Assert.AreEqual("/etc/kafka/ca.pem", config.SslCaLocation);
+        Assert.IsNull(config.SslCertificateLocation);
+        Assert.IsNull(config.SslKeyLocation);
+    }
+
+    [TestMethod]
+    public void S3_Ssl_full_mtls_triple_sets_all_three_paths()
+    {
+        var config = new ProducerConfig();
+        var opts = new KafkaStreamingOptions
+        {
+            SecurityProtocol       = KafkaSecurityProtocol.Ssl,
+            SslCaLocation          = "/etc/kafka/ca.pem",
+            SslCertificateLocation = "/etc/kafka/client.pem",
+            SslKeyLocation         = "/etc/kafka/client.key",
+        };
+
+        KafkaClientConfigExtensions.ApplySecurity(config, opts);
+
+        Assert.AreEqual("/etc/kafka/ca.pem", config.SslCaLocation);
+        Assert.AreEqual("/etc/kafka/client.pem", config.SslCertificateLocation);
+        Assert.AreEqual("/etc/kafka/client.key", config.SslKeyLocation);
+        Assert.IsNull(config.SslKeyPassword);
+    }
+
+    [TestMethod]
+    public void S4_Ssl_full_mtls_with_password_sets_all_four_props()
+    {
+        var config = new ProducerConfig();
+        var opts = new KafkaStreamingOptions
+        {
+            SecurityProtocol       = KafkaSecurityProtocol.Ssl,
+            SslCaLocation          = "/etc/kafka/ca.pem",
+            SslCertificateLocation = "/etc/kafka/client.pem",
+            SslKeyLocation         = "/etc/kafka/client.key",
+            SslKeyPassword         = "s3cret",
+        };
+
+        KafkaClientConfigExtensions.ApplySecurity(config, opts);
+
+        Assert.AreEqual("/etc/kafka/ca.pem", config.SslCaLocation);
+        Assert.AreEqual("/etc/kafka/client.pem", config.SslCertificateLocation);
+        Assert.AreEqual("/etc/kafka/client.key", config.SslKeyLocation);
+        Assert.AreEqual("s3cret", config.SslKeyPassword);
+    }
+
+    [TestMethod]
+    public void S5_Ssl_cert_without_key_throws()
+    {
+        var config = new ProducerConfig();
+        var opts = new KafkaStreamingOptions
+        {
+            SecurityProtocol       = KafkaSecurityProtocol.Ssl,
+            SslCertificateLocation = "/etc/kafka/client.pem",
+        };
+
+        Assert.ThrowsExactly<InvalidOperationException>(
+            () => KafkaClientConfigExtensions.ApplySecurity(config, opts));
+    }
+
+    [TestMethod]
+    public void S6_Ssl_key_without_cert_throws()
+    {
+        var config = new ProducerConfig();
+        var opts = new KafkaStreamingOptions
+        {
+            SecurityProtocol = KafkaSecurityProtocol.Ssl,
+            SslKeyLocation   = "/etc/kafka/client.key",
+        };
+
+        Assert.ThrowsExactly<InvalidOperationException>(
+            () => KafkaClientConfigExtensions.ApplySecurity(config, opts));
+    }
+
+    [TestMethod]
+    public void S7_Ssl_password_without_key_throws()
+    {
+        var config = new ProducerConfig();
+        var opts = new KafkaStreamingOptions
+        {
+            SecurityProtocol = KafkaSecurityProtocol.Ssl,
+            SslKeyPassword   = "s3cret",
+        };
+
+        Assert.ThrowsExactly<InvalidOperationException>(
+            () => KafkaClientConfigExtensions.ApplySecurity(config, opts));
+    }
+
+    [TestMethod]
+    public void S8_Plaintext_with_ssl_paths_throws()
+    {
+        var config = new ProducerConfig();
+        var opts = new KafkaStreamingOptions
+        {
+            SecurityProtocol = KafkaSecurityProtocol.Plaintext,
+            SslCaLocation    = "/etc/kafka/ca.pem",
+        };
+
+        Assert.ThrowsExactly<InvalidOperationException>(
+            () => KafkaClientConfigExtensions.ApplySecurity(config, opts));
+    }
+
+    [TestMethod]
+    public void S9_SaslPlaintext_with_ssl_paths_throws()
+    {
+        var config = new ProducerConfig();
+        var opts = new KafkaStreamingOptions
+        {
+            SecurityProtocol = KafkaSecurityProtocol.SaslPlaintext,
+            SaslMechanism    = KafkaSaslMechanism.Plain,
+            SaslUsername     = "u",
+            SaslPassword     = "p",
+            SslCaLocation    = "/etc/kafka/ca.pem",
+        };
+
+        Assert.ThrowsExactly<InvalidOperationException>(
+            () => KafkaClientConfigExtensions.ApplySecurity(config, opts));
+    }
+
     // --- Regression guard: existing options defaults must still work ---
 
     [TestMethod]

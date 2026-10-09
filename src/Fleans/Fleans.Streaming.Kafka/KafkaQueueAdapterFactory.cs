@@ -13,7 +13,7 @@ using Orleans.Streams;
 
 namespace Fleans.Streaming.Kafka;
 
-public sealed class KafkaQueueAdapterFactory : IQueueAdapterFactory, IDisposable
+public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory, IDisposable
 {
     private readonly string _name;
     private readonly KafkaStreamingOptions _options;
@@ -45,8 +45,19 @@ public sealed class KafkaQueueAdapterFactory : IQueueAdapterFactory, IDisposable
         _cache = new SimpleQueueAdapterCache(cacheOptions, name, loggerFactory);
     }
 
+    internal static void ValidateOptions(KafkaStreamingOptions opts)
+    {
+        if (opts.EnableIdempotence && opts.Acks != KafkaAcks.All)
+            throw new InvalidOperationException(
+                $"Kafka idempotent producer requires Acks=All (configured: Acks={opts.Acks}). " +
+                "Either set Acks=All or set EnableIdempotence=false.");
+    }
+
     public async Task<IQueueAdapter> CreateAdapter()
     {
+        ValidateOptions(_options);
+        if (_options.Acks != KafkaAcks.All)
+            LogAcksNotAll(_options.Acks);
         await EnsureTopicsAsync().ConfigureAwait(false);
         return new KafkaQueueAdapter(_name, _options, _mapper, _serializer, _loggerFactory);
     }
@@ -90,20 +101,42 @@ public sealed class KafkaQueueAdapterFactory : IQueueAdapterFactory, IDisposable
 
         var adminConfig = new AdminClientConfig { BootstrapServers = _options.Brokers };
         KafkaClientConfigExtensions.ApplySecurity(adminConfig, _options);
+        if (_options.SecurityProtocol is KafkaSecurityProtocol.Ssl or KafkaSecurityProtocol.SaslSsl
+            && string.IsNullOrEmpty(_options.SslCaLocation))
+        {
+            LogSslNoPathsOsTrustStore(_options.SecurityProtocol);
+        }
         var adminBuilder = new AdminClientBuilder(adminConfig);
         if (_options.OAuthBearerTokenProvider is not null)
             adminBuilder.SetOAuthBearerTokenRefreshHandler(_options.OAuthBearerTokenProvider);
         using var admin = adminBuilder.Build();
 
         HashSet<string> existing;
+        short effectiveRf;
         try
         {
             var meta = admin.GetMetadata(_options.AdminTimeout);
             existing = meta.Topics.Select(t => t.Topic).ToHashSet(StringComparer.Ordinal);
+
+            var brokerCount = meta.Brokers.Count;
+            if (brokerCount == 0)
+                throw new InvalidOperationException(
+                    $"Kafka admin reports zero brokers for '{_options.Brokers}'. " +
+                    "The cluster is unreachable or misconfigured.");
+
+            effectiveRf = _options.ReplicationFactor;
+            if (brokerCount < effectiveRf)
+            {
+                if (brokerCount == 1)
+                    LogSingleBrokerCluster(_options.ReplicationFactor);
+                else
+                    LogReplicationFactorFallback(_options.ReplicationFactor, brokerCount, brokerCount);
+                effectiveRf = (short)brokerCount;
+            }
         }
         catch (KafkaException ex)
         {
-            _logger.LogError(ex, "Kafka topic-ensure: GetMetadata failed for brokers {Brokers}", _options.Brokers);
+            LogGetMetadataFailed(ex, _options.Brokers);
             throw;
         }
 
@@ -113,7 +146,7 @@ public sealed class KafkaQueueAdapterFactory : IQueueAdapterFactory, IDisposable
             {
                 Name = t,
                 NumPartitions = _options.NumPartitions,
-                ReplicationFactor = _options.ReplicationFactor,
+                ReplicationFactor = effectiveRf,
             })
             .ToList();
 
@@ -125,20 +158,19 @@ public sealed class KafkaQueueAdapterFactory : IQueueAdapterFactory, IDisposable
         try
         {
             await admin.CreateTopicsAsync(missing).ConfigureAwait(false);
-            _logger.LogInformation(
-                "Kafka topic-ensure: created {Count} topic(s): {Topics}",
-                missing.Count,
-                string.Join(", ", missing.Select(m => m.Name)));
+            LogTopicsCreated(missing.Count, string.Join(", ", missing.Select(m => m.Name)));
         }
         catch (CreateTopicsException ex) when (ex.Results.All(r =>
             r.Error.Code == Confluent.Kafka.ErrorCode.NoError ||
             r.Error.Code == Confluent.Kafka.ErrorCode.TopicAlreadyExists))
         {
-            _logger.LogInformation(
-                "Kafka topic-ensure: topics already existed (race with peer silo): {Topics}",
-                string.Join(", ", missing.Select(m => m.Name)));
+            LogTopicsAlreadyExisted(string.Join(", ", missing.Select(m => m.Name)));
         }
     }
+
+    [LoggerMessage(EventId = 11100, Level = LogLevel.Warning,
+        Message = "SecurityProtocol={SecurityProtocol} configured without explicit SSL paths — broker certificate will be validated against the OS trust store.")]
+    private partial void LogSslNoPathsOsTrustStore(KafkaSecurityProtocol securityProtocol);
 
     public static KafkaQueueAdapterFactory Create(IServiceProvider services, string name)
     {
@@ -154,4 +186,28 @@ public sealed class KafkaQueueAdapterFactory : IQueueAdapterFactory, IDisposable
 
         return factory;
     }
+
+    [LoggerMessage(EventId = 11101, Level = LogLevel.Warning,
+        Message = "Kafka adapter: Acks={Acks} is not All. Workflow event delivery durability is reduced — this is only safe for non-production workloads.")]
+    private partial void LogAcksNotAll(KafkaAcks acks);
+
+    [LoggerMessage(EventId = 11102, Level = LogLevel.Information,
+        Message = "Kafka topic-ensure: single-broker cluster detected; using ReplicationFactor=1 instead of configured {Configured}")]
+    private partial void LogSingleBrokerCluster(short configured);
+
+    [LoggerMessage(EventId = 11103, Level = LogLevel.Warning,
+        Message = "Kafka topic-ensure: configured ReplicationFactor={Configured} exceeds broker count={BrokerCount}; falling back to RF={Effective}. This indicates a partially-degraded or under-provisioned cluster.")]
+    private partial void LogReplicationFactorFallback(short configured, int brokerCount, int effective);
+
+    [LoggerMessage(EventId = 11104, Level = LogLevel.Error,
+        Message = "Kafka topic-ensure: GetMetadata failed for brokers {Brokers}")]
+    private partial void LogGetMetadataFailed(Exception ex, string brokers);
+
+    [LoggerMessage(EventId = 11105, Level = LogLevel.Information,
+        Message = "Kafka topic-ensure: created {Count} topic(s): {Topics}")]
+    private partial void LogTopicsCreated(int count, string topics);
+
+    [LoggerMessage(EventId = 11106, Level = LogLevel.Information,
+        Message = "Kafka topic-ensure: topics already existed (race with peer silo): {Topics}")]
+    private partial void LogTopicsAlreadyExisted(string topics);
 }

@@ -20,6 +20,11 @@ Both questions are answered without leaving the browser.
 2. Click the **Events** entry in the left navigation app-bar (between **Custom Tasks** and the user-account section).
 3. The page renders five sections, each backed by a different persistence table:
 
+<figure class="arch-diagram" style="--arch-ratio: 700 / 748; max-width: 740px; margin-inline: auto">
+  <iframe data-arch-src="/fleans/diagrams/events-page-flow.html" src="/fleans/diagrams/events-page-flow.html?embed=1" title="Events page data flow" loading="lazy"></iframe>
+  <figcaption>Each of the five Events page sections reads one persistence table: start-event registrations written by a deploy, and subscriptions held while an instance is parked on a catch event; Refresh re-queries all five. <a href="/fleans/diagrams/events-page-flow.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
 | Section | Source | Rows you'll see |
 |---|---|---|
 | **Message Start Events** | `MessageStartEventRegistrations` | one per `(MessageName, ProcessDefinitionKey)` pair registered by a deploy |
