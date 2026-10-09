@@ -264,7 +264,7 @@ The tab fetches via the `ICompensationLogService` application service which acti
 
 **Constraint:** **Multi-instance transactions** are rejected at parse time ([BpmnConverter.cs#L578-L581](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L578-L581) — typed exception). This is a deliberate restriction, not a bug — multi-instance + atomicity has subtle interactions with compensation walk ordering that #307 will address.
 
-**Nested transactions:** parse and run on the happy path. **Do not place a Cancel End Event inside an inner nested transaction** — cancel-path semantics for nested transactions land in later phases of [#307](https://github.com/nightBaker/fleans/issues/307).
+**Nested transactions:** supported on both the happy path and the inner-cancel path — an inner transaction can reach a Cancel End Event, run its compensation handlers, and exit through its Cancel Boundary Event while the outer transaction carries on and commits. Covered by manual test plan [#53](https://github.com/nightBaker/fleans/blob/main/tests/manual/53-nested-transaction/test-plan.md) (Scenarios A and B are also automated E2E).
 :::
 
 Cancel events implement the **transaction cancellation** path in BPMN: when a Cancel End Event fires inside a Transaction Sub-Process, the engine rolls back the transaction's scope and routes execution to a recovery flow via the Cancel Boundary Event.

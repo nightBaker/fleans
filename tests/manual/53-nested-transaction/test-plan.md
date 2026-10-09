@@ -2,14 +2,20 @@
 
 Tests the cancel-path semantics of nested `<transaction>` elements.
 
-**Design note:** Two separate BPMN fixtures are used because the Fleans engine does not support
-gateway routing inside a doubly-nested Transaction (gateways at the inner-tx level fail to
-activate their target activities). `nested-tx-normal-inner.bpmn` covers Scenarios A and C
+**Design note:** Two separate BPMN fixtures are used. `nested-tx-normal-inner.bpmn` covers Scenarios A and C
 (inner TX completes normally via a linear `start → work → end` flow; outer TX chooses its
-exit via EventBasedGateway at 1-level depth — supported). `nested-tx-cancel-inner.bpmn`
+exit via EventBasedGateway). `nested-tx-cancel-inner.bpmn`
 covers Scenario B (inner TX does work then fires CancelEndEvent; cancel boundary on inner-tx
 at outer-tx level routes the flow to an outer ICE — 1-level-deep ICE is supported).
 Scenario F cross-references `26-transaction-subprocess/nested-tx-hazard.bpmn`.
+
+**Correlation:** the outer catch events' messages correlate on the `txKey` variable
+(`<fleans:subscription correlationKey="= txKey" />`). Intermediate message catch events
+require a correlation key — an uncorrelated message only reaches message start events, and a
+catch event whose message has no correlation key is failed when reached (#761). Start every
+instance with a unique `txKey` and send the messages with `"CorrelationKey": "<txKey>"`.
+
+Scenarios A and B are automated in `src/Fleans/Fleans.E2E.Tests/Specs/NestedTransactionTests.cs`.
 
 ## Universal prerequisite
 
@@ -30,9 +36,9 @@ Uses `nested-tx-normal-inner.bpmn`.
    POST /Workflow/deploy  { "BpmnXml": "<contents of nested-tx-normal-inner.bpmn>" }
    ```
 
-2. Start an instance (no variables needed — inner TX always completes normally):
+2. Start an instance with a correlation key:
    ```
-   POST /Workflow/start  { "WorkflowId": "nested-tx-normal-inner" }
+   POST /Workflow/start  { "WorkflowId": "nested-tx-normal-inner", "Variables": { "txKey": "nested-a-1" } }
    ```
    Note the `workflowInstanceId`.
 
@@ -42,7 +48,7 @@ Uses `nested-tx-normal-inner.bpmn`.
 
 4. Send `trigger-outer-complete` to complete the outer TX normally:
    ```
-   POST /Workflow/message  { "MessageName": "trigger-outer-complete", "CorrelationKey": "" }
+   POST /Workflow/message  { "MessageName": "trigger-outer-complete", "CorrelationKey": "<txKey>" }
    ```
 
 5. Check instance state:
@@ -66,9 +72,9 @@ Uses `nested-tx-cancel-inner.bpmn`.
 
 ### Setup
 
-Fresh instance — no start variables needed (inner TX always cancels in this fixture):
+Fresh instance with a correlation key (inner TX always cancels in this fixture):
 ```
-POST /Workflow/start  { "WorkflowId": "nested-tx-cancel-inner" }
+POST /Workflow/start  { "WorkflowId": "nested-tx-cancel-inner", "Variables": { "txKey": "nested-b-1" } }
 ```
 
 ### Steps
@@ -80,7 +86,7 @@ POST /Workflow/start  { "WorkflowId": "nested-tx-cancel-inner" }
 
 4. Send `trigger-outer-complete`:
    ```
-   POST /Workflow/message  { "MessageName": "trigger-outer-complete", "CorrelationKey": "" }
+   POST /Workflow/message  { "MessageName": "trigger-outer-complete", "CorrelationKey": "<txKey>" }
    ```
 
 5. Check instance state.
@@ -102,9 +108,9 @@ Uses `nested-tx-normal-inner.bpmn`.
 
 ### Setup
 
-Fresh instance — no variables:
+Fresh instance with a correlation key:
 ```
-POST /Workflow/start  { "WorkflowId": "nested-tx-normal-inner" }
+POST /Workflow/start  { "WorkflowId": "nested-tx-normal-inner", "Variables": { "txKey": "nested-c-1" } }
 ```
 
 ### Steps
@@ -113,7 +119,7 @@ POST /Workflow/start  { "WorkflowId": "nested-tx-normal-inner" }
 
 4. Send `trigger-outer-cancel`:
    ```
-   POST /Workflow/message  { "MessageName": "trigger-outer-cancel", "CorrelationKey": "" }
+   POST /Workflow/message  { "MessageName": "trigger-outer-cancel", "CorrelationKey": "<txKey>" }
    ```
 
 5. Check instance state.
@@ -141,7 +147,7 @@ Expected: outer TX outcome is Hazard (error code 503), outer Error Boundary fire
 
 | Scenario | BPMN fixture | Start variables | Outer message | Inner outcome | Outer outcome | Outer boundary |
 |---|---|---|---|---|---|---|
-| A | `nested-tx-normal-inner.bpmn` | (none) | `trigger-outer-complete` | Completed | Completed | (none) |
-| B | `nested-tx-cancel-inner.bpmn` | (none) | `trigger-outer-complete` | Cancelled | Completed | Cancel on inner-tx only |
-| C | `nested-tx-normal-inner.bpmn` | (none) | `trigger-outer-cancel` | Completed | Cancelled | Cancel on outer-tx → `cancel-recovery-end` |
+| A | `nested-tx-normal-inner.bpmn` | `txKey` | `trigger-outer-complete` | Completed | Completed | (none) |
+| B | `nested-tx-cancel-inner.bpmn` | `txKey` | `trigger-outer-complete` | Cancelled | Completed | Cancel on inner-tx only |
+| C | `nested-tx-normal-inner.bpmn` | `txKey` | `trigger-outer-cancel` | Completed | Cancelled | Cancel on outer-tx → `cancel-recovery-end` |
 | F | `nested-tx-hazard.bpmn` | — | — | Hazard | Hazard | Error on outer-tx → `hazard-recovery-end` |
