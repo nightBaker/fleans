@@ -118,6 +118,8 @@ Each numbered entry below is one regression "step". For each one, follow the lin
 
 68. **AWS MSK IAM authentication** — `68-kafka-msk-iam/test-plan.md`. Verifies #682: `AddKafkaStreamingWithMskIam` wires SASL_SSL+OAuthBearer via the AWS SigV4 signer; IAM token refreshes succeed under workload identity; EventId 11200 fires on IAM permission errors; missing region throws at startup; wrong broker port (`:9092` vs `:9098`) produces a clear SASL error. **Human-only — requires AWS account + MSK cluster.**
 
+69. **REST read endpoints + API negative paths** — `69-api-read-endpoints-negative-paths/test-plan.md` (`api-read-endpoints.bpmn`, `api-disable-start.bpmn`, `malformed.bpmn`, `no-process.bpmn`). Verifies #766: `GET /Definitions` (Sieve filter / sort / paging), `GET /Definitions/{key}/instances` and `/{key}/{version}/instances`, `GET /custom-tasks` and `/custom-tasks/{taskType}` (RestCaller catalog entry), `GET /Instances/{id}/state` 404; and that malformed / process-less BPMN deploys → 400 with the parser message, starting an unknown key → 404 / a disabled key → 409, and `complete-activity` for an unknown instance → 404 (was 409 with an internal message) / unknown or already-completed activity → 409. *(Automated: `DefinitionsApiTests`, `ExecutionApiTests`, `InstancesApiTests`, `CustomTasksApiTests`.)*
+
 ## Website regression suite
 
 Website-specific manual tests live under `website/`. These run in a local dev server, not against the .NET stack.

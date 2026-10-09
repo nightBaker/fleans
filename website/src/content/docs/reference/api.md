@@ -52,11 +52,11 @@ Content-Type: application/json
 }
 ```
 
-**Error response (400)** — returned when the BPMN XML cannot be parsed:
+**Error response (400)** — returned when `BpmnXml` is empty, is not well-formed XML, or is not a deployable BPMN model (e.g. no `<process>` element). The message carries the parser diagnostic:
 
 ```json
 {
-  "error": "Failed to parse BPMN: ..."
+  "error": "Invalid BPMN: BPMN file must contain a process element"
 }
 ```
 
@@ -98,13 +98,11 @@ Content-Type: application/json
 }
 ```
 
-**Error response (400)**
+**Error responses**
 
-```json
-{
-  "error": "WorkflowId is required"
-}
-```
+- **400** — `{"error": "WorkflowId is required"}`
+- **404** — the process key was never deployed (ProblemDetails, `detail`: `Workflow with id 'my-process' is not registered. …`)
+- **409** — the process key is disabled (ProblemDetails, `detail`: `Process 'my-process' is disabled. Enable it before creating new instances.`)
 
 ### `POST /Workflow/message`
 
@@ -188,12 +186,28 @@ Content-Type: application/json
 
 **Success response (200)** — empty body
 
-**Error response (400)**
+**Error responses**
 
-```json
-{
-  "error": "WorkflowInstanceId is required"
-}
+- **400** — `{"error": "WorkflowInstanceId is required"}` / `{"error": "ActivityId is required"}`
+- **404** — no workflow instance with that id (ProblemDetails, `detail`: `Workflow instance '<id>' not found.`)
+- **409** — the activity has no active entry: unknown activity id, or an activity that already completed (ProblemDetails, `detail`: `No active entry found for activity 'review-task'.`). Also returned when the activity is a user task — use the `/UserTasks/{id}/complete` endpoint instead.
+
+### Read endpoints
+
+Paginated read endpoints accept `page` (default 1), `pageSize` (default 20, max 100), and Sieve `sorts` / `filters` query parameters, and return `{"items": [...], "totalCount": n, "page": p, "pageSize": s}`. An unknown key or version returns an empty page (200), not 404.
+
+| Verb | Path | Returns |
+| --- | --- | --- |
+| GET | `/Definitions` | Deployed process-definition versions (`processDefinitionId`, `processDefinitionKey`, `version`, `deployedAt`, `activitiesCount`, `sequenceFlowsCount`, `isActive`). Filterable on `ProcessDefinitionKey`, `Version`, `IsActive`; sortable on `ProcessDefinitionKey`, `Version`, `DeployedAt`. |
+| GET | `/Definitions/{key}/instances` | Instances of every version of `key` (`instanceId`, `processDefinitionId`, `isStarted`, `isCompleted`, `isCancelled`, timestamps). Filterable on `IsStarted`, `IsCompleted`, `IsCancelled`, `CreatedAt`. |
+| GET | `/Definitions/{key}/{version}/instances` | Same, restricted to one version. |
+| GET | `/custom-tasks` | Custom-task plugin catalog: one entry per task type with `displayName`, `parameterSchema`, and the `siloNames` hosting it. Not paginated. |
+| GET | `/custom-tasks/{taskType}` | One catalog entry; **404** if no plugin registers that task type. |
+
+```bash
+curl -k 'https://localhost:7140/Definitions?sorts=-Version&filters=ProcessDefinitionKey==my-process'
+curl -k 'https://localhost:7140/Definitions/my-process/2/instances?filters=IsCompleted==true'
+curl -k 'https://localhost:7140/custom-tasks/rest-call'
 ```
 
 ### User Task endpoints

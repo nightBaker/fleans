@@ -212,6 +212,98 @@ public sealed class FleansApiClient
         return result ?? throw new InvalidOperationException("SendSignal returned an empty body.");
     }
 
+    // --- Read-endpoint + negative-path helpers (#766) ---
+
+    /// <summary>POST /Definitions/deploy without <c>EnsureSuccessStatusCode</c> — for negative paths.</summary>
+    public async Task<HttpResponseMessage> DeployRawAsync(string bpmnXml, CancellationToken ct = default)
+    {
+        return await _http.PostAsJsonAsync(
+            "/Definitions/deploy",
+            new DeployBpmnRequest(bpmnXml),
+            JsonOptions,
+            ct);
+    }
+
+    /// <summary>POST /Execution/start without <c>EnsureSuccessStatusCode</c> — for negative paths.</summary>
+    public async Task<HttpResponseMessage> StartRawAsync(string processDefinitionKey, CancellationToken ct = default)
+    {
+        return await _http.PostAsJsonAsync(
+            "/Execution/start",
+            new StartWorkflowRequest(processDefinitionKey),
+            JsonOptions,
+            ct);
+    }
+
+    public async Task<HttpResponseMessage> GetStateRawAsync(Guid workflowInstanceId, CancellationToken ct = default)
+    {
+        return await _http.GetAsync($"/Instances/{workflowInstanceId:D}/state", ct);
+    }
+
+    public async Task<PagedResult<ProcessDefinitionSummary>> ListDefinitionsAsync(
+        int page = 1,
+        int pageSize = 20,
+        string? sorts = null,
+        string? filters = null,
+        CancellationToken ct = default)
+    {
+        return await GetPagedAsync<ProcessDefinitionSummary>("/Definitions", page, pageSize, sorts, filters, ct);
+    }
+
+    public async Task<PagedResult<WorkflowInstanceInfo>> ListInstancesByKeyAsync(
+        string processDefinitionKey,
+        int page = 1,
+        int pageSize = 20,
+        string? sorts = null,
+        string? filters = null,
+        CancellationToken ct = default)
+    {
+        return await GetPagedAsync<WorkflowInstanceInfo>(
+            $"/Definitions/{Uri.EscapeDataString(processDefinitionKey)}/instances", page, pageSize, sorts, filters, ct);
+    }
+
+    public async Task<PagedResult<WorkflowInstanceInfo>> ListInstancesByKeyAndVersionAsync(
+        string processDefinitionKey,
+        int version,
+        int page = 1,
+        int pageSize = 20,
+        string? sorts = null,
+        string? filters = null,
+        CancellationToken ct = default)
+    {
+        return await GetPagedAsync<WorkflowInstanceInfo>(
+            $"/Definitions/{Uri.EscapeDataString(processDefinitionKey)}/{version}/instances",
+            page, pageSize, sorts, filters, ct);
+    }
+
+    public async Task<List<CustomTaskCatalogEntryDto>> GetCustomTasksAsync(CancellationToken ct = default)
+    {
+        var response = await _http.GetAsync("/custom-tasks", ct);
+        response.EnsureSuccessStatusCode();
+        var result = await response.Content.ReadFromJsonAsync<List<CustomTaskCatalogEntryDto>>(JsonOptions, ct);
+        return result ?? throw new InvalidOperationException("GetCustomTasks returned an empty body.");
+    }
+
+    /// <summary>GET /custom-tasks/{taskType}; returns <c>null</c> on 404.</summary>
+    public async Task<CustomTaskCatalogEntryDto?> GetCustomTaskAsync(string taskType, CancellationToken ct = default)
+    {
+        var response = await _http.GetAsync($"/custom-tasks/{Uri.EscapeDataString(taskType)}", ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<CustomTaskCatalogEntryDto>(JsonOptions, ct);
+    }
+
+    private async Task<PagedResult<T>> GetPagedAsync<T>(
+        string path, int page, int pageSize, string? sorts, string? filters, CancellationToken ct)
+    {
+        var query = new List<string> { $"page={page}", $"pageSize={pageSize}" };
+        if (sorts is not null) query.Add($"sorts={Uri.EscapeDataString(sorts)}");
+        if (filters is not null) query.Add($"filters={Uri.EscapeDataString(filters)}");
+        var response = await _http.GetAsync($"{path}?{string.Join("&", query)}", ct);
+        response.EnsureSuccessStatusCode();
+        var result = await response.Content.ReadFromJsonAsync<PagedResult<T>>(JsonOptions, ct);
+        return result ?? throw new InvalidOperationException($"GET {path} returned an empty body.");
+    }
+
     public async Task<InstanceStateSnapshot> WaitForStateAsync(
         Guid workflowInstanceId,
         Func<InstanceStateSnapshot, bool> predicate,
