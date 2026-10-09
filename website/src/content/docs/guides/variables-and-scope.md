@@ -43,7 +43,7 @@ var city = (string)_context.user.address.city;
 var attempts = _context.retryCount ?? 0;
 ```
 
-DynamicExpresso evaluates each statement independently. You cannot define helper methods inside a script task — keep logic linear, and put complex computation behind a custom service-task plugin (see [Writing Custom-Task Plugins](/fleans/guides/writing-custom-tasks/)).
+DynamicExpresso evaluates each statement independently. Not every C# construct parses — notably implicitly-typed array literals (`new[] { 1, 2, 3 }`) are rejected; use `new List<object> { 1, 2, 3 }` instead. A script that fails to parse fails its activity (code `500`). You cannot define helper methods inside a script task — keep logic linear, and put complex computation behind a custom service-task plugin (see [Writing Custom-Task Plugins](/fleans/guides/writing-custom-tasks/)).
 
 ## Writing variables in script tasks
 

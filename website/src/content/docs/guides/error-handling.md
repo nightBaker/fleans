@@ -148,6 +148,31 @@ If a script or plugin throws *any other* exception, the activity fails with code
 **`"500"`** and the exception's `Message`. Use this only when you can't classify
 the failure — prefer the typed exceptions above.
 
+### Unhandled errors fail the instance
+
+If nothing catches the error — no matching error boundary event and no error
+event sub-process in any enclosing scope — the activity is recorded as failed
+(its `ErrorState` carries the code and message). When that failure leaves the
+instance with **no active activities**, the instance itself terminates as
+**Failed**:
+
+- the instance-state snapshot reports `isFailed: true` (together with
+  `isCompleted: true` and `completedAt`, because a failed instance is terminal —
+  the same convention `isCancelled` uses), and the Web UI shows a red **Failed**
+  badge;
+- the engine logs EventId **1120** at `Error` level naming the failed activity
+  and its error;
+- `fleans.workflow.terminated` is incremented with `result="failed"`.
+
+If other branches are still active (for example after a parallel fork), the
+instance keeps running; it fails only once no active activities remain. A branch
+that reaches a root end event first still completes the instance, as before.
+
+Before this behaviour existed, such an instance silently stayed *Running* with
+no active activities. If you need the workflow to continue instead, attach an
+error boundary event (a catch-all one with no `errorRef` works) or add an error
+event sub-process.
+
 ## Escalation
 
 Escalations express *something noteworthy that isn't strictly a failure*. The

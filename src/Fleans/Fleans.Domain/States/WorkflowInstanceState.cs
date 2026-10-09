@@ -31,6 +31,14 @@ public class WorkflowInstanceState
     [Id(19)]
     public bool IsCancelled { get; private set; }
 
+    /// <summary>
+    /// True when the instance terminated because an unhandled activity failure left it with
+    /// no live tokens (#762). Like <see cref="IsCancelled"/>, a failed instance is also
+    /// <see cref="IsCompleted"/> (terminal) — check this flag to tell success from failure.
+    /// </summary>
+    [Id(28)]
+    public bool IsFailed { get; private set; }
+
     [Id(7)]
     public DateTimeOffset? CreatedAt { get; private set; }
 
@@ -340,6 +348,25 @@ public class WorkflowInstanceState
         CompletedAt = DateTimeOffset.UtcNow;
         IsCompleted = true;
         IsCancelled = true;
+    }
+
+    /// <summary>
+    /// Terminal failure: the instance can make no further progress because an unhandled
+    /// activity failure consumed its last token. Mirrors <see cref="Cancel"/> — marks the
+    /// instance terminal (IsCompleted + CompletedAt) and sets <see cref="IsFailed"/>.
+    /// </summary>
+    public void Fail()
+    {
+        if (IsCompleted)
+            return; // already terminated — a late failure after termination is a no-op
+
+        GatewayForks.Clear();
+        ComplexGatewayJoinStates.Clear();
+        AppliedOperations.Clear(); // dedup ledger GC: bounded to instance lifetime (#657, Q1')
+        _dirtyFlags |= DirtyGatewayForks | DirtyComplexGatewayJoinStates | DirtyPendingOperations;
+        CompletedAt = DateTimeOffset.UtcNow;
+        IsCompleted = true;
+        IsFailed = true;
     }
 
     public Guid AddCloneOfVariableState(Guid variableStateId)

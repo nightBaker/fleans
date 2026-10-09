@@ -25,6 +25,7 @@ If you author a custom-task plugin, follow the same pattern (see the [adding a B
 | 1090–1099 | `WorkflowInstance` — escalation |
 | 1100–1109 | `WorkflowInstance` — transaction sub-process |
 | 1110–1119 | `WorkflowInstance` — compensation |
+| 1120 | `WorkflowInstance` — workflow failed: an unhandled activity failure left no active activities (Error) |
 | 1066 | `UserTaskClaim` rejection (Warning) |
 | 2000–2099 | `ActivityInstance` |
 | 3000–3099 | `WorkflowInstanceState` |

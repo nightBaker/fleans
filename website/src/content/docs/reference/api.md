@@ -485,7 +485,9 @@ curl -k -X POST https://localhost:7140/UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a
 
 ### Instance State endpoint
 
-`GET /Workflow/instances/{instanceId}/state` returns a per-instance state snapshot including `activeActivityIds`, `completedActivityIds`, `isStarted`, `isCompleted`, and related fields.
+`GET /Workflow/instances/{instanceId}/state` returns a per-instance state snapshot including `activeActivityIds`, `completedActivityIds`, `isStarted`, `isCompleted`, `isCancelled`, `isFailed`, and related fields.
+
+`isCompleted` means *terminal*. Tell the outcomes apart with the two flags: `isCancelled: true` → cancelled, `isFailed: true` → an unhandled activity failure ended the instance (see [Unhandled errors fail the instance](/fleans/guides/error-handling/#unhandled-errors-fail-the-instance)); both `false` → completed successfully. The failing activity is listed in `completedActivities` with a non-null `errorState`.
 
 This endpoint is intended for **diagnostics and load-test polling**, not for high-frequency production use. The response reflects the read-side EF projection, which is eventually consistent with the event stream — callers that need realtime certainty should drive via the grain API directly.
 

@@ -27,7 +27,7 @@ public static class FleansDiagnostics
     public static readonly Counter<long> WorkflowsTerminated = Meter.CreateCounter<long>(
         "fleans.workflow.terminated",
         unit: "{instances}",
-        description: "Workflow instances that reached a terminal state. Tag 'result' = completed|cancelled.");
+        description: "Workflow instances that reached a terminal state. Tag 'result' = completed|cancelled|failed.");
 
     public static readonly Histogram<double> ActivityDuration = Meter.CreateHistogram<double>(
         "fleans.activity.duration",
@@ -48,6 +48,9 @@ public static class FleansDiagnostics
 
     public static void OnWorkflowCancelled() =>
         WorkflowsTerminated.Add(1, new KeyValuePair<string, object?>("result", "cancelled"));
+
+    public static void OnWorkflowFailed() =>
+        WorkflowsTerminated.Add(1, new KeyValuePair<string, object?>("result", "failed"));
 
     public static void RecordActivityDuration(double milliseconds, string activityType) =>
         ActivityDuration.Record(milliseconds, new KeyValuePair<string, object?>("activity.type", activityType));

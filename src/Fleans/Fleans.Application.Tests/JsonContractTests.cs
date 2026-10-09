@@ -43,6 +43,7 @@ public class JsonContractTests
             IsStarted: true,
             IsCompleted: false,
             IsCancelled: false,
+            IsFailed: false,
             ActiveActivities: new(),
             CompletedActivities: new(),
             VariableStates: new(),

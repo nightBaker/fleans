@@ -774,6 +774,57 @@ public class WorkflowExecution
         return effects.AsReadOnly();
     }
 
+    /// <summary>
+    /// Fails the workflow instance when an unhandled activity failure has left it with no
+    /// live tokens (#762). Called at quiescence (end of the execution loop), after
+    /// <see cref="TryDeferredWorkflowCompletion"/> — so a workflow whose root end event already
+    /// completed still completes normally.
+    /// <para>
+    /// Without this, an unhandled failure (no error boundary, no error event sub-process) on
+    /// the last live branch leaves the instance with no active activities while it is neither
+    /// completed nor failed: the token is silently dropped and nothing ever terminates the
+    /// instance. A failed activity entry anywhere in the instance is the signal that the stall
+    /// was caused by an error; an instance with no active activities and no failure is left
+    /// alone (that is not an error path this method owns).
+    /// </para>
+    /// <para>
+    /// Child workflows are marked failed too; the parent notification for the unhandled
+    /// failure is still emitted by <see cref="FailActivity"/>, so it is not repeated here.
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<IInfrastructureEffect> TryFailStalledWorkflow()
+    {
+        if (!_state.IsStarted || _state.IsCompleted)
+            return [];
+
+        if (_state.GetActiveActivities().Any())
+            return [];
+
+        var failedEntry = _state.Entries
+            .Where(e => e.ErrorCode is not null)
+            .OrderBy(e => e.CompletedAt ?? DateTimeOffset.MinValue)
+            .LastOrDefault();
+        if (failedEntry is null)
+            return [];
+
+        var effects = new List<IInfrastructureEffect>();
+
+        // Unregister any still-armed root-scope event sub-process listeners — the instance is
+        // terminal, so a later timer/message/signal must not re-open it.
+        effects.AddRange(BuildEventSubProcessPeerUnregisterEffects(
+            _definition, scopeContainerId: null,
+            scopeVariablesId: _state.GetRootVariablesId(),
+            skipStartEventActivityId: null));
+
+        Emit(new WorkflowFailed(
+            failedEntry.ActivityId,
+            failedEntry.ActivityInstanceId,
+            failedEntry.ErrorCode!,
+            failedEntry.ErrorState?.Message ?? string.Empty));
+
+        return effects.AsReadOnly();
+    }
+
     // ── Compensation Walk ────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -3221,6 +3272,9 @@ public class WorkflowExecution
                 break;
             case WorkflowCancelled:
                 _state.Cancel();
+                break;
+            case WorkflowFailed:
+                _state.Fail();
                 break;
             case EscalationUncaughtRaised:
                 break; // non-faulting per BPMN spec — recorded for observability only

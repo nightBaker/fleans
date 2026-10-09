@@ -81,5 +81,10 @@ public class MessageEventTests : WorkflowE2ETestBase
             "waitApproval should appear among completed activities (with a failure outcome).");
         Assert.IsNotNull(failedActivity.ErrorState,
             "waitApproval should carry an ErrorState describing the missing-variable failure.");
+
+        // The failure consumed the only token, so the instance itself terminates as failed (#762).
+        var terminal = await ApiClient.WaitForStateAsync(
+            started.WorkflowInstanceId, s => s.IsFailed, timeout: TimeSpan.FromSeconds(15));
+        Assert.IsTrue(terminal.IsCompleted, "A failed instance is terminal.");
     }
 }

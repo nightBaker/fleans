@@ -232,9 +232,7 @@ public sealed class FleansApiClient
         }
         throw new TimeoutException(
             $"Workflow instance {workflowInstanceId} did not reach the expected state within {timeout ?? TimeSpan.FromSeconds(30)}. " +
-            $"Last snapshot: IsStarted={last?.IsStarted}, IsCompleted={last?.IsCompleted}, " +
-            $"Active=[{string.Join(",", last?.ActiveActivityIds ?? new List<string>())}], " +
-            $"Completed=[{string.Join(",", last?.CompletedActivityIds ?? new List<string>())}].");
+            $"Last snapshot: {Describe(last)}");
     }
 
     public async Task<InstanceStateSnapshot> WaitForCompletionAsync(
@@ -248,6 +246,15 @@ public sealed class FleansApiClient
         {
             ct.ThrowIfCancellationRequested();
             last = await GetStateAsync(workflowInstanceId, ct);
+            if (last is { IsFailed: true })
+            {
+                // An unhandled failure terminates the instance (IsCompleted + IsFailed, #762).
+                // Callers of this helper expect success — fail fast with the cause instead of
+                // returning a terminal-but-failed snapshot that an IsCompleted assert would accept.
+                // Specs that expect a failure should use WaitForStateAsync(s => s.IsFailed).
+                throw new InvalidOperationException(
+                    $"Workflow instance {workflowInstanceId} FAILED instead of completing. Last snapshot: {Describe(last)}");
+            }
             if (last is { IsCompleted: true })
             {
                 return last;
@@ -256,8 +263,18 @@ public sealed class FleansApiClient
         }
         throw new TimeoutException(
             $"Workflow instance {workflowInstanceId} did not reach IsCompleted within {timeout ?? TimeSpan.FromSeconds(30)}. " +
-            $"Last snapshot: IsStarted={last?.IsStarted}, IsCompleted={last?.IsCompleted}, " +
-            $"Active=[{string.Join(",", last?.ActiveActivityIds ?? new List<string>())}], " +
-            $"Completed=[{string.Join(",", last?.CompletedActivityIds ?? new List<string>())}].");
+            $"Last snapshot: {Describe(last)}");
+    }
+
+    private static string Describe(InstanceStateSnapshot? snapshot)
+    {
+        if (snapshot is null) return "<none>";
+        var failures = snapshot.CompletedActivities
+            .Where(a => a.ErrorState is not null)
+            .Select(a => $"{a.ActivityId}: {a.ErrorState!.Code} {a.ErrorState.Message}");
+        return $"IsStarted={snapshot.IsStarted}, IsCompleted={snapshot.IsCompleted}, IsFailed={snapshot.IsFailed}, " +
+               $"Active=[{string.Join(",", snapshot.ActiveActivityIds)}], " +
+               $"Completed=[{string.Join(",", snapshot.CompletedActivityIds)}], " +
+               $"Failures=[{string.Join("; ", failures)}].";
     }
 }
