@@ -4211,6 +4211,10 @@
 
     /* Dashed boundary variants */
     .c-security-group { fill: transparent; stroke: var(--security-stroke); stroke-dasharray: 4,4; }
+    /* Pluggable-backend chips: solid = ships with Fleans, dashed = other Orleans providers */
+    .chip-in.chip-database   { fill: var(--database-fill);   stroke: var(--database-stroke);   stroke-width: 1.2; }
+    .chip-in.chip-messagebus { fill: var(--messagebus-fill); stroke: var(--messagebus-stroke); stroke-width: 1.2; }
+    .chip-opt { fill: var(--bg); stroke: var(--text-dim); stroke-width: 1; stroke-dasharray: 3 2; }
     .c-region         { fill: rgba(251, 191, 36, 0.05); stroke: var(--cloud-stroke); stroke-dasharray: 8,4; }
     .c-lane           { fill: var(--lane-fill); stroke: var(--lane-stroke); stroke-dasharray: 6,6; }
 
@@ -4498,7 +4502,7 @@
         <div class="pulse-dot"></div>
         <h1>Fleans in your infrastructure</h1>
       </div>
-      <p class="subtitle">Your backend calls the REST API; Orleans silos keep workflow state in PostgreSQL and coordinate through Redis</p>
+      <p class="subtitle">Your backend calls the REST API; Orleans silos plug into the storage and queues you choose — any backend Orleans supports</p>
     </div>
 
     <script id="archify-guided-views-data" type="application/json">[]</script>
@@ -4544,9 +4548,9 @@
 
     <!-- Main Diagram -->
     <div class="diagram-container" data-detail-level="read">
-      <svg viewBox="0 0 1120 548" role="img" aria-labelledby="archify-diagram-title archify-diagram-description" data-preset="classic" data-quality-profile="showcase">
+      <svg viewBox="0 0 1400 580" role="img" aria-labelledby="archify-diagram-title archify-diagram-description" data-preset="classic" data-quality-profile="showcase">
         <title id="archify-diagram-title">Fleans in your infrastructure</title>
-        <desc id="archify-diagram-description">Your backend calls the REST API; Orleans silos keep workflow state in PostgreSQL and coordinate through Redis</desc>
+        <desc id="archify-diagram-description">Your backend calls the REST API; Orleans silos plug into the storage and queues you choose — any backend Orleans supports</desc>
         <!-- Definitions -->
         <defs>
           <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
@@ -4573,8 +4577,8 @@
         <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="0" x="290" y="10" width="460" height="470" rx="12" class="c-region" stroke-width="1"/>
         <text x="298" y="28" class="t-cloud" font-size="9" font-weight="600">Orleans cluster</text>
 
-        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="1" x="850" y="70" width="230" height="410" rx="12" class="c-region" stroke-width="1"/>
-        <text x="858" y="88" class="t-cloud" font-size="9" font-weight="600">State + messaging</text>
+        <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="1" x="850" y="10" width="530" height="560" rx="12" class="c-region" stroke-width="1"/>
+        <text x="858" y="28" class="t-cloud" font-size="9" font-weight="600">Pluggable backends — pick yours</text>
 
         <!-- Connection paths (before components for correct z-order) -->
         <path data-edge-from="client" data-edge-to="idp" data-edge-label="token" data-edge-key="0" data-edge-id="client-idp" data-composition-points="110,220;110,100" d="M 110 220 L 110 100" class="a-security" stroke-width="1.5" marker-end="url(#arrowhead-security)"/>
@@ -4583,9 +4587,10 @@
         <path data-edge-from="web" data-edge-to="api" data-edge-key="3" data-edge-id="web-api" data-composition-points="400,400;400,280" d="M 400 400 L 400 280" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         <path data-edge-from="api" data-edge-to="worker" data-edge-label="grain calls" data-edge-key="4" data-edge-id="api-worker" data-composition-points="400,220;400,100" d="M 400 220 L 400 100" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         <path data-edge-from="api" data-edge-to="plugin" data-edge-key="5" data-edge-id="api-plugin" data-composition-points="480,236;520,236;520,70;560,70" d="M 480 236 L 512 236 Q 520 236 520 228 L 520 78 Q 520 70 528 70 L 560 70" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
-        <path data-edge-from="api" data-edge-to="postgres" data-edge-label="events" data-edge-key="6" data-edge-id="api-postgres" data-composition-points="480,250;680,250;680,130;880,130" d="M 480 250 L 672 250 Q 680 250 680 242 L 680 138 Q 680 130 688 130 L 880 130" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="api" data-edge-to="redis" data-edge-label="membership" data-edge-key="7" data-edge-id="api-redis" data-composition-points="480,250;680,250;680,280;880,280" d="M 480 250 L 672 250 Q 680 250 680 258 L 680 272 Q 680 280 688 280 L 880 280" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="api" data-edge-to="kafka" data-edge-key="8" data-edge-id="api-kafka" data-composition-points="480,264;680,264;680,430;880,430" d="M 480 264 L 672 264 Q 680 264 680 272 L 680 422 Q 680 430 688 430 L 880 430" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="api" data-edge-to="state" data-edge-label="event log" data-edge-key="6" data-edge-id="api-state" data-composition-points="480,244;640,244;640,112;866,112" d="M 480 244 L 632 244 Q 640 244 640 236 L 640 120 Q 640 112 648 112 L 866 112" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="api" data-edge-to="clustering" data-edge-label="membership" data-edge-key="7" data-edge-id="api-clustering" data-composition-points="480,254;680,254;680,190;866,190" d="M 480 254 L 672 254 Q 680 254 680 246 L 680 198 Q 680 190 688 190 L 866 190" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="api" data-edge-to="reminders" data-edge-label="timers" data-edge-key="8" data-edge-id="api-reminders" data-composition-points="480,264;700,264;700,344;866,344" d="M 480 264 L 692 264 Q 700 264 700 272 L 700 336 Q 700 344 708 344 L 866 344" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="api" data-edge-to="streams" data-edge-label="events" data-edge-key="9" data-edge-id="api-streams" data-composition-points="480,274;640,274;640,432;866,432" d="M 480 274 L 632 274 Q 640 274 640 282 L 640 424 Q 640 432 648 432 L 866 432" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
 
         <!-- Components -->
         <g id="node-idp" data-node-id="idp" data-node-label="OIDC provider" tabindex="0" role="button" aria-label="Focus OIDC provider, optional, Architecture component" aria-pressed="false" data-node-kind="security" data-node-sublabel="optional" data-node-context="Architecture component">
@@ -4673,42 +4678,208 @@
         <text data-detail="context" x="400" y="444" class="t-muted" font-size="9" text-anchor="middle">admin UI silo</text>
         </g>
 
-        <g id="node-postgres" data-node-id="postgres" data-node-label="PostgreSQL" tabindex="0" role="button" aria-label="Focus PostgreSQL, event log + read model, State + messaging" aria-pressed="false" data-node-kind="database" data-node-sublabel="event log + read model" data-node-context="State + messaging">
-          <title>PostgreSQL · event log + read model · State + messaging</title>
-          <rect x="880" y="100" width="170" height="60" rx="6" class="c-mask"/>
-          <rect x="880" y="100" width="170" height="60" rx="6" class="c-database" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(886 106) scale(0.6875)">
+        <g id="node-state" data-node-id="state" data-node-label="Workflow state" tabindex="0" role="button" aria-label="Focus Workflow state, grain storage: event log + read model, Pluggable backends" aria-pressed="false" data-node-kind="database" data-node-sublabel="grain storage: event log + read model" data-node-context="Pluggable backends">
+          <title>Workflow state · grain storage: event log + read model · ships with Fleans: SQLite, PostgreSQL · Orleans providers: SQL Server, MySQL / MariaDB, Oracle, Azure Table, Azure Blob, Cosmos DB, DynamoDB, Firestore, Redis, In-memory, MongoDB*, Marten*</title>
+          <rect x="866" y="40" width="498" height="102" rx="6" class="c-mask"/>
+          <rect x="866" y="40" width="498" height="102" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(874 48) scale(0.6875)">
             <ellipse cx="8" cy="4" rx="5" ry="2"/>
             <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
           </g>
-          <text data-detail-anchor x="965" y="128" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">PostgreSQL</text>
-        <text data-detail="context" x="965" y="144" class="t-muted" font-size="9" text-anchor="middle">event log + read model</text>
+          <text data-detail-anchor x="892" y="60" class="t-primary" font-size="11" font-weight="600">Workflow state</text>
+        <text data-detail="context" x="1354" y="60" class="t-muted" font-size="9" text-anchor="end">grain storage: event log + read model</text>
+          <rect x="878" y="72" width="48" height="17" rx="8.5" class="chip-in chip-database"/>
+          <text x="902" y="83.5" class="t-primary" font-size="9" font-weight="600" text-anchor="middle">SQLite</text>
+          <rect x="932" y="72" width="69" height="17" rx="8.5" class="chip-in chip-database"/>
+          <text x="966.5" y="83.5" class="t-primary" font-size="9" font-weight="600" text-anchor="middle">PostgreSQL</text>
+          <rect x="1007" y="72" width="65" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1039.5" y="83.5" class="t-muted" font-size="9" text-anchor="middle">SQL Server</text>
+          <rect x="1078" y="72" width="90" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1123" y="83.5" class="t-muted" font-size="9" text-anchor="middle">MySQL / MariaDB</text>
+          <rect x="1174" y="72" width="45" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1196.5" y="83.5" class="t-muted" font-size="9" text-anchor="middle">Oracle</text>
+          <rect x="1225" y="72" width="70" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1260" y="83.5" class="t-muted" font-size="9" text-anchor="middle">Azure Table</text>
+          <rect x="878" y="94" width="65" height="17" rx="8.5" class="chip-opt"/>
+          <text x="910.5" y="105.5" class="t-muted" font-size="9" text-anchor="middle">Azure Blob</text>
+          <rect x="949" y="94" width="60" height="17" rx="8.5" class="chip-opt"/>
+          <text x="979" y="105.5" class="t-muted" font-size="9" text-anchor="middle">Cosmos DB</text>
+          <rect x="1015" y="94" width="55" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1042.5" y="105.5" class="t-muted" font-size="9" text-anchor="middle">DynamoDB</text>
+          <rect x="1076" y="94" width="60" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1106" y="105.5" class="t-muted" font-size="9" text-anchor="middle">Firestore</text>
+          <rect x="1142" y="94" width="40" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1162" y="105.5" class="t-muted" font-size="9" text-anchor="middle">Redis</text>
+          <rect x="1188" y="94" width="60" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1218" y="105.5" class="t-muted" font-size="9" text-anchor="middle">In-memory</text>
+          <rect x="1254" y="94" width="55" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1281.5" y="105.5" class="t-muted" font-size="9" text-anchor="middle">MongoDB*</text>
+          <rect x="878" y="116" width="50" height="17" rx="8.5" class="chip-opt"/>
+          <text x="903" y="127.5" class="t-muted" font-size="9" text-anchor="middle">Marten*</text>
         </g>
 
-        <g id="node-redis" data-node-id="redis" data-node-label="Redis" tabindex="0" role="button" aria-label="Focus Redis, clustering + reminders, State + messaging" aria-pressed="false" data-node-kind="database" data-node-sublabel="clustering + reminders" data-node-context="State + messaging">
-          <title>Redis · clustering + reminders · State + messaging</title>
-          <rect x="880" y="250" width="170" height="60" rx="6" class="c-mask"/>
-          <rect x="880" y="250" width="170" height="60" rx="6" class="c-database" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(886 256) scale(0.6875)">
+        <g id="node-clustering" data-node-id="clustering" data-node-label="Clustering" tabindex="0" role="button" aria-label="Focus Clustering, silo membership, Pluggable backends" aria-pressed="false" data-node-kind="database" data-node-sublabel="silo membership" data-node-context="Pluggable backends">
+          <title>Clustering · silo membership · ships with Fleans: Redis · Orleans providers: SQL Server, PostgreSQL, MySQL, Oracle, Azure Table, Cosmos DB, DynamoDB, Firestore, Cassandra, Consul, ZooKeeper, Kubernetes*, MongoDB*</title>
+          <rect x="866" y="150" width="498" height="80" rx="6" class="c-mask"/>
+          <rect x="866" y="150" width="498" height="80" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(874 158) scale(0.6875)">
             <ellipse cx="8" cy="4" rx="5" ry="2"/>
             <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
           </g>
-          <text data-detail-anchor x="965" y="278" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Redis</text>
-        <text data-detail="context" x="965" y="294" class="t-muted" font-size="9" text-anchor="middle">clustering + reminders</text>
+          <text data-detail-anchor x="892" y="170" class="t-primary" font-size="11" font-weight="600">Clustering</text>
+        <text data-detail="context" x="1354" y="170" class="t-muted" font-size="9" text-anchor="end">silo membership</text>
+          <rect x="878" y="182" width="42" height="17" rx="8.5" class="chip-in chip-database"/>
+          <text x="899" y="193.5" class="t-primary" font-size="9" font-weight="600" text-anchor="middle">Redis</text>
+          <rect x="926" y="182" width="65" height="17" rx="8.5" class="chip-opt"/>
+          <text x="958.5" y="193.5" class="t-muted" font-size="9" text-anchor="middle">SQL Server</text>
+          <rect x="997" y="182" width="65" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1029.5" y="193.5" class="t-muted" font-size="9" text-anchor="middle">PostgreSQL</text>
+          <rect x="1068" y="182" width="40" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1088" y="193.5" class="t-muted" font-size="9" text-anchor="middle">MySQL</text>
+          <rect x="1114" y="182" width="45" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1136.5" y="193.5" class="t-muted" font-size="9" text-anchor="middle">Oracle</text>
+          <rect x="1165" y="182" width="70" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1200" y="193.5" class="t-muted" font-size="9" text-anchor="middle">Azure Table</text>
+          <rect x="1241" y="182" width="60" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1271" y="193.5" class="t-muted" font-size="9" text-anchor="middle">Cosmos DB</text>
+          <rect x="878" y="204" width="55" height="17" rx="8.5" class="chip-opt"/>
+          <text x="905.5" y="215.5" class="t-muted" font-size="9" text-anchor="middle">DynamoDB</text>
+          <rect x="939" y="204" width="60" height="17" rx="8.5" class="chip-opt"/>
+          <text x="969" y="215.5" class="t-muted" font-size="9" text-anchor="middle">Firestore</text>
+          <rect x="1005" y="204" width="60" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1035" y="215.5" class="t-muted" font-size="9" text-anchor="middle">Cassandra</text>
+          <rect x="1071" y="204" width="45" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1093.5" y="215.5" class="t-muted" font-size="9" text-anchor="middle">Consul</text>
+          <rect x="1122" y="204" width="60" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1152" y="215.5" class="t-muted" font-size="9" text-anchor="middle">ZooKeeper</text>
+          <rect x="1188" y="204" width="70" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1223" y="215.5" class="t-muted" font-size="9" text-anchor="middle">Kubernetes*</text>
+          <rect x="1264" y="204" width="55" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1291.5" y="215.5" class="t-muted" font-size="9" text-anchor="middle">MongoDB*</text>
         </g>
 
-        <g id="node-kafka" data-node-id="kafka" data-node-label="Kafka" tabindex="0" role="button" aria-label="Focus Kafka, streams, optional, State + messaging" aria-pressed="false" data-node-kind="messagebus" data-node-sublabel="streams, optional" data-node-context="State + messaging">
-          <title>Kafka · streams, optional · State + messaging</title>
-          <rect x="880" y="400" width="170" height="60" rx="6" class="c-mask"/>
-          <rect x="880" y="400" width="170" height="60" rx="6" class="c-messagebus" stroke-width="1.5"/>
-          <g aria-hidden="true" data-semantic-sigil="messagebus" class="semantic-sigil s-messagebus" transform="translate(886 406) scale(0.6875)">
+        <g id="node-directory" data-node-id="directory" data-node-label="Grain directory" tabindex="0" role="button" aria-label="Focus Grain directory, optional; default is in-cluster, Pluggable backends" aria-pressed="false" data-node-kind="database" data-node-sublabel="optional; default is in-cluster" data-node-context="Pluggable backends">
+          <title>Grain directory · optional; default is in-cluster · ships with Fleans: In-cluster · Orleans providers: Redis, Azure Table, SQL Server, PostgreSQL, MySQL, Firestore</title>
+          <rect x="866" y="238" width="498" height="58" rx="6" class="c-mask"/>
+          <rect x="866" y="238" width="498" height="58" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(874 246) scale(0.6875)">
+            <ellipse cx="8" cy="4" rx="5" ry="2"/>
+            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
+          </g>
+          <text data-detail-anchor x="892" y="258" class="t-primary" font-size="11" font-weight="600">Grain directory</text>
+        <text data-detail="context" x="1354" y="258" class="t-muted" font-size="9" text-anchor="end">optional; default is in-cluster</text>
+          <rect x="878" y="270" width="69" height="17" rx="8.5" class="chip-in chip-database"/>
+          <text x="912.5" y="281.5" class="t-primary" font-size="9" font-weight="600" text-anchor="middle">In-cluster</text>
+          <rect x="953" y="270" width="40" height="17" rx="8.5" class="chip-opt"/>
+          <text x="973" y="281.5" class="t-muted" font-size="9" text-anchor="middle">Redis</text>
+          <rect x="999" y="270" width="70" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1034" y="281.5" class="t-muted" font-size="9" text-anchor="middle">Azure Table</text>
+          <rect x="1075" y="270" width="65" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1107.5" y="281.5" class="t-muted" font-size="9" text-anchor="middle">SQL Server</text>
+          <rect x="1146" y="270" width="65" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1178.5" y="281.5" class="t-muted" font-size="9" text-anchor="middle">PostgreSQL</text>
+          <rect x="1217" y="270" width="40" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1237" y="281.5" class="t-muted" font-size="9" text-anchor="middle">MySQL</text>
+          <rect x="1263" y="270" width="60" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1293" y="281.5" class="t-muted" font-size="9" text-anchor="middle">Firestore</text>
+        </g>
+
+        <g id="node-reminders" data-node-id="reminders" data-node-label="Reminders" tabindex="0" role="button" aria-label="Focus Reminders, durable BPMN timers, Pluggable backends" aria-pressed="false" data-node-kind="database" data-node-sublabel="durable BPMN timers" data-node-context="Pluggable backends">
+          <title>Reminders · durable BPMN timers · ships with Fleans: Redis, PostgreSQL · Orleans providers: SQL Server, MySQL, Oracle, Azure Table, Cosmos DB, DynamoDB, Firestore, In-memory, MongoDB*</title>
+          <rect x="866" y="304" width="498" height="80" rx="6" class="c-mask"/>
+          <rect x="866" y="304" width="498" height="80" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(874 312) scale(0.6875)">
+            <ellipse cx="8" cy="4" rx="5" ry="2"/>
+            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
+          </g>
+          <text data-detail-anchor x="892" y="324" class="t-primary" font-size="11" font-weight="600">Reminders</text>
+        <text data-detail="context" x="1354" y="324" class="t-muted" font-size="9" text-anchor="end">durable BPMN timers</text>
+          <rect x="878" y="336" width="42" height="17" rx="8.5" class="chip-in chip-database"/>
+          <text x="899" y="347.5" class="t-primary" font-size="9" font-weight="600" text-anchor="middle">Redis</text>
+          <rect x="926" y="336" width="69" height="17" rx="8.5" class="chip-in chip-database"/>
+          <text x="960.5" y="347.5" class="t-primary" font-size="9" font-weight="600" text-anchor="middle">PostgreSQL</text>
+          <rect x="1001" y="336" width="65" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1033.5" y="347.5" class="t-muted" font-size="9" text-anchor="middle">SQL Server</text>
+          <rect x="1072" y="336" width="40" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1092" y="347.5" class="t-muted" font-size="9" text-anchor="middle">MySQL</text>
+          <rect x="1118" y="336" width="45" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1140.5" y="347.5" class="t-muted" font-size="9" text-anchor="middle">Oracle</text>
+          <rect x="1169" y="336" width="70" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1204" y="347.5" class="t-muted" font-size="9" text-anchor="middle">Azure Table</text>
+          <rect x="1245" y="336" width="60" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1275" y="347.5" class="t-muted" font-size="9" text-anchor="middle">Cosmos DB</text>
+          <rect x="878" y="358" width="55" height="17" rx="8.5" class="chip-opt"/>
+          <text x="905.5" y="369.5" class="t-muted" font-size="9" text-anchor="middle">DynamoDB</text>
+          <rect x="939" y="358" width="60" height="17" rx="8.5" class="chip-opt"/>
+          <text x="969" y="369.5" class="t-muted" font-size="9" text-anchor="middle">Firestore</text>
+          <rect x="1005" y="358" width="60" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1035" y="369.5" class="t-muted" font-size="9" text-anchor="middle">In-memory</text>
+          <rect x="1071" y="358" width="55" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1098.5" y="369.5" class="t-muted" font-size="9" text-anchor="middle">MongoDB*</text>
+        </g>
+
+        <g id="node-streams" data-node-id="streams" data-node-label="Streams" tabindex="0" role="button" aria-label="Focus Streams, domain events, at-least-once, Pluggable backends" aria-pressed="false" data-node-kind="messagebus" data-node-sublabel="domain events, at-least-once" data-node-context="Pluggable backends">
+          <title>Streams · domain events, at-least-once · ships with Fleans: Redis, Kafka, Azure Queue, In-memory · Orleans providers: Event Hubs, Amazon SQS, Amazon Kinesis, NATS, SQL Server, PostgreSQL, MySQL, RabbitMQ*</title>
+          <rect x="866" y="392" width="498" height="80" rx="6" class="c-mask"/>
+          <rect x="866" y="392" width="498" height="80" rx="6" class="c-messagebus" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="messagebus" class="semantic-sigil s-messagebus" transform="translate(874 400) scale(0.6875)">
             <path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/>
             <circle cx="5" cy="4.5" r="1" class="sigil-fill"/>
             <circle cx="10.5" cy="8" r="1" class="sigil-fill"/>
             <circle cx="7" cy="11.5" r="1" class="sigil-fill"/>
           </g>
-          <text data-detail-anchor x="965" y="428" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Kafka</text>
-        <text data-detail="context" x="965" y="444" class="t-muted" font-size="9" text-anchor="middle">streams, optional</text>
+          <text data-detail-anchor x="892" y="412" class="t-primary" font-size="11" font-weight="600">Streams</text>
+        <text data-detail="context" x="1354" y="412" class="t-muted" font-size="9" text-anchor="end">domain events, at-least-once</text>
+          <rect x="878" y="424" width="42" height="17" rx="8.5" class="chip-in chip-messagebus"/>
+          <text x="899" y="435.5" class="t-primary" font-size="9" font-weight="600" text-anchor="middle">Redis</text>
+          <rect x="926" y="424" width="42" height="17" rx="8.5" class="chip-in chip-messagebus"/>
+          <text x="947" y="435.5" class="t-primary" font-size="9" font-weight="600" text-anchor="middle">Kafka</text>
+          <rect x="974" y="424" width="74" height="17" rx="8.5" class="chip-in chip-messagebus"/>
+          <text x="1011" y="435.5" class="t-primary" font-size="9" font-weight="600" text-anchor="middle">Azure Queue</text>
+          <rect x="1054" y="424" width="64" height="17" rx="8.5" class="chip-in chip-messagebus"/>
+          <text x="1086" y="435.5" class="t-primary" font-size="9" font-weight="600" text-anchor="middle">In-memory</text>
+          <rect x="1124" y="424" width="65" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1156.5" y="435.5" class="t-muted" font-size="9" text-anchor="middle">Event Hubs</text>
+          <rect x="1195" y="424" width="65" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1227.5" y="435.5" class="t-muted" font-size="9" text-anchor="middle">Amazon SQS</text>
+          <rect x="1266" y="424" width="85" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1308.5" y="435.5" class="t-muted" font-size="9" text-anchor="middle">Amazon Kinesis</text>
+          <rect x="878" y="446" width="36" height="17" rx="8.5" class="chip-opt"/>
+          <text x="896" y="457.5" class="t-muted" font-size="9" text-anchor="middle">NATS</text>
+          <rect x="920" y="446" width="65" height="17" rx="8.5" class="chip-opt"/>
+          <text x="952.5" y="457.5" class="t-muted" font-size="9" text-anchor="middle">SQL Server</text>
+          <rect x="991" y="446" width="65" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1023.5" y="457.5" class="t-muted" font-size="9" text-anchor="middle">PostgreSQL</text>
+          <rect x="1062" y="446" width="40" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1082" y="457.5" class="t-muted" font-size="9" text-anchor="middle">MySQL</text>
+          <rect x="1108" y="446" width="60" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1138" y="457.5" class="t-muted" font-size="9" text-anchor="middle">RabbitMQ*</text>
+        </g>
+
+        <g id="node-journaling" data-node-id="journaling" data-node-label="Journaling · transactions · jobs" tabindex="0" role="button" aria-label="Focus Journaling · transactions · jobs, other Orleans storage, Pluggable backends" aria-pressed="false" data-node-kind="database" data-node-sublabel="other Orleans storage" data-node-context="Pluggable backends">
+          <title>Journaling · transactions · jobs · other Orleans storage · ships with Fleans: none · Orleans providers: Journal: Azure Blob, Journal: Azure Table, Journal: Redis, Journal: S3, Transactions: Azure Table, Transactions: DynamoDB, Durable jobs: Azure Storage</title>
+          <rect x="866" y="480" width="498" height="80" rx="6" class="c-mask"/>
+          <rect x="866" y="480" width="498" height="80" rx="6" class="c-database" stroke-width="1.5"/>
+          <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(874 488) scale(0.6875)">
+            <ellipse cx="8" cy="4" rx="5" ry="2"/>
+            <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
+          </g>
+          <text data-detail-anchor x="892" y="500" class="t-primary" font-size="11" font-weight="600">Journaling · transactions · jobs</text>
+        <text data-detail="context" x="1354" y="500" class="t-muted" font-size="9" text-anchor="end">other Orleans storage</text>
+          <rect x="878" y="512" width="109" height="17" rx="8.5" class="chip-opt"/>
+          <text x="932.5" y="523.5" class="t-muted" font-size="9" text-anchor="middle">Journal: Azure Blob</text>
+          <rect x="993" y="512" width="114" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1050" y="523.5" class="t-muted" font-size="9" text-anchor="middle">Journal: Azure Table</text>
+          <rect x="1113" y="512" width="85" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1155.5" y="523.5" class="t-muted" font-size="9" text-anchor="middle">Journal: Redis</text>
+          <rect x="1204" y="512" width="70" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1239" y="523.5" class="t-muted" font-size="9" text-anchor="middle">Journal: S3</text>
+          <rect x="878" y="534" width="139" height="17" rx="8.5" class="chip-opt"/>
+          <text x="947.5" y="545.5" class="t-muted" font-size="9" text-anchor="middle">Transactions: Azure Table</text>
+          <rect x="1023" y="534" width="124" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1085" y="545.5" class="t-muted" font-size="9" text-anchor="middle">Transactions: DynamoDB</text>
+          <rect x="1153" y="534" width="148" height="17" rx="8.5" class="chip-opt"/>
+          <text x="1227" y="545.5" class="t-muted" font-size="9" text-anchor="middle">Durable jobs: Azure Storage</text>
         </g>
 
         <!-- Connection labels -->
@@ -4730,13 +4901,21 @@
           <text x="400" y="210" class="t-backend" font-size="8" text-anchor="middle">grain calls</text>
         </g>
 
-        <g data-detail="context" data-edge-from="api" data-edge-to="postgres" data-edge-label="events" data-edge-key="6" data-edge-id="api-postgres">
-          <rect x="660.6" y="170" width="38.8" height="14" rx="3" class="c-mask"/>
-          <text x="680" y="180" class="t-muted" font-size="8" text-anchor="middle">events</text>
+        <g data-detail="context" data-edge-from="api" data-edge-to="state" data-edge-label="event log" data-edge-key="6" data-edge-id="api-state">
+          <rect x="773" y="105" width="54" height="14" rx="3" class="c-mask"/>
+          <text x="800" y="115" class="t-muted" font-size="8" text-anchor="middle">event log</text>
         </g>
-        <g data-detail="context" data-edge-from="api" data-edge-to="redis" data-edge-label="membership" data-edge-key="7" data-edge-id="api-redis">
-          <rect x="761" y="258" width="58" height="14" rx="3" class="c-mask"/>
-          <text x="790" y="268" class="t-muted" font-size="8" text-anchor="middle">membership</text>
+        <g data-detail="context" data-edge-from="api" data-edge-to="clustering" data-edge-label="membership" data-edge-key="7" data-edge-id="api-clustering">
+          <rect x="770.5" y="183" width="59" height="14" rx="3" class="c-mask"/>
+          <text x="800" y="193" class="t-muted" font-size="8" text-anchor="middle">membership</text>
+        </g>
+        <g data-detail="context" data-edge-from="api" data-edge-to="reminders" data-edge-label="timers" data-edge-key="8" data-edge-id="api-reminders">
+          <rect x="780.5" y="337" width="39" height="14" rx="3" class="c-mask"/>
+          <text x="800" y="347" class="t-muted" font-size="8" text-anchor="middle">timers</text>
+        </g>
+        <g data-detail="context" data-edge-from="api" data-edge-to="streams" data-edge-label="events" data-edge-key="9" data-edge-id="api-streams">
+          <rect x="780.5" y="425" width="39" height="14" rx="3" class="c-mask"/>
+          <text x="800" y="435" class="t-muted" font-size="8" text-anchor="middle">events</text>
         </g>
 
 
@@ -4766,6 +4945,14 @@
           <g data-legend-semantic-kind="external" data-legend-kind="external" data-legend-label="External" data-legend-x="570" data-legend-baseline="532" data-legend-width="82">
             <rect x="570" y="524" width="14" height="9" rx="2" class="c-external" stroke-width="1"/>
             <text x="591" y="532" class="t-muted" font-size="8">External</text>
+          </g>
+          <g data-legend-chip="builtin">
+            <rect x="40" y="546" width="22" height="9" rx="4.5" class="chip-in chip-database"/>
+            <text x="69" y="554" class="t-muted" font-size="8">Ships with Fleans</text>
+          </g>
+          <g data-legend-chip="orleans">
+            <rect x="156" y="546" width="22" height="9" rx="4.5" class="chip-opt"/>
+            <text x="185" y="554" class="t-muted" font-size="8">Orleans 10 provider (* community package)</text>
           </g>
         </g>
       </svg>
