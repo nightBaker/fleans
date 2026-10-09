@@ -1,0 +1,253 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Events page data flow",
+    "subtitle": "Each /events section reads one persistence table; Refresh re-queries all five, with no auto-poll",
+    "quality_profile": "showcase",
+    "animation": "none",
+    "viewBox": [
+      700,
+      730
+    ],
+    "legend": {
+      "entries": {
+        "emphasis": {
+          "label": "set by deploy"
+        },
+        "default": {
+          "label": "held while parked"
+        },
+        "dashed": {
+          "label": "read on Refresh"
+        },
+        "database": {
+          "label": "table"
+        }
+      }
+    }
+  },
+  "stages": [
+    {
+      "label": "Engine source"
+    },
+    {
+      "label": "Persistence table"
+    },
+    {
+      "label": "Events page section"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "srcMsgStart",
+      "type": "backend",
+      "label": "Message start",
+      "sublabel": "start event, on deploy",
+      "stage": 0,
+      "row": 0,
+      "width": 150
+    },
+    {
+      "id": "srcSigStart",
+      "type": "backend",
+      "label": "Signal start",
+      "sublabel": "start event, on deploy",
+      "stage": 0,
+      "row": 1,
+      "width": 150
+    },
+    {
+      "id": "srcCond",
+      "type": "backend",
+      "label": "Conditional start",
+      "sublabel": "active listener",
+      "stage": 0,
+      "row": 2,
+      "width": 150
+    },
+    {
+      "id": "srcMsgCatch",
+      "type": "backend",
+      "label": "Message catch",
+      "sublabel": "instance parked",
+      "stage": 0,
+      "row": 3,
+      "width": 150
+    },
+    {
+      "id": "srcSigCatch",
+      "type": "backend",
+      "label": "Signal catch",
+      "sublabel": "instance parked",
+      "stage": 0,
+      "row": 4,
+      "width": 150
+    },
+    {
+      "id": "tMsgStart",
+      "type": "database",
+      "label": "Registrations",
+      "sublabel": "MessageStartEventRegistrations",
+      "stage": 1,
+      "row": 0,
+      "width": 150,
+      "tag": "MessageName + key"
+    },
+    {
+      "id": "tSigStart",
+      "type": "database",
+      "label": "Registrations",
+      "sublabel": "SignalStartEventRegistrations",
+      "stage": 1,
+      "row": 1,
+      "width": 150,
+      "tag": "SignalName + key"
+    },
+    {
+      "id": "tCond",
+      "type": "database",
+      "label": "Listener state",
+      "sublabel": "ConditionalStartEventListenerState",
+      "stage": 1,
+      "row": 2,
+      "width": 150,
+      "tag": "IsRegistered=true"
+    },
+    {
+      "id": "tMsgSubs",
+      "type": "database",
+      "label": "Subscriptions",
+      "sublabel": "MessageSubscriptions",
+      "stage": 1,
+      "row": 3,
+      "width": 150,
+      "tag": "deleted when catch fires"
+    },
+    {
+      "id": "tSigSubs",
+      "type": "database",
+      "label": "Subscriptions",
+      "sublabel": "SignalSubscriptions",
+      "stage": 1,
+      "row": 4,
+      "width": 150,
+      "tag": "deleted when catch fires"
+    },
+    {
+      "id": "pMsgStart",
+      "type": "frontend",
+      "label": "Message Start",
+      "sublabel": "Message Start Events",
+      "stage": 2,
+      "row": 0,
+      "width": 150
+    },
+    {
+      "id": "pSigStart",
+      "type": "frontend",
+      "label": "Signal Start",
+      "sublabel": "Signal Start Events",
+      "stage": 2,
+      "row": 1,
+      "width": 150
+    },
+    {
+      "id": "pCond",
+      "type": "frontend",
+      "label": "Conditional",
+      "sublabel": "Conditional Start Events",
+      "stage": 2,
+      "row": 2,
+      "width": 150
+    },
+    {
+      "id": "pMsgSubs",
+      "type": "frontend",
+      "label": "Message Subs",
+      "sublabel": "Active Message Subscriptions",
+      "stage": 2,
+      "row": 3,
+      "width": 150
+    },
+    {
+      "id": "pSigSubs",
+      "type": "frontend",
+      "label": "Signal Subs",
+      "sublabel": "Active Signal Subscriptions",
+      "stage": 2,
+      "row": 4,
+      "width": 150
+    }
+  ],
+  "flows": [
+    {
+      "from": "srcMsgStart",
+      "to": "tMsgStart",
+      "label": "write",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "from": "srcSigStart",
+      "to": "tSigStart",
+      "label": "write",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "from": "srcCond",
+      "to": "tCond",
+      "label": "write",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "from": "srcMsgCatch",
+      "to": "tMsgSubs",
+      "label": "park",
+      "route": "straight"
+    },
+    {
+      "from": "srcSigCatch",
+      "to": "tSigSubs",
+      "label": "park",
+      "route": "straight"
+    },
+    {
+      "from": "tMsgStart",
+      "to": "pMsgStart",
+      "label": "read",
+      "variant": "dashed",
+      "route": "straight"
+    },
+    {
+      "from": "tSigStart",
+      "to": "pSigStart",
+      "label": "read",
+      "variant": "dashed",
+      "route": "straight"
+    },
+    {
+      "from": "tCond",
+      "to": "pCond",
+      "label": "read",
+      "variant": "dashed",
+      "route": "straight"
+    },
+    {
+      "from": "tMsgSubs",
+      "to": "pMsgSubs",
+      "label": "read",
+      "variant": "dashed",
+      "route": "straight"
+    },
+    {
+      "from": "tSigSubs",
+      "to": "pSigSubs",
+      "label": "read",
+      "variant": "dashed",
+      "route": "straight"
+    }
+  ]
+}

@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Multi-instance execution",
+    "subtitle": "One host activity, one child scope per iteration, outputs aggregated on the enclosing scope",
+    "quality_profile": "showcase",
+    "animation": "none",
+    "legend": {
+      "mode": "hidden"
+    }
+  },
+  "lanes": [
+    {
+      "id": "host",
+      "label": "Host activity"
+    },
+    {
+      "id": "iters",
+      "label": "Iterations (child scopes)"
+    },
+    {
+      "id": "fail",
+      "label": "Failure",
+      "variant": "exception"
+    }
+  ],
+  "mainPath": [
+    "resolve",
+    "spawn",
+    "run",
+    "collect",
+    "complete"
+  ],
+  "nodes": [
+    {
+      "id": "resolve",
+      "lane": "host",
+      "col": 0,
+      "width": 92,
+      "type": "backend",
+      "label": "Resolve count",
+      "sublabel": "collection or N"
+    },
+    {
+      "id": "spawn",
+      "lane": "host",
+      "col": 1,
+      "width": 100,
+      "type": "backend",
+      "label": "Spawn",
+      "sublabel": "parallel: all at once"
+    },
+    {
+      "id": "run",
+      "lane": "iters",
+      "col": 1,
+      "width": 100,
+      "type": "backend",
+      "label": "Iteration i",
+      "sublabel": "loopCounter + item"
+    },
+    {
+      "id": "collect",
+      "lane": "host",
+      "col": 3,
+      "width": 120,
+      "type": "database",
+      "label": "Aggregate",
+      "sublabel": "into outputCollection"
+    },
+    {
+      "id": "complete",
+      "lane": "host",
+      "col": 5,
+      "width": 100,
+      "type": "external",
+      "label": "Host completes",
+      "sublabel": "all iterations done"
+    },
+    {
+      "id": "hostfail",
+      "lane": "fail",
+      "col": 3,
+      "width": 110,
+      "type": "security",
+      "label": "Host fails",
+      "sublabel": "boundary can catch"
+    }
+  ],
+  "edges": [
+    {
+      "from": "resolve",
+      "to": "spawn"
+    },
+    {
+      "from": "spawn",
+      "to": "run",
+      "label": "per item"
+    },
+    {
+      "from": "run",
+      "to": "collect",
+      "label": "completes"
+    },
+    {
+      "from": "collect",
+      "to": "complete"
+    },
+    {
+      "from": "collect",
+      "to": "spawn",
+      "label": "sequential: next",
+      "role": "return",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "top",
+      "route": "up-channel"
+    },
+    {
+      "from": "run",
+      "to": "hostfail",
+      "label": "throws",
+      "role": "error"
+    }
+  ]
+}

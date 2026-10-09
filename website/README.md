@@ -53,27 +53,43 @@ website/
 └── public/favicon.svg
 ```
 
-## Hero BPMN Diagram
+## Architecture Diagrams (Archify)
 
-The landing page includes a rendered BPMN workflow diagram between the hero and the "Why Fleans?" cards. Two themed SVG variants (light/dark) are pre-rendered from `tests/manual/04-parallel-gateway/fork-join.bpmn` using bpmn-js in a headless Playwright browser.
+The landing-page hero and the architecture / sequence / lifecycle / workflow / data-flow diagrams across the docs are generated with [Archify](https://github.com/tt-a1i/archify) from typed JSON specs.
+
+- **Source of truth:** `website/diagrams/<name>.<type>.json` (`<type>` is `architecture`, `sequence`, `workflow`, `dataflow`, or `lifecycle`).
+- **Output:** `website/public/diagrams/<name>.html` — a self-contained interactive page (pan/zoom, search, theme toggle, PNG/SVG export).
+- **Regenerate** after editing a spec: `node <archify>/bin/archify.mjs deliver <type> website/diagrams/<name>.<type>.json website/public/diagrams/<name>.html --quality showcase --json`. Only commit when it exits 0 with all 9 artifact checks and 0 composition errors/warnings.
+- **Embedding:** pages use a plain-HTML block (works in `.md` and `.mdx`):
+
+  ```html
+  <figure class="arch-diagram" style="--arch-ratio: 1120 / 566">
+    <iframe data-arch-src="/fleans/diagrams/<name>.html" src="/fleans/diagrams/<name>.html?embed=1" title="…" loading="lazy"></iframe>
+    <figcaption>… <a href="/fleans/diagrams/<name>.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+  </figure>
+  ```
+
+  Set `--arch-ratio` to the SVG `viewBox` width / (height + 18) so the iframe has no inner scroll. The inline script in `astro.config.mjs` (`head`) rewrites every `iframe[data-arch-src]` to `?embed=1&theme=light|dark` and follows Starlight's theme toggle.
+- **Facts must come from the docs/code** — a diagram is documentation; update its spec in the same PR as the behaviour change.
+
+## BPMN Activity Illustrations
+
+The per-activity BPMN illustrations on `concepts/activities/*` pages are pre-rendered from `tests/manual/` fixtures using bpmn-js in a headless Playwright browser.
 
 - **Prerequisites:** `npx playwright install chromium` (one-time setup)
-- **Trigger:** re-run when the source fixture changes or `bpmn-js` version is bumped
+- **Trigger:** re-run when a source fixture changes or `bpmn-js` version is bumped
 - **Command:** `cd website && npm run render-bpmn`
-- **Output:** `website/public/hero-workflow-light.svg` and `website/public/hero-workflow-dark.svg`
-- **Rule:** visually inspect both SVGs in a browser before committing, AND open each file directly (not embedded in a page) to confirm the browser's XML viewer accepts it without a parse-error banner. The output must begin with `<?xml …?>` + `<!-- created with bpmn-js -->` + `<!DOCTYPE svg …>`.
+- **Output:** `website/public/activities/{slug}-{light,dark}.svg`
+- **Rule:** visually inspect the SVGs in a browser before committing, AND open each file directly (not embedded in a page) to confirm the browser's XML viewer accepts it without a parse-error banner. The output must begin with `<?xml …?>` + `<!-- created with bpmn-js -->` + `<!DOCTYPE svg …>`.
 - **Structural cleanup happens in the DOM, not via regex.** `render-bpmn.mjs` calls `viewer.saveSVG()`, round-trips the result through `DOMParser` + `querySelectorAll('.djs-hit, .djs-outline, .djs-dragger').remove()`, then re-serializes via `XMLSerializer` with the prolog/DOCTYPE re-prepended. Do not re-introduce regex-based element stripping — `<[^>]+>` absorbs the `/` of self-closing `<rect class="djs-hit" .../>` tags, causing a non-greedy `[\s\S]*?</[^>]+>` trailer to consume unrelated `</g>` closers (that is the root cause of #366 — 21 missing `</g>` per file, SVG rejected by strict XML parsers).
 - **Known limitation:** interior type-markers (script/user/service icons) are stripped from the SVG — only shapes (rectangles, diamonds, circles, arrows) are rendered. The admin UI (Fleans.Web) shows full markers because it loads the bpmn-font.
 
-## 3D Landing Background
+## Visual design
 
-The splash page (`website/src/content/docs/index.mdx`) loads an interactive Three.js silo scene as its background via `src/components/SiloBackground.astro`. Key points:
+The landing page and docs share one theme ("Saddle" direction): tokens in `src/styles/custom.css`, component overrides (`Header`, `Hero`, `ThemeSelect`, `Footer`) in `src/components/`, rationale and the contrast matrix in [`DESIGN.md`](DESIGN.md).
 
-- **Feature-gated:** loads the scene only on desktop (≥ 768 px), when `prefers-reduced-motion` is not set, and when WebGL2 is available. Otherwise renders `public/silo-poster-{dark,light}.webp`.
-- **Theme-reactive:** a `MutationObserver` on `<html data-theme>` recolors the scene in place — no reload, no rebuild.
-- **Only imported by `index.mdx`:** doc pages are untouched and pay zero bundle cost.
-- **Regenerating posters:** if you change scene visuals, run `cd website && npm run posters` (requires `npx playwright install chromium`). Commit the updated `public/silo-poster-*.webp` files.
-- **Contrast guardrail:** `cd website && npm run check:contrast` runs a Playwright check that fails if hero text drops below WCAG AA against the themed composite background. It is *not* wired into `npm run build` (that would force CI to install Chromium on every deploy). Run it manually after any change to the silo-background CSS, silo-scene, or hero styling.
+- **Changing a color token:** update `custom.css`, the hex values in `scripts/check-contrast.mjs`, and the tables in `DESIGN.md`; then run `node scripts/check-contrast.mjs`.
+- **Contrast guardrail for the hero:** `npm run check:contrast` starts a dev server and checks the rendered hero text in both themes with Playwright (needs `npx playwright install chromium`). It is *not* wired into `npm run build`, so run it after any hero or token change.
 
 ## Documentation rules
 

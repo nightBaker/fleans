@@ -14,6 +14,45 @@ export default defineConfig({
         replacesTitle: false,
       },
       favicon: '/favicon.svg',
+      head: [
+        // Archify diagrams (public/diagrams/*.html) are embedded as iframes with
+        // `data-arch-src`; keep their `?theme=` in sync with Starlight's theme toggle.
+        {
+          tag: 'script',
+          content: `(() => {
+  const sync = () => {
+    const theme = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+    document.querySelectorAll('iframe[data-arch-src]').forEach((f) => {
+      const src = f.dataset.archSrc + '?embed=1&theme=' + theme;
+      if (f.getAttribute('src') !== src) f.setAttribute('src', src);
+    });
+  };
+  // Re-skin the diagram canvas with the site's neutrals (same-origin iframe), so
+  // regenerated Archify files need no hand edits. Node colors stay Archify's.
+  const SKIN = 'html[data-embed="true"][data-theme="dark"]{--bg:#1b1818;--grid:#272323;--mask:#221f1f;--panel:rgba(34,31,31,.96)}'
+    + 'html[data-embed="true"][data-theme="light"]{--bg:#fff;--grid:#f1efef;--mask:#f7f6f6;--panel:rgba(247,246,246,.97)}';
+  const skin = (f) => {
+    try {
+      const d = f.contentDocument;
+      if (d && d.head && !d.getElementById('fl-skin')) {
+        const s = d.createElement('style');
+        s.id = 'fl-skin';
+        s.textContent = SKIN;
+        d.head.appendChild(s);
+      }
+    } catch (_) { /* cross-origin — leave as is */ }
+  };
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('iframe[data-arch-src]').forEach((f) => {
+      f.addEventListener('load', () => skin(f));
+      skin(f);
+    });
+    sync();
+    new MutationObserver(sync).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  });
+})();`,
+        },
+      ],
       social: [
         { icon: 'github', label: 'GitHub', href: 'https://github.com/nightBaker/fleans' },
       ],
@@ -80,6 +119,31 @@ export default defineConfig({
       ],
       components: {
         Footer: './src/components/Footer.astro',
+        Header: './src/components/Header.astro',
+        Hero: './src/components/Hero.astro',
+        ThemeSelect: './src/components/ThemeSelect.astro',
+      },
+      // Code frames follow the site tokens (custom.css) so they flip with the theme.
+      expressiveCode: {
+        styleOverrides: {
+          borderRadius: '0.625rem',
+          borderColor: 'var(--fl-stroke)',
+          codeFontFamily: "'JetBrains Mono', ui-monospace, monospace",
+          codeFontSize: '0.875rem',
+          codeBackground: 'var(--fl-surface-2)',
+          uiFontFamily: "'Geist Sans', ui-sans-serif, system-ui, sans-serif",
+          frames: {
+            shadowColor: 'transparent',
+            editorTabBarBackground: 'var(--fl-surface-3)',
+            editorTabBarBorderBottomColor: 'var(--fl-stroke)',
+            editorActiveTabBackground: 'var(--fl-surface-2)',
+            editorActiveTabIndicatorTopColor: 'var(--fl-blue)',
+            editorActiveTabIndicatorBottomColor: 'transparent',
+            terminalTitlebarBackground: 'var(--fl-surface-3)',
+            terminalTitlebarBorderBottomColor: 'var(--fl-stroke)',
+            terminalBackground: 'var(--fl-surface-2)',
+          },
+        },
       },
       customCss: ['./src/styles/custom.css'],
     }),

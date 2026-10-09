@@ -1,0 +1,140 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "User Task Lifecycle",
+    "subtitle": "Claim and unclaim cycle until complete. Fail and cancel are also accepted while Created.",
+    "quality_profile": "showcase",
+    "animation": "none",
+    "viewBox": [
+      820,
+      630
+    ]
+  },
+  "lanes": [
+    {
+      "id": "main",
+      "label": "Task states"
+    },
+    {
+      "id": "exits",
+      "label": "Operator exits"
+    },
+    {
+      "id": "terminal",
+      "label": "Failure outcome"
+    }
+  ],
+  "states": [
+    {
+      "id": "created",
+      "type": "start",
+      "label": "Created",
+      "sublabel": "listed in GET /UserTasks",
+      "lane": "main",
+      "col": 0,
+      "step": "01"
+    },
+    {
+      "id": "claimed",
+      "type": "active",
+      "label": "Claimed",
+      "sublabel": "re-claim overwrites claimedBy",
+      "lane": "main",
+      "col": 2,
+      "step": "02"
+    },
+    {
+      "id": "completed",
+      "type": "success",
+      "label": "Completed",
+      "sublabel": "outputs merged, token advances",
+      "lane": "main",
+      "col": 4,
+      "step": "03",
+      "tag": "terminal",
+      "yOffset": -7
+    },
+    {
+      "id": "failed",
+      "type": "failure",
+      "label": "Failed",
+      "sublabel": "ActivityFailed + error code",
+      "lane": "exits",
+      "col": 0
+    },
+    {
+      "id": "cancelled",
+      "type": "neutral",
+      "label": "Cancelled",
+      "sublabel": "no boundary fires",
+      "lane": "exits",
+      "col": 1,
+      "tag": "terminal"
+    },
+    {
+      "id": "routed",
+      "type": "failure",
+      "label": "Error routed",
+      "sublabel": "boundary fires, else instance fails",
+      "lane": "terminal",
+      "col": 0,
+      "width": 170,
+      "tag": "terminal"
+    }
+  ],
+  "transitions": [
+    {
+      "id": "t-claim",
+      "from": "created",
+      "to": "claimed",
+      "label": "claim (auth check)",
+      "variant": "emphasis"
+    },
+    {
+      "id": "t-unclaim",
+      "from": "claimed",
+      "to": "created",
+      "label": "unclaim (any caller)",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "top",
+      "route": "top-channel",
+      "channelY": 72
+    },
+    {
+      "id": "t-complete",
+      "from": "claimed",
+      "to": "completed",
+      "label": "complete + expectedOutputs",
+      "variant": "emphasis"
+    },
+    {
+      "id": "t-fail",
+      "from": "claimed",
+      "to": "failed",
+      "label": "POST /fail",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "straight",
+      "labelDy": 24
+    },
+    {
+      "id": "t-cancel",
+      "from": "claimed",
+      "to": "cancelled",
+      "label": "POST /cancel",
+      "fromSide": "right",
+      "toSide": "top"
+    },
+    {
+      "id": "t-routed",
+      "from": "failed",
+      "to": "routed",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top"
+    }
+  ]
+}

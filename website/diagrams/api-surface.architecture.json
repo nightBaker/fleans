@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Fleans REST API surface",
+    "subtitle": "Opt-in JWT auth and rate limiting front four endpoint groups backed by Orleans grains and the read projection",
+    "quality_profile": "showcase",
+    "animation": "none",
+    "legend": {
+      "entries": {
+        "external": { "label": "API client" },
+        "security": { "label": "Opt-in middleware (off by default)" },
+        "frontend": { "label": "Endpoint group (route prefix)" },
+        "backend": { "label": "Orleans grain" },
+        "database": { "label": "Read-side EF projection" }
+      }
+    }
+  },
+  "components": [
+    { "id": "client", "type": "external", "label": "API client", "sublabel": "HTTPS :7140", "pos": [40, 220], "size": [150, 64] },
+    { "id": "jwt", "type": "security", "label": "JWT bearer", "sublabel": "opt-in auth", "pos": [250, 220], "size": [160, 64] },
+    { "id": "ratelimit", "type": "security", "label": "Rate limiter", "sublabel": "5 policies, opt-in", "pos": [470, 220], "size": [170, 64] },
+    { "id": "defs", "type": "frontend", "label": "Definitions", "sublabel": "deploy · enable · disable", "tag": "/Workflow", "pos": [720, 40], "size": [230, 64] },
+    { "id": "exec", "type": "frontend", "label": "Execution", "sublabel": "start · message · signal", "tag": "/Workflow", "pos": [720, 160], "size": [230, 64] },
+    { "id": "tasks", "type": "frontend", "label": "User tasks", "sublabel": "claim · complete · fail", "tag": "/UserTasks", "pos": [720, 280], "size": [230, 64] },
+    { "id": "state", "type": "frontend", "label": "Instance state", "sublabel": "instances/{id}/state", "tag": "/Workflow", "pos": [720, 400], "size": [230, 64] },
+    { "id": "pdgrain", "type": "backend", "label": "Process definition", "sublabel": "versioned BPMN", "pos": [1030, 40], "size": [200, 64] },
+    { "id": "corr", "type": "backend", "label": "Correlation grains", "sublabel": "message + signal", "pos": [1030, 160], "size": [200, 64] },
+    { "id": "wi", "type": "backend", "label": "WorkflowInstance", "sublabel": "event-sourced", "pos": [1030, 280], "size": [200, 64] },
+    { "id": "proj", "type": "database", "label": "Query projection", "sublabel": "eventually consistent", "pos": [1030, 400], "size": [200, 64] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "Fleans.Api", "wraps": ["jwt", "ratelimit", "defs", "exec", "tasks", "state"] },
+    { "kind": "region", "label": "Orleans cluster", "wraps": ["pdgrain", "corr", "wi", "proj"] }
+  ],
+  "connections": [
+    { "id": "client-jwt", "from": "client", "to": "jwt", "variant": "emphasis" },
+    { "id": "jwt-rl", "from": "jwt", "to": "ratelimit", "variant": "emphasis" },
+    { "id": "rl-defs", "from": "ratelimit", "to": "defs" },
+    { "id": "rl-exec", "from": "ratelimit", "to": "exec" },
+    { "id": "rl-tasks", "from": "ratelimit", "to": "tasks" },
+    { "id": "rl-state", "from": "ratelimit", "to": "state" },
+    { "id": "defs-pd", "from": "defs", "to": "pdgrain" },
+    { "id": "exec-corr", "from": "exec", "to": "corr" },
+    { "id": "exec-wi", "from": "exec", "to": "wi" },
+    { "id": "tasks-wi", "from": "tasks", "to": "wi" },
+    { "id": "state-proj", "from": "state", "to": "proj", "variant": "dashed" }
+  ]
+}
