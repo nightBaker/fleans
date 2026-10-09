@@ -13,13 +13,13 @@
     <scriptTask id="set-vars" scriptFormat="csharp">
       <incoming>f1</incoming>
       <outgoing>f2</outgoing>
-      <script>status = "pending";</script>
+      <script>_context.status = "pending"</script>
     </scriptTask>
 
     <scriptTask id="main-task" scriptFormat="csharp">
       <incoming>f2</incoming>
       <outgoing>f3</outgoing>
-      <script>status = "approved";</script>
+      <script>_context.status = "approved"</script>
     </scriptTask>
 
     <boundaryEvent id="cond-boundary" attachedToRef="main-task" cancelActivity="true">
@@ -36,7 +36,7 @@
     <scriptTask id="boundary-handler" scriptFormat="csharp">
       <incoming>f4</incoming>
       <outgoing>f5</outgoing>
-      <script>handled = "boundary-fired";</script>
+      <script>_context.handled = "boundary-fired"</script>
     </scriptTask>
 
     <endEvent id="end-boundary">

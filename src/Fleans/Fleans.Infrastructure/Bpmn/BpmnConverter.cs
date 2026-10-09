@@ -807,14 +807,18 @@ public partial class BpmnConverter : IBpmnConverter
         }
     }
 
-    private static string ParseConditionExpression(XElement conditionalEventDef, string activityId, string elementType)
+    private string ParseConditionExpression(XElement conditionalEventDef, string activityId, string elementType)
     {
         var conditionEl = conditionalEventDef.Element(Bpmn + "condition");
         var expression = conditionEl?.Value?.Trim();
         if (string.IsNullOrEmpty(expression))
             throw new InvalidOperationException(
                 $"{elementType} '{activityId}' conditionalEventDefinition must have a non-empty <condition> element");
-        return expression;
+
+        // Same syntax as sequence-flow <conditionExpression>: bare variable names and
+        // ${...} placeholders are rewritten to `_context.<name>` so the condition
+        // evaluator can resolve them against the workflow variables (#760).
+        return ConvertBpmnCondition(expression);
     }
 
     // Resolves a BPMN errorRef (the id of an <error> element declared at definitions scope)
