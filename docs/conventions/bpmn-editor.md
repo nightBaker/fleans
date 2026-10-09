@@ -6,6 +6,8 @@ Tab state lives in `Editor.razor` (private `tabs: List<TabSession>` + `activeTab
 
 Dirty tracking subscribes to bpmn-js `commandStack.changed` via `bpmnEditor.registerDirtyCallback` and flips the active tab's flag (cleared on deploy).
 
+**Boot readiness.** `bpmnEditor.init` creates the modeler on the *first* interop call of `OnAfterRenderAsync`, but the boot sequence keeps going (restore tabs → `ActivateTab`/`AddBlankTab` → `bpmnEditor.loadXml` → persist). `window.bpmnEditor._modeler` existing therefore does **not** mean the editor is ready: a `loadXml` issued in that window is silently overwritten by the boot's own blank/restored diagram, and later `elementRegistry.get(id)` returns `null` (#773 — looked like registry corruption after `updateProperties`, was this race; deterministic on slower Linux CI). The root `.editor-page` div renders `data-editor-ready="true"` only after the boot sequence finishes. Anything driving `window.bpmnEditor.*` from outside Blazor (E2E `EditorPage.OpenAsync`) MUST wait on that attribute, never on `_modeler`.
+
 Persistence is **localStorage-only** under key `fleans.editor.tabs.v1` (versioned so future schema changes don't crash old sessions). The cap is 10 tabs; closing the last tab opens a fresh blank one so the editor is never empty.
 
 ## Custom-task properties panel: input/output asymmetry
