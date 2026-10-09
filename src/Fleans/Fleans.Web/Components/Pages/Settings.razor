@@ -1,6 +1,7 @@
 @page "/settings"
 @rendermode InteractiveServer
 @inject Fleans.Web.Services.ThemeService ThemeService
+@implements IDisposable
 
 <PageTitle>Settings</PageTitle>
 
@@ -12,6 +13,7 @@
 
         <FluentSelect TOption="DesignThemeModes"
                       Label="Theme Mode"
+                      data-testid="settings-theme-mode"
                       Items="@_modeOptions"
                       OptionValue="@(m => m.ToString())"
                       OptionText="@(m => m.ToString())"
@@ -19,6 +21,7 @@
 
         <FluentSelect TOption="OfficeColorOption"
                       Label="Accent Color"
+                      data-testid="settings-accent-color"
                       Items="@_colorOptions"
                       OptionValue="@(o => o.Label)"
                       OptionText="@(o => o.Label)"
@@ -65,8 +68,28 @@
 
     protected override void OnInitialized()
     {
+        SyncFromService();
+        // MainLayout's FluentDesignTheme restores the persisted theme from localStorage only
+        // after the circuit is interactive — i.e. after this page initialised with the
+        // ThemeService defaults — so follow later changes instead of snapshotting once.
+        ThemeService.OnChanged += OnThemeChanged;
+    }
+
+    private void SyncFromService()
+    {
         _selectedMode = ThemeService.Mode;
         _selectedColor = _colorOptions.First(o => o.Value == ThemeService.OfficeColor);
+    }
+
+    private void OnThemeChanged()
+    {
+        SyncFromService();
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        ThemeService.OnChanged -= OnThemeChanged;
     }
 
     private static List<OfficeColorOption> BuildColorOptions()

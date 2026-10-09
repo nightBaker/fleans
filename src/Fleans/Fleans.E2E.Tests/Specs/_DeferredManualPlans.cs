@@ -34,10 +34,8 @@ public class DeferredManualPlans : WorkflowE2ETestBase_None
     [Ignore("Needs OIDC/JWT test setup for Fleans.Web.")]
     public void Plan30_WebAuth_LoginRequired() { }
 
-    // tests/manual/31-events-page/test-plan.md — /events page in Web UI.
-    [TestMethod]
-    [Ignore("Needs EventsPage POM; UI assertion on Fluent DataGrid filtering.")]
-    public void Plan31_EventsPage_FilterAndDisplay() { }
+    // tests/manual/31-events-page/test-plan.md — automated in EventsPageTests
+    // (steps 2 empty-state and 7 OIDC remain manual).
 
     // tests/manual/35-kafka-streaming/test-plan.md — OUT OF SCOPE per plan (silo kill).
 
