@@ -24,6 +24,22 @@ public static class AspireFixture
 
     public static Uri WebBaseUri { get; private set; } = null!;
 
+    /// <summary>
+    /// True when the AppHost was booted with <c>FLEANS_E2E_AUTH=true</c> (#771): Keycloak is
+    /// provisioned, Fleans.Api enforces JWT bearer and Fleans.Web enforces OIDC login. Only
+    /// <see cref="E2ECategories.Auth"/> specs are meaningful in that mode.
+    /// </summary>
+    public static bool AuthEnabled { get; private set; }
+
+    /// <summary>Host-side Keycloak base URL when <see cref="AuthEnabled"/>; otherwise null.</summary>
+    public static Uri? KeycloakBaseUri { get; private set; }
+
+    /// <summary>
+    /// Fleans.Api HTTPS endpoint, resolved only when <see cref="AuthEnabled"/>. Bearer requests
+    /// must target it directly — HttpClient drops the Authorization header on redirects.
+    /// </summary>
+    public static Uri ApiHttpsBaseUri { get; private set; } = null!;
+
     public static HttpClient ApiHttpClient { get; private set; } = null!;
 
     public static IBrowser Browser =>
@@ -48,6 +64,8 @@ public static class AspireFixture
         // FLEANS_PERSISTENCE_PROVIDER / FLEANS_STREAMING_PROVIDER, when already set, are
         // passed through to the AppHost unchanged — CI's e2e-providers job uses this to
         // re-run the E2E-Smoke subset on Postgres, Kafka and Azure Queue (Azurite).
+        // FLEANS_E2E_AUTH=true (the e2e-auth job) is passed through the same way and makes the
+        // AppHost provision Keycloak and wire JWT/OIDC into Api and Web (#771).
         // CI runners (ubuntu-latest) ship Docker preinstalled, which is sufficient.
         if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("FLEANS_PERSISTENCE_PROVIDER")))
         {
@@ -65,6 +83,14 @@ public static class AspireFixture
         // HTTPS URL uses the ASP.NET Core dev cert that isn't trusted on Linux CI runners
         // (UntrustedRoot); bypassing validation is safe because this is a local-only test
         // cluster with no production exposure.
+        AuthEnabled = string.Equals(
+            Environment.GetEnvironmentVariable("FLEANS_E2E_AUTH"), "true", StringComparison.OrdinalIgnoreCase);
+        if (AuthEnabled)
+        {
+            KeycloakBaseUri = _application.GetEndpoint("keycloak", "http");
+            ApiHttpsBaseUri = _application.GetEndpoint("fleans-core", "https");
+        }
+
         ApiBaseUri = _application.GetEndpoint("fleans-core", "http");
         WebBaseUri = _application.GetEndpoint("fleans-management", "http");
 
@@ -108,6 +134,7 @@ public static class AspireFixture
         Require("FLEANS_PERSISTENCE_PROVIDER", "Postgres", "postgres");
         Require("FLEANS_STREAMING_PROVIDER", "Kafka", "fleans-kafka");
         Require("FLEANS_STREAMING_PROVIDER", "AzureQueue", "fleans-azurite");
+        Require("FLEANS_E2E_AUTH", "true", "keycloak");
     }
 
     [AssemblyCleanup]

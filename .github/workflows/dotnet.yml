@@ -48,7 +48,8 @@ jobs:
         # Microsoft.Playwright ships a PowerShell install script; ubuntu-latest has pwsh preinstalled.
         pwsh Fleans.E2E.Tests/bin/Debug/net10.0/playwright.ps1 install --with-deps chromium
     - name: Run E2E tests
-      run: dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --no-build --filter "TestCategory=E2E" --logger "trx;LogFileName=e2e.trx" --results-directory TestResults
+      # E2E-Auth specs need the Keycloak topology (FLEANS_E2E_AUTH=true) and run in e2e-auth below.
+      run: dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --no-build --filter "TestCategory=E2E&TestCategory!=E2E-Auth" --logger "trx;LogFileName=e2e.trx" --results-directory TestResults
     - name: Upload Playwright artifacts on failure
       if: failure()
       uses: actions/upload-artifact@v4
@@ -121,6 +122,60 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: e2e-providers-${{ matrix.leg }}-failure-artifacts
+        path: |
+          src/Fleans/TestResults/**/*.trx
+          src/Fleans/Fleans.E2E.Tests/bin/Debug/net10.0/playwright-traces/
+
+  # Authentication leg (#771). FLEANS_E2E_AUTH=true makes the AppHost provision Keycloak with
+  # Fleans.Aspire/e2e-auth/fleans-realm.json and wire JWT bearer into Fleans.Api and OIDC into
+  # Fleans.Web; AspireFixture fails fast if the keycloak resource is missing. Only E2E-Auth
+  # specs run here — the rest of the suite assumes auth is off.
+  e2e-auth:
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 25
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.0.x
+    - name: Build E2E project
+      run: dotnet build Fleans.E2E.Tests/Fleans.E2E.Tests.csproj
+    - name: Install Playwright browsers
+      run: pwsh Fleans.E2E.Tests/bin/Debug/net10.0/playwright.ps1 install --with-deps chromium
+    - name: Run E2E-Auth specs
+      env:
+        FLEANS_E2E_AUTH: "true"
+      run: dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --no-build --filter "TestCategory=E2E-Auth" --logger "trx;LogFileName=e2e-auth.trx" --results-directory TestResults
+    # Silent-green guard: E2E-Auth specs report Inconclusive (counted as not executed, not
+    # failed) when the fixture is not in auth mode, and a filter that matches nothing exits 0 —
+    # require total > 0 and passed == total.
+    - name: Assert auth specs actually ran
+      if: always()
+      run: |
+        trx_file=$(find TestResults -name "e2e-auth.trx" | head -1)
+        if [ -z "$trx_file" ]; then
+          echo "::error::no e2e-auth.trx produced"
+          exit 1
+        fi
+        read -r passed total < <(python3 - "$trx_file" <<'PY'
+        import sys, xml.etree.ElementTree as ET
+        ns = {"t": "http://microsoft.com/schemas/VisualStudio/TeamTest/2010"}
+        c = ET.parse(sys.argv[1]).getroot().find(".//t:Counters", ns)
+        print(c.get("passed", "0") if c is not None else "0", c.get("total", "0") if c is not None else "0")
+        PY
+        )
+        echo "E2E-Auth: passed=${passed} total=${total}"
+        if [ "${total:-0}" -eq 0 ] || [ "${passed:-0}" -ne "${total:-0}" ]; then
+          echo "::error::E2E-Auth specs did not all pass against the Keycloak topology (passed=${passed}, total=${total})."
+          exit 1
+        fi
+    - name: Upload artifacts on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: e2e-auth-failure-artifacts
         path: |
           src/Fleans/TestResults/**/*.trx
           src/Fleans/Fleans.E2E.Tests/bin/Debug/net10.0/playwright-traces/
