@@ -11,15 +11,14 @@ Tests BPMN Conditional Events: a workflow with a **conditional intermediate catc
 
 ## Fixture
 
-`conditional-event-test.bpmn` — Process `conditional-event-test`:
+`conditional-event-test.bpmn` — Process `conditional-event-test` (`amount` is a start variable):
 
 1. Start Event
-2. Script Task `set-initial` — sets `amount = 0`
-3. Parallel Gateway `fork` — splits into two branches:
+2. Parallel Gateway `fork` — splits into two branches:
    - Conditional Intermediate Catch Event `wait-for-amount` — waits for `amount > 500`, then Script Task `after-condition` (sets `result = "condition-met"`) → End Event `end`
-   - Task `update-amount` (external, completed via API) → End Event `end-update`
+   - Task `parallel-task` (external, completed via API) → End Event `end-parallel`
 
-Conditional watchers are re-evaluated whenever **another activity in the same instance completes**. There is no "patch variables" API, so the fixture provides the `update-amount` task on a parallel branch: completing it with variables merges them into the instance scope and triggers the watcher evaluation. (Completing an already-completed script task such as `set-initial` returns **409 Conflict** — that is not a way to inject variables.)
+How the watcher fires: conditional watchers are re-evaluated whenever **another activity in the same instance completes**, against the catch event's **own variable scope**. Each parallel branch gets a *cloned copy* of the variables at the fork, so variables passed when completing `parallel-task` are NOT visible to `wait-for-amount` — the completion is only the evaluation trigger. The value the condition sees is the `amount` start variable inherited at the fork. There is currently no API to change the variables of a waiting branch; completing an already-completed activity returns **409 Conflict**.
 
 Conditions use the same syntax as sequence-flow conditions: bare variable names (`amount > 500`) or `${...}` placeholders are rewritten to `_context.<name>` at deploy time.
 
@@ -30,15 +29,19 @@ Conditions use the same syntax as sequence-flow conditions: bare variable names 
 ### Test A: Conditional Intermediate Catch Event
 
 1. **Deploy** the BPMN fixture via Web UI (upload `conditional-event-test.bpmn`)
-2. **Start** a new workflow instance for `conditional-event-test`
-3. **Verify** the workflow pauses with `wait-for-amount` and `update-amount` both active
-4. **Complete** `update-amount` with a value that does NOT satisfy the condition:
+2. **Start** an instance with a value that does NOT satisfy the condition:
+   ```
+   POST https://localhost:7140/Execution/start
+   {"WorkflowId": "conditional-event-test", "Variables": {"amount": 100}}
+   ```
+3. **Verify** the workflow pauses with `wait-for-amount` and `parallel-task` both active
+4. **Complete** `parallel-task` to trigger watcher evaluation:
    ```
    POST https://localhost:7140/Execution/complete-activity
-   {"WorkflowInstanceId": "<id>", "ActivityId": "update-amount", "Variables": {"amount": 100}}
+   {"WorkflowInstanceId": "<id>", "ActivityId": "parallel-task", "Variables": {}}
    ```
-5. **Verify** `wait-for-amount` is still active and the instance is not completed
-6. **Start** a second instance, wait for both activities to be active, then complete `update-amount` with `{"amount": 600}`
+5. **Verify** `wait-for-amount` is still active, `after-condition` did not run, and the instance is not completed
+6. **Start** a second instance with `{"amount": 600}`, wait for both activities to be active, then complete `parallel-task`
 7. **Verify** the conditional catch event fires and the workflow completes with `result = "condition-met"`
 
 ### Test B: Conditional Start Event (via API)
@@ -55,9 +58,9 @@ Conditions use the same syntax as sequence-flow conditions: bare variable names 
 
 ## Expected Outcomes
 
-- [ ] Conditional intermediate catch event blocks until condition is true
+- [ ] Conditional intermediate catch event blocks while condition is false (no evaluation error)
 - [ ] Workflow resumes after condition becomes true
-- [ ] Conditional start event creates instance when condition evaluates true
+- [ ] Conditional start event creates instance when condition evaluates true (response has no `Errors`)
 - [ ] Conditional start event does not create instance when condition evaluates false
 - [ ] Conditional boundary event (interrupting) cancels host activity when condition fires
 - [ ] Variables are correctly available after conditional event completes

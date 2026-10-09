@@ -149,7 +149,8 @@ Write conditions the same way as sequence-flow `<conditionExpression>`s: referen
 
 Conditions are registered as **watchers** when their host element starts executing. Watchers are evaluated in the workflow's execution loop whenever at least one activity completes. This completion-driven evaluation means:
 
-- **Intermediate catch events** block until another activity completes and the condition is `true` at that point. To feed a value in from outside, model an external task on a parallel branch and complete it via `POST /Execution/complete-activity` with the new variables — the completion merges them and re-evaluates the watcher. There is no standalone "set variables" endpoint.
+- **Intermediate catch events** block until another activity completes and the condition is `true` at that point.
+- Conditions are evaluated against the **watcher's own variable scope**. Parallel-gateway branches (and boundary paths) receive a *cloned copy* of the variables, so variables written by a sibling branch — including variables passed to `POST /Execution/complete-activity` for a task on another branch — are not visible to the watcher; that completion only triggers re-evaluation. There is currently no API to change the variables of a waiting branch.
 - **Boundary events** require a concurrent activity (e.g., via a parallel gateway fork) to complete, triggering the watcher evaluation while the host task is still active.
 - **Non-interrupting boundaries** use edge detection: they fire only when the condition *transitions* from `false` to `true`, preventing repeated firing on every evaluation cycle.
 

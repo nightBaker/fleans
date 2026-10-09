@@ -16,7 +16,7 @@
     <scriptTask id="process-alert" scriptFormat="csharp">
       <incoming>f1</incoming>
       <outgoing>f2</outgoing>
-      <script>alert = "temperature-exceeded";</script>
+      <script>_context.alert = "temperature-exceeded"</script>
     </scriptTask>
 
     <endEvent id="end">
