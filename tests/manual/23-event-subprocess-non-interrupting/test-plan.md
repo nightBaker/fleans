@@ -17,9 +17,9 @@ regular `normalEnd` event.
 ## Steps
 
 1. **Deploy** the BPMN: upload `ni-event-subprocess.bpmn` via the Web UI, or
-   `POST https://localhost:7140/Workflow/upload-bpmn`.
+   `POST https://localhost:7140/Definitions/deploy`.
 2. **Start an instance**:
-   `POST https://localhost:7140/Workflow/start` with body
+   `POST https://localhost:7140/Execution/start` with body
    `{"WorkflowId":"niEvtSubProcess"}`
 3. Confirm `parentTask` is active in the Web UI.
 4. Wait ~5 seconds for the timer to fire.

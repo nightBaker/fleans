@@ -147,7 +147,7 @@ The activity completes with `user` (the parsed JSON body) and `status` (the inte
 
 ### v1 limitations
 
-- `headers` and `successCodes` (Map / List parameters) can only come from workflow variables. The mapping grammar doesn't support literal `=[200, 404]` or `={"X-Foo":"bar"}` syntax in BPMN. Authors who need static values seed them via `POST /Workflow/start` `Variables` or build them in a preceding `<scriptTask>`. The management UI editor (sub-issue C) is the long-term fix.
+- `headers` and `successCodes` (Map / List parameters) can only come from workflow variables. The mapping grammar doesn't support literal `=[200, 404]` or `={"X-Foo":"bar"}` syntax in BPMN. Authors who need static values seed them via `POST /Execution/start` `Variables` or build them in a preceding `<scriptTask>`. The management UI editor (sub-issue C) is the long-term fix.
 - No OAuth / mTLS / certificate auth — pass static `Authorization` headers.
 - No HTTP-level retry — workflow authors retry via boundary error events.
 - No streaming (SSE / WebSocket / chunked).

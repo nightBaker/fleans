@@ -20,15 +20,15 @@ correlation key against the variables snapshot at that moment.
 
 1. **Deploy** the BPMN: upload `message-event-subprocess.bpmn` via the Web UI
    (Fleans.Web → Deployments → Upload), or
-   `POST https://localhost:7140/Workflow/upload-bpmn` with the file.
+   `POST https://localhost:7140/Definitions/deploy` with the file.
 2. **Start an instance** with an `orderId` variable:
-   `POST https://localhost:7140/Workflow/start` with body
+   `POST https://localhost:7140/Execution/start` with body
    ```json
    {"WorkflowId":"evtSubMessageProcess","Variables":{"orderId":"ORD-123"}}
    ```
 3. Confirm `userTask` is active in the Web UI. Do NOT complete it.
 4. **Deliver a correlated message**:
-   `POST https://localhost:7140/Workflow/message`
+   `POST https://localhost:7140/Execution/message`
    ```json
    {"MessageName":"cancelOrder","CorrelationKey":"ORD-123","Variables":{}}
    ```

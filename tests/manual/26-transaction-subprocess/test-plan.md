@@ -23,13 +23,13 @@ must record a `Completed` transaction outcome for the Transaction activity insta
 1. **Deploy** the BPMN: upload `happy-path.bpmn` via the Web UI
    (Fleans.Web → Deployments → Upload), or:
    ```
-   POST https://localhost:7140/Workflow/upload-bpmn
+   POST https://localhost:7140/Definitions/deploy
    ```
    Confirm `txHappyPathProcess` appears in the deployments list.
 
 2. **Start an instance**:
    ```
-   POST https://localhost:7140/Workflow/start
+   POST https://localhost:7140/Execution/start
    Body: {"WorkflowId":"txHappyPathProcess"}
    ```
    Note the returned `workflowInstanceId`.

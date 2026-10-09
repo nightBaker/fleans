@@ -22,13 +22,13 @@ Verifies the three-role placement contract introduced on `feature/plugin-host-is
 
 1. **Deploy a BPMN with a ScriptTask.** Use any chained-script-task fixture, e.g. `tests/manual/02-script-tasks/script-chain.bpmn`.
    ```bash
-   curl -k -X POST https://localhost:7140/Workflow/deploy \
+   curl -k -X POST https://localhost:7140/Definitions/deploy \
      -H "Content-Type: application/json" \
      -d "{\"BpmnXml\": $(jq -Rs . < tests/manual/02-script-tasks/script-chain.bpmn)}"
    ```
 2. **Start an instance.**
    ```bash
-   curl -k -X POST https://localhost:7140/Workflow/start \
+   curl -k -X POST https://localhost:7140/Execution/start \
      -H "Content-Type: application/json" \
      -d '{"WorkflowId":"script-chain"}'
    ```
@@ -40,7 +40,7 @@ Verifies the three-role placement contract introduced on `feature/plugin-host-is
 
 - [ ] All `ScriptExecutorGrain` activations are on `worker-*` or `combined-*` silos.
 - [ ] Zero `ScriptExecutorGrain` activations on any `plugin-*` silo.
-- [ ] The workflow completes (`isCompleted: true` via `GET /Workflow/instances/<id>/state`).
+- [ ] The workflow completes (`isCompleted: true` via `GET /Instances/<id>/state`).
 
 ## Scenario 2 — Engine-bundled plugin placement (`RestCallerHandler` on the engine worker)
 

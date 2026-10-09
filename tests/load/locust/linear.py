@@ -1,7 +1,7 @@
 """
 Locust port of tests/load/scripts/linear.js — Scenario 1 (linear throughput).
 
-Each task issues one POST /Workflow/start { WorkflowId: "load-linear" } against
+Each task issues one POST /Execution/start { WorkflowId: "load-linear" } against
 the Fleans API. Mirrors the k6 script's measurement surface:
   - Latency / throughput / error rate are emitted by Locust under the
     request name "workflow_start".
@@ -26,7 +26,7 @@ class LinearUser(HttpUser):
     @task
     def start_linear_workflow(self):
         with self.client.post(
-            "/Workflow/start",
+            "/Execution/start",
             json={"WorkflowId": "load-linear"},
             name="workflow_start",
             catch_response=True,

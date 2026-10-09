@@ -25,7 +25,7 @@ Add the `Authentication` section to your `appsettings.json`:
 }
 ```
 
-Once `Authority` is set, all `/Workflow/*` endpoints require a valid `Authorization: Bearer <token>` header. Requests without a token receive `401 Unauthorized`.
+Once `Authority` is set, all API endpoints (`/Definitions/*`, `/Execution/*`, `/Instances/*`, `/UserTasks/*`, `/custom-tasks`) require a valid `Authorization: Bearer <token>` header. Requests without a token receive `401 Unauthorized`.
 
 **Environment variable equivalent** (for Docker Compose or container deployments):
 
@@ -45,7 +45,7 @@ Authentication__RequireHttpsMetadata=false
 
 ## Behavior when enabled
 
-- **All `/Workflow/*` endpoints** require a valid `Authorization: Bearer <token>` header. Unauthenticated requests receive `401 Unauthorized`.
+- **All API endpoints** (`/Definitions/*`, `/Execution/*`, `/Instances/*`, `/UserTasks/*`, `/custom-tasks`) require a valid `Authorization: Bearer <token>` header. Unauthenticated requests receive `401 Unauthorized`.
 - **Health endpoints** (`/health`, `/alive`) remain anonymous — they are exempt so that load balancers and orchestrators can probe without credentials. See [`Fleans.ServiceDefaults/Extensions.cs`](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.ServiceDefaults/Extensions.cs) for the implementation.
 - **Swagger UI** remains accessible in development mode for testing.
 
@@ -81,7 +81,7 @@ TOKEN=$(curl -s -X POST http://localhost:8080/realms/fleans/protocol/openid-conn
   -d "client_id=fleans-api" \
   -d "client_secret=YOUR_SECRET" | jq -r '.access_token')
 
-curl -X POST https://localhost:7140/Workflow/deploy \
+curl -X POST https://localhost:7140/Definitions/deploy \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"BpmnXml":"..."}'
@@ -99,7 +99,7 @@ Configuration is identical — set `Authority` to your provider's OIDC discovery
 # Obtain a token from your identity provider, then:
 TOKEN="<your-jwt-token>"
 
-curl -X POST https://localhost:7140/Workflow/start \
+curl -X POST https://localhost:7140/Execution/start \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"WorkflowId":"my-process"}'

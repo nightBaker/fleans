@@ -186,7 +186,7 @@
       "id": "http",
       "from": "driver",
       "to": "silos",
-      "label": "HTTP /Workflow/*",
+      "label": "HTTP /Execution/*",
       "variant": "emphasis"
     },
     {

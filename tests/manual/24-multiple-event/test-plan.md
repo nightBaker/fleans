@@ -15,13 +15,13 @@ subscription is cancelled automatically.
 ### Steps
 
 1. **Deploy** `message-or-signal-catch.bpmn` via the Web UI or
-   `POST https://localhost:7140/Workflow/upload-bpmn`.
+   `POST https://localhost:7140/Definitions/deploy`.
 2. **Start an instance**:
-   `POST https://localhost:7140/Workflow/start` with body
+   `POST https://localhost:7140/Execution/start` with body
    `{"WorkflowId":"multi-catch-test"}`
 3. Confirm `multiCatch` is active in the Web UI.
 4. **Test A1 — Message wins**: Send a message:
-   `POST https://localhost:7140/Workflow/message` with body
+   `POST https://localhost:7140/Execution/message` with body
    `{"MessageName":"paymentReceived","CorrelationKey":"order-multi-1","Variables":{"amount":99}}`
 5. Refresh the instance view.
 
@@ -35,7 +35,7 @@ subscription is cancelled automatically.
 
 1. Start a **new** instance (same workflow).
 2. Send a signal instead:
-   `POST https://localhost:7140/Workflow/signal` with body
+   `POST https://localhost:7140/Execution/signal` with body
    `{"SignalName":"manualOverride"}`
 3. Refresh the instance view.
 
@@ -65,7 +65,7 @@ should be unblocked.
 2. (Optional) Deploy and start signal-catch workflows that wait on `eventA`
    and `eventB`.
 3. **Start an instance**:
-   `POST https://localhost:7140/Workflow/start` with body
+   `POST https://localhost:7140/Execution/start` with body
    `{"WorkflowId":"multi-throw-test"}`
 4. Refresh the instance view.
 
@@ -93,10 +93,10 @@ the task completes, the workflow follows the normal path.
 
 1. **Deploy** `multiple-boundary.bpmn`.
 2. **Start an instance**:
-   `POST https://localhost:7140/Workflow/start` with body
+   `POST https://localhost:7140/Execution/start` with body
    `{"WorkflowId":"multi-boundary-test"}`
 3. **Immediately** send a cancel message:
-   `POST https://localhost:7140/Workflow/message` with body
+   `POST https://localhost:7140/Execution/message` with body
    `{"MessageName":"cancelOrder","CorrelationKey":"order-boundary-1","Variables":{}}`
 4. Refresh the instance view.
 

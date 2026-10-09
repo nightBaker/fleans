@@ -21,7 +21,7 @@ is completed, flow reaches a **Cancel End Event** inside the transaction. The en
 1. **Deploy** the BPMN:
 
    ```
-   POST https://localhost:7140/Workflow/deploy
+   POST https://localhost:7140/Definitions/deploy
    Body: { "BpmnXml": "<contents of cancel-transaction.bpmn>" }
    ```
 
@@ -35,7 +35,7 @@ is completed, flow reaches a **Cancel End Event** inside the transaction. The en
 2. **Start an instance**:
 
    ```
-   POST https://localhost:7140/Workflow/start
+   POST https://localhost:7140/Execution/start
    Body: { "WorkflowId": "cancelTransactionProcess" }
    ```
 
@@ -45,7 +45,7 @@ is completed, flow reaches a **Cancel End Event** inside the transaction. The en
    is waiting at `review_task` (the user task inside the transaction).
 
    ```
-   GET https://localhost:7140/Workflow/instances/{WorkflowInstanceId}/state
+   GET https://localhost:7140/Instances/{WorkflowInstanceId}/state
    ```
 
    Expected: `activeActivityIds` contains `"review_task"`.
@@ -53,7 +53,7 @@ is completed, flow reaches a **Cancel End Event** inside the transaction. The en
 4. **Complete the user task** (triggering cancel flow):
 
    ```
-   POST https://localhost:7140/Workflow/complete-activity
+   POST https://localhost:7140/Execution/complete-activity
    Body: {
      "WorkflowInstanceId": "<id>",
      "ActivityId": "review_task",

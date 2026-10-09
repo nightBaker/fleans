@@ -68,7 +68,7 @@ Auth keys are **per-host** — the API and the Web admin UI use different OIDC f
 
 | Env var | Config key | Read at | Applies to |
 | --- | --- | --- | --- |
-| `Authentication__Authority` | `Authentication:Authority` | `Fleans.Api`, `Fleans.Web` | **Both hosts.** OIDC issuer URL. Setting this enables JWT enforcement on `/Workflow/*` (API) and OIDC sign-in on the admin UI. Auth disabled when missing. |
+| `Authentication__Authority` | `Authentication:Authority` | `Fleans.Api`, `Fleans.Web` | **Both hosts.** OIDC issuer URL. Setting this enables JWT enforcement on every API endpoint (API) and OIDC sign-in on the admin UI. Auth disabled when missing. |
 | `Authentication__Audience` | `Authentication:Audience` | `Fleans.Api` | **API only.** JWT `aud` claim the API requires. Default: `"fleans-api"`. Setting on the Web silo has no effect. |
 | `Authentication__ClientId` | `Authentication:ClientId` | `Fleans.Web` | **Web only.** OIDC client identifier for the Blazor Server admin UI. Setting on the API has no effect. |
 | `Authentication__ClientSecret` | `Authentication:ClientSecret` | `Fleans.Web` | **Web only.** OIDC client secret. Source from a Secret/Key Vault, not appsettings, in production. |

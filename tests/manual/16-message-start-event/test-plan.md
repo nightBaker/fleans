@@ -15,7 +15,7 @@ A workflow is triggered by an incoming message rather than an explicit start req
 
 2. **Send a message to trigger workflow creation**
    ```bash
-   curl -k -X POST https://localhost:7140/Workflow/message \
+   curl -k -X POST https://localhost:7140/Execution/message \
      -H "Content-Type: application/json" \
      -d '{"MessageName":"orderReceived","Variables":{"orderId":"ORD-001"}}'
    ```
@@ -27,7 +27,7 @@ A workflow is triggered by an incoming message rather than an explicit start req
 
 4. **Send another message to create a second instance**
    ```bash
-   curl -k -X POST https://localhost:7140/Workflow/message \
+   curl -k -X POST https://localhost:7140/Execution/message \
      -H "Content-Type: application/json" \
      -d '{"MessageName":"orderReceived","Variables":{"orderId":"ORD-002"}}'
    ```
@@ -35,7 +35,7 @@ A workflow is triggered by an incoming message rather than an explicit start req
 
 5. **Send a message with no matching start event**
    ```bash
-   curl -k -X POST https://localhost:7140/Workflow/message \
+   curl -k -X POST https://localhost:7140/Execution/message \
      -H "Content-Type: application/json" \
      -d '{"MessageName":"unknownMessage","Variables":{}}'
    ```

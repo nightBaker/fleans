@@ -30,7 +30,7 @@ The conditional intermediate catch event will be evaluated each time the executi
 3. **Verify** the workflow pauses at `wait-for-amount` (check active activities in Web UI)
 4. **Complete** the `set-initial` script task with variables `{"amount": 600}`:
    ```
-   POST https://localhost:7140/Workflow/complete-activity
+   POST https://localhost:7140/Execution/complete-activity
    {"WorkflowInstanceId": "<id>", "ActivityId": "set-initial", "Variables": {"amount": 600}}
    ```
 5. **Verify** the conditional catch event fires and the workflow completes with `result = "condition-met"`
@@ -40,7 +40,7 @@ The conditional intermediate catch event will be evaluated each time the executi
 1. Deploy a process with a `ConditionalStartEvent`
 2. Call the evaluate-conditions endpoint:
    ```
-   POST https://localhost:7140/Workflow/evaluate-conditions
+   POST https://localhost:7140/Execution/evaluate-conditions
    {"Variables": {"temperature": 150}}
    ```
 3. Verify a new workflow instance is created (condition `temperature > 100` evaluates true)

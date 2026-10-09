@@ -16,7 +16,7 @@
 // 1. All BPMN fixtures must be deployed before this script runs:
 //      k6 run tests/load/scripts/setup.js
 //    Verify that all fixtures report `deployed: true` before proceeding.
-//    If fixtures are not deployed, POST /Workflow/start calls will return errors
+//    If fixtures are not deployed, POST /Execution/start calls will return errors
 //    and the run results will be meaningless.
 //
 // 2. Dependency scripts must satisfy the contract in docs/plans/2026-04-19-mixed-load-scenario-design.md:
@@ -99,7 +99,7 @@ export const options = {
     // Intentionally relaxed vs. isolation baseline to account for contention
     // from 100 concurrent VUs across three workflow types.
     // REQUIRES: all three dependency scripts emit workflowStartDuration.add(res.timings.duration)
-    // for their POST /Workflow/start call (via import from ./metrics.js).
+    // for their POST /Execution/start call (via import from ./metrics.js).
     // Silently skipped by k6 if the metric is never emitted.
     'workflow_start_duration': ['p(95)<3000'],
   },

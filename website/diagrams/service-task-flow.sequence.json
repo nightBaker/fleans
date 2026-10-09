@@ -81,7 +81,7 @@
       "from": "caller",
       "to": "api",
       "y": 184,
-      "label": "POST /Workflow/start",
+      "label": "POST /Execution/start",
       "variant": "emphasis"
     },
     {
@@ -123,7 +123,7 @@
       "from": "worker",
       "to": "api",
       "y": 420,
-      "label": "POST /Workflow/complete-activity",
+      "label": "POST /Execution/complete-activity",
       "variant": "emphasis",
       "note": "Variables; failure = status flag"
     },

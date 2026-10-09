@@ -82,7 +82,7 @@ The examples in the rest of this guide target the default unauthenticated profil
 ## Discovering pending tasks
 
 :::note[Endpoint location]
-User-task endpoints live under `/UserTasks/...` (since [PR #614](https://github.com/nightBaker/fleans/pull/614)). Older guides and BPMN-tool integrations may reference `/Workflow/tasks/...` — that route is gone; replace with `/UserTasks/...`.
+User-task endpoints live under `/UserTasks/...` (since [PR #614](https://github.com/nightBaker/fleans/pull/614)). Older guides and BPMN-tool integrations may reference `/Workflow/tasks/...` — that route is gone; replace with `/UserTasks/...`. The other `/Workflow/*` routes moved too: see the [API reference](/fleans/reference/api/).
 :::
 
 `GET /UserTasks` returns the paginated list of active user tasks across all workflow instances:

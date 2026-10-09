@@ -173,7 +173,7 @@ var childDefinition = await processGrain.GetLatestDefinition();
 
 Practical implications:
 
-- **New deploys are picked up immediately.** Each `POST /Workflow/deploy`
+- **New deploys are picked up immediately.** Each `POST /Definitions/deploy`
   increments the version of `calledElement`. Parent instances starting
   *after* the deploy use the new version, and **in-flight parents that
   reach a call activity after the deploy also use the new version** — there

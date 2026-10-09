@@ -17,13 +17,13 @@ Fleans treats service tasks as **external-completion tasks**. When a workflow in
 
 <figure class="arch-diagram" style="--arch-ratio: 620 / 698; max-width: 660px; margin-inline: auto">
   <iframe data-arch-src="/fleans/diagrams/service-task-flow.html" src="/fleans/diagrams/service-task-flow.html?embed=1" title="Service task completion sequence" loading="lazy"></iframe>
-  <figcaption>The token waits at the service task until an external worker calls <code>POST /Workflow/complete-activity</code>; the engine merges the variables and advances. <a href="/fleans/diagrams/service-task-flow.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+  <figcaption>The token waits at the service task until an external worker calls <code>POST /Execution/complete-activity</code>; the engine merges the variables and advances. <a href="/fleans/diagrams/service-task-flow.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
 </figure>
 
 There is no in-process handler interface to implement. Instead, the pattern is:
 
 1. The workflow instance reaches a `<bpmn:serviceTask>` and marks it as an active activity.
-2. An external worker calls `POST /Workflow/complete-activity` with the activity result.
+2. An external worker calls `POST /Execution/complete-activity` with the activity result.
 3. The engine merges the returned variables into the workflow scope and advances the token.
 
 This decoupled model lets you write workers in any language and scale them independently of the engine.
@@ -78,7 +78,7 @@ Deploy via the Admin UI (Blazor editor) — open the **Web app** from the Aspire
 Then start an instance:
 
 ```bash
-curl -X POST https://localhost:7140/Workflow/start \
+curl -X POST https://localhost:7140/Execution/start \
   -H "Content-Type: application/json" \
   -d '{"WorkflowId":"order-process"}'
 ```
@@ -88,7 +88,7 @@ The response includes a `workflowInstanceId`. The instance is now paused at `cha
 ## Completing a service task with curl
 
 ```bash
-curl -X POST https://localhost:7140/Workflow/complete-activity \
+curl -X POST https://localhost:7140/Execution/complete-activity \
   -H "Content-Type: application/json" \
   -d '{
     "WorkflowInstanceId": "<instance-guid>",

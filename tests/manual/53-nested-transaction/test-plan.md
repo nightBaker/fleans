@@ -27,12 +27,12 @@ Uses `nested-tx-normal-inner.bpmn`.
 
 1. Deploy the workflow:
    ```
-   POST /Workflow/deploy  { "BpmnXml": "<contents of nested-tx-normal-inner.bpmn>" }
+   POST /Definitions/deploy  { "BpmnXml": "<contents of nested-tx-normal-inner.bpmn>" }
    ```
 
 2. Start an instance (no variables needed — inner TX always completes normally):
    ```
-   POST /Workflow/start  { "WorkflowId": "nested-tx-normal-inner" }
+   POST /Execution/start  { "WorkflowId": "nested-tx-normal-inner" }
    ```
    Note the `workflowInstanceId`.
 
@@ -42,12 +42,12 @@ Uses `nested-tx-normal-inner.bpmn`.
 
 4. Send `trigger-outer-complete` to complete the outer TX normally:
    ```
-   POST /Workflow/message  { "MessageName": "trigger-outer-complete", "CorrelationKey": "" }
+   POST /Execution/message  { "MessageName": "trigger-outer-complete", "CorrelationKey": "" }
    ```
 
 5. Check instance state:
    ```
-   GET /Workflow/instances/{workflowInstanceId}/state
+   GET /Instances/{workflowInstanceId}/state
    ```
 
 ### Expected results
@@ -68,7 +68,7 @@ Uses `nested-tx-cancel-inner.bpmn`.
 
 Fresh instance — no start variables needed (inner TX always cancels in this fixture):
 ```
-POST /Workflow/start  { "WorkflowId": "nested-tx-cancel-inner" }
+POST /Execution/start  { "WorkflowId": "nested-tx-cancel-inner" }
 ```
 
 ### Steps
@@ -80,7 +80,7 @@ POST /Workflow/start  { "WorkflowId": "nested-tx-cancel-inner" }
 
 4. Send `trigger-outer-complete`:
    ```
-   POST /Workflow/message  { "MessageName": "trigger-outer-complete", "CorrelationKey": "" }
+   POST /Execution/message  { "MessageName": "trigger-outer-complete", "CorrelationKey": "" }
    ```
 
 5. Check instance state.
@@ -104,7 +104,7 @@ Uses `nested-tx-normal-inner.bpmn`.
 
 Fresh instance — no variables:
 ```
-POST /Workflow/start  { "WorkflowId": "nested-tx-normal-inner" }
+POST /Execution/start  { "WorkflowId": "nested-tx-normal-inner" }
 ```
 
 ### Steps
@@ -113,7 +113,7 @@ POST /Workflow/start  { "WorkflowId": "nested-tx-normal-inner" }
 
 4. Send `trigger-outer-cancel`:
    ```
-   POST /Workflow/message  { "MessageName": "trigger-outer-cancel", "CorrelationKey": "" }
+   POST /Execution/message  { "MessageName": "trigger-outer-cancel", "CorrelationKey": "" }
    ```
 
 5. Check instance state.

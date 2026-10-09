@@ -5,7 +5,7 @@
              xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
              xmlns:zeebe="http://camunda.org/schema/zeebe/1.0">
   <!-- requestId is supplied as an initial variable at workflow start:
-       POST /Workflow/start { "WorkflowId": "load-events", "Variables": { "requestId": "<uuid>" } }
+       POST /Execution/start { "WorkflowId": "load-events", "Variables": { "requestId": "<uuid>" } }
        The correlation key expression resolves against the workflow variable scope,
        so initial variables are available without a preceding script task. -->
   <message id="msg-load" name="loadMessage">

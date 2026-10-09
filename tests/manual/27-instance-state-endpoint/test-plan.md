@@ -2,7 +2,7 @@
 
 ## Scenario
 
-Verify `GET /Workflow/instances/{instanceId}/state` returns per-instance state with correct JSON shape and active activity tracking.
+Verify `GET /Instances/{instanceId}/state` returns per-instance state with correct JSON shape and active activity tracking.
 
 ## Prerequisites
 
@@ -13,7 +13,7 @@ Verify `GET /Workflow/instances/{instanceId}/state` returns per-instance state w
 
 1. Start an instance with a correlation variable:
    ```bash
-   curl -k -X POST https://localhost:7140/Workflow/start \
+   curl -k -X POST https://localhost:7140/Execution/start \
      -H "Content-Type: application/json" \
      -d '{"WorkflowId":"load-events","Variables":{"requestId":"test-123"}}'
    ```
@@ -21,7 +21,7 @@ Verify `GET /Workflow/instances/{instanceId}/state` returns per-instance state w
 
 2. Poll the instance state endpoint:
    ```bash
-   curl -k https://localhost:7140/Workflow/instances/<instanceId>/state
+   curl -k https://localhost:7140/Instances/<instanceId>/state
    ```
 
 3. Verify the response shape:
@@ -32,21 +32,21 @@ Verify `GET /Workflow/instances/{instanceId}/state` returns per-instance state w
 
 4. Verify 404 for unknown instance:
    ```bash
-   curl -k https://localhost:7140/Workflow/instances/00000000-0000-0000-0000-000000000000/state
+   curl -k https://localhost:7140/Instances/00000000-0000-0000-0000-000000000000/state
    ```
    - [ ] Response is HTTP 404
    - [ ] Body contains `{"error":"Instance 00000000-0000-0000-0000-000000000000 not found"}`
 
 5. Send the correlated message to unblock the instance:
    ```bash
-   curl -k -X POST https://localhost:7140/Workflow/message \
+   curl -k -X POST https://localhost:7140/Execution/message \
      -H "Content-Type: application/json" \
      -d '{"MessageName":"loadMessage","CorrelationKey":"test-123","Variables":{}}'
    ```
 
 6. Poll the state again:
    ```bash
-   curl -k https://localhost:7140/Workflow/instances/<instanceId>/state
+   curl -k https://localhost:7140/Instances/<instanceId>/state
    ```
    - [ ] `isCompleted` is `true`
    - [ ] `activeActivityIds` is empty

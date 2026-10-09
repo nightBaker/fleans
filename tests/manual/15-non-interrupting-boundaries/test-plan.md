@@ -41,7 +41,7 @@ Non-interrupting boundary events fire without cancelling the attached activity. 
 2. Verify `longTask` is active
 3. Send message via API:
    ```
-   POST https://localhost:{PORT}/Workflow/message
+   POST https://localhost:{PORT}/Execution/message
    {"MessageName":"reminderMessage", "CorrelationKey":"order-123", "Variables":{}}
    ```
 
