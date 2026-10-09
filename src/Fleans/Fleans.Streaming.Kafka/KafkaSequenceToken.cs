@@ -16,14 +16,18 @@ public sealed class KafkaSequenceToken : StreamSequenceToken
     [Id(1)]
     public override int EventIndex { get; protected set; }
 
+    [Id(2)]
+    public int Partition { get; private set; }
+
     public KafkaSequenceToken()
     {
     }
 
-    public KafkaSequenceToken(long offset, int eventIndex = 0)
+    public KafkaSequenceToken(long offset, int eventIndex = 0, int partition = 0)
     {
         SequenceNumber = offset;
         EventIndex = eventIndex;
+        Partition = partition;
     }
 
     public long Offset => SequenceNumber;
@@ -32,13 +36,18 @@ public sealed class KafkaSequenceToken : StreamSequenceToken
     {
         if (other is not KafkaSequenceToken k) return 1;
         var c = SequenceNumber.CompareTo(k.SequenceNumber);
+        if (c != 0) return c;
+        c = Partition.CompareTo(k.Partition);
         return c != 0 ? c : EventIndex.CompareTo(k.EventIndex);
     }
 
     public override bool Equals(StreamSequenceToken? other) =>
-        other is KafkaSequenceToken k && SequenceNumber == k.SequenceNumber && EventIndex == k.EventIndex;
+        other is KafkaSequenceToken k
+        && SequenceNumber == k.SequenceNumber
+        && EventIndex == k.EventIndex
+        && Partition == k.Partition;
 
     public override bool Equals(object? obj) => Equals(obj as StreamSequenceToken);
 
-    public override int GetHashCode() => HashCode.Combine(SequenceNumber, EventIndex);
+    public override int GetHashCode() => HashCode.Combine(SequenceNumber, EventIndex, Partition);
 }
