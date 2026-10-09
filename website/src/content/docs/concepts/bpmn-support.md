@@ -167,6 +167,11 @@ The engine evaluates the condition for each registered conditional start event l
 
 Compensation allows a workflow to undo already-completed work by running dedicated **handler activities** in reverse completion order.
 
+<figure class="arch-diagram" style="--arch-ratio: 720 / 546">
+  <iframe data-arch-src="/fleans/diagrams/error-boundary-flow.html" src="/fleans/diagrams/error-boundary-flow.html?embed=1" title="Error boundary matching and compensation flow" loading="lazy"></iframe>
+  <figcaption>Where compensation fits: after an error is handled, a compensate throw undoes completed compensable activities in reverse order. <a href="/fleans/diagrams/error-boundary-flow.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
 ### Why compensation exists
 
 In long-running business processes (e.g., travel booking: reserve hotel → book flight) you may need to roll back successfully completed steps when a later step fails — or as an explicit business decision. BPMN models this with compensation rather than transactions because the activities may span external systems and cannot be rolled back atomically.

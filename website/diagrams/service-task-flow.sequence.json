@@ -1,0 +1,191 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Service task: external completion",
+    "subtitle": "The engine pauses at the service task until an external worker completes it over REST",
+    "viewBox": [
+      620,
+      680
+    ],
+    "animation": "none",
+    "quality_profile": "showcase",
+    "legend": {
+      "entries": {
+        "emphasis": {
+          "label": "REST call"
+        },
+        "default": {
+          "label": "message"
+        },
+        "dashed": {
+          "label": "retry / duplicate"
+        },
+        "return": {
+          "label": "response"
+        }
+      }
+    }
+  },
+  "participants": [
+    {
+      "id": "caller",
+      "type": "external",
+      "label": "Caller",
+      "sublabel": "starts workflow"
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "Fleans API",
+      "sublabel": "REST"
+    },
+    {
+      "id": "instance",
+      "type": "backend",
+      "label": "Instance",
+      "sublabel": "workflow engine"
+    },
+    {
+      "id": "broker",
+      "type": "messagebus",
+      "label": "Your broker",
+      "sublabel": "queue or callback"
+    },
+    {
+      "id": "worker",
+      "type": "frontend",
+      "label": "Your worker",
+      "sublabel": "any language"
+    }
+  ],
+  "segments": [
+    {
+      "from": 160,
+      "to": 300,
+      "label": "Start"
+    },
+    {
+      "from": 312,
+      "to": 386,
+      "label": "Hand-off"
+    },
+    {
+      "from": 398,
+      "to": 576,
+      "label": "Complete"
+    }
+  ],
+  "messages": [
+    {
+      "from": "caller",
+      "to": "api",
+      "y": 184,
+      "label": "POST /Workflow/start",
+      "variant": "emphasis"
+    },
+    {
+      "from": "api",
+      "to": "instance",
+      "y": 220,
+      "label": "start",
+      "variant": "default"
+    },
+    {
+      "from": "instance",
+      "to": "api",
+      "y": 252,
+      "label": "paused at task",
+      "variant": "return"
+    },
+    {
+      "from": "api",
+      "to": "caller",
+      "y": 284,
+      "label": "workflowInstanceId",
+      "variant": "return"
+    },
+    {
+      "from": "caller",
+      "to": "broker",
+      "y": 334,
+      "label": "instance id + ActivityId",
+      "variant": "default"
+    },
+    {
+      "from": "broker",
+      "to": "worker",
+      "y": 368,
+      "label": "work item",
+      "variant": "default"
+    },
+    {
+      "from": "worker",
+      "to": "api",
+      "y": 420,
+      "label": "POST /Workflow/complete-activity",
+      "variant": "emphasis",
+      "note": "Variables; failure = status flag"
+    },
+    {
+      "from": "api",
+      "to": "instance",
+      "y": 456,
+      "label": "merge Variables",
+      "variant": "default"
+    },
+    {
+      "from": "instance",
+      "to": "api",
+      "y": 488,
+      "label": "token advances",
+      "variant": "return"
+    },
+    {
+      "from": "worker",
+      "to": "api",
+      "y": 524,
+      "label": "duplicate complete",
+      "variant": "dashed"
+    },
+    {
+      "from": "api",
+      "to": "worker",
+      "y": 558,
+      "label": "409 Conflict",
+      "variant": "return"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "api",
+      "from": 178,
+      "to": 290
+    },
+    {
+      "participant": "instance",
+      "from": 214,
+      "to": 258
+    },
+    {
+      "participant": "worker",
+      "from": 362,
+      "to": 564
+    },
+    {
+      "participant": "api",
+      "from": 414,
+      "to": 494
+    },
+    {
+      "participant": "instance",
+      "from": 450,
+      "to": 494
+    },
+    {
+      "participant": "api",
+      "from": 518,
+      "to": 564
+    }
+  ]
+}

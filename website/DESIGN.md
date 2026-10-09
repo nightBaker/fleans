@@ -1,12 +1,12 @@
 # Fleans Website Design
 
-Design decisions, rationale, and guidelines for the Fleans documentation website. Sections are owned by individual design issues.
+Design decisions, rationale, and guidelines for the Fleans documentation website (landing page + every docs page). Tokens live in `src/styles/custom.css`; this file explains them.
 
 ## Aesthetic Direction
 
-> **Status note — retrospective brief:** This section codifies aesthetic decisions already validated by sibling issues #257–#261 (typography pair, color palette, hero redesign, motion details, visual details). It does not prescribe new choices; it documents the reasoning behind decisions already in review so future contributors have a coherent reference instead of scattered PR descriptions.
->
-> All subsections below are written in the descriptive voice (*"the site is designed to…"*), not the prescriptive voice (*"the site should…"*). Contributors who deviate from this brief should have a conscious reason, not just an absent reference.
+**Reference:** [The Saddle Framework](https://saddle-framework.webflow.io) ([Made in Webflow listing](https://webflow.com/made-in-webflow/website/the-saddle-framework)). The site borrows its visual grammar — not its content or branding: flat warm-neutral surfaces, one electric-blue accent, oversized light-weight grotesk headings, monospace "class-name" chips, and hairline-bordered note cards.
+
+This supersedes the earlier "brutalist-technical" direction (teal accent, IBM Plex / Space Grotesk, dot-matrix noise, scanlines, code-block corner brackets, Three.js silo hero — issues #257–#261, #327). Those were removed wholesale rather than layered under the new look.
 
 ### Audience
 
@@ -16,273 +16,143 @@ Backend .NET engineers and architects who:
 - Work primarily in dark IDEs and terminals
 - Distrust tools that hide complexity; respect tools that are honest about it
 
-They do not need to be convinced workflows are important. They need to be convinced Fleans is the right implementation.
-
 ### Tone
 
-**Precise. Formal. Confident without being loud.**
+**Precise. Calm. Confident without being loud.** A well-set specification document: generous whitespace, few colors, type doing the work. Code is always shown, never described.
 
-The tone is that of a well-designed technical specification document — dense when it needs to be, clear when it can afford to be. Not terse to the point of unfriendliness, but never chatty. Headings read like section labels in an RFC. Code is always shown, never described.
+### Principles
 
-Visual corollary: tight typographic rhythm, exact spacing, meaningful contrast. Ornamentation only when it carries meaning (e.g., a BPMN flow diagram as a visual element, not just a screenshot).
+1. **Type is the decoration.** Headings are large and *light* (weight 400, negative tracking), never bold. Hierarchy comes from size and color (text vs. muted), not weight.
+2. **One accent.** Electric blue is the only saturated color in site chrome. It marks actions (primary button), code identifiers (chips), and links. A violet secondary appears only as the second chip in a chip pair.
+3. **Hairlines, not fills.** Structure comes from 1px borders in `--fl-stroke` and 10px radii. No shadows, gradients, textures, or glows.
+4. **Dark-first, light-equal.** Dark is the reference; light uses the same layout and scale with inverted neutrals. Neither theme has decoration the other lacks.
+5. **Diagrams carry the color.** Archify diagrams keep their semantic node palette; the site re-skins only their canvas so they sit on the page's own background.
 
-### What Makes It Unforgettable
+### Rejected alternatives
 
-Three things no other .NET workflow engine site is designed to do:
-
-1. **The BPMN diagram as hero art** — A real BPMN flow rendered in the page's own visual language (CSS or inline SVG), not a screenshot. Backend devs immediately recognise it and feel at home. Non-devs see a sophisticated data-flow graphic.
-
-2. **IBM Plex as a tribal signal** — IBM Plex Sans is the font IBM uses for developer-facing products (VS Code extension docs, Cloud platform docs). For backend devs who have worked in IBM/enterprise spaces, it signals 'serious tooling' without a word being said.
-
-3. **Dark-first, light-correct** — Almost all dev-tool sites are designed light with a dark mode bolted on. Fleans inverts this. The dark theme is the reference; light is the polite alternative. The color palette (near-true black + industrial orange accent) is built to be extraordinary in dark mode and merely clean in light.
-
-### Light Mode Constraint
-
-Light mode uses the same type scale, spacing, and layout as dark mode. **Only surface colors and accent lightness change.** The constraint: light mode must read as *specification-grade clean* — white paper with ink, not *bright app*. Concretely:
-
-- Backgrounds stay in the warm off-white range (`#f5f5f0`), no colored gradients
-- No decorative fills that appear only in light mode
-- Accent uses a darker shade of the same industrial orange used in dark mode (≈ 20–30% darkened for contrast on white; see [Color & Theme](#color--theme) for exact tokens)
-- A contributor adding a new page should be able to follow this rule without guessing
-
-### Rejected Alternatives
-
-The following directions were explicitly evaluated and rejected during the design phase (issues #257–#261):
-
-| Alternative | Why Rejected |
+| Alternative | Why rejected |
 |---|---|
-| **Vercel-style gradient-dark** (deep background, purple/blue linear gradients, large sans-serif hero) | Signals "premium SaaS product" — Fleans is infrastructure, not a consumer product. The aesthetic would misrepresent the tool's category to its primary audience. |
-| **Go.dev minimal white** (sparse white layout, large body text, no visual differentiation) | Too sparse to carry personality. Backend devs associate the style with Google's house style, not the .NET/Orleans ecosystem. Under-signals craft. |
-| **Retro-futuristic neon** (dark background, neon green/magenta accents, monospace-heavy) | Decorative over substantive. Signals gaming or crypto tooling, not enterprise workflow execution. The monospace-everywhere approach conflicts with the RFC-document tone. |
-| **Starlight stock theme (no customisation)** | Signals "template project" — the exact perception the redesign aims to eliminate. Indistinguishable from hundreds of other Starlight-based docs sites. |
+| Keep the teal brutalist theme | Visual noise (scanlines, noise, brackets, lime hovers) competed with content; the 3D hero cost ~1.6k lines of Three.js for a background. |
+| Vercel-style gradient-dark | Signals consumer SaaS, not infrastructure. |
+| Stock Starlight | Indistinguishable from hundreds of docs sites. |
 
 ---
 
 ## Typography
 
-**Display (headings): Space Grotesk** — `@fontsource/space-grotesk`
-**Body (prose): IBM Plex Sans** — `@fontsource/ibm-plex-sans`
+| Role | Family | Weights | Package |
+|---|---|---|---|
+| Everything (headings, body, UI) | **Geist Sans** | 300, 400, 500 | `@fontsource/geist-sans` |
+| Code, chips, table headers, labels | **JetBrains Mono** | 400, 500 | `@fontsource/jetbrains-mono` |
 
-### Rationale
+Saddle uses Neue Montreal (commercial). Geist Sans is the closest open-licence neo-grotesk: same tight apertures and flat terminals, and it reads well at both 120px and 15px. JetBrains Mono is what Saddle itself uses for chips.
 
-| | Space Grotesk (headings) | IBM Plex Sans (body) |
-|---|---|---|
-| **Character** | Geometric grotesque with distinctive terminals — precise and engineered | Humanist sans with IBM industrial heritage; comfortable at body size |
-| **Brutalist-technical fit** | Geometric construction mirrors BPMN diagram notation | Enterprise/backend-dev association without being loud |
-| **Weights used** | **700** (h1/h2, .hero h1, .site-title, .group-label .large), **500** (h3/h4) | **400** (body), **400-italic**, **600** (UI labels/strong) |
-| **@fontsource** | `@fontsource/space-grotesk` | `@fontsource/ibm-plex-sans` |
+### Scale
 
-### Why not alternatives
+| Element | Size | Weight | Tracking |
+|---|---|---|---|
+| Landing hero title | `clamp(3.5rem, 9vw, 7.5rem)` | 400 | −0.04em |
+| Landing hero lead | `clamp(1.375rem, 2.6vw, 2rem)` | 400 | −0.01em |
+| Landing section `h2` | `clamp(2.5rem, 6vw, 4rem)` | 400 | −0.03em |
+| Docs page title (`h1#_top`) | `clamp(2.5rem, 6vw, 4.25rem)` | 400 | −0.035em |
+| Docs `h2` / `h3` / `h4` | `~2.5rem` / `1.625rem` / `1.25rem` | 400 / 400 / 500 | −0.03 … −0.02em |
+| Docs body | `1.0625rem`, line-height 1.65 | 400 | 0 |
+| Labels (TOC heading, table `th`, aside titles) | `0.75–0.8125rem` mono, uppercase | 400–500 | +0.06em |
 
-- *Syne + DM Sans*: Syne is too art-forward for a BPMN workflow engine site that needs to project reliability.
-- *IBM Plex Mono as body*: Monospace for long-form prose degrades readability. Mono stays for code only (handled by `--sl-font-mono`).
-- *Space Grotesk throughout*: IBM Plex Sans's humanist proportions read more naturally at body size on long docs pages.
-
-### Implementation notes
-
-- `--sl-font: 'IBM Plex Sans', sans-serif` is set in a theme-agnostic `:root {}` block in `custom.css`, applying the body font globally via Starlight's `--__sl-font` computed variable.
-- Space Grotesk is applied to heading selectors with explicit `font-weight` declarations so both weight imports are actively rendered.
-- Sidebar group labels (`.group-label .large`) and site title (`.site-title`) use Space Grotesk at weight 700 — verified against `@astrojs/starlight` 0.38.2 source.
-- `@fontsource` v5 ships `font-display: swap` in all generated CSS — no additional configuration needed.
-- IBM Plex Sans weight 500 is NOT imported — no Starlight 0.38.2 element uses it. All UI emphasis uses weight 600.
+`strong` is weight 500 in `--fl-text` — emphasis by color, not heaviness.
 
 ---
 
 ## Color & Theme
 
-Chosen direction: **Technical-clean with teal accent** (owner decision on [#327](https://github.com/nightBaker/fleans/issues/327), superseding the original orange palette from [#258](https://github.com/nightBaker/fleans/issues/258)). The site signals a workflow engine for backend developers — teal on near-black reads as precise and technical without the industrial harshness of orange.
+All site colors are `--fl-*` tokens in `custom.css`; Starlight's `--sl-color-*` tokens are mapped onto them so built-in components follow automatically.
 
-Owner decisions fixed up front:
+| Token | Dark | Light | Role |
+|---|---|---|---|
+| `--fl-bg` | `#1b1818` | `#ffffff` | Page, header, sidebar background |
+| `--fl-surface-2` | `#221f1f` | `#f7f6f6` | Code blocks, asides, hover fill |
+| `--fl-surface-3` | `#2c2828` | `#eceaea` | Code frame tab bar / title bar |
+| `--fl-stroke` | `#3a3636` | `#e2e0e0` | Card borders, sidebar card, table rules |
+| `--fl-hairline` | `#2c2828` | `#eceaea` | Header rule on scroll, section dividers |
+| `--fl-text` | `#fafafa` | `#1b1818` | Headings, active nav, strong |
+| `--fl-text-muted` | `#aba9a9` | `#5b5757` | Body prose |
+| `--fl-text-faint` | `#878484` | `#757171` | Sidebar/TOC links, captions |
+| `--fl-accent` | `#8aa4ff` | `#2652e1` | Link text (lightened on dark for AA) |
+| `--fl-chip-bg` | `#2652e1` | `#2652e1` | Inline-code chips, primary button |
+| `--fl-chip-alt-bg` | `#9b3ed6` | `#8a2fc4` | Second chip in a pair |
+| `--fl-blue` | `#3e6cff` | `#3e6cff` | Focus ring, selection, active code tab marker |
 
-1. Aesthetic direction: technical-clean (teal `#4eb5a6` as primary accent).
-2. Per-candidate token completeness: option (a) — full token map for every Starlight token plus the two `--fleans-*` tokens, both themes.
-3. `--fleans-accent-2` usage: contract-only; real usage deferred to [#259](https://github.com/nightBaker/fleans/issues/259) / [#260](https://github.com/nightBaker/fleans/issues/260).
-
-### Dark theme token map
-
-| Token | Hex | Role |
-|---|---|---|
-| `--sl-color-accent-low` | `#0f2926` | Callout / admonition background (teal tint at L* ≈ 12%) |
-| `--sl-color-accent` | `#4eb5a6` | Primary accent — links, focus rings, sidebar hover (teal) |
-| `--sl-color-accent-high` | `#a8e0d6` | Admonition/callout titles on accent-low |
-| `--sl-color-white` | `#f5f5f0` | Body text (Starlight "max-contrast-vs-bg") |
-| `--sl-color-gray-1` | `#e5e5df` | Text-adjacent |
-| `--sl-color-gray-2` | `#b8b8b1` | |
-| `--sl-color-gray-3` | `#8a8a82` | Muted text |
-| `--sl-color-gray-4` | `#5a5a53` | |
-| `--sl-color-gray-5` | `#2e2e2a` | Panel / card background |
-| `--sl-color-gray-6` | `#1a1a17` | Near-bg |
-| `--sl-color-black` | `#0a0a0a` | Page bg — Starlight derives `--sl-color-bg` from this |
-| `--fleans-accent-2` | `#9eff00` | Sharp secondary accent — terminal lime (contract-only this PR) |
-| `--fleans-surface` | `#141411` | Elevated card / code-block surface (dark-only cue) |
-
-Narrative page bg: `#0a0a0a` (near-true black).
-
-### Light theme token map
-
-| Token | Hex | Role |
-|---|---|---|
-| `--sl-color-accent-low` | `#d4f0eb` | Callout / admonition background (teal tint at L* ≈ 92%) |
-| `--sl-color-accent` | `#1f6357` | Primary accent — darkened teal for AA on light bg |
-| `--sl-color-accent-high` | `#175046` | Admonition/callout titles on accent-low |
-| `--sl-color-white` | `#0a0a0a` | Body text (Starlight "max-contrast-vs-bg", flipped) |
-| `--sl-color-gray-1` | `#1a1a17` | Text-adjacent |
-| `--sl-color-gray-2` | `#2e2e2a` | |
-| `--sl-color-gray-3` | `#5a5a53` | Muted text |
-| `--sl-color-gray-4` | `#8a8a82` | |
-| `--sl-color-gray-5` | `#b8b8b1` | Panel / card background |
-| `--sl-color-gray-6` | `#e0e0d9` | Near-bg |
-| `--sl-color-gray-7` | `#efefea` | Very near-bg |
-| `--sl-color-black` | `#f5f5f0` | Page bg — Starlight derives `--sl-color-bg` from this |
-| `--fleans-accent-2` | `#3a7d00` | Sharp secondary accent — deeper lime for AA on light bg |
-| `--fleans-surface` | `#f5f5f0` | Collapses to bg in light mode (dark-only elevation cue) |
-
-Narrative page bg: `#f5f5f0` (warm off-white).
-
-### Derivation rule
-
-Any future palette tweak follows this rule rather than ad-hoc picks:
-
-- `--sl-color-accent-low` = dominant accent blended toward bg to **L\* ≈ 12%** (dark) / **L\* ≈ 92%** (light) in OKLCH. Produces a background-like tint that stays recognizably the accent hue.
-- `--sl-color-accent-high` = dominant accent shifted toward text-color end until it hits **AA (≥4.5:1)** against `--sl-color-accent-low`. Used for admonition titles sitting on callout backgrounds.
-- `--sl-color-gray-1 … -6/-7` = perceptually even OKLCH L\* steps, anchored as follows:
-  - `gray-1` at **L\*(text) minus 2%** (text-adjacent, moved toward bg)
-  - `gray-6` (dark) / `gray-7` (light) at **L\*(bg) plus 2%** (bg-adjacent, moved toward text)
-  - intermediate stops at **equal L\* intervals** between the two endpoints
-  - the ramp inherits any warm/cool bias the bg carries (Candidate 1 light's bg `#f5f5f0` gives a faintly warm ramp)
-- `--sl-color-white` = the theme's text color (Starlight semantic: "max-contrast-vs-bg").
-- `--sl-color-black` = the theme's page background color. Starlight's `--sl-color-bg` derives from this token, so setting it to the narrative bg value (instead of a "one step beyond" extreme) is what actually renders the intended background. The derivation rule gives "bg or one step beyond"; we pick "bg" to match the brutalist-technical narrative.
-- `--fleans-accent-2` = secondary accent verbatim (no derivation).
-- `--fleans-surface` = one step off `--sl-color-gray-6` in dark mode (elevation cue); collapses to bg in light mode (elevation via color is counter-productive on light surfaces).
-
-Re-tuning during implementation stays within **±5% OKLCH L\*** of the table values. Anything beyond the envelope is a design change and needs a fresh review.
-
-Note on the current light-theme `--sl-color-accent`: the raw teal `#4eb5a6` fails AA on light bg (2.26:1). Darkening to `#1f6357` achieves 6.44:1 on bg while staying in the same hue family. All pairs meet or exceed WCAG AA minimums with comfortable margin.
+The Saddle blue `#3e6cff` is only 4.3:1 under white text, so filled surfaces (chips, buttons) use the deeper `#2652e1` (Saddle's own hover shade).
 
 ### Contrast matrix (verified)
 
-WCAG ratios via the sRGB relative-luminance formula (W3C WCAG 2.1 §1.4.3). Verified programmatically (`website/scripts/check-contrast.mjs`). Format: `pair: <fg-token-name> (<#hex>) on <bg-token-name> (<#hex>) = <ratio>:1 (<verdict>)`.
-
-**Dark theme**
+Run `node scripts/check-contrast.mjs` after any token change (exits non-zero on failure); `npm run check:contrast` checks the rendered hero in both themes.
 
 ```
-pair: --sl-color-white (#f5f5f0) on bg (#0a0a0a) = 18.10:1 (AA pass)
-pair: --sl-color-accent (#4eb5a6) on bg (#0a0a0a) = 8.00:1 (AA pass)
-pair: --sl-color-accent-high (#a8e0d6) on --sl-color-accent-low (#0f2926) = 10.47:1 (AA pass)
-pair: --sl-color-accent (#4eb5a6) on --sl-color-accent-low (#0f2926) = 6.21:1 (AA pass)
-pair: --sl-color-gray-3 (#8a8a82) on bg (#0a0a0a) = 5.69:1 (AA pass)
-pair: --fleans-accent-2 (#9eff00) on bg (#0a0a0a) = 15.80:1 (AA-large pass)
-pair: --sl-color-accent (#4eb5a6) on --sl-color-gray-5 (#2e2e2a) = 5.51:1 (AA-large pass)
-pair: --sl-color-accent (#4eb5a6) on --sl-color-gray-6 (#1a1a17) = 7.05:1 (AA pass)
-pair: --sl-color-accent (#4eb5a6) on --fleans-surface (#141411) = 7.46:1 (AA pass)
+--- dark ---
+--fl-text        on --fl-bg         = 16.90:1
+--fl-text-muted  on --fl-bg         =  7.54:1
+--fl-text-muted  on --fl-surface-2  =  6.99:1
+--fl-text-faint  on --fl-bg         =  4.76:1
+--fl-accent      on --fl-bg         =  7.42:1
+--fl-accent      on --fl-surface-2  =  6.88:1
+#fff on --fl-chip-bg                =  6.22:1
+#fff on --fl-chip-alt-bg            =  5.18:1
+--- light ---
+--fl-text        on --fl-bg         = 17.64:1
+--fl-text-muted  on --fl-bg         =  7.13:1
+--fl-text-muted  on --fl-surface-2  =  6.61:1
+--fl-text-faint  on --fl-bg         =  4.82:1
+--fl-accent      on --fl-bg         =  6.22:1
+--fl-accent      on --fl-surface-2  =  5.77:1
+#fff on --fl-chip-bg                =  6.22:1
+#fff on --fl-chip-alt-bg            =  6.39:1
 ```
-
-**Light theme**
-
-```
-pair: --sl-color-white (#0a0a0a) on bg (#f5f5f0) = 18.10:1 (AA pass)
-pair: --sl-color-accent (#1f6357) on bg (#f5f5f0) = 6.44:1 (AA pass)
-pair: --sl-color-accent-high (#175046) on --sl-color-accent-low (#d4f0eb) = 7.69:1 (AA pass)
-pair: --sl-color-accent (#1f6357) on --sl-color-accent-low (#d4f0eb) = 5.86:1 (AA pass)
-pair: --sl-color-gray-3 (#5a5a53) on bg (#f5f5f0) = 6.35:1 (AA pass)
-pair: --fleans-accent-2 (#3a7d00) on bg (#f5f5f0) = 4.67:1 (AA-large pass)
-pair: --sl-color-accent (#1f6357) on --sl-color-gray-5 (#b8b8b1) = 3.53:1 (AA-large pass)
-pair: --sl-color-accent (#1f6357) on --sl-color-gray-6 (#e0e0d9) = 5.31:1 (AA pass)
-```
-
-Row 7b (accent on `--fleans-surface`) is dark-only; in light theme `--fleans-surface = bg`, so the pair degenerates to row 2 which already passes.
-
-## Atmospheric details
-
-Added in [#261](https://github.com/nightBaker/fleans/issues/261). Implements four atmospheric techniques that push the brutalist-technical aesthetic beyond palette alone — controlled surface texture, sharp rules, and direction-carrying light/shadow.
-
-### Techniques
-
-#### A. H2 accent rule
-A 2px linear-gradient bar beneath each `<h2>`: `linear-gradient(to right, accent 0 3.5rem, transparent 3.5rem)`. Reads as a printer registration mark / CLI prompt bar. Applied in both themes via `.sl-markdown-content h2::after`.
-
-#### B. Dot-matrix noise (dark theme only)
-A static SVG (`public/texture-dotmatrix.svg`, ~120×120 viewBox, staggered 1px dots at ~1% coverage) applied as `background-image` on `body::before` at `opacity: 0.04`, `background-size: 240px`. Fixed positioning covers the viewport without scrolling.
-
-Light theme is intentionally texture-free: dot-matrix on warm `#f5f5f0` bg fights the bg tint rather than reinforcing it.
-
-#### C. Decorative borders
-Three primitives used sparingly:
-
-1. **Section rule** — `.sl-markdown-content hr` becomes a 1px dashed rule in `--sl-color-gray-4` centered on a `■` glyph in accent color. Reads like a page-break marker.
-2. **Code-block corner brackets** — `div.expressive-code::before` uses eight stacked background gradients to paint four 12×12px L-shapes in accent color at each corner. No full border — terminal-panel feel.
-3. **Sidebar active-item tick** — `nav a[aria-current="page"]` overrides Starlight's thick left border with a 2px accent bar (`border-inline-start-width: 2px`).
-
-#### D. Scanline overlay (dark theme only)
-A `repeating-linear-gradient(0deg, rgba(245,245,240,0.015) 0 1px, transparent 1px 3px)` applied via `main::before` in dark theme. Fixed positioning, `z-index: 1`, `pointer-events: none`. At 1.5% opacity the effect is imperceptible over body text but adds horizontal line rhythm over near-black code-block surfaces — the CRT-over-CLI cue.
-
-### Token additions
-
-| Token | Role | Dark | Light |
-|---|---|---|---|
-| `--fleans-rule-glyph` | `■` glyph color in section dividers | `= --sl-color-accent` | `= --sl-color-accent` |
-| `--fleans-bracket` | Code-block corner bracket color | `= --sl-color-accent` | `= --sl-color-accent` |
-| `--fleans-noise-opacity` | Dot-matrix layer opacity | `0.04` | `0` (no noise) |
-| `--fleans-scanline-base` | Scanline tint for content area | `rgba(245,245,240,0.015)` | *(undefined — no scanlines)* |
-
-### CSS selector stability
-
-| Target | Selector | Stability |
-|---|---|---|
-| H2 accent rule | `.sl-markdown-content h2::after` | Stable — documented Starlight override point since v0.15 |
-| Section divider | `.sl-markdown-content hr` | Stable — same documented override point |
-| Code-block brackets | `div.expressive-code::before` | Stable — ExpressiveCode public API class, v0.41.7 |
-| Scanline overlay | `main::before` | Stable — semantic HTML element, won't be renamed |
-| Sidebar active tick | `nav a[aria-current="page"]` | Stable — ARIA attribute, part of a11y contract |
-
-No undocumented Starlight internal class selectors. Any future selector targeting a Starlight internal must carry a `/* Verified: Starlight <version> */` comment.
-
-<!-- ## Hero atmospheric details — applied with #259
-   Deferred hero-specific effects to be added alongside the hero redesign (#259):
-   - Heavier scanline clipped to .hero (rgba(255,95,31,0.04) bands)
-   - Corner brackets around hero image
--->
 
 ---
 
-## Spatial Composition
+## Components
 
-> **Stub** — hero layout and spatial decisions are documented in issue #259. This section will be expanded after PR #259 merges.
+| Piece | File | Notes |
+|---|---|---|
+| Header | `src/components/Header.astro` | Wordmark · flat text nav (Guides / Concepts / Reference, current section in `--fl-text`) · pill search · theme switch · "GitHub". No bottom border until the page scrolls (CSS `animation-timeline: scroll()`). |
+| Theme switch | `src/components/ThemeSelect.astro` | Pill toggle replacing Starlight's `<select>`. Same `localStorage['starlight-theme']` contract, so Starlight's FOUC guard and the Archify iframe sync keep working. No "auto" state in the UI: until the user clicks, the system preference applies. |
+| Landing hero | `src/components/Hero.astro` | Chips eyebrow → oversized title → lead → pill actions → "made for … by …" row. Fills the first viewport. Driven by `hero` frontmatter in `index.mdx`. |
+| Landing section | `src/components/Section.astro` | Large light `h2` + muted intro slot. |
+| Spec row | `src/components/SpecRow.astro` | Saddle styleguide row: chips (left, 11rem) · `h3` + body · bordered note card (right, 17.5rem) with optional "Learn how →". Single column under 60rem. In MDX, leave a blank line before `<Fragment slot="note">` — otherwise MDX wraps it in the body paragraph and the slot is lost. |
+| Footer | `src/components/Footer.astro` | Licence line + Releases / Issues / GitHub. |
 
-The landing hero is designed around a brutalist-technical layout: asymmetric grid, large typographic anchors, and a BPMN diagram rendered as visual art rather than a screenshot.
+### Docs-page treatments (all in `custom.css`)
+
+- **Sidebar** — a bordered 10px-radius card inset from the viewport edge (≥50rem). Group labels in `--fl-text`; links in `--fl-text-faint`; nested items hang off a 1px tree line that turns solid `--fl-text` beside the current page.
+- **Inline code** — solid blue mono chip with white text (the Saddle signature). Chips wrap only at the cell edge (`overflow-wrap: break-word`), so wide tables scroll horizontally instead of splitting identifiers.
+- **Code blocks** — ExpressiveCode `styleOverrides` in `astro.config.mjs` point at `--fl-surface-2/3` and `--fl-stroke`, so frames flip with the theme; syntax colors stay Starlight's defaults.
+- **Asides** — `--fl-surface-2` card with hairline border and a mono uppercase title in the variant color.
+- **Tables** — no fills or zebra; hairline row rules; mono uppercase headers.
+- **Tabs** — active tab is an outline pill.
+- **Pagination / cards** — hairline cards, `--fl-surface-2` on hover.
+
+### Archify diagrams
+
+`public/diagrams/*.html` are generated artifacts embedded via `<iframe data-arch-src>`. A head script in `astro.config.mjs` (a) keeps their `?theme=` in sync with the site and (b) injects a `#fl-skin` style into each same-origin iframe overriding `--bg`, `--grid`, `--mask`, `--panel` with the site neutrals. Regenerating a diagram therefore needs no hand edits. Node colors are left alone.
+
+---
+
+## Spatial composition
+
+- **Landing** — full-bleed content width (`--sl-content-width: 90rem` under `[data-has-hero]`), 2.5rem gutters matching the header. Sections are separated by `--fl-hairline` rules and 6rem of top padding; spec rows by `--fl-stroke` rules.
+- **Docs** — 20rem sidebar, 48rem content column, right-rail TOC with a single hairline. Header height 5.5rem on desktop.
+- **Radii** — 4px (chips, kbd), 10px (cards, code, asides, sidebar), full (buttons, search, tabs, switch).
 
 ## Motion
 
-CSS-only motion and hover effects — no JavaScript. Implemented in [#260](https://github.com/nightBaker/fleans/issues/260).
+Minimal and CSS-only except the theme switch.
 
-### Principles
+| Moment | Technique |
+|---|---|
+| Hero entrance | Title → lead → actions rise 12px and fade, 600ms, 90ms stagger |
+| Header rule | Border fades in over the first 4rem of scroll (`animation-timeline: scroll(root)`, behind `@supports`) |
+| Hover | 120–200ms color / border / background transitions; "→" nudges 3px in note links |
+| Theme switch | Knob slides 220ms |
 
-1. **Motion is progressive enhancement.** Every animation is inside `@media (prefers-reduced-motion: no-preference)`. Users who prefer reduced motion see the final state instantly — no information is lost.
-2. **Hover effects require a pointer.** Hover rules live in `@media (hover: hover)`. `:focus-visible` equivalents are always active (outside the media query) so keyboard users get the same visual feedback.
-3. **No JavaScript, no intersection observers.** Scroll-driven animations use the CSS `animation-timeline: view()` spec behind an `@supports` guard — browsers without support see the static fallback (accent markers always visible).
-
-### Three moments
-
-| Moment | Technique | Timing |
-|---|---|---|
-| **Hero entrance** | `fade-up-clip` stagger (title → tagline → actions) + `clip-reveal-x` on logo | 320–420ms per element, 60–380ms stagger delay, `cubic-bezier(.2,.8,0,1)` (sharp-out) |
-| **Scroll accents** | Left-border `border-draw` on `.card`, underline `underline-draw` on `h2::after` | Tied to `animation-timeline: view()`, entry 0–40% |
-| **Hover / focus** | Sidebar lime `>` caret + 4px text shift; `.site-title` underline wipe; `.card` lift + hard lime shadow; primary action underline wipe; copy-button blinking lime dot | 120–180ms transitions |
-
-### Keyframes
-
-| Name | From | To | Notes |
-|---|---|---|---|
-| `fade-up-clip` | `translateY(8px)` + `clip-path: inset(100% 0 0 0)` | `translateY(0)` + `inset(0)` | Hero stagger |
-| `clip-reveal-x` | `clip-path: inset(0 100% 0 0)` | `inset(0)` | Logo reveal |
-| `underline-draw` | `scaleX(0)` | `scaleX(1)`, origin left | Scroll + hover underlines |
-| `caret-slide` | `translateX(-8px)` + opacity 0 | `translateX(0)` + opacity 1 | Sidebar hover (via transition, keyframe reserved) |
-| `border-draw` | `scaleY(0)` | `scaleY(1)`, origin top | Scroll-driven card border |
-| `cursor-blink` | opacity 1 | opacity 0, `steps(2)` | Copy-button lime dot |
-
-### Accessibility
-
-- All keyframe animations are inside `@media (prefers-reduced-motion: no-preference)`.
-- `cursor-blink` is frozen (`animation: none !important`) under `@media (prefers-reduced-motion: reduce)`.
-- Hover effects gated on `@media (hover: hover)`; `:focus-visible` mirrors are outside the media query so they always apply for keyboard navigation.
-- `will-change: transform, clip-path` is scoped to `.hero > *` only — no blanket GPU promotion.
+Every keyframe animation sits inside `@media (prefers-reduced-motion: no-preference)`; the switch drops its transition under `reduce`. `:focus-visible` always shows a 2px `--fl-blue` ring.
