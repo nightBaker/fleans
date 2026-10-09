@@ -8,12 +8,36 @@ CI runs the suite on every PR (job `e2e` in `.github/workflows/dotnet.yml`); loc
 
 ```bash
 cd src/Fleans
-dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --filter "TestCategory=E2E"
+dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --filter "TestCategory=E2E&TestCategory!=E2E-Auth"
 ```
+
+(`TestCategory=E2E` alone also works — `E2E-Auth` specs report Inconclusive outside the auth topology.)
+
+### Provider legs (`E2E-Smoke`)
+
+The `e2e` job runs on the dev defaults (Sqlite persistence, Redis streaming). The `e2e-providers` matrix job re-runs the specs tagged `[TestCategory(E2ECategories.Smoke)]` — basic flow, user task, call activity, compensation, timer, message, signal — once per non-default provider: Postgres persistence, Kafka streaming, Azure Queue streaming (Azurite). `AspireFixture` passes `FLEANS_PERSISTENCE_PROVIDER` / `FLEANS_STREAMING_PROVIDER` through to the AppHost when set (defaulting persistence to Sqlite otherwise) and fails fast if the requested provider's resource isn't provisioned. Locally:
+
+```bash
+FLEANS_PERSISTENCE_PROVIDER=Postgres dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --filter "TestCategory=E2E-Smoke"
+FLEANS_STREAMING_PROVIDER=Kafka      dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --filter "TestCategory=E2E-Smoke"
+FLEANS_STREAMING_PROVIDER=AzureQueue dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --filter "TestCategory=E2E-Smoke"
+```
+
+Tag a spec `E2E-Smoke` only when it exercises persistence or streaming in a way the default leg can't vouch for — every tagged spec runs three extra times in CI.
+
+### Authentication leg (`E2E-Auth`)
+
+`FLEANS_E2E_AUTH=true` makes the AppHost (dev/test only, never in publish mode) provision a Keycloak container with the test realm in `src/Fleans/Fleans.Aspire/e2e-auth/fleans-realm.json` (users `alice`/`alice` ∈ `managers`, `bob`/`bob` in no group; clients `fleans-e2e` → `aud=fleans-api` + `groups`, `fleans-e2e-other` → wrong audience, `fleans-web` → OIDC with wildcard redirect URIs) and wire `Authentication__Authority/Audience/RequireHttpsMetadata` into Fleans.Api and `Authority/ClientId/ClientSecret` into Fleans.Web. Without the flag no Keycloak resource exists — the default dev topology is unchanged. Specs tagged `[TestCategory(E2ECategories.Auth)]` (`AuthenticationTests`) cover API 401/200/wrong-audience, JWT-derived user-task claim groups with body groups ignored, and the Web OIDC login round-trip. They are excluded from the `e2e` job and run in the `e2e-auth` job (guard: every selected spec must pass — an Inconclusive skip fails the job). Locally:
+
+```bash
+FLEANS_E2E_AUTH=true dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --filter "TestCategory=E2E-Auth"
+```
+
+Traps: Keycloak only imports a realm file named `<realm>-realm.json`; bearer requests must target the Api's **https** endpoint (`AspireFixture.ApiHttpsBaseUri`) because `HttpClient` drops the `Authorization` header when following the HTTP→HTTPS redirect. Only `E2E-Auth` specs may run in this mode — every other spec assumes auth is off.
 
 Each spec class under `Fleans.E2E.Tests/Specs/` carries a `// Ports tests/manual/NN-*/test-plan.md` doc comment linking back to the human-readable plan it derives from.
 
-The `Specs/_DeferredManualPlans.cs` file documents every plan that doesn't yet have an active spec (editor-UI plans, custom-task plugin plans, OIDC/JWT auth plans, Helm/release-pipeline plans, etc.), each `[Ignore]`'d with a specific reason.
+The `Specs/_DeferredManualPlans.cs` file documents every plan that doesn't yet have an active spec (editor-UI plans, custom-task plugin plans, Helm/release-pipeline plans, etc.), each `[Ignore]`'d with a specific reason.
 
 ## Aspire.Hosting.Testing + `UseHttpsRedirection` trap
 

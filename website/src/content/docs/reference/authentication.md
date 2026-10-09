@@ -42,12 +42,15 @@ Authentication__RequireHttpsMetadata=false
 | `Authority` | Yes (to enable auth) | *(absent — auth disabled)* | OIDC issuer URL. When set, all API endpoints require a valid JWT. |
 | `Audience` | No | `fleans-api` | Expected `aud` claim in the JWT. |
 | `RequireHttpsMetadata` | No | `true` | Set to `false` only for local dev with an HTTP-only IdP (e.g., Keycloak dev mode). |
+| `UserIdClaim` | No | `preferred_username` | JWT claim holding the acting user id for user-task claim/complete. Its values must match what your BPMN `camunda:assignee` / `camunda:candidateUsers` contain. `sub` is also accepted. |
+| `GroupsClaim` | No | `groups` | JWT claim holding the caller's groups for `candidateGroups` checks (one claim entry per group). |
 
 ## Behavior when enabled
 
 - **All `/Workflow/*` endpoints** require a valid `Authorization: Bearer <token>` header. Unauthenticated requests receive `401 Unauthorized`.
 - **Health endpoints** (`/health`, `/alive`) remain anonymous — they are exempt so that load balancers and orchestrators can probe without credentials. See [`Fleans.ServiceDefaults/Extensions.cs`](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.ServiceDefaults/Extensions.cs) for the implementation.
 - **Swagger UI** remains accessible in development mode for testing.
+- **User-task identity comes from the token.** `POST /UserTasks/{id}/claim` and `/complete` act as the user in the `UserIdClaim` claim (default `preferred_username`). The body `UserId` field is optional. If you send it and it differs from the token, the request fails with `403 Forbidden`, so a caller can't act as another user. Body-supplied `UserGroups` are ignored; groups come from the `GroupsClaim` claim. A token without the user-id claim also gets `403`. This applies to releases after v0.5.0 ([#793](https://github.com/nightBaker/fleans/issues/793)). v0.5.0 and earlier trust the body `UserId` even under JWT.
 
 <figure class="arch-diagram" style="--arch-ratio: 480 / 738; max-width: 520px; margin-inline: auto">
   <iframe data-arch-src="/fleans/diagrams/api-jwt-auth.html" src="/fleans/diagrams/api-jwt-auth.html?embed=1" title="API JWT authentication sequence" loading="lazy"></iframe>
@@ -216,6 +219,8 @@ The manual regression test plans for authentication live at:
 | `401` with no `WWW-Authenticate` response header | `Authority` URL is unreachable or the OIDC discovery endpoint returned an error at startup |
 | `401` with `invalid_token` in `WWW-Authenticate` | `Audience` mismatch — the token's `aud` claim doesn't match the configured value |
 | `401` on `/health` or `/alive` | Not expected — these endpoints are always anonymous; check for a reverse proxy stripping the path |
+| `403` `UserId does not match the authenticated user` on claim/complete | The body `UserId` differs from the token's `UserIdClaim` value. Omit `UserId` or send the token's value |
+| `403` `Authenticated user has no user id claim` on claim/complete | The token lacks the `UserIdClaim` claim. Add a mapper in your IdP or point `Authentication:UserIdClaim` at a claim the token carries |
 
 ## Related
 

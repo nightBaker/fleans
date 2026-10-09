@@ -10,6 +10,7 @@ namespace Fleans.E2E.Tests.Specs;
 public class CallActivityTests : WorkflowE2ETestBase
 {
     [TestMethod]
+    [TestCategory(E2ECategories.Smoke)]
     public async Task ParentCallsChild_ResultMappedBack_BothProcessesComplete()
     {
         // Deploy child first (parent references calledElement="child-process")

@@ -6,7 +6,7 @@ Verifies #588: a `<bpmn:userTask>` gated by `camunda:candidateGroups` (no assign
 
 - Aspire stack running (`dotnet run --project Fleans.Aspire` from `src/Fleans/`).
 - Web UI reachable at `https://localhost:7124`; API at `https://localhost:7140`.
-- Authentication NOT configured (default no-auth posture) — `Authentication:Authority` is absent. Auth-enabled JWT-derived groups are covered in a follow-up plan once a representative IdP fixture is available.
+- Authentication NOT configured (default no-auth posture) — `Authentication:Authority` is absent. Auth-enabled JWT-derived groups (token `groups` claim, body-supplied groups ignored) are automated in `Fleans.E2E.Tests/Specs/AuthenticationTests.cs` against the Keycloak E2E realm (`FLEANS_E2E_AUTH=true`, CI job `e2e-auth`).
 
 ## Steps
 

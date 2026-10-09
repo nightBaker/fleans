@@ -138,6 +138,13 @@ HTTP/1.1 409 Conflict
 
 For the `assignee`-only branch, the body is `"Task is assigned to alice, not charlie"`. Exact wording is engine-controlled — `Fleans.Domain/Aggregates/Services/UserTaskLifecycle.cs` is the canonical source.
 
+#### User-id sourcing
+
+The acting `UserId` checked against the table above comes from one of two places:
+
+- **No-auth deployments** — the `UserId` field of the claim/complete request body. Trusted on the wire.
+- **JWT-auth deployments** — the bearer token's `Authentication:UserIdClaim` claim (default `preferred_username`). The body `UserId` is optional. If you send it and it differs from the token, the API returns **403 Forbidden** before the engine is called. A caller with a valid token therefore can't claim or complete a task as somebody else. See [Authentication](/fleans/reference/authentication/#behavior-when-enabled).
+
 #### User-group sourcing
 
 The caller's `userGroups` list — used to evaluate the `candidateGroups` row of the Who-can-claim table — is sourced from one of two places depending on deployment mode:

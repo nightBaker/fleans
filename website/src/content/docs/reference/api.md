@@ -213,13 +213,13 @@ User-task endpoints expose the human-in-the-loop lifecycle of `<bpmn:userTask>` 
 | --- | --- | --- | --- | --- |
 | GET  | `/UserTasks`                            | Query    | optional | `200 OK` |
 | GET  | `/UserTasks/{activityInstanceId}`       | Query    | optional | `200 OK` |
-| POST | `/UserTasks/{activityInstanceId}/claim`    | Mutation | `UserId` required in body | `200 OK` |
+| POST | `/UserTasks/{activityInstanceId}/claim`    | Mutation | `UserId` from body (no auth) or token (JWT) | `200 OK` |
 | POST | `/UserTasks/{activityInstanceId}/unclaim`  | Mutation | NONE — see below | `200 OK` |
-| POST | `/UserTasks/{activityInstanceId}/complete` | Mutation | `UserId` required in body | `200 OK` |
+| POST | `/UserTasks/{activityInstanceId}/complete` | Mutation | `UserId` from body (no auth) or token (JWT) | `200 OK` |
 | POST | `/UserTasks/{activityInstanceId}/fail`     | Mutation | `ErrorMessage` required in body | `200 OK` |
 | POST | `/UserTasks/{activityInstanceId}/cancel`   | Mutation | body optional | `200 OK` |
 
-`Auth` above refers to API-level JWT bearer auth, which is opt-in for the entire API — see [Authentication](/fleans/reference/authentication/#quick-start). The `UserId` field in claim/complete bodies is **caller identity**, not authentication: the engine treats whatever value it receives as the acting user.
+`Auth` above refers to API-level JWT bearer auth, which is opt-in for the entire API — see [Authentication](/fleans/reference/authentication/#quick-start). With auth disabled, the `UserId` field in claim/complete bodies is trusted as the acting user. With JWT auth enabled, the acting user comes from the token's `Authentication:UserIdClaim` claim. The body `UserId` is then optional, and a value that differs from the token is rejected with `403`.
 
 #### Error response shapes
 
@@ -323,13 +323,14 @@ Content-Type: application/json
 
 | Body field | Type | Required | Description |
 |---|---|---|---|
-| `UserId` | `string` | yes | Caller identity attached to the claim. |
+| `UserId` | `string` | yes without auth; optional under JWT | Acting user. Under JWT the token's user is used, and a differing value returns `403`. |
 
 **Success response (200)** — empty body.
 
 **Error responses**
 
-- **400** — `{"error": "UserId is required"}` — body missing or `UserId` empty/whitespace.
+- **400** — `{"error": "UserId is required"}` — auth disabled and the body is missing or `UserId` is empty/whitespace.
+- **403** — JWT auth only: `{"error": "UserId does not match the authenticated user"}` when the body `UserId` differs from the token, or `{"error": "Authenticated user has no user id claim"}` when the token lacks the configured claim.
 - **404** — `{"error": "User task '<id>' not found"}` — no pending task with that activity-instance id.
 - **409** — claim rejected by the domain layer (e.g. caller is not in `Assignee` / `CandidateUsers` / `CandidateGroups`); the body is the underlying `InvalidOperationException` message.
 
@@ -389,14 +390,15 @@ Content-Type: application/json
 
 | Body field | Type | Required | Description |
 |---|---|---|---|
-| `UserId` | `string` | yes | Caller identity — must match `claimedBy` on the task. |
+| `UserId` | `string` | yes without auth; optional under JWT | Acting user — must match `claimedBy` on the task. Under JWT the token's user is used, and a differing value returns `403`. |
 | `Variables` | `object?` | optional unless the task declares `expectedOutputVariables` | Output variables merged into the workflow's enclosing scope. Every entry in `expectedOutputVariables` must have a value here. |
 
 **Success response (200)** — empty body. The task is removed from the registry; subsequent `GET /UserTasks/{id}` returns `404`.
 
 **Error responses**
 
-- **400** — `{"error": "UserId is required"}`
+- **400** — `{"error": "UserId is required"}` — auth disabled and no `UserId` in the body.
+- **403** — JWT auth only: the body `UserId` differs from the token, or the token lacks the configured user-id claim (same bodies as `claim`).
 - **404** — `{"error": "User task '<id>' not found"}` — already completed, never existed, or wrong id.
 - **409 — wrong claimer**:
 

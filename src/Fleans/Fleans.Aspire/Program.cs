@@ -65,6 +65,26 @@ var authAuthority = builder.AddParameter("auth-authority", () => "");
 var authClientId = builder.AddParameter("auth-client-id", () => "");
 var authClientSecret = builder.AddParameter("auth-client-secret", () => "", secret: true);
 
+// E2E auth topology (#771) — opt-in via FLEANS_E2E_AUTH=true, dev/test runs only. Provisions a
+// Keycloak container with the test realm in e2e-auth/ (users alice ∈ managers, bob ∉ any group;
+// clients fleans-e2e / fleans-e2e-other / fleans-web) and points Fleans.Api (JWT bearer) and
+// Fleans.Web (OIDC) at it, overriding the auth-* parameters above. The default dev topology is
+// unchanged: without the flag no Keycloak resource is registered. Never honoured in publish mode
+// — the realm ships throwaway passwords and wildcard redirect URIs. Keycloak requires the import
+// file to be named <realm>-realm.json, hence e2e-auth/fleans-realm.json.
+var e2eAuth = !builder.ExecutionContext.IsPublishMode && string.Equals(
+    builder.Configuration["FLEANS_E2E_AUTH"],
+    "true",
+    StringComparison.OrdinalIgnoreCase);
+IResourceBuilder<KeycloakResource>? keycloak = null;
+ReferenceExpression? e2eAuthority = null;
+if (e2eAuth)
+{
+    keycloak = builder.AddKeycloak("keycloak")
+        .WithRealmImport("./e2e-auth");
+    e2eAuthority = ReferenceExpression.Create($"{keycloak.GetEndpoint("http")}/realms/fleans");
+}
+
 // Centralized Orleans configuration
 // Reminder provider is configured by the silo itself via Fleans.ServiceDefaults' AddFleansReminders,
 // which binds the persistent Redis reminder service (#650). AppHost stays orchestration-only.
@@ -183,6 +203,14 @@ var apiProject = builder.AddProject<Projects.Fleans_Api>("fleans-core")
     .WaitFor(redis)
     .WithReplicas(1);
 if (usePostgres) apiProject = apiProject.WaitFor(pg!);
+if (keycloak is not null)
+{
+    apiProject = apiProject
+        .WaitFor(keycloak)
+        .WithEnvironment("Authentication__Authority", e2eAuthority!)
+        .WithEnvironment("Authentication__Audience", "fleans-api")
+        .WithEnvironment("Authentication__RequireHttpsMetadata", "false");
+}
 // Mark the API endpoint as externally accessible so the docker-compose publisher emits a
 // host port mapping (`ports:`) rather than internal-only `expose:`. Without this, the
 // release-asset compose bundle is unreachable from the host even after `docker compose up`.
@@ -197,10 +225,23 @@ fleansSilo = WithStreaming(fleansSilo, useKafka, kafka, useAzureQueue, azureQueu
 var webProject = builder.AddProject<Projects.Fleans_Web>("fleans-management")
     .WithReference(orleans.AsClient())
     .WaitFor(fleansSilo)
-    .WithEnvironment("Authentication__Authority", authAuthority)
-    .WithEnvironment("Authentication__ClientId", authClientId)
-    .WithEnvironment("Authentication__ClientSecret", authClientSecret)
     .WithReplicas(1);
+if (keycloak is not null)
+{
+    webProject = webProject
+        .WaitFor(keycloak)
+        .WithEnvironment("Authentication__Authority", e2eAuthority!)
+        .WithEnvironment("Authentication__ClientId", "fleans-web")
+        .WithEnvironment("Authentication__ClientSecret", "fleans-web-e2e-secret")
+        .WithEnvironment("Authentication__RequireHttpsMetadata", "false");
+}
+else
+{
+    webProject = webProject
+        .WithEnvironment("Authentication__Authority", authAuthority)
+        .WithEnvironment("Authentication__ClientId", authClientId)
+        .WithEnvironment("Authentication__ClientSecret", authClientSecret);
+}
 if (builder.ExecutionContext.IsPublishMode)
 {
     webProject = webProject.WithExternalHttpEndpoints();
