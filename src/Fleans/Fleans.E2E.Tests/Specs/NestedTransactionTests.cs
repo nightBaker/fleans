@@ -9,31 +9,30 @@ namespace Fleans.E2E.Tests.Specs;
 // Scenario A (happy path) + Scenario B (inner cancels) are automated. Scenarios C and F
 // require additional setup or cross-reference plan #26's hazard fixture — out of scope
 // for this batch.
+//
+// The outer catch event's message correlates on `txKey`: intermediate message catch events
+// require a correlation key (uncorrelated messages only reach message start events). Each
+// run uses a fresh key so concurrent runs against the same stack don't cross-deliver.
 [TestClass]
 [TestCategory("E2E")]
 public class NestedTransactionTests : WorkflowE2ETestBase
 {
-    // TODO: `inner-work` (a scriptTask inside a nested transaction with a compensation
-    // boundary) never completes in the test cluster — verified at 45 s wait, snapshot
-    // shows it permanently Active alongside `inner-tx`, `outer-tx` while `inner-start`
-    // / `outer-start` / `start` have all completed. Likely related to the fixture's note
-    // that "ExclusiveGateway and EventBasedGateway targets fail to activate inside
-    // inner-tx" — the inner-tx scope appears to leave script tasks stuck. Needs engine
-    // investigation rather than test-shape changes.
     [TestMethod]
-    [Ignore("Pending: inner-work scriptTask inside nested compensation-bounded transaction does not auto-complete in test cluster (verified at 45s wait).")]
     public async Task ScenarioA_BothTransactionsCommit_HappyPath()
     {
+        var txKey = $"nested-tx-a-{Guid.NewGuid():N}";
         var xml = BpmnFixtureLoader.Load("53-nested-transaction", "nested-tx-normal-inner.bpmn");
         var deployed = await ApiClient.DeployAsync(xml);
-        var started = await ApiClient.StartAsync(deployed.ProcessDefinitionKey);
+        var started = await ApiClient.StartAsync(
+            deployed.ProcessDefinitionKey,
+            new Dictionary<string, object?> { ["txKey"] = txKey });
 
         await ApiClient.WaitForStateAsync(
             started.WorkflowInstanceId,
             s => s.ActiveActivityIds.Contains("trigger-outer-complete-catch"),
-            timeout: TimeSpan.FromSeconds(45));
+            timeout: TimeSpan.FromSeconds(30));
 
-        var msg = await ApiClient.SendMessageAsync("trigger-outer-complete");
+        var msg = await ApiClient.SendMessageAsync("trigger-outer-complete", correlationKey: txKey);
         Assert.IsTrue(msg.Delivered);
 
         var state = await ApiClient.WaitForCompletionAsync(
@@ -47,23 +46,26 @@ public class NestedTransactionTests : WorkflowE2ETestBase
     }
 
     [TestMethod]
-    [Ignore("Pending investigation: same root cause as Scenario A (host task doesn't auto-complete).")]
     public async Task ScenarioB_InnerCancelsAndCompensates_OuterCommits()
     {
+        var txKey = $"nested-tx-b-{Guid.NewGuid():N}";
         var xml = BpmnFixtureLoader.Load("53-nested-transaction", "nested-tx-cancel-inner.bpmn");
         var deployed = await ApiClient.DeployAsync(xml);
-        var started = await ApiClient.StartAsync(deployed.ProcessDefinitionKey);
+        var started = await ApiClient.StartAsync(
+            deployed.ProcessDefinitionKey,
+            new Dictionary<string, object?> { ["txKey"] = txKey });
 
         await ApiClient.WaitForStateAsync(
             started.WorkflowInstanceId,
             s => s.ActiveActivityIds.Contains("trigger-outer-complete-catch"),
-            timeout: TimeSpan.FromSeconds(15));
+            timeout: TimeSpan.FromSeconds(30));
 
-        await ApiClient.SendMessageAsync("trigger-outer-complete");
+        var msg = await ApiClient.SendMessageAsync("trigger-outer-complete", correlationKey: txKey);
+        Assert.IsTrue(msg.Delivered);
 
         var state = await ApiClient.WaitForCompletionAsync(
             started.WorkflowInstanceId,
-            timeout: TimeSpan.FromSeconds(15));
+            timeout: TimeSpan.FromSeconds(30));
 
         state.AssertCompletedActivities(
             "inner-work", "inner-cancel-end", "inner-compensate", "inner-tx",

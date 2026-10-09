@@ -1179,6 +1179,15 @@ public class WorkflowExecution
                     $"Correlation variable '{variableName}' is null for message '{messageDef.Name}'.");
         }
 
+        // Catch/boundary message subscriptions are partitioned by correlation key
+        // (MessageCorrelationGrain is keyed "{name}/{key}"); an uncorrelated message can only
+        // trigger a message start event. Reject here so the registration-path failure routes
+        // to FailActivity instead of escaping the effect handler and stalling the workflow (#761).
+        if (string.IsNullOrWhiteSpace(correlationKey))
+            throw new InvalidOperationException(
+                $"Message '{messageDef.Name}' has no correlation key. Intermediate catch and boundary " +
+                "message events require a correlation key (zeebe:subscription correlationKey).");
+
         return new SubscribeMessageEffect(
             messageDef.Name, correlationKey,
             _state.Id, msg.ActivityId, activityInstanceId);
@@ -1608,6 +1617,16 @@ public class WorkflowExecution
                 // SubProcess: all scope children must be completed
                 if (!scopeEntries.All(e => e.IsCompleted)) continue;
 
+                // A nested scope host completed earlier in THIS call has not had its outgoing
+                // transitions resolved yet (the caller resolves them after we return), so its
+                // token is still in flight inside this scope. Cascading now would complete the
+                // enclosing scope before its post-nested-scope activities run — e.g. an outer
+                // Transaction committing while its catch event after the inner Transaction has
+                // not even been spawned (#761). Only cascade through hosts with no outgoing flow.
+                if (scopeEntries.Any(e => allCompletedHostIds.Contains(e.ActivityInstanceId)
+                        && HostRoutesTokenAfterCompletion(e)))
+                    continue;
+
                 // If any scope child has an error (and wasn't handled by a boundary),
                 // a regular SubProcess should NOT auto-complete — its boundary error
                 // events catch the failure and route execution. EventSubProcesses have
@@ -1736,6 +1755,23 @@ public class WorkflowExecution
         }
 
         return (allEffects.AsReadOnly(), allCompletedHostIds.AsReadOnly(), allOrphanedScopeIds.AsReadOnly());
+    }
+
+    /// <summary>
+    /// True when a just-completed scope host still routes a token inside its enclosing scope:
+    /// either along an outgoing sequence flow, or — for a Cancelled Transaction — through its
+    /// attached Cancel Boundary Event (activated by the caller after this pass).
+    /// </summary>
+    private bool HostRoutesTokenAfterCompletion(ActivityInstanceEntry hostEntry)
+    {
+        var scope = _definition.GetScopeForActivity(hostEntry.ActivityId);
+        if (scope.SequenceFlows.Any(sf => sf.Source.ActivityId == hostEntry.ActivityId))
+            return true;
+
+        return _state.TransactionOutcomes.TryGetValue(hostEntry.ActivityInstanceId, out var outcome)
+            && outcome.Outcome == TransactionOutcome.Cancelled
+            && scope.Activities.OfType<CancelBoundaryEvent>()
+                .Any(b => b.AttachedToActivityId == hostEntry.ActivityId);
     }
 
     /// <summary>

@@ -99,6 +99,36 @@ public class ExclusiveGatewayActivityTests
     }
 
     [TestMethod]
+    public async Task GetNextActivities_ConvergingGateway_ShouldFollowUnconditionalOutgoingFlow()
+    {
+        // Arrange — merging XOR: two incoming flows, one plain outgoing flow (#761)
+        var taskA = new TaskActivity("a");
+        var taskB = new TaskActivity("b");
+        var join = new ExclusiveGateway("join");
+        var end = new EndEvent("end");
+
+        var definition = ActivityTestHelper.CreateWorkflowDefinition(
+            [taskA, taskB, join, end],
+            [
+                new SequenceFlow("in1", taskA, join),
+                new SequenceFlow("in2", taskB, join),
+                new SequenceFlow("out", join, end)
+            ]);
+
+        var activityInstanceId = Guid.NewGuid();
+        var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
+        ActivityTestHelper.SetupConditionStates(workflowContext, activityInstanceId);
+        var (activityContext, _) = ActivityTestHelper.CreateActivityContext("join", activityInstanceId);
+
+        // Act
+        var nextActivities = await join.GetNextActivities(workflowContext, activityContext, definition);
+
+        // Assert
+        Assert.HasCount(1, nextActivities);
+        Assert.AreEqual("end", nextActivities[0].NextActivity.ActivityId);
+    }
+
+    [TestMethod]
     public async Task ExecuteAsync_ShouldAddConditionalSequences_AndQueueEvaluateEvents()
     {
         // Arrange

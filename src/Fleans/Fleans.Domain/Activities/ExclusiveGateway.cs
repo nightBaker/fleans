@@ -51,6 +51,20 @@ public record ExclusiveGateway(string ActivityId) : ConditionalGateway(ActivityI
         if (defaultFlow is not null)
             return [new ActivityTransition(defaultFlow.Target)];
 
+        // Merging (converging) gateway: no conditional flows at all, so ExecuteAsync completed it
+        // immediately — pass the token along the unconditional outgoing flow (#761).
+        var hasConditionalFlows = definition.SequenceFlows
+            .OfType<ConditionalSequenceFlow>()
+            .Any(sf => sf.Source.ActivityId == ActivityId);
+        if (!hasConditionalFlows)
+        {
+            var plainFlow = definition.SequenceFlows
+                .FirstOrDefault(sf => sf.Source.ActivityId == ActivityId
+                    && sf is not ConditionalSequenceFlow and not DefaultSequenceFlow);
+            if (plainFlow is not null)
+                return [new ActivityTransition(plainFlow.Target)];
+        }
+
         throw new InvalidOperationException(
             $"ExclusiveGateway {ActivityId}: no true condition and no default flow");
     }
