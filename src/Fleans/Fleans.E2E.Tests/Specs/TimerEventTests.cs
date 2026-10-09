@@ -29,12 +29,7 @@ public class TimerEventTests : WorkflowE2ETestBase
         state.AssertVariableEquals("timerFired", "True");
     }
 
-    // tests/manual/08-timer-events/test-plan.md notes a KNOWN BUG:
-    //   "Boundary events on IntermediateCatchEvents don't register subscriptions.
-    //    The timer boundary will not fire."
-    // Spec authored against the fix so it runs once the bug is closed.
     [TestMethod]
-    [Ignore("Known bug: boundary events on IntermediateCatchEvent do not register subscriptions; see docs/plans/2026-02-25-manual-test-results.md.")]
     public async Task TimerBoundary_InterruptsBlockingActivity_TimeoutPathTaken()
     {
         var xml = BpmnFixtureLoader.Load("08-timer-events", "timer-boundary.bpmn");

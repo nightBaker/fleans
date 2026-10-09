@@ -64,18 +64,9 @@ disables the *Interrupting* checkbox for them.
 Full fixture: `tests/manual/11-error-boundary/error-on-call-activity.bpmn` —
 deploy steps in `tests/manual/11-error-boundary/test-plan.md`.
 
-:::caution[Known limitation: child-process errors don't bubble to parent CallActivity]
-Per `tests/manual/11-error-boundary/test-plan.md`, **child-process errors do not
-currently propagate to a parent `CallActivity`'s error boundary**. The boundary stays
-armed but never fires; the CallActivity stays in `Running` state.
-
-**Workaround:** catch the error inside the child scope using an *error event
-sub-process* (or a boundary event on a sub-process inside the child), and exit
-the child cleanly. The parent's call activity will then complete normally, and
-you can branch on a variable the child set to indicate the recovery path.
-
-This is regression item #11 in the manual-test list (`KNOWN BUG` until resolved).
-:::
+The same boundary works on a `callActivity`: an unhandled error in the child
+process is propagated to the parent call activity, and its error boundary routes
+the parent onto the error path.
 
 ### Error event sub-process
 
@@ -295,8 +286,6 @@ goes here" — typically routing to a generic failure handler that logs and page
 
 ## Limitations and known issues
 
-- **Child-process errors do not propagate through `CallActivity` error boundaries.**
-  See the *Known limitation* callout above and `tests/manual/11-error-boundary/test-plan.md`.
 - **Compensation of compensation is rejected at parse time.** A compensation
   handler activity may not itself have a `<compensateEventDefinition/>` boundary.
 - **At most one compensation boundary** is allowed per compensable activity;

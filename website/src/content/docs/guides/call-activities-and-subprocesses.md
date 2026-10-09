@@ -209,22 +209,10 @@ the parent — paired with `tests/manual/11-error-boundary/child-that-fails.bpmn
 See [Error Handling — error end events](/fleans/guides/error-handling/) for the catch-all
 vs specific-code matching rules and the cancellation semantics.
 
-:::caution[Known limitation: child errors don't bubble to parent CallActivity boundary]
-Per `tests/manual/11-error-boundary/test-plan.md`, **child-process errors do
-not currently propagate to a parent `CallActivity`'s error boundary**. The
-boundary stays armed but never fires; the call activity stays in `Running`
-state indefinitely.
-
-**Workaround:** catch the error inside the child scope using an *error event
-sub-process* (or a boundary event on a sub-process inside the child), and
-exit the child cleanly via a normal end event. The parent's call activity
-will then complete normally, and you can branch in the parent on a variable
-the child set to indicate which recovery path was taken.
-
-This is regression item **#11 in the manual-test list** (`KNOWN BUG` until
-resolved). The full discussion of error/escalation/compensation lives in
-the [Error Handling guide](/fleans/guides/error-handling/).
-:::
+An unhandled error thrown in the child fails the child instance and is
+re-raised on the parent's call activity, where the matching error boundary
+catches it and the parent continues on the error path (the call activity is
+interrupted; the parent instance does not fail).
 
 ## Transaction sub-process
 
@@ -316,10 +304,6 @@ handler side-effects visible to subsequent handlers — are in
 
 ## Limitations and known issues
 
-- **#11 KNOWN BUG — child errors don't bubble to parent CallActivity
-  boundary.** The boundary stays armed but never fires; the call activity
-  stays `Running`. Use the error-event-sub-process workaround above. See
-  `tests/manual/11-error-boundary/test-plan.md`.
 - **No `<calledElement-version>` pinning.** Call activities always resolve
   to the latest version of `calledElement`
   ([WorkflowLifecycleEffectHandler.cs#L61](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Application/Effects/WorkflowLifecycleEffectHandler.cs#L61) — `GetLatestDefinition()`).

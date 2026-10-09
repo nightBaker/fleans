@@ -173,6 +173,70 @@ public class BoundaryOnCatchEventTests : WorkflowTestBase
     }
 
     [TestMethod]
+    public async Task TimerBoundaryOnMessageCatch_RealReminderFires_ShouldFollowBoundaryPath()
+    {
+        // #759 — drive the boundary through the real TimerCallbackGrain reminder instead of
+        // calling HandleTimerFired directly. The fired timer must not be unregistered from
+        // inside HandleTimerFired: the callback grain is non-reentrant and is awaiting that
+        // call, so the Cancel() round-trip deadlocks until the Orleans response timeout.
+        var start = new StartEvent("start");
+        var msgDef = new MessageDefinition("msg1", "neverArrives", "corrKey");
+        var msgCatch = new MessageIntermediateCatchEvent("msgCatch", "msg1");
+        var boundaryTimer = new BoundaryTimerEvent("bt1", "msgCatch",
+            new TimerDefinition(TimerType.Duration, "PT1S"));
+        var setCorr = new ScriptTask("setCorr", "return 1;");
+        var timeoutPath = new ScriptTask("timeoutPath", "return 1;");
+        var normalEnd = new EndEvent("normalEnd");
+        var timeoutEnd = new EndEvent("timeoutEnd");
+
+        // Mirrors tests/manual/08-timer-events/timer-boundary.bpmn.
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "timer-boundary-on-msg-catch-real-reminder",
+            Activities = [start, setCorr, msgCatch, boundaryTimer, timeoutPath, normalEnd, timeoutEnd],
+            SequenceFlows =
+            [
+                new SequenceFlow("f0", start, setCorr),
+                new SequenceFlow("f1", setCorr, msgCatch),
+                new SequenceFlow("f2", msgCatch, normalEnd),
+                new SequenceFlow("f3", boundaryTimer, timeoutPath),
+                new SequenceFlow("f4", timeoutPath, timeoutEnd)
+            ],
+            Messages = [msgDef]
+        };
+
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await workflowInstance.SetWorkflow(workflow);
+        dynamic initVars = new ExpandoObject();
+        initVars.corrKey = "never-match";
+        await workflowInstance.SetInitialVariables(initVars);
+        await workflowInstance.StartWorkflow();
+
+        // Act — wait for the reminder to fire on its own.
+        var instanceId = workflowInstance.GetPrimaryKey();
+        var snapshot = await WaitForCondition(instanceId, s => s.IsCompleted, timeoutMs: 15000);
+
+        // Assert — boundary path taken, message catch interrupted
+        var interruptedCatch = snapshot.CompletedActivities.Single(a => a.ActivityId == "msgCatch");
+        Assert.IsTrue(interruptedCatch.IsCancelled, "Interrupted catch should be cancelled");
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "bt1"),
+            "Boundary timer should complete");
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "timeoutPath"),
+            "Timeout path should run");
+
+        // The interrupted catch's own message subscription must be released, otherwise the
+        // next instance correlating on the same key fails with "Duplicate subscription".
+        var correlationGrain = Cluster.GrainFactory.GetGrain<IMessageCorrelationGrain>(
+            MessageCorrelationKey.Build("neverArrives", "never-match"));
+        Assert.IsFalse(await correlationGrain.DeliverMessage(new ExpandoObject()),
+            "Interrupted message catch subscription should have been cleaned up");
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "timeoutEnd"),
+            "Should complete via timeout end");
+        Assert.IsFalse(snapshot.CompletedActivities.Any(a => a.ActivityId == "normalEnd"),
+            "Should NOT complete via normal end");
+    }
+
+    [TestMethod]
     public async Task TimerBoundaryOnMessageCatch_MessageArrivesFirst_ShouldFollowNormalPath()
     {
         // Arrange — Start → MessageCatch(+BoundaryTimer) → NormalEnd, BoundaryTimer → TimeoutEnd
