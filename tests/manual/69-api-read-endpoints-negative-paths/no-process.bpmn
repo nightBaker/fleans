@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Fixture for plan 69: well-formed BPMN definitions with no <process> (e.g. a
+     collaboration-only or choreography-only model). Unsupported → deploy rejected with 400. -->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  id="defs_no_process" targetNamespace="http://fleans.io/bpmn">
+  <bpmn:collaboration id="collab" />
+</bpmn:definitions>

@@ -48,6 +48,25 @@ namespace Fleans.Application.Tests
         }
 
         [TestMethod]
+        public async Task CompleteActivity_OnUnknownInstance_ThrowsKeyNotFound()
+        {
+            // Regression (#766): POST /Execution/complete-activity with an unknown
+            // workflowInstanceId returned 409 "ProcessDefinitionId not set — call SetWorkflow
+            // first." KeyNotFoundException maps to 404 in the API's GlobalExceptionHandler.
+            var unknownId = Guid.NewGuid();
+            var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(unknownId);
+
+            var ex = await Assert.ThrowsAsync<KeyNotFoundException>(async () =>
+            {
+                await workflowInstance.CompleteActivity("task", new ExpandoObject());
+            });
+            StringAssert.Contains(ex.Message, unknownId.ToString());
+
+            // The probe must not materialise an instance.
+            Assert.IsNull(await QueryService.GetStateSnapshot(unknownId));
+        }
+
+        [TestMethod]
         public async Task StartWorkflow_ShouldExecuteStartEvent_AndTransitionToNextActivity()
         {
             // Arrange

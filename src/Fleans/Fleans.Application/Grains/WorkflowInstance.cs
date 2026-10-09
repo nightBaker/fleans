@@ -306,8 +306,11 @@ public partial class WorkflowInstance :
         if (_workflowDefinition is not null)
             return;
 
+        // No ProcessDefinitionId ⇒ SetWorkflow never ran ⇒ this grain id is not a workflow
+        // instance. KeyNotFoundException maps to 404 at the API (GlobalExceptionHandler);
+        // the previous InvalidOperationException surfaced as a 409 with an internal message.
         var processDefId = State.ProcessDefinitionId
-            ?? throw new InvalidOperationException("ProcessDefinitionId not set — call SetWorkflow first.");
+            ?? throw new KeyNotFoundException($"Workflow instance '{this.GetPrimaryKey()}' not found.");
 
         var key = ProcessDefinition.ExtractKeyFromId(processDefId);
         var grain = _grainFactory.GetGrain<IProcessDefinitionGrain>(key);
