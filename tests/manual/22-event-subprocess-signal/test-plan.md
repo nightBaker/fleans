@@ -16,13 +16,13 @@ listening on `cancelEverything` should be interrupted by a single broadcast.
 ## Steps
 
 1. **Deploy** the BPMN: upload `signal-event-subprocess.bpmn` via the Web UI,
-   or `POST https://localhost:7140/Workflow/upload-bpmn`.
+   or `POST https://localhost:7140/Definitions/deploy`.
 2. **Start two instances** of `evtSubSignalProcess`:
-   `POST https://localhost:7140/Workflow/start` with body
+   `POST https://localhost:7140/Execution/start` with body
    `{"WorkflowId":"evtSubSignalProcess"}` (repeat).
 3. Confirm both instances have `userTask` active in the Web UI. Do not complete them.
 4. **Broadcast the signal**:
-   `POST https://localhost:7140/Workflow/signal` with body
+   `POST https://localhost:7140/Execution/signal` with body
    `{"SignalName":"cancelEverything"}`
 5. Refresh both instance views.
 

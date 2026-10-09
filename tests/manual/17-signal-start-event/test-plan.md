@@ -15,7 +15,7 @@ A workflow is triggered by a broadcast signal rather than an explicit start requ
 
 2. **Send a signal to trigger workflow creation**
    ```bash
-   curl -k -X POST https://localhost:7140/Workflow/signal \
+   curl -k -X POST https://localhost:7140/Execution/signal \
      -H "Content-Type: application/json" \
      -d '{"SignalName":"orderSignal"}'
    ```
@@ -27,7 +27,7 @@ A workflow is triggered by a broadcast signal rather than an explicit start requ
 
 4. **Send a second signal to create another instance**
    ```bash
-   curl -k -X POST https://localhost:7140/Workflow/signal \
+   curl -k -X POST https://localhost:7140/Execution/signal \
      -H "Content-Type: application/json" \
      -d '{"SignalName":"orderSignal"}'
    ```
@@ -35,7 +35,7 @@ A workflow is triggered by a broadcast signal rather than an explicit start requ
 
 5. **Send a signal with an unknown name**
    ```bash
-   curl -k -X POST https://localhost:7140/Workflow/signal \
+   curl -k -X POST https://localhost:7140/Execution/signal \
      -H "Content-Type: application/json" \
      -d '{"SignalName":"unknownSignal"}'
    ```

@@ -16,9 +16,9 @@ event must NOT be reached.
 
 1. **Deploy** the BPMN: upload `timer-event-subprocess.bpmn` via the Web UI
    (Fleans.Web → Deployments → Upload), or
-   `POST https://localhost:7140/Workflow/upload-bpmn` with the file.
+   `POST https://localhost:7140/Definitions/deploy` with the file.
 2. **Start an instance**:
-   `POST https://localhost:7140/Workflow/start` with body
+   `POST https://localhost:7140/Execution/start` with body
    `{"WorkflowId":"evtSubTimerProcess"}`
 3. Open the instance in the Web UI and confirm `userTask` is active (claimable).
 4. Do NOT claim or complete the user task. Wait ~5 seconds.

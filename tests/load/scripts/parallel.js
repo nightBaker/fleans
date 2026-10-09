@@ -15,7 +15,7 @@
 // Standalone:  k6 run --insecure-skip-tls-verify tests/load/scripts/parallel.js
 // Mixed run:   imported by mixed.js (issue #242) via the parallelWorkflow named export
 //
-// METRIC SCOPE: workflowStartDuration captures the synchronous latency of POST /Workflow/start
+// METRIC SCOPE: workflowStartDuration captures the synchronous latency of POST /Execution/start
 // (instance creation), not fork/join completion. The fork/join coordination runs asynchronously
 // inside Orleans after the 200 is returned. Comparing this scenario to linear.js at equal VU
 // counts measures activation overhead under different downstream processing loads — parallel
@@ -49,7 +49,7 @@ export const options = {
 // Named export required by mixed.js (exec: 'parallelWorkflow')
 export function parallelWorkflow() {
   const payload = JSON.stringify({ WorkflowId: 'load-parallel' });
-  const res = http.post(`${BASE_URL}/Workflow/start`, payload, { headers: HEADERS });
+  const res = http.post(`${BASE_URL}/Execution/start`, payload, { headers: HEADERS });
 
   workflowStartDuration.add(res.timings.duration);
   check(res, { 'workflow start: status 200': (r) => r.status === 200 });

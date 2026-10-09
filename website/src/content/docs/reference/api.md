@@ -5,17 +5,17 @@ sidebar:
   order: 1
 ---
 
-Workflow endpoints are served from `https://localhost:7140/Workflow/*`; user-task endpoints are served from `https://localhost:7140/UserTasks/*` by default (see [PR #614](https://github.com/nightBaker/fleans/pull/614) for the controller split).
+All paths below are relative to the API base URL (`https://localhost:7140` in the Aspire dev stack). Endpoints are grouped by controller: `/Definitions/*` (deploy, disable, enable, list), `/Execution/*` (start, message, signal, complete-activity, evaluate-conditions), `/Instances/*` (state) and `/UserTasks/*`. The old `/Workflow/*` prefix was removed when the controller was split (see [PR #614](https://github.com/nightBaker/fleans/pull/614)) and now returns `404`.
 
 | Endpoint | Method | Body |
 |---|---|---|
-| `/deploy` | POST | `{"BpmnXml":"<raw BPMN XML string>"}` |
-| `/start` | POST | `{"WorkflowId":"process-id"}` or `{"WorkflowId":"process-id","Variables":{"key":"value"}}` — `Variables` is optional; when provided, the variables are merged into the root scope **before** the workflow starts (required for message event sub-processes that resolve correlation keys from variables at scope entry) |
-| `/message` | POST | `{"MessageName":"...", "CorrelationKey":"...", "Variables":{}}` |
-| `/signal` | POST | `{"SignalName":"..."}` |
-| `/complete-activity` | POST | `{"WorkflowInstanceId":"guid", "ActivityId":"activity-id", "Variables":{}}` |
-| `/evaluate-conditions` | POST | `{"WorkflowId":"process-id", "Variables":{"key":"value"}}` — Evaluates all conditional start events (or only those for the given `WorkflowId` if provided) against the supplied variables. Returns `{"StartedInstanceIds":["guid",...], "Errors":["..."]}`. `Errors` is present only when one or more listeners failed during evaluation. |
-| `/instances/{instanceId}/state` | GET | *(none)* — Returns the current state snapshot for a specific workflow instance |
+| `/Definitions/deploy` | POST | `{"BpmnXml":"<raw BPMN XML string>"}` |
+| `/Execution/start` | POST | `{"WorkflowId":"process-id"}` or `{"WorkflowId":"process-id","Variables":{"key":"value"}}` — `Variables` is optional; when provided, the variables are merged into the root scope **before** the workflow starts (required for message event sub-processes that resolve correlation keys from variables at scope entry) |
+| `/Execution/message` | POST | `{"MessageName":"...", "CorrelationKey":"...", "Variables":{}}` |
+| `/Execution/signal` | POST | `{"SignalName":"..."}` |
+| `/Execution/complete-activity` | POST | `{"WorkflowInstanceId":"guid", "ActivityId":"activity-id", "Variables":{}}` |
+| `/Execution/evaluate-conditions` | POST | `{"WorkflowId":"process-id", "Variables":{"key":"value"}}` — Evaluates all conditional start events (or only those for the given `WorkflowId` if provided) against the supplied variables. Returns `{"StartedInstanceIds":["guid",...], "Errors":["..."]}`. `Errors` is present only when one or more listeners failed during evaluation. |
+| `/Instances/{instanceId}/state` | GET | *(none)* — Returns the current state snapshot for a specific workflow instance |
 | `/UserTasks` | GET | *(query string)* — Paginated list of pending user tasks. See [User Task endpoints](#user-task-endpoints). |
 | `/UserTasks/{activityInstanceId}` | GET | *(none)* — Single user-task lookup. |
 | `/UserTasks/{activityInstanceId}/claim` | POST | `{"UserId":"alice"}` |
@@ -26,7 +26,7 @@ Workflow endpoints are served from `https://localhost:7140/Workflow/*`; user-tas
 
 ## Endpoint details
 
-### `POST /Workflow/deploy`
+### `POST /Definitions/deploy`
 
 Deploys a BPMN process definition to the engine. The request body contains the raw BPMN XML as a string. On success the engine parses the XML, registers the process definition, and returns the assigned key and version number. If the same process ID is deployed again, the version is incremented automatically.
 
@@ -35,7 +35,7 @@ Deploys a BPMN process definition to the engine. The request body contains the r
 **Request**
 
 ```json
-POST /Workflow/deploy
+POST /Definitions/deploy
 Content-Type: application/json
 
 {
@@ -65,21 +65,21 @@ Content-Type: application/json
 ```bash
 # Deploy a local BPMN file via curl
 BPMN_XML=$(cat my-workflow.bpmn | jq -Rs .)
-curl -s -X POST https://localhost:7140/Workflow/deploy \
+curl -s -X POST https://localhost:7140/Definitions/deploy \
   -H "Content-Type: application/json" \
   -d "{\"BpmnXml\": $BPMN_XML}"
 ```
 
 This reads the `.bpmn` file, JSON-escapes it with `jq -Rs`, and sends it to the deploy endpoint. The response contains the `ProcessDefinitionKey` you pass to `/start` to create instances.
 
-### `POST /Workflow/start`
+### `POST /Execution/start`
 
 Starts a new workflow instance from a deployed process definition. Returns the instance ID which can be used to track state, send messages, or complete activities.
 
 **Request**
 
 ```json
-POST /Workflow/start
+POST /Execution/start
 Content-Type: application/json
 
 {
@@ -106,14 +106,14 @@ Content-Type: application/json
 }
 ```
 
-### `POST /Workflow/message`
+### `POST /Execution/message`
 
 Delivers a message to workflow instances waiting for it, correlated by key. Used to trigger intermediate message catch events and message start events.
 
 **Request**
 
 ```json
-POST /Workflow/message
+POST /Execution/message
 Content-Type: application/json
 
 {
@@ -137,14 +137,14 @@ Content-Type: application/json
 - **400** — `{"error": "MessageName is required"}`
 - **404** — `{"error": "No active subscription found for message 'payment-received' with correlation key 'order-123'"}` — no workflow instance is currently waiting for this message/key combination
 
-### `POST /Workflow/signal`
+### `POST /Execution/signal`
 
 Broadcasts a signal to all workflow instances listening for it. Unlike messages, signals have no correlation key — every matching listener receives the signal.
 
 **Request**
 
 ```json
-POST /Workflow/signal
+POST /Execution/signal
 Content-Type: application/json
 
 {
@@ -169,14 +169,14 @@ Content-Type: application/json
 - **400** — `{"error": "SignalName is required"}`
 - **404** — `{"error": "No active subscription found for signal 'global-alert'"}` — no workflow instance is currently listening for this signal
 
-### `POST /Workflow/complete-activity`
+### `POST /Execution/complete-activity`
 
 Completes a manual activity (e.g., a task waiting for external input) on a running workflow instance, optionally passing output variables.
 
 **Request**
 
 ```json
-POST /Workflow/complete-activity
+POST /Execution/complete-activity
 Content-Type: application/json
 
 {
@@ -481,16 +481,16 @@ curl -k -X POST https://localhost:7140/UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a
 #### See also
 
 - [User Tasks guide](/fleans/guides/user-tasks/) — conceptual model, state diagram, BPMN authoring (`<fleans:expectedOutputs>`).
-- [Authentication](/fleans/reference/authentication/) — opt-in JWT bearer auth that gates every `/Workflow/*` endpoint, including the User Task surface.
+- [Authentication](/fleans/reference/authentication/) — opt-in JWT bearer auth that gates every API endpoint, including the User Task surface.
 
 ### Instance State endpoint
 
-`GET /Workflow/instances/{instanceId}/state` returns a per-instance state snapshot including `activeActivityIds`, `completedActivityIds`, `isStarted`, `isCompleted`, and related fields.
+`GET /Instances/{instanceId}/state` returns a per-instance state snapshot including `activeActivityIds`, `completedActivityIds`, `isStarted`, `isCompleted`, and related fields.
 
 This endpoint is intended for **diagnostics and load-test polling**, not for high-frequency production use. The response reflects the read-side EF projection, which is eventually consistent with the event stream — callers that need realtime certainty should drive via the grain API directly.
 
 ```bash
-curl -k https://localhost:7140/Workflow/instances/<guid>/state
+curl -k https://localhost:7140/Instances/<guid>/state
 ```
 
 > `-k` (or `--insecure`) skips dev-cert validation. In production behind a proper TLS cert, drop the flag.
@@ -527,15 +527,15 @@ The rate limiter uses a **fixed window** algorithm, partitioned by the client's 
 #### Policy → endpoint mapping
 
 
-All paths below are relative to the `/Workflow` controller route.
+Paths are relative to the API base URL.
 
 | Policy | Endpoints | Description |
 |--------|-----------|-------------|
-| `WorkflowMutation` | `POST /start`, `/message`, `/signal`, `/evaluate-conditions`, `/deploy` | Workflow lifecycle write operations (start instance, deliver event, evaluate conditions, deploy BPMN) |
-| `TaskOperation` | `POST /complete-activity`, `/tasks/{activityInstanceId}/claim`, `/tasks/{activityInstanceId}/unclaim`, `/tasks/{activityInstanceId}/complete`, `/tasks/{activityInstanceId}/fail`, `/tasks/{activityInstanceId}/cancel` | Activity-completion + user-task operations — see [User Tasks guide](/fleans/guides/user-tasks/) |
-| `Read` | `GET /definitions`, `/definitions/{key}/instances`, `/definitions/{key}/{version}/instances`, `/tasks`, `/tasks/{activityInstanceId}` | Read-only queries |
-| `Admin` | `POST /disable`, `/enable` | Admin operations on process definitions |
-| `Polling` | `GET /instances/{instanceId}/state` | High-frequency state polling |
+| `WorkflowMutation` | `POST /Execution/start`, `/Execution/message`, `/Execution/signal`, `/Execution/evaluate-conditions`, `/Definitions/deploy` | Workflow lifecycle write operations (start instance, deliver event, evaluate conditions, deploy BPMN) |
+| `TaskOperation` | `POST /Execution/complete-activity`, `/UserTasks/{activityInstanceId}/claim`, `/UserTasks/{activityInstanceId}/unclaim`, `/UserTasks/{activityInstanceId}/complete`, `/UserTasks/{activityInstanceId}/fail`, `/UserTasks/{activityInstanceId}/cancel` | Activity-completion + user-task operations — see [User Tasks guide](/fleans/guides/user-tasks/) |
+| `Read` | `GET /Definitions`, `/Definitions/{key}/instances`, `/Definitions/{key}/{version}/instances`, `/UserTasks`, `/UserTasks/{activityInstanceId}` | Read-only queries |
+| `Admin` | `POST /Definitions/disable`, `/Definitions/enable` | Admin operations on process definitions |
+| `Polling` | `GET /Instances/{instanceId}/state` | High-frequency state polling |
 
 #### Environment variable overrides
 

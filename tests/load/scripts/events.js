@@ -6,11 +6,11 @@
 // verifies deployment, not provisioning.
 //
 // Flow per VU iteration:
-//   1. POST /Workflow/start  { WorkflowId: 'load-events', Variables: { requestId: <uuid> } }
-//   2. Poll GET /Workflow/instances/{id}/state until activeActivityIds includes 'waitMessage',
+//   1. POST /Execution/start  { WorkflowId: 'load-events', Variables: { requestId: <uuid> } }
+//   2. Poll GET /Instances/{id}/state until activeActivityIds includes 'waitMessage',
 //      with exponential backoff capped at K6_POLL_BACKOFF_CAP_MS and a K6_POLL_TOTAL_BUDGET_MS
 //      wall-clock deadline.
-//   3. POST /Workflow/message { MessageName: 'loadMessage', CorrelationKey: requestId }
+//   3. POST /Execution/message { MessageName: 'loadMessage', CorrelationKey: requestId }
 //      with budgeted retry on 404 (subscription-grain commit race).
 
 import http                        from 'k6/http';
@@ -63,12 +63,12 @@ export const options = {
 
 export function setup() {
   const probe = http.get(
-    `${BASE_URL}/Workflow/definitions?page=1&pageSize=200`,
+    `${BASE_URL}/Definitions?page=1&pageSize=200`,
     { headers: GET_HEADERS });
 
   if (probe.status !== 200) {
     throw new Error(
-      `[events.js] Setup probe GET /Workflow/definitions returned ${probe.status}. ` +
+      `[events.js] Setup probe GET /Definitions returned ${probe.status}. ` +
       `Cannot start a load run against ${BASE_URL}.`);
   }
 
@@ -93,7 +93,7 @@ export function eventsWorkflow() {
   // Phase 1 — start
   group('start', () => {
     const res = http.post(
-      `${BASE_URL}/Workflow/start`,
+      `${BASE_URL}/Execution/start`,
       JSON.stringify({ WorkflowId: FIXTURE.processId, Variables: { [FIXTURE.correlationVar]: requestId } }),
       { headers: POST_HEADERS });
     workflowStartDuration.add(res.timings.duration);
@@ -113,7 +113,7 @@ export function eventsWorkflow() {
     for (let i = 0; i < POLL_MAX; i++) {
       if (Date.now() >= pollDeadline) break;
       const res = http.get(
-        `${BASE_URL}/Workflow/instances/${instanceId}/state`,
+        `${BASE_URL}/Instances/${instanceId}/state`,
         { headers: GET_HEADERS });
       if (res.status === 200) {
         const activeIds = res.json('activeActivityIds') || [];
@@ -137,7 +137,7 @@ export function eventsWorkflow() {
   if (!caught) return;
 
   // Phase 3 — send message with budgeted retry on 404 (subscription-grain commit race).
-  // GET /instances/{id}/state reads the EF projection; POST /Workflow/message dispatches
+  // GET /instances/{id}/state reads the EF projection; POST /Execution/message dispatches
   // via IMessageCorrelationGrain.DeliverMessage (direct grain call). These are independent
   // commit paths — seeing waitMessage in activeActivityIds is evidence the projection saw
   // the event, not proof the subscription grain has committed.
@@ -152,7 +152,7 @@ export function eventsWorkflow() {
     let attempts = 0;
     let res;
     while (true) {
-      res = http.post(`${BASE_URL}/Workflow/message`, body, { headers: POST_HEADERS });
+      res = http.post(`${BASE_URL}/Execution/message`, body, { headers: POST_HEADERS });
       attempts += 1;
       if (res.status !== 404) break;
       if (Date.now() >= deadline) break;

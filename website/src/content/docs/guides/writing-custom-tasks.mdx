@@ -336,7 +336,7 @@ Save the diagram. The BPMN XML now contains the snippet from the [What you'll bu
 Deploy the BPMN:
 
 ```bash
-curl -X POST http://localhost:8081/Workflow/deploy \
+curl -X POST http://localhost:8081/Definitions/deploy \
   -H "Content-Type: application/json" \
   -d "{\"BpmnXml\": $(jq -Rs . < /path/to/your.bpmn)}"
 ```
@@ -344,7 +344,7 @@ curl -X POST http://localhost:8081/Workflow/deploy \
 Start an instance:
 
 ```bash
-curl -X POST http://localhost:8081/Workflow/start \
+curl -X POST http://localhost:8081/Execution/start \
   -H "Content-Type: application/json" \
   -d '{"WorkflowId":"<your-process-id>","Variables":{"customerName":"alice"}}'
 ```
@@ -352,7 +352,7 @@ curl -X POST http://localhost:8081/Workflow/start \
 Inspect the result:
 
 ```bash
-curl http://localhost:8081/Workflow/instances/<instance-id>/state
+curl http://localhost:8081/Instances/<instance-id>/state
 ```
 
 The variable projection includes `greeting: "Hello, alice!!"`. Tail your plugin-host log to see the `[9400] HelloWorld plugin greeted alice (excited=True)` entry your `[LoggerMessage]` writes:

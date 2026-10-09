@@ -107,14 +107,14 @@ A recovery task runs and the workflow terminates via the error-handled path.
 
 1. **Deploy** the BPMN via the Web UI or:
    ```
-   POST https://localhost:7140/Workflow/upload-bpmn
+   POST https://localhost:7140/Definitions/deploy
    Body: (attach hazard-path.bpmn)
    ```
    Confirm `txHazardPathProcess` appears in the deployments list.
 
 2. **Start an instance**:
    ```
-   POST https://localhost:7140/Workflow/start
+   POST https://localhost:7140/Execution/start
    Body: {"WorkflowId":"txHazardPathProcess"}
    ```
    Note the returned `workflowInstanceId`.

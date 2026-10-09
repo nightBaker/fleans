@@ -71,7 +71,7 @@ Each numbered entry below is one regression "step". For each one, follow the lin
 27. **Multiple Event (Catch, Throw, Boundary)** — `24-multiple-event/test-plan.md` (`message-or-signal-catch.bpmn`, `multi-throw.bpmn`, `multiple-boundary.bpmn`). Multiple intermediate catch races message vs signal (first-fires-wins; loser subscription cancelled); multiple intermediate throw fires every defined signal; multiple interrupting boundary (message + timer) cancels the host activity whichever triggers first.
 28. **Escalation Event** — `24-escalation-event/test-plan.md` (`child-escalation-end.bpmn`, `child-escalation-throw.bpmn`, `parent-escalation-interrupting.bpmn`, `parent-escalation-non-interrupting.bpmn`). Child CallActivity throws escalation; parent's interrupting boundary cancels the CallActivity and runs the handler; non-interrupting boundary runs the handler while the child continues. Specific escalation codes match before catch-all; uncaught escalations are non-faulting per BPMN spec.
 29. **Compensation Events** — `24-compensation-event/test-plan.md` (`compensation-broadcast.bpmn`). Broadcast compensation throw after two script tasks; verifies reverse-order handler execution (cancel_flight before cancel_hotel) and variable mutation by compensation handlers. Also verifies the **Compensation tab** on `/instances/{id}` shows both entries with `Accent="Compensated"` badges (newest-first ordering, handler activity ids matching `cancel_flight` / `cancel_hotel`).
-30. **Instance State Endpoint** — `27-instance-state-endpoint/test-plan.md`. `GET /Workflow/instances/{id}/state` returns per-instance state snapshot with camelCase JSON keys; verifies active activity tracking through the message-catch lifecycle and 404 for unknown instances.
+30. **Instance State Endpoint** — `27-instance-state-endpoint/test-plan.md`. `GET /Instances/{id}/state` returns per-instance state snapshot with camelCase JSON keys; verifies active activity tracking through the message-catch lifecycle and 404 for unknown instances.
 31. **API JWT Authentication** — `28-api-auth/test-plan.md`. Opt-in JWT bearer authentication; verifies API works unauthenticated by default, returns 401 when auth is configured and no token is provided, and accepts valid tokens.
 32. **Conditional Events** — `24-conditional-event/test-plan.md` (`conditional-event-test.bpmn`). Conditional intermediate catch event blocks until condition is true; conditional start event creates instances via evaluate-conditions API; conditional boundary event (interrupting) cancels host.
 33. **Editor Tabs** — `29-editor-tabs/test-plan.md`. Multi-tab BPMN editor in the Admin UI: open/switch/close tabs, dirty tracking with confirm-close dialog, 10-tab cap, `localStorage` persistence across refresh, `beforeunload` warning when any tab is dirty.
@@ -143,13 +143,13 @@ Website-specific manual tests live under `website/`. These run in a local dev se
 
 ## API endpoints for manual tests
 
-- Deploy process: `POST https://localhost:7140/Workflow/deploy` — body: `{"BpmnXml":"<raw BPMN XML string>"}` — returns `{"ProcessDefinitionKey":"...","Version":1}` on success, 400 with `{"Error":"..."}` on parse failure
-- Start instance: `POST https://localhost:7140/Workflow/start` — body: `{"WorkflowId":"process-id"}` or `{"WorkflowId":"process-id","Variables":{"key":"value"}}` to set initial variables before workflow starts (required for message event sub-processes that use variables as correlation keys)
-- Send message: `POST https://localhost:7140/Workflow/message` — body: `{"MessageName":"...", "CorrelationKey":"...", "Variables":{}}`
-- Send signal: `POST https://localhost:7140/Workflow/signal` — body: `{"SignalName":"..."}`
-- Complete activity: `POST https://localhost:7140/Workflow/complete-activity` — body: `{"WorkflowInstanceId":"guid", "ActivityId":"activity-id", "Variables":{}}`
-- Evaluate conditions: `POST https://localhost:7140/Workflow/evaluate-conditions` — body: `{"WorkflowId":"process-id", "Variables":{"key":"value"}}` — `WorkflowId` is optional; evaluates conditional start events against supplied variables
-- Instance state: `GET https://localhost:7140/Workflow/instances/{instanceId}/state` — returns per-instance state snapshot (activeActivityIds, completedActivityIds, isStarted, isCompleted). Diagnostics/load-test endpoint; reads from the eventually-consistent EF projection.
+- Deploy process: `POST https://localhost:7140/Definitions/deploy` — body: `{"BpmnXml":"<raw BPMN XML string>"}` — returns `{"ProcessDefinitionKey":"...","Version":1}` on success, 400 with `{"Error":"..."}` on parse failure
+- Start instance: `POST https://localhost:7140/Execution/start` — body: `{"WorkflowId":"process-id"}` or `{"WorkflowId":"process-id","Variables":{"key":"value"}}` to set initial variables before workflow starts (required for message event sub-processes that use variables as correlation keys)
+- Send message: `POST https://localhost:7140/Execution/message` — body: `{"MessageName":"...", "CorrelationKey":"...", "Variables":{}}`
+- Send signal: `POST https://localhost:7140/Execution/signal` — body: `{"SignalName":"..."}`
+- Complete activity: `POST https://localhost:7140/Execution/complete-activity` — body: `{"WorkflowInstanceId":"guid", "ActivityId":"activity-id", "Variables":{}}`
+- Evaluate conditions: `POST https://localhost:7140/Execution/evaluate-conditions` — body: `{"WorkflowId":"process-id", "Variables":{"key":"value"}}` — `WorkflowId` is optional; evaluates conditional start events against supplied variables
+- Instance state: `GET https://localhost:7140/Instances/{instanceId}/state` — returns per-instance state snapshot (activeActivityIds, completedActivityIds, isStarted, isCompleted). Diagnostics/load-test endpoint; reads from the eventually-consistent EF projection.
 
 ## BPMN fixture authoring rules
 

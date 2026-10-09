@@ -4,13 +4,13 @@ description: How Fleans correlates incoming BPMN messages to running workflow in
 ---
 
 
-A **message correlation key** is the runtime value that routes an incoming message to the right workflow instance. Without it, every workflow waiting on `approvalReceived` would wake up — with it, only the one whose `requestId == "req-456"` does. This guide covers what a correlation key is in BPMN, how Fleans parses it, how the engine resolves it at runtime, the `POST /Workflow/message` API, and a small cookbook of the three patterns you'll most often need.
+A **message correlation key** is the runtime value that routes an incoming message to the right workflow instance. Without it, every workflow waiting on `approvalReceived` would wake up — with it, only the one whose `requestId == "req-456"` does. This guide covers what a correlation key is in BPMN, how Fleans parses it, how the engine resolves it at runtime, the `POST /Execution/message` API, and a small cookbook of the three patterns you'll most often need.
 
 ## What is a correlation key?
 
 In BPMN, a **message** is a typed payload that flows between processes. When a workflow contains a `<intermediateCatchEvent>` or an event sub-process triggered by `<messageEventDefinition>`, that workflow *subscribes* to a (message-name, correlation-key) pair and pauses until something delivers a matching one.
 
-The correlation **name** is static and lives on the `<bpmn:message>` definition. The correlation **key value** is dynamic — it is read from the workflow's variables at the moment the subscription is registered. So a workflow with `requestId = "req-456"` waiting on the message `approvalReceived` registers a subscription under the key `approvalReceived/req-456`. A `POST /Workflow/message` with `MessageName="approvalReceived"`, `CorrelationKey="req-456"` matches that exact subscription and resumes the workflow.
+The correlation **name** is static and lives on the `<bpmn:message>` definition. The correlation **key value** is dynamic — it is read from the workflow's variables at the moment the subscription is registered. So a workflow with `requestId = "req-456"` waiting on the message `approvalReceived` registers a subscription under the key `approvalReceived/req-456`. A `POST /Execution/message` with `MessageName="approvalReceived"`, `CorrelationKey="req-456"` matches that exact subscription and resumes the workflow.
 
 The grain layer enforces a **single subscriber per (messageName, correlationKey) pair** — two instances cannot wait on the same key at the same time. This is what gives correlation its routing power: the key is the address.
 
@@ -51,7 +51,7 @@ Three load-bearing details:
 3. **Placement of `<extensionElements>` is project-specific** — read the caution that follows.
 
 :::caution[Place `<extensionElements>` inside `<bpmn:message>`, not inside the message-event element]
-Fleans only walks `<extensionElements>` that are **direct children of `<bpmn:message>`** (parser at [BpmnConverter.cs#L895-L925](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L895-L925)). Putting the `<fleans:subscription>` block under the `<intermediateCatchEvent>` or the `<startEvent>` is **silently ignored** — the engine treats the message as "no correlation key" and your `POST /Workflow/message` will never match.
+Fleans only walks `<extensionElements>` that are **direct children of `<bpmn:message>`** (parser at [BpmnConverter.cs#L895-L925](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L895-L925)). Putting the `<fleans:subscription>` block under the `<intermediateCatchEvent>` or the `<startEvent>` is **silently ignored** — the engine treats the message as "no correlation key" and your `POST /Execution/message` will never match.
 
 This is the single most common authoring mistake. The pattern is captured as a canonical rule in `CLAUDE.md` under *BPMN Fixture Authoring Rules*. Always check fixture #09 / #21 before authoring a new message-event workflow.
 :::
@@ -86,11 +86,11 @@ What this means in practice:
 - **A null variable throws `InvalidOperationException`** with the message `Correlation variable '{name}' is null for message '{messageName}'.`. The throw aborts the workflow — there is no fallback to "empty correlation key". Either seed the correlation variable from the `/start` request's `Variables` payload, or set it via a script task that runs **before** the message-catch is reached.
 - **Twin logic for the register-message path.** The same parse-and-resolve sequence is used by `ProcessRegisterMessage` ([WorkflowExecution.cs#L989-L1011](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Domain/Aggregates/WorkflowExecution.cs#L989-L1011)) which handles register-message commands emitted when a scope opens that contains a message-event sub-process. If you change one path, change both.
 
-For message **start** events, no correlation key lives on the BPMN definition (fixture #16 deliberately omits `<extensionElements>` on the `<message>`). Routing for start events is by message *name* alone — the API caller supplies the correlation value as part of the `POST /Workflow/message` request, and a fresh workflow instance is spawned with that key recorded against its own variables.
+For message **start** events, no correlation key lives on the BPMN definition (fixture #16 deliberately omits `<extensionElements>` on the `<message>`). Routing for start events is by message *name* alone — the API caller supplies the correlation value as part of the `POST /Execution/message` request, and a fresh workflow instance is spawned with that key recorded against its own variables.
 
 ## API request shape
 
-The endpoint is `POST /Workflow/message`. The DTO is `SendMessageRequest` from `Fleans.ServiceDefaults`:
+The endpoint is `POST /Execution/message`. The DTO is `SendMessageRequest` from `Fleans.ServiceDefaults`:
 
 ```csharp
 public record SendMessageRequest(string MessageName, string? CorrelationKey, ExpandoObject? Variables);
@@ -116,13 +116,13 @@ This walks the full lifecycle of fixture #09 — deploy the BPMN, start an insta
 
 ```bash
 # 1. Deploy the workflow.
-curl -k -X POST https://localhost:7140/Workflow/deploy \
+curl -k -X POST https://localhost:7140/Definitions/deploy \
   -H "Content-Type: application/json" \
   -d '{"BpmnXml":"<paste contents of tests/manual/09-message-events/message-catch.bpmn here>"}'
 # → { "ProcessDefinitionKey": "...", "Version": 1 }
 
 # 2. Start an instance. The workflow's first script task sets _context.requestId = "req-456".
-curl -k -X POST https://localhost:7140/Workflow/start \
+curl -k -X POST https://localhost:7140/Execution/start \
   -H "Content-Type: application/json" \
   -d '{"WorkflowId":"message-catch-test"}'
 # → { "InstanceId": "..." }
@@ -130,7 +130,7 @@ curl -k -X POST https://localhost:7140/Workflow/start \
 # and registered subscription "approvalReceived/req-456".
 
 # 3. Deliver the message. CorrelationKey must equal the runtime value of requestId.
-curl -k -X POST https://localhost:7140/Workflow/message \
+curl -k -X POST https://localhost:7140/Execution/message \
   -H "Content-Type: application/json" \
   -d '{"MessageName":"approvalReceived","CorrelationKey":"req-456","Variables":{"approvalDecision":"approved"}}'
 # → { "Delivered": true, "WorkflowInstanceIds": ["..."] }
@@ -181,7 +181,7 @@ The process is created **by** the message, not waiting for one. Each unique corr
 </process>
 ```
 
-`POST /Workflow/message` with `MessageName="orderPlaced"`, `CorrelationKey="<orderId>"`, and the order payload in `Variables` creates a new instance and seeds its variables. Note: message start events deliberately have **no** `<extensionElements>` block — the correlation value comes from the API request, not from existing workflow state. See `tests/manual/16-message-start-event/message-start-event.bpmn` for the full fixture.
+`POST /Execution/message` with `MessageName="orderPlaced"`, `CorrelationKey="<orderId>"`, and the order payload in `Variables` creates a new instance and seeds its variables. Note: message start events deliberately have **no** `<extensionElements>` block — the correlation value comes from the API request, not from existing workflow state. See `tests/manual/16-message-start-event/message-start-event.bpmn` for the full fixture.
 
 ### Pattern 3 — Multi-step orchestration (multiple keyed catches)
 
@@ -223,7 +223,7 @@ The engine performs a **plain variable lookup**, not expression evaluation. `cor
 :::
 
 :::caution[Variable not in scope at subscription time]
-If the correlation variable is null (or absent) when the message-catch is reached, the workflow fails fast with `InvalidOperationException`. There is no fallback. Either pass the variable as part of the `POST /Workflow/start` `Variables` payload, or set it via a script task that runs **before** the catch.
+If the correlation variable is null (or absent) when the message-catch is reached, the workflow fails fast with `InvalidOperationException`. There is no fallback. Either pass the variable as part of the `POST /Execution/start` `Variables` payload, or set it via a script task that runs **before** the catch.
 :::
 
 :::caution[`MessageName` is case-sensitive]
@@ -231,7 +231,7 @@ The grain layer keys subscriptions on `{messageName}/{Uri.EscapeDataString(corre
 :::
 
 :::caution[Wrong `<extensionElements>` placement is silently ignored]
-This bears repeating because it is the most expensive failure mode. `<extensionElements>` MUST be a direct child of `<bpmn:message>`. If you put it under `<intermediateCatchEvent>`, `<startEvent>`, or anywhere else, the parser doesn't see it — there is no parse error, no warning, the workflow deploys cleanly, and the `POST /Workflow/message` simply never matches. Always validate against `tests/manual/09-message-events/message-catch.bpmn` if a message subscription mysteriously fails to fire.
+This bears repeating because it is the most expensive failure mode. `<extensionElements>` MUST be a direct child of `<bpmn:message>`. If you put it under `<intermediateCatchEvent>`, `<startEvent>`, or anywhere else, the parser doesn't see it — there is no parse error, no warning, the workflow deploys cleanly, and the `POST /Execution/message` simply never matches. Always validate against `tests/manual/09-message-events/message-catch.bpmn` if a message subscription mysteriously fails to fire.
 :::
 
 ## Limitations

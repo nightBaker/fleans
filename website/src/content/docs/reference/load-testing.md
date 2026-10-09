@@ -22,9 +22,9 @@ Four scenario scripts live in parallel under `tests/load/scripts/` (k6) and `tes
 
 | Scenario | Purpose | Fixture / process id |
 |----------|---------|----------------------|
-| `linear`   | Pure throughput — `Start → ScriptTask → End`. Measures `/Workflow/start` HTTP latency only.        | `load-linear`   |
+| `linear`   | Pure throughput — `Start → ScriptTask → End`. Measures `/Execution/start` HTTP latency only.        | `load-linear`   |
 | `parallel` | 3-branch fork/join, each branch a `ScriptTask`. Same HTTP-latency surface, more state writes per start. | `load-parallel` |
-| `events`   | Three-phase event-driven loop: start → poll for `waitMessage` → POST `/Workflow/message`.          | `load-events`   |
+| `events`   | Three-phase event-driven loop: start → poll for `waitMessage` → POST `/Execution/message`.          | `load-events`   |
 | `mixed`    | 40 / 30 / 30 weighted blend of the above three.                                                    | (composite)     |
 
 The suite is documented in detail in `tests/load/README.md`.

@@ -2,11 +2,11 @@
 Locust port of tests/load/scripts/events.js — Scenario 3 (event-driven).
 
 Each iteration:
-  1. POST /Workflow/start { WorkflowId: "load-events", Variables: {requestId: <uuid>} }
-  2. Poll GET /Workflow/instances/{id}/state until activeActivityIds includes
+  1. POST /Execution/start { WorkflowId: "load-events", Variables: {requestId: <uuid>} }
+  2. Poll GET /Instances/{id}/state until activeActivityIds includes
      'waitMessage'. Backoff capped at K6_POLL_BACKOFF_CAP_MS, total budget
      K6_POLL_TOTAL_BUDGET_MS (k6 names kept for parity).
-  3. POST /Workflow/message with the correlation key, retried on 404.
+  3. POST /Execution/message with the correlation key, retried on 404.
 
 Three named request labels are emitted ("workflow_start", "poll_state",
 "send_message") so Azure Load Testing can show per-phase latency separately.
@@ -50,7 +50,7 @@ class EventsUser(HttpUser):
 
         # Phase 1 — start
         with self.client.post(
-            "/Workflow/start",
+            "/Execution/start",
             json={
                 "WorkflowId": FIXTURE["process_id"],
                 "Variables": {FIXTURE["correlation_var"]: request_id},
@@ -73,7 +73,7 @@ class EventsUser(HttpUser):
         caught = False
         while time.monotonic() < deadline:
             with self.client.get(
-                f"/Workflow/instances/{instance_id}/state",
+                f"/Instances/{instance_id}/state",
                 name="poll_state",
                 catch_response=True,
             ) as pr:
@@ -111,7 +111,7 @@ class EventsUser(HttpUser):
         attempts = 0
         while True:
             with self.client.post(
-                "/Workflow/message",
+                "/Execution/message",
                 json={
                     "MessageName": FIXTURE["message_name"],
                     "CorrelationKey": request_id,

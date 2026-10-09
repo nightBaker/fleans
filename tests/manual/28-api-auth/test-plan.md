@@ -28,7 +28,7 @@ Verify the API works exactly as before when no `Authentication:Authority` is con
 
 3. **API endpoints work without a token:**
    ```bash
-   curl -k -X POST https://localhost:7140/Workflow/start \
+   curl -k -X POST https://localhost:7140/Execution/start \
      -H "Content-Type: application/json" \
      -d '{"WorkflowId":"nonexistent"}'
    ```
@@ -38,7 +38,7 @@ Verify the API works exactly as before when no `Authentication:Authority` is con
 
 - [ ] `GET /health` returns 200 Healthy
 - [ ] `GET /alive` returns 200 Healthy
-- [ ] `POST /Workflow/start` does NOT return 401 Unauthorized
+- [ ] `POST /Execution/start` does NOT return 401 Unauthorized
 - [ ] No authentication/authorization middleware errors in logs
 
 ---
@@ -83,7 +83,7 @@ Configure `appsettings.json` (or environment variables):
 
 3. **API endpoints reject unauthenticated requests:**
    ```bash
-   curl -k -X POST https://localhost:7140/Workflow/start \
+   curl -k -X POST https://localhost:7140/Execution/start \
      -H "Content-Type: application/json" \
      -d '{"WorkflowId":"test"}'
    ```
@@ -96,7 +96,7 @@ Configure `appsettings.json` (or environment variables):
      -d "client_id=fleans-api" \
      -d "client_secret=YOUR_SECRET" | jq -r '.access_token')
 
-   curl -k -X POST https://localhost:7140/Workflow/start \
+   curl -k -X POST https://localhost:7140/Execution/start \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer $TOKEN" \
      -d '{"WorkflowId":"test"}'
@@ -105,7 +105,7 @@ Configure `appsettings.json` (or environment variables):
 
 5. **Expired/invalid token is rejected:**
    ```bash
-   curl -k -X POST https://localhost:7140/Workflow/start \
+   curl -k -X POST https://localhost:7140/Execution/start \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer invalid-token-here" \
      -d '{"WorkflowId":"test"}'
@@ -116,9 +116,9 @@ Configure `appsettings.json` (or environment variables):
 
 - [ ] `GET /health` returns 200 without a token
 - [ ] `GET /alive` returns 200 without a token
-- [ ] `POST /Workflow/start` without token returns 401
-- [ ] `POST /Workflow/start` with valid token does NOT return 401
-- [ ] `POST /Workflow/start` with invalid token returns 401
-- [ ] `POST /Workflow/deploy` without token returns 401
-- [ ] `POST /Workflow/message` without token returns 401
-- [ ] `POST /Workflow/signal` without token returns 401
+- [ ] `POST /Execution/start` without token returns 401
+- [ ] `POST /Execution/start` with valid token does NOT return 401
+- [ ] `POST /Execution/start` with invalid token returns 401
+- [ ] `POST /Definitions/deploy` without token returns 401
+- [ ] `POST /Execution/message` without token returns 401
+- [ ] `POST /Execution/signal` without token returns 401

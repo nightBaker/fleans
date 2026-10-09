@@ -14,8 +14,8 @@ restarts in a multi-silo cluster.
 ### Step A — Single-silo restart
 
 1. `cd out/compose && docker compose up -d`
-2. Deploy `timer-restart.bpmn` via the API (`POST /Workflow/process-definitions`).
-3. Start an instance via `POST /Workflow/instances` for that definition.
+2. Deploy `timer-restart.bpmn` via the API (`POST /Definitions/deploy`).
+3. Start an instance via `POST /Execution/start` for that definition.
 4. Confirm reminder registered: open `https://localhost:<web-port>/dashboard/Reminders`.
    The entry for `TimerCallbackGrain` keyed by `<workflowInstanceId>:Timer_xxx` is visible.
 5. Restart the Core silo:
@@ -23,7 +23,7 @@ restarts in a multi-silo cluster.
    docker compose restart fleans-core
    ```
 6. Wait for the 5-minute timer to fire (the BPMN has `PT5M`).
-7. **Pass:** the workflow completes; verify via `GET /Workflow/instances/<id>/state` returns `IsCompleted: true`.
+7. **Pass:** the workflow completes; verify via `GET /Instances/<id>/state` returns `IsCompleted: true`.
 
 ### Step B — Multi-silo cluster (Core-only restart)
 

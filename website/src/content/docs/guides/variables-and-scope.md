@@ -6,7 +6,7 @@ sidebar:
 ---
 
 
-Workflow variables are the data that flows through a Fleans workflow. They carry inputs from `POST /Workflow/start`, are mutated by script tasks and service tasks, get read by gateway conditions and output mappings, and end up persisted alongside the workflow's event stream.
+Workflow variables are the data that flows through a Fleans workflow. They carry inputs from `POST /Execution/start`, are mutated by script tasks and service tasks, get read by gateway conditions and output mappings, and end up persisted alongside the workflow's event stream.
 
 This guide covers the mental model, how to read and write variables from script tasks, how scopes nest and inherit, and — most importantly — when a child scope's variables flow back to the parent.
 
@@ -135,7 +135,7 @@ Correct. Script-task failure rolls back the in-flight scope mutations for that a
 
 **"`ExpandoObject` vs `JObject` — why does my nested field surface as a `JObject`?"**
 
-If a complex value enters the workflow via `POST /Workflow/start` `Variables`, it deserializes through `Newtonsoft.Json` and may surface as `JObject` / `JArray` rather than nested `ExpandoObject`. Cast or convert when reading deeply nested fields. Top-level fields work transparently.
+If a complex value enters the workflow via `POST /Execution/start` `Variables`, it deserializes through `Newtonsoft.Json` and may surface as `JObject` / `JArray` rather than nested `ExpandoObject`. Cast or convert when reading deeply nested fields. Top-level fields work transparently.
 
 ## Worked examples
 
@@ -151,6 +151,6 @@ For SubProcess merging, see manual test plan #7 (`tests/manual/07-subprocess/`).
 ## See also
 
 - [BPMN Support](/fleans/concepts/bpmn-support/) — which BPMN elements open new scopes
-- [API Reference](/fleans/reference/api/) — `POST /Workflow/start` initial variables, `POST /Workflow/complete-activity` output variables
+- [API Reference](/fleans/reference/api/) — `POST /Execution/start` initial variables, `POST /Execution/complete-activity` output variables
 - [Persistence](/fleans/reference/persistence/) — how variable state and scope-tree events are serialized
 - [User Tasks](/fleans/guides/user-tasks/) — output variable mappings on user-task completion

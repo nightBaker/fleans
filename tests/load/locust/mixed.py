@@ -2,8 +2,8 @@
 Locust port of tests/load/scripts/mixed.js — Scenario 4 (mixed workload).
 
 Three User classes weighted 40/30/30 mirror the k6 mixed.js scenario splits:
-  - LinearUser    (40%): POST /Workflow/start  WorkflowId=load-linear
-  - ParallelUser  (30%): POST /Workflow/start  WorkflowId=load-parallel
+  - LinearUser    (40%): POST /Execution/start  WorkflowId=load-linear
+  - ParallelUser  (30%): POST /Execution/start  WorkflowId=load-parallel
   - EventsUser    (30%): full 3-phase event-driven loop
 
 When run via Azure Load Testing, set LOCUST_USERS to the *total* concurrent
@@ -39,7 +39,7 @@ class LinearUser(HttpUser):
     @task
     def start_linear(self):
         with self.client.post(
-            "/Workflow/start",
+            "/Execution/start",
             json={"WorkflowId": "load-linear"},
             name="linear:workflow_start",
             catch_response=True,
@@ -55,7 +55,7 @@ class ParallelUser(HttpUser):
     @task
     def start_parallel(self):
         with self.client.post(
-            "/Workflow/start",
+            "/Execution/start",
             json={"WorkflowId": "load-parallel"},
             name="parallel:workflow_start",
             catch_response=True,
@@ -73,7 +73,7 @@ class EventsUser(HttpUser):
         request_id = str(uuid.uuid4())
 
         with self.client.post(
-            "/Workflow/start",
+            "/Execution/start",
             json={
                 "WorkflowId": "load-events",
                 "Variables": {"requestId": request_id},
@@ -95,7 +95,7 @@ class EventsUser(HttpUser):
         caught = False
         while time.monotonic() < deadline:
             with self.client.get(
-                f"/Workflow/instances/{instance_id}/state",
+                f"/Instances/{instance_id}/state",
                 name="events:poll_state",
                 catch_response=True,
             ) as pr:
@@ -129,7 +129,7 @@ class EventsUser(HttpUser):
         msg_deadline = time.monotonic() + (MESSAGE_RETRY_BUDGET_MS / 1000.0)
         while True:
             with self.client.post(
-                "/Workflow/message",
+                "/Execution/message",
                 json={
                     "MessageName": "loadMessage",
                     "CorrelationKey": request_id,

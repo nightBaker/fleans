@@ -17,9 +17,9 @@ event-sub-process path (the normal `normalEnd` event is NOT reached).
 
 1. **Deploy** the BPMN: upload `error-event-subprocess.bpmn` via the Web UI
    (Fleans.Web → Deployments → Upload), or
-   `POST https://localhost:7140/Workflow/upload-bpmn` with the file.
+   `POST https://localhost:7140/Definitions/deploy` with the file.
 2. **Start an instance**:
-   `POST https://localhost:7140/Workflow/start` with body
+   `POST https://localhost:7140/Execution/start` with body
    `{"WorkflowId":"evtSubErrorProcess"}`
 3. Open the instance in the Web UI and confirm it is running.
 4. Wait briefly — the script task throws synchronously, the handler runs,
