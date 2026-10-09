@@ -236,10 +236,6 @@ This bears repeating because it is the most expensive failure mode. `<extensionE
 
 ## Limitations
 
-:::caution[Boundary message events on `IntermediateCatchEvent` do not register]
-Per regression test #9 (and the matching KNOWN BUG note in `tests/manual/09-message-events/test-plan.md`), boundary events attached to an `IntermediateCatchEvent` host do not register their subscriptions. This is the same root cause as regression test #8 (timer boundaries on intermediate catches) and affects message and signal boundaries the same way. As a workaround, attach the boundary to a host activity that the engine handles correctly (e.g. `userTask`, `serviceTask`, `subProcess`).
-:::
-
 A workflow can only have **one** active subscription per `(messageName, correlationKey)` pair. A second instance trying to subscribe on a key that is already taken fails with `Duplicate subscription`. Design correlation values to be per-instance unique (use a generated `Guid`, an order id, a session id) — never a shared business constant.
 
 ## See also

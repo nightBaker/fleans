@@ -14,7 +14,8 @@ the runnable manual-test fixtures under `tests/manual/06-call-activity/`,
 This plan verifies that the build completes cleanly, the page renders in
 both themes, every cited manual-test fixture is referenced by name, the
 explicit `<zeebe:input>` / `<zeebe:output>` disclaimer is present, the
-KNOWN BUG #11 callout mirrors `tests/manual/11-error-boundary/test-plan.md`,
+*Error propagation* section describes child errors reaching the parent
+call activity's error boundary (fixture #11),
 and the drift-guard line ranges still match the current source SHA.
 
 ## Prerequisites
@@ -79,7 +80,7 @@ and the drift-guard line ranges still match the current source SHA.
    - `/fleans/guides/variables-and-scope/` — referenced from the *When to
      use what* table and the *Embedded SubProcess* section.
    - `/fleans/guides/error-handling/` — referenced from the *Error
-     propagation* section, the KNOWN BUG callout, and the *Transaction
+     propagation* section and the *Transaction
      sub-process* section.
    - `/fleans/concepts/bpmn-support/` — referenced from the *See also*
      section.
@@ -93,15 +94,12 @@ and the drift-guard line ranges still match the current source SHA.
    ```
    (verbatim from `tests/manual/06-call-activity/parent-process.bpmn`).
 
-8. **Content spot-check — KNOWN BUG wording mirrors fixture #11.** The
-   guide's *Known limitation: child errors don't bubble…* callout describes
-   the same condition as the `> **KNOWN BUG:**` block at the top of
-   `tests/manual/11-error-boundary/test-plan.md`:
-   > Child process errors don't propagate to parent error boundary on
-   > CallActivity. The CallActivity stays Running indefinitely.
-   Both source-of-truth wordings must agree on (a) what stays Running and
-   (b) the workaround (catch inside the child, exit cleanly, branch on a
-   variable in the parent).
+8. **Content spot-check — error propagation matches fixture #11.** The
+   guide's *Error propagation* section states that an unhandled child error
+   is re-raised on the parent call activity and caught by its error
+   boundary — the behaviour asserted by
+   `tests/manual/11-error-boundary/test-plan.md` (parent **Completed** via
+   `errorHandler`, not stuck Running).
 
 9. **Drift-guard freshness.** Open
    `website/src/content/docs/guides/call-activities-and-subprocesses.md`
@@ -166,8 +164,8 @@ and the drift-guard line ranges still match the current source SHA.
       Support* resolve (HTTP 200).
 - [ ] Fixture-derived `<callActivity>` snippet appears verbatim from
       `tests/manual/06-call-activity/parent-process.bpmn`.
-- [ ] *Known limitation* callout wording matches the KNOWN BUG note at the
-      top of `tests/manual/11-error-boundary/test-plan.md`.
+- [ ] *Error propagation* section matches the outcome asserted by
+      `tests/manual/11-error-boundary/test-plan.md`.
 - [ ] Every drift-guard pin
       (`BpmnConverter.cs:601-635,616-625,1286-1322`,
       `WorkflowLifecycleEffectHandler.cs:61`,
