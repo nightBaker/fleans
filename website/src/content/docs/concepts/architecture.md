@@ -7,9 +7,9 @@ description: How Fleans achieves scalability, reliability, and performance throu
 
 Fleans follows Clean Architecture / DDD layering:
 
-<figure class="arch-diagram" style="--arch-ratio: 1120 / 566">
+<figure class="arch-diagram" style="--arch-ratio: 1400 / 598">
   <iframe data-arch-src="/fleans/diagrams/fleans-cluster.html" src="/fleans/diagrams/fleans-cluster.html?embed=1" title="Fleans deployment architecture" loading="lazy"></iframe>
-  <figcaption>A Fleans deployment: your backend calls <code>fleans-api</code>; Core, worker and custom-worker silos form one Orleans cluster backed by PostgreSQL, Redis and optional Kafka. <a href="/fleans/diagrams/fleans-cluster.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+  <figcaption>A Fleans deployment: your backend calls <code>fleans-api</code>; Core, worker and custom-worker silos form one Orleans cluster whose state, clustering, reminders and streams plug into any Orleans-supported storage or queue — SQLite, PostgreSQL, Redis, Kafka and Azure Queue ship in the box. <a href="/fleans/diagrams/fleans-cluster.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
 </figure>
 
 | Layer | Project | Responsibility |

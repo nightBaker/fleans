@@ -13,7 +13,7 @@ Aspire is Fleans' development orchestrator — not a production runtime. To run 
 
 A production Fleans cluster has these components:
 
-<figure class="arch-diagram" style="--arch-ratio: 1120 / 566">
+<figure class="arch-diagram" style="--arch-ratio: 1400 / 598">
   <iframe data-arch-src="/fleans/diagrams/fleans-cluster.html" src="/fleans/diagrams/fleans-cluster.html?embed=1" title="Fleans deployment architecture" loading="lazy"></iframe>
   <figcaption>The components of a production Fleans cluster and how they connect. <a href="/fleans/diagrams/fleans-cluster.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
 </figure>
