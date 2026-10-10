@@ -10,8 +10,8 @@ const { data } = Astro.locals.starlightRoute.entry;
 const { title = data.title, tagline, actions = [] } = data.hero || {};
 
 // Hero card video (public/hero/), one cut per theme: fleans-hero-{dark,light}. Each has
-// AV1 (~470 KB) plus an H.264 fallback (~600 KB) for browsers without AV1 decode; all
-// silent, 1280×800 (native), faststart. The poster is the video's own (blank) first frame so
+// AV1 (~0.9 MB) plus an H.264 fallback (~1.4 MB) for browsers without AV1 decode; all
+// silent, 1920×1200 (native, visually lossless: VMAF ≈ 97), faststart. The poster is the video's own (blank) first frame so
 // playback starts without a flash. The script below picks the cut for the current theme.
 const hero = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/hero/fleans-hero`;
 ---
@@ -54,8 +54,8 @@ const hero = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/hero/fleans-hero`;
       <figure class="fl-hero-card">
         <video
           id="fl-hero-video"
-          width="1280"
-          height="800"
+          width="1920"
+          height="1200"
           data-base={hero}
           autoplay
           muted
