@@ -174,7 +174,13 @@ static IResourceBuilder<ProjectResource> WithStreaming(
 // at Combined so fleans-core continues to
 // host worker grains. FLEANS_ROLE env override applies in either mode for local
 // experimentation.
-var defaultCoreRole = builder.ExecutionContext.IsPublishMode ? "Core" : "Combined";
+//
+// FLEANS_SPLIT_ROLES=true (dev mode only) mirrors the publish topology locally: fleans-core
+// defaults to Core and the dedicated fleans-worker silo is registered below. The E2E suite's
+// split-roles leg uses this; the default dev topology is unchanged when the switch is unset.
+var splitRoles = !builder.ExecutionContext.IsPublishMode && string.Equals(
+    builder.Configuration["FLEANS_SPLIT_ROLES"], "true", StringComparison.OrdinalIgnoreCase);
+var defaultCoreRole = builder.ExecutionContext.IsPublishMode || splitRoles ? "Core" : "Combined";
 var coreRole = builder.Configuration["FLEANS_ROLE"] ?? defaultCoreRole;
 
 var apiProject = builder.AddProject<Projects.Fleans_Api>("fleans-core")
@@ -216,10 +222,10 @@ WithPersistence(
         .WithReplicas(1),
     usePostgres, pg, sqliteConnectionString);
 
-// Publish-only topology: registers the dedicated Fleans.WorkerHost silo (always) and,
-// optionally, the load-test nginx fan-out (gated by FLEANS_LOAD_TEST_MODE=true). Local dev
-// (`dotnet run --project Fleans.Aspire`) keeps the original 3-process layout — Fleans.Api
-// with the default Combined role still hosts worker grains there.
+// Publish topology: registers the dedicated Fleans.WorkerHost silo (always; in dev only with
+// FLEANS_SPLIT_ROLES=true) and, optionally, the load-test nginx fan-out (gated by
+// FLEANS_LOAD_TEST_MODE=true). Local dev (`dotnet run --project Fleans.Aspire`) keeps the
+// original 3-process layout by default — Fleans.Api with the Combined role hosts worker grains.
 //
 // FLEANS_LOAD_TEST_MODE gates the nginx + 2-replica fan-out from end-user release
 // artifacts. End-user `docker-compose-v<VERSION>.zip` and the hand-written helm chart
@@ -236,20 +242,47 @@ var loadTestMode = string.Equals(
     "true",
     StringComparison.OrdinalIgnoreCase);
 
-if (builder.ExecutionContext.IsPublishMode)
+if (builder.ExecutionContext.IsPublishMode || splitRoles)
 {
     // Worker silo — separate deployable so production/k8s topologies can scale Core and
     // Worker independently. Joins the same Orleans cluster via Redis clustering; worker grains
     // (script executor, condition evaluator, custom-task plugins) place onto it preferentially
-    // via WorkerPlacementDirector.
+    // via WorkerPlacementDirector. Registered in dev mode too when FLEANS_SPLIT_ROLES=true.
     var workerHost = builder.AddProject<Projects.Fleans_WorkerHost>("fleans-worker")
         .WithReference(orleans)
         .WaitFor(redis)
         .WithEnvironment("Fleans__Role", "Worker")
         .WithReplicas(1);
     if (usePostgres) workerHost = workerHost.WaitFor(pg!);
+    if (splitRoles)
+    {
+        // Fleans.WorkerHost has no launch profile, so in dev Kestrel would fall back to
+        // http://localhost:5000 — taken by macOS AirPlay and by any concurrent stack. Nothing
+        // calls the worker over HTTP; let Kestrel pick a free port.
+        workerHost = workerHost.WithEnvironment("ASPNETCORE_URLS", "http://127.0.0.1:0");
+    }
     workerHost = WithPersistence(workerHost, usePostgres, pg, sqliteConnectionString);
-    workerHost = WithStreaming(workerHost, useKafka, kafka, useAzureQueue, azureQueues, useRedisStreaming);
+    WithStreaming(workerHost, useKafka, kafka, useAzureQueue, azureQueues, useRedisStreaming);
+}
+
+// Dev-only: an external Plugin-role host (a project built from the fleans-custom-worker-example
+// template, or the E2E suite's Fleans.E2E.PluginHost) joined to the dev cluster. Set
+// FLEANS_PLUGIN_HOST_PROJECT=<absolute path to the host's .csproj>. The host must call
+// AddFleansPluginHost and wire the same stream provider as the engine silos. Never emitted by
+// `aspire publish` — the release pipeline does not ship a plugin-host image.
+var pluginHostProject = builder.Configuration["FLEANS_PLUGIN_HOST_PROJECT"];
+if (!builder.ExecutionContext.IsPublishMode && !string.IsNullOrWhiteSpace(pluginHostProject))
+{
+    var pluginHost = builder.AddProject("fleans-plugin-host", pluginHostProject)
+        .WithReference(orleans)
+        .WaitFor(fleansSilo)
+        .WithEnvironment("Fleans__Role", "Plugin")
+        .WithReplicas(1);
+    WithStreaming(pluginHost, useKafka, kafka, useAzureQueue, azureQueues, useRedisStreaming);
+}
+
+if (builder.ExecutionContext.IsPublishMode)
+{
 
     // NOTE: the "host your own custom-task plugins" template is intentionally NOT
     // registered here. It lives in a separate repository as a GitHub template:

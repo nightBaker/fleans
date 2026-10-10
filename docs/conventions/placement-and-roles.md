@@ -18,7 +18,19 @@ The dedicated deployable for the Worker role — a thin Web SDK Exe that:
 - references the `Fleans.Worker` class library for grain implementations + placement directors,
 - wires the same persistence/streaming/Redis stack as `Fleans.Api`.
 
-It is registered with Aspire **only in publish mode** (`builder.ExecutionContext.IsPublishMode`), so `dotnet run --project Fleans.Aspire` keeps the original 3-process dev topology and `aspire publish -t kubernetes` / `-t docker-compose` emits a fourth `fleans-worker` deployment alongside `fleans-core` (Api), `fleans-management` (Web), and `fleans-mcp` (Mcp).
+It is registered with Aspire **in publish mode** (`builder.ExecutionContext.IsPublishMode`), so `dotnet run --project Fleans.Aspire` keeps the original 3-process dev topology and `aspire publish -t kubernetes` / `-t docker-compose` emits a fourth `fleans-worker` deployment alongside `fleans-core` (Api), `fleans-management` (Web), and `fleans-mcp` (Mcp).
+
+### Running the split topology locally
+
+- `FLEANS_SPLIT_ROLES=true` (dev only) mirrors publish: `fleans-core` defaults to `Core` and `fleans-worker` is registered with `Worker` (Kestrel on a dynamic port — WorkerHost has no launch profile). `FLEANS_ROLE` still overrides the core role.
+- `FLEANS_PLUGIN_HOST_PROJECT=<absolute .csproj path>` (dev only) adds a `fleans-plugin-host` resource with `Fleans__Role=Plugin`, the Orleans cluster reference and the stream-provider env vars — point it at a host built from the custom-worker template to test your plugins against the dev cluster. Never emitted by `aspire publish`.
+- The E2E `e2e-split-roles` leg uses both (with the test-only `Fleans.E2E.PluginHost`); see [`regression-testing.md`](regression-testing.md#split-role-leg-e2e-splitroles).
+
+Observed in that leg — know before relying on the contract:
+
+- Engine-bundled plugins are registered on **both** engine silos (`Fleans.Api` and `Fleans.WorkerHost` call `AddRestCallerPlugin()`), so with a `Core` + `Worker` split `RestCallerHandler` is compatible with — and may activate on — the `core-` silo. Only a plugin compiled solely into one host (e.g. an external `plugin-` host) has deterministic placement.
+- A plugin host owns a slice of the reminder-service hash ring, so it MUST run the engine's reminder provider (Redis table on `orleans-redis`, as `AddFleansReminders` does). Without one, BPMN timers hashed onto it fail to register (`TypeLoadException: Orleans.IReminderService`); with an in-memory one they lose durability (#788). `Fleans.E2E.PluginHost` wires `UseRedisReminderService`.
+- `PlacementRoleAssertion` is currently never registered (#787); role mismatches are caught only by the explicit `Fleans:Role` checks in `Fleans.Api` / `Fleans.WorkerHost` / `AddFleansPluginHost`.
 
 Container image name: `fleans-worker` via `<ContainerRepository>` in `Fleans.WorkerHost.csproj`.
 
