@@ -1,6 +1,8 @@
 ---
 // Splash hero (overrides Starlight's Hero). Typographic, Saddle-style: eyebrow,
-// oversized light title, large lead, pill actions, "made for … by …" footer row.
+// oversized light title, large lead, pill actions, "made for … by …" footer row,
+// with the overview video in a card to the right. On wide screens the hero is a
+// scroll stage: the card grows from its slot to fill the viewport as you scroll.
 // Driven by the `hero` frontmatter of src/content/docs/index.mdx.
 const PAGE_TITLE_ID = '_top'; // Starlight's page-title anchor (not exported)
 
@@ -13,86 +15,144 @@ const { title = data.title, tagline, actions = [] } = data.hero || {};
 const hero = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/hero`;
 ---
 
-<header class="fl-hero not-content">
-  <div class="fl-hero-eyebrow">
-    <span class="fl-chip">BPMN 2.0</span>
-    <span class="fl-chip fl-chip--outline">.NET · Orleans</span>
-  </div>
+<header class="fl-hero not-content" id="fl-hero">
+  <div class="fl-hero-sticky">
+    <div class="fl-hero-text">
+      <div class="fl-hero-eyebrow">
+        <span class="fl-chip">BPMN 2.0</span>
+        <span class="fl-chip fl-chip--outline">.NET · Orleans</span>
+      </div>
 
-  <div class="fl-hero-body">
-    <h1 id={PAGE_TITLE_ID} data-page-title set:html={title} />
-    {tagline && <p class="fl-hero-lead" set:html={tagline} />}
-    {
-      actions.length > 0 && (
-        <div class="fl-hero-actions">
-          {actions.map(({ link, text, variant, attrs }) => (
-            <a
-              href={link}
-              class:list={['fl-button', variant !== 'primary' && 'fl-button--secondary']}
-              {...attrs}
-            >
-              {text}
-            </a>
-          ))}
-        </div>
-      )
-    }
-  </div>
+      <div class="fl-hero-body">
+        <h1 id={PAGE_TITLE_ID} data-page-title set:html={title} />
+        {tagline && <p class="fl-hero-lead" set:html={tagline} />}
+        {
+          actions.length > 0 && (
+            <div class="fl-hero-actions">
+              {actions.map(({ link, text, variant, attrs }) => (
+                <a
+                  href={link}
+                  class:list={['fl-button', variant !== 'primary' && 'fl-button--secondary']}
+                  {...attrs}
+                >
+                  {text}
+                </a>
+              ))}
+            </div>
+          )
+        }
+      </div>
 
-  <figure class="fl-hero-card">
-    <video
-      id="fl-hero-video"
-      width="1600"
-      height="1000"
-      poster={`${hero}/fleans-hero-poster.jpg`}
-      data-still={`${hero}/fleans-hero-still.jpg`}
-      autoplay
-      muted
-      loop
-      playsinline
-      preload="auto"
-      disablepictureinpicture
-      aria-label="Fleans overview: one command to start, any backend over REST, runs on your infrastructure, works with your storage, add silos to scale out"
-    >
-      <source src={`${hero}/fleans-hero.av1.mp4`} type='video/mp4; codecs="av01.0.08M.08"' />
-      <source src={`${hero}/fleans-hero.mp4`} type="video/mp4" />
-    </video>
-  </figure>
-  <script is:inline>
-    (() => {
-      const v = document.getElementById('fl-hero-video');
-      if (!v) return;
-      // Reduced motion: no autoplay, show the finished frame and let the user press play.
-      if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
-        v.removeAttribute('autoplay');
-        v.pause();
-        v.poster = v.dataset.still;
-        v.controls = true;
-        return;
-      }
+      <div class="fl-hero-foot">
+        <p><span>made for</span> <a href="https://learn.microsoft.com/dotnet/orleans/">.NET Orleans</a></p>
+        <p><span>by</span> <a href="https://github.com/nightBaker/fleans/graphs/contributors">Fleans contributors</a></p>
+      </div>
+    </div>
+
+    <div class="fl-hero-slot">
+      <figure class="fl-hero-card">
+        <video
+          id="fl-hero-video"
+          width="1600"
+          height="1000"
+          poster={`${hero}/fleans-hero-poster.jpg`}
+          data-still={`${hero}/fleans-hero-still.jpg`}
+          autoplay
+          muted
+          loop
+          playsinline
+          preload="auto"
+          disablepictureinpicture
+          aria-label="Fleans overview: one command to start, any backend over REST, runs on your infrastructure, works with your storage, add silos to scale out"
+        >
+          <source src={`${hero}/fleans-hero.av1.mp4`} type='video/mp4; codecs="av01.0.08M.08"' />
+          <source src={`${hero}/fleans-hero.mp4`} type="video/mp4" />
+        </video>
+      </figure>
+    </div>
+  </div>
+</header>
+<script is:inline>
+  (() => {
+    const heroEl = document.getElementById('fl-hero');
+    const v = document.getElementById('fl-hero-video');
+    if (!heroEl || !v) return;
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+
+    // Playback. Reduced motion: no autoplay, show the finished frame and let the user press play.
+    if (reduce.matches) {
+      v.removeAttribute('autoplay');
+      v.pause();
+      v.poster = v.dataset.still;
+      v.controls = true;
+    } else {
       // Some browsers drop autoplay when the attribute is parsed before `muted` sticks.
       v.muted = true;
       const play = () => v.play().catch(() => {});
       play();
       // Don't burn CPU decoding a loop nobody is looking at.
       new IntersectionObserver(([e]) => (e.isIntersecting ? play() : v.pause())).observe(v);
-    })();
-  </script>
+    }
 
-  <div class="fl-hero-foot">
-    <p><span>made for</span> <a href="https://learn.microsoft.com/dotnet/orleans/">.NET Orleans</a></p>
-    <p><span>by</span> <a href="https://github.com/nightBaker/fleans/graphs/contributors">Fleans contributors</a></p>
-  </div>
-</header>
+    // Scroll stage: the card grows from its slot (right of the text) to the full viewport.
+    const sticky = heroEl.querySelector('.fl-hero-sticky');
+    const slot = heroEl.querySelector('.fl-hero-slot');
+    const card = heroEl.querySelector('.fl-hero-card');
+    const panel = heroEl.closest('.content-panel');
+    const wide = matchMedia('(min-width: 64rem)');
+    const lerp = (a, b, t) => a + (b - a) * t;
+    const ease = (t) => 1 - Math.pow(1 - t, 3);
+    let frame = 0;
+
+    const update = () => {
+      frame = 0;
+      const on = wide.matches && !reduce.matches;
+      heroEl.classList.toggle('is-stage', on);
+      if (!on) {
+        card.removeAttribute('style');
+        heroEl.style.removeProperty('--fl-hero-p');
+        heroEl.style.removeProperty('margin-top');
+        return;
+      }
+      // Pull the stage up over Starlight's content-panel top padding so the pinned box
+      // starts right under the header and the whole hero fits the first viewport.
+      if (panel) heroEl.style.marginTop = `-${getComputedStyle(panel).paddingTop}`;
+      const s = sticky.getBoundingClientRect();
+      const h = heroEl.getBoundingClientRect();
+      const r = slot.getBoundingClientRect();
+      const range = Math.max(1, h.height - s.height);
+      const t = ease(Math.min(1, Math.max(0, (s.top - h.top) / range)));
+      // Full bleed: from the viewport's left edge to the scrollbar, top of the sticky box down.
+      const vw = document.documentElement.clientWidth;
+      card.style.left = `${lerp(r.left - s.left, -s.left, t)}px`;
+      card.style.top = `${lerp(r.top - s.top, 0, t)}px`;
+      card.style.width = `${lerp(r.width, vw, t)}px`;
+      card.style.height = `${lerp(r.height, s.height, t)}px`;
+      heroEl.style.setProperty('--fl-hero-p', t.toFixed(4));
+    };
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
+    addEventListener('scroll', schedule, { passive: true });
+    addEventListener('resize', schedule);
+    wide.addEventListener('change', schedule);
+    reduce.addEventListener('change', schedule);
+    update();
+  })();
+</script>
 
 <style>
   .fl-hero {
+    padding-block: 3rem 2.5rem;
+  }
+  .fl-hero-sticky {
+    display: flex;
+    flex-direction: column;
+    gap: 3rem;
+  }
+  .fl-hero-text {
     display: flex;
     flex-direction: column;
     justify-content: space-between;
     gap: 4rem;
-    min-height: calc(100svh - var(--sl-nav-height) - 2rem);
-    padding-block: 3rem 2.5rem;
   }
   .fl-hero-eyebrow {
     display: flex;
@@ -121,21 +181,6 @@ const hero = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/hero`;
     gap: 0.5rem;
     margin-top: 3rem;
   }
-  .fl-hero-card {
-    margin: 0;
-    overflow: hidden;
-    border: 1px solid var(--fl-stroke);
-    border-radius: var(--fl-radius);
-    /* Matches the video's background so letterboxing/loading never shows a seam. */
-    background: #0e0f13;
-    aspect-ratio: 16 / 10;
-  }
-  .fl-hero-card video {
-    display: block;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
   .fl-hero-foot {
     display: flex;
     flex-wrap: wrap;
@@ -156,6 +201,76 @@ const hero = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/hero`;
   }
   .fl-hero-foot a:hover {
     color: var(--fl-accent);
+  }
+
+  .fl-hero-slot {
+    aspect-ratio: 16 / 10;
+  }
+  .fl-hero-card {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    border: 1px solid var(--fl-stroke);
+    border-radius: var(--fl-radius);
+    /* The video's own background colour, so letterboxing never shows a seam. */
+    background: #0e0f13;
+  }
+  /* Dark theme: no border — card and video read as one surface. */
+  :global(:root[data-theme='dark']) .fl-hero-card {
+    border-color: transparent;
+  }
+  .fl-hero-card video {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+
+  /* Wide screens: text left, card right. */
+  @media (min-width: 64rem) {
+    .fl-hero-sticky {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+      align-items: center;
+      gap: 3rem;
+      min-height: calc(100svh - var(--sl-nav-height) - 5.5rem);
+    }
+    .fl-hero-text {
+      align-self: stretch;
+    }
+    .fl-hero-body h1 {
+      font-size: clamp(3.5rem, 7vw, 7rem);
+    }
+    .fl-hero-lead {
+      font-size: clamp(1.25rem, 1.6vw, 1.625rem);
+    }
+    .fl-hero-foot {
+      font-size: clamp(1.125rem, 1.4vw, 1.375rem);
+    }
+  }
+
+  /* Scroll stage (set by the script on wide screens without reduced motion): the hero is
+     ~2 viewports tall, its content is pinned, and the card is positioned by the script. */
+  .fl-hero:global(.is-stage) {
+    height: calc(200svh - var(--sl-nav-height));
+    padding-block: 0;
+  }
+  .fl-hero:global(.is-stage) .fl-hero-sticky {
+    position: sticky;
+    top: var(--sl-nav-height);
+    height: calc(100svh - var(--sl-nav-height));
+    min-height: 0;
+    padding-block: 3rem 2.5rem;
+    box-sizing: border-box;
+  }
+  .fl-hero:global(.is-stage) .fl-hero-text {
+    opacity: calc(1 - var(--fl-hero-p, 0) * 2);
+  }
+  .fl-hero:global(.is-stage) .fl-hero-card {
+    position: absolute;
+    z-index: 1;
+    border-radius: calc(var(--fl-radius) * (1 - var(--fl-hero-p, 0)));
   }
 
   @media (prefers-reduced-motion: no-preference) {
