@@ -11,6 +11,18 @@ cd src/Fleans
 dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --filter "TestCategory=E2E"
 ```
 
+### Provider legs (`E2E-Smoke`)
+
+The `e2e` job runs on the dev defaults (Sqlite persistence, Redis streaming). The `e2e-providers` matrix job re-runs the specs tagged `[TestCategory(E2ECategories.Smoke)]` — basic flow, user task, call activity, compensation, timer, message, signal — once per non-default provider: Postgres persistence, Kafka streaming, Azure Queue streaming (Azurite). `AspireFixture` passes `FLEANS_PERSISTENCE_PROVIDER` / `FLEANS_STREAMING_PROVIDER` through to the AppHost when set (defaulting persistence to Sqlite otherwise) and fails fast if the requested provider's resource isn't provisioned. Locally:
+
+```bash
+FLEANS_PERSISTENCE_PROVIDER=Postgres dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --filter "TestCategory=E2E-Smoke"
+FLEANS_STREAMING_PROVIDER=Kafka      dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --filter "TestCategory=E2E-Smoke"
+FLEANS_STREAMING_PROVIDER=AzureQueue dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --filter "TestCategory=E2E-Smoke"
+```
+
+Tag a spec `E2E-Smoke` only when it exercises persistence or streaming in a way the default leg can't vouch for — every tagged spec runs three extra times in CI.
+
 Each spec class under `Fleans.E2E.Tests/Specs/` carries a `// Ports tests/manual/NN-*/test-plan.md` doc comment linking back to the human-readable plan it derives from.
 
 The `Specs/_DeferredManualPlans.cs` file documents every plan that doesn't yet have an active spec (editor-UI plans, custom-task plugin plans, OIDC/JWT auth plans, Helm/release-pipeline plans, etc.), each `[Ignore]`'d with a specific reason.

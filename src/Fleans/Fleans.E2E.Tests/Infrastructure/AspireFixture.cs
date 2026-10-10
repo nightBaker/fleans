@@ -1,5 +1,7 @@
 using Aspire.Hosting;
+using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.Testing;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Playwright;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -38,16 +40,23 @@ public static class AspireFixture
     [AssemblyInitialize]
     public static async Task InitializeAsync(TestContext _)
     {
-        // Force the lightest dev defaults so the suite boots on stock CI runners:
+        // Default to the lightest dev topology so the suite boots on stock CI runners:
         //   - Sqlite persistence (no Postgres container)
+        //   - Redis streaming (reuses the Redis the AppHost wires unconditionally for
+        //     clustering + PubSubStore)
         //   - Combined silo role (Api hosts both Core + Worker grains in one process)
-        // Redis is still required because the AppHost wires it unconditionally for
-        // clustering + PubSubStore + the default Redis stream provider. CI runners
-        // (ubuntu-latest) ship Docker preinstalled, which is sufficient.
-        Environment.SetEnvironmentVariable("FLEANS_PERSISTENCE_PROVIDER", "Sqlite");
+        // FLEANS_PERSISTENCE_PROVIDER / FLEANS_STREAMING_PROVIDER, when already set, are
+        // passed through to the AppHost unchanged — CI's e2e-providers job uses this to
+        // re-run the E2E-Smoke subset on Postgres, Kafka and Azure Queue (Azurite).
+        // CI runners (ubuntu-latest) ship Docker preinstalled, which is sufficient.
+        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("FLEANS_PERSISTENCE_PROVIDER")))
+        {
+            Environment.SetEnvironmentVariable("FLEANS_PERSISTENCE_PROVIDER", "Sqlite");
+        }
 
         var builder = await DistributedApplicationTestingBuilder.CreateAsync<Projects.Fleans_Aspire>();
         _application = await builder.BuildAsync();
+        AssertRequestedProvidersProvisioned(_application);
         await _application.StartAsync();
 
         // Use HTTP endpoint as the base — Fleans.Api/Web call UseHttpsRedirection() so HTTP
@@ -73,6 +82,32 @@ public static class AspireFixture
         });
 
         _testHttpServer = TestHttpServer.Start();
+    }
+
+    /// <summary>
+    /// Guards the provider legs against silently testing the default topology: if a
+    /// provider override is requested but the AppHost didn't provision its backing resource
+    /// (e.g. the env var name drifted), fail the run instead of going green on Sqlite/Redis.
+    /// </summary>
+    private static void AssertRequestedProvidersProvisioned(DistributedApplication app)
+    {
+        var resourceNames = app.Services.GetRequiredService<DistributedApplicationModel>()
+            .Resources.Select(r => r.Name).ToHashSet(StringComparer.Ordinal);
+
+        void Require(string envVar, string value, string resourceName)
+        {
+            if (string.Equals(Environment.GetEnvironmentVariable(envVar), value, StringComparison.OrdinalIgnoreCase)
+                && !resourceNames.Contains(resourceName))
+            {
+                throw new InvalidOperationException(
+                    $"{envVar}={value} was requested but the AppHost has no '{resourceName}' resource. " +
+                    $"Resources: [{string.Join(", ", resourceNames.Order())}].");
+            }
+        }
+
+        Require("FLEANS_PERSISTENCE_PROVIDER", "Postgres", "postgres");
+        Require("FLEANS_STREAMING_PROVIDER", "Kafka", "fleans-kafka");
+        Require("FLEANS_STREAMING_PROVIDER", "AzureQueue", "fleans-azurite");
     }
 
     [AssemblyCleanup]

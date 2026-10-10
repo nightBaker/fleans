@@ -57,3 +57,70 @@ jobs:
         path: |
           src/Fleans/TestResults/**/*.trx
           src/Fleans/Fleans.E2E.Tests/bin/Debug/net10.0/playwright-traces/
+
+  # Re-runs the E2E-Smoke subset against the non-default providers (#768, #769). The
+  # default e2e job above covers Sqlite + Redis streaming; each leg here swaps exactly one
+  # provider. AspireFixture passes FLEANS_* through to the AppHost and fails fast if the
+  # requested provider's resource (postgres / fleans-kafka / fleans-azurite) isn't provisioned.
+  e2e-providers:
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - leg: postgres
+            env_name: FLEANS_PERSISTENCE_PROVIDER
+            env_value: Postgres
+          - leg: kafka
+            env_name: FLEANS_STREAMING_PROVIDER
+            env_value: Kafka
+          - leg: azurequeue
+            env_name: FLEANS_STREAMING_PROVIDER
+            env_value: AzureQueue
+    name: e2e-providers (${{ matrix.leg }})
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.0.x
+    - name: Build E2E project
+      run: dotnet build Fleans.E2E.Tests/Fleans.E2E.Tests.csproj
+    - name: Install Playwright browsers
+      run: pwsh Fleans.E2E.Tests/bin/Debug/net10.0/playwright.ps1 install --with-deps chromium
+    - name: Run E2E-Smoke subset
+      run: |
+        export ${{ matrix.env_name }}=${{ matrix.env_value }}
+        dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --no-build --filter "TestCategory=E2E-Smoke" --logger "trx;LogFileName=e2e-${{ matrix.leg }}.trx" --results-directory TestResults
+    # Silent-green guard (same pattern as pg-tests.yml): a filter that matches nothing
+    # exits 0, so require at least one passed test.
+    - name: Assert smoke tests actually ran
+      if: always()
+      run: |
+        trx_file=$(find TestResults -name "e2e-${{ matrix.leg }}.trx" | head -1)
+        if [ -z "$trx_file" ]; then
+          echo "::error::no e2e-${{ matrix.leg }}.trx produced"
+          exit 1
+        fi
+        passed=$(python3 - "$trx_file" <<'PY'
+        import sys, xml.etree.ElementTree as ET
+        ns = {"t": "http://microsoft.com/schemas/VisualStudio/TeamTest/2010"}
+        c = ET.parse(sys.argv[1]).getroot().find(".//t:Counters", ns)
+        print(c.get("passed", "0") if c is not None else "0")
+        PY
+        )
+        echo "E2E-Smoke (${{ matrix.leg }}): passed=${passed}"
+        if [ "${passed:-0}" -eq 0 ]; then
+          echo "::error::Zero E2E-Smoke tests passed on the ${{ matrix.leg }} leg — did the [TestCategory(E2ECategories.Smoke)] tags get dropped?"
+          exit 1
+        fi
+    - name: Upload artifacts on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: e2e-providers-${{ matrix.leg }}-failure-artifacts
+        path: |
+          src/Fleans/TestResults/**/*.trx
+          src/Fleans/Fleans.E2E.Tests/bin/Debug/net10.0/playwright-traces/

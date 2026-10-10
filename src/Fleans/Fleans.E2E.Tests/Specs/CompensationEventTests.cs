@@ -10,6 +10,7 @@ namespace Fleans.E2E.Tests.Specs;
 public class CompensationEventTests : WorkflowE2ETestBase
 {
     [TestMethod]
+    [TestCategory(E2ECategories.Smoke)]
     public async Task CompensationBroadcast_RunsHandlersInReverseCompletionOrder()
     {
         var xml = BpmnFixtureLoader.Load("24-compensation-event", "compensation-broadcast.bpmn");
