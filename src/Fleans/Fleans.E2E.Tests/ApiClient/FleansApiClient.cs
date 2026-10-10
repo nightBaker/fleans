@@ -66,6 +66,38 @@ public sealed partial class FleansApiClient
             ct);
     }
 
+    public async Task<PagedResult<ProcessDefinitionSummary>> ListDefinitionsAsync(
+        string? filters = null,
+        CancellationToken ct = default)
+    {
+        var url = "/Definitions?pageSize=100";
+        if (filters is not null)
+        {
+            url += "&filters=" + Uri.EscapeDataString(filters);
+        }
+        var result = await _http.GetFromJsonAsync<PagedResult<ProcessDefinitionSummary>>(url, JsonOptions, ct);
+        return result ?? throw new InvalidOperationException("ListDefinitions returned an empty body.");
+    }
+
+    public async Task<PagedResult<WorkflowInstanceInfo>> ListInstancesAsync(
+        string processDefinitionKey,
+        int? version = null,
+        CancellationToken ct = default)
+    {
+        var key = Uri.EscapeDataString(processDefinitionKey);
+        var url = version is null
+            ? $"/Definitions/{key}/instances?pageSize=100"
+            : $"/Definitions/{key}/{version.Value}/instances?pageSize=100";
+        var result = await _http.GetFromJsonAsync<PagedResult<WorkflowInstanceInfo>>(url, JsonOptions, ct);
+        return result ?? throw new InvalidOperationException("ListInstances returned an empty body.");
+    }
+
+    public async Task<IReadOnlyList<CustomTaskCatalogEntryDto>> GetCustomTasksAsync(CancellationToken ct = default)
+    {
+        var result = await _http.GetFromJsonAsync<List<CustomTaskCatalogEntryDto>>("/custom-tasks", JsonOptions, ct);
+        return result ?? throw new InvalidOperationException("GetCustomTasks returned an empty body.");
+    }
+
     public async Task<HttpResponseMessage> CompleteActivityAsync(
         Guid workflowInstanceId,
         string activityId,

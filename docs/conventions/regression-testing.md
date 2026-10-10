@@ -27,6 +27,15 @@ Each spec class under `Fleans.E2E.Tests/Specs/` carries a `// Ports tests/manual
 
 The `Specs/_DeferredManualPlans.cs` file documents every plan that doesn't yet have an active spec (editor-UI plans, custom-task plugin plans, OIDC/JWT auth plans, Helm/release-pipeline plans, etc.), each `[Ignore]`'d with a specific reason.
 
+## Admin-UI specs: page objects, interactivity, unique data
+
+Admin pages are wrapped by page objects under `Fleans.E2E.Tests/PageObjects/` (`WorkflowsPage`, `ProcessInstancesPage`, `InstanceDetailsPage`, `EventsPage`, `CustomTaskCatalogPage`, `SettingsPage`, `EditorPage`). Specs seed state through the REST API, open the page, and assert the rendered rows against the API's view of the same data.
+
+- **Wait for the SignalR circuit before clicking.** Pages are prerendered, so markup is visible before event handlers are wired and an early click is silently dropped. `MainLayout.razor` renders `[data-testid=blazor-interactive]` only when `RendererInfo.IsInteractive`; use `BlazorPage.GotoInteractiveAsync` (or `WaitForInteractiveAsync` after an in-app navigation).
+- **Selectors:** add `data-testid` to the Razor markup. `FluentDataGrid`, `FluentButton`, `FluentSelect`, `FluentTextField` pass it through; **`FluentMessageBar` does not** — put the test id on a `<span>` inside it. App-bar links are `.fluent-appbar-item a[href='/…']`.
+- **Unique identifiers, never exact list counts.** Concurrent E2E stacks share the temp-dir SQLite file, so list pages contain other runs' definitions/instances. Generate per-test process keys / message / signal names with `InlineBpmn` (`Infrastructure/InlineBpmn.cs`) instead of the fixed-id fixtures under `tests/manual/`, and scope assertions to those rows.
+- **Snapshot pages (e.g. `/events`) need a re-query loop**: projections are written asynchronously, so use `BlazorPage.RefreshUntilCountAsync` (clicks Refresh + short auto-waiting assertion per attempt) rather than a fixed delay.
+
 ## Aspire.Hosting.Testing + `UseHttpsRedirection` trap
 
 Aspire's default endpoint for an ASP.NET Core project is HTTPS, signed with an ASP.NET dev cert that **isn't trusted on Linux CI runners** (`HttpRequestException: The remote certificate is invalid because of errors in the certificate chain: UntrustedRoot`).

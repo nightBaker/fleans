@@ -24,7 +24,8 @@
                     Pagination="@pagination"
                     TGridItem="WorkflowInstanceInfo"
                     Loading="@isLoading"
-                    Style="width: 100%">
+                    Style="width: 100%"
+                    data-testid="process-instances-grid">
         <TemplateColumn Title="Instance ID">
             <span title="@context.InstanceId">@context.InstanceId.ToString()[..8]...</span>
         </TemplateColumn>
