@@ -80,10 +80,12 @@ should be unblocked.
 
 ## Scenario C — Multiple Boundary Event (Message + Timer)
 
-A script task has an **interrupting multiple boundary event** with a message
-(`cancelOrder`) and a 10-second timer. If the message arrives before the timer,
-the boundary fires via message and cancels the timer. If neither fires before
-the task completes, the workflow follows the normal path.
+A user task (`longTask`) has an **interrupting multiple boundary event** with a
+message (`cancelOrder`) and a 10-second timer. The user task blocks until it is
+completed or interrupted, so the boundary always has a window to fire. If the
+message arrives before the timer, the boundary fires via message and cancels the
+timer. If the user task is completed before either fires, the workflow follows
+the normal path.
 
 ### Prerequisites
 
@@ -93,16 +95,16 @@ the task completes, the workflow follows the normal path.
 
 1. **Deploy** `multiple-boundary.bpmn`.
 2. **Start an instance**:
-   `POST https://localhost:7140/Workflow/start` with body
+   `POST https://localhost:7140/Execution/start` with body
    `{"WorkflowId":"multi-boundary-test"}`
-3. **Immediately** send a cancel message:
-   `POST https://localhost:7140/Workflow/message` with body
+3. Within 10 seconds (while `longTask` is active) send a cancel message:
+   `POST https://localhost:7140/Execution/message` with body
    `{"MessageName":"cancelOrder","CorrelationKey":"order-boundary-1","Variables":{}}`
 4. Refresh the instance view.
 
 ### Expected Outcomes (C1 — Message fires)
 
-- [ ] `longTask` is cancelled (interrupted by boundary).
+- [ ] `longTask` is cancelled (interrupted by boundary) — not completed.
 - [ ] `escalation` script runs and completes.
 - [ ] Workflow reaches **Completed** via `escalationEnd`.
 - [ ] Timer subscription is cancelled.
