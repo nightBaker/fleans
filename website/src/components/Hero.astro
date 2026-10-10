@@ -9,10 +9,11 @@ const PAGE_TITLE_ID = '_top'; // Starlight's page-title anchor (not exported)
 const { data } = Astro.locals.starlightRoute.entry;
 const { title = data.title, tagline, actions = [] } = data.hero || {};
 
-// Hero card video (public/hero/). AV1 first (~600 KB), H.264 fallback (~780 KB) for
-// browsers without AV1 decode; both silent, 1600×1000, faststart. The poster is the
-// video's own (blank) first frame so playback starts without a flash.
-const hero = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/hero`;
+// Hero card video (public/hero/), one cut per theme: fleans-hero-{dark,light}. Each has
+// AV1 (~590 KB) plus an H.264 fallback (~790 KB) for browsers without AV1 decode; all
+// silent, 1600×1000, faststart. The poster is the video's own (blank) first frame so
+// playback starts without a flash. The script below picks the cut for the current theme.
+const hero = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/hero/fleans-hero`;
 ---
 
 <header class="fl-hero not-content" id="fl-hero">
@@ -55,8 +56,7 @@ const hero = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/hero`;
           id="fl-hero-video"
           width="1600"
           height="1000"
-          poster={`${hero}/fleans-hero-poster.jpg`}
-          data-still={`${hero}/fleans-hero-still.jpg`}
+          data-base={hero}
           autoplay
           muted
           loop
@@ -65,9 +65,34 @@ const hero = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/hero`;
           disablepictureinpicture
           aria-label="Fleans overview: one command to start, any backend over REST, runs on your infrastructure, works with your storage, add silos to scale out"
         >
-          <source src={`${hero}/fleans-hero.av1.mp4`} type='video/mp4; codecs="av01.0.08M.08"' />
-          <source src={`${hero}/fleans-hero.mp4`} type="video/mp4" />
         </video>
+        <script is:inline>
+          // Runs right after the <video> is parsed, before any fetch starts, so only the
+          // current theme's cut is ever downloaded. Re-runs on theme switch (see below).
+          (() => {
+            const v = document.getElementById('fl-hero-video');
+            const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+            const apply = () => {
+              const theme = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+              if (v.dataset.theme === theme) return;
+              const first = !v.dataset.theme;
+              const t = v.currentTime;
+              v.dataset.theme = theme;
+              const b = `${v.dataset.base}-${theme}`;
+              v.poster = reduce ? `${b}-still.jpg` : `${b}-poster.jpg`;
+              v.replaceChildren(
+                Object.assign(document.createElement('source'), { src: `${b}.av1.mp4`, type: 'video/mp4; codecs="av01.0.08M.08"' }),
+                Object.assign(document.createElement('source'), { src: `${b}.mp4`, type: 'video/mp4' }),
+              );
+              if (first) return;
+              // Theme switched mid-loop: carry on from the same moment in the other cut.
+              v.load();
+              v.addEventListener('loadedmetadata', () => { v.currentTime = t; if (!reduce) v.play().catch(() => {}); }, { once: true });
+            };
+            apply();
+            new MutationObserver(apply).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+          })();
+        </script>
       </figure>
     </div>
   </div>
@@ -83,7 +108,6 @@ const hero = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/hero`;
     if (reduce.matches) {
       v.removeAttribute('autoplay');
       v.pause();
-      v.poster = v.dataset.still;
       v.controls = true;
     } else {
       // Some browsers drop autoplay when the attribute is parsed before `muted` sticks.
@@ -211,14 +235,12 @@ const hero = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/hero`;
     width: 100%;
     height: 100%;
     overflow: hidden;
-    border: 1px solid var(--fl-stroke);
     border-radius: var(--fl-radius);
-    /* The video's own background colour, so letterboxing never shows a seam. */
-    background: #0e0f13;
+    /* Each cut's own background colour, so letterboxing never shows a seam. */
+    background: #0d0f13;
   }
-  /* Dark theme: no border — card and video read as one surface. */
-  :global(:root[data-theme='dark']) .fl-hero-card {
-    border-color: transparent;
+  :global(:root[data-theme='light']) .fl-hero-card {
+    background: #f6f7f9;
   }
   .fl-hero-card video {
     display: block;
