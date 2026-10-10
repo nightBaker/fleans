@@ -26,26 +26,25 @@ public partial class TimerStartEventSchedulerGrain : Grain, ITimerStartEventSche
         _logger = logger;
     }
 
+    // Orleans rejects reminder periods below ReminderOptions.MinimumReminderPeriod (1 min by
+    // default), so the reminder period is never the BPMN cycle interval. Instead the reminder
+    // is registered with dueTime = next fire and a fixed 1-minute period (the period only
+    // acts as a retry tick if a fire fails); after each successful cycle fire it is
+    // re-registered with dueTime = interval. Same pattern as TimerCallbackGrain.
+    private static readonly TimeSpan ReminderRetryPeriod = TimeSpan.FromMinutes(1);
+
     public async Task ActivateScheduler(string processDefinitionId)
     {
-        var processGrain = _grainFactory.GetGrain<IProcessDefinitionGrain>(this.GetPrimaryKeyString());
-        var definition = await processGrain.GetLatestDefinition();
-        var timerStart = definition.Activities.OfType<TimerStartEvent>().FirstOrDefault()
+        var timerStart = await GetTimerStartEvent()
             ?? throw new InvalidOperationException("Workflow does not have a TimerStartEvent");
 
         var dueTime = timerStart.TimerDefinition.GetDueTime();
 
-        if (timerStart.TimerDefinition.Type == TimerType.Cycle)
-        {
-            var (repeatCount, interval) = timerStart.TimerDefinition.ParseCycle();
-            State.Activate(processDefinitionId, repeatCount);
-            await this.RegisterOrUpdateReminder("timer-start", dueTime, interval);
-        }
-        else
-        {
-            State.Activate(processDefinitionId, 1);
-            await this.RegisterOrUpdateReminder("timer-start", dueTime, TimeSpan.FromMinutes(1));
-        }
+        var maxFireCount = timerStart.TimerDefinition.Type == TimerType.Cycle
+            ? timerStart.TimerDefinition.ParseCycle().RepeatCount
+            : 1;
+        State.Activate(processDefinitionId, maxFireCount);
+        await this.RegisterOrUpdateReminder("timer-start", dueTime, ReminderRetryPeriod);
 
         await _state.WriteStateAsync();
         LogSchedulerActivated(this.GetPrimaryKeyString(), processDefinitionId);
@@ -96,7 +95,24 @@ public partial class TimerStartEventSchedulerGrain : Grain, ITimerStartEventSche
         if (State.MaxFireCount.HasValue && State.FireCount >= State.MaxFireCount.Value)
         {
             await DeactivateScheduler();
+            return;
         }
+
+        // Cycle timer with repetitions left: arm the next fire one interval from now.
+        var timerStart = await GetTimerStartEvent();
+        if (timerStart?.TimerDefinition.Type == TimerType.Cycle)
+        {
+            var interval = timerStart.TimerDefinition.ParseCycle().Interval;
+            await this.RegisterOrUpdateReminder("timer-start", interval, ReminderRetryPeriod);
+            LogCycleReArmed(this.GetPrimaryKeyString(), interval, State.FireCount);
+        }
+    }
+
+    private async Task<TimerStartEvent?> GetTimerStartEvent()
+    {
+        var processGrain = _grainFactory.GetGrain<IProcessDefinitionGrain>(this.GetPrimaryKeyString());
+        var definition = await processGrain.GetLatestDefinition();
+        return definition.Activities.OfType<TimerStartEvent>().FirstOrDefault();
     }
 
     [LoggerMessage(EventId = 8000, Level = LogLevel.Information, Message = "Timer start event scheduler activated for process {ProcessKey}, definition {ProcessDefinitionId}")]
@@ -110,4 +126,7 @@ public partial class TimerStartEventSchedulerGrain : Grain, ITimerStartEventSche
 
     [LoggerMessage(EventId = 8003, Level = LogLevel.Warning, Message = "Failed to unregister timer-start reminder for process {ProcessKey}")]
     private partial void LogReminderUnregisterFailed(string processKey, Exception ex);
+
+    [LoggerMessage(EventId = 8004, Level = LogLevel.Information, Message = "Timer start cycle re-armed for process {ProcessKey}: next fire in {Interval} (fired {FireCount} so far)")]
+    private partial void LogCycleReArmed(string processKey, TimeSpan interval, int fireCount);
 }

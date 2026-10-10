@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+             id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn">
+  <message id="msg_update" name="conditionalBoundaryUpdate">
+    <extensionElements>
+      <zeebe:subscription correlationKey="= orderId" />
+    </extensionElements>
+  </message>
+  <!-- Interrupting conditional boundary on a waiting task. A non-interrupting message
+       boundary on the same task lets the caller inject `decision` into the task's scope
+       (POST /Execution/message). When decision == "escalate" the conditional boundary
+       fires, cancels hostTask and runs the escalated path. Start with variable orderId. -->
+  <process id="conditional-boundary-on-task" isExecutable="true">
+    <startEvent id="start" />
+    <scriptTask id="init" scriptFormat="csharp">
+      <script>_context.decision = "pending"</script>
+    </scriptTask>
+    <task id="hostTask" name="Host task (waits)" />
+    <boundaryEvent id="condBoundary" attachedToRef="hostTask" cancelActivity="true">
+      <conditionalEventDefinition>
+        <condition>_context.decision == "escalate"</condition>
+      </conditionalEventDefinition>
+    </boundaryEvent>
+    <boundaryEvent id="updateBoundary" attachedToRef="hostTask" cancelActivity="false">
+      <messageEventDefinition messageRef="msg_update" />
+    </boundaryEvent>
+    <scriptTask id="escalated" scriptFormat="csharp">
+      <script>_context.handled = "boundary-fired"</script>
+    </scriptTask>
+    <endEvent id="endNormal" />
+    <endEvent id="endUpdate" />
+    <endEvent id="endBoundary" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="init" />
+    <sequenceFlow id="f2" sourceRef="init" targetRef="hostTask" />
+    <sequenceFlow id="f3" sourceRef="hostTask" targetRef="endNormal" />
+    <sequenceFlow id="f4" sourceRef="updateBoundary" targetRef="endUpdate" />
+    <sequenceFlow id="f5" sourceRef="condBoundary" targetRef="escalated" />
+    <sequenceFlow id="f6" sourceRef="escalated" targetRef="endBoundary" />
+  </process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_conditional-boundary-on-task">
+    <bpmndi:BPMNPlane id="BPMNPlane_conditional-boundary-on-task" bpmnElement="conditional-boundary-on-task">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start"><dc:Bounds x="180" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="init_di" bpmnElement="init"><dc:Bounds x="276" y="100" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="hostTask_di" bpmnElement="hostTask"><dc:Bounds x="436" y="100" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="escalated_di" bpmnElement="escalated"><dc:Bounds x="596" y="100" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="endNormal_di" bpmnElement="endNormal"><dc:Bounds x="628" y="270" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="endUpdate_di" bpmnElement="endUpdate"><dc:Bounds x="628" y="396" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="endBoundary_di" bpmnElement="endBoundary"><dc:Bounds x="756" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="condBoundary_di" bpmnElement="condBoundary"><dc:Bounds x="446" y="162" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="updateBoundary_di" bpmnElement="updateBoundary"><dc:Bounds x="492" y="162" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1"><di:waypoint x="216" y="118" /><di:waypoint x="246" y="118" /><di:waypoint x="246" y="140" /><di:waypoint x="276" y="140" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2"><di:waypoint x="376" y="140" /><di:waypoint x="436" y="140" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3"><di:waypoint x="536" y="140" /><di:waypoint x="582" y="140" /><di:waypoint x="582" y="288" /><di:waypoint x="628" y="288" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f4_di" bpmnElement="f4"><di:waypoint x="510" y="198" /><di:waypoint x="510" y="414" /><di:waypoint x="628" y="414" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f5_di" bpmnElement="f5"><di:waypoint x="464" y="198" /><di:waypoint x="464" y="140" /><di:waypoint x="596" y="140" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f6_di" bpmnElement="f6"><di:waypoint x="696" y="140" /><di:waypoint x="726" y="140" /><di:waypoint x="726" y="118" /><di:waypoint x="756" y="118" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

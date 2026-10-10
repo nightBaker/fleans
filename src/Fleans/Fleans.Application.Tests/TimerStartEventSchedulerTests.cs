@@ -46,4 +46,37 @@ public class TimerStartEventSchedulerTests : WorkflowTestBase
         Assert.IsTrue(snapshot.ActiveActivities.Any(a => a.ActivityId == "task1"),
             "Task1 should be active after timer start event completes");
     }
+
+    [TestMethod]
+    public async Task SubMinuteCycle_ShouldArmAndFireEachRepetition()
+    {
+        // Regression: the scheduler used the BPMN cycle interval as the Orleans reminder
+        // period, which Orleans rejects below ReminderOptions.MinimumReminderPeriod (1 min),
+        // so a timeCycle such as R2/PT2S failed to arm and never created instances.
+        var timerStart = new TimerStartEvent("timerStart1", new TimerDefinition(TimerType.Cycle, "R2/PT2S"));
+        var end = new EndEvent("end");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "sub-minute-cycle",
+            Activities = [timerStart, end],
+            SequenceFlows = [new SequenceFlow("f1", timerStart, end)],
+            ProcessDefinitionId = "sub-minute-cycle:1:abc"
+        };
+
+        var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("sub-minute-cycle");
+        await processGrain.DeployVersion(workflow, "<placeholder/>");
+
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        var count = 0;
+        while (DateTime.UtcNow < deadline)
+        {
+            var page = await QueryService.GetInstancesByKey(
+                "sub-minute-cycle", new Fleans.Application.QueryModels.PageRequest(1, 20, null, null));
+            count = page.TotalCount;
+            if (count >= 2) break;
+            await Task.Delay(200);
+        }
+
+        Assert.AreEqual(2, count, "R2/PT2S should create exactly two instances.");
+    }
 }

@@ -33,6 +33,17 @@ public partial class SignalStartEventListenerGrain :
             if (sigDef?.Name == eventName)
                 return activity.ActivityId;
         }
+
+        // A Multiple Start Event registers its signal definitions with this listener too
+        // (IWorkflowDefinition.GetSignalStartEventNames), so it must be resolvable here.
+        foreach (var multiStart in definition.Activities.OfType<MultipleStartEvent>())
+        {
+            foreach (var sigEventDef in multiStart.Definitions.OfType<SignalEventDef>())
+            {
+                if (definition.FindSignalDefinition(sigEventDef.SignalDefinitionId)?.Name == eventName)
+                    return multiStart.ActivityId;
+            }
+        }
         return null;
     }
 
