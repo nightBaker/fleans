@@ -6,6 +6,11 @@ const PAGE_TITLE_ID = '_top'; // Starlight's page-title anchor (not exported)
 
 const { data } = Astro.locals.starlightRoute.entry;
 const { title = data.title, tagline, actions = [] } = data.hero || {};
+
+// Hero card video (public/hero/). AV1 first (~600 KB), H.264 fallback (~780 KB) for
+// browsers without AV1 decode; both silent, 1600×1000, faststart. The poster is the
+// video's own (blank) first frame so playback starts without a flash.
+const hero = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/hero`;
 ---
 
 <header class="fl-hero not-content">
@@ -33,6 +38,46 @@ const { title = data.title, tagline, actions = [] } = data.hero || {};
       )
     }
   </div>
+
+  <figure class="fl-hero-card">
+    <video
+      id="fl-hero-video"
+      width="1600"
+      height="1000"
+      poster={`${hero}/fleans-hero-poster.jpg`}
+      data-still={`${hero}/fleans-hero-still.jpg`}
+      autoplay
+      muted
+      loop
+      playsinline
+      preload="auto"
+      disablepictureinpicture
+      aria-label="Fleans overview: one command to start, any backend over REST, runs on your infrastructure, works with your storage, add silos to scale out"
+    >
+      <source src={`${hero}/fleans-hero.av1.mp4`} type='video/mp4; codecs="av01.0.08M.08"' />
+      <source src={`${hero}/fleans-hero.mp4`} type="video/mp4" />
+    </video>
+  </figure>
+  <script is:inline>
+    (() => {
+      const v = document.getElementById('fl-hero-video');
+      if (!v) return;
+      // Reduced motion: no autoplay, show the finished frame and let the user press play.
+      if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        v.removeAttribute('autoplay');
+        v.pause();
+        v.poster = v.dataset.still;
+        v.controls = true;
+        return;
+      }
+      // Some browsers drop autoplay when the attribute is parsed before `muted` sticks.
+      v.muted = true;
+      const play = () => v.play().catch(() => {});
+      play();
+      // Don't burn CPU decoding a loop nobody is looking at.
+      new IntersectionObserver(([e]) => (e.isIntersecting ? play() : v.pause())).observe(v);
+    })();
+  </script>
 
   <div class="fl-hero-foot">
     <p><span>made for</span> <a href="https://learn.microsoft.com/dotnet/orleans/">.NET Orleans</a></p>
@@ -75,6 +120,21 @@ const { title = data.title, tagline, actions = [] } = data.hero || {};
     flex-wrap: wrap;
     gap: 0.5rem;
     margin-top: 3rem;
+  }
+  .fl-hero-card {
+    margin: 0;
+    overflow: hidden;
+    border: 1px solid var(--fl-stroke);
+    border-radius: var(--fl-radius);
+    /* Matches the video's background so letterboxing/loading never shows a seam. */
+    background: #0e0f13;
+    aspect-ratio: 16 / 10;
+  }
+  .fl-hero-card video {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
   }
   .fl-hero-foot {
     display: flex;
