@@ -13,6 +13,16 @@ Four stream providers, selected via `FLEANS_STREAMING_PROVIDER`:
 
 If the third-party Redis-streaming package ever goes unmaintained, the swap-out path is to fork it or build a custom adapter (~530 LoC mirroring `Fleans.Streaming.Kafka`).
 
+## Kafka integration tests
+
+The broker-backed tests in `Fleans.Application.Tests` (`KafkaStreamProviderIntegrationTests`, `KafkaTopicEnsureTests`) are env-gated so the default `dotnet test` stays container-free:
+
+```bash
+FLEANS_KAFKA_TESTS=1 dotnet test Fleans.Application.Tests --filter "FullyQualifiedName~Kafka"   # Docker required
+```
+
+Without the variable they return `Inconclusive` (never `Failed`). CI runs them in `.github/workflows/kafka-tests.yml`, which fails if zero tests passed — the same silent-green guard as `pg-tests.yml`. A test that touches a stream through `TestCluster.Client` must also register the provider on the **client** (`IClientBuilderConfigurator`); a silo-only configurator leaves the client without a keyed `IStreamProvider` (#756).
+
 ## Kafka durability defaults
 
 Three knobs on `KafkaStreamingOptions` control producer and topic durability:

@@ -114,6 +114,11 @@ The endpoint is rate-limited under the `workflow-mutation` policy.
 
 This walks the full lifecycle of fixture #09 — deploy the BPMN, start an instance (which sets `requestId = "req-456"` via a script task), then deliver the matching message:
 
+<figure class="arch-diagram" style="--arch-ratio: 480 / 738; max-width: 520px; margin-inline: auto">
+  <iframe data-arch-src="/fleans/diagrams/message-correlation.html" src="/fleans/diagrams/message-correlation.html?embed=1" title="Message correlation sequence" loading="lazy"></iframe>
+  <figcaption>The waiting instance registers <code>approvalReceived/req-456</code> and resumes when <code>POST /Workflow/message</code> supplies the matching key. <a href="/fleans/diagrams/message-correlation.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
 ```bash
 # 1. Deploy the workflow.
 curl -k -X POST https://localhost:7140/Workflow/deploy \
@@ -235,10 +240,6 @@ This bears repeating because it is the most expensive failure mode. `<extensionE
 :::
 
 ## Limitations
-
-:::caution[Boundary message events on `IntermediateCatchEvent` do not register]
-Per regression test #9 (and the matching KNOWN BUG note in `tests/manual/09-message-events/test-plan.md`), boundary events attached to an `IntermediateCatchEvent` host do not register their subscriptions. This is the same root cause as regression test #8 (timer boundaries on intermediate catches) and affects message and signal boundaries the same way. As a workaround, attach the boundary to a host activity that the engine handles correctly (e.g. `userTask`, `serviceTask`, `subProcess`).
-:::
 
 A workflow can only have **one** active subscription per `(messageName, correlationKey)` pair. A second instance trying to subscribe on a key that is already taken fails with `Duplicate subscription`. Design correlation values to be per-instance unique (use a generated `Guid`, an order id, a session id) — never a shared business constant.
 

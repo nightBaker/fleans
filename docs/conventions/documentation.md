@@ -20,7 +20,7 @@ The public docs site lives in `website/` — an Astro + Starlight project deploy
 - Local dev: `cd website && npm install && npm run dev`
 - Build check: `npm run build` (must pass before merging)
 
-For website-build infrastructure (Hero BPMN diagram regeneration, 3D landing background, load-test publishing rule), see [`website/README.md`](../../website/README.md).
+For website-build infrastructure (Archify architecture diagrams, BPMN activity illustrations, 3D landing background, load-test publishing rule), see [`website/README.md`](../../website/README.md).
 
 ## Tabs for interchangeable approaches
 

@@ -33,9 +33,7 @@ public class MessageEventTests : WorkflowE2ETestBase
         state.AssertVariableEquals("requestId", "req-456");
     }
 
-    // tests/manual/09-message-events/test-plan.md notes a KNOWN BUG on Scenario B.
     [TestMethod]
-    [Ignore("Known bug: boundary events on IntermediateCatchEvent do not register subscriptions; see docs/plans/2026-02-25-manual-test-results.md.")]
     public async Task MessageBoundary_InterruptsTimer_CancelPathTaken()
     {
         var xml = BpmnFixtureLoader.Load("09-message-events", "message-boundary.bpmn");

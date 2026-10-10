@@ -24,6 +24,12 @@ public class DeferredManualPlans : WorkflowE2ETestBase_None
     [Ignore("Needs OIDC/JWT test setup (Authority + ClientId + token-issuer container).")]
     public void Plan28_ApiAuth_JwtBearerEnforced() { }
 
+    // Editor plans (29, 38, 47, 48, 52, 54, 59): the EditorPage POM is now reliable — #773
+    // was a boot race (OpenAsync returned before Editor.razor's OnAfterRenderAsync finished
+    // loading its blank/restored tab), fixed by waiting on data-editor-ready="true". Model-level
+    // round-trips via window.bpmnEditor.* are therefore unblocked; each plan below still needs
+    // its own spec (and, for panel-DOM assertions, an ElementPropertiesPanel POM).
+
     // tests/manual/29-editor-tabs/test-plan.md — BPMN editor multi-tab UI.
     [TestMethod]
     [Ignore("Needs EditorPage page object + bpmn-js drag-drop integration (deferred Phase 4 follow-up).")]
@@ -34,10 +40,8 @@ public class DeferredManualPlans : WorkflowE2ETestBase_None
     [Ignore("Needs OIDC/JWT test setup for Fleans.Web.")]
     public void Plan30_WebAuth_LoginRequired() { }
 
-    // tests/manual/31-events-page/test-plan.md — /events page in Web UI.
-    [TestMethod]
-    [Ignore("Needs EventsPage POM; UI assertion on Fluent DataGrid filtering.")]
-    public void Plan31_EventsPage_FilterAndDisplay() { }
+    // tests/manual/31-events-page/test-plan.md — automated in EventsPageTests
+    // (steps 2 empty-state and 7 OIDC remain manual).
 
     // tests/manual/35-kafka-streaming/test-plan.md — OUT OF SCOPE per plan (silo kill).
 
@@ -68,11 +72,6 @@ public class DeferredManualPlans : WorkflowE2ETestBase_None
     [Ignore("Configuration + throughput observation; not a workflow-level assertion.")]
     public void Plan44_StreamShardingParallelism_QueueCountTunable() { }
 
-    // tests/manual/45-user-task-fail-cancel/test-plan.md — fail/cancel user task.
-    [TestMethod]
-    [Ignore("Needs fail-task + cancel-task DTO + client helpers; lifecycle covered partially by Plan18.")]
-    public void Plan45_UserTaskFailCancel_TerminalStatesTransition() { }
-
     // tests/manual/47-event-subprocess-editor/test-plan.md — editor UI for event sub-process.
     [TestMethod]
     [Ignore("Needs EditorPage POM + property-panel inspection.")]
@@ -84,14 +83,15 @@ public class DeferredManualPlans : WorkflowE2ETestBase_None
     public void Plan48_IoMappingEditor_AddEditRemove() { }
 
     // tests/manual/49-complex-gateway-activation-condition/test-plan.md — the model-level
-    // round-trip lives in EditorPropertiesTests.ActivationCondition_WriteReadClear_…
-    // (currently [Ignore]'d pending investigation into a bpmn-js elementRegistry-inconsistent
-    // state after modeling.updateProperties on default-namespace BPMN). The panel-DOM half
-    // still needs an ElementPropertiesPanel POM.
+    // write/read/clear round-trip is automated in
+    // EditorPropertiesTests.ActivationCondition_WriteReadClear_RoundTripsThroughComplexGateway
+    // (un-ignored by #773). The panel-DOM half still needs an ElementPropertiesPanel POM.
 
     // tests/manual/50-gateway-default-flow/test-plan.md — the model-level round-trip is
-    // automated in EditorPropertiesTests.DefaultFlow_PrePopulatedFromXml_…. The panel-DOM
-    // half (dropdown population + click-to-select) still needs an ElementPropertiesPanel POM.
+    // automated in EditorPropertiesTests.DefaultFlow_PrePopulatesFromImportedXml and
+    // DefaultFlow_EditAndClear_RoundTripsThroughExclusiveGateway (un-ignored by #773). The
+    // panel-DOM half (dropdown population + click-to-select) still needs an
+    // ElementPropertiesPanel POM.
 
     // tests/manual/52-compensation-editor/test-plan.md — editor UI compensation panel.
     [TestMethod]
@@ -129,10 +129,9 @@ public class DeferredManualPlans : WorkflowE2ETestBase_None
     [Ignore("Needs EditorPage POM + custom-task output mapping panel.")]
     public void Plan59_CustomTaskOutputMappingEditor() { }
 
-    // tests/manual/61-usertask-group-claim/test-plan.md — candidate-group claim.
-    [TestMethod]
-    [Ignore("Needs JWT 'groups' claim resolution in test cluster; spec body lives with Plan18 follow-up.")]
-    public void Plan61_UserTaskGroupClaim_AuthorizationRule() { }
+    // tests/manual/45-user-task-fail-cancel/test-plan.md and
+    // tests/manual/61-usertask-group-claim/test-plan.md — automated in UserTaskLifecycleTests
+    // (the JWT-derived-groups half of plan 61 stays manual; the test cluster runs without auth).
 
     // tests/manual/62-chart-streaming-providers/test-plan.md — Helm chart tests. OUT OF SCOPE.
     // tests/manual/63-chart-external-postgres/test-plan.md — Helm chart tests. OUT OF SCOPE.

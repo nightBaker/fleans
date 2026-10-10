@@ -15,6 +15,11 @@ see [Observability reference](/fleans/reference/observability/).
 Every silo (`fleans-api`, `fleans-web`, `fleans-worker`, `fleans-mcp`) ships with the following
 signals auto-wired via `Fleans.ServiceDefaults`:
 
+<figure class="arch-diagram" style="--arch-ratio: 1080 / 658">
+  <iframe data-arch-src="/fleans/diagrams/observability-pipeline.html" src="/fleans/diagrams/observability-pipeline.html?embed=1" title="Observability pipeline" loading="lazy"></iframe>
+  <figcaption>Every silo emits metrics, traces and logs through one OTLP exporter (enabled by <code>OTEL_EXPORTER_OTLP_ENDPOINT</code>) to a collector or a hosted backend; dev runs use the Aspire dashboard. <a href="/fleans/diagrams/observability-pipeline.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
 | Signal | Source names |
 |--------|-------------|
 | **Metrics** | `Fleans`, `Microsoft.Orleans`, `Microsoft.AspNetCore.*`, `System.Net.Http`, .NET runtime |

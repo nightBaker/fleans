@@ -9,8 +9,8 @@ under the **Getting Started** sidebar group between *Hosting Plugins (Custom
 Worker Host)* and *BPMN Editor*.
 
 This plan verifies that the build completes cleanly, the page renders in both
-themes, every cited manual-test fixture is referenced by name, the KNOWN BUG
-disclosure mirrors `tests/manual/11-error-boundary/test-plan.md`, and the
+themes, every cited manual-test fixture is referenced by name, the call-activity
+error-propagation note matches `tests/manual/11-error-boundary/test-plan.md`, and the
 drift-guard line ranges still match the current source SHA.
 
 ## Prerequisites
@@ -41,13 +41,12 @@ drift-guard line ranges still match the current source SHA.
      between *Hosting Plugins (Custom Worker Host)* and *BPMN Editor*.
    - The "When to use what" table renders three rows (Error / Escalation /
      Compensation) and four columns.
-   - Both `:::caution` admonitions render as orange/yellow callouts —
-     *Known limitation: child-process errors don't bubble to parent CallActivity*
-     and *Variable-scope invariant — read this before writing handlers*.
+   - The `:::caution` admonition renders as an orange/yellow callout —
+     *Variable-scope invariant — read this before writing handlers*.
 
 3. **Dev server render — dark theme.** Toggle to dark.
    - Page heading remains visible.
-   - The two caution admonitions retain their warning style (no white-on-white,
+   - The caution admonition retains its warning style (no white-on-white,
      no missing icon glyph).
    - Inline `<bpmn:…>` code blocks render with the standard syntax highlighting
      used by `service-tasks.md` and `user-tasks.md`.
@@ -60,14 +59,10 @@ drift-guard line ranges still match the current source SHA.
    - `tests/manual/24-escalation-event/`
    - `tests/manual/24-compensation-event/`
 
-5. **Content spot-check — KNOWN BUG wording mirrors fixture #11.** The guide's
-   *Known limitation* callout describes the same condition as the
-   `> **KNOWN BUG:**` block at the top of
-   `tests/manual/11-error-boundary/test-plan.md`:
-   > Child process errors don't propagate to parent error boundary on
-   > CallActivity. The CallActivity stays Running indefinitely.
-   Both source-of-truth wordings must agree on (a) what stays Running and
-   (b) the workaround.
+5. **Content spot-check — call-activity error propagation matches fixture #11.**
+   The guide's *Error boundary on a service task* section states that the same
+   boundary works on a `callActivity` (child error re-raised on the parent and
+   caught) — the outcome asserted by `tests/manual/11-error-boundary/test-plan.md`.
 
 6. **Drift-guard freshness.** Open `website/src/content/docs/guides/error-handling.md`
    in the repo. The HTML drift-guard comment at the top pins line ranges
@@ -109,13 +104,13 @@ drift-guard line ranges still match the current source SHA.
 ## Expected outcomes (checklist)
 
 - [ ] `npm run build` exits 0; `dist/guides/error-handling/index.html` exists.
-- [ ] Light-theme render: page + sidebar entry + both `:::caution` admonitions
+- [ ] Light-theme render: page + sidebar entry + the `:::caution` admonition
       render correctly.
 - [ ] Dark-theme render: same, with no contrast regressions.
 - [ ] All four fixture-folder paths (#11, #19, #24-escalation, #24-compensation)
       are referenced by name in the rendered guide.
-- [ ] *Known limitation* callout wording matches the KNOWN BUG note at the top
-      of `tests/manual/11-error-boundary/test-plan.md`.
+- [ ] Call-activity error-propagation note matches the outcome asserted by
+      `tests/manual/11-error-boundary/test-plan.md`.
 - [ ] Every drift-guard pin (`WorkflowExecution.cs:723-784`,
       `BpmnConverter.cs:132,209-269,665-710,759-815`,
       `BadRequestActivityException.cs:5-13`,

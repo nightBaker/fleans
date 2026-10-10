@@ -2,6 +2,8 @@
 
 Verifies the new `/events` admin page shows registered start events and active message/signal subscriptions, that the **Refresh** button re-queries without a full reload, and that the delete-on-completion semantic of subscription tables surfaces in the UI (rows disappear after a Refresh once the subscribing workflow advances past the catch).
 
+> **Automation:** steps 1, 3, 4, 5, 6 and 8 are automated in `src/Fleans/Fleans.E2E.Tests/Specs/EventsPageTests.cs` (page object `PageObjects/EventsPage.cs`), using per-run unique message / signal names instead of the fixtures below. Steps 2 (empty state — needs an unshared clean DB) and 7 (OIDC) remain manual.
+
 ## Prerequisites
 
 - Aspire stack running: `dotnet run --project Fleans.Aspire` (from `src/Fleans/`).

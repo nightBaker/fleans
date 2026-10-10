@@ -54,6 +54,11 @@ lands on your host fail to register and their activities fail; with an in-memory
 
 Three NuGet packages compose the plugin-author surface, layered strictly:
 
+<figure class="arch-diagram" style="--arch-ratio: 1260 / 470">
+  <iframe data-arch-src="/fleans/diagrams/plugin-nuget-stack.html" src="/fleans/diagrams/plugin-nuget-stack.html?embed=1" title="Plugin-author NuGet package stack" loading="lazy"></iframe>
+  <figcaption>Your plugin depends on <code>Fleans.Worker</code> (which pulls in the abstraction packages); a host built from the template references it plus your plugins and joins the engine's Orleans cluster. <a href="/fleans/diagrams/plugin-nuget-stack.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
 ```
 Fleans.Worker  →  Fleans.Application.Abstractions  →  Fleans.Domain.Abstractions
 ```

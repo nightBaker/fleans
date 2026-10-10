@@ -1,0 +1,94 @@
+---
+// Pill switch replacing Starlight's theme <select>. Same storage contract as
+// Starlight (`localStorage['starlight-theme']`), so ThemeProvider's FOUC guard
+// and the Archify iframe sync in astro.config.mjs keep working unchanged.
+---
+
+<fleans-theme-switch>
+  <button type="button" role="switch" aria-checked="true" aria-label="Dark theme" class="fl-switch">
+    <span class="fl-switch-knob" aria-hidden="true"></span>
+  </button>
+</fleans-theme-switch>
+
+<script>
+  const storageKey = 'starlight-theme';
+  const systemTheme = () => (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+  const stored = () => {
+    try {
+      const v = localStorage.getItem(storageKey);
+      return v === 'light' || v === 'dark' ? v : null;
+    } catch {
+      return null;
+    }
+  };
+  const current = () => stored() ?? systemTheme();
+
+  function render() {
+    const dark = current() === 'dark';
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    document.querySelectorAll('fleans-theme-switch button').forEach((b) => {
+      b.setAttribute('aria-checked', String(dark));
+    });
+  }
+
+  matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+    if (!stored()) render();
+  });
+
+  class FleansThemeSwitch extends HTMLElement {
+    connectedCallback() {
+      render();
+      this.querySelector('button')?.addEventListener('click', () => {
+        const next = current() === 'dark' ? 'light' : 'dark';
+        try {
+          localStorage.setItem(storageKey, next);
+        } catch {
+          /* storage blocked — theme still applies for this page view */
+        }
+        render();
+      });
+    }
+  }
+  customElements.define('fleans-theme-switch', FleansThemeSwitch);
+</script>
+
+<style>
+  .fl-switch {
+    position: relative;
+    width: 3.5rem;
+    height: 1.75rem;
+    padding: 0;
+    border: 1px solid var(--fl-stroke);
+    border-radius: 9999px;
+    background: var(--fl-surface-2);
+    cursor: pointer;
+    transition: background-color 200ms ease, border-color 200ms ease;
+  }
+  .fl-switch:hover {
+    border-color: var(--fl-text-muted);
+  }
+  .fl-switch-knob {
+    position: absolute;
+    top: 50%;
+    left: 0.1875rem;
+    width: 1.375rem;
+    height: 1.375rem;
+    border-radius: 50%;
+    background: var(--fl-text);
+    transform: translate(0, -50%);
+    transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .fl-switch[aria-checked='true'] .fl-switch-knob {
+    transform: translate(1.75rem, -50%);
+  }
+  /* Moon crescent on the knob in dark mode */
+  .fl-switch[aria-checked='true'] .fl-switch-knob {
+    box-shadow: inset -0.3rem -0.15rem 0 0 var(--fl-surface-3);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .fl-switch,
+    .fl-switch-knob {
+      transition: none;
+    }
+  }
+</style>

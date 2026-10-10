@@ -96,6 +96,11 @@ string so plugin grains share the same Orleans cluster.
 A plugin host runs **only** the plugin grain classes compiled into its assembly load context.
 The isolation falls out of two Orleans mechanisms:
 
+<figure class="arch-diagram" style="--arch-ratio: 870 / 570">
+  <iframe data-arch-src="/fleans/diagrams/plugin-placement.html" src="/fleans/diagrams/plugin-placement.html?embed=1" title="Plugin grain placement across silo roles" loading="lazy"></iframe>
+  <figcaption>Engine grains reach only <code>worker-</code>/<code>combined-</code> silos through <code>WorkerPlacementDirector</code>; plugin handlers use default placement, so each lands only on a silo that has its assembly loaded. <a href="/fleans/diagrams/plugin-placement.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
 1. **Grain class discovery.** Orleans' `IPlacementContext.GetCompatibleSilos` automatically
    excludes silos that don't have the concrete grain type loaded. A `plugin-*` host that
    doesn't reference `Fleans.Plugins.RestCaller` is not a candidate for `RestCallerHandler`

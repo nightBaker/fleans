@@ -65,6 +65,11 @@ definition** as a separate instance. The parent's call-activity step waits
 until the child instance terminates; on success, output mappings copy
 variables back into the parent.
 
+<figure class="arch-diagram" style="--arch-ratio: 540 / 818; max-width: 580px; margin-inline: auto">
+  <iframe data-arch-src="/fleans/diagrams/call-activity-sequence.html" src="/fleans/diagrams/call-activity-sequence.html?embed=1" title="Call activity parent/child sequence" loading="lazy"></iframe>
+  <figcaption>A call activity starts a separate child instance on the latest version of <code>calledElement</code>, then waits for the child to complete or fail. <a href="/fleans/diagrams/call-activity-sequence.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
 Fixture: `tests/manual/06-call-activity/parent-process.bpmn` (parent) and
 `tests/manual/06-call-activity/child-process.bpmn` (child) — test plan in
 `tests/manual/06-call-activity/test-plan.md`.
@@ -156,9 +161,9 @@ evolve.
 
 ## Versioning
 
-Call activities always resolve to the **latest active version** of the
+Call activities always resolve to the **latest deployed version** of the
 called process. The single resolution point lives at
-[WorkflowLifecycleEffectHandler.cs#L61](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Application/Effects/WorkflowLifecycleEffectHandler.cs#L61):
+[WorkflowLifecycleEffectHandler.cs#L76](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Application/Effects/WorkflowLifecycleEffectHandler.cs#L76):
 
 ```csharp
 var processGrain = context.GrainFactory.GetGrain<IProcessDefinitionGrain>(
@@ -168,7 +173,7 @@ var childDefinition = await processGrain.GetLatestDefinition();
 
 Practical implications:
 
-- **New deploys are picked up immediately.** Each `POST /Workflow/deploy`
+- **New deploys are picked up immediately.** Each `POST /Definitions/deploy`
   increments the version of `calledElement`. Parent instances starting
   *after* the deploy use the new version, and **in-flight parents that
   reach a call activity after the deploy also use the new version** — there
@@ -204,22 +209,10 @@ the parent — paired with `tests/manual/11-error-boundary/child-that-fails.bpmn
 See [Error Handling — error end events](/fleans/guides/error-handling/) for the catch-all
 vs specific-code matching rules and the cancellation semantics.
 
-:::caution[Known limitation: child errors don't bubble to parent CallActivity boundary]
-Per `tests/manual/11-error-boundary/test-plan.md`, **child-process errors do
-not currently propagate to a parent `CallActivity`'s error boundary**. The
-boundary stays armed but never fires; the call activity stays in `Running`
-state indefinitely.
-
-**Workaround:** catch the error inside the child scope using an *error event
-sub-process* (or a boundary event on a sub-process inside the child), and
-exit the child cleanly via a normal end event. The parent's call activity
-will then complete normally, and you can branch in the parent on a variable
-the child set to indicate which recovery path was taken.
-
-This is regression item **#11 in the manual-test list** (`KNOWN BUG` until
-resolved). The full discussion of error/escalation/compensation lives in
-the [Error Handling guide](/fleans/guides/error-handling/).
-:::
+An unhandled error thrown in the child fails the child instance and is
+re-raised on the parent's call activity, where the matching error boundary
+catches it and the parent continues on the error path (the call activity is
+interrupted; the parent instance does not fail).
 
 ## Transaction sub-process
 
@@ -311,13 +304,9 @@ handler side-effects visible to subsequent handlers — are in
 
 ## Limitations and known issues
 
-- **#11 KNOWN BUG — child errors don't bubble to parent CallActivity
-  boundary.** The boundary stays armed but never fires; the call activity
-  stays `Running`. Use the error-event-sub-process workaround above. See
-  `tests/manual/11-error-boundary/test-plan.md`.
 - **No `<calledElement-version>` pinning.** Call activities always resolve
   to the latest version of `calledElement`
-  ([WorkflowLifecycleEffectHandler.cs#L61](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Application/Effects/WorkflowLifecycleEffectHandler.cs#L61) — `GetLatestDefinition()`).
+  ([WorkflowLifecycleEffectHandler.cs#L76](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Application/Effects/WorkflowLifecycleEffectHandler.cs#L76) — `GetLatestDefinition()`).
   In-flight parents pick up new versions on their next call-activity
   execution. Use distinct `calledElement` keys per version if you need
   pinning today.

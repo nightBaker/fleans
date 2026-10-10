@@ -1,33 +1,37 @@
-# 43 — User Task Fail and Cancel Endpoints
+# 45 — User Task Fail and Cancel Endpoints
+
+> **Automated:** every scenario below is covered by
+> `src/Fleans/Fleans.E2E.Tests/Specs/UserTaskLifecycleTests.cs` (`Fail_*`, `Cancel_*`).
+> Run this plan manually only to spot-check against a deployed stack.
 
 ## Scenario: Fail a user task
 
-1. Deploy a workflow with a single user task (use `tests/manual/bpmn/user-task-simple.bpmn` or create one).
+1. Deploy `tests/manual/45-user-task-fail-cancel/user-task-simple.bpmn` (process key `user-task-test`; user task `review-task` assigned to `test-user`, Error Boundary catching code `"400"`).
 2. Start the workflow:
    ```
-   POST /api/workflow/start   { "workflowId": "user-task-test" }
+   POST /Execution/start   { "workflowId": "user-task-test" }
    ```
 3. List pending tasks and note `activityInstanceId`:
    ```
-   GET /api/workflow/tasks
+   GET /UserTasks?assignee=test-user
    ```
 4. Claim the task:
    ```
-   POST /api/workflow/tasks/{activityInstanceId}/claim   { "userId": "test-user" }
+   POST /UserTasks/{activityInstanceId}/claim   { "userId": "test-user" }
    ```
 5. Fail the task:
    ```
-   POST /api/workflow/tasks/{activityInstanceId}/fail
-   { "errorCode": "400", "errorMessage": "User rejected the task" }
+   POST /UserTasks/{activityInstanceId}/fail
+   { "errorCode": "500", "errorMessage": "User rejected the task" }
    ```
    **Verify:** `200 OK`
 6. Verify the task no longer appears in pending tasks:
    ```
-   GET /api/workflow/tasks/{activityInstanceId}   → 404
+   GET /UserTasks/{activityInstanceId}   → 404
    ```
-7. Verify the workflow instance is in error state (if no error boundary event is attached):
+7. Verify the user task failed. Use an error code other than `"400"` (e.g. `"500"`) to bypass the fixture's Error Boundary:
    ```
-   GET /api/workflow/{workflowInstanceId}   → state contains error with code 400
+   GET /Instances/{workflowInstanceId}/state   → `review-task` in completedActivities with errorState.code = the code you sent
    ```
 
 ## Scenario: Cancel a user task
@@ -37,7 +41,7 @@
 3. Claim the task.
 4. Cancel the task:
    ```
-   POST /api/workflow/tasks/{activityInstanceId}/cancel
+   POST /UserTasks/{activityInstanceId}/cancel
    { "reason": "Operator cancelled" }
    ```
    **Verify:** `200 OK`
@@ -47,21 +51,21 @@
 ## Scenario: Cancel without body (reason is optional)
 
 ```
-POST /api/workflow/tasks/{activityInstanceId}/cancel
+POST /UserTasks/{activityInstanceId}/cancel
 (empty body)
 ```
 **Verify:** `200 OK`
 
-## Scenario: Idempotency — double fail
+## Scenario: Idempotency — double fail / cancel on a terminal task (#536)
 
-1. Fail a task (step 5 above).
-2. Call fail again on the same `activityInstanceId`.
-**Verify:** `200 OK` (no error, no duplicate events).
+1. Fail (or cancel) a task (step 5 above).
+2. Call fail again, then cancel, on the same `activityInstanceId`.
+**Verify:** `200 OK` for both (no error, no duplicate events — the activity's error state / cancellation reason is unchanged).
 
 ## Scenario: Fail a non-existent task
 
 ```
-POST /api/workflow/tasks/00000000-0000-0000-0000-000000000000/fail
+POST /UserTasks/00000000-0000-0000-0000-000000000000/fail
 { "errorMessage": "test" }
 ```
 **Verify:** `404 Not Found`
@@ -69,7 +73,7 @@ POST /api/workflow/tasks/00000000-0000-0000-0000-000000000000/fail
 ## Scenario: Fail with missing ErrorMessage
 
 ```
-POST /api/workflow/tasks/{activityInstanceId}/fail
+POST /UserTasks/{activityInstanceId}/fail
 { "errorCode": "500" }
 ```
 **Verify:** `400 Bad Request`

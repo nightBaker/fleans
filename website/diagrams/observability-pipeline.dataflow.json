@@ -1,0 +1,231 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Observability pipeline",
+    "subtitle": "OTLP export is on only when OTEL_EXPORTER_OTLP_ENDPOINT is set; unset means signals are discarded",
+    "quality_profile": "showcase",
+    "animation": "none",
+    "viewBox": [
+      1080,
+      640
+    ],
+    "legend": {
+      "entries": {
+        "security": {
+          "label": "auth headers"
+        },
+        "dashed": {
+          "label": "local dev only"
+        },
+        "emphasis": {
+          "label": "main path"
+        },
+        "database": {
+          "label": "backend store"
+        }
+      }
+    }
+  },
+  "stages": [
+    {
+      "label": "Silos"
+    },
+    {
+      "label": "Signals"
+    },
+    {
+      "label": "Export"
+    },
+    {
+      "label": "Ingest"
+    },
+    {
+      "label": "Backends"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "silos",
+      "type": "backend",
+      "label": "Fleans silos",
+      "sublabel": "api, web, worker, mcp",
+      "stage": 0,
+      "row": 1,
+      "tag": "ServiceDefaults"
+    },
+    {
+      "id": "metrics",
+      "type": "backend",
+      "label": "Metrics",
+      "sublabel": "Meter \"Fleans\" + Orleans",
+      "stage": 1,
+      "row": 0
+    },
+    {
+      "id": "traces",
+      "type": "backend",
+      "label": "Traces",
+      "sublabel": "ActivitySource \"Fleans\"",
+      "stage": 1,
+      "row": 1
+    },
+    {
+      "id": "logs",
+      "type": "backend",
+      "label": "Logs",
+      "sublabel": "EventId + WorkflowId scope",
+      "stage": 1,
+      "row": 2
+    },
+    {
+      "id": "otlp",
+      "type": "messagebus",
+      "label": "OTLP exporter",
+      "sublabel": "OTEL_EXPORTER_OTLP_*",
+      "stage": 2,
+      "row": 1,
+      "tag": "grpc | http/protobuf"
+    },
+    {
+      "id": "collector",
+      "type": "cloud",
+      "label": "OTel Collector",
+      "sublabel": ":4317 grpc, :4318 http",
+      "stage": 3,
+      "row": 1,
+      "tag": "Path 1"
+    },
+    {
+      "id": "aspire",
+      "type": "frontend",
+      "label": "Aspire dashboard",
+      "sublabel": "in-memory collector",
+      "stage": 2,
+      "row": 3,
+      "tag": "local dev"
+    },
+    {
+      "id": "prometheus",
+      "type": "database",
+      "label": "Prometheus",
+      "sublabel": "scrapes otelcol:8889",
+      "stage": 4,
+      "row": 0
+    },
+    {
+      "id": "jaeger",
+      "type": "database",
+      "label": "Jaeger / Tempo",
+      "sublabel": "service fleans-silo",
+      "stage": 4,
+      "row": 1
+    },
+    {
+      "id": "loki",
+      "type": "database",
+      "label": "Loki",
+      "sublabel": "structured attributes",
+      "stage": 4,
+      "row": 2
+    },
+    {
+      "id": "grafana",
+      "type": "external",
+      "label": "Grafana Cloud",
+      "sublabel": "managed OTLP gateway",
+      "stage": 3,
+      "row": 3,
+      "tag": "Path 2"
+    }
+  ],
+  "flows": [
+    {
+      "from": "silos",
+      "to": "metrics",
+      "label": "emit",
+      "fromSide": "top",
+      "toSide": "left"
+    },
+    {
+      "from": "silos",
+      "to": "traces",
+      "label": "emit",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "from": "silos",
+      "to": "logs",
+      "label": "emit",
+      "fromSide": "bottom",
+      "toSide": "left"
+    },
+    {
+      "from": "metrics",
+      "to": "otlp",
+      "label": "OTLP",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelSegment": 0
+    },
+    {
+      "from": "traces",
+      "to": "otlp",
+      "label": "OTLP",
+      "variant": "emphasis",
+      "route": "straight",
+      "labelDx": -26
+    },
+    {
+      "from": "logs",
+      "to": "otlp",
+      "label": "OTLP",
+      "fromSide": "right",
+      "toSide": "left",
+      "labelSegment": 0
+    },
+    {
+      "from": "otlp",
+      "to": "collector",
+      "label": "ENDPOINT",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "from": "otlp",
+      "to": "aspire",
+      "label": "dev runs",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "collector",
+      "to": "prometheus",
+      "label": "metrics",
+      "fromSide": "top",
+      "toSide": "left"
+    },
+    {
+      "from": "collector",
+      "to": "jaeger",
+      "label": "traces",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "from": "collector",
+      "to": "loki",
+      "label": "logs",
+      "fromSide": "bottom",
+      "toSide": "left"
+    },
+    {
+      "from": "otlp",
+      "to": "grafana",
+      "label": "HEADERS auth",
+      "variant": "security"
+    }
+  ]
+}

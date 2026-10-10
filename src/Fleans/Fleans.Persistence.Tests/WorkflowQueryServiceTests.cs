@@ -1075,6 +1075,39 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
         Assert.AreEqual(1, result.TotalCount);
     }
 
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetPendingUserTasks_Paginated_ExcludesCompleted_WithoutCallerFilter(PersistenceProvider provider)
+    {
+        // Regression (#765): GET /UserTasks returned terminal (completed / failed / cancelled)
+        // tasks unless the caller passed an explicit TaskState Sieve filter.
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture, provider);
+
+        using var db = commandFactory.CreateDbContext();
+
+        var instanceId = Guid.NewGuid();
+        await SeedWorkflowInstance(db, instanceId, isStarted: true);
+
+        var pendingId = Guid.NewGuid();
+        await SeedUserTask(db, pendingId, instanceId, "task1",
+            assignee: "alice", candidateGroups: ["managers"],
+            taskState: UserTaskLifecycleState.Created);
+        await SeedUserTask(db, Guid.NewGuid(), instanceId, "task2",
+            assignee: "alice", candidateGroups: ["managers"],
+            taskState: UserTaskLifecycleState.Completed);
+
+        foreach (var (assignee, group) in new (string?, string?)[]
+                 { (null, null), ("alice", null), (null, "managers"), ("alice", "managers") })
+        {
+            var result = await service.GetPendingUserTasks(assignee, group, new PageRequest());
+
+            Assert.AreEqual(1, result.TotalCount, $"assignee={assignee}, group={group}");
+            Assert.AreEqual(pendingId, result.Items.Single().ActivityInstanceId);
+        }
+    }
+
     // ─────────────────────────────────────────────────
     // GetPendingUserTasks (paginated) — #415 SQL pushdown
     // ─────────────────────────────────────────────────
