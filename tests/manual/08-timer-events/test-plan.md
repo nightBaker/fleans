@@ -25,8 +25,6 @@ A blocking activity (message catch that never receives a message) has a 5s bound
 
 ## Steps — Scenario B (timer-boundary.bpmn)
 
-> **KNOWN BUG:** Boundary events on IntermediateCatchEvents don't register subscriptions. The timer boundary will not fire. See `docs/plans/2026-02-25-manual-test-results.md`.
-
 ### 1. Deploy and start
 - Import `timer-boundary.bpmn`, deploy, start `timer-boundary-test`
 
@@ -38,6 +36,12 @@ A blocking activity (message catch that never receives a message) has a 5s bound
 - [ ] `timeoutPath` in completed activities (boundary timer fired)
 - [ ] `normalEnd` NOT in completed activities (message path was interrupted)
 - [ ] Variables tab: `timedOut` = **true**
+- [ ] `blockingWait` shows as cancelled ("Interrupted by boundary event 'boundaryTimer'")
+
+### 4. Start a second instance (regression for #759)
+The fixture correlates on the fixed key `never-match`, so the interrupted catch must release its message subscription.
+- [ ] Start `timer-boundary-test` again — `blockingWait` becomes active (it does NOT fail with "Duplicate subscription")
+- [ ] After ~5 seconds the second instance also completes via `timeoutPath`
 
 ## Scenario C: Timer Start Event — `timeDate` (timer-start-date.bpmn)
 Deploying a process whose start event has a `timeDate` timer creates exactly one instance at that moment — no `start` call. Automated by `TimerStartEventTests.TimerStartEvent_TimeDate_CreatesOneInstanceAtTheConfiguredMoment`.
