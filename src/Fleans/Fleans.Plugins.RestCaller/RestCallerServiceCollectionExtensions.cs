@@ -16,9 +16,10 @@ public static class RestCallerServiceCollectionExtensions
     /// workflow state. 8 MiB is large enough for typical REST envelopes while
     /// keeping a single misbehaving upstream from filling the silo heap with a
     /// multi-GB response (the BCL default is 2 GiB). Operators with legitimate
-    /// large-payload use cases can replace the typed-client registration with
-    /// their own <c>AddHttpClient&lt;RestCallerHandler&gt;</c> call before
-    /// <see cref="AddRestCallerPlugin"/>.
+    /// large-payload use cases can raise it with their own
+    /// <c>AddHttpClient&lt;RestCallerHandler&gt;(c =&gt; c.MaxResponseContentBufferSize = …)</c>
+    /// call registered <b>after</b> <see cref="AddRestCallerPlugin"/> — HttpClient configure
+    /// actions run in registration order, so one registered before is overwritten.
     /// </summary>
     public const long DefaultMaxResponseContentBufferSize = 8L * 1024 * 1024;
 

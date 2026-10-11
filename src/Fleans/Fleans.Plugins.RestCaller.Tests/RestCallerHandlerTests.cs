@@ -320,6 +320,87 @@ public class RestCallerHandlerTests
         Assert.AreEqual("v", rec.Headers["X-Custom-Header_42!"]);
     }
 
+    [TestMethod]
+    public async Task ContentTypeContainingCrLf_FailsWith400()
+    {
+        // Content-Type skips the per-header loop (it's applied via StringContent), so it needs
+        // its own up-front validation — otherwise the media-type parser throws FormatException.
+        var handler = MakeHandler(new HttpClientHandler());
+        var headers = new Dictionary<string, object?>
+        {
+            ["Content-Type"] = "application/json\r\nX-Injected: 1"
+        };
+        var ex = await Assert.ThrowsExactlyAsync<CustomTaskFailedActivityException>(() =>
+            handler.ExecuteForTest(
+                Inputs("http://example.com/", method: "POST", headers: headers, body: "{}"),
+                new ExpandoObject(), Ctx()));
+        var state = ex.GetActivityErrorState();
+        Assert.AreEqual("400", state.Code);
+        Assert.IsTrue(state.Message.Contains("CR or LF"),
+            $"Expected CR/LF rejection message, got: {state.Message}");
+    }
+
+    [TestMethod]
+    public async Task ContentTypeNotAMediaType_FailsWith400()
+    {
+        var handler = MakeHandler(new HttpClientHandler());
+        var headers = new Dictionary<string, object?>
+        {
+            ["Content-Type"] = "not a media type"
+        };
+        var ex = await Assert.ThrowsExactlyAsync<CustomTaskFailedActivityException>(() =>
+            handler.ExecuteForTest(
+                Inputs("http://example.com/", method: "POST", headers: headers, body: "{}"),
+                new ExpandoObject(), Ctx()));
+        Assert.AreEqual("400", ex.GetActivityErrorState().Code);
+    }
+
+    // --- Response body cap ---
+
+    // HttpClient configured like the DI registration so the cap is actually in force.
+    private static RestCallerHandler MakeCappedHandler(HttpMessageHandler messageHandler) =>
+        new(new HttpClient(messageHandler)
+            {
+                Timeout = Timeout.InfiniteTimeSpan,
+                MaxResponseContentBufferSize = RestCallerServiceCollectionExtensions.DefaultMaxResponseContentBufferSize
+            },
+            NullLogger<RestCallerHandler>.Instance,
+            Substitute.For<IGrainFactory>());
+
+    private sealed class FixedBodyHandler(byte[] payload) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+            => Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(payload)
+            });
+    }
+
+    [TestMethod]
+    public async Task ResponseBodyExceedingBufferCap_FailsWith502()
+    {
+        // Body > MaxResponseContentBufferSize is rejected during in-SendAsync buffering
+        // (ResponseContentRead) → HttpRequestException → mapped to "502" by ExecuteAsync.
+        var oversized = new byte[RestCallerServiceCollectionExtensions.DefaultMaxResponseContentBufferSize + 1];
+        var handler = MakeCappedHandler(new FixedBodyHandler(oversized));
+
+        var ex = await Assert.ThrowsExactlyAsync<CustomTaskFailedActivityException>(() =>
+            handler.ExecuteForTest(Inputs("http://example.com/"), new ExpandoObject(), Ctx()));
+
+        Assert.AreEqual("502", ex.GetActivityErrorState().Code);
+    }
+
+    [TestMethod]
+    public async Task ResponseBodyAtBufferCap_Succeeds()
+    {
+        var atLimit = new byte[RestCallerServiceCollectionExtensions.DefaultMaxResponseContentBufferSize];
+        var handler = MakeCappedHandler(new FixedBodyHandler(atLimit));
+
+        var result = await handler.ExecuteForTest(Inputs("http://example.com/"), new ExpandoObject(), Ctx());
+
+        Assert.IsNotNull(result);
+    }
+
     // --- JSON content-type detection ---
 
     [TestMethod]

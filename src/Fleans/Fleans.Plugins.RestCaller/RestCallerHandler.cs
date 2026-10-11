@@ -100,10 +100,22 @@ public sealed partial class RestCallerHandler : CustomTaskHandlerBase
         // Set body + Content-Type before adding other headers so a user-supplied Content-Type override wins.
         var contentTypeHeader = headers.FirstOrDefault(kv =>
             string.Equals(kv.Key, "Content-Type", StringComparison.OrdinalIgnoreCase));
+        // Validate a user-supplied Content-Type up front: the header loop below skips it, and
+        // StringContent's media-type parser would otherwise throw an unhandled FormatException.
+        if (contentTypeHeader.Key is not null)
+            ValidateHeader(contentTypeHeader.Key, contentTypeHeader.Value);
         if (!string.IsNullOrEmpty(body))
         {
             var contentType = contentTypeHeader.Key is null ? DefaultRequestContentType : contentTypeHeader.Value;
-            request.Content = new StringContent(body, Encoding.UTF8, contentType);
+            try
+            {
+                request.Content = new StringContent(body, Encoding.UTF8, contentType);
+            }
+            catch (FormatException)
+            {
+                throw new CustomTaskFailedActivityException("400",
+                    $"header 'Content-Type' value '{contentType}' is not a valid media type");
+            }
         }
 
         foreach (var (name, value) in headers)
@@ -125,6 +137,9 @@ public sealed partial class RestCallerHandler : CustomTaskHandlerBase
         HttpResponseMessage response;
         try
         {
+            // Default HttpCompletionOption.ResponseContentRead buffers the body inside SendAsync, which is
+            // what enforces HttpClient.MaxResponseContentBufferSize (an oversized body surfaces as the
+            // HttpRequestException → 502 below). Switching to ResponseHeadersRead would silently drop that cap.
             response = await _http.SendAsync(request, linkedCts.Token);
         }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)

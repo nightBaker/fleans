@@ -1,5 +1,7 @@
 # Manual Test Plan #39 — REST Caller plugin
 
+**STATUS: NEEDS-RERUN** — scenarios 6–7 added for #710 (header validation, response-body cap).
+
 Verifies the `rest-call` custom-task end-to-end: GET happy path; POST with body+headers; failure routing on non-success; timeout; idempotency-key opt-in.
 
 ## Prerequisites
@@ -15,7 +17,7 @@ Verifies the `rest-call` custom-task end-to-end: GET happy path; POST with body+
    ```bash
    curl -k -X POST https://localhost:7140/Definitions/deploy \
      -H "Content-Type: application/json" \
-     -d "{\"BpmnXml\": $(jq -Rs . < tests/manual/38-rest-caller/rest-call.bpmn)}"
+     -d "{\"BpmnXml\": $(jq -Rs . < tests/manual/39-rest-caller/rest-call.bpmn)}"
    ```
 2. **Start.**
    ```bash
@@ -66,6 +68,16 @@ Hit a slow endpoint (httpbin.org/delay/30) with a workflow variant where `timeou
 
 Add `<zeebe:input source="X-Request-Id" target="idempotencyKeyHeader" />` to the fixture. Hit `https://httpbin.org/anything` and verify the response echoes `X-Request-Id: <some-guid>` (httpbin reflects request headers).
 
+## Scenario 6 — Header with CR/LF is rejected (#710)
+
+1. Start the workflow with `apiHeaders` = `{"X-Test":"value\r\nHost: evil.example.com"}` (and `apiUrl` = `https://httpbin.org/anything`).
+2. **Verify.** Instance Fails; `errorState.code = "400"`; the message names "CR or LF". No outbound request is made.
+
+## Scenario 7 — Oversized response body is capped (#710)
+
+1. Start the workflow with `apiUrl` = `https://httpbin.org/bytes/9000000` (> 8 MiB). If httpbin caps the size, use a local stub that streams > 8 MiB.
+2. **Verify.** Instance Fails with `errorState.code = "502"`; silo memory stays flat (no OOM / GC spike).
+
 ## Expected outcomes (checklist)
 
 - [ ] Scenario 1: deploy succeeds; workflow completes; `apiStatus=200`; `apiBody` is the JSON object from httpbin.
@@ -73,6 +85,8 @@ Add `<zeebe:input source="X-Request-Id" target="idempotencyKeyHeader" />` to the
 - [ ] Scenario 3: activity Fails with `code="404"`; boundary error event catches and routes to recovery.
 - [ ] Scenario 4: activity Fails with `code="504"` within `timeoutSec ± 1s`.
 - [ ] Scenario 5: request carried `X-Request-Id: <activityInstanceId-guid>`.
+- [ ] Scenario 6: activity Fails with `code="400"` naming CR/LF; no request reaches the upstream.
+- [ ] Scenario 7: activity Fails with `code="502"`; no silo memory spike.
 
 ## Known limitations (v1)
 
