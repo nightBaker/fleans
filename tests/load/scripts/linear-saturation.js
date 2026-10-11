@@ -1,6 +1,6 @@
 // linear-saturation.js — saturation search script for Phase 3B/3C
 // Extends linear.js stages to find the VU count where error rate > 1% or p95 > 2s.
-// Uses the same POST /Workflow/start payload as linear.js so results measure
+// Uses the same POST /Execution/start payload as linear.js so results measure
 // actual workflow-execution saturation, not HTTP-pipeline saturation.
 //
 // Prerequisites:
@@ -33,7 +33,7 @@ export const options = {
 
 export default function () {
   const payload = JSON.stringify({ WorkflowId: 'load-linear' });
-  const res = http.post(`${BASE_URL}/Workflow/start`, payload, { headers: HEADERS });
+  const res = http.post(`${BASE_URL}/Execution/start`, payload, { headers: HEADERS });
   check(res, { 'workflow start: status 200': (r) => r.status === 200 });
   sleep(0.1);
 }

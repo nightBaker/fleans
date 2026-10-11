@@ -11,7 +11,7 @@ There are no known issues at the moment. If you hit one, please [open an issue](
 
 **Affects:** any workflow where an activity fails and nothing handles the error.
 
-**Symptom:** the instance's status is **Failed** (`isFailed: true` on `GET /Workflow/instances/{id}/state`) and one activity in `completedActivities` carries an `errorState`. On releases before the fix for [#762](https://github.com/nightBaker/fleans/issues/762) the same situation showed up as an instance stuck in *Running* with `activeActivityIds: []`, neither completed nor failed.
+**Symptom:** the instance's status is **Failed** (`isFailed: true` on `GET /Instances/{id}/state`) and one activity in `completedActivities` carries an `errorState`. On releases before the fix for [#762](https://github.com/nightBaker/fleans/issues/762) the same situation showed up as an instance stuck in *Running* with `activeActivityIds: []`, neither completed nor failed.
 
 **Root cause:** the failing activity had no error boundary event and no enclosing error event sub-process, so the error ended the last live branch. A frequent trigger is a script task whose script DynamicExpresso cannot parse — e.g. `_context.items = new[] { 1, 2, 3 }` (implicitly-typed array literals are unsupported).
 

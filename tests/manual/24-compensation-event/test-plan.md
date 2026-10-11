@@ -40,7 +40,7 @@ This plan covers:
 ### Step 2 — Start a workflow instance
 
 ```bash
-curl -k -X POST https://localhost:7140/Workflow/start \
+curl -k -X POST https://localhost:7140/Execution/start \
   -H "Content-Type: application/json" \
   -d '{"WorkflowId":"compensation-broadcast-process"}'
 ```
@@ -74,10 +74,10 @@ Wait 3–5 seconds, then check the instance in the Web UI.
 
 ```bash
 # Replace <instanceId> with the actual workflow instance ID
-curl -k https://localhost:7140/Workflow/<instanceId>/variables
+curl -k https://localhost:7140/Instances/<instanceId>/state | jq '.variableStates'
 ```
 
-Expected response contains:
+Expected: a scope in `variableStates` whose variables contain:
 
 ```json
 {

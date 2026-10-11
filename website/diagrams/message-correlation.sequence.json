@@ -60,7 +60,7 @@
       "from": "client",
       "to": "api",
       "y": 185,
-      "label": "POST /Workflow/deploy",
+      "label": "POST /Definitions/deploy",
       "variant": "default"
     },
     {
@@ -76,7 +76,7 @@
       "from": "client",
       "to": "api",
       "y": 245,
-      "label": "POST /Workflow/start",
+      "label": "POST /Execution/start",
       "variant": "emphasis"
     },
     {
@@ -109,7 +109,7 @@
       "from": "client",
       "to": "api",
       "y": 450,
-      "label": "POST /Workflow/message",
+      "label": "POST /Execution/message",
       "variant": "emphasis",
       "note": "name + key + Variables"
     },

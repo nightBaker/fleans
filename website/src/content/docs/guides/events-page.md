@@ -41,7 +41,7 @@ You deploy a workflow that opens with `<bpmn:messageStartEvent>` and listens for
 
 ```bash
 # 1. Deploy the fixture
-curl -X POST https://localhost:7140/Workflow/deploy \
+curl -X POST https://localhost:7140/Definitions/deploy \
   -H "Content-Type: application/json" \
   -d "{\"BpmnXml\": $(cat tests/manual/16-message-start-event/message-start.bpmn | jq -Rs .)}"
 
@@ -49,7 +49,7 @@ curl -X POST https://localhost:7140/Workflow/deploy \
 #    "Message Start Events" with MessageName="order-placed".
 
 # 3. Send the start message
-curl -X POST https://localhost:7140/Workflow/message \
+curl -X POST https://localhost:7140/Execution/message \
   -H "Content-Type: application/json" \
   -d '{"MessageName":"order-placed","CorrelationKey":"order-1","Variables":{}}'
 
@@ -66,7 +66,7 @@ The "row vanishes after the catch fires" cycle is the easiest way to confirm cor
 
 ## What it does not do
 
-The Events page is **read-only** in v1. It does not let you cancel a subscription, force-deliver a message, or edit a registration — those actions belong on the workflow-instance detail view (and the lifecycle endpoints under `/Workflow/*`). It also does not auto-poll; large pages are typically polled by an external monitoring stack rather than the browser, so a manual Refresh fits the operator's workflow without burning bandwidth.
+The Events page is **read-only** in v1. It does not let you cancel a subscription, force-deliver a message, or edit a registration — those actions belong on the workflow-instance detail view (and the lifecycle endpoints under `/Execution/*`). It also does not auto-poll; large pages are typically polled by an external monitoring stack rather than the browser, so a manual Refresh fits the operator's workflow without burning bandwidth.
 
 ## Authentication
 

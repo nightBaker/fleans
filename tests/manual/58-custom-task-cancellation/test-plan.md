@@ -33,7 +33,7 @@ Two equivalent paths; pick one.
 
 Within ~1 s of the silo restart, check:
 
-1. **Workflow instance is still Running.** The state-snapshot endpoint at `GET https://localhost:7140/Workflow/instances/{id}/state` should show the custom-task activity still **Active** (not Failed).
+1. **Workflow instance is still Running.** The state-snapshot endpoint at `GET https://localhost:7140/Instances/{id}/state` should show the custom-task activity still **Active** (not Failed).
 2. **The custom-task activity has NOT been marked failed.** Specifically, no row for this activity appears in any "Failed activities" UI projection, and the workflow state's failed-activities collection is empty for this `ActivityInstanceId`.
 3. **The silo console log contains exactly one `LogPluginCancelledOnDeactivation` line** (EventId 4050) with `TaskType=rest-call` and the activity id from your workflow:
    ```

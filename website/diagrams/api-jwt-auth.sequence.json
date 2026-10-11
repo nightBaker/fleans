@@ -90,7 +90,7 @@
       "from": "client",
       "to": "api",
       "y": 340,
-      "label": "POST /Workflow/start",
+      "label": "POST /Execution/start",
       "variant": "emphasis",
       "note": "Authorization: Bearer; aud = Audience"
     },

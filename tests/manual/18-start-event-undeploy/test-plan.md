@@ -15,7 +15,7 @@ Upload `signal-start-disable.bpmn` via Web UI Editor or API.
 
 ### 2. Verify signal starts a new instance
 ```
-POST https://localhost:7140/Workflow/signal
+POST https://localhost:7140/Execution/signal
 {"SignalName": "test-disable-signal"}
 ```
 - [ ] Response includes a `WorkflowInstanceIds` list with one ID
@@ -23,7 +23,7 @@ POST https://localhost:7140/Workflow/signal
 
 ### 3. Disable the process
 ```
-POST https://localhost:7140/Workflow/disable
+POST https://localhost:7140/Definitions/disable
 {"ProcessDefinitionKey": "signal-start-disable-test"}
 ```
 - [ ] Response `IsActive` is `false`
@@ -31,7 +31,7 @@ POST https://localhost:7140/Workflow/disable
 
 ### 4. Verify signal no longer starts instances
 ```
-POST https://localhost:7140/Workflow/signal
+POST https://localhost:7140/Execution/signal
 {"SignalName": "test-disable-signal"}
 ```
 - [ ] Response: 404 (no subscription or start event found)
@@ -39,7 +39,7 @@ POST https://localhost:7140/Workflow/signal
 
 ### 5. Verify manual start is blocked
 ```
-POST https://localhost:7140/Workflow/start
+POST https://localhost:7140/Execution/start
 {"WorkflowId": "signal-start-disable-test"}
 ```
 - [ ] Response: error (process is disabled)
@@ -47,7 +47,7 @@ POST https://localhost:7140/Workflow/start
 
 ### 6. Re-enable the process
 ```
-POST https://localhost:7140/Workflow/enable
+POST https://localhost:7140/Definitions/enable
 {"ProcessDefinitionKey": "signal-start-disable-test"}
 ```
 - [ ] Response `IsActive` is `true`
@@ -55,7 +55,7 @@ POST https://localhost:7140/Workflow/enable
 
 ### 7. Verify signal starts instances again
 ```
-POST https://localhost:7140/Workflow/signal
+POST https://localhost:7140/Execution/signal
 {"SignalName": "test-disable-signal"}
 ```
 - [ ] Response includes `WorkflowInstanceIds` with one ID

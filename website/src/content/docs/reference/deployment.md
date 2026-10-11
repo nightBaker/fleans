@@ -275,7 +275,7 @@ Both the API and the admin UI ship with **opt-in** authentication — when nothi
 
 | Key | Required | Default | Notes |
 | --- | --- | --- | --- |
-| `Authentication:Authority` | to enable | — (auth disabled) | OIDC issuer. Setting this enables JWT enforcement on `/Workflow/*` (API) and OIDC sign-in on the admin UI. |
+| `Authentication:Authority` | to enable | — (auth disabled) | OIDC issuer. Setting this enables JWT enforcement on every API endpoint and OIDC sign-in on the admin UI. |
 | `Authentication:Audience` | API | — | JWT `aud` claim the API requires. |
 | `Authentication:RequireHttpsMetadata` | no | `true` | Set `false` only for local dev against an HTTP IdP. |
 | `Authentication:ClientId` | Web | — | OIDC client ID for the Blazor Server admin UI. |

@@ -111,7 +111,7 @@
       "col": 4,
       "type": "backend",
       "label": "Start instance",
-      "sublabel": "POST /Workflow/start",
+      "sublabel": "POST /Execution/start",
       "tag": "200 + instance id",
       "width": 130
     },

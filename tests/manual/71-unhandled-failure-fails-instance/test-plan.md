@@ -14,11 +14,11 @@ Automated coverage: `src/Fleans/Fleans.Application.Tests/UnhandledActivityFailur
 1. **Deploy** `unhandled-script-failure.bpmn` (Web UI → *Process Definitions* → *Upload BPMN*, or the editor). Deploy succeeds.
 2. **Start** an instance:
    ```bash
-   curl -k -X POST https://localhost:7140/Workflow/start \
+   curl -k -X POST https://localhost:7140/Execution/start \
      -H "Content-Type: application/json" \
      -d '{"WorkflowId":"unhandled-script-failure"}'
    ```
-3. **Check state** (`curl -k https://localhost:7140/Workflow/instances/<id>/state`). Expect within a few seconds:
+3. **Check state** (`curl -k https://localhost:7140/Instances/<id>/state`). Expect within a few seconds:
    - `isFailed: true`, `isCompleted: true`, `isCancelled: false`, `completedAt` set
    - `activeActivityIds: []`
    - `completedActivities` contains `boom` with `errorState.code = "500"` and a DynamicExpresso parse message

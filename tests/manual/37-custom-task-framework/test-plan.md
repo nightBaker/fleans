@@ -13,7 +13,7 @@ Verifies the custom-task framework end-to-end: BPMN parses to a `CustomTaskActiv
 
 1. **Deploy the workflow.**
    ```bash
-   curl -k -X POST https://localhost:7140/Workflow/deploy \
+   curl -k -X POST https://localhost:7140/Definitions/deploy \
      -H "Content-Type: application/json" \
      -d "{\"BpmnXml\": $(jq -Rs . < tests/manual/37-custom-task-framework/stub-custom-task.bpmn)}"
    ```
@@ -27,7 +27,7 @@ Verifies the custom-task framework end-to-end: BPMN parses to a `CustomTaskActiv
 
 3. **Start an instance.**
    ```bash
-   curl -k -X POST https://localhost:7140/Workflow/start \
+   curl -k -X POST https://localhost:7140/Execution/start \
      -H "Content-Type: application/json" \
      -d '{"WorkflowId":"stub-custom-task"}'
    ```
@@ -35,13 +35,13 @@ Verifies the custom-task framework end-to-end: BPMN parses to a `CustomTaskActiv
 
 4. **Confirm the activity is Active.**
    ```bash
-   curl -k https://localhost:7140/Workflow/instances/<instance-id>/state
+   curl -k https://localhost:7140/Instances/<instance-id>/state
    ```
    Expect `activeActivityIds` contains `ct1`; `isCompleted: false`.
 
 5. **Manually complete the activity** (no plugin will, so this is the only way forward).
    ```bash
-   curl -k -X POST https://localhost:7140/Workflow/complete-activity \
+   curl -k -X POST https://localhost:7140/Execution/complete-activity \
      -H "Content-Type: application/json" \
      -d '{"WorkflowInstanceId":"<instance-id>","ActivityId":"ct1","Variables":{"echo":"manual"}}'
    ```
