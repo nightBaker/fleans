@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.svg" width="128" height="128" alt="Fleans logo"/>
+  <a href="https://nightbaker.github.io/fleans/"><img src="assets/screenshots/website.png" alt="Fleans website — nightbaker.github.io/fleans" width="780"></a>
 </p>
 
 <h1 align="center">Fleans</h1>
@@ -18,7 +18,11 @@
 </p>
 
 <p align="center">
-  <img src="assets/screenshots/admin-editor.png" alt="Fleans admin UI — BPMN editor" width="780">
+  <img src="assets/screenshots/architecture.png" alt="Fleans architecture: your backend calls fleans-api over REST; Core, worker and custom-worker silos form one Orleans cluster backed by pluggable storage and queues" width="780">
+</p>
+
+<p align="center">
+  📖 <b><a href="https://nightbaker.github.io/fleans/">nightbaker.github.io/fleans</a></b> — full project details: concepts, guides, BPMN support, self-hosting and API reference.
 </p>
 
 ---
