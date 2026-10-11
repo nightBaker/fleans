@@ -28,6 +28,7 @@ A manual `test-plan.md` is deleted once every scenario it asserts is covered by 
 | `05-event-based-gateway` | `EventBasedGatewayTests` |
 | `06-call-activity` | `CallActivityTests` |
 | `07-subprocess` | `SubprocessTests` |
+| `08-timer-events` | `TimerEventTests`, `TimerStartEventTests` (+ Application `BoundaryOnCatchEventTests` for #759 cancellation + subscription cleanup, Domain `TimerStartEventSchedulerStateTests` for cycle re-arm) |
 | `10-signal-events` | `SignalEventTests` |
 | `11-error-boundary` | `ErrorBoundaryTests`, `ErrorBoundaryOnTaskTests` |
 | `12-variable-scoping` | `VariableScopingTests` (+ Application `ParallelGatewayTests` for join merge / last-write-wins) |
@@ -70,7 +71,6 @@ Each numbered entry below is one regression "step". For each one, follow the lin
 
 ## BPMN regression suite
 
-8. **Timer Events** — `08-timer-events/test-plan.md`. Timer catch event (5s) pauses then resumes; an interrupting timer boundary on a message `IntermediateCatchEvent` takes the timeout path and releases the catch's message subscription so a second instance can start (#759). Timer Start Event: `timer-start-date.bpmn` (`timeDate`) creates exactly one instance at the configured instant; `timer-start-cycle.bpmn` (`R2/PT5S`) creates exactly two instances, 5 s apart.
 9. **Message Events** — `09-message-events/test-plan.md`. Scenarios A–C: workflow message delivery and correlation. Scenario D: editor panel correlation key round-trip (#428).
 13. **Multi-Instance Activity** — `13-multi-instance/test-plan.md`. Multi-instance loop spawns N children, each with its own variables; completion waits for all. Scenarios 13g–13i: MI embedded sub-process (`parallel-subprocess.bpmn`), MI call activity (`parallel-call-activity.bpmn` + `mi-child.bpmn`; **Known bug** [#782](https://github.com/nightBaker/fleans/issues/782)), and one failing iteration caught by an error boundary on the MI host (`parallel-subprocess-one-fails.bpmn`).
 18. **Start Event Undeploy (Disable/Enable)** — `18-start-event-undeploy/test-plan.md`. Disabling a process definition unregisters its start-event listeners; re-enabling re-registers them.

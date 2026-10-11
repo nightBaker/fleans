@@ -6,7 +6,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Fleans.E2E.Tests.Specs;
 
-// Ports tests/manual/08-timer-events/test-plan.md (Scenarios C + D — Timer Start Event)
+// Ports tests/manual/08-timer-events/ Scenarios C + D — Timer Start Event (manual plan retired — automated here)
 [TestClass]
 [TestCategory("E2E")]
 public class TimerStartEventTests : WorkflowE2ETestBase
