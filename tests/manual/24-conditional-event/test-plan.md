@@ -11,47 +11,73 @@ Tests BPMN Conditional Events: a workflow with a **conditional intermediate catc
 
 ## Fixture
 
-`conditional-event-test.bpmn` — Process `conditional-event-test`:
+`conditional-event-test.bpmn` — Process `conditional-event-test` (`amount` is a start variable):
 
 1. Start Event
-2. Script Task `set-initial` — sets `amount = 0`
-3. Conditional Intermediate Catch Event `wait-for-amount` — waits for `amount > 500`
-4. Script Task `after-condition` — sets `result = "condition-met"`
-5. End Event
+2. Parallel Gateway `fork` — splits into two branches:
+   - Conditional Intermediate Catch Event `wait-for-amount` — waits for `amount > 500`, then Script Task `after-condition` (sets `result = "condition-met"`) → End Event `end`
+   - Task `parallel-task` (external, completed via API) → End Event `end-parallel`
 
-The conditional intermediate catch event will be evaluated each time the execution loop runs after variable changes. The test requires an external `complete-activity` call with variables to trigger the condition.
+How the watcher fires: conditional watchers are re-evaluated whenever **another activity in the same instance completes**, against the catch event's **own variable scope**. Each parallel branch gets a *cloned copy* of the variables at the fork, so variables passed when completing `parallel-task` are NOT visible to `wait-for-amount` — the completion is only the evaluation trigger. The value the condition sees is the `amount` start variable inherited at the fork. There is currently no API to change the variables of a waiting branch; completing an already-completed activity returns **409 Conflict**.
+
+Conditions use the same syntax as sequence-flow conditions: bare variable names (`amount > 500`) or `${...}` placeholders are rewritten to `_context.<name>` at deploy time.
+
+`conditional-start-event.bpmn` — Process `conditional-start-test`: Conditional Start Event `condStart` (`temperature > 100`) → Script Task `process-alert` (sets `alert = "temperature-exceeded"`) → End Event.
 
 ## Steps
 
 ### Test A: Conditional Intermediate Catch Event
 
 1. **Deploy** the BPMN fixture via Web UI (upload `conditional-event-test.bpmn`)
-2. **Start** a new workflow instance for `conditional-event-test`
-3. **Verify** the workflow pauses at `wait-for-amount` (check active activities in Web UI)
-4. **Complete** the `set-initial` script task with variables `{"amount": 600}`:
+2. **Start** an instance with a value that does NOT satisfy the condition:
+   ```
+   POST https://localhost:7140/Execution/start
+   {"WorkflowId": "conditional-event-test", "Variables": {"amount": 100}}
+   ```
+3. **Verify** the workflow pauses with `wait-for-amount` and `parallel-task` both active
+4. **Complete** `parallel-task` to trigger watcher evaluation:
    ```
    POST https://localhost:7140/Execution/complete-activity
-   {"WorkflowInstanceId": "<id>", "ActivityId": "set-initial", "Variables": {"amount": 600}}
+   {"WorkflowInstanceId": "<id>", "ActivityId": "parallel-task", "Variables": {}}
    ```
-5. **Verify** the conditional catch event fires and the workflow completes with `result = "condition-met"`
+5. **Verify** `wait-for-amount` is still active, `after-condition` did not run, and the instance is not completed
+6. **Start** a second instance with `{"amount": 600}`, wait for both activities to be active, then complete `parallel-task`
+7. **Verify** the conditional catch event fires and the workflow completes with `result = "condition-met"`
 
 ### Test B: Conditional Start Event (via API)
 
-1. Deploy a process with a `ConditionalStartEvent`
+1. Deploy `conditional-start-event.bpmn`
 2. Call the evaluate-conditions endpoint:
    ```
    POST https://localhost:7140/Execution/evaluate-conditions
-   {"Variables": {"temperature": 150}}
+   {"WorkflowId": "conditional-start-test", "Variables": {"temperature": 150}}
    ```
-3. Verify a new workflow instance is created (condition `temperature > 100` evaluates true)
-4. Call again with `{"Variables": {"temperature": 50}}`
+3. Verify the response has exactly one `StartedInstanceIds` entry and no `Errors`; the new instance completes with `alert = "temperature-exceeded"` (condition `temperature > 100` evaluates true)
+4. Call again with `{"WorkflowId": "conditional-start-test", "Variables": {"temperature": 50}}`
 5. Verify no new instance is created (condition evaluates false)
+
+### Test C: Conditional Boundary — condition stays false (`conditional-boundary-on-task.bpmn`)
+
+`hostTask` (plain task) carries an interrupting conditional boundary `_context.decision == "escalate"` and a non-interrupting message boundary `updateBoundary` (message `conditionalBoundaryUpdate`, correlation key `orderId`) used to inject variables. Automated by `ConditionalBoundaryEventTests.InterruptingConditionalBoundary_ConditionStaysFalse_HostCompletesNormally`.
+
+1. Deploy `conditional-boundary-on-task.bpmn`; start `conditional-boundary-on-task` with `{"orderId": "cb-1"}`
+2. `POST https://localhost:7140/Execution/message` `{"MessageName":"conditionalBoundaryUpdate","CorrelationKey":"cb-1","Variables":{"decision":"approve"}}`
+3. Verify `endUpdate` completes and `hostTask` is still active (boundary did not fire)
+4. `POST /Execution/complete-activity` for `hostTask`
+5. Verify the instance completes via `endNormal`; `condBoundary` / `escalated` not completed
+
+### Test D: Conditional Boundary — condition becomes true
+
+> **KNOWN BUG:** the conditional watcher only reads the host's own variable scope, and both the message-boundary payload and parallel-branch writes land in cloned scopes, so the boundary never fires. See [#784](https://github.com/nightBaker/fleans/issues/784). Specs `InterruptingConditionalBoundary_ConditionBecomesTrue_…` and `…_VariableChangedInParallelBranch_Fires` are `[Ignore]`d.
+
+1. Repeat Test C with `"decision":"escalate"` → expect `hostTask` cancelled, `escalated` + `endBoundary` completed, `handled = "boundary-fired"`
+2. Deploy `conditional-boundary-parallel-branch.bpmn`, start it, `complete-activity` `triggerTask` with `{"decision":"escalate"}` → same expectation
 
 ## Expected Outcomes
 
-- [ ] Conditional intermediate catch event blocks until condition is true
+- [ ] Conditional intermediate catch event blocks while condition is false (no evaluation error)
 - [ ] Workflow resumes after condition becomes true
-- [ ] Conditional start event creates instance when condition evaluates true
+- [ ] Conditional start event creates instance when condition evaluates true (response has no `Errors`)
 - [ ] Conditional start event does not create instance when condition evaluates false
 - [ ] Conditional boundary event (interrupting) cancels host activity when condition fires
 - [ ] Variables are correctly available after conditional event completes

@@ -3,22 +3,23 @@
              xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
              xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
              xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:fleans="https://fleans.io/schema/bpmn/1.0"
              id="Definitions_nested_tx_cancel_inner"
              targetNamespace="http://bpmn.io/schema/bpmn">
 
   <!--
-    Fixture for test 46 — Scenario B: inner TX cancels, outer TX commits.
-    Scenario B: start({}) → inner does work then fires CancelEndEvent →
+    Fixture for test 53 — Scenario B: inner TX cancels, outer TX commits.
+    Scenario B: start({txKey}) → inner does work then fires CancelEndEvent →
                 compensation runs (innerCompensated=true) →
                 cancel boundary on inner-tx fires →
-                outer continues → send "trigger-outer-complete" → outer Completed
+                outer continues → send "trigger-outer-complete" (correlationKey = txKey) → outer Completed
+
+    Intermediate message catch events require a correlation key — uncorrelated
+    messages only trigger message start events — so the message correlates on `txKey`.
 
     Design: inner TX uses direct linear flow (start → work → cancel-end) — no gateways.
-    Doubly-nested TX does not support gateway routing (engine limitation; both
-    ExclusiveGateway and EventBasedGateway targets fail to activate inside inner-tx).
-    Outer TX uses plain IntermediateCatchEvent at 1-level depth (supported).
     Cancel boundary on inner-tx (at outer-tx level) merges both inner exit paths
-    via an ExclusiveGateway join — this gateway is at outer-tx level, not inner-tx level.
+    via a converging ExclusiveGateway join.
   -->
 
   <process id="nested-tx-cancel-inner" isExecutable="true">
@@ -109,7 +110,11 @@
   </process>
 
   <!-- Message for the outer ICE (1-level deep — supported) -->
-  <message id="msgTriggerOuterComplete" name="trigger-outer-complete" />
+  <message id="msgTriggerOuterComplete" name="trigger-outer-complete">
+    <extensionElements>
+      <fleans:subscription correlationKey="= txKey" />
+    </extensionElements>
+  </message>
 
   <!-- Error for outer TX Hazard boundary -->
   <error id="hazardError" name="HazardError" errorCode="503" />

@@ -11,19 +11,20 @@ propagation), see [`docs/plans/2026-02-08-structured-workflow-logging.md`](../pl
 
 | Range | Class | Notes |
 |-------|-------|-------|
-| 1000–1199 | `WorkflowInstance` | Sub-ranges: 1066 UserTaskClaim rejection (Warning); 1070–1079 pending events / event sub-processes; 1078 root-scope listeners; 1080–1089 complex gateway; 1090–1099 escalation; 1100–1109 transaction sub-process; 1110–1119 compensation |
+| 1000–1199 | `WorkflowInstance` | Sub-ranges: 1066 UserTaskClaim rejection (Warning); 1070–1079 pending events / event sub-processes; 1078 root-scope listeners; 1080–1089 complex gateway; 1090–1099 escalation; 1100–1109 transaction sub-process; 1110–1119 compensation; 1120 workflow failed by unhandled activity failure (Error, #762) |
 | 2000–2099 | `ActivityInstance` | |
 | 3000–3099 | `WorkflowInstanceState` | Includes 3030–3032 escalation warnings |
 | 4000–4099 | Event handlers | `Fleans.Application/Events/Handlers/*` |
 | 5000–5099 | `WorkflowEventsPublisher` | |
 | 6000–6099 | `WorkflowInstanceFactoryGrain` | |
 | 7000–7099 | `WorkflowEngine` | |
-| 8000–8099 | `TimerStartEventSchedulerGrain` | |
+| 8000–8099 | `TimerStartEventSchedulerGrain` (8000–8003), `UserTasksController` (8004–8010) | 8009 body-UserId/token mismatch rejection (Warning); 8010 token without user-id claim (Warning) |
 | 9000–9099 | `BpmnConverter` | |
 | 10000–10099 | `TimerCallbackGrain` | |
 | 11000–11099 | `KafkaProductionPresetExtensions` | 11000 preset-applied INFO |
 | 11100–11199 | `KafkaQueueAdapter`, `KafkaQueueAdapterReceiver`, `KafkaQueueAdapterFactory` | 11100 SSL-no-paths OS-trust-store WARNING (shared EventId across all three sibling classes); 11101 acks-not-all WARNING; 11102 single-broker RF fallback INFO; 11103 RF>brokers fallback WARNING; 11104 GetMetadata error ERROR; 11105 topics created INFO; 11106 topics already existed INFO |
 | 11200–11299 | `MskIamTokenRefresher` | 11200 token-refresh-failed ERROR, 11201 set-token-failure-threw WARNING |
+| 99000–99099 | `ProbeHandler` (test-only, `Fleans.E2E.PluginHost`) | 99000 started, 99001 completed, 99002 cancelled, 99003 callback failed. Never shipped. |
 
 ## Adding a new range
 

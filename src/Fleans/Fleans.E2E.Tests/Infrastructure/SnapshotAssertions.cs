@@ -34,6 +34,20 @@ public static class SnapshotAssertions
         }
     }
 
+    /// <summary>
+    /// Interrupted activities (boundary fired, scope cancelled) land in
+    /// <c>CompletedActivityIds</c> too, flagged <c>IsCancelled</c> — assert on the flag.
+    /// </summary>
+    public static void AssertCancelled(this InstanceStateSnapshot snapshot, params string[] expected)
+    {
+        foreach (var id in expected)
+        {
+            var entries = snapshot.CompletedActivities.Where(a => a.ActivityId == id).ToList();
+            Assert.IsNotEmpty(entries, $"Expected '{id}' to be cancelled, but it never finished. Completed: [{string.Join(",", snapshot.CompletedActivityIds)}].");
+            Assert.IsTrue(entries.All(a => a.IsCancelled), $"Expected every '{id}' instance to be cancelled, but at least one completed normally.");
+        }
+    }
+
     public static string GetVariable(this InstanceStateSnapshot snapshot, string name)
     {
         // Iterate in reverse — when multiple scopes hold the same variable (e.g. parallel

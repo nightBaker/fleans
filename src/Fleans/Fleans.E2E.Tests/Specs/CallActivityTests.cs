@@ -4,12 +4,13 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Fleans.E2E.Tests.Specs;
 
-// Ports tests/manual/06-call-activity/test-plan.md
+// Ports tests/manual/06-call-activity/ (manual plan retired — automated here)
 [TestClass]
 [TestCategory("E2E")]
 public class CallActivityTests : WorkflowE2ETestBase
 {
     [TestMethod]
+    [TestCategory(E2ECategories.Smoke)]
     public async Task ParentCallsChild_ResultMappedBack_BothProcessesComplete()
     {
         // Deploy child first (parent references calledElement="child-process")

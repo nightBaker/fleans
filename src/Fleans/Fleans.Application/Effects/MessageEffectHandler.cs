@@ -49,11 +49,14 @@ public partial class MessageEffectHandler : IEffectHandler
 
     private async Task PerformMessageSubscribe(SubscribeMessageEffect subMsg, IEffectContext context)
     {
-        var grainKey = MessageCorrelationKey.Build(subMsg.MessageName, subMsg.CorrelationKey);
-        var corrGrain = context.GrainFactory.GetGrain<IMessageCorrelationGrain>(grainKey);
-
         try
         {
+            // Key building is inside the try: an invalid key (e.g. empty correlation key) is a
+            // registration-path failure and MUST route to FailActivity, not escape and stall
+            // the workflow (#761).
+            var grainKey = MessageCorrelationKey.Build(subMsg.MessageName, subMsg.CorrelationKey);
+            var corrGrain = context.GrainFactory.GetGrain<IMessageCorrelationGrain>(grainKey);
+
             await context.PersistStateAsync(); // persist before external call
             await corrGrain.Subscribe(subMsg.WorkflowInstanceId, subMsg.ActivityId, subMsg.HostActivityInstanceId);
             LogMessageSubscriptionRegistered(subMsg.ActivityId, subMsg.MessageName, subMsg.CorrelationKey);

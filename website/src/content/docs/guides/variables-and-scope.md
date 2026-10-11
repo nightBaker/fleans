@@ -43,7 +43,7 @@ var city = (string)_context.user.address.city;
 var attempts = _context.retryCount ?? 0;
 ```
 
-DynamicExpresso evaluates each statement independently. You cannot define helper methods inside a script task — keep logic linear, and put complex computation behind a custom service-task plugin (see [Writing Custom-Task Plugins](/fleans/guides/writing-custom-tasks/)).
+DynamicExpresso evaluates each statement independently. Not every C# construct parses — notably implicitly-typed array literals (`new[] { 1, 2, 3 }`) are rejected; use `new List<object> { 1, 2, 3 }` instead. A script that fails to parse fails its activity (code `500`). You cannot define helper methods inside a script task — keep logic linear, and put complex computation behind a custom service-task plugin (see [Writing Custom-Task Plugins](/fleans/guides/writing-custom-tasks/)).
 
 ## Writing variables in script tasks
 
@@ -110,7 +110,7 @@ Parallel branches run with **isolated** scopes (each branch gets a `VariableScop
 
 When all branches arrive at the join gateway, the engine merges each branch's variables into the original (pre-fork) scope **in token-creation order — last write wins** — and then emits `VariableScopesRemoved` for the now-consumed branch scopes. After the join, exactly one scope remains for the joined token.
 
-This is the behaviour exercised by manual test plan #12 (`tests/manual/12-variable-scoping/test-plan.md`): the merged scope contains `shared` with the last branch's value, and both branches' branch-local variables end up in the merged scope.
+This is the behaviour exercised by the `VariableScopingTests` E2E spec (fixture `tests/manual/12-variable-scoping/parallel-variable-isolation.bpmn`): the merged scope contains `shared` with the last branch's value, and both branches' branch-local variables end up in the merged scope.
 
 ### Embedded SubProcess completion
 
@@ -144,7 +144,7 @@ If a complex value enters the workflow via `POST /Execution/start` `Variables`, 
 
 ## Worked examples
 
-The canonical fixture for variable-scope behaviour is the manual test plan at `tests/manual/12-variable-scoping/test-plan.md` (`parallel-variable-isolation.bpmn`):
+The canonical fixture for variable-scope behaviour is `tests/manual/12-variable-scoping/parallel-variable-isolation.bpmn`:
 
 - A pre-fork script task sets `shared` to an initial value.
 - A parallel fork creates two branches; each writes a different value to `shared`.

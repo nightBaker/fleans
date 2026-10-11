@@ -62,20 +62,11 @@ Per BPMN spec, error boundaries are **always interrupting** — Fleans rejects
 disables the *Interrupting* checkbox for them.
 
 Full fixture: `tests/manual/11-error-boundary/error-on-call-activity.bpmn` —
-deploy steps in `tests/manual/11-error-boundary/test-plan.md`.
+exercised by the `ErrorBoundaryTests` E2E spec.
 
-:::caution[Known limitation: child-process errors don't bubble to parent CallActivity]
-Per `tests/manual/11-error-boundary/test-plan.md`, **child-process errors do not
-currently propagate to a parent `CallActivity`'s error boundary**. The boundary stays
-armed but never fires; the CallActivity stays in `Running` state.
-
-**Workaround:** catch the error inside the child scope using an *error event
-sub-process* (or a boundary event on a sub-process inside the child), and exit
-the child cleanly. The parent's call activity will then complete normally, and
-you can branch on a variable the child set to indicate the recovery path.
-
-This is regression item #11 in the manual-test list (`KNOWN BUG` until resolved).
-:::
+The same boundary works on a `callActivity`: an unhandled error in the child
+process is propagated to the parent call activity, and its error boundary routes
+the parent onto the error path.
 
 ### Error event sub-process
 
@@ -152,6 +143,31 @@ for an end-to-end worked example using the REST Caller plugin.
 If a script or plugin throws *any other* exception, the activity fails with code
 **`"500"`** and the exception's `Message`. Use this only when you can't classify
 the failure — prefer the typed exceptions above.
+
+### Unhandled errors fail the instance
+
+If nothing catches the error — no matching error boundary event and no error
+event sub-process in any enclosing scope — the activity is recorded as failed
+(its `ErrorState` carries the code and message). When that failure leaves the
+instance with **no active activities**, the instance itself terminates as
+**Failed**:
+
+- the instance-state snapshot reports `isFailed: true` (together with
+  `isCompleted: true` and `completedAt`, because a failed instance is terminal —
+  the same convention `isCancelled` uses), and the Web UI shows a red **Failed**
+  badge;
+- the engine logs EventId **1120** at `Error` level naming the failed activity
+  and its error;
+- `fleans.workflow.terminated` is incremented with `result="failed"`.
+
+If other branches are still active (for example after a parallel fork), the
+instance keeps running; it fails only once no active activities remain. A branch
+that reaches a root end event first still completes the instance, as before.
+
+Before this behaviour existed, such an instance silently stayed *Running* with
+no active activities. If you need the workflow to continue instead, attach an
+error boundary event (a catch-all one with no `errorRef` works) or add an error
+event sub-process.
 
 ## Escalation
 
@@ -295,8 +311,6 @@ goes here" — typically routing to a generic failure handler that logs and page
 
 ## Limitations and known issues
 
-- **Child-process errors do not propagate through `CallActivity` error boundaries.**
-  See the *Known limitation* callout above and `tests/manual/11-error-boundary/test-plan.md`.
 - **Compensation of compensation is rejected at parse time.** A compensation
   handler activity may not itself have a `<compensateEventDefinition/>` boundary.
 - **At most one compensation boundary** is allowed per compensable activity;

@@ -559,6 +559,9 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                     b.Property<bool>("IsCompleted")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsFailed")
+                        .HasColumnType("boolean");
+
                     b.Property<bool>("IsStarted")
                         .HasColumnType("boolean");
 

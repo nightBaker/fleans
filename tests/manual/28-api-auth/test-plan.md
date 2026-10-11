@@ -49,6 +49,8 @@ Verify the API enforces JWT bearer tokens when `Authentication:Authority` is con
 
 ### Prerequisites for Scenario B
 
+> **Shortcut:** `FLEANS_E2E_AUTH=true dotnet run --project Fleans.Aspire` provisions Keycloak with a ready-made realm and wires the Api to it (see `tests/manual/30-web-auth/keycloak-dev.md`). Get a token with `client_id=fleans-e2e`, `client_secret=fleans-e2e-secret`, `grant_type=password`, `username=alice`, `password=alice`. Scenario B is automated in `Fleans.E2E.Tests/Specs/AuthenticationTests.cs` (CI job `e2e-auth`).
+
 Set up an OIDC provider (e.g., Keycloak dev instance):
 
 ```bash

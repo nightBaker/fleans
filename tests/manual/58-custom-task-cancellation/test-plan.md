@@ -64,6 +64,13 @@ Distinguishes the "our cancellation" path (Steps 1–3) from "plugin's own timeo
 # delete the dev DB if you ran this immediately before another test plan
 ```
 
+## Step 5 — Boundary timer interrupts a long-running plugin task (automated)
+
+Fixture: `probe-boundary-timer.bpmn` (`e2e-probe` task with a PT3S interrupting timer; start with `delayMs=10000`, `callbackUrl`, `probeKey`). Automated as `SplitRoleTopologyTests.BoundaryTimer_InterruptsLongRunningPluginTask_TimeoutPathTaken_LateCompletionDropped` (`E2E-SplitRoles`).
+
+> **PASS criteria:** the instance completes via `timeoutPath` / `endTimeout`; `normalPath` never runs; after the plugin finishes, its late `CompleteActivity` is dropped (no `probeSilo` variable).
+> **Known gaps:** the plugin's `CancellationToken` is NOT cancelled on interrupt — the probe runs to completion (#786, spec `BoundaryTimer_InterruptingPluginTask_CancelsHandlerToken` is `[Ignore]`d). The timer path currently takes ~30s to proceed because of a `WorkflowInstance` ↔ `TimerCallbackGrain` call cycle (#785).
+
 ## Out of scope (covered elsewhere)
 
 - Plugin authors who **ignore** the token (block forever on un-cancellable I/O) — Orleans force-kills at the hard-timeout boundary; the stream still redelivers on reactivation. Demonstrating this requires a deliberately broken plugin and is covered by the deferred integration test in `Fleans.Application.Tests` (when WorkflowTestBase grows a plugin-registration hook).

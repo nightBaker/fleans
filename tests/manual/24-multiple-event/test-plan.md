@@ -80,10 +80,12 @@ should be unblocked.
 
 ## Scenario C — Multiple Boundary Event (Message + Timer)
 
-A script task has an **interrupting multiple boundary event** with a message
-(`cancelOrder`) and a 10-second timer. If the message arrives before the timer,
-the boundary fires via message and cancels the timer. If neither fires before
-the task completes, the workflow follows the normal path.
+A user task (`longTask`) has an **interrupting multiple boundary event** with a
+message (`cancelOrder`) and a 10-second timer. The user task blocks until it is
+completed or interrupted, so the boundary always has a window to fire. If the
+message arrives before the timer, the boundary fires via message and cancels the
+timer. If the user task is completed before either fires, the workflow follows
+the normal path.
 
 ### Prerequisites
 
@@ -95,14 +97,14 @@ the task completes, the workflow follows the normal path.
 2. **Start an instance**:
    `POST https://localhost:7140/Execution/start` with body
    `{"WorkflowId":"multi-boundary-test"}`
-3. **Immediately** send a cancel message:
+3. Within 10 seconds (while `longTask` is active) send a cancel message:
    `POST https://localhost:7140/Execution/message` with body
    `{"MessageName":"cancelOrder","CorrelationKey":"order-boundary-1","Variables":{}}`
 4. Refresh the instance view.
 
 ### Expected Outcomes (C1 — Message fires)
 
-- [ ] `longTask` is cancelled (interrupted by boundary).
+- [ ] `longTask` is cancelled (interrupted by boundary) — not completed.
 - [ ] `escalation` script runs and completes.
 - [ ] Workflow reaches **Completed** via `escalationEnd`.
 - [ ] Timer subscription is cancelled.
@@ -119,3 +121,21 @@ the task completes, the workflow follows the normal path.
 - [ ] `escalation` script runs and completes.
 - [ ] Workflow reaches **Completed** via `escalationEnd`.
 - [ ] Message subscription for `cancelOrder` is cancelled.
+
+---
+
+## Scenario D — Multiple Start Event (Message or Signal)
+
+`multiple-start.bpmn` has one start event with two definitions: message `multiStartOrder` and signal `multiStartOverride`. Either trigger creates a new instance. Automated by `MultipleStartEventTests.MultipleStartEvent_EitherMessageOrSignal_CreatesAnInstance`.
+
+### Steps
+
+1. Deploy `multiple-start.bpmn` (process `multiple-start-test`). Do not start it.
+2. `POST https://localhost:7140/Execution/message` with `{"MessageName":"multiStartOrder"}`.
+3. `POST https://localhost:7140/Execution/signal` with `{"SignalName":"multiStartOverride"}`.
+
+### Expected Outcomes
+
+- [ ] Step 2 returns `delivered: true` with one `workflowInstanceIds` entry; that instance **Completed** (`multiStart`, `afterStart`, `end`)
+- [ ] Step 3 returns one new `workflowInstanceIds` entry (distinct from step 2); that instance **Completed**
+- [ ] Regression: before the fix, the start-event listeners only resolved single-definition message/signal start events, so both calls created no instance (message → 404)
