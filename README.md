@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://nightbaker.github.io/fleans/"><img src="assets/screenshots/website.png" alt="Fleans website — nightbaker.github.io/fleans" width="780"></a>
+  <a href="https://nightbaker.github.io/fleans/"><img src="assets/screenshots/website.png" alt="Fleans website — nightbaker.github.io/fleans" width="100%"></a>
 </p>
 
 <h1 align="center">Fleans</h1>
