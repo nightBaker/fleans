@@ -8,7 +8,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Fleans.E2E.Tests.Specs;
 
-// Ports tests/manual/45-user-task-fail-cancel/test-plan.md
+// Ports tests/manual/45-user-task-fail-cancel/ (manual plan retired — automated here)
 // Ports tests/manual/61-usertask-group-claim/test-plan.md
 // Covers the UserTasksController endpoints that UserTaskTests (plan 18) doesn't reach:
 // fail, cancel, unclaim + re-claim, the pending-list filters, candidateGroups claims

@@ -50,7 +50,7 @@ FLEANS_E2E_AUTH=true dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --filt
 
 Traps: Keycloak only imports a realm file named `<realm>-realm.json`; bearer requests must target the Api's **https** endpoint (`AspireFixture.ApiHttpsBaseUri`) because `HttpClient` drops the `Authorization` header when following the HTTP→HTTPS redirect. Only `E2E-Auth` specs may run in this mode — every other spec assumes auth is off.
 
-Each spec class under `Fleans.E2E.Tests/Specs/` carries a `// Ports tests/manual/NN-*/test-plan.md` doc comment linking back to the human-readable plan it derives from.
+Each spec class under `Fleans.E2E.Tests/Specs/` carries a `// Ports tests/manual/NN-*` doc comment linking back to the human-readable plan (or fixture folder) it derives from. Once a spec — together with Application/Domain tests — covers **every** scenario of a plan, delete that plan's `test-plan.md` (keep the `.bpmn` fixtures, which specs load via `BpmnFixtureLoader`) and move its catalog entry to the *Retired plans* table in `tests/manual/README.md`.
 
 The `Specs/_DeferredManualPlans.cs` file documents every plan that doesn't yet have an active spec (editor-UI plans, custom-task plugin plans, Helm/release-pipeline plans, etc.), each `[Ignore]`'d with a specific reason.
 

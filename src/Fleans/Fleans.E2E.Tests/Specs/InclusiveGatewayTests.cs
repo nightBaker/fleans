@@ -4,7 +4,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Fleans.E2E.Tests.Specs;
 
-// Ports tests/manual/14-inclusive-gateway/test-plan.md
+// Ports tests/manual/14-inclusive-gateway/ (manual plan retired — automated here)
 [TestClass]
 [TestCategory("E2E")]
 public class InclusiveGatewayTests : WorkflowE2ETestBase

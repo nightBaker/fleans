@@ -1,12 +1,12 @@
 # Manual Test Plans
 
-Each `NN-feature-name/` subfolder contains a manual test plan: one or more `.bpmn` fixtures plus a step-by-step `test-plan.md` (deploy, start, trigger events, verify). The union of every plan here is the project's full manual regression suite.
+Each `NN-feature-name/` subfolder contains one or more `.bpmn` fixtures plus, unless the plan has been retired as fully automated (see [Retired plans](#retired-plans-fully-automated)), a step-by-step `test-plan.md` (deploy, start, trigger events, verify). The union of every remaining plan here is the project's manual regression suite.
 
 See `docs/plans/2026-02-25-manual-test-plan-design.md` for the template and rationale.
 
 ## Automation status
 
-**Most BPMN plans are now automated** under `src/Fleans/Fleans.E2E.Tests/Specs/*.cs`. Each spec class includes a `// Ports tests/manual/NN-*/test-plan.md` doc comment linking it back to the manual plan it derives from. Run the automated suite via:
+**Most BPMN plans are now automated** under `src/Fleans/Fleans.E2E.Tests/Specs/*.cs`. Each spec class includes a `// Ports tests/manual/NN-*` doc comment linking it back to the manual plan (or, for retired plans, the fixture folder) it derives from. Run the automated suite via:
 
 ```bash
 cd src/Fleans
@@ -14,6 +14,34 @@ dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --filter "TestCategory=E2E"
 ```
 
 CI runs the same filter on every PR (`e2e` job in `.github/workflows/dotnet.yml`), minus the `E2E-SplitRoles` specs, which need the Core / Worker / Plugin topology and run in the `e2e-split-roles` job (`FLEANS_SPLIT_ROLES=true`, see [`docs/conventions/regression-testing.md`](../../docs/conventions/regression-testing.md)).
+
+### Retired plans (fully automated)
+
+A manual `test-plan.md` is deleted once every scenario it asserts is covered by a non-`[Ignore]`'d automated test (E2E spec, plus Application/Domain tests for assertions the E2E spec doesn't make). The folder and its `.bpmn` fixtures stay — the E2E specs load them via `BpmnFixtureLoader`, and `website/scripts/render-bpmn.mjs` renders some of them. A plan with **any** uncovered scenario stays in the catalog below.
+
+| Folder | Automated by |
+|---|---|
+| `01-basic-workflow` | `BasicWorkflowTests` |
+| `02-script-tasks` | `ScriptTaskTests` |
+| `03-exclusive-gateway` | `ExclusiveGatewayTests` |
+| `04-parallel-gateway` | `ParallelGatewayTests` (+ Application `ParallelGatewayTests` for branch scope isolation) |
+| `05-event-based-gateway` | `EventBasedGatewayTests` |
+| `06-call-activity` | `CallActivityTests` |
+| `07-subprocess` | `SubprocessTests` |
+| `10-signal-events` | `SignalEventTests` |
+| `11-error-boundary` | `ErrorBoundaryTests`, `ErrorBoundaryOnTaskTests` |
+| `12-variable-scoping` | `VariableScopingTests` (+ Application `ParallelGatewayTests` for join merge / last-write-wins) |
+| `14-inclusive-gateway` | `InclusiveGatewayTests` |
+| `15-non-interrupting-boundaries` | `NonInterruptingBoundaryTests` (+ Domain `WorkflowExecutionBoundaryTests` for cycle stop-after-N) |
+| `16-message-start-event` | `MessageStartEventTests` (+ Application `MessageStartEventTests` for variable propagation) |
+| `17-signal-start-event` | `SignalStartEventTests` |
+| `19-event-subprocess-error` | `EventSubprocessTests` (+ Application `EventSubProcessErrorTests`) |
+| `20-complex-gateway` | `ComplexGatewayTests` (20b) + Application `ComplexGatewayTests` (20a fork, 20c join) |
+| `20-event-subprocess-timer` | `EventSubprocessTests` (+ Application `EventSubProcessTimerTests`) |
+| `22-event-subprocess-signal` | `EventSubprocessTests` (+ Application `EventSubProcessSignalTests`) |
+| `23-event-subprocess-non-interrupting` | `EventSubprocessTests` (+ Application `EventSubProcessNonInterruptingTests`) |
+| `45-user-task-fail-cancel` | `UserTaskLifecycleTests` |
+| `72-definition-versioning` | `DefinitionVersioningTests` |
 
 **When to still run a manual plan in this folder:**
 
@@ -42,31 +70,12 @@ Each numbered entry below is one regression "step". For each one, follow the lin
 
 ## BPMN regression suite
 
-1. **Basic Workflow** — `01-basic-workflow/test-plan.md` (`simple-workflow.bpmn`). Start → task → end completes cleanly; verifies the deploy/start/complete lifecycle.
-2. **Script Tasks** — `02-script-tasks/test-plan.md`. Chained C# script tasks create and mutate workflow variables; verifies the script engine + variable persistence.
-3. **Exclusive Gateway** — `03-exclusive-gateway/test-plan.md`. `x = 7` → exclusive gateway with `x > 5` takes the truthy branch; default branch is not taken.
-4. **Parallel Gateway** — `04-parallel-gateway/test-plan.md`. Two parallel branches set distinct variables, join, then end; verifies fork/join synchronization.
-5. **Event-Based Gateway** — `05-event-based-gateway/test-plan.md`. Gateway races a 30s timer vs a message; sending the message via API before the timer fires wins.
-6. **Call Activity** — `06-call-activity/test-plan.md`. Parent maps `input = 21` into a child that computes `result = input * 2` and maps it back; verifies cross-process variable mapping.
-7. **Embedded SubProcess** — `07-subprocess/test-plan.md`. Embedded subprocess with its own start → script → end runs, then the parent continues.
 8. **Timer Events** — `08-timer-events/test-plan.md`. Timer catch event (5s) pauses then resumes; an interrupting timer boundary on a message `IntermediateCatchEvent` takes the timeout path and releases the catch's message subscription so a second instance can start (#759). Timer Start Event: `timer-start-date.bpmn` (`timeDate`) creates exactly one instance at the configured instant; `timer-start-cycle.bpmn` (`R2/PT5S`) creates exactly two instances, 5 s apart.
 9. **Message Events** — `09-message-events/test-plan.md`. Scenarios A–C: workflow message delivery and correlation. Scenario D: editor panel correlation key round-trip (#428).
-10. **Signal Events** — `10-signal-events/test-plan.md`. Workflow waits for signal `globalAlert`; broadcasting via API unblocks.
-11. **Error Boundary Event** — `11-error-boundary/test-plan.md` (`child-that-fails.bpmn`, `error-on-call-activity.bpmn`, `error-on-script-task.bpmn`). Scenario B: error boundary directly on a script task routes a divide-by-zero failure (code 500) to the handler; the happy path skips it. Child throws → parent's CallActivity error boundary catches and routes to handler.
-12. **Variable Scoping** — `12-variable-scoping/test-plan.md`. `shared` is set before a parallel fork; each branch overwrites it independently and the parent merge respects scope isolation.
 13. **Multi-Instance Activity** — `13-multi-instance/test-plan.md`. Multi-instance loop spawns N children, each with its own variables; completion waits for all. Scenarios 13g–13i: MI embedded sub-process (`parallel-subprocess.bpmn`), MI call activity (`parallel-call-activity.bpmn` + `mi-child.bpmn`; **Known bug** [#782](https://github.com/nightBaker/fleans/issues/782)), and one failing iteration caught by an error boundary on the MI host (`parallel-subprocess-one-fails.bpmn`).
-14. **Inclusive Gateway** — `14-inclusive-gateway/test-plan.md`. Inclusive (OR) gateway forks all conditions that evaluate true, then joins on all live tokens.
-15. **Non-Interrupting Boundary Events** — `15-non-interrupting-boundaries/test-plan.md`. Boundaries fire without cancelling the attached activity; cycle timer boundaries fire repeatedly while the host activity continues.
-16. **Message Start Event** — `16-message-start-event/test-plan.md`. Sending a message matching a process's start-event message name auto-creates an instance.
-17. **Signal Start Event** — `17-signal-start-event/test-plan.md`. Broadcasting a signal matching a process's start-event signal name auto-creates an instance.
 18. **Start Event Undeploy (Disable/Enable)** — `18-start-event-undeploy/test-plan.md`. Disabling a process definition unregisters its start-event listeners; re-enabling re-registers them.
 19. **User Task** — `18-user-task/test-plan.md` (`user-task-approval.bpmn`). Full user-task lifecycle: appears in registry, claim/unclaim, complete with required output variables (409 on unauthorized claim or missing required vars), unregistered after completion. This is the regression home for #288 (User Task API status codes / completed-task removal).
-20. **Event Sub-Process — Error (Interrupting)** — `19-event-subprocess-error/test-plan.md`. Error event sub-process catches a thrown error, runs its handler, and completes the enclosing scope.
-21. **Complex Gateway** — `20-complex-gateway/test-plan.md`. Complex fork (conditional outgoing flows) + join with optional `activationCondition`.
-22. **Event Sub-Process — Timer (Interrupting)** — `20-event-subprocess-timer/test-plan.md`. Timer event sub-process fires inside a scope, interrupts siblings, and runs the handler.
 23. **Event Sub-Process — Message (Interrupting)** — `21-event-subprocess-message/test-plan.md`. Message event sub-process: scope-entry correlation against enclosing variables; on delivery, interrupts siblings.
-24. **Event Sub-Process — Signal (Interrupting)** — `22-event-subprocess-signal/test-plan.md`. Signal event sub-process inside a scope; broadcast delivery interrupts siblings.
-25. **Event Sub-Process — Non-Interrupting (Timer)** — `23-event-subprocess-non-interrupting/test-plan.md`. Non-interrupting variant runs in parallel with the host scope, with isolated child variable scope; timer cycles re-arm.
 26. **Transaction Sub-Process** — `26-transaction-subprocess/test-plan.md` (happy path) + `26-transaction-subprocess/test-plan-hazard.md` (hazard path). Happy path: completes normally, variables merge into parent scope. Hazard path: inner task throws, error escapes TX scope, compensation walk runs, Error Boundary on TX host catches it, recovery task runs.
 27. **Multiple Event (Catch, Throw, Boundary)** — `24-multiple-event/test-plan.md` (`message-or-signal-catch.bpmn`, `multi-throw.bpmn`, `multiple-boundary.bpmn`). Multiple intermediate catch races message vs signal (first-fires-wins; loser subscription cancelled); multiple intermediate throw fires every defined signal; multiple interrupting boundary (message + timer) cancels the host activity whichever triggers first. Scenario D: Multiple Start Event (`multiple-start.bpmn`) — either the message or the signal creates a new instance.
 28. **Escalation Event** — `24-escalation-event/test-plan.md` (`child-escalation-end.bpmn`, `child-escalation-throw.bpmn`, `parent-escalation-interrupting.bpmn`, `parent-escalation-non-interrupting.bpmn`). Child CallActivity throws escalation; parent's interrupting boundary cancels the CallActivity and runs the handler; non-interrupting boundary runs the handler while the child continues. Specific escalation codes match before catch-all; uncaught escalations are non-faulting per BPMN spec. Test D (`escalation-event-subprocess.bpmn`): escalation caught by an event sub-process — **Known bug** [#783](https://github.com/nightBaker/fleans/issues/783).
@@ -87,7 +96,6 @@ Each numbered entry below is one regression "step". For each one, follow the lin
 43. **Release pipeline** — `42-release-pipeline/test-plan.md` (no BPMN — release-infrastructure plan). `.github/workflows/release.yml` triggers on `git push origin v<SemVer>` and `workflow_dispatch`. Verifies (a) local `dotnet publish /t:PublishContainer` smoke produces multi-arch (`linux/amd64` + `linux/arm64`) manifest lists for all 4 services (api/web/worker/mcp), (b) `workflow_dispatch` with `version=0.0.0-rc-test` is a dry-run that uploads compose-zip + helm-tgz artifacts but skips `gh release create`, (c) a real `git tag v<VERSION> && git push` run publishes 4 ghcr.io images, creates a GitHub Release with auto-generated notes grouped per `.github/release.yml` categorizer, attaches `docker-compose-v<VERSION>.zip` + `fleans-<VERSION>.tgz`, and `release.published` triggers `nuget-publish.yml`, (d) `:latest` is moved only on non-prerelease tags, (e) re-runs hard-fail on `gh release create` duplicate (no silent overwrites), (f) the `helm-package` job's `helm lint` + smoke-render (`--set worker.enabled=true --set customWorker.enabled=true`) catches template breakage as a regression-guard. The original `helm-drift` deep-diff job was retired in PR #504 — the chart and Aspire's K8s publisher emit intentionally different shapes (per-service ConfigMap/Secret vs inline env), so the diff was always failing.
 44. **Azure Queue Streaming Provider** — `44-azure-queue-streaming/test-plan.md` (`azure-queue-streams.bpmn`). Opt-in Azure Queue Storage stream provider via `FLEANS_STREAMING_PROVIDER=AzureQueue`; verifies (a) Aspire dashboard provisions a `fleans-azurite` Azurite container and forwards `Fleans__Streaming__Provider=AzureQueue` and `Fleans__Streaming__AzureQueue__ConnectionString` env vars to the silo, (b) chained-script-task workflow completes after the silo is killed and restarted between tasks (at-least-once delivery via Azure Queue), (c) 8 queues named `fleans-stream-0` … `fleans-stream-7` are created in Azurite. The workflow-level smoke (basic / user task / call activity / compensation / timer / message / signal) is automated in CI's `e2e-providers` (azurequeue) leg; (b) restart-recovery and (c) queue inspection stay manual.
 45. **Redis Streaming Provider (default)** — `45-redis-streaming/test-plan.md` (`redis-streams.bpmn`). Verifies the new **default** stream provider (v0.3.0+) — `Universley.OrleansContrib.StreamsProvider.Redis` reuses the existing `orleans-redis` Aspire-managed container. (a) `FLEANS_STREAMING_PROVIDER` unset → silo env shows `Fleans__Streaming__Provider=Redis`; no Kafka/Azurite containers running; (b) chained-script-task workflow completes after the silo is killed mid-stream and restarted (at-least-once via Redis Streams XACK + XAUTOCLAIM consumer-group reclaim); (c) `redis-cli KEYS '*StreamProvider*'` shows the Redis Streams keys; `XLEN` ≥ 2; `XINFO GROUPS … pending = 0` after recovery; (d) `FLEANS_STREAMING_PROVIDER=Memory` opt-out path still works (single-silo demo only).
-45. **User task fail and cancel endpoints** — `45-user-task-fail-cancel/test-plan.md`. New `POST /tasks/{id}/fail` and `POST /tasks/{id}/cancel` endpoints; verifies (a) fail surfaces `ActivityFailed` and routes to Error Boundary Event if present, (b) cancel marks the activity terminal with `ActivityCancelled` and cleans up the user task, (c) both operations are idempotent (double-call returns 200), (d) 404 on unknown task, (e) 400 on missing ErrorMessage for fail, (f) cancel body is optional. *(Automated: `UserTaskLifecycleTests`.)*
 46. **Fleans namespace** — `45-fleans-namespace/test-plan.md` (`fleans-service-task.bpmn`). End-to-end deploy + run of a workflow whose extension elements use the `fleans:` prefix at `https://fleans.io/schema/bpmn/1.0`. Exercises `<fleans:taskDefinition>`, `<fleans:ioMapping>` with `<fleans:input>`/`<fleans:output>`, and the four `fleans:*` multi-instance loop attributes (`collection`, `elementVariable`, `outputCollection`, `outputElement`). Verifies (a) parser accepts the new URI and namespaced shapes, (b) editor round-trips them without rewriting prefixes, (c) zeebe-prefixed peer fixture (#37) still deploys for backward compat.
 47. **Event Sub-Process editor toggle** — `47-event-subprocess-editor/test-plan.md`. Editor panel for `bpmn:SubProcess` shows "Triggered by event (Event Sub-Process)" checkbox; checking it sets `triggeredByEvent="true"` and redraws the element with a dashed border; unchecking reverts; panel header label updates to "Event Sub-Process" / "Sub-Process" accordingly.
 48. **IO Mapping editor** — `48-io-mapping-editor/test-plan.md`. CallActivity shows Input/Output Mappings from imported BPMNs (including `zeebe:ioMapping` nested format); ServiceTask with unregistered plugin type shows raw IO mapping table with existing entries visible; adding/removing rows works correctly.
@@ -119,8 +127,6 @@ Each numbered entry below is one regression "step". For each one, follow the lin
 68. **AWS MSK IAM authentication** — `68-kafka-msk-iam/test-plan.md`. Verifies #682: `AddKafkaStreamingWithMskIam` wires SASL_SSL+OAuthBearer via the AWS SigV4 signer; IAM token refreshes succeed under workload identity; EventId 11200 fires on IAM permission errors; missing region throws at startup; wrong broker port (`:9092` vs `:9098`) produces a clear SASL error. **Human-only — requires AWS account + MSK cluster.**
 
 69. **User-task acting user from JWT** — `69-usertask-jwt-user-id/test-plan.md`. Verifies #793: under JWT auth, claim/complete act as the token's `Authentication:UserIdClaim` user (default `preferred_username`). A body `UserId` that differs from the token returns 403 (EventId 8009, identifier-free message), so an authenticated caller can't claim an `assignee=alice` task by naming alice. No-auth deployments still trust the body. Automated in CI's `e2e-auth` job (`AuthenticationTests.UserTaskClaimAndComplete_UseJwtUserId_BodySuppliedUserIdCannotImpersonate`).
-
-72. **Process-definition versioning** — `72-definition-versioning/test-plan.md` (`versioned-order-v{1,2}.bpmn`, `versioned-child-v{1,2}.bpmn`, `versioned-parent.bpmn`). Verifies #767: instances started on v1 finish on the v1 graph after v2 of the same key is deployed (v1-only ids completed, v2-only ids not — both versions share the `approve` user-task id to catch graph migration); new starts use v2; `GET /Definitions/{key}/{version}/instances` and `GET /Definitions/{key}/instances` list each instance under the right version; a call activity resolves the **latest** child version at the moment it executes (no pinning), while an already-running v1 child finishes on v1. Automated by `DefinitionVersioningTests`.
 
 ## Website regression suite
 

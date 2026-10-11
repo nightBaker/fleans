@@ -4,7 +4,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Fleans.E2E.Tests.Specs;
 
-// Ports tests/manual/20-complex-gateway/test-plan.md (scenario 20b)
+// Ports tests/manual/20-complex-gateway/ (manual plan retired — automated here) (scenario 20b)
 [TestClass]
 [TestCategory("E2E")]
 public class ComplexGatewayTests : WorkflowE2ETestBase

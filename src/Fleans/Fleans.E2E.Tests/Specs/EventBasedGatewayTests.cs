@@ -4,7 +4,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Fleans.E2E.Tests.Specs;
 
-// Ports tests/manual/05-event-based-gateway/test-plan.md
+// Ports tests/manual/05-event-based-gateway/ (manual plan retired — automated here)
 [TestClass]
 [TestCategory("E2E")]
 public class EventBasedGatewayTests : WorkflowE2ETestBase

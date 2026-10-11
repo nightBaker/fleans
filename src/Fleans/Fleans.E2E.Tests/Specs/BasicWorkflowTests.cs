@@ -5,7 +5,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Fleans.E2E.Tests.Specs;
 
-// Ports tests/manual/01-basic-workflow/test-plan.md
+// Ports tests/manual/01-basic-workflow/ (manual plan retired — automated here)
 //
 // Phase 1 pilot — driving deploy + start via the API rather than the bpmn-js editor.
 // "Deploy via drag-drop in the editor" and "click Start on the Workflows row" are NOT

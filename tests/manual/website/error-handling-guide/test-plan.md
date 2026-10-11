@@ -10,7 +10,7 @@ Worker Host)* and *BPMN Editor*.
 
 This plan verifies that the build completes cleanly, the page renders in both
 themes, every cited manual-test fixture is referenced by name, the call-activity
-error-propagation note matches `tests/manual/11-error-boundary/test-plan.md`, and the
+error-propagation note matches `ErrorBoundaryTests` (E2E spec, fixtures in `tests/manual/11-error-boundary/`), and the
 drift-guard line ranges still match the current source SHA.
 
 ## Prerequisites
@@ -62,7 +62,7 @@ drift-guard line ranges still match the current source SHA.
 5. **Content spot-check — call-activity error propagation matches fixture #11.**
    The guide's *Error boundary on a service task* section states that the same
    boundary works on a `callActivity` (child error re-raised on the parent and
-   caught) — the outcome asserted by `tests/manual/11-error-boundary/test-plan.md`.
+   caught) — the outcome asserted by `ErrorBoundaryTests` (E2E spec, fixtures in `tests/manual/11-error-boundary/`).
 
 6. **Drift-guard freshness.** Open `website/src/content/docs/guides/error-handling.md`
    in the repo. The HTML drift-guard comment at the top pins line ranges
@@ -110,7 +110,7 @@ drift-guard line ranges still match the current source SHA.
 - [ ] All four fixture-folder paths (#11, #19, #24-escalation, #24-compensation)
       are referenced by name in the rendered guide.
 - [ ] Call-activity error-propagation note matches the outcome asserted by
-      `tests/manual/11-error-boundary/test-plan.md`.
+      `ErrorBoundaryTests` (E2E spec, fixtures in `tests/manual/11-error-boundary/`).
 - [ ] Every drift-guard pin (`WorkflowExecution.cs:723-784`,
       `BpmnConverter.cs:132,209-269,665-710,759-815`,
       `BadRequestActivityException.cs:5-13`,

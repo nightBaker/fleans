@@ -4,7 +4,7 @@ The release pipeline at `.github/workflows/release.yml` triggers on `git push or
 
 ## Pre-tag checklist
 
-1. **Manual regression suite green** — run the full BPMN regression list (`tests/manual/01-…/` through the latest entry) plus the website regression list against `main`. Document any KNOWN-BUG verdicts in the release notes draft. See [docs/conventions/regression-testing.md](../conventions/regression-testing.md).
+1. **Manual regression suite green** — run every plan in the BPMN regression list of `tests/manual/README.md` (fully automated plans are retired from it and gated by the `e2e` CI job instead) plus the website regression list against `main`. Document any KNOWN-BUG verdicts in the release notes draft. See [docs/conventions/regression-testing.md](../conventions/regression-testing.md).
 1a. **Verify `Universley.OrleansContrib.StreamsProvider.Redis` pin** in `Fleans.ServiceDefaults.csproj` matches what the manual regression actually ran against. The package uses date-based versioning (`YYYY.M.D`) and is not SemVer; an unintentional version drift could ship a different Redis-streaming adapter than the one the regression validated.
 2. **Version bump in `Directory.Build.props`** — `<VersionPrefix>` only needs a hand-bump for *local development builds* (so dev images get reasonable tags). The release workflow overrides `/p:Version=<git-tag-without-v>` regardless, so the assembly + container tag always match the git tag.
 3. **Changelog draft** — start from `git log v<PREV>..main --oneline --no-merges`. The workflow auto-generates release notes via `gh release create --generate-notes`; a hand-authored "Highlights" section makes the post readable.
