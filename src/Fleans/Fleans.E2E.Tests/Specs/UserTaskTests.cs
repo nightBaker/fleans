@@ -10,6 +10,7 @@ namespace Fleans.E2E.Tests.Specs;
 public class UserTaskTests : WorkflowE2ETestBase
 {
     [TestMethod]
+    [TestCategory(E2ECategories.Smoke)]
     public async Task UserTaskLifecycle_ListClaimCompleteAndWorkflowContinues()
     {
         var xml = BpmnFixtureLoader.Load("18-user-task", "user-task-approval.bpmn");

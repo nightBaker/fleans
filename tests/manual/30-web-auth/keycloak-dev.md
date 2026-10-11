@@ -2,6 +2,15 @@
 
 A copy-paste recipe for running a Keycloak dev instance pre-configured with the `fleans` realm + `fleans-web` client used by the manual test plan.
 
+## Shortcut — let Aspire provision it
+
+```bash
+cd src/Fleans
+FLEANS_E2E_AUTH=true dotnet run --project Fleans.Aspire
+```
+
+The AppHost (dev mode only) starts a Keycloak container with the E2E realm `src/Fleans/Fleans.Aspire/e2e-auth/fleans-realm.json` (users `alice`/`alice` ∈ `managers`, `bob`/`bob`; wildcard redirect URIs) and wires both Fleans.Api (JWT, audience `fleans-api`) and Fleans.Web (OIDC client `fleans-web`) to it — no user-secrets needed. The Keycloak URL is on the Aspire dashboard. The automated `E2E-Auth` specs use this topology. The manual recipe below stays useful for exercising your own realm settings.
+
 ## Run Keycloak with the realm imported
 
 Run from the repository root so the `-v` mount path resolves:

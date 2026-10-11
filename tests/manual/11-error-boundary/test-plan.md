@@ -25,3 +25,21 @@ A parent process calls a child that throws an exception. An error boundary event
 - [ ] Variables: `errorHandled` = **true**
 - [ ] Activities tab: `callFailing` shows error details (code 500, message "Something went wrong")
 - [ ] BPMN canvas highlights the error path
+
+## Scenario B: Error boundary on a plain script task (error-on-script-task.bpmn)
+An error boundary attached directly to a script task (no call activity). The script computes `10 / divisor`; `divisor = 0` throws. Automated by `ErrorBoundaryOnTaskTests`.
+
+### Steps
+1. Deploy `error-on-script-task.bpmn`.
+2. Start `error-boundary-script-task` with variables `{"divisor": 0}`.
+3. Start a second instance with `{"divisor": 2}`.
+
+### Expected — `divisor = 0`
+- [ ] Instance **Completed** (not failed, not cancelled)
+- [ ] `errorBoundary`, `errorHandler`, `errorEnd` completed; `happyPath` / `happyEnd` NOT completed
+- [ ] `riskyScript` shows error code **500**
+- [ ] Variables: `errorHandled` = **true**
+
+### Expected — `divisor = 2`
+- [ ] Instance **Completed** via `happyPath` → `happyEnd`; boundary not triggered
+- [ ] Variables: `quotient` = **5**

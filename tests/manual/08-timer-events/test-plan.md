@@ -42,3 +42,30 @@ A blocking activity (message catch that never receives a message) has a 5s bound
 The fixture correlates on the fixed key `never-match`, so the interrupted catch must release its message subscription.
 - [ ] Start `timer-boundary-test` again — `blockingWait` becomes active (it does NOT fail with "Duplicate subscription")
 - [ ] After ~5 seconds the second instance also completes via `timeoutPath`
+
+## Scenario C: Timer Start Event — `timeDate` (timer-start-date.bpmn)
+Deploying a process whose start event has a `timeDate` timer creates exactly one instance at that moment — no `start` call. Automated by `TimerStartEventTests.TimerStartEvent_TimeDate_CreatesOneInstanceAtTheConfiguredMoment`.
+
+### Steps
+1. Edit `timer-start-date.bpmn`: set `<timeDate>` to an ISO-8601 UTC instant ~30 s in the future (e.g. `2026-10-09T12:00:30Z`).
+2. Deploy it. Do **not** start an instance.
+3. Poll `GET https://localhost:7140/Definitions/timer-start-date-test/instances` until an instance appears.
+
+### Expected
+- [ ] No instance exists before the configured instant; exactly one appears after it
+- [ ] The instance is **Completed** with `timerStart`, `afterTimerStart`, `end` completed
+- [ ] Variables: `startedByTimer` = **true**
+- [ ] No further instances are created afterwards
+
+## Scenario D: Timer Start Event — `timeCycle` (timer-start-cycle.bpmn)
+`R2/PT5S` creates one instance every 5 seconds, twice, then stops. Automated by `TimerStartEventTests.TimerStartEvent_TimeCycle_CreatesOneInstancePerRepetition`.
+
+### Steps
+1. Deploy `timer-start-cycle.bpmn`. Do **not** start an instance.
+2. Poll `GET https://localhost:7140/Definitions/timer-start-cycle-test/instances` for ~20 s.
+3. Disable the definition (`POST /Definitions/disable`) when done; re-deploying a disabled key keeps it disabled — call `POST /Definitions/enable` to re-arm the timer.
+
+### Expected
+- [ ] Exactly 2 instances are created, ~5 s apart, both **Completed** with `startedByTimer` = **true**
+- [ ] Sub-minute cycles work (regression: the scheduler used to pass the cycle interval as the Orleans reminder period, which Orleans rejects below 1 minute)
+- [ ] Re-deploying / re-enabling the definition arms a fresh `R2` budget (regression: the fire counter used to carry over)

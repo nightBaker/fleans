@@ -161,9 +161,9 @@ evolve.
 
 ## Versioning
 
-Call activities always resolve to the **latest active version** of the
+Call activities always resolve to the **latest deployed version** of the
 called process. The single resolution point lives at
-[WorkflowLifecycleEffectHandler.cs#L61](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Application/Effects/WorkflowLifecycleEffectHandler.cs#L61):
+[WorkflowLifecycleEffectHandler.cs#L76](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Application/Effects/WorkflowLifecycleEffectHandler.cs#L76):
 
 ```csharp
 var processGrain = context.GrainFactory.GetGrain<IProcessDefinitionGrain>(
@@ -173,7 +173,7 @@ var childDefinition = await processGrain.GetLatestDefinition();
 
 Practical implications:
 
-- **New deploys are picked up immediately.** Each `POST /Workflow/deploy`
+- **New deploys are picked up immediately.** Each `POST /Definitions/deploy`
   increments the version of `calledElement`. Parent instances starting
   *after* the deploy use the new version, and **in-flight parents that
   reach a call activity after the deploy also use the new version** — there
@@ -306,7 +306,7 @@ handler side-effects visible to subsequent handlers — are in
 
 - **No `<calledElement-version>` pinning.** Call activities always resolve
   to the latest version of `calledElement`
-  ([WorkflowLifecycleEffectHandler.cs#L61](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Application/Effects/WorkflowLifecycleEffectHandler.cs#L61) — `GetLatestDefinition()`).
+  ([WorkflowLifecycleEffectHandler.cs#L76](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Application/Effects/WorkflowLifecycleEffectHandler.cs#L76) — `GetLatestDefinition()`).
   In-flight parents pick up new versions on their next call-activity
   execution. Use distinct `calledElement` keys per version if you need
   pinning today.

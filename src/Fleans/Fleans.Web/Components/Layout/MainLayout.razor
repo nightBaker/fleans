@@ -51,6 +51,13 @@
     </FluentStack>
 </FluentLayout>
 
+@* E2E hook: only rendered once the SignalR circuit is up (never during prerender),
+   so Playwright page objects can wait for interactivity before clicking. *@
+@if (RendererInfo.IsInteractive)
+{
+    <span data-testid="blazor-interactive" hidden></span>
+}
+
 <div id="blazor-error-ui" data-nosnippet>
     An unhandled error has occurred.
     <a href="." class="reload">Reload</a>
@@ -75,14 +82,18 @@
         InvokeAsync(StateHasChanged);
     }
 
+    // Raised when FluentDesignTheme changes the theme itself (notably when it restores the
+    // persisted value from localStorage), so pages showing the theme (Settings) stay in sync.
     private void SyncModeToService()
     {
-        ThemeService.Mode = _mode;
+        if (ThemeService.Mode != _mode)
+            ThemeService.SetTheme(_mode, ThemeService.OfficeColor);
     }
 
     private void SyncColorToService()
     {
-        ThemeService.OfficeColor = _officeColor;
+        if (ThemeService.OfficeColor != _officeColor)
+            ThemeService.SetTheme(ThemeService.Mode, _officeColor);
     }
 
     public void Dispose()

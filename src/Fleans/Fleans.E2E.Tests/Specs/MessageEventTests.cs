@@ -10,6 +10,7 @@ namespace Fleans.E2E.Tests.Specs;
 public class MessageEventTests : WorkflowE2ETestBase
 {
     [TestMethod]
+    [TestCategory(E2ECategories.Smoke)]
     public async Task MessageCatch_ReceivesMessage_WorkflowResumes()
     {
         var xml = BpmnFixtureLoader.Load("09-message-events", "message-catch.bpmn");

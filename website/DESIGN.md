@@ -117,7 +117,7 @@ Run `node scripts/check-contrast.mjs` after any token change (exits non-zero on 
 |---|---|---|
 | Header | `src/components/Header.astro` | Wordmark · flat text nav (Guides / Concepts / Reference, current section in `--fl-text`) · pill search · theme switch · "GitHub". No bottom border until the page scrolls (CSS `animation-timeline: scroll()`). |
 | Theme switch | `src/components/ThemeSelect.astro` | Pill toggle replacing Starlight's `<select>`. Same `localStorage['starlight-theme']` contract, so Starlight's FOUC guard and the Archify iframe sync keep working. No "auto" state in the UI: until the user clicks, the system preference applies. |
-| Landing hero | `src/components/Hero.astro` | Chips eyebrow → oversized title → lead → pill actions → "made for … by …" row. Fills the first viewport. Driven by `hero` frontmatter in `index.mdx`. |
+| Landing hero | `src/components/Hero.astro` | Text column (chips eyebrow → oversized title → lead → pill actions → "made for … by …" row) left, hero card video right (≥64rem; stacked below that). Fills the first viewport. Driven by `hero` frontmatter in `index.mdx`. |
 | Landing section | `src/components/Section.astro` | Large light `h2` + muted intro slot. |
 | Spec row | `src/components/SpecRow.astro` | Saddle styleguide row: chips (left, 11rem) · `h3` + body · bordered note card (right, 17.5rem) with optional "Learn how →". Single column under 60rem. In MDX, leave a blank line before `<Fragment slot="note">` — otherwise MDX wraps it in the body paragraph and the slot is lost. |
 | Footer | `src/components/Footer.astro` | Licence line + Releases / Issues / GitHub. |
@@ -151,6 +151,8 @@ Minimal and CSS-only except the theme switch.
 | Moment | Technique |
 |---|---|
 | Hero entrance | Title → lead → actions rise 12px and fade, 600ms, 90ms stagger |
+| Hero scroll stage | ≥64rem without reduced motion: the hero is ~2 viewports tall with its content pinned (`position: sticky`); as you scroll, the card grows from its slot to the full viewport under the header (ease-out cubic, radius → 0) and the text fades. The card has no border and its background is the current cut's own colour (`#16181c` dark, `#ffffff` light), so card and video read as one surface. |
+| Hero card video | `public/hero/fleans-hero-{dark,light}.*`: one cut per theme, picked by an inline script before any fetch and swapped (same timestamp) on theme toggle. Silent 21s loop at the source's native 1920×1200 (never rescaled), visually lossless: AV1 (~0.9 MB) with H.264 fallback (~1.4 MB), both VMAF ≈ 97 against the source, `+faststart`; poster is the blank first frame. Pauses off-screen; under `reduce` it doesn't autoplay and shows the final frame (`*-still.jpg`) with controls. Re-encode a new source with `ffmpeg -an -c:v libsvtav1 -preset 4 -crf 32 -g 240` / `-c:v libx264 -preset veryslow -crf 21 -tune animation -movflags +faststart`. Higher AV1 CRF (36+) starts erasing the faint background dot grid; HEVC gave no saving over H.264 on this content. |
 | Header rule | Border fades in over the first 4rem of scroll (`animation-timeline: scroll(root)`, behind `@supports`) |
 | Hover | 120–200ms color / border / background transitions; "→" nudges 3px in note links |
 | Theme switch | Knob slides 220ms |

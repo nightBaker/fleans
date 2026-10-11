@@ -40,6 +40,16 @@ and ship the resulting container image alongside the engine.
 - **Independent release cadence** — your plugin host repo lives outside the engine repo, so
   you bump it on your own schedule and contributors don't need engine commit access.
 
+## Configure the shared reminder service
+
+Your plugin host joins the engine's Orleans cluster, so it owns part of the cluster's
+reminder ring and serves some of the engine's BPMN-timer reminders. Configure it with the
+**same reminder provider as the engine** — by default the Redis reminder table on the
+`orleans-redis` connection (`Microsoft.Orleans.Reminders.Redis`,
+`siloBuilder.UseRedisReminderService(...)`). Without a reminder service, timers whose range
+lands on your host fail to register and their activities fail; with an in-memory one
+(`UseInMemoryReminderService()`), those timers are lost whenever your host restarts.
+
 ## Plugin-author NuGet stack
 
 Three NuGet packages compose the plugin-author surface, layered strictly:

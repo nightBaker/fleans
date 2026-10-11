@@ -10,6 +10,7 @@ namespace Fleans.E2E.Tests.Specs;
 public class SignalEventTests : WorkflowE2ETestBase
 {
     [TestMethod]
+    [TestCategory(E2ECategories.Smoke)]
     public async Task SignalCatch_ReceivesBroadcast_WorkflowResumes()
     {
         var xml = BpmnFixtureLoader.Load("10-signal-events", "signal-catch-throw.bpmn");

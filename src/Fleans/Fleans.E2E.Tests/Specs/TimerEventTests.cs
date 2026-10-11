@@ -10,6 +10,7 @@ namespace Fleans.E2E.Tests.Specs;
 public class TimerEventTests : WorkflowE2ETestBase
 {
     [TestMethod]
+    [TestCategory(E2ECategories.Smoke)]
     public async Task TimerIntermediateCatch_FiresAfterDelay_WorkflowResumes()
     {
         var xml = BpmnFixtureLoader.Load("08-timer-events", "timer-intermediate-catch.bpmn");

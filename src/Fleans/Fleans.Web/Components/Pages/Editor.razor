@@ -17,7 +17,12 @@
 
 <PageTitle>BPMN Editor</PageTitle>
 
-<div class="editor-page">
+@* data-editor-ready flips to "true" only after OnAfterRenderAsync has finished its whole
+   boot sequence (init → restore tabs → load active/blank tab → persist). Anything that drives
+   window.bpmnEditor externally (E2E page objects) MUST wait on it: the modeler object exists
+   long before the boot sequence's own loadXml lands, and an import issued in that window is
+   silently overwritten by the blank/restored tab (#773). *@
+<div class="editor-page" data-editor-ready="@(editorReady ? "true" : "false")">
     <div class="editor-toolbar">
         <FluentButton Appearance="Appearance.Stealth"
                       IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowLeft())"
@@ -178,6 +183,7 @@
     private string? errorMessage;
     private string? successMessage;
     private bool editorInitialized;
+    private bool editorReady;
 
     private string? deployProcessKey;
     private string deployNextVersion = "";
@@ -228,6 +234,7 @@
         }
 
         await PersistTabs();
+        editorReady = true;
         StateHasChanged();
     }
 
