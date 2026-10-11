@@ -1,0 +1,275 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Fleans on Kubernetes",
+    "subtitle": "Helm release: TLS ingress, Orleans silos, admin UI, MCP, and managed state",
+    "animation": "none",
+    "quality_profile": "showcase"
+  },
+  "components": [
+    {
+      "id": "users",
+      "type": "external",
+      "label": "Users",
+      "sublabel": "browser + API clients",
+      "pos": [
+        40,
+        250
+      ],
+      "size": [
+        130,
+        60
+      ]
+    },
+    {
+      "id": "ingress",
+      "type": "security",
+      "label": "Ingress",
+      "sublabel": "TLS termination",
+      "pos": [
+        240,
+        250
+      ],
+      "size": [
+        130,
+        60
+      ]
+    },
+    {
+      "id": "web",
+      "type": "frontend",
+      "label": "fleans-web",
+      "sublabel": "admin UI :8080",
+      "pos": [
+        440,
+        150
+      ],
+      "size": [
+        130,
+        60
+      ]
+    },
+    {
+      "id": "mcp",
+      "type": "backend",
+      "label": "fleans-mcp",
+      "sublabel": "MCP :5200 (opt)",
+      "pos": [
+        360,
+        480
+      ],
+      "size": [
+        130,
+        60
+      ]
+    },
+    {
+      "id": "core",
+      "type": "backend",
+      "label": "Core silos",
+      "sublabel": "fleans-api, Role=Core",
+      "pos": [
+        660,
+        250
+      ],
+      "size": [
+        140,
+        60
+      ]
+    },
+    {
+      "id": "worker",
+      "type": "backend",
+      "label": "Worker silos",
+      "sublabel": "dedicated node pool",
+      "pos": [
+        620,
+        400
+      ],
+      "size": [
+        140,
+        60
+      ]
+    },
+    {
+      "id": "custom",
+      "type": "backend",
+      "label": "Custom worker",
+      "sublabel": "plugin host (opt)",
+      "pos": [
+        800,
+        400
+      ],
+      "size": [
+        140,
+        60
+      ]
+    },
+    {
+      "id": "redis",
+      "type": "database",
+      "label": "Redis",
+      "sublabel": "clustering + storage",
+      "pos": [
+        890,
+        150
+      ],
+      "size": [
+        140,
+        60
+      ]
+    },
+    {
+      "id": "postgres",
+      "type": "database",
+      "label": "Postgres",
+      "sublabel": "managed, event store",
+      "pos": [
+        1180,
+        250
+      ],
+      "size": [
+        140,
+        60
+      ]
+    },
+    {
+      "id": "kafka",
+      "type": "messagebus",
+      "label": "Kafka",
+      "sublabel": "streaming (opt)",
+      "pos": [
+        1180,
+        380
+      ],
+      "size": [
+        140,
+        60
+      ]
+    },
+    {
+      "id": "idp",
+      "type": "security",
+      "label": "OIDC IdP",
+      "sublabel": "issuer / JWT",
+      "pos": [
+        440,
+        10
+      ],
+      "size": [
+        130,
+        60
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Kubernetes namespace (Helm release)",
+      "wraps": [
+        "ingress",
+        "web",
+        "mcp",
+        "core",
+        "worker",
+        "custom",
+        "redis"
+      ]
+    },
+    {
+      "kind": "security-group",
+      "label": "Orleans cluster",
+      "wraps": [
+        "core",
+        "worker",
+        "custom"
+      ],
+      "pad": 24
+    },
+    {
+      "kind": "region",
+      "label": "External / managed services",
+      "wraps": [
+        "postgres",
+        "kafka"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "users",
+      "to": "ingress",
+      "label": "HTTPS",
+      "variant": "emphasis"
+    },
+    {
+      "from": "ingress",
+      "to": "web",
+      "variant": "emphasis",
+      "fromSide": "top",
+      "toSide": "left",
+      "via": [
+        [
+          305,
+          180
+        ]
+      ]
+    },
+    {
+      "from": "ingress",
+      "to": "core",
+      "label": "/api/",
+      "variant": "emphasis",
+      "labelDy": 12
+    },
+    {
+      "from": "web",
+      "to": "core",
+      "label": "grain calls"
+    },
+    {
+      "from": "mcp",
+      "to": "core",
+      "label": "grain calls",
+      "variant": "dashed"
+    },
+    {
+      "from": "core",
+      "to": "worker",
+      "label": "grain calls",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDx": -12
+    },
+    {
+      "from": "core",
+      "to": "custom",
+      "label": "custom tasks",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "core",
+      "to": "redis",
+      "label": "membership"
+    },
+    {
+      "from": "core",
+      "to": "postgres",
+      "label": "SQL"
+    },
+    {
+      "from": "core",
+      "to": "kafka",
+      "variant": "dashed"
+    },
+    {
+      "from": "web",
+      "to": "idp",
+      "label": "OIDC",
+      "variant": "security"
+    }
+  ]
+}

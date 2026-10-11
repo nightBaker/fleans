@@ -20,11 +20,16 @@ public sealed class EditorPage
     public async Task OpenAsync()
     {
         await _page.GotoAsync("/editor");
-        // bpmn-js init runs inside Editor.razor's OnAfterRenderAsync; wait until the
-        // modeler is materialised before calling any window.bpmnEditor.* method.
-        await _page.WaitForFunctionAsync(
-            "() => window.bpmnEditor && window.bpmnEditor._modeler !== null && window.bpmnEditor._modeler !== undefined",
-            options: new PageWaitForFunctionOptions { PollingInterval = 100, Timeout = 15_000 });
+        // Wait for Editor.razor's whole OnAfterRenderAsync boot sequence, not just for
+        // window.bpmnEditor._modeler to exist. The modeler is created by the first JS
+        // interop call, but the boot sequence then keeps going over the SignalR circuit
+        // (restore tabs → AddBlankTab → bpmnEditor.newDiagram → loadXml). A LoadXmlAsync
+        // issued in that window is silently overwritten by the blank diagram, after which
+        // elementRegistry.get(id) returns null (#773 — deterministic on slower Linux CI
+        // runners, intermittent on macOS). data-editor-ready is rendered "true" only
+        // after the boot sequence finished, so it is a deterministic signal.
+        await _page.Locator(".editor-page[data-editor-ready='true']").WaitForAsync(
+            new LocatorWaitForOptions { State = WaitForSelectorState.Attached, Timeout = 30_000 });
     }
 
     public async Task LoadXmlAsync(string bpmnXml)
@@ -59,7 +64,7 @@ public sealed class EditorPage
         return await _page.EvaluateAsync<string>(script);
     }
 
-    public async Task UpdateActivationConditionAsync(string elementId, string expression)
+    public async Task UpdateActivationConditionAsync(string elementId, string? expression)
     {
         var script = $@"() => {{
             try {{

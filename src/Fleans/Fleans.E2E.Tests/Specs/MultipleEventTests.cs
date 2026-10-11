@@ -63,28 +63,46 @@ public class MultipleEventTests : WorkflowE2ETestBase
         Assert.IsTrue(state.IsCompleted);
     }
 
-    // TODO: timing-sensitive — `longTask` completes very quickly and the cancel message
-    // doesn't reach the boundary before normalEnd fires. Requires a fixture with a longer
-    // host activity, or an active-state wait that the engine guarantees (the catch
-    // events become active before script tasks complete, but TaskActivity isn't a
-    // catch event so we can't WaitForState on its subscription).
+    // `longTask` is a user task, so it stays active until the boundary interrupts it —
+    // the message has a deterministic window (the boundary's own timer is PT10S).
     [TestMethod]
-    [Ignore("Timing-sensitive: longTask completes before the cancel message arrives in test cluster.")]
     public async Task MultipleBoundary_MessageFiresFirst_EscalationPathTaken()
     {
         var xml = BpmnFixtureLoader.Load("24-multiple-event", "multiple-boundary.bpmn");
         var deployed = await ApiClient.DeployAsync(xml);
-        var started = await ApiClient.StartAsync(
-            deployed.ProcessDefinitionKey,
-            variables: new Dictionary<string, object?> { ["orderId"] = "order-boundary-1" });
+        var started = await ApiClient.StartAsync(deployed.ProcessDefinitionKey);
 
         await ApiClient.WaitForStateAsync(
             started.WorkflowInstanceId,
             s => s.ActiveActivityIds.Contains("longTask"));
 
-        await ApiClient.SendMessageAsync("cancelOrder", correlationKey: "order-boundary-1");
+        var msg = await ApiClient.SendMessageAsync("cancelOrder", correlationKey: "order-boundary-1");
+        Assert.IsTrue(msg.Delivered, "cancelOrder should be delivered to the multiple boundary.");
 
         var state = await ApiClient.WaitForCompletionAsync(started.WorkflowInstanceId);
         state.AssertCompletedActivities("escalation", "escalationEnd");
+        state.AssertCancelled("longTask");
+        state.AssertNotCompleted("normalEnd");
+        state.AssertVariableEquals("escalated", "True");
+    }
+
+    [TestMethod]
+    public async Task MultipleBoundary_TimerFiresWhenNoMessage_EscalationPathTaken()
+    {
+        var xml = BpmnFixtureLoader.Load("24-multiple-event", "multiple-boundary.bpmn");
+        var deployed = await ApiClient.DeployAsync(xml);
+        var started = await ApiClient.StartAsync(deployed.ProcessDefinitionKey);
+
+        await ApiClient.WaitForStateAsync(
+            started.WorkflowInstanceId,
+            s => s.ActiveActivityIds.Contains("longTask"));
+
+        // No message: the PT10S timer branch of the boundary must interrupt the user task.
+        var state = await ApiClient.WaitForCompletionAsync(
+            started.WorkflowInstanceId,
+            timeout: TimeSpan.FromSeconds(45));
+        state.AssertCompletedActivities("escalation", "escalationEnd");
+        state.AssertCancelled("longTask");
+        state.AssertNotCompleted("normalEnd");
     }
 }

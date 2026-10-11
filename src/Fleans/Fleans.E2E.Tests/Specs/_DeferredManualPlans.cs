@@ -24,6 +24,12 @@ public class DeferredManualPlans : WorkflowE2ETestBase_None
     // AuthenticationTests (E2E-Auth category, FLEANS_E2E_AUTH=true → Keycloak). Scenario A
     // (auth disabled) is implicitly covered by every default-leg spec.
 
+    // Editor plans (29, 38, 47, 48, 52, 54, 59): the EditorPage POM is now reliable — #773
+    // was a boot race (OpenAsync returned before Editor.razor's OnAfterRenderAsync finished
+    // loading its blank/restored tab), fixed by waiting on data-editor-ready="true". Model-level
+    // round-trips via window.bpmnEditor.* are therefore unblocked; each plan below still needs
+    // its own spec (and, for panel-DOM assertions, an ElementPropertiesPanel POM).
+
     // tests/manual/29-editor-tabs/test-plan.md — BPMN editor multi-tab UI.
     [TestMethod]
     [Ignore("Needs EditorPage page object + bpmn-js drag-drop integration (deferred Phase 4 follow-up).")]
@@ -34,10 +40,8 @@ public class DeferredManualPlans : WorkflowE2ETestBase_None
     // AuthenticationTests.Web_RedirectsToIssuer_LoginEstablishesSession. Scenarios 3–5
     // (dashboard guard, open-redirect table, antiforgery logout) remain manual.
 
-    // tests/manual/31-events-page/test-plan.md — /events page in Web UI.
-    [TestMethod]
-    [Ignore("Needs EventsPage POM; UI assertion on Fluent DataGrid filtering.")]
-    public void Plan31_EventsPage_FilterAndDisplay() { }
+    // tests/manual/31-events-page/test-plan.md — automated in EventsPageTests
+    // (steps 2 empty-state and 7 OIDC remain manual).
 
     // tests/manual/35-kafka-streaming/test-plan.md — OUT OF SCOPE per plan (silo kill).
 
@@ -68,11 +72,6 @@ public class DeferredManualPlans : WorkflowE2ETestBase_None
     [Ignore("Configuration + throughput observation; not a workflow-level assertion.")]
     public void Plan44_StreamShardingParallelism_QueueCountTunable() { }
 
-    // tests/manual/45-user-task-fail-cancel/test-plan.md — fail/cancel user task.
-    [TestMethod]
-    [Ignore("Needs fail-task + cancel-task DTO + client helpers; lifecycle covered partially by Plan18.")]
-    public void Plan45_UserTaskFailCancel_TerminalStatesTransition() { }
-
     // tests/manual/47-event-subprocess-editor/test-plan.md — editor UI for event sub-process.
     [TestMethod]
     [Ignore("Needs EditorPage POM + property-panel inspection.")]
@@ -84,14 +83,15 @@ public class DeferredManualPlans : WorkflowE2ETestBase_None
     public void Plan48_IoMappingEditor_AddEditRemove() { }
 
     // tests/manual/49-complex-gateway-activation-condition/test-plan.md — the model-level
-    // round-trip lives in EditorPropertiesTests.ActivationCondition_WriteReadClear_…
-    // (currently [Ignore]'d pending investigation into a bpmn-js elementRegistry-inconsistent
-    // state after modeling.updateProperties on default-namespace BPMN). The panel-DOM half
-    // still needs an ElementPropertiesPanel POM.
+    // write/read/clear round-trip is automated in
+    // EditorPropertiesTests.ActivationCondition_WriteReadClear_RoundTripsThroughComplexGateway
+    // (un-ignored by #773). The panel-DOM half still needs an ElementPropertiesPanel POM.
 
     // tests/manual/50-gateway-default-flow/test-plan.md — the model-level round-trip is
-    // automated in EditorPropertiesTests.DefaultFlow_PrePopulatedFromXml_…. The panel-DOM
-    // half (dropdown population + click-to-select) still needs an ElementPropertiesPanel POM.
+    // automated in EditorPropertiesTests.DefaultFlow_PrePopulatesFromImportedXml and
+    // DefaultFlow_EditAndClear_RoundTripsThroughExclusiveGateway (un-ignored by #773). The
+    // panel-DOM half (dropdown population + click-to-select) still needs an
+    // ElementPropertiesPanel POM.
 
     // tests/manual/52-compensation-editor/test-plan.md — editor UI compensation panel.
     [TestMethod]
@@ -103,30 +103,37 @@ public class DeferredManualPlans : WorkflowE2ETestBase_None
     [Ignore("Needs EditorPage POM (multi-event definitions panel).")]
     public void Plan54_MultiEventEditor_PanelFields() { }
 
-    // tests/manual/55-plugin-host-isolation/test-plan.md — plugin host placement.
-    [TestMethod]
-    [Ignore("Needs separate Plugin-role silo in the test cluster (Fleans.CustomWorkerHost).")]
-    public void Plan55_PluginHostIsolation_GrainPlacement() { }
+    // tests/manual/41-placement-role-mismatch/test-plan.md — the PlacementRoleAssertion it
+    // targets never runs (#787). Role mismatch failing loudly is automated via the explicit
+    // Fleans:Role validation in SplitRoleTopologyTests.MisroledSilo_RefusesToStart_… (E2E-SplitRoles).
+
+    // tests/manual/55-plugin-host-isolation/test-plan.md — Scenario 3 (external plugin runs
+    // only on the plugin- silo) and the role-validation negatives are automated in
+    // SplitRoleTopologyTests (E2E-SplitRoles leg). Scenarios 1–2 (Orleans Dashboard placement
+    // of ScriptExecutorGrain / RestCallerHandler) remain manual.
 
     // tests/manual/56-streaming-queue-count-config/test-plan.md — config option round-trip.
     [TestMethod]
     [Ignore("Configuration option (Fleans:Streaming:Redis:TotalQueueCount); not a workflow assertion.")]
     public void Plan56_StreamingQueueCountConfig_RoundTrip() { }
 
-    // tests/manual/58-custom-task-cancellation/test-plan.md — plugin cancellation.
+    // tests/manual/58-custom-task-cancellation/test-plan.md — the boundary-timer interrupt of a
+    // long-running plugin task is automated in SplitRoleTopologyTests (E2E-SplitRoles); token
+    // propagation on interrupt is an engine gap (#786, spec [Ignore]'d there).
     [TestMethod]
-    [Ignore("Needs Worker silo + plugin host + cancellable plugin handler.")]
-    public void Plan58_CustomTaskCancellation_GraceefulShutdown() { }
+    [Ignore("Needs a controlled silo kill/restart mid-plugin-call and EventId 4050/4030 log assertions; the split-roles leg's plugin host is shared by other specs.")]
+    public void Plan58_CustomTaskCancellation_DeactivationRedelivery() { }
 
     // tests/manual/59-custom-task-output-mapping-editor/test-plan.md — editor UI for plugin outputs.
     [TestMethod]
     [Ignore("Needs EditorPage POM + custom-task output mapping panel.")]
     public void Plan59_CustomTaskOutputMappingEditor() { }
 
-    // tests/manual/61-usertask-group-claim/test-plan.md — the JWT half (groups resolved from the
+    // tests/manual/45-user-task-fail-cancel/test-plan.md and
+    // tests/manual/61-usertask-group-claim/test-plan.md — automated in UserTaskLifecycleTests
+    // (auth-disabled body-groups path). The JWT half of plan 61 (groups resolved from the
     // token's `groups` claim; body-supplied groups ignored, so a spoofing caller gets 409) is
     // automated in AuthenticationTests.UserTaskClaim_UsesJwtGroups_BodySuppliedGroupsIgnored.
-    // The auth-disabled body-groups path is covered by the Plan18 UserTaskTests spec.
 
     // tests/manual/62-chart-streaming-providers/test-plan.md — Helm chart tests. OUT OF SCOPE.
     // tests/manual/63-chart-external-postgres/test-plan.md — Helm chart tests. OUT OF SCOPE.

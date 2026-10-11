@@ -8,10 +8,10 @@ CI runs the suite on every PR (job `e2e` in `.github/workflows/dotnet.yml`); loc
 
 ```bash
 cd src/Fleans
-dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --filter "TestCategory=E2E&TestCategory!=E2E-Auth"
+dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --filter "TestCategory=E2E&TestCategory!=E2E-SplitRoles&TestCategory!=E2E-Auth"
 ```
 
-(`TestCategory=E2E` alone also works — `E2E-Auth` specs report Inconclusive outside the auth topology.)
+(`TestCategory=E2E` alone also works — `E2E-SplitRoles` and `E2E-Auth` specs report Inconclusive outside their own topologies.)
 
 ### Provider legs (`E2E-Smoke`)
 
@@ -24,6 +24,21 @@ FLEANS_STREAMING_PROVIDER=AzureQueue dotnet test Fleans.E2E.Tests/Fleans.E2E.Tes
 ```
 
 Tag a spec `E2E-Smoke` only when it exercises persistence or streaming in a way the default leg can't vouch for — every tagged spec runs three extra times in CI.
+
+### Split-role leg (`E2E-SplitRoles`)
+
+Specs tagged `[TestCategory(E2ECategories.SplitRoles)]` (`SplitRoleTopologyTests`) need the three-role topology and run only in the `e2e-split-roles` job; the default `e2e` job filters them out (`TestCategory=E2E&TestCategory!=E2E-SplitRoles&TestCategory!=E2E-Auth`). With `FLEANS_SPLIT_ROLES=true`:
+
+- the AppHost runs `fleans-core` as `Core` and registers `fleans-worker` (`Fleans.WorkerHost`, `Worker`) in dev mode;
+- `AspireFixture` sets `FLEANS_PLUGIN_HOST_PROJECT` to `src/Fleans/Fleans.E2E.PluginHost` — a test-only `Plugin`-role host (template-shaped: `Fleans.Worker` + Orleans only) whose single plugin `e2e-probe` reports the silo it ran on and its start/complete/cancel lifecycle to the in-process `TestHttpServer` (`/probe`);
+- two explicit-start resources (`misroled-worker`, `misroled-plugin-host`) exist only for the role-mismatch spec;
+- every resource's console output is teed to `Fleans.E2E.Tests/bin/Debug/net10.0/resource-logs/` (uploaded by CI on failure).
+
+```bash
+FLEANS_SPLIT_ROLES=true dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --filter "TestCategory=E2E-SplitRoles"
+```
+
+Without the switch these specs report Inconclusive. The plugin host only wires Redis streaming, so the leg is not combined with the provider matrix.
 
 ### Authentication leg (`E2E-Auth`)
 
@@ -38,6 +53,15 @@ Traps: Keycloak only imports a realm file named `<realm>-realm.json`; bearer req
 Each spec class under `Fleans.E2E.Tests/Specs/` carries a `// Ports tests/manual/NN-*/test-plan.md` doc comment linking back to the human-readable plan it derives from.
 
 The `Specs/_DeferredManualPlans.cs` file documents every plan that doesn't yet have an active spec (editor-UI plans, custom-task plugin plans, Helm/release-pipeline plans, etc.), each `[Ignore]`'d with a specific reason.
+
+## Admin-UI specs: page objects, interactivity, unique data
+
+Admin pages are wrapped by page objects under `Fleans.E2E.Tests/PageObjects/` (`WorkflowsPage`, `ProcessInstancesPage`, `InstanceDetailsPage`, `EventsPage`, `CustomTaskCatalogPage`, `SettingsPage`, `EditorPage`). Specs seed state through the REST API, open the page, and assert the rendered rows against the API's view of the same data.
+
+- **Wait for the SignalR circuit before clicking.** Pages are prerendered, so markup is visible before event handlers are wired and an early click is silently dropped. `MainLayout.razor` renders `[data-testid=blazor-interactive]` only when `RendererInfo.IsInteractive`; use `BlazorPage.GotoInteractiveAsync` (or `WaitForInteractiveAsync` after an in-app navigation).
+- **Selectors:** add `data-testid` to the Razor markup. `FluentDataGrid`, `FluentButton`, `FluentSelect`, `FluentTextField` pass it through; **`FluentMessageBar` does not** — put the test id on a `<span>` inside it. App-bar links are `.fluent-appbar-item a[href='/…']`.
+- **Unique identifiers, never exact list counts.** Concurrent E2E stacks share the temp-dir SQLite file, so list pages contain other runs' definitions/instances. Generate per-test process keys / message / signal names with `InlineBpmn` (`Infrastructure/InlineBpmn.cs`) instead of the fixed-id fixtures under `tests/manual/`, and scope assertions to those rows.
+- **Snapshot pages (e.g. `/events`) need a re-query loop**: projections are written asynchronously, so use `BlazorPage.RefreshUntilCountAsync` (clicks Refresh + short auto-waiting assertion per attempt) rather than a fixed delay.
 
 ## Aspire.Hosting.Testing + `UseHttpsRedirection` trap
 

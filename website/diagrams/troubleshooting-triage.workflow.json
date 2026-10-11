@@ -1,0 +1,207 @@
+{
+  "schema_version": 1,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Troubleshooting Triage",
+    "subtitle": "Match the stuck-instance symptom to its known gap, then apply the workaround",
+    "quality_profile": "showcase",
+    "animation": "none",
+    "legend": {
+      "entries": {
+        "external": {
+          "label": "Observed symptom"
+        },
+        "security": {
+          "label": "Root cause"
+        },
+        "backend": {
+          "label": "Workaround"
+        },
+        "database": {
+          "label": "Reference page"
+        }
+      }
+    }
+  },
+  "lanes": [
+    {
+      "id": "catchLane",
+      "label": "Boundary on intermediate catch event"
+    },
+    {
+      "id": "callLane",
+      "label": "Error boundary on CallActivity"
+    },
+    {
+      "id": "otherLane",
+      "label": "Not listed here",
+      "variant": "exception"
+    }
+  ],
+  "phases": [
+    {
+      "id": "pSymptom",
+      "label": "Symptom",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "pCause",
+      "label": "Root cause",
+      "fromCol": 3,
+      "toCol": 3
+    },
+    {
+      "id": "pFix",
+      "label": "Workaround",
+      "fromCol": 5,
+      "toCol": 5,
+      "variant": "emphasis"
+    }
+  ],
+  "mainPath": [
+    "stuck",
+    "catchSym",
+    "catchCause",
+    "catchFix"
+  ],
+  "nodes": [
+    {
+      "id": "stuck",
+      "lane": "catchLane",
+      "col": 0,
+      "type": "external",
+      "label": "Triage",
+      "sublabel": "instance stuck",
+      "width": 92
+    },
+    {
+      "id": "catchSym",
+      "lane": "catchLane",
+      "col": 1,
+      "type": "external",
+      "label": "Never fires",
+      "sublabel": "timer/msg/signal",
+      "width": 112
+    },
+    {
+      "id": "catchCause",
+      "lane": "catchLane",
+      "col": 3,
+      "type": "security",
+      "label": "Not registered",
+      "sublabel": "host is catch event",
+      "width": 132
+    },
+    {
+      "id": "catchFix",
+      "lane": "catchLane",
+      "col": 5,
+      "type": "backend",
+      "label": "Subprocess",
+      "sublabel": "boundary on wrapper",
+      "width": 108
+    },
+    {
+      "id": "callSym",
+      "lane": "callLane",
+      "col": 1,
+      "type": "external",
+      "label": "Running",
+      "sublabel": "boundary silent",
+      "width": 112
+    },
+    {
+      "id": "callCause",
+      "lane": "callLane",
+      "col": 3,
+      "type": "security",
+      "label": "Error lost",
+      "sublabel": "child to parent",
+      "width": 132
+    },
+    {
+      "id": "callFix",
+      "lane": "callLane",
+      "col": 5,
+      "type": "backend",
+      "label": "Normal end",
+      "sublabel": "discriminator var",
+      "width": 108
+    },
+    {
+      "id": "support",
+      "lane": "otherLane",
+      "col": 1,
+      "type": "database",
+      "label": "BPMN Support",
+      "sublabel": "element status",
+      "width": 128
+    }
+  ],
+  "edges": [
+    {
+      "from": "stuck",
+      "to": "catchSym",
+      "variant": "emphasis",
+      "role": "main"
+    },
+    {
+      "from": "catchSym",
+      "to": "catchCause",
+      "variant": "emphasis",
+      "role": "main"
+    },
+    {
+      "from": "catchCause",
+      "to": "catchFix",
+      "variant": "emphasis",
+      "role": "main"
+    },
+    {
+      "from": "stuck",
+      "to": "callSym",
+      "role": "branch",
+      "fromSide": "left",
+      "toSide": "left",
+      "via": [
+        [
+          30,
+          119
+        ],
+        [
+          30,
+          243
+        ]
+      ]
+    },
+    {
+      "from": "callSym",
+      "to": "callCause",
+      "role": "branch"
+    },
+    {
+      "from": "callCause",
+      "to": "callFix",
+      "role": "branch"
+    },
+    {
+      "from": "stuck",
+      "to": "support",
+      "role": "branch",
+      "variant": "dashed",
+      "fromSide": "left",
+      "toSide": "left",
+      "via": [
+        [
+          18,
+          119
+        ],
+        [
+          18,
+          367
+        ]
+      ]
+    }
+  ]
+}

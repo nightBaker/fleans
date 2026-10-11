@@ -20,6 +20,11 @@ under `tests/load/results/` in the matching git tag.
 Four scenario scripts live in parallel under `tests/load/scripts/` (k6) and `tests/load/locust/`
 (Locust). They share fixtures under `tests/load/fixtures/`.
 
+<figure class="arch-diagram" style="--arch-ratio: 1160 / 578">
+  <iframe data-arch-src="/fleans/diagrams/load-test-topology.html" src="/fleans/diagrams/load-test-topology.html?embed=1" title="Load test topology" loading="lazy"></iframe>
+  <figcaption>The shared scenarios drive k6 (local) or Locust (Azure Load Testing) against two fleans-api silos backed by PostgreSQL and Redis clustering. <a href="/fleans/diagrams/load-test-topology.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
 | Scenario | Purpose | Fixture / process id |
 |----------|---------|----------------------|
 | `linear`   | Pure throughput — `Start → ScriptTask → End`. Measures `/Workflow/start` HTTP latency only.        | `load-linear`   |

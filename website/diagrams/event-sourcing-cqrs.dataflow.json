@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Event Sourcing + CQRS",
+    "subtitle": "Commands mutate in-memory grain state; one ConfirmEvents transaction persists the batch; reads hit a materialized projection, never the event log",
+    "animation": "none",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1100,
+      560
+    ]
+  },
+  "stages": [
+    {
+      "label": "Commands"
+    },
+    {
+      "label": "Write model"
+    },
+    {
+      "label": "Persist"
+    },
+    {
+      "label": "Read model"
+    },
+    {
+      "label": "Queries"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "commands",
+      "type": "frontend",
+      "label": "API / Admin UI",
+      "sublabel": "start, complete, signal",
+      "stage": 0,
+      "row": 0,
+      "tag": "command"
+    },
+    {
+      "id": "grain",
+      "type": "backend",
+      "label": "WorkflowInstance",
+      "sublabel": "in-memory state",
+      "stage": 1,
+      "row": 0,
+      "tag": "JournaledGrain"
+    },
+    {
+      "id": "eventlog",
+      "type": "database",
+      "label": "Event log",
+      "sublabel": "FleanCommandDbContext",
+      "stage": 2,
+      "row": 0,
+      "tag": "append-only"
+    },
+    {
+      "id": "projection",
+      "type": "backend",
+      "label": "State projection",
+      "sublabel": "EfCoreWorkflowStateProjection",
+      "stage": 2,
+      "row": 1,
+      "tag": "after each batch",
+      "width": 160
+    },
+    {
+      "id": "readmodel",
+      "type": "database",
+      "label": "Read model",
+      "sublabel": "denormalized snapshot",
+      "stage": 3,
+      "row": 1,
+      "tag": "materialized"
+    },
+    {
+      "id": "querydb",
+      "type": "database",
+      "label": "FleanQueryDbContext",
+      "sublabel": "NoTracking reads",
+      "stage": 3,
+      "row": 2,
+      "tag": "replica optional",
+      "width": 150
+    },
+    {
+      "id": "readers",
+      "type": "frontend",
+      "label": "Admin UI / GET state",
+      "sublabel": "/instances/{id}/state",
+      "stage": 4,
+      "row": 2,
+      "tag": "query",
+      "width": 150
+    }
+  ],
+  "flows": [
+    {
+      "from": "commands",
+      "to": "grain",
+      "label": "command",
+      "variant": "emphasis"
+    },
+    {
+      "from": "grain",
+      "to": "eventlog",
+      "label": "ConfirmEvents",
+      "classification": "1 transaction",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "from": "grain",
+      "to": "projection",
+      "label": "confirmed state",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "left"
+    },
+    {
+      "from": "projection",
+      "to": "readmodel",
+      "label": "upsert",
+      "variant": "default"
+    },
+    {
+      "from": "readmodel",
+      "to": "querydb",
+      "label": "read",
+      "variant": "default"
+    },
+    {
+      "from": "querydb",
+      "to": "readers",
+      "label": "query",
+      "variant": "default"
+    }
+  ]
+}

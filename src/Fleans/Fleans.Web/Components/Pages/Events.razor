@@ -13,7 +13,8 @@
             <FluentButton Appearance="Appearance.Neutral"
                           IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowSync())"
                           @onclick="RefreshAsync"
-                          Loading="@isLoading">
+                          Loading="@isLoading"
+                          data-testid="events-refresh">
                 Refresh
             </FluentButton>
         </Actions>
@@ -39,7 +40,7 @@
     }
     else
     {
-        <FluentDataGrid Items="@snapshot.MessageStartEvents.AsQueryable()" GridTemplateColumns="1fr 1fr">
+        <FluentDataGrid Items="@snapshot.MessageStartEvents.AsQueryable()" data-testid="events-message-start-grid" GridTemplateColumns="1fr 1fr">
             <PropertyColumn Title="Message Name" Property="@(r => r.MessageName)" />
             <PropertyColumn Title="Process Definition Key" Property="@(r => r.ProcessDefinitionKey)" />
         </FluentDataGrid>
@@ -53,7 +54,7 @@
     }
     else
     {
-        <FluentDataGrid Items="@snapshot.SignalStartEvents.AsQueryable()" GridTemplateColumns="1fr 1fr">
+        <FluentDataGrid Items="@snapshot.SignalStartEvents.AsQueryable()" data-testid="events-signal-start-grid" GridTemplateColumns="1fr 1fr">
             <PropertyColumn Title="Signal Name" Property="@(r => r.SignalName)" />
             <PropertyColumn Title="Process Definition Key" Property="@(r => r.ProcessDefinitionKey)" />
         </FluentDataGrid>
@@ -67,7 +68,7 @@
     }
     else
     {
-        <FluentDataGrid Items="@snapshot.ConditionalStartEvents.AsQueryable()" GridTemplateColumns="1fr 1fr 2fr">
+        <FluentDataGrid Items="@snapshot.ConditionalStartEvents.AsQueryable()" data-testid="events-conditional-start-grid" GridTemplateColumns="1fr 1fr 2fr">
             <PropertyColumn Title="Process Definition Key" Property="@(r => r.ProcessDefinitionKey)" />
             <PropertyColumn Title="Activity Id" Property="@(r => r.ActivityId)" />
             <PropertyColumn Title="Condition Expression" Property="@(r => r.ConditionExpression)" />
@@ -82,7 +83,7 @@
     }
     else
     {
-        <FluentDataGrid Items="@snapshot.ActiveMessageSubscriptions.AsQueryable()" GridTemplateColumns="1.2fr 1fr 1fr 1fr 1fr">
+        <FluentDataGrid Items="@snapshot.ActiveMessageSubscriptions.AsQueryable()" data-testid="events-message-subscriptions-grid" GridTemplateColumns="1.2fr 1fr 1fr 1fr 1fr">
             <PropertyColumn Title="Message Name" Property="@(r => r.MessageName)" />
             <PropertyColumn Title="Correlation Key" Property="@(r => r.CorrelationKey)" />
             <TemplateColumn Title="Workflow Instance">
@@ -107,7 +108,7 @@
     }
     else
     {
-        <FluentDataGrid Items="@snapshot.ActiveSignalSubscriptions.AsQueryable()" GridTemplateColumns="1.2fr 1fr 1fr 1fr">
+        <FluentDataGrid Items="@snapshot.ActiveSignalSubscriptions.AsQueryable()" data-testid="events-signal-subscriptions-grid" GridTemplateColumns="1.2fr 1fr 1fr 1fr">
             <PropertyColumn Title="Signal Name" Property="@(r => r.SignalName)" />
             <TemplateColumn Title="Workflow Instance">
                 @{ var wfId = context.WorkflowInstanceId.ToString(); }

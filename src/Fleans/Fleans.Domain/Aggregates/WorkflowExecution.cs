@@ -1560,6 +1560,18 @@ public class WorkflowExecution
                 var scopeDefinition = _definition.GetScopeForActivity(entry.ActivityId);
                 var activity = scopeDefinition.GetActivity(entry.ActivityId);
 
+                // A multi-instance iteration shares the host's ActivityId, so the lookup
+                // returns the MultiInstanceActivity wrapper. Unwrap it so an iteration of a
+                // multi-instance SubProcess is completed like a regular SubProcess once its
+                // body finishes (otherwise the iteration — and therefore the host — never
+                // completes).
+                var isMultiInstanceIteration = false;
+                if (activity is MultiInstanceActivity iterationWrapper && entry.MultiInstanceIndex is not null)
+                {
+                    activity = iterationWrapper.InnerActivity;
+                    isMultiInstanceIteration = true;
+                }
+
                 var isSubProcess = activity is SubProcess;
                 var isEventSubProcess = activity is EventSubProcess;
                 var isMultiInstanceHost = activity is MultiInstanceActivity
@@ -1688,8 +1700,13 @@ public class WorkflowExecution
                 Emit(new ActivityCompleted(
                     entry.ActivityInstanceId, entry.VariablesId, new ExpandoObject()));
 
-                var effects = BuildBoundaryUnsubscribeEffects(entry.ActivityId, entry);
-                allEffects.AddRange(effects);
+                // Boundaries belong to the multi-instance host, not to its iterations —
+                // they are unsubscribed when the host completes (TryComplete path above).
+                if (!isMultiInstanceIteration)
+                {
+                    var effects = BuildBoundaryUnsubscribeEffects(entry.ActivityId, entry);
+                    allEffects.AddRange(effects);
+                }
 
                 // Unregister any event-sub-process timers declared inside this
                 // completing scope (SubProcess only — event sub-processes don't

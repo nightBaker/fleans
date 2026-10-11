@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn">
+  <escalation id="Esc_LowStock" name="LowStock" escalationCode="ESC_LOW_STOCK" />
+  <!-- Escalation thrown inside an embedded sub-process is caught by a non-interrupting
+       escalation Event Sub-Process at process level; the main flow continues. -->
+  <process id="escalation-event-subprocess" isExecutable="true">
+    <startEvent id="start" />
+    <subProcess id="work">
+      <startEvent id="workStart" />
+      <intermediateThrowEvent id="throwEscalation">
+        <escalationEventDefinition escalationRef="Esc_LowStock" />
+      </intermediateThrowEvent>
+      <scriptTask id="afterThrow" scriptFormat="csharp">
+        <script>_context.mainContinued = true</script>
+      </scriptTask>
+      <endEvent id="workEnd" />
+      <sequenceFlow id="wf1" sourceRef="workStart" targetRef="throwEscalation" />
+      <sequenceFlow id="wf2" sourceRef="throwEscalation" targetRef="afterThrow" />
+      <sequenceFlow id="wf3" sourceRef="afterThrow" targetRef="workEnd" />
+    </subProcess>
+    <endEvent id="end" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="work" />
+    <sequenceFlow id="f2" sourceRef="work" targetRef="end" />
+    <subProcess id="escalationEventSub" triggeredByEvent="true">
+      <startEvent id="escStart" isInterrupting="false">
+        <escalationEventDefinition escalationRef="Esc_LowStock" />
+      </startEvent>
+      <scriptTask id="escalationHandler" scriptFormat="csharp">
+        <script>_context.escalationHandled = true</script>
+      </scriptTask>
+      <endEvent id="escEnd" />
+      <sequenceFlow id="ef1" sourceRef="escStart" targetRef="escalationHandler" />
+      <sequenceFlow id="ef2" sourceRef="escalationHandler" targetRef="escEnd" />
+    </subProcess>
+  </process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_escalation-event-subprocess">
+    <bpmndi:BPMNPlane id="BPMNPlane_escalation-event-subprocess" bpmnElement="escalation-event-subprocess">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start"><dc:Bounds x="180" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="work_di" bpmnElement="work" isExpanded="true"><dc:Bounds x="276" y="100" width="488" height="210" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="workStart_di" bpmnElement="workStart"><dc:Bounds x="316" y="140" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="throwEscalation_di" bpmnElement="throwEscalation"><dc:Bounds x="412" y="140" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="afterThrow_di" bpmnElement="afterThrow"><dc:Bounds x="508" y="140" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="workEnd_di" bpmnElement="workEnd"><dc:Bounds x="668" y="140" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_di" bpmnElement="end"><dc:Bounds x="824" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="escalationEventSub_di" bpmnElement="escalationEventSub" isExpanded="true"><dc:Bounds x="180" y="400" width="392" height="210" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="escStart_di" bpmnElement="escStart"><dc:Bounds x="220" y="440" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="escalationHandler_di" bpmnElement="escalationHandler"><dc:Bounds x="316" y="440" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="escEnd_di" bpmnElement="escEnd"><dc:Bounds x="476" y="440" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1"><di:waypoint x="216" y="118" /><di:waypoint x="246" y="118" /><di:waypoint x="246" y="205" /><di:waypoint x="276" y="205" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2"><di:waypoint x="764" y="205" /><di:waypoint x="794" y="205" /><di:waypoint x="794" y="118" /><di:waypoint x="824" y="118" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="wf1_di" bpmnElement="wf1"><di:waypoint x="352" y="158" /><di:waypoint x="412" y="158" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="wf2_di" bpmnElement="wf2"><di:waypoint x="448" y="158" /><di:waypoint x="478" y="158" /><di:waypoint x="478" y="180" /><di:waypoint x="508" y="180" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="wf3_di" bpmnElement="wf3"><di:waypoint x="608" y="180" /><di:waypoint x="638" y="180" /><di:waypoint x="638" y="158" /><di:waypoint x="668" y="158" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="ef1_di" bpmnElement="ef1"><di:waypoint x="256" y="458" /><di:waypoint x="286" y="458" /><di:waypoint x="286" y="480" /><di:waypoint x="316" y="480" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="ef2_di" bpmnElement="ef2"><di:waypoint x="416" y="480" /><di:waypoint x="446" y="480" /><di:waypoint x="446" y="458" /><di:waypoint x="476" y="458" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

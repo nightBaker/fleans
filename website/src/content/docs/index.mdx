@@ -3,89 +3,123 @@ title: Fleans
 description: BPMN Workflow Engine on Orleans — Camunda on .NET Orleans
 template: splash
 hero:
-  tagline: Design visual workflows, run them at scale in .NET Orleans.
-  image:
-    file: ../../assets/logo.svg
+  title: Fleans
+  tagline: A BPMN workflow engine built on .NET Orleans. Design workflows visually, deploy them as BPMN XML, and run every instance as an event-sourced actor — scale out by adding silos, not by tuning a central orchestrator.
   actions:
-    - text: Get Started
+    - text: Get started
       link: /fleans/guides/introduction/
-      icon: right-arrow
       variant: primary
-    - text: View on GitHub
+    - text: Quick start
+      link: /fleans/guides/quick-start/
+      variant: secondary
+    - text: GitHub
       link: https://github.com/nightBaker/fleans
-      icon: external
+      variant: secondary
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
-import SiloBackground from '../../components/SiloBackground.astro';
+import Section from '../../components/Section.astro';
+import SpecRow from '../../components/SpecRow.astro';
 
-<SiloBackground />
+<Section title="Architecture" id="architecture">
+  <Fragment slot="intro">
+    Your backend talks REST to one Orleans cluster. Core, worker and custom-worker silos share it;
+    state, clustering, reminders and streams plug into whichever storage and queues you already run —
+    Fleans ships SQLite, PostgreSQL, Redis, Kafka and Azure Queue, and any other Orleans provider fits the same seams.
+  </Fragment>
+  <figure class="arch-diagram fl-frame" style="--arch-ratio: 1400 / 598">
+    <iframe data-arch-src="/fleans/diagrams/fleans-cluster.html" src="/fleans/diagrams/fleans-cluster.html?embed=1" title="Fleans architecture: your backend calls fleans-api; Core, worker and custom-worker silos form one Orleans cluster backed by pluggable storage and queues: SQLite, PostgreSQL, Redis, Kafka, Azure Queue, or any other Orleans provider such as SQL Server, Cosmos DB, DynamoDB, Event Hubs and Amazon SQS" loading="eager"></iframe>
+    <figcaption>Interactive diagram. <a href="/fleans/diagrams/fleans-cluster.html" target="_blank" rel="noopener">Open full screen ↗</a></figcaption>
+  </figure>
+</Section>
 
-<p style="text-align: center; margin-top: -1rem; margin-bottom: 2rem;">
-  <a href="https://github.com/nightBaker/fleans">
-    <img class="github-stars-light" src="https://img.shields.io/github/stars/nightBaker/fleans?style=for-the-badge&color=1f6357&labelColor=2e2e2a&logo=github&logoColor=white" alt="GitHub stars" />
-    <img class="github-stars-dark" src="https://img.shields.io/github/stars/nightBaker/fleans?style=for-the-badge&color=4eb5a6&labelColor=1a1a17&logo=github&logoColor=white" alt="GitHub stars" />
-  </a>
-</p>
+<Section title="Execution model" id="execution">
+  <Fragment slot="intro">
+    How a workflow instance runs, survives failure, and stays fast.
+  </Fragment>
 
-<figure class="hero-workflow" role="img" aria-label="A sample BPMN workflow showing parallel task execution">
-  <img class="hero-workflow-light" src="/fleans/hero-workflow-light.svg" alt="BPMN workflow diagram with parallel gateway" width="720" height="auto" loading="eager" />
-  <img class="hero-workflow-dark" src="/fleans/hero-workflow-dark.svg" alt="BPMN workflow diagram with parallel gateway" width="720" height="auto" loading="eager" />
-  <figcaption>A parallel-gateway workflow rendered by Fleans</figcaption>
-</figure>
+  <SpecRow tags={['grain', 'actor']} title="Actors, not orchestrators">
+    Every workflow is an independent Orleans grain. No shared coordinator, no lock contention — add silos, get linear throughput.
 
-## Why Fleans?
+    <Fragment slot="note">Each instance activates on whichever silo Orleans places it, so throughput grows with the cluster.</Fragment>
+  </SpecRow>
 
-<CardGrid stagger>
-  <Card title="Actors, not orchestrators" icon="rocket">
-    Every workflow is an independent Orleans grain. No shared coordinator,
-    no lock contention — add silos, get linear throughput.
-  </Card>
-  <Card title="Scale reads separately from writes" icon="random">
-    Built-in CQRS split routes read traffic through a NoTracking query
-    context and optional PostgreSQL replica.
-    [Learn how →](/fleans/concepts/architecture/#scalability)
-  </Card>
-  <Card title="Event-sourced, crash-safe state" icon="approve-check">
-    Append-only event log with deterministic replay. Silo dies mid-workflow?
-    Orleans reactivates the grain on another silo — no orphaned state.
-    [Learn how →](/fleans/concepts/architecture/#reliability)
-  </Card>
-  <Card title="Typed BPMN recovery paths" icon="warning">
-    Compensation, error boundaries, and escalation events are first-class.
-    Failure modes get explicit semantics, not ad-hoc try/catch.
-  </Card>
-  <Card title="In-memory hot path" icon="star">
-    Active workflows run from RAM — mid-workflow steps skip the database.
-    Events batch into one transaction at the end of each grain call.
-  </Card>
-  <Card title="Materialized read projections" icon="magnifier">
-    Admin UI and state queries read a pre-built EF projection.
-    No event replay to render a list or poll for completion.
-  </Card>
-  <Card title="Run in your infrastructure" icon="setting">
-    Fleans ships as a container image you can run anywhere — laptop, VM, or
-    Kubernetes. Your data never leaves your network, and there is no SaaS
-    dependency to ramp.
-    [Learn how →](/fleans/reference/self-hosting/)
-  </Card>
-  <Card title="Bring your own database" icon="list-format">
-    SQLite for laptops, PostgreSQL for production — selected at startup via a
-    single config key, no code change. The provider model is open if you need
-    to add another.
-    [Learn how →](/fleans/reference/persistence/)
-  </Card>
-  <Card title="Plug in your stream provider" icon="puzzle">
-    Domain events flow through Orleans Streams. Default is in-memory; flip
-    `Fleans:Streaming:Provider=kafka` to use the bundled Kafka adapter for
-    cross-silo durability — or ship your own provider against the same
-    extension point.
-    [Learn how →](/fleans/reference/streaming/)
-  </Card>
-  <Card title="Extend with your own tasks and workers" icon="add-document">
-    Wrap REST calls, queues, or any custom integration as a BPMN task by
-    shipping a worker silo from a GitHub template. Engine and plugin hosts
-    scale independently, so one workflow can fan out across your own fleet.
-    [Learn how →](/fleans/guides/custom-worker-host/)
-  </Card>
-</CardGrid>
+  <SpecRow tags={['journal', 'replay']} title="Event-sourced, crash-safe state" href="/fleans/concepts/architecture/#reliability">
+    Append-only event log with deterministic replay. Silo dies mid-workflow? Orleans reactivates the grain on another silo — no orphaned state.
+
+    <Fragment slot="note">State is rebuilt from the journal on activation.</Fragment>
+  </SpecRow>
+
+  <SpecRow tags={['memory', 'batch']} title="In-memory hot path">
+    Active workflows run from RAM — mid-workflow steps skip the database. Events batch into one transaction at the end of each grain call.
+
+    <Fragment slot="note">One write per grain call, however many activities it advanced.</Fragment>
+  </SpecRow>
+
+  <SpecRow tags={['bpmn', 'errors']} title="Typed BPMN recovery paths" href="/fleans/guides/error-handling/">
+    Compensation, error boundaries, and escalation events are first-class. Failure modes get explicit semantics, not ad-hoc try/catch.
+
+    <Fragment slot="note">Recovery lives in the diagram, where reviewers can see it.</Fragment>
+  </SpecRow>
+</Section>
+
+<Section title="Data &amp; operations" id="operations">
+  <Fragment slot="intro">
+    Reads, storage and transport are split so each can scale or be swapped on its own.
+  </Fragment>
+
+  <SpecRow tags={['cqrs', 'replica']} title="Scale reads separately from writes" href="/fleans/concepts/architecture/#scalability">
+    Built-in CQRS split routes read traffic through a NoTracking query context and an optional PostgreSQL replica.
+
+    <Fragment slot="note">Point queries at a replica without touching the write path.</Fragment>
+  </SpecRow>
+
+  <SpecRow tags={['projection', 'ef']} title="Materialized read projections">
+    Admin UI and state queries read a pre-built EF projection. No event replay to render a list or poll for completion.
+
+    <Fragment slot="note">Listing instances never replays a journal.</Fragment>
+  </SpecRow>
+
+  <SpecRow tags={['sqlite', 'postgres']} title="Bring your own database" href="/fleans/reference/persistence/">
+    SQLite for laptops, PostgreSQL for production — selected at startup via a single config key, no code change. The provider model is open if you need to add another.
+
+    <Fragment slot="note">`Persistence:Provider` picks SQLite (default) or PostgreSQL.</Fragment>
+  </SpecRow>
+
+  <SpecRow tags={['streams', 'kafka']} title="Plug in your stream provider" href="/fleans/reference/streaming/">
+    Domain events flow through Orleans Streams. Flip `Fleans:Streaming:Provider=kafka` to use the bundled Kafka adapter for cross-silo durability — or ship your own provider against the same extension point.
+
+    <Fragment slot="note">In-memory by default; Kafka for durable cross-silo delivery.</Fragment>
+  </SpecRow>
+
+  <SpecRow tags={['docker', 'helm']} title="Run in your infrastructure" href="/fleans/reference/self-hosting/">
+    Fleans ships as a container image you can run anywhere — laptop, VM, or Kubernetes. Your data never leaves your network, and there is no SaaS dependency to ramp.
+
+    <Fragment slot="note">Docker Compose bundle and Helm chart on every release.</Fragment>
+  </SpecRow>
+
+  <SpecRow tags={['plugin', 'worker']} title="Extend with your own tasks and workers" href="/fleans/guides/custom-worker-host/">
+    Wrap REST calls, queues, or any custom integration as a BPMN task by shipping a worker silo from a GitHub template. Engine and plugin hosts scale independently, so one workflow can fan out across your own fleet.
+
+    <Fragment slot="note">Start from the custom-worker template on GitHub.</Fragment>
+  </SpecRow>
+</Section>
+
+<Section title="Next steps" id="next">
+  <div class="fl-cards">
+    <a class="fl-card" href="/fleans/guides/quick-start/">
+      <span class="fl-chip">01</span>
+      <strong>Quick start</strong>
+      <span>Run the released Docker Compose bundle and start your first instance in five minutes.</span>
+    </a>
+    <a class="fl-card" href="/fleans/concepts/bpmn-support/">
+      <span class="fl-chip">02</span>
+      <strong>BPMN support</strong>
+      <span>See which events, gateways, tasks and sub-processes the engine executes today.</span>
+    </a>
+    <a class="fl-card" href="/fleans/guides/self-host-helm/">
+      <span class="fl-chip">03</span>
+      <strong>Self-host with Helm</strong>
+      <span>Deploy a production cluster on Kubernetes with PostgreSQL and Redis.</span>
+    </a>
+  </div>
+</Section>

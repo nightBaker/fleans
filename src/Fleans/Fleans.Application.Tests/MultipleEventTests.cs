@@ -282,4 +282,57 @@ public class MultipleEventTests : WorkflowTestBase
         var finalSnapshot = await QueryService.GetStateSnapshot(instanceId);
         Assert.IsTrue(finalSnapshot!.IsCompleted, "Workflow should be completed");
     }
+
+    private async Task DeployMultipleStartWorkflow(string key, string messageName, string signalName)
+    {
+        var multiStart = new MultipleStartEvent("multiStart",
+        [
+            new MessageEventDef("msg1"),
+            new SignalEventDef("sig1")
+        ]);
+        var end = new EndEvent("end");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = key,
+            Activities = [multiStart, end],
+            SequenceFlows = [new SequenceFlow("f1", multiStart, end)],
+            Messages = [new MessageDefinition("msg1", messageName, null)],
+            Signals = [new SignalDefinition("sig1", signalName)]
+        };
+        var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(key);
+        await processGrain.DeployVersion(workflow, "<placeholder/>");
+    }
+
+    [TestMethod]
+    public async Task MultipleStart_MessageDefinition_ShouldCreateInstance()
+    {
+        // Regression: the message start listener only resolved plain MessageStartEvents, so a
+        // message matching a Multiple Start Event's definition created no instance.
+        await DeployMultipleStartWorkflow("multi-start-msg", "multiStartMsg", "multiStartMsgSig");
+
+        var listener = Cluster.GrainFactory.GetGrain<IMessageStartEventListenerGrain>("multiStartMsg");
+        var instanceIds = await listener.FireMessageStartEvent(new ExpandoObject());
+
+        Assert.HasCount(1, instanceIds);
+        var snapshot = await QueryService.GetStateSnapshot(instanceIds[0]);
+        Assert.IsNotNull(snapshot);
+        Assert.IsTrue(snapshot.IsCompleted);
+        CollectionAssert.Contains(snapshot.CompletedActivityIds, "multiStart");
+    }
+
+    [TestMethod]
+    public async Task MultipleStart_SignalDefinition_ShouldCreateInstance()
+    {
+        // Regression: same as above for the signal start listener.
+        await DeployMultipleStartWorkflow("multi-start-sig", "multiStartSigMsg", "multiStartSig");
+
+        var listener = Cluster.GrainFactory.GetGrain<ISignalStartEventListenerGrain>("multiStartSig");
+        var instanceIds = await listener.FireSignalStartEvent();
+
+        Assert.HasCount(1, instanceIds);
+        var snapshot = await QueryService.GetStateSnapshot(instanceIds[0]);
+        Assert.IsNotNull(snapshot);
+        Assert.IsTrue(snapshot.IsCompleted);
+        CollectionAssert.Contains(snapshot.CompletedActivityIds, "multiStart");
+    }
 }

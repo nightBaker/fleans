@@ -52,6 +52,11 @@ Authentication__RequireHttpsMetadata=false
 - **Swagger UI** remains accessible in development mode for testing.
 - **User-task identity comes from the token.** `POST /UserTasks/{id}/claim` and `/complete` act as the user in the `UserIdClaim` claim (default `preferred_username`). The body `UserId` field is optional. If you send it and it differs from the token, the request fails with `403 Forbidden`, so a caller can't act as another user. Body-supplied `UserGroups` are ignored; groups come from the `GroupsClaim` claim. A token without the user-id claim also gets `403`. This applies to releases after v0.5.0 ([#793](https://github.com/nightBaker/fleans/issues/793)). v0.5.0 and earlier trust the body `UserId` even under JWT.
 
+<figure class="arch-diagram" style="--arch-ratio: 480 / 738; max-width: 520px; margin-inline: auto">
+  <iframe data-arch-src="/fleans/diagrams/api-jwt-auth.html" src="/fleans/diagrams/api-jwt-auth.html?embed=1" title="API JWT authentication sequence" loading="lazy"></iframe>
+  <figcaption>With <code>Authentication:Authority</code> set, every API call carries a bearer token; user-task claims take candidate groups from the token's <code>groups</code> claim. <a href="/fleans/diagrams/api-jwt-auth.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
 ## Identity providers
 
 ### Keycloak

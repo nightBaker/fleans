@@ -1,0 +1,173 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Call Activity Lifecycle",
+    "subtitle": "Parent spawns a separate child instance, waits, then completes or fails the call activity",
+    "viewBox": [
+      540,
+      800
+    ],
+    "animation": "none",
+    "quality_profile": "showcase",
+    "legend": {
+      "entries": {
+        "dashed": {
+          "label": "failure path"
+        }
+      }
+    }
+  },
+  "participants": [
+    {
+      "id": "parent",
+      "type": "backend",
+      "label": "Parent",
+      "sublabel": "instance grain"
+    },
+    {
+      "id": "lifecycle",
+      "type": "backend",
+      "label": "Lifecycle",
+      "sublabel": "effect handler"
+    },
+    {
+      "id": "procdef",
+      "type": "database",
+      "label": "Definition",
+      "sublabel": "latest version"
+    },
+    {
+      "id": "child",
+      "type": "backend",
+      "label": "Child",
+      "sublabel": "instance grain"
+    }
+  ],
+  "segments": [
+    {
+      "from": 160,
+      "to": 420,
+      "label": "Spawn child"
+    },
+    {
+      "from": 440,
+      "to": 560,
+      "label": "Child completes"
+    },
+    {
+      "from": 580,
+      "to": 700,
+      "label": "Child fails"
+    }
+  ],
+  "messages": [
+    {
+      "id": "m-start",
+      "from": "parent",
+      "to": "lifecycle",
+      "y": 190,
+      "label": "StartChildWorkflow",
+      "variant": "emphasis",
+      "note": "callActivity reached; inputMapping + propagateAllParentVariables"
+    },
+    {
+      "id": "m-resolve",
+      "from": "lifecycle",
+      "to": "procdef",
+      "y": 240,
+      "label": "GetLatestDefinition()",
+      "variant": "default"
+    },
+    {
+      "id": "m-version",
+      "from": "procdef",
+      "to": "lifecycle",
+      "y": 290,
+      "label": "latest active version",
+      "variant": "return"
+    },
+    {
+      "id": "m-set",
+      "from": "lifecycle",
+      "to": "child",
+      "y": 340,
+      "label": "SetWorkflow + SetParentInfo",
+      "variant": "emphasis"
+    },
+    {
+      "id": "m-run",
+      "from": "lifecycle",
+      "to": "child",
+      "y": 390,
+      "label": "input vars + StartWorkflow",
+      "variant": "emphasis"
+    },
+    {
+      "id": "m-done",
+      "from": "child",
+      "to": "lifecycle",
+      "y": 470,
+      "label": "NotifyParentCompleted",
+      "variant": "return"
+    },
+    {
+      "id": "m-oncomplete",
+      "from": "lifecycle",
+      "to": "parent",
+      "y": 530,
+      "label": "OnChildWorkflowCompleted(opId)",
+      "variant": "default",
+      "note": "outputMapping merged; call activity completes. Retried with deterministic op-id, dedup'd"
+    },
+    {
+      "id": "m-failed",
+      "from": "child",
+      "to": "lifecycle",
+      "y": 610,
+      "label": "NotifyParentFailed",
+      "variant": "dashed"
+    },
+    {
+      "id": "m-onfail",
+      "from": "lifecycle",
+      "to": "parent",
+      "y": 670,
+      "label": "OnChildWorkflowFailed(opId)",
+      "variant": "dashed",
+      "note": "FailActivity on the call activity. Known bug #11: child error end events do not reach the boundary"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "lifecycle",
+      "from": 184,
+      "to": 398,
+      "type": "backend"
+    },
+    {
+      "participant": "procdef",
+      "from": 234,
+      "to": 296,
+      "type": "database"
+    },
+    {
+      "participant": "child",
+      "from": 334,
+      "to": 616,
+      "type": "backend"
+    },
+    {
+      "participant": "parent",
+      "from": 524,
+      "to": 538,
+      "type": "backend"
+    },
+    {
+      "participant": "parent",
+      "from": 664,
+      "to": 678,
+      "type": "backend"
+    }
+  ]
+}

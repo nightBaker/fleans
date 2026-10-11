@@ -1,0 +1,160 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Message Correlation",
+    "subtitle": "Fixture #09: a waiting instance resumes when the message key matches",
+    "quality_profile": "showcase",
+    "animation": "none",
+    "viewBox": [
+      480,
+      720
+    ]
+  },
+  "participants": [
+    {
+      "id": "client",
+      "type": "external",
+      "label": "Client app",
+      "sublabel": "curl / your service"
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "Fleans API",
+      "sublabel": "/Workflow endpoints"
+    },
+    {
+      "id": "instance",
+      "type": "backend",
+      "label": "Instance",
+      "sublabel": "WorkflowInstance"
+    },
+    {
+      "id": "corr",
+      "type": "messagebus",
+      "label": "Correlation",
+      "sublabel": "one per name/key"
+    }
+  ],
+  "segments": [
+    {
+      "from": 165,
+      "to": 300,
+      "label": "Deploy + start"
+    },
+    {
+      "from": 320,
+      "to": 405,
+      "label": "Wait"
+    },
+    {
+      "from": 425,
+      "to": 640,
+      "label": "Deliver"
+    }
+  ],
+  "messages": [
+    {
+      "id": "m-deploy",
+      "from": "client",
+      "to": "api",
+      "y": 185,
+      "label": "POST /Workflow/deploy",
+      "variant": "default"
+    },
+    {
+      "id": "m-deploy-ok",
+      "from": "api",
+      "to": "client",
+      "y": 215,
+      "label": "key + version",
+      "variant": "return"
+    },
+    {
+      "id": "m-start",
+      "from": "client",
+      "to": "api",
+      "y": 245,
+      "label": "POST /Workflow/start",
+      "variant": "emphasis"
+    },
+    {
+      "id": "m-start-inst",
+      "from": "api",
+      "to": "instance",
+      "y": 265,
+      "label": "start instance",
+      "variant": "emphasis"
+    },
+    {
+      "id": "m-start-ok",
+      "from": "api",
+      "to": "client",
+      "y": 290,
+      "label": "InstanceId",
+      "variant": "return"
+    },
+    {
+      "id": "m-subscribe",
+      "from": "instance",
+      "to": "corr",
+      "y": 360,
+      "label": "Subscribe approvalReceived/req-456",
+      "variant": "dashed",
+      "note": "requestId set by script; token waits"
+    },
+    {
+      "id": "m-message",
+      "from": "client",
+      "to": "api",
+      "y": 450,
+      "label": "POST /Workflow/message",
+      "variant": "emphasis",
+      "note": "name + key + Variables"
+    },
+    {
+      "id": "m-deliver",
+      "from": "api",
+      "to": "corr",
+      "y": 490,
+      "label": "DeliverMessage(variables)",
+      "variant": "emphasis"
+    },
+    {
+      "id": "m-handle",
+      "from": "corr",
+      "to": "instance",
+      "y": 530,
+      "label": "HandleMessageDelivery",
+      "variant": "emphasis",
+      "note": "merge vars, resume to end"
+    },
+    {
+      "id": "m-ok",
+      "from": "api",
+      "to": "client",
+      "y": 600,
+      "label": "200 Delivered, InstanceIds",
+      "variant": "return",
+      "note": "no subscriber: 404"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "api",
+      "from": 185,
+      "to": 605
+    },
+    {
+      "participant": "instance",
+      "from": 265,
+      "to": 540
+    },
+    {
+      "participant": "corr",
+      "from": 360,
+      "to": 535
+    }
+  ]
+}
