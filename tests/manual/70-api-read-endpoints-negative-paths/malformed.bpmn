@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Fixture for plan 69: not well-formed XML (unclosed <process>). Deploy must be rejected with 400. -->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  id="defs_malformed" targetNamespace="http://fleans.io/bpmn">
+  <bpmn:process id="api-malformed" isExecutable="true">
+    <bpmn:startEvent id="start" />
+</bpmn:definitions>
