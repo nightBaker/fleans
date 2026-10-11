@@ -26,7 +26,7 @@ public class RestCallerHandlerTests
     private static IDictionary<string, object?> Inputs(string url, string method = "GET",
         IDictionary<string, object?>? headers = null, string? body = null,
         IEnumerable<int>? successCodes = null, int timeoutSec = 10,
-        string? idempotencyKeyHeader = null) => new Dictionary<string, object?>
+        string? idempotencyKeyHeader = null, int? maxResponseBytes = null) => new Dictionary<string, object?>
         {
             ["url"] = url,
             ["method"] = method,
@@ -35,6 +35,7 @@ public class RestCallerHandlerTests
             ["successCodes"] = successCodes?.Cast<object>().ToList(),
             ["timeoutSec"] = timeoutSec,
             ["idempotencyKeyHeader"] = idempotencyKeyHeader,
+            ["maxResponseBytes"] = maxResponseBytes,
         };
 
     // --- Happy path ---
@@ -367,13 +368,26 @@ public class RestCallerHandlerTests
             NullLogger<RestCallerHandler>.Instance,
             Substitute.For<IGrainFactory>());
 
-    private sealed class FixedBodyHandler(byte[] payload) : HttpMessageHandler
+    private sealed class FixedBodyHandler(byte[] payload, bool declareLength = true) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
             => Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
             {
-                Content = new ByteArrayContent(payload)
+                Content = declareLength ? new ByteArrayContent(payload) : new UnknownLengthContent(payload)
             });
+    }
+
+    /// <summary>Simulates a chunked response: no Content-Length, so the cap needs the bounded read.</summary>
+    private sealed class UnknownLengthContent(byte[] payload) : HttpContent
+    {
+        protected override Task SerializeToStreamAsync(Stream stream, System.Net.TransportContext? context)
+            => stream.WriteAsync(payload, 0, payload.Length);
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
     }
 
     [TestMethod]
@@ -388,6 +402,99 @@ public class RestCallerHandlerTests
             handler.ExecuteForTest(Inputs("http://example.com/"), new ExpandoObject(), Ctx()));
 
         Assert.AreEqual("502", ex.GetActivityErrorState().Code);
+    }
+
+    [TestMethod]
+    public async Task ChunkedResponseBodyExceedingBufferCap_FailsWith502()
+    {
+        var oversized = new byte[RestCallerServiceCollectionExtensions.DefaultMaxResponseContentBufferSize + 1];
+        var handler = MakeCappedHandler(new FixedBodyHandler(oversized, declareLength: false));
+
+        var ex = await Assert.ThrowsExactlyAsync<CustomTaskFailedActivityException>(() =>
+            handler.ExecuteForTest(Inputs("http://example.com/"), new ExpandoObject(), Ctx()));
+
+        Assert.AreEqual("502", ex.GetActivityErrorState().Code);
+    }
+
+    [TestMethod]
+    public async Task MaxResponseBytes_LowersCap_DeclaredLengthFailsWith502()
+    {
+        var handler = MakeCappedHandler(new FixedBodyHandler(new byte[101]));
+
+        var ex = await Assert.ThrowsExactlyAsync<CustomTaskFailedActivityException>(() =>
+            handler.ExecuteForTest(Inputs("http://example.com/", maxResponseBytes: 100), new ExpandoObject(), Ctx()));
+
+        var state = ex.GetActivityErrorState();
+        Assert.AreEqual("502", state.Code);
+        Assert.Contains("exceeds limit of 100 bytes", state.Message);
+    }
+
+    [TestMethod]
+    public async Task MaxResponseBytes_LowersCap_ChunkedBodyFailsWith502()
+    {
+        var handler = MakeCappedHandler(new FixedBodyHandler(new byte[101], declareLength: false));
+
+        var ex = await Assert.ThrowsExactlyAsync<CustomTaskFailedActivityException>(() =>
+            handler.ExecuteForTest(Inputs("http://example.com/", maxResponseBytes: 100), new ExpandoObject(), Ctx()));
+
+        Assert.AreEqual("502", ex.GetActivityErrorState().Code);
+    }
+
+    [TestMethod]
+    public async Task MaxResponseBytes_BodyWithinCap_Succeeds()
+    {
+        var payload = System.Text.Encoding.UTF8.GetBytes("hello");
+        var handler = MakeCappedHandler(new FixedBodyHandler(payload, declareLength: false));
+
+        var result = await handler.ExecuteForTest(
+            Inputs("http://example.com/", maxResponseBytes: payload.Length), new ExpandoObject(), Ctx());
+
+        var response = (IDictionary<string, object?>)result["__response"]!;
+        Assert.AreEqual("hello", response["body"]);
+    }
+
+    [TestMethod]
+    public async Task MaxResponseBytes_AboveCeiling_IsClampedToCeiling()
+    {
+        // A per-task value can only lower the silo ceiling — asking for more still fails at ceiling + 1.
+        var oversized = new byte[RestCallerServiceCollectionExtensions.DefaultMaxResponseContentBufferSize + 1];
+        var handler = MakeCappedHandler(new FixedBodyHandler(oversized, declareLength: false));
+
+        var ex = await Assert.ThrowsExactlyAsync<CustomTaskFailedActivityException>(() =>
+            handler.ExecuteForTest(Inputs("http://example.com/", maxResponseBytes: int.MaxValue),
+                new ExpandoObject(), Ctx()));
+
+        Assert.AreEqual("502", ex.GetActivityErrorState().Code);
+    }
+
+    [TestMethod]
+    public async Task RaisedClientCeiling_AllowsBodyAboveDefault()
+    {
+        // A host that raises MaxResponseContentBufferSize (AddHttpClient<RestCallerHandler> after
+        // AddRestCallerPlugin) raises the ceiling the handler enforces.
+        var handler = new RestCallerHandler(
+            new HttpClient(new FixedBodyHandler(new byte[9 * 1024 * 1024], declareLength: false))
+            {
+                Timeout = Timeout.InfiniteTimeSpan,
+                MaxResponseContentBufferSize = 16L * 1024 * 1024
+            },
+            NullLogger<RestCallerHandler>.Instance,
+            Substitute.For<IGrainFactory>());
+
+        var result = await handler.ExecuteForTest(Inputs("http://example.com/"), new ExpandoObject(), Ctx());
+
+        Assert.IsTrue(result.ContainsKey("__response"));
+    }
+
+    [TestMethod]
+    public async Task MaxResponseBytes_NotPositive_FailsWith400()
+    {
+        var handler = MakeCappedHandler(new FixedBodyHandler([]));
+
+        var ex = await Assert.ThrowsExactlyAsync<CustomTaskFailedActivityException>(() =>
+            handler.ExecuteForTest(Inputs("http://example.com/", maxResponseBytes: 0), new ExpandoObject(), Ctx()));
+
+        Assert.AreEqual("400", ex.GetActivityErrorState().Code);
     }
 
     [TestMethod]

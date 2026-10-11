@@ -88,6 +88,14 @@ public sealed partial class RestCallerHandler : CustomTaskHandlerBase
         var successCodes = ReadIntegerList(resolvedInputs, "successCodes");
         var idempotencyKeyHeader = ReadString(resolvedInputs, "idempotencyKeyHeader");
 
+        // Per-task body cap may only LOWER the silo ceiling (the typed client's
+        // MaxResponseContentBufferSize, 8 MiB unless the host overrides it) — never raise it.
+        var ceiling = _http.MaxResponseContentBufferSize;
+        var requestedMax = ReadInteger(resolvedInputs, "maxResponseBytes");
+        if (requestedMax is < 1)
+            throw new CustomTaskFailedActivityException("400", $"maxResponseBytes must be >= 1; got {requestedMax}");
+        var maxResponseBytes = requestedMax is { } m ? Math.Min(m, ceiling) : ceiling;
+
         // Idempotency-key opt-in. Plugin's value wins on collision with user-supplied headers.
         if (!string.IsNullOrWhiteSpace(idempotencyKeyHeader))
         {
@@ -137,10 +145,10 @@ public sealed partial class RestCallerHandler : CustomTaskHandlerBase
         HttpResponseMessage response;
         try
         {
-            // Default HttpCompletionOption.ResponseContentRead buffers the body inside SendAsync, which is
-            // what enforces HttpClient.MaxResponseContentBufferSize (an oversized body surfaces as the
-            // HttpRequestException → 502 below). Switching to ResponseHeadersRead would silently drop that cap.
-            response = await _http.SendAsync(request, linkedCts.Token);
+            // ResponseHeadersRead: HttpClient.MaxResponseContentBufferSize is only enforced under
+            // ResponseContentRead and is fixed per client, so the body is bounded by
+            // ReadBodyBoundedAsync instead — that is what lets maxResponseBytes vary per task.
+            response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, linkedCts.Token);
         }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
         {
@@ -161,7 +169,24 @@ public sealed partial class RestCallerHandler : CustomTaskHandlerBase
             var statusCode = (int)response.StatusCode;
             var contentLength = response.Content.Headers.ContentLength ?? -1;
             LogResponseReceived(method, uri.ToString(), statusCode, contentLength, stopwatch.ElapsedMilliseconds);
-            return await BuildResponseAsync(response, successCodes, uri, method);
+
+            string rawBody;
+            try
+            {
+                rawBody = await ReadBodyBoundedAsync(response.Content, maxResponseBytes, method, uri, linkedCts.Token);
+            }
+            catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
+            {
+                LogTimeout(method, uri.ToString(), timeoutSec, stopwatch.ElapsedMilliseconds);
+                throw new CustomTaskFailedActivityException("504", $"timeout after {timeoutSec}s calling {uri}");
+            }
+            catch (Exception ex) when (ex is HttpRequestException or IOException)
+            {
+                LogNetworkError(ex, method, uri.ToString(), stopwatch.ElapsedMilliseconds);
+                throw new CustomTaskFailedActivityException("502", $"network error calling {uri}: {ex.Message}");
+            }
+
+            return BuildResponse(response, rawBody, successCodes, uri, method);
         }
         finally
         {
@@ -169,11 +194,52 @@ public sealed partial class RestCallerHandler : CustomTaskHandlerBase
         }
     }
 
-    private async Task<IDictionary<string, object?>> BuildResponseAsync(
-        HttpResponseMessage response, IReadOnlyList<int>? successCodes, Uri uri, string method)
+    /// <summary>
+    /// Reads the response body, failing with <c>502</c> once it exceeds <paramref name="maxBytes"/>.
+    /// A declared <c>Content-Length</c> over the cap fails before reading; otherwise (chunked or
+    /// no length) the stream is read until <c>maxBytes + 1</c> bytes would be buffered.
+    /// </summary>
+    private async Task<string> ReadBodyBoundedAsync(
+        HttpContent content, long maxBytes, string method, Uri uri, CancellationToken ct)
+    {
+        if (content.Headers.ContentLength is { } declared && declared > maxBytes)
+        {
+            LogResponseTooLarge(method, uri.ToString(), declared, maxBytes);
+            throw new CustomTaskFailedActivityException("502",
+                $"response body from {uri} is {declared} bytes; exceeds limit of {maxBytes} bytes");
+        }
+
+        await using var stream = await content.ReadAsStreamAsync(ct);
+        using var buffered = new MemoryStream();
+        var chunk = new byte[81920];
+        int read;
+        while ((read = await stream.ReadAsync(chunk, ct)) > 0)
+        {
+            if (buffered.Length + read > maxBytes)
+            {
+                LogResponseTooLarge(method, uri.ToString(), buffered.Length + read, maxBytes);
+                throw new CustomTaskFailedActivityException("502",
+                    $"response body from {uri} exceeds limit of {maxBytes} bytes");
+            }
+            buffered.Write(chunk, 0, read);
+        }
+
+        // Same decoding ReadAsStringAsync applies: declared charset, then BOM, then UTF-8.
+        var encoding = Encoding.UTF8;
+        if (content.Headers.ContentType?.CharSet is { Length: > 0 } charset)
+        {
+            try { encoding = Encoding.GetEncoding(charset.Trim('"')); }
+            catch (ArgumentException) { /* unknown charset — fall back to UTF-8 */ }
+        }
+        buffered.Position = 0;
+        using var reader = new StreamReader(buffered, encoding, detectEncodingFromByteOrderMarks: true);
+        return await reader.ReadToEndAsync(ct);
+    }
+
+    private IDictionary<string, object?> BuildResponse(
+        HttpResponseMessage response, string rawBody, IReadOnlyList<int>? successCodes, Uri uri, string method)
     {
         var statusCode = (int)response.StatusCode;
-        var rawBody = await response.Content.ReadAsStringAsync();
         var contentTypeStr = response.Content.Headers.ContentType?.ToString();
         var bodyShape = TryParseJsonBody(rawBody, response.Content.Headers.ContentType);
 
@@ -361,4 +427,8 @@ public sealed partial class RestCallerHandler : CustomTaskHandlerBase
     [LoggerMessage(EventId = 9346, Level = LogLevel.Warning,
         Message = "REST plugin failed to deserialize response body as JSON despite Content-Type='{ContentType}'; body returned as raw string")]
     private partial void LogJsonParseFailed(Exception ex, string contentType);
+
+    [LoggerMessage(EventId = 9347, Level = LogLevel.Warning,
+        Message = "REST plugin rejected response from {Method} {Url}: body of at least {BodyBytes}B exceeds limit {MaxBytes}B — failing the activity with 502")]
+    private partial void LogResponseTooLarge(string method, string url, long bodyBytes, long maxBytes);
 }
