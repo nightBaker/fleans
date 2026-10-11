@@ -13,13 +13,13 @@ Verifies the `rest-call` custom-task end-to-end: GET happy path; POST with body+
 
 1. **Deploy.**
    ```bash
-   curl -k -X POST https://localhost:7140/Workflow/deploy \
+   curl -k -X POST https://localhost:7140/Definitions/deploy \
      -H "Content-Type: application/json" \
      -d "{\"BpmnXml\": $(jq -Rs . < tests/manual/38-rest-caller/rest-call.bpmn)}"
    ```
 2. **Start.**
    ```bash
-   curl -k -X POST https://localhost:7140/Workflow/start \
+   curl -k -X POST https://localhost:7140/Execution/start \
      -H "Content-Type: application/json" \
      -d '{"WorkflowId":"rest-call-demo","Variables":{
             "apiUrl":"https://httpbin.org/get",
@@ -33,7 +33,7 @@ Verifies the `rest-call` custom-task end-to-end: GET happy path; POST with body+
 Edit the fixture to set `method=POST` and add `body` input. Or send a fresh deploy with that variant. Then:
 
 ```bash
-curl -k -X POST https://localhost:7140/Workflow/start \
+curl -k -X POST https://localhost:7140/Execution/start \
   -H "Content-Type: application/json" \
   -d '{"WorkflowId":"rest-call-demo","Variables":{
          "apiUrl":"https://httpbin.org/post",
@@ -48,7 +48,7 @@ Verify httpbin echoed the headers + body in its response.
 Use a workflow variant with a boundary error event on `callApi` that catches `errorCode="404"` and routes to a recovery branch. Hit a 404 endpoint:
 
 ```bash
-curl -k -X POST https://localhost:7140/Workflow/start \
+curl -k -X POST https://localhost:7140/Execution/start \
   -H "Content-Type: application/json" \
   -d '{"WorkflowId":"rest-call-demo","Variables":{
          "apiUrl":"https://httpbin.org/status/404",

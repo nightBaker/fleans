@@ -1,0 +1,164 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Plugin Placement",
+    "subtitle": "Which silo role hosts which grains in one Orleans cluster",
+    "quality_profile": "showcase",
+    "animation": "none"
+  },
+  "components": [
+    {
+      "id": "wf",
+      "type": "backend",
+      "label": "WorkflowInstance",
+      "sublabel": "[CorePlacement]",
+      "pos": [
+        60,
+        230
+      ],
+      "size": [
+        150,
+        64
+      ]
+    },
+    {
+      "id": "director",
+      "type": "security",
+      "label": "WorkerPlacementDirector",
+      "sublabel": "excludes plugin-* silos",
+      "pos": [
+        300,
+        100
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "compat",
+      "type": "cloud",
+      "label": "GetCompatibleSilos",
+      "sublabel": "picks silo with handler dll",
+      "pos": [
+        300,
+        360
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "script",
+      "type": "backend",
+      "label": "ScriptExecutor + Condition",
+      "sublabel": "evaluator grains",
+      "pos": [
+        580,
+        100
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "rest",
+      "type": "external",
+      "label": "RestCallerHandler",
+      "sublabel": "bundled with worker",
+      "pos": [
+        580,
+        230
+      ],
+      "size": [
+        190,
+        64
+      ]
+    },
+    {
+      "id": "email",
+      "type": "external",
+      "label": "EmailHandler",
+      "sublabel": "plugin grain only",
+      "pos": [
+        580,
+        400
+      ],
+      "size": [
+        190,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Orleans cluster \u00b7 shared Redis clustering",
+      "wraps": [
+        "wf",
+        "director",
+        "compat",
+        "script",
+        "rest",
+        "email"
+      ],
+      "pad": 60
+    },
+    {
+      "kind": "security-group",
+      "label": "core-* silo",
+      "wraps": [
+        "wf"
+      ]
+    },
+    {
+      "kind": "security-group",
+      "label": "worker-* / combined-* silo",
+      "wraps": [
+        "script",
+        "rest"
+      ]
+    },
+    {
+      "kind": "security-group",
+      "label": "plugin-* silo (AddFleansPluginHost)",
+      "wraps": [
+        "email"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "wf-director",
+      "from": "wf",
+      "to": "director",
+      "label": "engine grains",
+      "variant": "emphasis"
+    },
+    {
+      "id": "director-script",
+      "from": "director",
+      "to": "script",
+      "variant": "emphasis"
+    },
+    {
+      "id": "wf-compat",
+      "from": "wf",
+      "to": "compat",
+      "label": "custom task"
+    },
+    {
+      "id": "compat-rest",
+      "from": "compat",
+      "to": "rest"
+    },
+    {
+      "id": "compat-email",
+      "from": "compat",
+      "to": "email"
+    }
+  ]
+}

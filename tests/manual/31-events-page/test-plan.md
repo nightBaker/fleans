@@ -2,6 +2,8 @@
 
 Verifies the new `/events` admin page shows registered start events and active message/signal subscriptions, that the **Refresh** button re-queries without a full reload, and that the delete-on-completion semantic of subscription tables surfaces in the UI (rows disappear after a Refresh once the subscribing workflow advances past the catch).
 
+> **Automation:** steps 1, 3, 4, 5, 6 and 8 are automated in `src/Fleans/Fleans.E2E.Tests/Specs/EventsPageTests.cs` (page object `PageObjects/EventsPage.cs`), using per-run unique message / signal names instead of the fixtures below. Steps 2 (empty state — needs an unshared clean DB) and 7 (OIDC) remain manual.
+
 ## Prerequisites
 
 - Aspire stack running: `dotnet run --project Fleans.Aspire` (from `src/Fleans/`).
@@ -29,7 +31,7 @@ Against a clean database:
 
 ### 3. Message Start Event registration shows up
 
-- [ ] Deploy `tests/manual/16-message-start-event/message-start.bpmn` via the Editor or `POST /Workflow/deploy`.
+- [ ] Deploy `tests/manual/16-message-start-event/message-start.bpmn` via the Editor or `POST /Definitions/deploy`.
 - [ ] Click **Refresh** on `/events`.
 - [ ] **Message Start Events** section now lists one row: `MessageName=order-placed`, `ProcessDefinitionKey=order-process` (or whatever the fixture declares — match against the fixture).
 - [ ] No full-page reload occurred (the URL bar did not flicker; only the sections re-rendered).
@@ -43,14 +45,14 @@ Against a clean database:
 ### 5. Active Message Subscription appears, then disappears after delivery
 
 - [ ] Deploy `tests/manual/09-message-events/message-catch.bpmn`.
-- [ ] Start an instance via `POST /Workflow/start` with the fixture's required initial variables (e.g. `requestId`).
+- [ ] Start an instance via `POST /Execution/start` with the fixture's required initial variables (e.g. `requestId`).
 - [ ] Refresh `/events`. **Active Message Subscriptions** lists one row:
     - `MessageName` matches the catch-event message
     - `CorrelationKey` matches the value derived from the start variables
     - `WorkflowInstanceId` is shown truncated to 8 chars + "…" — hovering reveals the full GUID via tooltip
     - `ActivityId` is the catch event's id
     - `ActivityInstanceId` is shown truncated, full on hover
-- [ ] Send the message via `POST /Workflow/message` with the matching `MessageName` and `CorrelationKey`.
+- [ ] Send the message via `POST /Execution/message` with the matching `MessageName` and `CorrelationKey`.
 - [ ] Refresh `/events`. The row no longer appears in **Active Message Subscriptions**. (This proves the delete-on-completion semantic of `MessageSubscriptions` surfaces in the UI without any row-level filter — if the row vanished, the engine already removed it.)
 
 ### 6. Refresh button re-queries without page reload
@@ -66,7 +68,7 @@ Against a clean database:
 
 - [ ] Deploy a workflow with a `<bpmn:conditionalEventDefinition>` start event (e.g. fixture from `tests/manual/24-conditional-event/`).
 - [ ] Refresh `/events`. The **Conditional Start Events** section lists the conditional listener with its `ConditionExpression`.
-- [ ] Disable the process definition (via `POST /Workflow/disable` or the UI). Refresh.
+- [ ] Disable the process definition (via `POST /Definitions/disable` or the UI). Refresh.
 - [ ] The conditional listener row disappears (the listener row is updated to `IsRegistered=false` and the page filters those out).
 
 ## Expected outcome

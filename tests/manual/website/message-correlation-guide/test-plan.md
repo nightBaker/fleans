@@ -6,7 +6,7 @@ The website docs include a **guides/message-correlation/** page that documents
 how Fleans correlates incoming BPMN messages to running workflow instances —
 the BPMN definition (placement of `<extensionElements>` inside `<bpmn:message>`),
 variable resolution semantics (`= ` prefix strip + plain `GetVariable` lookup,
-no expression evaluation), the `POST /Workflow/message` API, an end-to-end curl
+no expression evaluation), the `POST /Execution/message` API, an end-to-end curl
 example, three patterns (request/response, event-driven start, multi-step
 orchestration), and a set of common pitfalls. The page renders under the
 **Getting Started** sidebar group between *Error Handling* and *BPMN Editor*.
@@ -78,8 +78,6 @@ ranges still match the current source SHA.
    - "`MessageName` is case-sensitive" — under §"Common pitfalls".
    - "Wrong `<extensionElements>` placement is silently ignored" — under
      §"Common pitfalls".
-   - "Boundary message events on `IntermediateCatchEvent` do not register" —
-     under §"Limitations" (this is the regression #9 KNOWN BUG disclosure).
 
 6. **Content spot-check — curl example renders.** The §"End-to-end curl
    example" block must render as a single fenced `bash` code block containing

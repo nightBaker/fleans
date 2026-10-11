@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Plan 55 Scenario 3 fixture: a custom task whose plugin (e2e-probe) is hosted ONLY by an
+     external Plugin-role silo. The probe reports the silo it ran on, so placement is
+     observable from workflow variables. Automated by SplitRoleTopologyTests (E2E-SplitRoles);
+     the e2e-probe plugin lives in src/Fleans/Fleans.E2E.PluginHost. -->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+                  id="defs_probe_placement" targetNamespace="http://fleans.io/bpmn">
+  <bpmn:process id="probe-placement" isExecutable="true">
+    <bpmn:startEvent id="start" />
+    <bpmn:serviceTask id="probe" type="e2e-probe">
+      <bpmn:extensionElements>
+        <zeebe:ioMapping>
+          <zeebe:output source="=__response.siloName"  target="probeSilo" />
+          <zeebe:output source="=__response.role"      target="probeRole" />
+          <zeebe:output source="=__response.processId" target="probeProcessId" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="end" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="probe" />
+    <bpmn:sequenceFlow id="f2" sourceRef="probe" targetRef="end" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="diag">
+    <bpmndi:BPMNPlane id="plane" bpmnElement="probe-placement">
+      <bpmndi:BPMNShape id="s_start" bpmnElement="start"><dc:Bounds x="100" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_probe" bpmnElement="probe"><dc:Bounds x="200" y="80" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_end" bpmnElement="end"><dc:Bounds x="350" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="e_f1" bpmnElement="f1"><di:waypoint x="136" y="118" /><di:waypoint x="200" y="118" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="e_f2" bpmnElement="f2"><di:waypoint x="300" y="118" /><di:waypoint x="350" y="118" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

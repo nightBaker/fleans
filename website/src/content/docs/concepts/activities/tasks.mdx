@@ -13,6 +13,11 @@ See also: [BPMN Support matrix](../bpmn-support) for the full coverage table.
 
 ---
 
+<figure class="arch-diagram" style="--arch-ratio: 1010 / 550">
+  <iframe data-arch-src="/fleans/diagrams/task-types.html" src="/fleans/diagrams/task-types.html?embed=1" title="How each task type is executed" loading="lazy"></iframe>
+  <figcaption>Each task type reaches the WorkflowInstance its own way: plain tasks complete at once, scripts run in the evaluator, user tasks wait for a person, and service tasks run in a custom-task plugin. <a href="/fleans/diagrams/task-types.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
 ## Plain Task
 
 A **Plain Task** (`<bpmn:task>`) completes immediately with no executor — the engine advances to
@@ -91,7 +96,7 @@ exposes a claim → complete (or fail / cancel) lifecycle via REST and the admin
 
 :::note
 `assignee` and `candidateGroups` are stored as task metadata. The workflow is paused until the
-task is completed via `POST /Workflow/{id}/complete-activity`. Source: [BpmnConverter.cs#L313](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L313).
+task is completed via `POST /Execution/complete-activity`. Source: [BpmnConverter.cs#L313](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L313).
 :::
 
 ---

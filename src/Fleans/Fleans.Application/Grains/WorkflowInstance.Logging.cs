@@ -277,6 +277,10 @@ public partial class WorkflowInstance
         Message = "Processing pending external event: {EventType}")]
     private partial void LogProcessingPendingEvent(string eventType);
 
+    [LoggerMessage(EventId = 1079, Level = LogLevel.Debug,
+        Message = "Pending external operation {OperationId} deduplicated — returning persisted outcome (retry short-circuit)")]
+    private partial void LogPendingOpDeduplicated(string operationId);
+
     // Event Sub-Process lifecycle (EventId 1075-1079)
     [LoggerMessage(EventId = 1075, Level = LogLevel.Information,
         Message = "Workflow completed via root EventSubProcess {EventSubProcessId} (no outgoing sequence flow)")]
@@ -312,6 +316,10 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 3030, Level = LogLevel.Warning,
         Message = "Workflow cancelled: {Reason}")]
     private partial void LogWorkflowCancelled(string reason);
+
+    [LoggerMessage(EventId = 1120, Level = LogLevel.Error,
+        Message = "Workflow failed: unhandled failure of activity {FailedActivityId} ({FailedActivityInstanceId}) left no active activities. ErrorCode={ErrorCode}, ErrorMessage={ErrorMessage}")]
+    private partial void LogWorkflowFailed(string failedActivityId, Guid failedActivityInstanceId, string errorCode, string errorMessage);
 
     [LoggerMessage(EventId = 3031, Level = LogLevel.Warning,
         Message = "Escalation uncaught: EscalationCode={EscalationCode}, SourceActivityId={SourceActivityId}")]

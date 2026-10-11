@@ -1,0 +1,236 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Fleans in your infrastructure",
+    "subtitle": "Your backend calls the REST API; Orleans silos keep workflow state in PostgreSQL and coordinate through Redis",
+    "quality_profile": "showcase"
+  },
+  "components": [
+    {
+      "id": "idp",
+      "type": "security",
+      "label": "OIDC provider",
+      "sublabel": "optional",
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        140,
+        60
+      ]
+    },
+    {
+      "id": "client",
+      "type": "external",
+      "label": "Your backend",
+      "sublabel": "REST client",
+      "pos": [
+        40,
+        220
+      ],
+      "size": [
+        140,
+        60
+      ]
+    },
+    {
+      "id": "operator",
+      "type": "external",
+      "label": "Operator",
+      "sublabel": "browser",
+      "pos": [
+        40,
+        400
+      ],
+      "size": [
+        140,
+        60
+      ]
+    },
+    {
+      "id": "worker",
+      "type": "backend",
+      "label": "fleans-worker",
+      "sublabel": "script + condition",
+      "pos": [
+        320,
+        40
+      ],
+      "size": [
+        160,
+        60
+      ],
+      "tag": "scale out"
+    },
+    {
+      "id": "plugin",
+      "type": "backend",
+      "label": "Custom worker",
+      "sublabel": "your task plugins",
+      "pos": [
+        560,
+        40
+      ],
+      "size": [
+        160,
+        60
+      ]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "fleans-api",
+      "sublabel": "Core silos",
+      "pos": [
+        320,
+        220
+      ],
+      "size": [
+        160,
+        60
+      ],
+      "tag": "scale out"
+    },
+    {
+      "id": "web",
+      "type": "frontend",
+      "label": "fleans-web",
+      "sublabel": "admin UI silo",
+      "pos": [
+        320,
+        400
+      ],
+      "size": [
+        160,
+        60
+      ]
+    },
+    {
+      "id": "postgres",
+      "type": "database",
+      "label": "PostgreSQL",
+      "sublabel": "event log + read model",
+      "pos": [
+        880,
+        100
+      ],
+      "size": [
+        170,
+        60
+      ]
+    },
+    {
+      "id": "redis",
+      "type": "database",
+      "label": "Redis",
+      "sublabel": "clustering + reminders",
+      "pos": [
+        880,
+        250
+      ],
+      "size": [
+        170,
+        60
+      ]
+    },
+    {
+      "id": "kafka",
+      "type": "messagebus",
+      "label": "Kafka",
+      "sublabel": "streams, optional",
+      "pos": [
+        880,
+        400
+      ],
+      "size": [
+        170,
+        60
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Orleans cluster",
+      "wraps": [
+        "worker",
+        "plugin",
+        "api",
+        "web"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "State + messaging",
+      "wraps": [
+        "postgres",
+        "redis",
+        "kafka"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "client-idp",
+      "from": "client",
+      "to": "idp",
+      "label": "token",
+      "variant": "security"
+    },
+    {
+      "id": "client-api",
+      "from": "client",
+      "to": "api",
+      "label": "REST + JWT",
+      "variant": "emphasis"
+    },
+    {
+      "id": "operator-web",
+      "from": "operator",
+      "to": "web",
+      "label": "HTTPS"
+    },
+    {
+      "id": "web-api",
+      "from": "web",
+      "to": "api"
+    },
+    {
+      "id": "api-worker",
+      "from": "api",
+      "to": "worker",
+      "label": "grain calls",
+      "variant": "emphasis"
+    },
+    {
+      "id": "api-plugin",
+      "from": "api",
+      "to": "plugin",
+      "variant": "dashed"
+    },
+    {
+      "id": "api-postgres",
+      "from": "api",
+      "to": "postgres",
+      "label": "events"
+    },
+    {
+      "id": "api-redis",
+      "from": "api",
+      "to": "redis",
+      "label": "membership",
+      "labelAt": [
+        790,
+        268
+      ]
+    },
+    {
+      "id": "api-kafka",
+      "from": "api",
+      "to": "kafka",
+      "variant": "dashed"
+    }
+  ]
+}

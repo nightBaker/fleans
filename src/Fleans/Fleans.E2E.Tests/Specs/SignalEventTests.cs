@@ -4,12 +4,13 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Fleans.E2E.Tests.Specs;
 
-// Ports tests/manual/10-signal-events/test-plan.md
+// Ports tests/manual/10-signal-events/ (manual plan retired — automated here)
 [TestClass]
 [TestCategory("E2E")]
 public class SignalEventTests : WorkflowE2ETestBase
 {
     [TestMethod]
+    [TestCategory(E2ECategories.Smoke)]
     public async Task SignalCatch_ReceivesBroadcast_WorkflowResumes()
     {
         var xml = BpmnFixtureLoader.Load("10-signal-events", "signal-catch-throw.bpmn");
@@ -30,7 +31,6 @@ public class SignalEventTests : WorkflowE2ETestBase
     }
 
     [TestMethod]
-    [Ignore("Known bug: boundary events on IntermediateCatchEvent do not register subscriptions; see docs/plans/2026-02-25-manual-test-results.md.")]
     public async Task SignalBoundary_InterruptsTimer_EmergencyPathTaken()
     {
         var xml = BpmnFixtureLoader.Load("10-signal-events", "signal-boundary.bpmn");

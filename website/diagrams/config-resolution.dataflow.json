@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Configuration resolution",
+    "subtitle": "Each : in a key becomes __ in an env var; appsettings.json and CLI args use the colon form",
+    "quality_profile": "showcase",
+    "animation": "none",
+    "viewBox": [700, 730],
+    "legend": {
+      "entries": {
+        "default": { "label": "same key, different notation" },
+        "emphasis": { "label": "switches behavior at startup" },
+        "database": { "label": "persistence / connection keys" }
+      }
+    }
+  },
+  "stages": [
+    { "label": "Environment variable" },
+    { "label": "appsettings.json / CLI" },
+    { "label": "Startup effect" }
+  ],
+  "nodes": [
+    { "id": "envRole", "type": "external", "label": "Silo role", "sublabel": "Fleans__Role", "stage": 0, "row": 0, "width": 150 },
+    { "id": "envPersist", "type": "external", "label": "Persistence", "sublabel": "Persistence__Provider", "stage": 0, "row": 1, "width": 150 },
+    { "id": "envStream", "type": "external", "label": "Streaming", "sublabel": "Fleans__Streaming__Provider", "stage": 0, "row": 2, "width": 150 },
+    { "id": "envAuth", "type": "external", "label": "Authentication", "sublabel": "Authentication__Authority", "stage": 0, "row": 3, "width": 150 },
+    { "id": "envConn", "type": "external", "label": "Connections", "sublabel": "ConnectionStrings__*", "stage": 0, "row": 4, "width": 150 },
+    { "id": "role", "type": "backend", "label": "Fleans:Role", "sublabel": "Core | Worker | Combined", "stage": 1, "row": 0, "width": 150 },
+    { "id": "persist", "type": "database", "label": "Persistence", "sublabel": "Persistence:Provider", "stage": 1, "row": 1, "width": 150, "tag": "Sqlite | Postgres" },
+    { "id": "stream", "type": "messagebus", "label": "Streaming", "sublabel": "Fleans:Streaming:Provider", "stage": 1, "row": 2, "width": 150, "tag": "memory | kafka | azurequeue" },
+    { "id": "auth", "type": "security", "label": "Authority", "sublabel": "Authentication:Authority", "stage": 1, "row": 3, "width": 150, "tag": "OIDC issuer URL" },
+    { "id": "conn", "type": "database", "label": "Conn. strings", "sublabel": "fleans, orleans-redis", "stage": 1, "row": 4, "width": 150, "tag": "ConnectionStrings:*" },
+    { "id": "roleFx", "type": "backend", "label": "Silo name", "sublabel": "{role}-{machine}-{guid}", "stage": 2, "row": 0, "width": 150, "tag": "invalid value throws" },
+    { "id": "persistFx", "type": "database", "label": "Schema setup", "sublabel": "MigrateAsync / EnsureCreated", "stage": 2, "row": 1, "width": 150, "tag": "typo throws" },
+    { "id": "streamFx", "type": "messagebus", "label": "Stream provider", "sublabel": "memory is single-silo only", "stage": 2, "row": 2, "width": 150 },
+    { "id": "authFx", "type": "security", "label": "Auth on", "sublabel": "API JWT, Web OIDC sign-in", "stage": 2, "row": 3, "width": 150, "tag": "off when unset" },
+    { "id": "connFx", "type": "database", "label": "Stores + cluster", "sublabel": "event store, Redis clustering", "stage": 2, "row": 4, "width": 150, "tag": "fleans required for Postgres" }
+  ],
+  "flows": [
+    { "from": "envRole", "to": "role", "label": "= key", "route": "straight" },
+    { "from": "envPersist", "to": "persist", "label": "= key", "route": "straight" },
+    { "from": "envStream", "to": "stream", "label": "= key", "route": "straight" },
+    { "from": "envAuth", "to": "auth", "label": "= key", "route": "straight" },
+    { "from": "envConn", "to": "conn", "label": "= key", "route": "straight" },
+    { "from": "role", "to": "roleFx", "label": "stamps", "variant": "emphasis", "route": "straight" },
+    { "from": "persist", "to": "persistFx", "label": "picks", "variant": "emphasis", "route": "straight" },
+    { "from": "stream", "to": "streamFx", "label": "picks", "variant": "emphasis", "route": "straight" },
+    { "from": "auth", "to": "authFx", "label": "enables", "variant": "emphasis", "route": "straight" },
+    { "from": "conn", "to": "connFx", "label": "wires", "variant": "emphasis", "route": "straight" }
+  ]
+}

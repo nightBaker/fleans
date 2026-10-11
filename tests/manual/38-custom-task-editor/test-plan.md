@@ -79,6 +79,6 @@ Verifies the management UI BPMN editor's typed parameter editor for custom-task 
 
 ## Known limitations (v1)
 
-- `Map`/`List` parameters render a "workflow variable name" text field (no inline editor). Authors set the variable via `POST /Workflow/start` Variables or a preceding script task. Inline literal editing is a v2 follow-up tied to a mapping-grammar extension.
+- `Map`/`List` parameters render a "workflow variable name" text field (no inline editor). Authors set the variable via `POST /Execution/start` Variables or a preceding script task. Inline literal editing is a v2 follow-up tied to a mapping-grammar extension.
 - No live validation against the actual workflow scope (e.g. the editor doesn't know what variable names exist).
 - No variable autocomplete in the `Expression` widget.

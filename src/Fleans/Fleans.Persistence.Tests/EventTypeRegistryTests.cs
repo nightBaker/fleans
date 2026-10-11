@@ -211,6 +211,7 @@ public class EventTypeRegistryTests
             (new WorkflowStarted(id, "proc:1", rootVarsId), nameof(WorkflowStarted)),
             (new ExecutionStarted(), nameof(ExecutionStarted)),
             (new WorkflowCompleted(), nameof(WorkflowCompleted)),
+            (new WorkflowFailed("a", id, "500", "error"), nameof(WorkflowFailed)),
             (new ActivitySpawned(id, "a", "ScriptTask", id, null, null, null), nameof(ActivitySpawned)),
             (new ActivityExecutionStarted(id), nameof(ActivityExecutionStarted)),
             (new ActivityCompleted(id, id, variables), nameof(ActivityCompleted)),

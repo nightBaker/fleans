@@ -7,6 +7,8 @@ Verifies the three-role placement contract introduced on `feature/plugin-host-is
 - External plugin hosts using the new `Plugin` role (silo prefix `plugin-*`) host **only** the plugin grains compiled into their assembly load context — engine grains never land on them, and their plugin grains never land on engine silos.
 - Engine startup rejects `Fleans:Role=Plugin`; the `AddFleansPluginHost` helper rejects `Fleans:Role=Worker` (and `Core`).
 
+> **Automation:** Scenario 3 and the role-validation negatives (Scenario 5, plus the `Fleans.WorkerHost` equivalent of Scenario 4) run in CI as `SplitRoleTopologyTests` (`E2E-SplitRoles`, `e2e-split-roles` job) using `probe-placement.bpmn` and the test-only `src/Fleans/Fleans.E2E.PluginHost` (`e2e-probe` plugin, which reports its silo name). Locally: `FLEANS_SPLIT_ROLES=true dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --filter "TestCategory=E2E-SplitRoles"`. To run this plan by hand against the dev stack, `FLEANS_SPLIT_ROLES=true FLEANS_PLUGIN_HOST_PROJECT=<abs path to your host .csproj> dotnet run --project Fleans.Aspire`. Your plugin host must also run the engine's reminder provider (#788).
+
 ## Prerequisites
 
 - Aspire stack running locally: `dotnet run --project Fleans.Aspire` (from `src/Fleans/`), **or** a publish-mode docker-compose stack: `aspire publish -t docker-compose -o out/compose` then `docker compose -f out/compose/compose.yaml up`.
@@ -22,13 +24,13 @@ Verifies the three-role placement contract introduced on `feature/plugin-host-is
 
 1. **Deploy a BPMN with a ScriptTask.** Use any chained-script-task fixture, e.g. `tests/manual/02-script-tasks/script-chain.bpmn`.
    ```bash
-   curl -k -X POST https://localhost:7140/Workflow/deploy \
+   curl -k -X POST https://localhost:7140/Definitions/deploy \
      -H "Content-Type: application/json" \
      -d "{\"BpmnXml\": $(jq -Rs . < tests/manual/02-script-tasks/script-chain.bpmn)}"
    ```
 2. **Start an instance.**
    ```bash
-   curl -k -X POST https://localhost:7140/Workflow/start \
+   curl -k -X POST https://localhost:7140/Execution/start \
      -H "Content-Type: application/json" \
      -d '{"WorkflowId":"script-chain"}'
    ```
@@ -40,7 +42,7 @@ Verifies the three-role placement contract introduced on `feature/plugin-host-is
 
 - [ ] All `ScriptExecutorGrain` activations are on `worker-*` or `combined-*` silos.
 - [ ] Zero `ScriptExecutorGrain` activations on any `plugin-*` silo.
-- [ ] The workflow completes (`isCompleted: true` via `GET /Workflow/instances/<id>/state`).
+- [ ] The workflow completes (`isCompleted: true` via `GET /Instances/<id>/state`).
 
 ## Scenario 2 — Engine-bundled plugin placement (`RestCallerHandler` on the engine worker)
 

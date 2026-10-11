@@ -4,7 +4,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Fleans.E2E.Tests.Specs;
 
-// Ports tests/manual/12-variable-scoping/test-plan.md
+// Ports tests/manual/12-variable-scoping/ (manual plan retired — automated here)
 [TestClass]
 [TestCategory("E2E")]
 public class VariableScopingTests : WorkflowE2ETestBase

@@ -10,6 +10,7 @@ namespace Fleans.E2E.Tests.Specs;
 public class MessageEventTests : WorkflowE2ETestBase
 {
     [TestMethod]
+    [TestCategory(E2ECategories.Smoke)]
     public async Task MessageCatch_ReceivesMessage_WorkflowResumes()
     {
         var xml = BpmnFixtureLoader.Load("09-message-events", "message-catch.bpmn");
@@ -32,9 +33,7 @@ public class MessageEventTests : WorkflowE2ETestBase
         state.AssertVariableEquals("requestId", "req-456");
     }
 
-    // tests/manual/09-message-events/test-plan.md notes a KNOWN BUG on Scenario B.
     [TestMethod]
-    [Ignore("Known bug: boundary events on IntermediateCatchEvent do not register subscriptions; see docs/plans/2026-02-25-manual-test-results.md.")]
     public async Task MessageBoundary_InterruptsTimer_CancelPathTaken()
     {
         var xml = BpmnFixtureLoader.Load("09-message-events", "message-boundary.bpmn");
@@ -81,5 +80,10 @@ public class MessageEventTests : WorkflowE2ETestBase
             "waitApproval should appear among completed activities (with a failure outcome).");
         Assert.IsNotNull(failedActivity.ErrorState,
             "waitApproval should carry an ErrorState describing the missing-variable failure.");
+
+        // The failure consumed the only token, so the instance itself terminates as failed (#762).
+        var terminal = await ApiClient.WaitForStateAsync(
+            started.WorkflowInstanceId, s => s.IsFailed, timeout: TimeSpan.FromSeconds(15));
+        Assert.IsTrue(terminal.IsCompleted, "A failed instance is terminal.");
     }
 }

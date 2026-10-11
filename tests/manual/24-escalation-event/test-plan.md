@@ -12,6 +12,7 @@ Tests BPMN Escalation Events: escalation end event (child terminates and throws 
 2. `child-escalation-throw.bpmn` — child process that throws an escalation mid-flow and continues
 3. `parent-escalation-interrupting.bpmn` — parent with interrupting escalation boundary on CallActivity
 4. `parent-escalation-non-interrupting.bpmn` — parent with non-interrupting escalation boundary on CallActivity
+5. `escalation-event-subprocess.bpmn` — escalation thrown inside an embedded sub-process, caught by a process-level non-interrupting escalation event sub-process (Test D)
 
 ---
 
@@ -58,3 +59,17 @@ Tests BPMN Escalation Events: escalation end event (child terminates and throws 
 - [ ] Parent instance status: **Completed** (escalation is non-faulting per BPMN spec)
 - [ ] No error raised — uncaught escalation is silently recorded
 - [ ] Check structured logs for `EscalationUncaughtRaised` log entry
+
+---
+
+## Test D: Escalation caught by an Event Sub-Process
+
+> **KNOWN BUG:** escalation-triggered event sub-processes are not supported — the escalation start event is parsed as a plain start event and the escalation is treated as uncaught. See [#783](https://github.com/nightBaker/fleans/issues/783). Spec `EscalationEventSubProcessTests` is `[Ignore]`d.
+
+### Steps
+1. Deploy `escalation-event-subprocess.bpmn`; start `escalation-event-subprocess`
+
+### Expected Outcome
+- [ ] `escalationHandler` completed (event sub-process fired on `ESC_LOW_STOCK`)
+- [ ] Main flow continues: `afterThrow`, `work`, `end` completed (non-interrupting)
+- [ ] Variables: `escalationHandled` = **true**, `mainContinued` = **true**

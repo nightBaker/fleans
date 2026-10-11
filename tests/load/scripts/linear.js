@@ -37,7 +37,7 @@ export const options = {
 // Named export required by mixed.js (exec: 'linearWorkflow')
 export function linearWorkflow() {
   const payload = JSON.stringify({ WorkflowId: 'load-linear' });
-  const res = http.post(`${BASE_URL}/Workflow/start`, payload, { headers: HEADERS });
+  const res = http.post(`${BASE_URL}/Execution/start`, payload, { headers: HEADERS });
 
   workflowStartDuration.add(res.timings.duration);
   check(res, { 'workflow start: status 200': (r) => r.status === 200 });

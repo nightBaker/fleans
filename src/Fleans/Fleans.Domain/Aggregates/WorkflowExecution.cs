@@ -774,6 +774,57 @@ public class WorkflowExecution
         return effects.AsReadOnly();
     }
 
+    /// <summary>
+    /// Fails the workflow instance when an unhandled activity failure has left it with no
+    /// live tokens (#762). Called at quiescence (end of the execution loop), after
+    /// <see cref="TryDeferredWorkflowCompletion"/> — so a workflow whose root end event already
+    /// completed still completes normally.
+    /// <para>
+    /// Without this, an unhandled failure (no error boundary, no error event sub-process) on
+    /// the last live branch leaves the instance with no active activities while it is neither
+    /// completed nor failed: the token is silently dropped and nothing ever terminates the
+    /// instance. A failed activity entry anywhere in the instance is the signal that the stall
+    /// was caused by an error; an instance with no active activities and no failure is left
+    /// alone (that is not an error path this method owns).
+    /// </para>
+    /// <para>
+    /// Child workflows are marked failed too; the parent notification for the unhandled
+    /// failure is still emitted by <see cref="FailActivity"/>, so it is not repeated here.
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<IInfrastructureEffect> TryFailStalledWorkflow()
+    {
+        if (!_state.IsStarted || _state.IsCompleted)
+            return [];
+
+        if (_state.GetActiveActivities().Any())
+            return [];
+
+        var failedEntry = _state.Entries
+            .Where(e => e.ErrorCode is not null)
+            .OrderBy(e => e.CompletedAt ?? DateTimeOffset.MinValue)
+            .LastOrDefault();
+        if (failedEntry is null)
+            return [];
+
+        var effects = new List<IInfrastructureEffect>();
+
+        // Unregister any still-armed root-scope event sub-process listeners — the instance is
+        // terminal, so a later timer/message/signal must not re-open it.
+        effects.AddRange(BuildEventSubProcessPeerUnregisterEffects(
+            _definition, scopeContainerId: null,
+            scopeVariablesId: _state.GetRootVariablesId(),
+            skipStartEventActivityId: null));
+
+        Emit(new WorkflowFailed(
+            failedEntry.ActivityId,
+            failedEntry.ActivityInstanceId,
+            failedEntry.ErrorCode!,
+            failedEntry.ErrorState?.Message ?? string.Empty));
+
+        return effects.AsReadOnly();
+    }
+
     // ── Compensation Walk ────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -1004,7 +1055,8 @@ public class WorkflowExecution
                 _state.Id,
                 _state.ParentActivityId!,
                 command.EscalationCode,
-                scopeVariables)];
+                scopeVariables,
+                EscalationInstanceId: activityInstanceId)];
         }
 
         // Uncaught at root — BPMN spec: escalation is non-faulting, just record it
@@ -1178,6 +1230,15 @@ public class WorkflowExecution
                     $"Correlation variable '{variableName}' is null for message '{messageDef.Name}'.");
         }
 
+        // Catch/boundary message subscriptions are partitioned by correlation key
+        // (MessageCorrelationGrain is keyed "{name}/{key}"); an uncorrelated message can only
+        // trigger a message start event. Reject here so the registration-path failure routes
+        // to FailActivity instead of escaping the effect handler and stalling the workflow (#761).
+        if (string.IsNullOrWhiteSpace(correlationKey))
+            throw new InvalidOperationException(
+                $"Message '{messageDef.Name}' has no correlation key. Intermediate catch and boundary " +
+                "message events require a correlation key (zeebe:subscription correlationKey).");
+
         return new SubscribeMessageEffect(
             messageDef.Name, correlationKey,
             _state.Id, msg.ActivityId, activityInstanceId);
@@ -1304,10 +1365,14 @@ public class WorkflowExecution
 
         if (activity is BoundaryTimerEvent boundaryTimer)
         {
+            // Skip the fired timer: its TimerCallbackGrain is the (non-reentrant) caller of
+            // this method and unregisters its own reminder once we return. Emitting an
+            // UnregisterTimerEffect for it would call back into that busy grain and deadlock
+            // until the Orleans response timeout (#759).
             return HandleBoundaryEventFired(
                 boundaryTimer, boundaryTimer.AttachedToActivityId,
                 boundaryTimer.IsInterrupting, entry, new ExpandoObject(),
-                skipTimerActivityId: null,
+                skipTimerActivityId: boundaryTimer.ActivityId,
                 skipMessageName: null,
                 skipSignalName: null);
         }
@@ -1559,6 +1624,18 @@ public class WorkflowExecution
                 var scopeDefinition = _definition.GetScopeForActivity(entry.ActivityId);
                 var activity = scopeDefinition.GetActivity(entry.ActivityId);
 
+                // A multi-instance iteration shares the host's ActivityId, so the lookup
+                // returns the MultiInstanceActivity wrapper. Unwrap it so an iteration of a
+                // multi-instance SubProcess is completed like a regular SubProcess once its
+                // body finishes (otherwise the iteration — and therefore the host — never
+                // completes).
+                var isMultiInstanceIteration = false;
+                if (activity is MultiInstanceActivity iterationWrapper && entry.MultiInstanceIndex is not null)
+                {
+                    activity = iterationWrapper.InnerActivity;
+                    isMultiInstanceIteration = true;
+                }
+
                 var isSubProcess = activity is SubProcess;
                 var isEventSubProcess = activity is EventSubProcess;
                 var isMultiInstanceHost = activity is MultiInstanceActivity
@@ -1606,6 +1683,16 @@ public class WorkflowExecution
 
                 // SubProcess: all scope children must be completed
                 if (!scopeEntries.All(e => e.IsCompleted)) continue;
+
+                // A nested scope host completed earlier in THIS call has not had its outgoing
+                // transitions resolved yet (the caller resolves them after we return), so its
+                // token is still in flight inside this scope. Cascading now would complete the
+                // enclosing scope before its post-nested-scope activities run — e.g. an outer
+                // Transaction committing while its catch event after the inner Transaction has
+                // not even been spawned (#761). Only cascade through hosts with no outgoing flow.
+                if (scopeEntries.Any(e => allCompletedHostIds.Contains(e.ActivityInstanceId)
+                        && HostRoutesTokenAfterCompletion(e)))
+                    continue;
 
                 // If any scope child has an error (and wasn't handled by a boundary),
                 // a regular SubProcess should NOT auto-complete — its boundary error
@@ -1687,8 +1774,13 @@ public class WorkflowExecution
                 Emit(new ActivityCompleted(
                     entry.ActivityInstanceId, entry.VariablesId, new ExpandoObject()));
 
-                var effects = BuildBoundaryUnsubscribeEffects(entry.ActivityId, entry);
-                allEffects.AddRange(effects);
+                // Boundaries belong to the multi-instance host, not to its iterations —
+                // they are unsubscribed when the host completes (TryComplete path above).
+                if (!isMultiInstanceIteration)
+                {
+                    var effects = BuildBoundaryUnsubscribeEffects(entry.ActivityId, entry);
+                    allEffects.AddRange(effects);
+                }
 
                 // Unregister any event-sub-process timers declared inside this
                 // completing scope (SubProcess only — event sub-processes don't
@@ -1735,6 +1827,23 @@ public class WorkflowExecution
         }
 
         return (allEffects.AsReadOnly(), allCompletedHostIds.AsReadOnly(), allOrphanedScopeIds.AsReadOnly());
+    }
+
+    /// <summary>
+    /// True when a just-completed scope host still routes a token inside its enclosing scope:
+    /// either along an outgoing sequence flow, or — for a Cancelled Transaction — through its
+    /// attached Cancel Boundary Event (activated by the caller after this pass).
+    /// </summary>
+    private bool HostRoutesTokenAfterCompletion(ActivityInstanceEntry hostEntry)
+    {
+        var scope = _definition.GetScopeForActivity(hostEntry.ActivityId);
+        if (scope.SequenceFlows.Any(sf => sf.Source.ActivityId == hostEntry.ActivityId))
+            return true;
+
+        return _state.TransactionOutcomes.TryGetValue(hostEntry.ActivityInstanceId, out var outcome)
+            && outcome.Outcome == TransactionOutcome.Cancelled
+            && scope.Activities.OfType<CancelBoundaryEvent>()
+                .Any(b => b.AttachedToActivityId == hostEntry.ActivityId);
     }
 
     /// <summary>
@@ -2011,6 +2120,7 @@ public class WorkflowExecution
 
     public (IReadOnlyList<IInfrastructureEffect> Effects, EscalationHandledResult Result)
         HandleChildEscalationRaised(
+            Guid escalationInstanceId,
             Guid childWorkflowInstanceId,
             string hostActivityId,
             string escalationCode,
@@ -2047,7 +2157,10 @@ public class WorkflowExecution
                     _state.Id,
                     _state.ParentActivityId!,
                     escalationCode,
-                    variables)
+                    variables,
+                    // Propagate the origin throw's id unchanged so a re-escalated hop keeps the
+                    // same op-id — dedup short-circuits a retried hop (#657, round-4 fix).
+                    EscalationInstanceId: escalationInstanceId)
             };
             return (effects, EscalationHandledResult.NeedsParentLookup);
         }
@@ -2204,7 +2317,7 @@ public class WorkflowExecution
         effects.AddRange(BuildBoundaryUnsubscribeEffects(entry.ActivityId, entry));
 
         // Cancel event-based gateway siblings
-        effects.AddRange(CancelEventBasedGatewaySiblings(entry.ActivityId, entry));
+        effects.AddRange(CancelEventBasedGatewaySiblings(entry.ActivityId));
 
         // Clean up user task registry if applicable
         effects.AddRange(BuildUserTaskCleanupEffects(entry.ActivityInstanceId));
@@ -2822,9 +2935,52 @@ public class WorkflowExecution
             effects.AddRange(BuildBoundaryUnsubscribeEffects(
                 result.AttachedToActivityId, hostEntry,
                 skipTimerActivityId, skipMessageName, skipSignalName));
+
+            // An interrupted intermediate catch host must also drop its OWN trigger
+            // subscription. Otherwise e.g. a message catch's correlation grain stays
+            // subscribed forever and the next instance with the same correlation key fails
+            // with "Duplicate subscription" (#759).
+            var hostActivity = _definition.GetActivityAcrossScopes(result.AttachedToActivityId);
+            effects.AddRange(BuildCatchEventTriggerCleanupEffects(hostActivity, hostEntry));
         }
 
         return effects.AsReadOnly();
+    }
+
+    /// <summary>
+    /// Builds the cleanup effects for an intermediate catch event's own trigger
+    /// (timer reminder, message subscription, signal subscription) when its entry is
+    /// cancelled before the trigger fired. Returns no effects for any other activity type.
+    /// </summary>
+    private List<IInfrastructureEffect> BuildCatchEventTriggerCleanupEffects(
+        Activity catchActivity, ActivityInstanceEntry catchEntry)
+    {
+        var effects = new List<IInfrastructureEffect>();
+        switch (catchActivity)
+        {
+            case TimerIntermediateCatchEvent:
+                effects.Add(new UnregisterTimerEffect(
+                    _state.Id, catchEntry.ActivityInstanceId, catchActivity.ActivityId));
+                break;
+
+            case MessageIntermediateCatchEvent msgCatch:
+                var messageDef = _definition.GetMessageDefinition(msgCatch.MessageDefinitionId);
+                var correlationKey = ResolveCorrelationKey(messageDef, catchEntry.VariablesId);
+                effects.Add(new UnsubscribeMessageEffect(messageDef.Name, correlationKey));
+                break;
+
+            case SignalIntermediateCatchEvent sigCatch:
+                var signalDef = _definition.GetSignalDefinition(sigCatch.SignalDefinitionId);
+                effects.Add(new UnsubscribeSignalEffect(signalDef.Name, _state.Id, catchActivity.ActivityId));
+                break;
+
+            case MultipleIntermediateCatchEvent multiCatch:
+                effects.AddRange(CancelMultipleEventSiblings(
+                    multiCatch, catchEntry,
+                    skipMessageName: null, skipSignalName: null, skipTimerActivityId: null));
+                break;
+        }
+        return effects;
     }
 
     private Guid? FindDescendantHazardTx(Guid outerTxScopeId)
@@ -3013,7 +3169,7 @@ public class WorkflowExecution
     }
 
     private List<IInfrastructureEffect> CancelEventBasedGatewaySiblings(
-        string completedActivityId, ActivityInstanceEntry completedEntry)
+        string completedActivityId)
     {
         var effects = new List<IInfrastructureEffect>();
         var siblings = _definition.GetEventBasedGatewaySiblings(completedActivityId);
@@ -3031,31 +3187,7 @@ public class WorkflowExecution
 
             // Build unsubscribe effects based on sibling type
             var siblingActivity = _definition.GetActivityAcrossScopes(siblingId);
-            switch (siblingActivity)
-            {
-                case TimerIntermediateCatchEvent:
-                    effects.Add(new UnregisterTimerEffect(
-                        _state.Id, siblingEntry.ActivityInstanceId, siblingId));
-                    break;
-
-                case MessageIntermediateCatchEvent msgCatch:
-                    var messageDef = _definition.GetMessageDefinition(msgCatch.MessageDefinitionId);
-                    var correlationKey = ResolveCorrelationKey(messageDef, completedEntry.VariablesId);
-                    effects.Add(new UnsubscribeMessageEffect(messageDef.Name, correlationKey));
-                    break;
-
-                case SignalIntermediateCatchEvent sigCatch:
-                    var signalDef = _definition.GetSignalDefinition(sigCatch.SignalDefinitionId);
-                    effects.Add(new UnsubscribeSignalEffect(signalDef.Name, _state.Id, siblingId));
-                    break;
-
-                case MultipleIntermediateCatchEvent multiCatch:
-                    // Cancel all watchers for a Multiple Event sibling
-                    effects.AddRange(CancelMultipleEventSiblings(
-                        multiCatch, siblingEntry,
-                        skipMessageName: null, skipSignalName: null, skipTimerActivityId: null));
-                    break;
-            }
+            effects.AddRange(BuildCatchEventTriggerCleanupEffects(siblingActivity, siblingEntry));
         }
 
         return effects;
@@ -3162,6 +3294,20 @@ public class WorkflowExecution
                 $"Correlation variable '{variableName}' is null for message '{messageDef.Name}'.");
     }
 
+    // --- Pending external events durability (#657) ---
+
+    /// <summary>Emits <see cref="PendingEventEnqueued"/>, persisting an external event in the queue ledger.</summary>
+    public void EmitPendingEventEnqueued(string opKey, PendingExternalEventPayload payload)
+        => Emit(new PendingEventEnqueued(opKey, payload, DateTimeOffset.UtcNow));
+
+    /// <summary>Emits <see cref="PendingEventDrained"/>, removing a processed external event from the queue ledger.</summary>
+    public void EmitPendingEventDrained(string opKey)
+        => Emit(new PendingEventDrained(opKey, DateTimeOffset.UtcNow));
+
+    /// <summary>Emits <see cref="PendingEventApplied"/>, recording a retried op's outcome in the dedup ledger.</summary>
+    public void EmitPendingEventApplied(string opKey, PendingEventResult? result)
+        => Emit(new PendingEventApplied(opKey, result, DateTimeOffset.UtcNow));
+
     // --- Emit / Apply pattern ---
 
     private void Emit(IDomainEvent @event)
@@ -3202,6 +3348,9 @@ public class WorkflowExecution
                 break;
             case WorkflowCancelled:
                 _state.Cancel();
+                break;
+            case WorkflowFailed:
+                _state.Fail();
                 break;
             case EscalationUncaughtRaised:
                 break; // non-faulting per BPMN spec — recorded for observability only
@@ -3340,6 +3489,15 @@ public class WorkflowExecution
             case TransactionOutcomeSet e:
                 _state.TransactionOutcomes[e.TransactionInstanceId] =
                     new TransactionOutcomeRecord(e.Outcome, e.ErrorCode, e.ErrorMessage);
+                break;
+            case PendingEventEnqueued e:
+                _state.AddPendingOperation(e.OpKey, e.Payload);
+                break;
+            case PendingEventDrained e:
+                _state.RemovePendingOperation(e.OpKey);
+                break;
+            case PendingEventApplied e:
+                _state.RecordAppliedOperation(e.OpKey, e.Result);
                 break;
             default:
                 throw new InvalidOperationException($"Unknown domain event type: {@event.GetType().Name}");

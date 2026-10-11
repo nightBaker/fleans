@@ -4,7 +4,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Fleans.E2E.Tests.Specs;
 
-// Ports tests/manual/16-message-start-event/test-plan.md
+// Ports tests/manual/16-message-start-event/ (manual plan retired — automated here)
 [TestClass]
 [TestCategory("E2E")]
 public class MessageStartEventTests : WorkflowE2ETestBase

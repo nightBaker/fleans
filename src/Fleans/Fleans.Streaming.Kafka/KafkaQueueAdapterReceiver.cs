@@ -6,7 +6,7 @@ using Orleans.Streams;
 
 namespace Fleans.Streaming.Kafka;
 
-internal sealed class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
+internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
 {
     private readonly QueueId _queueId;
     private readonly KafkaStreamingOptions _options;
@@ -40,12 +40,24 @@ internal sealed class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
             EnableAutoCommit = false,
             EnablePartitionEof = false,
         };
-        _consumer = new ConsumerBuilder<byte[], byte[]>(config)
-            .SetErrorHandler((_, e) => _logger.LogWarning("Kafka consumer error on topic {Topic}: {Reason}", _topic, e.Reason))
-            .Build();
+        KafkaClientConfigExtensions.ApplySecurity(config, _options);
+        if (_options.SecurityProtocol is KafkaSecurityProtocol.Ssl or KafkaSecurityProtocol.SaslSsl
+            && string.IsNullOrEmpty(_options.SslCaLocation))
+        {
+            LogSslNoPathsOsTrustStore(_options.SecurityProtocol);
+        }
+        var consumerBuilder = new ConsumerBuilder<byte[], byte[]>(config)
+            .SetErrorHandler((_, e) => _logger.LogWarning("Kafka consumer error on topic {Topic}: {Reason}", _topic, e.Reason));
+        if (_options.OAuthBearerTokenProvider is not null)
+            consumerBuilder.SetOAuthBearerTokenRefreshHandler(_options.OAuthBearerTokenProvider);
+        _consumer = consumerBuilder.Build();
         _consumer.Subscribe(_topic);
         return Task.CompletedTask;
     }
+
+    [LoggerMessage(EventId = 11100, Level = LogLevel.Warning,
+        Message = "SecurityProtocol={SecurityProtocol} configured without explicit SSL paths — broker certificate will be validated against the OS trust store.")]
+    private partial void LogSslNoPathsOsTrustStore(KafkaSecurityProtocol securityProtocol);
 
     public Task<IList<IBatchContainer>> GetQueueMessagesAsync(int maxCount)
     {

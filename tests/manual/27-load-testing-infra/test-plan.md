@@ -39,7 +39,7 @@ docker compose ps
 ### 4. Test API endpoint via nginx
 
 ```bash
-curl -X POST http://localhost:80/Workflow/start \
+curl -X POST http://localhost:80/Execution/start \
   -H "Content-Type: application/json" \
   -d '{"WorkflowId":"nonexistent"}'
 ```
@@ -52,7 +52,7 @@ Send 4 requests and check logs:
 
 ```bash
 for i in 1 2 3 4; do
-  curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:80/Workflow/start \
+  curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:80/Execution/start \
     -H "Content-Type: application/json" \
     -d '{"WorkflowId":"nonexistent"}'
 done

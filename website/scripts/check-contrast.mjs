@@ -1,100 +1,73 @@
 #!/usr/bin/env node
-// Ad-hoc WCAG contrast checker for the Candidate 1 palette.
-// Not committed to the build — run via `node scripts/check-contrast.mjs`.
+// WCAG AA contrast check for the site palette (website/DESIGN.md § Color & Theme).
+// Not wired into the build — run via `node scripts/check-contrast.mjs` after any token change.
+// Exits non-zero if any pair fails. Keep the hex values in sync with src/styles/custom.css.
 
 function hexToRgb(hex) {
   const h = hex.replace('#', '');
-  return {
-    r: parseInt(h.slice(0, 2), 16),
-    g: parseInt(h.slice(2, 4), 16),
-    b: parseInt(h.slice(4, 6), 16),
-  };
+  return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
 }
 
 function srgbToLinear(c) {
   const s = c / 255;
-  return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
 }
 
-function luminance({ r, g, b }) {
-  return (
-    0.2126 * srgbToLinear(r) +
-    0.7152 * srgbToLinear(g) +
-    0.0722 * srgbToLinear(b)
-  );
+function luminance(hex) {
+  const [r, g, b] = hexToRgb(hex).map(srgbToLinear);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
 function contrast(fg, bg) {
-  const L1 = luminance(hexToRgb(fg));
-  const L2 = luminance(hexToRgb(bg));
-  const [a, b] = L1 >= L2 ? [L1, L2] : [L2, L1];
+  const [a, b] = [luminance(fg), luminance(bg)].sort((x, y) => y - x);
   return (a + 0.05) / (b + 0.05);
 }
 
-function verdict(ratio, minKind) {
-  const min = minKind === 'AA-large' ? 3.0 : 4.5;
-  return ratio >= min ? `${minKind} pass` : 'FAIL';
-}
-
-const dark = {
-  '--sl-color-accent-low': '#0f2926',
-  '--sl-color-accent': '#4eb5a6',
-  '--sl-color-accent-high': '#a8e0d6',
-  '--sl-color-white': '#f5f5f0',
-  '--sl-color-gray-1': '#e5e5df',
-  '--sl-color-gray-2': '#b8b8b1',
-  '--sl-color-gray-3': '#8a8a82',
-  '--sl-color-gray-4': '#5a5a53',
-  '--sl-color-gray-5': '#2e2e2a',
-  '--sl-color-gray-6': '#1a1a17',
-  '--sl-color-black': '#050504',
-  '--fleans-accent-2': '#9eff00',
-  '--fleans-surface': '#141411',
+const themes = {
+  dark: {
+    bg: '#1b1818',
+    surface2: '#221f1f',
+    text: '#fafafa',
+    textMuted: '#aba9a9',
+    textFaint: '#878484',
+    accent: '#8aa4ff',
+    chip: '#2652e1',
+    chipAlt: '#9b3ed6',
+  },
+  light: {
+    bg: '#ffffff',
+    surface2: '#f7f6f6',
+    text: '#1b1818',
+    textMuted: '#5b5757',
+    textFaint: '#757171',
+    accent: '#2652e1',
+    chip: '#2652e1',
+    chipAlt: '#8a2fc4',
+  },
 };
 
-const light = {
-  '--sl-color-accent-low': '#d4f0eb',
-  '--sl-color-accent': '#1f6357',
-  '--sl-color-accent-high': '#175046',
-  '--sl-color-white': '#0a0a0a',
-  '--sl-color-gray-1': '#1a1a17',
-  '--sl-color-gray-2': '#2e2e2a',
-  '--sl-color-gray-3': '#5a5a53',
-  '--sl-color-gray-4': '#8a8a82',
-  '--sl-color-gray-5': '#b8b8b1',
-  '--sl-color-gray-6': '#e0e0d9',
-  '--sl-color-gray-7': '#efefea',
-  '--sl-color-black': '#ffffff',
-  '--fleans-accent-2': '#3a7d00',
-  '--fleans-surface': '#f5f5f0',
-};
+// [fg, bg, minimum] — 4.5 for body-size text, 3.0 for large text / UI chrome.
+const pairs = (t) => [
+  ['--fl-text', t.text, '--fl-bg', t.bg, 4.5],
+  ['--fl-text-muted', t.textMuted, '--fl-bg', t.bg, 4.5],
+  ['--fl-text-muted', t.textMuted, '--fl-surface-2', t.surface2, 4.5],
+  ['--fl-text-faint', t.textFaint, '--fl-bg', t.bg, 4.5],
+  ['--fl-accent', t.accent, '--fl-bg', t.bg, 4.5],
+  ['--fl-accent', t.accent, '--fl-surface-2', t.surface2, 4.5],
+  ['#fff (chip/button text)', '#ffffff', '--fl-chip-bg', t.chip, 4.5],
+  ['#fff (chip text)', '#ffffff', '--fl-chip-alt-bg', t.chipAlt, 4.5],
+];
 
-// Effective page bg per Starlight: dark uses --sl-color-black-derived bg, light uses near-white.
-// We treat "bg" pairwise as the likely rendered background — the darkest/lightest extreme.
-// For dark, Starlight renders body against ~var(--sl-color-black). For light, ~var(--sl-color-black) too (which is white).
-// To match the plan's narrative bg (#0a0a0a dark / #f5f5f0 light), we verify contrast against BOTH the actual --sl-color-black
-// AND the narrative "bg" values used by the plan's tables (accent row etc).
-
-function runTheme(name, p, narrativeBg) {
+let failed = false;
+for (const [name, t] of Object.entries(themes)) {
   console.log(`\n--- ${name} ---`);
-  const rows = [
-    { id: 1, fg: p['--sl-color-white'], fgName: '--sl-color-white', bg: narrativeBg, bgName: 'bg', min: 'AA' },
-    { id: 2, fg: p['--sl-color-accent'], fgName: '--sl-color-accent', bg: narrativeBg, bgName: 'bg', min: 'AA' },
-    { id: 3, fg: p['--sl-color-accent-high'], fgName: '--sl-color-accent-high', bg: p['--sl-color-accent-low'], bgName: '--sl-color-accent-low', min: 'AA' },
-    { id: 4, fg: p['--sl-color-accent'], fgName: '--sl-color-accent', bg: p['--sl-color-accent-low'], bgName: '--sl-color-accent-low', min: 'AA' },
-    { id: 5, fg: p['--sl-color-gray-3'], fgName: '--sl-color-gray-3', bg: narrativeBg, bgName: 'bg', min: 'AA' },
-    { id: 6, fg: p['--fleans-accent-2'], fgName: '--fleans-accent-2', bg: narrativeBg, bgName: 'bg', min: 'AA-large' },
-    { id: '7a-5', fg: p['--sl-color-accent'], fgName: '--sl-color-accent', bg: p['--sl-color-gray-5'], bgName: '--sl-color-gray-5', min: 'AA-large' },
-    { id: '7a-6', fg: p['--sl-color-accent'], fgName: '--sl-color-accent', bg: p['--sl-color-gray-6'], bgName: '--sl-color-gray-6', min: 'AA-large' },
-  ];
-  if (name === 'dark') {
-    rows.push({ id: '7b', fg: p['--sl-color-accent'], fgName: '--sl-color-accent', bg: p['--fleans-surface'], bgName: '--fleans-surface', min: 'AA-large' });
-  }
-  for (const r of rows) {
-    const ratio = contrast(r.fg, r.bg);
-    console.log(`  row ${r.id}: pair: ${r.fgName} (${r.fg}) on ${r.bgName} (${r.bg}) = ${ratio.toFixed(2)}:1 (${verdict(ratio, r.min)})`);
+  for (const [fgName, fg, bgName, bg, min] of pairs(t)) {
+    const ratio = contrast(fg, bg);
+    const ok = ratio >= min;
+    if (!ok) failed = true;
+    console.log(
+      `pair: ${fgName} (${fg}) on ${bgName} (${bg}) = ${ratio.toFixed(2)}:1 (${ok ? 'AA pass' : 'FAIL'})`,
+    );
   }
 }
-
-runTheme('dark', dark, '#0a0a0a');
-runTheme('light', light, '#f5f5f0');
+process.exit(failed ? 1 : 0);

@@ -11,9 +11,9 @@
 
 import { Rate, Trend } from 'k6/metrics';
 
-// Duration of the POST /Workflow/start HTTP call, in milliseconds.
+// Duration of the POST /Execution/start HTTP call, in milliseconds.
 // Each dependency script must call: workflowStartDuration.add(res.timings.duration)
-// at its POST /Workflow/start call site.
+// at its POST /Execution/start call site.
 //
 // WARNING: k6 silently skips thresholds for metrics that are never emitted.
 // If a script does not call .add(), the 'workflow_start_duration' threshold in

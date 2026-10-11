@@ -53,7 +53,7 @@ cd tests/load/generated && docker compose up -d
 
 ```bash
 # Health check — should return 400 (no workflow deployed)
-curl -X POST http://localhost:80/Workflow/start -d '{"WorkflowId":"nonexistent"}' -H "Content-Type: application/json"
+curl -X POST http://localhost:80/Execution/start -d '{"WorkflowId":"nonexistent"}' -H "Content-Type: application/json"
 
 # Check all services are running
 docker compose ps
@@ -108,7 +108,7 @@ k6 run --insecure-skip-tls-verify tests/load/scripts/parallel.js
 k6 run --vus 5 --iterations 20 --insecure-skip-tls-verify tests/load/scripts/parallel.js
 ```
 
-`parallel.js` shares the same VU profile and `workflow_start_duration` metric as `linear.js`, so the two scripts can be compared directly. The fixture is a 3-branch fork/join (`branchA`/`branchB`/`branchC`); fork/join completion timing is asynchronous in Orleans and is **not** captured by `workflow_start_duration` — that metric records `POST /Workflow/start` HTTP latency only. End-to-end fork/join latency is covered by issue #244.
+`parallel.js` shares the same VU profile and `workflow_start_duration` metric as `linear.js`, so the two scripts can be compared directly. The fixture is a 3-branch fork/join (`branchA`/`branchB`/`branchC`); fork/join completion timing is asynchronous in Orleans and is **not** captured by `workflow_start_duration` — that metric records `POST /Execution/start` HTTP latency only. End-to-end fork/join latency is covered by issue #244.
 
 ## Environment Variables
 
@@ -132,16 +132,16 @@ Shared baseline thresholds are defined in `thresholds.json` and imported by all 
 |---|---|---|---|
 | `http_req_failed` | Rate | `rate < 1%` | |
 | `http_req_duration` | Trend | `p(95) < 2 000 ms` | |
-| `workflow_start_duration` | Trend | `p(95) < 2 000 ms` | HTTP duration of `POST /Workflow/start` |
+| `workflow_start_duration` | Trend | `p(95) < 2 000 ms` | HTTP duration of `POST /Execution/start` |
 | `poll_until_catch_duration` | Trend | `p(95) < 2 500 ms` | Wall-clock from start to poll success |
-| `message_accept_duration` | Trend | `p(95) < 2 000 ms` | HTTP duration of final `POST /Workflow/message` |
+| `message_accept_duration` | Trend | `p(95) < 2 000 ms` | HTTP duration of final `POST /Execution/message` |
 | `message_retry_attempts` | Trend | *(none)* | Diagnostic only |
 | `poll_stalls` | Rate | `rate < 1%` | Poll budget expired |
 | `correlation_miss` | Rate | `rate < 1%` | Message retry budget expired |
 
 ## Rate-limit policy: `polling`
 
-The `GET /Workflow/instances/{id}/state` endpoint uses `[EnableRateLimiting("polling")]`. This attribute is **opt-in** via the `RateLimiting:Polling` config section:
+The `GET /Instances/{id}/state` endpoint uses `[EnableRateLimiting("polling")]`. This attribute is **opt-in** via the `RateLimiting:Polling` config section:
 
 - **Section entirely absent** (default) → `UseRateLimiter()` is not registered; attribute is a no-op. Fails open.
 - **Section populated for `Polling` but missing `WorkflowMutation`/`TaskOperation`/`Read`/`Admin`** → `UseRateLimiter()` activates, but requests to endpoints with unregistered policy names throw `InvalidOperationException` → HTTP 500. Fails closed.

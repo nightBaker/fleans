@@ -55,12 +55,17 @@ public record UpdateUserTaskClaimEffect(
     UserTaskLifecycleState TaskState) : IInfrastructureEffect;
 
 // Escalation
+// EscalationInstanceId carries the originating throw's activity-instance id (a raw domain Guid)
+// so the application layer can derive a deterministic, per-throw op-id for dedup across retries
+// and re-escalation hops (#657). It stays a Guid here — the "child-escalation:{guid}" string is
+// formatted in the application layer per the domain-purity rule.
 public record NotifyParentEscalationRaisedEffect(
     Guid ParentWorkflowInstanceId,
     Guid ChildWorkflowInstanceId,
     string HostActivityId,
     string EscalationCode,
-    ExpandoObject Variables) : IInfrastructureEffect;
+    ExpandoObject Variables,
+    Guid EscalationInstanceId) : IInfrastructureEffect;
 
 // Event publishing
 public record PublishDomainEventEffect(IDomainEvent Event) : IInfrastructureEffect;

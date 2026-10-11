@@ -28,7 +28,7 @@ Verify the API works exactly as before when no `Authentication:Authority` is con
 
 3. **API endpoints work without a token:**
    ```bash
-   curl -k -X POST https://localhost:7140/Workflow/start \
+   curl -k -X POST https://localhost:7140/Execution/start \
      -H "Content-Type: application/json" \
      -d '{"WorkflowId":"nonexistent"}'
    ```
@@ -38,7 +38,7 @@ Verify the API works exactly as before when no `Authentication:Authority` is con
 
 - [ ] `GET /health` returns 200 Healthy
 - [ ] `GET /alive` returns 200 Healthy
-- [ ] `POST /Workflow/start` does NOT return 401 Unauthorized
+- [ ] `POST /Execution/start` does NOT return 401 Unauthorized
 - [ ] No authentication/authorization middleware errors in logs
 
 ---
@@ -48,6 +48,8 @@ Verify the API works exactly as before when no `Authentication:Authority` is con
 Verify the API enforces JWT bearer tokens when `Authentication:Authority` is configured.
 
 ### Prerequisites for Scenario B
+
+> **Shortcut:** `FLEANS_E2E_AUTH=true dotnet run --project Fleans.Aspire` provisions Keycloak with a ready-made realm and wires the Api to it (see `tests/manual/30-web-auth/keycloak-dev.md`). Get a token with `client_id=fleans-e2e`, `client_secret=fleans-e2e-secret`, `grant_type=password`, `username=alice`, `password=alice`. Scenario B is automated in `Fleans.E2E.Tests/Specs/AuthenticationTests.cs` (CI job `e2e-auth`).
 
 Set up an OIDC provider (e.g., Keycloak dev instance):
 
@@ -83,7 +85,7 @@ Configure `appsettings.json` (or environment variables):
 
 3. **API endpoints reject unauthenticated requests:**
    ```bash
-   curl -k -X POST https://localhost:7140/Workflow/start \
+   curl -k -X POST https://localhost:7140/Execution/start \
      -H "Content-Type: application/json" \
      -d '{"WorkflowId":"test"}'
    ```
@@ -96,7 +98,7 @@ Configure `appsettings.json` (or environment variables):
      -d "client_id=fleans-api" \
      -d "client_secret=YOUR_SECRET" | jq -r '.access_token')
 
-   curl -k -X POST https://localhost:7140/Workflow/start \
+   curl -k -X POST https://localhost:7140/Execution/start \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer $TOKEN" \
      -d '{"WorkflowId":"test"}'
@@ -105,7 +107,7 @@ Configure `appsettings.json` (or environment variables):
 
 5. **Expired/invalid token is rejected:**
    ```bash
-   curl -k -X POST https://localhost:7140/Workflow/start \
+   curl -k -X POST https://localhost:7140/Execution/start \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer invalid-token-here" \
      -d '{"WorkflowId":"test"}'
@@ -116,9 +118,9 @@ Configure `appsettings.json` (or environment variables):
 
 - [ ] `GET /health` returns 200 without a token
 - [ ] `GET /alive` returns 200 without a token
-- [ ] `POST /Workflow/start` without token returns 401
-- [ ] `POST /Workflow/start` with valid token does NOT return 401
-- [ ] `POST /Workflow/start` with invalid token returns 401
-- [ ] `POST /Workflow/deploy` without token returns 401
-- [ ] `POST /Workflow/message` without token returns 401
-- [ ] `POST /Workflow/signal` without token returns 401
+- [ ] `POST /Execution/start` without token returns 401
+- [ ] `POST /Execution/start` with valid token does NOT return 401
+- [ ] `POST /Execution/start` with invalid token returns 401
+- [ ] `POST /Definitions/deploy` without token returns 401
+- [ ] `POST /Execution/message` without token returns 401
+- [ ] `POST /Execution/signal` without token returns 401

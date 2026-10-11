@@ -104,6 +104,163 @@ public class WorkflowExecutionBoundaryTests
     }
 
     [TestMethod]
+    public void InterruptingBoundaryTimer_ShouldNotUnregisterTheFiredTimer()
+    {
+        // #759 — the fired timer's own TimerCallbackGrain is the caller of HandleTimerFired
+        // (non-reentrant). Emitting UnregisterTimerEffect for it makes WorkflowInstance call
+        // back into that busy grain and deadlock until the Orleans response timeout. The
+        // callback grain unregisters its own reminder after HandleTimerFired returns.
+        var boundaryTimer = new BoundaryTimerEvent(
+            "bt1", "task1", new TimerDefinition(TimerType.Duration, "PT10S"), IsInterrupting: true);
+        var otherTimer = new BoundaryTimerEvent(
+            "bt2", "task1", new TimerDefinition(TimerType.Duration, "PT1H"), IsInterrupting: true);
+        var handler1 = new ScriptTask("handler1", "return 1;");
+        var handler2 = new ScriptTask("handler2", "return 2;");
+
+        var (execution, state, taskEntry) = CreateWithExecutingTask(
+            [boundaryTimer, otherTimer, handler1, handler2],
+            [new("seq-bt1", boundaryTimer, handler1), new("seq-bt2", otherTimer, handler2)]);
+
+        var effects = execution.HandleTimerFired("bt1", taskEntry.ActivityInstanceId);
+
+        var unregTimer = effects.OfType<UnregisterTimerEffect>().Single();
+        Assert.AreEqual("bt2", unregTimer.TimerActivityId,
+            "Only the sibling timer should be unregistered; the fired timer cleans itself up");
+        Assert.IsTrue(taskEntry.IsCancelled);
+    }
+
+    /// <summary>
+    /// Layout: start -> catchActivity -> end (plus boundaries). Returns the executing catch entry.
+    /// </summary>
+    private static (WorkflowExecution execution, WorkflowInstanceState state, ActivityInstanceEntry catchEntry)
+        CreateWithExecutingCatch(
+            Activity catchActivity,
+            List<Activity> extraActivities,
+            List<SequenceFlow> extraFlows,
+            List<MessageDefinition>? messages = null,
+            List<SignalDefinition>? signals = null)
+    {
+        var start = new StartEvent("start1");
+        var end = new EndEvent("end1");
+        var activities = new List<Activity> { start, catchActivity, end };
+        activities.AddRange(extraActivities);
+        var flows = new List<SequenceFlow>
+        {
+            new("seq1", start, catchActivity),
+            new("seq2", catchActivity, end)
+        };
+        flows.AddRange(extraFlows);
+
+        var (execution, state, _) = CreateStartedExecution(activities, flows, messages, signals);
+
+        var startEntry = state.Entries.First();
+        execution.MarkExecuting(startEntry.ActivityInstanceId);
+        execution.MarkCompleted(startEntry.ActivityInstanceId, new ExpandoObject());
+        execution.ResolveTransitions(
+        [
+            new CompletedActivityTransitions(startEntry.ActivityInstanceId, "start1",
+                [new ActivityTransition(catchActivity)])
+        ]);
+
+        var catchEntry = state.GetActiveActivities().First(e => e.ActivityId == catchActivity.ActivityId);
+        execution.MarkExecuting(catchEntry.ActivityInstanceId);
+        execution.ClearUncommittedEvents();
+        return (execution, state, catchEntry);
+    }
+
+    [TestMethod]
+    public void InterruptingBoundaryTimer_OnMessageCatch_ShouldUnsubscribeHostMessage()
+    {
+        // #759 — the interrupted catch's own message subscription must be released, or the
+        // correlation grain stays subscribed and the next instance with the same key fails.
+        var msgDef = new MessageDefinition("msg1", "neverArrives", "corrKey");
+        var msgCatch = new MessageIntermediateCatchEvent("catch1", "msg1");
+        var boundaryTimer = new BoundaryTimerEvent(
+            "bt1", "catch1", new TimerDefinition(TimerType.Duration, "PT5S"), IsInterrupting: true);
+        var handler = new ScriptTask("handler1", "return 1;");
+
+        var (execution, state, catchEntry) = CreateWithExecutingCatch(
+            msgCatch, [boundaryTimer, handler], [new("seq-bt", boundaryTimer, handler)],
+            messages: [msgDef]);
+        var vars = new ExpandoObject();
+        ((IDictionary<string, object?>)vars)["corrKey"] = "never-match";
+        state.MergeState(catchEntry.VariablesId, vars);
+
+        var effects = execution.HandleTimerFired("bt1", catchEntry.ActivityInstanceId);
+
+        Assert.IsTrue(catchEntry.IsCancelled);
+        var unsub = effects.OfType<UnsubscribeMessageEffect>().Single();
+        Assert.AreEqual("neverArrives", unsub.MessageName);
+        Assert.AreEqual("never-match", unsub.CorrelationKey);
+        Assert.IsFalse(effects.OfType<UnregisterTimerEffect>().Any(),
+            "The fired boundary timer must not be unregistered from inside HandleTimerFired");
+    }
+
+    [TestMethod]
+    public void InterruptingBoundaryTimer_OnSignalCatch_ShouldUnsubscribeHostSignal()
+    {
+        var sigDef = new SignalDefinition("sig1", "GoSignal");
+        var sigCatch = new SignalIntermediateCatchEvent("catch1", "sig1");
+        var boundaryTimer = new BoundaryTimerEvent(
+            "bt1", "catch1", new TimerDefinition(TimerType.Duration, "PT5S"), IsInterrupting: true);
+        var handler = new ScriptTask("handler1", "return 1;");
+
+        var (execution, _, catchEntry) = CreateWithExecutingCatch(
+            sigCatch, [boundaryTimer, handler], [new("seq-bt", boundaryTimer, handler)],
+            signals: [sigDef]);
+
+        var effects = execution.HandleTimerFired("bt1", catchEntry.ActivityInstanceId);
+
+        Assert.IsTrue(catchEntry.IsCancelled);
+        var unsub = effects.OfType<UnsubscribeSignalEffect>().Single();
+        Assert.AreEqual("GoSignal", unsub.SignalName);
+        Assert.AreEqual("catch1", unsub.ActivityId);
+    }
+
+    [TestMethod]
+    public void InterruptingBoundarySignal_OnTimerCatch_ShouldUnregisterHostTimer()
+    {
+        var sigDef = new SignalDefinition("sig1", "StopSignal");
+        var timerCatch = new TimerIntermediateCatchEvent(
+            "catch1", new TimerDefinition(TimerType.Duration, "PT1H"));
+        var boundarySig = new SignalBoundaryEvent("bs1", "catch1", "sig1", IsInterrupting: true);
+        var handler = new ScriptTask("handler1", "return 1;");
+
+        var (execution, _, catchEntry) = CreateWithExecutingCatch(
+            timerCatch, [boundarySig, handler], [new("seq-bs", boundarySig, handler)],
+            signals: [sigDef]);
+
+        var effects = execution.HandleSignalDelivery("bs1", catchEntry.ActivityInstanceId);
+
+        Assert.IsTrue(catchEntry.IsCancelled);
+        var unreg = effects.OfType<UnregisterTimerEffect>().Single();
+        Assert.AreEqual("catch1", unreg.TimerActivityId);
+        Assert.AreEqual(catchEntry.ActivityInstanceId, unreg.HostActivityInstanceId);
+    }
+
+    [TestMethod]
+    public void NonInterruptingBoundaryTimer_OnMessageCatch_ShouldKeepHostSubscription()
+    {
+        var msgDef = new MessageDefinition("msg1", "neverArrives", "corrKey");
+        var msgCatch = new MessageIntermediateCatchEvent("catch1", "msg1");
+        var boundaryTimer = new BoundaryTimerEvent(
+            "bt1", "catch1", new TimerDefinition(TimerType.Duration, "PT5S"), IsInterrupting: false);
+        var handler = new ScriptTask("handler1", "return 1;");
+
+        var (execution, state, catchEntry) = CreateWithExecutingCatch(
+            msgCatch, [boundaryTimer, handler], [new("seq-bt", boundaryTimer, handler)],
+            messages: [msgDef]);
+        var vars = new ExpandoObject();
+        ((IDictionary<string, object?>)vars)["corrKey"] = "k1";
+        state.MergeState(catchEntry.VariablesId, vars);
+
+        var effects = execution.HandleTimerFired("bt1", catchEntry.ActivityInstanceId);
+
+        Assert.IsFalse(catchEntry.IsCompleted, "Non-interrupting boundary leaves the catch active");
+        Assert.IsFalse(effects.OfType<UnsubscribeMessageEffect>().Any());
+    }
+
+    [TestMethod]
     public void InterruptingBoundaryTimer_ShouldSpawnBoundaryActivity()
     {
         var boundaryTimer = new BoundaryTimerEvent(
@@ -236,10 +393,10 @@ public class WorkflowExecutionBoundaryTests
 
         var effects = execution.HandleTimerFired("bt1", taskEntry.ActivityInstanceId);
 
-        // Timer fired, so it should NOT appear in unsubscribe effects
-        // (timer that fired is not included — there's no "skip" for the timer itself since
-        //  it already fired; but other timers would be unsubscribed)
+        // Timer fired, so it must NOT appear in unregister effects (its callback grain
+        // cleans itself up — see InterruptingBoundaryTimer_ShouldNotUnregisterTheFiredTimer).
         // Message and signal boundaries should be unsubscribed
+        Assert.IsFalse(effects.OfType<UnregisterTimerEffect>().Any());
         var unsubMsg = effects.OfType<UnsubscribeMessageEffect>().Single();
         Assert.AreEqual("OrderMsg", unsubMsg.MessageName);
         Assert.AreEqual("order-999", unsubMsg.CorrelationKey);

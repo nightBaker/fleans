@@ -31,8 +31,6 @@ Expected: `{"delivered": true}`
 
 ## Steps — Scenario B (message-boundary.bpmn)
 
-> **KNOWN BUG:** Boundary events on IntermediateCatchEvents don't register subscriptions. The message boundary will not fire. See `docs/plans/2026-02-25-manual-test-results.md`.
-
 ### 1. Deploy and start
 - Import `message-boundary.bpmn`, deploy, start `message-boundary-test`
 - Instance should be **Running** with `longWait` active

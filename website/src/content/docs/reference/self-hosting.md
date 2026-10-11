@@ -137,6 +137,11 @@ worker:
 
 A starting point for a real cluster — pinned tag, external managed Postgres, OIDC on the admin UI, ingress with TLS, and a small worker pool isolated to dedicated nodes. Save as `prod-values.yaml` and install with `helm install fleans charts/fleans/ -f prod-values.yaml`.
 
+<figure class="arch-diagram" style="--arch-ratio: 1390 / 646">
+  <iframe data-arch-src="/fleans/diagrams/k8s-deployment.html" src="/fleans/diagrams/k8s-deployment.html?embed=1" title="Kubernetes production topology" loading="lazy"></iframe>
+  <figcaption>Production Helm topology: TLS ingress in front of the admin UI and API, Core and Worker silos in one Orleans cluster, managed PostgreSQL and optional Kafka outside the namespace. <a href="/fleans/diagrams/k8s-deployment.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
 ```yaml
 image:
   tag: 0.1.0-beta            # pin — never let `latest` drift in prod
@@ -188,6 +193,11 @@ ingress:
 ## Plugin packages on NuGet
 
 Fleans publishes four plugin-author packages to nuget.org on every tagged GitHub Release. They are the supported way to write a custom-task plugin or stand up your own plugin host without depending on the Fleans repo as a Git submodule. The packages are layered strictly so plugin authors get only what they need:
+
+<figure class="arch-diagram" style="--arch-ratio: 1260 / 470">
+  <iframe data-arch-src="/fleans/diagrams/plugin-nuget-stack.html" src="/fleans/diagrams/plugin-nuget-stack.html?embed=1" title="Plugin-author NuGet package stack" loading="lazy"></iframe>
+  <figcaption>The NuGet packages a plugin author consumes and how a custom worker host joins the cluster. <a href="/fleans/diagrams/plugin-nuget-stack.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
 
 ```
 Fleans.Worker  →  Fleans.Application.Abstractions  →  Fleans.Domain.Abstractions
@@ -255,6 +265,21 @@ When the silo joins the Orleans cluster, `<bpmn:serviceTask type="rest-call">` a
 ### Release cadence
 
 The packages are published by [`.github/workflows/nuget-publish.yml`](https://github.com/nightBaker/fleans/blob/main/.github/workflows/nuget-publish.yml) on `release.published`. The workflow can also be invoked manually with `workflow_dispatch` and `version=0.0.0-ci-test` to dry-run pack + upload-artifact without touching nuget.org. Re-runs against an already-published version are no-ops via `dotnet nuget push --skip-duplicate`.
+
+### Package integrity & signatures
+
+Every Fleans plugin package you install from nuget.org carries nuget.org's **repository signature**. nuget.org applies this signature **server-side, when it accepts the upload** — it is not produced by the Fleans build, and it is present on the package you restore, not on a locally-packed `.nupkg`. The repository signature chains to a root that .NET trusts by default, so you can verify any restored Fleans package:
+
+```bash
+# Resolve the package, then verify the signature on the restored .nupkg in your global packages cache.
+dotnet add package Fleans.Worker
+dotnet nuget verify --all \
+  ~/.nuget/packages/fleans.worker/<version>/fleans.worker.<version>.nupkg
+```
+
+`verify --all` exits `0` and reports a valid **repository** signature; it fails (`NU3004`) if the package is unsigned or has been tampered with after nuget.org signed it.
+
+**What this guarantees, and what it does not.** The repository signature gives you **integrity** — the package is exactly what nuget.org accepted and has not been altered in transit or on the feed. It does **not** assert *publisher* identity: it proves nuget.org holds the package, not that the Fleans project specifically signed it. For a pre-1.0 project this is a deliberate trade-off — repository signing delivers the tamper-resistance most consumers need at zero setup, and **publisher (author) signing** is a planned follow-up ([#728](https://github.com/nightBaker/fleans/issues/728)) for when publisher-authenticated signatures become worth the certificate onboarding. Until then, no project-managed signing certificate or per-consumer trust step is required.
 
 ## Limitations
 

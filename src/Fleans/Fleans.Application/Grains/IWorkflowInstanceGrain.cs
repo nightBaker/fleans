@@ -37,12 +37,15 @@ public interface IWorkflowInstanceGrain : IWorkflowInstanceCallback, IWorkflowEx
 
     Task SetParentInfo(Guid parentWorkflowInstanceId, string parentActivityId);
     Task SetInitialVariables(ExpandoObject variables);
+    // operationId (#657): caller-derived deterministic op-id for at-least-once dedup.
+    // The grain consults AppliedOperations/PendingOperations to avoid double-applying retries.
     [AlwaysInterleave]
-    Task OnChildWorkflowCompleted(string parentActivityId, ExpandoObject childVariables);
+    Task OnChildWorkflowCompleted(string operationId, string parentActivityId, ExpandoObject childVariables);
     [AlwaysInterleave]
-    Task OnChildWorkflowFailed(string parentActivityId, Exception exception);
+    Task OnChildWorkflowFailed(string operationId, string parentActivityId, Exception exception);
     [AlwaysInterleave]
     Task<EscalationHandledResult> OnChildEscalationRaised(
+        string operationId, Guid escalationInstanceId,
         Guid childWorkflowInstanceId, string hostActivityId,
         string escalationCode, ExpandoObject variables);
 
@@ -78,4 +81,12 @@ public interface IWorkflowInstanceGrain : IWorkflowInstanceCallback, IWorkflowEx
     /// </summary>
     [ReadOnly]
     ValueTask<IReadOnlyList<CompensationLogEntrySnapshot>> GetCompensationLog();
+
+    /// <summary>Op-keys currently in the durable pending-events queue (PendingOperations). #657.</summary>
+    [ReadOnly]
+    ValueTask<IReadOnlyList<string>> GetPendingOperationKeys();
+
+    /// <summary>Op-keys recorded in the dedup ledger (AppliedOperations). #657.</summary>
+    [ReadOnly]
+    ValueTask<IReadOnlyList<string>> GetAppliedOperationKeys();
 }

@@ -11,6 +11,11 @@ This page is the canonical lookup for every Fleans configuration key, what it do
 
 Fleans configuration uses two notations that map onto each other via .NET's standard configuration provider:
 
+<figure class="arch-diagram" style="--arch-ratio: 700 / 748; max-width: 740px; margin-inline: auto">
+  <iframe data-arch-src="/fleans/diagrams/config-resolution.html" src="/fleans/diagrams/config-resolution.html?embed=1" title="Configuration resolution" loading="lazy"></iframe>
+  <figcaption>Every key has a colon form for appsettings.json and CLI args and a double-underscore form for environment variables; each key group switches one behaviour at silo startup. <a href="/fleans/diagrams/config-resolution.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
 - **`A:B:C`** — colon-separated, used in `appsettings.json` and CLI args. Example: `Fleans:Streaming:Provider`.
 - **`A__B__C`** — double-underscore-separated, used in environment variables. Example: `Fleans__Streaming__Provider`.
 
@@ -50,12 +55,12 @@ The provider toggle. `Postgres` runs `MigrateAsync()` at startup; `Sqlite` runs 
 
 | Env var | Config key | Read at | Default |
 | --- | --- | --- | --- |
-| `Fleans__Streaming__Provider` | `Fleans:Streaming:Provider` | `Fleans.ServiceDefaults` | `"memory"` (case-insensitive; accepts `memory` or `kafka`) |
+| `Fleans__Streaming__Provider` | `Fleans:Streaming:Provider` | `Fleans.ServiceDefaults` | `"memory"` (case-insensitive; accepts `memory`, `kafka` or `azurequeue` — see [Streaming](/fleans/reference/streaming/#provider-switch)) |
 | `Fleans__Streaming__Kafka__Brokers` | `Fleans:Streaming:Kafka:Brokers` | `Fleans.ServiceDefaults` (binding) | — |
 | `Fleans__Streaming__Kafka__ConsumerGroup` | `Fleans:Streaming:Kafka:ConsumerGroup` | (binding) | `"fleans"` |
 | `Fleans__Streaming__Kafka__TopicPrefix` | `Fleans:Streaming:Kafka:TopicPrefix` | (binding) | `"fleans-"` |
 
-`memory` is single-silo only — it silently drops cross-silo events. Use `kafka` for any deployment with more than one silo. See [Streaming](/fleans/reference/streaming/) for at-least-once semantics.
+`memory` is single-silo only — it silently drops cross-silo events. Use `kafka` or `azurequeue` for any deployment with more than one silo. See [Streaming](/fleans/reference/streaming/) for at-least-once semantics.
 
 ### Authentication
 
@@ -63,7 +68,7 @@ Auth keys are **per-host** — the API and the Web admin UI use different OIDC f
 
 | Env var | Config key | Read at | Applies to |
 | --- | --- | --- | --- |
-| `Authentication__Authority` | `Authentication:Authority` | `Fleans.Api`, `Fleans.Web` | **Both hosts.** OIDC issuer URL. Setting this enables JWT enforcement on `/Workflow/*` (API) and OIDC sign-in on the admin UI. Auth disabled when missing. |
+| `Authentication__Authority` | `Authentication:Authority` | `Fleans.Api`, `Fleans.Web` | **Both hosts.** OIDC issuer URL. Setting this enables JWT enforcement on every API endpoint (API) and OIDC sign-in on the admin UI. Auth disabled when missing. |
 | `Authentication__Audience` | `Authentication:Audience` | `Fleans.Api` | **API only.** JWT `aud` claim the API requires. Default: `"fleans-api"`. Setting on the Web silo has no effect. |
 | `Authentication__ClientId` | `Authentication:ClientId` | `Fleans.Web` | **Web only.** OIDC client identifier for the Blazor Server admin UI. Setting on the API has no effect. |
 | `Authentication__ClientSecret` | `Authentication:ClientSecret` | `Fleans.Web` | **Web only.** OIDC client secret. Source from a Secret/Key Vault, not appsettings, in production. |

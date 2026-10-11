@@ -183,8 +183,12 @@ public class EfCoreEventStore : IEventStore
 }
 
 /// <summary>
-/// Serialization binder for event store that allows Fleans.Domain types
-/// and BCL/system assembly types (needed for ExpandoObject, List&lt;T&gt;, arrays, etc.).
+/// Serialization binder for the event store. Allows types from
+/// <see cref="Fleans.Domain"/> and the BCL assemblies enumerated in
+/// <see cref="JsonAssemblyAllowList"/>. Anything else — including BCL
+/// assemblies that ship classic Newtonsoft gadget chains
+/// (<c>System.Diagnostics.Process</c>, <c>System.Configuration.Install.AssemblyInstaller</c>,
+/// etc.) — is rejected with <see cref="JsonSerializationException"/>.
 /// </summary>
 internal sealed class EventStoreSerializationBinder : DefaultSerializationBinder
 {
@@ -193,19 +197,11 @@ internal sealed class EventStoreSerializationBinder : DefaultSerializationBinder
     public override Type BindToType(string? assemblyName, string typeName)
     {
         var type = base.BindToType(assemblyName, typeName);
-        if (type.Assembly != DomainAssembly && !IsSystemAssembly(type.Assembly))
+        if (type.Assembly != DomainAssembly && !JsonAssemblyAllowList.IsAllowedBclAssembly(type.Assembly))
             throw new JsonSerializationException(
                 $"Deserialization of type '{type.FullName}' from assembly '{type.Assembly.FullName}' is not allowed. " +
-                $"Only types from '{DomainAssembly.GetName().Name}' and system assemblies are permitted.");
+                $"Only types from '{DomainAssembly.GetName().Name}' and a curated BCL allowlist are permitted.");
         return type;
-    }
-
-    private static bool IsSystemAssembly(Assembly assembly)
-    {
-        var name = assembly.GetName().Name;
-        if (name is null) return false;
-        return name.StartsWith("System", StringComparison.Ordinal)
-            || name is "mscorlib" or "netstandard";
     }
 }
 

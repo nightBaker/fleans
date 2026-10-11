@@ -1,7 +1,32 @@
+using Confluent.Kafka;
+
 namespace Fleans.Streaming.Kafka;
 
 /// <summary>
-/// v1 Kafka streaming options. Plaintext brokers only — production SASL/TLS lands in a follow-up.
+/// Kafka security protocol, mirroring Confluent.Kafka's enum but kept Fleans-owned
+/// so Confluent types stay out of the public API surface.
+/// </summary>
+public enum KafkaSecurityProtocol
+{
+    Plaintext,
+    Ssl,
+    SaslPlaintext,
+    SaslSsl,
+}
+
+/// <summary>
+/// SASL mechanism, mirroring Confluent.Kafka's enum.
+/// </summary>
+public enum KafkaSaslMechanism
+{
+    Plain,
+    ScramSha256,
+    ScramSha512,
+    OAuthBearer,
+}
+
+/// <summary>
+/// Kafka streaming options.
 /// </summary>
 public class KafkaStreamingOptions
 {
@@ -28,9 +53,93 @@ public class KafkaStreamingOptions
     /// </summary>
     public int NumPartitions { get; set; } = 1;
 
-    public short ReplicationFactor { get; set; } = 1;
+    /// <summary>
+    /// Replication factor for Kafka topics created at silo startup. Defaults to <c>3</c> for
+    /// production-safe durability (survives one broker loss). The factory probes the live broker
+    /// count and falls back to a lower value when fewer brokers are available — single-broker
+    /// clusters automatically use <c>1</c>; partially-provisioned clusters emit a warning.
+    /// </summary>
+    public short ReplicationFactor { get; set; } = 3;
+
+    /// <summary>
+    /// Enables exactly-once produce semantics on the Kafka producer.
+    /// Defaults to <c>true</c>. When <c>true</c>, <see cref="Acks"/> must be
+    /// <see cref="KafkaAcks.All"/>; the factory throws <see cref="InvalidOperationException"/>
+    /// at startup if the combination is invalid.
+    /// </summary>
+    public bool EnableIdempotence { get; set; } = true;
+
+    /// <summary>
+    /// Producer acknowledgement mode. Defaults to <see cref="KafkaAcks.All"/> for maximum
+    /// durability. Downgrading below <c>All</c> is only safe when
+    /// <see cref="EnableIdempotence"/> is <c>false</c> — the factory enforces this at startup.
+    /// </summary>
+    public KafkaAcks Acks { get; set; } = KafkaAcks.All;
 
     public TimeSpan PollTimeout { get; set; } = TimeSpan.FromMilliseconds(50);
 
     public TimeSpan AdminTimeout { get; set; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// Kafka security protocol. Defaults to <see cref="KafkaSecurityProtocol.Plaintext"/>
+    /// for backward compatibility with existing plaintext deployments.
+    /// </summary>
+    public KafkaSecurityProtocol SecurityProtocol { get; set; } = KafkaSecurityProtocol.Plaintext;
+
+    /// <summary>
+    /// SASL mechanism. Required when <see cref="SecurityProtocol"/> is
+    /// <see cref="KafkaSecurityProtocol.SaslPlaintext"/> or <see cref="KafkaSecurityProtocol.SaslSsl"/>.
+    /// </summary>
+    public KafkaSaslMechanism? SaslMechanism { get; set; }
+
+    /// <summary>
+    /// SASL username. Required for PLAIN, SCRAM-SHA-256, and SCRAM-SHA-512 mechanisms.
+    /// </summary>
+    public string? SaslUsername { get; set; }
+
+    /// <summary>
+    /// SASL password. Required for PLAIN, SCRAM-SHA-256, and SCRAM-SHA-512 mechanisms.
+    /// </summary>
+    public string? SaslPassword { get; set; }
+
+    /// <summary>
+    /// OAuthBearer token provider callback. Required when <see cref="SaslMechanism"/> is
+    /// <see cref="KafkaSaslMechanism.OAuthBearer"/>. The callback is registered via
+    /// <c>SetOAuthBearerTokenRefreshHandler</c> on each client builder.
+    /// </summary>
+    public Action<IClient, string>? OAuthBearerTokenProvider { get; set; }
+
+    /// <summary>
+    /// Path to the CA certificate (PEM). Required when connecting to a broker
+    /// with a certificate issued by a private CA. Resolved relative to the silo's CWD —
+    /// prefer absolute paths in containerised deployments.
+    /// </summary>
+    public string? SslCaLocation { get; set; }
+
+    /// <summary>
+    /// Path to the client certificate (PEM). Required for mutual TLS (mTLS).
+    /// Must be paired with <see cref="SslKeyLocation"/>.
+    /// </summary>
+    public string? SslCertificateLocation { get; set; }
+
+    /// <summary>
+    /// Path to the client private key (PEM). Required for mTLS.
+    /// Must be paired with <see cref="SslCertificateLocation"/>.
+    /// </summary>
+    public string? SslKeyLocation { get; set; }
+
+    /// <summary>
+    /// Optional passphrase for the client private key.
+    /// Requires <see cref="SslKeyLocation"/> to be set.
+    /// </summary>
+    public string? SslKeyPassword { get; set; }
+
+    public override string ToString() =>
+        $"Brokers={Brokers} ConsumerGroup={ConsumerGroup} TopicPrefix={TopicPrefix} " +
+        $"QueueCount={QueueCount} NumPartitions={NumPartitions} ReplicationFactor={ReplicationFactor} " +
+        $"SecurityProtocol={SecurityProtocol} SaslMechanism={SaslMechanism} " +
+        $"SaslUsername={SaslUsername} SaslPassword={(SaslPassword is null ? "null" : "***")} " +
+        // OAuthBearerTokenProvider is a delegate — excluded
+        $"SslCaLocation={SslCaLocation} SslCertificateLocation={SslCertificateLocation} " +
+        $"SslKeyLocation={SslKeyLocation} SslKeyPassword={(SslKeyPassword is null ? "null" : "***")}";
 }

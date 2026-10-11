@@ -13,6 +13,35 @@ Four stream providers, selected via `FLEANS_STREAMING_PROVIDER`:
 
 If the third-party Redis-streaming package ever goes unmaintained, the swap-out path is to fork it or build a custom adapter (~530 LoC mirroring `Fleans.Streaming.Kafka`).
 
+## Kafka integration tests
+
+The broker-backed tests in `Fleans.Application.Tests` (`KafkaStreamProviderIntegrationTests`, `KafkaTopicEnsureTests`) are env-gated so the default `dotnet test` stays container-free:
+
+```bash
+FLEANS_KAFKA_TESTS=1 dotnet test Fleans.Application.Tests --filter "FullyQualifiedName~Kafka"   # Docker required
+```
+
+Without the variable they return `Inconclusive` (never `Failed`). CI runs them in `.github/workflows/kafka-tests.yml`, which fails if zero tests passed — the same silent-green guard as `pg-tests.yml`. A test that touches a stream through `TestCluster.Client` must also register the provider on the **client** (`IClientBuilderConfigurator`); a silo-only configurator leaves the client without a keyed `IStreamProvider` (#756).
+
+## Kafka durability defaults
+
+Three knobs on `KafkaStreamingOptions` control producer and topic durability:
+
+| Option | Default | Purpose |
+|---|---|---|
+| `EnableIdempotence` | `true` | Exactly-once produce semantics (Kafka EOS Phase 1). |
+| `Acks` | `All` | Leader + all in-sync replicas must acknowledge before produce returns. |
+| `ReplicationFactor` | `3` | Topics created at silo startup use RF=3, surviving one broker loss. |
+
+**`ValidateOptions` startup cross-check:** `KafkaQueueAdapterFactory.CreateAdapter()` throws `InvalidOperationException` when `EnableIdempotence=true && Acks != All`. Confluent.Kafka v2.x enforces this combination internally; the check surfaces it at silo startup rather than at first produce. A startup warning is emitted when `Acks != All` and idempotence is off — this is a valid but lower-durability configuration and should only be used in non-production workloads.
+
+**Broker-count fallback:** `EnsureTopicsAsync` probes the live broker count via `AdminClient.GetMetadata()` before creating topics. When `brokerCount < ReplicationFactor`, the effective RF is clamped to `brokerCount`:
+- Single-broker cluster → `effectiveRf=1`, logged at `Information` (expected in dev/CI).
+- Multi-broker cluster with fewer brokers than RF → logged at `Warning` (indicates degraded cluster).
+- Zero brokers → `InvalidOperationException` (cluster unreachable, fail-fast).
+
+The broker-count fallback applies only to **new** topics created at startup. For **existing** topics, the stored RF is set when the topic was first created. To change the RF of an existing topic use `kafka-reassign-partitions` or recreate the topic (with a drain window).
+
 ## Per-provider parallelism knobs
 
 - **Redis:** `Fleans:Streaming:Redis:TotalQueueCount` (default `8`, configurable — invalid values throw `ArgumentException` at startup via `FleanStreamingExtensions.ReadRedisTotalQueueCount`).
@@ -22,6 +51,28 @@ If the third-party Redis-streaming package ever goes unmaintained, the swap-out 
 **Bumping the count rehashes Stream IDs across queues.** Consistent with the project's pre-v1 stance, **expect in-flight workflow stalls across the bump window — no formal drain procedure is shipped.**
 
 See `website/src/content/docs/reference/streaming.md#tuning-throughput` for the sizing heuristic and the per-provider operator notes.
+
+## Kafka production preset
+
+`WithProductionDefaults(name)` is an **opt-in**, chainable extension that ties both Kafka knobs to `Environment.ProcessorCount`:
+
+```csharp
+builder.AddKafkaStreams("kafka", configuration)
+       .WithProductionDefaults("kafka");
+```
+
+Applied values:
+
+| Property | Formula |
+|---|---|
+| `QueueCount` | `max(8, Environment.ProcessorCount)` — never drops below the 8-queue Orleans baseline |
+| `NumPartitions` | `max(1, Environment.ProcessorCount)` — scales broker-side write parallelism |
+
+**The `name` argument must match exactly** the name passed to `AddKafkaStreams`. A mismatch silently applies overrides to a different named-options instance and leaves the provider at defaults — the absence of EventId 11000 in startup logs is the observable signal.
+
+**Homogeneity requirement:** `QueueCount` maps to `HashRingStreamQueueMapperOptions.TotalQueueCount`, a cluster-wide hash-ring parameter. All silos must have the same `Environment.ProcessorCount`; a mismatch silently misroutes streams under rebalance. Autoscaling mixed-core or mixed-arch fleets should NOT use this preset unless core counts are pinned uniformly. A cross-silo sanity probe covering Redis, Kafka, and AzureQueue providers is tracked in #699.
+
+**`NumPartitions` is forward-only:** `kafka-topics --alter --partitions N` can grow but not shrink. Deploying with the preset and then removing it leaves topics at the preset partition count — this is the safe direction, but plan accordingly.
 
 ## Stream-id sharding by `WorkflowInstanceId`
 
@@ -60,3 +111,66 @@ Each plugin's grain class only sees its own traffic (eliminates the N-plugins ×
 `AddCustomTaskPlugin<T>(taskType, …)` validates at silo startup that (a) no other plugin already claims `taskType` and (b) `typeof(T)` declares a matching `[ImplicitStreamSubscription]`. Both throw `InvalidOperationException` with explicit messages.
 
 The `TaskType` mismatch branch in `OnNextAsync` is unreachable under correct routing and now logs `LogTaskTypeMismatch` (EventId 4037) as a warning instead of dropping silently.
+
+## Kafka SASL / TLS
+
+Kafka security is configured via nine properties on `KafkaStreamingOptions`:
+
+| Property | Type | Default | Notes |
+|---|---|---|---|
+| `SecurityProtocol` | `KafkaSecurityProtocol` | `Plaintext` | Backward-compatible default; existing deployments are unaffected |
+| `SaslMechanism` | `KafkaSaslMechanism?` | `null` | Required for `SaslPlaintext` / `SaslSsl` protocols |
+| `SaslUsername` | `string?` | `null` | Required for PLAIN / SCRAM-SHA-256 / SCRAM-SHA-512 |
+| `SaslPassword` | `string?` | `null` | Required for PLAIN / SCRAM-SHA-256 / SCRAM-SHA-512 |
+| `OAuthBearerTokenProvider` | `Action<IClient, string>?` | `null` | Required for OAuthBearer; wired via `SetOAuthBearerTokenRefreshHandler` on each client builder |
+| `SslCaLocation` | `string?` | `null` | Path to CA certificate (PEM). Pins the CA that signed the broker cert |
+| `SslCertificateLocation` | `string?` | `null` | Path to client certificate (PEM). Required for mTLS; must be paired with `SslKeyLocation` |
+| `SslKeyLocation` | `string?` | `null` | Path to client private key (PEM). Required for mTLS; must be paired with `SslCertificateLocation` |
+| `SslKeyPassword` | `string?` | `null` | Passphrase for the client private key. Requires `SslKeyLocation` to be set |
+
+**Fail-fast validation.** `KafkaClientConfigExtensions.ApplySecurity` is called on all three client builders (producer, consumer, admin) and throws `InvalidOperationException` at silo startup for any misconfigured combination — missing mechanism, empty credentials, missing OAuthBearer provider, SSL paths with incompatible protocol, unpaired cert/key, or password without key. This surfaces configuration errors before the first broker connection.
+
+**Enum ownership.** `KafkaSecurityProtocol` and `KafkaSaslMechanism` are Fleans-owned enums (1:1 switch to Confluent types) so Confluent types stay out of the public API surface. Unknown enum values throw at startup.
+
+**OAuthBearer handler.** The `OAuthBearerTokenProvider` callback matches Confluent.Kafka's `SetOAuthBearerTokenRefreshHandler(Action<IClient, string>)` signature directly — no adapter needed. The callback is registered after `ApplySecurity` on each builder.
+
+### mTLS / client-certificate authentication
+
+Two distinct SSL modes are supported:
+
+**Server-cert validation against a private CA** (no client cert): Set `SecurityProtocol = Ssl` (or `SaslSsl`) and `SslCaLocation` only. Useful when the broker cert is issued by an internal CA not in the OS trust store. Omitting all `Ssl*` paths with `SecurityProtocol = Ssl` is also valid — the OS trust store is used for broker-cert validation, and the silo logs a WARNING at startup (EventId 11100) to confirm this is intentional.
+
+**Mutual TLS (full mTLS)** — client presents a certificate to the broker: Set `SecurityProtocol = Ssl` and all three paths:
+
+- `SslCaLocation` — path to the CA that issued the broker cert
+- `SslCertificateLocation` — path to the client certificate
+- `SslKeyLocation` — path to the client private key
+- `SslKeyPassword` — passphrase (omit if the key is not passphrase-protected)
+
+> **Path resolution:** Confluent.Kafka resolves `Ssl*Location` paths relative to the **silo's working directory**, not the .NET assembly directory. In containerised deployments (Kubernetes, Docker), prefer **absolute paths** (e.g. `/etc/kafka/certs/ca.pem`) to avoid CWD-dependent failures.
+
+Example environment variables (full mTLS + passphrase-protected key):
+
+```
+Streaming__Kafka__SecurityProtocol=Ssl
+Streaming__Kafka__SslCaLocation=/etc/kafka/certs/ca.pem
+Streaming__Kafka__SslCertificateLocation=/etc/kafka/certs/client.pem
+Streaming__Kafka__SslKeyLocation=/etc/kafka/certs/client.key
+Streaming__Kafka__SslKeyPassword=s3cret
+```
+
+## AWS MSK IAM authentication
+
+The optional package `Fleans.Streaming.Kafka.AwsMsk` (in-repo, NuGet publish tracked separately) provides one-line registration for AWS MSK clusters that use IAM auth over the standard OAUTHBEARER SASL mechanism:
+
+```csharp
+builder.AddKafkaStreamingWithMskIam("kafka", configuration, "eu-west-1");
+```
+
+IAM credentials come from the AWS workload identity chain (EC2 instance profile, EKS Pod Identity / IRSA, ECS task role, AWS SSO) — no static secrets go in configuration.
+
+**Broker endpoint port.** MSK IAM uses port `:9098`, not `:9092` (plaintext) or `:9094` (TLS-only). Set `Fleans:Streaming:Kafka:Brokers=b-1.cluster.kafka.eu-west-1.amazonaws.com:9098`. If you see persistent SASL handshake failures despite valid IAM permissions, verify the broker port is `:9098` — `:9092` and `:9094` produce the same generic "could not get OAUTH token" error.
+
+**Region resolution.** The `region` parameter takes precedence over `AWS_REGION` env var, which takes precedence over `AWS_DEFAULT_REGION`. Providing no region and neither env var throws `InvalidOperationException` at registration time.
+
+**Observable signals.** EventId 11200 (`LogTokenRefreshFailed`, ERROR) fires when a SigV4 STS call fails — the most common cause is a missing IAM policy action (`kafka-cluster:Connect`, `kafka-cluster:WriteData`, `kafka-cluster:ReadData`). EventId 11201 (`LogSetTokenFailureThrew`, WARNING) indicates a disposed-client race during shutdown; it is not actionable in isolation.

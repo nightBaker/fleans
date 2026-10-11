@@ -4,7 +4,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Fleans.E2E.Tests.Specs;
 
-// Ports tests/manual/02-script-tasks/test-plan.md
+// Ports tests/manual/02-script-tasks/ (manual plan retired — automated here)
 [TestClass]
 [TestCategory("E2E")]
 public class ScriptTaskTests : WorkflowE2ETestBase

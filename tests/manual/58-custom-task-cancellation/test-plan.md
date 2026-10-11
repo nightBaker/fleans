@@ -33,7 +33,7 @@ Two equivalent paths; pick one.
 
 Within ~1 s of the silo restart, check:
 
-1. **Workflow instance is still Running.** The state-snapshot endpoint at `GET https://localhost:7140/Workflow/instances/{id}/state` should show the custom-task activity still **Active** (not Failed).
+1. **Workflow instance is still Running.** The state-snapshot endpoint at `GET https://localhost:7140/Instances/{id}/state` should show the custom-task activity still **Active** (not Failed).
 2. **The custom-task activity has NOT been marked failed.** Specifically, no row for this activity appears in any "Failed activities" UI projection, and the workflow state's failed-activities collection is empty for this `ActivityInstanceId`.
 3. **The silo console log contains exactly one `LogPluginCancelledOnDeactivation` line** (EventId 4050) with `TaskType=rest-call` and the activity id from your workflow:
    ```
@@ -63,6 +63,13 @@ Distinguishes the "our cancellation" path (Steps 1–3) from "plugin's own timeo
 # stop the long-blocking endpoint if still running
 # delete the dev DB if you ran this immediately before another test plan
 ```
+
+## Step 5 — Boundary timer interrupts a long-running plugin task (automated)
+
+Fixture: `probe-boundary-timer.bpmn` (`e2e-probe` task with a PT3S interrupting timer; start with `delayMs=10000`, `callbackUrl`, `probeKey`). Automated as `SplitRoleTopologyTests.BoundaryTimer_InterruptsLongRunningPluginTask_TimeoutPathTaken_LateCompletionDropped` (`E2E-SplitRoles`).
+
+> **PASS criteria:** the instance completes via `timeoutPath` / `endTimeout`; `normalPath` never runs; after the plugin finishes, its late `CompleteActivity` is dropped (no `probeSilo` variable).
+> **Known gaps:** the plugin's `CancellationToken` is NOT cancelled on interrupt — the probe runs to completion (#786, spec `BoundaryTimer_InterruptingPluginTask_CancelsHandlerToken` is `[Ignore]`d). The timer path currently takes ~30s to proceed because of a `WorkflowInstance` ↔ `TimerCallbackGrain` call cycle (#785).
 
 ## Out of scope (covered elsewhere)
 

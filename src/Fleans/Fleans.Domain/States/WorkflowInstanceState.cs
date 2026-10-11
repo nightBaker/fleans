@@ -1,5 +1,6 @@
 using System.Dynamic;
 using Fleans.Domain.Activities;
+using Fleans.Domain.Events;
 
 namespace Fleans.Domain.States;
 
@@ -29,6 +30,14 @@ public class WorkflowInstanceState
 
     [Id(19)]
     public bool IsCancelled { get; private set; }
+
+    /// <summary>
+    /// True when the instance terminated because an unhandled activity failure left it with
+    /// no live tokens (#762). Like <see cref="IsCancelled"/>, a failed instance is also
+    /// <see cref="IsCompleted"/> (terminal) — check this flag to tell success from failure.
+    /// </summary>
+    [Id(28)]
+    public bool IsFailed { get; private set; }
 
     [Id(7)]
     public DateTimeOffset? CreatedAt { get; private set; }
@@ -154,9 +163,60 @@ public class WorkflowInstanceState
     [Id(25)]
     public Dictionary<Guid, CompensationWalkState> ActiveCompensationWalks { get; private set; } = new();
 
+    /// <summary>
+    /// Pending external events (child completed/failed/escalation, signal delivery) that have been
+    /// enqueued via <c>PendingEventEnqueued</c> but not yet drained. Keyed by op-key. Rebuilt from the
+    /// event log on activation (like <see cref="TransactionOutcomes"/>); the in-memory queue's fresh
+    /// TaskCompletionSources are minted from this on reactivation. Issue #657.
+    /// </summary>
+    [Id(26)]
+    public Dictionary<string, PendingExternalEventPayload> PendingOperations { get; private set; } = new();
+
+    /// <summary>
+    /// Dedup ledger for caller-retried operations: op-key → durable outcome (null for void ops).
+    /// Populated only by the three retried methods (child completed/failed/escalation) via
+    /// <c>PendingEventApplied</c>; consulted on retry to short-circuit double-apply. Cleared on
+    /// terminal state (the existing IsCompleted stale guard protects post-completion retries). Issue #657.
+    /// </summary>
+    [Id(27)]
+    public Dictionary<string, PendingEventResult?> AppliedOperations { get; private set; } = new();
+
+    private const int DirtyPendingOperations = 256;
+
     internal int GetDirtyFlags() => _dirtyFlags;
 
     internal void ClearDirtyFlags() => _dirtyFlags = 0;
+
+    // ── Pending external events (issue #657) ────────────────────────────────────────
+
+    public void AddPendingOperation(string opKey, PendingExternalEventPayload payload)
+    {
+        PendingOperations[opKey] = payload;
+        _dirtyFlags |= DirtyPendingOperations;
+    }
+
+    public void RemovePendingOperation(string opKey)
+    {
+        PendingOperations.Remove(opKey);
+        _dirtyFlags |= DirtyPendingOperations;
+    }
+
+    public void RecordAppliedOperation(string opKey, PendingEventResult? result)
+    {
+        AppliedOperations[opKey] = result;
+        _dirtyFlags |= DirtyPendingOperations;
+    }
+
+    public void ClearAppliedOperations()
+    {
+        AppliedOperations.Clear();
+        _dirtyFlags |= DirtyPendingOperations;
+    }
+
+    public bool TryGetAppliedOperation(string opKey, out PendingEventResult? result)
+        => AppliedOperations.TryGetValue(opKey, out result);
+
+    public bool HasPendingOperation(string opKey) => PendingOperations.ContainsKey(opKey);
 
     public IEnumerable<ActivityInstanceEntry> GetActiveActivities()
         => ActiveEntryIds.Select(id => EntriesById[id]);
@@ -270,7 +330,8 @@ public class WorkflowInstanceState
 
         GatewayForks.Clear();
         ComplexGatewayJoinStates.Clear();
-        _dirtyFlags |= DirtyGatewayForks | DirtyComplexGatewayJoinStates;
+        AppliedOperations.Clear(); // dedup ledger GC: bounded to instance lifetime (#657, Q1')
+        _dirtyFlags |= DirtyGatewayForks | DirtyComplexGatewayJoinStates | DirtyPendingOperations;
         CompletedAt = DateTimeOffset.UtcNow;
         IsCompleted = true;
     }
@@ -282,10 +343,30 @@ public class WorkflowInstanceState
 
         GatewayForks.Clear();
         ComplexGatewayJoinStates.Clear();
-        _dirtyFlags |= DirtyGatewayForks | DirtyComplexGatewayJoinStates;
+        AppliedOperations.Clear(); // dedup ledger GC: bounded to instance lifetime (#657, Q1')
+        _dirtyFlags |= DirtyGatewayForks | DirtyComplexGatewayJoinStates | DirtyPendingOperations;
         CompletedAt = DateTimeOffset.UtcNow;
         IsCompleted = true;
         IsCancelled = true;
+    }
+
+    /// <summary>
+    /// Terminal failure: the instance can make no further progress because an unhandled
+    /// activity failure consumed its last token. Mirrors <see cref="Cancel"/> — marks the
+    /// instance terminal (IsCompleted + CompletedAt) and sets <see cref="IsFailed"/>.
+    /// </summary>
+    public void Fail()
+    {
+        if (IsCompleted)
+            return; // already terminated — a late failure after termination is a no-op
+
+        GatewayForks.Clear();
+        ComplexGatewayJoinStates.Clear();
+        AppliedOperations.Clear(); // dedup ledger GC: bounded to instance lifetime (#657, Q1')
+        _dirtyFlags |= DirtyGatewayForks | DirtyComplexGatewayJoinStates | DirtyPendingOperations;
+        CompletedAt = DateTimeOffset.UtcNow;
+        IsCompleted = true;
+        IsFailed = true;
     }
 
     public Guid AddCloneOfVariableState(Guid variableStateId)

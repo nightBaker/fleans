@@ -36,7 +36,8 @@
     else
     {
         <FluentDataGrid Items="@(_entries.AsQueryable())" GridTemplateColumns="200px 220px 1fr 100px"
-                        ResizableColumns="true" Style="width: 100%;">
+                        ResizableColumns="true" Style="width: 100%;"
+                        data-testid="custom-task-catalog-grid">
             <PropertyColumn Title="Task Type" Property="@(e => e.TaskType)" />
             <PropertyColumn Title="Display Name" Property="@(e => e.DisplayName ?? "—")" />
             <TemplateColumn Title="Silos">

@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "A small BPMN process",
+    "subtitle": "Events, activities and a gateway joined by sequence flows",
+    "quality_profile": "showcase",
+    "animation": "none",
+    "legend": {
+      "entries": {
+        "external": {
+          "label": "Event"
+        },
+        "backend": {
+          "label": "Activity"
+        },
+        "security": {
+          "label": "Gateway"
+        }
+      }
+    }
+  },
+  "lanes": [
+    {
+      "id": "flow",
+      "label": "Process flow"
+    },
+    {
+      "id": "ends",
+      "label": "End events"
+    }
+  ],
+  "mainPath": [
+    "start",
+    "review",
+    "decide",
+    "grant",
+    "closed"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "lane": "flow",
+      "col": 0,
+      "type": "external",
+      "label": "Request in",
+      "sublabel": "start event"
+    },
+    {
+      "id": "review",
+      "lane": "flow",
+      "col": 1,
+      "type": "backend",
+      "label": "Review request",
+      "sublabel": "user task",
+      "width": 110
+    },
+    {
+      "id": "decide",
+      "lane": "flow",
+      "col": 3,
+      "type": "security",
+      "label": "Approved?",
+      "sublabel": "XOR gateway"
+    },
+    {
+      "id": "grant",
+      "lane": "flow",
+      "col": 5,
+      "type": "backend",
+      "label": "Grant access",
+      "sublabel": "script task"
+    },
+    {
+      "id": "rejected",
+      "lane": "ends",
+      "col": 3,
+      "type": "external",
+      "label": "Rejected",
+      "sublabel": "end event"
+    },
+    {
+      "id": "closed",
+      "lane": "ends",
+      "col": 5,
+      "type": "external",
+      "label": "Done",
+      "sublabel": "end event"
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "review"
+    },
+    {
+      "from": "review",
+      "to": "decide"
+    },
+    {
+      "from": "decide",
+      "to": "grant",
+      "label": "yes"
+    },
+    {
+      "from": "grant",
+      "to": "closed"
+    },
+    {
+      "from": "decide",
+      "to": "rejected",
+      "label": "no",
+      "role": "branch",
+      "labelDy": 11
+    }
+  ]
+}

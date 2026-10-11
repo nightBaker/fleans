@@ -40,7 +40,7 @@ This plan covers:
 ### Step 2 — Start a workflow instance
 
 ```bash
-curl -k -X POST https://localhost:7140/Workflow/start \
+curl -k -X POST https://localhost:7140/Execution/start \
   -H "Content-Type: application/json" \
   -d '{"WorkflowId":"compensation-broadcast-process"}'
 ```
@@ -74,10 +74,10 @@ Wait 3–5 seconds, then check the instance in the Web UI.
 
 ```bash
 # Replace <instanceId> with the actual workflow instance ID
-curl -k https://localhost:7140/Workflow/<instanceId>/variables
+curl -k https://localhost:7140/Instances/<instanceId>/state | jq '.variableStates'
 ```
 
-Expected response contains:
+Expected: a scope in `variableStates` whose variables contain:
 
 ```json
 {
@@ -117,3 +117,27 @@ Open the instance detail view in the Web UI. In the activity history / completed
 
 - Compensation handlers (`cancel_hotel`, `cancel_flight`) are **not on the main sequence flow** — they are connected only via `<association>` from the boundary event. They should not appear as regular activities in the flow but should appear in the completed activities list after compensation.
 - The compensation walk runs in **reverse completion order**: `book_flight` was completed after `reserve_hotel`, so `cancel_flight` runs before `cancel_hotel`.
+
+---
+
+## Scenario B — Targeted compensation throw (`compensation-targeted.bpmn`)
+
+Same activities as Scenario A, but the throw event carries `activityRef="book_flight"`, so only the flight is compensated. Automated by `CompensationThrowAndEndEventTests.CompensationThrow_WithActivityRef_CompensatesOnlyTheTargetedActivity`.
+
+1. Deploy `compensation-targeted.bpmn`; start `compensation-targeted-process`.
+
+- [ ] Workflow **Completed** via `compensate_flight` → `end`
+- [ ] `cancel_flight` completed; `cancel_hotel` **not** completed
+- [ ] `flightStatus = "cancelled"`, `hotelStatus = "reserved"` (never `cancelled` in any scope)
+
+---
+
+## Scenario C — Compensation End Event (`compensation-end-event.bpmn`)
+
+The process ends on an end event with a broadcast `compensateEventDefinition`. Automated by `CompensationThrowAndEndEventTests.CompensationEndEvent_CompensatesAllCompletedActivities_AndEndsTheProcess`.
+
+1. Deploy `compensation-end-event.bpmn`; start `compensation-end-event-process`.
+
+- [ ] Workflow **Completed** (not cancelled) at `compensate_end`
+- [ ] `cancel_flight` completes before `cancel_hotel` (reverse completion order)
+- [ ] `hotelStatus = "cancelled"`, `flightStatus = "cancelled"`

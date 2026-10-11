@@ -5,7 +5,7 @@
 //
 //   k6 run --insecure-skip-tls-verify tests/load/scripts/setup.js
 //
-// Prerequisites: target cluster running with POST /Workflow/deploy endpoint available.
+// Prerequisites: target cluster running with POST /Definitions/deploy endpoint available.
 // Abort on any fixture deploy failure — do NOT continue with partial setup.
 
 import http            from 'k6/http';
@@ -39,7 +39,7 @@ export default function () {
   // 1. Deploy each fixture — abort immediately on failure
   for (const fixture of FIXTURES) {
     const payload = JSON.stringify({ BpmnXml: fixture.bpmnXml });
-    const res = http.post(`${BASE_URL}/Workflow/deploy`, payload, { headers: HEADERS });
+    const res = http.post(`${BASE_URL}/Definitions/deploy`, payload, { headers: HEADERS });
 
     if (res.status !== 200) {
       fail(`Failed to deploy ${fixture.name}: HTTP ${res.status} — ${res.body}`);
@@ -51,11 +51,11 @@ export default function () {
 
   // 2. Verify all 3 keys appear in the definitions list.
   //    Pass pageSize=100 to avoid missing fixtures when >20 definitions exist.
-  const defsRes = http.get(`${BASE_URL}/Workflow/definitions?pageSize=100`);
+  const defsRes = http.get(`${BASE_URL}/Definitions?pageSize=100`);
   check(defsRes, { 'definitions list: status 200': (r) => r.status === 200 });
 
   if (defsRes.status !== 200) {
-    fail(`Cannot verify fixtures: GET /Workflow/definitions returned HTTP ${defsRes.status}`);
+    fail(`Cannot verify fixtures: GET /Definitions returned HTTP ${defsRes.status}`);
   }
 
   // Response shape: PagedResult<ProcessDefinitionSummary>
@@ -66,7 +66,7 @@ export default function () {
     const found = keys.some((k) => k === fixture.name);
     check({ found }, { [`${fixture.name} present in definitions`]: (x) => x.found });
     if (!found) {
-      fail(`MISSING: ${fixture.name} not found in /Workflow/definitions — cannot proceed`);
+      fail(`MISSING: ${fixture.name} not found in /Definitions — cannot proceed`);
     }
   }
 }
