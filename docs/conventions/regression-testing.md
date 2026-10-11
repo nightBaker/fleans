@@ -8,8 +8,10 @@ CI runs the suite on every PR (job `e2e` in `.github/workflows/dotnet.yml`); loc
 
 ```bash
 cd src/Fleans
-dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --filter "TestCategory=E2E"
+dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --filter "TestCategory=E2E&TestCategory!=E2E-SplitRoles&TestCategory!=E2E-Auth"
 ```
+
+(`TestCategory=E2E` alone also works — `E2E-SplitRoles` and `E2E-Auth` specs report Inconclusive outside their own topologies.)
 
 ### Provider legs (`E2E-Smoke`)
 
@@ -25,7 +27,7 @@ Tag a spec `E2E-Smoke` only when it exercises persistence or streaming in a way 
 
 ### Split-role leg (`E2E-SplitRoles`)
 
-Specs tagged `[TestCategory(E2ECategories.SplitRoles)]` (`SplitRoleTopologyTests`) need the three-role topology and run only in the `e2e-split-roles` job; the default `e2e` job filters them out (`TestCategory=E2E&TestCategory!=E2E-SplitRoles`). With `FLEANS_SPLIT_ROLES=true`:
+Specs tagged `[TestCategory(E2ECategories.SplitRoles)]` (`SplitRoleTopologyTests`) need the three-role topology and run only in the `e2e-split-roles` job; the default `e2e` job filters them out (`TestCategory=E2E&TestCategory!=E2E-SplitRoles&TestCategory!=E2E-Auth`). With `FLEANS_SPLIT_ROLES=true`:
 
 - the AppHost runs `fleans-core` as `Core` and registers `fleans-worker` (`Fleans.WorkerHost`, `Worker`) in dev mode;
 - `AspireFixture` sets `FLEANS_PLUGIN_HOST_PROJECT` to `src/Fleans/Fleans.E2E.PluginHost` — a test-only `Plugin`-role host (template-shaped: `Fleans.Worker` + Orleans only) whose single plugin `e2e-probe` reports the silo it ran on and its start/complete/cancel lifecycle to the in-process `TestHttpServer` (`/probe`);
@@ -38,9 +40,19 @@ FLEANS_SPLIT_ROLES=true dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --f
 
 Without the switch these specs report Inconclusive. The plugin host only wires Redis streaming, so the leg is not combined with the provider matrix.
 
+### Authentication leg (`E2E-Auth`)
+
+`FLEANS_E2E_AUTH=true` makes the AppHost (dev/test only, never in publish mode) provision a Keycloak container with the test realm in `src/Fleans/Fleans.Aspire/e2e-auth/fleans-realm.json` (users `alice`/`alice` ∈ `managers`, `bob`/`bob` in no group; clients `fleans-e2e` → `aud=fleans-api` + `groups`, `fleans-e2e-other` → wrong audience, `fleans-web` → OIDC with wildcard redirect URIs) and wire `Authentication__Authority/Audience/RequireHttpsMetadata` into Fleans.Api and `Authority/ClientId/ClientSecret` into Fleans.Web. Without the flag no Keycloak resource exists — the default dev topology is unchanged. Specs tagged `[TestCategory(E2ECategories.Auth)]` (`AuthenticationTests`) cover API 401/200/wrong-audience, JWT-derived user-task claim groups with body groups ignored, and the Web OIDC login round-trip. They are excluded from the `e2e` job and run in the `e2e-auth` job (guard: every selected spec must pass — an Inconclusive skip fails the job). Locally:
+
+```bash
+FLEANS_E2E_AUTH=true dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --filter "TestCategory=E2E-Auth"
+```
+
+Traps: Keycloak only imports a realm file named `<realm>-realm.json`; bearer requests must target the Api's **https** endpoint (`AspireFixture.ApiHttpsBaseUri`) because `HttpClient` drops the `Authorization` header when following the HTTP→HTTPS redirect. Only `E2E-Auth` specs may run in this mode — every other spec assumes auth is off.
+
 Each spec class under `Fleans.E2E.Tests/Specs/` carries a `// Ports tests/manual/NN-*/test-plan.md` doc comment linking back to the human-readable plan it derives from.
 
-The `Specs/_DeferredManualPlans.cs` file documents every plan that doesn't yet have an active spec (editor-UI plans, custom-task plugin plans, OIDC/JWT auth plans, Helm/release-pipeline plans, etc.), each `[Ignore]`'d with a specific reason.
+The `Specs/_DeferredManualPlans.cs` file documents every plan that doesn't yet have an active spec (editor-UI plans, custom-task plugin plans, Helm/release-pipeline plans, etc.), each `[Ignore]`'d with a specific reason.
 
 ## Admin-UI specs: page objects, interactivity, unique data
 

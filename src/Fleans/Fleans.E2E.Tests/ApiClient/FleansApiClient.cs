@@ -159,7 +159,7 @@ public sealed partial class FleansApiClient
 
     public async Task<HttpResponseMessage> ClaimUserTaskAsync(
         Guid activityInstanceId,
-        string userId,
+        string? userId,
         IReadOnlyList<string>? userGroups = null,
         CancellationToken ct = default)
     {
@@ -172,7 +172,7 @@ public sealed partial class FleansApiClient
 
     public async Task<HttpResponseMessage> CompleteUserTaskAsync(
         Guid activityInstanceId,
-        string userId,
+        string? userId,
         Dictionary<string, object?>? variables = null,
         CancellationToken ct = default)
     {

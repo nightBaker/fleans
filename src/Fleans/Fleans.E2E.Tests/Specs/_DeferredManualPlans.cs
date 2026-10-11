@@ -4,8 +4,8 @@ namespace Fleans.E2E.Tests.Specs;
 
 /// <summary>
 /// Placeholder specs for manual plans whose automation requires infrastructure beyond
-/// the current scaffolding (BPMN editor automation, custom-task plugin host, OIDC/auth
-/// stub, Docker-compose-only flows, etc.). Each method below documents what the manual
+/// the current scaffolding (BPMN editor automation, custom-task plugin host,
+/// Docker-compose-only flows, etc.). Each method below documents what the manual
 /// plan asserts and is [Ignore]'d with a clear reason. Activating one of these requires
 /// the underlying capability to land first.
 /// </summary>
@@ -19,10 +19,10 @@ public class DeferredManualPlans : WorkflowE2ETestBase_None
     // tests/manual/27-load-testing-infra/test-plan.md — Docker Compose + nginx fan-out.
     // OUT OF SCOPE per the original plan.
 
-    // tests/manual/28-api-auth/test-plan.md — JWT bearer auth.
-    [TestMethod]
-    [Ignore("Needs OIDC/JWT test setup (Authority + ClientId + token-issuer container).")]
-    public void Plan28_ApiAuth_JwtBearerEnforced() { }
+    // tests/manual/28-api-auth/test-plan.md — Scenario B (401 without token, 200 with a valid
+    // token, wrong audience / garbage token → 401, /health anonymous) is automated in
+    // AuthenticationTests (E2E-Auth category, FLEANS_E2E_AUTH=true → Keycloak). Scenario A
+    // (auth disabled) is implicitly covered by every default-leg spec.
 
     // Editor plans (29, 38, 47, 48, 52, 54, 59): the EditorPage POM is now reliable — #773
     // was a boot race (OpenAsync returned before Editor.razor's OnAfterRenderAsync finished
@@ -35,10 +35,10 @@ public class DeferredManualPlans : WorkflowE2ETestBase_None
     [Ignore("Needs EditorPage page object + bpmn-js drag-drop integration (deferred Phase 4 follow-up).")]
     public void Plan29_EditorTabs_OpenCloseDirtyTracking() { }
 
-    // tests/manual/30-web-auth/test-plan.md — Blazor Web app auth gate.
-    [TestMethod]
-    [Ignore("Needs OIDC/JWT test setup for Fleans.Web.")]
-    public void Plan30_WebAuth_LoginRequired() { }
+    // tests/manual/30-web-auth/test-plan.md — Scenario 2 (anonymous visit → Keycloak login →
+    // back on the deep link with "Signed in as alice") is automated in
+    // AuthenticationTests.Web_RedirectsToIssuer_LoginEstablishesSession. Scenarios 3–5
+    // (dashboard guard, open-redirect table, antiforgery logout) remain manual.
 
     // tests/manual/31-events-page/test-plan.md — automated in EventsPageTests
     // (steps 2 empty-state and 7 OIDC remain manual).
@@ -131,7 +131,9 @@ public class DeferredManualPlans : WorkflowE2ETestBase_None
 
     // tests/manual/45-user-task-fail-cancel/test-plan.md and
     // tests/manual/61-usertask-group-claim/test-plan.md — automated in UserTaskLifecycleTests
-    // (the JWT-derived-groups half of plan 61 stays manual; the test cluster runs without auth).
+    // (auth-disabled body-groups path). The JWT half of plan 61 (groups resolved from the
+    // token's `groups` claim; body-supplied groups ignored, so a spoofing caller gets 409) is
+    // automated in AuthenticationTests.UserTaskClaim_UsesJwtGroups_BodySuppliedGroupsIgnored.
 
     // tests/manual/62-chart-streaming-providers/test-plan.md — Helm chart tests. OUT OF SCOPE.
     // tests/manual/63-chart-external-postgres/test-plan.md — Helm chart tests. OUT OF SCOPE.
