@@ -337,6 +337,90 @@ public sealed partial class FleansApiClient
         return result ?? throw new InvalidOperationException("SendSignal returned an empty body.");
     }
 
+    // --- Read-endpoint + negative-path helpers (#766) ---
+
+    /// <summary>POST /Definitions/deploy without <c>EnsureSuccessStatusCode</c> — for negative paths.</summary>
+    public async Task<HttpResponseMessage> DeployRawAsync(string bpmnXml, CancellationToken ct = default)
+    {
+        return await _http.PostAsJsonAsync(
+            "/Definitions/deploy",
+            new DeployBpmnRequest(bpmnXml),
+            JsonOptions,
+            ct);
+    }
+
+    /// <summary>POST /Execution/start without <c>EnsureSuccessStatusCode</c> — for negative paths.</summary>
+    public async Task<HttpResponseMessage> StartRawAsync(string processDefinitionKey, CancellationToken ct = default)
+    {
+        return await _http.PostAsJsonAsync(
+            "/Execution/start",
+            new StartWorkflowRequest(processDefinitionKey),
+            JsonOptions,
+            ct);
+    }
+
+    public async Task<HttpResponseMessage> GetStateRawAsync(Guid workflowInstanceId, CancellationToken ct = default)
+    {
+        return await _http.GetAsync($"/Instances/{workflowInstanceId:D}/state", ct);
+    }
+
+    public async Task<PagedResult<ProcessDefinitionSummary>> ListDefinitionsAsync(
+        int page = 1,
+        int pageSize = 20,
+        string? sorts = null,
+        string? filters = null,
+        CancellationToken ct = default)
+    {
+        return await GetPagedAsync<ProcessDefinitionSummary>("/Definitions", page, pageSize, sorts, filters, ct);
+    }
+
+    public async Task<PagedResult<WorkflowInstanceInfo>> ListInstancesByKeyAsync(
+        string processDefinitionKey,
+        int page = 1,
+        int pageSize = 20,
+        string? sorts = null,
+        string? filters = null,
+        CancellationToken ct = default)
+    {
+        return await GetPagedAsync<WorkflowInstanceInfo>(
+            $"/Definitions/{Uri.EscapeDataString(processDefinitionKey)}/instances", page, pageSize, sorts, filters, ct);
+    }
+
+    public async Task<PagedResult<WorkflowInstanceInfo>> ListInstancesByKeyAndVersionAsync(
+        string processDefinitionKey,
+        int version,
+        int page = 1,
+        int pageSize = 20,
+        string? sorts = null,
+        string? filters = null,
+        CancellationToken ct = default)
+    {
+        return await GetPagedAsync<WorkflowInstanceInfo>(
+            $"/Definitions/{Uri.EscapeDataString(processDefinitionKey)}/{version}/instances",
+            page, pageSize, sorts, filters, ct);
+    }
+
+    /// <summary>GET /custom-tasks/{taskType}; returns <c>null</c> on 404.</summary>
+    public async Task<CustomTaskCatalogEntryDto?> GetCustomTaskAsync(string taskType, CancellationToken ct = default)
+    {
+        var response = await _http.GetAsync($"/custom-tasks/{Uri.EscapeDataString(taskType)}", ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<CustomTaskCatalogEntryDto>(JsonOptions, ct);
+    }
+
+    private async Task<PagedResult<T>> GetPagedAsync<T>(
+        string path, int page, int pageSize, string? sorts, string? filters, CancellationToken ct)
+    {
+        var query = new List<string> { $"page={page}", $"pageSize={pageSize}" };
+        if (sorts is not null) query.Add($"sorts={Uri.EscapeDataString(sorts)}");
+        if (filters is not null) query.Add($"filters={Uri.EscapeDataString(filters)}");
+        var response = await _http.GetAsync($"{path}?{string.Join("&", query)}", ct);
+        response.EnsureSuccessStatusCode();
+        var result = await response.Content.ReadFromJsonAsync<PagedResult<T>>(JsonOptions, ct);
+        return result ?? throw new InvalidOperationException($"GET {path} returned an empty body.");
+    }
+
     public async Task<InstanceStateSnapshot> WaitForStateAsync(
         Guid workflowInstanceId,
         Func<InstanceStateSnapshot, bool> predicate,
@@ -357,9 +441,7 @@ public sealed partial class FleansApiClient
         }
         throw new TimeoutException(
             $"Workflow instance {workflowInstanceId} did not reach the expected state within {timeout ?? TimeSpan.FromSeconds(30)}. " +
-            $"Last snapshot: IsStarted={last?.IsStarted}, IsCompleted={last?.IsCompleted}, " +
-            $"Active=[{string.Join(",", last?.ActiveActivityIds ?? new List<string>())}], " +
-            $"Completed=[{string.Join(",", last?.CompletedActivityIds ?? new List<string>())}].");
+            $"Last snapshot: {Describe(last)}");
     }
 
     public async Task<InstanceStateSnapshot> WaitForCompletionAsync(
@@ -373,6 +455,15 @@ public sealed partial class FleansApiClient
         {
             ct.ThrowIfCancellationRequested();
             last = await GetStateAsync(workflowInstanceId, ct);
+            if (last is { IsFailed: true })
+            {
+                // An unhandled failure terminates the instance (IsCompleted + IsFailed, #762).
+                // Callers of this helper expect success — fail fast with the cause instead of
+                // returning a terminal-but-failed snapshot that an IsCompleted assert would accept.
+                // Specs that expect a failure should use WaitForStateAsync(s => s.IsFailed).
+                throw new InvalidOperationException(
+                    $"Workflow instance {workflowInstanceId} FAILED instead of completing. Last snapshot: {Describe(last)}");
+            }
             if (last is { IsCompleted: true })
             {
                 return last;
@@ -381,8 +472,18 @@ public sealed partial class FleansApiClient
         }
         throw new TimeoutException(
             $"Workflow instance {workflowInstanceId} did not reach IsCompleted within {timeout ?? TimeSpan.FromSeconds(30)}. " +
-            $"Last snapshot: IsStarted={last?.IsStarted}, IsCompleted={last?.IsCompleted}, " +
-            $"Active=[{string.Join(",", last?.ActiveActivityIds ?? new List<string>())}], " +
-            $"Completed=[{string.Join(",", last?.CompletedActivityIds ?? new List<string>())}].");
+            $"Last snapshot: {Describe(last)}");
+    }
+
+    private static string Describe(InstanceStateSnapshot? snapshot)
+    {
+        if (snapshot is null) return "<none>";
+        var failures = snapshot.CompletedActivities
+            .Where(a => a.ErrorState is not null)
+            .Select(a => $"{a.ActivityId}: {a.ErrorState!.Code} {a.ErrorState.Message}");
+        return $"IsStarted={snapshot.IsStarted}, IsCompleted={snapshot.IsCompleted}, IsFailed={snapshot.IsFailed}, " +
+               $"Active=[{string.Join(",", snapshot.ActiveActivityIds)}], " +
+               $"Completed=[{string.Join(",", snapshot.CompletedActivityIds)}], " +
+               $"Failures=[{string.Join("; ", failures)}].";
     }
 }

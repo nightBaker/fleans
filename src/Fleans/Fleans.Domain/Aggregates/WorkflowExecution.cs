@@ -774,6 +774,57 @@ public class WorkflowExecution
         return effects.AsReadOnly();
     }
 
+    /// <summary>
+    /// Fails the workflow instance when an unhandled activity failure has left it with no
+    /// live tokens (#762). Called at quiescence (end of the execution loop), after
+    /// <see cref="TryDeferredWorkflowCompletion"/> — so a workflow whose root end event already
+    /// completed still completes normally.
+    /// <para>
+    /// Without this, an unhandled failure (no error boundary, no error event sub-process) on
+    /// the last live branch leaves the instance with no active activities while it is neither
+    /// completed nor failed: the token is silently dropped and nothing ever terminates the
+    /// instance. A failed activity entry anywhere in the instance is the signal that the stall
+    /// was caused by an error; an instance with no active activities and no failure is left
+    /// alone (that is not an error path this method owns).
+    /// </para>
+    /// <para>
+    /// Child workflows are marked failed too; the parent notification for the unhandled
+    /// failure is still emitted by <see cref="FailActivity"/>, so it is not repeated here.
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<IInfrastructureEffect> TryFailStalledWorkflow()
+    {
+        if (!_state.IsStarted || _state.IsCompleted)
+            return [];
+
+        if (_state.GetActiveActivities().Any())
+            return [];
+
+        var failedEntry = _state.Entries
+            .Where(e => e.ErrorCode is not null)
+            .OrderBy(e => e.CompletedAt ?? DateTimeOffset.MinValue)
+            .LastOrDefault();
+        if (failedEntry is null)
+            return [];
+
+        var effects = new List<IInfrastructureEffect>();
+
+        // Unregister any still-armed root-scope event sub-process listeners — the instance is
+        // terminal, so a later timer/message/signal must not re-open it.
+        effects.AddRange(BuildEventSubProcessPeerUnregisterEffects(
+            _definition, scopeContainerId: null,
+            scopeVariablesId: _state.GetRootVariablesId(),
+            skipStartEventActivityId: null));
+
+        Emit(new WorkflowFailed(
+            failedEntry.ActivityId,
+            failedEntry.ActivityInstanceId,
+            failedEntry.ErrorCode!,
+            failedEntry.ErrorState?.Message ?? string.Empty));
+
+        return effects.AsReadOnly();
+    }
+
     // ── Compensation Walk ────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -1178,6 +1229,15 @@ public class WorkflowExecution
                 ?? throw new InvalidOperationException(
                     $"Correlation variable '{variableName}' is null for message '{messageDef.Name}'.");
         }
+
+        // Catch/boundary message subscriptions are partitioned by correlation key
+        // (MessageCorrelationGrain is keyed "{name}/{key}"); an uncorrelated message can only
+        // trigger a message start event. Reject here so the registration-path failure routes
+        // to FailActivity instead of escaping the effect handler and stalling the workflow (#761).
+        if (string.IsNullOrWhiteSpace(correlationKey))
+            throw new InvalidOperationException(
+                $"Message '{messageDef.Name}' has no correlation key. Intermediate catch and boundary " +
+                "message events require a correlation key (zeebe:subscription correlationKey).");
 
         return new SubscribeMessageEffect(
             messageDef.Name, correlationKey,
@@ -1624,6 +1684,16 @@ public class WorkflowExecution
                 // SubProcess: all scope children must be completed
                 if (!scopeEntries.All(e => e.IsCompleted)) continue;
 
+                // A nested scope host completed earlier in THIS call has not had its outgoing
+                // transitions resolved yet (the caller resolves them after we return), so its
+                // token is still in flight inside this scope. Cascading now would complete the
+                // enclosing scope before its post-nested-scope activities run — e.g. an outer
+                // Transaction committing while its catch event after the inner Transaction has
+                // not even been spawned (#761). Only cascade through hosts with no outgoing flow.
+                if (scopeEntries.Any(e => allCompletedHostIds.Contains(e.ActivityInstanceId)
+                        && HostRoutesTokenAfterCompletion(e)))
+                    continue;
+
                 // If any scope child has an error (and wasn't handled by a boundary),
                 // a regular SubProcess should NOT auto-complete — its boundary error
                 // events catch the failure and route execution. EventSubProcesses have
@@ -1757,6 +1827,23 @@ public class WorkflowExecution
         }
 
         return (allEffects.AsReadOnly(), allCompletedHostIds.AsReadOnly(), allOrphanedScopeIds.AsReadOnly());
+    }
+
+    /// <summary>
+    /// True when a just-completed scope host still routes a token inside its enclosing scope:
+    /// either along an outgoing sequence flow, or — for a Cancelled Transaction — through its
+    /// attached Cancel Boundary Event (activated by the caller after this pass).
+    /// </summary>
+    private bool HostRoutesTokenAfterCompletion(ActivityInstanceEntry hostEntry)
+    {
+        var scope = _definition.GetScopeForActivity(hostEntry.ActivityId);
+        if (scope.SequenceFlows.Any(sf => sf.Source.ActivityId == hostEntry.ActivityId))
+            return true;
+
+        return _state.TransactionOutcomes.TryGetValue(hostEntry.ActivityInstanceId, out var outcome)
+            && outcome.Outcome == TransactionOutcome.Cancelled
+            && scope.Activities.OfType<CancelBoundaryEvent>()
+                .Any(b => b.AttachedToActivityId == hostEntry.ActivityId);
     }
 
     /// <summary>
@@ -3261,6 +3348,9 @@ public class WorkflowExecution
                 break;
             case WorkflowCancelled:
                 _state.Cancel();
+                break;
+            case WorkflowFailed:
+                _state.Fail();
                 break;
             case EscalationUncaughtRaised:
                 break; // non-faulting per BPMN spec — recorded for observability only

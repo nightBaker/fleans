@@ -26,7 +26,7 @@ This page is the canonical coverage matrix for BPMN 2.0 elements in Fleans. Ever
 | Message Start Event | `<bpmn:startEvent><messageEventDefinition>` | ✅ | [BpmnConverter.cs#L94](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L94) + [#L113](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L113) | [#16](../../../tests/manual/16-message-start-event/) | Auto-creates an instance on matching message delivery. |
 | Signal Start Event | `<bpmn:startEvent><signalEventDefinition>` | ✅ | [BpmnConverter.cs#L94](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L94) + [#L120](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L120) | [#17](../../../tests/manual/17-signal-start-event/) | Broadcast match creates an instance. |
 | Error Start Event *(Event Sub-Process only)* | `<bpmn:startEvent><errorEventDefinition>` | ✅ | [BpmnConverter.cs#L94](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L94) + [#L132](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L132), [#L536](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L536) | [#19](../../../tests/manual/19-event-subprocess-error/) | Only valid inside `triggeredByEvent="true"` sub-processes. |
-| Conditional Start Event | `<bpmn:startEvent><conditionalEventDefinition>` | ✅ | [BpmnConverter.cs#L94](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L94) + [#L129](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L129) | [#24-conditional](../../../tests/manual/24-conditional-event/) | Triggered via `POST /Workflow/evaluate-conditions`. |
+| Conditional Start Event | `<bpmn:startEvent><conditionalEventDefinition>` | ✅ | [BpmnConverter.cs#L94](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L94) + [#L129](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L129) | [#24-conditional](../../../tests/manual/24-conditional-event/) | Triggered via `POST /Execution/evaluate-conditions`. |
 | Multiple Start Event | `<bpmn:startEvent>` with multiple event definitions | ✅ | [BpmnConverter.cs#L94](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L94) (multi-def detection) | [#24-multiple](../../../tests/manual/24-multiple-event/) (E2E `MultipleStartEventTests`) | First-fires-wins; surplus subscriptions cancelled. |
 
 ### Intermediate Catch Events
@@ -134,11 +134,13 @@ This page is the canonical coverage matrix for BPMN 2.0 elements in Fleans. Ever
 
 Conditional events allow workflow execution to react to data-driven conditions. Conditions are C# expressions evaluated against the current workflow variables.
 
+Write conditions the same way as sequence-flow `<conditionExpression>`s: reference variables by bare name (`amount > 500`, `status == "approved"`) or with `${...}` placeholders (`${amount > 500}`). At deploy time the engine rewrites variable references to `_context.<name>`; already-prefixed `_context.amount` is left as-is. Names inside string literals are not rewritten.
+
 ### Supported types
 
 | Element | BPMN XML | Behavior |
 |---------|----------|----------|
-| **Conditional Start Event** | `<startEvent><conditionalEventDefinition><condition>expr</condition></conditionalEventDefinition></startEvent>` | Creates a new workflow instance when the condition evaluates to `true`. Triggered via the `POST /Workflow/evaluate-conditions` API endpoint. |
+| **Conditional Start Event** | `<startEvent><conditionalEventDefinition><condition>expr</condition></conditionalEventDefinition></startEvent>` | Creates a new workflow instance when the condition evaluates to `true`. Triggered via the `POST /Execution/evaluate-conditions` API endpoint. |
 | **Conditional Intermediate Catch Event** | `<intermediateCatchEvent><conditionalEventDefinition><condition>expr</condition></conditionalEventDefinition></intermediateCatchEvent>` | Blocks the sequence flow until the condition becomes `true`. The condition is re-evaluated whenever another activity in the same instance completes. |
 | **Conditional Boundary Event (Interrupting)** | `<boundaryEvent attachedToRef="task" cancelActivity="true"><conditionalEventDefinition><condition>expr</condition></conditionalEventDefinition></boundaryEvent>` | Cancels the host activity and follows the boundary path when the condition becomes `true`. |
 | **Conditional Boundary Event (Non-Interrupting)** | `<boundaryEvent attachedToRef="task" cancelActivity="false"><conditionalEventDefinition>...</conditionalEventDefinition></boundaryEvent>` | Fires the boundary path when the condition transitions from `false` to `true` (edge-triggered), but the host activity continues running. |
@@ -148,6 +150,7 @@ Conditional events allow workflow execution to react to data-driven conditions. 
 Conditions are registered as **watchers** when their host element starts executing. Watchers are evaluated in the workflow's execution loop whenever at least one activity completes. This completion-driven evaluation means:
 
 - **Intermediate catch events** block until another activity completes and the condition is `true` at that point.
+- Conditions are evaluated against the **watcher's own variable scope**. Parallel-gateway branches (and boundary paths) receive a *cloned copy* of the variables, so variables written by a sibling branch — including variables passed to `POST /Execution/complete-activity` for a task on another branch — are not visible to the watcher; that completion only triggers re-evaluation. There is currently no API to change the variables of a waiting branch.
 - **Boundary events** require a concurrent activity (e.g., via a parallel gateway fork) to complete, triggering the watcher evaluation while the host task is still active.
 - **Non-interrupting boundaries** use edge detection: they fire only when the condition *transitions* from `false` to `true`, preventing repeated firing on every evaluation cycle.
 
@@ -156,7 +159,7 @@ Conditions are registered as **watchers** when their host element starts executi
 Conditional start events are evaluated externally via the REST API:
 
 ```bash
-curl -k -X POST https://localhost:7140/Workflow/evaluate-conditions \
+curl -k -X POST https://localhost:7140/Execution/evaluate-conditions \
   -H "Content-Type: application/json" \
   -d '{"WorkflowId":"my-process","Variables":{"threshold":100}}'
 ```
@@ -269,7 +272,7 @@ The tab fetches via the `ICompensationLogService` application service which acti
 
 **Constraint:** **Multi-instance transactions** are rejected at parse time ([BpmnConverter.cs#L578-L581](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs#L578-L581) — typed exception). This is a deliberate restriction, not a bug — multi-instance + atomicity has subtle interactions with compensation walk ordering that #307 will address.
 
-**Nested transactions:** parse and run on the happy path. **Do not place a Cancel End Event inside an inner nested transaction** — cancel-path semantics for nested transactions land in later phases of [#307](https://github.com/nightBaker/fleans/issues/307).
+**Nested transactions:** supported on both the happy path and the inner-cancel path — an inner transaction can reach a Cancel End Event, run its compensation handlers, and exit through its Cancel Boundary Event while the outer transaction carries on and commits. Covered by manual test plan [#53](https://github.com/nightBaker/fleans/blob/main/tests/manual/53-nested-transaction/test-plan.md) (Scenarios A and B are also automated E2E).
 :::
 
 Cancel events implement the **transaction cancellation** path in BPMN: when a Cancel End Event fires inside a Transaction Sub-Process, the engine rolls back the transaction's scope and routes execution to a recovery flow via the Cancel Boundary Event.
