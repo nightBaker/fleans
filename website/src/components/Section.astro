@@ -1,0 +1,42 @@
+---
+// Landing-page section: large light heading + muted intro, then children.
+interface Props {
+  title: string;
+  id?: string;
+}
+const { title, id } = Astro.props;
+---
+
+<section class="fl-section not-content" id={id}>
+  <div class="fl-section-head">
+    <h2>{title}</h2>
+    {Astro.slots.has('intro') && <div class="fl-section-intro"><slot name="intro" /></div>}
+  </div>
+  <slot />
+</section>
+
+<style>
+  .fl-section {
+    padding-block: 6rem 2rem;
+  }
+  .fl-section-head {
+    margin-bottom: 3rem;
+  }
+  .fl-section-head h2 {
+    margin: 0 0 1.25rem;
+    font-size: clamp(2.5rem, 6vw, 4rem);
+    font-weight: 400;
+    line-height: 1.1;
+    letter-spacing: -0.03em;
+    color: var(--fl-text);
+  }
+  .fl-section-intro {
+    max-width: 45rem;
+    font-size: 1.25rem;
+    line-height: 1.45;
+    color: var(--fl-text-muted);
+  }
+  .fl-section-intro :global(p) {
+    margin: 0;
+  }
+</style>

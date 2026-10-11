@@ -149,6 +149,11 @@ for the per-Deployment image / port table — not duplicated here.
 Each item below maps to a `values.yaml` override. Combine into a single
 `values-prod.yaml` overlay and pass with `-f`.
 
+<figure class="arch-diagram" style="--arch-ratio: 1390 / 646">
+  <iframe data-arch-src="/fleans/diagrams/k8s-deployment.html" src="/fleans/diagrams/k8s-deployment.html?embed=1" title="Kubernetes production topology" loading="lazy"></iframe>
+  <figcaption>The production topology this checklist builds toward: TLS ingress, Core and Worker silos in one Orleans cluster, managed PostgreSQL outside the namespace. <a href="/fleans/diagrams/k8s-deployment.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
 ### External Postgres (managed RDS / Cloud SQL / Aiven)
 
 ```yaml

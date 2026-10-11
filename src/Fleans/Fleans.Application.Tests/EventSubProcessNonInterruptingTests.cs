@@ -222,11 +222,11 @@ public class EventSubProcessNonInterruptingTests : WorkflowTestBase
 
         // Fire the timer externally (simulates the timer firing inside the ESP scope).
         await workflowInstance.HandleTimerFired("evtSubScope_timerStart", instanceId);
-        await Task.Delay(300); // give the handler a moment to activate
 
         // handlerTask should now be active in the isolated scope.
-        var midSnapshot = await QueryService.GetStateSnapshot(instanceId);
-        Assert.IsTrue(midSnapshot!.ActiveActivities.Any(a => a.ActivityId == "handlerTask"),
+        var midSnapshot = await WaitForCondition(instanceId,
+            s => s.ActiveActivities.Any(a => a.ActivityId == "handlerTask"));
+        Assert.IsTrue(midSnapshot.ActiveActivities.Any(a => a.ActivityId == "handlerTask"),
             "handlerTask must be active in the handler scope");
         Assert.IsTrue(midSnapshot.ActiveActivities.Any(a => a.ActivityId == "parentTask"),
             "parentTask must still be active (non-interrupting did not cancel parent)");
@@ -235,7 +235,8 @@ public class EventSubProcessNonInterruptingTests : WorkflowTestBase
         var handlerVars = new System.Dynamic.ExpandoObject() as IDictionary<string, object?>;
         handlerVars["handlerVar"] = "fromHandler";
         await workflowInstance.CompleteActivity("handlerTask", (System.Dynamic.ExpandoObject)handlerVars);
-        await Task.Delay(300);
+        await WaitForCondition(instanceId,
+            s => s.CompletedActivities.Any(a => a.ActivityId == "handlerTask"));
 
         // Complete parentTask with a different variable.
         var parentVars = new System.Dynamic.ExpandoObject() as IDictionary<string, object?>;

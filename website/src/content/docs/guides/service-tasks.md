@@ -15,6 +15,11 @@ A **service task** (`<bpmn:serviceTask>`) represents automated work in a BPMN pr
 
 Fleans treats service tasks as **external-completion tasks**. When a workflow instance reaches a service task, the engine pauses the token there and waits for an external worker to complete it via the REST API.
 
+<figure class="arch-diagram" style="--arch-ratio: 620 / 698; max-width: 660px; margin-inline: auto">
+  <iframe data-arch-src="/fleans/diagrams/service-task-flow.html" src="/fleans/diagrams/service-task-flow.html?embed=1" title="Service task completion sequence" loading="lazy"></iframe>
+  <figcaption>The token waits at the service task until an external worker calls <code>POST /Workflow/complete-activity</code>; the engine merges the variables and advances. <a href="/fleans/diagrams/service-task-flow.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
 There is no in-process handler interface to implement. Instead, the pattern is:
 
 1. The workflow instance reaches a `<bpmn:serviceTask>` and marks it as an active activity.

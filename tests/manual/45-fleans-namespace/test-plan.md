@@ -15,7 +15,7 @@ End-to-end coverage that the engine deploys and runs a workflow whose extension 
 
 3. **Start instance:** start a new instance with no input variables. Watch it advance: `start → seed (sets items=[1,2,3]) → ct1 (calls stub-task) → iterate (multi-instance over items) → end`. Without a `stub-task` plugin, `ct1` waits in **Active** — complete it via `POST /Workflow/complete-activity` (`{"WorkflowInstanceId":"<id>","ActivityId":"ct1","Variables":{}}`).
 
-   > **#762 regression guard.** The `seed` script is `_context.items = new List<object> { 1, 2, 3 }`. An earlier version used `new[] { 1, 2, 3 }`, which DynamicExpresso cannot parse: `seed` failed, and because nothing handled the error the instance used to sit with no active activities while being neither completed nor failed. It must now show `seed` with an error **and** the instance status **Failed** — never a silent "Running" with no active activities. (Scenario coverage of that failure path lives in `tests/manual/69-unhandled-failure-fails-instance/`.)
+   > **#762 regression guard.** The `seed` script is `_context.items = new List<object> { 1, 2, 3 }`. An earlier version used `new[] { 1, 2, 3 }`, which DynamicExpresso cannot parse: `seed` failed, and because nothing handled the error the instance used to sit with no active activities while being neither completed nor failed. It must now show `seed` with an error **and** the instance status **Failed** — never a silent "Running" with no active activities. (Scenario coverage of that failure path lives in `tests/manual/71-unhandled-failure-fails-instance/`.)
 
 4. **Verify multi-instance output:** instance state shows `doubled_results == [2, 4, 6]`. This proves the parser read the four `fleans:*` multi-instance attributes correctly.
 

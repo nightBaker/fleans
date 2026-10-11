@@ -1,0 +1,78 @@
+---
+// Saddle-style header: wordmark left, flat text nav, then search, theme switch
+// and a plain-text GitHub link on the right. Overrides Starlight's Header.
+import Search from '@astrojs/starlight/components/Search.astro';
+import SiteTitle from '@astrojs/starlight/components/SiteTitle.astro';
+import ThemeSelect from './ThemeSelect.astro';
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const path = Astro.url.pathname;
+const nav = [
+  { label: 'Guides', href: `${base}/guides/introduction/`, match: `${base}/guides/` },
+  { label: 'Concepts', href: `${base}/concepts/architecture/`, match: `${base}/concepts/` },
+  { label: 'Reference', href: `${base}/reference/api/`, match: `${base}/reference/` },
+];
+---
+
+<div class="fl-header">
+  <div class="fl-title">
+    <SiteTitle />
+  </div>
+  <nav class="fl-nav sl-hidden md:sl-flex" aria-label="Primary">
+    {nav.map(({ label, href, match }) => (
+      <a href={href} aria-current={path.startsWith(match) ? 'true' : undefined}>{label}</a>
+    ))}
+  </nav>
+  <div class="fl-search print:hidden">
+    <Search />
+  </div>
+  <div class="fl-right sl-hidden md:sl-flex print:hidden">
+    <ThemeSelect />
+    <a class="fl-gh" href="https://github.com/nightBaker/fleans">GitHub</a>
+  </div>
+</div>
+
+<style>
+  .fl-header {
+    display: flex;
+    align-items: center;
+    gap: 2.5rem;
+    height: 100%;
+  }
+  .fl-title {
+    min-width: 0;
+    overflow: clip;
+    padding: 0.25rem;
+    margin: -0.25rem;
+  }
+  .fl-nav {
+    gap: 2.5rem;
+  }
+  .fl-nav a {
+    color: var(--fl-text-muted);
+    text-decoration: none;
+    font-size: 1rem;
+    transition: color 150ms ease;
+  }
+  .fl-nav a:hover,
+  .fl-nav a[aria-current] {
+    color: var(--fl-text);
+  }
+  .fl-search {
+    display: flex;
+    flex: 1;
+    justify-content: flex-end;
+  }
+  .fl-right {
+    align-items: center;
+    gap: 2rem;
+  }
+  .fl-gh {
+    color: var(--fl-text);
+    text-decoration: none;
+    font-size: 1rem;
+  }
+  .fl-gh:hover {
+    color: var(--fl-accent);
+  }
+</style>

@@ -47,6 +47,23 @@ The conditional intermediate catch event will be evaluated each time the executi
 4. Call again with `{"Variables": {"temperature": 50}}`
 5. Verify no new instance is created (condition evaluates false)
 
+### Test C: Conditional Boundary — condition stays false (`conditional-boundary-on-task.bpmn`)
+
+`hostTask` (plain task) carries an interrupting conditional boundary `_context.decision == "escalate"` and a non-interrupting message boundary `updateBoundary` (message `conditionalBoundaryUpdate`, correlation key `orderId`) used to inject variables. Automated by `ConditionalBoundaryEventTests.InterruptingConditionalBoundary_ConditionStaysFalse_HostCompletesNormally`.
+
+1. Deploy `conditional-boundary-on-task.bpmn`; start `conditional-boundary-on-task` with `{"orderId": "cb-1"}`
+2. `POST https://localhost:7140/Execution/message` `{"MessageName":"conditionalBoundaryUpdate","CorrelationKey":"cb-1","Variables":{"decision":"approve"}}`
+3. Verify `endUpdate` completes and `hostTask` is still active (boundary did not fire)
+4. `POST /Execution/complete-activity` for `hostTask`
+5. Verify the instance completes via `endNormal`; `condBoundary` / `escalated` not completed
+
+### Test D: Conditional Boundary — condition becomes true
+
+> **KNOWN BUG:** the conditional watcher only reads the host's own variable scope, and both the message-boundary payload and parallel-branch writes land in cloned scopes, so the boundary never fires. See [#784](https://github.com/nightBaker/fleans/issues/784). Specs `InterruptingConditionalBoundary_ConditionBecomesTrue_…` and `…_VariableChangedInParallelBranch_Fires` are `[Ignore]`d.
+
+1. Repeat Test C with `"decision":"escalate"` → expect `hostTask` cancelled, `escalated` + `endBoundary` completed, `handled = "boundary-fired"`
+2. Deploy `conditional-boundary-parallel-branch.bpmn`, start it, `complete-activity` `triggerTask` with `{"decision":"escalate"}` → same expectation
+
 ## Expected Outcomes
 
 - [ ] Conditional intermediate catch event blocks until condition is true
