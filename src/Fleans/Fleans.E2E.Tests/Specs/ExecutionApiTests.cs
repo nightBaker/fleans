@@ -5,7 +5,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Fleans.E2E.Tests.Specs;
 
-// Ports tests/manual/69-api-read-endpoints-negative-paths/test-plan.md (Execution section)
+// Ports tests/manual/70-api-read-endpoints-negative-paths/test-plan.md (Execution section)
 // Negative paths on ExecutionController: start an unknown / disabled process key, and
 // complete-activity for an unknown instance, an unknown activity, and an already-completed
 // activity.

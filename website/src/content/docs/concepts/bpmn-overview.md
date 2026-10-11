@@ -26,15 +26,15 @@ Every BPMN diagram is built from just four categories of symbols.
 
 ## A minimal example
 
-Below is the simplest possible BPMN process — a start event, one task, and an end event
-connected by sequence flows:
+The simplest possible BPMN process is a start event, one task, and an end event connected
+by sequence flows. Add one exclusive gateway and you can already model a real approval:
 
-```
-  (O)  ──▶  [ Review request ]  ──▶  (O)
- start            task                end
-```
+<figure class="arch-diagram" style="--arch-ratio: 720 / 422">
+  <iframe data-arch-src="/fleans/diagrams/bpmn-overview-flow.html" src="/fleans/diagrams/bpmn-overview-flow.html?embed=1" title="Minimal BPMN approval process" loading="lazy"></iframe>
+  <figcaption>A start event, a user task, an exclusive gateway and a script task joined by sequence flows, ending in one of two end events. <a href="/fleans/diagrams/bpmn-overview-flow.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
 
-In practice you layer in gateways for branching, intermediate events for waiting on
+In practice you also layer in parallel gateways, intermediate events for waiting on
 timers or messages, and sub-processes for encapsulating reusable logic.
 
 ## Where to go next

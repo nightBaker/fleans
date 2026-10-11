@@ -43,25 +43,28 @@
     @if (!string.IsNullOrWhiteSpace(actionErrorMessage))
     {
         <FluentMessageBar Intent="MessageIntent.Error" Dismissible="true" OnDismissed="@(() => actionErrorMessage = null)">
-            @actionErrorMessage
+            <span data-testid="workflows-action-error">@actionErrorMessage</span>
         </FluentMessageBar>
     }
 
     @if (!string.IsNullOrWhiteSpace(actionSuccessMessage))
     {
         <FluentMessageBar Intent="MessageIntent.Success" Dismissible="true" OnDismissed="@(() => actionSuccessMessage = null)">
-            @actionSuccessMessage
+            <span data-testid="workflows-action-success">@actionSuccessMessage</span>
         </FluentMessageBar>
     }
 
     <FluentTextField Placeholder="Search by process key"
                      @bind-Value="SearchQuery"
-                     Style="max-width: 320px;" />
+                     Style="max-width: 320px;"
+                     data-testid="workflows-search" />
 
     <FluentDataGrid ItemsProvider="@workflowsProvider"
                     Pagination="@pagination"
                     TGridItem="ProcessDefinitionRow"
                     Loading="@isLoading"
+                    data-testid="workflows-grid"
+                    OnToggle="@((ProcessDefinitionRow row) => OnRowToggledAsync(row))"
                     @ref="grid">
         <TemplateColumn Title="Process Key" HierarchicalToggle="true">
             <strong title="@context.Item.ProcessDefinitionId"
@@ -148,6 +151,11 @@
     private string searchQuery = string.Empty;
     private Timer? searchDebounceTimer;
 
+    // The grid renders exactly what the ItemsProvider returns, so collapsed children
+    // (IsHidden) must be filtered out by the provider itself. Expanded groups are tracked by
+    // key so the expand/collapse state survives the re-query triggered by a toggle.
+    private readonly HashSet<string> expandedKeys = new(StringComparer.Ordinal);
+
     private string SearchQuery
     {
         get => searchQuery;
@@ -188,10 +196,10 @@
                     .SelectMany(group =>
                     {
                         var versions = group.Versions;
+                        var expanded = expandedKeys.Contains(versions[0].ProcessDefinitionKey);
                         var parent = new ProcessDefinitionRow
                         {
                             Item = versions[0],
-                            IsCollapsed = true,
                         };
 
                         var children = versions.Skip(1)
@@ -199,7 +207,7 @@
                             {
                                 Item = d,
                                 Depth = 1,
-                                IsHidden = true,
+                                IsHidden = !expanded,
                             })
                             .ToList();
 
@@ -208,7 +216,9 @@
                             parent.Children.Add(child);
                         }
 
-                        return new[] { parent }.Concat(children);
+                        parent.IsCollapsed = !expanded;
+
+                        return new[] { parent }.Concat(children.Where(c => !c.IsHidden));
                     })
                     .ToList();
 
@@ -224,6 +234,20 @@
                     new List<ProcessDefinitionRow>(), 0);
             }
         };
+    }
+
+    private async Task OnRowToggledAsync(ProcessDefinitionRow row)
+    {
+        // The grid flips IsCollapsed before raising OnToggle.
+        if (row.IsCollapsed)
+            expandedKeys.Remove(row.Item.ProcessDefinitionKey);
+        else
+            expandedKeys.Add(row.Item.ProcessDefinitionKey);
+
+        if (grid is not null)
+        {
+            await grid.RefreshDataAsync();
+        }
     }
 
     private static string? BuildSortString(

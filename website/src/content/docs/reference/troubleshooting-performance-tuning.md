@@ -5,6 +5,11 @@ description: Throughput, pagination, and capacity knobs for Fleans streaming pro
 
 This page documents the operator-tunable knobs that affect Fleans throughput. For provider selection and full configuration reference, see [Streaming](/fleans/reference/streaming/) and [Persistence](/fleans/reference/persistence/).
 
+<figure class="arch-diagram" style="--arch-ratio: 980 / 538">
+  <iframe data-arch-src="/fleans/diagrams/perf-tuning-map.html" src="/fleans/diagrams/perf-tuning-map.html?embed=1" title="Performance tuning map" loading="lazy"></iframe>
+  <figcaption>Throughput knobs and their defaults: stream queue counts set how many pulling agents each silo runs; persistence knobs bound event-replay size and user-task query cost. <a href="/fleans/diagrams/perf-tuning-map.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
 ## Stream provider sizing
 
 ### Kafka

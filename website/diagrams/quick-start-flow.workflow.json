@@ -1,0 +1,168 @@
+{
+  "schema_version": 1,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Quick Start Flow",
+    "subtitle": "Released compose bundle to a completed workflow instance in three steps",
+    "animation": "none",
+    "quality_profile": "showcase",
+    "legend": {
+      "entries": {
+        "external": {
+          "label": "Release download"
+        },
+        "cloud": {
+          "label": "Docker / terminal"
+        },
+        "frontend": {
+          "label": "Admin UI step"
+        },
+        "backend": {
+          "label": "REST call"
+        }
+      }
+    }
+  },
+  "lanes": [
+    {
+      "id": "shell",
+      "label": "Terminal"
+    },
+    {
+      "id": "ui",
+      "label": "Admin UI :8080"
+    },
+    {
+      "id": "api",
+      "label": "REST API :8081"
+    }
+  ],
+  "phases": [
+    {
+      "id": "p_run",
+      "label": "1. Run release bundle",
+      "fromCol": 0,
+      "toCol": 1,
+      "variant": "emphasis"
+    },
+    {
+      "id": "p_deploy",
+      "label": "2. Deploy a workflow",
+      "fromCol": 2,
+      "toCol": 3
+    },
+    {
+      "id": "p_start",
+      "label": "3. Start an instance",
+      "fromCol": 4,
+      "toCol": 5
+    }
+  ],
+  "mainPath": [
+    "download",
+    "compose_up",
+    "editor",
+    "deploy",
+    "start",
+    "inspect"
+  ],
+  "nodes": [
+    {
+      "id": "download",
+      "lane": "shell",
+      "col": 0,
+      "type": "external",
+      "label": "Download",
+      "sublabel": "gh release download",
+      "tag": "compose-v<VER>.zip",
+      "width": 90
+    },
+    {
+      "id": "compose_up",
+      "lane": "shell",
+      "col": 1,
+      "type": "cloud",
+      "label": "Start stack",
+      "sublabel": "docker compose up -d",
+      "tag": "ps: all running",
+      "width": 112
+    },
+    {
+      "id": "editor",
+      "lane": "ui",
+      "col": 2,
+      "type": "frontend",
+      "label": "Editor page",
+      "sublabel": "import my-process.bpmn",
+      "width": 112
+    },
+    {
+      "id": "deploy",
+      "lane": "ui",
+      "col": 3,
+      "type": "frontend",
+      "label": "Deploy",
+      "sublabel": "my-process v1",
+      "width": 84
+    },
+    {
+      "id": "start",
+      "lane": "api",
+      "col": 4,
+      "type": "backend",
+      "label": "Start instance",
+      "sublabel": "POST /Workflow/start",
+      "tag": "200 + instance id",
+      "width": 130
+    },
+    {
+      "id": "inspect",
+      "lane": "ui",
+      "col": 5,
+      "type": "frontend",
+      "label": "Workflows",
+      "sublabel": "instance Completed",
+      "tag": "greeting variable",
+      "width": 100
+    }
+  ],
+  "edges": [
+    {
+      "from": "download",
+      "to": "compose_up"
+    },
+    {
+      "from": "compose_up",
+      "to": "editor",
+      "variant": "emphasis",
+      "route": "drop",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "editor",
+      "to": "deploy"
+    },
+    {
+      "from": "deploy",
+      "to": "start",
+      "label": "curl",
+      "variant": "emphasis",
+      "route": "drop",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "start",
+      "to": "inspect",
+      "fromSide": "right",
+      "toSide": "bottom",
+      "via": [
+        [
+          625,
+          367
+        ]
+      ]
+    }
+  ]
+}

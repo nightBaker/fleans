@@ -5,14 +5,14 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Fleans.E2E.Tests.Specs;
 
-// Ports tests/manual/69-api-read-endpoints-negative-paths/test-plan.md (Definitions section)
+// Ports tests/manual/70-api-read-endpoints-negative-paths/test-plan.md (Definitions section)
 // Covers DefinitionsController: GET list, GET {key}/instances, GET {key}/{version}/instances,
 // and the deploy negative paths (malformed / unsupported BPMN, empty body).
 [TestClass]
 [TestCategory("E2E")]
 public class DefinitionsApiTests : WorkflowE2ETestBase
 {
-    internal const string Plan = "69-api-read-endpoints-negative-paths";
+    internal const string Plan = "70-api-read-endpoints-negative-paths";
     internal const string ReadFixture = "api-read-endpoints.bpmn";
     internal const string ReadKey = "api-read-endpoints";
     internal const string WaitActivity = "wait";
@@ -54,7 +54,7 @@ public class DefinitionsApiTests : WorkflowE2ETestBase
         Assert.AreEqual(mine.TotalCount, page2.TotalCount);
 
         // Unknown key → empty page, not an error.
-        var none = await ApiClient.ListDefinitionsAsync(filters: "ProcessDefinitionKey==no-such-key-766");
+        var none = await ApiClient.ListDefinitionsAsync(pageSize: 100, filters: "ProcessDefinitionKey==no-such-key-766");
         Assert.AreEqual(0, none.TotalCount);
         Assert.IsEmpty(none.Items);
     }
@@ -172,7 +172,7 @@ public class DefinitionsApiTests : WorkflowE2ETestBase
 
     private async Task AssertNotDeployedAsync(string key)
     {
-        var defs = await ApiClient.ListDefinitionsAsync(filters: $"ProcessDefinitionKey=={key}");
+        var defs = await ApiClient.ListDefinitionsAsync(pageSize: 100, filters: $"ProcessDefinitionKey=={key}");
         Assert.AreEqual(0, defs.TotalCount, $"A rejected deploy must not register '{key}'.");
     }
 }

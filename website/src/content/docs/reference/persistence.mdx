@@ -13,6 +13,11 @@ Fleans supports two persistence providers: **SQLite** (default, for local develo
 
 Set `Persistence__Provider` (case-insensitive: `Sqlite` or `Postgres`) on every `fleans-*` workload via your deployment tool. For PostgreSQL, also provide a connection string via `ConnectionStrings__fleans`. The runtime key is documented in [Configuration / Persistence](/fleans/reference/configuration/#persistence).
 
+<figure class="arch-diagram" style="--arch-ratio: 920 / 578">
+  <iframe data-arch-src="/fleans/diagrams/persistence-providers.html" src="/fleans/diagrams/persistence-providers.html?embed=1" title="Persistence provider topology" loading="lazy"></iframe>
+  <figcaption><code>Persistence:Provider</code> picks SQLite (default) or PostgreSQL; writes go through the command context, reads through the query context, which can target an optional replica. <a href="/fleans/diagrams/persistence-providers.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
 <Tabs syncKey="deployment-tool">
 <TabItem label="Compose bundle">
 

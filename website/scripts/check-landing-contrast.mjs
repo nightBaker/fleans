@@ -1,5 +1,5 @@
 // Verifies hero text passes WCAG AA contrast in both themes on the splash page.
-// Runs as `prebuild` hook. Exits non-zero if any text fails.
+// Run manually (`npm run check:contrast`); not wired into the build. Exits non-zero if any text fails.
 import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
 import { fileURLToPath } from 'node:url';
@@ -56,58 +56,36 @@ async function main() {
   try {
     await waitForServer(URL);
     const browser = await chromium.launch({ headless: true });
-    // Splash is dark-only — the SiloBackground component forces data-theme
-    // to 'dark' on this page regardless of user preference. Checking light
-    // theme here would measure a state that never reaches users.
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     const page = await context.newPage();
     await page.goto(URL, { waitUntil: 'networkidle' });
-    await page.waitForTimeout(2000);
 
-    const results = await page.evaluate(() => {
-      // Force dark in case the inline SiloBackground script ran before
-      // Starlight's ThemeProvider completed (observed in headless chromium).
-      // This mirrors what users see in real browsers on this page.
-      document.documentElement.setAttribute('data-theme', 'dark');
-      const selectors = [
-        { sel: '.hero h1', role: 'h1 (large)' },
-        { sel: '.hero .tagline', role: 'tagline (normal)' },
-      ];
-      return selectors.map(({ sel, role }) => {
-        const el = document.querySelector(sel);
-        if (!el) return { role, sel, missing: true };
-        const cs = window.getComputedStyle(el);
-        // The contrast overlay pins hero background to --fleans-surface
-        // at high alpha, so approximate the composite with that color.
-        const bg = window.getComputedStyle(document.documentElement)
-          .getPropertyValue('--fleans-surface').trim();
-        return { role, sel, fg: cs.color, bg };
-      });
-    });
+    for (const theme of ['dark', 'light']) {
+      const results = await page.evaluate((theme) => {
+        document.documentElement.setAttribute('data-theme', theme);
+        const bg = window.getComputedStyle(document.body).backgroundColor;
+        return [
+          { sel: '.fl-hero h1', role: 'h1 (large)' },
+          { sel: '.fl-hero-lead', role: 'lead (normal)' },
+        ].map(({ sel, role }) => {
+          const el = document.querySelector(sel);
+          if (!el) return { role, sel, missing: true };
+          return { role, sel, fg: window.getComputedStyle(el).color, bg };
+        });
+      }, theme);
 
-    for (const r of results) {
-      if (r.missing) {
-        console.error(`[contrast] MISSING element ${r.sel}`);
-        failed = true;
-        continue;
+      for (const r of results) {
+        if (r.missing) {
+          console.error(`[contrast] MISSING element ${r.sel}`);
+          failed = true;
+          continue;
+        }
+        const ratio = contrastRatio(parseRGB(r.fg), parseRGB(r.bg));
+        const min = r.role.includes('large') ? 3.0 : 4.5;
+        const ok = ratio >= min;
+        console.log(`[contrast] ${theme} ${r.role} ratio=${ratio.toFixed(2)} min=${min} ${ok ? 'OK' : 'FAIL'}`);
+        if (!ok) failed = true;
       }
-      const fgRgb = parseRGB(r.fg);
-      const bgRgb = await page.evaluate((hex) => {
-        const div = document.createElement('div');
-        div.style.color = hex;
-        document.body.appendChild(div);
-        const c = window.getComputedStyle(div).color;
-        div.remove();
-        return c;
-      }, r.bg);
-      const ratio = contrastRatio(fgRgb, parseRGB(bgRgb));
-      const min = r.role.includes('large') ? 3.0 : 4.5;
-      const ok = ratio >= min;
-      console.log(
-        `[contrast] ${r.role} ratio=${ratio.toFixed(2)} min=${min} ` +
-        `${ok ? 'OK' : 'FAIL'}`,
-      );
-      if (!ok) failed = true;
     }
 
     await context.close();

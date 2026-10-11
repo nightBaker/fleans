@@ -1,0 +1,159 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Variable scope tree",
+    "subtitle": "Reads walk up to the root; writes stay local until a merge targets the parent",
+    "quality_profile": "showcase",
+    "animation": "none",
+    "legend": {
+      "entries": {
+        "database": {
+          "label": "Root scope"
+        },
+        "backend": {
+          "label": "Child scope"
+        }
+      }
+    }
+  },
+  "components": [
+    {
+      "id": "root",
+      "type": "database",
+      "label": "Root scope",
+      "sublabel": "reads walk up to here",
+      "pos": [
+        40,
+        224
+      ],
+      "size": [
+        180,
+        60
+      ]
+    },
+    {
+      "id": "sub",
+      "type": "backend",
+      "label": "SubProcess scope",
+      "sublabel": "child of enclosing scope",
+      "pos": [
+        560,
+        40
+      ],
+      "size": [
+        200,
+        60
+      ]
+    },
+    {
+      "id": "esp",
+      "type": "backend",
+      "label": "Event sub-process",
+      "sublabel": "child + trigger payload",
+      "pos": [
+        560,
+        132
+      ],
+      "size": [
+        200,
+        60
+      ]
+    },
+    {
+      "id": "branch",
+      "type": "backend",
+      "label": "Parallel branch",
+      "sublabel": "cloned at fork",
+      "pos": [
+        560,
+        224
+      ],
+      "size": [
+        200,
+        60
+      ]
+    },
+    {
+      "id": "comp",
+      "type": "backend",
+      "label": "Compensation handler",
+      "sublabel": "seeded with snapshot",
+      "pos": [
+        560,
+        316
+      ],
+      "size": [
+        200,
+        60
+      ]
+    },
+    {
+      "id": "iter",
+      "type": "backend",
+      "label": "MI iteration",
+      "sublabel": "loopCounter + item",
+      "pos": [
+        560,
+        408
+      ],
+      "size": [
+        200,
+        60
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "sub-merge",
+      "from": "sub",
+      "to": "root",
+      "label": "merge on completion",
+      "labelAt": [
+        472,
+        70
+      ]
+    },
+    {
+      "id": "esp-merge",
+      "from": "esp",
+      "to": "root",
+      "label": "merge on completion",
+      "labelAt": [
+        472,
+        162
+      ]
+    },
+    {
+      "id": "branch-merge",
+      "from": "branch",
+      "to": "root",
+      "label": "merge at join, last wins",
+      "labelAt": [
+        472,
+        254
+      ]
+    },
+    {
+      "id": "comp-merge",
+      "from": "comp",
+      "to": "root",
+      "label": "merge before next handler",
+      "labelAt": [
+        472,
+        346
+      ]
+    },
+    {
+      "id": "iter-out",
+      "from": "iter",
+      "to": "root",
+      "label": "outputElement only",
+      "variant": "dashed",
+      "labelAt": [
+        472,
+        438
+      ]
+    }
+  ]
+}

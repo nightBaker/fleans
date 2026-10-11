@@ -17,6 +17,7 @@ namespace Fleans.E2E.Tests.Specs;
 public class BasicWorkflowTests : WorkflowE2ETestBase
 {
     [TestMethod]
+    [TestCategory(E2ECategories.Smoke)]
     public async Task Deploy_Start_VerifyAllActivitiesComplete()
     {
         // Arrange — deploy the fixture and start an instance via API

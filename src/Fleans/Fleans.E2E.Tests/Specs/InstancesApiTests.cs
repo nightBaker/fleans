@@ -5,7 +5,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Fleans.E2E.Tests.Specs;
 
-// Ports tests/manual/69-api-read-endpoints-negative-paths/test-plan.md (Instances section)
+// Ports tests/manual/70-api-read-endpoints-negative-paths/test-plan.md (Instances section)
 // The happy path of GET /Instances/{id}/state is exercised by every other spec; this class
 // pins the not-found contract.
 [TestClass]
