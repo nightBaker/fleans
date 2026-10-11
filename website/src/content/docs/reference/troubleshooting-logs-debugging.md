@@ -9,6 +9,11 @@ This page documents the structured-logging contract Fleans emits via `[LoggerMes
 
 Fleans uses **`[LoggerMessage]` source-generated logging exclusively** — no `ILogger.LogInformation(...)` extension-method calls. Every state mutation in `WorkflowInstance` and `ActivityInstance` emits a structured log entry via a `private partial void` declared on a partial class. This means:
 
+<figure class="arch-diagram" style="--arch-ratio: 1080 / 558">
+  <iframe data-arch-src="/fleans/diagrams/logs-debugging-flow.html" src="/fleans/diagrams/logs-debugging-flow.html?embed=1" title="Logs debugging flow" loading="lazy"></iframe>
+  <figcaption>Each state mutation emits a source-generated log entry with a stable EventId, enriched with grain-call scope fields; filter by level, then query your log backend by EventId range or <code>WorkflowInstanceId</code>. <a href="/fleans/diagrams/logs-debugging-flow.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
 - **EventIds are stable** — filter by EventId, not by message text.
 - **Field names are typed and consistent** — log queries on `WorkflowInstanceId` always hit the same field.
 - **No format-string drift** — the source generator validates the format string against the parameters at compile time.
@@ -25,6 +30,7 @@ If you author a custom-task plugin, follow the same pattern (see the [adding a B
 | 1090–1099 | `WorkflowInstance` — escalation |
 | 1100–1109 | `WorkflowInstance` — transaction sub-process |
 | 1110–1119 | `WorkflowInstance` — compensation |
+| 1120 | `WorkflowInstance` — workflow failed: an unhandled activity failure left no active activities (Error) |
 | 1066 | `UserTaskClaim` rejection (Warning) |
 | 2000–2099 | `ActivityInstance` |
 | 3000–3099 | `WorkflowInstanceState` |

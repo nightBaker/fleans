@@ -41,6 +41,11 @@ If your situation isn't on this list, lean toward external completion — it's t
 
 A trivial "say hello" plugin. The workflow author writes:
 
+<figure class="arch-diagram" style="--arch-ratio: 560 / 678; max-width: 600px; margin-inline: auto">
+  <iframe data-arch-src="/fleans/diagrams/custom-task-dispatch.html" src="/fleans/diagrams/custom-task-dispatch.html?embed=1" title="Custom task dispatch sequence" loading="lazy"></iframe>
+  <figcaption>At runtime the engine dispatches your task over a per-task-type Orleans stream to the handler you write here; the handler reports back by calling the workflow instance directly. <a href="/fleans/diagrams/custom-task-dispatch.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
 ```xml
 <!-- Requires xmlns:fleans="https://fleans.io/schema/bpmn/1.0" on <bpmn:definitions> -->
 <bpmn:serviceTask id="greet" type="hello">
@@ -60,6 +65,11 @@ Your plugin reads `name` (`String`) and `excitement` (`Boolean`), and returns `{
 ## Step 1 — Scaffold the plugin-host repo
 
 The [`fleans-custom-worker-example`](https://github.com/nightBaker/fleans-custom-worker-example) GitHub template ships a complete plugin-host project — Orleans silo, Redis clustering, role validation, OTel, health checks — wired against the published `Fleans.Worker` NuGet package. Your plugin lives in this repo as a sibling project under `src/`, not in the engine source tree.
+
+<figure class="arch-diagram" style="--arch-ratio: 1260 / 470">
+  <iframe data-arch-src="/fleans/diagrams/plugin-nuget-stack.html" src="/fleans/diagrams/plugin-nuget-stack.html?embed=1" title="Plugin-author NuGet package stack" loading="lazy"></iframe>
+  <figcaption>The packages your plugin-host repo references and how the built host joins the engine's cluster. <a href="/fleans/diagrams/plugin-nuget-stack.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
 
 Run these six commands. Replace `my-plugin-host` with your preferred name; the rest of the tutorial uses `my-plugin-host` literally.
 

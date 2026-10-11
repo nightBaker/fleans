@@ -6,6 +6,7 @@ public sealed record InstanceStateSnapshot(
     bool IsStarted,
     bool IsCompleted,
     bool IsCancelled,
+    bool IsFailed,
     List<ActivityInstanceSnapshot> ActiveActivities,
     List<ActivityInstanceSnapshot> CompletedActivities,
     List<VariableStateSnapshot> VariableStates,

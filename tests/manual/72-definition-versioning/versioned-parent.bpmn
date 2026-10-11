@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI">
+  <!-- Parent that calls versioned-child. The 'gate' user task holds the parent before the call activity so a child deploy can land between parent start and the call. -->
+  <process id="versioned-parent" isExecutable="true">
+    <startEvent id="parentStart" />
+    <userTask id="gate" name="Gate before call" />
+    <callActivity id="callChild" calledElement="versioned-child">
+      <extensionElements>
+        <outputMapping source="result" target="childResult" />
+      </extensionElements>
+    </callActivity>
+    <endEvent id="parentEnd" />
+    <sequenceFlow id="f1" sourceRef="parentStart" targetRef="gate" />
+    <sequenceFlow id="f2" sourceRef="gate" targetRef="callChild" />
+    <sequenceFlow id="f3" sourceRef="callChild" targetRef="parentEnd" />
+  </process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="versioned-parent">
+      <bpmndi:BPMNShape id="parentStart_di" bpmnElement="parentStart">
+        <dc:Bounds x="180" y="182" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gate_di" bpmnElement="gate">
+        <dc:Bounds x="276" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="callChild_di" bpmnElement="callChild">
+        <dc:Bounds x="436" y="160" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="parentEnd_di" bpmnElement="parentEnd">
+        <dc:Bounds x="596" y="182" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="216" y="200" />
+        <di:waypoint x="276" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="376" y="200" />
+        <di:waypoint x="436" y="200" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="536" y="200" />
+        <di:waypoint x="596" y="200" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</definitions>

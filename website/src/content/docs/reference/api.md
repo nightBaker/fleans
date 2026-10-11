@@ -26,6 +26,11 @@ Workflow endpoints are served from `https://localhost:7140/Workflow/*`; user-tas
 
 ## Endpoint details
 
+<figure class="arch-diagram" style="--arch-ratio: 1300 / 570">
+  <iframe data-arch-src="/fleans/diagrams/api-surface.html" src="/fleans/diagrams/api-surface.html?embed=1" title="REST API surface" loading="lazy"></iframe>
+  <figcaption>Every request passes the opt-in JWT and rate-limit layers, then an endpoint group hands it to a process-definition, correlation or WorkflowInstance grain, or to the read-side projection. <a href="/fleans/diagrams/api-surface.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
+
 ### `POST /Workflow/deploy`
 
 Deploys a BPMN process definition to the engine. The request body contains the raw BPMN XML as a string. On success the engine parses the XML, registers the process definition, and returns the assigned key and version number. If the same process ID is deployed again, the version is incremented automatically.
@@ -52,11 +57,11 @@ Content-Type: application/json
 }
 ```
 
-**Error response (400)** — returned when the BPMN XML cannot be parsed:
+**Error response (400)** — returned when `BpmnXml` is empty, is not well-formed XML, or is not a deployable BPMN model (e.g. no `<process>` element). The message carries the parser diagnostic:
 
 ```json
 {
-  "error": "Failed to parse BPMN: ..."
+  "error": "Invalid BPMN: BPMN file must contain a process element"
 }
 ```
 
@@ -98,13 +103,11 @@ Content-Type: application/json
 }
 ```
 
-**Error response (400)**
+**Error responses**
 
-```json
-{
-  "error": "WorkflowId is required"
-}
-```
+- **400** — `{"error": "WorkflowId is required"}`
+- **404** — the process key was never deployed (ProblemDetails, `detail`: `Workflow with id 'my-process' is not registered. …`)
+- **409** — the process key is disabled (ProblemDetails, `detail`: `Process 'my-process' is disabled. Enable it before creating new instances.`)
 
 ### `POST /Workflow/message`
 
@@ -188,12 +191,28 @@ Content-Type: application/json
 
 **Success response (200)** — empty body
 
-**Error response (400)**
+**Error responses**
 
-```json
-{
-  "error": "WorkflowInstanceId is required"
-}
+- **400** — `{"error": "WorkflowInstanceId is required"}` / `{"error": "ActivityId is required"}`
+- **404** — no workflow instance with that id (ProblemDetails, `detail`: `Workflow instance '<id>' not found.`)
+- **409** — the activity has no active entry: unknown activity id, or an activity that already completed (ProblemDetails, `detail`: `No active entry found for activity 'review-task'.`). Also returned when the activity is a user task — use the `/UserTasks/{id}/complete` endpoint instead.
+
+### Read endpoints
+
+Paginated read endpoints accept `page` (default 1), `pageSize` (default 20, max 100), and Sieve `sorts` / `filters` query parameters, and return `{"items": [...], "totalCount": n, "page": p, "pageSize": s}`. An unknown key or version returns an empty page (200), not 404.
+
+| Verb | Path | Returns |
+| --- | --- | --- |
+| GET | `/Definitions` | Deployed process-definition versions (`processDefinitionId`, `processDefinitionKey`, `version`, `deployedAt`, `activitiesCount`, `sequenceFlowsCount`, `isActive`). Filterable on `ProcessDefinitionKey`, `Version`, `IsActive`; sortable on `ProcessDefinitionKey`, `Version`, `DeployedAt`. |
+| GET | `/Definitions/{key}/instances` | Instances of every version of `key` (`instanceId`, `processDefinitionId`, `isStarted`, `isCompleted`, `isCancelled`, timestamps). Filterable on `IsStarted`, `IsCompleted`, `IsCancelled`, `CreatedAt`. |
+| GET | `/Definitions/{key}/{version}/instances` | Same, restricted to one version. |
+| GET | `/custom-tasks` | Custom-task plugin catalog: one entry per task type with `displayName`, `parameterSchema`, and the `siloNames` hosting it. Not paginated. |
+| GET | `/custom-tasks/{taskType}` | One catalog entry; **404** if no plugin registers that task type. |
+
+```bash
+curl -k 'https://localhost:7140/Definitions?sorts=-Version&filters=ProcessDefinitionKey==my-process'
+curl -k 'https://localhost:7140/Definitions/my-process/2/instances?filters=IsCompleted==true'
+curl -k 'https://localhost:7140/custom-tasks/rest-call'
 ```
 
 ### User Task endpoints
@@ -208,13 +227,13 @@ User-task endpoints expose the human-in-the-loop lifecycle of `<bpmn:userTask>` 
 | --- | --- | --- | --- | --- |
 | GET  | `/UserTasks`                            | Query    | optional | `200 OK` |
 | GET  | `/UserTasks/{activityInstanceId}`       | Query    | optional | `200 OK` |
-| POST | `/UserTasks/{activityInstanceId}/claim`    | Mutation | `UserId` required in body | `200 OK` |
+| POST | `/UserTasks/{activityInstanceId}/claim`    | Mutation | `UserId` from body (no auth) or token (JWT) | `200 OK` |
 | POST | `/UserTasks/{activityInstanceId}/unclaim`  | Mutation | NONE — see below | `200 OK` |
-| POST | `/UserTasks/{activityInstanceId}/complete` | Mutation | `UserId` required in body | `200 OK` |
+| POST | `/UserTasks/{activityInstanceId}/complete` | Mutation | `UserId` from body (no auth) or token (JWT) | `200 OK` |
 | POST | `/UserTasks/{activityInstanceId}/fail`     | Mutation | `ErrorMessage` required in body | `200 OK` |
 | POST | `/UserTasks/{activityInstanceId}/cancel`   | Mutation | body optional | `200 OK` |
 
-`Auth` above refers to API-level JWT bearer auth, which is opt-in for the entire API — see [Authentication](/fleans/reference/authentication/#quick-start). The `UserId` field in claim/complete bodies is **caller identity**, not authentication: the engine treats whatever value it receives as the acting user.
+`Auth` above refers to API-level JWT bearer auth, which is opt-in for the entire API — see [Authentication](/fleans/reference/authentication/#quick-start). With auth disabled, the `UserId` field in claim/complete bodies is trusted as the acting user. With JWT auth enabled, the acting user comes from the token's `Authentication:UserIdClaim` claim. The body `UserId` is then optional, and a value that differs from the token is rejected with `403`.
 
 #### Error response shapes
 
@@ -318,13 +337,14 @@ Content-Type: application/json
 
 | Body field | Type | Required | Description |
 |---|---|---|---|
-| `UserId` | `string` | yes | Caller identity attached to the claim. |
+| `UserId` | `string` | yes without auth; optional under JWT | Acting user. Under JWT the token's user is used, and a differing value returns `403`. |
 
 **Success response (200)** — empty body.
 
 **Error responses**
 
-- **400** — `{"error": "UserId is required"}` — body missing or `UserId` empty/whitespace.
+- **400** — `{"error": "UserId is required"}` — auth disabled and the body is missing or `UserId` is empty/whitespace.
+- **403** — JWT auth only: `{"error": "UserId does not match the authenticated user"}` when the body `UserId` differs from the token, or `{"error": "Authenticated user has no user id claim"}` when the token lacks the configured claim.
 - **404** — `{"error": "User task '<id>' not found"}` — no pending task with that activity-instance id.
 - **409** — claim rejected by the domain layer (e.g. caller is not in `Assignee` / `CandidateUsers` / `CandidateGroups`); the body is the underlying `InvalidOperationException` message.
 
@@ -384,14 +404,15 @@ Content-Type: application/json
 
 | Body field | Type | Required | Description |
 |---|---|---|---|
-| `UserId` | `string` | yes | Caller identity — must match `claimedBy` on the task. |
+| `UserId` | `string` | yes without auth; optional under JWT | Acting user — must match `claimedBy` on the task. Under JWT the token's user is used, and a differing value returns `403`. |
 | `Variables` | `object?` | optional unless the task declares `expectedOutputVariables` | Output variables merged into the workflow's enclosing scope. Every entry in `expectedOutputVariables` must have a value here. |
 
 **Success response (200)** — empty body. The task is removed from the registry; subsequent `GET /UserTasks/{id}` returns `404`.
 
 **Error responses**
 
-- **400** — `{"error": "UserId is required"}`
+- **400** — `{"error": "UserId is required"}` — auth disabled and no `UserId` in the body.
+- **403** — JWT auth only: the body `UserId` differs from the token, or the token lacks the configured user-id claim (same bodies as `claim`).
 - **404** — `{"error": "User task '<id>' not found"}` — already completed, never existed, or wrong id.
 - **409 — wrong claimer**:
 
@@ -485,7 +506,9 @@ curl -k -X POST https://localhost:7140/UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a
 
 ### Instance State endpoint
 
-`GET /Workflow/instances/{instanceId}/state` returns a per-instance state snapshot including `activeActivityIds`, `completedActivityIds`, `isStarted`, `isCompleted`, and related fields.
+`GET /Workflow/instances/{instanceId}/state` returns a per-instance state snapshot including `activeActivityIds`, `completedActivityIds`, `isStarted`, `isCompleted`, `isCancelled`, `isFailed`, and related fields.
+
+`isCompleted` means *terminal*. Tell the outcomes apart with the two flags: `isCancelled: true` → cancelled, `isFailed: true` → an unhandled activity failure ended the instance (see [Unhandled errors fail the instance](/fleans/guides/error-handling/#unhandled-errors-fail-the-instance)); both `false` → completed successfully. The failing activity is listed in `completedActivities` with a non-null `errorState`.
 
 This endpoint is intended for **diagnostics and load-test polling**, not for high-frequency production use. The response reflects the read-side EF projection, which is eventually consistent with the event stream — callers that need realtime certainty should drive via the grain API directly.
 

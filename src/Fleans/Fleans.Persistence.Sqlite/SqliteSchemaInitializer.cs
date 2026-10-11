@@ -78,5 +78,67 @@ public static class SqliteSchemaInitializer
         {
             if (wasClosed && conn.State == System.Data.ConnectionState.Open) conn.Close();
         }
+
+        EnsureAdditiveColumns(conn);
+    }
+
+    /// <summary>
+    /// Columns added to existing tables after a SQLite file may already have been created.
+    /// <see cref="DatabaseFacade.EnsureCreated"/> is a no-op on an existing file, so without
+    /// this an older dev DB would fail at first query with "no such column". Each entry must be
+    /// purely additive (NOT NULL columns need a DEFAULT). Postgres gets the same change through
+    /// a regular EF migration.
+    /// </summary>
+    private static readonly (string Table, string Column, string Definition)[] AdditiveColumns =
+    [
+        // #762 — terminal failed state for workflow instances.
+        ("WorkflowInstances", "IsFailed", "INTEGER NOT NULL DEFAULT 0"),
+    ];
+
+    private static void EnsureAdditiveColumns(SqliteConnection conn)
+    {
+        var wasClosed = conn.State != System.Data.ConnectionState.Open;
+        try
+        {
+            if (wasClosed) conn.Open();
+            foreach (var (table, column, definition) in AdditiveColumns)
+            {
+                if (!TableExists(conn, table) || ColumnExists(conn, table, column))
+                    continue;
+
+                try
+                {
+                    using var alter = conn.CreateCommand();
+                    alter.CommandText = $"ALTER TABLE \"{table}\" ADD COLUMN \"{column}\" {definition};";
+                    alter.ExecuteNonQuery();
+                }
+                catch (SqliteException ex) when (
+                    ex.SqliteErrorCode == raw.SQLITE_ERROR
+                    && ex.Message.Contains("duplicate column name", StringComparison.OrdinalIgnoreCase))
+                {
+                    // A sibling silo sharing the same .db file added the column first.
+                }
+            }
+        }
+        finally
+        {
+            if (wasClosed && conn.State == System.Data.ConnectionState.Open) conn.Close();
+        }
+    }
+
+    private static bool TableExists(SqliteConnection conn, string table)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = $name;";
+        cmd.Parameters.AddWithValue("$name", table);
+        return Convert.ToInt64(cmd.ExecuteScalar()) > 0;
+    }
+
+    private static bool ColumnExists(SqliteConnection conn, string table, string column)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = $column;";
+        cmd.Parameters.AddWithValue("$column", column);
+        return Convert.ToInt64(cmd.ExecuteScalar()) > 0;
     }
 }

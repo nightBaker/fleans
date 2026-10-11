@@ -19,7 +19,11 @@
         <Actions>
             @if (snapshot != null)
             {
-                @if (snapshot.IsCancelled)
+                @if (snapshot.IsFailed)
+                {
+                    <FluentBadge Color="Color.Error">Failed</FluentBadge>
+                }
+                else if (snapshot.IsCancelled)
                 {
                     <FluentBadge Color="Color.Warning">Cancelled</FluentBadge>
                 }

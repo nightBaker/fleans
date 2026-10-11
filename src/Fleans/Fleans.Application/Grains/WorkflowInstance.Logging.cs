@@ -317,6 +317,10 @@ public partial class WorkflowInstance
         Message = "Workflow cancelled: {Reason}")]
     private partial void LogWorkflowCancelled(string reason);
 
+    [LoggerMessage(EventId = 1120, Level = LogLevel.Error,
+        Message = "Workflow failed: unhandled failure of activity {FailedActivityId} ({FailedActivityInstanceId}) left no active activities. ErrorCode={ErrorCode}, ErrorMessage={ErrorMessage}")]
+    private partial void LogWorkflowFailed(string failedActivityId, Guid failedActivityInstanceId, string errorCode, string errorMessage);
+
     [LoggerMessage(EventId = 3031, Level = LogLevel.Warning,
         Message = "Escalation uncaught: EscalationCode={EscalationCode}, SourceActivityId={SourceActivityId}")]
     private partial void LogEscalationUncaught(string escalationCode, string sourceActivityId);

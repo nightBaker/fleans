@@ -1,0 +1,104 @@
+---
+// Three-column "spec row" used on the landing page:
+// mono chips (left) · heading + body (center) · bordered note card (right).
+// Collapses to a single column under 60rem.
+interface Props {
+  tags: string[];
+  title: string;
+  /** Optional link rendered at the bottom of the note card. */
+  href?: string;
+  linkText?: string;
+}
+const { tags, title, href, linkText = 'Learn how' } = Astro.props;
+const hasNote = Astro.slots.has('note') || href;
+---
+
+<article class="fl-row not-content">
+  <div class="fl-row-tags">
+    {tags.map((t, i) => <span class:list={['fl-chip', i > 0 && 'fl-chip--alt']}>{t}</span>)}
+  </div>
+  <div class="fl-row-body">
+    <h3>{title}</h3>
+    <div class="fl-row-text"><slot /></div>
+  </div>
+  {
+    hasNote && (
+      <aside class="fl-note">
+        <slot name="note" />
+        {href && (
+          <a class="fl-note-link" href={href}>
+            {linkText} <span aria-hidden="true">→</span>
+          </a>
+        )}
+      </aside>
+    )
+  }
+</article>
+
+<style>
+  .fl-row {
+    display: grid;
+    grid-template-columns: 11rem minmax(0, 1fr) 17.5rem;
+    gap: 1.5rem 2.5rem;
+    align-items: start;
+    padding-block: 3rem;
+    border-top: 1px solid var(--fl-stroke);
+  }
+  .fl-row-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    align-content: start;
+  }
+  .fl-row-body h3 {
+    margin: 0 0 1rem;
+    font-size: clamp(1.75rem, 3vw, 2.5rem);
+    font-weight: 400;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    color: var(--fl-text);
+  }
+  .fl-row-text {
+    max-width: 36rem;
+    font-size: 1.125rem;
+    line-height: 1.5;
+    color: var(--fl-text-muted);
+  }
+  .fl-row-text :global(code) {
+    font-size: 0.85em;
+  }
+  .fl-note {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1.25rem;
+    border: 1px solid var(--fl-stroke);
+    border-radius: var(--fl-radius);
+    font-size: 1rem;
+    line-height: 1.5;
+    color: var(--fl-text-muted);
+  }
+  .fl-note :global(p) {
+    margin: 0;
+  }
+  .fl-note-link {
+    color: var(--fl-text);
+    text-decoration: none;
+  }
+  .fl-note-link:hover {
+    color: var(--fl-accent);
+  }
+  .fl-note-link span {
+    display: inline-block;
+    transition: transform 150ms ease;
+  }
+  .fl-note-link:hover span {
+    transform: translateX(3px);
+  }
+  @media (max-width: 60rem) {
+    .fl-row {
+      grid-template-columns: minmax(0, 1fr);
+      padding-block: 2rem;
+    }
+  }
+</style>

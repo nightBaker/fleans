@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Custom Task Dispatch",
+    "subtitle": "Stream event out, direct grain callback back",
+    "quality_profile": "showcase",
+    "animation": "none",
+    "viewBox": [
+      560,
+      660
+    ],
+    "legend": {
+      "entries": {
+        "emphasis": {
+          "label": "call / event"
+        },
+        "security": {
+          "label": "failure path"
+        }
+      }
+    }
+  },
+  "participants": [
+    {
+      "id": "wf",
+      "type": "backend",
+      "label": "Workflow",
+      "sublabel": "instance grain"
+    },
+    {
+      "id": "stream",
+      "type": "messagebus",
+      "label": "Stream",
+      "sublabel": "per task type"
+    },
+    {
+      "id": "handler",
+      "type": "backend",
+      "label": "Handler",
+      "sublabel": "plugin grain"
+    },
+    {
+      "id": "plugin",
+      "type": "external",
+      "label": "Plugin",
+      "sublabel": "ExecuteAsync"
+    }
+  ],
+  "segments": [
+    {
+      "from": 160,
+      "to": 250,
+      "label": "Dispatch"
+    },
+    {
+      "from": 262,
+      "to": 430,
+      "label": "Execute"
+    },
+    {
+      "from": 442,
+      "to": 560,
+      "label": "Report back"
+    }
+  ],
+  "messages": [
+    {
+      "from": "wf",
+      "to": "stream",
+      "y": 190,
+      "label": "ExecuteCustomTaskEvent",
+      "variant": "emphasis"
+    },
+    {
+      "from": "stream",
+      "to": "handler",
+      "y": 232,
+      "label": "implicit subscription",
+      "variant": "emphasis"
+    },
+    {
+      "from": "handler",
+      "to": "wf",
+      "y": 282,
+      "label": "GetVariables",
+      "variant": "default"
+    },
+    {
+      "from": "wf",
+      "to": "handler",
+      "y": 324,
+      "label": "variable scope",
+      "variant": "return"
+    },
+    {
+      "from": "handler",
+      "to": "plugin",
+      "y": 366,
+      "label": "resolved inputs",
+      "variant": "emphasis"
+    },
+    {
+      "from": "plugin",
+      "to": "handler",
+      "y": 408,
+      "label": "outputs or throw",
+      "variant": "return"
+    },
+    {
+      "from": "handler",
+      "to": "wf",
+      "y": 470,
+      "label": "CompleteActivity \u2192 advance",
+      "variant": "emphasis"
+    },
+    {
+      "from": "handler",
+      "to": "wf",
+      "y": 530,
+      "label": "FailActivity(code) \u2192 boundary",
+      "variant": "security"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "stream",
+      "from": 184,
+      "to": 238,
+      "type": "messagebus"
+    },
+    {
+      "participant": "handler",
+      "from": 226,
+      "to": 538,
+      "type": "backend"
+    },
+    {
+      "participant": "plugin",
+      "from": 360,
+      "to": 414,
+      "type": "external"
+    }
+  ]
+}

@@ -269,13 +269,97 @@ public class WorkflowExecutionScopeCompletionTests
         // First scope completion should complete innerSub host
         var (effects1, completedIds1, _) = execution.CompleteFinishedSubProcessScopes();
 
-        // Inner sub should be completed, and since that makes all outer scope children
-        // completed, the outer sub should also be completed in the same call (loop detects it)
+        // Inner sub completes, but innerSub → outerEnd has not been resolved yet, so the
+        // outer sub must NOT cascade-complete in the same call (#761): its token is still
+        // in flight towards outerEnd.
         Assert.IsTrue(innerSubEntry.IsCompleted);
-        Assert.IsTrue(outerHostEntry.IsCompleted);
-        Assert.AreEqual(2, completedIds1.Count);
+        Assert.IsFalse(outerHostEntry.IsCompleted,
+            "Outer sub must wait for innerSub's outgoing transition (outerEnd) to run");
+        Assert.AreEqual(1, completedIds1.Count);
         Assert.IsTrue(completedIds1.Contains(innerSubEntry.ActivityInstanceId));
-        Assert.IsTrue(completedIds1.Contains(outerHostEntry.ActivityInstanceId));
+
+        // Resolve innerSub → outerEnd and complete outerEnd: now the outer sub completes.
+        execution.ResolveTransitions(
+        [
+            new CompletedActivityTransitions(innerSubEntry.ActivityInstanceId, "innerSub",
+                [new ActivityTransition(outerEnd)])
+        ]);
+        var outerEndEntry = state.Entries.First(e => e.ActivityId == "outerEnd");
+        Assert.IsFalse(outerEndEntry.IsCompleted);
+        execution.MarkExecuting(outerEndEntry.ActivityInstanceId);
+        execution.MarkCompleted(outerEndEntry.ActivityInstanceId, new ExpandoObject());
+
+        var (_, completedIds2, _) = execution.CompleteFinishedSubProcessScopes();
+        Assert.IsTrue(outerHostEntry.IsCompleted);
+        CollectionAssert.AreEqual(new[] { outerHostEntry.ActivityInstanceId }, completedIds2.ToList());
+    }
+
+    [TestMethod]
+    public void CompleteFinishedSubProcessScopes_NestedSubProcessWithoutOutgoingFlow_ShouldCascadeToOuter()
+    {
+        // Build: start -> outerSub(outerStart -> innerSub(innerStart -> innerEnd)) -> end
+        // innerSub has no outgoing flow, so its completion is the outer scope's last token.
+        var innerStart = new StartEvent("innerStart");
+        var innerEnd = new EndEvent("innerEnd");
+        var innerSub = new SubProcess("innerSub")
+        {
+            Activities = [innerStart, innerEnd],
+            SequenceFlows = [new SequenceFlow("innerSeq1", innerStart, innerEnd)]
+        };
+
+        var outerStart = new StartEvent("outerStart");
+        var outerSub = new SubProcess("outerSub")
+        {
+            Activities = [outerStart, innerSub],
+            SequenceFlows = [new SequenceFlow("outerSeq1", outerStart, innerSub)]
+        };
+
+        var start = new StartEvent("start1");
+        var end = new EndEvent("end1");
+
+        var (execution, state, outerHostEntry) = CreateWithExecutingHost(
+            [start, outerSub, end],
+            [new("seq1", start, outerSub), new("seq2", outerSub, end)],
+            outerSub);
+
+        execution.ProcessCommands(
+            [new OpenSubProcessCommand(outerSub, outerHostEntry.VariablesId)],
+            outerHostEntry.ActivityInstanceId);
+
+        var outerStartEntry = state.Entries.First(e => e.ActivityId == "outerStart");
+        execution.MarkExecuting(outerStartEntry.ActivityInstanceId);
+        execution.MarkCompleted(outerStartEntry.ActivityInstanceId, new ExpandoObject());
+        execution.ResolveTransitions(
+        [
+            new CompletedActivityTransitions(outerStartEntry.ActivityInstanceId, "outerStart",
+                [new ActivityTransition(innerSub)])
+        ]);
+
+        var innerSubEntry = state.GetActiveActivities().First(e => e.ActivityId == "innerSub");
+        execution.MarkExecuting(innerSubEntry.ActivityInstanceId);
+        execution.ProcessCommands(
+            [new OpenSubProcessCommand(innerSub, innerSubEntry.VariablesId)],
+            innerSubEntry.ActivityInstanceId);
+
+        var innerStartEntry = state.Entries.First(e => e.ActivityId == "innerStart");
+        execution.MarkExecuting(innerStartEntry.ActivityInstanceId);
+        execution.MarkCompleted(innerStartEntry.ActivityInstanceId, new ExpandoObject());
+        execution.ResolveTransitions(
+        [
+            new CompletedActivityTransitions(innerStartEntry.ActivityInstanceId, "innerStart",
+                [new ActivityTransition(innerEnd)])
+        ]);
+
+        var innerEndEntry = state.Entries.First(e => e.ActivityId == "innerEnd");
+        execution.MarkExecuting(innerEndEntry.ActivityInstanceId);
+        execution.MarkCompleted(innerEndEntry.ActivityInstanceId, new ExpandoObject());
+
+        var (_, completedIds, _) = execution.CompleteFinishedSubProcessScopes();
+
+        Assert.IsTrue(innerSubEntry.IsCompleted);
+        Assert.IsTrue(outerHostEntry.IsCompleted,
+            "With no outgoing flow from innerSub, the outer sub cascades in the same call");
+        Assert.AreEqual(2, completedIds.Count);
     }
 
     // ===== MultiInstance Parallel Completion Tests =====

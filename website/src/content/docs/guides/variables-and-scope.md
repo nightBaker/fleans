@@ -43,7 +43,7 @@ var city = (string)_context.user.address.city;
 var attempts = _context.retryCount ?? 0;
 ```
 
-DynamicExpresso evaluates each statement independently. You cannot define helper methods inside a script task — keep logic linear, and put complex computation behind a custom service-task plugin (see [Writing Custom-Task Plugins](/fleans/guides/writing-custom-tasks/)).
+DynamicExpresso evaluates each statement independently. Not every C# construct parses — notably implicitly-typed array literals (`new[] { 1, 2, 3 }`) are rejected; use `new List<object> { 1, 2, 3 }` instead. A script that fails to parse fails its activity (code `500`). You cannot define helper methods inside a script task — keep logic linear, and put complex computation behind a custom service-task plugin (see [Writing Custom-Task Plugins](/fleans/guides/writing-custom-tasks/)).
 
 ## Writing variables in script tasks
 
@@ -59,6 +59,11 @@ Persistence is event-sourced: at the end of the activity, the engine takes a sna
 ## Scope inheritance
 
 Reads walk **up the chain**. When a script task in a child scope reads `_context.foo`, the engine resolves `foo` by checking the active scope first, then its parent, then its grandparent, up to the root.
+
+<figure class="arch-diagram" style="--arch-ratio: 800 / 554">
+  <iframe data-arch-src="/fleans/diagrams/variable-scopes.html" src="/fleans/diagrams/variable-scopes.html?embed=1" title="Variable scope hierarchy and merge rules" loading="lazy"></iframe>
+  <figcaption>Every child scope reads up the chain to the root, but its writes reach the parent only through an explicit merge; multi-instance iterations hand back only their <code>outputElement</code>. <a href="/fleans/diagrams/variable-scopes.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
 
 Writes are **scope-local**. `_context.foo = ...` creates-or-updates `foo` on the active scope only. It does not mutate any ancestor scope. The only way a child scope's variables reach an ancestor is via an explicit merge event — see [Merge semantics](#merge-semantics) below.
 
@@ -77,7 +82,7 @@ These events are emitted from roughly 22 sites in `Fleans.Domain/Aggregates/Work
 
 - **Embedded SubProcess entry** — opens a `ChildVariableScopeCreated` so the SubProcess body sees enclosing variables but its writes stay local until merge.
 - **Event sub-process activation (interrupting + non-interrupting)** — handler activation creates a fresh child scope and (when the trigger carries data, e.g. a message payload) merges those fields into the new scope.
-- **Multi-instance loop body** — each iteration is `VariableScopeCloned` from the host scope, optionally augmented with the per-iteration item value.
+- **Multi-instance loop body** — each iteration opens a `ChildVariableScopeCreated` child of the host scope (reads resolve through the host), seeded with `loopCounter` and the per-iteration item value.
 - **Parallel fork branches** — every outgoing branch from a parallel fork gets a `VariableScopeCloned` snapshot of the fork-time variables, giving each branch an isolated copy.
 - **Compensation handler activation** — each handler gets a fresh child scope **seeded from the compensable activity's completion-time snapshot**, overlaying the enclosing scope.
 - **Escalation handler activation** — host scope is cloned for the handler; if the escalation throw carries variables they are merged in.

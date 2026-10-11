@@ -84,6 +84,7 @@ What this means in practice:
 - **The `=` prefix is stripped, then the remainder is treated as a plain variable name** — `_state.GetVariable(...)` is a dictionary lookup against the workflow's `ExpandoObject`-backed variable scope, not a Roslyn or DynamicExpresso evaluation. A correlation expression like `= requestId` looks up the variable named `requestId`. A correlation expression like `= a + b` looks up the literal variable named `a + b` (which doesn't exist) and throws.
 - **Resolution scope depends on where the subscription is registered.** For an `<intermediateCatchEvent>`, resolution happens at the host activity's variable scope at the moment execution reaches the catch — variables set by upstream script tasks in the same scope (or any ancestor scope, see [Variables and Scope](/fleans/guides/variables-and-scope/)) are visible.
 - **A null variable throws `InvalidOperationException`** with the message `Correlation variable '{name}' is null for message '{messageName}'.`. The throw aborts the workflow — there is no fallback to "empty correlation key". Either seed the correlation variable from the `/start` request's `Variables` payload, or set it via a script task that runs **before** the message-catch is reached.
+- **Intermediate catch and boundary message events require a correlation key.** If the `<message>` has no `<fleans:subscription correlationKey>` (or the variable resolves to an empty string), the catch / boundary activity is **failed** with `Message '{name}' has no correlation key. ...` as soon as execution reaches it. Uncorrelated `POST /Workflow/message` calls (empty `CorrelationKey`) only ever reach message **start** events.
 - **Twin logic for the register-message path.** The same parse-and-resolve sequence is used by `ProcessRegisterMessage` ([WorkflowExecution.cs#L989-L1011](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Domain/Aggregates/WorkflowExecution.cs#L989-L1011)) which handles register-message commands emitted when a scope opens that contains a message-event sub-process. If you change one path, change both.
 
 For message **start** events, no correlation key lives on the BPMN definition (fixture #16 deliberately omits `<extensionElements>` on the `<message>`). Routing for start events is by message *name* alone — the API caller supplies the correlation value as part of the `POST /Workflow/message` request, and a fresh workflow instance is spawned with that key recorded against its own variables.
@@ -113,6 +114,11 @@ The endpoint is rate-limited under the `workflow-mutation` policy.
 ## End-to-end curl example
 
 This walks the full lifecycle of fixture #09 — deploy the BPMN, start an instance (which sets `requestId = "req-456"` via a script task), then deliver the matching message:
+
+<figure class="arch-diagram" style="--arch-ratio: 480 / 738; max-width: 520px; margin-inline: auto">
+  <iframe data-arch-src="/fleans/diagrams/message-correlation.html" src="/fleans/diagrams/message-correlation.html?embed=1" title="Message correlation sequence" loading="lazy"></iframe>
+  <figcaption>The waiting instance registers <code>approvalReceived/req-456</code> and resumes when <code>POST /Workflow/message</code> supplies the matching key. <a href="/fleans/diagrams/message-correlation.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+</figure>
 
 ```bash
 # 1. Deploy the workflow.
@@ -235,10 +241,6 @@ This bears repeating because it is the most expensive failure mode. `<extensionE
 :::
 
 ## Limitations
-
-:::caution[Boundary message events on `IntermediateCatchEvent` do not register]
-Per regression test #9 (and the matching KNOWN BUG note in `tests/manual/09-message-events/test-plan.md`), boundary events attached to an `IntermediateCatchEvent` host do not register their subscriptions. This is the same root cause as regression test #8 (timer boundaries on intermediate catches) and affects message and signal boundaries the same way. As a workaround, attach the boundary to a host activity that the engine handles correctly (e.g. `userTask`, `serviceTask`, `subProcess`).
-:::
 
 A workflow can only have **one** active subscription per `(messageName, correlationKey)` pair. A second instance trying to subscribe on a key that is already taken fails with `Duplicate subscription`. Design correlation values to be per-instance unique (use a generated `Guid`, an order id, a session id) — never a shared business constant.
 

@@ -1,0 +1,82 @@
+# Runs the Kafka-gated integration tests in Fleans.Application.Tests against a
+# real Kafka broker via Testcontainers. Default `dotnet test` (in dotnet.yml)
+# leaves FLEANS_KAFKA_TESTS unset, so those tests short-circuit to
+# Assert.Inconclusive there; this job is the only place they execute (#756).
+name: Kafka tests
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+defaults:
+  run:
+    working-directory: src/Fleans
+
+jobs:
+  kafka-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore
+
+      - name: Test (Kafka-gated)
+        env:
+          FLEANS_KAFKA_TESTS: "1"
+        run: >-
+          dotnet test Fleans.Application.Tests/Fleans.Application.Tests.csproj
+          --no-build
+          --verbosity normal
+          --filter "FullyQualifiedName~Kafka"
+          --logger "trx;LogFileName=kafka.trx"
+
+      # Silent-green guard (same pattern as pg-tests.yml / #445). Two ways this
+      # job can go green without testing anything:
+      #   1. the filter matches zero tests (a rename drops "Kafka" from the class names);
+      #   2. the env gate is not honoured, so every test returns Assert.Inconclusive —
+      #      `dotnet test` exits 0. MSTest 4 counts those as total>0, passed=0
+      #      (verified locally), older TRX writers as inconclusive>0.
+      # Fail on either: require passed > 0 and inconclusive == 0.
+      - name: Assert Kafka tests actually ran (silent-green guard)
+        if: always()
+        run: |
+          set -e
+
+          trx_file=$(find Fleans.Application.Tests/TestResults -name kafka.trx | head -1)
+          if [ -z "$trx_file" ]; then
+            echo "::error::no kafka.trx produced — the test runner may have crashed before emitting results"
+            exit 1
+          fi
+
+          read total passed inconclusive < <(python3 - "$trx_file" <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          ns = {"t": "http://microsoft.com/schemas/VisualStudio/TeamTest/2010"}
+          root = ET.parse(sys.argv[1]).getroot()
+          c = root.find(".//t:Counters", ns)
+          get = (lambda k: c.get(k, "0")) if c is not None else (lambda k: "0")
+          print(get("total"), get("passed"), get("inconclusive"))
+          PY
+          )
+
+          echo "Kafka tests: total=${total} passed=${passed} inconclusive=${inconclusive}"
+
+          if [ "${total:-0}" -eq 0 ] || [ "${passed:-0}" -eq 0 ]; then
+            echo "::error::Zero Kafka tests passed — the FullyQualifiedName~Kafka filter matched nothing or every test failed (total=${total}, passed=${passed})."
+            exit 1
+          fi
+          if [ "${inconclusive:-0}" -ne 0 ]; then
+            echo "::error::${inconclusive} Kafka test(s) were Inconclusive — FLEANS_KAFKA_TESTS gate not honoured, so they never touched a broker."
+            exit 1
+          fi

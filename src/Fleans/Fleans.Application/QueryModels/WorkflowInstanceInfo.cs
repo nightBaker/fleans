@@ -6,6 +6,7 @@ public sealed record WorkflowInstanceInfo(
     bool IsStarted,
     bool IsCompleted,
     bool IsCancelled,
+    bool IsFailed,
     DateTimeOffset? CreatedAt,
     DateTimeOffset? ExecutionStartedAt,
     DateTimeOffset? CompletedAt);

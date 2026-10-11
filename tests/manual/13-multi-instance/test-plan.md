@@ -125,3 +125,41 @@ Aspire stack running: `dotnet run --project Fleans.Aspire` from `src/Fleans/`
 - [ ] Field initially shows `_context.nrOfCompletedInstances >= 1`
 - [ ] After editing, the exported BPMN contains the new value
 - [ ] No "Correlation Key" field appears (not applicable to multi-instance activities)
+
+---
+
+## Scenario 13g: Parallel multi-instance embedded sub-process
+
+Deploy `parallel-subprocess.bpmn`: `perItem` is an embedded sub-process with parallel MI over `items = ["A","B","C"]`; its body sets `result = "sub-" + item`. Automated by `MultiInstanceScopeTests.ParallelMultiInstanceSubProcess_RunsBodyOncePerItem_AndCollectsOutput`.
+
+### Steps
+1. Deploy `parallel-subprocess.bpmn` and start `mi-subprocess-test`.
+
+### Expected
+- [ ] Instance **Completed** (regression: iterations of an MI sub-process never completed, so the host hung)
+- [ ] `processItem` completed 3 times; `perItem` completed 4 times (3 iterations + host)
+- [ ] Variables: `results` contains `sub-A`, `sub-B`, `sub-C`
+
+---
+
+## Scenario 13h: Parallel multi-instance call activity
+
+> **KNOWN BUG:** MI call activities never complete — child completion is routed by ActivityId, which all iterations share. See [#782](https://github.com/nightBaker/fleans/issues/782).
+
+Deploy `mi-child.bpmn` first, then `parallel-call-activity.bpmn` (`callChild` calls `mi-child-process` once per item). Automated (ignored) by `MultiInstanceScopeTests.ParallelMultiInstanceCallActivity_SpawnsOneChildPerItem_AndCollectsOutput`.
+
+### Expected
+- [ ] One child instance per item, each **Completed**
+- [ ] Parent **Completed**; `results` contains `child-A`, `child-B`, `child-C`
+
+---
+
+## Scenario 13i: One iteration of a multi-instance sub-process fails
+
+Deploy `parallel-subprocess-one-fails.bpmn`: same as 13g, but the body divides by zero for item `B`, and an error boundary `miError` is attached to the MI host. Automated by `MultiInstanceScopeTests.ParallelMultiInstanceSubProcess_OneIterationFails_HostFailsAndErrorBoundaryCatches`.
+
+### Expected
+- [ ] Instance **Completed** via `miError` → `errorHandler` → `errorEnd`; `end` NOT completed
+- [ ] Exactly one `processItem` iteration has error code **500**
+- [ ] No active activities remain (siblings cancelled or finished)
+- [ ] Variables: `errorHandled` = **true**

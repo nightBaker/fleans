@@ -1,0 +1,206 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Plugin-author NuGet stack",
+    "subtitle": "Strictly layered packages; your worker host joins the engine cluster via Redis",
+    "quality_profile": "showcase",
+    "animation": "none",
+    "legend": {
+      "entries": {
+        "frontend": {
+          "label": "Your package"
+        },
+        "backend": {
+          "label": "Fleans package / silo"
+        },
+        "database": {
+          "label": "Cluster store"
+        },
+        "external": {
+          "label": "Third-party package"
+        }
+      }
+    }
+  },
+  "components": [
+    {
+      "id": "plugin",
+      "type": "frontend",
+      "label": "Your plugin package",
+      "sublabel": "CustomTaskHandlerBase",
+      "pos": [
+        40,
+        110
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "worker",
+      "type": "backend",
+      "label": "Fleans.Worker",
+      "sublabel": "handler base, placement",
+      "pos": [
+        290,
+        110
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "appabs",
+      "type": "backend",
+      "label": "Application.Abstractions",
+      "sublabel": "grain interfaces",
+      "pos": [
+        540,
+        110
+      ],
+      "size": [
+        180,
+        64
+      ]
+    },
+    {
+      "id": "domabs",
+      "type": "backend",
+      "label": "Domain.Abstractions",
+      "sublabel": "events, mappings",
+      "pos": [
+        800,
+        110
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "tag": "true leaf"
+    },
+    {
+      "id": "orleans",
+      "type": "external",
+      "label": "Microsoft.Orleans.Sdk",
+      "sublabel": "only dependency",
+      "pos": [
+        1050,
+        110
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "host",
+      "type": "backend",
+      "label": "Custom worker host",
+      "sublabel": "Fleans:Role=Worker",
+      "pos": [
+        290,
+        320
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "tag": "template repo"
+    },
+    {
+      "id": "redis",
+      "type": "database",
+      "label": "Redis",
+      "sublabel": "Orleans clustering",
+      "pos": [
+        540,
+        320
+      ],
+      "size": [
+        180,
+        64
+      ]
+    },
+    {
+      "id": "engine",
+      "type": "backend",
+      "label": "Fleans engine silos",
+      "sublabel": "same Orleans cluster",
+      "pos": [
+        800,
+        320
+      ],
+      "size": [
+        170,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "nuget.org",
+      "wraps": [
+        "plugin",
+        "worker",
+        "appabs",
+        "domabs"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "plugin-worker",
+      "from": "plugin",
+      "to": "worker",
+      "label": "refs"
+    },
+    {
+      "id": "worker-appabs",
+      "from": "worker",
+      "to": "appabs"
+    },
+    {
+      "id": "appabs-domabs",
+      "from": "appabs",
+      "to": "domabs"
+    },
+    {
+      "id": "domabs-orleans",
+      "from": "domabs",
+      "to": "orleans",
+      "variant": "dashed"
+    },
+    {
+      "id": "host-worker",
+      "from": "host",
+      "to": "worker",
+      "label": "PackageReference",
+      "variant": "emphasis",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "host-plugin",
+      "from": "host",
+      "to": "plugin",
+      "fromSide": "left",
+      "toSide": "bottom"
+    },
+    {
+      "id": "host-redis",
+      "from": "host",
+      "to": "redis",
+      "label": "joins",
+      "variant": "emphasis"
+    },
+    {
+      "id": "redis-engine",
+      "from": "redis",
+      "to": "engine"
+    }
+  ]
+}
