@@ -218,14 +218,11 @@ public class MultipleEventTests : WorkflowTestBase
         var throwerSnap = await QueryService.GetStateSnapshot(thrower.GetPrimaryKey());
         Assert.IsTrue(throwerSnap!.IsCompleted, "Thrower workflow should be completed");
 
-        // Wait for signal delivery propagation
-        await Task.Delay(500);
-
-        // Both subscribers should be completed
-        var finalSnapB = await QueryService.GetStateSnapshot(instanceB.GetPrimaryKey());
-        Assert.IsTrue(finalSnapB!.IsCompleted, "Subscriber B should be completed after sig1 broadcast");
-        var finalSnapC = await QueryService.GetStateSnapshot(instanceC.GetPrimaryKey());
-        Assert.IsTrue(finalSnapC!.IsCompleted, "Subscriber C should be completed after sig2 broadcast");
+        // Both subscribers should complete once signal delivery propagates
+        var finalSnapB = await WaitForCondition(instanceB.GetPrimaryKey(), s => s.IsCompleted);
+        Assert.IsTrue(finalSnapB.IsCompleted, "Subscriber B should be completed after sig1 broadcast");
+        var finalSnapC = await WaitForCondition(instanceC.GetPrimaryKey(), s => s.IsCompleted);
+        Assert.IsTrue(finalSnapC.IsCompleted, "Subscriber C should be completed after sig2 broadcast");
     }
 
     [TestMethod]
