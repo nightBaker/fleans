@@ -11,7 +11,7 @@ propagation), see [`docs/plans/2026-02-08-structured-workflow-logging.md`](../pl
 
 | Range | Class | Notes |
 |-------|-------|-------|
-| 1000–1199 | `WorkflowInstance` | Sub-ranges: 1066 UserTaskClaim rejection (Warning); 1070–1079 pending events / event sub-processes; 1078 root-scope listeners; 1080–1089 complex gateway; 1090–1099 escalation; 1100–1109 transaction sub-process; 1110–1119 compensation |
+| 1000–1199 | `WorkflowInstance` | Sub-ranges: 1066 UserTaskClaim rejection (Warning); 1070–1079 pending events / event sub-processes; 1078 root-scope listeners; 1080–1089 complex gateway; 1090–1099 escalation; 1100–1109 transaction sub-process; 1110–1119 compensation; 1120 workflow failed by unhandled activity failure (Error, #762) |
 | 2000–2099 | `ActivityInstance` | |
 | 3000–3099 | `WorkflowInstanceState` | Includes 3030–3032 escalation warnings |
 | 4000–4099 | Event handlers | `Fleans.Application/Events/Handlers/*` |

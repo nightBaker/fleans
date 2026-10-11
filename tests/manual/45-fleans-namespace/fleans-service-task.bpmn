@@ -9,7 +9,7 @@
     <bpmn:startEvent id="start" />
 
     <bpmn:scriptTask id="seed" scriptFormat="csharp">
-      <bpmn:script>_context.items = new[] { 1, 2, 3 };</bpmn:script>
+      <bpmn:script>_context.items = new List&lt;object&gt; { 1, 2, 3 }</bpmn:script>
     </bpmn:scriptTask>
 
     <!-- Service task uses fleans:taskDefinition + fleans:ioMapping (the new shape). -->

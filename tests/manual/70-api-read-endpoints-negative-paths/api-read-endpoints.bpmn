@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Fixture for plan 69: a process that parks on an unregistered custom task so
+<!-- Fixture for plan 70: a process that parks on an unregistered custom task so
      instances stay running until complete-activity is called. -->
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
                   xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"

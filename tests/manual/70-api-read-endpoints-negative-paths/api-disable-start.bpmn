@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Fixture for plan 69: a trivial process whose key is disabled to verify that
+<!-- Fixture for plan 70: a trivial process whose key is disabled to verify that
      POST /Execution/start rejects a disabled process. Own key so disabling it can't
      affect any other spec. -->
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"

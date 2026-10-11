@@ -25,12 +25,11 @@ public class RedisAndNamespaceSmokeTests : WorkflowE2ETestBase
         Assert.IsFalse(state.IsCancelled);
     }
 
-    // TODO: workflow stalls after `seed` with Active=[] — `ct1` (`<bpmn:serviceTask>`
-    // with `<fleans:taskDefinition type="stub-task" />`) is never activated. The engine
-    // appears to silently drop the serviceTask when only the fleans namespace shape is
-    // present (zeebe variant is parsed cleanly per plan #37). Pending engine investigation.
+    // #762: the fixture's `seed` script used `new[] { 1, 2, 3 }`, which DynamicExpresso cannot
+    // parse, so `seed` failed and, with no error handler, the instance was left with no
+    // active activities while neither completed nor failed. The fixture now uses
+    // `new List<object> { ... }`, and the engine fails such instances visibly (IsFailed).
     [TestMethod]
-    [Ignore("fleans:taskDefinition serviceTask never activates after upstream seed task; ct1 silently dropped. Pending engine investigation.")]
     public async Task FleansNamespace_ServiceTaskDeploysAndCompletes()
     {
         var xml = BpmnFixtureLoader.Load("45-fleans-namespace", "fleans-service-task.bpmn");
@@ -55,5 +54,12 @@ public class RedisAndNamespaceSmokeTests : WorkflowE2ETestBase
             timeout: TimeSpan.FromSeconds(20));
         Assert.IsTrue(state.IsCompleted);
         Assert.IsFalse(state.IsCancelled);
+        Assert.IsFalse(state.IsFailed);
+        state.AssertCompletedActivities("start", "seed", "ct1", "iterate", "end");
+        // The fleans:-namespaced multi-instance attributes were honoured: one iteration per item.
+        Assert.IsTrue(state.TryGetVariable("doubled_results", out var doubled),
+            "fleans:outputCollection should produce 'doubled_results'.");
+        foreach (var expected in new[] { "2", "4", "6" })
+            StringAssert.Contains(doubled, expected);
     }
 }

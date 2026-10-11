@@ -33,6 +33,7 @@
    ```
    GET /Instances/{workflowInstanceId}/state   → `review-task` in completedActivities with errorState.code = the code you sent
    ```
+   With no boundary attached, the failed task was the only live token, so the instance itself is terminated as failed (#762): `isFailed: true`, `isCompleted: true`, red **Failed** badge in the Web UI.
 
 ## Scenario: Cancel a user task
 

@@ -181,6 +181,14 @@ public partial class WorkflowInstance
         var deferredEffects = _execution!.TryDeferredWorkflowCompletion();
         if (deferredEffects.Count > 0)
             await PerformEffects(deferredEffects);
+
+        // Stalled-by-failure termination (#762): if an unhandled activity failure consumed the
+        // last live token, fail the instance visibly instead of leaving it neither active,
+        // completed, nor failed. Runs after deferred completion so a completed root end event
+        // still wins. The WorkflowFailed event is logged via LogEvent → LogWorkflowFailed.
+        var stalledEffects = _execution.TryFailStalledWorkflow();
+        if (stalledEffects.Count > 0)
+            await PerformEffects(stalledEffects);
     }
 
     /// <summary>
@@ -789,6 +797,10 @@ public partial class WorkflowInstance
             case WorkflowCancelled wfCancelled:
                 LogWorkflowCancelled(wfCancelled.Reason);
                 FleansDiagnostics.OnWorkflowCancelled();
+                break;
+            case WorkflowFailed wfFailed:
+                LogWorkflowFailed(wfFailed.FailedActivityId, wfFailed.FailedActivityInstanceId, wfFailed.ErrorCode, wfFailed.ErrorMessage);
+                FleansDiagnostics.OnWorkflowFailed();
                 break;
             case EscalationUncaughtRaised escUncaught:
                 LogEscalationUncaught(escUncaught.EscalationCode, escUncaught.SourceActivityId);
