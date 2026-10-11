@@ -5,7 +5,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Fleans.E2E.Tests.Specs;
 
-// Ports tests/manual/70-api-read-endpoints-negative-paths/test-plan.md (Definitions section)
+// Ports tests/manual/70-api-read-endpoints-negative-paths/ — Definitions section (manual plan retired — automated here)
 // Covers DefinitionsController: GET list, GET {key}/instances, GET {key}/{version}/instances,
 // and the deploy negative paths (malformed / unsupported BPMN, empty body).
 [TestClass]

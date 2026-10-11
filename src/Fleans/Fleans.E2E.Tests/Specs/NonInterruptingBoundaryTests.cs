@@ -4,7 +4,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Fleans.E2E.Tests.Specs;
 
-// Ports tests/manual/15-non-interrupting-boundaries/test-plan.md
+// Ports tests/manual/15-non-interrupting-boundaries/ (manual plan retired — automated here)
 [TestClass]
 [TestCategory("E2E")]
 public class NonInterruptingBoundaryTests : WorkflowE2ETestBase

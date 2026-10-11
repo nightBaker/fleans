@@ -38,7 +38,7 @@ same event stream, same overall lifecycle. Use it to:
 - Compose multi-step compensation (paired with a transaction).
 
 Fixture: `tests/manual/07-subprocess/embedded-subprocess.bpmn` —
-test plan in `tests/manual/07-subprocess/test-plan.md`.
+exercised by the `SubprocessTests` E2E spec.
 
 ```xml
 <bpmn:subProcess id="risk-check">
@@ -71,8 +71,8 @@ variables back into the parent.
 </figure>
 
 Fixture: `tests/manual/06-call-activity/parent-process.bpmn` (parent) and
-`tests/manual/06-call-activity/child-process.bpmn` (child) — test plan in
-`tests/manual/06-call-activity/test-plan.md`.
+`tests/manual/06-call-activity/child-process.bpmn` (child) — exercised by the
+`CallActivityTests` E2E spec.
 
 ### Variable mapping syntax — bare `<inputMapping>` / `<outputMapping>` only
 

@@ -5,7 +5,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Fleans.E2E.Tests.Specs;
 
-// Ports tests/manual/72-definition-versioning/test-plan.md
+// Ports tests/manual/72-definition-versioning/ (manual plan retired — automated here)
 //
 // The E2E stack persists to a shared SQLite file that survives across runs, so every test
 // rewrites the fixture process ids with a per-run suffix. That keeps deployed versions

@@ -4,7 +4,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Fleans.E2E.Tests.Specs;
 
-// Ports tests/manual/11-error-boundary/test-plan.md (Scenario B — error boundary on a script task)
+// Ports tests/manual/11-error-boundary/ (manual plan retired — automated here) (Scenario B — error boundary on a script task)
 [TestClass]
 [TestCategory("E2E")]
 public class ErrorBoundaryOnTaskTests : WorkflowE2ETestBase

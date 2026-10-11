@@ -4,7 +4,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Fleans.E2E.Tests.Specs;
 
-// Ports tests/manual/17-signal-start-event/test-plan.md
+// Ports tests/manual/17-signal-start-event/ (manual plan retired — automated here)
 [TestClass]
 [TestCategory("E2E")]
 public class SignalStartEventTests : WorkflowE2ETestBase

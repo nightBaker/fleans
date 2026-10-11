@@ -4,7 +4,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Fleans.E2E.Tests.Specs;
 
-// Ports tests/manual/07-subprocess/test-plan.md
+// Ports tests/manual/07-subprocess/ (manual plan retired — automated here)
 [TestClass]
 [TestCategory("E2E")]
 public class SubprocessTests : WorkflowE2ETestBase

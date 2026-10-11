@@ -9,7 +9,7 @@ namespace Fleans.E2E.Tests.Specs;
 [TestCategory("E2E")]
 public class EventSubprocessTests : WorkflowE2ETestBase
 {
-    // tests/manual/19-event-subprocess-error/test-plan.md
+    // tests/manual/19-event-subprocess-error/ (manual plan retired — automated here)
     [TestMethod]
     public async Task ErrorEventSubprocess_CatchesUnhandledException_HandlerRuns()
     {
@@ -29,7 +29,7 @@ public class EventSubprocessTests : WorkflowE2ETestBase
         Assert.IsNotNull(failing.ErrorState, "failingTask must carry an ErrorState.");
     }
 
-    // tests/manual/20-event-subprocess-timer/test-plan.md
+    // tests/manual/20-event-subprocess-timer/ (manual plan retired — automated here)
     [TestMethod]
     public async Task TimerEventSubprocess_FiresAfterDelay_CancelsUserTask_HandlerRuns()
     {
@@ -70,7 +70,7 @@ public class EventSubprocessTests : WorkflowE2ETestBase
         state.AssertNotCompleted("normalEnd");
     }
 
-    // tests/manual/22-event-subprocess-signal/test-plan.md
+    // tests/manual/22-event-subprocess-signal/ (manual plan retired — automated here)
     [TestMethod]
     public async Task SignalEventSubprocess_BroadcastInterruptsMultipleInstances()
     {
@@ -101,7 +101,7 @@ public class EventSubprocessTests : WorkflowE2ETestBase
         }
     }
 
-    // tests/manual/23-event-subprocess-non-interrupting/test-plan.md
+    // tests/manual/23-event-subprocess-non-interrupting/ (manual plan retired — automated here)
     // The full plan claims parentTask via UI completion to terminate normally — we don't
     // automate user-task UI claim yet, so this verifies only the parallel-handler step.
     [TestMethod]

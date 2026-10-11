@@ -129,7 +129,6 @@ public class DeferredManualPlans : WorkflowE2ETestBase_None
     [Ignore("Needs EditorPage POM + custom-task output mapping panel.")]
     public void Plan59_CustomTaskOutputMappingEditor() { }
 
-    // tests/manual/45-user-task-fail-cancel/test-plan.md and
     // tests/manual/61-usertask-group-claim/test-plan.md — automated in UserTaskLifecycleTests
     // (auth-disabled body-groups path). The JWT half of plan 61 (groups resolved from the
     // token's `groups` claim; body-supplied groups ignored, so a spoofing caller gets 409) is

@@ -4,7 +4,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Fleans.E2E.Tests.Specs;
 
-// Ports tests/manual/70-api-read-endpoints-negative-paths/test-plan.md (Custom-task catalog section)
+// Ports tests/manual/70-api-read-endpoints-negative-paths/ — Custom-task catalog section (manual plan retired — automated here)
 // The engine-bundled RestCaller plugin ("rest-call") registers itself in the catalog on silo
 // startup, so it is always present in the Aspire test cluster.
 [TestClass]

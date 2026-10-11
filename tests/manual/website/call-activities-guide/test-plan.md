@@ -98,7 +98,7 @@ and the drift-guard line ranges still match the current source SHA.
    guide's *Error propagation* section states that an unhandled child error
    is re-raised on the parent call activity and caught by its error
    boundary — the behaviour asserted by
-   `tests/manual/11-error-boundary/test-plan.md` (parent **Completed** via
+   `ErrorBoundaryTests` (E2E spec, fixtures in `tests/manual/11-error-boundary/`) (parent **Completed** via
    `errorHandler`, not stuck Running).
 
 9. **Drift-guard freshness.** Open
@@ -165,7 +165,7 @@ and the drift-guard line ranges still match the current source SHA.
 - [ ] Fixture-derived `<callActivity>` snippet appears verbatim from
       `tests/manual/06-call-activity/parent-process.bpmn`.
 - [ ] *Error propagation* section matches the outcome asserted by
-      `tests/manual/11-error-boundary/test-plan.md`.
+      `ErrorBoundaryTests` (E2E spec, fixtures in `tests/manual/11-error-boundary/`).
 - [ ] Every drift-guard pin
       (`BpmnConverter.cs:601-635,616-625,1286-1322`,
       `WorkflowLifecycleEffectHandler.cs:61`,

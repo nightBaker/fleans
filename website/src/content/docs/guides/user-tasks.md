@@ -235,7 +235,7 @@ curl -X POST https://localhost:7140/UserTasks/{activityInstanceId}/fail \
 - **400** if `ErrorMessage` is missing or empty.
 - **404** on unknown task.
 
-Regression home: [`tests/manual/45-user-task-fail-cancel/test-plan.md`](https://github.com/nightBaker/fleans/blob/main/tests/manual/45-user-task-fail-cancel/test-plan.md).
+Regression home: [`UserTaskLifecycleTests`](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.E2E.Tests/Specs/UserTaskLifecycleTests.cs) (E2E).
 
 ### Cancellation: `POST /UserTasks/{id}/cancel`
 

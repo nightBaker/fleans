@@ -4,7 +4,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Fleans.E2E.Tests.Specs;
 
-// Ports tests/manual/11-error-boundary/test-plan.md
+// Ports tests/manual/11-error-boundary/ (manual plan retired — automated here)
 [TestClass]
 [TestCategory("E2E")]
 public class ErrorBoundaryTests : WorkflowE2ETestBase

@@ -62,7 +62,7 @@ Per BPMN spec, error boundaries are **always interrupting** — Fleans rejects
 disables the *Interrupting* checkbox for them.
 
 Full fixture: `tests/manual/11-error-boundary/error-on-call-activity.bpmn` —
-deploy steps in `tests/manual/11-error-boundary/test-plan.md`.
+exercised by the `ErrorBoundaryTests` E2E spec.
 
 The same boundary works on a `callActivity`: an unhandled error in the child
 process is propagated to the parent call activity, and its error boundary routes
