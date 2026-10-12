@@ -110,9 +110,10 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
 
         var workflowInstance = _grainFactory.GetGrain<IWorkflowInstanceCallback>(item.WorkflowInstanceId);
 
-        // Claim check: the stream is at-least-once, so a redelivered event can reach a
-        // handler (on this or another worker silo) after the activity already finished.
-        // Skip it so the plugin's side effects never run twice for one activity instance.
+        // Pre-execution activity check (a read, not a lock): the stream is at-least-once, so a
+        // redelivered event can reach a handler after the activity already finished — skip it.
+        // It does not stop a re-run after an interrupted execution; plugins still need an
+        // idempotency key (context.ActivityInstanceId) for external side effects.
         // Deliberately outside the try below: the plugin has not run yet, so a failure here
         // (core silo restarting, call timeout) must propagate for stream redelivery rather
         // than fail the business activity.

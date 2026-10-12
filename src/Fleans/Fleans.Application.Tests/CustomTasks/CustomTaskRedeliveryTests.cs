@@ -10,7 +10,7 @@ namespace Fleans.Application.Tests.CustomTasks;
 /// <summary>
 /// Many worker silos may consume the custom-task streams in parallel and the stream is
 /// at-least-once, so the same <see cref="ExecuteCustomTaskEvent"/> can be delivered more
-/// than once. The plugin must run at most once per activity instance.
+/// than once. A delivery that arrives after the activity finished must not re-run the plugin.
 /// </summary>
 [TestClass]
 [DoNotParallelize]
@@ -71,12 +71,16 @@ public class CustomTaskRedeliveryTests : WorkflowTestBase
     }
 
     [TestMethod]
-    public async Task Many_workers_run_tasks_in_parallel_and_never_execute_the_same_task_twice()
+    public async Task Many_silos_run_distinct_instances_in_parallel_and_skip_queued_duplicates()
     {
         // Arrange — three worker silos; N instances each with one gated custom task.
+        // Scope: parallelism across instances + duplicates queued behind an in-flight run on the
+        // same activation. A race between two activations of one handler (possible briefly during
+        // membership changes) is not reproducible here and is not covered — see invariants.md guard 8.
         TestGatedCustomTaskHandler.Reset();
         CapturedLogEvents.Clear();
         await Cluster.StartAdditionalSiloAsync();
+        await WaitForActiveSilos(3);
         const int instanceCount = 30;
         var start = new StartEvent("start");
         var ct1 = new CustomTaskActivity("ct1", "test-gated", null, null);
@@ -150,5 +154,17 @@ public class CustomTaskRedeliveryTests : WorkflowTestBase
             "No task may be executed by two workers.");
         Assert.IsTrue(executions.Select(e => e.SiloName).Distinct().Count() > 1,
             "Tasks must be distributed across more than one worker silo.");
+    }
+
+    private async Task WaitForActiveSilos(int count)
+    {
+        var management = Cluster.GrainFactory.GetGrain<IManagementGrain>(0);
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        while ((await management.GetHosts(onlyActive: true)).Count < count)
+        {
+            if (DateTime.UtcNow > deadline)
+                Assert.Fail($"Cluster did not reach {count} active silos.");
+            await Task.Delay(100);
+        }
     }
 }
