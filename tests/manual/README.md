@@ -131,6 +131,8 @@ Each numbered entry below is one regression "step". For each one, follow the lin
 
 71. **Unhandled activity failure fails the instance** — `71-unhandled-failure-fails-instance/test-plan.md` (`unhandled-script-failure.bpmn`, `handled-script-failure.bpmn`). Verifies #762: when an activity fails with no error boundary / error event sub-process and that failure leaves the instance with no active activities, the instance terminates as **Failed** (`isFailed=true`, `isCompleted=true`, status badge *Failed*, EventId 1120 Error log, `fleans.workflow.terminated{result="failed"}`) instead of silently sitting in *Running* with no active activities. Handled failures (error boundary) still complete normally. Automated coverage: `Fleans.Application.Tests/UnhandledActivityFailureTests.cs`.
 
+73. **Kafka DLQ (dead-letter queue)** — `73-kafka-dlq/test-plan.md`. Verifies #686: poison Kafka messages are routed to a `-dlq` suffixed topic after `MaxConsumerRetries` failures (`EnableDeadLetterQueue=true`). Checks: DLQ topics auto-created at startup; silo log EventId sequence 12006 × (retries-1) → 12012 → 12014; raw bytes + diagnostic headers present in `-dlq` topic; source offset committed past poison offset so silo restart does NOT re-deliver; DLQ disabled path (default `false`) emits no 12xxx events.
+
 ## Website regression suite
 
 Website-specific manual tests live under `website/`. These run in a local dev server, not against the .NET stack.
