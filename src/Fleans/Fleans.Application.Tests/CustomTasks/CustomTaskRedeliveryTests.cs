@@ -59,7 +59,7 @@ public class CustomTaskRedeliveryTests : WorkflowTestBase
             InputMappings: new List<InputMapping>(),
             OutputMappings: new List<OutputMapping>(),
             VariablesId: ct1Entry.VariablesStateId));
-        await CapturedLogEvents.WaitFor(SkippedInactiveActivityEventId, 1);
+        await CapturedLogEvents.WaitFor<TestNoOpCustomTaskHandlerA>(SkippedInactiveActivityEventId, 1);
 
         // Assert — the duplicate was skipped; the plugin ran exactly once.
         Assert.AreEqual(1, Volatile.Read(ref TestNoOpCustomTaskHandlerA.InvocationCount),
@@ -139,7 +139,7 @@ public class CustomTaskRedeliveryTests : WorkflowTestBase
                 var done = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted);
                 Assert.IsFalse(done.IsFailed);
             }
-            await CapturedLogEvents.WaitFor(SkippedInactiveActivityEventId, instanceCount);
+            await CapturedLogEvents.WaitFor<TestGatedCustomTaskHandler>(SkippedInactiveActivityEventId, instanceCount);
         }
         finally
         {
@@ -155,6 +155,87 @@ public class CustomTaskRedeliveryTests : WorkflowTestBase
         Assert.IsTrue(executions.Select(e => e.SiloName).Distinct().Count() > 1,
             "Tasks must be distributed across more than one worker silo.");
     }
+
+    [TestMethod]
+    public async Task Redelivered_event_for_failed_activity_does_not_rerun_plugin()
+    {
+        // Arrange — start → ct1 (plugin always throws) → end; the activity fails.
+        Interlocked.Exchange(ref TestThrowingCustomTaskHandler.InvocationCount, 0);
+        var workflow = SingleCustomTaskWorkflow("custom-task-redelivery-failed", "test-throwing");
+        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await instance.SetWorkflow(workflow);
+        await instance.StartWorkflow();
+        var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsFailed);
+        Assert.AreEqual(1, Volatile.Read(ref TestThrowingCustomTaskHandler.InvocationCount));
+        var ct1Entry = snapshot.CompletedActivities.Single(a => a.ActivityId == "ct1");
+
+        // Act — redeliver the same event after the failure.
+        CapturedLogEvents.Clear();
+        await PublishCustomTaskEvent(instance.GetPrimaryKey(), workflow.WorkflowId, "test-throwing",
+            ct1Entry.ActivityInstanceId, ct1Entry.VariablesStateId);
+        await CapturedLogEvents.WaitFor<TestThrowingCustomTaskHandler>(SkippedInactiveActivityEventId, 1);
+
+        // Assert — skipped: the plugin did not run again and the instance stays failed.
+        Assert.AreEqual(1, Volatile.Read(ref TestThrowingCustomTaskHandler.InvocationCount),
+            "A redelivered event for an already-failed activity must not re-execute the plugin.");
+        var after = await QueryService.GetStateSnapshot(instance.GetPrimaryKey());
+        Assert.IsNotNull(after);
+        Assert.IsTrue(after.IsFailed);
+    }
+
+    [TestMethod]
+    public async Task Deterministic_activity_check_error_fails_the_activity_without_running_plugin()
+    {
+        // Arrange — ct1 uses a task type nobody handles, so it stays Active.
+        Interlocked.Exchange(ref TestNoOpCustomTaskHandlerA.InvocationCount, 0);
+        var workflow = SingleCustomTaskWorkflow("custom-task-bad-variables", "unhandled-type");
+        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await instance.SetWorkflow(workflow);
+        await instance.StartWorkflow();
+        var snapshot = await WaitForCondition(instance.GetPrimaryKey(),
+            s => s.ActiveActivities.Any(a => a.ActivityId == "ct1"));
+        var ct1Entry = snapshot.ActiveActivities.Single(a => a.ActivityId == "ct1");
+
+        // Act — an event for that active activity whose variable scope does not exist: the
+        // activity check throws a deterministic error that redelivery could never fix.
+        await PublishCustomTaskEvent(instance.GetPrimaryKey(), workflow.WorkflowId, "test-no-op-a",
+            ct1Entry.ActivityInstanceId, variablesId: Guid.NewGuid());
+
+        // Assert — the activity fails visibly instead of staying Active; the plugin never ran.
+        var after = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsFailed);
+        Assert.IsFalse(after.ActiveActivities.Any(a => a.ActivityId == "ct1"));
+        Assert.AreEqual(0, Volatile.Read(ref TestNoOpCustomTaskHandlerA.InvocationCount));
+    }
+
+    private static WorkflowDefinition SingleCustomTaskWorkflow(string workflowId, string taskType)
+    {
+        var start = new StartEvent("start");
+        var ct1 = new CustomTaskActivity("ct1", taskType, null, null);
+        var end = new EndEvent("end");
+        return new WorkflowDefinition
+        {
+            WorkflowId = workflowId,
+            Activities = [start, ct1, end],
+            SequenceFlows =
+            [
+                new SequenceFlow("f1", start, ct1),
+                new SequenceFlow("f2", ct1, end)
+            ]
+        };
+    }
+
+    private Task PublishCustomTaskEvent(
+        Guid workflowInstanceId, string workflowId, string taskType, Guid activityInstanceId, Guid variablesId)
+        => Cluster.GrainFactory.GetGrain<IEventPublisher>(0).Publish(new ExecuteCustomTaskEvent(
+            WorkflowInstanceId: workflowInstanceId,
+            WorkflowId: workflowId,
+            ProcessDefinitionId: null,
+            ActivityInstanceId: activityInstanceId,
+            ActivityId: "ct1",
+            TaskType: taskType,
+            InputMappings: new List<InputMapping>(),
+            OutputMappings: new List<OutputMapping>(),
+            VariablesId: variablesId));
 
     private async Task WaitForActiveSilos(int count)
     {

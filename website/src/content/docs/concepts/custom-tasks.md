@@ -78,6 +78,7 @@ Targets must be valid identifiers (`^[a-zA-Z_][a-zA-Z0-9_]*$`). The target `__re
 - If no boundary error event or error event sub-process catches the failure and it leaves the instance with no active activities, the **instance** terminates as Failed (`isFailed: true` on the state snapshot) — see [Unhandled errors fail the instance](/fleans/guides/error-handling/#unhandled-errors-fail-the-instance).
 - A plugin that is never registered does **not** fail the activity: with nobody subscribed to the per-type stream, the activity stays Active until a plugin for that `type` comes online or someone calls `POST /Execution/complete-activity`.
 - If `FailActivity` itself fails (e.g. the workflow grain is unavailable), the handler rethrows so the Orleans stream provider retries — domain idempotency guards handle the duplicate.
+- A plugin that succeeded is never recorded as failed because reporting its result failed: an infrastructure failure of `CompleteActivity` is rethrown for redelivery (logged as EventId 4039), which runs the plugin again (see [Running many workers](#running-many-workers)).
 
 ## Running many workers
 
@@ -86,8 +87,8 @@ You can run any number of worker / plugin-host replicas side by side; they proce
 - Events are routed by workflow instance: each instance's custom tasks go to a single handler activation on one silo at a time, while different instances spread across all replicas.
 - Before calling your `ExecuteAsync`, the handler reads the activity's variables from the workflow instance, and gets them only while that activity instance is still active. A redelivered or duplicate event for an activity that already completed or failed is skipped (logged as EventId 4038), so a finished task is never executed again.
 - A duplicate that arrives while the task is still running waits for the in-flight run on the same activation and is then skipped.
-- If that read fails (for example the engine silo is restarting), your plugin is not called and the activity is not failed: the event is redelivered and retried.
-- **Your plugin can still run more than once for the same task** when it is interrupted mid-run: a worker that dies, or a handler activation that is deactivated (graceful shutdown, rebalancing) while `ExecuteAsync` runs. The event is redelivered and another replica runs the task again, and a plugin that ignores the `CancellationToken` may even keep running on the old silo in parallel. Honour the token, and use `context.ActivityInstanceId` as an idempotency key for external calls. For the built-in `rest-call` task, set `idempotencyKeyHeader` so the target service can drop the repeat.
+- If that read fails for an infrastructure reason (the engine silo is restarting, the call times out), your plugin is not called and the activity is not failed: the event is redelivered. Any other error there (for example a missing variable scope) fails the activity, since redelivery could not fix it.
+- **Your plugin can still run more than once for the same task**: when it is interrupted mid-run (a worker that dies, or a handler activation deactivated by graceful shutdown or rebalancing while `ExecuteAsync` runs); when it succeeded but reporting the result to the engine failed for an infrastructure reason; and, rarely, when a cluster membership change briefly leaves two handler activations that both see the task as active (the check is a read, not a lock). The event is redelivered and the task runs again, and a plugin that ignores the `CancellationToken` may even keep running on the old silo in parallel. Honour the token, and use `context.ActivityInstanceId` as an idempotency key for external calls. For the built-in `rest-call` task, set `idempotencyKeyHeader` so the target service can drop the repeat.
 
 ## Catalog & liveness
 
@@ -188,7 +189,7 @@ Plugin authors should also know that an `OperationCanceledException` whose `Canc
 
 ## Upgrade note: upgrade the engine before workers
 
-Custom-task handlers call the workflow instance's `GetVariablesIfActive` before running a plugin. An engine silo from a release without that method cannot answer it, so during a rolling upgrade **roll the engine (core) silos first, then worker / plugin hosts**. If a newer worker meets an older engine anyway, its custom tasks are not failed: the stream provider redelivers them, but only within its redelivery window, so tasks still unanswered after that stay Active (stalled) until completed manually via `POST /Execution/complete-activity`.
+Custom-task handlers call the workflow instance's `GetVariablesIfActive` before running a plugin. An engine silo from a release without that method cannot answer it, so during a rolling upgrade **roll the engine (core) silos first, then worker / plugin hosts**. If a newer worker meets an older engine anyway, its custom tasks do not run until the engine is upgraded: depending on how the older engine rejects the call they either fail or are redelivered until the stream provider's redelivery window ends and then stay Active (complete them via `POST /Execution/complete-activity`).
 
 ## Upgrade note: per-type stream namespaces
 
