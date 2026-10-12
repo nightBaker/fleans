@@ -31,3 +31,12 @@ Conventions:
 - Pages that import components must use the `.mdx` extension. Add `import { Tabs, TabItem } from '@astrojs/starlight/components';` after the frontmatter.
 - Set a `syncKey` so the tool choice persists across pages (e.g. `<Tabs syncKey="release-download-tool">` on every gh-vs-curl block, `syncKey="package-manager"` on every npm-vs-yarn block).
 - **Don't use tabs for non-interchangeable content** — dev vs prod configs, SQLite vs PostgreSQL, compose vs Helm are *different workflows* the reader needs to see both of, not a one-of-two choice.
+
+## Maintaining `CLAUDE.md`
+
+`CLAUDE.md` is loaded into every agent turn, so every line costs on every turn.
+
+- **Add a rule** only after burning >1h on something the rule would have prevented. State the rule, then a short *Why* and *How to apply*.
+- **Prune as you add.** Each new line should displace or shorten another. Long-form patterns go to `docs/conventions/`, operational procedures to `docs/runbooks/`; `CLAUDE.md` keeps a one-line summary plus a pointer whose wording says *when* to read the target.
+- **Leave lookups to the environment** — file paths, route tables, BPMN element lists, EventId ranges live in `README.md`, the code, or design docs.
+- **Keep headings other tooling greps for**: `## Regression tests` (read by the `manual-regression-testing` skill) and the "Documentation scope split" phrase (cited by `.github/workflows/website-pin-guard.yml`).
