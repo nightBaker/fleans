@@ -39,12 +39,12 @@ public class KafkaStreamingOptionsTests
     }
 
     [TestMethod]
-    public void MaxConsumerRetries_default_is_3()
+    public void DeliveryRetryWindow_default_is_null()
     {
         var options = new KafkaStreamingOptions();
 
-        Assert.AreEqual(3, options.MaxConsumerRetries,
-            "3 retries before DLQ routing is the baseline; operators tune per-stream.");
+        Assert.IsNull(options.DeliveryRetryWindow,
+            "null keeps Orleans' MaxEventDeliveryTime default (1 minute) — no behaviour change on upgrade.");
     }
 
     [TestMethod]

@@ -13,6 +13,7 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
     private readonly Serializer<KafkaBatchContainer> _serializer;
     private readonly ILogger<KafkaQueueAdapterReceiver> _logger;
     private readonly string _topic;
+    private readonly KafkaDeadLetterPublisher? _deadLetters;
 
     private IConsumer<byte[], byte[]>? _consumer;
     private long _lastDeliveredOffset = -1;
@@ -21,13 +22,15 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
         QueueId queueId,
         KafkaStreamingOptions options,
         Serializer<KafkaBatchContainer> serializer,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        KafkaDeadLetterPublisher? deadLetters = null)
     {
         _queueId = queueId;
         _options = options;
         _serializer = serializer;
         _logger = loggerFactory.CreateLogger<KafkaQueueAdapterReceiver>();
         _topic = KafkaTopicNaming.TopicForQueue(options, queueId);
+        _deadLetters = deadLetters;
     }
 
     public Task Initialize(TimeSpan timeout)
@@ -59,12 +62,12 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
         Message = "SecurityProtocol={SecurityProtocol} configured without explicit SSL paths — broker certificate will be validated against the OS trust store.")]
     private partial void LogSslNoPathsOsTrustStore(KafkaSecurityProtocol securityProtocol);
 
-    public Task<IList<IBatchContainer>> GetQueueMessagesAsync(int maxCount)
+    public async Task<IList<IBatchContainer>> GetQueueMessagesAsync(int maxCount)
     {
         IList<IBatchContainer> batches = new List<IBatchContainer>();
         if (_consumer is null)
         {
-            return Task.FromResult(batches);
+            return batches;
         }
 
         var deadline = DateTime.UtcNow + _options.PollTimeout;
@@ -98,10 +101,17 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to deserialize Kafka message at topic={Topic} offset={Offset}", _topic, result.Offset.Value);
+                // Published before the offset is committed (MessagesDeliveredAsync), so the record is never lost silently.
+                if (_deadLetters is not null)
+                {
+                    await _deadLetters.PublishAsync(
+                        _topic, result.Partition.Value, result.Offset.Value, result.Message.Key, result.Message.Value,
+                        KafkaDeadLetterReason.DeserializationFailed, exception: ex).ConfigureAwait(false);
+                }
             }
         }
 
-        return Task.FromResult(batches);
+        return batches;
     }
 
     public Task MessagesDeliveredAsync(IList<IBatchContainer> messages)

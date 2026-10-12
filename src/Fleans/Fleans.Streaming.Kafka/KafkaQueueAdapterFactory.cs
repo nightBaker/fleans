@@ -23,6 +23,7 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory, IDi
     private readonly HashRingBasedStreamQueueMapper _mapper;
     private readonly IQueueAdapterCache _cache;
     private readonly ConcurrentDictionary<QueueId, Lazy<KafkaDlqFailureHandler>> _dlqHandlers = new();
+    private readonly Lazy<KafkaDeadLetterPublisher> _deadLetters;
     private int _disposed;
 
     public KafkaQueueAdapterFactory(
@@ -43,6 +44,7 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory, IDi
             KafkaTopicNaming.MapperPrefix(options));
 
         _cache = new SimpleQueueAdapterCache(cacheOptions, name, loggerFactory);
+        _deadLetters = new Lazy<KafkaDeadLetterPublisher>(() => new KafkaDeadLetterPublisher(options, loggerFactory));
     }
 
     internal static void ValidateOptions(KafkaStreamingOptions opts)
@@ -51,6 +53,13 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory, IDi
             throw new InvalidOperationException(
                 $"Kafka idempotent producer requires Acks=All (configured: Acks={opts.Acks}). " +
                 "Either set Acks=All or set EnableIdempotence=false.");
+        if (opts.DeliveryRetryWindow is { } window && window <= TimeSpan.Zero)
+            throw new InvalidOperationException(
+                $"Kafka DeliveryRetryWindow must be positive (configured: {window}).");
+        if (opts.EnableDeadLetterQueue && string.IsNullOrEmpty(opts.DeadLetterTopicSuffix))
+            throw new InvalidOperationException(
+                "Kafka DeadLetterTopicSuffix must not be empty when EnableDeadLetterQueue=true — " +
+                "the dead-letter topic would be the source topic itself.");
     }
 
     public async Task<IQueueAdapter> CreateAdapter()
@@ -59,7 +68,8 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory, IDi
         if (_options.Acks != KafkaAcks.All)
             LogAcksNotAll(_options.Acks);
         await EnsureTopicsAsync().ConfigureAwait(false);
-        return new KafkaQueueAdapter(_name, _options, _mapper, _serializer, _loggerFactory);
+        return new KafkaQueueAdapter(_name, _options, _mapper, _serializer, _loggerFactory,
+            _options.EnableDeadLetterQueue ? _deadLetters.Value : null);
     }
 
     public IQueueAdapterCache GetQueueAdapterCache() => _cache;
@@ -76,6 +86,7 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory, IDi
                 new KafkaDlqFailureHandler(
                     KafkaTopicNaming.TopicForQueue(_options, id),
                     _options,
+                    _deadLetters.Value,
                     _loggerFactory)));
 
         return Task.FromResult<IStreamFailureHandler>(handler.Value);
@@ -87,6 +98,8 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory, IDi
         foreach (var lazy in _dlqHandlers.Values)
             if (lazy.IsValueCreated)
                 lazy.Value.Dispose();
+        if (_deadLetters.IsValueCreated)
+            _deadLetters.Value.Dispose();
     }
 
     /// <summary>

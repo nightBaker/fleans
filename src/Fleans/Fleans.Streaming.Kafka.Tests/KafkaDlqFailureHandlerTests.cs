@@ -4,116 +4,106 @@ using Orleans.Streams;
 
 namespace Fleans.Streaming.Kafka.Tests;
 
+/// <summary>
+/// Broker-free checks for the DLQ handler. The end-to-end routing (subscriber failure and
+/// deserialization failure → <c>-dlq</c> topic) is covered by
+/// <c>Fleans.Application.Tests.KafkaDlqIntegrationTests</c>.
+/// </summary>
 [TestClass]
 public class KafkaDlqFailureHandlerTests
 {
     [TestMethod]
     public void ShouldFaultSubsriptionOnError_IsFalse()
     {
-        // ShouldFaultSubsriptionOnError = false is the load-bearing invariant:
-        // Orleans keeps the same in-memory batch and increments the failure count
-        // per retry, allowing the handler to count retries and route to DLQ.
-        using var handler = CreateHandler();
+        // false keeps the subscription alive: Orleans moves past the poison record and keeps delivering.
+        using var publisher = CreatePublisher();
+        using var handler = CreateHandler(publisher);
+
         Assert.IsFalse(handler.ShouldFaultSubsriptionOnError);
     }
 
     [TestMethod]
-    public async Task OnSubscriptionFailure_BelowRetryThreshold_DoesNotRoute()
+    public async Task OnSubscriptionFailure_IsLogOnly()
     {
-        using var handler = CreateHandler(maxRetries: 3);
-        var kt = new KafkaSequenceToken(offset: 50, eventIndex: 0, partition: 0);
+        using var publisher = CreatePublisher();
+        using var handler = CreateHandler(publisher);
 
-        // Calls 1 and 2 are below threshold — should return CompletedTask without routing
-        await handler.OnSubscriptionFailure(GuidId.GetNewGuidId(), "provider",
-            StreamId.Create("ns", "id"), kt);
-        await handler.OnSubscriptionFailure(GuidId.GetNewGuidId(), "provider",
-            StreamId.Create("ns", "id"), kt);
-
-        // No exception and no DLQ routing (routing would require a live broker and throw)
-        // If we get here without an exception from Kafka, below-threshold paths returned cleanly.
-    }
-
-    [TestMethod]
-    public async Task OnSubscriptionFailure_AfterThreshold_GuardPreventsSecondRoute()
-    {
-        // After _routedToDlq guard is set, subsequent calls return CompletedTask immediately.
-        // We can verify this by calling with a null sequence token (which hits the guard
-        // and logs, but doesn't throw) on the first call, then a second call returns immediately.
-        using var handler = CreateHandler(maxRetries: 1);
-
-        // First call at threshold with null token → logs MissingSequenceToken, sets guard
-        await handler.OnSubscriptionFailure(GuidId.GetNewGuidId(), "provider",
-            StreamId.Create("ns", "id"), null!);
-
-        // Second call with same key (null token → streamId-based key) → guard hit, returns Task.CompletedTask
-        var result = handler.OnSubscriptionFailure(GuidId.GetNewGuidId(), "provider",
-            StreamId.Create("ns", "id"), null!);
-
-        Assert.IsTrue(result.IsCompleted);
-        Assert.IsFalse(result.IsFaulted);
-    }
-
-    [TestMethod]
-    public async Task OnSubscriptionFailure_NullSequenceToken_LogsAndSkips()
-    {
-        using var handler = CreateHandler(maxRetries: 1);
-
-        // A null token cannot be cast to KafkaSequenceToken — logs 12008 and returns without routing.
-        await handler.OnSubscriptionFailure(GuidId.GetNewGuidId(), "provider",
-            StreamId.Create("ns", "test-null-token"), null!);
-        // No exception — the handler gracefully skips DLQ routing and just logs.
-    }
-
-    [TestMethod]
-    public async Task OnDeliveryFailure_AlwaysReturnsCompleted()
-    {
-        using var handler = CreateHandler();
-
-        // Returns Task (void) — just verify no exception is thrown
-        await handler.OnDeliveryFailure(
-            GuidId.GetNewGuidId(), "provider",
+        // Would block on the unreachable broker if it tried to re-consume or publish.
+        var task = handler.OnSubscriptionFailure(GuidId.GetNewGuidId(), "provider",
             StreamId.Create("ns", "id"), new KafkaSequenceToken(1, 0, 0));
+
+        Assert.IsTrue(task.IsCompletedSuccessfully);
+        await task;
+    }
+
+    [TestMethod]
+    public async Task OnDeliveryFailure_NonKafkaToken_IsDroppedWithoutBrokerCall()
+    {
+        using var publisher = CreatePublisher();
+        using var handler = CreateHandler(publisher);
+
+        var task = handler.OnDeliveryFailure(GuidId.GetNewGuidId(), "provider",
+            StreamId.Create("ns", "id"), null!);
+
+        Assert.IsTrue(task.IsCompletedSuccessfully);
+        await task;
     }
 
     [TestMethod]
     public void Dispose_CalledTwice_IsIdempotent()
     {
-        var handler = CreateHandler();
-        handler.Dispose();
-        handler.Dispose(); // Must not throw
-    }
+        using var publisher = CreatePublisher();
+        var handler = CreateHandler(publisher);
 
-    // ----- Integration tests (require live Kafka broker) -----
+        handler.Dispose();
+        handler.Dispose();
+        publisher.Dispose();
+        publisher.Dispose();
+    }
 
     [TestMethod]
-    [Ignore("Integration test — requires a live Kafka broker. Set KAFKA_BROKERS and remove [Ignore] to run.")]
-    public void CommitOffset_ExplicitOffsetsWithoutAssign_DoesNotThrow()
+    public void ValidateOptions_NonPositiveDeliveryRetryWindow_Throws()
     {
-        var brokers = Environment.GetEnvironmentVariable("KAFKA_BROKERS") ?? "localhost:9092";
-        using var consumer = new Confluent.Kafka.ConsumerBuilder<Confluent.Kafka.Ignore, Confluent.Kafka.Ignore>(
-            new Confluent.Kafka.ConsumerConfig
-            {
-                BootstrapServers = brokers,
-                GroupId = "fleans-test-commit-without-assign",
-                EnableAutoCommit = false,
-            }).Build();
+        var options = new KafkaStreamingOptions { DeliveryRetryWindow = TimeSpan.Zero };
 
-        // Committing explicit offsets without Assign or Subscribe must not throw.
-        // librdkafka sends OffsetCommitRequest with generation_id=-1 directly to the coordinator.
-        var offsets = new[] { new Confluent.Kafka.TopicPartitionOffset("fleans-test-0", 0, new Confluent.Kafka.Offset(1)) };
-        consumer.Commit(offsets); // Must not throw KafkaException
+        Assert.ThrowsExactly<InvalidOperationException>(() => KafkaQueueAdapterFactory.ValidateOptions(options));
     }
 
-    // ----- Helpers -----
+    [TestMethod]
+    public void ValidateOptions_EmptySuffixWithDlqEnabled_Throws()
+    {
+        var options = new KafkaStreamingOptions { EnableDeadLetterQueue = true, DeadLetterTopicSuffix = "" };
 
-    private static KafkaDlqFailureHandler CreateHandler(int maxRetries = 3) =>
-        new("fleans-test-0",
-            new KafkaStreamingOptions
-            {
-                Brokers = "localhost:9092", // not contacted in unit tests
-                ConsumerGroup = "fleans-test",
-                MaxConsumerRetries = maxRetries,
-                EnableDeadLetterQueue = true,
-            },
-            NullLoggerFactory.Instance);
+        Assert.ThrowsExactly<InvalidOperationException>(() => KafkaQueueAdapterFactory.ValidateOptions(options));
+    }
+
+    [TestMethod]
+    public void ValidateOptions_EmptySuffixWithDlqDisabled_DoesNotThrow()
+    {
+        var options = new KafkaStreamingOptions { EnableDeadLetterQueue = false, DeadLetterTopicSuffix = "" };
+
+        KafkaQueueAdapterFactory.ValidateOptions(options);
+    }
+
+    [TestMethod]
+    public void AllExpectedTopics_IncludesDlqTopicsOnlyWhenEnabled()
+    {
+        var disabled = new KafkaStreamingOptions { TopicPrefix = "t-", QueueCount = 2 };
+        var enabled = new KafkaStreamingOptions { TopicPrefix = "t-", QueueCount = 2, EnableDeadLetterQueue = true };
+
+        CollectionAssert.AreEqual(new[] { "t-0", "t-1" }, KafkaTopicNaming.AllExpectedTopics(disabled).ToArray());
+        CollectionAssert.AreEqual(new[] { "t-0", "t-0-dlq", "t-1", "t-1-dlq" }, KafkaTopicNaming.AllExpectedTopics(enabled).ToArray());
+    }
+
+    private static readonly KafkaStreamingOptions Options = new()
+    {
+        Brokers = "localhost:1", // never contacted by these tests
+        ConsumerGroup = "fleans-test",
+        EnableDeadLetterQueue = true,
+    };
+
+    private static KafkaDeadLetterPublisher CreatePublisher() => new(Options, NullLoggerFactory.Instance);
+
+    private static KafkaDlqFailureHandler CreateHandler(KafkaDeadLetterPublisher publisher) =>
+        new("fleans-test-0", Options, publisher, NullLoggerFactory.Instance);
 }

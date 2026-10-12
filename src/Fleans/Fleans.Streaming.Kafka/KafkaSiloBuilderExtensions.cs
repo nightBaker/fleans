@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Orleans.Configuration;
 using Orleans.Hosting;
 using Orleans.Streams;
@@ -27,6 +28,11 @@ public static class KafkaSiloBuilderExtensions
                 b.Configure<SimpleQueueCacheOptions>(_ => { });
                 b.UseConsistentRingQueueBalancer();
                 b.ConfigureStreamPubSub(StreamPubSubType.ExplicitGrainBasedAndImplicit);
+                b.ConfigurePullingAgent(ob => ob.Configure<IOptionsMonitor<KafkaStreamingOptions>>((agent, kafka) =>
+                {
+                    if (kafka.Get(name).DeliveryRetryWindow is { } window)
+                        agent.MaxEventDeliveryTime = window;
+                }));
             });
     }
 }
