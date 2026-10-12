@@ -81,6 +81,23 @@ public class KafkaStreamingOptions
     public TimeSpan AdminTimeout { get; set; } = TimeSpan.FromSeconds(10);
 
     /// <summary>
+    /// Opt-in. When <c>true</c>, records whose subscriber keeps failing past
+    /// <see cref="DeliveryRetryWindow"/> are published to <c>&lt;topic&gt;&lt;DeadLetterTopicSuffix&gt;</c>
+    /// instead of being dropped. Records that cannot be deserialized are only logged, never dead-lettered.
+    /// </summary>
+    public bool EnableDeadLetterQueue { get; set; } = false;
+
+    /// <summary>Suffix appended to each source topic to form its dead-letter topic.</summary>
+    public string DeadLetterTopicSuffix { get; set; } = "-dlq";
+
+    /// <summary>
+    /// How long Orleans keeps retrying delivery of one record to a failing subscriber before giving up
+    /// (maps to <c>StreamPullingAgentOptions.MaxEventDeliveryTime</c>). <c>null</c> keeps the Orleans
+    /// default of 1 minute. The partition is blocked for that subscriber while it retries.
+    /// </summary>
+    public TimeSpan? DeliveryRetryWindow { get; set; }
+
+    /// <summary>
     /// Kafka security protocol. Defaults to <see cref="KafkaSecurityProtocol.Plaintext"/>
     /// for backward compatibility with existing plaintext deployments.
     /// </summary>

@@ -29,6 +29,34 @@ public class KafkaStreamingOptionsTests
     }
 
     [TestMethod]
+    public void EnableDeadLetterQueue_default_is_false()
+    {
+        var options = new KafkaStreamingOptions();
+
+        Assert.IsFalse(options.EnableDeadLetterQueue,
+            "DLQ is opt-in — enabling it by default would create -dlq topics for every " +
+            "existing deployment on upgrade, which is a breaking change.");
+    }
+
+    [TestMethod]
+    public void DeliveryRetryWindow_default_is_null()
+    {
+        var options = new KafkaStreamingOptions();
+
+        Assert.IsNull(options.DeliveryRetryWindow,
+            "null keeps Orleans' MaxEventDeliveryTime default (1 minute) — no behaviour change on upgrade.");
+    }
+
+    [TestMethod]
+    public void DeadLetterTopicSuffix_default_is_dash_dlq()
+    {
+        var options = new KafkaStreamingOptions();
+
+        Assert.AreEqual("-dlq", options.DeadLetterTopicSuffix,
+            "'-dlq' suffix is the Kafka community convention for dead-letter topics.");
+    }
+
+    [TestMethod]
     public void ReplicationFactor_default_is_3()
     {
         var options = new KafkaStreamingOptions();

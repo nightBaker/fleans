@@ -23,11 +23,11 @@ public sealed class KafkaBatchContainer : IBatchContainer
 
     public IEnumerable<Tuple<T, StreamSequenceToken>> GetEvents<T>()
     {
-        var baseOffset = Token?.SequenceNumber ?? 0;
+        var baseToken = Token ?? new KafkaSequenceToken(0, 0);
         return Events
             .Select((evt, idx) => (evt, idx))
             .Where(t => t.evt is T)
-            .Select(t => Tuple.Create((T)t.evt!, (StreamSequenceToken)new KafkaSequenceToken(baseOffset, t.idx)));
+            .Select(t => Tuple.Create((T)t.evt!, (StreamSequenceToken)baseToken.WithEventIndex(t.idx)));
     }
 
     public bool ImportRequestContext()

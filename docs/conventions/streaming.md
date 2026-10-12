@@ -23,6 +23,38 @@ FLEANS_KAFKA_TESTS=1 dotnet test Fleans.Application.Tests --filter "FullyQualifi
 
 Without the variable they return `Inconclusive` (never `Failed`). CI runs them in `.github/workflows/kafka-tests.yml`, which fails if zero tests passed — the same silent-green guard as `pg-tests.yml`. A test that touches a stream through `TestCluster.Client` must also register the provider on the **client** (`IClientBuilderConfigurator`); a silo-only configurator leaves the client without a keyed `IStreamProvider` (#756).
 
+## Kafka dead-letter queue
+
+Opt-in via `EnableDeadLetterQueue` (default `false`, #686). Records whose subscriber keeps failing are published, raw and unchanged, to `<source-topic><DeadLetterTopicSuffix>` (default suffix `-dlq`, e.g. `fleans-0-dlq`) instead of being dropped. DLQ topics are created by the same topic-ensure step as the source topics.
+
+| Knob | Default | Meaning |
+|---|---|---|
+| `EnableDeadLetterQueue` | `false` | Turns routing on and adds the `-dlq` topics to topic-ensure. |
+| `DeadLetterTopicSuffix` | `"-dlq"` | Appended to each source topic. Rejected at startup (`ValidateOptions`, run both when the pulling-agent options are built and in `CreateAdapter`) when DLQ is on if it turns a DLQ name into a live queue topic — empty included — (`fleans-1` + `"0"` = `fleans-10`), which would feed dead letters back into the engine. |
+| `DeliveryRetryWindow` | `null` (Orleans default: 1 min) | Mapped onto `StreamPullingAgentOptions.MaxEventDeliveryTime` by `AddKafkaStreams`. How long Orleans keeps retrying one record for a failing subscriber before giving up. The record blocks that subscriber's cursor while it retries. |
+
+**Capture point: subscriber keeps failing** (`x-fleans-failure-reason: delivery-failed`). Orleans retries delivery itself until `MaxEventDeliveryTime`, then calls `IStreamFailureHandler.OnDeliveryFailure` and moves the cursor past the record. `KafkaDlqFailureHandler` opens a short-lived assign-only consumer, re-reads the raw record by partition and offset (30 s timeout — a cold client pays connect, TLS and SASL/OAuth first), and publishes it with the **adapter's own producer**. The consumer is built by `KafkaClientConfigExtensions.BuildConsumer`, shared with the receiver, so security knobs and the error handler can't drift between the two. `OnSubscriptionFailure` is for subscription *initialisation* errors and is log-only.
+
+**Undeserializable records are log-only, by decision.** `KafkaQueueAdapterReceiver` logs EventId `11107` and skips the record. Publishing from the poll loop would block the whole queue on every DLQ produce.
+
+Every DLQ record carries `x-fleans-original-topic`, `-partition`, `-offset`, `x-fleans-failure-reason`, `x-fleans-failure-time-utc`, `x-fleans-stream-id` and `x-fleans-subscription-id`.
+
+**Keep it simple: no owned Kafka clients.** Failures are rare, so the handler builds a consumer per failure and borrows the adapter's producer. No shared consumer, locks, leases, `Lazy` or dispose hooks. Three review rounds of shutdown machinery were removed for this; don't reintroduce a long-lived DLQ client without a measured need.
+
+**Traps:**
+
+- **Hook `OnDeliveryFailure`, not `OnSubscriptionFailure`.** The first DLQ draft counted retries in `OnSubscriptionFailure`, so nothing was ever dead-lettered. Orleans owns the retry loop, so there is no per-record retry *count* to configure, only the time window.
+- **Without DLQ, a poison record is dropped, not replayed forever.** After the window Orleans logs and skips it, and the receiver's next commit moves past it. The DLQ exists to make that loss recoverable.
+- **Re-consume needs `AutoOffsetReset=Error`.** With `Earliest`, a purged offset silently jumps to the earliest retained record, so "no longer retained" (`12004`) is never logged and the drop looks like a timeout (`12006`).
+- **Sequence tokens must be built from Kafka coordinates only** (offset, partition, event index). Orleans keeps a subscriber's last token across queue rebalances and silo restarts, so any process-local field (e.g. an arrival counter) makes tokens from silo B look older than silo A's and skips records. `KafkaBatchContainer.GetEvents` copies the partition into every event token so a handler given an event token still locates the right record. Cross-partition ordering with `NumPartitions > 1` is a known limitation (#812).
+- **The DLQ unit is the whole Kafka record, once per failing subscription.** A record that fails for several subscribers is dead-lettered once per subscriber (`x-fleans-subscription-id` tells them apart); a record carrying several events is dead-lettered whole, including events already delivered. Replay is safe only because of the [stream-redelivery idempotency](../../CLAUDE.md) guards; DLQ consumers dedupe on `x-fleans-original-{topic,partition,offset}`.
+- **The 30 s publish timeout only bounds the wait, not the message.** The pulling agent stops waiting after 30 s (`12001`), but the shared producer keeps the message for its `message.timeout.ms` (librdkafka default 5 min) and may still deliver it. During a long DLQ outage those messages also occupy the producer queue that live engine events use. A `12001` therefore means "not confirmed", not "certainly lost".
+- **The DLQ is best-effort, not lossless.** A DLQ publish that is never delivered, or a record that is no longer retained by the broker, is logged (EventIds `12001`, `12004`–`12006`) and the record is dropped. Alert on `12001`.
+- **The factory needs the adapter before handlers.** `GetDeliveryFailureHandler` returns a DLQ handler only after `CreateAdapter` ran; otherwise it logs `11112` and falls back to no-op. Orleans creates the adapter first today; the log makes a lifecycle change visible.
+- **The DLQ does not survive a silo crash during the retry window.** The receiver's parameterless `Commit()` can commit past a record Orleans is still retrying; if the silo dies before `OnDeliveryFailure`, the new owner starts after it and the record is neither delivered nor dead-lettered. Fixing commit semantics is #813.
+
+Integration coverage: `KafkaDlqIntegrationTests` (env-gated like the other Kafka tests above).
+
 ## Kafka durability defaults
 
 Three knobs on `KafkaStreamingOptions` control producer and topic durability:

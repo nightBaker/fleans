@@ -22,7 +22,7 @@ Three knobs on `KafkaStreamingOptions`:
 | `Fleans:Streaming:Kafka:NumPartitions` | `1` | Kafka-side per-topic partition count at topic creation. Independent of `QueueCount` — does not multiply Orleans consumer parallelism. Forward-only via `kafka-topics --alter --partitions N`. |
 | `Fleans:Streaming:Kafka:ReplicationFactor` | `1` | Per-topic broker replication. Set to `3` in multi-broker clusters for durability. |
 
-Production deployments: see [#474](https://github.com/nightBaker/fleans/issues/474) for security (SASL/TLS), durability (idempotent producer), and operational (DLQ, lag metrics) gaps not yet shipped.
+Production deployments: see [#474](https://github.com/nightBaker/fleans/issues/474) for security (SASL/TLS), durability (idempotent producer), and operational (lag metrics) gaps not yet shipped. Poison records can be routed to a dead-letter topic — see [Streaming](/fleans/reference/streaming/#poison-records-and-the-dead-letter-topic).
 
 ### Redis
 
