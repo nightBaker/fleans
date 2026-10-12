@@ -79,6 +79,14 @@ Targets must be valid identifiers (`^[a-zA-Z_][a-zA-Z0-9_]*$`). The target `__re
 - A plugin that is never registered does **not** fail the activity: with nobody subscribed to the per-type stream, the activity stays Active until a plugin for that `type` comes online or someone calls `POST /Execution/complete-activity`.
 - If `FailActivity` itself fails (e.g. the workflow grain is unavailable), the handler rethrows so the Orleans stream provider retries — domain idempotency guards handle the duplicate.
 
+## Running many workers
+
+You can run any number of worker / plugin-host replicas side by side; they process custom tasks in parallel and never pick up the same task:
+
+- Events are routed by workflow instance: each instance's custom tasks go to a single handler activation on one silo at a time, while different instances spread across all replicas.
+- Before calling your `ExecuteAsync`, the handler asks the workflow instance whether that activity instance is still active. A redelivered or duplicate event for an activity that already completed or failed is skipped (logged as EventId 4038), so your plugin runs at most once per completed activity.
+- One window remains: if a worker crashes *while* `ExecuteAsync` is running, the event is redelivered and the plugin runs again on another replica. Use `context.ActivityInstanceId` as an idempotency key for external side effects.
+
 ## Catalog & liveness
 
 - Workers announce themselves once at silo startup via `ILifecycleParticipant<ISiloLifecycle>` at stage `Active`, with bounded retry (2 s, 5 s, 15 s) if the catalog grain is briefly unreachable.

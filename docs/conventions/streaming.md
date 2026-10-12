@@ -116,7 +116,7 @@ Applied values:
 - `EvaluateActivationConditionEvent`
 - `EvaluateCompletionConditionEvent`
 
-Per-instance FIFO ordering is preserved (Orleans guarantees FIFO per stream); cross-instance traffic distributes across `TotalQueueCount` Redis queues and across silos. Scaling `fleans-worker` replicas now provides real parallelism across distinct workflow instances for `CustomTaskHandlerBase` plugin handlers.
+Per-instance FIFO ordering is preserved (Orleans guarantees FIFO per stream); cross-instance traffic distributes across `TotalQueueCount` Redis queues and across silos. Scaling `fleans-worker` replicas now provides real parallelism across distinct workflow instances for `CustomTaskHandlerBase` plugin handlers. Workers never share a task: each handler grain is keyed by workflow instance id (Orleans single-activation → one silo at a time), each queue is pulled by exactly one silo, and the `IsActivityActive` pre-execution check skips at-least-once redeliveries of an activity that already finished (see [`invariants.md`](invariants.md#stream-redelivery-idempotency) guard 8).
 
 The default `IDomainEvent` switch branch in `Publish` logs at warning level (`LogUnknownEventType`, EventId 5001) and drops — **adding a new engine event type requires a new `switch` case.**
 

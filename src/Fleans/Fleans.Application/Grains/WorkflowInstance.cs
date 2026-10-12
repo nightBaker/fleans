@@ -776,6 +776,9 @@ public partial class WorkflowInstance :
     public ValueTask<ExpandoObject> GetVariables(Guid variablesStateId)
         => ValueTask.FromResult(State.GetMergedVariables(variablesStateId));
 
+    public ValueTask<bool> IsActivityActive(Guid activityInstanceId)
+        => ValueTask.FromResult(State.HasActiveEntry(activityInstanceId));
+
     public ValueTask<IReadOnlyList<IActivityExecutionContext>> GetActiveActivities()
     {
         IReadOnlyList<IActivityExecutionContext> result = State.GetActiveActivities()
