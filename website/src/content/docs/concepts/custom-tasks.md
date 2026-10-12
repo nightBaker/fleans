@@ -108,14 +108,14 @@ Fleans ships one custom-task plugin out of the box: `Fleans.Plugins.RestCaller`.
 | Outcome | `ErrorState.Code` | Message |
 |---|---|---|
 | HTTP status outside `successCodes` | `<status>` (e.g. `"404"`) | response body, truncated to 1024 chars (`"(response body … exceeds limit of N bytes)"` if the body is over the cap) |
-| Network error (`HttpRequestException`) | `"502"` | `ex.Message` |
+| Network error (`HttpRequestException` / `IOException`, including a connection drop while the body downloads) | `"502"` | `ex.Message` |
 | Success response with a body larger than `maxResponseBytes` (or the 8 MiB silo ceiling) | `"502"` | `"response body … exceeds limit of N bytes"` |
-| Timeout (per `timeoutSec`) | `"504"` | `"timeout after Ns calling <uri>"` |
+| Timeout (per `timeoutSec`, covering the body download too) | `"504"` | `"timeout after Ns calling <uri>"` |
 | Bad URL / unsupported method / `timeoutSec` out of `[1, 300]` / `maxResponseBytes` < 1 / invalid header (CR or LF, non-token name, unparseable `Content-Type`) | `"400"` | descriptive message |
 
 Workflow authors route via boundary error events with `errorCode="404"`, `errorCode="504"`, etc.
 
-Response bodies are buffered in memory and capped at **8 MiB** (`RestCallerServiceCollectionExtensions.DefaultMaxResponseContentBufferSize`) so a hostile or misbehaving upstream can't exhaust the silo heap. A declared `Content-Length` over the cap fails before the body is read; chunked responses fail as soon as the cap is crossed. `HEAD`, `204` and `304` responses carry no body and are never capped, even when they declare a `Content-Length`. Individual tasks can tighten the cap with `maxResponseBytes`, but only the host can raise the ceiling: a custom worker host that legitimately needs larger payloads can raise it by configuring the typed client **after** registering the plugin (client configuration runs in registration order, so a call placed before `AddRestCallerPlugin()` is overwritten):
+Response bodies are buffered in memory and capped at **8 MiB** (`RestCallerServiceCollectionExtensions.DefaultMaxResponseContentBufferSize`) so a hostile or misbehaving upstream can't exhaust the silo heap. A declared `Content-Length` over the cap fails before the body is read; chunked responses fail as soon as the cap is crossed. `HEAD`, `204`, `205` and `304` responses carry no body and are never capped, even when they declare a `Content-Length`. Individual tasks can tighten the cap with `maxResponseBytes`, but only the host can raise the ceiling: a custom worker host that legitimately needs larger payloads can raise it by configuring the typed client **after** registering the plugin (client configuration runs in registration order, so a call placed before `AddRestCallerPlugin()` is overwritten):
 
 ```csharp
 services.AddRestCallerPlugin();

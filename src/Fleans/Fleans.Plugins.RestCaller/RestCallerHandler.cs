@@ -149,21 +149,30 @@ public sealed partial class RestCallerHandler : CustomTaskHandlerBase
             // ReadBodyAsync: an unbuffered read here has no size limit.
             using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, linkedCts.Token);
             var statusCode = (int)response.StatusCode;
-            LogResponseReceived(method, uri.ToString(), statusCode,
-                response.Content.Headers.ContentLength ?? -1, stopwatch.ElapsedMilliseconds);
-
             var isSuccess = successCodes is { Count: > 0 }
                 ? successCodes.Contains(statusCode)
                 : statusCode is >= 200 and <= 299;
 
-            // HEAD / 204 / 304 carry no body, but may still declare the GET body's Content-Length.
-            var rawBody = method == "HEAD" || statusCode is 204 or 304
+            // HEAD / 204 / 205 / 304 carry no body, but may still declare a Content-Length.
+            var rawBody = method == "HEAD" || statusCode is 204 or 205 or 304
                 ? string.Empty
-                : await ReadBodyAsync(response.Content, maxResponseBytes, isSuccess, method, uri, linkedCts.Token);
+                : await ReadBodyAsync(response.Content, maxResponseBytes, isSuccess, statusCode, method, uri, linkedCts.Token);
+            // Logged after the body read so the elapsed time includes the transfer.
+            LogResponseReceived(method, uri.ToString(), statusCode,
+                response.Content.Headers.ContentLength ?? -1, stopwatch.ElapsedMilliseconds);
 
             return BuildResponse(response, rawBody, isSuccess, uri, method);
         }
-        catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
+        // The body is read outside SendAsync, where a cancelled socket read surfaces as
+        // IOException / HttpRequestException rather than OperationCanceledException — so classify
+        // by which token fired, not by exception type.
+        catch (Exception ex) when (IsTransportOrCancel(ex) && cancellationToken.IsCancellationRequested)
+        {
+            // The activity itself was cancelled: propagate as cancellation, never as a failure.
+            if (ex is OperationCanceledException) throw;
+            throw new OperationCanceledException(ex.Message, ex, cancellationToken);
+        }
+        catch (Exception ex) when (IsTransportOrCancel(ex) && timeoutCts.IsCancellationRequested)
         {
             LogTimeout(method, uri.ToString(), timeoutSec, stopwatch.ElapsedMilliseconds);
             throw new CustomTaskFailedActivityException("504", $"timeout after {timeoutSec}s calling {uri}");
@@ -175,6 +184,9 @@ public sealed partial class RestCallerHandler : CustomTaskHandlerBase
         }
     }
 
+    private static bool IsTransportOrCancel(Exception ex) =>
+        ex is OperationCanceledException or HttpRequestException or IOException;
+
     /// <summary>
     /// Buffers the response body up to <paramref name="maxBytes"/> and decodes it exactly as
     /// <c>ReadAsStringAsync</c> does. Over the limit, a success response fails with <c>502</c>; a
@@ -182,7 +194,7 @@ public sealed partial class RestCallerHandler : CustomTaskHandlerBase
     /// gets a placeholder body for the failure message.
     /// </summary>
     private async Task<string> ReadBodyAsync(
-        HttpContent content, long maxBytes, bool isSuccess, string method, Uri uri, CancellationToken ct)
+        HttpContent content, long maxBytes, bool isSuccess, int statusCode, string method, Uri uri, CancellationToken ct)
     {
         try
         {
@@ -192,7 +204,7 @@ public sealed partial class RestCallerHandler : CustomTaskHandlerBase
         }
         catch (HttpRequestException ex) when (ex.HttpRequestError == HttpRequestError.ConfigurationLimitExceeded)
         {
-            LogResponseTooLarge(method, uri.ToString(), content.Headers.ContentLength ?? maxBytes + 1, maxBytes);
+            LogResponseTooLarge(method, uri.ToString(), statusCode, content.Headers.ContentLength ?? maxBytes + 1, maxBytes);
             var message = $"response body from {uri} exceeds limit of {maxBytes} bytes";
             if (isSuccess)
                 throw new CustomTaskFailedActivityException("502", message);
@@ -391,6 +403,6 @@ public sealed partial class RestCallerHandler : CustomTaskHandlerBase
     private partial void LogJsonParseFailed(Exception ex, string contentType);
 
     [LoggerMessage(EventId = 9347, Level = LogLevel.Warning,
-        Message = "REST plugin rejected response from {Method} {Url}: body of at least {BodyBytes}B exceeds limit {MaxBytes}B — failing the activity with 502")]
-    private partial void LogResponseTooLarge(string method, string url, long bodyBytes, long maxBytes);
+        Message = "REST plugin response {StatusCode} from {Method} {Url}: body of at least {BodyBytes}B exceeds limit {MaxBytes}B — body not read (success status fails with 502, otherwise the status code is kept)")]
+    private partial void LogResponseTooLarge(string method, string url, int statusCode, long bodyBytes, long maxBytes);
 }

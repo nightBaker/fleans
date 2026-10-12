@@ -222,6 +222,31 @@ public class RestCallerHandlerTests
     }
 
     [TestMethod]
+    public async Task Timeout_WhileReadingBody_FailsWith504()
+    {
+        // Headers arrive at once, the body stalls past timeoutSec. A cancelled socket read surfaces
+        // as IOException (wrapped in HttpRequestException), not OperationCanceledException.
+        var handler = MakeHandler(new StalledBodyHandler());
+        var ex = await Assert.ThrowsExactlyAsync<CustomTaskFailedActivityException>(() =>
+            handler.ExecuteForTest(
+                Inputs("http://example.com/", timeoutSec: 1),
+                new ExpandoObject(), Ctx()));
+        Assert.AreEqual("504", ex.GetActivityErrorState().Code);
+    }
+
+    [TestMethod]
+    public async Task Cancellation_WhileReadingBody_PropagatesAsCancellation()
+    {
+        // The activity being cancelled mid-body must not be recorded as a 502 failure.
+        var handler = MakeHandler(new StalledBodyHandler());
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            handler.ExecuteForTest(
+                Inputs("http://example.com/", timeoutSec: 30),
+                new ExpandoObject(), Ctx(), cts.Token));
+    }
+
+    [TestMethod]
     public async Task BadUrl_FailsWith400()
     {
         var handler = MakeHandler(new HttpClientHandler());
@@ -627,6 +652,31 @@ public class RestCallerHandlerTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
             => throw ex;
+    }
+
+    /// <summary>Returns headers immediately; the body never arrives until the read is cancelled.</summary>
+    private sealed class StalledBodyHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+            => Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StalledContent() });
+    }
+
+    private sealed class StalledContent : HttpContent
+    {
+        protected override Task SerializeToStreamAsync(Stream stream, System.Net.TransportContext? context)
+            => SerializeToStreamAsync(stream, context, CancellationToken.None);
+
+        protected override async Task SerializeToStreamAsync(Stream stream, System.Net.TransportContext? context, CancellationToken ct)
+        {
+            try { await Task.Delay(Timeout.Infinite, ct); }
+            catch (OperationCanceledException) { throw new IOException("socket read aborted"); }  // like SocketsHttpHandler
+        }
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
     }
 
     private sealed class SlowHandler(TimeSpan delay) : HttpMessageHandler
