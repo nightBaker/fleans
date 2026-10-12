@@ -212,9 +212,11 @@ Redelivery is safe: the engine ignores events for activities that have already c
 the at-least-once contract above). Every dead-lettered record is logged at Warning with
 EventId `12000`.
 
-The dead-letter topic is best-effort, not a guarantee. If publishing to it fails (EventId `12001`,
-Error), or the broker no longer holds the original record (EventIds `12004`–`12006`), the record
-is lost: the engine has already moved past it. Alert on EventId `12001`. A record is also lost if
+The dead-letter topic is best-effort, not a guarantee. If publishing to it is not confirmed within
+30 seconds (EventId `12001`, Error), the record may still arrive later, or may be lost. If the
+broker no longer holds the original record (EventIds `12004`–`12006`), the record is lost: the
+engine has already moved past it. Connection, authentication or TLS problems while re-reading
+the record are logged as EventId `12007`. Alert on EventId `12001`. A record is also lost if
 the silo crashes while Orleans is still retrying it
 ([#813](https://github.com/nightBaker/fleans/issues/813)).
 

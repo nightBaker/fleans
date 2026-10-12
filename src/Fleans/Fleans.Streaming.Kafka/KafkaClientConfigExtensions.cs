@@ -9,6 +9,21 @@ namespace Fleans.Streaming.Kafka;
 internal static class KafkaClientConfigExtensions
 {
     /// <summary>
+    /// Builds a consumer with brokers, security and OAuth wired from <paramref name="opts"/>.
+    /// Shared by the receiver and the DLQ re-consume path so the two can't drift apart.
+    /// </summary>
+    internal static IConsumer<byte[], byte[]> BuildConsumer(
+        ConsumerConfig config, KafkaStreamingOptions opts, Action<Error> onError)
+    {
+        config.BootstrapServers = opts.Brokers;
+        ApplySecurity(config, opts);
+        var builder = new ConsumerBuilder<byte[], byte[]>(config).SetErrorHandler((_, e) => onError(e));
+        if (opts.OAuthBearerTokenProvider is not null)
+            builder.SetOAuthBearerTokenRefreshHandler(opts.OAuthBearerTokenProvider);
+        return builder.Build();
+    }
+
+    /// <summary>
     /// Applies the security-protocol and SASL settings from <paramref name="opts"/>
     /// onto <paramref name="config"/>. Throws <see cref="InvalidOperationException"/>
     /// for any misconfigured combination so the silo fails-fast at startup rather than

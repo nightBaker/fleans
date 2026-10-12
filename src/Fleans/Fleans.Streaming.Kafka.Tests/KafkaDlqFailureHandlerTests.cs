@@ -61,6 +61,30 @@ public class KafkaDlqFailureHandlerTests
     }
 
     [TestMethod]
+    public async Task GetDeliveryFailureHandler_DlqEnabledWithAdapter_ReturnsDlqHandler()
+    {
+        using var adapter = CreateAdapter();
+        var factory = new KafkaQueueAdapterFactory("provider", Options, new SimpleQueueCacheOptions(),
+            null!, NullLoggerFactory.Instance) { Adapter = adapter };
+
+        var handler = await factory.GetDeliveryFailureHandler(QueueId.GetQueueId("t", 0, 0));
+
+        Assert.IsInstanceOfType<KafkaDlqFailureHandler>(handler);
+    }
+
+    [TestMethod]
+    public async Task GetDeliveryFailureHandler_DlqEnabledBeforeAdapter_FallsBackToNoOp()
+    {
+        // Logged (EventId 11112) — the ordering assumption is checked, not silent.
+        var factory = new KafkaQueueAdapterFactory("provider", Options, new SimpleQueueCacheOptions(),
+            null!, NullLoggerFactory.Instance);
+
+        var handler = await factory.GetDeliveryFailureHandler(QueueId.GetQueueId("t", 0, 0));
+
+        Assert.IsInstanceOfType<NoOpStreamDeliveryFailureHandler>(handler);
+    }
+
+    [TestMethod]
     public void ValidateOptions_NonPositiveDeliveryRetryWindow_Throws()
     {
         var options = new KafkaStreamingOptions { DeliveryRetryWindow = TimeSpan.Zero };

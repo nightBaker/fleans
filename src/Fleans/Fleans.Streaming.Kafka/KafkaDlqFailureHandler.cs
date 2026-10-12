@@ -18,9 +18,12 @@ namespace Fleans.Streaming.Kafka;
 /// </summary>
 internal sealed partial class KafkaDlqFailureHandler : IStreamFailureHandler
 {
-    internal static readonly TimeSpan ConsumeTimeout = TimeSpan.FromSeconds(10);
+    // Covers a cold client: connect, TLS, SASL/OAuth token fetch and metadata, then the fetch itself.
+    internal static readonly TimeSpan ConsumeTimeout = TimeSpan.FromSeconds(30);
 
-    // Bounds how long the pulling agent awaiting OnDeliveryFailure waits on the DLQ broker.
+    // Bounds how long the pulling agent awaiting OnDeliveryFailure waits for the DLQ ack. Cancelling
+    // only stops the wait: the shared producer keeps the message (up to its message.timeout.ms) and
+    // may still deliver it.
     internal static readonly TimeSpan PublishTimeout = TimeSpan.FromSeconds(30);
 
     private readonly string _topic;
@@ -67,7 +70,7 @@ internal sealed partial class KafkaDlqFailureHandler : IStreamFailureHandler
             return;
         }
 
-        if (record?.Message?.Value is null)
+        if (record?.Message is null)
         {
             LogReconsumeTimedOut(_topic, kt.Partition, kt.Offset, ConsumeTimeout.TotalSeconds);
             return;
@@ -95,19 +98,15 @@ internal sealed partial class KafkaDlqFailureHandler : IStreamFailureHandler
     {
         var config = new ConsumerConfig
         {
-            BootstrapServers = _options.Brokers,
             GroupId = $"{_options.ConsumerGroup}-dlq-reconsume",
             EnableAutoCommit = false,
             // Error, not Earliest: a purged offset must surface as an error, not jump to another record.
             AutoOffsetReset = AutoOffsetReset.Error,
         };
-        KafkaClientConfigExtensions.ApplySecurity(config, _options);
-        var builder = new ConsumerBuilder<byte[], byte[]>(config);
-        if (_options.OAuthBearerTokenProvider is not null)
-            builder.SetOAuthBearerTokenRefreshHandler(_options.OAuthBearerTokenProvider);
 
         // Assign-only: never joins the group, never commits.
-        using var consumer = builder.Build();
+        using var consumer = KafkaClientConfigExtensions.BuildConsumer(
+            config, _options, e => LogReconsumeClientError(_topic, e.Reason));
         consumer.Assign(new TopicPartitionOffset(_topic, partition, offset));
         return consumer.Consume(ConsumeTimeout);
     }
@@ -139,7 +138,7 @@ internal sealed partial class KafkaDlqFailureHandler : IStreamFailureHandler
         }
         catch (Exception ex)
         {
-            LogPublishFailed(ex, _topic, kt.Partition, kt.Offset, dlqTopic);
+            LogPublishFailed(ex, _topic, kt.Partition, kt.Offset, dlqTopic, PublishTimeout.TotalSeconds);
         }
     }
 
@@ -150,8 +149,8 @@ internal sealed partial class KafkaDlqFailureHandler : IStreamFailureHandler
     private partial void LogPublished(string topic, int partition, long offset, string dlqTopic, long dlqOffset);
 
     [LoggerMessage(EventId = 12001, Level = LogLevel.Error,
-        Message = "Kafka DLQ: failed to publish record {Topic}[{Partition}]@{Offset} to {DlqTopic}; the record is lost")]
-    private partial void LogPublishFailed(Exception ex, string topic, int partition, long offset, string dlqTopic);
+        Message = "Kafka DLQ: publish of record {Topic}[{Partition}]@{Offset} to {DlqTopic} failed or was not acknowledged within {TimeoutSeconds}s; the producer may still deliver it, otherwise the record is lost")]
+    private partial void LogPublishFailed(Exception ex, string topic, int partition, long offset, string dlqTopic, double timeoutSeconds);
 
     [LoggerMessage(EventId = 12002, Level = LogLevel.Warning,
         Message = "Kafka DLQ: subscription {SubscriptionId} on stream {StreamId} failed to initialise; not a poison record, nothing dead-lettered")]
@@ -172,4 +171,8 @@ internal sealed partial class KafkaDlqFailureHandler : IStreamFailureHandler
     [LoggerMessage(EventId = 12006, Level = LogLevel.Warning,
         Message = "Kafka DLQ: re-consume of {Topic}[{Partition}]@{Offset} returned nothing within {TimeoutSeconds}s; dropped without dead-lettering")]
     private partial void LogReconsumeTimedOut(string topic, int partition, long offset, double timeoutSeconds);
+
+    [LoggerMessage(EventId = 12007, Level = LogLevel.Warning,
+        Message = "Kafka DLQ: re-consume client error on topic {Topic}: {Reason}")]
+    private partial void LogReconsumeClientError(string topic, string reason);
 }

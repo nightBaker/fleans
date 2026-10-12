@@ -34,23 +34,17 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
     {
         var config = new ConsumerConfig
         {
-            BootstrapServers = _options.Brokers,
             GroupId = _options.ConsumerGroup,
             AutoOffsetReset = AutoOffsetReset.Earliest,
             EnableAutoCommit = false,
             EnablePartitionEof = false,
         };
-        KafkaClientConfigExtensions.ApplySecurity(config, _options);
         if (_options.SecurityProtocol is KafkaSecurityProtocol.Ssl or KafkaSecurityProtocol.SaslSsl
             && string.IsNullOrEmpty(_options.SslCaLocation))
         {
             LogSslNoPathsOsTrustStore(_options.SecurityProtocol);
         }
-        var consumerBuilder = new ConsumerBuilder<byte[], byte[]>(config)
-            .SetErrorHandler((_, e) => LogConsumerError(_topic, e.Reason));
-        if (_options.OAuthBearerTokenProvider is not null)
-            consumerBuilder.SetOAuthBearerTokenRefreshHandler(_options.OAuthBearerTokenProvider);
-        _consumer = consumerBuilder.Build();
+        _consumer = KafkaClientConfigExtensions.BuildConsumer(config, _options, e => LogConsumerError(_topic, e.Reason));
         _consumer.Subscribe(_topic);
         return Task.CompletedTask;
     }

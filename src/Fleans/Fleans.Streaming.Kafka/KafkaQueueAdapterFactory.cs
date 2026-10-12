@@ -23,7 +23,7 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory
 
     // Set by CreateAdapter, which Orleans runs before it asks for any delivery-failure handler.
     // The DLQ publishes through this adapter's producer, so the factory owns no Kafka clients.
-    private KafkaQueueAdapter? _adapter;
+    internal KafkaQueueAdapter? Adapter { get; set; }
 
     public KafkaQueueAdapterFactory(
         string name,
@@ -73,17 +73,25 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory
         if (_options.Acks != KafkaAcks.All)
             LogAcksNotAll(_options.Acks);
         await EnsureTopicsAsync().ConfigureAwait(false);
-        return _adapter = new KafkaQueueAdapter(_name, _options, _mapper, _serializer, _loggerFactory);
+        return Adapter = new KafkaQueueAdapter(_name, _options, _mapper, _serializer, _loggerFactory);
     }
 
     public IQueueAdapterCache GetQueueAdapterCache() => _cache;
 
     public IStreamQueueMapper GetStreamQueueMapper() => _mapper;
 
-    public Task<IStreamFailureHandler> GetDeliveryFailureHandler(QueueId queueId) =>
-        Task.FromResult<IStreamFailureHandler>(_options.EnableDeadLetterQueue && _adapter is not null
-            ? new KafkaDlqFailureHandler(KafkaTopicNaming.TopicForQueue(_options, queueId), _options, _adapter, _loggerFactory)
-            : new NoOpStreamDeliveryFailureHandler(false));
+    public Task<IStreamFailureHandler> GetDeliveryFailureHandler(QueueId queueId)
+    {
+        if (!_options.EnableDeadLetterQueue)
+            return Task.FromResult<IStreamFailureHandler>(new NoOpStreamDeliveryFailureHandler(false));
+        if (Adapter is null)
+        {
+            LogDlqWithoutAdapter(queueId.ToString());
+            return Task.FromResult<IStreamFailureHandler>(new NoOpStreamDeliveryFailureHandler(false));
+        }
+        return Task.FromResult<IStreamFailureHandler>(new KafkaDlqFailureHandler(
+            KafkaTopicNaming.TopicForQueue(_options, queueId), _options, Adapter, _loggerFactory));
+    }
 
     /// <summary>
     /// Idempotent client-side topic ensure. Listed missing topics are created with v1 defaults
@@ -176,6 +184,10 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory
         var loggerFactory = services.GetRequiredService<ILoggerFactory>();
         return new KafkaQueueAdapterFactory(name, options, cacheOptions, serializer, loggerFactory);
     }
+
+    [LoggerMessage(EventId = 11112, Level = LogLevel.Warning,
+        Message = "Kafka DLQ is enabled but the queue adapter was not created before queue {QueueId} asked for its delivery-failure handler; poison records on it are dropped, not dead-lettered")]
+    private partial void LogDlqWithoutAdapter(string queueId);
 
     [LoggerMessage(EventId = 11101, Level = LogLevel.Warning,
         Message = "Kafka adapter: Acks={Acks} is not All. Workflow event delivery durability is reduced — this is only safe for non-production workloads.")]

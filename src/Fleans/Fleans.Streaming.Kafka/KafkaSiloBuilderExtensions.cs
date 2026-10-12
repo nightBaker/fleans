@@ -30,7 +30,9 @@ public static class KafkaSiloBuilderExtensions
                 b.ConfigureStreamPubSub(StreamPubSubType.ExplicitGrainBasedAndImplicit);
                 b.ConfigurePullingAgent(ob => ob.Configure<IOptionsMonitor<KafkaStreamingOptions>>((agent, kafka) =>
                 {
-                    if (kafka.Get(name).DeliveryRetryWindow is { } window)
+                    var opts = kafka.Get(name);
+                    KafkaQueueAdapterFactory.ValidateOptions(opts); // before a bad window reaches Orleans
+                    if (opts.DeliveryRetryWindow is { } window)
                         agent.MaxEventDeliveryTime = window;
                 }));
             });
