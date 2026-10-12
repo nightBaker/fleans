@@ -20,6 +20,7 @@ propagation), see [`docs/plans/2026-02-08-structured-workflow-logging.md`](../pl
 | 7000–7099 | `WorkflowEngine` | |
 | 8000–8099 | `TimerStartEventSchedulerGrain` (8000–8003), `UserTasksController` (8004–8010) | 8009 body-UserId/token mismatch rejection (Warning); 8010 token without user-id claim (Warning) |
 | 9000–9099 | `BpmnConverter` | |
+| 9340–9349 | `RestCallerHandler` (`Fleans.Plugins.RestCaller`) | 9340 sending, 9341 received, 9342 timeout, 9343 network error, 9344 non-success status, 9345 idempotency key, 9346 JSON parse failed, 9347 response body over limit (Warning) |
 | 10000–10099 | `TimerCallbackGrain` | |
 | 11000–11099 | `KafkaProductionPresetExtensions` | 11000 preset-applied INFO |
 | 11100–11199 | `KafkaQueueAdapter`, `KafkaQueueAdapterReceiver`, `KafkaQueueAdapterFactory` | 11100 SSL-no-paths OS-trust-store WARNING (shared EventId across all three sibling classes); 11101 acks-not-all WARNING; 11102 single-broker RF fallback INFO; 11103 RF>brokers fallback WARNING; 11104 GetMetadata error ERROR; 11105 topics created INFO; 11106 topics already existed INFO; 11107 record deserialization failed, skipped ERROR; 11108 consumer error WARNING; 11109 consume failed WARNING; 11110 offset commit failed WARNING; 11111 consumer close failed WARNING; 11112 DLQ enabled but adapter not created yet, handler falls back to no-op WARNING |

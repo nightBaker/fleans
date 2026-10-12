@@ -68,5 +68,15 @@ public static class RestCallerSchema
             Required: false,
             Description: "When set, plugin sends <header>: <activityInstanceId-guid> so server-side dedupe is keyed on the activity instance id (mitigates retries under silo failure).",
             DefaultValue: null),
+
+        new CustomTaskParameterSpec(
+            Name: "maxResponseBytes",
+            DisplayName: "Max Response Bytes",
+            Type: CustomTaskParameterType.Integer,
+            Required: false,
+            Description: "Caps the buffered response body. Null/empty uses the silo ceiling (8 MiB by default). " +
+                         "Can only lower that ceiling, never raise it; an oversized success response fails with code=502 " +
+                         "(a non-success response keeps its own status code).",
+            DefaultValue: null),
     });
 }

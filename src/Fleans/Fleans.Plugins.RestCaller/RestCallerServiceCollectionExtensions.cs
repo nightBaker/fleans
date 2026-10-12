@@ -12,8 +12,8 @@ namespace Fleans.Plugins.RestCaller;
 public static class RestCallerServiceCollectionExtensions
 {
     /// <summary>
-    /// Default cap on the response body the REST-call plugin will buffer into
-    /// workflow state. 8 MiB is large enough for typical REST envelopes while
+    /// Default ceiling on the response body the REST-call plugin will buffer into
+    /// workflow state; a task's <c>maxResponseBytes</c> input can only lower it. 8 MiB is large enough for typical REST envelopes while
     /// keeping a single misbehaving upstream from filling the silo heap with a
     /// multi-GB response (the BCL default is 2 GiB). Operators with legitimate
     /// large-payload use cases can raise it with their own
@@ -27,8 +27,9 @@ public static class RestCallerServiceCollectionExtensions
     {
         // Typed-client; HttpClient.Timeout = InfiniteTimeSpan because per-call timeout is
         // enforced by the handler via CancellationTokenSource.CancelAfter(timeoutSec).
-        // MaxResponseContentBufferSize caps ReadAsStringAsync / ReadAsByteArrayAsync so
-        // a hostile or compromised upstream cannot stream gigabytes into the silo heap.
+        // MaxResponseContentBufferSize is the silo-wide body ceiling. The handler reads it and
+        // enforces min(ceiling, maxResponseBytes) itself with a bounded stream read (it sends with
+        // ResponseHeadersRead, so HttpClient does not apply the cap on its own).
         services.AddHttpClient<RestCallerHandler>(client =>
         {
             client.Timeout = Timeout.InfiniteTimeSpan;
