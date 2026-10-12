@@ -24,7 +24,7 @@ propagation), see [`docs/plans/2026-02-08-structured-workflow-logging.md`](../pl
 | 11000–11099 | `KafkaProductionPresetExtensions` | 11000 preset-applied INFO |
 | 11100–11199 | `KafkaQueueAdapter`, `KafkaQueueAdapterReceiver`, `KafkaQueueAdapterFactory` | 11100 SSL-no-paths OS-trust-store WARNING (shared EventId across all three sibling classes); 11101 acks-not-all WARNING; 11102 single-broker RF fallback INFO; 11103 RF>brokers fallback WARNING; 11104 GetMetadata error ERROR; 11105 topics created INFO; 11106 topics already existed INFO |
 | 11200–11299 | `MskIamTokenRefresher` | 11200 token-refresh-failed ERROR, 11201 set-token-failure-threw WARNING |
-| 12000–12099 | `KafkaQueueAdapterFactory` / `KafkaDlqFailureHandler` | 12006 retry-attempt DEBUG; 12007 delivery-failure-dropped WARN; 12008 missing-token WARN; 12009 offset-gone WARN; 12010 re-consume-failed ERROR; 12011 re-consume-timed-out WARN; 12012 DLQ-published INFO; 12013 offset-commit-failed ERROR; 12014 offset-committed DEBUG; 12015 DLQ-publish-failed ERROR |
+| 12000–12099 | Kafka DLQ: `KafkaDeadLetterPublisher` (12000–12001), `KafkaDlqFailureHandler` (12002–12006) | 12000 record dead-lettered WARN; 12001 DLQ publish failed ERROR; 12002 subscription-init failure WARN; 12003 non-Kafka sequence token WARN; 12004 offset no longer retained WARN; 12005 re-consume failed ERROR; 12006 re-consume timed out WARN |
 | 99000–99099 | `ProbeHandler` (test-only, `Fleans.E2E.PluginHost`) | 99000 started, 99001 completed, 99002 cancelled, 99003 callback failed. Never shipped. |
 
 ## Adding a new range

@@ -13,7 +13,7 @@ cross-silo event durability.
 
 :::caution[Kafka provider is not production-ready]
 The v1 `Fleans.Streaming.Kafka` adapter ships **plaintext brokers only**, defaults to
-`ReplicationFactor=1`, and offers no DLQ or schema-registry integration. **Do not point
+`ReplicationFactor=1`, and offers no schema-registry integration. **Do not point
 this at Confluent Cloud, Amazon MSK, Aiven, Redpanda Cloud, or any managed Kafka
 service yet** — the silo will fail to connect with `Disconnected: SASL authentication required`
 because no `SecurityProtocol` / SASL / TLS configuration knobs exist
@@ -117,7 +117,6 @@ These won't break a deploy, but they will cost you operationally.
 |---|---|---|
 | `NumPartitions=1` default | New topics created with 1 partition — no broker-side write fan-out per topic | Bump `Fleans:Streaming:Kafka:NumPartitions` and re-create or `kafka-topics --alter --partitions N` existing topics (forward-only; cannot shrink). See [Tuning throughput](#tuning-throughput) |
 | No schema registry integration | Codec is the Orleans codec; non-Orleans consumers cannot decode the stream | Treat Kafka topics as silo-internal until a follow-up adds Avro/Protobuf framing |
-| No DLQ for poison messages | A consistently-failing handler replays forever | Manual offset commit via `AdminClient` is your only escape today |
 | No metrics/health-check for consumer lag | Lag is invisible to the Aspire dashboard's health UI | Run `kafka-consumer-groups.sh --describe --group fleans` against the broker |
 
 [Manual test plan #35](https://github.com/nightBaker/fleans/tree/main/tests/manual/35-kafka-streaming) exercises the happy path against a single-broker Aspire-provisioned `fleans-kafka` resource — it validates that the at-least-once contract holds across a silo restart, but it does **not** test any production failure mode listed above.
@@ -162,6 +161,47 @@ if (!State.HasActiveEntry(activityInstanceId))
 Once the activity instance has completed once, its entry leaves `HasActiveEntry`, so a second
 delivery is a logged no-op. **Do not remove that guard** without re-reading this page —
 it is what makes the at-least-once contract safe for the workflow engine.
+
+## Poison records and the dead-letter topic
+
+When a subscriber keeps throwing on a record, Orleans retries delivery for up to
+`DeliveryRetryWindow` (1 minute by default), then gives up and moves on to the next record.
+A record whose bytes cannot be deserialized is skipped right away. **By default both are
+dropped** with only an error log.
+
+Set `Fleans__Streaming__Kafka__EnableDeadLetterQueue=true` to keep them instead. Each such
+record is then published, unchanged, to a dead-letter topic named after its source topic
+(`fleans-0` → `fleans-0-dlq`). The engine creates the dead-letter topics at startup alongside
+the regular ones.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `Fleans__Streaming__Kafka__EnableDeadLetterQueue` | `false` | Route poison records to the dead-letter topic instead of dropping them. |
+| `Fleans__Streaming__Kafka__DeadLetterTopicSuffix` | `-dlq` | Suffix appended to each source topic. |
+| `Fleans__Streaming__Kafka__DeliveryRetryWindow` | `00:01:00` | How long to keep retrying a failing record before giving up (`hh:mm:ss`). The stream stays blocked for that subscriber while it retries, so keep it short. |
+
+Each dead-letter record carries these headers:
+
+| Header | Value |
+|---|---|
+| `x-fleans-original-topic` / `-partition` / `-offset` | Where the record came from. |
+| `x-fleans-failure-reason` | `delivery-failed` (a subscriber kept throwing) or `deserialization-failed`. |
+| `x-fleans-failure-time-utc` | ISO-8601 timestamp. |
+| `x-fleans-stream-id` | Orleans stream ID (`delivery-failed` only). |
+| `x-fleans-exception-type` / `-message` | The deserialization error (`deserialization-failed` only). |
+
+Inspect the topic with any Kafka client, for example:
+
+```bash
+kafka-console-consumer.sh --bootstrap-server <broker> --topic fleans-0-dlq \
+  --from-beginning --property print.headers=true
+```
+
+To retry a record once the cause is fixed, produce its value back to `x-fleans-original-topic`.
+Redelivery is safe: the engine ignores events for activities that have already completed (see
+the at-least-once contract above). Every dead-lettered record is logged at Warning with
+EventId `12000`; EventId `12001` (Error) means the DLQ publish itself failed and the record was
+lost.
 
 ## Topic provisioning
 

@@ -23,6 +23,32 @@ FLEANS_KAFKA_TESTS=1 dotnet test Fleans.Application.Tests --filter "FullyQualifi
 
 Without the variable they return `Inconclusive` (never `Failed`). CI runs them in `.github/workflows/kafka-tests.yml`, which fails if zero tests passed — the same silent-green guard as `pg-tests.yml`. A test that touches a stream through `TestCluster.Client` must also register the provider on the **client** (`IClientBuilderConfigurator`); a silo-only configurator leaves the client without a keyed `IStreamProvider` (#756).
 
+## Kafka dead-letter queue
+
+Opt-in via `EnableDeadLetterQueue` (default `false`, #686). Records that cannot be processed are published, raw and unchanged, to `<source-topic><DeadLetterTopicSuffix>` (default suffix `-dlq`, e.g. `fleans-0-dlq`) instead of being dropped. DLQ topics are created by the same topic-ensure step as the source topics.
+
+| Knob | Default | Meaning |
+|---|---|---|
+| `EnableDeadLetterQueue` | `false` | Turns routing on and adds the `-dlq` topics to topic-ensure. |
+| `DeadLetterTopicSuffix` | `"-dlq"` | Appended to each source topic. Empty is rejected at startup when DLQ is on. |
+| `DeliveryRetryWindow` | `null` (Orleans default: 1 min) | Mapped onto `StreamPullingAgentOptions.MaxEventDeliveryTime` by `AddKafkaStreams`. How long Orleans keeps retrying one record for a failing subscriber before giving up. The record blocks that subscriber's cursor while it retries. |
+
+**Two capture points:**
+
+1. **Subscriber keeps failing** (`x-fleans-failure-reason: delivery-failed`). Orleans retries delivery itself until `MaxEventDeliveryTime`, then calls `IStreamFailureHandler.OnDeliveryFailure` **once** and moves the cursor past the record. `KafkaDlqFailureHandler` re-reads the raw record by partition and offset with an assign-only consumer and publishes it. `OnSubscriptionFailure` is for subscription *initialisation* errors and is log-only.
+2. **Record cannot be deserialized** (`x-fleans-failure-reason: deserialization-failed`, plus `x-fleans-exception-type` / `-message`). `KafkaQueueAdapterReceiver` publishes it before the next offset commit.
+
+Every DLQ record carries `x-fleans-original-topic`, `-partition`, `-offset`, `x-fleans-failure-reason` and `x-fleans-failure-time-utc`, plus `x-fleans-stream-id` for delivery failures. One `KafkaDeadLetterPublisher` per adapter factory serves both paths and reuses the main producer config (security, idempotence, acks).
+
+**Traps:**
+
+- **Hook `OnDeliveryFailure`, not `OnSubscriptionFailure`.** The first DLQ draft counted retries in `OnSubscriptionFailure`, so nothing was ever dead-lettered. Orleans owns the retry loop, so there is no per-record retry *count* to configure, only the time window.
+- **Without DLQ, a poison record is dropped, not replayed forever.** After the window Orleans logs and skips it, and the receiver's next commit moves past it. The DLQ exists to make that loss recoverable.
+- **Delivery failure is per subscriber.** A record that failed for one implicit subscriber may have succeeded for another. Replaying from the DLQ redelivers to all of them, which is safe only because of the [stream-redelivery idempotency](../../CLAUDE.md) guards.
+- A DLQ publish failure, or a record that is no longer retained by the broker, is logged (EventIds `12001`, `12004`–`12006`) and the record is dropped. DLQ delivery is best-effort at-least-once, never blocking.
+
+Integration coverage: `KafkaDlqIntegrationTests` (env-gated like the other Kafka tests above).
+
 ## Kafka durability defaults
 
 Three knobs on `KafkaStreamingOptions` control producer and topic durability:
