@@ -15,7 +15,7 @@ Verifies the `rest-call` custom-task end-to-end: GET happy path; POST with body+
    ```bash
    curl -k -X POST https://localhost:7140/Definitions/deploy \
      -H "Content-Type: application/json" \
-     -d "{\"BpmnXml\": $(jq -Rs . < tests/manual/38-rest-caller/rest-call.bpmn)}"
+     -d "{\"BpmnXml\": $(jq -Rs . < tests/manual/39-rest-caller/rest-call.bpmn)}"
    ```
 2. **Start.**
    ```bash

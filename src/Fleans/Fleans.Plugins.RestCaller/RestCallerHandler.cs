@@ -100,16 +100,29 @@ public sealed partial class RestCallerHandler : CustomTaskHandlerBase
         // Set body + Content-Type before adding other headers so a user-supplied Content-Type override wins.
         var contentTypeHeader = headers.FirstOrDefault(kv =>
             string.Equals(kv.Key, "Content-Type", StringComparison.OrdinalIgnoreCase));
+        // Validate a user-supplied Content-Type up front: the header loop below skips it, and
+        // StringContent's media-type parser would otherwise throw an unhandled FormatException.
+        if (contentTypeHeader.Key is not null)
+            ValidateHeader(contentTypeHeader.Key, contentTypeHeader.Value);
         if (!string.IsNullOrEmpty(body))
         {
             var contentType = contentTypeHeader.Key is null ? DefaultRequestContentType : contentTypeHeader.Value;
-            request.Content = new StringContent(body, Encoding.UTF8, contentType);
+            try
+            {
+                request.Content = new StringContent(body, Encoding.UTF8, contentType);
+            }
+            catch (FormatException)
+            {
+                throw new CustomTaskFailedActivityException("400",
+                    $"header 'Content-Type' value '{contentType}' is not a valid media type");
+            }
         }
 
         foreach (var (name, value) in headers)
         {
             if (string.Equals(name, "Content-Type", StringComparison.OrdinalIgnoreCase))
                 continue;  // already handled via StringContent
+            ValidateHeader(name, value);
             if (!request.Headers.TryAddWithoutValidation(name, value))
                 request.Content?.Headers.TryAddWithoutValidation(name, value);
         }
@@ -124,6 +137,9 @@ public sealed partial class RestCallerHandler : CustomTaskHandlerBase
         HttpResponseMessage response;
         try
         {
+            // Default HttpCompletionOption.ResponseContentRead buffers the body inside SendAsync, which is
+            // what enforces HttpClient.MaxResponseContentBufferSize (an oversized body surfaces as the
+            // HttpRequestException → 502 below). Switching to ResponseHeadersRead would silently drop that cap.
             response = await _http.SendAsync(request, linkedCts.Token);
         }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
@@ -212,6 +228,51 @@ public sealed partial class RestCallerHandler : CustomTaskHandlerBase
     }
 
     // --- helpers for resolvedInputs coercion ---
+
+    /// <summary>
+    /// Rejects header names/values that contain CR or LF. Modern .NET handlers strip
+    /// these at send time and raise HttpRequestException, but rejecting here makes
+    /// the failure deterministic and produces a 400 CustomTaskFailedActivityException
+    /// instead of a 502 network error wrapper. Header names additionally must conform
+    /// to RFC 7230 token grammar — `TryAddWithoutValidation` lets through bytes that
+    /// silently break the upstream parser; reject up-front so workflow authors get a
+    /// clear error.
+    /// </summary>
+    private static void ValidateHeader(string name, string value)
+    {
+        if (string.IsNullOrEmpty(name))
+            throw new CustomTaskFailedActivityException("400", "header name cannot be empty");
+
+        if (ContainsCrOrLf(name))
+            throw new CustomTaskFailedActivityException("400",
+                $"header name '{name}' contains CR or LF");
+
+        foreach (var c in name)
+        {
+            // RFC 7230 token: !#$%&'*+-.^_`|~ and DIGIT / ALPHA. Excludes control chars,
+            // whitespace, separators (:,;()<>@\"/[]?={}). Conservative on purpose —
+            // headers that don't fit this grammar would be rejected by the SocketsHttpHandler
+            // anyway; failing early avoids ambiguous 502 wrappers.
+            var ok = c is (>= 'a' and <= 'z') or (>= 'A' and <= 'Z') or (>= '0' and <= '9')
+                  || c is '!' or '#' or '$' or '%' or '&' or '\'' or '*' or '+' or '-'
+                       or '.' or '^' or '_' or '`' or '|' or '~';
+            if (!ok)
+                throw new CustomTaskFailedActivityException("400",
+                    $"header name '{name}' contains invalid character '{c}' " +
+                    "(RFC 7230 token grammar required)");
+        }
+
+        if (ContainsCrOrLf(value))
+            throw new CustomTaskFailedActivityException("400",
+                $"header '{name}' value contains CR or LF");
+    }
+
+    private static bool ContainsCrOrLf(string s)
+    {
+        for (var i = 0; i < s.Length; i++)
+            if (s[i] is '\r' or '\n') return true;
+        return false;
+    }
 
     private static string? ReadString(IDictionary<string, object?> inputs, string key)
         => inputs.TryGetValue(key, out var v) ? v?.ToString() : null;

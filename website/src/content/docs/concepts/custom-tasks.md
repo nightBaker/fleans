@@ -96,7 +96,7 @@ Fleans ships one custom-task plugin out of the box: `Fleans.Plugins.RestCaller`.
 |---|---|---|---|---|
 | `url` | `String` | yes | — | Absolute URI |
 | `method` | `String` | yes | `GET` | One of GET / POST / PUT / PATCH / DELETE / HEAD / OPTIONS |
-| `headers` | `Map<String>` | no | `null` | Each `(name, value)` pair sent as a header. **v1 only sources from a workflow variable** (e.g. `<fleans:input source="=requestHeaders" target="headers" />`). |
+| `headers` | `Map<String>` | no | `null` | Each `(name, value)` pair sent as a header. Names must be RFC 7230 tokens (letters, digits, and ``!#$%&'*+-.^_`|~``); names and values must not contain CR or LF — otherwise the activity fails with `code="400"` before any request is sent. **v1 only sources from a workflow variable** (e.g. `<fleans:input source="=requestHeaders" target="headers" />`). |
 | `body` | `MultilineString` | no | `null` | Sent verbatim. If non-empty and no `Content-Type` header is supplied, defaults to `application/json` |
 | `successCodes` | `List<Integer>` | no | `null` | When null/empty, defaults to `200..299`. Pass an explicit list (e.g. `[200, 201, 404]`) when you want non-2xx codes treated as success. **v1 only sources from a workflow variable.** |
 | `timeoutSec` | `Integer` | yes | `30` | Whole seconds; clamped to `[1, 300]`. Timeout fails the activity with `code="504"` |
@@ -107,11 +107,18 @@ Fleans ships one custom-task plugin out of the box: `Fleans.Plugins.RestCaller`.
 | Outcome | `ErrorState.Code` | Message |
 |---|---|---|
 | HTTP status outside `successCodes` | `<status>` (e.g. `"404"`) | response body, truncated to 1024 chars |
-| Network error (`HttpRequestException`) | `"502"` | `ex.Message` |
+| Network error (`HttpRequestException`), including a response body larger than 8 MiB | `"502"` | `ex.Message` |
 | Timeout (per `timeoutSec`) | `"504"` | `"timeout after Ns calling <uri>"` |
-| Bad URL / unsupported method / `timeoutSec` out of `[1, 300]` | `"400"` | descriptive message |
+| Bad URL / unsupported method / `timeoutSec` out of `[1, 300]` / invalid header (CR or LF, non-token name, unparseable `Content-Type`) | `"400"` | descriptive message |
 
 Workflow authors route via boundary error events with `errorCode="404"`, `errorCode="504"`, etc.
+
+Response bodies are buffered in memory and capped at **8 MiB** (`RestCallerServiceCollectionExtensions.DefaultMaxResponseContentBufferSize`) so a hostile or misbehaving upstream can't exhaust the silo heap. A custom worker host that legitimately needs larger payloads can raise it by configuring the typed client **after** registering the plugin (client configuration runs in registration order, so a call placed before `AddRestCallerPlugin()` is overwritten):
+
+```csharp
+services.AddRestCallerPlugin();
+services.AddHttpClient<RestCallerHandler>(c => c.MaxResponseContentBufferSize = 64L * 1024 * 1024);
+```
 
 ### Worked example
 

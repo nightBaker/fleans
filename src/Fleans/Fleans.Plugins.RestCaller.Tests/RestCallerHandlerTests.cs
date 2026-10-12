@@ -247,6 +247,160 @@ public class RestCallerHandlerTests
         Assert.AreEqual("400", ex.GetActivityErrorState().Code);
     }
 
+    // --- Header validation (CRLF + RFC 7230 token grammar) ---
+
+    [TestMethod]
+    public async Task HeaderValueContainingCrLf_FailsWith400()
+    {
+        var handler = MakeHandler(new HttpClientHandler());
+        var headers = new Dictionary<string, object?>
+        {
+            ["X-Test"] = "value\r\nHost: evil.example.com"
+        };
+        var ex = await Assert.ThrowsExactlyAsync<CustomTaskFailedActivityException>(() =>
+            handler.ExecuteForTest(
+                Inputs("http://example.com/", headers: headers), new ExpandoObject(), Ctx()));
+        var state = ex.GetActivityErrorState();
+        Assert.AreEqual("400", state.Code);
+        Assert.IsTrue(state.Message.Contains("CR or LF"),
+            $"Expected CR/LF rejection message, got: {state.Message}");
+    }
+
+    [TestMethod]
+    public async Task HeaderNameContainingCrLf_FailsWith400()
+    {
+        var handler = MakeHandler(new HttpClientHandler());
+        var headers = new Dictionary<string, object?>
+        {
+            ["X-Bad\r\nInjected"] = "value"
+        };
+        var ex = await Assert.ThrowsExactlyAsync<CustomTaskFailedActivityException>(() =>
+            handler.ExecuteForTest(
+                Inputs("http://example.com/", headers: headers), new ExpandoObject(), Ctx()));
+        Assert.AreEqual("400", ex.GetActivityErrorState().Code);
+    }
+
+    [TestMethod]
+    public async Task HeaderNameWithInvalidTokenChar_FailsWith400()
+    {
+        var handler = MakeHandler(new HttpClientHandler());
+        // Space and `:` and `=` and `<` are all outside RFC 7230 token grammar.
+        var headers = new Dictionary<string, object?>
+        {
+            ["X-Has Space"] = "v"
+        };
+        var ex = await Assert.ThrowsExactlyAsync<CustomTaskFailedActivityException>(() =>
+            handler.ExecuteForTest(
+                Inputs("http://example.com/", headers: headers), new ExpandoObject(), Ctx()));
+        var state = ex.GetActivityErrorState();
+        Assert.AreEqual("400", state.Code);
+        Assert.IsTrue(state.Message.Contains("invalid character"),
+            $"Expected token-grammar rejection, got: {state.Message}");
+    }
+
+    [TestMethod]
+    public async Task HeaderNameWithValidTokenChars_Accepted()
+    {
+        // Sanity-check: legitimate header names with the full RFC 7230 token alphabet still work.
+        await using var mock = await MockServer.StartAsync(async ctx =>
+        {
+            ctx.Response.StatusCode = 200;
+            await ctx.Response.WriteAsync("ok");
+        });
+
+        var handler = MakeHandler(new HttpClientHandler());
+        var headers = new Dictionary<string, object?>
+        {
+            ["X-Custom-Header_42!"] = "v"
+        };
+        await handler.ExecuteForTest(
+            Inputs($"{mock.BaseUrl}/", headers: headers), new ExpandoObject(), Ctx());
+
+        var rec = mock.Requests.Single();
+        Assert.AreEqual("v", rec.Headers["X-Custom-Header_42!"]);
+    }
+
+    [TestMethod]
+    public async Task ContentTypeContainingCrLf_FailsWith400()
+    {
+        // Content-Type skips the per-header loop (it's applied via StringContent), so it needs
+        // its own up-front validation — otherwise the media-type parser throws FormatException.
+        var handler = MakeHandler(new HttpClientHandler());
+        var headers = new Dictionary<string, object?>
+        {
+            ["Content-Type"] = "application/json\r\nX-Injected: 1"
+        };
+        var ex = await Assert.ThrowsExactlyAsync<CustomTaskFailedActivityException>(() =>
+            handler.ExecuteForTest(
+                Inputs("http://example.com/", method: "POST", headers: headers, body: "{}"),
+                new ExpandoObject(), Ctx()));
+        var state = ex.GetActivityErrorState();
+        Assert.AreEqual("400", state.Code);
+        Assert.IsTrue(state.Message.Contains("CR or LF"),
+            $"Expected CR/LF rejection message, got: {state.Message}");
+    }
+
+    [TestMethod]
+    public async Task ContentTypeNotAMediaType_FailsWith400()
+    {
+        var handler = MakeHandler(new HttpClientHandler());
+        var headers = new Dictionary<string, object?>
+        {
+            ["Content-Type"] = "not a media type"
+        };
+        var ex = await Assert.ThrowsExactlyAsync<CustomTaskFailedActivityException>(() =>
+            handler.ExecuteForTest(
+                Inputs("http://example.com/", method: "POST", headers: headers, body: "{}"),
+                new ExpandoObject(), Ctx()));
+        Assert.AreEqual("400", ex.GetActivityErrorState().Code);
+    }
+
+    // --- Response body cap ---
+
+    // HttpClient configured like the DI registration so the cap is actually in force.
+    private static RestCallerHandler MakeCappedHandler(HttpMessageHandler messageHandler) =>
+        new(new HttpClient(messageHandler)
+            {
+                Timeout = Timeout.InfiniteTimeSpan,
+                MaxResponseContentBufferSize = RestCallerServiceCollectionExtensions.DefaultMaxResponseContentBufferSize
+            },
+            NullLogger<RestCallerHandler>.Instance,
+            Substitute.For<IGrainFactory>());
+
+    private sealed class FixedBodyHandler(byte[] payload) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+            => Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(payload)
+            });
+    }
+
+    [TestMethod]
+    public async Task ResponseBodyExceedingBufferCap_FailsWith502()
+    {
+        // Body > MaxResponseContentBufferSize is rejected during in-SendAsync buffering
+        // (ResponseContentRead) → HttpRequestException → mapped to "502" by ExecuteAsync.
+        var oversized = new byte[RestCallerServiceCollectionExtensions.DefaultMaxResponseContentBufferSize + 1];
+        var handler = MakeCappedHandler(new FixedBodyHandler(oversized));
+
+        var ex = await Assert.ThrowsExactlyAsync<CustomTaskFailedActivityException>(() =>
+            handler.ExecuteForTest(Inputs("http://example.com/"), new ExpandoObject(), Ctx()));
+
+        Assert.AreEqual("502", ex.GetActivityErrorState().Code);
+    }
+
+    [TestMethod]
+    public async Task ResponseBodyAtBufferCap_Succeeds()
+    {
+        var atLimit = new byte[RestCallerServiceCollectionExtensions.DefaultMaxResponseContentBufferSize];
+        var handler = MakeCappedHandler(new FixedBodyHandler(atLimit));
+
+        var result = await handler.ExecuteForTest(Inputs("http://example.com/"), new ExpandoObject(), Ctx());
+
+        Assert.IsNotNull(result);
+    }
+
     // --- JSON content-type detection ---
 
     [TestMethod]
