@@ -75,7 +75,8 @@ public static class RestCallerSchema
             Type: CustomTaskParameterType.Integer,
             Required: false,
             Description: "Caps the buffered response body. Null/empty uses the silo ceiling (8 MiB by default). " +
-                         "Can only lower that ceiling, never raise it; an oversized response fails with code=502.",
+                         "Can only lower that ceiling, never raise it; an oversized success response fails with code=502 " +
+                         "(a non-success response keeps its own status code).",
             DefaultValue: null),
     });
 }

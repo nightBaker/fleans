@@ -141,103 +141,68 @@ public sealed partial class RestCallerHandler : CustomTaskHandlerBase
         var bodyLength = body?.Length ?? 0;
         LogSendingRequest(method, uri.ToString(), headers.Count, bodyLength, timeoutSec, context.ActivityInstanceId);
         var stopwatch = Stopwatch.StartNew();
-
-        HttpResponseMessage response;
         try
         {
-            // ResponseHeadersRead: HttpClient.MaxResponseContentBufferSize is only enforced under
-            // ResponseContentRead and is fixed per client, so the body is bounded by
-            // ReadBodyBoundedAsync instead — that is what lets maxResponseBytes vary per task.
-            response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, linkedCts.Token);
+            // ResponseHeadersRead: HttpClient.MaxResponseContentBufferSize is fixed per client and only
+            // enforced under ResponseContentRead, so the body is bounded by ReadBodyAsync instead — that
+            // is what lets maxResponseBytes vary per task. Never read response.Content outside
+            // ReadBodyAsync: an unbuffered read here has no size limit.
+            using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, linkedCts.Token);
+            var statusCode = (int)response.StatusCode;
+            LogResponseReceived(method, uri.ToString(), statusCode,
+                response.Content.Headers.ContentLength ?? -1, stopwatch.ElapsedMilliseconds);
+
+            var isSuccess = successCodes is { Count: > 0 }
+                ? successCodes.Contains(statusCode)
+                : statusCode is >= 200 and <= 299;
+
+            // HEAD / 204 / 304 carry no body, but may still declare the GET body's Content-Length.
+            var rawBody = method == "HEAD" || statusCode is 204 or 304
+                ? string.Empty
+                : await ReadBodyAsync(response.Content, maxResponseBytes, isSuccess, method, uri, linkedCts.Token);
+
+            return BuildResponse(response, rawBody, isSuccess, uri, method);
         }
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
         {
-            stopwatch.Stop();
             LogTimeout(method, uri.ToString(), timeoutSec, stopwatch.ElapsedMilliseconds);
             throw new CustomTaskFailedActivityException("504", $"timeout after {timeoutSec}s calling {uri}");
         }
-        catch (HttpRequestException ex)
+        catch (Exception ex) when (ex is HttpRequestException or IOException)
         {
-            stopwatch.Stop();
             LogNetworkError(ex, method, uri.ToString(), stopwatch.ElapsedMilliseconds);
             throw new CustomTaskFailedActivityException("502", $"network error calling {uri}: {ex.Message}");
-        }
-        stopwatch.Stop();
-
-        try
-        {
-            var statusCode = (int)response.StatusCode;
-            var contentLength = response.Content.Headers.ContentLength ?? -1;
-            LogResponseReceived(method, uri.ToString(), statusCode, contentLength, stopwatch.ElapsedMilliseconds);
-
-            string rawBody;
-            try
-            {
-                rawBody = await ReadBodyBoundedAsync(response.Content, maxResponseBytes, method, uri, linkedCts.Token);
-            }
-            catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
-            {
-                LogTimeout(method, uri.ToString(), timeoutSec, stopwatch.ElapsedMilliseconds);
-                throw new CustomTaskFailedActivityException("504", $"timeout after {timeoutSec}s calling {uri}");
-            }
-            catch (Exception ex) when (ex is HttpRequestException or IOException)
-            {
-                LogNetworkError(ex, method, uri.ToString(), stopwatch.ElapsedMilliseconds);
-                throw new CustomTaskFailedActivityException("502", $"network error calling {uri}: {ex.Message}");
-            }
-
-            return BuildResponse(response, rawBody, successCodes, uri, method);
-        }
-        finally
-        {
-            response.Dispose();
         }
     }
 
     /// <summary>
-    /// Reads the response body, failing with <c>502</c> once it exceeds <paramref name="maxBytes"/>.
-    /// A declared <c>Content-Length</c> over the cap fails before reading; otherwise (chunked or
-    /// no length) the stream is read until <c>maxBytes + 1</c> bytes would be buffered.
+    /// Buffers the response body up to <paramref name="maxBytes"/> and decodes it exactly as
+    /// <c>ReadAsStringAsync</c> does. Over the limit, a success response fails with <c>502</c>; a
+    /// non-success response keeps its status code (so boundary error events still route on it) and
+    /// gets a placeholder body for the failure message.
     /// </summary>
-    private async Task<string> ReadBodyBoundedAsync(
-        HttpContent content, long maxBytes, string method, Uri uri, CancellationToken ct)
+    private async Task<string> ReadBodyAsync(
+        HttpContent content, long maxBytes, bool isSuccess, string method, Uri uri, CancellationToken ct)
     {
-        if (content.Headers.ContentLength is { } declared && declared > maxBytes)
+        try
         {
-            LogResponseTooLarge(method, uri.ToString(), declared, maxBytes);
-            throw new CustomTaskFailedActivityException("502",
-                $"response body from {uri} is {declared} bytes; exceeds limit of {maxBytes} bytes");
+            // Rejects a declared Content-Length over the limit before reading, and stops a
+            // chunked body as soon as it crosses the limit.
+            await content.LoadIntoBufferAsync(maxBytes, ct);
         }
-
-        await using var stream = await content.ReadAsStreamAsync(ct);
-        using var buffered = new MemoryStream();
-        var chunk = new byte[81920];
-        int read;
-        while ((read = await stream.ReadAsync(chunk, ct)) > 0)
+        catch (HttpRequestException ex) when (ex.HttpRequestError == HttpRequestError.ConfigurationLimitExceeded)
         {
-            if (buffered.Length + read > maxBytes)
-            {
-                LogResponseTooLarge(method, uri.ToString(), buffered.Length + read, maxBytes);
-                throw new CustomTaskFailedActivityException("502",
-                    $"response body from {uri} exceeds limit of {maxBytes} bytes");
-            }
-            buffered.Write(chunk, 0, read);
+            LogResponseTooLarge(method, uri.ToString(), content.Headers.ContentLength ?? maxBytes + 1, maxBytes);
+            var message = $"response body from {uri} exceeds limit of {maxBytes} bytes";
+            if (isSuccess)
+                throw new CustomTaskFailedActivityException("502", message);
+            return $"({message})";
         }
-
-        // Same decoding ReadAsStringAsync applies: declared charset, then BOM, then UTF-8.
-        var encoding = Encoding.UTF8;
-        if (content.Headers.ContentType?.CharSet is { Length: > 0 } charset)
-        {
-            try { encoding = Encoding.GetEncoding(charset.Trim('"')); }
-            catch (ArgumentException) { /* unknown charset — fall back to UTF-8 */ }
-        }
-        buffered.Position = 0;
-        using var reader = new StreamReader(buffered, encoding, detectEncodingFromByteOrderMarks: true);
-        return await reader.ReadToEndAsync(ct);
+        return await content.ReadAsStringAsync(ct);
     }
 
     private IDictionary<string, object?> BuildResponse(
-        HttpResponseMessage response, string rawBody, IReadOnlyList<int>? successCodes, Uri uri, string method)
+        HttpResponseMessage response, string rawBody, bool isSuccess, Uri uri, string method)
     {
         var statusCode = (int)response.StatusCode;
         var contentTypeStr = response.Content.Headers.ContentType?.ToString();
@@ -257,10 +222,6 @@ public sealed partial class RestCallerHandler : CustomTaskHandlerBase
         responseDict["body"] = bodyShape;
         responseDict["headers"] = responseHeaders;
         responseDict["contentType"] = contentTypeStr;
-
-        var isSuccess = successCodes is { Count: > 0 }
-            ? successCodes.Contains(statusCode)
-            : statusCode is >= 200 and <= 299;
 
         if (!isSuccess)
         {
@@ -346,6 +307,7 @@ public sealed partial class RestCallerHandler : CustomTaskHandlerBase
     private static int? ReadInteger(IDictionary<string, object?> inputs, string key)
     {
         if (!inputs.TryGetValue(key, out var v) || v is null) return null;
+        if (v is string str && string.IsNullOrWhiteSpace(str)) return null;  // blank editor field = absent
         try { return Convert.ToInt32(v); }
         catch (Exception ex) when (ex is FormatException or InvalidCastException or OverflowException)
         {

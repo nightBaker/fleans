@@ -368,13 +368,25 @@ public class RestCallerHandlerTests
             NullLogger<RestCallerHandler>.Instance,
             Substitute.For<IGrainFactory>());
 
-    private sealed class FixedBodyHandler(byte[] payload, bool declareLength = true) : HttpMessageHandler
+    private sealed class FixedBodyHandler(byte[] payload, bool declareLength = true,
+        System.Net.HttpStatusCode status = System.Net.HttpStatusCode.OK) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
-            => Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            => Task.FromResult(new HttpResponseMessage(status)
             {
                 Content = declareLength ? new ByteArrayContent(payload) : new UnknownLengthContent(payload)
             });
+    }
+
+    /// <summary>Response that declares a Content-Length but carries no body (HEAD, 204, 304).</summary>
+    private sealed class DeclaredLengthNoBodyHandler(System.Net.HttpStatusCode status, long declaredLength) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            var content = new ByteArrayContent([]);
+            content.Headers.ContentLength = declaredLength;
+            return Task.FromResult(new HttpResponseMessage(status) { Content = content });
+        }
     }
 
     /// <summary>Simulates a chunked response: no Content-Length, so the cap needs the bounded read.</summary>
@@ -393,8 +405,8 @@ public class RestCallerHandlerTests
     [TestMethod]
     public async Task ResponseBodyExceedingBufferCap_FailsWith502()
     {
-        // Body > MaxResponseContentBufferSize is rejected during in-SendAsync buffering
-        // (ResponseContentRead) → HttpRequestException → mapped to "502" by ExecuteAsync.
+        // Body > the silo ceiling (the client's MaxResponseContentBufferSize) is rejected by
+        // ReadBodyAsync's bounded LoadIntoBufferAsync → "502".
         var oversized = new byte[RestCallerServiceCollectionExtensions.DefaultMaxResponseContentBufferSize + 1];
         var handler = MakeCappedHandler(new FixedBodyHandler(oversized));
 
@@ -437,7 +449,9 @@ public class RestCallerHandlerTests
         var ex = await Assert.ThrowsExactlyAsync<CustomTaskFailedActivityException>(() =>
             handler.ExecuteForTest(Inputs("http://example.com/", maxResponseBytes: 100), new ExpandoObject(), Ctx()));
 
-        Assert.AreEqual("502", ex.GetActivityErrorState().Code);
+        var state = ex.GetActivityErrorState();
+        Assert.AreEqual("502", state.Code);
+        Assert.Contains("exceeds limit of 100 bytes", state.Message);
     }
 
     [TestMethod]
@@ -495,6 +509,48 @@ public class RestCallerHandlerTests
             handler.ExecuteForTest(Inputs("http://example.com/", maxResponseBytes: 0), new ExpandoObject(), Ctx()));
 
         Assert.AreEqual("400", ex.GetActivityErrorState().Code);
+    }
+
+    [TestMethod]
+    public async Task MaxResponseBytes_EmptyString_UsesCeiling()
+    {
+        // A blank editor field resolves to "" — treated as absent, not as a malformed integer.
+        var handler = MakeCappedHandler(new FixedBodyHandler(System.Text.Encoding.UTF8.GetBytes("hello")));
+        var inputs = Inputs("http://example.com/");
+        inputs["maxResponseBytes"] = "";
+
+        var result = await handler.ExecuteForTest(inputs, new ExpandoObject(), Ctx());
+
+        var response = (IDictionary<string, object?>)result["__response"]!;
+        Assert.AreEqual("hello", response["body"]);
+    }
+
+    [TestMethod]
+    public async Task Head_DeclaredLengthAboveCap_Succeeds()
+    {
+        // HEAD declares the GET body's length but carries no body — the cap must not apply.
+        var handler = MakeCappedHandler(new DeclaredLengthNoBodyHandler(System.Net.HttpStatusCode.OK, 50L * 1024 * 1024));
+
+        var result = await handler.ExecuteForTest(
+            Inputs("http://example.com/", method: "HEAD", maxResponseBytes: 100), new ExpandoObject(), Ctx());
+
+        var response = (IDictionary<string, object?>)result["__response"]!;
+        Assert.AreEqual(200, response["status"]);
+    }
+
+    [TestMethod]
+    public async Task NonSuccessStatus_BodyAboveCap_KeepsStatusCode()
+    {
+        // A 404 with a body over a low per-task cap must still fail with "404" so a boundary
+        // error event keyed on that code fires — not with the cap's "502".
+        var handler = MakeCappedHandler(new FixedBodyHandler(new byte[1024], status: System.Net.HttpStatusCode.NotFound));
+
+        var ex = await Assert.ThrowsExactlyAsync<CustomTaskFailedActivityException>(() =>
+            handler.ExecuteForTest(Inputs("http://example.com/", maxResponseBytes: 256), new ExpandoObject(), Ctx()));
+
+        var state = ex.GetActivityErrorState();
+        Assert.AreEqual("404", state.Code);
+        Assert.Contains("exceeds limit of 256 bytes", state.Message);
     }
 
     [TestMethod]
