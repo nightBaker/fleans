@@ -85,7 +85,8 @@ You can run any number of worker / plugin-host replicas side by side; they proce
 
 - Events are routed by workflow instance: each instance's custom tasks go to a single handler activation on one silo at a time, while different instances spread across all replicas.
 - Before calling your `ExecuteAsync`, the handler asks the workflow instance whether that activity instance is still active. A redelivered or duplicate event for an activity that already completed or failed is skipped (logged as EventId 4038), so your plugin runs at most once per completed activity.
-- One window remains: if a worker crashes *while* `ExecuteAsync` is running, the event is redelivered and the plugin runs again on another replica. Use `context.ActivityInstanceId` as an idempotency key for external side effects.
+- Two live workers never execute the same task, even when duplicate events arrive while it is still running (the duplicate waits for the in-flight run and is then skipped).
+- If a worker **dies** in the middle of `ExecuteAsync`, the task is not lost: the event is redelivered and another replica takes it over. The dead worker may have already performed part of the external side effect, so use `context.ActivityInstanceId` as an idempotency key for external calls.
 
 ## Catalog & liveness
 
