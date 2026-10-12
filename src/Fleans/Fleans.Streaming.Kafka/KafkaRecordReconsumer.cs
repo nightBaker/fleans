@@ -20,6 +20,7 @@ internal enum KafkaReconsumeOutcome
 internal sealed class KafkaRecordReconsumer : IDisposable
 {
     private static readonly TimeSpan ConsumeTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan DisposeLockTimeout = TimeSpan.FromSeconds(2);
 
     private readonly Lazy<IConsumer<byte[], byte[]>> _consumer;
 
@@ -27,7 +28,7 @@ internal sealed class KafkaRecordReconsumer : IDisposable
     // fetch racing Dispose observes _disposed instead of an ObjectDisposedException.
     private readonly SemaphoreSlim _lock = new(1, 1);
 
-    private bool _disposed;
+    private volatile bool _disposed;
 
     public KafkaRecordReconsumer(KafkaStreamingOptions options)
     {
@@ -94,8 +95,13 @@ internal sealed class KafkaRecordReconsumer : IDisposable
 
     public void Dispose()
     {
-        // Waits for an in-flight fetch so the native consumer is never disposed mid-Consume.
-        _lock.Wait();
+        // Waits (bounded) for an in-flight fetch so the native consumer is never disposed mid-Consume.
+        // If the fetch outlasts the wait, leave the consumer to process exit rather than block shutdown.
+        if (!_lock.Wait(DisposeLockTimeout))
+        {
+            _disposed = true;
+            return;
+        }
         try
         {
             if (_disposed) return;

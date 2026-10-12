@@ -60,6 +60,16 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory, IDi
             throw new InvalidOperationException(
                 "Kafka DeadLetterTopicSuffix must not be empty when EnableDeadLetterQueue=true — " +
                 "the dead-letter topic would be the source topic itself.");
+        if (opts.EnableDeadLetterQueue)
+        {
+            var sources = KafkaTopicNaming.SourceTopics(opts).ToHashSet(StringComparer.Ordinal);
+            var collision = sources.FirstOrDefault(t => sources.Contains(KafkaTopicNaming.DeadLetterTopicForSource(opts, t)));
+            if (collision is not null)
+                throw new InvalidOperationException(
+                    $"Kafka DeadLetterTopicSuffix '{opts.DeadLetterTopicSuffix}' makes the dead-letter topic of " +
+                    $"'{collision}' a live queue topic ('{KafkaTopicNaming.DeadLetterTopicForSource(opts, collision)}'); " +
+                    "dead-lettered records would be fed back into the engine. Choose a suffix such as '-dlq'.");
+        }
     }
 
     public async Task<IQueueAdapter> CreateAdapter()
@@ -90,8 +100,8 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory, IDi
     public void Dispose()
     {
         if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0) return;
-        // Re-consumer first: it waits for an in-flight fetch, whose publish then hits the
-        // still-open producer instead of a disposed one.
+        // Each waits (bounded, ~2s) for its in-flight work; handlers hold a publisher lease across
+        // fetch + publish. Shutdown runs after the agents stopped, so this is normally instant.
         if (_reconsumer.IsValueCreated)
             _reconsumer.Value.Dispose();
         if (_deadLetters.IsValueCreated)

@@ -19,18 +19,42 @@ internal sealed partial class KafkaDeadLetterPublisher : IDisposable
 {
     private readonly KafkaStreamingOptions _options;
     private readonly ILogger<KafkaDeadLetterPublisher> _logger;
+    // Bounds how long a DLQ publish can hold up the pulling agent awaiting OnDeliveryFailure
+    // (librdkafka's default message.timeout.ms is 5 minutes).
+    internal const int MessageTimeoutMs = 30_000;
+
+    private static readonly TimeSpan DrainTimeout = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan FlushTimeout = TimeSpan.FromSeconds(5);
+
     private readonly IProducer<byte[], byte[]> _producer;
     private int _disposed;
+    private int _inFlight;
 
     public KafkaDeadLetterPublisher(KafkaStreamingOptions options, ILoggerFactory loggerFactory)
     {
         _options = options;
         _logger = loggerFactory.CreateLogger<KafkaDeadLetterPublisher>();
 
-        var producerBuilder = new ProducerBuilder<byte[], byte[]>(KafkaQueueAdapter.BuildProducerConfig(options));
+        var config = KafkaQueueAdapter.BuildProducerConfig(options);
+        config.MessageTimeoutMs = MessageTimeoutMs;
+        var producerBuilder = new ProducerBuilder<byte[], byte[]>(config);
         if (options.OAuthBearerTokenProvider is not null)
             producerBuilder.SetOAuthBearerTokenRefreshHandler(options.OAuthBearerTokenProvider);
         _producer = producerBuilder.Build();
+    }
+
+    /// <summary>
+    /// Holds off <see cref="Dispose"/> (bounded) until released, so a caller can span work that ends in
+    /// a publish — e.g. re-consume then publish. <c>null</c> once disposed.
+    /// </summary>
+    public IDisposable? TryAcquire()
+    {
+        // Increment before the disposed check: Dispose sets the flag first and then waits for
+        // _inFlight to drain, so a lease taken before the flag finishes on an open producer.
+        Interlocked.Increment(ref _inFlight);
+        if (Volatile.Read(ref _disposed) == 0) return new Lease(this);
+        Interlocked.Decrement(ref _inFlight);
+        return null;
     }
 
     /// <summary>Never throws — a failed DLQ publish is logged (EventId 12001) and the record is dropped.</summary>
@@ -38,12 +62,30 @@ internal sealed partial class KafkaDeadLetterPublisher : IDisposable
         string sourceTopic, int partition, long offset, byte[]? key, byte[] value,
         string reason, string? streamId = null)
     {
-        if (Volatile.Read(ref _disposed) != 0)
+        using var lease = TryAcquire();
+        if (lease is null)
         {
             LogDroppedAfterDispose(reason, sourceTopic, partition, offset);
             return;
         }
 
+        await ProduceAsync(sourceTopic, partition, offset, key, value, reason, streamId).ConfigureAwait(false);
+    }
+
+    private sealed class Lease(KafkaDeadLetterPublisher owner) : IDisposable
+    {
+        private int _released;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _released, 1) == 0)
+                Interlocked.Decrement(ref owner._inFlight);
+        }
+    }
+
+    private async Task ProduceAsync(
+        string sourceTopic, int partition, long offset, byte[]? key, byte[] value, string reason, string? streamId)
+    {
         var dlqTopic = KafkaTopicNaming.DeadLetterTopicForSource(_options, sourceTopic);
         var headers = new Headers
         {
@@ -77,9 +119,11 @@ internal sealed partial class KafkaDeadLetterPublisher : IDisposable
     public void Dispose()
     {
         if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0) return;
+        // Bounded: a publish still running after this fails on the disposed producer (EventId 12001).
+        SpinWait.SpinUntil(() => Volatile.Read(ref _inFlight) == 0, DrainTimeout);
         try
         {
-            _producer.Flush(TimeSpan.FromSeconds(10));
+            _producer.Flush(FlushTimeout);
         }
         catch
         {

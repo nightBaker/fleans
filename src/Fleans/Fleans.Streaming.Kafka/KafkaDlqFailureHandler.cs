@@ -51,6 +51,14 @@ internal sealed partial class KafkaDlqFailureHandler : IStreamFailureHandler
 
     private async Task RouteToDlqAsync(string streamId, KafkaSequenceToken kt)
     {
+        // Spans fetch + publish, so factory shutdown can't dispose the publisher between the two.
+        using var lease = _publisher.TryAcquire();
+        if (lease is null)
+        {
+            LogShuttingDown(_topic, kt.Partition, kt.Offset);
+            return;
+        }
+
         KafkaReconsumeOutcome outcome;
         Confluent.Kafka.Message<byte[], byte[]>? message;
         try

@@ -140,6 +140,47 @@ public class KafkaDlqFailureHandlerTests
     }
 
     [TestMethod]
+    public void ValidateOptions_SuffixMakingDlqTopicALiveQueueTopic_Throws()
+    {
+        // fleans-1 + "0" = fleans-10, which is queue 10's source topic.
+        var options = new KafkaStreamingOptions
+        {
+            TopicPrefix = "fleans-", QueueCount = 12, EnableDeadLetterQueue = true, DeadLetterTopicSuffix = "0",
+        };
+
+        var ex = Assert.ThrowsExactly<InvalidOperationException>(() => KafkaQueueAdapterFactory.ValidateOptions(options));
+        StringAssert.Contains(ex.Message, "fleans-10");
+    }
+
+    [TestMethod]
+    public void ValidateOptions_DefaultSuffixWithManyQueues_DoesNotThrow()
+    {
+        var options = new KafkaStreamingOptions { QueueCount = 64, EnableDeadLetterQueue = true };
+
+        KafkaQueueAdapterFactory.ValidateOptions(options);
+    }
+
+    [TestMethod]
+    public async Task PublisherDispose_WaitsForLeaseHeldAcrossFetchAndPublish()
+    {
+        // Arrange — a handler holds a lease between re-consume and publish.
+        var publisher = CreatePublisher();
+        var lease = publisher.TryAcquire();
+        Assert.IsNotNull(lease);
+
+        // Act
+        var dispose = Task.Run(publisher.Dispose);
+        await Task.Delay(200);
+        var disposedWhileLeased = dispose.IsCompleted;
+        lease.Dispose();
+        await dispose.WaitAsync(TimeSpan.FromSeconds(10));
+
+        // Assert
+        Assert.IsFalse(disposedWhileLeased, "Dispose must not tear the producer down under a live lease");
+        Assert.IsNull(publisher.TryAcquire(), "no new leases after Dispose");
+    }
+
+    [TestMethod]
     public void AllExpectedTopics_IncludesDlqTopicsOnlyWhenEnabled()
     {
         var disabled = new KafkaStreamingOptions { TopicPrefix = "t-", QueueCount = 2 };

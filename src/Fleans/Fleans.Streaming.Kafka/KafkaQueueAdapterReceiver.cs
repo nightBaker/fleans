@@ -14,10 +14,6 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
     private readonly ILogger<KafkaQueueAdapterReceiver> _logger;
     private readonly string _topic;
 
-    // Process-wide arrival counter: gives tokens a total order that matches consumption order even
-    // when one topic has several partitions (offsets are only ordered within a partition).
-    private static long s_receiveOrder;
-
     private IConsumer<byte[], byte[]>? _consumer;
     private long _lastDeliveredOffset = -1;
 
@@ -51,7 +47,7 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
             LogSslNoPathsOsTrustStore(_options.SecurityProtocol);
         }
         var consumerBuilder = new ConsumerBuilder<byte[], byte[]>(config)
-            .SetErrorHandler((_, e) => _logger.LogWarning("Kafka consumer error on topic {Topic}: {Reason}", _topic, e.Reason));
+            .SetErrorHandler((_, e) => LogConsumerError(_topic, e.Reason));
         if (_options.OAuthBearerTokenProvider is not null)
             consumerBuilder.SetOAuthBearerTokenRefreshHandler(_options.OAuthBearerTokenProvider);
         _consumer = consumerBuilder.Build();
@@ -66,6 +62,22 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
     [LoggerMessage(EventId = 11107, Level = LogLevel.Error,
         Message = "Kafka receiver: failed to deserialize record {Topic}[{Partition}]@{Offset}; the record is skipped and not dead-lettered")]
     private partial void LogDeserializationFailed(Exception ex, string topic, int partition, long offset);
+
+    [LoggerMessage(EventId = 11108, Level = LogLevel.Warning,
+        Message = "Kafka consumer error on topic {Topic}: {Reason}")]
+    private partial void LogConsumerError(string topic, string reason);
+
+    [LoggerMessage(EventId = 11109, Level = LogLevel.Warning,
+        Message = "Kafka consume failed on topic {Topic}")]
+    private partial void LogConsumeFailed(Exception ex, string topic);
+
+    [LoggerMessage(EventId = 11110, Level = LogLevel.Warning,
+        Message = "Kafka offset commit failed on topic {Topic}")]
+    private partial void LogCommitFailed(Exception ex, string topic);
+
+    [LoggerMessage(EventId = 11111, Level = LogLevel.Warning,
+        Message = "Kafka consumer close failed on topic {Topic}")]
+    private partial void LogCloseFailed(Exception ex, string topic);
 
     public Task<IList<IBatchContainer>> GetQueueMessagesAsync(int maxCount)
     {
@@ -87,7 +99,7 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
             }
             catch (ConsumeException ex)
             {
-                _logger.LogWarning(ex, "Kafka consume failed on topic {Topic}", _topic);
+                LogConsumeFailed(ex, _topic);
                 break;
             }
 
@@ -99,8 +111,7 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
             try
             {
                 var container = _serializer.Deserialize(result.Message.Value);
-                container.Token = new KafkaSequenceToken(
-                    result.Offset.Value, 0, result.Partition.Value, Interlocked.Increment(ref s_receiveOrder));
+                container.Token = new KafkaSequenceToken(result.Offset.Value, 0, result.Partition.Value);
                 batches.Add(container);
                 _lastDeliveredOffset = result.Offset.Value;
             }
@@ -127,7 +138,7 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
         }
         catch (KafkaException ex)
         {
-            _logger.LogWarning(ex, "Kafka offset commit failed on topic {Topic}", _topic);
+            LogCommitFailed(ex, _topic);
         }
         return Task.CompletedTask;
     }
@@ -144,7 +155,7 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Kafka consumer close failed on topic {Topic}", _topic);
+            LogCloseFailed(ex, _topic);
         }
         try { _consumer.Dispose(); } catch { /* swallow */ }
         _consumer = null;

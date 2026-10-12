@@ -176,7 +176,7 @@ the regular ones.
 | Setting | Default | What it does |
 |---|---|---|
 | `Fleans__Streaming__Kafka__EnableDeadLetterQueue` | `false` | Route records whose subscriber keeps failing to the dead-letter topic instead of dropping them. |
-| `Fleans__Streaming__Kafka__DeadLetterTopicSuffix` | `-dlq` | Suffix appended to each source topic. |
+| `Fleans__Streaming__Kafka__DeadLetterTopicSuffix` | `-dlq` | Suffix appended to each source topic. The silo refuses to start if the suffix would make a dead-letter topic name equal a regular topic (for example `0`: `fleans-1` + `0` = `fleans-10`). |
 | `Fleans__Streaming__Kafka__DeliveryRetryWindow` | `00:01:00` | How long to keep retrying a failing record before giving up (`hh:mm:ss`). The stream stays blocked for that subscriber while it retries, so keep it short. |
 
 Each dead-letter record carries these headers:

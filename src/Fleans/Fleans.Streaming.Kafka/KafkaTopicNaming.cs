@@ -22,12 +22,17 @@ internal static class KafkaTopicNaming
     public static string DeadLetterTopicForSource(KafkaStreamingOptions options, string sourceTopic) =>
         sourceTopic + options.DeadLetterTopicSuffix;
 
-    public static IEnumerable<string> AllExpectedTopics(KafkaStreamingOptions options)
+    public static IEnumerable<string> SourceTopics(KafkaStreamingOptions options)
     {
         var prefix = MapperPrefix(options);
         for (var i = 0; i < options.QueueCount; i++)
+            yield return $"{prefix}-{i}";
+    }
+
+    public static IEnumerable<string> AllExpectedTopics(KafkaStreamingOptions options)
+    {
+        foreach (var topic in SourceTopics(options))
         {
-            var topic = $"{prefix}-{i}";
             yield return topic;
             if (options.EnableDeadLetterQueue)
                 yield return DeadLetterTopicForSource(options, topic);

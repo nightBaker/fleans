@@ -6,18 +6,20 @@ namespace Fleans.Streaming.Kafka.Tests;
 public class KafkaSequenceTokenTests
 {
     [TestMethod]
-    public void CompareTo_OrdersByReceiveOrder_NotOffset_AcrossPartitions()
+    public void SameRecord_YieldsEqualTokens_IndependentOfProcess()
     {
-        // p0@100 was consumed before p1@3 — offsets alone would order them the other way round.
-        var first = new KafkaSequenceToken(offset: 100, eventIndex: 0, partition: 0, receiveOrder: 1);
-        var second = new KafkaSequenceToken(offset: 3, eventIndex: 0, partition: 1, receiveOrder: 2);
+        // Orleans keeps tokens across queue rebalances and silo restarts, so a token must be built
+        // only from Kafka coordinates — never from process-local state.
+        var a = new KafkaSequenceToken(offset: 5, eventIndex: 1, partition: 2);
+        var b = new KafkaSequenceToken(offset: 5, eventIndex: 1, partition: 2);
 
-        Assert.IsTrue(first.Older(second));
-        Assert.IsTrue(second.Newer(first));
+        Assert.IsTrue(a.Equals(b));
+        Assert.AreEqual(0, a.CompareTo(b));
+        Assert.AreEqual(a.GetHashCode(), b.GetHashCode());
     }
 
     [TestMethod]
-    public void SamePartitionAndOffset_DifferentPartition_AreNotEqual()
+    public void SameOffset_DifferentPartition_AreNotEqual()
     {
         var p0 = new KafkaSequenceToken(5, 0, partition: 0);
         var p1 = new KafkaSequenceToken(5, 0, partition: 1);
@@ -27,13 +29,13 @@ public class KafkaSequenceTokenTests
     }
 
     [TestMethod]
-    public void BatchContainer_EventTokens_CarryPartitionAndReceiveOrder()
+    public void BatchContainer_EventTokens_CarryPartitionAndOffset()
     {
         // Arrange
         var container = new KafkaBatchContainer
         {
             Events = ["a", "b"],
-            Token = new KafkaSequenceToken(offset: 5, eventIndex: 0, partition: 2, receiveOrder: 42),
+            Token = new KafkaSequenceToken(offset: 5, eventIndex: 0, partition: 2),
         };
 
         // Act
@@ -45,7 +47,6 @@ public class KafkaSequenceTokenTests
         {
             Assert.AreEqual(2, token.Partition);
             Assert.AreEqual(5, token.Offset);
-            Assert.AreEqual(42, token.ReceiveOrder);
         }
         Assert.AreEqual(0, tokens[0].EventIndex);
         Assert.AreEqual(1, tokens[1].EventIndex);
