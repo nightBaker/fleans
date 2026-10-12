@@ -16,6 +16,9 @@ namespace Fleans.Application.Tests.CustomTasks;
 [DoNotParallelize]
 public class CustomTaskRedeliveryTests : WorkflowTestBase
 {
+    // CustomTaskHandlerBase.LogSkippedInactiveActivity — the positive signal that a duplicate was handled.
+    private const int SkippedInactiveActivityEventId = 4038;
+
     [TestMethod]
     public async Task Redelivered_event_for_completed_activity_does_not_rerun_plugin()
     {
@@ -44,6 +47,7 @@ public class CustomTaskRedeliveryTests : WorkflowTestBase
         var ct1Entry = snapshot.CompletedActivities.Single(a => a.ActivityId == "ct1");
 
         // Act — redeliver the same event (same activity instance) through the engine publisher.
+        CapturedLogEvents.Clear();
         var publisher = Cluster.GrainFactory.GetGrain<IEventPublisher>(0);
         await publisher.Publish(new ExecuteCustomTaskEvent(
             WorkflowInstanceId: instance.GetPrimaryKey(),
@@ -55,7 +59,7 @@ public class CustomTaskRedeliveryTests : WorkflowTestBase
             InputMappings: new List<InputMapping>(),
             OutputMappings: new List<OutputMapping>(),
             VariablesId: ct1Entry.VariablesStateId));
-        await Task.Delay(1000);
+        await CapturedLogEvents.WaitFor(SkippedInactiveActivityEventId, 1);
 
         // Assert — the duplicate was skipped; the plugin ran exactly once.
         Assert.AreEqual(1, Volatile.Read(ref TestNoOpCustomTaskHandlerA.InvocationCount),
@@ -71,6 +75,7 @@ public class CustomTaskRedeliveryTests : WorkflowTestBase
     {
         // Arrange — three worker silos; N instances each with one gated custom task.
         TestGatedCustomTaskHandler.Reset();
+        CapturedLogEvents.Clear();
         await Cluster.StartAdditionalSiloAsync();
         const int instanceCount = 30;
         var start = new StartEvent("start");
@@ -95,40 +100,48 @@ public class CustomTaskRedeliveryTests : WorkflowTestBase
             await i.StartWorkflow();
         }));
 
-        // Act 1 — wait until every task is executing at the same time (held by the gate).
-        var deadline = DateTime.UtcNow.AddSeconds(20);
-        while (DateTime.UtcNow < deadline && TestGatedCustomTaskHandler.Executions.Count < instanceCount)
-            await Task.Delay(50);
-        Assert.AreEqual(instanceCount, TestGatedCustomTaskHandler.MaxInFlight,
-            "All tasks must be able to run concurrently across workers.");
-
-        // Act 2 — while every task is in flight, deliver a duplicate event for each one.
-        var publisher = Cluster.GrainFactory.GetGrain<IEventPublisher>(0);
-        foreach (var instance in instances)
+        try
         {
-            var snapshot = await WaitForCondition(instance.GetPrimaryKey(),
-                s => s.ActiveActivities.Any(a => a.ActivityId == "ct1"));
-            var entry = snapshot.ActiveActivities.Single(a => a.ActivityId == "ct1");
-            await publisher.Publish(new ExecuteCustomTaskEvent(
-                WorkflowInstanceId: instance.GetPrimaryKey(),
-                WorkflowId: workflow.WorkflowId,
-                ProcessDefinitionId: null,
-                ActivityInstanceId: entry.ActivityInstanceId,
-                ActivityId: "ct1",
-                TaskType: "test-gated",
-                InputMappings: new List<InputMapping>(),
-                OutputMappings: new List<OutputMapping>(),
-                VariablesId: entry.VariablesStateId));
-        }
+            // Act 1 — wait until every task is executing at the same time (held by the gate).
+            var deadline = DateTime.UtcNow.AddSeconds(20);
+            while (DateTime.UtcNow < deadline && TestGatedCustomTaskHandler.Executions.Count < instanceCount)
+                await Task.Delay(50);
+            Assert.AreEqual(instanceCount, TestGatedCustomTaskHandler.MaxInFlight,
+                "All tasks must be able to run concurrently across workers.");
 
-        // Release the originals; the queued duplicates arrive after completion.
-        TestGatedCustomTaskHandler.Gate.TrySetResult();
-        foreach (var instance in instances)
-        {
-            var done = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted);
-            Assert.IsFalse(done.IsFailed);
+            // Act 2 — while every task is in flight, deliver a duplicate event for each one.
+            var publisher = Cluster.GrainFactory.GetGrain<IEventPublisher>(0);
+            foreach (var instance in instances)
+            {
+                var snapshot = await WaitForCondition(instance.GetPrimaryKey(),
+                    s => s.ActiveActivities.Any(a => a.ActivityId == "ct1"));
+                var entry = snapshot.ActiveActivities.Single(a => a.ActivityId == "ct1");
+                await publisher.Publish(new ExecuteCustomTaskEvent(
+                    WorkflowInstanceId: instance.GetPrimaryKey(),
+                    WorkflowId: workflow.WorkflowId,
+                    ProcessDefinitionId: null,
+                    ActivityInstanceId: entry.ActivityInstanceId,
+                    ActivityId: "ct1",
+                    TaskType: "test-gated",
+                    InputMappings: new List<InputMapping>(),
+                    OutputMappings: new List<OutputMapping>(),
+                    VariablesId: entry.VariablesStateId));
+            }
+
+            // Release the originals; the queued duplicates arrive after completion.
+            TestGatedCustomTaskHandler.Gate.TrySetResult();
+            foreach (var instance in instances)
+            {
+                var done = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted);
+                Assert.IsFalse(done.IsFailed);
+            }
+            await CapturedLogEvents.WaitFor(SkippedInactiveActivityEventId, instanceCount);
         }
-        await Task.Delay(1000);
+        finally
+        {
+            // Never leave gated handlers hanging if an assertion above fails.
+            TestGatedCustomTaskHandler.Gate.TrySetResult();
+        }
 
         // Assert — exactly one execution per task, spread over more than one worker silo.
         var executions = TestGatedCustomTaskHandler.Executions.ToList();

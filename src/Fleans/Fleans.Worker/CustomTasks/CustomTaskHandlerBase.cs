@@ -110,19 +110,21 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
 
         var workflowInstance = _grainFactory.GetGrain<IWorkflowInstanceCallback>(item.WorkflowInstanceId);
 
+        // Claim check: the stream is at-least-once, so a redelivered event can reach a
+        // handler (on this or another worker silo) after the activity already finished.
+        // Skip it so the plugin's side effects never run twice for one activity instance.
+        // Deliberately outside the try below: the plugin has not run yet, so a failure here
+        // (core silo restarting, call timeout) must propagate for stream redelivery rather
+        // than fail the business activity.
+        var variables = await workflowInstance.GetVariablesIfActive(item.ActivityInstanceId, item.VariablesId);
+        if (variables is null)
+        {
+            LogSkippedInactiveActivity(item.ActivityId, item.ActivityInstanceId, item.TaskType);
+            return;
+        }
+
         try
         {
-            // Claim check: the stream is at-least-once, so a redelivered event can reach a
-            // handler (on this or another worker silo) after the activity already completed.
-            // Skip it so the plugin's side effects never run twice for one activity instance.
-            if (!await workflowInstance.IsActivityActive(item.ActivityInstanceId))
-            {
-                LogSkippedInactiveActivity(item.ActivityId, item.ActivityInstanceId, item.TaskType);
-                return;
-            }
-
-            var variables = await workflowInstance.GetVariables(item.VariablesId);
-
             var resolved = new Dictionary<string, object?>(StringComparer.Ordinal);
             foreach (var im in item.InputMappings)
                 resolved[im.Target] = MappingResolver.Resolve(im.Source, (IDictionary<string, object?>)variables);
