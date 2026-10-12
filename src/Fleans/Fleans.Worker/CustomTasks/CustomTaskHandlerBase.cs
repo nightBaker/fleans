@@ -114,16 +114,31 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
         // redelivered event can reach a handler after the activity already finished — skip it.
         // It does not stop a re-run after an interrupted execution; plugins still need an
         // idempotency key (context.ActivityInstanceId) for external side effects.
-        // Deliberately outside the try below: the plugin has not run yet, so a failure here
-        // (core silo restarting, call timeout) must propagate for stream redelivery rather
-        // than fail the business activity.
-        var variables = await workflowInstance.GetVariablesIfActive(item.ActivityInstanceId, item.VariablesId);
+        ExpandoObject? variables;
+        try
+        {
+            variables = await workflowInstance.GetVariablesIfActive(item.ActivityInstanceId, item.VariablesId);
+        }
+        catch (Exception ex) when (!IsTransient(ex))
+        {
+            // Deterministic (e.g. unknown variable scope): redelivery cannot fix it — fail visibly.
+            await FailActivityAsync(workflowInstance, item, ex);
+            return;
+        }
+        catch (Exception ex)
+        {
+            // Plugin has not run: let the stream provider redeliver instead of failing the activity.
+            LogTransientCallFailed(ex, item.ActivityId, nameof(IWorkflowInstanceCallback.GetVariablesIfActive));
+            throw;
+        }
+
         if (variables is null)
         {
             LogSkippedInactiveActivity(item.ActivityId, item.ActivityInstanceId, item.TaskType);
             return;
         }
 
+        ExpandoObject outputs;
         try
         {
             var resolved = new Dictionary<string, object?>(StringComparer.Ordinal);
@@ -140,12 +155,10 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
 
             var pluginResult = await ExecuteAsync(resolved, variables, context, _grainLifetimeCts!.Token);
 
-            var outputs = new ExpandoObject();
+            outputs = new ExpandoObject();
             var outputsDict = (IDictionary<string, object?>)outputs;
             foreach (var om in item.OutputMappings)
                 outputsDict[om.Target] = MappingResolver.Resolve(om.Source, pluginResult);
-
-            await workflowInstance.CompleteActivity(item.ActivityId, item.ActivityInstanceId, outputs);
         }
         catch (OperationCanceledException) when (_grainLifetimeCts?.IsCancellationRequested == true)
         {
@@ -157,21 +170,54 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
         }
         catch (Exception ex)
         {
-            LogExecuteFailed(ex, item.ActivityId, item.TaskType);
-            try
-            {
-                await workflowInstance.FailActivity(item.ActivityId, item.ActivityInstanceId, ex);
-            }
-            catch (Exception failEx)
-            {
-                LogFailActivityFailed(failEx, item.ActivityId);
-                // Redelivery duplicates are absorbed by the HasActiveEntry guard at
-                // WorkflowInstance.cs:315/:351 (CompleteActivity / FailActivity), backed by
-                // the domain-level entry.IsCompleted early-return at WorkflowExecution.cs:2135/:2186.
-                // See docs/conventions/invariants.md "Stream-redelivery idempotency" and
-                // the #569 Phase 1 audit comment for the full per-call-site guarantee.
-                throw;
-            }
+            await FailActivityAsync(workflowInstance, item, ex);
+            return;
+        }
+
+        // Outside the plugin catch: the plugin already succeeded, so a failed completion must
+        // never be recorded as a failed activity.
+        try
+        {
+            await workflowInstance.CompleteActivity(item.ActivityId, item.ActivityInstanceId, outputs);
+        }
+        catch (Exception ex) when (!IsTransient(ex))
+        {
+            // Deterministic (e.g. outputs that cannot be serialized): fail visibly.
+            await FailActivityAsync(workflowInstance, item, ex);
+        }
+        catch (Exception ex)
+        {
+            // Redelivery re-runs the plugin (the activity is still active) — the documented
+            // reason plugins need an idempotency key.
+            LogTransientCallFailed(ex, item.ActivityId, nameof(IWorkflowInstanceCallback.CompleteActivity));
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Infrastructure failures of a grain call (timeout, silo unavailable, message rejected) that
+    /// stream redelivery can recover from. Exceptions thrown by the grain method itself arrive
+    /// with their own type and are treated as deterministic.
+    /// </summary>
+    private static bool IsTransient(Exception ex) => ex is TimeoutException or OrleansException;
+
+    private async Task FailActivityAsync(
+        IWorkflowInstanceCallback workflowInstance, ExecuteCustomTaskEvent item, Exception ex)
+    {
+        LogExecuteFailed(ex, item.ActivityId, item.TaskType);
+        try
+        {
+            await workflowInstance.FailActivity(item.ActivityId, item.ActivityInstanceId, ex);
+        }
+        catch (Exception failEx)
+        {
+            LogFailActivityFailed(failEx, item.ActivityId);
+            // Redelivery duplicates are absorbed by the HasActiveEntry guards in
+            // WorkflowInstance.CompleteActivity / FailActivity, backed by the domain-level
+            // entry.IsCompleted early-return in WorkflowExecution.
+            // See docs/conventions/invariants.md "Stream-redelivery idempotency" and
+            // the #569 Phase 1 audit comment for the full per-call-site guarantee.
+            throw;
         }
     }
 
@@ -198,6 +244,10 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
     [LoggerMessage(EventId = 4038, Level = LogLevel.Information,
         Message = "Custom-task event for activity {ActivityId} (instance {ActivityInstanceId}, taskType={TaskType}) skipped — activity is no longer active (redelivered or duplicate event)")]
     private partial void LogSkippedInactiveActivity(string activityId, Guid activityInstanceId, string taskType);
+
+    [LoggerMessage(EventId = 4039, Level = LogLevel.Warning,
+        Message = "Custom-task call {Call} for activity {ActivityId} failed transiently — rethrowing for stream redelivery")]
+    private partial void LogTransientCallFailed(Exception ex, string activityId, string call);
 
     [LoggerMessage(EventId = 4031, Level = LogLevel.Error,
         Message = "Custom-task plugin execution failed for activity {ActivityId} (taskType={TaskType})")]

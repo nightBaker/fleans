@@ -14,7 +14,7 @@ propagation), see [`docs/plans/2026-02-08-structured-workflow-logging.md`](../pl
 | 1000–1199 | `WorkflowInstance` | Sub-ranges: 1066 UserTaskClaim rejection (Warning); 1070–1079 pending events / event sub-processes; 1078 root-scope listeners; 1080–1089 complex gateway; 1090–1099 escalation; 1100–1109 transaction sub-process; 1110–1119 compensation; 1120 workflow failed by unhandled activity failure (Error, #762) |
 | 2000–2099 | `ActivityInstance` | |
 | 3000–3099 | `WorkflowInstanceState` | Includes 3030–3032 escalation warnings |
-| 4000–4099 | Event handlers | `Fleans.Application/Events/Handlers/*` |
+| 4000–4099 | Event handlers | `Fleans.Application/Events/Handlers/*`; `CustomTaskHandlerBase` (`Fleans.Worker`) uses 4030–4035, 4037–4039, 4050: 4030 handling INFO, 4031 execute failed ERROR, 4032 stream completed INFO, 4033 stream error ERROR, 4034 FailActivity failed CRITICAL, 4035 activated INFO, 4037 task-type mismatch WARNING, 4038 skipped finished activity INFO, 4039 transient grain-call failure rethrown WARNING, 4050 cancelled on deactivation INFO. **Known collision:** 4030–4034 are also used by `WorkflowEvaluateCompletionConditionEventHandler` — filter by logger category; pick new custom-task ids from 4040+ only after checking both classes. |
 | 5000–5099 | `WorkflowEventsPublisher` | |
 | 6000–6099 | `WorkflowInstanceFactoryGrain` | |
 | 7000–7099 | `WorkflowEngine` | |
