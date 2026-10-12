@@ -161,23 +161,46 @@ public class KafkaDlqFailureHandlerTests
     }
 
     [TestMethod]
-    public async Task PublisherDispose_WaitsForLeaseHeldAcrossFetchAndPublish()
+    public async Task PublisherDispose_WithLiveLease_DefersProducerDisposeToLastRelease()
     {
-        // Arrange — a handler holds a lease between re-consume and publish.
+        // Arrange — a handler holds a lease between re-consume and publish, longer than Dispose waits.
         var publisher = CreatePublisher();
         var lease = publisher.TryAcquire();
         Assert.IsNotNull(lease);
 
         // Act
-        var dispose = Task.Run(publisher.Dispose);
-        await Task.Delay(200);
-        var disposedWhileLeased = dispose.IsCompleted;
+        await Task.Run(publisher.Dispose).WaitAsync(TimeSpan.FromSeconds(10)); // bounded: returns despite the lease
+        var disposedUnderLease = publisher.IsProducerDisposed;
+        var newLease = publisher.TryAcquire();
         lease.Dispose();
-        await dispose.WaitAsync(TimeSpan.FromSeconds(10));
 
         // Assert
-        Assert.IsFalse(disposedWhileLeased, "Dispose must not tear the producer down under a live lease");
-        Assert.IsNull(publisher.TryAcquire(), "no new leases after Dispose");
+        Assert.IsFalse(disposedUnderLease, "the producer must stay open while a lease is live");
+        Assert.IsNull(newLease, "no new leases after Dispose");
+        Assert.IsTrue(publisher.IsProducerDisposed, "the last lease released disposes the producer");
+    }
+
+    [TestMethod]
+    public async Task GetDeliveryFailureHandler_DoesNotCreateDlqProducer()
+    {
+        var factory = new KafkaQueueAdapterFactory("provider", Options, new SimpleQueueCacheOptions(),
+            null!, NullLoggerFactory.Instance);
+
+        await factory.GetDeliveryFailureHandler(QueueId.GetQueueId("t", 0, 0));
+
+        Assert.IsFalse(factory.IsDeadLetterPublisherCreated, "the DLQ producer is built on the first failure, not at queue init");
+        factory.Dispose();
+    }
+
+    [TestMethod]
+    public void OptionsValidator_FailsInvalidNamedOptions_AndSkipsOtherNames()
+    {
+        var validator = new KafkaStreamingOptionsValidator("provider");
+        var invalid = new KafkaStreamingOptions { DeliveryRetryWindow = TimeSpan.Zero };
+
+        Assert.IsTrue(validator.Validate("provider", invalid).Failed);
+        Assert.IsTrue(validator.Validate("other", invalid).Skipped);
+        Assert.IsTrue(validator.Validate("provider", new KafkaStreamingOptions()).Succeeded);
     }
 
     [TestMethod]
@@ -200,5 +223,5 @@ public class KafkaDlqFailureHandlerTests
     private static KafkaDeadLetterPublisher CreatePublisher() => new(Options, NullLoggerFactory.Instance);
 
     private static KafkaDlqFailureHandler CreateHandler(KafkaRecordReconsumer reconsumer, KafkaDeadLetterPublisher publisher) =>
-        new("fleans-test-0", reconsumer, publisher, NullLoggerFactory.Instance);
+        new("fleans-test-0", reconsumer, () => publisher, NullLoggerFactory.Instance);
 }

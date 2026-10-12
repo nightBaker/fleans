@@ -71,6 +71,7 @@ public class KafkaDlqIntegrationTests
             Assert.AreEqual("0", Header(dlqMessage, "x-fleans-original-offset"));
             Assert.AreEqual("delivery-failed", Header(dlqMessage, "x-fleans-failure-reason"));
             Assert.IsNotNull(Header(dlqMessage, "x-fleans-stream-id"));
+            Assert.IsNotNull(Header(dlqMessage, "x-fleans-subscription-id"), "replay must be able to target only the failing subscriber");
             Assert.IsNotNull(Header(dlqMessage, "x-fleans-failure-time-utc"));
             lock (healthy) { CollectionAssert.AreEqual(new[] { "healthy" }, healthy, "the record after the poison one must still be delivered"); }
 

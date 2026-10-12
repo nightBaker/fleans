@@ -187,6 +187,7 @@ Each dead-letter record carries these headers:
 | `x-fleans-failure-reason` | `delivery-failed` (a subscriber kept throwing). |
 | `x-fleans-failure-time-utc` | ISO-8601 timestamp. |
 | `x-fleans-stream-id` | Orleans stream ID. |
+| `x-fleans-subscription-id` | The subscription whose handler kept failing. |
 
 A record whose bytes cannot be deserialized is **never** dead-lettered, even with the DLQ on: it
 is skipped right away and logged at Error with EventId `11107`. Such a record can only come from
@@ -194,7 +195,8 @@ something other than the engine writing to the topic; find it with the topic, pa
 offset in the log line.
 
 Delivery to the dead-letter topic is at-least-once: a record that fails for several subscribers
-is published once per subscriber. Deduplicate on the `x-fleans-original-*` headers.
+is published once per subscriber, each copy with its own `x-fleans-subscription-id`. Deduplicate
+on the `x-fleans-original-*` headers.
 
 Inspect the topic with any Kafka client, for example:
 

@@ -23,6 +23,7 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory, IDi
     private readonly IQueueAdapterCache _cache;
     private readonly Lazy<KafkaDeadLetterPublisher> _deadLetters;
     private readonly Lazy<KafkaRecordReconsumer> _reconsumer;
+    private readonly object _publisherGate = new();
     private int _disposed;
 
     public KafkaQueueAdapterFactory(
@@ -93,15 +94,26 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory, IDi
         return Task.FromResult<IStreamFailureHandler>(new KafkaDlqFailureHandler(
             KafkaTopicNaming.TopicForQueue(_options, queueId),
             _reconsumer.Value,
-            _deadLetters.Value,
+            GetPublisher,
             _loggerFactory));
+    }
+
+    internal bool IsDeadLetterPublisherCreated => _deadLetters.IsValueCreated;
+
+    // Under the gate so a first failure racing Dispose can't build a producer nobody will dispose.
+    private KafkaDeadLetterPublisher? GetPublisher()
+    {
+        lock (_publisherGate)
+            return Volatile.Read(ref _disposed) != 0 ? null : _deadLetters.Value;
     }
 
     public void Dispose()
     {
-        if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0) return;
-        // Each waits (bounded, ~2s) for its in-flight work; handlers hold a publisher lease across
-        // fetch + publish. Shutdown runs after the agents stopped, so this is normally instant.
+        lock (_publisherGate)
+            if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0) return;
+        // Each waits (bounded, ~2s) for its in-flight work; whatever is still running then releases
+        // the native client itself when it finishes. Shutdown runs after the agents stopped, so this
+        // is normally instant.
         if (_reconsumer.IsValueCreated)
             _reconsumer.Value.Dispose();
         if (_deadLetters.IsValueCreated)

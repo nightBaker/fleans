@@ -117,7 +117,8 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
             }
             catch (Exception ex)
             {
-                // Log-only, never dead-lettered: the next commit moves past it.
+                // Log-only, never dead-lettered. Skipped now; its offset is committed only with a later
+                // delivered batch, so a trailing bad record is re-read (and re-logged) after a restart.
                 LogDeserializationFailed(ex, _topic, result.Partition.Value, result.Offset.Value);
             }
         }

@@ -15,13 +15,16 @@ internal sealed partial class KafkaDlqFailureHandler : IStreamFailureHandler
 {
     private readonly string _topic;
     private readonly KafkaRecordReconsumer _reconsumer;
-    private readonly KafkaDeadLetterPublisher _publisher;
+
+    // Resolved on first failure, not at queue init, so a silo that never sees a poison record never
+    // opens a DLQ producer. Returns null once the factory is disposed.
+    private readonly Func<KafkaDeadLetterPublisher?> _publisher;
     private readonly ILogger<KafkaDlqFailureHandler> _logger;
 
     public bool ShouldFaultSubsriptionOnError => false;
 
     internal KafkaDlqFailureHandler(
-        string topic, KafkaRecordReconsumer reconsumer, KafkaDeadLetterPublisher publisher, ILoggerFactory loggerFactory)
+        string topic, KafkaRecordReconsumer reconsumer, Func<KafkaDeadLetterPublisher?> publisher, ILoggerFactory loggerFactory)
     {
         _topic = topic;
         _reconsumer = reconsumer;
@@ -38,7 +41,7 @@ internal sealed partial class KafkaDlqFailureHandler : IStreamFailureHandler
             return Task.CompletedTask;
         }
 
-        return RouteToDlqAsync(streamIdentity.ToString(), kt);
+        return RouteToDlqAsync(streamIdentity.ToString(), subscriptionId.ToString(), kt);
     }
 
     public Task OnSubscriptionFailure(GuidId subscriptionId, string streamProviderName,
@@ -49,11 +52,12 @@ internal sealed partial class KafkaDlqFailureHandler : IStreamFailureHandler
         return Task.CompletedTask;
     }
 
-    private async Task RouteToDlqAsync(string streamId, KafkaSequenceToken kt)
+    private async Task RouteToDlqAsync(string streamId, string subscriptionId, KafkaSequenceToken kt)
     {
-        // Spans fetch + publish, so factory shutdown can't dispose the publisher between the two.
-        using var lease = _publisher.TryAcquire();
-        if (lease is null)
+        // The lease spans fetch + publish, so factory shutdown can't dispose the producer between the two.
+        var publisher = _publisher();
+        using var lease = publisher?.TryAcquire();
+        if (publisher is null || lease is null)
         {
             LogShuttingDown(_topic, kt.Partition, kt.Offset);
             return;
@@ -74,15 +78,18 @@ internal sealed partial class KafkaDlqFailureHandler : IStreamFailureHandler
         switch (outcome)
         {
             case KafkaReconsumeOutcome.Found:
-                await _publisher.PublishAsync(
+                await publisher.PublishUnderLeaseAsync(
                     _topic, kt.Partition, kt.Offset, message!.Key, message.Value,
-                    KafkaDeadLetterReason.DeliveryFailed, streamId).ConfigureAwait(false);
+                    KafkaDeadLetterReason.DeliveryFailed, streamId, subscriptionId).ConfigureAwait(false);
                 break;
             case KafkaReconsumeOutcome.OffsetGone:
                 LogOffsetGone(_topic, kt.Partition, kt.Offset);
                 break;
             case KafkaReconsumeOutcome.TimedOut:
-                LogReconsumeTimedOut(_topic, kt.Partition, kt.Offset);
+                LogReconsumeTimedOut(_topic, kt.Partition, kt.Offset, KafkaRecordReconsumer.ConsumeTimeout.TotalSeconds);
+                break;
+            case KafkaReconsumeOutcome.Busy:
+                LogReconsumeBusy(_topic, kt.Partition, kt.Offset, KafkaRecordReconsumer.LockTimeout.TotalSeconds);
                 break;
             case KafkaReconsumeOutcome.Disposed:
                 LogShuttingDown(_topic, kt.Partition, kt.Offset);
@@ -107,8 +114,12 @@ internal sealed partial class KafkaDlqFailureHandler : IStreamFailureHandler
     private partial void LogReconsumeFailed(Exception ex, string topic, int partition, long offset);
 
     [LoggerMessage(EventId = 12006, Level = LogLevel.Warning,
-        Message = "Kafka DLQ: re-consume of {Topic}[{Partition}]@{Offset} returned nothing within 10s; dropped without dead-lettering")]
-    private partial void LogReconsumeTimedOut(string topic, int partition, long offset);
+        Message = "Kafka DLQ: re-consume of {Topic}[{Partition}]@{Offset} returned nothing within {TimeoutSeconds}s; dropped without dead-lettering")]
+    private partial void LogReconsumeTimedOut(string topic, int partition, long offset, double timeoutSeconds);
+
+    [LoggerMessage(EventId = 12009, Level = LogLevel.Warning,
+        Message = "Kafka DLQ: re-consume of {Topic}[{Partition}]@{Offset} waited {TimeoutSeconds}s behind other queues' re-consumes; dropped without dead-lettering")]
+    private partial void LogReconsumeBusy(string topic, int partition, long offset, double timeoutSeconds);
 
     [LoggerMessage(EventId = 12007, Level = LogLevel.Warning,
         Message = "Kafka DLQ: delivery of {Topic}[{Partition}]@{Offset} failed after the DLQ was shut down; dropped without dead-lettering")]

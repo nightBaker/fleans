@@ -9,6 +9,8 @@ internal enum KafkaReconsumeOutcome
     Found,
     OffsetGone,
     TimedOut,
+    /// <summary>Other queues' fetches held the shared consumer past <see cref="KafkaRecordReconsumer.LockTimeout"/>.</summary>
+    Busy,
     Disposed,
 }
 
@@ -19,7 +21,11 @@ internal enum KafkaReconsumeOutcome
 /// </summary>
 internal sealed class KafkaRecordReconsumer : IDisposable
 {
-    private static readonly TimeSpan ConsumeTimeout = TimeSpan.FromSeconds(10);
+    internal static readonly TimeSpan ConsumeTimeout = TimeSpan.FromSeconds(10);
+
+    // Bounds how long one queue's pulling agent waits behind other queues' fetches.
+    internal static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(15);
+
     private static readonly TimeSpan DisposeLockTimeout = TimeSpan.FromSeconds(2);
 
     private readonly Lazy<IConsumer<byte[], byte[]>> _consumer;
@@ -29,6 +35,7 @@ internal sealed class KafkaRecordReconsumer : IDisposable
     private readonly SemaphoreSlim _lock = new(1, 1);
 
     private volatile bool _disposed;
+    private int _consumerDisposed;
 
     public KafkaRecordReconsumer(KafkaStreamingOptions options)
     {
@@ -55,7 +62,9 @@ internal sealed class KafkaRecordReconsumer : IDisposable
     public async Task<(KafkaReconsumeOutcome Outcome, Message<byte[], byte[]>? Message)> FetchAsync(
         string topic, int partition, long offset)
     {
-        await _lock.WaitAsync().ConfigureAwait(false);
+        if (_disposed) return (KafkaReconsumeOutcome.Disposed, null);
+        if (!await _lock.WaitAsync(LockTimeout).ConfigureAwait(false))
+            return (KafkaReconsumeOutcome.Busy, null);
         try
         {
             if (_disposed) return (KafkaReconsumeOutcome.Disposed, null);
@@ -63,6 +72,8 @@ internal sealed class KafkaRecordReconsumer : IDisposable
         }
         finally
         {
+            // Dispose gave up waiting for this fetch — release the native consumer here instead.
+            if (_disposed) DisposeConsumer();
             _lock.Release();
         }
     }
@@ -95,23 +106,25 @@ internal sealed class KafkaRecordReconsumer : IDisposable
 
     public void Dispose()
     {
+        _disposed = true;
         // Waits (bounded) for an in-flight fetch so the native consumer is never disposed mid-Consume.
-        // If the fetch outlasts the wait, leave the consumer to process exit rather than block shutdown.
-        if (!_lock.Wait(DisposeLockTimeout))
-        {
-            _disposed = true;
-            return;
-        }
+        // If the fetch outlasts the wait, its own finally disposes the consumer once Consume returns.
+        if (!_lock.Wait(DisposeLockTimeout)) return;
         try
         {
-            if (_disposed) return;
-            _disposed = true;
-            if (_consumer.IsValueCreated)
-                _consumer.Value.Dispose();
+            DisposeConsumer();
         }
         finally
         {
             _lock.Release();
         }
+    }
+
+    // Only called while holding _lock.
+    private void DisposeConsumer()
+    {
+        if (Interlocked.Exchange(ref _consumerDisposed, 1) != 0) return;
+        if (_consumer.IsValueCreated)
+            _consumer.Value.Dispose();
     }
 }

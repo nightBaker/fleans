@@ -28,6 +28,7 @@ internal sealed partial class KafkaDeadLetterPublisher : IDisposable
 
     private readonly IProducer<byte[], byte[]> _producer;
     private int _disposed;
+    private int _producerDisposed;
     private int _inFlight;
 
     public KafkaDeadLetterPublisher(KafkaStreamingOptions options, ILoggerFactory loggerFactory)
@@ -53,8 +54,15 @@ internal sealed partial class KafkaDeadLetterPublisher : IDisposable
         // _inFlight to drain, so a lease taken before the flag finishes on an open producer.
         Interlocked.Increment(ref _inFlight);
         if (Volatile.Read(ref _disposed) == 0) return new Lease(this);
-        Interlocked.Decrement(ref _inFlight);
+        Release();
         return null;
+    }
+
+    private void Release()
+    {
+        // Dispose gave up draining — the last lease out releases the producer.
+        if (Interlocked.Decrement(ref _inFlight) == 0 && Volatile.Read(ref _disposed) != 0)
+            DisposeProducer();
     }
 
     /// <summary>Never throws — a failed DLQ publish is logged (EventId 12001) and the record is dropped.</summary>
@@ -72,6 +80,15 @@ internal sealed partial class KafkaDeadLetterPublisher : IDisposable
         await ProduceAsync(sourceTopic, partition, offset, key, value, reason, streamId).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Publish for a caller that already holds a lease from <see cref="TryAcquire"/>; skips the
+    /// disposed check, because the caller's lease is what keeps the producer open.
+    /// </summary>
+    public Task PublishUnderLeaseAsync(
+        string sourceTopic, int partition, long offset, byte[]? key, byte[] value,
+        string reason, string? streamId, string? subscriptionId) =>
+        ProduceAsync(sourceTopic, partition, offset, key, value, reason, streamId, subscriptionId);
+
     private sealed class Lease(KafkaDeadLetterPublisher owner) : IDisposable
     {
         private int _released;
@@ -79,12 +96,13 @@ internal sealed partial class KafkaDeadLetterPublisher : IDisposable
         public void Dispose()
         {
             if (Interlocked.Exchange(ref _released, 1) == 0)
-                Interlocked.Decrement(ref owner._inFlight);
+                owner.Release();
         }
     }
 
     private async Task ProduceAsync(
-        string sourceTopic, int partition, long offset, byte[]? key, byte[] value, string reason, string? streamId)
+        string sourceTopic, int partition, long offset, byte[]? key, byte[] value, string reason, string? streamId,
+        string? subscriptionId = null)
     {
         var dlqTopic = KafkaTopicNaming.DeadLetterTopicForSource(_options, sourceTopic);
         var headers = new Headers
@@ -97,6 +115,8 @@ internal sealed partial class KafkaDeadLetterPublisher : IDisposable
         };
         if (streamId is not null)
             headers.Add("x-fleans-stream-id", Utf8(streamId));
+        if (subscriptionId is not null)
+            headers.Add("x-fleans-subscription-id", Utf8(subscriptionId));
 
         try
         {
@@ -114,13 +134,22 @@ internal sealed partial class KafkaDeadLetterPublisher : IDisposable
         }
     }
 
+    internal bool IsProducerDisposed => Volatile.Read(ref _producerDisposed) != 0;
+
     private static byte[] Utf8(string value) => Encoding.UTF8.GetBytes(value);
 
     public void Dispose()
     {
         if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0) return;
-        // Bounded: a publish still running after this fails on the disposed producer (EventId 12001).
-        SpinWait.SpinUntil(() => Volatile.Read(ref _inFlight) == 0, DrainTimeout);
+        // Bounded wait so shutdown never blocks long; if leases are still live, the last one to be
+        // released disposes the producer (see Release), so their publish still succeeds.
+        if (SpinWait.SpinUntil(() => Volatile.Read(ref _inFlight) == 0, DrainTimeout))
+            DisposeProducer();
+    }
+
+    private void DisposeProducer()
+    {
+        if (Interlocked.Exchange(ref _producerDisposed, 1) != 0) return;
         try
         {
             _producer.Flush(FlushTimeout);
