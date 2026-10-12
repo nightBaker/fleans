@@ -35,7 +35,7 @@ Opt-in via `EnableDeadLetterQueue` (default `false`, #686). Records that cannot 
 
 **Two capture points:**
 
-1. **Subscriber keeps failing** (`x-fleans-failure-reason: delivery-failed`). Orleans retries delivery itself until `MaxEventDeliveryTime`, then calls `IStreamFailureHandler.OnDeliveryFailure` **once** and moves the cursor past the record. `KafkaDlqFailureHandler` re-reads the raw record by partition and offset with an assign-only consumer and publishes it. `OnSubscriptionFailure` is for subscription *initialisation* errors and is log-only.
+1. **Subscriber keeps failing** (`x-fleans-failure-reason: delivery-failed`). Orleans retries delivery itself until `MaxEventDeliveryTime`, then calls `IStreamFailureHandler.OnDeliveryFailure` and moves the cursor past the record. The call is per subscription, so a record that fails for several subscribers is dead-lettered once per subscriber — DLQ consumers dedupe on `x-fleans-original-{topic,partition,offset}`. `KafkaDlqFailureHandler` re-reads the raw record by partition and offset with an assign-only consumer and publishes it. `OnSubscriptionFailure` is for subscription *initialisation* errors and is log-only.
 2. **Record cannot be deserialized** (`x-fleans-failure-reason: deserialization-failed`, plus `x-fleans-exception-type` / `-message`). `KafkaQueueAdapterReceiver` publishes it before the next offset commit.
 
 Every DLQ record carries `x-fleans-original-topic`, `-partition`, `-offset`, `x-fleans-failure-reason` and `x-fleans-failure-time-utc`, plus `x-fleans-stream-id` for delivery failures. One `KafkaDeadLetterPublisher` per adapter factory serves both paths and reuses the main producer config (security, idempotence, acks).

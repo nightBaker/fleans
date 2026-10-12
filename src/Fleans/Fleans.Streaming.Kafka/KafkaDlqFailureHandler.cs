@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Confluent.Kafka;
 using Microsoft.Extensions.Logging;
 using Orleans.Runtime;
@@ -21,9 +20,6 @@ internal sealed partial class KafkaDlqFailureHandler : IStreamFailureHandler, ID
 
     // Serializes re-consume calls: Assign + Consume on one consumer is not thread-safe.
     private readonly SemaphoreSlim _reConsumeLock = new(1, 1);
-
-    // "{partition}:{offset}" already routed — a record failing for several subscribers is dead-lettered once.
-    private readonly ConcurrentDictionary<string, byte> _routed = new();
 
     private int _disposed;
 
@@ -62,9 +58,6 @@ internal sealed partial class KafkaDlqFailureHandler : IStreamFailureHandler, ID
             LogMissingSequenceToken(streamIdentity.ToString());
             return Task.CompletedTask;
         }
-
-        if (!_routed.TryAdd($"{kt.Partition}:{kt.SequenceNumber}", 0))
-            return Task.CompletedTask;
 
         return RouteToDlqAsync(streamIdentity.ToString(), kt);
     }

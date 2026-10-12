@@ -190,6 +190,9 @@ Each dead-letter record carries these headers:
 | `x-fleans-stream-id` | Orleans stream ID (`delivery-failed` only). |
 | `x-fleans-exception-type` / `-message` | The deserialization error (`deserialization-failed` only). |
 
+Delivery to the dead-letter topic is at-least-once: a record that fails for several subscribers
+is published once per subscriber. Deduplicate on the `x-fleans-original-*` headers.
+
 Inspect the topic with any Kafka client, for example:
 
 ```bash
