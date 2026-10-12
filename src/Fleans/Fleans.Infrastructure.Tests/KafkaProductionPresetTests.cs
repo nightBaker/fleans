@@ -1,4 +1,8 @@
 using Fleans.Streaming.Kafka;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using Orleans.Hosting;
 
 namespace Fleans.Infrastructure.Tests;
 
@@ -9,30 +13,6 @@ namespace Fleans.Infrastructure.Tests;
 [TestClass]
 public class KafkaProductionPresetTests
 {
-    // --- QueueCount ---
-
-    [TestMethod]
-    public void QueueCount_returns_8_when_cores_below_floor()
-    {
-        Assert.AreEqual(8, KafkaProductionPreset.QueueCount(1));
-        Assert.AreEqual(8, KafkaProductionPreset.QueueCount(4));
-        Assert.AreEqual(8, KafkaProductionPreset.QueueCount(7));
-    }
-
-    [TestMethod]
-    public void QueueCount_returns_8_at_exactly_8_cores()
-    {
-        Assert.AreEqual(8, KafkaProductionPreset.QueueCount(8));
-    }
-
-    [TestMethod]
-    public void QueueCount_scales_linearly_above_8_cores()
-    {
-        Assert.AreEqual(16, KafkaProductionPreset.QueueCount(16));
-        Assert.AreEqual(32, KafkaProductionPreset.QueueCount(32));
-        Assert.AreEqual(96, KafkaProductionPreset.QueueCount(96));
-    }
-
     // --- NumPartitions ---
 
     [TestMethod]
@@ -66,5 +46,36 @@ public class KafkaProductionPresetTests
 
         Assert.AreEqual(1, options.NumPartitions,
             "Default NumPartitions must stay 1 regardless of preset — WithProductionDefaults is opt-in.");
+    }
+
+    // --- QueueCount stays config-driven (#699) ---
+
+    [TestMethod]
+    public void Preset_does_not_override_QueueCount()
+    {
+        var builder = new FakeSiloBuilder();
+        builder.Services.AddLogging();
+        builder.Services.Configure<KafkaStreamingOptions>("kafka", o => o.QueueCount = 3);
+
+        builder.WithProductionDefaults("kafka");
+
+        var options = builder.Services.BuildServiceProvider()
+            .GetRequiredService<IOptionsMonitor<KafkaStreamingOptions>>().Get("kafka");
+        Assert.AreEqual(3, options.QueueCount,
+            "QueueCount is a cluster-wide hash-ring value; deriving it from the host's core count lets a mixed-core fleet misroute streams.");
+        Assert.AreEqual(KafkaProductionPreset.NumPartitions(Environment.ProcessorCount), options.NumPartitions);
+    }
+
+    private sealed class FakeSiloBuilder : ISiloBuilder
+    {
+        public IServiceCollection Services { get; } = new ServiceCollection();
+
+        public IConfiguration Configuration { get; } = new ConfigurationBuilder().Build();
+
+        public ISiloBuilder ConfigureServices(Action<IServiceCollection> configureDelegate)
+        {
+            configureDelegate(Services);
+            return this;
+        }
     }
 }
