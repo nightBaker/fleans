@@ -101,7 +101,7 @@ The authoritative element coverage matrix lives on the docs site:
 - [BPMN editor](https://nightbaker.github.io/fleans/guides/editor/) — multi-tab editing, live deploy
 - [Writing custom tasks](https://nightbaker.github.io/fleans/guides/writing-custom-tasks/) — your own task plugins
 - [Custom worker host](https://nightbaker.github.io/fleans/guides/custom-worker-host/) — ship plugins as a separate deployable
-- [Migrating Camunda 7 external tasks](https://nightbaker.github.io/fleans/guides/camunda-external-tasks/) — keep existing Camunda external-task workers; the `Fleans.Plugins.CamundaExternalTask` plugin serves the Camunda `/external-task` REST API
+- [Migrating Camunda 7 external tasks](https://nightbaker.github.io/fleans/guides/camunda-external-tasks/) — keep existing Camunda external-task workers via the separate [fleans-camunda-external-task](https://github.com/nightBaker/fleans-camunda-external-task) plugin
 - [Message correlation](https://nightbaker.github.io/fleans/guides/message-correlation/) — wire BPMN to external events
 - [Error handling](https://nightbaker.github.io/fleans/guides/error-handling/) — boundary events and compensation
 - [Self-host: Docker Compose](https://nightbaker.github.io/fleans/guides/self-host-docker-compose/) · [Helm](https://nightbaker.github.io/fleans/guides/self-host-helm/)

@@ -197,12 +197,12 @@ The publisher routes `ExecuteCustomTaskEvent` to `events.ExecuteCustomTaskEvent.
 
 Plugin authors hosting from the [`fleans-custom-worker-example`](https://github.com/nightBaker/fleans-custom-worker-example) template need to update their handlers: each concrete `CustomTaskHandlerBase` subclass must carry `[ImplicitStreamSubscription("events.ExecuteCustomTaskEvent.<task-type>")]` with a literal string matching its `TaskType`. The Worker host's `AddCustomTaskPlugin<T>(taskType, …)` call now throws `InvalidOperationException` at startup if the attribute is missing or drifted, or if two plugins claim the same `TaskType` — diagnose against the exception message.
 
-## Camunda 7 external tasks (plugin)
+## Camunda 7 external tasks
 
-`Fleans.Plugins.CamundaExternalTask` keeps Camunda 7 external-task workers running unchanged:
-`<serviceTask type="camunda:<topic>">` tasks are queued in a table and served through the
-Camunda `/engine-rest/external-task` REST API. See
-[Migrating Camunda 7 External Tasks](/fleans/guides/camunda-external-tasks/).
+The separate [fleans-camunda-external-task](https://github.com/nightBaker/fleans-camunda-external-task)
+plugin keeps Camunda 7 external-task workers running unchanged. It queues
+`<serviceTask type="camunda:<topic>">` tasks and serves the Camunda `/engine-rest/external-task`
+REST API. See [Migrating Camunda 7 External Tasks](/fleans/guides/camunda-external-tasks/).
 
 ## Hosting plugins externally
 

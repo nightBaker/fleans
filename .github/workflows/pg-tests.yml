@@ -45,23 +45,6 @@ jobs:
           --filter "TestCategory=Postgres"
           --logger "trx;LogFileName=pg.trx"
 
-      # Camunda external-task plugin: re-runs its REST API suite on PostgreSQL
-      # (schema DDL, conditional lock UPDATE). A zero-match here fails on the
-      # explicit count check below.
-      - name: Test Camunda external-task plugin (PostgreSQL)
-        env:
-          FLEANS_PG_TESTS: "1"
-        run: |
-          dotnet test Fleans.Plugins.CamundaExternalTask.Tests/Fleans.Plugins.CamundaExternalTask.Tests.csproj \
-            --no-build --filter "TestCategory=Postgres" --logger "trx;LogFileName=pg-camunda.trx"
-          trx_file=$(find Fleans.Plugins.CamundaExternalTask.Tests/TestResults -name pg-camunda.trx | head -1)
-          executed=$(python3 -c "import sys,xml.etree.ElementTree as ET; ns={'t':'http://microsoft.com/schemas/VisualStudio/TeamTest/2010'}; c=ET.parse(sys.argv[1]).getroot().find('.//t:Counters',ns); print(c.get('executed','0') if c is not None else 0)" "$trx_file")
-          echo "Camunda plugin Postgres tests executed: ${executed}"
-          if [ "${executed:-0}" -eq 0 ]; then
-            echo "::error::No Camunda external-task Postgres tests executed"
-            exit 1
-          fi
-
       # Silent-green guard for #445. `dotnet test --filter "TestCategory=Postgres"`
       # exits 0 when the filter matches zero tests — a refactor that drops the
       # [TestCategory("Postgres")] attribute from every parametrised class would
