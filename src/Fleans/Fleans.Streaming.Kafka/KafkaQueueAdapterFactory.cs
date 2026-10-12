@@ -1,7 +1,6 @@
 using Confluent.Kafka;
 using Confluent.Kafka.Admin;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Orleans.Configuration;
@@ -12,7 +11,7 @@ using Orleans.Streams;
 
 namespace Fleans.Streaming.Kafka;
 
-public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory, IDisposable
+public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory
 {
     private readonly string _name;
     private readonly KafkaStreamingOptions _options;
@@ -21,10 +20,10 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory, IDi
     private readonly ILogger<KafkaQueueAdapterFactory> _logger;
     private readonly HashRingBasedStreamQueueMapper _mapper;
     private readonly IQueueAdapterCache _cache;
-    private readonly Lazy<KafkaDeadLetterPublisher> _deadLetters;
-    private readonly Lazy<KafkaRecordReconsumer> _reconsumer;
-    private readonly object _publisherGate = new();
-    private int _disposed;
+
+    // Set by CreateAdapter, which Orleans runs before it asks for any delivery-failure handler.
+    // The DLQ publishes through this adapter's producer, so the factory owns no Kafka clients.
+    private KafkaQueueAdapter? _adapter;
 
     public KafkaQueueAdapterFactory(
         string name,
@@ -44,8 +43,6 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory, IDi
             KafkaTopicNaming.MapperPrefix(options));
 
         _cache = new SimpleQueueAdapterCache(cacheOptions, name, loggerFactory);
-        _deadLetters = new Lazy<KafkaDeadLetterPublisher>(() => new KafkaDeadLetterPublisher(options, loggerFactory));
-        _reconsumer = new Lazy<KafkaRecordReconsumer>(() => new KafkaRecordReconsumer(options));
     }
 
     internal static void ValidateOptions(KafkaStreamingOptions opts)
@@ -57,12 +54,9 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory, IDi
         if (opts.DeliveryRetryWindow is { } window && window <= TimeSpan.Zero)
             throw new InvalidOperationException(
                 $"Kafka DeliveryRetryWindow must be positive (configured: {window}).");
-        if (opts.EnableDeadLetterQueue && string.IsNullOrEmpty(opts.DeadLetterTopicSuffix))
-            throw new InvalidOperationException(
-                "Kafka DeadLetterTopicSuffix must not be empty when EnableDeadLetterQueue=true — " +
-                "the dead-letter topic would be the source topic itself.");
         if (opts.EnableDeadLetterQueue)
         {
+            // Also catches an empty suffix: the dead-letter topic would be the source topic itself.
             var sources = KafkaTopicNaming.SourceTopics(opts).ToHashSet(StringComparer.Ordinal);
             var collision = sources.FirstOrDefault(t => sources.Contains(KafkaTopicNaming.DeadLetterTopicForSource(opts, t)));
             if (collision is not null)
@@ -79,46 +73,17 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory, IDi
         if (_options.Acks != KafkaAcks.All)
             LogAcksNotAll(_options.Acks);
         await EnsureTopicsAsync().ConfigureAwait(false);
-        return new KafkaQueueAdapter(_name, _options, _mapper, _serializer, _loggerFactory);
+        return _adapter = new KafkaQueueAdapter(_name, _options, _mapper, _serializer, _loggerFactory);
     }
 
     public IQueueAdapterCache GetQueueAdapterCache() => _cache;
 
     public IStreamQueueMapper GetStreamQueueMapper() => _mapper;
 
-    public Task<IStreamFailureHandler> GetDeliveryFailureHandler(QueueId queueId)
-    {
-        if (!_options.EnableDeadLetterQueue || Volatile.Read(ref _disposed) != 0)
-            return Task.FromResult<IStreamFailureHandler>(new NoOpStreamDeliveryFailureHandler(false));
-
-        return Task.FromResult<IStreamFailureHandler>(new KafkaDlqFailureHandler(
-            KafkaTopicNaming.TopicForQueue(_options, queueId),
-            _reconsumer.Value,
-            GetPublisher,
-            _loggerFactory));
-    }
-
-    internal bool IsDeadLetterPublisherCreated => _deadLetters.IsValueCreated;
-
-    // Under the gate so a first failure racing Dispose can't build a producer nobody will dispose.
-    private KafkaDeadLetterPublisher? GetPublisher()
-    {
-        lock (_publisherGate)
-            return Volatile.Read(ref _disposed) != 0 ? null : _deadLetters.Value;
-    }
-
-    public void Dispose()
-    {
-        lock (_publisherGate)
-            if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0) return;
-        // Each waits (bounded, ~2s) for its in-flight work; whatever is still running then releases
-        // the native client itself when it finishes. Shutdown runs after the agents stopped, so this
-        // is normally instant.
-        if (_reconsumer.IsValueCreated)
-            _reconsumer.Value.Dispose();
-        if (_deadLetters.IsValueCreated)
-            _deadLetters.Value.Dispose();
-    }
+    public Task<IStreamFailureHandler> GetDeliveryFailureHandler(QueueId queueId) =>
+        Task.FromResult<IStreamFailureHandler>(_options.EnableDeadLetterQueue && _adapter is not null
+            ? new KafkaDlqFailureHandler(KafkaTopicNaming.TopicForQueue(_options, queueId), _options, _adapter, _loggerFactory)
+            : new NoOpStreamDeliveryFailureHandler(false));
 
     /// <summary>
     /// Idempotent client-side topic ensure. Listed missing topics are created with v1 defaults
@@ -209,15 +174,7 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory, IDi
         var cacheOptions = services.GetRequiredService<IOptionsMonitor<SimpleQueueCacheOptions>>().Get(name);
         var serializer = services.GetRequiredService<Serializer<KafkaBatchContainer>>();
         var loggerFactory = services.GetRequiredService<ILoggerFactory>();
-        var factory = new KafkaQueueAdapterFactory(name, options, cacheOptions, serializer, loggerFactory);
-
-        // Orleans does not call Dispose on queue adapter factories; register a shutdown hook so
-        // DLQ Kafka clients are flushed and released on clean shutdown. ApplicationStopped, not
-        // ApplicationStopping: Stopping fires before the silo hosted service stops, while pulling
-        // agents can still be delivering and calling the DLQ handlers.
-        services.GetService<IHostApplicationLifetime>()?.ApplicationStopped.Register(factory.Dispose);
-
-        return factory;
+        return new KafkaQueueAdapterFactory(name, options, cacheOptions, serializer, loggerFactory);
     }
 
     [LoggerMessage(EventId = 11101, Level = LogLevel.Warning,

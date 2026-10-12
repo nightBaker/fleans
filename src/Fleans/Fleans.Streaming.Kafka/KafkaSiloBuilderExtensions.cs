@@ -24,14 +24,7 @@ public static class KafkaSiloBuilderExtensions
             KafkaQueueAdapterFactory.Create,
             b =>
             {
-                // ValidateOnStart: bad options fail host start, before the pulling agent reads
-                // DeliveryRetryWindow into MaxEventDeliveryTime.
-                b.Configure<KafkaStreamingOptions>(o =>
-                {
-                    o.Configure(opt => configuration.Bind(opt)).ValidateOnStart();
-                    o.Services.AddSingleton<IValidateOptions<KafkaStreamingOptions>>(
-                        new KafkaStreamingOptionsValidator(name));
-                });
+                b.Configure<KafkaStreamingOptions>(o => o.Configure(opt => configuration.Bind(opt)));
                 b.Configure<SimpleQueueCacheOptions>(_ => { });
                 b.UseConsistentRingQueueBalancer();
                 b.ConfigureStreamPubSub(StreamPubSubType.ExplicitGrainBasedAndImplicit);

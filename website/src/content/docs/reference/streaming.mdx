@@ -196,7 +196,9 @@ offset in the log line.
 
 Delivery to the dead-letter topic is at-least-once: a record that fails for several subscribers
 is published once per subscriber, each copy with its own `x-fleans-subscription-id`. Deduplicate
-on the `x-fleans-original-*` headers.
+on the `x-fleans-original-*` headers. The whole Kafka record is dead-lettered, so replaying it
+also redelivers any events in it that had already succeeded — safe, because of the at-least-once
+contract above.
 
 Inspect the topic with any Kafka client, for example:
 
@@ -212,7 +214,9 @@ EventId `12000`.
 
 The dead-letter topic is best-effort, not a guarantee. If publishing to it fails (EventId `12001`,
 Error), or the broker no longer holds the original record (EventIds `12004`–`12006`), the record
-is lost: the engine has already moved past it. Alert on EventId `12001`.
+is lost: the engine has already moved past it. Alert on EventId `12001`. A record is also lost if
+the silo crashes while Orleans is still retrying it
+([#813](https://github.com/nightBaker/fleans/issues/813)).
 
 ## Topic provisioning
 

@@ -90,6 +90,11 @@ internal sealed partial class KafkaQueueAdapter : IQueueAdapter, IDisposable
         }
     }
 
+    /// <summary>Publishes a raw record with this adapter's producer — used by the dead-letter queue.</summary>
+    internal Task<DeliveryResult<byte[], byte[]>> ProduceRawAsync(
+        string topic, Message<byte[], byte[]> message, CancellationToken cancellationToken) =>
+        _producer.ProduceAsync(topic, message, cancellationToken);
+
     internal static ProducerConfig BuildProducerConfig(KafkaStreamingOptions opts)
     {
         var config = new ProducerConfig
