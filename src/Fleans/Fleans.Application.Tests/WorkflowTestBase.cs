@@ -17,6 +17,7 @@ using Microsoft.Data.Sqlite;
 using Fleans.Persistence.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Sieve.Models;
 using Sieve.Services;
@@ -236,6 +237,8 @@ public abstract class WorkflowTestBase
                 .UseInMemoryReminderService()
                 .ConfigureServices(services =>
                 {
+                    services.AddSingleton<ILoggerProvider, CapturedLogEvents.Provider>();
+
                     services.AddDbContextFactory<FleanCommandDbContext>(options =>
                         options.UseFleansSqlite("DataSource=file::memory:?cache=shared"));
 

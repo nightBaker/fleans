@@ -110,10 +110,22 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
 
         var workflowInstance = _grainFactory.GetGrain<IWorkflowInstanceCallback>(item.WorkflowInstanceId);
 
+        // Pre-execution activity check (a read, not a lock): the stream is at-least-once, so a
+        // redelivered event can reach a handler after the activity already finished — skip it.
+        // It does not stop a re-run after an interrupted execution; plugins still need an
+        // idempotency key (context.ActivityInstanceId) for external side effects.
+        // Deliberately outside the try below: the plugin has not run yet, so a failure here
+        // (core silo restarting, call timeout) must propagate for stream redelivery rather
+        // than fail the business activity.
+        var variables = await workflowInstance.GetVariablesIfActive(item.ActivityInstanceId, item.VariablesId);
+        if (variables is null)
+        {
+            LogSkippedInactiveActivity(item.ActivityId, item.ActivityInstanceId, item.TaskType);
+            return;
+        }
+
         try
         {
-            var variables = await workflowInstance.GetVariables(item.VariablesId);
-
             var resolved = new Dictionary<string, object?>(StringComparer.Ordinal);
             foreach (var im in item.InputMappings)
                 resolved[im.Target] = MappingResolver.Resolve(im.Source, (IDictionary<string, object?>)variables);
@@ -156,7 +168,7 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
                 // Redelivery duplicates are absorbed by the HasActiveEntry guard at
                 // WorkflowInstance.cs:315/:351 (CompleteActivity / FailActivity), backed by
                 // the domain-level entry.IsCompleted early-return at WorkflowExecution.cs:2135/:2186.
-                // See CLAUDE.md Design Constraints "Stream-redelivery idempotency contract" and
+                // See docs/conventions/invariants.md "Stream-redelivery idempotency" and
                 // the #569 Phase 1 audit comment for the full per-call-site guarantee.
                 throw;
             }
@@ -182,6 +194,10 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
     [LoggerMessage(EventId = 4035, Level = LogLevel.Information,
         Message = "Custom-task handler activated on silo {SiloName} for stream key {StreamKey}")]
     private partial void LogActivated(string siloName, string streamKey);
+
+    [LoggerMessage(EventId = 4038, Level = LogLevel.Information,
+        Message = "Custom-task event for activity {ActivityId} (instance {ActivityInstanceId}, taskType={TaskType}) skipped — activity is no longer active (redelivered or duplicate event)")]
+    private partial void LogSkippedInactiveActivity(string activityId, Guid activityInstanceId, string taskType);
 
     [LoggerMessage(EventId = 4031, Level = LogLevel.Error,
         Message = "Custom-task plugin execution failed for activity {ActivityId} (taskType={TaskType})")]

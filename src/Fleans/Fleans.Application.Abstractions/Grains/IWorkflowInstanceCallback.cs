@@ -14,6 +14,15 @@ public interface IWorkflowInstanceCallback : IGrainWithGuidKey
     [ReadOnly]
     ValueTask<ExpandoObject> GetVariables(Guid variablesStateId);
 
+    /// <summary>
+    /// Merged variables for <paramref name="variablesStateId"/> while the activity instance is
+    /// still awaiting completion; <c>null</c> once it has completed or failed. Handlers call this
+    /// before running side effects so a redelivered (or duplicate) event for an already-finished
+    /// activity is skipped instead of executed twice — in one round-trip with the variable read.
+    /// </summary>
+    [ReadOnly]
+    ValueTask<ExpandoObject?> GetVariablesIfActive(Guid activityInstanceId, Guid variablesStateId);
+
     Task CompleteActivity(string activityId, Guid activityInstanceId, ExpandoObject variables);
 
     Task FailActivity(string activityId, Guid activityInstanceId, Exception exception);
