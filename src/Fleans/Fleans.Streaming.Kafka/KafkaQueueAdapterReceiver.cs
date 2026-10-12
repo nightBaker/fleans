@@ -13,7 +13,10 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
     private readonly Serializer<KafkaBatchContainer> _serializer;
     private readonly ILogger<KafkaQueueAdapterReceiver> _logger;
     private readonly string _topic;
-    private readonly KafkaDeadLetterPublisher? _deadLetters;
+
+    // Process-wide arrival counter: gives tokens a total order that matches consumption order even
+    // when one topic has several partitions (offsets are only ordered within a partition).
+    private static long s_receiveOrder;
 
     private IConsumer<byte[], byte[]>? _consumer;
     private long _lastDeliveredOffset = -1;
@@ -22,15 +25,13 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
         QueueId queueId,
         KafkaStreamingOptions options,
         Serializer<KafkaBatchContainer> serializer,
-        ILoggerFactory loggerFactory,
-        KafkaDeadLetterPublisher? deadLetters = null)
+        ILoggerFactory loggerFactory)
     {
         _queueId = queueId;
         _options = options;
         _serializer = serializer;
         _logger = loggerFactory.CreateLogger<KafkaQueueAdapterReceiver>();
         _topic = KafkaTopicNaming.TopicForQueue(options, queueId);
-        _deadLetters = deadLetters;
     }
 
     public Task Initialize(TimeSpan timeout)
@@ -62,12 +63,16 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
         Message = "SecurityProtocol={SecurityProtocol} configured without explicit SSL paths — broker certificate will be validated against the OS trust store.")]
     private partial void LogSslNoPathsOsTrustStore(KafkaSecurityProtocol securityProtocol);
 
-    public async Task<IList<IBatchContainer>> GetQueueMessagesAsync(int maxCount)
+    [LoggerMessage(EventId = 11107, Level = LogLevel.Error,
+        Message = "Kafka receiver: failed to deserialize record {Topic}[{Partition}]@{Offset}; the record is skipped and not dead-lettered")]
+    private partial void LogDeserializationFailed(Exception ex, string topic, int partition, long offset);
+
+    public Task<IList<IBatchContainer>> GetQueueMessagesAsync(int maxCount)
     {
         IList<IBatchContainer> batches = new List<IBatchContainer>();
         if (_consumer is null)
         {
-            return batches;
+            return Task.FromResult(batches);
         }
 
         var deadline = DateTime.UtcNow + _options.PollTimeout;
@@ -94,24 +99,19 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
             try
             {
                 var container = _serializer.Deserialize(result.Message.Value);
-                container.Token = new KafkaSequenceToken(result.Offset.Value, 0, result.Partition.Value);
+                container.Token = new KafkaSequenceToken(
+                    result.Offset.Value, 0, result.Partition.Value, Interlocked.Increment(ref s_receiveOrder));
                 batches.Add(container);
                 _lastDeliveredOffset = result.Offset.Value;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to deserialize Kafka message at topic={Topic} offset={Offset}", _topic, result.Offset.Value);
-                // Published before the offset is committed (MessagesDeliveredAsync), so the record is never lost silently.
-                if (_deadLetters is not null)
-                {
-                    await _deadLetters.PublishAsync(
-                        _topic, result.Partition.Value, result.Offset.Value, result.Message.Key, result.Message.Value,
-                        KafkaDeadLetterReason.DeserializationFailed, exception: ex).ConfigureAwait(false);
-                }
+                // Log-only, never dead-lettered: the next commit moves past it.
+                LogDeserializationFailed(ex, _topic, result.Partition.Value, result.Offset.Value);
             }
         }
 
-        return batches;
+        return Task.FromResult(batches);
     }
 
     public Task MessagesDeliveredAsync(IList<IBatchContainer> messages)

@@ -13,8 +13,9 @@ using Testcontainers.Kafka;
 namespace Fleans.Application.Tests;
 
 /// <summary>
-/// Acceptance tests for issue #686 — records whose subscriber keeps failing, and records that cannot be
-/// deserialized, end up in the <c>-dlq</c> topic with diagnostic headers. Env-gated by <c>FLEANS_KAFKA_TESTS=1</c>.
+/// Acceptance tests for issue #686 — records whose subscriber keeps failing end up in the <c>-dlq</c> topic
+/// with diagnostic headers; records that cannot be deserialized are logged and skipped, never dead-lettered.
+/// Env-gated by <c>FLEANS_KAFKA_TESTS=1</c>.
 /// </summary>
 [TestClass]
 public class KafkaDlqIntegrationTests
@@ -83,7 +84,7 @@ public class KafkaDlqIntegrationTests
     }
 
     [TestMethod]
-    public async Task Undeserializable_record_is_dead_lettered_with_exception_headers()
+    public async Task Undeserializable_record_is_skipped_not_dead_lettered_and_stream_keeps_flowing()
     {
         if (!ShouldRun) { Assert.Inconclusive("FLEANS_KAFKA_TESTS != 1 — skipping container-backed test."); return; }
 
@@ -91,26 +92,34 @@ public class KafkaDlqIntegrationTests
         await using var kafka = new KafkaBuilder().WithImage("confluentinc/cp-kafka:7.6.1").Build();
         await kafka.StartAsync();
         var (sourceTopic, dlqTopic) = UseFreshTopics(kafka.GetBootstrapAddress());
-        var garbage = Encoding.UTF8.GetBytes("not an Orleans-serialized batch");
 
         var cluster = BuildCluster();
         await cluster.DeployAsync();
         try
         {
-            // Act — write bytes the receiver cannot deserialize straight into the source topic.
+            var stream = cluster.Client.GetStreamProvider(ProviderName)
+                .GetStream<ExecuteScriptEvent>(StreamId.Create(Namespace, nameof(ExecuteScriptEvent)));
+            var healthy = new List<string>();
+            var sub = await stream.SubscribeAsync((evt, _) =>
+            {
+                lock (healthy) { healthy.Add(evt.ActivityId); }
+                return Task.CompletedTask;
+            });
+
+            // Act — bytes the receiver cannot deserialize, straight into the source topic, then a healthy event.
             using (var producer = new ProducerBuilder<Null, byte[]>(new ProducerConfig { BootstrapServers = DlqSiloConfigurator.Brokers }).Build())
             {
-                await producer.ProduceAsync(sourceTopic, new Message<Null, byte[]> { Value = garbage });
+                await producer.ProduceAsync(sourceTopic, new Message<Null, byte[]> { Value = Encoding.UTF8.GetBytes("not an Orleans-serialized batch") });
             }
-            var dlqMessage = ConsumeOne(DlqSiloConfigurator.Brokers, dlqTopic, TimeSpan.FromSeconds(60));
+            await stream.OnNextAsync(NewEvent("healthy"));
+            await WaitUntilAsync(() => { lock (healthy) { return healthy.Count > 0; } }, TimeSpan.FromSeconds(30));
+            var dlqMessage = ConsumeOne(DlqSiloConfigurator.Brokers, dlqTopic, TimeSpan.FromSeconds(5));
 
-            // Assert
-            Assert.IsNotNull(dlqMessage, $"expected the undeserializable record in '{dlqTopic}'");
-            CollectionAssert.AreEqual(garbage, dlqMessage.Value, "DLQ payload must be the original bytes, unchanged");
-            Assert.AreEqual(sourceTopic, Header(dlqMessage, "x-fleans-original-topic"));
-            Assert.AreEqual("deserialization-failed", Header(dlqMessage, "x-fleans-failure-reason"));
-            Assert.IsFalse(string.IsNullOrEmpty(Header(dlqMessage, "x-fleans-exception-type")));
-            Assert.IsNotNull(Header(dlqMessage, "x-fleans-exception-message"));
+            // Assert — log-only by design: deserialization failures never reach the DLQ.
+            lock (healthy) { CollectionAssert.AreEqual(new[] { "healthy" }, healthy, "the record after the garbage one must still be delivered"); }
+            Assert.IsNull(dlqMessage, $"undeserializable records must not be dead-lettered, but '{dlqTopic}' has a record");
+
+            await sub.UnsubscribeAsync();
         }
         finally
         {

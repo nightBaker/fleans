@@ -82,8 +82,8 @@ public class KafkaStreamingOptions
 
     /// <summary>
     /// Opt-in. When <c>true</c>, records whose subscriber keeps failing past
-    /// <see cref="DeliveryRetryWindow"/>, and records that cannot be deserialized, are published to
-    /// <c>&lt;topic&gt;&lt;DeadLetterTopicSuffix&gt;</c> instead of being dropped.
+    /// <see cref="DeliveryRetryWindow"/> are published to <c>&lt;topic&gt;&lt;DeadLetterTopicSuffix&gt;</c>
+    /// instead of being dropped. Records that cannot be deserialized are only logged, never dead-lettered.
     /// </summary>
     public bool EnableDeadLetterQueue { get; set; } = false;
 

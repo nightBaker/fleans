@@ -166,17 +166,16 @@ it is what makes the at-least-once contract safe for the workflow engine.
 
 When a subscriber keeps throwing on a record, Orleans retries delivery for up to
 `DeliveryRetryWindow` (1 minute by default), then gives up and moves on to the next record.
-A record whose bytes cannot be deserialized is skipped right away. **By default both are
-dropped** with only an error log.
+**By default that record is dropped** with only an error log.
 
-Set `Fleans__Streaming__Kafka__EnableDeadLetterQueue=true` to keep them instead. Each such
+Set `Fleans__Streaming__Kafka__EnableDeadLetterQueue=true` to keep it instead. Each such
 record is then published, unchanged, to a dead-letter topic named after its source topic
 (`fleans-0` → `fleans-0-dlq`). The engine creates the dead-letter topics at startup alongside
 the regular ones.
 
 | Setting | Default | What it does |
 |---|---|---|
-| `Fleans__Streaming__Kafka__EnableDeadLetterQueue` | `false` | Route poison records to the dead-letter topic instead of dropping them. |
+| `Fleans__Streaming__Kafka__EnableDeadLetterQueue` | `false` | Route records whose subscriber keeps failing to the dead-letter topic instead of dropping them. |
 | `Fleans__Streaming__Kafka__DeadLetterTopicSuffix` | `-dlq` | Suffix appended to each source topic. |
 | `Fleans__Streaming__Kafka__DeliveryRetryWindow` | `00:01:00` | How long to keep retrying a failing record before giving up (`hh:mm:ss`). The stream stays blocked for that subscriber while it retries, so keep it short. |
 
@@ -185,10 +184,14 @@ Each dead-letter record carries these headers:
 | Header | Value |
 |---|---|
 | `x-fleans-original-topic` / `-partition` / `-offset` | Where the record came from. |
-| `x-fleans-failure-reason` | `delivery-failed` (a subscriber kept throwing) or `deserialization-failed`. |
+| `x-fleans-failure-reason` | `delivery-failed` (a subscriber kept throwing). |
 | `x-fleans-failure-time-utc` | ISO-8601 timestamp. |
-| `x-fleans-stream-id` | Orleans stream ID (`delivery-failed` only). |
-| `x-fleans-exception-type` / `-message` | The deserialization error (`deserialization-failed` only). |
+| `x-fleans-stream-id` | Orleans stream ID. |
+
+A record whose bytes cannot be deserialized is **never** dead-lettered, even with the DLQ on: it
+is skipped right away and logged at Error with EventId `11107`. Such a record can only come from
+something other than the engine writing to the topic; find it with the topic, partition and
+offset in the log line.
 
 Delivery to the dead-letter topic is at-least-once: a record that fails for several subscribers
 is published once per subscriber. Deduplicate on the `x-fleans-original-*` headers.
@@ -203,8 +206,11 @@ kafka-console-consumer.sh --bootstrap-server <broker> --topic fleans-0-dlq \
 To retry a record once the cause is fixed, produce its value back to `x-fleans-original-topic`.
 Redelivery is safe: the engine ignores events for activities that have already completed (see
 the at-least-once contract above). Every dead-lettered record is logged at Warning with
-EventId `12000`; EventId `12001` (Error) means the DLQ publish itself failed and the record was
-lost.
+EventId `12000`.
+
+The dead-letter topic is best-effort, not a guarantee. If publishing to it fails (EventId `12001`,
+Error), or the broker no longer holds the original record (EventIds `12004`–`12006`), the record
+is lost: the engine has already moved past it. Alert on EventId `12001`.
 
 ## Topic provisioning
 

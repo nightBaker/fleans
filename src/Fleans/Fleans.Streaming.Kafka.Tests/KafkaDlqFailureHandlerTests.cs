@@ -1,4 +1,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using Orleans.Configuration;
+using Orleans.Providers.Streams.Common;
 using Orleans.Runtime;
 using Orleans.Streams;
 
@@ -6,7 +8,7 @@ namespace Fleans.Streaming.Kafka.Tests;
 
 /// <summary>
 /// Broker-free checks for the DLQ handler. The end-to-end routing (subscriber failure and
-/// deserialization failure → <c>-dlq</c> topic) is covered by
+/// deserialization failure → skipped, not dead-lettered) is covered by
 /// <c>Fleans.Application.Tests.KafkaDlqIntegrationTests</c>.
 /// </summary>
 [TestClass]
@@ -16,8 +18,9 @@ public class KafkaDlqFailureHandlerTests
     public void ShouldFaultSubsriptionOnError_IsFalse()
     {
         // false keeps the subscription alive: Orleans moves past the poison record and keeps delivering.
+        using var reconsumer = new KafkaRecordReconsumer(Options);
         using var publisher = CreatePublisher();
-        using var handler = CreateHandler(publisher);
+        var handler = CreateHandler(reconsumer, publisher);
 
         Assert.IsFalse(handler.ShouldFaultSubsriptionOnError);
     }
@@ -25,8 +28,9 @@ public class KafkaDlqFailureHandlerTests
     [TestMethod]
     public async Task OnSubscriptionFailure_IsLogOnly()
     {
+        using var reconsumer = new KafkaRecordReconsumer(Options);
         using var publisher = CreatePublisher();
-        using var handler = CreateHandler(publisher);
+        var handler = CreateHandler(reconsumer, publisher);
 
         // Would block on the unreachable broker if it tried to re-consume or publish.
         var task = handler.OnSubscriptionFailure(GuidId.GetNewGuidId(), "provider",
@@ -39,8 +43,9 @@ public class KafkaDlqFailureHandlerTests
     [TestMethod]
     public async Task OnDeliveryFailure_NonKafkaToken_IsDroppedWithoutBrokerCall()
     {
+        using var reconsumer = new KafkaRecordReconsumer(Options);
         using var publisher = CreatePublisher();
-        using var handler = CreateHandler(publisher);
+        var handler = CreateHandler(reconsumer, publisher);
 
         var task = handler.OnDeliveryFailure(GuidId.GetNewGuidId(), "provider",
             StreamId.Create("ns", "id"), null!);
@@ -52,13 +57,62 @@ public class KafkaDlqFailureHandlerTests
     [TestMethod]
     public void Dispose_CalledTwice_IsIdempotent()
     {
-        using var publisher = CreatePublisher();
-        var handler = CreateHandler(publisher);
+        var reconsumer = new KafkaRecordReconsumer(Options);
+        var publisher = CreatePublisher();
 
-        handler.Dispose();
-        handler.Dispose();
+        reconsumer.Dispose();
+        reconsumer.Dispose();
         publisher.Dispose();
         publisher.Dispose();
+    }
+
+    [TestMethod]
+    public async Task OnDeliveryFailure_AfterShutdown_IsDroppedWithoutBrokerCall()
+    {
+        // Arrange — a late failure after the factory released its Kafka clients.
+        var reconsumer = new KafkaRecordReconsumer(Options);
+        var publisher = CreatePublisher();
+        var handler = CreateHandler(reconsumer, publisher);
+        reconsumer.Dispose();
+        publisher.Dispose();
+
+        // Act — would throw ObjectDisposedException or block on the unreachable broker if unguarded.
+        var task = handler.OnDeliveryFailure(GuidId.GetNewGuidId(), "provider",
+            StreamId.Create("ns", "id"), new KafkaSequenceToken(1, 0, 0));
+        await task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        // Assert
+        Assert.IsTrue(task.IsCompletedSuccessfully);
+    }
+
+    [TestMethod]
+    public async Task PublishAsync_AfterDispose_IsDroppedWithoutBrokerCall()
+    {
+        var publisher = CreatePublisher();
+        publisher.Dispose();
+
+        var task = publisher.PublishAsync("t-0", 0, 1, null, [1], KafkaDeadLetterReason.DeliveryFailed);
+
+        Assert.IsTrue(task.IsCompletedSuccessfully);
+        await task;
+    }
+
+    [TestMethod]
+    public async Task GetDeliveryFailureHandler_AfterFactoryDispose_ReturnsNoOpHandler()
+    {
+        // Arrange
+        var factory = new KafkaQueueAdapterFactory("provider", Options, new SimpleQueueCacheOptions(),
+            null!, NullLoggerFactory.Instance);
+        var queueId = QueueId.GetQueueId("t", 0, 0);
+        var before = await factory.GetDeliveryFailureHandler(queueId);
+
+        // Act
+        factory.Dispose();
+        var after = await factory.GetDeliveryFailureHandler(queueId);
+
+        // Assert
+        Assert.IsInstanceOfType<KafkaDlqFailureHandler>(before);
+        Assert.IsInstanceOfType<NoOpStreamDeliveryFailureHandler>(after);
     }
 
     [TestMethod]
@@ -104,6 +158,6 @@ public class KafkaDlqFailureHandlerTests
 
     private static KafkaDeadLetterPublisher CreatePublisher() => new(Options, NullLoggerFactory.Instance);
 
-    private static KafkaDlqFailureHandler CreateHandler(KafkaDeadLetterPublisher publisher) =>
-        new("fleans-test-0", Options, publisher, NullLoggerFactory.Instance);
+    private static KafkaDlqFailureHandler CreateHandler(KafkaRecordReconsumer reconsumer, KafkaDeadLetterPublisher publisher) =>
+        new("fleans-test-0", reconsumer, publisher, NullLoggerFactory.Instance);
 }

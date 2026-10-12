@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Confluent.Kafka;
 using Confluent.Kafka.Admin;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,8 +21,8 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory, IDi
     private readonly ILogger<KafkaQueueAdapterFactory> _logger;
     private readonly HashRingBasedStreamQueueMapper _mapper;
     private readonly IQueueAdapterCache _cache;
-    private readonly ConcurrentDictionary<QueueId, Lazy<KafkaDlqFailureHandler>> _dlqHandlers = new();
     private readonly Lazy<KafkaDeadLetterPublisher> _deadLetters;
+    private readonly Lazy<KafkaRecordReconsumer> _reconsumer;
     private int _disposed;
 
     public KafkaQueueAdapterFactory(
@@ -45,6 +44,7 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory, IDi
 
         _cache = new SimpleQueueAdapterCache(cacheOptions, name, loggerFactory);
         _deadLetters = new Lazy<KafkaDeadLetterPublisher>(() => new KafkaDeadLetterPublisher(options, loggerFactory));
+        _reconsumer = new Lazy<KafkaRecordReconsumer>(() => new KafkaRecordReconsumer(options));
     }
 
     internal static void ValidateOptions(KafkaStreamingOptions opts)
@@ -68,8 +68,7 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory, IDi
         if (_options.Acks != KafkaAcks.All)
             LogAcksNotAll(_options.Acks);
         await EnsureTopicsAsync().ConfigureAwait(false);
-        return new KafkaQueueAdapter(_name, _options, _mapper, _serializer, _loggerFactory,
-            _options.EnableDeadLetterQueue ? _deadLetters.Value : null);
+        return new KafkaQueueAdapter(_name, _options, _mapper, _serializer, _loggerFactory);
     }
 
     public IQueueAdapterCache GetQueueAdapterCache() => _cache;
@@ -78,26 +77,23 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory, IDi
 
     public Task<IStreamFailureHandler> GetDeliveryFailureHandler(QueueId queueId)
     {
-        if (!_options.EnableDeadLetterQueue)
+        if (!_options.EnableDeadLetterQueue || Volatile.Read(ref _disposed) != 0)
             return Task.FromResult<IStreamFailureHandler>(new NoOpStreamDeliveryFailureHandler(false));
 
-        var handler = _dlqHandlers.GetOrAdd(queueId,
-            id => new Lazy<KafkaDlqFailureHandler>(() =>
-                new KafkaDlqFailureHandler(
-                    KafkaTopicNaming.TopicForQueue(_options, id),
-                    _options,
-                    _deadLetters.Value,
-                    _loggerFactory)));
-
-        return Task.FromResult<IStreamFailureHandler>(handler.Value);
+        return Task.FromResult<IStreamFailureHandler>(new KafkaDlqFailureHandler(
+            KafkaTopicNaming.TopicForQueue(_options, queueId),
+            _reconsumer.Value,
+            _deadLetters.Value,
+            _loggerFactory));
     }
 
     public void Dispose()
     {
         if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0) return;
-        foreach (var lazy in _dlqHandlers.Values)
-            if (lazy.IsValueCreated)
-                lazy.Value.Dispose();
+        // Re-consumer first: it waits for an in-flight fetch, whose publish then hits the
+        // still-open producer instead of a disposed one.
+        if (_reconsumer.IsValueCreated)
+            _reconsumer.Value.Dispose();
         if (_deadLetters.IsValueCreated)
             _deadLetters.Value.Dispose();
     }
@@ -194,8 +190,10 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory, IDi
         var factory = new KafkaQueueAdapterFactory(name, options, cacheOptions, serializer, loggerFactory);
 
         // Orleans does not call Dispose on queue adapter factories; register a shutdown hook so
-        // DLQ Kafka producers are flushed and handles released on clean shutdown.
-        services.GetService<IHostApplicationLifetime>()?.ApplicationStopping.Register(factory.Dispose);
+        // DLQ Kafka clients are flushed and released on clean shutdown. ApplicationStopped, not
+        // ApplicationStopping: Stopping fires before the silo hosted service stops, while pulling
+        // agents can still be delivering and calling the DLQ handlers.
+        services.GetService<IHostApplicationLifetime>()?.ApplicationStopped.Register(factory.Dispose);
 
         return factory;
     }

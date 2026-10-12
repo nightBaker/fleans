@@ -15,7 +15,6 @@ internal sealed partial class KafkaQueueAdapter : IQueueAdapter, IDisposable
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<KafkaQueueAdapter> _logger;
     private readonly IProducer<byte[], byte[]> _producer;
-    private readonly KafkaDeadLetterPublisher? _deadLetters;
 
     public string Name { get; }
 
@@ -28,11 +27,9 @@ internal sealed partial class KafkaQueueAdapter : IQueueAdapter, IDisposable
         KafkaStreamingOptions options,
         IStreamQueueMapper mapper,
         Serializer<KafkaBatchContainer> serializer,
-        ILoggerFactory loggerFactory,
-        KafkaDeadLetterPublisher? deadLetters = null)
+        ILoggerFactory loggerFactory)
     {
         Name = name;
-        _deadLetters = deadLetters;
         _options = options;
         _mapper = mapper;
         _serializer = serializer;
@@ -114,7 +111,7 @@ internal sealed partial class KafkaQueueAdapter : IQueueAdapter, IDisposable
     };
 
     public IQueueAdapterReceiver CreateReceiver(QueueId queueId) =>
-        new KafkaQueueAdapterReceiver(queueId, _options, _serializer, _loggerFactory, _deadLetters);
+        new KafkaQueueAdapterReceiver(queueId, _options, _serializer, _loggerFactory);
 
     [LoggerMessage(EventId = 11100, Level = LogLevel.Warning,
         Message = "SecurityProtocol={SecurityProtocol} configured without explicit SSL paths — broker certificate will be validated against the OS trust store.")]

@@ -1,4 +1,3 @@
-using Confluent.Kafka;
 using Microsoft.Extensions.Logging;
 using Orleans.Runtime;
 using Orleans.Streams;
@@ -10,44 +9,24 @@ namespace Fleans.Streaming.Kafka;
 /// itself until <c>StreamPullingAgentOptions.MaxEventDeliveryTime</c> (see
 /// <see cref="KafkaStreamingOptions.DeliveryRetryWindow"/>), then calls <see cref="OnDeliveryFailure"/>
 /// once and moves the cursor past the record — so this handler only has to capture it.
+/// Stateless per queue: the re-consumer and publisher are shared, owned and disposed by the factory.
 /// </summary>
-internal sealed partial class KafkaDlqFailureHandler : IStreamFailureHandler, IDisposable
+internal sealed partial class KafkaDlqFailureHandler : IStreamFailureHandler
 {
     private readonly string _topic;
+    private readonly KafkaRecordReconsumer _reconsumer;
     private readonly KafkaDeadLetterPublisher _publisher;
     private readonly ILogger<KafkaDlqFailureHandler> _logger;
-    private readonly Lazy<IConsumer<byte[], byte[]>> _reConsumeConsumer;
-
-    // Serializes re-consume calls: Assign + Consume on one consumer is not thread-safe.
-    private readonly SemaphoreSlim _reConsumeLock = new(1, 1);
-
-    private int _disposed;
 
     public bool ShouldFaultSubsriptionOnError => false;
 
     internal KafkaDlqFailureHandler(
-        string topic, KafkaStreamingOptions options, KafkaDeadLetterPublisher publisher, ILoggerFactory loggerFactory)
+        string topic, KafkaRecordReconsumer reconsumer, KafkaDeadLetterPublisher publisher, ILoggerFactory loggerFactory)
     {
         _topic = topic;
+        _reconsumer = reconsumer;
         _publisher = publisher;
         _logger = loggerFactory.CreateLogger<KafkaDlqFailureHandler>();
-
-        // Assign-only consumer (never subscribes, never commits) used to fetch the original raw bytes.
-        _reConsumeConsumer = new Lazy<IConsumer<byte[], byte[]>>(() =>
-        {
-            var config = new ConsumerConfig
-            {
-                BootstrapServers = options.Brokers,
-                GroupId = $"{options.ConsumerGroup}-dlq-reconsume",
-                EnableAutoCommit = false,
-                AutoOffsetReset = AutoOffsetReset.Earliest,
-            };
-            KafkaClientConfigExtensions.ApplySecurity(config, options);
-            var builder = new ConsumerBuilder<byte[], byte[]>(config);
-            if (options.OAuthBearerTokenProvider is not null)
-                builder.SetOAuthBearerTokenRefreshHandler(options.OAuthBearerTokenProvider);
-            return builder.Build();
-        });
     }
 
     public Task OnDeliveryFailure(GuidId subscriptionId, string streamProviderName,
@@ -72,53 +51,35 @@ internal sealed partial class KafkaDlqFailureHandler : IStreamFailureHandler, ID
 
     private async Task RouteToDlqAsync(string streamId, KafkaSequenceToken kt)
     {
-        ConsumeResult<byte[], byte[]>? record;
-        await _reConsumeLock.WaitAsync().ConfigureAwait(false);
+        KafkaReconsumeOutcome outcome;
+        Confluent.Kafka.Message<byte[], byte[]>? message;
         try
         {
-            record = await Task.Run(() => Reconsume(kt)).ConfigureAwait(false);
-        }
-        catch (ConsumeException cex) when (cex.Error.Code == Confluent.Kafka.ErrorCode.Local_NoOffset)
-        {
-            LogOffsetGone(_topic, kt.Partition, kt.SequenceNumber);
-            return;
+            (outcome, message) = await _reconsumer.FetchAsync(_topic, kt.Partition, kt.Offset).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            LogReconsumeFailed(ex, _topic, kt.Partition, kt.SequenceNumber);
-            return;
-        }
-        finally
-        {
-            _reConsumeLock.Release();
-        }
-
-        if (record?.Message?.Value is null)
-        {
-            LogReconsumeTimedOut(_topic, kt.Partition, kt.SequenceNumber);
+            LogReconsumeFailed(ex, _topic, kt.Partition, kt.Offset);
             return;
         }
 
-        await _publisher.PublishAsync(
-            _topic, kt.Partition, kt.SequenceNumber, record.Message.Key, record.Message.Value,
-            KafkaDeadLetterReason.DeliveryFailed, streamId).ConfigureAwait(false);
-    }
-
-    private ConsumeResult<byte[], byte[]>? Reconsume(KafkaSequenceToken kt)
-    {
-        var consumer = _reConsumeConsumer.Value;
-        consumer.Assign(new TopicPartitionOffset(_topic, kt.Partition, kt.SequenceNumber));
-        var result = consumer.Consume(TimeSpan.FromSeconds(10));
-        // A compacted/deleted offset makes the consumer skip ahead — never dead-letter the wrong record.
-        return result is not null && result.Offset.Value == kt.SequenceNumber ? result : null;
-    }
-
-    public void Dispose()
-    {
-        if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0) return;
-        if (_reConsumeConsumer.IsValueCreated)
-            _reConsumeConsumer.Value.Dispose();
-        _reConsumeLock.Dispose();
+        switch (outcome)
+        {
+            case KafkaReconsumeOutcome.Found:
+                await _publisher.PublishAsync(
+                    _topic, kt.Partition, kt.Offset, message!.Key, message.Value,
+                    KafkaDeadLetterReason.DeliveryFailed, streamId).ConfigureAwait(false);
+                break;
+            case KafkaReconsumeOutcome.OffsetGone:
+                LogOffsetGone(_topic, kt.Partition, kt.Offset);
+                break;
+            case KafkaReconsumeOutcome.TimedOut:
+                LogReconsumeTimedOut(_topic, kt.Partition, kt.Offset);
+                break;
+            case KafkaReconsumeOutcome.Disposed:
+                LogShuttingDown(_topic, kt.Partition, kt.Offset);
+                break;
+        }
     }
 
     [LoggerMessage(EventId = 12002, Level = LogLevel.Warning,
@@ -140,4 +101,8 @@ internal sealed partial class KafkaDlqFailureHandler : IStreamFailureHandler, ID
     [LoggerMessage(EventId = 12006, Level = LogLevel.Warning,
         Message = "Kafka DLQ: re-consume of {Topic}[{Partition}]@{Offset} returned nothing within 10s; dropped without dead-lettering")]
     private partial void LogReconsumeTimedOut(string topic, int partition, long offset);
+
+    [LoggerMessage(EventId = 12007, Level = LogLevel.Warning,
+        Message = "Kafka DLQ: delivery of {Topic}[{Partition}]@{Offset} failed after the DLQ was shut down; dropped without dead-lettering")]
+    private partial void LogShuttingDown(string topic, int partition, long offset);
 }

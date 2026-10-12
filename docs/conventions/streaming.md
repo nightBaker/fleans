@@ -25,7 +25,7 @@ Without the variable they return `Inconclusive` (never `Failed`). CI runs them i
 
 ## Kafka dead-letter queue
 
-Opt-in via `EnableDeadLetterQueue` (default `false`, #686). Records that cannot be processed are published, raw and unchanged, to `<source-topic><DeadLetterTopicSuffix>` (default suffix `-dlq`, e.g. `fleans-0-dlq`) instead of being dropped. DLQ topics are created by the same topic-ensure step as the source topics.
+Opt-in via `EnableDeadLetterQueue` (default `false`, #686). Records whose subscriber keeps failing are published, raw and unchanged, to `<source-topic><DeadLetterTopicSuffix>` (default suffix `-dlq`, e.g. `fleans-0-dlq`) instead of being dropped. DLQ topics are created by the same topic-ensure step as the source topics.
 
 | Knob | Default | Meaning |
 |---|---|---|
@@ -33,19 +33,23 @@ Opt-in via `EnableDeadLetterQueue` (default `false`, #686). Records that cannot 
 | `DeadLetterTopicSuffix` | `"-dlq"` | Appended to each source topic. Empty is rejected at startup when DLQ is on. |
 | `DeliveryRetryWindow` | `null` (Orleans default: 1 min) | Mapped onto `StreamPullingAgentOptions.MaxEventDeliveryTime` by `AddKafkaStreams`. How long Orleans keeps retrying one record for a failing subscriber before giving up. The record blocks that subscriber's cursor while it retries. |
 
-**Two capture points:**
+**Capture point: subscriber keeps failing** (`x-fleans-failure-reason: delivery-failed`). Orleans retries delivery itself until `MaxEventDeliveryTime`, then calls `IStreamFailureHandler.OnDeliveryFailure` and moves the cursor past the record. The call is per subscription, so a record that fails for several subscribers is dead-lettered once per subscriber — DLQ consumers dedupe on `x-fleans-original-{topic,partition,offset}`. `KafkaDlqFailureHandler` re-reads the raw record by partition and offset and publishes it. `OnSubscriptionFailure` is for subscription *initialisation* errors and is log-only.
 
-1. **Subscriber keeps failing** (`x-fleans-failure-reason: delivery-failed`). Orleans retries delivery itself until `MaxEventDeliveryTime`, then calls `IStreamFailureHandler.OnDeliveryFailure` and moves the cursor past the record. The call is per subscription, so a record that fails for several subscribers is dead-lettered once per subscriber — DLQ consumers dedupe on `x-fleans-original-{topic,partition,offset}`. `KafkaDlqFailureHandler` re-reads the raw record by partition and offset with an assign-only consumer and publishes it. `OnSubscriptionFailure` is for subscription *initialisation* errors and is log-only.
-2. **Record cannot be deserialized** (`x-fleans-failure-reason: deserialization-failed`, plus `x-fleans-exception-type` / `-message`). `KafkaQueueAdapterReceiver` publishes it before the next offset commit.
+**Undeserializable records are log-only, by decision.** `KafkaQueueAdapterReceiver` logs EventId `11107` and skips the record; the next commit moves past it. Publishing from the poll loop would block the whole queue on every DLQ produce (up to `message.timeout.ms`, 5 min by default).
 
-Every DLQ record carries `x-fleans-original-topic`, `-partition`, `-offset`, `x-fleans-failure-reason` and `x-fleans-failure-time-utc`, plus `x-fleans-stream-id` for delivery failures. One `KafkaDeadLetterPublisher` per adapter factory serves both paths and reuses the main producer config (security, idempotence, acks).
+Every DLQ record carries `x-fleans-original-topic`, `-partition`, `-offset`, `x-fleans-failure-reason`, `x-fleans-failure-time-utc` and `x-fleans-stream-id`.
+
+**Shared clients, owned by the factory.** One `KafkaDeadLetterPublisher` (reuses the main producer config: security, idempotence, acks) and one `KafkaRecordReconsumer` (assign-only consumer, `AutoOffsetReset=Error`, fetches serialized under a lock) per adapter factory, shared by every queue's handler. Handlers are stateless. The factory disposes both on `IHostApplicationLifetime.ApplicationStopped`; after that, handlers and publishes log and drop (`12007`, `12008`), and the factory hands out no-op handlers.
 
 **Traps:**
 
 - **Hook `OnDeliveryFailure`, not `OnSubscriptionFailure`.** The first DLQ draft counted retries in `OnSubscriptionFailure`, so nothing was ever dead-lettered. Orleans owns the retry loop, so there is no per-record retry *count* to configure, only the time window.
 - **Without DLQ, a poison record is dropped, not replayed forever.** After the window Orleans logs and skips it, and the receiver's next commit moves past it. The DLQ exists to make that loss recoverable.
+- **Dispose on `ApplicationStopped`, not `ApplicationStopping`.** Stopping fires before the silo hosted service stops, while pulling agents are still delivering and calling the DLQ handlers — disposing there tears the Kafka clients down under them.
+- **Re-consume needs `AutoOffsetReset=Error`.** With `Earliest`, a purged offset silently jumps to the earliest retained record, so "no longer retained" (`12004`) is never logged and the drop looks like a timeout (`12006`).
+- **Sequence tokens order by `ReceiveOrder`, not offset.** Offsets are ordered only within a partition; with `NumPartitions > 1` an offset-first `CompareTo` breaks Orleans cache/cursor ordering. `KafkaQueueAdapterReceiver` stamps a process-wide monotonic `ReceiveOrder`, and `KafkaBatchContainer.GetEvents` copies partition and order into every event token so a handler given an event token still locates the right record.
 - **Delivery failure is per subscriber.** A record that failed for one implicit subscriber may have succeeded for another. Replaying from the DLQ redelivers to all of them, which is safe only because of the [stream-redelivery idempotency](../../CLAUDE.md) guards.
-- A DLQ publish failure, or a record that is no longer retained by the broker, is logged (EventIds `12001`, `12004`–`12006`) and the record is dropped. DLQ delivery is best-effort at-least-once, never blocking.
+- **The DLQ is best-effort, not lossless.** A DLQ publish failure, or a record that is no longer retained by the broker, is logged (EventIds `12001`, `12004`–`12006`) and the record is dropped: the consumer has already moved past it and the next commit makes that permanent. Alert on `12001`.
 
 Integration coverage: `KafkaDlqIntegrationTests` (env-gated like the other Kafka tests above).
 

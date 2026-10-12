@@ -9,13 +9,11 @@ namespace Fleans.Streaming.Kafka;
 internal static class KafkaDeadLetterReason
 {
     public const string DeliveryFailed = "delivery-failed";
-    public const string DeserializationFailed = "deserialization-failed";
 }
 
 /// <summary>
 /// Publishes the original raw Kafka record to <c>&lt;topic&gt;&lt;DeadLetterTopicSuffix&gt;</c> with diagnostic headers.
-/// One instance per adapter factory, shared by the receivers (deserialization failures) and the
-/// delivery-failure handlers (subscriber failures).
+/// One instance per adapter factory, shared by every queue's delivery-failure handler.
 /// </summary>
 internal sealed partial class KafkaDeadLetterPublisher : IDisposable
 {
@@ -38,8 +36,14 @@ internal sealed partial class KafkaDeadLetterPublisher : IDisposable
     /// <summary>Never throws — a failed DLQ publish is logged (EventId 12001) and the record is dropped.</summary>
     public async Task PublishAsync(
         string sourceTopic, int partition, long offset, byte[]? key, byte[] value,
-        string reason, string? streamId = null, Exception? exception = null)
+        string reason, string? streamId = null)
     {
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            LogDroppedAfterDispose(reason, sourceTopic, partition, offset);
+            return;
+        }
+
         var dlqTopic = KafkaTopicNaming.DeadLetterTopicForSource(_options, sourceTopic);
         var headers = new Headers
         {
@@ -51,11 +55,6 @@ internal sealed partial class KafkaDeadLetterPublisher : IDisposable
         };
         if (streamId is not null)
             headers.Add("x-fleans-stream-id", Utf8(streamId));
-        if (exception is not null)
-        {
-            headers.Add("x-fleans-exception-type", Utf8(exception.GetType().FullName ?? exception.GetType().Name));
-            headers.Add("x-fleans-exception-message", Utf8(exception.Message));
-        }
 
         try
         {
@@ -96,4 +95,8 @@ internal sealed partial class KafkaDeadLetterPublisher : IDisposable
     [LoggerMessage(EventId = 12001, Level = LogLevel.Error,
         Message = "Kafka DLQ: failed to publish {Reason} record {Topic}[{Partition}]@{Offset} to {DlqTopic}; the record is dropped")]
     private partial void LogPublishFailed(Exception ex, string reason, string topic, int partition, long offset, string dlqTopic);
+
+    [LoggerMessage(EventId = 12008, Level = LogLevel.Warning,
+        Message = "Kafka DLQ: {Reason} record {Topic}[{Partition}]@{Offset} arrived after the DLQ publisher was shut down; the record is dropped")]
+    private partial void LogDroppedAfterDispose(string reason, string topic, int partition, long offset);
 }
