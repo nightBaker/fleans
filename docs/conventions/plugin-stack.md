@@ -51,4 +51,4 @@ Code that scans `typeof(IDomainEvent).Assembly.GetTypes()` (or any other anchor 
 
 ## Plugin NuGet versioning
 
-Plugin NuGet packages (`Fleans.Domain.Abstractions`, `Fleans.Application.Abstractions`, `Fleans.Worker`, `Fleans.Plugins.RestCaller`) share the engine's `<VersionPrefix>` track (from `src/Fleans/Directory.Build.props`) — every release bumps every plugin even if its source is bit-identical.
+Plugin NuGet packages (`Fleans.Domain.Abstractions`, `Fleans.Application.Abstractions`, `Fleans.Worker`, `Fleans.Plugins.RestCaller`, `Fleans.Plugins.CamundaExternalTask`) share the engine's `<VersionPrefix>` track (from `src/Fleans/Directory.Build.props`) — every release bumps every plugin even if its source is bit-identical.

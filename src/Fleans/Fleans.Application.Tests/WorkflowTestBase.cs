@@ -12,6 +12,7 @@ using Fleans.Domain.Persistence;
 using Fleans.Domain.Sequences;
 using Fleans.Persistence;
 using Fleans.Persistence.Events;
+using Fleans.Plugins.CamundaExternalTask;
 using Fleans.Worker.Placement;
 using Microsoft.Data.Sqlite;
 using Fleans.Persistence.Sqlite;
@@ -269,6 +270,10 @@ public abstract class WorkflowTestBase
                     services.AddSingleton<EfCoreEventStore>();
                     services.AddSingleton<IEventStore>(sp => sp.GetRequiredService<EfCoreEventStore>());
                     services.AddApplication();
+
+                    // Camunda external-task plugin: only activates for `camunda:<topic>` task types.
+                    services.AddCamundaExternalTasks(options =>
+                        options.UseSqlite("DataSource=file::memory:?cache=shared"));
 
                     services.AddSerializer(serializerBuilder =>
                     {

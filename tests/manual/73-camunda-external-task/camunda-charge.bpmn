@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+                  id="defs_camunda_charge" targetNamespace="http://fleans.io/bpmn">
+  <bpmn:error id="err_declined" name="Payment declined" errorCode="PAYMENT_DECLINED" />
+  <bpmn:process id="camunda-charge" isExecutable="true">
+    <bpmn:startEvent id="start" />
+
+    <!-- Camunda 7 equivalent: camunda:type="external" camunda:topic="charge-card" -->
+    <bpmn:serviceTask id="charge" type="camunda:charge-card">
+      <bpmn:extensionElements>
+        <zeebe:ioMapping>
+          <zeebe:input source="=amount" target="amountToCharge" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+
+    <bpmn:boundaryEvent id="declinedBoundary" attachedToRef="charge">
+      <bpmn:errorEventDefinition errorRef="err_declined" />
+    </bpmn:boundaryEvent>
+
+    <bpmn:endEvent id="paid" />
+    <bpmn:endEvent id="declined" />
+
+    <bpmn:sequenceFlow id="f1" sourceRef="start"            targetRef="charge" />
+    <bpmn:sequenceFlow id="f2" sourceRef="charge"           targetRef="paid" />
+    <bpmn:sequenceFlow id="f3" sourceRef="declinedBoundary" targetRef="declined" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="diag">
+    <bpmndi:BPMNPlane id="plane" bpmnElement="camunda-charge">
+      <bpmndi:BPMNShape id="s_start"    bpmnElement="start"><dc:Bounds x="100" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_charge"   bpmnElement="charge"><dc:Bounds x="200" y="80" width="100" height="80" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_boundary" bpmnElement="declinedBoundary"><dc:Bounds x="232" y="142" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_paid"     bpmnElement="paid"><dc:Bounds x="400" y="100" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s_declined" bpmnElement="declined"><dc:Bounds x="400" y="242" width="36" height="36" /></bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="e_f1" bpmnElement="f1"><di:waypoint x="136" y="118" /><di:waypoint x="200" y="118" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="e_f2" bpmnElement="f2"><di:waypoint x="300" y="118" /><di:waypoint x="400" y="118" /></bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="e_f3" bpmnElement="f3"><di:waypoint x="250" y="178" /><di:waypoint x="250" y="260" /><di:waypoint x="400" y="260" /></bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
