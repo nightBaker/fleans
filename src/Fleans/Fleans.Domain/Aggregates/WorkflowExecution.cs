@@ -2325,14 +2325,21 @@ public class WorkflowExecution
         return effects.AsReadOnly();
     }
 
+    /// <param name="variables">
+    /// Optional variables to merge into the activity's scope before the failure propagates, so an
+    /// error boundary or error event sub-process sees them (Camunda's <c>bpmnError</c> variables).
+    /// </param>
     public IReadOnlyList<IInfrastructureEffect> FailActivity(
-        string activityId, Guid? activityInstanceId, Exception exception)
+        string activityId, Guid? activityInstanceId, Exception exception, ExpandoObject? variables = null)
     {
         var entry = ResolveEntry(activityId, activityInstanceId);
 
         // Stale guard: if entry is already completed, ignore stale callbacks
         if (entry.IsCompleted)
             return [];
+
+        if (variables is not null && ((IDictionary<string, object?>)variables).Count > 0)
+            Emit(new VariablesMerged(entry.VariablesId, variables));
 
         // Extract error code from exception type
         string errorCode;

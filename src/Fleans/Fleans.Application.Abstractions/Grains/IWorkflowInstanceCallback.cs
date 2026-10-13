@@ -26,4 +26,11 @@ public interface IWorkflowInstanceCallback : IGrainWithGuidKey
     Task CompleteActivity(string activityId, Guid activityInstanceId, ExpandoObject variables);
 
     Task FailActivity(string activityId, Guid activityInstanceId, Exception exception);
+
+    /// <summary>
+    /// Fails the activity after merging <paramref name="variables"/> into its scope, so an error
+    /// boundary event or error event sub-process that catches the failure sees them. Same stale
+    /// guard as the overload without variables: ignored once the activity has completed or failed.
+    /// </summary>
+    Task FailActivity(string activityId, Guid activityInstanceId, Exception exception, ExpandoObject variables);
 }
