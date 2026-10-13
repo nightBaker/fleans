@@ -2325,14 +2325,24 @@ public class WorkflowExecution
         return effects.AsReadOnly();
     }
 
+    /// <param name="variables">
+    /// Optional variables reported with the failure (Camunda's <c>bpmnError</c> variables), merged
+    /// into the scope of whatever catches it: the failed activity's scope for an error boundary
+    /// event (the boundary runs on it), the handler scope for an error event sub-process, and the
+    /// failed activity's scope when nothing catches it. Not merged when the failure starts a
+    /// transaction's cancellation, and not forwarded to a parent workflow's call activity.
+    /// </param>
     public IReadOnlyList<IInfrastructureEffect> FailActivity(
-        string activityId, Guid? activityInstanceId, Exception exception)
+        string activityId, Guid? activityInstanceId, Exception exception, ExpandoObject? variables = null)
     {
         var entry = ResolveEntry(activityId, activityInstanceId);
 
         // Stale guard: if entry is already completed, ignore stale callbacks
         if (entry.IsCompleted)
             return [];
+
+        if (variables is not null && ((IDictionary<string, object?>)variables).Count == 0)
+            variables = null;
 
         // Extract error code from exception type
         string errorCode;
@@ -2383,6 +2393,10 @@ public class WorkflowExecution
                 return effects.AsReadOnly();
             }
 
+            // The boundary below is spawned on the failed entry's scope.
+            if (variables is not null)
+                Emit(new VariablesMerged(entry.VariablesId, variables));
+
             var scopeIdForCancel = attachedEntry?.ActivityInstanceId ?? entry.ActivityInstanceId;
 
             // Cancel scope children of the attached-to activity
@@ -2411,13 +2425,16 @@ public class WorkflowExecution
                 MultiInstanceIndex: null,
                 TokenId: null));
         }
-        else if (TryActivateErrorEventSubProcess(entry, errorCode, effects))
+        else if (TryActivateErrorEventSubProcess(entry, errorCode, effects, variables))
         {
             // Error event sub-process took over.
         }
         else
         {
-            // No boundary handler found
+            // No boundary handler found — keep the reported variables on the failed activity's
+            // scope so they show in the instance state.
+            if (variables is not null)
+                Emit(new VariablesMerged(entry.VariablesId, variables));
 
             // If this is a multi-instance iteration, cancel siblings and fail host
             if (entry.MultiInstanceIndex is not null && entry.ScopeId.HasValue)
@@ -2454,7 +2471,8 @@ public class WorkflowExecution
     /// unsubscribes would target.
     /// </summary>
     private bool TryActivateErrorEventSubProcess(
-        ActivityInstanceEntry failedEntry, string errorCode, List<IInfrastructureEffect> effects)
+        ActivityInstanceEntry failedEntry, string errorCode, List<IInfrastructureEffect> effects,
+        ExpandoObject? failureVariables = null)
     {
         var match = _definition.FindErrorEventSubProcessHandler(
             failedEntry.ActivityId, errorCode);
@@ -2503,6 +2521,11 @@ public class WorkflowExecution
         // 3. Child variable scope for the handler (isolated — not merged back).
         var handlerScopeId = Guid.NewGuid();
         Emit(new ChildVariableScopeCreated(handlerScopeId, enclosingScopeVariablesId));
+
+        // Variables reported with the failure go where the handler reads them: its own scope.
+        // The failed activity's scope may be a branch or iteration scope the handler cannot see.
+        if (failureVariables is not null)
+            Emit(new VariablesMerged(handlerScopeId, failureVariables));
 
         // 4. Spawn the ErrorStartEvent inside the EventSubProcess scope.
         var errorStart = eventSubProcess.Activities.OfType<ErrorStartEvent>().First();

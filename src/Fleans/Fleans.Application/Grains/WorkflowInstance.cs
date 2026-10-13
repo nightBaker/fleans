@@ -412,7 +412,10 @@ public partial class WorkflowInstance :
         await ProcessPendingEvents();
     }
 
-    public async Task FailActivity(string activityId, Guid activityInstanceId, Exception exception)
+    public Task FailActivity(string activityId, Guid activityInstanceId, Exception exception) =>
+        FailActivity(activityId, activityInstanceId, exception, variables: null);
+
+    public async Task FailActivity(string activityId, Guid activityInstanceId, Exception exception, ExpandoObject? variables)
     {
         await EnsureExecution();
 
@@ -427,7 +430,7 @@ public partial class WorkflowInstance :
         using var scope = BeginWorkflowScope();
         LogFailingActivity(activityId);
 
-        var effects = _execution!.FailActivity(activityId, activityInstanceId, exception);
+        var effects = _execution!.FailActivity(activityId, activityInstanceId, exception, variables);
         await PerformEffects(effects);
         await ResolveExternalCompletions();
         await RunExecutionLoop();

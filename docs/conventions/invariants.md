@@ -40,7 +40,7 @@ Every state-mutating grain method reachable from an `[ImplicitStreamSubscription
 
 Current guarantees are a layered guard set:
 
-1. Grain-entry stale guard `HasActiveEntry(activityInstanceId)` on `CompleteActivity`/`FailActivity`.
+1. Grain-entry stale guard `HasActiveEntry(activityInstanceId)` on `CompleteActivity`/`FailActivity` (both `FailActivity` overloads, with and without variables — the variables are merged only after the guard).
 2. Domain-entry stale guard `entry.IsCompleted` as defense-in-depth.
 3. `joinState.HasFired` on `CompleteActivationCondition`.
 4. `entry.IsCompleted || entry.ActivityInstanceId != hostActivityInstanceId` on `CompleteMultiInstanceEarly`.
