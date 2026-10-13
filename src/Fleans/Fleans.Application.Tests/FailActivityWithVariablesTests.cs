@@ -70,6 +70,66 @@ public class FailActivityWithVariablesTests : WorkflowTestBase
         Assert.AreEqual(1, snapshot.CompletedActivities.Count(a => a.ActivityId == "recovered"));
     }
 
+    [TestMethod]
+    public async Task Variables_reach_an_error_event_sub_process_that_catches_a_failure_from_a_parallel_branch()
+    {
+        // Arrange — start → fork → (taskA | taskB); a process-level error event sub-process
+        // catching FRAUD waits in handlerTask. Branches run on cloned scopes, which the handler
+        // (a child of the root scope) cannot see.
+        var start = new StartEvent("start");
+        var fork = new ParallelGateway("fork", IsFork: true);
+        var taskA = new TaskActivity("taskA");
+        var taskB = new TaskActivity("taskB");
+        var endA = new EndEvent("endA");
+        var endB = new EndEvent("endB");
+        var errStart = new ErrorStartEvent("esp_errStart", "FRAUD");
+        var handlerTask = new TaskActivity("handlerTask");
+        var errEnd = new EndEvent("esp_end");
+        var esp = new EventSubProcess("esp")
+        {
+            Activities = [errStart, handlerTask, errEnd],
+            SequenceFlows = [new SequenceFlow("esp_f1", errStart, handlerTask), new SequenceFlow("esp_f2", handlerTask, errEnd)],
+            IsInterrupting = true,
+        };
+        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await instance.SetWorkflow(new WorkflowDefinition
+        {
+            WorkflowId = "fail-with-variables-esp",
+            Activities = [start, fork, taskA, taskB, endA, endB, esp],
+            SequenceFlows =
+            [
+                new SequenceFlow("f1", start, fork),
+                new SequenceFlow("f2", fork, taskA),
+                new SequenceFlow("f3", fork, taskB),
+                new SequenceFlow("f4", taskA, endA),
+                new SequenceFlow("f5", taskB, endB),
+            ],
+        });
+        await instance.StartWorkflow();
+        var task = await ActiveEntry(instance, "taskA");
+
+        // Act
+        await instance.FailActivity("taskA", task.ActivityInstanceId,
+            new CustomTaskFailedActivityException("FRAUD", "fishy"), Variables(("reason", "card-stolen")));
+
+        // Assert — the handler's own scope holds the variable.
+        var handler = await ActiveEntry(instance, "handlerTask");
+        var handlerVariables = (IDictionary<string, object?>)await instance.GetVariables(handler.VariablesStateId);
+        Assert.AreEqual("card-stolen", handlerVariables["reason"]);
+    }
+
+    [TestMethod]
+    public async Task Empty_variables_behave_like_the_overload_without_variables()
+    {
+        var instance = await StartWorkflow(withBoundary: true);
+        var task = await ActiveEntry(instance, "task1");
+
+        await instance.FailActivity("task1", task.ActivityInstanceId, new Exception("boom"), null);
+
+        var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted);
+        Assert.IsTrue(snapshot.CompletedActivityIds.Contains("recovered"));
+    }
+
     private async Task<IWorkflowInstanceGrain> StartWorkflow(bool withBoundary)
     {
         var start = new StartEvent("start");
