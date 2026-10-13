@@ -16,6 +16,15 @@ waiting tasks in its own table and reports workers' results back to the workflow
 
 Requires **Fleans 0.6.0 or later**.
 
+:::caution[For migration only — prefer native Fleans plugins]
+This plugin is a backward-compatibility bridge. It lets existing Camunda 7 workers keep running
+while you move your processes to Fleans. For new tasks, and when you rewrite a worker anyway, use
+a native [custom-task plugin](/fleans/guides/writing-custom-tasks/). Native plugins run inside the
+Fleans cluster, so they need no polling, locks or extra database. They also get typed inputs and
+outputs through mappings, appear in the plugin catalog and the editor, and support everything
+Fleans offers, unlike the Camunda subset listed below.
+:::
+
 ## 1. Adapt the BPMN
 
 Replace Camunda's `camunda:type="external" camunda:topic="…"` attribute pair with a Fleans
