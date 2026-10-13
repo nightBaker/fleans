@@ -90,9 +90,10 @@ ExternalTaskClient.create().baseUrl("http://camunda-external-task:8080/engine-re
 new Client({ baseUrl: "http://camunda-external-task:8080/engine-rest" });
 ```
 
-`fetchAndLock` (including long polling), `complete`, `failure`, `bpmnError`, `extendLock`,
-`lock`, `unlock`, `retries`, `priority` and the `GET` queries are supported. Errors use
-Camunda's body and status codes.
+Every endpoint the official Java and JS clients call is supported: `fetchAndLock` (including
+long polling), `complete`, `failure`, `bpmnError`, `lock`, `extendLock` and `unlock`. Errors use
+Camunda's body and status codes. Operator endpoints (task queries, `PUT /retries`, `PUT /priority`)
+and task priorities are not provided yet.
 
 ## Differences from Camunda 7
 
