@@ -51,9 +51,12 @@ public class EventsPageTests : WorkflowE2ETestBase
         await events.RefreshUntilCountAsync(events.SignalStartRow(sigName), 1);
         await Expect(events.SignalStartRow(sigName).Locator("td")).ToHaveTextAsync([sigName, sigKey]);
 
-        // Conditional Start Events: ProcessDefinitionKey + ActivityId + ConditionExpression.
+        // Conditional Start Events: ProcessDefinitionKey + ActivityId + ConditionExpression. The
+        // registry stores the condition as the engine evaluates it — variables rewritten to
+        // `_context.<name>` at deploy time (#760), like sequence-flow conditions.
         await events.RefreshUntilCountAsync(events.ConditionalStartRow(condKey), 1);
-        await Expect(events.ConditionalStartRow(condKey).Locator("td")).ToHaveTextAsync([condKey, "condStart", condition]);
+        await Expect(events.ConditionalStartRow(condKey).Locator("td"))
+            .ToHaveTextAsync([condKey, "condStart", $"_context.{condition}"]);
 
         // Refresh re-queries in place — no navigation.
         Assert.AreEqual(urlBefore, Page.Url, "Refresh must not navigate.");
