@@ -14,7 +14,7 @@ The engine has no Camunda-specific code. The plugin is an ordinary
 [plugin host](/fleans/concepts/plugin-hosting/) that joins the engine's cluster. It stores
 waiting tasks in its own table and reports workers' results back to the workflow.
 
-Requires **Fleans 0.6.0 or later**.
+Plugin 0.7.0 requires **Fleans 0.7.0 or later**.
 
 :::caution[For migration only — prefer native Fleans plugins]
 This plugin is a backward-compatibility bridge. It lets existing Camunda 7 workers keep running
@@ -39,7 +39,21 @@ task type that starts with `camunda:`:
 ```
 
 Workers keep subscribing to the topic (`charge-card`). Camunda's `<camunda:inputOutput>` is not
-read. Use Fleans [input/output mappings](/fleans/concepts/custom-tasks/#mapping-grammar) instead.
+read. Use Fleans [input/output mappings](/fleans/concepts/custom-tasks/#mapping-grammar) instead;
+the [plugin README](https://github.com/nightBaker/fleans-camunda-external-task#1-adapt-the-bpmn)
+has a conversion table.
+
+Camunda task metadata comes from **reserved input targets**, evaluated when the task is queued
+(except extension properties, evaluated at fetch time) and never sent as variables:
+
+```xml
+<zeebe:ioMapping>
+  <zeebe:input source="=order.priority" target="taskPriority" />       <!-- camunda:taskPriority -->
+  <zeebe:input source="=order.id" target="businessKey" />
+  <zeebe:input source="acme" target="tenantId" />
+  <zeebe:input source="eu-west" target="extensionProperty_region" />  <!-- camunda:properties -->
+</zeebe:ioMapping>
+```
 
 ## 2. Run the plugin host
 
@@ -100,23 +114,30 @@ new Client({ baseUrl: "http://camunda-external-task:8080/engine-rest" });
 ```
 
 Every endpoint the official Java and JS clients call is supported: `fetchAndLock` (including
-long polling), `complete`, `failure`, `bpmnError`, `lock`, `extendLock` and `unlock`. Errors use
-Camunda's body and status codes. Operator endpoints (task queries, `PUT /retries`, `PUT /priority`)
-and task priorities are not provided yet.
+long polling, `usePriority`, `sorting`, and the `businessKey` / tenant filters), `complete`,
+`failure`, `bpmnError`, `lock`, `extendLock`, `unlock`, and the file-variable download. The
+operator endpoints are there too: task queries and counts, `topic-names`, `PUT /retries` and
+`PUT /priority`. Errors use Camunda's body and status codes. Set
+`CamundaExternalTasks__BasicAuth__Username` and `__Password` on the host to require HTTP basic
+authentication (the clients' `BasicAuthProvider` / `BasicAuthInterceptor`).
 
 ## Differences from Camunda 7
 
-- **No incidents.** `failure` with `retries = 0` fails the activity, with error code `500` and the
-  worker's error message. It shows as failed in Fleans, and an error boundary event can catch it.
+- **Incidents are opt-in.** By default, `failure` with `retries = 0` fails the activity with
+  error code `500`, and an error boundary event can catch it. With
+  `CamundaExternalTasks__Incidents=true` the task stays as an incident, as in Camunda, until
+  `PUT /external-task/{id}/retries` resolves it. Incidents are not shown in the Fleans UI.
 - **`bpmnError`** fails the activity with the worker's `errorCode`, so an
-  [error boundary event](/fleans/guides/error-handling/) with that code catches it. Variables
-  sent with the BPMN error are ignored.
-- **Variables:** primitives, `Date` (kept as a string), `Json`, and `Object` with
-  `application/json` are supported. `Bytes`, `File` and Java-serialized objects are rejected.
-- **Missing fields:** `businessKey`, `tenantId` and `processDefinitionVersionTag` are always
-  `null`, because Fleans has no equivalent.
-- **Scope:** only the `/external-task` resource is provided. Start processes and correlate
-  messages through the [Fleans REST API](/fleans/reference/api/).
+  [error boundary event](/fleans/guides/error-handling/) with that code catches it. Its variables
+  are visible to the boundary or error event sub-process that catches it, but not to an error
+  boundary on a parent workflow's call activity.
+- **Variables:** primitives, `Date` (kept as a string), `Json`, `Bytes`, `File`, and `Object`
+  with `application/json` are supported. Binary values live in the workflow state, so keep them
+  small. Java-serialized objects are rejected.
+- **Missing fields:** `processDefinitionVersionTag` is always `null`, because Fleans has no
+  equivalent.
+- **Scope:** the `/external-task` resource plus the file-variable download. Start processes and
+  correlate messages through the [Fleans REST API](/fleans/reference/api/).
 
 The [repository README](https://github.com/nightBaker/fleans-camunda-external-task#differences-from-camunda-7)
 lists every difference.
