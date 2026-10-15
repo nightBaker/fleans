@@ -10,7 +10,8 @@ namespace Fleans.Application.Tests;
 /// <see cref="Orleans.TestingHost.TestCluster"/> run in the test process; counts are keyed by the
 /// logger category so a test only sees entries from the types it owns (e.g. its own test stubs).
 /// For EventIds passed to <see cref="Capture"/> it also keeps the message and the active scope
-/// fields, so a test can assert what a log line says and which correlation ids it carries.
+/// fields, so a test can assert what a log line says and which correlation ids it carries. Capture
+/// stops when the returned handle is disposed; callers must be <c>[DoNotParallelize]</c>.
 /// </summary>
 public static class CapturedLogEvents
 {
@@ -20,14 +21,21 @@ public static class CapturedLogEvents
 
     public sealed record Entry(string Category, string Message, IReadOnlyDictionary<string, object?> ScopeFields);
 
-    public static void Clear() => Counts.Clear();
+    public static void Clear()
+    {
+        Counts.Clear();
+        Captured.Clear();
+    }
 
-    /// <summary>Starts keeping full entries for <paramref name="eventIds"/>, dropping earlier ones.</summary>
-    public static void Capture(params int[] eventIds)
+    /// <summary>
+    /// Keeps full entries for <paramref name="eventIds"/> until the returned handle is disposed.
+    /// </summary>
+    public static IDisposable Capture(params int[] eventIds)
     {
         Captured.Clear();
         foreach (var id in eventIds)
             Captured[id] = new ConcurrentQueue<Entry>();
+        return new CaptureHandle();
     }
 
     public static IReadOnlyList<Entry> Entries(int eventId)
@@ -83,6 +91,11 @@ public static class CapturedLogEvents
                         fields.TryAdd(key, value);
             return fields;
         }
+    }
+
+    private sealed class CaptureHandle : IDisposable
+    {
+        public void Dispose() => Captured.Clear();
     }
 
     private sealed class Scope(object state, Scope? parent) : IDisposable

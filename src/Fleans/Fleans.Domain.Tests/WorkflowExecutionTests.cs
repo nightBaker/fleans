@@ -46,6 +46,20 @@ public class WorkflowExecutionTests
     }
 
     [TestMethod]
+    public void Start_WithInstanceId_ShouldUseItAsStateId()
+    {
+        var start = new StartEvent("start1");
+        var (execution, state) = CreateExecution([start], []);
+        var instanceId = Guid.NewGuid();
+
+        execution.Start(instanceId: instanceId);
+
+        var started = (WorkflowStarted)execution.GetUncommittedEvents()[0];
+        Assert.AreEqual(instanceId, started.InstanceId);
+        Assert.AreEqual(instanceId, state.Id);
+    }
+
+    [TestMethod]
     public void Start_WithBusinessId_ShouldCarryItOnWorkflowStartedAndState()
     {
         var start = new StartEvent("start1");

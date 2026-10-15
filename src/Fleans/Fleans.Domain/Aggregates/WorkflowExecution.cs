@@ -61,7 +61,12 @@ public class WorkflowExecution
 
     public void ClearUncommittedEvents() => _uncommittedEvents.Clear();
 
-    public void Start(string? startActivityId = null, string? businessId = null)
+    /// <param name="instanceId">
+    /// The instance's public id — the workflow instance grain key. It becomes <c>State.Id</c>, which
+    /// effects (message/signal subscriptions, timers) and logs hand to other grains, so it must be
+    /// the id those grains can address. Domain tests may omit it.
+    /// </param>
+    public void Start(string? startActivityId = null, string? businessId = null, Guid? instanceId = null)
     {
         if (_state.IsStarted)
             throw new InvalidOperationException("Workflow is already started.");
@@ -80,10 +85,9 @@ public class WorkflowExecution
             startActivity = _definition.GetStartActivity();
         }
 
-        var instanceId = Guid.NewGuid();
         var rootVariablesId = Guid.NewGuid();
 
-        Emit(new WorkflowStarted(instanceId, _definition.ProcessDefinitionId, rootVariablesId, BusinessId: businessId));
+        Emit(new WorkflowStarted(instanceId ?? Guid.NewGuid(), _definition.ProcessDefinitionId, rootVariablesId, BusinessId: businessId));
 
         var variablesId = _state.GetRootVariablesId();
 

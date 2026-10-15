@@ -53,7 +53,7 @@ Every grain call is wrapped in a `BeginScope` by `WorkflowLoggingScopeFilter` (a
 | `WorkflowId` | string | `WorkflowInstance` |
 | `ProcessDefinitionId` | string | `WorkflowInstance` |
 | `WorkflowInstanceId` | string | `WorkflowInstance` |
-| `BusinessId` | string | `WorkflowInstance`, custom-task workers — the instance's business id, `-` when none was set (not inherited by call-activity children) |
+| `BusinessId` | string | `WorkflowInstance`, stream handlers (script, condition, custom task) — the instance's business id, `-` when none was set; not inherited by call-activity children. Lines logged outside a call from the instance (e.g. timer reminders) lack it — filter on `WorkflowInstanceId` for the full picture |
 | `ActivityId` | string | `WorkflowInstance` / `ActivityInstance` |
 | `ActivityInstanceId` | string | `WorkflowInstance` / `ActivityInstance` |
 | `VariablesId` | string | `ActivityInstance` |

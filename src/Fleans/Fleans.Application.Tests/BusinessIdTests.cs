@@ -111,6 +111,21 @@ public class BusinessIdTests : WorkflowTestBase
     }
 
     [TestMethod]
+    [DataRow("ORDER-1\nforged log line")]
+    [DataRow("ORDER-1\r\n")]
+    [DataRow("ORDER\t1")]
+    [DataRow("ORDER\u001b[31m1")]
+    public async Task StartWorkflow_WithControlCharactersInBusinessId_IsRejected(string businessId)
+    {
+        // Arrange
+        await DeployAsync(CreateSimpleWorkflow("biz-control"));
+
+        // Act + Assert — the id goes into every log scope; CR/LF would forge log lines
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => CommandService.StartWorkflow("biz-control", businessId: businessId));
+    }
+
+    [TestMethod]
     public async Task StartWorkflow_WithOverlongBusinessId_IsRejected()
     {
         // Arrange
@@ -278,10 +293,11 @@ public class BusinessIdTests : WorkflowTestBase
         Assert.IsNull(child.BusinessId);
     }
 
-    // WorkflowInstance "Workflow started" (EventId 3007) and the worker's "Handling custom-task
-    // event" (EventId 4030) — CapturedLogEvents keeps their message and scope fields.
+    // WorkflowInstance "Workflow started" (3007), the worker's "Handling custom-task event" (4030)
+    // and "Handling script event" (4010) — CapturedLogEvents keeps their message and scope fields.
     private const int WorkflowStartedEventId = 3007;
     private const int CustomTaskHandlingEventId = 4030;
+    private const int ScriptHandlingEventId = 4010;
 
     [TestMethod]
     [DoNotParallelize]
@@ -289,7 +305,7 @@ public class BusinessIdTests : WorkflowTestBase
     {
         // Arrange
         await DeployAsync(CreateSimpleWorkflow("biz-log"));
-        CapturedLogEvents.Capture(WorkflowStartedEventId);
+        using var capture = CapturedLogEvents.Capture(WorkflowStartedEventId);
 
         // Act
         var withId = await CommandService.StartWorkflow("biz-log", businessId: "ORDER-LOG");
@@ -321,16 +337,46 @@ public class BusinessIdTests : WorkflowTestBase
             Activities = [start, ct1, end],
             SequenceFlows = [new SequenceFlow("f1", start, ct1), new SequenceFlow("f2", ct1, end)]
         });
-        CapturedLogEvents.Capture(CustomTaskHandlingEventId);
+        using var capture = CapturedLogEvents.Capture(CustomTaskHandlingEventId);
 
         // Act
         var instanceId = await CommandService.StartWorkflow("biz-log-worker", businessId: "ORDER-WORKER");
         await WaitForCondition(instanceId, s => s.IsCompleted);
 
-        // Assert
+        // Assert — the stream is at-least-once, so the handler may log more than once
         var handling = CapturedLogEvents.Entries(CustomTaskHandlingEventId)
-            .Single(e => Equals(e.ScopeFields["WorkflowInstanceId"], instanceId));
-        Assert.AreEqual("ORDER-WORKER", handling.ScopeFields["BusinessId"]);
+            .Where(e => Equals(e.ScopeFields["WorkflowInstanceId"], instanceId.ToString()))
+            .ToList();
+        Assert.IsNotEmpty(handling);
+        Assert.IsTrue(handling.All(e => Equals(e.ScopeFields["BusinessId"], "ORDER-WORKER")));
+    }
+
+    [TestMethod]
+    [DoNotParallelize]
+    public async Task ScriptHandlerLog_KeepsBusinessIdArrivingWithTheStream()
+    {
+        // Arrange — ExecuteScriptEvent does not carry the business id; it arrives in RequestContext
+        var start = new StartEvent("start");
+        var script = new ScriptTask("script1", "noop", "csharp");
+        var end = new EndEvent("end");
+        await DeployAsync(new WorkflowDefinition
+        {
+            WorkflowId = "biz-log-script",
+            Activities = [start, script, end],
+            SequenceFlows = [new SequenceFlow("f1", start, script), new SequenceFlow("f2", script, end)]
+        });
+        using var capture = CapturedLogEvents.Capture(ScriptHandlingEventId);
+
+        // Act
+        var instanceId = await CommandService.StartWorkflow("biz-log-script", businessId: "ORDER-SCRIPT");
+        await WaitForCondition(instanceId, s => s.IsCompleted);
+
+        // Assert
+        var handling = CapturedLogEvents.Entries(ScriptHandlingEventId)
+            .Where(e => Equals(e.ScopeFields["WorkflowInstanceId"], instanceId.ToString()))
+            .ToList();
+        Assert.IsNotEmpty(handling);
+        Assert.IsTrue(handling.All(e => Equals(e.ScopeFields["BusinessId"], "ORDER-SCRIPT")));
     }
 
     [TestMethod]
@@ -348,7 +394,7 @@ public class BusinessIdTests : WorkflowTestBase
             Activities = [start, call, end],
             SequenceFlows = [new SequenceFlow("p1", start, call), new SequenceFlow("p2", call, end)]
         });
-        CapturedLogEvents.Capture(WorkflowStartedEventId);
+        using var capture = CapturedLogEvents.Capture(WorkflowStartedEventId);
 
         // Act
         var parentId = await CommandService.StartWorkflow("biz-log-parent", businessId: "ORDER-PARENT-LOG");

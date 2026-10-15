@@ -54,9 +54,7 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
         var guid = Guid.NewGuid();
         LogCreatingInstance(key, definition.ProcessDefinitionId, guid);
 
-        RequestContext.Set(WorkflowContextKeys.WorkflowId, key);
-        RequestContext.Set(WorkflowContextKeys.ProcessDefinitionId, definition.ProcessDefinitionId);
-        RequestContext.Set(WorkflowContextKeys.WorkflowInstanceId, guid.ToString());
+        WorkflowLoggingContext.SetInstance(key, definition.ProcessDefinitionId, guid, businessId);
 
         var workflowInstanceGrain = _grainFactory.GetGrain<IWorkflowInstanceGrain>(guid);
         await workflowInstanceGrain.SetWorkflow(definition.Workflow, businessId: businessId);
@@ -76,9 +74,7 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
         var guid = Guid.NewGuid();
         LogCreatingInstance(key, processDefinitionId, guid);
 
-        RequestContext.Set(WorkflowContextKeys.WorkflowId, key);
-        RequestContext.Set(WorkflowContextKeys.ProcessDefinitionId, processDefinitionId);
-        RequestContext.Set(WorkflowContextKeys.WorkflowInstanceId, guid.ToString());
+        WorkflowLoggingContext.SetInstance(key, processDefinitionId, guid, businessId);
 
         var workflowInstanceGrain = _grainFactory.GetGrain<IWorkflowInstanceGrain>(guid);
         await workflowInstanceGrain.SetWorkflow(definition.Workflow, businessId: businessId);
