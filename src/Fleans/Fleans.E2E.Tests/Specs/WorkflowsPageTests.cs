@@ -97,4 +97,26 @@ public class WorkflowsPageTests : WorkflowE2ETestBase
         await BlazorPage.WaitForInteractiveAsync(Page);
         await new ProcessInstancesPage(Page).AssertInstanceStatusAsync(instanceId, "Completed");
     }
+
+    [TestMethod]
+    public async Task StartFromUi_WithBusinessId_SetsItAndClearsTheField()
+    {
+        var key = $"e2e-workflows-start-biz-{InlineBpmn.UniqueSuffix()}";
+        await ApiClient.DeployAsync(InlineBpmn.ScriptOnly(key));
+        var businessId = $"ORDER-{InlineBpmn.UniqueSuffix()}";
+
+        var page = new WorkflowsPage(Page);
+        await page.OpenAsync();
+        await page.SearchAsync(key);
+        await page.StartBusinessIdInput.FillAsync(businessId);
+        await page.StartBusinessIdInput.PressAsync("Tab");
+
+        await page.ClickActionAsync(key, "Start");
+        await Expect(page.SuccessMessage).ToContainTextAsync($"Business ID: {businessId}.", new() { Timeout = 30_000 });
+
+        // The id tags one instance only: the field is cleared so the next Start doesn't reuse it.
+        await Expect(page.StartBusinessIdInput).ToHaveValueAsync("");
+        var instances = await ApiClient.ListInstancesByBusinessIdAsync(key, businessId);
+        Assert.AreEqual(1, instances.TotalCount);
+    }
 }

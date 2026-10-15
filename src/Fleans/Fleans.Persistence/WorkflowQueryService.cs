@@ -237,6 +237,8 @@ public class WorkflowQueryService : IWorkflowQueryService
     private async Task<PagedResult<WorkflowInstanceInfo>> ApplySieveAndProject(
         IQueryable<WorkflowInstanceState> baseQuery, PageRequest page, string? businessId)
     {
+        // Same rules as at start: a blank or over-long filter is a bad request (400), not "no match".
+        BusinessIdRules.Validate(businessId);
         if (businessId is not null)
             baseQuery = baseQuery.Where(w => w.BusinessId == businessId);
 

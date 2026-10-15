@@ -108,7 +108,7 @@ Content-Type: application/json
 
 **Error responses**
 
-- **400** — `{"error": "WorkflowId is required"}`, or an invalid `BusinessId` (ProblemDetails; empty or whitespace, or longer than 256 characters)
+- **400** — `{"error": "WorkflowId is required"}`, or an invalid `BusinessId` (ProblemDetails; empty or whitespace, leading or trailing whitespace, or longer than 256 characters)
 - **404** — the process key was never deployed (ProblemDetails, `detail`: `Workflow with id 'my-process' is not registered. …`)
 - **409** — the process key is disabled (ProblemDetails, `detail`: `Process 'my-process' is disabled. Enable it before creating new instances.`)
 
@@ -118,9 +118,10 @@ A process instance can have a business id: a value your systems already know, su
 
 - **Set only at start**, on `POST /Execution/start`, on `POST /Execution/message` when a message start event creates the instance, or in the admin UI's **Business ID for Start** field. It can't be changed afterwards: a message correlated to a running instance does not change it. Instances started by timers, signals, conditional starts or call activities have none.
 - **At most 256 characters**, and not empty or whitespace. An invalid value returns **400**.
+- **Stored exactly as sent.** Leading or trailing whitespace is rejected with `400` rather than trimmed, so the value you look up is the value you started with.
 - **Not unique.** Two instances can share a business id. Fleans does not enforce uniqueness, so filter by it and pick the instance you need.
 - **Not inherited.** A call activity's child instance does not get the parent's business id.
-- **Visible everywhere:** as `businessId` on `GET /Instances/{id}/state` and on the instance listings. Find instances by it with the `businessId` query parameter, for example `/Definitions/my-process/instances?businessId=order-123`. It matches exactly, so values with `,` or `|` work too (URL-encode them); those characters would split a Sieve `filters` term. It also appears in the admin UI, and custom-task plugins get it as `CustomTaskExecutionContext.BusinessId`.
+- **Visible everywhere:** as `businessId` on `GET /Instances/{id}/state` and on the instance listings. Find instances by it with the `businessId` query parameter, for example `/Definitions/my-process/instances?businessId=order-123`. It matches exactly, so values with `,` or `|` work too (URL-encode them); those characters would split a Sieve `filters` term. A padded or too-long value returns `400`; an empty value is ignored (no filter). The MCP `ListInstances` tool takes the same `businessId` argument. It also appears in the admin UI, and custom-task plugins get it as `CustomTaskExecutionContext.BusinessId`.
 
 ### `POST /Execution/message`
 

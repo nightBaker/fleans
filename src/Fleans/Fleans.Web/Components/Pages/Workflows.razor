@@ -2,6 +2,7 @@
 @rendermode InteractiveServer
 @using Fleans.Application
 @using Fleans.Application.QueryModels
+@using Fleans.Domain
 @using Microsoft.FluentUI.AspNetCore.Components
 @inject IWorkflowQueryService QueryService
 @inject IWorkflowCommandService CommandService
@@ -61,7 +62,7 @@
                          data-testid="workflows-search" />
         <FluentTextField Placeholder="Business ID for Start (optional)"
                          @bind-Value="startBusinessId"
-                         Maxlength="256"
+                         Maxlength="@BusinessIdRules.MaxLength"
                          Style="max-width: 320px;"
                          data-testid="workflows-start-business-id" />
     </FluentStack>
@@ -317,11 +318,14 @@
             actionErrorMessage = null;
             actionSuccessMessage = null;
 
-            var businessId = string.IsNullOrWhiteSpace(startBusinessId) ? null : startBusinessId.Trim();
+            // Sent as typed: padding is rejected (400 over REST) rather than trimmed, here too.
+            var businessId = string.IsNullOrEmpty(startBusinessId) ? null : startBusinessId;
             var instanceId = await CommandService.StartWorkflowByProcessDefinitionId(version.ProcessDefinitionId, businessId);
             LogProcessStarted(version.ProcessDefinitionId, instanceId);
             actionSuccessMessage = $"Started '{version.ProcessDefinitionKey}' v{version.Version}. Instance: {instanceId}."
                 + (businessId is null ? "" : $" Business ID: {businessId}.");
+            // A business id tags one instance; don't carry it over to the next Start click.
+            startBusinessId = null;
         }
         catch (KeyNotFoundException ex)
         {

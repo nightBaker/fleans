@@ -23,6 +23,8 @@ public sealed class WorkflowsPage
 
     public ILocator SuccessMessage => _page.GetByTestId("workflows-action-success");
 
+    public ILocator StartBusinessIdInput => _page.GetByTestId("workflows-start-business-id").Locator("input");
+
     public async Task OpenAsync()
     {
         await BlazorPage.GotoInteractiveAsync(_page, "/workflows");

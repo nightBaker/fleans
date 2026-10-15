@@ -99,6 +99,25 @@ public class ExecutionApiTests : WorkflowE2ETestBase
     }
 
     [TestMethod]
+    public async Task InstanceList_BusinessIdQueryParameter_MatchesSieveMetacharactersAndRejectsPadding()
+    {
+        await ApiClient.DeployAsync(BpmnFixtureLoader.Load(DefinitionsApiTests.Plan, DefinitionsApiTests.ReadFixture));
+        // `,` and `|` would split a Sieve filters term; the query parameter must bind them verbatim.
+        var businessId = $"ACME, Inc|{Guid.NewGuid():N}";
+        var started = await ApiClient.StartAsync(DefinitionsApiTests.ReadKey, businessId: businessId);
+
+        var page = await ApiClient.ListInstancesByBusinessIdAsync(DefinitionsApiTests.ReadKey, businessId);
+        Assert.AreEqual(started.WorkflowInstanceId, page.Items.Single().InstanceId);
+
+        // A whitespace-only value binds to null (no filter); a padded one reaches validation.
+        using var padded = await ApiClient.ListInstancesByBusinessIdRawAsync(DefinitionsApiTests.ReadKey, " ORDER-1");
+        Assert.AreEqual(HttpStatusCode.BadRequest, padded.StatusCode);
+
+        using var complete = await ApiClient.CompleteActivityAsync(started.WorkflowInstanceId, DefinitionsApiTests.WaitActivity);
+        Assert.AreEqual(HttpStatusCode.OK, complete.StatusCode);
+    }
+
+    [TestMethod]
     public async Task Start_OverlongBusinessId_Returns400()
     {
         using var response = await ApiClient.StartRawAsync(
