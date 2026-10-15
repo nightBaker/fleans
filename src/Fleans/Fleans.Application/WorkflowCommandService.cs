@@ -20,9 +20,17 @@ public partial class WorkflowCommandService : IWorkflowCommandService
     public async Task<Guid> StartWorkflow(string workflowId, ExpandoObject? initialVariables = null, string? businessId = null)
     {
         LogStartingWorkflow(workflowId);
+        BusinessIdRules.Validate(businessId);
 
         var processGrain = _grainFactory.GetGrain<IProcessDefinitionGrain>(workflowId);
-        return await processGrain.StartNewInstance(initialVariables, businessId);
+        var workflowInstance = await processGrain.CreateInstance(businessId);
+
+        if (initialVariables != null)
+            await workflowInstance.SetInitialVariables(initialVariables);
+
+        await workflowInstance.StartWorkflow();
+
+        return await workflowInstance.GetWorkflowInstanceId();
     }
 
     public async Task<Guid> StartWorkflowByProcessDefinitionId(string processDefinitionId)
@@ -66,6 +74,7 @@ public partial class WorkflowCommandService : IWorkflowCommandService
     public async Task<SendMessageResult> SendMessage(string messageName, string? correlationKey, ExpandoObject variables, string? businessId = null)
     {
         LogSendingMessage(messageName, correlationKey);
+        BusinessIdRules.Validate(businessId);
 
         // Try correlation-based delivery first if a correlation key is provided
         if (!string.IsNullOrWhiteSpace(correlationKey))

@@ -51,10 +51,11 @@ public class JsonContractTests
             ProcessDefinitionId: "load-events",
             CreatedAt: null,
             ExecutionStartedAt: null,
-            CompletedAt: null);
+            CompletedAt: null,
+            BusinessId: "order-1");
 
         using var doc = JsonDocument.Parse(JsonSerializer.Serialize(dto, ApiOptions));
-        foreach (var key in new[] { "activeActivityIds", "completedActivityIds", "isStarted", "isCompleted" })
+        foreach (var key in new[] { "activeActivityIds", "completedActivityIds", "isStarted", "isCompleted", "businessId" })
             Assert.IsTrue(doc.RootElement.TryGetProperty(key, out _),
                 $"Expected camelCase '{key}' — the k6 load script reads this exact key.");
     }

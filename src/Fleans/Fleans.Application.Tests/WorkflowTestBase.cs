@@ -50,15 +50,11 @@ public abstract class WorkflowTestBase
 
         var builder = new TestClusterBuilder();
         builder.AddSiloBuilderConfigurator<EfCoreSiloConfigurator>();
-        ConfigureCluster(builder);
         Cluster = builder.Build();
         Cluster.Deploy();
 
         QueryService = ((InProcessSiloHandle)Cluster.Primary).SiloHost.Services.GetRequiredService<IWorkflowQueryService>();
     }
-
-    /// <summary>Hook for per-class cluster settings (e.g. host configuration) before deploy.</summary>
-    protected virtual void ConfigureCluster(TestClusterBuilder builder) { }
 
     /// <summary>
     /// Forces deactivation of all grain activations in the test cluster
@@ -267,7 +263,6 @@ public abstract class WorkflowTestBase
                     });
                     services.AddSingleton<IUserTaskFilterStrategy, InMemoryUserTaskFilterStrategy>();
                     services.AddSingleton<IWorkflowQueryService, WorkflowQueryService>();
-                    services.AddSingleton<IBusinessIdLookup, EfCoreBusinessIdLookup>();
                     services.AddSingleton<IScriptExpressionExecutor, SimpleScriptExecutor>();
                     services.AddSingleton<IConditionExpressionEvaluator, SimpleConditionEvaluator>();
                     services.AddSingleton<IWorkflowStateProjection, EfCoreWorkflowStateProjection>();

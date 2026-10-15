@@ -10,4 +10,4 @@ public sealed record WorkflowInstanceInfo(
     DateTimeOffset? CreatedAt,
     DateTimeOffset? ExecutionStartedAt,
     DateTimeOffset? CompletedAt,
-    string? BusinessId = null);
+    string? BusinessId);

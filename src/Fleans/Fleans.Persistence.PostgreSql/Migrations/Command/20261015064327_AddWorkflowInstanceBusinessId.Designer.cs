@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Fleans.Persistence.PostgreSql.Migrations.Command
 {
     [DbContext(typeof(FleanCommandDbContext))]
-    [Migration("20261015063009_AddWorkflowInstanceBusinessId")]
+    [Migration("20261015064327_AddWorkflowInstanceBusinessId")]
     partial class AddWorkflowInstanceBusinessId
     {
         /// <inheritdoc />
@@ -584,9 +584,9 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ProcessDefinitionId");
+                    b.HasIndex("BusinessId");
 
-                    b.HasIndex("BusinessId", "ProcessDefinitionId");
+                    b.HasIndex("ProcessDefinitionId");
 
                     b.ToTable("WorkflowInstances", (string)null);
                 });

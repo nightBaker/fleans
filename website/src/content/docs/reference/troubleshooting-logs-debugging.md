@@ -39,7 +39,6 @@ If you author a custom-task plugin, follow the same pattern (see the [adding a B
 | 5000–5099 | `WorkflowEventsPublisher` |
 | 9000–9099 | `BpmnConverter` |
 | 10000–10099 | `TimerCallbackGrain` |
-| 13000 | `BusinessIdGuardGrain` — start rejected because an active instance already holds the business id (Warning; only when `Fleans:BusinessId:EnforceUniqueness` is on) |
 | 11200 | `Fleans.Streaming.Kafka.AwsMsk` — MSK IAM token refresh failed (Error); check IAM policy for `kafka-cluster:Connect` / `WriteData` / `ReadData` |
 | 11201 | `Fleans.Streaming.Kafka.AwsMsk` — `OAuthBearerSetTokenFailure` threw after token-refresh failure (Warning); typically a shutdown race, not actionable |
 

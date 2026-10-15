@@ -15,4 +15,4 @@ public sealed record InstanceStateSnapshot(
     DateTimeOffset? CreatedAt,
     DateTimeOffset? ExecutionStartedAt,
     DateTimeOffset? CompletedAt,
-    string? BusinessId = null);
+    string? BusinessId);

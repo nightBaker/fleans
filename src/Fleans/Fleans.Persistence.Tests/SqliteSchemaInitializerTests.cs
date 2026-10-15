@@ -43,8 +43,7 @@ public class SqliteSchemaInitializerTests
     [TestMethod]
     public void EnsureCreatedIgnoreRaces_AddsMissingAdditiveColumns_OnExistingDb()
     {
-        // Arrange — an existing dev DB created before WorkflowInstances.IsFailed (#762) and
-        // WorkflowInstances.BusinessId (#824) existed.
+        // Arrange — #762: an existing dev DB created before WorkflowInstances.IsFailed existed.
         // EnsureCreated() is a no-op on a non-empty file, so the initializer must backfill.
         var dbPath = Path.GetTempFileName();
         try
@@ -59,11 +58,7 @@ public class SqliteSchemaInitializerTests
             {
                 conn.Open();
                 using var drop = conn.CreateCommand();
-                // SQLite refuses to drop an indexed column, so drop BusinessId's index first.
-                drop.CommandText =
-                    "ALTER TABLE \"WorkflowInstances\" DROP COLUMN \"IsFailed\";" +
-                    "DROP INDEX \"IX_WorkflowInstances_BusinessId_ProcessDefinitionId\";" +
-                    "ALTER TABLE \"WorkflowInstances\" DROP COLUMN \"BusinessId\";";
+                drop.CommandText = "ALTER TABLE \"WorkflowInstances\" DROP COLUMN \"IsFailed\";";
                 drop.ExecuteNonQuery();
             }
 
@@ -78,18 +73,11 @@ public class SqliteSchemaInitializerTests
             {
                 verify.Open();
                 using var cmd = verify.CreateCommand();
-                cmd.CommandText = "SELECT COUNT(*) FROM pragma_table_info('WorkflowInstances') WHERE name IN ('IsFailed', 'BusinessId');";
-                Assert.AreEqual(2L, (long)cmd.ExecuteScalar()!);
-
-                using var index = verify.CreateCommand();
-                index.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'IX_WorkflowInstances_BusinessId_ProcessDefinitionId';";
-                Assert.AreEqual(1L, (long)index.ExecuteScalar()!);
+                cmd.CommandText = "SELECT COUNT(*) FROM pragma_table_info('WorkflowInstances') WHERE name = 'IsFailed';";
+                Assert.AreEqual(1L, (long)cmd.ExecuteScalar()!);
             }
             using (var ctx = new FleanCommandDbContext(options))
-            {
                 Assert.AreEqual(0, ctx.WorkflowInstances.Count(w => w.IsFailed));
-                Assert.AreEqual(0, ctx.WorkflowInstances.Count(w => w.BusinessId != null));
-            }
         }
         finally
         {

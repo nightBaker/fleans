@@ -108,10 +108,9 @@ Content-Type: application/json
 
 **Error responses**
 
-- **400** — `{"error": "WorkflowId is required"}`, or an invalid `BusinessId` (empty or whitespace, or longer than 256 characters)
+- **400** — `{"error": "WorkflowId is required"}`, or an invalid `BusinessId` (ProblemDetails; empty or whitespace, or longer than 256 characters)
 - **404** — the process key was never deployed (ProblemDetails, `detail`: `Workflow with id 'my-process' is not registered. …`)
 - **409** — the process key is disabled (ProblemDetails, `detail`: `Process 'my-process' is disabled. Enable it before creating new instances.`)
-- **409** — [uniqueness](#business-id) is on and another active instance of the process already has this `BusinessId` (ProblemDetails, `detail`: `An active instance of process 'my-process' with BusinessId 'order-123' already exists (<guid>).`)
 
 #### Business id
 
@@ -119,9 +118,9 @@ A process instance can have a business id: a value your systems already know, su
 
 - **Set only at start**, on `POST /Execution/start` or on `POST /Execution/message` when a message start event creates the instance. It can't be changed afterwards. Instances started by timers, signals, conditional starts or call activities have none.
 - **At most 256 characters**, and not empty or whitespace. An invalid value returns **400**.
+- **Not unique.** Two instances can share a business id. Fleans does not enforce uniqueness, so filter by it and pick the instance you need.
 - **Not inherited.** A call activity's child instance does not get the parent's business id.
 - **Visible everywhere:** as `businessId` on `GET /Instances/{id}/state` and on the instance listings. You can filter on it, for example `/Definitions/my-process/instances?filters=BusinessId==order-123`. It also appears in the admin UI, and custom-task plugins get it as `CustomTaskExecutionContext.BusinessId`.
-- **Optional uniqueness.** When [`Fleans:BusinessId:EnforceUniqueness`](/fleans/reference/configuration/#business-id) is `true`, a start returns **409** while another started, non-terminal root instance of the same process key (any version) has the same business id. Uniqueness is off by default, so duplicates are allowed. A completed, cancelled or failed instance frees its business id. So does a start that failed before execution began, so you can retry it. When a message start conflicts, that process's instance is not created and the conflict is logged (EventId 13000). The message still starts the other processes it targets. If every targeted process conflicts, the endpoint returns **409**.
 
 ### `POST /Execution/message`
 
@@ -151,8 +150,7 @@ Content-Type: application/json
 
 **Error responses**
 
-- **400** — `{"error": "MessageName is required"}`, or an invalid `BusinessId`
-- **409** — the message would start instances, but every targeted process already has an active instance with this `BusinessId` (only when [uniqueness](#business-id) is on)
+- **400** — `{"error": "MessageName is required"}`, or an invalid `BusinessId` (ProblemDetails)
 - **404** — `{"error": "No active subscription found for message 'payment-received' with correlation key 'order-123'"}` — no workflow instance is currently waiting for this message/key combination
 
 ### `POST /Execution/signal`

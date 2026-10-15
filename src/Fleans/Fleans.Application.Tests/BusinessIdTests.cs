@@ -3,14 +3,12 @@ using Fleans.Application.QueryModels;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
-using Microsoft.Extensions.Configuration;
-using Orleans.TestingHost;
 using System.Dynamic;
 
 namespace Fleans.Application.Tests;
 
 /// <summary>
-/// #824 — business id on process instances, with uniqueness enforcement off (the default).
+/// #824 — business id on process instances.
 /// </summary>
 [TestClass]
 public class BusinessIdTests : WorkflowTestBase
@@ -112,7 +110,7 @@ public class BusinessIdTests : WorkflowTestBase
     }
 
     [TestMethod]
-    public async Task UniquenessOff_SameBusinessIdTwice_StartsBoth()
+    public async Task SameBusinessIdTwice_StartsBoth()
     {
         // Arrange
         await DeployAsync(CreateSimpleWorkflow("biz-dup"));
@@ -188,153 +186,4 @@ public class BusinessIdTests : WorkflowTestBase
     private Task DeployAsync(IWorkflowDefinition workflow) =>
         Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId)
             .DeployVersion((WorkflowDefinition)workflow, "<placeholder/>");
-}
-
-/// <summary>
-/// #824 — business id uniqueness, enabled through <c>Fleans:BusinessId:EnforceUniqueness</c>.
-/// </summary>
-[TestClass]
-public class BusinessIdUniquenessTests : WorkflowTestBase
-{
-    private IWorkflowCommandService CommandService => GetSiloService<IWorkflowCommandService>();
-
-    protected override void ConfigureCluster(TestClusterBuilder builder) =>
-        builder.ConfigureHostConfiguration(cfg => cfg.AddInMemoryCollection(new Dictionary<string, string?>
-        {
-            [$"{BusinessIdOptions.SectionName}:{nameof(BusinessIdOptions.EnforceUniqueness)}"] = "true"
-        }));
-
-    [TestMethod]
-    public async Task SecondStart_WhileFirstIsActive_IsRejectedWithConflict()
-    {
-        // Arrange
-        await DeployAsync("uniq-active");
-        var first = await CommandService.StartWorkflow("uniq-active", businessId: "ORDER-1");
-
-        // Act
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => CommandService.StartWorkflow("uniq-active", businessId: "ORDER-1"));
-
-        // Assert
-        StringAssert.Contains(ex.Message, first.ToString());
-        var page = await QueryService.GetInstancesByKey("uniq-active", new PageRequest(Filters: "BusinessId==ORDER-1"));
-        Assert.AreEqual(1, page.TotalCount, "The rejected start must not leave an instance behind");
-    }
-
-    [TestMethod]
-    public async Task Start_AfterPreviousInstanceCompleted_IsAllowed()
-    {
-        // Arrange
-        await DeployAsync("uniq-done");
-        var first = await CommandService.StartWorkflow("uniq-done", businessId: "ORDER-1");
-        await CommandService.CompleteActivity(first, "task", new ExpandoObject());
-        await WaitForCondition(first, s => s.IsCompleted);
-
-        // Act
-        var second = await CommandService.StartWorkflow("uniq-done", businessId: "ORDER-1");
-
-        // Assert
-        Assert.AreNotEqual(first, second);
-    }
-
-    [TestMethod]
-    public async Task UnstartedInstance_DoesNotHoldTheBusinessId()
-    {
-        // Arrange — a start that failed after SetWorkflow (e.g. initial variables threw) leaves
-        // a projected but never-started instance carrying the id.
-        await DeployAsync("uniq-orphan");
-        var definition = await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("uniq-orphan").GetLatestDefinition();
-        var orphan = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await orphan.SetWorkflow(definition, businessId: "ORDER-1");
-
-        // Act — a retry with the same id must not be blocked by the orphan.
-        var retried = await CommandService.StartWorkflow("uniq-orphan", businessId: "ORDER-1");
-
-        // Assert
-        var snapshot = await QueryService.GetStateSnapshot(retried);
-        Assert.IsNotNull(snapshot);
-        Assert.IsTrue(snapshot.IsStarted);
-    }
-
-    [TestMethod]
-    public async Task SameBusinessId_OnDifferentProcesses_IsAllowed()
-    {
-        // Arrange
-        await DeployAsync("uniq-a");
-        await DeployAsync("uniq-b");
-
-        // Act
-        var a = await CommandService.StartWorkflow("uniq-a", businessId: "ORDER-1");
-        var b = await CommandService.StartWorkflow("uniq-b", businessId: "ORDER-1");
-
-        // Assert
-        Assert.AreNotEqual(a, b);
-    }
-
-    [TestMethod]
-    public async Task StartsWithoutBusinessId_AreNotConstrained()
-    {
-        // Arrange
-        await DeployAsync("uniq-none");
-
-        // Act
-        var first = await CommandService.StartWorkflow("uniq-none");
-        var second = await CommandService.StartWorkflow("uniq-none");
-
-        // Assert
-        Assert.AreNotEqual(first, second);
-    }
-
-    [TestMethod]
-    public async Task ConcurrentStarts_WithSameBusinessId_StartExactlyOne()
-    {
-        // Arrange
-        await DeployAsync("uniq-race");
-
-        // Act
-        var attempts = Enumerable.Range(0, 5)
-            .Select(async _ =>
-            {
-                try { return (Guid?)await CommandService.StartWorkflow("uniq-race", businessId: "ORDER-RACE"); }
-                catch (InvalidOperationException) { return null; }
-            })
-            .ToList();
-        var results = await Task.WhenAll(attempts);
-
-        // Assert
-        Assert.AreEqual(1, results.Count(r => r.HasValue));
-        var page = await QueryService.GetInstancesByKey("uniq-race", new PageRequest(Filters: "BusinessId==ORDER-RACE"));
-        Assert.AreEqual(1, page.TotalCount);
-    }
-
-    [TestMethod]
-    public async Task MessageStart_WithBusinessIdAlreadyActive_IsRejectedWithConflict()
-    {
-        // Arrange
-        var messageStart = new MessageStartEvent("msgStart", "msg1");
-        var task = new TaskActivity("task");
-        var end = new EndEvent("end");
-        await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("uniq-message").DeployVersion(new WorkflowDefinition
-        {
-            WorkflowId = "uniq-message",
-            Activities = [messageStart, task, end],
-            SequenceFlows = [new SequenceFlow("f1", messageStart, task), new SequenceFlow("f2", task, end)],
-            Messages = [new MessageDefinition("msg1", "uniqOrderPlaced", null)]
-        }, "<placeholder/>");
-        var first = await CommandService.SendMessage("uniqOrderPlaced", null, new ExpandoObject(), businessId: "ORDER-1");
-
-        // Act — the only targeted process rejects the id: a conflict (409), not "not delivered" (404).
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => CommandService.SendMessage("uniqOrderPlaced", null, new ExpandoObject(), businessId: "ORDER-1"));
-
-        // Assert
-        Assert.IsTrue(first.Delivered);
-        StringAssert.Contains(ex.Message, first.WorkflowInstanceIds!.Single().ToString());
-        var page = await QueryService.GetInstancesByKey("uniq-message", new PageRequest(Filters: "BusinessId==ORDER-1"));
-        Assert.AreEqual(1, page.TotalCount);
-    }
-
-    private Task DeployAsync(string workflowId) =>
-        Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflowId)
-            .DeployVersion((WorkflowDefinition)CreateSimpleWorkflow(workflowId), "<placeholder/>");
 }

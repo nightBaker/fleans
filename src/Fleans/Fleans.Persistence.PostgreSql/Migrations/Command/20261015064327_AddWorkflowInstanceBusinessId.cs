@@ -18,16 +18,16 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                 nullable: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_WorkflowInstances_BusinessId_ProcessDefinitionId",
+                name: "IX_WorkflowInstances_BusinessId",
                 table: "WorkflowInstances",
-                columns: new[] { "BusinessId", "ProcessDefinitionId" });
+                column: "BusinessId");
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropIndex(
-                name: "IX_WorkflowInstances_BusinessId_ProcessDefinitionId",
+                name: "IX_WorkflowInstances_BusinessId",
                 table: "WorkflowInstances");
 
             migrationBuilder.DropColumn(
