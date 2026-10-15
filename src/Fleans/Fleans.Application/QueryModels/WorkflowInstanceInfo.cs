@@ -9,4 +9,5 @@ public sealed record WorkflowInstanceInfo(
     bool IsFailed,
     DateTimeOffset? CreatedAt,
     DateTimeOffset? ExecutionStartedAt,
-    DateTimeOffset? CompletedAt);
+    DateTimeOffset? CompletedAt,
+    string? BusinessId);

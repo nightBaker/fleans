@@ -14,4 +14,5 @@ public sealed record InstanceStateSnapshot(
     string? ProcessDefinitionId,
     DateTimeOffset? CreatedAt,
     DateTimeOffset? ExecutionStartedAt,
-    DateTimeOffset? CompletedAt);
+    DateTimeOffset? CompletedAt,
+    string? BusinessId);

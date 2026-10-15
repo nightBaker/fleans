@@ -36,11 +36,12 @@ public sealed partial class FleansApiClient
     public async Task<StartWorkflowResponse> StartAsync(
         string processDefinitionKey,
         Dictionary<string, object?>? variables = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? businessId = null)
     {
         var response = await _http.PostAsJsonAsync(
             "/Execution/start",
-            new StartWorkflowRequest(processDefinitionKey, variables),
+            new StartWorkflowRequest(processDefinitionKey, variables, businessId),
             JsonOptions,
             ct);
         response.EnsureSuccessStatusCode();
@@ -350,11 +351,12 @@ public sealed partial class FleansApiClient
     }
 
     /// <summary>POST /Execution/start without <c>EnsureSuccessStatusCode</c> — for negative paths.</summary>
-    public async Task<HttpResponseMessage> StartRawAsync(string processDefinitionKey, CancellationToken ct = default)
+    public async Task<HttpResponseMessage> StartRawAsync(
+        string processDefinitionKey, CancellationToken ct = default, string? businessId = null)
     {
         return await _http.PostAsJsonAsync(
             "/Execution/start",
-            new StartWorkflowRequest(processDefinitionKey),
+            new StartWorkflowRequest(processDefinitionKey, BusinessId: businessId),
             JsonOptions,
             ct);
     }

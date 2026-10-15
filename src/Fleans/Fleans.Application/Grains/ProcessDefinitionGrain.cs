@@ -46,7 +46,7 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
         LogActivated(key, _versions.Count);
     }
 
-    public async Task<IWorkflowInstanceGrain> CreateInstance()
+    public async Task<IWorkflowInstanceGrain> CreateInstance(string? businessId = null)
     {
         var key = this.GetPrimaryKeyString();
         var definition = GetLatestDefinitionOrThrow(key);
@@ -59,7 +59,7 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
         RequestContext.Set(WorkflowContextKeys.WorkflowInstanceId, guid.ToString());
 
         var workflowInstanceGrain = _grainFactory.GetGrain<IWorkflowInstanceGrain>(guid);
-        await workflowInstanceGrain.SetWorkflow(definition.Workflow);
+        await workflowInstanceGrain.SetWorkflow(definition.Workflow, businessId: businessId);
 
         return workflowInstanceGrain;
     }

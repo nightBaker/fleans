@@ -90,7 +90,8 @@ public class WorkflowQueryService : IWorkflowQueryService
             activeSnapshots, completedSnapshots,
             variableStates, conditionSequences,
             state.ProcessDefinitionId,
-            state.CreatedAt, state.ExecutionStartedAt, state.CompletedAt);
+            state.CreatedAt, state.ExecutionStartedAt, state.CompletedAt,
+            state.BusinessId);
     }
 
     public async Task<int> GetMaxVersionByKeyAsync(string processDefinitionKey)
@@ -255,7 +256,7 @@ public class WorkflowQueryService : IWorkflowQueryService
 
         var items = await pagedQuery.Select(w => new WorkflowInstanceInfo(
             w.Id, w.ProcessDefinitionId ?? "", w.IsStarted, w.IsCompleted, w.IsCancelled, w.IsFailed,
-            w.CreatedAt, w.ExecutionStartedAt, w.CompletedAt)).ToListAsync();
+            w.CreatedAt, w.ExecutionStartedAt, w.CompletedAt, w.BusinessId)).ToListAsync();
 
         return new PagedResult<WorkflowInstanceInfo>(
             items, totalCount, page.Page, page.PageSize);

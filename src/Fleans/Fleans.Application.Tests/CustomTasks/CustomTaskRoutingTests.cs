@@ -107,7 +107,8 @@ public class CustomTaskRoutingTests : WorkflowTestBase
             TaskType: taskType,
             InputMappings: new List<InputMapping>(),
             OutputMappings: new List<OutputMapping>(),
-            VariablesId: Guid.NewGuid());
+            VariablesId: Guid.NewGuid(),
+            BusinessId: null);
 
     private sealed class CountingObserver : IAsyncObserver<ExecuteCustomTaskEvent>
     {

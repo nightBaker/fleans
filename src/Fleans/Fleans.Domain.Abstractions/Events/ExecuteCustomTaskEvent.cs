@@ -12,4 +12,5 @@ public record ExecuteCustomTaskEvent(
     string TaskType,
     List<InputMapping> InputMappings,
     List<OutputMapping> OutputMappings,
-    Guid VariablesId) : IDomainEvent;
+    Guid VariablesId,
+    string? BusinessId) : IDomainEvent;

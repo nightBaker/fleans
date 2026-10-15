@@ -58,7 +58,8 @@ public class CustomTaskRedeliveryTests : WorkflowTestBase
             TaskType: "test-no-op-a",
             InputMappings: new List<InputMapping>(),
             OutputMappings: new List<OutputMapping>(),
-            VariablesId: ct1Entry.VariablesStateId));
+            VariablesId: ct1Entry.VariablesStateId,
+            BusinessId: null));
         await CapturedLogEvents.WaitFor<TestNoOpCustomTaskHandlerA>(SkippedInactiveActivityEventId, 1);
 
         // Assert — the duplicate was skipped; the plugin ran exactly once.
@@ -129,7 +130,8 @@ public class CustomTaskRedeliveryTests : WorkflowTestBase
                     TaskType: "test-gated",
                     InputMappings: new List<InputMapping>(),
                     OutputMappings: new List<OutputMapping>(),
-                    VariablesId: entry.VariablesStateId));
+                    VariablesId: entry.VariablesStateId,
+            BusinessId: null));
             }
 
             // Release the originals; the queued duplicates arrive after completion.
@@ -235,7 +237,8 @@ public class CustomTaskRedeliveryTests : WorkflowTestBase
             TaskType: taskType,
             InputMappings: new List<InputMapping>(),
             OutputMappings: new List<OutputMapping>(),
-            VariablesId: variablesId));
+            VariablesId: variablesId,
+            BusinessId: null));
 
     private async Task WaitForActiveSilos(int count)
     {

@@ -24,6 +24,8 @@ public class ApplicationSieveProcessor : SieveProcessor
             .CanFilter();
         mapper.Property<WorkflowInstanceState>(w => w.CompletedAt)
             .CanSort();
+        mapper.Property<WorkflowInstanceState>(w => w.BusinessId)
+            .CanFilter();
         mapper.Property<WorkflowInstanceState>(w => w.ExecutionStartedAt)
             .CanSort();
 

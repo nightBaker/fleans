@@ -712,7 +712,7 @@ public partial class WorkflowInstance
                 LogParentInfoSet(parentInfo.ParentInstanceId, parentInfo.ParentActivityId);
                 break;
             case WorkflowStarted started:
-                LogWorkflowInstanceStarted(started.InstanceId);
+                LogWorkflowInstanceStarted(started.InstanceId, started.BusinessId ?? "-");
                 FleansDiagnostics.OnWorkflowStarted();
                 break;
             case ExecutionStarted:

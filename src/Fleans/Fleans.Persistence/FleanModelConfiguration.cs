@@ -40,6 +40,10 @@ internal static class FleanModelConfiguration
 
             entity.Property(e => e.ProcessDefinitionId).HasMaxLength(512);
 
+            // #824: filterable via Sieve ("the process for order 123").
+            entity.Property(e => e.BusinessId).HasMaxLength(BusinessIdRules.MaxLength);
+            entity.HasIndex(e => e.BusinessId);
+
             // DateTimeOffset columns (CreatedAt / ExecutionStartedAt / CompletedAt) are stored
             // natively in the shared model. Provider packages may override this — e.g. the
             // SQLite provider applies a string converter via its IModelCustomizer because SQLite

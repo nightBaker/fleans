@@ -159,8 +159,8 @@ public partial class WorkflowInstance
         Message = "Stale message delivery ignored for activityId='{ActivityId}', hostActivityInstanceId={HostActivityInstanceId} — activity already completed")]
     private partial void LogStaleMessageDeliveryIgnored(string activityId, Guid hostActivityInstanceId);
 
-    [LoggerMessage(EventId = 3007, Level = LogLevel.Information, Message = "Workflow started: InstanceId={InstanceId}")]
-    private partial void LogWorkflowInstanceStarted(Guid instanceId);
+    [LoggerMessage(EventId = 3007, Level = LogLevel.Information, Message = "Workflow started: InstanceId={InstanceId}, BusinessId={BusinessId}")]
+    private partial void LogWorkflowInstanceStarted(Guid instanceId, string businessId);
 
     [LoggerMessage(EventId = 3008, Level = LogLevel.Debug, Message = "Activity execution started: {ActivityInstanceId}")]
     private partial void LogActivityExecutionStarted(Guid activityInstanceId);

@@ -6,5 +6,5 @@ public interface IMessageStartEventListenerGrain : IGrainWithStringKey
 {
     ValueTask RegisterProcess(string processDefinitionKey);
     ValueTask UnregisterProcess(string processDefinitionKey);
-    ValueTask<List<Guid>> FireMessageStartEvent(ExpandoObject variables);
+    ValueTask<List<Guid>> FireMessageStartEvent(ExpandoObject variables, string? businessId = null);
 }

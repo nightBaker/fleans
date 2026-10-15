@@ -29,7 +29,7 @@ namespace Fleans.Api.Controllers
                 ? VariableConverter.ToExpandoObject(request.Variables)
                 : null;
 
-            var instanceId = await _commandService.StartWorkflow(request.WorkflowId, initialVariables);
+            var instanceId = await _commandService.StartWorkflow(request.WorkflowId, initialVariables, request.BusinessId);
             return Ok(new StartWorkflowResponse(instanceId));
         }
 
@@ -42,7 +42,7 @@ namespace Fleans.Api.Controllers
 
             var variables = VariableConverter.ToExpandoObject(request.Variables);
 
-            var result = await _commandService.SendMessage(request.MessageName, request.CorrelationKey, variables);
+            var result = await _commandService.SendMessage(request.MessageName, request.CorrelationKey, variables, request.BusinessId);
 
             if (!result.Delivered)
                 return NotFound(new ErrorResponse(
