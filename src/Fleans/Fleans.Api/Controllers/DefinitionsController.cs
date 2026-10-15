@@ -66,10 +66,11 @@ namespace Fleans.Api.Controllers
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20,
             [FromQuery] string? sorts = null,
-            [FromQuery] string? filters = null)
+            [FromQuery] string? filters = null,
+            [FromQuery] string? businessId = null)
         {
             var request = new PageRequest(page, pageSize, sorts, filters);
-            var result = await _workflowQueryService.GetInstancesByKey(key, request);
+            var result = await _workflowQueryService.GetInstancesByKey(key, request, businessId);
             return Ok(result);
         }
 
@@ -80,10 +81,11 @@ namespace Fleans.Api.Controllers
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20,
             [FromQuery] string? sorts = null,
-            [FromQuery] string? filters = null)
+            [FromQuery] string? filters = null,
+            [FromQuery] string? businessId = null)
         {
             var request = new PageRequest(page, pageSize, sorts, filters);
-            var result = await _workflowQueryService.GetInstancesByKeyAndVersion(key, version, request);
+            var result = await _workflowQueryService.GetInstancesByKeyAndVersion(key, version, request, businessId);
             return Ok(result);
         }
 

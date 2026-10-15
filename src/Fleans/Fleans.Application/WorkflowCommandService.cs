@@ -33,13 +33,14 @@ public partial class WorkflowCommandService : IWorkflowCommandService
         return await workflowInstance.GetWorkflowInstanceId();
     }
 
-    public async Task<Guid> StartWorkflowByProcessDefinitionId(string processDefinitionId)
+    public async Task<Guid> StartWorkflowByProcessDefinitionId(string processDefinitionId, string? businessId = null)
     {
         LogStartingWorkflowByDefinition(processDefinitionId);
+        BusinessIdRules.Validate(businessId);
 
         var key = ProcessDefinition.ExtractKeyFromId(processDefinitionId);
         var processGrain = _grainFactory.GetGrain<IProcessDefinitionGrain>(key);
-        var workflowInstance = await processGrain.CreateInstanceByDefinitionId(processDefinitionId);
+        var workflowInstance = await processGrain.CreateInstanceByDefinitionId(processDefinitionId, businessId);
 
         await workflowInstance.StartWorkflow();
 

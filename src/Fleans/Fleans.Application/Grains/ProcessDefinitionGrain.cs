@@ -64,7 +64,7 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
         return workflowInstanceGrain;
     }
 
-    public async Task<IWorkflowInstanceGrain> CreateInstanceByDefinitionId(string processDefinitionId)
+    public async Task<IWorkflowInstanceGrain> CreateInstanceByDefinitionId(string processDefinitionId, string? businessId = null)
     {
         if (string.IsNullOrWhiteSpace(processDefinitionId))
             throw new ArgumentException("ProcessDefinitionId cannot be null or empty.", nameof(processDefinitionId));
@@ -81,7 +81,7 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
         RequestContext.Set(WorkflowContextKeys.WorkflowInstanceId, guid.ToString());
 
         var workflowInstanceGrain = _grainFactory.GetGrain<IWorkflowInstanceGrain>(guid);
-        await workflowInstanceGrain.SetWorkflow(definition.Workflow);
+        await workflowInstanceGrain.SetWorkflow(definition.Workflow, businessId: businessId);
 
         return workflowInstanceGrain;
     }

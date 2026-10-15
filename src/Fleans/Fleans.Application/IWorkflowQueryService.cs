@@ -10,8 +10,11 @@ public interface IWorkflowQueryService
     Task<int> GetMaxVersionByKeyAsync(string processDefinitionKey);
     Task<PagedResult<ProcessDefinitionSummary>> GetAllProcessDefinitions(PageRequest page);
     Task<PagedResult<ProcessDefinitionGroup>> GetProcessDefinitionGroups(PageRequest page);
-    Task<PagedResult<WorkflowInstanceInfo>> GetInstancesByKey(string processDefinitionKey, PageRequest page);
-    Task<PagedResult<WorkflowInstanceInfo>> GetInstancesByKeyAndVersion(string key, int version, PageRequest page);
+    /// <param name="businessId">Exact-match filter on the instance business id; unlike a Sieve
+    /// <c>filters</c> term it may contain <c>,</c> and <c>|</c>.</param>
+    Task<PagedResult<WorkflowInstanceInfo>> GetInstancesByKey(string processDefinitionKey, PageRequest page, string? businessId = null);
+    /// <inheritdoc cref="GetInstancesByKey"/>
+    Task<PagedResult<WorkflowInstanceInfo>> GetInstancesByKeyAndVersion(string key, int version, PageRequest page, string? businessId = null);
     Task<string?> GetBpmnXml(Guid instanceId);
     Task<string?> GetBpmnXmlByKey(string processDefinitionKey);
     Task<string?> GetBpmnXmlByKeyAndVersion(string key, int version);

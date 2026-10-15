@@ -202,7 +202,7 @@ public class WorkflowQueryService : IWorkflowQueryService
             d.Workflow.SequenceFlows.Count, d.IsActive);
 
     public async Task<PagedResult<WorkflowInstanceInfo>> GetInstancesByKey(
-        string processDefinitionKey, PageRequest page)
+        string processDefinitionKey, PageRequest page, string? businessId = null)
     {
         page = page.Normalize();
         await using var db = await _dbContextFactory.CreateDbContextAsync();
@@ -215,11 +215,11 @@ public class WorkflowQueryService : IWorkflowQueryService
             .Where(w => w.ProcessDefinitionId != null
                 && definitionIds.Contains(w.ProcessDefinitionId));
 
-        return await ApplySieveAndProject(baseQuery, page);
+        return await ApplySieveAndProject(baseQuery, page, businessId);
     }
 
     public async Task<PagedResult<WorkflowInstanceInfo>> GetInstancesByKeyAndVersion(
-        string key, int version, PageRequest page)
+        string key, int version, PageRequest page, string? businessId = null)
     {
         page = page.Normalize();
         await using var db = await _dbContextFactory.CreateDbContextAsync();
@@ -231,12 +231,15 @@ public class WorkflowQueryService : IWorkflowQueryService
         var baseQuery = db.WorkflowInstances
             .Where(w => definitionIds.Contains(w.ProcessDefinitionId));
 
-        return await ApplySieveAndProject(baseQuery, page);
+        return await ApplySieveAndProject(baseQuery, page, businessId);
     }
 
     private async Task<PagedResult<WorkflowInstanceInfo>> ApplySieveAndProject(
-        IQueryable<WorkflowInstanceState> baseQuery, PageRequest page)
+        IQueryable<WorkflowInstanceState> baseQuery, PageRequest page, string? businessId)
     {
+        if (businessId is not null)
+            baseQuery = baseQuery.Where(w => w.BusinessId == businessId);
+
         var sieveModel = new SieveModel
         {
             Sorts = page.Sorts,
