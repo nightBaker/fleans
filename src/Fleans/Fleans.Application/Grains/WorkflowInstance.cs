@@ -331,6 +331,11 @@ public partial class WorkflowInstance :
         RequestContext.Set(WorkflowContextKeys.WorkflowInstanceId, this.GetPrimaryKey().ToString());
         if (_workflowDefinition.ProcessDefinitionId is not null)
             RequestContext.Set(WorkflowContextKeys.ProcessDefinitionId, _workflowDefinition.ProcessDefinitionId);
+        // Remove when absent so a parent's business id does not leak into a child instance's calls.
+        if (State.BusinessId is not null)
+            RequestContext.Set(WorkflowContextKeys.BusinessId, State.BusinessId);
+        else
+            RequestContext.Remove(WorkflowContextKeys.BusinessId);
     }
 
     private IDisposable? BeginWorkflowScope()
@@ -338,8 +343,9 @@ public partial class WorkflowInstance :
         if (_workflowDefinition is null) return null;
 
         return _logger.BeginScope(
-            "[{WorkflowId}, {ProcessDefinitionId}, {WorkflowInstanceId}]",
-            _workflowDefinition.WorkflowId, _workflowDefinition.ProcessDefinitionId ?? "-", this.GetPrimaryKey().ToString());
+            "[{WorkflowId}, {ProcessDefinitionId}, {WorkflowInstanceId}, {BusinessId}]",
+            _workflowDefinition.WorkflowId, _workflowDefinition.ProcessDefinitionId ?? "-", this.GetPrimaryKey().ToString(),
+            State.BusinessId ?? "-");
     }
 
     // ── StartWorkflow (from Execution) ──────────────────────────────────

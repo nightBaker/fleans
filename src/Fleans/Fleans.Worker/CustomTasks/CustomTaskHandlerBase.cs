@@ -104,7 +104,8 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
         }
 
         using var scope = WorkflowLoggingContext.BeginWorkflowScope(
-            _logger, item.WorkflowId, item.ProcessDefinitionId, item.WorkflowInstanceId, item.ActivityId);
+            _logger, item.WorkflowId, item.ProcessDefinitionId, item.WorkflowInstanceId, item.ActivityId,
+            item.BusinessId);
 
         LogHandling(item.ActivityId, item.TaskType);
 

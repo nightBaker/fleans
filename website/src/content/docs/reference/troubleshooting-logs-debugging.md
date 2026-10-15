@@ -53,6 +53,7 @@ Every grain call is wrapped in a `BeginScope` by `WorkflowLoggingScopeFilter` (a
 | `WorkflowId` | string | `WorkflowInstance` |
 | `ProcessDefinitionId` | string | `WorkflowInstance` |
 | `WorkflowInstanceId` | string | `WorkflowInstance` |
+| `BusinessId` | string | `WorkflowInstance`, custom-task workers — the instance's business id, `-` when none was set (not inherited by call-activity children) |
 | `ActivityId` | string | `WorkflowInstance` / `ActivityInstance` |
 | `ActivityInstanceId` | string | `WorkflowInstance` / `ActivityInstance` |
 | `VariablesId` | string | `ActivityInstance` |

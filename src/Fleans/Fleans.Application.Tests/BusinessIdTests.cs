@@ -278,6 +278,93 @@ public class BusinessIdTests : WorkflowTestBase
         Assert.IsNull(child.BusinessId);
     }
 
+    // WorkflowInstance "Workflow started" (EventId 3007) and the worker's "Handling custom-task
+    // event" (EventId 4030) — CapturedLogEvents keeps their message and scope fields.
+    private const int WorkflowStartedEventId = 3007;
+    private const int CustomTaskHandlingEventId = 4030;
+
+    [TestMethod]
+    [DoNotParallelize]
+    public async Task WorkflowStartedLog_CarriesInstanceIdAndBusinessId_InMessageAndScope()
+    {
+        // Arrange
+        await DeployAsync(CreateSimpleWorkflow("biz-log"));
+        CapturedLogEvents.Capture(WorkflowStartedEventId);
+
+        // Act
+        var withId = await CommandService.StartWorkflow("biz-log", businessId: "ORDER-LOG");
+        var withoutId = await CommandService.StartWorkflow("biz-log");
+
+        // Assert — the message names the instance id the API returned, not an internal one
+        var entries = CapturedLogEvents.Entries(WorkflowStartedEventId);
+        var started = entries.Single(e => e.Message.Contains(withId.ToString()));
+        StringAssert.Contains(started.Message, "BusinessId=ORDER-LOG");
+        Assert.AreEqual("ORDER-LOG", started.ScopeFields["BusinessId"]);
+        Assert.AreEqual(withId.ToString(), started.ScopeFields["WorkflowInstanceId"]);
+
+        var startedWithout = entries.Single(e => e.Message.Contains(withoutId.ToString()));
+        StringAssert.Contains(startedWithout.Message, "BusinessId=-");
+        Assert.AreEqual("-", startedWithout.ScopeFields["BusinessId"]);
+    }
+
+    [TestMethod]
+    [DoNotParallelize]
+    public async Task CustomTaskWorkerLog_CarriesBusinessIdInScope()
+    {
+        // Arrange
+        var start = new StartEvent("start");
+        var ct1 = new CustomTaskActivity("ct1", "test-no-op-a", null, null);
+        var end = new EndEvent("end");
+        await DeployAsync(new WorkflowDefinition
+        {
+            WorkflowId = "biz-log-worker",
+            Activities = [start, ct1, end],
+            SequenceFlows = [new SequenceFlow("f1", start, ct1), new SequenceFlow("f2", ct1, end)]
+        });
+        CapturedLogEvents.Capture(CustomTaskHandlingEventId);
+
+        // Act
+        var instanceId = await CommandService.StartWorkflow("biz-log-worker", businessId: "ORDER-WORKER");
+        await WaitForCondition(instanceId, s => s.IsCompleted);
+
+        // Assert
+        var handling = CapturedLogEvents.Entries(CustomTaskHandlingEventId)
+            .Single(e => Equals(e.ScopeFields["WorkflowInstanceId"], instanceId));
+        Assert.AreEqual("ORDER-WORKER", handling.ScopeFields["BusinessId"]);
+    }
+
+    [TestMethod]
+    [DoNotParallelize]
+    public async Task CallActivityChild_WorkflowStartedLog_DoesNotInheritParentBusinessId()
+    {
+        // Arrange
+        await DeployAsync(CreateSimpleWorkflow("biz-log-child"));
+        var start = new StartEvent("start");
+        var call = new CallActivity("call1", "biz-log-child", [], []);
+        var end = new EndEvent("end");
+        await DeployAsync(new WorkflowDefinition
+        {
+            WorkflowId = "biz-log-parent",
+            Activities = [start, call, end],
+            SequenceFlows = [new SequenceFlow("p1", start, call), new SequenceFlow("p2", call, end)]
+        });
+        CapturedLogEvents.Capture(WorkflowStartedEventId);
+
+        // Act
+        var parentId = await CommandService.StartWorkflow("biz-log-parent", businessId: "ORDER-PARENT-LOG");
+
+        // Assert
+        var parent = await WaitForCondition(parentId,
+            s => s.ActiveActivities.Any(a => a.ActivityId == "call1" && a.ChildWorkflowInstanceId is not null)
+                 || s.IsCompleted);
+        var childId = (parent.ActiveActivities.SingleOrDefault(a => a.ActivityId == "call1")
+            ?? parent.CompletedActivities.Single(a => a.ActivityId == "call1")).ChildWorkflowInstanceId!.Value;
+        var childStarted = CapturedLogEvents.Entries(WorkflowStartedEventId)
+            .Single(e => e.Message.Contains(childId.ToString()));
+        StringAssert.Contains(childStarted.Message, "BusinessId=-");
+        Assert.AreEqual("-", childStarted.ScopeFields["BusinessId"]);
+    }
+
     private Task DeployAsync(IWorkflowDefinition workflow) =>
         Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId)
             .DeployVersion((WorkflowDefinition)workflow, "<placeholder/>");

@@ -9,12 +9,29 @@ namespace Fleans.Application.Tests;
 /// and asserting that something did not happen. Static because all silos of a
 /// <see cref="Orleans.TestingHost.TestCluster"/> run in the test process; counts are keyed by the
 /// logger category so a test only sees entries from the types it owns (e.g. its own test stubs).
+/// For EventIds passed to <see cref="Capture"/> it also keeps the message and the active scope
+/// fields, so a test can assert what a log line says and which correlation ids it carries.
 /// </summary>
 public static class CapturedLogEvents
 {
     private static readonly ConcurrentDictionary<(string Category, int EventId), int> Counts = new();
+    private static readonly ConcurrentDictionary<int, ConcurrentQueue<Entry>> Captured = new();
+    private static readonly AsyncLocal<Scope?> CurrentScope = new();
+
+    public sealed record Entry(string Category, string Message, IReadOnlyDictionary<string, object?> ScopeFields);
 
     public static void Clear() => Counts.Clear();
+
+    /// <summary>Starts keeping full entries for <paramref name="eventIds"/>, dropping earlier ones.</summary>
+    public static void Capture(params int[] eventIds)
+    {
+        Captured.Clear();
+        foreach (var id in eventIds)
+            Captured[id] = new ConcurrentQueue<Entry>();
+    }
+
+    public static IReadOnlyList<Entry> Entries(int eventId)
+        => Captured.TryGetValue(eventId, out var q) ? q.ToList() : [];
 
     public static int Count<TCategory>(int eventId)
         => Counts.TryGetValue((typeof(TCategory).FullName!, eventId), out var n) ? n : 0;
@@ -42,7 +59,8 @@ public static class CapturedLogEvents
 
     private sealed class Logger(string category) : ILogger
     {
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull
+            => CurrentScope.Value = new Scope(state, CurrentScope.Value);
 
         public bool IsEnabled(LogLevel logLevel) => true;
 
@@ -51,6 +69,27 @@ public static class CapturedLogEvents
         {
             if (eventId.Id != 0)
                 Counts.AddOrUpdate((category, eventId.Id), 1, (_, n) => n + 1);
+            if (Captured.TryGetValue(eventId.Id, out var queue))
+                queue.Enqueue(new Entry(category, formatter(state, exception), CollectScopeFields()));
         }
+
+        // Inner scopes win over outer ones, as in structured-log sinks.
+        private static Dictionary<string, object?> CollectScopeFields()
+        {
+            var fields = new Dictionary<string, object?>();
+            for (var scope = CurrentScope.Value; scope is not null; scope = scope.Parent)
+                if (scope.State is IEnumerable<KeyValuePair<string, object?>> pairs)
+                    foreach (var (key, value) in pairs)
+                        fields.TryAdd(key, value);
+            return fields;
+        }
+    }
+
+    private sealed class Scope(object state, Scope? parent) : IDisposable
+    {
+        public object State { get; } = state;
+        public Scope? Parent { get; } = parent;
+
+        public void Dispose() => CurrentScope.Value = Parent;
     }
 }

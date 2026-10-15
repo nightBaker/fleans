@@ -9,6 +9,7 @@ public static class WorkflowContextKeys
     public const string WorkflowId = "WorkflowId";
     public const string ProcessDefinitionId = "ProcessDefinitionId";
     public const string WorkflowInstanceId = "WorkflowInstanceId";
+    public const string BusinessId = "BusinessId";
     public const string ActivityId = "ActivityId";
     public const string ActivityInstanceId = "ActivityInstanceId";
     public const string VariablesId = "VariablesId";

@@ -180,6 +180,7 @@ The authoritative source is [`docs/plans/2026-02-08-structured-workflow-logging.
 - `WorkflowId` (process definition logical id)
 - `ProcessDefinitionKey` (deployed version key, e.g. `proc:1:abc`)
 - `WorkflowInstanceId` (Guid, the instance the call belongs to)
+- `BusinessId` (the instance's business id, e.g. an order number; `-` when none was set). Custom-task workers carry it too, so `BusinessId = "ORDER-42"` finds every log line of that instance without looking up its Guid first. Script and condition evaluation logs show `-`.
 - Activity context where applicable (`ActivityId`, `ActivityInstanceId`)
 
 When `IncludeScopes` is enabled (`appsettings.Development.json` already does this), every log record carries those structured fields — your aggregator can pivot on them without parsing message text.

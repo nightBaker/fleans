@@ -712,7 +712,8 @@ public partial class WorkflowInstance
                 LogParentInfoSet(parentInfo.ParentInstanceId, parentInfo.ParentActivityId);
                 break;
             case WorkflowStarted started:
-                LogWorkflowInstanceStarted(started.InstanceId, started.BusinessId ?? "-");
+                // started.InstanceId is the aggregate's internal id, not the grain key the API returns.
+                LogWorkflowInstanceStarted(this.GetPrimaryKey(), started.BusinessId ?? "-");
                 FleansDiagnostics.OnWorkflowStarted();
                 break;
             case ExecutionStarted:
