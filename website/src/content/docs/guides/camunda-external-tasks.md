@@ -14,7 +14,7 @@ The engine has no Camunda-specific code. The plugin is an ordinary
 [plugin host](/fleans/concepts/plugin-hosting/) that joins the engine's cluster. It stores
 waiting tasks in its own table and reports workers' results back to the workflow.
 
-Plugin 0.7.0 requires **Fleans 0.7.0 or later**.
+Plugin 0.8.0 requires **Fleans 0.8.0 or later**.
 
 :::caution[For migration only — prefer native Fleans plugins]
 This plugin is a backward-compatibility bridge. It lets existing Camunda 7 workers keep running
@@ -43,17 +43,24 @@ read. Use Fleans [input/output mappings](/fleans/concepts/custom-tasks/#mapping-
 the [plugin README](https://github.com/nightBaker/fleans-camunda-external-task#1-adapt-the-bpmn)
 has a conversion table.
 
-Camunda task metadata comes from **reserved input targets**, evaluated when the task is queued
-(except extension properties, evaluated at fetch time) and never sent as variables:
+The task's `businessKey` is the process instance's [business id](/fleans/reference/api/#business-id),
+set when you start the instance (`"BusinessId": "order-123"` on `POST /Execution/start` or
+`POST /Execution/message`). You don't need a mapping for it.
+
+Other Camunda task metadata comes from **reserved input targets**, evaluated when the task is
+queued (except extension properties, evaluated at fetch time) and never sent as variables:
 
 ```xml
 <zeebe:ioMapping>
   <zeebe:input source="=order.priority" target="taskPriority" />       <!-- camunda:taskPriority -->
-  <zeebe:input source="=order.id" target="businessKey" />
   <zeebe:input source="acme" target="tenantId" />
   <zeebe:input source="eu-west" target="extensionProperty_region" />  <!-- camunda:properties -->
 </zeebe:ioMapping>
 ```
+
+A `businessKey` input replaces the business id, even when it evaluates to `null`. Use it where
+the instance has no business id, such as a call activity's child instance:
+`<zeebe:input source="=order.id" target="businessKey" />`.
 
 ## 2. Run the plugin host
 
