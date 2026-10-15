@@ -121,7 +121,7 @@ A process instance can have a business id: a value your systems already know, su
 - **At most 256 characters**, and not empty or whitespace. An invalid value returns **400**.
 - **Not inherited.** A call activity's child instance does not get the parent's business id.
 - **Visible everywhere:** as `businessId` on `GET /Instances/{id}/state` and on the instance listings. You can filter on it, for example `/Definitions/my-process/instances?filters=BusinessId==order-123`. It also appears in the admin UI, and custom-task plugins get it as `CustomTaskExecutionContext.BusinessId`.
-- **Optional uniqueness.** When [`Fleans:BusinessId:EnforceUniqueness`](/fleans/reference/configuration/#business-id) is `true`, a start returns **409** while another non-terminal root instance of the same process key (any version) has the same business id. Uniqueness is off by default, so duplicates are allowed. A completed, cancelled or failed instance frees its business id. When a message start conflicts, that process's instance is not created: the conflict is logged (EventId 13000) and the message still starts the other processes it targets. If it starts none, the endpoint returns **404**.
+- **Optional uniqueness.** When [`Fleans:BusinessId:EnforceUniqueness`](/fleans/reference/configuration/#business-id) is `true`, a start returns **409** while another started, non-terminal root instance of the same process key (any version) has the same business id. Uniqueness is off by default, so duplicates are allowed. A completed, cancelled or failed instance frees its business id. So does a start that failed before execution began, so you can retry it. When a message start conflicts, that process's instance is not created and the conflict is logged (EventId 13000). The message still starts the other processes it targets. If every targeted process conflicts, the endpoint returns **409**.
 
 ### `POST /Execution/message`
 
@@ -151,7 +151,8 @@ Content-Type: application/json
 
 **Error responses**
 
-- **400** — `{"error": "MessageName is required"}`
+- **400** — `{"error": "MessageName is required"}`, or an invalid `BusinessId`
+- **409** — the message would start instances, but every targeted process already has an active instance with this `BusinessId` (only when [uniqueness](#business-id) is on)
 - **404** — `{"error": "No active subscription found for message 'payment-received' with correlation key 'order-123'"}` — no workflow instance is currently waiting for this message/key combination
 
 ### `POST /Execution/signal`

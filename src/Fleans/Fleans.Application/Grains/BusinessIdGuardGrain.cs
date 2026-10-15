@@ -1,3 +1,4 @@
+using System.Dynamic;
 using Fleans.Application.Placement;
 using Fleans.Domain;
 using Microsoft.Extensions.Logging;
@@ -6,36 +7,41 @@ namespace Fleans.Application.Grains;
 
 /// <summary>
 /// Stateless and non-reentrant: Orleans runs one call at a time per key, so two starts with
-/// the same (process, business id) cannot both pass the check. The check reads the
-/// WorkflowInstances projection, which the instance writes before <c>SetWorkflow</c> returns,
-/// so the next queued call already sees the instance this call created (#824).
+/// the same (process, business id) cannot both pass the check. The whole start runs inside
+/// the call, and the instance projects itself to the primary store before each grain call
+/// returns, so the next queued call sees it (#824).
+/// Only <em>started</em> instances hold the id: a start that fails before execution begins
+/// leaves an unstarted instance that does not block retries.
 /// </summary>
+// One activation per distinct business id, typically used once: collect it quickly rather than
+// after the default idle age. Not DeactivateOnIdle() — calls queued behind the current one would
+// be forwarded to a deactivating activation and rejected under a burst of same-key starts.
+[CollectionAgeLimit(Minutes = 2)]
 [CorePlacement]
 public partial class BusinessIdGuardGrain : Grain, IBusinessIdGuardGrain
 {
-    private readonly IWorkflowQueryService _queryService;
+    private readonly IBusinessIdLookup _lookup;
     private readonly ILogger<BusinessIdGuardGrain> _logger;
 
-    public BusinessIdGuardGrain(IWorkflowQueryService queryService, ILogger<BusinessIdGuardGrain> logger)
+    public BusinessIdGuardGrain(IBusinessIdLookup lookup, ILogger<BusinessIdGuardGrain> logger)
     {
-        _queryService = queryService;
+        _lookup = lookup;
         _logger = logger;
     }
 
-    public async Task SetWorkflowIfUnique(
-        IWorkflowInstanceGrain instance, IWorkflowDefinition workflow, string? startActivityId)
+    public async Task<Guid?> StartIfUnique(
+        IWorkflowInstanceGrain instance, IWorkflowDefinition workflow, string? startActivityId, ExpandoObject? variables)
     {
         var (processDefinitionKey, businessId) = BusinessIdGuardKey.Parse(this.GetPrimaryKeyString());
 
-        var existing = await _queryService.FindActiveRootInstanceByBusinessId(processDefinitionKey, businessId);
+        var existing = await _lookup.FindActiveRootInstance(processDefinitionKey, businessId);
         if (existing is Guid existingId)
         {
             LogBusinessIdConflict(processDefinitionKey, businessId, existingId);
-            throw new InvalidOperationException(
-                $"An active instance of process '{processDefinitionKey}' with BusinessId '{businessId}' already exists ({existingId}).");
+            return existingId;
         }
 
-        await instance.SetWorkflow(workflow, startActivityId, businessId);
+        return await WorkflowInstanceStarter.StartUnguarded(instance, workflow, startActivityId, variables, businessId);
     }
 
     [LoggerMessage(EventId = 13000, Level = LogLevel.Warning,

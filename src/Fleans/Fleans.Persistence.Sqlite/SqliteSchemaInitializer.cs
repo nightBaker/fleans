@@ -93,6 +93,18 @@ public static class SqliteSchemaInitializer
     [
         // #762 — terminal failed state for workflow instances.
         ("WorkflowInstances", "IsFailed", "INTEGER NOT NULL DEFAULT 0"),
+        // #824 — optional business identifier on process instances.
+        ("WorkflowInstances", "BusinessId", "TEXT NULL"),
+    ];
+
+    /// <summary>
+    /// Indexes over <see cref="AdditiveColumns"/>, created with <c>IF NOT EXISTS</c> on the
+    /// same existing-file path. Names match the EF model so a fresh file gets the identical index.
+    /// </summary>
+    private static readonly (string Table, string Name, string Columns)[] AdditiveIndexes =
+    [
+        // #824 — business id uniqueness lookup and BusinessId filters.
+        ("WorkflowInstances", "IX_WorkflowInstances_BusinessId_ProcessDefinitionId", "\"BusinessId\", \"ProcessDefinitionId\""),
     ];
 
     private static void EnsureAdditiveColumns(SqliteConnection conn)
@@ -118,6 +130,16 @@ public static class SqliteSchemaInitializer
                 {
                     // A sibling silo sharing the same .db file added the column first.
                 }
+            }
+
+            foreach (var (table, name, columns) in AdditiveIndexes)
+            {
+                if (!TableExists(conn, table))
+                    continue;
+
+                using var create = conn.CreateCommand();
+                create.CommandText = $"CREATE INDEX IF NOT EXISTS \"{name}\" ON \"{table}\" ({columns});";
+                create.ExecuteNonQuery();
             }
         }
         finally

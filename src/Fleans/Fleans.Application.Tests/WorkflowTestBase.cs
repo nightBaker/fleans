@@ -267,6 +267,7 @@ public abstract class WorkflowTestBase
                     });
                     services.AddSingleton<IUserTaskFilterStrategy, InMemoryUserTaskFilterStrategy>();
                     services.AddSingleton<IWorkflowQueryService, WorkflowQueryService>();
+                    services.AddSingleton<IBusinessIdLookup, EfCoreBusinessIdLookup>();
                     services.AddSingleton<IScriptExpressionExecutor, SimpleScriptExecutor>();
                     services.AddSingleton<IConditionExpressionEvaluator, SimpleConditionEvaluator>();
                     services.AddSingleton<IWorkflowStateProjection, EfCoreWorkflowStateProjection>();

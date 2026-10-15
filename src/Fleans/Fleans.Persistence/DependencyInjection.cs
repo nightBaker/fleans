@@ -78,6 +78,7 @@ public static class EfCorePersistenceDependencyInjection
         // (e.g. AddPostgresPersistence) override this with a SQL-pushdown impl. See #415.
         services.AddSingleton<IUserTaskFilterStrategy, InMemoryUserTaskFilterStrategy>();
         services.AddSingleton<IWorkflowQueryService, WorkflowQueryService>();
+        services.AddSingleton<IBusinessIdLookup, EfCoreBusinessIdLookup>();
         services.AddSingleton<IWorkflowStateProjection, EfCoreWorkflowStateProjection>();
         services.AddSingleton<EfCoreEventStore>();
         services.AddSingleton<IEventStore>(sp => sp.GetRequiredService<EfCoreEventStore>());

@@ -1,21 +1,22 @@
+using System.Dynamic;
 using Fleans.Domain;
 
 namespace Fleans.Application.Grains;
 
 /// <summary>
 /// Serializes starts that share one (process definition key, business id) pair so the
-/// "no other active root instance carries this business id" check and the instance
-/// creation run as one step (#824). Keyed by <see cref="BusinessIdGuardKey"/>.
-/// Used only when <see cref="BusinessIdOptions.EnforceUniqueness"/> is on.
+/// "no other active root instance carries this business id" check and the whole start run
+/// as one step (#824). Keyed by <see cref="BusinessIdGuardKey"/>. Used only when
+/// <see cref="BusinessIdOptions.EnforceUniqueness"/> is on.
 /// </summary>
 public interface IBusinessIdGuardGrain : IGrainWithStringKey
 {
     /// <summary>
-    /// Calls <see cref="IWorkflowInstanceGrain.SetWorkflow"/> on <paramref name="instance"/>
-    /// with this grain's business id, or throws <see cref="InvalidOperationException"/>
-    /// (HTTP 409) while another non-terminal root instance of the same process carries it.
+    /// Starts <paramref name="instance"/> with this grain's business id and returns <c>null</c>,
+    /// or returns the id of the active instance already holding it (nothing is created then).
     /// </summary>
-    Task SetWorkflowIfUnique(IWorkflowInstanceGrain instance, IWorkflowDefinition workflow, string? startActivityId);
+    Task<Guid?> StartIfUnique(
+        IWorkflowInstanceGrain instance, IWorkflowDefinition workflow, string? startActivityId, ExpandoObject? variables);
 }
 
 public static class BusinessIdGuardKey

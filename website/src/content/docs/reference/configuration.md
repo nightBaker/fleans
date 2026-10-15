@@ -71,7 +71,7 @@ The provider toggle. `Postgres` runs `MigrateAsync()` at startup; `Sqlite` runs 
 | --- | --- | --- | --- |
 | `Fleans__BusinessId__EnforceUniqueness` | `Fleans:BusinessId:EnforceUniqueness` | `Fleans.Application` (every core silo) | `false` |
 
-When `true`, a start that supplies a business id is rejected with **409** while another non-terminal root instance of the same process key carries it. See [Business id](/fleans/reference/api/#business-id). Set the same value on every core silo (`Fleans.Api` and the Web / MCP hosts), because the check runs on whichever core silo the guard grain activates on.
+When `true`, a start that supplies a business id is rejected with **409** while another started, non-terminal root instance of the same process key carries it. See [Business id](/fleans/reference/api/#business-id). Set the same value on every core silo (`Fleans.Api` and the Web / MCP hosts), because the check runs on whichever core silo the guard grain activates on.
 
 ### Authentication
 

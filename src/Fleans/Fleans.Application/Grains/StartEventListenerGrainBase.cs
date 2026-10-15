@@ -13,15 +13,18 @@ public abstract class StartEventListenerGrainBase<TState> : Grain
 
     private readonly IGrainFactory _grainFactory;
     private readonly IPersistentState<TState> _state;
+    private readonly WorkflowInstanceStarter _starter;
 
     protected TState State => _state.State;
 
     protected StartEventListenerGrainBase(
         IPersistentState<TState> state,
-        IGrainFactory grainFactory)
+        IGrainFactory grainFactory,
+        WorkflowInstanceStarter starter)
     {
         _state = state;
         _grainFactory = grainFactory;
+        _starter = starter;
     }
 
     public async ValueTask RegisterProcess(string processDefinitionKey)
@@ -72,6 +75,7 @@ public abstract class StartEventListenerGrainBase<TState> : Grain
             OnHighProcessCount(eventName, processKeys.Count, HighProcessCountThreshold);
 
         var createdInstances = new List<Guid>();
+        string? conflictMessage = null;
 
         foreach (var batch in processKeys.Chunk(DeliveryBatchSize))
         {
@@ -97,13 +101,14 @@ public abstract class StartEventListenerGrainBase<TState> : Grain
                             $"Start activity for '{eventName}' not found in process '{processDefinitionKey}'. " +
                             "The definition may have been removed during a redeployment.");
 
-                    await BusinessIdStart.SetWorkflow(
-                        ServiceProvider, _grainFactory, instance, processDefinitionKey, definition, startActivityId, businessId);
-
-                    if (variables is not null)
-                        await instance.SetInitialVariables(variables);
-
-                    await instance.StartWorkflow();
+                    var conflict = await _starter.Start(
+                        instance, processDefinitionKey, definition, startActivityId, variables, businessId);
+                    if (conflict is Guid existingId)
+                    {
+                        // Business id uniqueness (#824): skip this process; surfaced below if nothing started.
+                        conflictMessage = WorkflowInstanceStarter.ConflictMessage(processDefinitionKey, businessId!, existingId);
+                        return (Guid?)null;
+                    }
 
                     OnStartEventFired(eventName, processDefinitionKey, instanceId);
                     return (Guid?)instanceId;
@@ -118,6 +123,11 @@ public abstract class StartEventListenerGrainBase<TState> : Grain
             var results = await Task.WhenAll(batchTasks);
             createdInstances.AddRange(results.Where(id => id.HasValue).Select(id => id!.Value));
         }
+
+        // Every targeted process rejected the business id: report a conflict (409) rather than
+        // an empty result, which callers would read as "no start event registered".
+        if (createdInstances.Count == 0 && conflictMessage is not null)
+            throw new InvalidOperationException(conflictMessage);
 
         return createdInstances;
     }

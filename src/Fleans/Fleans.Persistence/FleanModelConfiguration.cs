@@ -40,9 +40,10 @@ internal static class FleanModelConfiguration
 
             entity.Property(e => e.ProcessDefinitionId).HasMaxLength(512);
 
-            // #824: filterable via Sieve and looked up by the uniqueness guard.
+            // #824: filterable via Sieve; the composite index serves the uniqueness guard's
+            // (BusinessId, ProcessDefinitionId) lookup as well as plain BusinessId filters.
             entity.Property(e => e.BusinessId).HasMaxLength(BusinessIdRules.MaxLength);
-            entity.HasIndex(e => e.BusinessId);
+            entity.HasIndex(e => new { e.BusinessId, e.ProcessDefinitionId });
 
             // DateTimeOffset columns (CreatedAt / ExecutionStartedAt / CompletedAt) are stored
             // natively in the shared model. Provider packages may override this — e.g. the

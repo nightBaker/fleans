@@ -12,11 +12,6 @@ public interface IWorkflowQueryService
     Task<PagedResult<ProcessDefinitionGroup>> GetProcessDefinitionGroups(PageRequest page);
     Task<PagedResult<WorkflowInstanceInfo>> GetInstancesByKey(string processDefinitionKey, PageRequest page);
     Task<PagedResult<WorkflowInstanceInfo>> GetInstancesByKeyAndVersion(string key, int version, PageRequest page);
-    /// <summary>
-    /// Returns the id of a non-terminal root instance of <paramref name="processDefinitionKey"/>
-    /// (any version) carrying <paramref name="businessId"/>, or <c>null</c> (#824 uniqueness).
-    /// </summary>
-    Task<Guid?> FindActiveRootInstanceByBusinessId(string processDefinitionKey, string businessId);
     Task<string?> GetBpmnXml(Guid instanceId);
     Task<string?> GetBpmnXmlByKey(string processDefinitionKey);
     Task<string?> GetBpmnXmlByKeyAndVersion(string key, int version);

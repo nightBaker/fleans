@@ -1,3 +1,4 @@
+using System.Dynamic;
 using Fleans.Application.Logging;
 using Fleans.Application.Placement;
 using Fleans.Application.QueryModels;
@@ -17,6 +18,7 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
     private readonly IGrainFactory _grainFactory;
     private readonly ILogger<ProcessDefinitionGrain> _logger;
     private readonly IProcessDefinitionRepository _repository;
+    private readonly WorkflowInstanceStarter _starter;
 
     private readonly Dictionary<string, ProcessDefinition> _byId = new(StringComparer.Ordinal);
     private readonly List<ProcessDefinition> _versions = [];
@@ -24,11 +26,13 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
     public ProcessDefinitionGrain(
         IGrainFactory grainFactory,
         ILogger<ProcessDefinitionGrain> logger,
-        IProcessDefinitionRepository repository)
+        IProcessDefinitionRepository repository,
+        WorkflowInstanceStarter starter)
     {
         _grainFactory = grainFactory;
         _logger = logger;
         _repository = repository;
+        _starter = starter;
     }
 
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
@@ -46,7 +50,27 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
         LogActivated(key, _versions.Count);
     }
 
-    public async Task<IWorkflowInstanceGrain> CreateInstance(string? businessId = null)
+    public async Task<Guid> StartNewInstance(ExpandoObject? initialVariables, string? businessId)
+    {
+        var key = this.GetPrimaryKeyString();
+        var definition = GetLatestDefinitionOrThrow(key);
+
+        var guid = Guid.NewGuid();
+        LogCreatingInstance(key, definition.ProcessDefinitionId, guid);
+
+        RequestContext.Set(WorkflowContextKeys.WorkflowId, key);
+        RequestContext.Set(WorkflowContextKeys.ProcessDefinitionId, definition.ProcessDefinitionId);
+        RequestContext.Set(WorkflowContextKeys.WorkflowInstanceId, guid.ToString());
+
+        var instance = _grainFactory.GetGrain<IWorkflowInstanceGrain>(guid);
+        var conflict = await _starter.Start(instance, key, definition.Workflow, null, initialVariables, businessId);
+        if (conflict is Guid existingId)
+            throw new InvalidOperationException(WorkflowInstanceStarter.ConflictMessage(key, businessId!, existingId));
+
+        return guid;
+    }
+
+    public async Task<IWorkflowInstanceGrain> CreateInstance()
     {
         var key = this.GetPrimaryKeyString();
         var definition = GetLatestDefinitionOrThrow(key);
@@ -59,8 +83,7 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
         RequestContext.Set(WorkflowContextKeys.WorkflowInstanceId, guid.ToString());
 
         var workflowInstanceGrain = _grainFactory.GetGrain<IWorkflowInstanceGrain>(guid);
-        await BusinessIdStart.SetWorkflow(
-            ServiceProvider, _grainFactory, workflowInstanceGrain, key, definition.Workflow, null, businessId);
+        await workflowInstanceGrain.SetWorkflow(definition.Workflow);
 
         return workflowInstanceGrain;
     }

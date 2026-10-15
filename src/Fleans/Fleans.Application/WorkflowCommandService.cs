@@ -22,14 +22,7 @@ public partial class WorkflowCommandService : IWorkflowCommandService
         LogStartingWorkflow(workflowId);
 
         var processGrain = _grainFactory.GetGrain<IProcessDefinitionGrain>(workflowId);
-        var workflowInstance = await processGrain.CreateInstance(businessId);
-
-        if (initialVariables != null)
-            await workflowInstance.SetInitialVariables(initialVariables);
-
-        await workflowInstance.StartWorkflow();
-
-        return await workflowInstance.GetWorkflowInstanceId();
+        return await processGrain.StartNewInstance(initialVariables, businessId);
     }
 
     public async Task<Guid> StartWorkflowByProcessDefinitionId(string processDefinitionId)

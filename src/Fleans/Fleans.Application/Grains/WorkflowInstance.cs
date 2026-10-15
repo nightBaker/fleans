@@ -284,8 +284,6 @@ public partial class WorkflowInstance :
     public async Task SetWorkflow(IWorkflowDefinition workflow, string? startActivityId = null, string? businessId = null)
     {
         if (_workflowDefinition is not null) throw new ArgumentException("Workflow already set");
-        // Validate before assigning the definition so a rejected id leaves the grain unset.
-        BusinessIdRules.Validate(businessId);
 
         _workflowDefinition = workflow ?? throw new ArgumentNullException(nameof(workflow));
 

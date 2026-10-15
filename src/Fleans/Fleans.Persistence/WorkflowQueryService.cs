@@ -218,23 +218,6 @@ public class WorkflowQueryService : IWorkflowQueryService
         return await ApplySieveAndProject(baseQuery, page);
     }
 
-    public async Task<Guid?> FindActiveRootInstanceByBusinessId(string processDefinitionKey, string businessId)
-    {
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-
-        var definitionIds = db.ProcessDefinitions
-            .Where(p => p.ProcessDefinitionKey == processDefinitionKey)
-            .Select(p => p.ProcessDefinitionId);
-
-        return await db.WorkflowInstances
-            .Where(w => w.BusinessId == businessId
-                && !w.IsCompleted
-                && w.ParentWorkflowInstanceId == null
-                && definitionIds.Contains(w.ProcessDefinitionId))
-            .Select(w => (Guid?)w.Id)
-            .FirstOrDefaultAsync();
-    }
-
     public async Task<PagedResult<WorkflowInstanceInfo>> GetInstancesByKeyAndVersion(
         string key, int version, PageRequest page)
     {

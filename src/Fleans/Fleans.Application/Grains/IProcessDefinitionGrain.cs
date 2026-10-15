@@ -1,3 +1,4 @@
+using System.Dynamic;
 using Fleans.Application.QueryModels;
 using Fleans.Domain;
 using Orleans.Concurrency;
@@ -12,7 +13,13 @@ namespace Fleans.Application.Grains;
 /// </summary>
 public interface IProcessDefinitionGrain : IGrainWithStringKey
 {
-    Task<IWorkflowInstanceGrain> CreateInstance(string? businessId = null);
+    Task<IWorkflowInstanceGrain> CreateInstance();
+    /// <summary>
+    /// Creates and starts an instance of the latest version with optional initial variables and
+    /// business id (#824). Throws <see cref="InvalidOperationException"/> (HTTP 409) when business
+    /// id uniqueness rejects the start.
+    /// </summary>
+    Task<Guid> StartNewInstance(ExpandoObject? initialVariables, string? businessId);
     Task<IWorkflowInstanceGrain> CreateInstanceByDefinitionId(string processDefinitionId);
     Task<ProcessDefinitionSummary> DeployVersion(WorkflowDefinition workflow, string bpmnXml);
 

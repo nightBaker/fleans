@@ -238,6 +238,25 @@ public class BusinessIdUniquenessTests : WorkflowTestBase
     }
 
     [TestMethod]
+    public async Task UnstartedInstance_DoesNotHoldTheBusinessId()
+    {
+        // Arrange — a start that failed after SetWorkflow (e.g. initial variables threw) leaves
+        // a projected but never-started instance carrying the id.
+        await DeployAsync("uniq-orphan");
+        var definition = await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("uniq-orphan").GetLatestDefinition();
+        var orphan = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await orphan.SetWorkflow(definition, businessId: "ORDER-1");
+
+        // Act — a retry with the same id must not be blocked by the orphan.
+        var retried = await CommandService.StartWorkflow("uniq-orphan", businessId: "ORDER-1");
+
+        // Assert
+        var snapshot = await QueryService.GetStateSnapshot(retried);
+        Assert.IsNotNull(snapshot);
+        Assert.IsTrue(snapshot.IsStarted);
+    }
+
+    [TestMethod]
     public async Task SameBusinessId_OnDifferentProcesses_IsAllowed()
     {
         // Arrange
@@ -289,7 +308,7 @@ public class BusinessIdUniquenessTests : WorkflowTestBase
     }
 
     [TestMethod]
-    public async Task MessageStart_WithBusinessIdAlreadyActive_CreatesNoSecondInstance()
+    public async Task MessageStart_WithBusinessIdAlreadyActive_IsRejectedWithConflict()
     {
         // Arrange
         var messageStart = new MessageStartEvent("msgStart", "msg1");
@@ -304,12 +323,13 @@ public class BusinessIdUniquenessTests : WorkflowTestBase
         }, "<placeholder/>");
         var first = await CommandService.SendMessage("uniqOrderPlaced", null, new ExpandoObject(), businessId: "ORDER-1");
 
-        // Act
-        var second = await CommandService.SendMessage("uniqOrderPlaced", null, new ExpandoObject(), businessId: "ORDER-1");
+        // Act — the only targeted process rejects the id: a conflict (409), not "not delivered" (404).
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => CommandService.SendMessage("uniqOrderPlaced", null, new ExpandoObject(), businessId: "ORDER-1"));
 
         // Assert
         Assert.IsTrue(first.Delivered);
-        Assert.IsFalse(second.Delivered);
+        StringAssert.Contains(ex.Message, first.WorkflowInstanceIds!.Single().ToString());
         var page = await QueryService.GetInstancesByKey("uniq-message", new PageRequest(Filters: "BusinessId==ORDER-1"));
         Assert.AreEqual(1, page.TotalCount);
     }

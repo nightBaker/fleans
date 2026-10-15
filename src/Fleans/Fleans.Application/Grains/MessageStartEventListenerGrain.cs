@@ -17,8 +17,9 @@ public partial class MessageStartEventListenerGrain :
     public MessageStartEventListenerGrain(
         [PersistentState("state", GrainStorageNames.MessageStartEventListeners)] IPersistentState<MessageStartEventListenerState> state,
         IGrainFactory grainFactory,
+        WorkflowInstanceStarter starter,
         ILogger<MessageStartEventListenerGrain> logger)
-        : base(state, grainFactory)
+        : base(state, grainFactory, starter)
     {
         _logger = logger;
     }

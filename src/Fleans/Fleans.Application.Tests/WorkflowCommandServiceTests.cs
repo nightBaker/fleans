@@ -32,25 +32,19 @@ namespace Fleans.Application.Tests
             // Arrange
             var workflowId = "test-workflow-1";
             var workflowInstanceId = Guid.NewGuid();
-            var workflowInstance = Substitute.For<IWorkflowInstanceGrain>();
 
             _grainFactory.GetGrain<IProcessDefinitionGrain>(workflowId)
                 .Returns(_processGrain);
 
-            _processGrain.CreateInstance()
-                .Returns(workflowInstance);
-
-            workflowInstance.GetWorkflowInstanceId()
-                .Returns(ValueTask.FromResult(workflowInstanceId));
-            workflowInstance.StartWorkflow().Returns(Task.CompletedTask);
+            _processGrain.StartNewInstance(null, "ORDER-1")
+                .Returns(workflowInstanceId);
 
             // Act
-            var result = await _commandService.StartWorkflow(workflowId);
+            var result = await _commandService.StartWorkflow(workflowId, businessId: "ORDER-1");
 
             // Assert
             Assert.AreEqual(workflowInstanceId, result);
-            await _processGrain.Received(1).CreateInstance();
-            await workflowInstance.Received(1).StartWorkflow();
+            await _processGrain.Received(1).StartNewInstance(null, "ORDER-1");
         }
 
         [TestMethod]

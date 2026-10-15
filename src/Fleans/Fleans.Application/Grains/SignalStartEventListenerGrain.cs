@@ -16,8 +16,9 @@ public partial class SignalStartEventListenerGrain :
     public SignalStartEventListenerGrain(
         [PersistentState("state", GrainStorageNames.SignalStartEventListeners)] IPersistentState<SignalStartEventListenerState> state,
         IGrainFactory grainFactory,
+        WorkflowInstanceStarter starter,
         ILogger<SignalStartEventListenerGrain> logger)
-        : base(state, grainFactory)
+        : base(state, grainFactory, starter)
     {
         _logger = logger;
     }
