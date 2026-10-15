@@ -13,6 +13,9 @@ public interface IWorkflowInstanceGrain : IWorkflowInstanceCallback, IWorkflowEx
     new ValueTask<Guid> GetWorkflowInstanceId();
 
     [ReadOnly]
+    new ValueTask<string?> GetBusinessId();
+
+    [ReadOnly]
     new ValueTask<IReadOnlyDictionary<Guid, ConditionSequenceState[]>> GetConditionSequenceStates();
 
     [ReadOnly]
@@ -31,7 +34,7 @@ public interface IWorkflowInstanceGrain : IWorkflowInstanceCallback, IWorkflowEx
     Task FailActivity(string activityId, Exception exception);
     // FailActivity(activityId, activityInstanceId, exception) inherited from IWorkflowInstanceCallback
     Task StartWorkflow();
-    Task SetWorkflow(IWorkflowDefinition workflow, string? startActivityId = null);
+    Task SetWorkflow(IWorkflowDefinition workflow, string? startActivityId = null, string? businessId = null);
 
     // GetVariables(variablesStateId) inherited from IWorkflowInstanceCallback
 

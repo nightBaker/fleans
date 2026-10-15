@@ -30,7 +30,8 @@ public class ProcessInstancesPageTests : WorkflowE2ETestBase
 
         var v2 = await ApiClient.DeployAsync(xml);
         Assert.AreEqual(v1.Version + 1, v2.Version, "Redeploying the same key must create a new version.");
-        var runningV2 = await ApiClient.StartAsync(key, new() { ["requestId"] = $"v2-{suffix}" });
+        var businessId = $"order-{suffix}";
+        var runningV2 = await ApiClient.StartAsync(key, new() { ["requestId"] = $"v2-{suffix}" }, businessId: businessId);
         await ApiClient.WaitForStateAsync(runningV2.WorkflowInstanceId, s => s.ActiveActivityIds.Contains("waitMessage"));
 
         // API state is the source of truth the page must mirror.
@@ -52,6 +53,10 @@ public class ProcessInstancesPageTests : WorkflowE2ETestBase
         await page.AssertInstanceStatusAsync(running.WorkflowInstanceId, "Running");
         await page.AssertInstanceStatusAsync(runningV2.WorkflowInstanceId, "Running");
 
+        // Business ID column (#824): set on runningV2 only.
+        await Expect(page.BusinessIdCell(runningV2.WorkflowInstanceId)).ToHaveTextAsync(businessId);
+        await Expect(page.BusinessIdCell(running.WorkflowInstanceId)).ToHaveTextAsync("-");
+
         // Version filter: v1 only.
         await page.OpenAsync(key, v1.Version);
         await Expect(page.Title($"Instances — {key} v{v1.Version}")).ToBeVisibleAsync();
@@ -69,5 +74,6 @@ public class ProcessInstancesPageTests : WorkflowE2ETestBase
         await page.ViewInstanceAsync(runningV2.WorkflowInstanceId);
         await Expect(Page).ToHaveURLAsync(
             new System.Text.RegularExpressions.Regex($"/process-instance/{runningV2.WorkflowInstanceId:D}$"));
+        await Expect(Page.GetByTestId("instance-business-id")).ToHaveTextAsync(businessId, new() { Timeout = 15_000 });
     }
 }

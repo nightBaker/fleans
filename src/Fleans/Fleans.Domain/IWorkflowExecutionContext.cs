@@ -6,6 +6,9 @@ public interface IWorkflowExecutionContext
 {
     ValueTask<Guid> GetWorkflowInstanceId();
 
+    /// <summary>The instance's business identifier set at start, or <c>null</c> (#824).</summary>
+    ValueTask<string?> GetBusinessId();
+
     ValueTask<IReadOnlyDictionary<Guid, ConditionSequenceState[]>> GetConditionSequenceStates();
     ValueTask SetConditionSequenceResult(Guid activityInstanceId, string sequenceId, bool result);
 

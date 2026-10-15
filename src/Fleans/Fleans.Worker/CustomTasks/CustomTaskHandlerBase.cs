@@ -151,7 +151,8 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
                 item.ProcessDefinitionId,
                 item.ActivityInstanceId,
                 item.ActivityId,
-                item.TaskType);
+                item.TaskType,
+                item.BusinessId);
 
             var pluginResult = await ExecuteAsync(resolved, variables, context, _grainLifetimeCts!.Token);
 

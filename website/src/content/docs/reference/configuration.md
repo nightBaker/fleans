@@ -65,6 +65,14 @@ The provider toggle. `Postgres` runs `MigrateAsync()` at startup; `Sqlite` runs 
 
 `memory` is single-silo only — it silently drops cross-silo events. Use `kafka` or `azurequeue` for any deployment with more than one silo. See [Streaming](/fleans/reference/streaming/) for at-least-once semantics.
 
+### Business id
+
+| Env var | Config key | Read at | Default |
+| --- | --- | --- | --- |
+| `Fleans__BusinessId__EnforceUniqueness` | `Fleans:BusinessId:EnforceUniqueness` | `Fleans.Application` (every core silo) | `false` |
+
+When `true`, a start that supplies a business id is rejected with **409** while another non-terminal root instance of the same process key carries it. See [Business id](/fleans/reference/api/#business-id). Set the same value on every core silo (`Fleans.Api` and the Web / MCP hosts), because the check runs on whichever core silo the guard grain activates on.
+
 ### Authentication
 
 Auth keys are **per-host** — the API and the Web admin UI use different OIDC flows (JWT-bearer vs OIDC code-flow), so the keys split cleanly between hosts. Setting an API-only key on the Web silo (or vice-versa) has no effect.

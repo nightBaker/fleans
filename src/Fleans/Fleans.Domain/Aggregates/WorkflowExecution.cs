@@ -61,15 +61,17 @@ public class WorkflowExecution
 
     public void ClearUncommittedEvents() => _uncommittedEvents.Clear();
 
-    public void Start(string? startActivityId = null)
+    public void Start(string? startActivityId = null, string? businessId = null)
     {
         if (_state.IsStarted)
             throw new InvalidOperationException("Workflow is already started.");
 
+        BusinessIdRules.Validate(businessId);
+
         var instanceId = Guid.NewGuid();
         var rootVariablesId = Guid.NewGuid();
 
-        Emit(new WorkflowStarted(instanceId, _definition.ProcessDefinitionId, rootVariablesId));
+        Emit(new WorkflowStarted(instanceId, _definition.ProcessDefinitionId, rootVariablesId, BusinessId: businessId));
 
         Activity startActivity;
         if (startActivityId is not null)
@@ -3529,7 +3531,7 @@ public class WorkflowExecution
 
     private void ApplyWorkflowStarted(WorkflowStarted e)
     {
-        _state.Initialize(e.InstanceId, e.ProcessDefinitionId, e.RootVariablesId);
+        _state.Initialize(e.InstanceId, e.ProcessDefinitionId, e.RootVariablesId, e.BusinessId);
     }
 
     private void ApplyActivitySpawned(ActivitySpawned e)

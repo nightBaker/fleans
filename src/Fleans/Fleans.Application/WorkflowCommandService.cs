@@ -17,12 +17,12 @@ public partial class WorkflowCommandService : IWorkflowCommandService
         _logger = logger;
     }
 
-    public async Task<Guid> StartWorkflow(string workflowId, ExpandoObject? initialVariables = null)
+    public async Task<Guid> StartWorkflow(string workflowId, ExpandoObject? initialVariables = null, string? businessId = null)
     {
         LogStartingWorkflow(workflowId);
 
         var processGrain = _grainFactory.GetGrain<IProcessDefinitionGrain>(workflowId);
-        var workflowInstance = await processGrain.CreateInstance();
+        var workflowInstance = await processGrain.CreateInstance(businessId);
 
         if (initialVariables != null)
             await workflowInstance.SetInitialVariables(initialVariables);
@@ -70,7 +70,7 @@ public partial class WorkflowCommandService : IWorkflowCommandService
     [LoggerMessage(EventId = 7002, Level = LogLevel.Information, Message = "Completing activity {ActivityId} for workflow instance {WorkflowInstanceId}")]
     private partial void LogCompletingActivity(Guid workflowInstanceId, string activityId);
 
-    public async Task<SendMessageResult> SendMessage(string messageName, string? correlationKey, ExpandoObject variables)
+    public async Task<SendMessageResult> SendMessage(string messageName, string? correlationKey, ExpandoObject variables, string? businessId = null)
     {
         LogSendingMessage(messageName, correlationKey);
 
@@ -87,7 +87,8 @@ public partial class WorkflowCommandService : IWorkflowCommandService
 
         // Fallthrough: try message start event listener
         var listener = _grainFactory.GetGrain<IMessageStartEventListenerGrain>(messageName);
-        var instanceIds = await listener.FireMessageStartEvent(variables);
+        // businessId applies only to instances a message start event creates (#824).
+        var instanceIds = await listener.FireMessageStartEvent(variables, businessId);
 
         if (instanceIds.Count > 0)
             return new SendMessageResult(Delivered: true, WorkflowInstanceIds: instanceIds);

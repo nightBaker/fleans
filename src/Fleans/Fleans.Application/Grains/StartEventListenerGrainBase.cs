@@ -56,7 +56,7 @@ public abstract class StartEventListenerGrainBase<TState> : Grain
         OnProcessUnregistered(eventName, processDefinitionKey);
     }
 
-    protected async ValueTask<List<Guid>> FireStartEventCore(ExpandoObject? variables)
+    protected async ValueTask<List<Guid>> FireStartEventCore(ExpandoObject? variables, string? businessId = null)
     {
         var eventName = this.GetPrimaryKeyString();
 
@@ -97,7 +97,8 @@ public abstract class StartEventListenerGrainBase<TState> : Grain
                             $"Start activity for '{eventName}' not found in process '{processDefinitionKey}'. " +
                             "The definition may have been removed during a redeployment.");
 
-                    await instance.SetWorkflow(definition, startActivityId);
+                    await BusinessIdStart.SetWorkflow(
+                        ServiceProvider, _grainFactory, instance, processDefinitionKey, definition, startActivityId, businessId);
 
                     if (variables is not null)
                         await instance.SetInitialVariables(variables);

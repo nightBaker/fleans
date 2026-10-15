@@ -10,8 +10,8 @@ All paths below are relative to the API base URL (`https://localhost:7140` in th
 | Endpoint | Method | Body |
 |---|---|---|
 | `/Definitions/deploy` | POST | `{"BpmnXml":"<raw BPMN XML string>"}` |
-| `/Execution/start` | POST | `{"WorkflowId":"process-id"}` or `{"WorkflowId":"process-id","Variables":{"key":"value"}}` — `Variables` is optional; when provided, the variables are merged into the root scope **before** the workflow starts (required for message event sub-processes that resolve correlation keys from variables at scope entry) |
-| `/Execution/message` | POST | `{"MessageName":"...", "CorrelationKey":"...", "Variables":{}}` |
+| `/Execution/start` | POST | `{"WorkflowId":"process-id"}` or `{"WorkflowId":"process-id","Variables":{"key":"value"},"BusinessId":"order-123"}` — `BusinessId` is optional (see [Business id](#business-id)); `Variables` is optional; when provided, the variables are merged into the root scope **before** the workflow starts (required for message event sub-processes that resolve correlation keys from variables at scope entry) |
+| `/Execution/message` | POST | `{"MessageName":"...", "CorrelationKey":"...", "Variables":{}, "BusinessId":"..."}` — `BusinessId` is optional and applies only to instances a message start event creates |
 | `/Execution/signal` | POST | `{"SignalName":"..."}` |
 | `/Execution/complete-activity` | POST | `{"WorkflowInstanceId":"guid", "ActivityId":"activity-id", "Variables":{}}` |
 | `/Execution/evaluate-conditions` | POST | `{"WorkflowId":"process-id", "Variables":{"key":"value"}}` — Evaluates all conditional start events (or only those for the given `WorkflowId` if provided) against the supplied variables. Returns `{"StartedInstanceIds":["guid",...], "Errors":["..."]}`. `Errors` is present only when one or more listeners failed during evaluation. |
@@ -89,11 +89,14 @@ Content-Type: application/json
 
 {
   "WorkflowId": "my-process",
-  "Variables": { "amount": 100 }
+  "Variables": { "amount": 100 },
+  "BusinessId": "order-123"
 }
 ```
 
 `Variables` is optional. When provided, variables are merged into the root scope before the workflow starts.
+
+`BusinessId` is optional. It is a business identifier for the instance, such as an order number or a contract id. See [Business id](#business-id).
 
 **Success response (200)**
 
@@ -105,9 +108,20 @@ Content-Type: application/json
 
 **Error responses**
 
-- **400** — `{"error": "WorkflowId is required"}`
+- **400** — `{"error": "WorkflowId is required"}`, or an invalid `BusinessId` (empty or whitespace, or longer than 256 characters)
 - **404** — the process key was never deployed (ProblemDetails, `detail`: `Workflow with id 'my-process' is not registered. …`)
 - **409** — the process key is disabled (ProblemDetails, `detail`: `Process 'my-process' is disabled. Enable it before creating new instances.`)
+- **409** — [uniqueness](#business-id) is on and another active instance of the process already has this `BusinessId` (ProblemDetails, `detail`: `An active instance of process 'my-process' with BusinessId 'order-123' already exists (<guid>).`)
+
+#### Business id
+
+A process instance can have a business id: a value your systems already know, such as an order number. Use it to find "the process for order 123" without storing the generated instance GUID. It follows Camunda 8.9+'s [`businessId`](https://docs.camunda.io/docs/next/components/concepts/process-instance-creation/):
+
+- **Set only at start**, on `POST /Execution/start` or on `POST /Execution/message` when a message start event creates the instance. It can't be changed afterwards. Instances started by timers, signals, conditional starts or call activities have none.
+- **At most 256 characters**, and not empty or whitespace. An invalid value returns **400**.
+- **Not inherited.** A call activity's child instance does not get the parent's business id.
+- **Visible everywhere:** as `businessId` on `GET /Instances/{id}/state` and on the instance listings. You can filter on it, for example `/Definitions/my-process/instances?filters=BusinessId==order-123`. It also appears in the admin UI, and custom-task plugins get it as `CustomTaskExecutionContext.BusinessId`.
+- **Optional uniqueness.** When [`Fleans:BusinessId:EnforceUniqueness`](/fleans/reference/configuration/#business-id) is `true`, a start returns **409** while another non-terminal root instance of the same process key (any version) has the same business id. Uniqueness is off by default, so duplicates are allowed. A completed, cancelled or failed instance frees its business id. When a message start conflicts, that process's instance is not created: the conflict is logged (EventId 13000) and the message still starts the other processes it targets. If it starts none, the endpoint returns **404**.
 
 ### `POST /Execution/message`
 
@@ -204,7 +218,7 @@ Paginated read endpoints accept `page` (default 1), `pageSize` (default 20, max 
 | Verb | Path | Returns |
 | --- | --- | --- |
 | GET | `/Definitions` | Deployed process-definition versions (`processDefinitionId`, `processDefinitionKey`, `version`, `deployedAt`, `activitiesCount`, `sequenceFlowsCount`, `isActive`). Filterable on `ProcessDefinitionKey`, `Version`, `IsActive`; sortable on `ProcessDefinitionKey`, `Version`, `DeployedAt`. |
-| GET | `/Definitions/{key}/instances` | Instances of every version of `key` (`instanceId`, `processDefinitionId`, `isStarted`, `isCompleted`, `isCancelled`, timestamps). Filterable on `IsStarted`, `IsCompleted`, `IsCancelled`, `CreatedAt`. |
+| GET | `/Definitions/{key}/instances` | Instances of every version of `key` (`instanceId`, `processDefinitionId`, `isStarted`, `isCompleted`, `isCancelled`, timestamps). Filterable on `IsStarted`, `IsCompleted`, `IsCancelled`, `IsFailed`, `BusinessId`, `CreatedAt`. Each row also carries `businessId` (or `null`). |
 | GET | `/Definitions/{key}/{version}/instances` | Same, restricted to one version. |
 | GET | `/custom-tasks` | Custom-task plugin catalog: one entry per task type with `displayName`, `parameterSchema`, and the `siloNames` hosting it. Not paginated. |
 | GET | `/custom-tasks/{taskType}` | One catalog entry; **404** if no plugin registers that task type. |
@@ -506,7 +520,7 @@ curl -k -X POST https://localhost:7140/UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a
 
 ### Instance State endpoint
 
-`GET /Instances/{instanceId}/state` returns a per-instance state snapshot including `activeActivityIds`, `completedActivityIds`, `isStarted`, `isCompleted`, `isCancelled`, `isFailed`, and related fields.
+`GET /Instances/{instanceId}/state` returns a per-instance state snapshot including `activeActivityIds`, `completedActivityIds`, `isStarted`, `isCompleted`, `isCancelled`, `isFailed`, `businessId`, and related fields.
 
 `isCompleted` means *terminal*. Tell the outcomes apart with the two flags: `isCancelled: true` → cancelled, `isFailed: true` → an unhandled activity failure ended the instance (see [Unhandled errors fail the instance](/fleans/guides/error-handling/#unhandled-errors-fail-the-instance)); both `false` → completed successfully. The failing activity is listed in `completedActivities` with a non-null `errorState`.
 

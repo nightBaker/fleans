@@ -5,6 +5,8 @@ namespace Fleans.Worker.CustomTasks;
 /// authors can correlate work with the specific workflow + activity instance — required for
 /// idempotency keys, distributed tracing tags, deduplication keys against external systems,
 /// and any other code that needs to identify "which execution of which activity is this."
+/// <see cref="BusinessId"/> is the instance's business identifier set at start (an order
+/// number, a contract id), or <c>null</c> when the instance was started without one (#824).
 /// </summary>
 public sealed record CustomTaskExecutionContext(
     Guid WorkflowInstanceId,
@@ -12,4 +14,5 @@ public sealed record CustomTaskExecutionContext(
     string? ProcessDefinitionId,
     Guid ActivityInstanceId,
     string ActivityId,
-    string TaskType);
+    string TaskType,
+    string? BusinessId = null);

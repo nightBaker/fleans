@@ -1,4 +1,5 @@
 using Fleans.Application;
+using Fleans.Domain;
 using Fleans.ServiceDefaults.DTOs;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -25,11 +26,14 @@ namespace Fleans.Api.Controllers
                 return BadRequest(new ErrorResponse("WorkflowId is required"));
             }
 
+            if (BusinessIdRules.GetValidationError(request.BusinessId) is { } businessIdError)
+                return BadRequest(new ErrorResponse(businessIdError));
+
             var initialVariables = request.Variables != null
                 ? VariableConverter.ToExpandoObject(request.Variables)
                 : null;
 
-            var instanceId = await _commandService.StartWorkflow(request.WorkflowId, initialVariables);
+            var instanceId = await _commandService.StartWorkflow(request.WorkflowId, initialVariables, request.BusinessId);
             return Ok(new StartWorkflowResponse(instanceId));
         }
 
@@ -40,9 +44,12 @@ namespace Fleans.Api.Controllers
             if (request == null || string.IsNullOrWhiteSpace(request.MessageName))
                 return BadRequest(new ErrorResponse("MessageName is required"));
 
+            if (BusinessIdRules.GetValidationError(request.BusinessId) is { } businessIdError)
+                return BadRequest(new ErrorResponse(businessIdError));
+
             var variables = VariableConverter.ToExpandoObject(request.Variables);
 
-            var result = await _commandService.SendMessage(request.MessageName, request.CorrelationKey, variables);
+            var result = await _commandService.SendMessage(request.MessageName, request.CorrelationKey, variables, request.BusinessId);
 
             if (!result.Delivered)
                 return NotFound(new ErrorResponse(

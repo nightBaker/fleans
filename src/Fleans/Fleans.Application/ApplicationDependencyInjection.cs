@@ -7,6 +7,7 @@ namespace Fleans.Application
     {
         public static void AddApplication(this IServiceCollection services)
         {
+            services.AddOptions<BusinessIdOptions>().BindConfiguration(BusinessIdOptions.SectionName);
             services.AddSingleton<IWorkflowCommandService, WorkflowCommandService>();
             services.AddSingleton<ICompensationLogService, CompensationLogService>();
 

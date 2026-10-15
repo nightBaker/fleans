@@ -43,7 +43,8 @@ public record CustomTaskActivity : TaskActivity
             TaskType,
             InputMappings,
             OutputMappings,
-            variablesId));
+            variablesId,
+            await workflowContext.GetBusinessId()));
 
         return commands;
     }

@@ -46,6 +46,68 @@ public class WorkflowExecutionTests
     }
 
     [TestMethod]
+    public void Start_WithBusinessId_ShouldCarryItOnWorkflowStartedAndState()
+    {
+        var start = new StartEvent("start1");
+        var (execution, state) = CreateExecution([start], []);
+
+        execution.Start(businessId: "ORDER-42");
+
+        var started = (WorkflowStarted)execution.GetUncommittedEvents()[0];
+        Assert.AreEqual("ORDER-42", started.BusinessId);
+        Assert.AreEqual("ORDER-42", state.BusinessId);
+    }
+
+    [TestMethod]
+    public void Start_WithoutBusinessId_ShouldLeaveItNull()
+    {
+        var start = new StartEvent("start1");
+        var (execution, state) = CreateExecution([start], []);
+
+        execution.Start();
+
+        Assert.IsNull(((WorkflowStarted)execution.GetUncommittedEvents()[0]).BusinessId);
+        Assert.IsNull(state.BusinessId);
+    }
+
+    [TestMethod]
+    [DataRow("")]
+    [DataRow("   ")]
+    public void Start_WithBlankBusinessId_ShouldThrowAndEmitNothing(string businessId)
+    {
+        var start = new StartEvent("start1");
+        var (execution, state) = CreateExecution([start], []);
+
+        Assert.ThrowsExactly<ArgumentException>(() => execution.Start(businessId: businessId));
+
+        Assert.HasCount(0, execution.GetUncommittedEvents());
+        Assert.IsNull(state.BusinessId);
+    }
+
+    [TestMethod]
+    public void Start_WithOverlongBusinessId_ShouldThrow()
+    {
+        var start = new StartEvent("start1");
+        var (execution, _) = CreateExecution([start], []);
+        var businessId = new string('x', BusinessIdRules.MaxLength + 1);
+
+        Assert.ThrowsExactly<ArgumentException>(() => execution.Start(businessId: businessId));
+        Assert.HasCount(0, execution.GetUncommittedEvents());
+    }
+
+    [TestMethod]
+    public void Start_WithMaxLengthBusinessId_ShouldSucceed()
+    {
+        var start = new StartEvent("start1");
+        var (execution, state) = CreateExecution([start], []);
+        var businessId = new string('x', BusinessIdRules.MaxLength);
+
+        execution.Start(businessId: businessId);
+
+        Assert.AreEqual(businessId, state.BusinessId);
+    }
+
+    [TestMethod]
     public void Start_ShouldSetStateStarted()
     {
         var start = new StartEvent("start1");

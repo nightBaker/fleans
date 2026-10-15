@@ -32,6 +32,9 @@ public sealed class ProcessInstancesPage
     public ILocator Row(Guid instanceId) =>
         Grid.Locator("tbody tr").Filter(new() { Has = _page.Locator($"span[title='{instanceId:D}']") });
 
+    /// <summary>The row's Business ID cell (<c>-</c> when the instance has none).</summary>
+    public ILocator BusinessIdCell(Guid instanceId) => Row(instanceId).GetByTestId("instance-business-id");
+
     /// <summary>Asserts the instance row is rendered with the truncated id and the given status badge.</summary>
     public async Task AssertInstanceStatusAsync(Guid instanceId, string status)
     {

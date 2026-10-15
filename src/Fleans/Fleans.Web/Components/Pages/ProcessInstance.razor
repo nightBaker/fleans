@@ -36,6 +36,10 @@
                     <FluentBadge Color="Color.Accent">Running</FluentBadge>
                 }
             }
+            @if (snapshot?.BusinessId is { } businessId)
+            {
+                <FluentLabel Typo="Typography.Body" Title="Business ID" data-testid="instance-business-id">@businessId</FluentLabel>
+            }
             <FluentLabel Typo="Typography.Body" Style="color: var(--neutral-foreground-hint);">@InstanceId</FluentLabel>
             <FluentButton Appearance="Appearance.Stealth"
                           IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size16.Copy())"

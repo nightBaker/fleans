@@ -76,6 +76,38 @@ public class ExecutionApiTests : WorkflowE2ETestBase
     }
 
     [TestMethod]
+    public async Task Start_WithBusinessId_IsOnStateAndFilterableInInstanceList()
+    {
+        await ApiClient.DeployAsync(BpmnFixtureLoader.Load(DefinitionsApiTests.Plan, DefinitionsApiTests.ReadFixture));
+        var businessId = $"ORDER-{Guid.NewGuid():N}";
+
+        var started = await ApiClient.StartAsync(DefinitionsApiTests.ReadKey, businessId: businessId);
+
+        var state = await ApiClient.WaitForStateAsync(started.WorkflowInstanceId,
+            s => s.ActiveActivityIds.Contains(DefinitionsApiTests.WaitActivity));
+        Assert.AreEqual(businessId, state.BusinessId);
+
+        var page = await ApiClient.ListInstancesByKeyAsync(
+            DefinitionsApiTests.ReadKey, filters: $"BusinessId=={businessId}");
+        Assert.AreEqual(1, page.TotalCount);
+        Assert.AreEqual(started.WorkflowInstanceId, page.Items[0].InstanceId);
+        Assert.AreEqual(businessId, page.Items[0].BusinessId);
+
+        // Don't leave a parked instance behind for other specs listing this key.
+        using var complete = await ApiClient.CompleteActivityAsync(started.WorkflowInstanceId, DefinitionsApiTests.WaitActivity);
+        Assert.AreEqual(HttpStatusCode.OK, complete.StatusCode);
+    }
+
+    [TestMethod]
+    public async Task Start_OverlongBusinessId_Returns400()
+    {
+        using var response = await ApiClient.StartRawAsync(
+            DefinitionsApiTests.ReadKey, businessId: new string('x', 257));
+        Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode);
+        StringAssert.Contains(await response.Content.ReadAsStringAsync(), "BusinessId");
+    }
+
+    [TestMethod]
     public async Task CompleteActivity_UnknownInstance_Returns404()
     {
         var unknown = Guid.NewGuid();

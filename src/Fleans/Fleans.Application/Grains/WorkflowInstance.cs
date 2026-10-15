@@ -52,6 +52,7 @@ public partial class WorkflowInstance :
     ICustomStorageInterface<WorkflowInstanceState, IDomainEvent>
 {
     public ValueTask<Guid> GetWorkflowInstanceId() => ValueTask.FromResult(this.GetPrimaryKey());
+    public ValueTask<string?> GetBusinessId() => ValueTask.FromResult(State.BusinessId);
     private IWorkflowDefinition? _workflowDefinition;
     private WorkflowExecution? _execution;
 
@@ -280,9 +281,11 @@ public partial class WorkflowInstance :
         _execution ??= new WorkflowExecution(State, _workflowDefinition!);
     }
 
-    public async Task SetWorkflow(IWorkflowDefinition workflow, string? startActivityId = null)
+    public async Task SetWorkflow(IWorkflowDefinition workflow, string? startActivityId = null, string? businessId = null)
     {
         if (_workflowDefinition is not null) throw new ArgumentException("Workflow already set");
+        // Validate before assigning the definition so a rejected id leaves the grain unset.
+        BusinessIdRules.Validate(businessId);
 
         _workflowDefinition = workflow ?? throw new ArgumentNullException(nameof(workflow));
 
@@ -291,7 +294,7 @@ public partial class WorkflowInstance :
         LogWorkflowDefinitionSet();
 
         _execution = new WorkflowExecution(State, workflow);
-        _execution.Start(startActivityId);
+        _execution.Start(startActivityId, businessId);
         await ProcessPendingEvents();
     }
 

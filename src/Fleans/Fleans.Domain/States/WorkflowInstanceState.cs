@@ -57,6 +57,13 @@ public class WorkflowInstanceState
     [Id(12)]
     public string? ParentActivityId { get; private set; }
 
+    /// <summary>
+    /// Optional caller-supplied business identifier (an order number, a contract id) set at
+    /// start and immutable afterwards (#824). Not inherited by call-activity children.
+    /// </summary>
+    [Id(29)]
+    public string? BusinessId { get; private set; }
+
     [Id(13)]
     public List<GatewayForkState> GatewayForks { get; private set; } = [];
 
@@ -286,10 +293,11 @@ public class WorkflowInstanceState
     public IEnumerable<ConditionSequenceState> GetConditionSequenceStatesForGateway(Guid gatewayActivityInstanceId)
         => ConditionSequenceStates.Where(c => c.GatewayActivityInstanceId == gatewayActivityInstanceId);
 
-    public void Initialize(Guid id, string? processDefinitionId, Guid variablesId)
+    public void Initialize(Guid id, string? processDefinitionId, Guid variablesId, string? businessId = null)
     {
         Id = id;
         ProcessDefinitionId = processDefinitionId;
+        BusinessId = businessId;
         CreatedAt = DateTimeOffset.UtcNow;
         VariableStates.Add(new WorkflowVariablesState(variablesId, id));
         _dirtyFlags |= DirtyVariableStates;

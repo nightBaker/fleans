@@ -540,6 +540,10 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("BusinessId")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
                     b.Property<DateTimeOffset?>("CompletedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -576,6 +580,8 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                         .HasColumnType("character varying(512)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("BusinessId");
 
                     b.HasIndex("ProcessDefinitionId");
 

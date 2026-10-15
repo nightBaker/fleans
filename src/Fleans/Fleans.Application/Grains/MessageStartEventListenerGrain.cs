@@ -23,8 +23,8 @@ public partial class MessageStartEventListenerGrain :
         _logger = logger;
     }
 
-    public async ValueTask<List<Guid>> FireMessageStartEvent(ExpandoObject variables)
-        => await FireStartEventCore(variables);
+    public async ValueTask<List<Guid>> FireMessageStartEvent(ExpandoObject variables, string? businessId = null)
+        => await FireStartEventCore(variables, businessId);
 
     protected override string? FindStartActivityId(IWorkflowDefinition definition, string eventName)
     {

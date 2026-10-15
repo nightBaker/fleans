@@ -7,8 +7,10 @@ namespace Fleans.Domain.Events;
 // see a fixed timestamp instead of recomputing UtcNow inside Apply methods. Default is
 // MinValue for backward compatibility — emit sites are migrated to supply real values
 // in follow-up PRs (#651 PR A2).
+// BusinessId (#824): optional caller-supplied business identifier, immutable for the
+// instance's lifetime; null when the caller supplied none.
 public record WorkflowStarted(Guid InstanceId, string? ProcessDefinitionId, Guid RootVariablesId,
-    DateTimeOffset OccurredAt = default) : IDomainEvent;
+    DateTimeOffset OccurredAt = default, string? BusinessId = null) : IDomainEvent;
 public record ExecutionStarted(DateTimeOffset OccurredAt = default) : IDomainEvent;
 public record WorkflowCompleted(DateTimeOffset OccurredAt = default) : IDomainEvent;
 public record WorkflowCancelled(string Reason, DateTimeOffset OccurredAt = default) : IDomainEvent;
