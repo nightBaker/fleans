@@ -98,6 +98,19 @@ public class BusinessIdTests : WorkflowTestBase
     }
 
     [TestMethod]
+    [DataRow(" ORDER-1")]
+    [DataRow("ORDER-1 ")]
+    public async Task StartWorkflow_WithPaddedBusinessId_IsRejected(string businessId)
+    {
+        // Arrange
+        await DeployAsync(CreateSimpleWorkflow("biz-padded"));
+
+        // Act + Assert — rejected rather than trimmed, so exact-match lookups always find the stored id
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => CommandService.StartWorkflow("biz-padded", businessId: businessId));
+    }
+
+    [TestMethod]
     public async Task StartWorkflow_WithOverlongBusinessId_IsRejected()
     {
         // Arrange
@@ -123,6 +136,27 @@ public class BusinessIdTests : WorkflowTestBase
 
         // Assert
         Assert.AreEqual("ORDER-RETRY", await grain.GetBusinessId());
+    }
+
+    [TestMethod]
+    public async Task SetWorkflow_WithUnknownStartActivity_LeavesTheGrainRetryable()
+    {
+        // Arrange
+        await DeployAsync(CreateSimpleWorkflow("biz-bad-start"));
+        var definition = await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("biz-bad-start").GetLatestDefinition();
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+
+        // Act — the first start fails after validation passed; nothing may be left behind
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => grain.SetWorkflow(definition, startActivityId: "no-such-activity", businessId: "ORDER-1"));
+        await grain.SetWorkflow(definition, businessId: "ORDER-2");
+        await grain.StartWorkflow();
+
+        // Assert
+        Assert.AreEqual("ORDER-2", await grain.GetBusinessId());
+        var snapshot = await QueryService.GetStateSnapshot(await grain.GetWorkflowInstanceId());
+        Assert.IsNotNull(snapshot);
+        Assert.AreEqual("ORDER-2", snapshot.BusinessId);
     }
 
     [TestMethod]
@@ -168,6 +202,19 @@ public class BusinessIdTests : WorkflowTestBase
         // Assert
         Assert.AreEqual(match, byKey.Items.Single().InstanceId);
         Assert.AreEqual(match, byVersion.Items.Single().InstanceId);
+    }
+
+    [TestMethod]
+    [DataRow("  ")]
+    [DataRow(" ORDER-1")]
+    public async Task InstanceListing_InvalidBusinessIdParameter_IsRejected(string businessId)
+    {
+        // Arrange
+        await DeployAsync(CreateSimpleWorkflow("biz-filter-invalid"));
+
+        // Act + Assert — a 400 at the API instead of an empty page
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => QueryService.GetInstancesByKey("biz-filter-invalid", new PageRequest(), businessId));
     }
 
     [TestMethod]

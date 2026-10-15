@@ -45,12 +45,13 @@ public static class InstanceTools
         [Description("Page number (1-based, default: 1)")] int page = 1,
         [Description("Items per page (1-100, default: 50)")] int pageSize = 50,
         [Description("Sieve sort expression (e.g. '-CreatedAt' for newest first)")] string? sorts = null,
-        [Description("Sieve filter expression (e.g. 'IsCompleted==true')")] string? filters = null)
+        [Description("Sieve filter expression (e.g. 'IsCompleted==true')")] string? filters = null,
+        [Description("Exact business id to match (e.g. 'order-123'); unlike a Sieve filter it may contain ',' and '|'")] string? businessId = null)
     {
         try
         {
             var request = new PageRequest(page, pageSize, sorts, filters);
-            var result = await queryService.GetInstancesByKey(processDefinitionKey, request);
+            var result = await queryService.GetInstancesByKey(processDefinitionKey, request, businessId);
             return JsonSerializer.Serialize(result, JsonOptions);
         }
         catch (Exception ex)

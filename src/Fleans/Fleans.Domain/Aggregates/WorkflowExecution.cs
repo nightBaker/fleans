@@ -66,12 +66,8 @@ public class WorkflowExecution
         if (_state.IsStarted)
             throw new InvalidOperationException("Workflow is already started.");
 
+        // All validation runs before the first Emit: a rejected start leaves no state behind.
         BusinessIdRules.Validate(businessId);
-
-        var instanceId = Guid.NewGuid();
-        var rootVariablesId = Guid.NewGuid();
-
-        Emit(new WorkflowStarted(instanceId, _definition.ProcessDefinitionId, rootVariablesId, BusinessId: businessId));
 
         Activity startActivity;
         if (startActivityId is not null)
@@ -83,6 +79,11 @@ public class WorkflowExecution
         {
             startActivity = _definition.GetStartActivity();
         }
+
+        var instanceId = Guid.NewGuid();
+        var rootVariablesId = Guid.NewGuid();
+
+        Emit(new WorkflowStarted(instanceId, _definition.ProcessDefinitionId, rootVariablesId, BusinessId: businessId));
 
         var variablesId = _state.GetRootVariablesId();
 

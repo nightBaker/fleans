@@ -388,6 +388,21 @@ public sealed partial class FleansApiClient
             $"/Definitions/{Uri.EscapeDataString(processDefinitionKey)}/instances", page, pageSize, sorts, filters, ct);
     }
 
+    /// <summary>GET /Definitions/{key}/instances?businessId=… — raw, so specs can assert a 400.</summary>
+    public Task<HttpResponseMessage> ListInstancesByBusinessIdRawAsync(
+        string processDefinitionKey, string businessId, CancellationToken ct = default)
+        => _http.GetAsync(
+            $"/Definitions/{Uri.EscapeDataString(processDefinitionKey)}/instances?businessId={Uri.EscapeDataString(businessId)}", ct);
+
+    public async Task<PagedResult<WorkflowInstanceInfo>> ListInstancesByBusinessIdAsync(
+        string processDefinitionKey, string businessId, CancellationToken ct = default)
+    {
+        using var response = await ListInstancesByBusinessIdRawAsync(processDefinitionKey, businessId, ct);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<PagedResult<WorkflowInstanceInfo>>(JsonOptions, ct)
+            ?? throw new InvalidOperationException("GET instances?businessId returned an empty body.");
+    }
+
     public async Task<PagedResult<WorkflowInstanceInfo>> ListInstancesByKeyAndVersionAsync(
         string processDefinitionKey,
         int version,

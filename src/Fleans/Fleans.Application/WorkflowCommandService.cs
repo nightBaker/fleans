@@ -20,6 +20,7 @@ public partial class WorkflowCommandService : IWorkflowCommandService
     public async Task<Guid> StartWorkflow(string workflowId, ExpandoObject? initialVariables = null, string? businessId = null)
     {
         LogStartingWorkflow(workflowId);
+        // Fail fast: a bad id is a 400 before any definition lookup (404/409) or grain activation.
         BusinessIdRules.Validate(businessId);
 
         var processGrain = _grainFactory.GetGrain<IProcessDefinitionGrain>(workflowId);
@@ -36,6 +37,7 @@ public partial class WorkflowCommandService : IWorkflowCommandService
     public async Task<Guid> StartWorkflowByProcessDefinitionId(string processDefinitionId, string? businessId = null)
     {
         LogStartingWorkflowByDefinition(processDefinitionId);
+        // Fail fast: a bad id is a 400 before any definition lookup (404/409) or grain activation.
         BusinessIdRules.Validate(businessId);
 
         var key = ProcessDefinition.ExtractKeyFromId(processDefinitionId);
@@ -75,6 +77,7 @@ public partial class WorkflowCommandService : IWorkflowCommandService
     public async Task<SendMessageResult> SendMessage(string messageName, string? correlationKey, ExpandoObject variables, string? businessId = null)
     {
         LogSendingMessage(messageName, correlationKey);
+        // Validated here too: a correlated delivery below never reaches a start event.
         BusinessIdRules.Validate(businessId);
 
         // Try correlation-based delivery first if a correlation key is provided

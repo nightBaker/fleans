@@ -284,17 +284,20 @@ public partial class WorkflowInstance :
     public async Task SetWorkflow(IWorkflowDefinition workflow, string? startActivityId = null, string? businessId = null)
     {
         if (_workflowDefinition is not null) throw new ArgumentException("Workflow already set");
-        // Validate before assigning: a rejected id must leave the grain unset, not half-initialised.
-        BusinessIdRules.Validate(businessId);
+        ArgumentNullException.ThrowIfNull(workflow);
 
-        _workflowDefinition = workflow ?? throw new ArgumentNullException(nameof(workflow));
+        // Start validates (business id, start activity) before emitting anything. Assign the
+        // fields only after it succeeds, so a rejected start leaves the grain unset and a retry
+        // with valid input works. (A storage failure in ProcessPendingEvents is not covered.)
+        var execution = new WorkflowExecution(State, workflow);
+        execution.Start(startActivityId, businessId);
+        _workflowDefinition = workflow;
+        _execution = execution;
 
         SetWorkflowRequestContext();
         using var scope = BeginWorkflowScope();
         LogWorkflowDefinitionSet();
 
-        _execution = new WorkflowExecution(State, workflow);
-        _execution.Start(startActivityId, businessId);
         await ProcessPendingEvents();
     }
 
