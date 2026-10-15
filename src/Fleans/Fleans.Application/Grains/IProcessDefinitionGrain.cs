@@ -13,7 +13,7 @@ namespace Fleans.Application.Grains;
 public interface IProcessDefinitionGrain : IGrainWithStringKey
 {
     Task<IWorkflowInstanceGrain> CreateInstance(string? businessId = null);
-    Task<IWorkflowInstanceGrain> CreateInstanceByDefinitionId(string processDefinitionId);
+    Task<IWorkflowInstanceGrain> CreateInstanceByDefinitionId(string processDefinitionId, string? businessId = null);
     Task<ProcessDefinitionSummary> DeployVersion(WorkflowDefinition workflow, string bpmnXml);
 
     [ReadOnly]

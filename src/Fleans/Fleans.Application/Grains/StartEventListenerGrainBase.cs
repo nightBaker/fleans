@@ -58,6 +58,9 @@ public abstract class StartEventListenerGrainBase<TState> : Grain
 
     protected async ValueTask<List<Guid>> FireStartEventCore(ExpandoObject? variables, string? businessId = null)
     {
+        // Reject an invalid id up front: inside the per-process catch below it would surface as
+        // "not delivered" instead of a validation error.
+        BusinessIdRules.Validate(businessId);
         var eventName = this.GetPrimaryKeyString();
 
         if (State.ProcessDefinitionKeys.Count == 0)

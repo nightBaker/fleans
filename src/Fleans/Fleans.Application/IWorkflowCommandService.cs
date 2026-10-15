@@ -7,7 +7,7 @@ namespace Fleans.Application;
 public interface IWorkflowCommandService
 {
     Task<Guid> StartWorkflow(string workflowId, ExpandoObject? initialVariables = null, string? businessId = null);
-    Task<Guid> StartWorkflowByProcessDefinitionId(string processDefinitionId);
+    Task<Guid> StartWorkflowByProcessDefinitionId(string processDefinitionId, string? businessId = null);
     Task CompleteActivity(Guid workflowInstanceId, string activityId, ExpandoObject variables);
     Task<ProcessDefinitionSummary> DeployWorkflow(WorkflowDefinition workflow, string bpmnXml);
     Task<SendMessageResult> SendMessage(string messageName, string? correlationKey, ExpandoObject variables, string? businessId = null);

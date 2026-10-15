@@ -11,7 +11,7 @@ All paths below are relative to the API base URL (`https://localhost:7140` in th
 |---|---|---|
 | `/Definitions/deploy` | POST | `{"BpmnXml":"<raw BPMN XML string>"}` |
 | `/Execution/start` | POST | `{"WorkflowId":"process-id"}` or `{"WorkflowId":"process-id","Variables":{"key":"value"},"BusinessId":"order-123"}` — `BusinessId` is optional (see [Business id](#business-id)); `Variables` is optional; when provided, the variables are merged into the root scope **before** the workflow starts (required for message event sub-processes that resolve correlation keys from variables at scope entry) |
-| `/Execution/message` | POST | `{"MessageName":"...", "CorrelationKey":"...", "Variables":{}, "BusinessId":"..."}` — `BusinessId` is optional and applies only to instances a message start event creates |
+| `/Execution/message` | POST | `{"MessageName":"...", "CorrelationKey":"...", "Variables":{}, "BusinessId":"..."}` — `BusinessId` is optional and applies only to instances a message start event creates; a message delivered to a running instance leaves that instance's business id unchanged |
 | `/Execution/signal` | POST | `{"SignalName":"..."}` |
 | `/Execution/complete-activity` | POST | `{"WorkflowInstanceId":"guid", "ActivityId":"activity-id", "Variables":{}}` |
 | `/Execution/evaluate-conditions` | POST | `{"WorkflowId":"process-id", "Variables":{"key":"value"}}` — Evaluates all conditional start events (or only those for the given `WorkflowId` if provided) against the supplied variables. Returns `{"StartedInstanceIds":["guid",...], "Errors":["..."]}`. `Errors` is present only when one or more listeners failed during evaluation. |
@@ -116,11 +116,11 @@ Content-Type: application/json
 
 A process instance can have a business id: a value your systems already know, such as an order number. Use it to find "the process for order 123" without storing the generated instance GUID. It follows Camunda 8.9+'s [`businessId`](https://docs.camunda.io/docs/next/components/concepts/process-instance-creation/):
 
-- **Set only at start**, on `POST /Execution/start` or on `POST /Execution/message` when a message start event creates the instance. It can't be changed afterwards. Instances started by timers, signals, conditional starts or call activities have none.
+- **Set only at start**, on `POST /Execution/start`, on `POST /Execution/message` when a message start event creates the instance, or in the admin UI's **Business ID for Start** field. It can't be changed afterwards: a message correlated to a running instance does not change it. Instances started by timers, signals, conditional starts or call activities have none.
 - **At most 256 characters**, and not empty or whitespace. An invalid value returns **400**.
 - **Not unique.** Two instances can share a business id. Fleans does not enforce uniqueness, so filter by it and pick the instance you need.
 - **Not inherited.** A call activity's child instance does not get the parent's business id.
-- **Visible everywhere:** as `businessId` on `GET /Instances/{id}/state` and on the instance listings. You can filter on it, for example `/Definitions/my-process/instances?filters=BusinessId==order-123`. It also appears in the admin UI, and custom-task plugins get it as `CustomTaskExecutionContext.BusinessId`.
+- **Visible everywhere:** as `businessId` on `GET /Instances/{id}/state` and on the instance listings. Find instances by it with the `businessId` query parameter, for example `/Definitions/my-process/instances?businessId=order-123`. It matches exactly, so values with `,` or `|` work too (URL-encode them); those characters would split a Sieve `filters` term. It also appears in the admin UI, and custom-task plugins get it as `CustomTaskExecutionContext.BusinessId`.
 
 ### `POST /Execution/message`
 
@@ -217,7 +217,7 @@ Paginated read endpoints accept `page` (default 1), `pageSize` (default 20, max 
 | Verb | Path | Returns |
 | --- | --- | --- |
 | GET | `/Definitions` | Deployed process-definition versions (`processDefinitionId`, `processDefinitionKey`, `version`, `deployedAt`, `activitiesCount`, `sequenceFlowsCount`, `isActive`). Filterable on `ProcessDefinitionKey`, `Version`, `IsActive`; sortable on `ProcessDefinitionKey`, `Version`, `DeployedAt`. |
-| GET | `/Definitions/{key}/instances` | Instances of every version of `key` (`instanceId`, `processDefinitionId`, `isStarted`, `isCompleted`, `isCancelled`, timestamps). Filterable on `IsStarted`, `IsCompleted`, `IsCancelled`, `IsFailed`, `BusinessId`, `CreatedAt`. Each row also carries `businessId` (or `null`). |
+| GET | `/Definitions/{key}/instances` | Instances of every version of `key` (`instanceId`, `processDefinitionId`, `isStarted`, `isCompleted`, `isCancelled`, timestamps). Filterable on `IsStarted`, `IsCompleted`, `IsCancelled`, `IsFailed`, `BusinessId`, `CreatedAt`; `businessId=<value>` is an exact-match filter. Each row also carries `businessId` (or `null`). |
 | GET | `/Definitions/{key}/{version}/instances` | Same, restricted to one version. |
 | GET | `/custom-tasks` | Custom-task plugin catalog: one entry per task type with `displayName`, `parameterSchema`, and the `siloNames` hosting it. Not paginated. |
 | GET | `/custom-tasks/{taskType}` | One catalog entry; **404** if no plugin registers that task type. |

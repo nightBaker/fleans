@@ -110,6 +110,67 @@ public class BusinessIdTests : WorkflowTestBase
     }
 
     [TestMethod]
+    public async Task SetWorkflow_WithInvalidBusinessId_LeavesTheGrainUnset()
+    {
+        // Arrange — call the grain directly, bypassing the command service's validation
+        await DeployAsync(CreateSimpleWorkflow("biz-direct"));
+        var definition = await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("biz-direct").GetLatestDefinition();
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+
+        // Act
+        await Assert.ThrowsAsync<ArgumentException>(() => grain.SetWorkflow(definition, businessId: "  "));
+        await grain.SetWorkflow(definition, businessId: "ORDER-RETRY");
+
+        // Assert
+        Assert.AreEqual("ORDER-RETRY", await grain.GetBusinessId());
+    }
+
+    [TestMethod]
+    public async Task MessageStartListener_WithInvalidBusinessId_ThrowsInsteadOfReportingNotDelivered()
+    {
+        // Arrange
+        await DeployMessageStartWorkflow("biz-message-invalid", "bizInvalidPlaced");
+        var listener = Cluster.GrainFactory.GetGrain<IMessageStartEventListenerGrain>("bizInvalidPlaced");
+
+        // Act + Assert
+        await Assert.ThrowsAsync<ArgumentException>(
+            async () => await listener.FireMessageStartEvent(new ExpandoObject(), ""));
+    }
+
+    [TestMethod]
+    public async Task StartWorkflowByProcessDefinitionId_WithBusinessId_SetsIt()
+    {
+        // Arrange
+        await DeployAsync(CreateSimpleWorkflow("biz-by-id"));
+        var definition = await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("biz-by-id").GetLatestDefinition();
+
+        // Act
+        var instanceId = await CommandService.StartWorkflowByProcessDefinitionId(definition.ProcessDefinitionId!, "ORDER-UI");
+
+        // Assert
+        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsNotNull(snapshot);
+        Assert.AreEqual("ORDER-UI", snapshot.BusinessId);
+    }
+
+    [TestMethod]
+    public async Task InstanceListing_BusinessIdParameter_MatchesSieveMetacharactersExactly()
+    {
+        // Arrange — `,` and `|` would split a Sieve `filters` term
+        await DeployAsync(CreateSimpleWorkflow("biz-meta"));
+        var match = await CommandService.StartWorkflow("biz-meta", businessId: "ACME, Inc|42");
+        await CommandService.StartWorkflow("biz-meta", businessId: "ACME");
+
+        // Act
+        var byKey = await QueryService.GetInstancesByKey("biz-meta", new PageRequest(), "ACME, Inc|42");
+        var byVersion = await QueryService.GetInstancesByKeyAndVersion("biz-meta", 1, new PageRequest(), "ACME, Inc|42");
+
+        // Assert
+        Assert.AreEqual(match, byKey.Items.Single().InstanceId);
+        Assert.AreEqual(match, byVersion.Items.Single().InstanceId);
+    }
+
+    [TestMethod]
     public async Task SameBusinessIdTwice_StartsBoth()
     {
         // Arrange
@@ -129,20 +190,7 @@ public class BusinessIdTests : WorkflowTestBase
     public async Task MessageStart_WithBusinessId_SetsItOnTheStartedInstance()
     {
         // Arrange
-        var messageStart = new MessageStartEvent("msgStart", "msg1");
-        var task = new TaskActivity("task");
-        var end = new EndEvent("end");
-        await DeployAsync(new WorkflowDefinition
-        {
-            WorkflowId = "biz-message",
-            Activities = [messageStart, task, end],
-            SequenceFlows =
-            [
-                new SequenceFlow("f1", messageStart, task),
-                new SequenceFlow("f2", task, end)
-            ],
-            Messages = [new MessageDefinition("msg1", "bizOrderPlaced", null)]
-        });
+        await DeployMessageStartWorkflow("biz-message", "bizOrderPlaced");
 
         // Act
         var result = await CommandService.SendMessage("bizOrderPlaced", null, new ExpandoObject(), businessId: "ORDER-MSG");
@@ -186,4 +234,22 @@ public class BusinessIdTests : WorkflowTestBase
     private Task DeployAsync(IWorkflowDefinition workflow) =>
         Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId)
             .DeployVersion((WorkflowDefinition)workflow, "<placeholder/>");
+
+    private Task DeployMessageStartWorkflow(string workflowId, string messageName)
+    {
+        var messageStart = new MessageStartEvent("msgStart", "msg1");
+        var task = new TaskActivity("task");
+        var end = new EndEvent("end");
+        return DeployAsync(new WorkflowDefinition
+        {
+            WorkflowId = workflowId,
+            Activities = [messageStart, task, end],
+            SequenceFlows =
+            [
+                new SequenceFlow("f1", messageStart, task),
+                new SequenceFlow("f2", task, end)
+            ],
+            Messages = [new MessageDefinition("msg1", messageName, null)]
+        });
+    }
 }

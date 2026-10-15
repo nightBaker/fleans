@@ -54,10 +54,17 @@
         </FluentMessageBar>
     }
 
-    <FluentTextField Placeholder="Search by process key"
-                     @bind-Value="SearchQuery"
-                     Style="max-width: 320px;"
-                     data-testid="workflows-search" />
+    <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="12">
+        <FluentTextField Placeholder="Search by process key"
+                         @bind-Value="SearchQuery"
+                         Style="max-width: 320px;"
+                         data-testid="workflows-search" />
+        <FluentTextField Placeholder="Business ID for Start (optional)"
+                         @bind-Value="startBusinessId"
+                         Maxlength="256"
+                         Style="max-width: 320px;"
+                         data-testid="workflows-start-business-id" />
+    </FluentStack>
 
     <FluentDataGrid ItemsProvider="@workflowsProvider"
                     Pagination="@pagination"
@@ -146,6 +153,7 @@
     private string? actionSuccessMessage;
     private bool isStarting = false;
     private string? startingProcessDefinitionId;
+    private string? startBusinessId;
     private bool isToggling = false;
     private string? togglingProcessKey;
     private string searchQuery = string.Empty;
@@ -309,9 +317,11 @@
             actionErrorMessage = null;
             actionSuccessMessage = null;
 
-            var instanceId = await CommandService.StartWorkflowByProcessDefinitionId(version.ProcessDefinitionId);
+            var businessId = string.IsNullOrWhiteSpace(startBusinessId) ? null : startBusinessId.Trim();
+            var instanceId = await CommandService.StartWorkflowByProcessDefinitionId(version.ProcessDefinitionId, businessId);
             LogProcessStarted(version.ProcessDefinitionId, instanceId);
-            actionSuccessMessage = $"Started '{version.ProcessDefinitionKey}' v{version.Version}. Instance: {instanceId}.";
+            actionSuccessMessage = $"Started '{version.ProcessDefinitionKey}' v{version.Version}. Instance: {instanceId}."
+                + (businessId is null ? "" : $" Business ID: {businessId}.");
         }
         catch (KeyNotFoundException ex)
         {

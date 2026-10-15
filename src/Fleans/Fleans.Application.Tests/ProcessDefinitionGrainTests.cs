@@ -170,8 +170,8 @@ namespace Fleans.Application.Tests
             public Task<int> GetMaxVersionByKeyAsync(string processDefinitionKey) => Task.FromResult(0);
             public Task<PagedResult<ProcessDefinitionSummary>> GetAllProcessDefinitions(PageRequest page) => Task.FromResult(new PagedResult<ProcessDefinitionSummary>([], 0, page.Page, page.PageSize));
             public Task<PagedResult<ProcessDefinitionGroup>> GetProcessDefinitionGroups(PageRequest page) => Task.FromResult(new PagedResult<ProcessDefinitionGroup>([], 0, page.Page, page.PageSize));
-            public Task<PagedResult<WorkflowInstanceInfo>> GetInstancesByKey(string processDefinitionKey, PageRequest page) => Task.FromResult(new PagedResult<WorkflowInstanceInfo>([], 0, page.Page, page.PageSize));
-            public Task<PagedResult<WorkflowInstanceInfo>> GetInstancesByKeyAndVersion(string key, int version, PageRequest page) => Task.FromResult(new PagedResult<WorkflowInstanceInfo>([], 0, page.Page, page.PageSize));
+            public Task<PagedResult<WorkflowInstanceInfo>> GetInstancesByKey(string processDefinitionKey, PageRequest page, string? businessId = null) => Task.FromResult(new PagedResult<WorkflowInstanceInfo>([], 0, page.Page, page.PageSize));
+            public Task<PagedResult<WorkflowInstanceInfo>> GetInstancesByKeyAndVersion(string key, int version, PageRequest page, string? businessId = null) => Task.FromResult(new PagedResult<WorkflowInstanceInfo>([], 0, page.Page, page.PageSize));
             public Task<string?> GetBpmnXml(Guid instanceId) => Task.FromResult<string?>(null);
             public Task<string?> GetBpmnXmlByKey(string processDefinitionKey) => Task.FromResult<string?>(null);
             public Task<string?> GetBpmnXmlByKeyAndVersion(string key, int version) => Task.FromResult<string?>(null);
