@@ -43,4 +43,52 @@ public class SettingsPageTests : WorkflowE2ETestBase
         var persisted = await page.ReadPersistedThemeAsync();
         StringAssert.Contains(persisted?.ToLowerInvariant() ?? string.Empty, "dark");
     }
+
+    // Diagram Style (js/bpmnTheme.js): classic by default, archify opt-in. The theme is applied when
+    // the editor builds its bpmn-js modeler, as a container class plus per-shape category classes.
+    [TestMethod]
+    public async Task DiagramStyle_DefaultsToClassic_AndArchifyAppliesToEditor()
+    {
+        const string bpmn = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                              xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                              xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                              id="d" targetNamespace="x">
+              <bpmn:process id="diagram-style" isExecutable="true">
+                <bpmn:userTask id="review" name="Review" />
+                <bpmn:scriptTask id="calc" name="Calc" />
+              </bpmn:process>
+              <bpmndi:BPMNDiagram id="dg">
+                <bpmndi:BPMNPlane id="p" bpmnElement="diagram-style">
+                  <bpmndi:BPMNShape id="review_di" bpmnElement="review"><dc:Bounds x="100" y="100" width="100" height="80" /></bpmndi:BPMNShape>
+                  <bpmndi:BPMNShape id="calc_di" bpmnElement="calc"><dc:Bounds x="260" y="100" width="100" height="80" /></bpmndi:BPMNShape>
+                </bpmndi:BPMNPlane>
+              </bpmndi:BPMNDiagram>
+            </bpmn:definitions>
+            """;
+
+        var settings = new SettingsPage(Page);
+        await settings.OpenAsync();
+        await Microsoft.Playwright.Assertions.Expect(settings.DiagramThemeSelect).ToHaveJSPropertyAsync("value", "classic");
+
+        var editor = new EditorPage(Page);
+        await editor.OpenAsync();
+        await Microsoft.Playwright.Assertions.Expect(Page.Locator(".djs-container.fl-diagram-classic")).ToHaveCountAsync(1);
+        await Microsoft.Playwright.Assertions.Expect(Page.Locator(".fl-diagram-archify")).ToHaveCountAsync(0);
+
+        await settings.OpenAsync();
+        await settings.SelectDiagramThemeAsync("Archify", "archify");
+        Assert.AreEqual("archify", await settings.ReadPersistedDiagramThemeAsync());
+
+        await editor.OpenAsync();
+        await editor.LoadXmlAsync(bpmn);
+        await Microsoft.Playwright.Assertions.Expect(Page.Locator(".djs-container.fl-diagram-archify")).ToHaveCountAsync(1);
+        await Microsoft.Playwright.Assertions.Expect(Page.Locator("[data-element-id='review'].fl-cat-human")).ToHaveCountAsync(1);
+        await Microsoft.Playwright.Assertions.Expect(Page.Locator("[data-element-id='calc'].fl-cat-compute")).ToHaveCountAsync(1);
+
+        // A full reload restores the stored choice into the select.
+        await settings.OpenAsync();
+        await Microsoft.Playwright.Assertions.Expect(settings.DiagramThemeSelect).ToHaveJSPropertyAsync("value", "archify");
+    }
 }

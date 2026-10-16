@@ -27,7 +27,7 @@ window.bpmnViewer = {
         // this, the property-extraction helpers (which match on PascalCase
         // $type and read typed `.inputs`/`.outputs`/`.type` properties) come
         // back empty even though the XML has the data.
-        this._viewer = new BpmnViewer({
+        this._viewer = window.fleansBpmnTheme.create(BpmnViewer, {
             container: container,
             moddleExtensions: Object.assign(
                 {},

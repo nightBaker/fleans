@@ -1,6 +1,7 @@
 @page "/settings"
 @rendermode InteractiveServer
 @inject Fleans.Web.Services.ThemeService ThemeService
+@inject IJSRuntime JS
 @implements IDisposable
 
 <PageTitle>Settings</PageTitle>
@@ -26,11 +27,46 @@
                       OptionValue="@(o => o.Label)"
                       OptionText="@(o => o.Label)"
                       @bind-SelectedOption="@SelectedColor" />
+
+        <FluentSelect TOption="DiagramThemeOption"
+                      Label="Diagram Style"
+                      data-testid="settings-diagram-theme"
+                      Items="@_diagramThemeOptions"
+                      OptionValue="@(o => o.Value)"
+                      OptionText="@(o => o.Label)"
+                      @bind-SelectedOption="@_selectedDiagramTheme"
+                      @bind-SelectedOption:after="SaveDiagramThemeAsync" />
+        @if (_diagramThemeNotSaved)
+        {
+            <span data-testid="settings-diagram-theme-error" style="color: var(--error);">
+                Couldn't save the diagram style: browser storage is unavailable.
+            </span>
+        }
     </FluentStack>
 </FluentStack>
 
 @code {
     private record OfficeColorOption(string Label, OfficeColor? Value);
+
+    // BPMN editor / instance viewer theme. Values match window.fleansBpmnTheme (js/bpmnTheme.js),
+    // which persists the choice in localStorage and applies it when a diagram is opened.
+    private record DiagramThemeOption(string Label, string Value);
+
+    private static readonly List<DiagramThemeOption> _diagramThemeOptions =
+    [
+        new("Classic", "classic"),
+        new("Archify", "archify")
+    ];
+
+    private DiagramThemeOption _selectedDiagramTheme = _diagramThemeOptions[0];
+    private bool _diagramThemeChosen;
+    private bool _diagramThemeNotSaved;
+
+    private async Task SaveDiagramThemeAsync()
+    {
+        _diagramThemeChosen = true;
+        _diagramThemeNotSaved = !await JS.InvokeAsync<bool>("fleansBpmnTheme.set", _selectedDiagramTheme.Value);
+    }
 
     private static readonly List<DesignThemeModes> _modeOptions =
     [
@@ -73,6 +109,16 @@
         // after the circuit is interactive — i.e. after this page initialised with the
         // ThemeService defaults — so follow later changes instead of snapshotting once.
         ThemeService.OnChanged += OnThemeChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        var stored = await JS.InvokeAsync<string>("fleansBpmnTheme.get");
+        // The select is interactive while this round-trip is in flight; don't clobber a pick made meanwhile.
+        if (_diagramThemeChosen) return;
+        _selectedDiagramTheme = _diagramThemeOptions.FirstOrDefault(o => o.Value == stored) ?? _diagramThemeOptions[0];
+        StateHasChanged();
     }
 
     private void SyncFromService()
