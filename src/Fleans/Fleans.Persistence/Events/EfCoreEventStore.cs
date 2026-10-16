@@ -12,8 +12,8 @@ namespace Fleans.Persistence.Events;
 /// <summary>
 /// Encapsulates all database operations for event and snapshot persistence.
 /// Used by the WorkflowInstance grain's ICustomStorageInterface implementation.
-/// Snapshots are stored in normalized SQL tables via IWorkflowStateProjection,
-/// with version metadata tracked in the WorkflowSnapshots table.
+/// Snapshots are the normalized WorkflowInstances projection (IWorkflowStateProjection), which
+/// stores the version it covers in the same row.
 /// </summary>
 public class EfCoreEventStore : IEventStore
 {
@@ -42,26 +42,11 @@ public class EfCoreEventStore : IEventStore
     }
 
     /// <summary>
-    /// Loads the latest snapshot for a grain, or returns (null, 0) if none exists.
-    /// State is read from the normalized WorkflowInstances tables via IWorkflowStateProjection.
-    /// Version metadata is read from the WorkflowSnapshots table.
+    /// The projected state and the number of events it covers (one row, see
+    /// <see cref="IWorkflowStateProjection"/>), or <c>(null, 0)</c> when there is none.
     /// </summary>
-    public async Task<(WorkflowInstanceState? State, int Version)> ReadSnapshotAsync(
-        string grainId)
-    {
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-
-        var snapshot = await db.WorkflowSnapshots
-            .AsNoTracking()
-            .FirstOrDefaultAsync(s => s.GrainId == grainId);
-
-        if (snapshot is null)
-            return (null, 0);
-
-        var state = await _stateProjection.ReadAsync(grainId);
-
-        return (state, snapshot.Version);
-    }
+    public Task<(WorkflowInstanceState? State, int Version)> ReadSnapshotAsync(string grainId) =>
+        _stateProjection.ReadAsync(grainId);
 
     /// <summary>
     /// Loads all events for a grain after the given version, ordered by version.
@@ -130,7 +115,7 @@ public class EfCoreEventStore : IEventStore
     }
 
     /// <summary>
-    /// Writes the projected state and the snapshot version it covers in one transaction
+    /// Writes the projected state and the version it covers in one row
     /// (see <see cref="IWorkflowStateProjection.WriteAsync"/>).
     /// </summary>
     public Task WriteSnapshotAsync(string grainId, int version, WorkflowInstanceState state) =>

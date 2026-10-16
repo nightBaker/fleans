@@ -34,9 +34,9 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
     [TestMethod]
     public async Task StateRecovery_WithoutSnapshot_ReplaysAllEventsIncludingWorkflowStarted()
     {
-        // Arrange — an instance waiting on task2, then the snapshot removed, as after an
-        // ungraceful shutdown that happened before any snapshot was written (#833). Deployed,
-        // so the reactivated grain can load its definition by ProcessDefinitionId.
+        // Arrange — an instance waiting on task2, then its snapshot (the WorkflowInstances row)
+        // removed, as after an ungraceful shutdown before the first snapshot write (#833).
+        // Deployed, so the reactivated grain can load its definition by ProcessDefinitionId.
         var workflow = (WorkflowDefinition)CreateSequentialWorkflow();
         await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId)
             .DeployVersion(workflow, "<placeholder/>");
@@ -45,12 +45,12 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         var instanceId = grain.GetPrimaryKey();
         await grain.StartWorkflow();
         await grain.CompleteActivity("task1", new ExpandoObject());
-        await DeactivateAndWait(instanceId);
+        await ForceAllGrainDeactivation(instanceId);
 
         var dbFactory = GetSiloService<IDbContextFactory<FleanCommandDbContext>>();
         var grainIdStr = instanceId.ToString();
         await using (var db = await dbFactory.CreateDbContextAsync())
-            await db.WorkflowSnapshots.Where(s => s.GrainId == grainIdStr).ExecuteDeleteAsync();
+            await db.WorkflowInstances.Where(s => s.Id == instanceId).ExecuteDeleteAsync();
 
         // Act — the grain is inactive and has no snapshot, so this activation replays every event
         await grain.CompleteActivity("task2", new ExpandoObject());
@@ -64,30 +64,11 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         await using (var db = await dbFactory.CreateDbContextAsync())
         {
             var eventCount = await db.WorkflowEvents.CountAsync(e => e.GrainId == grainIdStr);
-            var snapshotVersion = await db.WorkflowSnapshots
-                .Where(s => s.GrainId == grainIdStr).Select(s => s.Version).SingleAsync();
+            var snapshotVersion = await db.WorkflowInstances
+                .Where(s => s.Id == instanceId)
+                .Select(s => EF.Property<int>(s, "SnapshotVersion")).SingleAsync();
             Assert.AreEqual(eventCount, snapshotVersion,
                 "the replayed grain must continue at the right version — no skipped or duplicated events");
-        }
-    }
-
-    /// <summary>
-    /// Deactivates all grains and waits until <paramref name="instanceId"/>'s activation is gone,
-    /// instead of trusting a fixed delay.
-    /// </summary>
-    private async Task DeactivateAndWait(Guid instanceId)
-    {
-        var management = Cluster.GrainFactory.GetGrain<IManagementGrain>(0);
-        var key = instanceId.ToString("N");
-        await management.ForceActivationCollection(TimeSpan.Zero);
-        var deadline = DateTime.UtcNow.AddSeconds(30);
-        while (true)
-        {
-            var stats = await management.GetDetailedGrainStatistics([typeof(WorkflowInstance).FullName!]);
-            if (!stats.Any(st => st.GrainId.ToString().Contains(key)))
-                return;
-            Assert.IsTrue(DateTime.UtcNow < deadline, $"Workflow instance {instanceId} did not deactivate.");
-            await Task.Delay(100);
         }
     }
 
@@ -248,9 +229,9 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
     [TestMethod]
     public async Task Snapshot_IsWrittenWithEveryAppend_AtTheEventCount()
     {
-        // The snapshot state is the projection, which every append rewrites. Its version must move
-        // with it — a version that lags the projection makes replay re-apply events the state
-        // already contains (#833). No deactivation: an ungraceful crash can happen at any point.
+        // The snapshot is the projection row, rewritten by every append together with the version
+        // it covers — a lagging version makes replay re-apply events the state already contains
+        // (#833). No deactivation: an ungraceful crash can happen at any point.
         var instanceId = Guid.NewGuid();
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
         var dbFactory = GetSiloService<IDbContextFactory<FleanCommandDbContext>>();
@@ -260,10 +241,11 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         {
             await using var db = await dbFactory.CreateDbContextAsync();
             var eventCount = await db.WorkflowEvents.CountAsync(e => e.GrainId == grainIdStr);
-            var snapshot = await db.WorkflowSnapshots.AsNoTracking()
-                .FirstOrDefaultAsync(s => s.GrainId == grainIdStr);
-            Assert.IsNotNull(snapshot, $"snapshot missing after {step}");
-            Assert.AreEqual(eventCount, snapshot.Version, $"snapshot version lags the events after {step}");
+            var snapshotVersion = await db.WorkflowInstances
+                .Where(s => s.Id == instanceId)
+                .Select(s => (int?)EF.Property<int>(s, "SnapshotVersion")).SingleOrDefaultAsync();
+            Assert.IsNotNull(snapshotVersion, $"snapshot missing after {step}");
+            Assert.AreEqual(eventCount, snapshotVersion, $"snapshot version lags the events after {step}");
         }
 
         await grain.SetWorkflow(CreateSequentialWorkflow());

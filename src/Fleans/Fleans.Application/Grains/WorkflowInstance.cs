@@ -220,7 +220,15 @@ public partial class WorkflowInstance :
         var success = await _eventStore.AppendEventsAsync(grainId, updates, expectedVersion);
         if (!success) return false;
 
-        // Projection for IWorkflowQueryService and snapshot in one write: the snapshot version
+        // A durable enqueue ([AlwaysInterleave], EnqueueDurable) can confirm while the main turn
+        // has applied events to State but not drained them yet. State then holds mutations that
+        // are not in the journal; snapshotting it would pair them with a version that does not
+        // cover them. Skip — the main turn's drain writes the snapshot, and a crash before it
+        // leaves the previous, consistent snapshot plus the journal tail.
+        if (_execution is not null && _execution.GetUncommittedEvents().Count > 0)
+            return true;
+
+        // Projection for IWorkflowQueryService and snapshot in one row: the snapshot version
         // always matches the projected state, so replay never re-applies events it contains.
         await _eventStore.WriteSnapshotAsync(grainId, expectedVersion + updates.Count, this.State);
 

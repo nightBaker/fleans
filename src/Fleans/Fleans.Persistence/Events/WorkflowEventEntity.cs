@@ -9,10 +9,3 @@ public class WorkflowEventEntity
     public string Payload { get; set; } = "";
     public DateTimeOffset Timestamp { get; set; }
 }
-
-public class WorkflowSnapshotEntity
-{
-    public string GrainId { get; set; } = "";
-    public int Version { get; set; }
-    public DateTimeOffset Timestamp { get; set; }
-}

@@ -14,12 +14,20 @@ namespace Fleans.Persistence;
 
 internal static class FleanModelConfiguration
 {
+    /// <summary>
+    /// Shadow column on WorkflowInstances: the number of journal events the projected row covers.
+    /// The row doubles as the event store's snapshot, so state and version live in one row and
+    /// cannot drift apart (#833). Persistence-only — the domain state does not know about it.
+    /// </summary>
+    public const string SnapshotVersion = "SnapshotVersion";
+
     public static void Configure(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<WorkflowInstanceState>(entity =>
         {
             entity.ToTable("WorkflowInstances");
             entity.HasKey(e => e.Id);
+            entity.Property<int>(SnapshotVersion);
 
             entity.Property(e => e.ETag).HasMaxLength(64);
 
@@ -371,14 +379,6 @@ internal static class FleanModelConfiguration
             entity.Property(e => e.EventType).HasMaxLength(128).IsRequired();
 
             entity.HasIndex(e => new { e.GrainId, e.Version }).IsUnique();
-        });
-
-        modelBuilder.Entity<WorkflowSnapshotEntity>(entity =>
-        {
-            entity.ToTable("WorkflowSnapshots");
-            entity.HasKey(e => e.GrainId);
-
-            entity.Property(e => e.GrainId).HasMaxLength(256);
         });
     }
 }

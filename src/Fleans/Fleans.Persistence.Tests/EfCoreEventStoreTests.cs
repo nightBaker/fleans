@@ -209,9 +209,10 @@ public class EfCoreEventStoreTests : PersistenceTestBase
         var row = await db.WorkflowInstances.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id);
         Assert.IsNotNull(row, "Snapshot state should exist in WorkflowInstances table");
 
-        var snapshotMeta = await db.WorkflowSnapshots.AsNoTracking().FirstOrDefaultAsync(s => s.GrainId == grainId);
-        Assert.IsNotNull(snapshotMeta);
-        Assert.AreEqual(5, snapshotMeta.Version);
+        // The version lives on the same row as the state (#833)
+        var rowVersion = await db.WorkflowInstances
+            .Where(s => s.Id == id).Select(s => EF.Property<int>(s, "SnapshotVersion")).SingleAsync();
+        Assert.AreEqual(5, rowVersion);
     }
 
     [DataTestMethod]
