@@ -14,6 +14,25 @@ namespace Fleans.Application.Tests;
 public class EventSourcingIntegrationTests : WorkflowTestBase
 {
     [TestMethod]
+    public async Task WorkflowStarted_StoresGrainKeyAsInstanceId()
+    {
+        // Arrange — replay rebuilds State.Id from WorkflowStarted.InstanceId, and effects
+        // (message/signal/timer registrations) address the instance by State.Id. A fresh Guid here
+        // was masked at runtime only because the first state projection overwrote State.Id.
+        var instanceId = Guid.NewGuid();
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
+
+        // Act
+        await grain.SetWorkflow(CreateSimpleWorkflow("es-started-instance-id"));
+
+        // Assert
+        // Event versions start at 0 and ReadEventsAsync returns Version > afterVersion.
+        var events = await GetSiloService<IEventStore>().ReadEventsAsync(instanceId.ToString(), -1);
+        var started = events.OfType<WorkflowStarted>().Single();
+        Assert.AreEqual(instanceId, started.InstanceId);
+    }
+
+    [TestMethod]
     public async Task StateRecovery_AfterDeactivation_ShouldMatchPreDeactivationState()
     {
         // Arrange — run a simple workflow to completion
