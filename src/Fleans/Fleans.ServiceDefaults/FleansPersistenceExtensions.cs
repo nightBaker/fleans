@@ -33,6 +33,8 @@ public static class FleansPersistenceExtensions
             var remindersProvider = builder.Configuration["Fleans:Reminders:Provider"];
             if (!string.IsNullOrWhiteSpace(remindersProvider)) opts.RemindersProvider = remindersProvider;
         });
+        builder.Services.AddSingleton<IValidateOptions<FleansPersistenceOptions>, FleansPersistenceOptionsValidator>();
+        builder.Services.AddOptions<FleansPersistenceOptions>().ValidateOnStart();
 
         if (provider.Equals("Postgres", StringComparison.OrdinalIgnoreCase))
         {

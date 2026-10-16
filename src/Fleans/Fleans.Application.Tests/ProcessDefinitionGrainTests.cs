@@ -160,6 +160,7 @@ namespace Fleans.Application.Tests
                         services.AddSingleton<IProcessDefinitionRepository, StubProcessDefinitionRepository>();
                         services.AddSingleton<IWorkflowQueryService, StubWorkflowQueryService>();
                         services.AddSingleton<IEventStore, InMemoryEventStore>();
+                        services.AddSingleton<IWorkflowStateProjection, InMemoryWorkflowStateProjection>();
                         services.AddApplication();
                     });
         }

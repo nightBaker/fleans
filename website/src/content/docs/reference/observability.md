@@ -39,7 +39,7 @@ Meter name: `Fleans` (instrumentation version `1.0.0`).
 
 > **Deferred to a follow-up:** `fleans.workflow.active` (a non-terminal-count gauge) requires engine-side cooperation to seed from persistence at silo startup so the count survives silo restarts. It is intentionally not shipped in this initial Meter to avoid a known-broken metric. Track via the Fleans GitHub project.
 
-> **Best-effort caveat (`fleans.activity.duration`).** Start times are kept per-grain in memory. If a silo restarts mid-workflow, in-flight activities whose `ActivitySpawned` event landed before the restart will not record a duration on completion. The counters above are unaffected — they emit on the journaled event, not in-memory timing.
+> **`fleans.activity.duration` is measured from the event log.** The duration runs from the activity's `ActivitySpawned` event to its completed, failed or cancelled event, using the time recorded on each event. An activity that spans a silo restart or grain reactivation still records its full duration.
 
 > **Activity source `Fleans` (tracing).** Declared and registered today; dedicated per-event spans (timer fired, message correlated, compensation walk advanced, custom task plugin executed) are a follow-up — plugin authors can already attach spans to `FleansDiagnostics.ActivitySource` from their own handlers.
 

@@ -54,16 +54,18 @@ public class EventTypeRegistryTests
     }
 
     [TestMethod]
-    public void RoundTrip_UserTaskClaimed_PreservesClaimedAt()
+    public void RoundTrip_UserTaskClaimed_PreservesOccurredAt()
     {
-        var original = new UserTaskClaimed(Guid.NewGuid(), "user-42", DateTimeOffset.UtcNow);
+        // OccurredAt is an init property of the WorkflowEvent base, not a constructor parameter:
+        // replay takes every recorded time from it, so it must survive the journal.
+        var original = new UserTaskClaimed(Guid.NewGuid(), "user-42") { OccurredAt = DateTimeOffset.UtcNow };
         var json = JsonConvert.SerializeObject(original, JsonSettings);
         var deserialized = (UserTaskClaimed)EventTypeRegistry.Deserialize(
             nameof(UserTaskClaimed), json, JsonSettings);
 
         Assert.AreEqual(original.ActivityInstanceId, deserialized.ActivityInstanceId);
         Assert.AreEqual(original.UserId, deserialized.UserId);
-        Assert.AreEqual(original.ClaimedAt, deserialized.ClaimedAt);
+        Assert.AreEqual(original.OccurredAt, deserialized.OccurredAt);
     }
 
     [TestMethod]
@@ -200,7 +202,7 @@ public class EventTypeRegistryTests
         Assert.IsNull(deserialized.TokenId);
     }
 
-    private static List<(IDomainEvent Event, string ExpectedName)> CreateAllDomainEvents()
+    private static List<(WorkflowEvent Event, string ExpectedName)> CreateAllDomainEvents()
     {
         var id = Guid.NewGuid();
         var rootVarsId = Guid.NewGuid();

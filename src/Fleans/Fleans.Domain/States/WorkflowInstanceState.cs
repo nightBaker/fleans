@@ -270,26 +270,26 @@ public class WorkflowInstanceState
 
     internal IReadOnlyDictionary<Guid, ActivityInstanceEntry> GetEntriesByIdCache() => EntriesById;
 
-    public void CompleteEntry(Guid activityInstanceId)
+    public void CompleteEntry(Guid activityInstanceId, DateTimeOffset at)
     {
         var entry = GetActiveEntry(activityInstanceId);
-        entry.Complete();
+        entry.Complete(at);
         ActiveEntryIds.Remove(activityInstanceId);
         _dirtyFlags |= DirtyEntries;
     }
 
-    public void FailEntry(Guid activityInstanceId, string errorCode, string errorMessage)
+    public void FailEntry(Guid activityInstanceId, string errorCode, string errorMessage, DateTimeOffset at)
     {
         var entry = GetActiveEntry(activityInstanceId);
-        entry.Fail(errorCode, errorMessage);
+        entry.Fail(errorCode, errorMessage, at);
         ActiveEntryIds.Remove(activityInstanceId);
         _dirtyFlags |= DirtyEntries;
     }
 
-    public void CancelEntry(Guid activityInstanceId, string reason)
+    public void CancelEntry(Guid activityInstanceId, string reason, DateTimeOffset at)
     {
         var entry = GetActiveEntry(activityInstanceId);
-        entry.Cancel(reason);
+        entry.Cancel(reason, at);
         ActiveEntryIds.Remove(activityInstanceId);
         _dirtyFlags |= DirtyEntries;
     }
@@ -304,27 +304,14 @@ public class WorkflowInstanceState
     public IEnumerable<ConditionSequenceState> GetConditionSequenceStatesForGateway(Guid gatewayActivityInstanceId)
         => ConditionSequenceStates.Where(c => c.GatewayActivityInstanceId == gatewayActivityInstanceId);
 
-    public void Initialize(Guid id, string? processDefinitionId, Guid variablesId, string? businessId = null)
+    public void Initialize(Guid id, string? processDefinitionId, Guid variablesId, DateTimeOffset createdAt, string? businessId = null)
     {
         Id = id;
         ProcessDefinitionId = processDefinitionId;
         BusinessId = businessId;
-        CreatedAt = DateTimeOffset.UtcNow;
+        CreatedAt = createdAt;
         VariableStates.Add(new WorkflowVariablesState(variablesId, id));
         _dirtyFlags |= DirtyVariableStates;
-    }
-
-    public void StartWith(Guid id, string? processDefinitionId, ActivityInstanceEntry entry, Guid variablesId)
-    {
-        Initialize(id, processDefinitionId, variablesId);
-        Entries.Add(entry);
-        _dirtyFlags |= DirtyEntries;
-
-        if (_entriesById != null)
-        {
-            _entriesById[entry.ActivityInstanceId] = entry;
-            _activeEntryIds!.Add(entry.ActivityInstanceId);
-        }
     }
 
     public void SetParentInfo(Guid parentWorkflowInstanceId, string parentActivityId)
@@ -333,16 +320,16 @@ public class WorkflowInstanceState
         ParentActivityId = parentActivityId;
     }
 
-    public void Start()
+    public void Start(DateTimeOffset at)
     {
         if (IsStarted)
             throw new InvalidOperationException("Workflow is already started");
         
-        ExecutionStartedAt = DateTimeOffset.UtcNow;
+        ExecutionStartedAt = at;
         IsStarted = true;
     }
 
-    public void Complete()
+    public void Complete(DateTimeOffset at)
     {
         if (IsCompleted)
             throw new InvalidOperationException("Workflow is already completed");
@@ -351,11 +338,11 @@ public class WorkflowInstanceState
         ComplexGatewayJoinStates.Clear();
         AppliedOperations.Clear(); // dedup ledger GC: bounded to instance lifetime (#657, Q1')
         _dirtyFlags |= DirtyGatewayForks | DirtyComplexGatewayJoinStates | DirtyPendingOperations;
-        CompletedAt = DateTimeOffset.UtcNow;
+        CompletedAt = at;
         IsCompleted = true;
     }
 
-    public void Cancel()
+    public void Cancel(DateTimeOffset at)
     {
         if (IsCompleted)
             return; // already terminated — cancellation after completion is a no-op
@@ -364,7 +351,7 @@ public class WorkflowInstanceState
         ComplexGatewayJoinStates.Clear();
         AppliedOperations.Clear(); // dedup ledger GC: bounded to instance lifetime (#657, Q1')
         _dirtyFlags |= DirtyGatewayForks | DirtyComplexGatewayJoinStates | DirtyPendingOperations;
-        CompletedAt = DateTimeOffset.UtcNow;
+        CompletedAt = at;
         IsCompleted = true;
         IsCancelled = true;
     }
@@ -374,7 +361,7 @@ public class WorkflowInstanceState
     /// activity failure consumed its last token. Mirrors <see cref="Cancel"/> — marks the
     /// instance terminal (IsCompleted + CompletedAt) and sets <see cref="IsFailed"/>.
     /// </summary>
-    public void Fail()
+    public void Fail(DateTimeOffset at)
     {
         if (IsCompleted)
             return; // already terminated — a late failure after termination is a no-op
@@ -383,20 +370,9 @@ public class WorkflowInstanceState
         ComplexGatewayJoinStates.Clear();
         AppliedOperations.Clear(); // dedup ledger GC: bounded to instance lifetime (#657, Q1')
         _dirtyFlags |= DirtyGatewayForks | DirtyComplexGatewayJoinStates | DirtyPendingOperations;
-        CompletedAt = DateTimeOffset.UtcNow;
+        CompletedAt = at;
         IsCompleted = true;
         IsFailed = true;
-    }
-
-    public Guid AddCloneOfVariableState(Guid variableStateId)
-    {
-        var source = VariableStates.First(v => v.Id == variableStateId);
-        var clonedState = new WorkflowVariablesState(Guid.NewGuid(), Id, source.ParentVariablesId);
-        clonedState.Merge(source.Variables);
-
-        VariableStates.Add(clonedState);
-        _dirtyFlags |= DirtyVariableStates;
-        return clonedState.Id;
     }
 
     public void AddCloneOfVariableState(Guid newScopeId, Guid sourceScopeId)
@@ -407,14 +383,6 @@ public class WorkflowInstanceState
 
         VariableStates.Add(clonedState);
         _dirtyFlags |= DirtyVariableStates;
-    }
-
-    public Guid AddChildVariableState(Guid parentVariablesId)
-    {
-        var childState = new WorkflowVariablesState(Guid.NewGuid(), Id, parentVariablesId);
-        VariableStates.Add(childState);
-        _dirtyFlags |= DirtyVariableStates;
-        return childState.Id;
     }
 
     public void AddChildVariableState(Guid childId, Guid parentVariablesId)
@@ -432,24 +400,15 @@ public class WorkflowInstanceState
         _dirtyFlags |= DirtyConditionSequenceStates;
     }
 
-    public void CompleteEntries(List<ActivityInstanceEntry> entries)
+    public void CompleteEntry(Guid activityInstanceId, ExpandoObject variables, Guid variablesId, DateTimeOffset at)
     {
-        foreach (var entry in entries)
-            CompleteEntry(entry.ActivityInstanceId);
-    }
-
-    public void CompleteEntry(Guid activityInstanceId, ExpandoObject variables, Guid variablesId)
-    {
-        var entry = GetActiveEntry(activityInstanceId);
-        entry.Complete();
-        ActiveEntryIds.Remove(activityInstanceId);
+        CompleteEntry(activityInstanceId, at);
         MergeState(variablesId, variables);
-        _dirtyFlags |= DirtyEntries;
     }
 
-    public void ExecuteEntry(Guid activityInstanceId)
+    public void ExecuteEntry(Guid activityInstanceId, DateTimeOffset at)
     {
-        GetActiveEntry(activityInstanceId).Execute();
+        GetActiveEntry(activityInstanceId).Execute(at);
         _dirtyFlags |= DirtyEntries;
     }
 

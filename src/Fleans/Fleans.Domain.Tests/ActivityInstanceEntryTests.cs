@@ -56,24 +56,15 @@ public class ActivityInstanceEntryTests
     }
 
     [TestMethod]
-    public void Fail_WithGenericException_ShouldSetErrorCode500()
+    public void Fail_ShouldSetErrorCodeAndMessage()
     {
         var entry = CreateEntry();
         entry.Execute();
-        entry.Fail(new Exception("something broke"));
+        entry.Fail("500", "something broke");
         Assert.IsTrue(entry.IsCompleted);
         Assert.IsFalse(entry.IsExecuting);
         Assert.AreEqual("500", entry.ErrorCode);
         Assert.AreEqual("something broke", entry.ErrorMessage);
-    }
-
-    [TestMethod]
-    public void Fail_WithActivityException_ShouldUseActivityErrorState()
-    {
-        var entry = CreateEntry();
-        entry.Execute();
-        entry.Fail(new BadRequestActivityException("bad input"));
-        Assert.AreEqual("400", entry.ErrorCode);
     }
 
     [TestMethod]
@@ -99,7 +90,7 @@ public class ActivityInstanceEntryTests
     {
         var entry = CreateEntry();
         entry.Execute();
-        entry.Fail(new Exception("err"));
+        entry.Fail("500", "err");
         Assert.IsNotNull(entry.ErrorState);
         Assert.AreEqual("500", entry.ErrorState!.Code);
     }

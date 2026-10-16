@@ -329,9 +329,6 @@ public partial class WorkflowInstance
         Message = "Escalation parent result missing: expected _pendingEscalationParentResult to be set for EscalationCode={EscalationCode}, WorkflowInstanceId={WorkflowInstanceId} — defaulting to Unhandled")]
     private partial void LogEscalationParentResultMissing(string? escalationCode, Guid workflowInstanceId);
 
-    [LoggerMessage(EventId = 3033, Level = LogLevel.Information,
-        Message = "Published ExecuteCustomTaskEvent for activity {ActivityId} (taskType={TaskType}, activityInstanceId={ActivityInstanceId})")]
-    private partial void LogCustomTaskEventPublished(string activityId, string taskType, Guid activityInstanceId);
 
     // Compensation event lifecycle (EventId 1110-1119)
     [LoggerMessage(EventId = 1110, Level = LogLevel.Debug,
@@ -459,4 +456,27 @@ public partial class WorkflowInstance
         Message = "Compensation log returned: {EntryCount} entries")]
     private partial void LogCompensationLogReturned(int entryCount);
 
+    [LoggerMessage(EventId = 1131, Level = LogLevel.Error,
+        Message = "Snapshot write at version {Version} failed; {TailLength} events now follow the last snapshot. An instance whose tail exceeds Persistence:MaxEventsPerLoad cannot activate")]
+    private partial void LogSnapshotWriteFailed(int version, int tailLength, Exception exception);
+
+    [LoggerMessage(EventId = 1132, Level = LogLevel.Warning,
+        Message = "Read-model projection write at version {Version} failed; retrying")]
+    private partial void LogProjectionWriteFailed(int version, Exception exception);
+
+    [LoggerMessage(EventId = 1133, Level = LogLevel.Information,
+        Message = "Read-model projection at version {ProjectedVersion} (-1: unknown) is behind the journal at {Version}; rebuilding it")]
+    private partial void LogProjectionBehind(int projectedVersion, int version);
+
+    [LoggerMessage(EventId = 1134, Level = LogLevel.Information,
+        Message = "Read-model projection caught up to version {Version} after a failed write")]
+    private partial void LogProjectionCaughtUp(int version);
+
+    [LoggerMessage(EventId = 1135, Level = LogLevel.Error,
+        Message = "Read-model projection still failing at version {Version} after {Attempts} retries; giving up until the next activation")]
+    private partial void LogProjectionRetryGaveUp(int version, int attempts);
+
+    [LoggerMessage(EventId = 1136, Level = LogLevel.Warning,
+        Message = "Reading the read-model projection version failed; rebuilding the projection")]
+    private partial void LogProjectionVersionReadFailed(Exception exception);
 }

@@ -306,6 +306,25 @@ public class UserTaskLifecycleTests
     }
 
     [TestMethod]
+    public void CompleteUserTask_EntryNoLongerActive_ThrowsAndEmitsNothing()
+    {
+        // Arrange — claimed, but the activity entry already completed (e.g. a boundary event
+        // took it): the completion is rejected after the claim checks pass
+        var (execution, state, taskEntry) = CreateWithExecutingUserTask(assignee: "alice");
+        execution.ClaimUserTask(taskEntry.ActivityInstanceId, "alice", []);
+        execution.ClearUncommittedEvents();
+        state.CompleteEntry(taskEntry.ActivityInstanceId, DateTimeOffset.UtcNow);
+
+        // Act
+        Assert.Throws<Exception>(
+            () => execution.CompleteUserTask(taskEntry.ActivityInstanceId, "alice", new ExpandoObject()));
+
+        // Assert — nothing left for the next drain to journal; the task is still claimed
+        Assert.IsEmpty(execution.GetUncommittedEvents());
+        Assert.AreEqual(UserTaskLifecycleState.Claimed, state.UserTasks[taskEntry.ActivityInstanceId].TaskState);
+    }
+
+    [TestMethod]
     public void CompleteUserTask_NotClaimed_ShouldThrowBadRequest()
     {
         // Arrange

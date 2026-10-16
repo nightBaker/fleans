@@ -47,9 +47,9 @@ namespace Fleans.Application.Grains;
 //   * WorkflowInstance.Logging.cs       — all [LoggerMessage] partial method declarations.
 [CorePlacement]
 public partial class WorkflowInstance :
-    JournaledGrain<WorkflowInstanceState, IDomainEvent>,
+    JournaledGrain<WorkflowInstanceState, WorkflowEvent>,
     IWorkflowInstanceGrain,
-    ICustomStorageInterface<WorkflowInstanceState, IDomainEvent>
+    ICustomStorageInterface<WorkflowInstanceState, WorkflowEvent>
 {
     public ValueTask<Guid> GetWorkflowInstanceId() => ValueTask.FromResult(this.GetPrimaryKey());
     public ValueTask<string?> GetBusinessId() => ValueTask.FromResult(State.BusinessId);
@@ -58,8 +58,8 @@ public partial class WorkflowInstance :
 
     private readonly IGrainFactory _grainFactory;
     private readonly ILogger<WorkflowInstance> _logger;
-    private readonly IWorkflowQueryService _queryService;
     private readonly IEventStore _eventStore;
+    private readonly IWorkflowStateProjection _projection;
     private readonly EffectDispatcher _effectDispatcher;
 
     private readonly ConcurrentQueue<(PendingExternalEvent Event, TaskCompletionSource Completion)> _pendingExternalEvents = new();
@@ -92,25 +92,48 @@ public partial class WorkflowInstance :
     /// </summary>
     private WorkflowExecution? _replayAggregate;
 
+    /// <summary>The version the stored snapshot covers; a new one is due every <see cref="IEventStore.SnapshotInterval"/> events.</summary>
+    private int _snapshotVersion;
+
+    /// <summary>The number of events in the journal, as of the last read or append.</summary>
+    private int _journalVersion;
+
+    /// <summary>The highest version this activation has written to (or read from) the read model.</summary>
+    private int _projectedVersion;
+
     /// <summary>
-    /// In-memory map of activity-instance start times for the <c>fleans.activity.duration</c> histogram.
-    /// Populated on <c>ActivitySpawned</c>, drained on <c>ActivityCompleted</c>/<c>ActivityFailed</c>/<c>ActivityCancelled</c>.
-    /// Per-grain in-memory state — silo restart loses in-flight entries; the histogram is
-    /// best-effort and skips activities that started before the current grain activation.
+    /// Serializes read-model writes: an append's write, the retry timer and the activation catch-up
+    /// would otherwise interleave (an [AlwaysInterleave] enqueue confirms while a retry awaits) on
+    /// the same rows.
     /// </summary>
-    private readonly Dictionary<Guid, (DateTimeOffset StartedAt, string ActivityType)> _activityStartedAt = new();
+    private readonly SemaphoreSlim _projectionLock = new(1, 1);
+
+    private IGrainTimer? _projectionRetryTimer;
+    private int _projectionRetryAttempt;
+    private static readonly TimeSpan ProjectionRetryFirstDelay = TimeSpan.FromSeconds(2);
+    private const int ProjectionRetryLimit = 8; // 2 s doubling: gives up after ~8.5 minutes
+
+    /// <summary>The main turn has applied events to State that are not drained into the journal yet.</summary>
+    private bool HasUndrainedEvents => _execution is not null && _execution.GetUncommittedEvents().Count > 0;
+
+    /// <summary>
+    /// An <c>EnqueueDurable</c> (serialized by <see cref="_enqueueLock"/>) is running: it changes
+    /// <c>State.PendingOperations</c> before its event is appended. The read model does not
+    /// project that collection, but a snapshot taken meanwhile would be ahead of its version.
+    /// </summary>
+    private bool EnqueueInFlight => _enqueueLock.CurrentCount == 0;
 
     public WorkflowInstance(
         IGrainFactory grainFactory,
         ILogger<WorkflowInstance> logger,
-        IWorkflowQueryService queryService,
         IEventStore eventStore,
+        IWorkflowStateProjection projection,
         EffectDispatcher effectDispatcher)
     {
         _grainFactory = grainFactory;
         _logger = logger;
-        _queryService = queryService;
         _eventStore = eventStore;
+        _projection = projection;
         _effectDispatcher = effectDispatcher;
     }
 
@@ -123,11 +146,6 @@ public partial class WorkflowInstance :
         // After base returns, we clear it — the real _execution aggregate will be created
         // by EnsureExecution() with the full workflow definition.
         _replayAggregate = null;
-
-        if (State.IsStarted && State.UserTasks.Count == 0)
-        {
-            await RehydrateUserTasks();
-        }
 
         RebuildPendingExternalEvents();
     }
@@ -176,7 +194,7 @@ public partial class WorkflowInstance :
     // ── JournaledGrain: TransitionState ─────────────────────────────────
 
     protected override void TransitionState(
-        WorkflowInstanceState state, IDomainEvent @event)
+        WorkflowInstanceState state, WorkflowEvent @event)
     {
         if (!_draining)
         {
@@ -193,66 +211,173 @@ public partial class WorkflowInstance :
     public async Task<KeyValuePair<int, WorkflowInstanceState>> ReadStateFromStorage()
     {
         var grainId = this.GetPrimaryKey().ToString();
+        // Independent of the state reads below, so it runs alongside them.
+        var projectedVersionTask = ReadProjectedVersion(grainId);
+
+        // The journal is the source of truth; the snapshot only shortens replay. A failed read
+        // (database error, or a snapshot from an older build — pre-1.0 needs a fresh database)
+        // propagates: Orleans' CustomStorage adaptor retries ReadStateFromStorage with backoff,
+        // so the activation waits rather than degrading to a full replay.
         var (snapshot, snapshotVersion) = await _eventStore.ReadSnapshotAsync(grainId);
-
         var state = snapshot ?? new WorkflowInstanceState();
-
-        // The snapshot is written with every append, so only events whose snapshot write did not
-        // happen (crash between the two) are replayed — or all of them when there is no snapshot.
-        // Ids come from the events, so replay is deterministic; only the timestamps Apply stamps
-        // with DateTimeOffset.UtcNow (CreatedAt, CompletedAt, …) get the replay time.
         var events = await _eventStore.ReadEventsAsync(grainId, snapshotVersion);
         if (events.Count > 0)
         {
+            // Apply handlers read only the event (ids and OccurredAt included), so this rebuilds
+            // exactly the state the live run had.
             var replay = new WorkflowExecution(state);
             foreach (var evt in events)
                 replay.ReplayEvent(evt);
         }
 
-        return new(snapshotVersion + events.Count, state);
+        var version = snapshotVersion + events.Count;
+        _snapshotVersion = snapshotVersion;
+        _journalVersion = version;
+
+        // Catch-up: the read model is behind the journal when a projection write was lost (the
+        // silo stopped after an append, or the retries gave up). Unknown (read failed) counts as behind.
+        var projectedVersion = await projectedVersionTask;
+        _projectedVersion = projectedVersion ?? 0;
+        if (version > 0 && (projectedVersion is null || projectedVersion < version))
+        {
+            LogProjectionBehind(projectedVersion ?? -1, version);
+            if (!await TryWriteProjection(grainId, state, version, rebuild: true))
+                ScheduleProjectionRetry();
+        }
+
+        return new(version, state);
+    }
+
+    private async Task<int?> ReadProjectedVersion(string grainId)
+    {
+        try
+        {
+            return await _projection.ReadVersionAsync(grainId);
+        }
+        catch (Exception ex)
+        {
+            LogProjectionVersionReadFailed(ex);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The only way to the read model. Serialized by <see cref="_projectionLock"/>, and never moves
+    /// the projected version backwards. Failures are logged and reported, never thrown.
+    /// </summary>
+    private async Task<bool> TryWriteProjection(string grainId, WorkflowInstanceState state, int version, bool rebuild)
+    {
+        await _projectionLock.WaitAsync();
+        try
+        {
+            if (version < _projectedVersion)
+                return true; // a later write already covered this one
+            await _projection.WriteAsync(grainId, state, version, rebuild);
+            _projectedVersion = version;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            LogProjectionWriteFailed(version, ex);
+            return false;
+        }
+        finally
+        {
+            _projectionLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// A failed read-model write must not wait for the next append — the failed one may be the
+    /// instance's last (e.g. WorkflowCompleted). A keep-alive timer rewrites it with doubling delays;
+    /// after <see cref="ProjectionRetryLimit"/> attempts it gives up (Error 1135) and lets the grain
+    /// deactivate, leaving the catch-up to the next activation instead of pinning the grain and
+    /// rewriting a write that keeps failing forever.
+    /// </summary>
+    private void ScheduleProjectionRetry()
+    {
+        if (_projectionRetryTimer is not null)
+            return;
+        _projectionRetryAttempt = 0;
+        _projectionRetryTimer = this.RegisterGrainTimer(RetryProjection,
+            new GrainTimerCreationOptions(ProjectionRetryFirstDelay, Timeout.InfiniteTimeSpan) { KeepAlive = true });
+    }
+
+    private async Task RetryProjection(CancellationToken cancellationToken)
+    {
+        // State ahead of the journal: the drain's own projection write follows and settles the retry.
+        if (!HasUndrainedEvents)
+        {
+            var version = _journalVersion;
+            if (await TryWriteProjection(this.GetPrimaryKey().ToString(), State, version, rebuild: true))
+            {
+                LogProjectionCaughtUp(version);
+                StopProjectionRetry();
+                return;
+            }
+
+            if (++_projectionRetryAttempt >= ProjectionRetryLimit)
+            {
+                LogProjectionRetryGaveUp(version, _projectionRetryAttempt);
+                StopProjectionRetry();
+                return;
+            }
+        }
+
+        _projectionRetryTimer?.Change(ProjectionRetryFirstDelay * (1 << _projectionRetryAttempt), Timeout.InfiniteTimeSpan);
+    }
+
+    private void StopProjectionRetry()
+    {
+        _projectionRetryTimer?.Dispose();
+        _projectionRetryTimer = null;
     }
 
     public async Task<bool> ApplyUpdatesToStorage(
-        IReadOnlyList<IDomainEvent> updates, int expectedVersion)
+        IReadOnlyList<WorkflowEvent> updates, int expectedVersion)
     {
         var grainId = this.GetPrimaryKey().ToString();
         // expectedVersion is the confirmed event count BEFORE these updates.
         var success = await _eventStore.AppendEventsAsync(grainId, updates, expectedVersion);
         if (!success) return false;
 
-        // A durable enqueue ([AlwaysInterleave], EnqueueDurable) can confirm while the main turn
-        // has applied events to State but not drained them yet. State then holds mutations that
-        // are not in the journal; snapshotting it would pair them with a version that does not
-        // cover them. Skip — the main turn's drain writes the snapshot, and a crash before it
-        // leaves the previous, consistent snapshot plus the journal tail.
-        if (_execution is not null && _execution.GetUncommittedEvents().Count > 0)
+        // The append is the commit. Everything below derives from the journal and must not
+        // throw: Orleans would retry a batch that is already stored and append it twice.
+        var version = expectedVersion + updates.Count;
+        _journalVersion = version;
+
+        // A durable enqueue can confirm while the main turn has applied events to State but not
+        // drained them; State then holds mutations the journal lacks. Skip — the drain's own
+        // append writes both.
+        if (HasUndrainedEvents)
             return true;
 
-        // Projection for IWorkflowQueryService and snapshot in one row: the snapshot version
-        // always matches the projected state, so replay never re-applies events it contains.
-        await _eventStore.WriteSnapshotAsync(grainId, expectedVersion + updates.Count, this.State);
+        if (await TryWriteProjection(grainId, State, version, rebuild: false))
+            StopProjectionRetry();
+        else
+            ScheduleProjectionRetry();
+
+        // A snapshot must be exactly the state at `version`. Log writes run one at a time, so an
+        // enqueue that changed State during the awaits above is still in flight here — skip, a
+        // later append writes it. No await separates this check from WriteSnapshotAsync's
+        // (synchronous) serialization.
+        var lag = version - _snapshotVersion;
+        if (!EnqueueInFlight && lag >= _eventStore.SnapshotInterval)
+        {
+            try
+            {
+                await _eventStore.WriteSnapshotAsync(grainId, version, State);
+                _snapshotVersion = version;
+            }
+            catch (Exception ex)
+            {
+                // Error, not Warning: once the tail passes Persistence:MaxEventsPerLoad, the
+                // instance can no longer activate.
+                LogSnapshotWriteFailed(version, lag, ex);
+            }
+        }
 
         return true;
-    }
-
-    private async Task RehydrateUserTasks()
-    {
-        var workflowInstanceId = this.GetPrimaryKey();
-        var tasks = await _queryService.GetActiveUserTasksForWorkflow(workflowInstanceId);
-
-        foreach (var task in tasks)
-        {
-            var metadata = new UserTaskMetadata();
-            metadata.Initialize(task.Assignee, task.CandidateGroups,
-                task.CandidateUsers, task.ExpectedOutputVariables);
-
-            if (task.TaskState == UserTaskLifecycleState.Claimed && task.ClaimedBy is not null)
-            {
-                metadata.Claim(task.ClaimedBy, task.ClaimedAt ?? DateTimeOffset.UtcNow);
-            }
-
-            State.UserTasks[task.ActivityInstanceId] = metadata;
-        }
     }
 
     private async ValueTask EnsureExecution()

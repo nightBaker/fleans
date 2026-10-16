@@ -11,10 +11,17 @@ public sealed class FleansPersistenceOptions
     /// <summary>
     /// Maximum number of events the event store will materialise in a single
     /// ReadEventsAsync call. Throws <see cref="InvalidOperationException"/> when exceeded.
-    /// Default 1000 — ~10× the 100-event snapshot cadence
-    /// (see WorkflowInstance.ApplyUpdatesToStorage).
+    /// Default 1000 — 10× the default <see cref="SnapshotInterval"/>, so it only trips when
+    /// snapshots stopped being written or could not be read.
     /// </summary>
     public int MaxEventsPerLoad { get; set; } = 1000;
+
+    /// <summary>
+    /// A workflow instance snapshot is written once this many events were appended since the
+    /// previous one (bound from <c>Persistence:SnapshotInterval</c>). Activation replays at most
+    /// about this many events after the snapshot. Default 100.
+    /// </summary>
+    public int SnapshotInterval { get; set; } = 100;
 
     /// <summary>
     /// Reminder backing store. Bound from <c>Fleans:Reminders:Provider</c>; default

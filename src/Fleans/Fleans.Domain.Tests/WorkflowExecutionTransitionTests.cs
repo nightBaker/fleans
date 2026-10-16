@@ -118,7 +118,7 @@ public class WorkflowExecutionTransitionTests
         execution.MarkExecuting(startEntry.ActivityInstanceId);
 
         // Simulate a failure: the entry has an error code set
-        startEntry.Fail(new Exception("test error"));
+        startEntry.Fail("500", "test error");
         execution.ClearUncommittedEvents();
 
         var transitions = new List<CompletedActivityTransitions>

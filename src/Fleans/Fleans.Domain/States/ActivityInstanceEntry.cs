@@ -11,7 +11,6 @@ public class ActivityInstanceEntry
         ActivityId = activityId;
         WorkflowInstanceId = workflowInstanceId;
         ScopeId = scopeId;
-        CreatedAt = DateTimeOffset.UtcNow;
     }
 
     private ActivityInstanceEntry()
@@ -98,7 +97,7 @@ public class ActivityInstanceEntry
     public void SetChildWorkflowInstanceId(Guid childId) => ChildWorkflowInstanceId = childId;
 
     // State transition methods
-    public void Execute()
+    public void Execute(DateTimeOffset at)
     {
         if (IsExecuting)
             throw new InvalidOperationException($"Activity '{ActivityId}' is already executing.");
@@ -106,42 +105,20 @@ public class ActivityInstanceEntry
             throw new InvalidOperationException($"Activity '{ActivityId}' is already completed — cannot execute again.");
 
         IsExecuting = true;
-        ExecutionStartedAt = DateTimeOffset.UtcNow;
+        ExecutionStartedAt = at;
     }
 
-    public void Complete()
+    public void Complete(DateTimeOffset at)
     {
         if (IsCompleted)
             throw new InvalidOperationException($"Activity '{ActivityId}' is already completed.");
 
         IsExecuting = false;
         IsCompleted = true;
-        CompletedAt = DateTimeOffset.UtcNow;
+        CompletedAt = at;
     }
 
-    public void Fail(Exception exception)
-    {
-        if (IsCompleted)
-            throw new InvalidOperationException($"Activity '{ActivityId}' is already completed — cannot fail.");
-
-        if (exception is ActivityException activityException)
-        {
-            var errorState = activityException.GetActivityErrorState();
-            ErrorCode = errorState.Code;
-            ErrorMessage = errorState.Message;
-        }
-        else
-        {
-            ErrorCode = "500";
-            ErrorMessage = exception.Message;
-        }
-
-        IsExecuting = false;
-        IsCompleted = true;
-        CompletedAt = DateTimeOffset.UtcNow;
-    }
-
-    public void Fail(string errorCode, string errorMessage)
+    public void Fail(string errorCode, string errorMessage, DateTimeOffset at)
     {
         if (IsCompleted)
             throw new InvalidOperationException($"Activity '{ActivityId}' is already completed — cannot fail.");
@@ -150,10 +127,10 @@ public class ActivityInstanceEntry
         ErrorMessage = errorMessage;
         IsExecuting = false;
         IsCompleted = true;
-        CompletedAt = DateTimeOffset.UtcNow;
+        CompletedAt = at;
     }
 
-    public void Cancel(string reason)
+    public void Cancel(string reason, DateTimeOffset at)
     {
         if (IsCompleted)
             throw new InvalidOperationException($"Activity '{ActivityId}' is already completed — cannot cancel.");
@@ -162,7 +139,7 @@ public class ActivityInstanceEntry
         CancellationReason = reason;
         IsExecuting = false;
         IsCompleted = true;
-        CompletedAt = DateTimeOffset.UtcNow;
+        CompletedAt = at;
     }
 
     public void ResetExecuting()
@@ -174,6 +151,8 @@ public class ActivityInstanceEntry
     }
 
     // Setters for initialization
+    public void SetCreatedAt(DateTimeOffset createdAt) => CreatedAt = createdAt;
+
     public void SetActivityType(string activityType)
     {
         ActivityType = activityType;

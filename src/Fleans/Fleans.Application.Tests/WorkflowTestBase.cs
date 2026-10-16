@@ -39,6 +39,9 @@ public abstract class WorkflowTestBase
     protected TestCluster Cluster { get; private set; } = null!;
     protected IWorkflowQueryService QueryService { get; private set; } = null!;
 
+    /// <summary>Persistence:SnapshotInterval of the test silo.</summary>
+    protected const int TestSnapshotInterval = 5;
+
     [TestInitialize]
     public void BaseSetup()
     {
@@ -286,7 +289,12 @@ public abstract class WorkflowTestBase
                     services.AddSingleton<IWorkflowQueryService, WorkflowQueryService>();
                     services.AddSingleton<IScriptExpressionExecutor, SimpleScriptExecutor>();
                     services.AddSingleton<IConditionExpressionEvaluator, SimpleConditionEvaluator>();
-                    services.AddSingleton<IWorkflowStateProjection, EfCoreWorkflowStateProjection>();
+                    services.AddSingleton<EfCoreWorkflowStateProjection>();
+                    services.AddSingleton<IWorkflowStateProjection>(sp =>
+                        new FaultInjectingWorkflowStateProjection(sp.GetRequiredService<EfCoreWorkflowStateProjection>()));
+                    // Small interval: most multi-step tests then reactivate from a snapshot plus a
+                    // journal tail, not only from a full replay.
+                    services.Configure<FleansPersistenceOptions>(o => o.SnapshotInterval = TestSnapshotInterval);
                     services.AddSingleton<EfCoreEventStore>();
                     services.AddSingleton<IEventStore>(sp => sp.GetRequiredService<EfCoreEventStore>());
                     services.AddApplication();

@@ -38,7 +38,7 @@ Every feature/fix updates docs **in the same PR**. **Documentation scope split:*
 
 - **Clean Architecture / DDD.** Domain has no infrastructure concerns.
 - **Grains change state only through domain methods** that apply a whole transition atomically (fields that change together live in one method).
-- **`WorkflowInstance` is event-sourced (`JournaledGrain`)**: mutate via `DrainAndRaiseEvents()` (drain → `RaiseEvent` → `ConfirmEvents()`), never `WriteStateAsync()`. Other grains use `IPersistentState`. Partial-file layout: header comment of `Fleans.Application/Grains/WorkflowInstance.cs`.
+- **`WorkflowInstance` is event-sourced (`JournaledGrain`)**: mutate via `DrainAndRaiseEvents()` (drain → `RaiseEvent` → `ConfirmEvents()`), never `WriteStateAsync()`; `Apply` handlers read only the event (`OccurredAt`, ids) — never the clock. Journal = truth, snapshots + read model derive from it; before touching the event store read [`persistence.md`](docs/conventions/persistence.md#event-store-journal-snapshots-read-model). Other grains use `IPersistentState`. Partial-file layout: header comment of `Fleans.Application/Grains/WorkflowInstance.cs`.
 - **Every state mutation is logged** with a `[LoggerMessage]` call.
 - **Workflow metrics/traces** (`Fleans` Meter/ActivitySource, `FleansDiagnostics.cs`) are emitted from `WorkflowInstance.LogEvent` — fires once per real transition — and stay out of `Apply` handlers, which re-run on replay. Catalog: `website/src/content/docs/reference/observability.md`.
 

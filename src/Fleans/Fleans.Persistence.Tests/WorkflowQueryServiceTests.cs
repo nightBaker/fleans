@@ -72,15 +72,15 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
         // Active entry — set enriched fields directly on the entry
         var activeEntry = new ActivityInstanceEntry(activeAiId, "task1", instanceId);
         activeEntry.SetActivityType("TaskActivity");
-        activeEntry.Execute(); // sets IsExecuting = true
+        activeEntry.Execute(DateTimeOffset.UtcNow); // sets IsExecuting = true
         db.WorkflowActivityInstanceEntries.Add(activeEntry);
         await db.SaveChangesAsync();
 
         // Completed entry — set enriched fields directly on the entry
         var completedEntry = new ActivityInstanceEntry(completedAiId, "start", instanceId);
         completedEntry.SetActivityType("StartEvent");
-        completedEntry.Execute();
-        completedEntry.Complete(); // sets IsCompleted = true
+        completedEntry.Execute(DateTimeOffset.UtcNow);
+        completedEntry.Complete(DateTimeOffset.UtcNow); // sets IsCompleted = true
         db.WorkflowActivityInstanceEntries.Add(completedEntry);
         await db.SaveChangesAsync();
 
@@ -232,8 +232,8 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
         var aiId = Guid.NewGuid();
         var entry = new ActivityInstanceEntry(aiId, "task1", instanceId);
         entry.SetActivityType("ScriptTask");
-        entry.Execute();
-        entry.Fail(new Exception("Something went wrong"));
+        entry.Execute(DateTimeOffset.UtcNow);
+        entry.Fail("500", "Something went wrong", DateTimeOffset.UtcNow);
         db.WorkflowActivityInstanceEntries.Add(entry);
         await db.SaveChangesAsync();
 

@@ -3,18 +3,19 @@ using Fleans.Domain.States;
 namespace Fleans.Domain.Events;
 
 /// <summary>
-/// Projects the current workflow instance state to a read model (e.g., the WorkflowInstances table).
-/// The projection doubles as the event store's snapshot, so it is stored together with the
-/// version it covers.
+/// Projects workflow instance state to the read model (the WorkflowInstances tables) queried by
+/// IWorkflowQueryService. Write-only from the grain's point of view: state is rebuilt from the
+/// event store, never from the projection.
 /// </summary>
 public interface IWorkflowStateProjection
 {
-    /// <summary>The projected state and the number of events it covers, or <c>(null, 0)</c>.</summary>
-    Task<(WorkflowInstanceState? State, int Version)> ReadAsync(string grainId);
+    /// <summary>The number of events the projected row reflects, or <c>0</c> when there is none.</summary>
+    Task<int> ReadVersionAsync(string grainId);
 
     /// <summary>
-    /// Writes <paramref name="state"/> together with the number of events it covers, atomically,
-    /// so the projected state and the version replay starts from can never disagree.
+    /// Writes <paramref name="state"/>, the state after the first <paramref name="version"/> events.
+    /// Only collections changed since the last write are diffed, unless <paramref name="rebuild"/> is
+    /// set — then every collection is rewritten (catch-up after a missed write).
     /// </summary>
-    Task WriteAsync(string grainId, WorkflowInstanceState state, int version);
+    Task WriteAsync(string grainId, WorkflowInstanceState state, int version, bool rebuild = false);
 }

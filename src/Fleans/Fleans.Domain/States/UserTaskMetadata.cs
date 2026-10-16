@@ -14,10 +14,12 @@ public class UserTaskMetadata
     public void Initialize(string? assignee, IReadOnlyList<string> candidateGroups,
         IReadOnlyList<string> candidateUsers, IReadOnlyList<string>? expectedOutputs)
     {
+        // Copied into List<T>: the state is Orleans-serialized (snapshots, grain calls), and the
+        // caller's list may be a type without a codec, such as a collection-expression list.
         Assignee = assignee;
-        CandidateGroups = candidateGroups;
-        CandidateUsers = candidateUsers;
-        ExpectedOutputVariables = expectedOutputs;
+        CandidateGroups = candidateGroups.ToList();
+        CandidateUsers = candidateUsers.ToList();
+        ExpectedOutputVariables = expectedOutputs?.ToList();
         TaskState = UserTaskLifecycleState.Created;
     }
 
@@ -37,13 +39,6 @@ public class UserTaskMetadata
         ClaimedBy = null;
         ClaimedAt = null;
         TaskState = UserTaskLifecycleState.Created;
-    }
-
-    public void Complete()
-    {
-        if (TaskState != UserTaskLifecycleState.Claimed)
-            throw new InvalidOperationException("Task must be in Claimed state to complete");
-        TaskState = UserTaskLifecycleState.Completed;
     }
 
     public void Fail()
