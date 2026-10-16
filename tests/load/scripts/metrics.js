@@ -26,3 +26,15 @@ export const messageAcceptDuration  = new Trend('message_accept_duration');
 export const messageRetryAttempts   = new Trend('message_retry_attempts');
 export const pollStallsRate         = new Rate('poll_stalls');
 export const correlationMissRate    = new Rate('correlation_miss');
+
+// long-diverse.js — per-stage wall-clock (ms) and outcome rates for the long process.
+export const ldStageToApproval    = new Trend('ld_stage_to_approval');     // start → waitApproval active
+export const ldStageToReview      = new Trend('ld_stage_to_review');       // approval sent → manualReview active
+export const ldStageToConfirm     = new Trend('ld_stage_to_confirm');      // review completed → waitConfirm active
+export const ldStageToCompleted   = new Trend('ld_stage_to_completed');    // confirm sent → isCompleted
+export const ldEndToEnd           = new Trend('ld_end_to_end');            // start → isCompleted (client-observed)
+export const ldEngineDuration     = new Trend('ld_engine_duration');       // completedAt − createdAt from the state snapshot
+export const ldCompletedRate      = new Rate('ld_completed');              // iteration reached isCompleted
+export const ldFailedRate         = new Rate('ld_instance_failed');        // engine reported isFailed
+export const ldStallRate          = new Rate('ld_poll_stall');             // a stage exceeded its poll budget
+export const ldPathMismatchRate   = new Rate('ld_path_mismatch');          // completed, but wrong branches taken

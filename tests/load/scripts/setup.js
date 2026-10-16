@@ -1,6 +1,6 @@
 // tests/load/scripts/setup.js
 //
-// Deploys all 3 load-test BPMN fixtures to the target cluster before any
+// Deploys all load-test BPMN fixtures to the target cluster before any
 // k6 scenario script runs. Run once before linear.js / parallel.js / events.js / mixed.js:
 //
 //   k6 run --insecure-skip-tls-verify tests/load/scripts/setup.js
@@ -15,6 +15,8 @@ import { check, fail } from 'k6';
 const linearBpmn   = open('../fixtures/linear-workflow.bpmn');
 const parallelBpmn = open('../fixtures/parallel-workflow.bpmn');
 const eventsBpmn   = open('../fixtures/events-workflow.bpmn');
+const longChildBpmn = open('../fixtures/long-diverse-child.bpmn');
+const longBpmn      = open('../fixtures/long-diverse-workflow.bpmn');
 
 const BASE_URL = __ENV.K6_TARGET_URL || 'https://localhost:7140';
 const HEADERS  = { 'Content-Type': 'application/json' };
@@ -23,6 +25,9 @@ const FIXTURES = [
   { name: 'load-linear',   bpmnXml: linearBpmn   },
   { name: 'load-parallel', bpmnXml: parallelBpmn },
   { name: 'load-events',   bpmnXml: eventsBpmn   },
+  // Child before parent: load-long-diverse calls load-long-child.
+  { name: 'load-long-child',   bpmnXml: longChildBpmn },
+  { name: 'load-long-diverse', bpmnXml: longBpmn      },
 ];
 
 export const options = {

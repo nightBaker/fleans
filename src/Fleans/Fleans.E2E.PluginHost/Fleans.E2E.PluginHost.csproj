@@ -33,6 +33,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Fleans.Worker\Fleans.Worker.csproj" />
+    <!-- Leaf package (Confluent.Kafka + Orleans only) — keeps the plugin-host isolation intact. -->
+    <ProjectReference Include="..\Fleans.Streaming.Kafka\Fleans.Streaming.Kafka.csproj" />
   </ItemGroup>
 
 </Project>

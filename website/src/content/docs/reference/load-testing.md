@@ -170,7 +170,7 @@ In priority order, based on what we measured:
 Both report files include a "How to reproduce" section that lists the exact `az`/`docker`
 commands. The Locust scripts under `tests/load/locust/` are uploaded directly to Azure Load
 Testing as the test plan; the k6 scripts under `tests/load/scripts/` are run locally against
-either the Aspire stack or `tests/load/generated/docker-compose.yml`.
+either the Aspire stack or `tests/load/docker-compose.yml` (3 Core + 2 Worker + 1 Plugin silos on Kafka).
 
 For the Azure run specifically, you'll need:
 

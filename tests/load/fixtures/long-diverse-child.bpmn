@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             id="Definitions_child" targetNamespace="http://bpmn.io/schema/bpmn">
+  <!-- Child process called from load-long-diverse (branch C of the parallel fork).
+       The 1s timer keeps the child from completing inline inside the parent's
+       child.StartWorkflow() call. -->
+  <process id="load-long-child" isExecutable="true">
+    <startEvent id="childStart" />
+    <scriptTask id="childCompute" scriptFormat="csharp">
+      <script>_context.childScore = _context.amount * 2</script>
+    </scriptTask>
+    <intermediateCatchEvent id="childWait">
+      <timerEventDefinition>
+        <timeDuration>PT1S</timeDuration>
+      </timerEventDefinition>
+    </intermediateCatchEvent>
+    <scriptTask id="childFinish" scriptFormat="csharp">
+      <script>_context.childResult = "child-" + _context.childScore</script>
+    </scriptTask>
+    <endEvent id="childEnd" />
+    <sequenceFlow id="c1" sourceRef="childStart" targetRef="childCompute" />
+    <sequenceFlow id="c2" sourceRef="childCompute" targetRef="childWait" />
+    <sequenceFlow id="c3" sourceRef="childWait" targetRef="childFinish" />
+    <sequenceFlow id="c4" sourceRef="childFinish" targetRef="childEnd" />
+  </process>
+</definitions>
