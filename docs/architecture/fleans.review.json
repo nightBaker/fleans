@@ -1,0 +1,15 @@
+{
+  "diagram_type": "architecture",
+  "output": "/Users/yerassylshalabayev/RiderProjects/fleans/docs/architecture/fleans.html",
+  "specification_sha256": "80e493c249b6d5c68d208ede3f885d8d3dedbff11418ff1fe055634e075f0cf6",
+  "artifact_sha256": "09701068a1c6f3e5f196ba6d1b400f2e29a004242daab2d80865131190774676",
+  "validation": "9/9 showcase, 0 errors, 0 warnings",
+  "browser_evidence": "passed",
+  "visual_review": "passed",
+  "correction_rounds": 1,
+  "reviewed_images": [
+    "fleans.visual-check.2048x1320.light.png",
+    "fleans.visual-check.1440x900.dark.png"
+  ],
+  "observations": "Подписи и связи не перекрываются; композиция помещается на экране и сбалансирована. Фиксированный интерфейс и html lang используют английский."
+}

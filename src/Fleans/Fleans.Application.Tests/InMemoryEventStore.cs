@@ -24,17 +24,16 @@ internal class InMemoryEventStore : IEventStore
         if (!_events.TryGetValue(grainId, out var events))
             return Task.FromResult<IReadOnlyList<IDomainEvent>>([]);
 
-        return Task.FromResult<IReadOnlyList<IDomainEvent>>(
-            events.Skip(afterVersion).ToList());
+        lock (events)
+            return Task.FromResult<IReadOnlyList<IDomainEvent>>(events.Skip(afterVersion).ToList());
     }
 
-    public Task<bool> AppendEventsAsync(string grainId, IReadOnlyList<IDomainEvent> events, int startVersion)
+    public Task<bool> AppendEventsAsync(string grainId, IReadOnlyList<IDomainEvent> events, int expectedVersion)
     {
         var list = _events.GetOrAdd(grainId, _ => []);
         lock (list)
         {
-            // 1-based versions (IEventStore): the next event's version is Count + 1.
-            if (list.Count + 1 != startVersion)
+            if (list.Count != expectedVersion)
                 return Task.FromResult(false);
             list.AddRange(events);
         }
@@ -46,7 +45,4 @@ internal class InMemoryEventStore : IEventStore
         _snapshots[grainId] = (state, version);
         return Task.CompletedTask;
     }
-
-    public Task ProjectStateAsync(string grainId, WorkflowInstanceState state) =>
-        Task.CompletedTask;
 }

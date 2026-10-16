@@ -1,5 +1,6 @@
 using Fleans.Domain.Events;
 using Fleans.Domain.States;
+using Fleans.Persistence.Events;
 using Microsoft.EntityFrameworkCore;
 
 namespace Fleans.Persistence;
@@ -8,6 +9,8 @@ namespace Fleans.Persistence;
 /// Projects the current workflow instance state to the WorkflowInstances read model table.
 /// Called by the WorkflowInstance grain after events are confirmed via JournaledGrain.
 /// Uses upsert semantics without ETag checking (event store is the source of truth).
+/// The projection is also the event store's snapshot: the WorkflowSnapshots version row is
+/// saved in the same SaveChanges, so state and version cannot drift apart.
 /// </summary>
 public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
 {
@@ -34,7 +37,7 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
             .FirstOrDefaultAsync(s => s.Id == id);
     }
 
-    public async Task WriteAsync(string grainId, WorkflowInstanceState state)
+    public async Task WriteAsync(string grainId, WorkflowInstanceState state, int version)
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync();
         var id = Guid.Parse(grainId);
@@ -99,6 +102,23 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
                 DiffTimerCycleTracking(db, existing, state, id);
         }
 
+        var snapshot = await db.WorkflowSnapshots.FirstOrDefaultAsync(s => s.GrainId == grainId);
+        if (snapshot is null)
+        {
+            db.WorkflowSnapshots.Add(new WorkflowSnapshotEntity
+            {
+                GrainId = grainId,
+                Version = version,
+                Timestamp = DateTimeOffset.UtcNow
+            });
+        }
+        else
+        {
+            snapshot.Version = version;
+            snapshot.Timestamp = DateTimeOffset.UtcNow;
+        }
+
+        // One SaveChanges = one transaction: state and snapshot version commit together.
         await db.SaveChangesAsync();
         state.ClearDirtyFlags();
     }

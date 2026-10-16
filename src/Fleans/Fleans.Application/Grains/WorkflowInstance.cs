@@ -87,11 +87,6 @@ public partial class WorkflowInstance :
     private bool _draining;
 
     /// <summary>
-    /// Tracks the version at which the last snapshot was written, for periodic snapshotting.
-    /// </summary>
-    private int _lastSnapshotVersion;
-
-    /// <summary>
     /// Temporary aggregate used during JournaledGrain activation replay.
     /// TransitionState uses this to apply events when not in drain mode.
     /// </summary>
@@ -178,19 +173,6 @@ public partial class WorkflowInstance :
         EnsurePendingEventsTimerRegistered();
     }
 
-    public override async Task OnDeactivateAsync(DeactivationReason reason, CancellationToken cancellationToken)
-    {
-        // Write a final snapshot on graceful deactivation to reduce replay on next activation
-        if (State.IsStarted && this.Version > _lastSnapshotVersion)
-        {
-            var grainId = this.GetPrimaryKey().ToString();
-            await _eventStore.WriteSnapshotAsync(grainId, this.Version, this.State);
-            _lastSnapshotVersion = this.Version;
-        }
-
-        await base.OnDeactivateAsync(reason, cancellationToken);
-    }
-
     // ── JournaledGrain: TransitionState ─────────────────────────────────
 
     protected override void TransitionState(
@@ -212,15 +194,13 @@ public partial class WorkflowInstance :
     {
         var grainId = this.GetPrimaryKey().ToString();
         var (snapshot, snapshotVersion) = await _eventStore.ReadSnapshotAsync(grainId);
-        _lastSnapshotVersion = snapshotVersion;
 
         var state = snapshot ?? new WorkflowInstanceState();
 
-        // Replay events after the snapshot to recover state lost by ungraceful shutdown.
-        // Note: Apply methods with Guid.NewGuid()/DateTimeOffset.UtcNow produce non-deterministic
-        // values during replay (e.g. ApplyWorkflowStarted). This is a known limitation —
-        // in practice, snapshots are written on graceful deactivation covering most events.
-        // A future fix should embed deterministic IDs in event records.
+        // The snapshot is written with every append, so only events whose snapshot write did not
+        // happen (crash between the two) are replayed — or all of them when there is no snapshot.
+        // Ids come from the events, so replay is deterministic; only the timestamps Apply stamps
+        // with DateTimeOffset.UtcNow (CreatedAt, CompletedAt, …) get the replay time.
         var events = await _eventStore.ReadEventsAsync(grainId, snapshotVersion);
         if (events.Count > 0)
         {
@@ -236,23 +216,13 @@ public partial class WorkflowInstance :
         IReadOnlyList<IDomainEvent> updates, int expectedVersion)
     {
         var grainId = this.GetPrimaryKey().ToString();
-        // expectedVersion is the confirmed version (event count) BEFORE these updates. Stored
-        // versions are 1-based, so the batch starts at expectedVersion + 1 and the event count
-        // equals the last stored version — the number ReadEventsAsync(afterVersion) and
-        // snapshots use. Starting at expectedVersion skipped one event on replay (#833).
-        var success = await _eventStore.AppendEventsAsync(grainId, updates, expectedVersion + 1);
+        // expectedVersion is the confirmed event count BEFORE these updates.
+        var success = await _eventStore.AppendEventsAsync(grainId, updates, expectedVersion);
         if (!success) return false;
 
-        // Project state to query store so IWorkflowQueryService has up-to-date data
-        await _eventStore.ProjectStateAsync(grainId, this.State);
-
-        // Periodic snapshot every 100 events (for faster activation recovery)
-        var newVersion = expectedVersion + updates.Count;
-        if (newVersion - _lastSnapshotVersion >= 100)
-        {
-            await _eventStore.WriteSnapshotAsync(grainId, newVersion, this.State);
-            _lastSnapshotVersion = newVersion;
-        }
+        // Projection for IWorkflowQueryService and snapshot in one write: the snapshot version
+        // always matches the projected state, so replay never re-applies events it contains.
+        await _eventStore.WriteSnapshotAsync(grainId, expectedVersion + updates.Count, this.State);
 
         return true;
     }

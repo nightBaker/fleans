@@ -54,9 +54,12 @@ CI runs the dedicated `PostgreSQL tests` job (`.github/workflows/pg-tests.yml`) 
 
 **Bump `PostgresImage` in `Infrastructure/PostgresContainerFixture.cs` whenever the production deploy target moves** — today it tracks Aspire's `Aspire.Hosting.PostgreSQL` default (PG 16).
 
-## Event versions are 1-based
+## Event store: versions and snapshots
 
-`IEventStore` stores a batch at `startVersion`, `startVersion + 1`, …; `ReadEventsAsync(afterVersion)` returns `Version > afterVersion`. `WorkflowInstance.ApplyUpdatesToStorage` appends at the JournaledGrain's pre-confirm version **+ 1**, so the last stored version equals the event count — the same number used as the snapshot version. A new `IEventStore` must keep this contract, or replay skips (or double-applies) the event at the snapshot boundary (#833).
+- **Versions.** A grain's version is its event count. `IEventStore.AppendEventsAsync(grainId, events, expectedVersion)` stores the batch as versions `expectedVersion + 1`, … — the store does the numbering, callers pass the count. `ReadEventsAsync(afterVersion)` returns `Version > afterVersion`.
+- **Snapshots.** The snapshot *state* is the `WorkflowInstances` projection; the `WorkflowSnapshots` row only holds the version that state covers. `WriteSnapshotAsync` writes both in one `SaveChanges` after **every** append, so they never disagree. If a crash lands between the append and that write, activation replays exactly the events after the snapshot version. A lagging version would make replay re-apply events the projection already contains (#833) — keep the two in one transaction in any new provider.
+- **Replay is deterministic for ids** (they come from the events); `Apply` handlers stamp timestamps (`CreatedAt`, `CompletedAt`, …) with the replay time.
+- **Pre-1.0:** journals written before #833 used 0-based versions and replay without their `WorkflowStarted`. There is no migration — start from a fresh database.
 
 ## `Persistence:MaxEventsPerLoad` safety valve (default `1000`)
 

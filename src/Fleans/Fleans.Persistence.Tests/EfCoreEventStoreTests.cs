@@ -35,7 +35,7 @@ public class EfCoreEventStoreTests : PersistenceTestBase
             new ActivitySpawned(Guid.NewGuid(), "start", "StartEvent", Guid.NewGuid(), null, null, null)
         };
 
-        var result = await store.AppendEventsAsync(grainId, events, startVersion: 1);
+        var result = await store.AppendEventsAsync(grainId, events, expectedVersion: 0);
         Assert.IsTrue(result);
 
         var loaded = await store.ReadEventsAsync(grainId, afterVersion: 0);
@@ -61,7 +61,7 @@ public class EfCoreEventStoreTests : PersistenceTestBase
             new WorkflowCompleted()
         };
 
-        await store.AppendEventsAsync(grainId, events, startVersion: 1);
+        await store.AppendEventsAsync(grainId, events, expectedVersion: 0);
 
         var loaded = await store.ReadEventsAsync(grainId, afterVersion: 2);
         Assert.AreEqual(1, loaded.Count);
@@ -88,7 +88,7 @@ public class EfCoreEventStoreTests : PersistenceTestBase
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
         var store = CreateStore(fixture);
 
-        var result = await store.AppendEventsAsync("grain/x", [], startVersion: 1);
+        var result = await store.AppendEventsAsync("grain/x", [], expectedVersion: 0);
         Assert.IsTrue(result);
     }
 
@@ -104,10 +104,10 @@ public class EfCoreEventStoreTests : PersistenceTestBase
         var events1 = new List<IDomainEvent> { new WorkflowStarted(Guid.NewGuid(), "p1", Guid.NewGuid()) };
         var events2 = new List<IDomainEvent> { new ExecutionStarted() };
 
-        var result1 = await store.AppendEventsAsync(grainId, events1, startVersion: 1);
+        var result1 = await store.AppendEventsAsync(grainId, events1, expectedVersion: 0);
         Assert.IsTrue(result1);
 
-        var result2 = await store.AppendEventsAsync(grainId, events2, startVersion: 1);
+        var result2 = await store.AppendEventsAsync(grainId, events2, expectedVersion: 0);
         Assert.IsFalse(result2);
     }
 
@@ -127,7 +127,7 @@ public class EfCoreEventStoreTests : PersistenceTestBase
         var events = ids.Select(id =>
             (IDomainEvent)new ActivityExecutionStarted(id)).ToList();
 
-        await store.AppendEventsAsync(grainId, events, startVersion: 1);
+        await store.AppendEventsAsync(grainId, events, expectedVersion: 0);
 
         var loaded = await store.ReadEventsAsync(grainId, afterVersion: 0);
         Assert.AreEqual(10, loaded.Count);
@@ -159,7 +159,7 @@ public class EfCoreEventStoreTests : PersistenceTestBase
             new ActivityCompleted(Guid.NewGuid(), Guid.NewGuid(), variables)
         };
 
-        await store.AppendEventsAsync(grainId, events, startVersion: 1);
+        await store.AppendEventsAsync(grainId, events, expectedVersion: 0);
         var loaded = await store.ReadEventsAsync(grainId, afterVersion: 0);
 
         var completed = (ActivityCompleted)loaded[0];
@@ -249,8 +249,8 @@ public class EfCoreEventStoreTests : PersistenceTestBase
         var events1 = new List<IDomainEvent> { new WorkflowStarted(Guid.NewGuid(), "p1", Guid.NewGuid()) };
         var events2 = new List<IDomainEvent> { new ExecutionStarted() };
 
-        await store.AppendEventsAsync("grain/a", events1, startVersion: 1);
-        await store.AppendEventsAsync("grain/b", events2, startVersion: 1);
+        await store.AppendEventsAsync("grain/a", events1, expectedVersion: 0);
+        await store.AppendEventsAsync("grain/b", events2, expectedVersion: 0);
 
         var loadedA = await store.ReadEventsAsync("grain/a", afterVersion: 0);
         var loadedB = await store.ReadEventsAsync("grain/b", afterVersion: 0);
@@ -274,8 +274,8 @@ public class EfCoreEventStoreTests : PersistenceTestBase
         var batch1 = new List<IDomainEvent> { new WorkflowStarted(Guid.NewGuid(), "p1", Guid.NewGuid()) };
         var batch2 = new List<IDomainEvent> { new ExecutionStarted(), new WorkflowCompleted() };
 
-        await store.AppendEventsAsync(grainId, batch1, startVersion: 1);
-        await store.AppendEventsAsync(grainId, batch2, startVersion: 2);
+        await store.AppendEventsAsync(grainId, batch1, expectedVersion: 0);
+        await store.AppendEventsAsync(grainId, batch2, expectedVersion: 1);
 
         var all = await store.ReadEventsAsync(grainId, afterVersion: 0);
         Assert.AreEqual(3, all.Count);
@@ -295,7 +295,7 @@ public class EfCoreEventStoreTests : PersistenceTestBase
 
         var grainId = "grain/cap-exact";
         var events = Enumerable.Range(0, cap).Select(_ => (IDomainEvent)new ExecutionStarted()).ToList();
-        await store.AppendEventsAsync(grainId, events, startVersion: 1);
+        await store.AppendEventsAsync(grainId, events, expectedVersion: 0);
 
         var loaded = await store.ReadEventsAsync(grainId, afterVersion: 0);
         Assert.AreEqual(cap, loaded.Count);
@@ -312,7 +312,7 @@ public class EfCoreEventStoreTests : PersistenceTestBase
 
         var grainId = "grain/cap-over";
         var events = Enumerable.Range(0, cap + 1).Select(_ => (IDomainEvent)new ExecutionStarted()).ToList();
-        await store.AppendEventsAsync(grainId, events, startVersion: 1);
+        await store.AppendEventsAsync(grainId, events, expectedVersion: 0);
 
         InvalidOperationException? caught = null;
         try { await store.ReadEventsAsync(grainId, afterVersion: 0); }
@@ -335,7 +335,7 @@ public class EfCoreEventStoreTests : PersistenceTestBase
         // cap + offset total events; afterVersion=offset leaves exactly cap events — should not throw
         var grainId = "grain/cap-offset";
         var events = Enumerable.Range(0, cap + offset).Select(_ => (IDomainEvent)new ExecutionStarted()).ToList();
-        await store.AppendEventsAsync(grainId, events, startVersion: 1);
+        await store.AppendEventsAsync(grainId, events, expectedVersion: 0);
 
         var loaded = await store.ReadEventsAsync(grainId, afterVersion: offset);
         Assert.AreEqual(cap, loaded.Count);
@@ -356,7 +356,7 @@ public class EfCoreEventStoreTests : PersistenceTestBase
             new ExecutionStarted(),
             new WorkflowCompleted()
         };
-        await store.AppendEventsAsync(grainId, events, startVersion: 1);
+        await store.AppendEventsAsync(grainId, events, expectedVersion: 0);
 
         var loaded = await store.ReadEventsAsync(grainId, afterVersion: 0);
         Assert.AreEqual(3, loaded.Count);

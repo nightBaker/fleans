@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "deliver",
+  "type": "workflow",
+  "input": "/Users/yerassylshalabayev/RiderProjects/fleans/docs/architecture/runtime-engine.workflow.json",
+  "output": "/Users/yerassylshalabayev/RiderProjects/fleans/docs/architecture/runtime-engine.html",
+  "specification": {
+    "sha256": "1821dda091bbb72abf789831eb2cafc30930d3c594330cf571a610d167b81ae5",
+    "bytes": 4990
+  },
+  "artifact": {
+    "sha256": "f98bc43051ecd5d1c71ffaadf6dede270c323a417f3bbd3d10d6c48c4f1683e7",
+    "bytes": 809882
+  },
+  "validation": {
+    "checksPassed": 9,
+    "checkCount": 9,
+    "compositionProfile": "showcase",
+    "compositionStatus": "pass",
+    "errors": 0,
+    "warnings": 0
+  }
+}

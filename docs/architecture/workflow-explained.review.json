@@ -1,0 +1,15 @@
+{
+  "diagram_type": "lifecycle",
+  "output": "/Users/yerassylshalabayev/RiderProjects/fleans/docs/architecture/workflow-explained.html",
+  "specification_sha256": "11255bdf2c1c6502bcbaf2faa6ad4d97b0468c99d913d98b8ab880a760cac048",
+  "artifact_sha256": "3a6c78ca02ff71cb4cbc59b64d2dee8ec20cef4abd4845c455ecdb2cd16438b6",
+  "validation": "9/9 showcase, 0 errors, 0 warnings",
+  "browser_evidence": "passed",
+  "visual_review": "passed",
+  "correction_rounds": 2,
+  "scope": "Conceptual leave approval example, not literal Fleans status enums. Unlabeled rail and outcome edges express the progression already stated by their endpoints.",
+  "reviewed_images": [
+    "workflow-explained.visual-check.2048x1320.light.png",
+    "workflow-explained.visual-check.1440x900.dark.png"
+  ]
+}

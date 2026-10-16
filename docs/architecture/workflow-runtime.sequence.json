@@ -1,0 +1,155 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Fleans: выполнение workflow со scriptTask",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "viewBox": [
+      1080,
+      560
+    ]
+  },
+  "participants": [
+    {
+      "id": "caller",
+      "type": "frontend",
+      "label": "Вход",
+      "sublabel": "API · Web · MCP"
+    },
+    {
+      "id": "instance",
+      "type": "backend",
+      "label": "WorkflowInstance",
+      "sublabel": "Core · координатор"
+    },
+    {
+      "id": "aggregate",
+      "type": "backend",
+      "label": "WorkflowExecution",
+      "sublabel": "Доменный агрегат"
+    },
+    {
+      "id": "store",
+      "type": "database",
+      "label": "EfCoreEventStore",
+      "sublabel": "Журнал + проекции"
+    },
+    {
+      "id": "stream",
+      "type": "messagebus",
+      "label": "Orleans Streams",
+      "sublabel": "ExecuteScriptEvent"
+    },
+    {
+      "id": "handler",
+      "type": "backend",
+      "label": "Подписчик",
+      "sublabel": "Core · подписчик"
+    },
+    {
+      "id": "executor",
+      "type": "backend",
+      "label": "Исполнитель",
+      "sublabel": "ScriptExecutorGrain"
+    }
+  ],
+  "messages": [
+    {
+      "id": "step-1",
+      "from": "caller",
+      "to": "instance",
+      "y": 160,
+      "label": "StartWorkflow()",
+      "variant": "emphasis"
+    },
+    {
+      "id": "step-2",
+      "from": "instance",
+      "to": "aggregate",
+      "y": 188,
+      "label": "Запуск и переходы BPMN",
+      "variant": "default"
+    },
+    {
+      "id": "step-4",
+      "from": "instance",
+      "to": "stream",
+      "y": 216,
+      "label": "Публикация ExecuteScriptEvent",
+      "variant": "dashed"
+    },
+    {
+      "id": "step-3",
+      "from": "instance",
+      "to": "store",
+      "y": 244,
+      "label": "ConfirmEvents(): журнал + проекция",
+      "variant": "emphasis"
+    },
+    {
+      "id": "step-5",
+      "from": "stream",
+      "to": "handler",
+      "y": 272,
+      "label": "OnNextAsync(event)",
+      "variant": "dashed"
+    },
+    {
+      "id": "step-6",
+      "from": "handler",
+      "to": "instance",
+      "y": 300,
+      "label": "GetVariables(variablesId)",
+      "variant": "default"
+    },
+    {
+      "id": "step-7",
+      "from": "instance",
+      "to": "handler",
+      "y": 328,
+      "label": "Переменные шага",
+      "variant": "return"
+    },
+    {
+      "id": "step-8",
+      "from": "handler",
+      "to": "executor",
+      "y": 356,
+      "label": "Execute(script, variables, format)",
+      "variant": "emphasis"
+    },
+    {
+      "id": "step-9",
+      "from": "executor",
+      "to": "handler",
+      "y": 384,
+      "label": "Результат скрипта",
+      "variant": "return"
+    },
+    {
+      "id": "step-10",
+      "from": "handler",
+      "to": "instance",
+      "y": 412,
+      "label": "CompleteActivity(..., result)",
+      "variant": "emphasis"
+    },
+    {
+      "id": "step-11",
+      "from": "instance",
+      "to": "aggregate",
+      "y": 440,
+      "label": "Завершить шаг и продолжить BPMN",
+      "variant": "default"
+    },
+    {
+      "id": "step-12",
+      "from": "instance",
+      "to": "store",
+      "y": 468,
+      "label": "ConfirmEvents(): события + проекция",
+      "variant": "emphasis"
+    }
+  ]
+}
