@@ -1,0 +1,126 @@
+# Fleans load-testing stack — split roles on Kafka streaming.
+#
+#   nginx → 3 × fleans-core (Fleans:Role=Core, REST API)
+#           2 × fleans-worker (Fleans.WorkerHost, Fleans:Role=Worker — scripts/conditions)
+#           1 × fleans-plugin (Fleans.E2E.PluginHost, Fleans:Role=Plugin — external `e2e-probe` task)
+#   + PostgreSQL 16 (persistence) + Redis 7 (clustering, reminders, PubSubStore) + Kafka (streams)
+#
+# Build images:  bash build-images.sh
+# Start:         docker compose up -d --wait            (replica counts come from deploy.replicas)
+#                docker compose exec nginx nginx -s reload
+# Stop:          docker compose down -v
+#
+# FLEANS_STREAMING_PROVIDER=Redis runs the same topology on Redis streams (Kafka stays up, unused).
+
+name: fleans-load
+
+x-silo-env: &silo-env
+  ASPNETCORE_ENVIRONMENT: Production
+  ASPNETCORE_HTTP_PORTS: "8080"
+  FLEANS_LOAD_TEST_MODE: "true"
+  ConnectionStrings__orleans-redis: "redis:6379"
+  Persistence__Provider: Postgres
+  ConnectionStrings__fleans: "Host=postgres;Database=fleans;Username=postgres;Password=fleans"
+  ConnectionStrings__fleans-query: "Host=postgres;Database=fleans;Username=postgres;Password=fleans"
+  Fleans__Streaming__Provider: ${FLEANS_STREAMING_PROVIDER:-Kafka}
+  Fleans__Streaming__Kafka__Brokers: "kafka:9092"
+
+x-http-health: &http-health
+  # The aspnet base image has bash but no curl/wget.
+  test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/8080 && printf \"GET /health HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && read r <&3 && [[ \"$$r\" == *200* ]]'"]
+  interval: 10s
+  timeout: 5s
+  retries: 15
+  start_period: 45s
+
+services:
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  postgres:
+    image: postgres:16-alpine
+    # 6 silos × (command + query) Npgsql pools exceed the default max_connections=100.
+    command: ["postgres", "-c", "max_connections=300"]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: fleans
+      POSTGRES_DB: fleans
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  kafka:
+    image: confluentinc/cp-kafka:7.9.0
+    environment:
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+
+  fleans-core:
+    image: fleans-api:loadtest
+    environment:
+      <<: *silo-env
+      Fleans__Role: Core
+    deploy: { replicas: 3 }
+    restart: on-failure
+    depends_on:
+      redis: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+    healthcheck: *http-health
+
+  fleans-worker:
+    image: fleans-worker:loadtest
+    environment:
+      <<: *silo-env
+      Fleans__Role: Worker
+    deploy: { replicas: 2 }
+    restart: on-failure
+    depends_on:
+      # Core silos create the schema first; workers start once they are up.
+      fleans-core: { condition: service_healthy }
+    healthcheck: *http-health
+
+  fleans-plugin:
+    # FLEANS_PLUGIN_IMAGE lets a run swap in a differently-built plugin host.
+    image: ${FLEANS_PLUGIN_IMAGE:-fleans-plugin:loadtest}
+    environment:
+      FLEANS_LOAD_TEST_MODE: "true"
+      Fleans__Role: Plugin
+      ConnectionStrings__orleans-redis: "redis:6379"
+      Fleans__Streaming__Provider: ${FLEANS_STREAMING_PROVIDER:-Kafka}
+      Fleans__Streaming__Kafka__Brokers: "kafka:9092"
+    restart: on-failure
+    depends_on:
+      fleans-core: { condition: service_healthy }
+
+  nginx:
+    image: nginx:1.27
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      fleans-core: { condition: service_healthy }

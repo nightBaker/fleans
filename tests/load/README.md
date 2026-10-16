@@ -4,9 +4,9 @@ k6 load test suite for the Fleans workflow engine.
 
 ## Prerequisites
 
-- [k6](https://k6.io/docs/get-started/installation/) installed
-- Fleans cluster running (see [Docker Compose setup](#docker-compose-setup) below, or Aspire for local dev)
-- All 3 BPMN fixtures deployed (run `setup.js` first)
+- [k6](https://k6.io/docs/get-started/installation/), Docker, the .NET SDK from `global.json`
+- Fleans cluster running (see [Docker Compose setup](#docker-compose-setup) below)
+- BPMN fixtures deployed (run `setup.js` first)
 
 ## Scripts
 
@@ -17,6 +17,7 @@ k6 load test suite for the Fleans workflow engine.
 | `scripts/parallel.js` | Scenario 2: parallel branching (3-branch fork/join) | `k6 run scripts/parallel.js` |
 | `scripts/events.js` | Scenario 3 — event-driven with message correlation | `k6 run scripts/events.js` |
 | `scripts/mixed.js` | Mixed workload combining all scenarios | `k6 run scripts/mixed.js` |
+| `scripts/long-diverse.js` | Scenario 5: long, diverse process with 4 client interactions + external task | `k6 run scripts/long-diverse.js` |
 | `scripts/metrics.js` | Shared metric definitions | Imported by scenario scripts |
 
 **`setup.js`** (from #239) is a standalone file you run once via `k6 run setup.js` to deploy fixtures and verify the cluster is ready.
@@ -30,34 +31,47 @@ k6 load test suite for the Fleans workflow engine.
 | `fixtures/linear-workflow.bpmn` | `load-linear` | Simple start → script → end |
 | `fixtures/parallel-workflow.bpmn` | `load-parallel` | Parallel gateway fork/join |
 | `fixtures/events-workflow.bpmn` | `load-events` | Timer + message events |
+| `fixtures/long-diverse-workflow.bpmn` | `load-long-diverse` | ~45 nodes: exclusive / parallel / inclusive / event-based gateways, embedded sub-process, parallel + sequential multi-instance, call activity, error + timer boundaries, timer + message catches, external `task`, `e2e-probe` custom task |
+| `fixtures/long-diverse-child.bpmn` | `load-long-child` | Called by `load-long-diverse` (script → 1 s timer → script) |
 
 ## Docker Compose Setup
 
-The load-testing Docker stack is generated from the Aspire AppHost using the Docker compose publisher. No hand-written Dockerfiles or compose files.
+`docker-compose.yml` is the load-testing stack — split roles on Kafka streaming:
 
-### Generate
+| Service | Replicas | What |
+|---|---:|---|
+| `nginx` | 1 | `:80` → `fleans-core` (config: `nginx.conf`) |
+| `fleans-core` | 3 | `Fleans.Api`, `Fleans:Role=Core` — REST API, workflow grains |
+| `fleans-worker` | 2 | `Fleans.WorkerHost`, `Fleans:Role=Worker` — script / condition grains |
+| `fleans-plugin` | 1 | `Fleans.E2E.PluginHost`, `Fleans:Role=Plugin` — external worker hosting the `e2e-probe` custom task |
+| `kafka` | 1 | Orleans streams (single broker, KRaft) |
+| `redis` | 1 | Orleans clustering, reminders, PubSubStore |
+| `postgres` | 1 | Persistence (`max_connections=300` — 6 silos × 2 Npgsql pools) |
+
+Outside Aspire the silos are wired by `FLEANS_LOAD_TEST_MODE=true` (explicit Redis clustering + PubSubStore).
+
+### Build images
 
 ```bash
-FLEANS_LOAD_TEST_MODE=true dotnet run --project src/Fleans/Fleans.Aspire -- --publisher docker-compose --output-path tests/load/generated
+bash tests/load/build-images.sh        # fleans-api / fleans-worker / fleans-plugin, tag :loadtest (TAG=… to override)
 ```
 
-The `FLEANS_LOAD_TEST_MODE=true` env var opts in to the load-test fan-out: nginx fronting 2 `fleans-core` replicas (config from `tests/load/nginx.conf`). Released compose / helm artifacts deliberately omit this — it's a developer-only concern and the K8s publisher rejects the bind mount that nginx requires.
+The script runs `dotnet publish` and builds each image on `mcr.microsoft.com/dotnet/aspnet:10.0`.
 
 ### Start
 
 ```bash
-cd tests/load/generated && docker compose up -d
+cd tests/load
+docker compose up -d --wait
+docker compose exec nginx nginx -s reload     # pick up all fleans-core replicas
+EXPECTED_REPLICA_COUNT=3 bash verify-cluster.sh
 ```
 
-### Verify
+`FLEANS_STREAMING_PROVIDER=Redis docker compose up -d --wait` runs the same topology on Redis streams.
+`FLEANS_PLUGIN_IMAGE=<image>` swaps the plugin-host image.
 
-```bash
-# Health check — should return 400 (no workflow deployed)
-curl -X POST http://localhost:80/Execution/start -d '{"WorkflowId":"nonexistent"}' -H "Content-Type: application/json"
-
-# Check all services are running
-docker compose ps
-```
+> **Known issues:** on Kafka, the stock plugin host owns stream queues but cannot deserialize engine events,
+> so instances hang (#866). Under load, ~4 % of `long-diverse` instances hang on either stream provider (#869).
 
 ### Teardown
 
@@ -65,14 +79,20 @@ docker compose ps
 docker compose down -v
 ```
 
-The generated artifacts are gitignored (`tests/load/generated/`). The AppHost is the single source of truth.
+### Alternative: Aspire-generated 2-replica stack
+
+`FLEANS_LOAD_TEST_MODE=true dotnet run --project src/Fleans/Fleans.Aspire -- --publisher docker-compose --output-path tests/load/generated`
+emits nginx fronting 2 `fleans-core` replicas (gitignored `tests/load/generated/`). Released compose / helm
+artifacts omit this fan-out. That stack has no Plugin-role host, so run `long-diverse.js` against it with
+`K6_EXPECT_PLUGIN=false`.
 
 ## Running
 
 ### 1. Deploy fixtures (required once per cluster restart)
 
 ```bash
-k6 run --insecure-skip-tls-verify tests/load/scripts/setup.js
+K6_TARGET_URL=http://localhost:80 k6 run tests/load/scripts/setup.js     # docker-compose stack
+k6 run --insecure-skip-tls-verify tests/load/scripts/setup.js           # Aspire dev stack (https://localhost:7140)
 ```
 
 Override the target URL with `K6_TARGET_URL`:
@@ -81,7 +101,25 @@ Override the target URL with `K6_TARGET_URL`:
 K6_TARGET_URL=https://my-cluster.example.com k6 run tests/load/scripts/setup.js
 ```
 
-### 2. Run linear throughput scenario
+### 2. Main scenario: long, diverse process (`long-diverse.js`)
+
+Per iteration: start → wait for `waitApproval` → message `loadApproval` → wait for `manualReview` →
+`POST /Execution/complete-activity` → wait for `waitConfirm` → message `loadConfirm` → wait for completion,
+then checks that every branch taken matches the start variables (`amount`, `divisor`). ~10 % of instances
+take the error-boundary path.
+
+```bash
+K6_TARGET_URL=http://localhost:80 K6_PROFILE=smoke k6 run tests/load/scripts/long-diverse.js   # 2 VUs × 5
+K6_TARGET_URL=http://localhost:80 k6 run tests/load/scripts/long-diverse.js                    # step: 10→25→50→100 VUs
+K6_TARGET_URL=http://localhost:80 K6_PROFILE=constant K6_VUS=50 K6_DURATION=5m k6 run tests/load/scripts/long-diverse.js
+```
+
+The `externalWork` step is an `e2e-probe` custom task, so the target cluster needs a Plugin-role host
+(`docker-compose.yml` has one). Against a cluster without one set `K6_EXPECT_PLUGIN=false` — the step then
+never completes, so use it only to measure the stages before the parallel join. Extra knobs:
+`K6_STAGE_BUDGET_MS` (poll budget per stage, default 45 000), `K6_SUMMARY_PATH` (write the k6 JSON summary).
+
+### 3. Run linear throughput scenario
 
 **Cloud / Docker Compose cluster (full load):**
 ```bash
@@ -96,7 +134,7 @@ k6 run --vus 5 --iterations 20 --insecure-skip-tls-verify tests/load/scripts/lin
 > **Warning:** Do NOT run the full 500-VU scenario against a local single-node dev setup.
 > It generates ~5 000 workflow starts/second and will overwhelm a dev database.
 
-### 3. Run parallel branching scenario
+### 4. Run parallel branching scenario
 
 **Cloud / Docker Compose cluster (full load):**
 ```bash
@@ -174,3 +212,4 @@ When running against Aspire locally (without docker-compose), rate limiting is o
 - Issue #241 — Event-driven scenario
 - Issue #242 — Mixed workload scenario
 - Issue #244 — Cloud validation run
+- Issues #866, #867, #868, #869 (and #846, #857) — findings from the `long-diverse` run on the split-roles Kafka stack

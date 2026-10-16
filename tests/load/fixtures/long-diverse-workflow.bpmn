@@ -1,0 +1,228 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+             id="Definitions_long" targetNamespace="http://bpmn.io/schema/bpmn">
+  <!-- Long, diverse load-test process (scenario: long-diverse.js).
+       Start variables (supplied by k6): orderId (uuid, message correlation key),
+       amount (1..1000, drives the exclusive + inclusive gateways),
+       divisor (0 for ~10% of instances → error boundary path, otherwise 1).
+
+       Stages:
+         1. init script → exclusive split (amount > 500) → merge
+         2. parallel fork, 4 branches:
+              A: two scripts
+              B: embedded sub-process with a parallel multi-instance script (5 items)
+              C: call activity → load-long-child (script, 1s timer, script)
+              D: external custom task `e2e-probe` (Fleans.E2E.PluginHost, Plugin role), 50ms of work
+         3. inclusive fork (always 2 of 3 branches) → inclusive join
+         4. risky script with error boundary → exclusive merge
+         5. message catch "loadApproval" (interrupting 60s timer boundary)
+         6. sequential multi-instance script (3 iterations)
+         7. 1s timer catch
+         8. external task "manualReview" (POST /Execution/complete-activity)
+         9. event-based gateway: message "loadConfirm" vs 60s timer
+        10. finalize script → end -->
+  <message id="msg-approval" name="loadApproval">
+    <extensionElements>
+      <zeebe:subscription correlationKey="= orderId" />
+    </extensionElements>
+  </message>
+  <message id="msg-confirm" name="loadConfirm">
+    <extensionElements>
+      <zeebe:subscription correlationKey="= orderId" />
+    </extensionElements>
+  </message>
+  <process id="load-long-diverse" isExecutable="true">
+    <startEvent id="start" />
+
+    <!-- 1. init + exclusive split/merge -->
+    <scriptTask id="init" scriptFormat="csharp">
+      <script>_context.items = new List&lt;object&gt; { "i1", "i2", "i3", "i4", "i5" }; _context.stage = 1</script>
+    </scriptTask>
+    <exclusiveGateway id="valueSplit" default="toStandard" />
+    <scriptTask id="highValue" scriptFormat="csharp">
+      <script>_context.discount = 10; _context.segment = "high"</script>
+    </scriptTask>
+    <scriptTask id="standardValue" scriptFormat="csharp">
+      <script>_context.discount = 0; _context.segment = "standard"</script>
+    </scriptTask>
+    <exclusiveGateway id="valueMerge" />
+
+    <!-- 2. parallel fork/join -->
+    <parallelGateway id="pFork" />
+    <scriptTask id="branchA1" scriptFormat="csharp">
+      <script>_context.a1 = _context.amount + 1</script>
+    </scriptTask>
+    <scriptTask id="branchA2" scriptFormat="csharp">
+      <script>_context.a2 = _context.a1 * 3</script>
+    </scriptTask>
+    <subProcess id="branchBSub">
+      <startEvent id="subStart" />
+      <scriptTask id="subPrepare" scriptFormat="csharp">
+        <script>_context.subPrepared = true</script>
+      </scriptTask>
+      <scriptTask id="subProcessItem" scriptFormat="csharp">
+        <script>_context.itemResult = "done-" + _context.item</script>
+        <multiInstanceLoopCharacteristics isSequential="false"
+          zeebe:collection="items" zeebe:elementVariable="item"
+          zeebe:outputCollection="itemResults" zeebe:outputElement="itemResult" />
+      </scriptTask>
+      <endEvent id="subEnd" />
+      <sequenceFlow id="sf1" sourceRef="subStart" targetRef="subPrepare" />
+      <sequenceFlow id="sf2" sourceRef="subPrepare" targetRef="subProcessItem" />
+      <sequenceFlow id="sf3" sourceRef="subProcessItem" targetRef="subEnd" />
+    </subProcess>
+    <callActivity id="branchCCall" calledElement="load-long-child">
+      <extensionElements>
+        <inputMapping source="amount" target="amount" />
+        <outputMapping source="childResult" target="childResult" />
+      </extensionElements>
+    </callActivity>
+    <serviceTask id="externalWork" type="e2e-probe">
+      <extensionElements>
+        <zeebe:ioMapping>
+          <zeebe:input  source="50"                   target="delayMs" />
+          <zeebe:output source="=__response.siloName" target="probeSilo" />
+          <zeebe:output source="=__response.role"     target="probeRole" />
+        </zeebe:ioMapping>
+      </extensionElements>
+    </serviceTask>
+    <parallelGateway id="pJoin" />
+
+    <!-- 3. inclusive fork/join: amount > 0 always true, then exactly one of the other two -->
+    <inclusiveGateway id="iFork" />
+    <scriptTask id="incAlways" scriptFormat="csharp">
+      <script>_context.incAlways = true</script>
+    </scriptTask>
+    <scriptTask id="incBig" scriptFormat="csharp">
+      <script>_context.incBig = true</script>
+    </scriptTask>
+    <scriptTask id="incSmall" scriptFormat="csharp">
+      <script>_context.incSmall = true</script>
+    </scriptTask>
+    <inclusiveGateway id="iJoin" />
+
+    <!-- 4. risky script with error boundary -->
+    <scriptTask id="risky" scriptFormat="csharp">
+      <script>_context.quotient = 100 / _context.divisor</script>
+    </scriptTask>
+    <boundaryEvent id="riskyError" attachedToRef="risky">
+      <errorEventDefinition />
+    </boundaryEvent>
+    <scriptTask id="handleError" scriptFormat="csharp">
+      <script>_context.errorHandled = true</script>
+    </scriptTask>
+    <exclusiveGateway id="riskMerge" />
+
+    <!-- 5. message catch with interrupting timeout -->
+    <intermediateCatchEvent id="waitApproval">
+      <messageEventDefinition messageRef="msg-approval" />
+    </intermediateCatchEvent>
+    <boundaryEvent id="approvalTimeout" attachedToRef="waitApproval">
+      <timerEventDefinition>
+        <timeDuration>PT60S</timeDuration>
+      </timerEventDefinition>
+    </boundaryEvent>
+    <scriptTask id="approvalTimedOut" scriptFormat="csharp">
+      <script>_context.outcome = "approval-timeout"</script>
+    </scriptTask>
+    <endEvent id="timeoutEnd" />
+
+    <!-- 6. sequential multi-instance -->
+    <scriptTask id="seqStep" scriptFormat="csharp">
+      <script>_context.seqResult = "seq-" + _context.loopCounter</script>
+      <multiInstanceLoopCharacteristics isSequential="true"
+        outputCollection="seqResults" outputElement="seqResult">
+        <loopCardinality>3</loopCardinality>
+      </multiInstanceLoopCharacteristics>
+    </scriptTask>
+
+    <!-- 7. timer catch -->
+    <intermediateCatchEvent id="coolDown">
+      <timerEventDefinition>
+        <timeDuration>PT1S</timeDuration>
+      </timerEventDefinition>
+    </intermediateCatchEvent>
+
+    <!-- 8. external task -->
+    <task id="manualReview" />
+
+    <!-- 9. event-based gateway -->
+    <eventBasedGateway id="confirmGateway" />
+    <intermediateCatchEvent id="waitConfirm">
+      <messageEventDefinition messageRef="msg-confirm" />
+    </intermediateCatchEvent>
+    <intermediateCatchEvent id="confirmExpired">
+      <timerEventDefinition>
+        <timeDuration>PT60S</timeDuration>
+      </timerEventDefinition>
+    </intermediateCatchEvent>
+    <scriptTask id="confirmed" scriptFormat="csharp">
+      <script>_context.outcome = "confirmed"</script>
+    </scriptTask>
+    <scriptTask id="expired" scriptFormat="csharp">
+      <script>_context.outcome = "confirm-expired"</script>
+    </scriptTask>
+    <exclusiveGateway id="outcomeMerge" />
+
+    <!-- 10. finalize -->
+    <scriptTask id="finalize" scriptFormat="csharp">
+      <script>_context.finished = true</script>
+    </scriptTask>
+    <endEvent id="end" />
+
+    <sequenceFlow id="f01" sourceRef="start" targetRef="init" />
+    <sequenceFlow id="f02" sourceRef="init" targetRef="valueSplit" />
+    <sequenceFlow id="toHigh" sourceRef="valueSplit" targetRef="highValue">
+      <conditionExpression>${amount &gt; 500}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="toStandard" sourceRef="valueSplit" targetRef="standardValue" />
+    <sequenceFlow id="f03" sourceRef="highValue" targetRef="valueMerge" />
+    <sequenceFlow id="f04" sourceRef="standardValue" targetRef="valueMerge" />
+    <sequenceFlow id="f05" sourceRef="valueMerge" targetRef="pFork" />
+    <sequenceFlow id="f06" sourceRef="pFork" targetRef="branchA1" />
+    <sequenceFlow id="f07" sourceRef="branchA1" targetRef="branchA2" />
+    <sequenceFlow id="f08" sourceRef="branchA2" targetRef="pJoin" />
+    <sequenceFlow id="f09" sourceRef="pFork" targetRef="branchBSub" />
+    <sequenceFlow id="f10" sourceRef="branchBSub" targetRef="pJoin" />
+    <sequenceFlow id="f11" sourceRef="pFork" targetRef="branchCCall" />
+    <sequenceFlow id="f12" sourceRef="branchCCall" targetRef="pJoin" />
+    <sequenceFlow id="f11d" sourceRef="pFork" targetRef="externalWork" />
+    <sequenceFlow id="f12d" sourceRef="externalWork" targetRef="pJoin" />
+    <sequenceFlow id="f13" sourceRef="pJoin" targetRef="iFork" />
+    <sequenceFlow id="incCondAlways" sourceRef="iFork" targetRef="incAlways">
+      <conditionExpression>${amount &gt; 0}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="incCondBig" sourceRef="iFork" targetRef="incBig">
+      <conditionExpression>${amount &gt; 500}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="incCondSmall" sourceRef="iFork" targetRef="incSmall">
+      <conditionExpression>${amount &lt;= 500}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="f14" sourceRef="incAlways" targetRef="iJoin" />
+    <sequenceFlow id="f15" sourceRef="incBig" targetRef="iJoin" />
+    <sequenceFlow id="f16" sourceRef="incSmall" targetRef="iJoin" />
+    <sequenceFlow id="f17" sourceRef="iJoin" targetRef="risky" />
+    <sequenceFlow id="f18" sourceRef="risky" targetRef="riskMerge" />
+    <sequenceFlow id="f19" sourceRef="riskyError" targetRef="handleError" />
+    <sequenceFlow id="f20" sourceRef="handleError" targetRef="riskMerge" />
+    <sequenceFlow id="f21" sourceRef="riskMerge" targetRef="waitApproval" />
+    <sequenceFlow id="f22" sourceRef="approvalTimeout" targetRef="approvalTimedOut" />
+    <sequenceFlow id="f23" sourceRef="approvalTimedOut" targetRef="timeoutEnd" />
+    <sequenceFlow id="f24" sourceRef="waitApproval" targetRef="seqStep" />
+    <sequenceFlow id="f25" sourceRef="seqStep" targetRef="coolDown" />
+    <sequenceFlow id="f26" sourceRef="coolDown" targetRef="manualReview" />
+    <sequenceFlow id="f27" sourceRef="manualReview" targetRef="confirmGateway" />
+    <sequenceFlow id="f28" sourceRef="confirmGateway" targetRef="waitConfirm" />
+    <sequenceFlow id="f29" sourceRef="confirmGateway" targetRef="confirmExpired" />
+    <sequenceFlow id="f30" sourceRef="waitConfirm" targetRef="confirmed" />
+    <sequenceFlow id="f31" sourceRef="confirmExpired" targetRef="expired" />
+    <sequenceFlow id="f32" sourceRef="confirmed" targetRef="outcomeMerge" />
+    <sequenceFlow id="f33" sourceRef="expired" targetRef="outcomeMerge" />
+    <sequenceFlow id="f34" sourceRef="outcomeMerge" targetRef="finalize" />
+    <sequenceFlow id="f35" sourceRef="finalize" targetRef="end" />
+  </process>
+</definitions>
