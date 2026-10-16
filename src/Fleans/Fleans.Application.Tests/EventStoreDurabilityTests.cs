@@ -107,12 +107,12 @@ public class EventStoreDurabilityTests : WorkflowTestBase
             $"CompleteActivity(task2) must append events " +
             $"(afterTask1={afterTask1}, afterTask2={afterTask2})");
 
-        // The journal must form a contiguous 0..N-1 version sequence
-        // (`WorkflowInstance.ApplyUpdatesToStorage` passes the pre-confirm
-        // version as the starting version; first event therefore has
-        // Version=0). A skipped version would still satisfy the count
-        // growth above, but replay would later reconstruct an incomplete
-        // state.
+        // The journal must form a contiguous 1..N version sequence
+        // (`WorkflowInstance.ApplyUpdatesToStorage` starts each batch at the
+        // pre-confirm version + 1; first event therefore has Version=1, and
+        // a snapshot at version N covers exactly the first N events — #833).
+        // A skipped version would still satisfy the count growth above, but
+        // replay would later reconstruct an incomplete state.
         await using (var db = await dbContextFactory.CreateDbContextAsync())
         {
             var versions = await db.WorkflowEvents
@@ -124,16 +124,16 @@ public class EventStoreDurabilityTests : WorkflowTestBase
                 "row count must match version count");
             for (int i = 0; i < versions.Count; i++)
             {
-                Assert.AreEqual(i, versions[i],
-                    $"versions must form a contiguous 0..N-1 sequence; " +
-                    $"gap at index {i}: expected {i}, got {versions[i]}");
+                Assert.AreEqual(i + 1, versions[i],
+                    $"versions must form a contiguous 1..N sequence; " +
+                    $"gap at index {i}: expected {i + 1}, got {versions[i]}");
             }
         }
 
-        // Max version equals (row count - 1) for 0-indexed versions —
+        // Max version equals the row count for 1-based versions —
         // catches duplicate-version bugs that would slip past the
         // contiguous-sequence assertion (e.g., the grain confirms a version
         // twice and the second insert silently overwrites or duplicates).
-        Assert.AreEqual(afterTask2 - 1, await MaxVersion());
+        Assert.AreEqual(afterTask2, await MaxVersion());
     }
 }

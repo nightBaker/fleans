@@ -54,6 +54,10 @@ CI runs the dedicated `PostgreSQL tests` job (`.github/workflows/pg-tests.yml`) 
 
 **Bump `PostgresImage` in `Infrastructure/PostgresContainerFixture.cs` whenever the production deploy target moves** — today it tracks Aspire's `Aspire.Hosting.PostgreSQL` default (PG 16).
 
+## Event versions are 1-based
+
+`IEventStore` stores a batch at `startVersion`, `startVersion + 1`, …; `ReadEventsAsync(afterVersion)` returns `Version > afterVersion`. `WorkflowInstance.ApplyUpdatesToStorage` appends at the JournaledGrain's pre-confirm version **+ 1**, so the last stored version equals the event count — the same number used as the snapshot version. A new `IEventStore` must keep this contract, or replay skips (or double-applies) the event at the snapshot boundary (#833).
+
 ## `Persistence:MaxEventsPerLoad` safety valve (default `1000`)
 
 `EfCoreEventStore.ReadEventsAsync` throws `InvalidOperationException` if the unread event delta exceeds this cap, surfacing broken-snapshotting scenarios before they OOM the silo. Increase via the `Persistence__MaxEventsPerLoad` env var for deployments with legitimately large deltas.

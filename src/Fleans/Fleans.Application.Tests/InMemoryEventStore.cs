@@ -33,7 +33,8 @@ internal class InMemoryEventStore : IEventStore
         var list = _events.GetOrAdd(grainId, _ => []);
         lock (list)
         {
-            if (list.Count != startVersion)
+            // 1-based versions (IEventStore): the next event's version is Count + 1.
+            if (list.Count + 1 != startVersion)
                 return Task.FromResult(false);
             list.AddRange(events);
         }

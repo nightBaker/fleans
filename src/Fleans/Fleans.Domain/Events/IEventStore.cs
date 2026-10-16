@@ -5,6 +5,9 @@ namespace Fleans.Domain.Events;
 /// <summary>
 /// Abstraction over the event store for JournaledGrain persistence.
 /// Implemented by EfCoreEventStore in the Persistence layer.
+/// Event versions are 1-based: <see cref="AppendEventsAsync"/> stores the batch at
+/// <c>startVersion</c>, <c>startVersion + 1</c>, …, and <see cref="ReadEventsAsync"/> returns the
+/// events with <c>Version &gt; afterVersion</c>. A snapshot's version is the number of events it covers.
 /// </summary>
 public interface IEventStore
 {

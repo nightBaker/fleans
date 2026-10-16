@@ -26,10 +26,42 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         await grain.SetWorkflow(CreateSimpleWorkflow("es-started-instance-id"));
 
         // Assert
-        // Event versions start at 0 and ReadEventsAsync returns Version > afterVersion.
-        var events = await GetSiloService<IEventStore>().ReadEventsAsync(instanceId.ToString(), -1);
+        var events = await GetSiloService<IEventStore>().ReadEventsAsync(instanceId.ToString(), afterVersion: 0);
         var started = events.OfType<WorkflowStarted>().Single();
         Assert.AreEqual(instanceId, started.InstanceId);
+    }
+
+    [TestMethod]
+    public async Task StateRecovery_WithoutSnapshot_ReplaysAllEventsIncludingWorkflowStarted()
+    {
+        // Arrange — an instance waiting on task2, then the snapshot removed, as after an
+        // ungraceful shutdown that happened before any snapshot was written (#833). Deployed,
+        // so the reactivated grain can load its definition by ProcessDefinitionId.
+        var workflow = (WorkflowDefinition)CreateSequentialWorkflow();
+        await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId)
+            .DeployVersion(workflow, "<placeholder/>");
+        var grain = await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId)
+            .CreateInstance();
+        var instanceId = grain.GetPrimaryKey();
+        await grain.StartWorkflow();
+        await grain.CompleteActivity("task1", new ExpandoObject());
+        await ForceAllGrainDeactivation();
+
+        var dbFactory = GetSiloService<IDbContextFactory<FleanCommandDbContext>>();
+        await using (var db = await dbFactory.CreateDbContextAsync())
+        {
+            var grainIdStr = instanceId.ToString();
+            await db.WorkflowSnapshots.Where(s => s.GrainId == grainIdStr).ExecuteDeleteAsync();
+        }
+
+        // Act — reactivation replays every stored event
+        await grain.CompleteActivity("task2", new ExpandoObject());
+
+        // Assert
+        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsNotNull(snapshot);
+        Assert.IsTrue(snapshot.IsCompleted);
+        Assert.IsFalse(snapshot.IsFailed);
     }
 
     [TestMethod]
@@ -265,11 +297,11 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
                 .Select(e => e.Version)
                 .ToListAsync();
 
-            // Versions should be contiguous starting from 0
+            // Versions should be contiguous starting from 1 (#833)
             for (int i = 0; i < versions.Count; i++)
             {
-                Assert.AreEqual(i, versions[i],
-                    $"Event version at index {i} should be {i} but was {versions[i]}");
+                Assert.AreEqual(i + 1, versions[i],
+                    $"Event version at index {i} should be {i + 1} but was {versions[i]}");
             }
         }
     }

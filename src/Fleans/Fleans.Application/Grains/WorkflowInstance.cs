@@ -236,9 +236,11 @@ public partial class WorkflowInstance :
         IReadOnlyList<IDomainEvent> updates, int expectedVersion)
     {
         var grainId = this.GetPrimaryKey().ToString();
-        // expectedVersion is the confirmed version BEFORE these updates.
-        // Events should be appended starting at this version.
-        var success = await _eventStore.AppendEventsAsync(grainId, updates, expectedVersion);
+        // expectedVersion is the confirmed version (event count) BEFORE these updates. Stored
+        // versions are 1-based, so the batch starts at expectedVersion + 1 and the event count
+        // equals the last stored version — the number ReadEventsAsync(afterVersion) and
+        // snapshots use. Starting at expectedVersion skipped one event on replay (#833).
+        var success = await _eventStore.AppendEventsAsync(grainId, updates, expectedVersion + 1);
         if (!success) return false;
 
         // Project state to query store so IWorkflowQueryService has up-to-date data
