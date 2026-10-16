@@ -6,19 +6,19 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
+using Orleans.Serialization;
 
 namespace Fleans.Persistence.Events;
 
 /// <summary>
-/// Encapsulates all database operations for event and snapshot persistence.
-/// Used by the WorkflowInstance grain's ICustomStorageInterface implementation.
-/// Snapshots are the normalized WorkflowInstances projection (IWorkflowStateProjection), which
-/// stores the version it covers in the same row.
+/// The WorkflowInstance journal (WorkflowEvents, JSON) and its snapshots (WorkflowSnapshots, the full
+/// grain state in Orleans binary form). Used by the grain's ICustomStorageInterface implementation.
+/// The read model is a separate projection (<see cref="IWorkflowStateProjection"/>).
 /// </summary>
 public class EfCoreEventStore : IEventStore
 {
     private readonly IDbContextFactory<FleanCommandDbContext> _dbContextFactory;
-    private readonly IWorkflowStateProjection _stateProjection;
+    private readonly Serializer _serializer;
     private readonly int _maxEventsPerLoad;
 
     internal static readonly JsonSerializerSettings JsonSettings = new()
@@ -33,20 +33,32 @@ public class EfCoreEventStore : IEventStore
 
     public EfCoreEventStore(
         IDbContextFactory<FleanCommandDbContext> dbContextFactory,
-        IWorkflowStateProjection stateProjection,
+        Serializer serializer,
         IOptions<FleansPersistenceOptions> options)
     {
         _dbContextFactory = dbContextFactory;
-        _stateProjection = stateProjection;
+        _serializer = serializer;
         _maxEventsPerLoad = options.Value.MaxEventsPerLoad;
+        SnapshotInterval = options.Value.SnapshotInterval;
     }
 
+    public int SnapshotInterval { get; }
+
     /// <summary>
-    /// The projected state and the number of events it covers (one row, see
-    /// <see cref="IWorkflowStateProjection"/>), or <c>(null, 0)</c> when there is none.
+    /// The latest snapshot and the version it covers, or <c>(null, 0)</c> when there is none.
+    /// Throws when the payload cannot be deserialized (e.g. the state shape changed).
     /// </summary>
-    public Task<(WorkflowInstanceState? State, int Version)> ReadSnapshotAsync(string grainId) =>
-        _stateProjection.ReadAsync(grainId);
+    public async Task<(WorkflowInstanceState? State, int Version)> ReadSnapshotAsync(string grainId)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        var snapshot = await db.WorkflowSnapshots
+            .AsNoTracking()
+            .FirstOrDefaultAsync(s => s.GrainId == grainId);
+        if (snapshot is null)
+            return (null, 0);
+
+        return (_serializer.Deserialize<WorkflowInstanceState>(snapshot.Payload), snapshot.Version);
+    }
 
     /// <summary>
     /// Loads all events for a grain after the given version, ordered by version.
@@ -68,8 +80,8 @@ public class EfCoreEventStore : IEventStore
         if (eventEntities.Count > _maxEventsPerLoad)
             throw new InvalidOperationException(
                 $"Refusing to load more than {_maxEventsPerLoad} events for grain '{grainId}' " +
-                $"(afterVersion={afterVersion}). This indicates snapshotting is broken — " +
-                $"investigate WorkflowInstance.ApplyUpdatesToStorage / WriteSnapshotAsync. " +
+                $"(afterVersion={afterVersion}). This indicates snapshotting is broken or the snapshot " +
+                $"was unreadable — investigate WorkflowInstance.ApplyUpdatesToStorage / WriteSnapshotAsync. " +
                 $"Increase Persistence:MaxEventsPerLoad if this is intentional.");
 
         return eventEntities
@@ -99,7 +111,7 @@ public class EfCoreEventStore : IEventStore
                 Version = expectedVersion + 1 + i,
                 EventType = EventTypeRegistry.GetEventType(events[i]),
                 Payload = JsonConvert.SerializeObject(events[i], JsonSettings),
-                Timestamp = DateTimeOffset.UtcNow
+                Timestamp = events[i] is WorkflowEvent we ? we.OccurredAt : DateTimeOffset.UtcNow
             });
         }
 
@@ -114,12 +126,32 @@ public class EfCoreEventStore : IEventStore
         }
     }
 
-    /// <summary>
-    /// Writes the projected state and the version it covers in one row
-    /// (see <see cref="IWorkflowStateProjection.WriteAsync"/>).
-    /// </summary>
-    public Task WriteSnapshotAsync(string grainId, int version, WorkflowInstanceState state) =>
-        _stateProjection.WriteAsync(grainId, state, version);
+    /// <summary>Upserts the grain's single snapshot row.</summary>
+    public async Task WriteSnapshotAsync(string grainId, int version, WorkflowInstanceState state)
+    {
+        var payload = _serializer.SerializeToArray(state);
+
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        var existing = await db.WorkflowSnapshots.FirstOrDefaultAsync(s => s.GrainId == grainId);
+        if (existing is null)
+        {
+            db.WorkflowSnapshots.Add(new WorkflowSnapshotEntity
+            {
+                GrainId = grainId,
+                Version = version,
+                Payload = payload,
+                Timestamp = DateTimeOffset.UtcNow
+            });
+        }
+        else
+        {
+            existing.Version = version;
+            existing.Payload = payload;
+            existing.Timestamp = DateTimeOffset.UtcNow;
+        }
+
+        await db.SaveChangesAsync();
+    }
 
     private static bool IsUniqueConstraintViolation(DbUpdateException ex)
     {

@@ -588,7 +588,7 @@ public partial class WorkflowInstance
                 ? esc.Tcs.Task
                 : completion.Task;
 
-            var evt = new Fleans.Domain.Events.PendingEventEnqueued(opKey, payload, DateTimeOffset.UtcNow);
+            var evt = new Fleans.Domain.Events.PendingEventEnqueued(opKey, payload) { OccurredAt = DateTimeOffset.UtcNow };
             State.AddPendingOperation(opKey, payload);
             LogProcessingPendingEvent(nameof(Fleans.Domain.Events.PendingEventEnqueued));
 
@@ -684,20 +684,19 @@ public partial class WorkflowInstance
                 break;
             case ActivitySpawned spawned:
                 LogActivitySpawned(spawned.ActivityInstanceId, spawned.ActivityId, spawned.ActivityType);
-                _activityStartedAt[spawned.ActivityInstanceId] = (DateTimeOffset.UtcNow, spawned.ActivityType);
                 break;
             case ActivityCompleted activityCompleted:
                 LogStateCompleteEntries(1);
-                RecordActivityDurationIfTracked(activityCompleted.ActivityInstanceId);
+                RecordActivityDuration(activityCompleted.ActivityInstanceId, activityCompleted.OccurredAt);
                 break;
             case ActivityFailed failed:
                 LogFailingActivity(failed.ActivityInstanceId.ToString());
-                RecordActivityDurationIfTracked(failed.ActivityInstanceId);
+                RecordActivityDuration(failed.ActivityInstanceId, failed.OccurredAt);
                 break;
             case ActivityCancelled cancelled:
                 LogScopeChildCancelled(cancelled.ActivityInstanceId.ToString(),
                     State.FindEntry(cancelled.ActivityInstanceId)?.ScopeId ?? Guid.Empty);
-                RecordActivityDurationIfTracked(cancelled.ActivityInstanceId);
+                RecordActivityDuration(cancelled.ActivityInstanceId, cancelled.OccurredAt);
                 break;
             case VariablesMerged merged:
                 LogStateMergeState(merged.VariablesId);
@@ -814,10 +813,14 @@ public partial class WorkflowInstance
         }
     }
 
-    private void RecordActivityDurationIfTracked(Guid activityInstanceId)
+    /// <summary>
+    /// Spawn-to-end duration from the journaled times (the entry's <c>CreatedAt</c> is its
+    /// <c>ActivitySpawned.OccurredAt</c>), so activities spawned before a reactivation count too.
+    /// </summary>
+    private void RecordActivityDuration(Guid activityInstanceId, DateTimeOffset endedAt)
     {
-        if (!_activityStartedAt.Remove(activityInstanceId, out var tracked)) return;
-        var elapsed = (DateTimeOffset.UtcNow - tracked.StartedAt).TotalMilliseconds;
-        FleansDiagnostics.RecordActivityDuration(elapsed, tracked.ActivityType);
+        var entry = State.FindEntry(activityInstanceId);
+        if (entry?.CreatedAt is not { } createdAt || entry.ActivityType is not { } activityType) return;
+        FleansDiagnostics.RecordActivityDuration((endedAt - createdAt).TotalMilliseconds, activityType);
     }
 }

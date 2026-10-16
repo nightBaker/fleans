@@ -69,7 +69,9 @@ This means Fleans inherits Orleans' distributed systems guarantees without build
   <figcaption>Commands change in-memory grain state, one <code>ConfirmEvents</code> transaction persists the batch, and reads come from a materialized projection instead of event replay. <a href="/fleans/diagrams/event-sourcing-cqrs.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
 </figure>
 
-**Materialized read-side projection.** The `EfCoreWorkflowStateProjection` writes a denormalized snapshot after each event batch. UI queries and `GET /instances/{id}/state` never replay events — they read the projection directly.
+**Materialized read-side projection.** The `EfCoreWorkflowStateProjection` writes a denormalized read model after each event batch. UI queries and `GET /instances/{id}/state` never replay events — they read the projection directly. If a projection write is missed, the instance rebuilds it from its events the next time it activates.
+
+**Snapshots bound replay.** Every 100 events (`Persistence:SnapshotInterval`) the engine stores the instance's full state. Reactivation loads the latest snapshot and replays only the events after it. The event log stays the source of truth: snapshots and the read model are both derived from it.
 
 **NoTracking reads by default.** The query `DbContext` skips EF Core change-tracking overhead on every read.
 

@@ -4,7 +4,9 @@ using Fleans.Domain.States;
 using Fleans.Persistence.Events;
 using Fleans.Persistence.Tests.Infrastructure;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Orleans.Serialization;
 
 namespace Fleans.Persistence.Tests;
 
@@ -12,11 +14,13 @@ namespace Fleans.Persistence.Tests;
 [TestCategory("Postgres")]
 public class EfCoreEventStoreTests : PersistenceTestBase
 {
+    private static readonly Serializer Serializer =
+        new ServiceCollection().AddSerializer().BuildServiceProvider().GetRequiredService<Serializer>();
+
     private static EfCoreEventStore CreateStore(IPersistenceTestFixture fixture, int? maxEventsPerLoad = null)
     {
-        var projection = new EfCoreWorkflowStateProjection(fixture.CommandFactory);
         var opts = Options.Create(new FleansPersistenceOptions { MaxEventsPerLoad = maxEventsPerLoad ?? 1000 });
-        return new EfCoreEventStore(fixture.CommandFactory, projection, opts);
+        return new EfCoreEventStore(fixture.CommandFactory, Serializer, opts);
     }
 
     [DataTestMethod]
@@ -187,14 +191,29 @@ public class EfCoreEventStoreTests : PersistenceTestBase
     [DataTestMethod]
     [DataRow(PersistenceProvider.Sqlite)]
     [DataRow(PersistenceProvider.Postgres)]
-    public async Task WriteAndReadSnapshot_RoundTrip(PersistenceProvider provider)
+    public async Task WriteAndReadSnapshot_RoundTrip_KeepsTheFullState(PersistenceProvider provider)
     {
+        // The snapshot is the grain state itself, including the members the read model has no
+        // columns for — activation restores them from here, not from the projection.
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
         var store = CreateStore(fixture);
 
         var id = Guid.NewGuid();
         var grainId = id.ToString();
         var state = CreateTestState(id);
+        var userTaskId = Guid.NewGuid();
+        var userTask = new UserTaskMetadata();
+        userTask.Initialize("alice", ["managers"], ["bob"], ["approved"]);
+        userTask.Claim("alice", DateTimeOffset.UtcNow);
+        state.UserTasks[userTaskId] = userTask;
+        var txId = Guid.NewGuid();
+        state.TransactionOutcomes[txId] = new TransactionOutcomeRecord(TransactionOutcome.Completed, null, null);
+        state.ScopeHostExecutionScopes[Guid.NewGuid()] = Guid.NewGuid();
+        state.AddPendingOperation("op-1", new PendingSignalDeliveryPayload("signal1", Guid.NewGuid()));
+        state.RecordAppliedOperation("op-0", null);
+        state.AddConditionalWatcher(Guid.NewGuid(), "cond1", "x > 1", state.GetRootVariablesId());
+        state.AddCompensationSnapshot(new CompletedActivitySnapshot(
+            Guid.NewGuid(), "task1", new ExpandoObject(), state.NextCompensationSequence, null));
 
         await store.WriteSnapshotAsync(grainId, version: 5, state);
 
@@ -203,16 +222,42 @@ public class EfCoreEventStoreTests : PersistenceTestBase
         Assert.AreEqual(5, version);
         Assert.AreEqual(state.Id, loaded.Id);
         Assert.AreEqual(state.IsStarted, loaded.IsStarted);
-        Assert.AreEqual(state.ProcessDefinitionId, loaded.ProcessDefinitionId);
+        Assert.AreEqual(state.CreatedAt, loaded.CreatedAt);
+        Assert.AreEqual("alice", loaded.UserTasks[userTaskId].ClaimedBy);
+        Assert.AreEqual(TransactionOutcome.Completed, loaded.TransactionOutcomes[txId].Outcome);
+        Assert.HasCount(1, loaded.ScopeHostExecutionScopes);
+        Assert.IsTrue(loaded.PendingOperations.ContainsKey("op-1"));
+        Assert.IsTrue(loaded.AppliedOperations.ContainsKey("op-0"));
+        Assert.HasCount(1, loaded.ConditionalWatchers);
+        Assert.HasCount(1, loaded.CompensationLog);
 
+        // Snapshots and the read model are separate: writing one does not touch the other.
         await using var db = await fixture.CommandFactory.CreateDbContextAsync();
-        var row = await db.WorkflowInstances.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id);
-        Assert.IsNotNull(row, "Snapshot state should exist in WorkflowInstances table");
+        Assert.IsFalse(await db.WorkflowInstances.AnyAsync(s => s.Id == id));
+    }
 
-        // The version lives on the same row as the state (#833)
-        var rowVersion = await db.WorkflowInstances
-            .Where(s => s.Id == id).Select(s => EF.Property<int>(s, "SnapshotVersion")).SingleAsync();
-        Assert.AreEqual(5, rowVersion);
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task ReadSnapshot_UnreadablePayload_Throws(PersistenceProvider provider)
+    {
+        // The grain treats a throwing read as "no snapshot" and replays the whole journal.
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var store = CreateStore(fixture);
+        var grainId = Guid.NewGuid().ToString();
+        await using (var db = await fixture.CommandFactory.CreateDbContextAsync())
+        {
+            db.WorkflowSnapshots.Add(new WorkflowSnapshotEntity
+            {
+                GrainId = grainId, Version = 3, Payload = [1, 2, 3], Timestamp = DateTimeOffset.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var threw = false;
+        try { await store.ReadSnapshotAsync(grainId); }
+        catch (Exception) { threw = true; }
+        Assert.IsTrue(threw, "an unreadable snapshot must not be returned as state");
     }
 
     [DataTestMethod]
@@ -370,11 +415,36 @@ public class EfCoreEventStoreTests : PersistenceTestBase
         Assert.AreEqual(1000, opts.MaxEventsPerLoad);
     }
 
+    [TestMethod]
+    public void Default_SnapshotInterval_Is100()
+    {
+        Assert.AreEqual(100, new FleansPersistenceOptions().SnapshotInterval);
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task AppendEvents_StoresOccurredAtAsTimestamp(PersistenceProvider provider)
+    {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var store = CreateStore(fixture);
+        var grainId = Guid.NewGuid().ToString();
+        var occurredAt = new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.Zero);
+
+        await store.AppendEventsAsync(grainId, [new ExecutionStarted { OccurredAt = occurredAt }], expectedVersion: 0);
+
+        var loaded = (ExecutionStarted)(await store.ReadEventsAsync(grainId, afterVersion: 0)).Single();
+        Assert.AreEqual(occurredAt, loaded.OccurredAt);
+        await using var db = await fixture.CommandFactory.CreateDbContextAsync();
+        var row = await db.WorkflowEvents.AsNoTracking().SingleAsync(e => e.GrainId == grainId);
+        Assert.AreEqual(occurredAt, row.Timestamp);
+    }
+
     private static WorkflowInstanceState CreateTestState(Guid? id = null)
     {
         var state = new WorkflowInstanceState();
-        state.Initialize(id ?? Guid.NewGuid(), null, Guid.NewGuid());
-        state.Start();
+        state.Initialize(id ?? Guid.NewGuid(), null, Guid.NewGuid(), DateTimeOffset.UtcNow);
+        state.Start(DateTimeOffset.UtcNow);
         return state;
     }
 }

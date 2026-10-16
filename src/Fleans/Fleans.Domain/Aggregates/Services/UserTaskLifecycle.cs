@@ -9,11 +9,11 @@ namespace Fleans.Domain.Aggregates.Services;
 public class UserTaskLifecycle
 {
     private readonly WorkflowInstanceState _state;
-    private readonly Action<IDomainEvent> _emit;
+    private readonly Action<WorkflowEvent> _emit;
 
     public UserTaskLifecycle(
         WorkflowInstanceState state,
-        Action<IDomainEvent> emit)
+        Action<WorkflowEvent> emit)
     {
         _state = state;
         _emit = emit;
@@ -49,8 +49,7 @@ public class UserTaskLifecycle
             throw new InvalidOperationException(
                 $"User {userId} is not authorized to claim this task");
 
-        var claimedAt = DateTimeOffset.UtcNow;
-        _emit(new UserTaskClaimed(activityInstanceId, userId, claimedAt));
+        _emit(new UserTaskClaimed(activityInstanceId, userId));
 
         return [new UpdateUserTaskClaimEffect(
             activityInstanceId, userId, UserTaskLifecycleState.Claimed)];
@@ -100,7 +99,7 @@ public class UserTaskLifecycle
         }
 
         // Transition user task to Completed state before cleanup removes it
-        metadata.Complete();
+        _emit(new UserTaskCompleted(activityInstanceId));
 
         return _state.GetActiveEntry(activityInstanceId);
     }

@@ -459,4 +459,19 @@ public partial class WorkflowInstance
         Message = "Compensation log returned: {EntryCount} entries")]
     private partial void LogCompensationLogReturned(int entryCount);
 
+    [LoggerMessage(EventId = 1130, Level = LogLevel.Warning,
+        Message = "Snapshot unreadable; replaying the whole journal")]
+    private partial void LogSnapshotUnreadable(Exception exception);
+
+    [LoggerMessage(EventId = 1131, Level = LogLevel.Warning,
+        Message = "Snapshot write at version {Version} failed; the next activation replays more events")]
+    private partial void LogSnapshotWriteFailed(int version, Exception exception);
+
+    [LoggerMessage(EventId = 1132, Level = LogLevel.Error,
+        Message = "Read-model projection write at version {Version} failed; it is rebuilt on the next activation")]
+    private partial void LogProjectionWriteFailed(int version, Exception exception);
+
+    [LoggerMessage(EventId = 1133, Level = LogLevel.Information,
+        Message = "Read-model projection at version {ProjectedVersion} is behind the journal at {Version}; rebuilding it")]
+    private partial void LogProjectionBehind(int projectedVersion, int version);
 }

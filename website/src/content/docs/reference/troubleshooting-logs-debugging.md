@@ -31,6 +31,7 @@ If you author a custom-task plugin, follow the same pattern (see the [adding a B
 | 1100–1109 | `WorkflowInstance` — transaction sub-process |
 | 1110–1119 | `WorkflowInstance` — compensation |
 | 1120 | `WorkflowInstance` — workflow failed: an unhandled activity failure left no active activities (Error) |
+| 1130–1133 | `WorkflowInstance` — event store: 1130 unreadable snapshot, full replay (Warning); 1131 snapshot write failed (Warning); 1132 read-model write failed, rebuilt on next activation (Error); 1133 read model behind the event log, rebuilding (Information) |
 | 1066 | `UserTaskClaim` rejection (Warning) |
 | 2000–2099 | `ActivityInstance` |
 | 3000–3099 | `WorkflowInstanceState` |

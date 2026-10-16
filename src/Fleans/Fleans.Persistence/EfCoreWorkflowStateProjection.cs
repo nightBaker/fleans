@@ -5,15 +5,19 @@ using Microsoft.EntityFrameworkCore;
 namespace Fleans.Persistence;
 
 /// <summary>
-/// Projects the current workflow instance state to the WorkflowInstances read model table.
-/// Called by the WorkflowInstance grain after events are confirmed via JournaledGrain.
-/// Uses upsert semantics without ETag checking (event store is the source of truth).
-/// The projection is also the event store's snapshot: the version it covers is a column of the
-/// same row (<see cref="FleanModelConfiguration.SnapshotVersion"/>), so state and version cannot
-/// drift apart.
+/// Projects the current workflow instance state to the WorkflowInstances read model tables.
+/// Called by the WorkflowInstance grain after its events are appended. Uses upsert semantics
+/// without ETag checking: the event store is the source of truth, and this projection is never
+/// read back as grain state. The version it reflects is a column of the same row
+/// (<see cref="FleanModelConfiguration.ProjectedVersion"/>) so a grain can tell, on activation,
+/// that a projection write was missed and rebuild it.
 /// </summary>
 public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
 {
+    private const DirtyCollections AllCollections =
+        DirtyCollections.Entries | DirtyCollections.VariableStates | DirtyCollections.ConditionSequenceStates
+        | DirtyCollections.GatewayForks | DirtyCollections.TimerCycleTracking | DirtyCollections.ComplexGatewayJoinStates;
+
     private readonly IDbContextFactory<FleanCommandDbContext> _dbContextFactory;
 
     public EfCoreWorkflowStateProjection(IDbContextFactory<FleanCommandDbContext> dbContextFactory)
@@ -21,38 +25,26 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
         _dbContextFactory = dbContextFactory;
     }
 
-    public async Task<(WorkflowInstanceState? State, int Version)> ReadAsync(string grainId)
+    public async Task<int> ReadVersionAsync(string grainId)
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync();
         var id = Guid.Parse(grainId);
 
-        var state = await db.WorkflowInstances
-            .Include(s => s.Entries)
-            .Include(s => s.VariableStates)
-            .Include(s => s.ConditionSequenceStates)
-            .Include(s => s.GatewayForks)
-            .Include(s => s.ComplexGatewayJoinStates)
-            .Include(s => s.TimerCycleTracking)
-            .AsNoTracking()
-            .FirstOrDefaultAsync(s => s.Id == id);
-        if (state is null)
-            return (null, 0);
-
-        var version = await db.WorkflowInstances
+        return await db.WorkflowInstances
             .Where(s => s.Id == id)
-            .Select(s => EF.Property<int>(s, FleanModelConfiguration.SnapshotVersion))
-            .SingleAsync();
-        return (state, version);
+            .Select(s => (int?)EF.Property<int>(s, FleanModelConfiguration.ProjectedVersion))
+            .SingleOrDefaultAsync() ?? 0;
     }
 
-    public async Task WriteAsync(string grainId, WorkflowInstanceState state, int version)
+    public async Task WriteAsync(string grainId, WorkflowInstanceState state, int version, bool rebuild = false)
     {
         // Taken before the first await: a mutation that interleaves while this write is in
         // flight sets its flag again and is projected next time, instead of being cleared unwritten.
         var takenFlags = state.TakeDirtyFlags();
         try
         {
-            await WriteCoreAsync(grainId, state, version, (DirtyCollections)takenFlags);
+            var dirty = rebuild ? AllCollections : (DirtyCollections)takenFlags;
+            await WriteCoreAsync(grainId, state, version, dirty);
         }
         catch
         {
@@ -90,7 +82,7 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
             db.WorkflowInstances.Add(state);
             db.Entry(state).Property(s => s.Id).CurrentValue = id;
             db.Entry(state).Property(s => s.ETag).CurrentValue = Guid.NewGuid().ToString("N");
-            db.Entry(state).Property(FleanModelConfiguration.SnapshotVersion).CurrentValue = version;
+            db.Entry(state).Property(FleanModelConfiguration.ProjectedVersion).CurrentValue = version;
 
             foreach (var entry in state.Entries)
                 db.Entry(entry).Property(e => e.WorkflowInstanceId).CurrentValue = id;
@@ -111,7 +103,7 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
             db.Entry(existing).CurrentValues.SetValues(state);
             db.Entry(existing).Property(s => s.Id).IsModified = false;
             db.Entry(existing).Property(s => s.ETag).CurrentValue = Guid.NewGuid().ToString("N");
-            db.Entry(existing).Property(FleanModelConfiguration.SnapshotVersion).CurrentValue = version;
+            db.Entry(existing).Property(FleanModelConfiguration.ProjectedVersion).CurrentValue = version;
 
             if (dirty.HasFlag(DirtyCollections.Entries))
                 DiffEntries(db, existing, state, id);

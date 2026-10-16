@@ -15,11 +15,11 @@ public record BoundaryEventFiredResult(
 public class BoundaryEventHandler
 {
     private readonly WorkflowInstanceState _state;
-    private readonly Action<IDomainEvent> _emit;
+    private readonly Action<WorkflowEvent> _emit;
 
     public BoundaryEventHandler(
         WorkflowInstanceState state,
-        Action<IDomainEvent> emit)
+        Action<WorkflowEvent> emit)
     {
         _state = state;
         _emit = emit;

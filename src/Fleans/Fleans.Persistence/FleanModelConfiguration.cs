@@ -15,11 +15,11 @@ namespace Fleans.Persistence;
 internal static class FleanModelConfiguration
 {
     /// <summary>
-    /// Shadow column on WorkflowInstances: the number of journal events the projected row covers.
-    /// The row doubles as the event store's snapshot, so state and version live in one row and
-    /// cannot drift apart (#833). Persistence-only — the domain state does not know about it.
+    /// Shadow column on WorkflowInstances: the number of journal events the projected row reflects.
+    /// A grain whose journal is ahead of it on activation rebuilds the projection (a write was
+    /// missed). Persistence-only — the domain state does not know about it.
     /// </summary>
-    public const string SnapshotVersion = "SnapshotVersion";
+    public const string ProjectedVersion = "ProjectedVersion";
 
     public static void Configure(ModelBuilder modelBuilder)
     {
@@ -27,7 +27,7 @@ internal static class FleanModelConfiguration
         {
             entity.ToTable("WorkflowInstances");
             entity.HasKey(e => e.Id);
-            entity.Property<int>(SnapshotVersion);
+            entity.Property<int>(ProjectedVersion);
 
             entity.Property(e => e.ETag).HasMaxLength(64);
 
@@ -57,25 +57,15 @@ internal static class FleanModelConfiguration
             // SQLite provider applies a string converter via its IModelCustomizer because SQLite
             // does not support DateTimeOffset in ORDER BY.
 
-            // UserTasks is an in-memory dictionary rehydrated from the UserTasks table on activation.
+            // The members below are grain state with no read-model columns. The grain restores them
+            // from its snapshot (WorkflowSnapshots) and the journal, never from this projection.
+            // User tasks are queried from the UserTasks table, written by UserTaskGrain.
             entity.Ignore(e => e.UserTasks);
-
-            // CompensationLog and ActiveCompensationWalks are event-sourced state: they are rebuilt
-            // from domain events on grain activation and are NOT projected to the relational store.
             entity.Ignore(e => e.CompensationLog);
             entity.Ignore(e => e.ActiveCompensationWalks);
             entity.Ignore(e => e.NextCompensationSequence);
-
-            // TransactionOutcomes is rebuilt from TransactionOutcomeSet events on grain activation.
             entity.Ignore(e => e.TransactionOutcomes);
-
-            // ScopeHostExecutionScopes is rebuilt from ScopeHostExecutionScopeOpened events
-            // (and pruned by ApplyActivityCompleted/ApplyActivityCancelled) on grain activation.
-            // See issue #284.
             entity.Ignore(e => e.ScopeHostExecutionScopes);
-
-            // PendingOperations / AppliedOperations are rebuilt from PendingEventEnqueued/Drained/
-            // Applied events on grain activation; not projected to the relational store. See #657.
             entity.Ignore(e => e.PendingOperations);
             entity.Ignore(e => e.AppliedOperations);
 
@@ -379,6 +369,14 @@ internal static class FleanModelConfiguration
             entity.Property(e => e.EventType).HasMaxLength(128).IsRequired();
 
             entity.HasIndex(e => new { e.GrainId, e.Version }).IsUnique();
+        });
+
+        modelBuilder.Entity<WorkflowSnapshotEntity>(entity =>
+        {
+            entity.ToTable("WorkflowSnapshots");
+            entity.HasKey(e => e.GrainId);
+            entity.Property(e => e.GrainId).HasMaxLength(256);
+            entity.Property(e => e.Payload).IsRequired();
         });
     }
 }

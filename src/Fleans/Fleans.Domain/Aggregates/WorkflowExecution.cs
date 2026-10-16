@@ -3328,19 +3328,19 @@ public class WorkflowExecution
 
     /// <summary>Emits <see cref="PendingEventEnqueued"/>, persisting an external event in the queue ledger.</summary>
     public void EmitPendingEventEnqueued(string opKey, PendingExternalEventPayload payload)
-        => Emit(new PendingEventEnqueued(opKey, payload, DateTimeOffset.UtcNow));
+        => Emit(new PendingEventEnqueued(opKey, payload));
 
     /// <summary>Emits <see cref="PendingEventDrained"/>, removing a processed external event from the queue ledger.</summary>
     public void EmitPendingEventDrained(string opKey)
-        => Emit(new PendingEventDrained(opKey, DateTimeOffset.UtcNow));
+        => Emit(new PendingEventDrained(opKey));
 
     /// <summary>Emits <see cref="PendingEventApplied"/>, recording a retried op's outcome in the dedup ledger.</summary>
     public void EmitPendingEventApplied(string opKey, PendingEventResult? result)
-        => Emit(new PendingEventApplied(opKey, result, DateTimeOffset.UtcNow));
+        => Emit(new PendingEventApplied(opKey, result));
 
     // --- Emit / Apply pattern ---
 
-    private void Emit(IDomainEvent @event)
+    private void Emit(WorkflowEvent @event)
     {
         // Snapshot mutable ExpandoObject data to preserve event immutability
         var snapshotted = @event switch
@@ -3350,8 +3350,12 @@ public class WorkflowExecution
             _ => @event
         };
 
-        Apply(snapshotted);
-        _uncommittedEvents.Add(snapshotted);
+        // The only clock read on the event path: Apply handlers take the time from the event,
+        // so replaying the journal reproduces it.
+        var stamped = snapshotted with { OccurredAt = DateTimeOffset.UtcNow };
+
+        Apply(stamped);
+        _uncommittedEvents.Add(stamped);
     }
 
     private static ExpandoObject SnapshotExpandoObject(ExpandoObject source)
@@ -3370,17 +3374,17 @@ public class WorkflowExecution
             case WorkflowStarted e:
                 ApplyWorkflowStarted(e);
                 break;
-            case ExecutionStarted:
-                _state.Start();
+            case ExecutionStarted e:
+                _state.Start(e.OccurredAt);
                 break;
-            case WorkflowCompleted:
-                _state.Complete();
+            case WorkflowCompleted e:
+                _state.Complete(e.OccurredAt);
                 break;
-            case WorkflowCancelled:
-                _state.Cancel();
+            case WorkflowCancelled e:
+                _state.Cancel(e.OccurredAt);
                 break;
-            case WorkflowFailed:
-                _state.Fail();
+            case WorkflowFailed e:
+                _state.Fail(e.OccurredAt);
                 break;
             case EscalationUncaughtRaised:
                 break; // non-faulting per BPMN spec — recorded for observability only
@@ -3460,10 +3464,13 @@ public class WorkflowExecution
                 _state.UserTasks[e.ActivityInstanceId] = meta;
                 break;
             case UserTaskClaimed e:
-                _state.UserTasks[e.ActivityInstanceId].Claim(e.UserId, e.ClaimedAt);
+                _state.UserTasks[e.ActivityInstanceId].Claim(e.UserId, e.OccurredAt);
                 break;
             case UserTaskUnclaimed e:
                 _state.UserTasks[e.ActivityInstanceId].Unclaim();
+                break;
+            case UserTaskCompleted e:
+                _state.UserTasks[e.ActivityInstanceId].Complete();
                 break;
             case UserTaskUnregistered e:
                 _state.UserTasks.Remove(e.ActivityInstanceId);
@@ -3536,7 +3543,7 @@ public class WorkflowExecution
 
     private void ApplyWorkflowStarted(WorkflowStarted e)
     {
-        _state.Initialize(e.InstanceId, e.ProcessDefinitionId, e.RootVariablesId, e.BusinessId);
+        _state.Initialize(e.InstanceId, e.ProcessDefinitionId, e.RootVariablesId, e.OccurredAt, e.BusinessId);
     }
 
     private void ApplyActivitySpawned(ActivitySpawned e)
@@ -3547,6 +3554,7 @@ public class WorkflowExecution
             _state.Id,
             e.ScopeId);
 
+        entry.SetCreatedAt(e.OccurredAt);
         entry.SetActivityType(e.ActivityType);
         entry.SetVariablesId(e.VariablesId);
 
@@ -3561,12 +3569,12 @@ public class WorkflowExecution
 
     private void ApplyActivityExecutionStarted(ActivityExecutionStarted e)
     {
-        _state.ExecuteEntry(e.ActivityInstanceId);
+        _state.ExecuteEntry(e.ActivityInstanceId, e.OccurredAt);
     }
 
     private void ApplyActivityCompleted(ActivityCompleted e)
     {
-        _state.CompleteEntry(e.ActivityInstanceId, e.Variables, e.VariablesId);
+        _state.CompleteEntry(e.ActivityInstanceId, e.Variables, e.VariablesId, e.OccurredAt);
         // Bound ScopeHostExecutionScopes growth across long-running workflows
         // by removing the host's entry on terminal transition. Idempotent on
         // replay: Remove is a no-op when the key is absent. The ActivityType
@@ -3578,12 +3586,12 @@ public class WorkflowExecution
 
     private void ApplyActivityFailed(ActivityFailed e)
     {
-        _state.FailEntry(e.ActivityInstanceId, e.ErrorCode, e.ErrorMessage);
+        _state.FailEntry(e.ActivityInstanceId, e.ErrorCode, e.ErrorMessage, e.OccurredAt);
     }
 
     private void ApplyActivityCancelled(ActivityCancelled e)
     {
-        _state.CancelEntry(e.ActivityInstanceId, e.Reason);
+        _state.CancelEntry(e.ActivityInstanceId, e.Reason, e.OccurredAt);
         if (IsSubProcessActivityType(_state.GetEntry(e.ActivityInstanceId).ActivityType))
             _state.ScopeHostExecutionScopes.Remove(e.ActivityInstanceId);
     }

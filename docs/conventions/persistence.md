@@ -54,18 +54,22 @@ CI runs the dedicated `PostgreSQL tests` job (`.github/workflows/pg-tests.yml`) 
 
 **Bump `PostgresImage` in `Infrastructure/PostgresContainerFixture.cs` whenever the production deploy target moves** — today it tracks Aspire's `Aspire.Hosting.PostgreSQL` default (PG 16).
 
-## Event store: versions and snapshots
+## Event store: journal, snapshots, read model
+
+`WorkflowInstance` is event-sourced: the journal (`WorkflowEvents`) is the only source of truth. Snapshots and the read model derive from it. Design: [`docs/plans/2026-10-16-event-sourced-workflow-instance-design.md`](../plans/2026-10-16-event-sourced-workflow-instance-design.md).
 
 - **Versions.** A grain's version is its event count. `IEventStore.AppendEventsAsync(grainId, events, expectedVersion)` stores the batch as versions `expectedVersion + 1`, … — the store does the numbering, callers pass the count. `ReadEventsAsync(afterVersion)` returns `Version > afterVersion`.
-- **Snapshots.** The snapshot is the `WorkflowInstances` projection row; the version it covers is a column of that row (shadow property `SnapshotVersion`, no domain field). `WriteSnapshotAsync` writes state and version together after every append, so they cannot disagree; a provider that splits them brings back the replay double-apply of #833. If a crash lands between the append and that write, activation replays exactly the events after the snapshot version.
-- **No snapshot while events are undrained.** An `[AlwaysInterleave]` durable enqueue can confirm while the main turn has applied events to `State` but not drained them; `ApplyUpdatesToStorage` then skips the snapshot (the main turn's drain writes it), so a snapshot never contains un-journaled mutations.
+- **The append is the commit.** `ApplyUpdatesToStorage` returns `true` once the append succeeds; snapshot and projection writes after it log on failure (EventIds 1131/1132) and never throw. Throwing there makes Orleans' `CustomStorage` adaptor retry the same batch at the new version, which appends it twice.
+- **Snapshots are a cache.** `WorkflowSnapshots` holds one row per grain: the **full** `WorkflowInstanceState` (Orleans binary serialization) and the version it covers. A new snapshot is written once `Persistence:SnapshotInterval` (default `100`) events were appended since the last one. Activation loads it and replays the tail. An unreadable snapshot (e.g. one written by a build with a different state shape) is logged (1130) and skipped, and the whole journal is replayed. Anything that crosses into state must be Orleans-serializable: copy caller lists into `List<T>` (see `UserTaskMetadata.Initialize`).
+- **The read model is write-only.** `IWorkflowStateProjection` writes the `WorkflowInstances` tables after every append, with the version they reflect (shadow column `ProjectedVersion`). The grain never loads state from it. Members with no read-model columns (`UserTasks`, `CompensationLog`, `TransactionOutcomes`, `PendingOperations`, …) live only in the snapshot and journal. On activation, a projection behind the journal is rewritten in full (1133), so a missed write heals itself.
+- **No snapshot or projection while events are undrained.** An `[AlwaysInterleave]` durable enqueue can confirm while the main turn has applied events to `State` but not drained them; `ApplyUpdatesToStorage` then skips both writes (the main turn's drain does them), so neither ever holds un-journaled mutations.
 - **Dirty flags** are taken (read + cleared) before the projection write's first await and restored if it fails, so a mutation that interleaves during the write is projected next time.
-- **Replay is deterministic for ids** (they come from the events); `Apply` handlers stamp timestamps (`CreatedAt`, `CompletedAt`, …) with the replay time.
-- **Pre-1.0:** journals written before #833 used 0-based versions and replay without their `WorkflowStarted`, and the `WorkflowSnapshots` table is gone. The Postgres migration only adds the column and drops the table — start from a fresh database (for SQLite, delete the dev DB file).
+- **Replay is deterministic.** Every journaled event derives from `WorkflowEvent`, whose `OccurredAt` is stamped by `WorkflowExecution.Emit`. `Apply` handlers take ids and times only from the event (state transition methods take the timestamp as a parameter), so replay rebuilds exactly the live state. Never read the clock or call `Guid.NewGuid()` in an `Apply` path.
+- **Pre-1.0:** this layout needs a fresh database (the Postgres migration renames `SnapshotVersion` to `ProjectedVersion` and creates `WorkflowSnapshots`; for SQLite, delete the dev DB file).
 
 ## `Persistence:MaxEventsPerLoad` safety valve (default `1000`)
 
-`EfCoreEventStore.ReadEventsAsync` throws `InvalidOperationException` if the unread event delta exceeds this cap, surfacing broken-snapshotting scenarios before they OOM the silo. Increase via the `Persistence__MaxEventsPerLoad` env var for deployments with legitimately large deltas.
+`EfCoreEventStore.ReadEventsAsync` throws `InvalidOperationException` if the unread event delta exceeds this cap, surfacing broken snapshotting (or a long instance whose snapshot was unreadable) before it OOMs the silo. Keep it well above `Persistence:SnapshotInterval`. Increase via the `Persistence__MaxEventsPerLoad` env var for deployments with legitimately large deltas.
 
 `FleansPersistenceOptions` lives in `Fleans.Persistence` (not `Fleans.ServiceDefaults`) to avoid a circular project reference.
 

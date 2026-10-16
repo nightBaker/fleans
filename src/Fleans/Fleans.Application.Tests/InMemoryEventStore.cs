@@ -15,6 +15,8 @@ internal class InMemoryEventStore(DeepCopier copier) : IEventStore
     private readonly ConcurrentDictionary<string, List<IDomainEvent>> _events = new();
     private readonly ConcurrentDictionary<string, (WorkflowInstanceState State, int Version)> _snapshots = new();
 
+    public int SnapshotInterval => 1;
+
     public Task<(WorkflowInstanceState? State, int Version)> ReadSnapshotAsync(string grainId)
     {
         if (_snapshots.TryGetValue(grainId, out var snapshot))
@@ -46,6 +48,21 @@ internal class InMemoryEventStore(DeepCopier copier) : IEventStore
     public Task WriteSnapshotAsync(string grainId, int version, WorkflowInstanceState state)
     {
         _snapshots[grainId] = (copier.Copy(state), version);
+        return Task.CompletedTask;
+    }
+}
+
+/// <summary>Read-model projection for silos without a query store: records only the projected version.</summary>
+internal class InMemoryWorkflowStateProjection : IWorkflowStateProjection
+{
+    private readonly ConcurrentDictionary<string, int> _versions = new();
+
+    public Task<int> ReadVersionAsync(string grainId) =>
+        Task.FromResult(_versions.GetValueOrDefault(grainId));
+
+    public Task WriteAsync(string grainId, WorkflowInstanceState state, int version, bool rebuild = false)
+    {
+        _versions[grainId] = version;
         return Task.CompletedTask;
     }
 }

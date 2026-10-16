@@ -130,8 +130,8 @@ public class ActivityExecutionContextAdapterTests
     public async Task IsCompleted_WhenCompleted_ShouldReturnTrue()
     {
         var entry = CreateEntry();
-        entry.Execute();
-        entry.Complete();
+        entry.Execute(DateTimeOffset.UtcNow);
+        entry.Complete(DateTimeOffset.UtcNow);
         var adapter = new ActivityExecutionContextAdapter(entry);
 
         var result = await adapter.IsCompleted();

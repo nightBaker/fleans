@@ -58,8 +58,8 @@ public partial class WorkflowInstance :
 
     private readonly IGrainFactory _grainFactory;
     private readonly ILogger<WorkflowInstance> _logger;
-    private readonly IWorkflowQueryService _queryService;
     private readonly IEventStore _eventStore;
+    private readonly IWorkflowStateProjection _projection;
     private readonly EffectDispatcher _effectDispatcher;
 
     private readonly ConcurrentQueue<(PendingExternalEvent Event, TaskCompletionSource Completion)> _pendingExternalEvents = new();
@@ -92,25 +92,20 @@ public partial class WorkflowInstance :
     /// </summary>
     private WorkflowExecution? _replayAggregate;
 
-    /// <summary>
-    /// In-memory map of activity-instance start times for the <c>fleans.activity.duration</c> histogram.
-    /// Populated on <c>ActivitySpawned</c>, drained on <c>ActivityCompleted</c>/<c>ActivityFailed</c>/<c>ActivityCancelled</c>.
-    /// Per-grain in-memory state — silo restart loses in-flight entries; the histogram is
-    /// best-effort and skips activities that started before the current grain activation.
-    /// </summary>
-    private readonly Dictionary<Guid, (DateTimeOffset StartedAt, string ActivityType)> _activityStartedAt = new();
+    /// <summary>The version the stored snapshot covers; a new one is due every <see cref="IEventStore.SnapshotInterval"/> events.</summary>
+    private int _snapshotVersion;
 
     public WorkflowInstance(
         IGrainFactory grainFactory,
         ILogger<WorkflowInstance> logger,
-        IWorkflowQueryService queryService,
         IEventStore eventStore,
+        IWorkflowStateProjection projection,
         EffectDispatcher effectDispatcher)
     {
         _grainFactory = grainFactory;
         _logger = logger;
-        _queryService = queryService;
         _eventStore = eventStore;
+        _projection = projection;
         _effectDispatcher = effectDispatcher;
     }
 
@@ -123,11 +118,6 @@ public partial class WorkflowInstance :
         // After base returns, we clear it — the real _execution aggregate will be created
         // by EnsureExecution() with the full workflow definition.
         _replayAggregate = null;
-
-        if (State.IsStarted && State.UserTasks.Count == 0)
-        {
-            await RehydrateUserTasks();
-        }
 
         RebuildPendingExternalEvents();
     }
@@ -193,23 +183,60 @@ public partial class WorkflowInstance :
     public async Task<KeyValuePair<int, WorkflowInstanceState>> ReadStateFromStorage()
     {
         var grainId = this.GetPrimaryKey().ToString();
-        var (snapshot, snapshotVersion) = await _eventStore.ReadSnapshotAsync(grainId);
+
+        // The journal is the source of truth; the snapshot only shortens replay. An unreadable
+        // snapshot (e.g. written by a build with a different state shape) is skipped, not fatal.
+        WorkflowInstanceState? snapshot;
+        int snapshotVersion;
+        try
+        {
+            (snapshot, snapshotVersion) = await _eventStore.ReadSnapshotAsync(grainId);
+        }
+        catch (Exception ex)
+        {
+            LogSnapshotUnreadable(ex);
+            (snapshot, snapshotVersion) = (null, 0);
+        }
 
         var state = snapshot ?? new WorkflowInstanceState();
-
-        // The snapshot is written with every append, so only events whose snapshot write did not
-        // happen (crash between the two) are replayed — or all of them when there is no snapshot.
-        // Ids come from the events, so replay is deterministic; only the timestamps Apply stamps
-        // with DateTimeOffset.UtcNow (CreatedAt, CompletedAt, …) get the replay time.
         var events = await _eventStore.ReadEventsAsync(grainId, snapshotVersion);
         if (events.Count > 0)
         {
+            // Apply handlers read only the event (ids and OccurredAt included), so this rebuilds
+            // exactly the state the live run had.
             var replay = new WorkflowExecution(state);
             foreach (var evt in events)
                 replay.ReplayEvent(evt);
         }
 
-        return new(snapshotVersion + events.Count, state);
+        var version = snapshotVersion + events.Count;
+        _snapshotVersion = snapshotVersion;
+        await CatchUpProjection(grainId, state, version);
+        return new(version, state);
+    }
+
+    /// <summary>
+    /// Rewrites the read model when it is behind the journal — a projection write failed, or the
+    /// silo stopped between an append and its projection write.
+    /// </summary>
+    private async Task CatchUpProjection(string grainId, WorkflowInstanceState state, int version)
+    {
+        if (version == 0)
+            return;
+
+        try
+        {
+            var projectedVersion = await _projection.ReadVersionAsync(grainId);
+            if (projectedVersion >= version)
+                return;
+
+            LogProjectionBehind(projectedVersion, version);
+            await _projection.WriteAsync(grainId, state, version, rebuild: true);
+        }
+        catch (Exception ex)
+        {
+            LogProjectionWriteFailed(version, ex);
+        }
     }
 
     public async Task<bool> ApplyUpdatesToStorage(
@@ -220,39 +247,45 @@ public partial class WorkflowInstance :
         var success = await _eventStore.AppendEventsAsync(grainId, updates, expectedVersion);
         if (!success) return false;
 
+        // The append is the commit. Everything below derives from the journal and is
+        // best-effort: throwing here would make Orleans retry a batch that is already stored and
+        // append it twice. A missed projection write is caught up on the next activation; a
+        // missed snapshot only lengthens the next replay.
+        var version = expectedVersion + updates.Count;
+
         // A durable enqueue ([AlwaysInterleave], EnqueueDurable) can confirm while the main turn
         // has applied events to State but not drained them yet. State then holds mutations that
-        // are not in the journal; snapshotting it would pair them with a version that does not
-        // cover them. Skip — the main turn's drain writes the snapshot, and a crash before it
-        // leaves the previous, consistent snapshot plus the journal tail.
+        // are not in the journal; writing it would pair them with a version that does not cover
+        // them. Skip — the main turn's drain writes both, and a crash before it leaves the
+        // previous snapshot plus the journal tail.
         if (_execution is not null && _execution.GetUncommittedEvents().Count > 0)
             return true;
 
-        // Projection for IWorkflowQueryService and snapshot in one row: the snapshot version
-        // always matches the projected state, so replay never re-applies events it contains.
-        await _eventStore.WriteSnapshotAsync(grainId, expectedVersion + updates.Count, this.State);
+        // Snapshot first: it serializes State synchronously, before an await could let an
+        // interleaving call change it.
+        if (version - _snapshotVersion >= _eventStore.SnapshotInterval)
+        {
+            try
+            {
+                await _eventStore.WriteSnapshotAsync(grainId, version, this.State);
+                _snapshotVersion = version;
+            }
+            catch (Exception ex)
+            {
+                LogSnapshotWriteFailed(version, ex);
+            }
+        }
+
+        try
+        {
+            await _projection.WriteAsync(grainId, this.State, version);
+        }
+        catch (Exception ex)
+        {
+            LogProjectionWriteFailed(version, ex);
+        }
 
         return true;
-    }
-
-    private async Task RehydrateUserTasks()
-    {
-        var workflowInstanceId = this.GetPrimaryKey();
-        var tasks = await _queryService.GetActiveUserTasksForWorkflow(workflowInstanceId);
-
-        foreach (var task in tasks)
-        {
-            var metadata = new UserTaskMetadata();
-            metadata.Initialize(task.Assignee, task.CandidateGroups,
-                task.CandidateUsers, task.ExpectedOutputVariables);
-
-            if (task.TaskState == UserTaskLifecycleState.Claimed && task.ClaimedBy is not null)
-            {
-                metadata.Claim(task.ClaimedBy, task.ClaimedAt ?? DateTimeOffset.UtcNow);
-            }
-
-            State.UserTasks[task.ActivityInstanceId] = metadata;
-        }
     }
 
     private async ValueTask EnsureExecution()

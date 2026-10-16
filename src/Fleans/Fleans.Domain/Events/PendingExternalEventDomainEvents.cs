@@ -20,14 +20,12 @@ namespace Fleans.Domain.Events;
 [GenerateSerializer]
 public record PendingEventEnqueued(
     [property: Id(0)] string OpKey,
-    [property: Id(1)] PendingExternalEventPayload Payload,
-    [property: Id(2)] DateTimeOffset OccurredAt = default) : IDomainEvent;
+    [property: Id(1)] PendingExternalEventPayload Payload) : WorkflowEvent;
 
 /// <summary>A previously-enqueued external event was drained (processed + applied). Removes it from PendingOperations.</summary>
 [GenerateSerializer]
 public record PendingEventDrained(
-    [property: Id(0)] string OpKey,
-    [property: Id(1)] DateTimeOffset OccurredAt = default) : IDomainEvent;
+    [property: Id(0)] string OpKey) : WorkflowEvent;
 
 /// <summary>
 /// Records the durable outcome of a caller-retried operation in the dedup ledger
@@ -36,8 +34,7 @@ public record PendingEventDrained(
 [GenerateSerializer]
 public record PendingEventApplied(
     [property: Id(0)] string OpKey,
-    [property: Id(1)] PendingEventResult? Result,
-    [property: Id(2)] DateTimeOffset OccurredAt = default) : IDomainEvent;
+    [property: Id(1)] PendingEventResult? Result) : WorkflowEvent;
 
 // ── Serializable payload hierarchy (mirrors PendingExternalEvent, minus the TCS) ──
 
