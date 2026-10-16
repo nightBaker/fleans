@@ -289,7 +289,9 @@ public abstract class WorkflowTestBase
                     services.AddSingleton<IWorkflowQueryService, WorkflowQueryService>();
                     services.AddSingleton<IScriptExpressionExecutor, SimpleScriptExecutor>();
                     services.AddSingleton<IConditionExpressionEvaluator, SimpleConditionEvaluator>();
-                    services.AddSingleton<IWorkflowStateProjection, EfCoreWorkflowStateProjection>();
+                    services.AddSingleton<EfCoreWorkflowStateProjection>();
+                    services.AddSingleton<IWorkflowStateProjection>(sp =>
+                        new FaultInjectingWorkflowStateProjection(sp.GetRequiredService<EfCoreWorkflowStateProjection>()));
                     // Small interval: most multi-step tests then reactivate from a snapshot plus a
                     // journal tail, not only from a full replay.
                     services.Configure<FleansPersistenceOptions>(o => o.SnapshotInterval = TestSnapshotInterval);

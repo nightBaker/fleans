@@ -90,30 +90,4 @@ public class UserTaskMetadataTests
         // Act & Assert
         Assert.ThrowsExactly<InvalidOperationException>(() => metadata.Unclaim());
     }
-
-    // --- Complete ---
-
-    [TestMethod]
-    public void Complete_FromClaimedState_ShouldSucceed()
-    {
-        // Arrange
-        var metadata = CreateInitialized();
-        metadata.Claim("john", DateTimeOffset.UtcNow);
-
-        // Act
-        metadata.Complete();
-
-        // Assert
-        Assert.AreEqual(UserTaskLifecycleState.Completed, metadata.TaskState);
-    }
-
-    [TestMethod]
-    public void Complete_FromNonClaimedState_ShouldThrowInvalidOperation()
-    {
-        // Arrange
-        var metadata = CreateInitialized(); // Created state, not claimed
-
-        // Act & Assert
-        Assert.ThrowsExactly<InvalidOperationException>(() => metadata.Complete());
-    }
 }

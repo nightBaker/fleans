@@ -1,4 +1,5 @@
 using Fleans.Application.Grains;
+using Fleans.Application.QueryModels;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Events;
@@ -371,9 +372,10 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
     }
 
     [TestMethod]
-    public async Task StateRecovery_UnreadableSnapshot_ReplaysTheJournal()
+    public async Task StateRecovery_UnreadableSnapshot_RetriesTheReadInsteadOfReplaying()
     {
-        // Arrange — a snapshot this build cannot read (e.g. written with another state shape)
+        // Arrange — a snapshot this build cannot read. Pre-1.0 there is no fallback for state from
+        // older builds (fresh database), and a transient read error must not trigger a full replay.
         var workflow = (WorkflowDefinition)CreateSequentialWorkflow();
         await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId)
             .DeployVersion(workflow, "<placeholder/>");
@@ -397,14 +399,61 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
             await db.SaveChangesAsync();
         }
 
-        // Act
-        await grain.CompleteActivity("task2", new ExpandoObject());
+        // Act — the call activates the grain, whose snapshot read keeps failing
+        var call = grain.CompleteActivity("task2", new ExpandoObject());
 
-        // Assert
+        // Assert — Orleans retries the read instead of the grain replaying around it: the call
+        // waits, and nothing is appended
+        Assert.AreNotSame(call, await Task.WhenAny(call, Task.Delay(TimeSpan.FromSeconds(3))),
+            "activation must not succeed on an unreadable snapshot");
+        var stateWhileBlocked = await QueryService.GetStateSnapshot(instanceId);
+        Assert.IsNotNull(stateWhileBlocked);
+        Assert.IsFalse(stateWhileBlocked.IsCompleted);
+
+        // Once the snapshot is readable (here: removed), the retried read succeeds and the call
+        // goes through
+        await using (var db = await dbFactory.CreateDbContextAsync())
+            await db.WorkflowSnapshots.Where(s => s.GrainId == grainIdStr).ExecuteDeleteAsync();
+        await call;
         var state = await QueryService.GetStateSnapshot(instanceId);
         Assert.IsNotNull(state);
         Assert.IsTrue(state.IsCompleted);
-        Assert.IsTrue(state.CompletedActivities.Any(a => a.ActivityId == "task1"));
+    }
+
+    [TestMethod]
+    public async Task ReadModel_FailedWriteOfTheLastAppend_IsRetriedUntilItLands()
+    {
+        // Arrange — the projection write of the final append (WorkflowCompleted) fails twice;
+        // no further append will come to carry it.
+        var instanceId = Guid.NewGuid();
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
+        var grainIdStr = instanceId.ToString();
+        await grain.SetWorkflow(CreateSequentialWorkflow());
+        await grain.StartWorkflow();
+        await grain.CompleteActivity("task1", new ExpandoObject());
+        FaultInjectingWorkflowStateProjection.FailNextWrites(instanceId, 2);
+
+        // Act — the command succeeds: the append is the commit
+        await grain.CompleteActivity("task2", new ExpandoObject());
+
+        // Assert — the read model catches up without another command
+        InstanceStateSnapshot? state = null;
+        for (var i = 0; i < 50 && state?.IsCompleted != true; i++)
+        {
+            await Task.Delay(200);
+            state = await QueryService.GetStateSnapshot(instanceId);
+        }
+        Assert.IsNotNull(state);
+        Assert.IsTrue(state.IsCompleted, "the failed projection write must be retried");
+
+        // ...and no batch was appended twice
+        var dbFactory = GetSiloService<IDbContextFactory<FleanCommandDbContext>>();
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var versions = await db.WorkflowEvents.Where(e => e.GrainId == grainIdStr)
+            .OrderBy(e => e.Version).Select(e => e.Version).ToListAsync();
+        CollectionAssert.AreEqual(Enumerable.Range(1, versions.Count).ToList(), versions);
+        var journal = await GetSiloService<IEventStore>().ReadEventsAsync(grainIdStr, afterVersion: 0);
+        Assert.AreEqual(1, journal.OfType<WorkflowCompleted>().Count(), "the completing batch was stored once");
     }
 
     [TestMethod]

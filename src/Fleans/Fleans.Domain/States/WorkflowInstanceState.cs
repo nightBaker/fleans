@@ -314,19 +314,6 @@ public class WorkflowInstanceState
         _dirtyFlags |= DirtyVariableStates;
     }
 
-    public void StartWith(Guid id, string? processDefinitionId, ActivityInstanceEntry entry, Guid variablesId, DateTimeOffset createdAt)
-    {
-        Initialize(id, processDefinitionId, variablesId, createdAt);
-        Entries.Add(entry);
-        _dirtyFlags |= DirtyEntries;
-
-        if (_entriesById != null)
-        {
-            _entriesById[entry.ActivityInstanceId] = entry;
-            _activeEntryIds!.Add(entry.ActivityInstanceId);
-        }
-    }
-
     public void SetParentInfo(Guid parentWorkflowInstanceId, string parentActivityId)
     {
         ParentWorkflowInstanceId = parentWorkflowInstanceId;
@@ -388,17 +375,6 @@ public class WorkflowInstanceState
         IsFailed = true;
     }
 
-    public Guid AddCloneOfVariableState(Guid variableStateId)
-    {
-        var source = VariableStates.First(v => v.Id == variableStateId);
-        var clonedState = new WorkflowVariablesState(Guid.NewGuid(), Id, source.ParentVariablesId);
-        clonedState.Merge(source.Variables);
-
-        VariableStates.Add(clonedState);
-        _dirtyFlags |= DirtyVariableStates;
-        return clonedState.Id;
-    }
-
     public void AddCloneOfVariableState(Guid newScopeId, Guid sourceScopeId)
     {
         var source = VariableStates.First(v => v.Id == sourceScopeId);
@@ -407,14 +383,6 @@ public class WorkflowInstanceState
 
         VariableStates.Add(clonedState);
         _dirtyFlags |= DirtyVariableStates;
-    }
-
-    public Guid AddChildVariableState(Guid parentVariablesId)
-    {
-        var childState = new WorkflowVariablesState(Guid.NewGuid(), Id, parentVariablesId);
-        VariableStates.Add(childState);
-        _dirtyFlags |= DirtyVariableStates;
-        return childState.Id;
     }
 
     public void AddChildVariableState(Guid childId, Guid parentVariablesId)
@@ -432,19 +400,10 @@ public class WorkflowInstanceState
         _dirtyFlags |= DirtyConditionSequenceStates;
     }
 
-    public void CompleteEntries(List<ActivityInstanceEntry> entries, DateTimeOffset at)
-    {
-        foreach (var entry in entries)
-            CompleteEntry(entry.ActivityInstanceId, at);
-    }
-
     public void CompleteEntry(Guid activityInstanceId, ExpandoObject variables, Guid variablesId, DateTimeOffset at)
     {
-        var entry = GetActiveEntry(activityInstanceId);
-        entry.Complete(at);
-        ActiveEntryIds.Remove(activityInstanceId);
+        CompleteEntry(activityInstanceId, at);
         MergeState(variablesId, variables);
-        _dirtyFlags |= DirtyEntries;
     }
 
     public void ExecuteEntry(Guid activityInstanceId, DateTimeOffset at)

@@ -98,9 +98,8 @@ public class UserTaskLifecycle
                     $"Missing required output variables: {string.Join(", ", missing)}");
         }
 
-        // Transition user task to Completed state before cleanup removes it
-        _emit(new UserTaskCompleted(activityInstanceId));
-
+        // Validation only — no event: a throw here or in the completion that follows must leave
+        // nothing behind. The task leaves the state via UserTaskUnregistered in that completion.
         return _state.GetActiveEntry(activityInstanceId);
     }
 }

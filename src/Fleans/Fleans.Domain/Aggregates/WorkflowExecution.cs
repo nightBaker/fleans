@@ -1910,10 +1910,10 @@ public class WorkflowExecution
         Guid activityInstanceId, string errorCode, string errorMessage)
     {
         var metadata = _state.UserTasks.GetValueOrDefault(activityInstanceId);
-        // Idempotency: already in a terminal state or already cleaned up
+        // Idempotency: already in a terminal state or already cleaned up (a completed task is
+        // unregistered, so it is null here)
         if (metadata is null || metadata.TaskState
-            is UserTaskLifecycleState.Completed
-            or UserTaskLifecycleState.Failed
+            is UserTaskLifecycleState.Failed
             or UserTaskLifecycleState.Cancelled)
             return [];
 
@@ -1928,10 +1928,10 @@ public class WorkflowExecution
         Guid activityInstanceId, string? reason)
     {
         var metadata = _state.UserTasks.GetValueOrDefault(activityInstanceId);
-        // Idempotency: already in a terminal state or already cleaned up
+        // Idempotency: already in a terminal state or already cleaned up (a completed task is
+        // unregistered, so it is null here)
         if (metadata is null || metadata.TaskState
-            is UserTaskLifecycleState.Completed
-            or UserTaskLifecycleState.Failed
+            is UserTaskLifecycleState.Failed
             or UserTaskLifecycleState.Cancelled)
             return [];
 
@@ -3468,9 +3468,6 @@ public class WorkflowExecution
                 break;
             case UserTaskUnclaimed e:
                 _state.UserTasks[e.ActivityInstanceId].Unclaim();
-                break;
-            case UserTaskCompleted e:
-                _state.UserTasks[e.ActivityInstanceId].Complete();
                 break;
             case UserTaskUnregistered e:
                 _state.UserTasks.Remove(e.ActivityInstanceId);

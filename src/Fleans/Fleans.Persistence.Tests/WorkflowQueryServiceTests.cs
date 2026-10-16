@@ -233,7 +233,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
         var entry = new ActivityInstanceEntry(aiId, "task1", instanceId);
         entry.SetActivityType("ScriptTask");
         entry.Execute(DateTimeOffset.UtcNow);
-        entry.Fail(new Exception("Something went wrong"), DateTimeOffset.UtcNow);
+        entry.Fail("500", "Something went wrong", DateTimeOffset.UtcNow);
         db.WorkflowActivityInstanceEntries.Add(entry);
         await db.SaveChangesAsync();
 

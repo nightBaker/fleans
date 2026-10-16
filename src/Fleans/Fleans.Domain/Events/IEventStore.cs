@@ -25,7 +25,7 @@ public interface IEventStore
 
     /// <summary>
     /// The latest snapshot and the version it covers, or <c>(null, 0)</c>. Throws when the snapshot
-    /// exists but cannot be read; the caller then replays the whole journal.
+    /// exists but cannot be read.
     /// </summary>
     Task<(WorkflowInstanceState? State, int Version)> ReadSnapshotAsync(string grainId);
 

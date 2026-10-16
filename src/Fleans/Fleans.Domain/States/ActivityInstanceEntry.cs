@@ -118,28 +118,6 @@ public class ActivityInstanceEntry
         CompletedAt = at;
     }
 
-    public void Fail(Exception exception, DateTimeOffset at)
-    {
-        if (IsCompleted)
-            throw new InvalidOperationException($"Activity '{ActivityId}' is already completed — cannot fail.");
-
-        if (exception is ActivityException activityException)
-        {
-            var errorState = activityException.GetActivityErrorState();
-            ErrorCode = errorState.Code;
-            ErrorMessage = errorState.Message;
-        }
-        else
-        {
-            ErrorCode = "500";
-            ErrorMessage = exception.Message;
-        }
-
-        IsExecuting = false;
-        IsCompleted = true;
-        CompletedAt = at;
-    }
-
     public void Fail(string errorCode, string errorMessage, DateTimeOffset at)
     {
         if (IsCompleted)

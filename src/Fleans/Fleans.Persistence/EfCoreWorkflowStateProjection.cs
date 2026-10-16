@@ -14,9 +14,9 @@ namespace Fleans.Persistence;
 /// </summary>
 public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
 {
-    private const DirtyCollections AllCollections =
-        DirtyCollections.Entries | DirtyCollections.VariableStates | DirtyCollections.ConditionSequenceStates
-        | DirtyCollections.GatewayForks | DirtyCollections.TimerCycleTracking | DirtyCollections.ComplexGatewayJoinStates;
+    // Every projected collection, derived from the enum so a new member is rebuilt too.
+    private static readonly DirtyCollections AllCollections =
+        Enum.GetValues<DirtyCollections>().Aggregate(DirtyCollections.None, (all, c) => all | c);
 
     private readonly IDbContextFactory<FleanCommandDbContext> _dbContextFactory;
 

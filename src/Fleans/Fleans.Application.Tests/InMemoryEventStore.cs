@@ -66,3 +66,28 @@ internal class InMemoryWorkflowStateProjection : IWorkflowStateProjection
         return Task.CompletedTask;
     }
 }
+
+/// <summary>
+/// Wraps the real projection and fails the next N writes for a chosen grain, to exercise the
+/// grain's handling of a read-model write that fails after its append succeeded.
+/// </summary>
+internal class FaultInjectingWorkflowStateProjection(IWorkflowStateProjection inner) : IWorkflowStateProjection
+{
+    private static readonly ConcurrentDictionary<string, int> FailuresLeft = new();
+
+    public static void FailNextWrites(Guid instanceId, int count) => FailuresLeft[instanceId.ToString()] = count;
+
+    public Task<int> ReadVersionAsync(string grainId) => inner.ReadVersionAsync(grainId);
+
+    public Task WriteAsync(string grainId, WorkflowInstanceState state, int version, bool rebuild = false)
+    {
+        if (FailuresLeft.TryGetValue(grainId, out var left) && left > 0)
+        {
+            FailuresLeft[grainId] = left - 1;
+            // Thrown before the inner write takes the dirty flags — like a real failed write,
+            // which restores them.
+            throw new TimeoutException($"Injected projection failure for {grainId}");
+        }
+        return inner.WriteAsync(grainId, state, version, rebuild);
+    }
+}

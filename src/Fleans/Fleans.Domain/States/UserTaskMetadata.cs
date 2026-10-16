@@ -41,13 +41,6 @@ public class UserTaskMetadata
         TaskState = UserTaskLifecycleState.Created;
     }
 
-    public void Complete()
-    {
-        if (TaskState != UserTaskLifecycleState.Claimed)
-            throw new InvalidOperationException("Task must be in Claimed state to complete");
-        TaskState = UserTaskLifecycleState.Completed;
-    }
-
     public void Fail()
     {
         TaskState = UserTaskLifecycleState.Failed;

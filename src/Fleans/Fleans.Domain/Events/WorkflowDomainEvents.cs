@@ -88,7 +88,6 @@ public record UserTaskRegistered(
     IReadOnlyList<string>? ExpectedOutputVariables) : WorkflowEvent;
 public record UserTaskClaimed(Guid ActivityInstanceId, string UserId) : WorkflowEvent;
 public record UserTaskUnclaimed(Guid ActivityInstanceId) : WorkflowEvent;
-public record UserTaskCompleted(Guid ActivityInstanceId) : WorkflowEvent;
 public record UserTaskUnregistered(Guid ActivityInstanceId) : WorkflowEvent;
 public record UserTaskFailed(Guid ActivityInstanceId, string ActivityId, string ErrorCode, string ErrorMessage) : WorkflowEvent;
 public record UserTaskCancelled(Guid ActivityInstanceId, string ActivityId, string? Reason) : WorkflowEvent;

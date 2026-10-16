@@ -80,8 +80,8 @@ public class EfCoreEventStore : IEventStore
         if (eventEntities.Count > _maxEventsPerLoad)
             throw new InvalidOperationException(
                 $"Refusing to load more than {_maxEventsPerLoad} events for grain '{grainId}' " +
-                $"(afterVersion={afterVersion}). This indicates snapshotting is broken or the snapshot " +
-                $"was unreadable — investigate WorkflowInstance.ApplyUpdatesToStorage / WriteSnapshotAsync. " +
+                $"(afterVersion={afterVersion}). This indicates snapshotting is broken — " +
+                $"investigate WorkflowInstance.ApplyUpdatesToStorage / WriteSnapshotAsync. " +
                 $"Increase Persistence:MaxEventsPerLoad if this is intentional.");
 
         return eventEntities
@@ -126,30 +126,32 @@ public class EfCoreEventStore : IEventStore
         }
     }
 
-    /// <summary>Upserts the grain's single snapshot row.</summary>
+    /// <summary>
+    /// Upserts the grain's single snapshot row — an UPDATE first, so the previous payload is never
+    /// read back; an INSERT only for the grain's first snapshot.
+    /// </summary>
     public async Task WriteSnapshotAsync(string grainId, int version, WorkflowInstanceState state)
     {
         var payload = _serializer.SerializeToArray(state);
+        var now = DateTimeOffset.UtcNow;
 
         await using var db = await _dbContextFactory.CreateDbContextAsync();
-        var existing = await db.WorkflowSnapshots.FirstOrDefaultAsync(s => s.GrainId == grainId);
-        if (existing is null)
-        {
-            db.WorkflowSnapshots.Add(new WorkflowSnapshotEntity
-            {
-                GrainId = grainId,
-                Version = version,
-                Payload = payload,
-                Timestamp = DateTimeOffset.UtcNow
-            });
-        }
-        else
-        {
-            existing.Version = version;
-            existing.Payload = payload;
-            existing.Timestamp = DateTimeOffset.UtcNow;
-        }
+        var updated = await db.WorkflowSnapshots
+            .Where(s => s.GrainId == grainId)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(x => x.Version, version)
+                .SetProperty(x => x.Payload, payload)
+                .SetProperty(x => x.Timestamp, now));
+        if (updated > 0)
+            return;
 
+        db.WorkflowSnapshots.Add(new WorkflowSnapshotEntity
+        {
+            GrainId = grainId,
+            Version = version,
+            Payload = payload,
+            Timestamp = now
+        });
         await db.SaveChangesAsync();
     }
 

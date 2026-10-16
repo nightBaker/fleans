@@ -589,6 +589,9 @@ public partial class WorkflowInstance
                 : completion.Task;
 
             var evt = new Fleans.Domain.Events.PendingEventEnqueued(opKey, payload) { OccurredAt = DateTimeOffset.UtcNow };
+            // State is ahead of the journal until this event is appended (ApplyUpdatesToStorage
+            // removes the key); a snapshot must not be taken in between.
+            _unjournaledEnqueues.Add(opKey);
             State.AddPendingOperation(opKey, payload);
             LogProcessingPendingEvent(nameof(Fleans.Domain.Events.PendingEventEnqueued));
 
@@ -601,6 +604,7 @@ public partial class WorkflowInstance
             finally
             {
                 _draining = false;
+                _unjournaledEnqueues.Remove(opKey);
             }
 
             _pendingExternalEvents.Enqueue((inMemory, completion));

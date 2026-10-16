@@ -95,6 +95,18 @@ public partial class WorkflowInstance :
     /// <summary>The version the stored snapshot covers; a new one is due every <see cref="IEventStore.SnapshotInterval"/> events.</summary>
     private int _snapshotVersion;
 
+    /// <summary>
+    /// Op-keys whose <c>PendingEventEnqueued</c> is applied to State but not yet appended: an
+    /// [AlwaysInterleave] <c>EnqueueDurable</c> mutates State before its ConfirmEvents. While any
+    /// remain, State is ahead of the journal and must not be snapshotted.
+    /// </summary>
+    private readonly HashSet<string> _unjournaledEnqueues = new();
+
+    /// <summary>Retries a failed read-model write until it succeeds (see <see cref="ScheduleProjectionRetry"/>).</summary>
+    private IGrainTimer? _projectionRetryTimer;
+
+    private static readonly TimeSpan ProjectionRetryInterval = TimeSpan.FromSeconds(2);
+
     public WorkflowInstance(
         IGrainFactory grainFactory,
         ILogger<WorkflowInstance> logger,
@@ -184,20 +196,11 @@ public partial class WorkflowInstance :
     {
         var grainId = this.GetPrimaryKey().ToString();
 
-        // The journal is the source of truth; the snapshot only shortens replay. An unreadable
-        // snapshot (e.g. written by a build with a different state shape) is skipped, not fatal.
-        WorkflowInstanceState? snapshot;
-        int snapshotVersion;
-        try
-        {
-            (snapshot, snapshotVersion) = await _eventStore.ReadSnapshotAsync(grainId);
-        }
-        catch (Exception ex)
-        {
-            LogSnapshotUnreadable(ex);
-            (snapshot, snapshotVersion) = (null, 0);
-        }
-
+        // The journal is the source of truth; the snapshot only shortens replay. A failed read
+        // (database error, or a snapshot from an older build — pre-1.0 needs a fresh database)
+        // propagates: Orleans' CustomStorage adaptor retries ReadStateFromStorage with backoff,
+        // so the activation waits rather than degrading to a full replay.
+        var (snapshot, snapshotVersion) = await _eventStore.ReadSnapshotAsync(grainId);
         var state = snapshot ?? new WorkflowInstanceState();
         var events = await _eventStore.ReadEventsAsync(grainId, snapshotVersion);
         if (events.Count > 0)
@@ -236,7 +239,45 @@ public partial class WorkflowInstance :
         catch (Exception ex)
         {
             LogProjectionWriteFailed(version, ex);
+            ScheduleProjectionRetry();
         }
+    }
+
+    /// <summary>
+    /// A failed read-model write must not wait for the next append — the failed one may be the
+    /// instance's last (e.g. WorkflowCompleted), and the read model would show it running forever.
+    /// A keep-alive timer rewrites it until it succeeds; only a silo crash defers the catch-up to
+    /// the next activation.
+    /// </summary>
+    private void ScheduleProjectionRetry()
+    {
+        _projectionRetryTimer ??= this.RegisterGrainTimer(RetryProjection,
+            new GrainTimerCreationOptions(ProjectionRetryInterval, ProjectionRetryInterval) { KeepAlive = true });
+    }
+
+    private async Task RetryProjection(CancellationToken cancellationToken)
+    {
+        // State ahead of the journal: the pending append's own write will project it.
+        if (_execution is not null && _execution.GetUncommittedEvents().Count > 0)
+            return;
+
+        var version = Version;
+        try
+        {
+            await _projection.WriteAsync(this.GetPrimaryKey().ToString(), State, version, rebuild: true);
+            LogProjectionCaughtUp(version);
+            StopProjectionRetry();
+        }
+        catch (Exception ex)
+        {
+            LogProjectionWriteFailed(version, ex);
+        }
+    }
+
+    private void StopProjectionRetry()
+    {
+        _projectionRetryTimer?.Dispose();
+        _projectionRetryTimer = null;
     }
 
     public async Task<bool> ApplyUpdatesToStorage(
@@ -247,11 +288,13 @@ public partial class WorkflowInstance :
         var success = await _eventStore.AppendEventsAsync(grainId, updates, expectedVersion);
         if (!success) return false;
 
-        // The append is the commit. Everything below derives from the journal and is
-        // best-effort: throwing here would make Orleans retry a batch that is already stored and
-        // append it twice. A missed projection write is caught up on the next activation; a
-        // missed snapshot only lengthens the next replay.
+        // The append is the commit. Everything below derives from the journal and must not
+        // throw: Orleans would retry a batch that is already stored and append it twice. A failed
+        // projection write is retried by a timer; a missed snapshot only lengthens the next replay.
         var version = expectedVersion + updates.Count;
+        foreach (var update in updates)
+            if (update is PendingEventEnqueued enqueued)
+                _unjournaledEnqueues.Remove(enqueued.OpKey);
 
         // A durable enqueue ([AlwaysInterleave], EnqueueDurable) can confirm while the main turn
         // has applied events to State but not drained them yet. State then holds mutations that
@@ -261,9 +304,11 @@ public partial class WorkflowInstance :
         if (_execution is not null && _execution.GetUncommittedEvents().Count > 0)
             return true;
 
-        // Snapshot first: it serializes State synchronously, before an await could let an
-        // interleaving call change it.
-        if (version - _snapshotVersion >= _eventStore.SnapshotInterval)
+        // The snapshot must be exactly the state at `version`. The only mutations that can
+        // interleave during the append above come from EnqueueDurable; while one of those is
+        // applied but not journaled, skip — a later append writes the snapshot. With none, State
+        // matches `version`, and WriteSnapshotAsync serializes it before its first await.
+        if (_unjournaledEnqueues.Count == 0 && version - _snapshotVersion >= _eventStore.SnapshotInterval)
         {
             try
             {
@@ -276,13 +321,17 @@ public partial class WorkflowInstance :
             }
         }
 
+        // The read model tolerates an interleaved mutation: it sets a dirty flag again and is
+        // projected by the next write.
         try
         {
             await _projection.WriteAsync(grainId, this.State, version);
+            StopProjectionRetry();
         }
         catch (Exception ex)
         {
             LogProjectionWriteFailed(version, ex);
+            ScheduleProjectionRetry();
         }
 
         return true;
