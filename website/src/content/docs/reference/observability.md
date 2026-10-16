@@ -180,6 +180,9 @@ The authoritative source is [`docs/plans/2026-02-08-structured-workflow-logging.
 - `WorkflowId` (process definition logical id)
 - `ProcessDefinitionKey` (deployed version key, e.g. `proc:1:abc`)
 - `WorkflowInstanceId` (Guid, the instance the call belongs to)
+- `BusinessId` (the instance's business id, e.g. an order number; `-` when none was set). Call-activity children do not inherit the parent's id.
+
+`BusinessId = "ORDER-42"` finds the instance's own log lines, the grains it calls, and the script, condition and custom-task handlers that run for it. Lines logged before the instance exists or outside a call from it do not carry the id: the `ProcessDefinitionGrain` "Creating instance" line on start, and timer reminder callbacks (`TimerCallbackGrain`) until they call into the instance. To see everything, look up the instance's `WorkflowInstanceId` once (it is in every matched line) and filter on that.
 - Activity context where applicable (`ActivityId`, `ActivityInstanceId`)
 
 When `IncludeScopes` is enabled (`appsettings.Development.json` already does this), every log record carries those structured fields — your aggregator can pivot on them without parsing message text.

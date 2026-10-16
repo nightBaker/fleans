@@ -290,7 +290,7 @@ public partial class WorkflowInstance :
         // fields only after it succeeds, so a rejected start leaves the grain unset and a retry
         // with valid input works. (A storage failure in ProcessPendingEvents is not covered.)
         var execution = new WorkflowExecution(State, workflow);
-        execution.Start(startActivityId, businessId);
+        execution.Start(startActivityId, businessId, this.GetPrimaryKey());
         _workflowDefinition = workflow;
         _execution = execution;
 
@@ -327,19 +327,17 @@ public partial class WorkflowInstance :
     {
         if (_workflowDefinition is null) return;
 
-        RequestContext.Set(WorkflowContextKeys.WorkflowId, _workflowDefinition.WorkflowId);
-        RequestContext.Set(WorkflowContextKeys.WorkflowInstanceId, this.GetPrimaryKey().ToString());
-        if (_workflowDefinition.ProcessDefinitionId is not null)
-            RequestContext.Set(WorkflowContextKeys.ProcessDefinitionId, _workflowDefinition.ProcessDefinitionId);
+        WorkflowLoggingContext.SetInstance(
+            _workflowDefinition.WorkflowId, _workflowDefinition.ProcessDefinitionId, this.GetPrimaryKey(), State.BusinessId);
     }
 
     private IDisposable? BeginWorkflowScope()
     {
         if (_workflowDefinition is null) return null;
 
-        return _logger.BeginScope(
-            "[{WorkflowId}, {ProcessDefinitionId}, {WorkflowInstanceId}]",
-            _workflowDefinition.WorkflowId, _workflowDefinition.ProcessDefinitionId ?? "-", this.GetPrimaryKey().ToString());
+        return WorkflowLoggingContext.BeginScope(
+            _logger, _workflowDefinition.WorkflowId, _workflowDefinition.ProcessDefinitionId, this.GetPrimaryKey(),
+            State.BusinessId);
     }
 
     // ── StartWorkflow (from Execution) ──────────────────────────────────
