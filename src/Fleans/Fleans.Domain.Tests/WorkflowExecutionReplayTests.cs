@@ -43,7 +43,7 @@ public class WorkflowExecutionReplayTests
         return (execution, state, taskEntry);
     }
 
-    private static WorkflowInstanceState Replay(IEnumerable<IDomainEvent> events)
+    private static WorkflowInstanceState Replay(IEnumerable<WorkflowEvent> events)
     {
         var state = new WorkflowInstanceState();
         var replay = new WorkflowExecution(state);
@@ -90,7 +90,7 @@ public class WorkflowExecutionReplayTests
 
         var events = execution.GetUncommittedEvents();
         Assert.IsNotEmpty(events);
-        foreach (var e in events.Cast<WorkflowEvent>())
+        foreach (var e in events)
             Assert.IsGreaterThanOrEqualTo(before, e.OccurredAt, $"{e.GetType().Name}.OccurredAt");
     }
 

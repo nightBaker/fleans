@@ -30,13 +30,13 @@ public interface IEventStore
     Task<(WorkflowInstanceState? State, int Version)> ReadSnapshotAsync(string grainId);
 
     /// <summary>Events with a version greater than <paramref name="afterVersion"/>, in order.</summary>
-    Task<IReadOnlyList<IDomainEvent>> ReadEventsAsync(string grainId, int afterVersion);
+    Task<IReadOnlyList<WorkflowEvent>> ReadEventsAsync(string grainId, int afterVersion);
 
     /// <summary>
     /// Appends <paramref name="events"/> as versions <c>expectedVersion + 1</c>, … . Returns
     /// <c>false</c> when another writer already stored events past <paramref name="expectedVersion"/>.
     /// </summary>
-    Task<bool> AppendEventsAsync(string grainId, IReadOnlyList<IDomainEvent> events, int expectedVersion);
+    Task<bool> AppendEventsAsync(string grainId, IReadOnlyList<WorkflowEvent> events, int expectedVersion);
 
     /// <summary>
     /// Replaces the grain's snapshot with <paramref name="state"/>, which must be exactly the state

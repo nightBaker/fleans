@@ -12,7 +12,7 @@ namespace Fleans.Application.Tests;
 /// </summary>
 internal class InMemoryEventStore(DeepCopier copier) : IEventStore
 {
-    private readonly ConcurrentDictionary<string, List<IDomainEvent>> _events = new();
+    private readonly ConcurrentDictionary<string, List<WorkflowEvent>> _events = new();
     private readonly ConcurrentDictionary<string, (WorkflowInstanceState State, int Version)> _snapshots = new();
 
     public int SnapshotInterval => 1;
@@ -24,16 +24,16 @@ internal class InMemoryEventStore(DeepCopier copier) : IEventStore
         return Task.FromResult<(WorkflowInstanceState?, int)>((null, 0));
     }
 
-    public Task<IReadOnlyList<IDomainEvent>> ReadEventsAsync(string grainId, int afterVersion)
+    public Task<IReadOnlyList<WorkflowEvent>> ReadEventsAsync(string grainId, int afterVersion)
     {
         if (!_events.TryGetValue(grainId, out var events))
-            return Task.FromResult<IReadOnlyList<IDomainEvent>>([]);
+            return Task.FromResult<IReadOnlyList<WorkflowEvent>>([]);
 
         lock (events)
-            return Task.FromResult<IReadOnlyList<IDomainEvent>>(events.Skip(afterVersion).ToList());
+            return Task.FromResult<IReadOnlyList<WorkflowEvent>>(events.Skip(afterVersion).ToList());
     }
 
-    public Task<bool> AppendEventsAsync(string grainId, IReadOnlyList<IDomainEvent> events, int expectedVersion)
+    public Task<bool> AppendEventsAsync(string grainId, IReadOnlyList<WorkflowEvent> events, int expectedVersion)
     {
         var list = _events.GetOrAdd(grainId, _ => []);
         lock (list)

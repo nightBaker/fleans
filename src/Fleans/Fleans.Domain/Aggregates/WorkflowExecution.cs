@@ -20,7 +20,7 @@ public class WorkflowExecution
 {
     private readonly WorkflowInstanceState _state;
     private readonly IWorkflowDefinition _definition;
-    private readonly List<IDomainEvent> _uncommittedEvents = [];
+    private readonly List<WorkflowEvent> _uncommittedEvents = [];
 
     // Domain services
     private readonly UserTaskLifecycle _userTasks;
@@ -55,9 +55,9 @@ public class WorkflowExecution
     /// Replays a persisted event by calling Apply without adding to uncommitted events.
     /// Used during JournaledGrain activation to reconstruct state from the event log.
     /// </summary>
-    internal void ReplayEvent(IDomainEvent @event) => Apply(@event);
+    internal void ReplayEvent(WorkflowEvent @event) => Apply(@event);
 
-    public IReadOnlyList<IDomainEvent> GetUncommittedEvents() => _uncommittedEvents.AsReadOnly();
+    public IReadOnlyList<WorkflowEvent> GetUncommittedEvents() => _uncommittedEvents.AsReadOnly();
 
     public void ClearUncommittedEvents() => _uncommittedEvents.Clear();
 
@@ -3326,10 +3326,6 @@ public class WorkflowExecution
 
     // --- Pending external events durability (#657) ---
 
-    /// <summary>Emits <see cref="PendingEventEnqueued"/>, persisting an external event in the queue ledger.</summary>
-    public void EmitPendingEventEnqueued(string opKey, PendingExternalEventPayload payload)
-        => Emit(new PendingEventEnqueued(opKey, payload));
-
     /// <summary>Emits <see cref="PendingEventDrained"/>, removing a processed external event from the queue ledger.</summary>
     public void EmitPendingEventDrained(string opKey)
         => Emit(new PendingEventDrained(opKey));
@@ -3350,13 +3346,17 @@ public class WorkflowExecution
             _ => @event
         };
 
-        // The only clock read on the event path: Apply handlers take the time from the event,
-        // so replaying the journal reproduces it.
-        var stamped = snapshotted with { OccurredAt = DateTimeOffset.UtcNow };
-
+        var stamped = Stamp(snapshotted);
         Apply(stamped);
         _uncommittedEvents.Add(stamped);
     }
+
+    /// <summary>
+    /// The only clock read on the event path: sets <see cref="WorkflowEvent.OccurredAt"/>. Apply
+    /// handlers take the time from the event, so replaying the journal reproduces it. Used by
+    /// <see cref="Emit"/> and by the grain's durable enqueue, which raises its event directly.
+    /// </summary>
+    public static WorkflowEvent Stamp(WorkflowEvent @event) => @event with { OccurredAt = DateTimeOffset.UtcNow };
 
     private static ExpandoObject SnapshotExpandoObject(ExpandoObject source)
     {
@@ -3367,7 +3367,7 @@ public class WorkflowExecution
         return snapshot;
     }
 
-    private void Apply(IDomainEvent @event)
+    private void Apply(WorkflowEvent @event)
     {
         switch (@event)
         {

@@ -202,7 +202,7 @@ public class EventTypeRegistryTests
         Assert.IsNull(deserialized.TokenId);
     }
 
-    private static List<(IDomainEvent Event, string ExpectedName)> CreateAllDomainEvents()
+    private static List<(WorkflowEvent Event, string ExpectedName)> CreateAllDomainEvents()
     {
         var id = Guid.NewGuid();
         var rootVarsId = Guid.NewGuid();

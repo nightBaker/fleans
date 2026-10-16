@@ -8,7 +8,8 @@ namespace Fleans.Domain.Events;
 /// <c>Guid.NewGuid()</c> — so replaying the journal rebuilds exactly the state the live run had.
 /// </summary>
 /// <remarks>
-/// <see cref="OccurredAt"/> is stamped by <c>WorkflowExecution.Emit</c>; event sites never set it.
+/// <see cref="OccurredAt"/> is stamped by <c>WorkflowExecution.Stamp</c> (via <c>Emit</c>, or the
+/// grain's durable enqueue); event sites never set it.
 /// Handlers that record a time (<c>CreatedAt</c>, <c>CompletedAt</c>, …) take it from here.
 /// </remarks>
 [GenerateSerializer]

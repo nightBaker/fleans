@@ -588,10 +588,9 @@ public partial class WorkflowInstance
                 ? esc.Tcs.Task
                 : completion.Task;
 
-            var evt = new Fleans.Domain.Events.PendingEventEnqueued(opKey, payload) { OccurredAt = DateTimeOffset.UtcNow };
-            // State is ahead of the journal until this event is appended (ApplyUpdatesToStorage
-            // removes the key); a snapshot must not be taken in between.
-            _unjournaledEnqueues.Add(opKey);
+            var evt = WorkflowExecution.Stamp(new Fleans.Domain.Events.PendingEventEnqueued(opKey, payload));
+            // State is ahead of the journal until this event is appended; EnqueueInFlight keeps
+            // snapshots out of that window.
             State.AddPendingOperation(opKey, payload);
             LogProcessingPendingEvent(nameof(Fleans.Domain.Events.PendingEventEnqueued));
 
@@ -604,7 +603,6 @@ public partial class WorkflowInstance
             finally
             {
                 _draining = false;
-                _unjournaledEnqueues.Remove(opKey);
             }
 
             _pendingExternalEvents.Enqueue((inMemory, completion));
@@ -678,7 +676,7 @@ public partial class WorkflowInstance
         }
     }
 
-    private void LogEvent(IDomainEvent evt)
+    private void LogEvent(WorkflowEvent evt)
     {
         switch (evt)
         {
@@ -807,12 +805,6 @@ public partial class WorkflowInstance
                 break;
             case EscalationUncaughtRaised escUncaught:
                 LogEscalationUncaught(escUncaught.EscalationCode, escUncaught.SourceActivityId);
-                break;
-            case ExecuteCustomTaskEvent customTaskEvent:
-                LogCustomTaskEventPublished(
-                    customTaskEvent.ActivityId,
-                    customTaskEvent.TaskType,
-                    customTaskEvent.ActivityInstanceId);
                 break;
         }
     }

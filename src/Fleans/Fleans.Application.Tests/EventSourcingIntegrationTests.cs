@@ -438,7 +438,7 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
 
         // Assert — the read model catches up without another command
         InstanceStateSnapshot? state = null;
-        for (var i = 0; i < 50 && state?.IsCompleted != true; i++)
+        for (var i = 0; i < 100 && state?.IsCompleted != true; i++) // retries back off: 2 s, then 4 s
         {
             await Task.Delay(200);
             state = await QueryService.GetStateSnapshot(instanceId);

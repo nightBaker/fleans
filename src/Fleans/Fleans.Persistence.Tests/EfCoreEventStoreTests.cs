@@ -32,7 +32,7 @@ public class EfCoreEventStoreTests : PersistenceTestBase
         var store = CreateStore(fixture);
 
         var grainId = "grain/test-1";
-        var events = new List<IDomainEvent>
+        var events = new List<WorkflowEvent>
         {
             new WorkflowStarted(Guid.NewGuid(), "process:1", Guid.NewGuid()),
             new ExecutionStarted(),
@@ -58,7 +58,7 @@ public class EfCoreEventStoreTests : PersistenceTestBase
         var store = CreateStore(fixture);
 
         var grainId = "grain/test-2";
-        var events = new List<IDomainEvent>
+        var events = new List<WorkflowEvent>
         {
             new WorkflowStarted(Guid.NewGuid(), "p1", Guid.NewGuid()),
             new ExecutionStarted(),
@@ -105,8 +105,8 @@ public class EfCoreEventStoreTests : PersistenceTestBase
         var store = CreateStore(fixture);
 
         var grainId = "grain/conflict";
-        var events1 = new List<IDomainEvent> { new WorkflowStarted(Guid.NewGuid(), "p1", Guid.NewGuid()) };
-        var events2 = new List<IDomainEvent> { new ExecutionStarted() };
+        var events1 = new List<WorkflowEvent> { new WorkflowStarted(Guid.NewGuid(), "p1", Guid.NewGuid()) };
+        var events2 = new List<WorkflowEvent> { new ExecutionStarted() };
 
         var result1 = await store.AppendEventsAsync(grainId, events1, expectedVersion: 0);
         Assert.IsTrue(result1);
@@ -129,7 +129,7 @@ public class EfCoreEventStoreTests : PersistenceTestBase
             .ToList();
 
         var events = ids.Select(id =>
-            (IDomainEvent)new ActivityExecutionStarted(id)).ToList();
+            (WorkflowEvent)new ActivityExecutionStarted(id)).ToList();
 
         await store.AppendEventsAsync(grainId, events, expectedVersion: 0);
 
@@ -158,7 +158,7 @@ public class EfCoreEventStoreTests : PersistenceTestBase
         dict["name"] = "test-value";
         dict["active"] = true;
 
-        var events = new List<IDomainEvent>
+        var events = new List<WorkflowEvent>
         {
             new ActivityCompleted(Guid.NewGuid(), Guid.NewGuid(), variables)
         };
@@ -239,6 +239,45 @@ public class EfCoreEventStoreTests : PersistenceTestBase
     [DataTestMethod]
     [DataRow(PersistenceProvider.Sqlite)]
     [DataRow(PersistenceProvider.Postgres)]
+    public async Task WriteAndReadSnapshot_RoundTrip_KeepsVariableValues(PersistenceProvider provider)
+    {
+        // Variables reach the snapshot through the production ExpandoObject codec
+        // (ExpandoObjectSurrogateConverter) — the value shapes the API and scripts produce.
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var store = CreateStore(fixture);
+        var id = Guid.NewGuid();
+        var state = CreateTestState(id);
+        dynamic nested = new ExpandoObject();
+        nested.level = 2L;
+        dynamic vars = new ExpandoObject();
+        vars.count = 42L;
+        vars.price = 9.5;
+        vars.approved = true;
+        vars.name = "order-1";
+        vars.missing = null;
+        vars.nested = nested;
+        vars.items = new List<object?> { 1L, "two", 3.0 };
+        state.MergeState(state.GetRootVariablesId(), (ExpandoObject)vars);
+
+        await store.WriteSnapshotAsync(id.ToString(), version: 3, state);
+        var (loaded, _) = await store.ReadSnapshotAsync(id.ToString());
+
+        Assert.IsNotNull(loaded);
+        var rootId = loaded.GetRootVariablesId();
+        Assert.AreEqual(42L, loaded.GetVariable(rootId, "count"));
+        Assert.AreEqual(9.5, loaded.GetVariable(rootId, "price"));
+        Assert.AreEqual(true, loaded.GetVariable(rootId, "approved"));
+        Assert.AreEqual("order-1", loaded.GetVariable(rootId, "name"));
+        Assert.IsNull(loaded.GetVariable(rootId, "missing"));
+        var loadedNested = (IDictionary<string, object?>)loaded.GetVariable(rootId, "nested")!;
+        Assert.AreEqual(2L, loadedNested["level"]);
+        CollectionAssert.AreEqual(new List<object?> { 1L, "two", 3.0 },
+            ((IEnumerable<object?>)loaded.GetVariable(rootId, "items")!).ToList());
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
     public async Task ReadSnapshot_UnreadablePayload_Throws(PersistenceProvider provider)
     {
         // The grain treats a throwing read as "no snapshot" and replays the whole journal.
@@ -292,8 +331,8 @@ public class EfCoreEventStoreTests : PersistenceTestBase
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
         var store = CreateStore(fixture);
 
-        var events1 = new List<IDomainEvent> { new WorkflowStarted(Guid.NewGuid(), "p1", Guid.NewGuid()) };
-        var events2 = new List<IDomainEvent> { new ExecutionStarted() };
+        var events1 = new List<WorkflowEvent> { new WorkflowStarted(Guid.NewGuid(), "p1", Guid.NewGuid()) };
+        var events2 = new List<WorkflowEvent> { new ExecutionStarted() };
 
         await store.AppendEventsAsync("grain/a", events1, expectedVersion: 0);
         await store.AppendEventsAsync("grain/b", events2, expectedVersion: 0);
@@ -317,8 +356,8 @@ public class EfCoreEventStoreTests : PersistenceTestBase
 
         var grainId = "grain/multi-batch";
 
-        var batch1 = new List<IDomainEvent> { new WorkflowStarted(Guid.NewGuid(), "p1", Guid.NewGuid()) };
-        var batch2 = new List<IDomainEvent> { new ExecutionStarted(), new WorkflowCompleted() };
+        var batch1 = new List<WorkflowEvent> { new WorkflowStarted(Guid.NewGuid(), "p1", Guid.NewGuid()) };
+        var batch2 = new List<WorkflowEvent> { new ExecutionStarted(), new WorkflowCompleted() };
 
         await store.AppendEventsAsync(grainId, batch1, expectedVersion: 0);
         await store.AppendEventsAsync(grainId, batch2, expectedVersion: 1);
@@ -340,7 +379,7 @@ public class EfCoreEventStoreTests : PersistenceTestBase
         var store = CreateStore(fixture, maxEventsPerLoad: cap);
 
         var grainId = "grain/cap-exact";
-        var events = Enumerable.Range(0, cap).Select(_ => (IDomainEvent)new ExecutionStarted()).ToList();
+        var events = Enumerable.Range(0, cap).Select(_ => (WorkflowEvent)new ExecutionStarted()).ToList();
         await store.AppendEventsAsync(grainId, events, expectedVersion: 0);
 
         var loaded = await store.ReadEventsAsync(grainId, afterVersion: 0);
@@ -357,7 +396,7 @@ public class EfCoreEventStoreTests : PersistenceTestBase
         var store = CreateStore(fixture, maxEventsPerLoad: cap);
 
         var grainId = "grain/cap-over";
-        var events = Enumerable.Range(0, cap + 1).Select(_ => (IDomainEvent)new ExecutionStarted()).ToList();
+        var events = Enumerable.Range(0, cap + 1).Select(_ => (WorkflowEvent)new ExecutionStarted()).ToList();
         await store.AppendEventsAsync(grainId, events, expectedVersion: 0);
 
         InvalidOperationException? caught = null;
@@ -380,7 +419,7 @@ public class EfCoreEventStoreTests : PersistenceTestBase
 
         // cap + offset total events; afterVersion=offset leaves exactly cap events — should not throw
         var grainId = "grain/cap-offset";
-        var events = Enumerable.Range(0, cap + offset).Select(_ => (IDomainEvent)new ExecutionStarted()).ToList();
+        var events = Enumerable.Range(0, cap + offset).Select(_ => (WorkflowEvent)new ExecutionStarted()).ToList();
         await store.AppendEventsAsync(grainId, events, expectedVersion: 0);
 
         var loaded = await store.ReadEventsAsync(grainId, afterVersion: offset);
@@ -396,7 +435,7 @@ public class EfCoreEventStoreTests : PersistenceTestBase
         var store = CreateStore(fixture, maxEventsPerLoad: int.MaxValue);
 
         var grainId = "grain/cap-high";
-        var events = new List<IDomainEvent>
+        var events = new List<WorkflowEvent>
         {
             new WorkflowStarted(Guid.NewGuid(), "p1", Guid.NewGuid()),
             new ExecutionStarted(),

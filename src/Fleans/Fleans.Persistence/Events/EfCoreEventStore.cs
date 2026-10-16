@@ -63,7 +63,7 @@ public class EfCoreEventStore : IEventStore
     /// <summary>
     /// Loads all events for a grain after the given version, ordered by version.
     /// </summary>
-    public async Task<IReadOnlyList<IDomainEvent>> ReadEventsAsync(
+    public async Task<IReadOnlyList<WorkflowEvent>> ReadEventsAsync(
         string grainId, int afterVersion)
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync();
@@ -96,7 +96,7 @@ public class EfCoreEventStore : IEventStore
     /// </summary>
     public async Task<bool> AppendEventsAsync(
         string grainId,
-        IReadOnlyList<IDomainEvent> events,
+        IReadOnlyList<WorkflowEvent> events,
         int expectedVersion)
     {
         if (events.Count == 0) return true;
@@ -111,7 +111,7 @@ public class EfCoreEventStore : IEventStore
                 Version = expectedVersion + 1 + i,
                 EventType = EventTypeRegistry.GetEventType(events[i]),
                 Payload = JsonConvert.SerializeObject(events[i], JsonSettings),
-                Timestamp = events[i] is WorkflowEvent we ? we.OccurredAt : DateTimeOffset.UtcNow
+                Timestamp = events[i].OccurredAt
             });
         }
 
