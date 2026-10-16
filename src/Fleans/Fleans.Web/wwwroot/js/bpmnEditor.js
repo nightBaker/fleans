@@ -42,7 +42,7 @@ window.bpmnEditor = {
 
         this._dotNetRef = dotNetRef;
 
-        this._modeler = new BpmnModeler({
+        this._modeler = window.fleansBpmnTheme.create(BpmnModeler, {
             container: container,
             keyboard: { bindTo: container },
             moddleExtensions: Object.assign(

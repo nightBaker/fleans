@@ -67,6 +67,35 @@ but each live in-memory tab also carries its most recent XML snapshot.
 - `beforeunload` shows the browser's standard "unsaved changes" warning whenever
   any tab is dirty.
 
+## Diagram style
+
+**Settings → Diagram Style** switches how the editor and the instance viewer draw diagrams:
+
+- **Classic** (default) — the standard bpmn-js look, tinted to match the Admin UI theme.
+- **Archify** — a gridded canvas, monospace labels, and nodes coloured by kind. It follows the
+  Admin UI's light/dark setting: dark slate in dark mode, near-white in light mode.
+
+The choice is stored in your browser and applies the next time a diagram is opened.
+It only affects how diagrams are displayed and is never written to the BPMN XML.
+
+In the Archify style, node colour shows what kind of step it is:
+
+| Colour | Elements |
+|---|---|
+| Cyan | User and manual tasks |
+| Green | Script, service, business-rule and plain tasks |
+| Violet | Subprocesses, call activities, transactions |
+| Amber | Timer events |
+| Orange | Message and signal events, send/receive tasks |
+| Red | Error, escalation, compensation, cancel and terminate events |
+| Grey | Gateways, plain start/end events, conditional and link events, data and annotations |
+
+Run state in the instance viewer uses colours outside this table: blue for the active step, a
+solid red fill for a failed one, grey dashes for a cancelled one.
+
+Colours set on an element by another modeler (for example Camunda Modeler's colour picker) are kept
+and override the scheme.
+
 ## Best practice
 
 - Open a **parent CallActivity process and its child in separate tabs** before

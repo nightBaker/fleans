@@ -21,6 +21,8 @@ public sealed class SettingsPage
 
     public ILocator AccentColorSelect => _page.GetByTestId("settings-accent-color");
 
+    public ILocator DiagramThemeSelect => _page.GetByTestId("settings-diagram-theme");
+
     public async Task OpenAsync()
     {
         await BlazorPage.GotoInteractiveAsync(_page, "/settings");
@@ -37,6 +39,18 @@ public sealed class SettingsPage
     public Task SelectThemeModeAsync(string mode) => SelectAsync(ThemeModeSelect, mode);
 
     public Task SelectAccentColorAsync(string color) => SelectAsync(AccentColorSelect, color);
+
+    /// <summary>Picks the BPMN diagram style; <paramref name="value"/> is the option value (<c>classic</c> / <c>archify</c>).</summary>
+    public async Task SelectDiagramThemeAsync(string label, string value)
+    {
+        await DiagramThemeSelect.ClickAsync();
+        await DiagramThemeSelect.Locator("fluent-option", new() { HasTextString = label }).First.ClickAsync();
+        await Expect(DiagramThemeSelect).ToHaveJSPropertyAsync("value", value);
+    }
+
+    /// <summary>Diagram style persisted by <c>js/bpmnTheme.js</c> under <c>localStorage["fleans.diagramTheme"]</c>.</summary>
+    public Task<string?> ReadPersistedDiagramThemeAsync() =>
+        _page.EvaluateAsync<string?>("() => window.localStorage.getItem('fleans.diagramTheme')");
 
     public async Task AssertThemeModeAsync(string mode) =>
         await Expect(ThemeModeSelect).ToHaveJSPropertyAsync("value", mode);

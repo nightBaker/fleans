@@ -41,16 +41,18 @@ h1:focus {
         content: "An error has occurred."
     }
 
-/* BPMN Theme Adaptation — overrides bpmn.js inline styles with FluentUI tokens */
-.djs-shape .djs-visual > rect,
-.djs-shape .djs-visual > circle,
-.djs-shape .djs-visual > polygon {
+/* BPMN Theme Adaptation (classic diagram theme, the default) — overrides bpmn.js inline styles with
+   FluentUI tokens. js/bpmnTheme.js tags the bpmn-js container with .fl-diagram-classic; :where() keeps
+   the selectors' original specificity so the viewer's execution highlights below still win. */
+:where(.fl-diagram-classic) .djs-shape .djs-visual > rect,
+:where(.fl-diagram-classic) .djs-shape .djs-visual > circle,
+:where(.fl-diagram-classic) .djs-shape .djs-visual > polygon {
     stroke: var(--neutral-foreground-hint) !important;
     fill: var(--neutral-fill-rest) !important;
 }
 
-.djs-shape .djs-visual > path,
-.djs-connection .djs-visual > path {
+:where(.fl-diagram-classic) .djs-shape .djs-visual > path,
+:where(.fl-diagram-classic) .djs-connection .djs-visual > path {
     stroke: var(--neutral-foreground-hint) !important;
 }
 
@@ -58,9 +60,9 @@ h1:focus {
     opacity: 0.7;
 }
 
-.djs-drag-group .djs-visual > rect,
-.djs-drag-group .djs-visual > circle,
-.djs-drag-group .djs-visual > polygon {
+:where(.fl-diagram-classic) .djs-drag-group .djs-visual > rect,
+:where(.fl-diagram-classic) .djs-drag-group .djs-visual > circle,
+:where(.fl-diagram-classic) .djs-drag-group .djs-visual > polygon {
     fill: var(--neutral-fill-rest) !important;
     stroke: var(--neutral-foreground-hint) !important;
 }
@@ -70,82 +72,82 @@ h1:focus {
     background: transparent !important;
 }
 
-.djs-overlay-container {
+:where(.fl-diagram-classic) .djs-overlay-container {
     background: transparent !important;
 }
 
-[class*="djs-create"] {
+:where(.fl-diagram-classic) [class*="djs-create"] {
     background: transparent !important;
 }
 
-svg defs marker path {
+:where(.fl-diagram-classic) svg defs marker path {
     fill: var(--neutral-foreground-hint) !important;
     stroke: var(--neutral-foreground-hint) !important;
 }
 
-marker[id*="sequenceflow"] path,
-marker[id*="association"] path,
-marker[id*="messageflow"] path,
-marker[id*="conditional"] path {
+:where(.fl-diagram-classic) marker[id*="sequenceflow"] path,
+:where(.fl-diagram-classic) marker[id*="association"] path,
+:where(.fl-diagram-classic) marker[id*="messageflow"] path,
+:where(.fl-diagram-classic) marker[id*="conditional"] path {
     fill: var(--neutral-foreground-hint) !important;
     stroke: var(--neutral-foreground-hint) !important;
 }
 
-.djs-direct-editing-parent {
+:where(.fl-diagram-classic) .djs-direct-editing-parent {
     background: var(--neutral-layer-1) !important;
     color: var(--neutral-foreground-rest) !important;
     border-color: var(--neutral-stroke-rest) !important;
 }
 
-.djs-direct-editing-content {
+:where(.fl-diagram-classic) .djs-direct-editing-content {
     background: var(--neutral-layer-1) !important;
     color: var(--neutral-foreground-rest) !important;
 }
 
-.djs-visual text,
-.djs-label text {
+:where(.fl-diagram-classic) .djs-visual text,
+:where(.fl-diagram-classic) .djs-label text {
     fill: var(--neutral-foreground-rest) !important;
 }
 
-.djs-palette {
+:where(.fl-diagram-classic) .djs-palette {
     background: var(--neutral-layer-2) !important;
     border-color: var(--neutral-stroke-rest) !important;
 }
 
-.djs-palette .entry {
+:where(.fl-diagram-classic) .djs-palette .entry {
     color: var(--neutral-foreground-rest) !important;
 }
 
-.djs-context-pad .entry {
+:where(.fl-diagram-classic) .djs-context-pad .entry {
     background: var(--neutral-layer-1) !important;
     color: var(--neutral-foreground-rest) !important;
 }
 
-.djs-popup {
+:where(.fl-diagram-classic) .djs-popup {
     background: var(--neutral-layer-2) !important;
     border-color: var(--neutral-stroke-rest) !important;
     color: var(--neutral-foreground-rest) !important;
 }
 
-.djs-popup .entry,
-.djs-popup .entry span {
+:where(.fl-diagram-classic) .djs-popup .entry,
+:where(.fl-diagram-classic) .djs-popup .entry span {
     color: var(--neutral-foreground-rest) !important;
 }
 
-.djs-popup .entry:hover {
+:where(.fl-diagram-classic) .djs-popup .entry:hover {
     background: var(--neutral-fill-stealth-hover) !important;
 }
 
-.djs-popup .djs-popup-header {
+:where(.fl-diagram-classic) .djs-popup .djs-popup-header {
     background: var(--neutral-layer-3) !important;
     border-color: var(--neutral-stroke-rest) !important;
 }
 
-.djs-popup .djs-popup-header .entry {
+:where(.fl-diagram-classic) .djs-popup .djs-popup-header .entry {
     color: var(--neutral-foreground-rest) !important;
 }
 
-.djs-popup input {
+:where(.fl-diagram-classic) .djs-popup input {
     background: var(--neutral-layer-1) !important;
     color: var(--neutral-foreground-rest) !important;
     border-color: var(--neutral-stroke-rest) !important;
@@ -476,4 +478,161 @@ marker[id*="conditional"] path {
 
 .tag-suggestion-item:hover {
     background: var(--neutral-fill-stealth-hover);
+}
+
+/* BPMN diagram theme: archify — opt-in via Settings → Diagram Style (js/bpmnTheme.js adds
+   .fl-diagram-archify to the bpmn-js container). Slate canvas, 40px line grid, monospace labels,
+   tinted nodes coloured by category. bpmn-js renders colours as inline var(--fl-node-*), each
+   shape's fl-cat-* class picks its colour pair; light tokens by default, dark when Fluent sets
+   body[data-theme="dark" | "system-dark"]. */
+body {
+    --fl-bg: #f8fafc;
+    --fl-grid: #e2e8f0;
+    --fl-text: #0f172a;
+    --fl-text-muted: #64748b;
+    --fl-panel: #ffffff;
+    --fl-panel-border: #cbd5e1;
+    --fl-panel-hover: #f1f5f9;
+    --fl-arrow: #94a3b8;
+    --fl-emphasis: #059669;
+    --fl-state-active: #2563eb;
+    --fl-danger: #be123c;
+    --fl-human: #0891b2;
+    --fl-compute: #059669;
+    --fl-process: #7c3aed;
+    --fl-timer: #d97706;
+    --fl-message: #ea580c;
+    --fl-error: #e11d48;
+    --fl-neutral: #64748b;
+    --fl-tint: 14%;
+}
+
+body[data-theme$="dark"] {
+    --fl-bg: #020617;
+    --fl-grid: #1e293b;
+    --fl-text: #f8fafc;
+    --fl-text-muted: #94a3b8;
+    --fl-panel: #0f172a;
+    --fl-panel-border: #334155;
+    --fl-panel-hover: #1e293b;
+    --fl-arrow: #64748b;
+    --fl-emphasis: #34d399;
+    --fl-state-active: #60a5fa;
+    --fl-danger: #f43f5e;
+    --fl-human: #22d3ee;
+    --fl-compute: #34d399;
+    --fl-process: #a78bfa;
+    --fl-timer: #fbbf24;
+    --fl-message: #fb923c;
+    --fl-error: #fb7185;
+    --fl-neutral: #94a3b8;
+    --fl-tint: 18%;
+}
+
+.djs-container.fl-diagram-archify {
+    --canvas-fill-color: var(--fl-bg);
+    --element-hover-outline-fill-color: var(--fl-text-muted);
+    --element-selected-outline-stroke-color: var(--fl-state-active);
+    --element-selected-outline-secondary-stroke-color: var(--fl-text-muted);
+    --lasso-fill-color: color-mix(in srgb, var(--fl-emphasis) 12%, transparent);
+    --bendpoint-fill-color: var(--fl-emphasis);
+    --resizer-fill-color: var(--fl-emphasis);
+    --palette-background-color: var(--fl-panel);
+    --palette-border-color: var(--fl-panel-border);
+    --palette-entry-color: var(--fl-text);
+    --palette-entry-hover-color: var(--fl-emphasis);
+    --palette-entry-selected-color: var(--fl-emphasis);
+    --palette-separator-color: var(--fl-panel-border);
+    --context-pad-entry-background-color: var(--fl-panel);
+    --context-pad-entry-hover-background-color: var(--fl-panel-hover);
+    --popup-font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --popup-font-size: 13px;
+    --popup-background-color: var(--fl-panel);
+    --popup-border-color: var(--fl-panel-border);
+    --popup-entry-title-color: var(--fl-text-muted);
+    --popup-description-color: var(--fl-text-muted);
+    --popup-no-results-color: var(--fl-text-muted);
+    --popup-entry-hover-color: var(--fl-panel-hover);
+    --popup-header-entry-selected-color: var(--fl-emphasis);
+    --popup-header-group-divider-color: var(--fl-panel-border);
+    --popup-search-border-color: var(--fl-panel-border);
+    --popup-search-focus-border-color: var(--fl-emphasis);
+    --popup-search-focus-background-color: var(--fl-panel-hover);
+    /* Default category; also what labels and the root resolve. */
+    --fl-cat: var(--fl-neutral);
+    --fl-node-stroke: var(--fl-neutral);
+    --fl-node-fill: color-mix(in srgb, var(--fl-neutral) var(--fl-tint), var(--fl-bg));
+    background-color: var(--fl-bg) !important;
+    background-image:
+        linear-gradient(var(--fl-grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--fl-grid) 1px, transparent 1px) !important;
+    background-size: 40px 40px !important;
+}
+
+.fl-diagram-archify .djs-connection {
+    --fl-node-stroke: var(--fl-arrow);
+    --fl-node-fill: var(--fl-bg);
+}
+
+/* Each category only names its colour; stroke + an opaque tint (the colour mixed into the canvas, so
+   boundary events and overlapping shapes don't show the edges underneath) derive from it. */
+.fl-diagram-archify .djs-shape {
+    --fl-node-stroke: var(--fl-cat);
+    --fl-node-fill: color-mix(in srgb, var(--fl-cat) var(--fl-tint), var(--fl-bg));
+}
+
+.fl-diagram-archify .fl-cat-human   { --fl-cat: var(--fl-human); }
+.fl-diagram-archify .fl-cat-compute { --fl-cat: var(--fl-compute); }
+.fl-diagram-archify .fl-cat-process { --fl-cat: var(--fl-process); }
+.fl-diagram-archify .fl-cat-timer   { --fl-cat: var(--fl-timer); }
+.fl-diagram-archify .fl-cat-message { --fl-cat: var(--fl-message); }
+.fl-diagram-archify .fl-cat-error   { --fl-cat: var(--fl-error); }
+
+/* Archify cards use a tighter corner radius than bpmn-js' 10px task radius. Tasks only: containers keep
+   bpmn-js geometry (a transaction's inset inner border would cross a tighter outer corner). */
+.fl-diagram-archify .djs-shape:is(.fl-cat-human, .fl-cat-compute, .fl-cat-message) .djs-visual > rect:first-child {
+    rx: 6px;
+    ry: 6px;
+}
+
+.fl-diagram-archify .djs-direct-editing-parent,
+.fl-diagram-archify .djs-direct-editing-content {
+    background: var(--fl-panel) !important;
+    color: var(--fl-text) !important;
+    border-color: var(--fl-panel-border) !important;
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important;
+}
+
+.fl-diagram-archify .djs-palette {
+    border-radius: 6px;
+}
+
+/* Run-state highlights must not reuse a category colour (an active script task or a failed error event
+   would otherwise look unchanged): active = blue, failed = red stroke + strong red fill, cancelled =
+   muted dashes, selected = text colour. */
+.fl-diagram-archify .bpmn-active .djs-visual > :nth-child(1) {
+    stroke: var(--fl-state-active) !important;
+    filter: drop-shadow(0 0 6px var(--fl-state-active));
+}
+
+.fl-diagram-archify :is(.bpmn-error, .bpmn-error-pulse) .djs-visual > :nth-child(1) {
+    stroke: var(--fl-danger) !important;
+    fill: color-mix(in srgb, var(--fl-danger) 40%, var(--fl-bg)) !important;
+}
+
+.fl-diagram-archify .bpmn-cancelled .djs-visual > :nth-child(1) {
+    stroke: var(--fl-text-muted) !important;
+}
+
+.fl-diagram-archify .bpmn-selected .djs-visual > :nth-child(1) {
+    stroke: var(--fl-text) !important;
+    filter: drop-shadow(0 0 6px color-mix(in srgb, var(--fl-text) 50%, transparent));
+}
+
+.fl-diagram-archify .execution-path-line {
+    stroke: var(--fl-state-active);
+}
+
+.fl-diagram-archify .execution-arrow-fill {
+    fill: var(--fl-state-active);
 }
