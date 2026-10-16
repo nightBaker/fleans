@@ -81,11 +81,32 @@ public abstract class WorkflowTestBase
         return await QueryService.GetStateSnapshot(instanceId);
     }
 
-    protected async Task ForceAllGrainDeactivation()
+    /// <summary>
+    /// Deactivates idle grains and polls until no workflow instance is active, for at most 3s (an
+    /// instance woken by a timer may come straight back). Instances in <paramref name="mustDeactivate"/>
+    /// must be gone — the call fails after 30s otherwise — so a test that relies on reactivation
+    /// does not depend on timing.
+    /// </summary>
+    protected async Task ForceAllGrainDeactivation(params Guid[] mustDeactivate)
     {
         var managementGrain = Cluster.GrainFactory.GetGrain<IManagementGrain>(0);
         await managementGrain.ForceActivationCollection(TimeSpan.Zero);
-        await Task.Delay(TimeSpan.FromSeconds(3));
+
+        var keys = mustDeactivate.Select(id => id.ToString("N")).ToList();
+        var settleBy = DateTime.UtcNow.AddSeconds(3);
+        var failBy = DateTime.UtcNow.AddSeconds(30);
+        while (true)
+        {
+            var active = (await managementGrain.GetDetailedGrainStatistics([typeof(WorkflowInstance).FullName!]))
+                .Select(s => s.GrainId.ToString()).ToList();
+            var required = keys.Where(k => active.Any(a => a.Contains(k))).ToList();
+            var done = keys.Count > 0 ? required.Count == 0 : DateTime.UtcNow >= settleBy;
+            if (active.Count == 0 || done)
+                return;
+            Assert.IsTrue(DateTime.UtcNow < failBy,
+                $"Workflow instances did not deactivate: {string.Join(", ", required)}");
+            await Task.Delay(100);
+        }
     }
 
     /// <summary>

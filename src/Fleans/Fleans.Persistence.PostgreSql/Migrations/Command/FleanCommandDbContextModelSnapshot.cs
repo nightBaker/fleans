@@ -579,6 +579,9 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
 
+                    b.Property<int>("SnapshotVersion")
+                        .HasColumnType("integer");
+
                     b.HasKey("Id");
 
                     b.HasIndex("BusinessId");
@@ -646,23 +649,6 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                         .IsUnique();
 
                     b.ToTable("WorkflowEvents", (string)null);
-                });
-
-            modelBuilder.Entity("Fleans.Persistence.Events.WorkflowSnapshotEntity", b =>
-                {
-                    b.Property<string>("GrainId")
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
-
-                    b.Property<DateTimeOffset>("Timestamp")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("Version")
-                        .HasColumnType("integer");
-
-                    b.HasKey("GrainId");
-
-                    b.ToTable("WorkflowSnapshots", (string)null);
                 });
 
             modelBuilder.Entity("Fleans.Domain.States.ActivityInstanceEntry", b =>

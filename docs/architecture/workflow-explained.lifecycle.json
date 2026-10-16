@@ -1,0 +1,147 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Как живёт процесс: согласование отпуска",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1080,
+      640
+    ]
+  },
+  "lanes": [
+    {
+      "id": "main",
+      "label": "Один экземпляр процесса"
+    },
+    {
+      "id": "events",
+      "label": "Отмена или необработанный сбой"
+    },
+    {
+      "id": "terminal",
+      "label": "Процесс остановлен"
+    }
+  ],
+  "states": [
+    {
+      "id": "created",
+      "type": "start",
+      "label": "Создан",
+      "sublabel": "Заявка принята",
+      "lane": "main",
+      "col": 0,
+      "step": "01"
+    },
+    {
+      "id": "running",
+      "type": "active",
+      "label": "Выполняется",
+      "sublabel": "Создать задачу",
+      "lane": "main",
+      "col": 1,
+      "step": "02"
+    },
+    {
+      "id": "waiting",
+      "type": "waiting",
+      "label": "Ожидает",
+      "sublabel": "Решение руководителя",
+      "lane": "main",
+      "col": 2,
+      "step": "03"
+    },
+    {
+      "id": "resumed",
+      "type": "active",
+      "label": "Продолжается",
+      "sublabel": "Отправить уведомление",
+      "lane": "main",
+      "col": 3,
+      "step": "04"
+    },
+    {
+      "id": "completed",
+      "type": "success",
+      "label": "Завершён",
+      "sublabel": "Все шаги пройдены",
+      "lane": "main",
+      "col": 4,
+      "step": "05"
+    },
+    {
+      "id": "cancelled",
+      "type": "neutral",
+      "label": "Отменён",
+      "sublabel": "Заявка отозвана",
+      "lane": "terminal",
+      "col": 0
+    },
+    {
+      "id": "failed",
+      "type": "failure",
+      "label": "Ошибка",
+      "sublabel": "Сбой не обработан",
+      "lane": "terminal",
+      "col": 1
+    },
+    {
+      "id": "withdraw",
+      "type": "external",
+      "label": "Отзыв заявки",
+      "sublabel": "Сотрудник передумал",
+      "lane": "events",
+      "col": 0
+    },
+    {
+      "id": "unhandled",
+      "type": "external",
+      "label": "Сбой шага",
+      "sublabel": "Нет обработки ошибки",
+      "lane": "events",
+      "col": 1
+    }
+  ],
+  "transitions": [
+    {
+      "id": "cancel",
+      "from": "waiting",
+      "to": "withdraw",
+      "label": "Отзыв заявки",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        402,
+        202
+      ]
+    },
+    {
+      "id": "failure",
+      "from": "resumed",
+      "to": "unhandled",
+      "label": "Не удалось выполнить",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        556,
+        202
+      ]
+    },
+    {
+      "id": "withdraw-stop",
+      "from": "withdraw",
+      "to": "cancelled",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "failure-stop",
+      "from": "unhandled",
+      "to": "failed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "variant": "security"
+    }
+  ]
+}

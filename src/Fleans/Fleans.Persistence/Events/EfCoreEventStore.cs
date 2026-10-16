@@ -12,8 +12,8 @@ namespace Fleans.Persistence.Events;
 /// <summary>
 /// Encapsulates all database operations for event and snapshot persistence.
 /// Used by the WorkflowInstance grain's ICustomStorageInterface implementation.
-/// Snapshots are stored in normalized SQL tables via IWorkflowStateProjection,
-/// with version metadata tracked in the WorkflowSnapshots table.
+/// Snapshots are the normalized WorkflowInstances projection (IWorkflowStateProjection), which
+/// stores the version it covers in the same row.
 /// </summary>
 public class EfCoreEventStore : IEventStore
 {
@@ -42,26 +42,11 @@ public class EfCoreEventStore : IEventStore
     }
 
     /// <summary>
-    /// Loads the latest snapshot for a grain, or returns (null, 0) if none exists.
-    /// State is read from the normalized WorkflowInstances tables via IWorkflowStateProjection.
-    /// Version metadata is read from the WorkflowSnapshots table.
+    /// The projected state and the number of events it covers (one row, see
+    /// <see cref="IWorkflowStateProjection"/>), or <c>(null, 0)</c> when there is none.
     /// </summary>
-    public async Task<(WorkflowInstanceState? State, int Version)> ReadSnapshotAsync(
-        string grainId)
-    {
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-
-        var snapshot = await db.WorkflowSnapshots
-            .AsNoTracking()
-            .FirstOrDefaultAsync(s => s.GrainId == grainId);
-
-        if (snapshot is null)
-            return (null, 0);
-
-        var state = await _stateProjection.ReadAsync(grainId);
-
-        return (state, snapshot.Version);
-    }
+    public Task<(WorkflowInstanceState? State, int Version)> ReadSnapshotAsync(string grainId) =>
+        _stateProjection.ReadAsync(grainId);
 
     /// <summary>
     /// Loads all events for a grain after the given version, ordered by version.
@@ -93,13 +78,14 @@ public class EfCoreEventStore : IEventStore
     }
 
     /// <summary>
-    /// Appends events starting at the given version.
-    /// Returns false if a version conflict occurs (unique constraint violation).
+    /// Appends events as versions <c>expectedVersion + 1</c>, … (1-based; the store does the
+    /// numbering so callers pass the grain's event count). Returns false if a version conflict
+    /// occurs (unique constraint violation).
     /// </summary>
     public async Task<bool> AppendEventsAsync(
         string grainId,
         IReadOnlyList<IDomainEvent> events,
-        int startVersion)
+        int expectedVersion)
     {
         if (events.Count == 0) return true;
 
@@ -110,7 +96,7 @@ public class EfCoreEventStore : IEventStore
             db.WorkflowEvents.Add(new WorkflowEventEntity
             {
                 GrainId = grainId,
-                Version = startVersion + i,
+                Version = expectedVersion + 1 + i,
                 EventType = EventTypeRegistry.GetEventType(events[i]),
                 Payload = JsonConvert.SerializeObject(events[i], JsonSettings),
                 Timestamp = DateTimeOffset.UtcNow
@@ -129,42 +115,11 @@ public class EfCoreEventStore : IEventStore
     }
 
     /// <summary>
-    /// Upserts a snapshot for the given grain.
-    /// State is written to normalized WorkflowInstances tables via IWorkflowStateProjection.
-    /// Version metadata is tracked in the WorkflowSnapshots table.
+    /// Writes the projected state and the version it covers in one row
+    /// (see <see cref="IWorkflowStateProjection.WriteAsync"/>).
     /// </summary>
-    public async Task WriteSnapshotAsync(
-        string grainId,
-        int version,
-        WorkflowInstanceState state)
-    {
-        await _stateProjection.WriteAsync(grainId, state);
-
-        await using var db = await _dbContextFactory.CreateDbContextAsync();
-
-        var existing = await db.WorkflowSnapshots
-            .FirstOrDefaultAsync(s => s.GrainId == grainId);
-
-        if (existing is not null)
-        {
-            existing.Version = version;
-            existing.Timestamp = DateTimeOffset.UtcNow;
-        }
-        else
-        {
-            db.WorkflowSnapshots.Add(new WorkflowSnapshotEntity
-            {
-                GrainId = grainId,
-                Version = version,
-                Timestamp = DateTimeOffset.UtcNow
-            });
-        }
-
-        await db.SaveChangesAsync();
-    }
-
-    public Task ProjectStateAsync(string grainId, WorkflowInstanceState state) =>
-        _stateProjection.WriteAsync(grainId, state);
+    public Task WriteSnapshotAsync(string grainId, int version, WorkflowInstanceState state) =>
+        _stateProjection.WriteAsync(grainId, state, version);
 
     private static bool IsUniqueConstraintViolation(DbUpdateException ex)
     {

@@ -54,6 +54,15 @@ CI runs the dedicated `PostgreSQL tests` job (`.github/workflows/pg-tests.yml`) 
 
 **Bump `PostgresImage` in `Infrastructure/PostgresContainerFixture.cs` whenever the production deploy target moves** — today it tracks Aspire's `Aspire.Hosting.PostgreSQL` default (PG 16).
 
+## Event store: versions and snapshots
+
+- **Versions.** A grain's version is its event count. `IEventStore.AppendEventsAsync(grainId, events, expectedVersion)` stores the batch as versions `expectedVersion + 1`, … — the store does the numbering, callers pass the count. `ReadEventsAsync(afterVersion)` returns `Version > afterVersion`.
+- **Snapshots.** The snapshot is the `WorkflowInstances` projection row; the version it covers is a column of that row (shadow property `SnapshotVersion`, no domain field). `WriteSnapshotAsync` writes state and version together after every append, so they cannot disagree; a provider that splits them brings back the replay double-apply of #833. If a crash lands between the append and that write, activation replays exactly the events after the snapshot version.
+- **No snapshot while events are undrained.** An `[AlwaysInterleave]` durable enqueue can confirm while the main turn has applied events to `State` but not drained them; `ApplyUpdatesToStorage` then skips the snapshot (the main turn's drain writes it), so a snapshot never contains un-journaled mutations.
+- **Dirty flags** are taken (read + cleared) before the projection write's first await and restored if it fails, so a mutation that interleaves during the write is projected next time.
+- **Replay is deterministic for ids** (they come from the events); `Apply` handlers stamp timestamps (`CreatedAt`, `CompletedAt`, …) with the replay time.
+- **Pre-1.0:** journals written before #833 used 0-based versions and replay without their `WorkflowStarted`, and the `WorkflowSnapshots` table is gone. The Postgres migration only adds the column and drops the table — start from a fresh database (for SQLite, delete the dev DB file).
+
 ## `Persistence:MaxEventsPerLoad` safety valve (default `1000`)
 
 `EfCoreEventStore.ReadEventsAsync` throws `InvalidOperationException` if the unread event delta exceeds this cap, surfacing broken-snapshotting scenarios before they OOM the silo. Increase via the `Persistence__MaxEventsPerLoad` env var for deployments with legitimately large deltas.

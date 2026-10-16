@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "deliver",
+  "type": "lifecycle",
+  "input": "/Users/yerassylshalabayev/RiderProjects/fleans/docs/architecture/workflow-explained.lifecycle.json",
+  "output": "/Users/yerassylshalabayev/RiderProjects/fleans/docs/architecture/workflow-explained.html",
+  "specification": {
+    "sha256": "11255bdf2c1c6502bcbaf2faa6ad4d97b0468c99d913d98b8ab880a760cac048",
+    "bytes": 3236
+  },
+  "artifact": {
+    "sha256": "3a6c78ca02ff71cb4cbc59b64d2dee8ec20cef4abd4845c455ecdb2cd16438b6",
+    "bytes": 808274
+  },
+  "validation": {
+    "checksPassed": 9,
+    "checkCount": 9,
+    "compositionProfile": "showcase",
+    "compositionStatus": "pass",
+    "errors": 0,
+    "warnings": 0
+  }
+}

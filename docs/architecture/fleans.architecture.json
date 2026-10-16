@@ -1,0 +1,330 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Архитектура Fleans",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1350,
+      660
+    ],
+    "repository": {
+      "url": "https://github.com/nightBaker/fleans",
+      "revision": "293856681ccd1f4861ea0832d453b7622d474cd9"
+    }
+  },
+  "components": [
+    {
+      "id": "entry",
+      "type": "frontend",
+      "label": "Точки входа",
+      "sublabel": "Web · REST API · MCP",
+      "pos": [
+        40,
+        285
+      ],
+      "size": [
+        220,
+        76
+      ],
+      "sources": [
+        {
+          "path": "src/Fleans/Fleans.Web/Program.cs"
+        },
+        {
+          "path": "src/Fleans/Fleans.Api/Program.cs"
+        },
+        {
+          "path": "src/Fleans/Fleans.Mcp/Program.cs"
+        }
+      ]
+    },
+    {
+      "id": "core",
+      "type": "backend",
+      "label": "Fleans.Application",
+      "sublabel": "Orleans · WorkflowInstance",
+      "pos": [
+        390,
+        285
+      ],
+      "size": [
+        220,
+        76
+      ],
+      "sources": [
+        {
+          "path": "src/Fleans/Fleans.Application/Grains/WorkflowInstance.cs"
+        }
+      ]
+    },
+    {
+      "id": "streams",
+      "type": "messagebus",
+      "label": "Orleans Streams",
+      "sublabel": "Redis · Kafka · AzureQueue · Memory",
+      "pos": [
+        740,
+        285
+      ],
+      "size": [
+        220,
+        76
+      ],
+      "sources": [
+        {
+          "path": "src/Fleans/Fleans.Application/Events/WorkflowEventsPublisher.cs"
+        },
+        {
+          "path": "src/Fleans/Fleans.ServiceDefaults/FleanStreamingExtensions.cs"
+        }
+      ]
+    },
+    {
+      "id": "worker",
+      "type": "backend",
+      "label": "Fleans.Worker",
+      "sublabel": "Скрипты · условия · плагины",
+      "pos": [
+        1090,
+        285
+      ],
+      "size": [
+        220,
+        76
+      ],
+      "sources": [
+        {
+          "path": "src/Fleans/Fleans.Worker/Scripts/ScriptExecutorGrain.cs"
+        },
+        {
+          "path": "src/Fleans/Fleans.WorkerHost/Program.cs"
+        }
+      ]
+    },
+    {
+      "id": "bpmn",
+      "type": "backend",
+      "label": "Fleans.Infrastructure",
+      "sublabel": "BPMN XML → модель процесса",
+      "pos": [
+        40,
+        65
+      ],
+      "size": [
+        220,
+        76
+      ],
+      "sources": [
+        {
+          "path": "src/Fleans/Fleans.Infrastructure/Bpmn/BpmnConverter.cs"
+        }
+      ]
+    },
+    {
+      "id": "domain",
+      "type": "backend",
+      "label": "Fleans.Domain",
+      "sublabel": "Агрегат · события · BPMN-логика",
+      "pos": [
+        390,
+        65
+      ],
+      "size": [
+        220,
+        76
+      ],
+      "sources": [
+        {
+          "path": "src/Fleans/Fleans.Domain/Fleans.Domain.csproj"
+        }
+      ]
+    },
+    {
+      "id": "redis",
+      "type": "database",
+      "label": "Redis",
+      "sublabel": "Кластер Orleans · PubSubStore",
+      "pos": [
+        740,
+        65
+      ],
+      "size": [
+        220,
+        76
+      ],
+      "sources": [
+        {
+          "path": "src/Fleans/Fleans.Aspire/Program.cs"
+        }
+      ]
+    },
+    {
+      "id": "persist",
+      "type": "backend",
+      "label": "Fleans.Persistence",
+      "sublabel": "Журнал · проекции · grain storage",
+      "pos": [
+        390,
+        505
+      ],
+      "size": [
+        220,
+        76
+      ],
+      "sources": [
+        {
+          "path": "src/Fleans/Fleans.Persistence/DependencyInjection.cs"
+        },
+        {
+          "path": "src/Fleans/Fleans.Persistence/Events/EfCoreEventStore.cs"
+        }
+      ]
+    },
+    {
+      "id": "sql",
+      "type": "database",
+      "label": "SQLite / PostgreSQL",
+      "sublabel": "EF Core · запись и CQRS-чтение",
+      "pos": [
+        740,
+        505
+      ],
+      "size": [
+        220,
+        76
+      ],
+      "sources": [
+        {
+          "path": "src/Fleans/Fleans.Persistence/FleanCommandDbContext.cs"
+        },
+        {
+          "path": "src/Fleans/Fleans.Persistence/FleanQueryDbContext.cs"
+        }
+      ]
+    },
+    {
+      "id": "remote",
+      "type": "external",
+      "label": "Внешние сервисы",
+      "sublabel": "REST-вызовы бизнес-систем",
+      "pos": [
+        1090,
+        505
+      ],
+      "size": [
+        220,
+        76
+      ],
+      "sources": [
+        {
+          "path": "src/Fleans/Fleans.Plugins.RestCaller/RestCallerHandler.cs"
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "commands",
+      "to": "core",
+      "label": "Команды",
+      "variant": "emphasis",
+      "from": "entry"
+    },
+    {
+      "id": "publish",
+      "to": "streams",
+      "label": "События",
+      "variant": "dashed",
+      "from": "core",
+      "labelDy": 30
+    },
+    {
+      "id": "consume",
+      "to": "worker",
+      "label": "Обработка",
+      "variant": "dashed",
+      "from": "streams"
+    },
+    {
+      "id": "convert",
+      "to": "bpmn",
+      "label": "Разбор XML",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "from": "entry"
+    },
+    {
+      "id": "rules",
+      "to": "domain",
+      "label": "Переходы",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "from": "core"
+    },
+    {
+      "id": "membership",
+      "to": "redis",
+      "label": "Кластер",
+      "fromSide": "right",
+      "toSide": "left",
+      "from": "core"
+    },
+    {
+      "id": "journal",
+      "to": "persist",
+      "label": "Сохранение",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "from": "core",
+      "labelAt": [
+        500,
+        375
+      ]
+    },
+    {
+      "id": "sqlwrite",
+      "to": "sql",
+      "label": "SQL",
+      "from": "persist"
+    },
+    {
+      "id": "http",
+      "to": "remote",
+      "label": "HTTP(S)",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "from": "worker",
+      "labelAt": [
+        1200,
+        375
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Вход и чтение",
+      "items": [
+        "Blazor и MCP вызывают Orleans напрямую; REST размещён в Api silo.",
+        "Запросы Web, API и MCP читают EF Core через WorkflowQueryService."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Устойчивое выполнение",
+      "items": [
+        "JournaledGrain сохраняет события; EF Core строит проекции состояния.",
+        "Обработчики возвращают результаты в WorkflowInstance через Orleans."
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Развёртывание",
+      "items": [
+        "Aspire: Combined в разработке; Core + Worker при публикации.",
+        "ServiceDefaults: телеметрия и health checks. Redis — потоковый провайдер по умолчанию."
+      ]
+    }
+  ]
+}

@@ -190,9 +190,20 @@ public class WorkflowInstanceState
 
     private const int DirtyPendingOperations = 256;
 
-    internal int GetDirtyFlags() => _dirtyFlags;
+    /// <summary>
+    /// Returns the dirty flags and clears them in one step. A writer takes them before its first
+    /// await, so a mutation that lands while the write is in flight sets its flag again and is
+    /// written next time instead of being cleared unwritten.
+    /// </summary>
+    internal int TakeDirtyFlags()
+    {
+        var flags = _dirtyFlags;
+        _dirtyFlags = 0;
+        return flags;
+    }
 
-    internal void ClearDirtyFlags() => _dirtyFlags = 0;
+    /// <summary>Puts back flags taken by a write that failed.</summary>
+    internal void RestoreDirtyFlags(int flags) => _dirtyFlags |= flags;
 
     // ── Pending external events (issue #657) ────────────────────────────────────────
 

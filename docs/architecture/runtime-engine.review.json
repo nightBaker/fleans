@@ -1,0 +1,14 @@
+{
+  "diagram_type": "workflow",
+  "output": "/Users/yerassylshalabayev/RiderProjects/fleans/docs/architecture/runtime-engine.html",
+  "specification_sha256": "1821dda091bbb72abf789831eb2cafc30930d3c594330cf571a610d167b81ae5",
+  "artifact_sha256": "f98bc43051ecd5d1c71ffaadf6dede270c323a417f3bbd3d10d6c48c4f1683e7",
+  "validation": "9/9 showcase, 0 errors, 0 warnings",
+  "browser_evidence": "passed",
+  "visual_review": "passed",
+  "correction_rounds": 2,
+  "reviewed_images": [
+    "runtime-engine.visual-check.2048x1320.light.png",
+    "runtime-engine.visual-check.1440x900.dark.png"
+  ]
+}

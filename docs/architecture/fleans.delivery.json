@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/Users/yerassylshalabayev/RiderProjects/fleans/docs/architecture/fleans.architecture.json",
+  "output": "/Users/yerassylshalabayev/RiderProjects/fleans/docs/architecture/fleans.html",
+  "specification": {
+    "sha256": "80e493c249b6d5c68d208ede3f885d8d3dedbff11418ff1fe055634e075f0cf6",
+    "bytes": 7148
+  },
+  "artifact": {
+    "sha256": "09701068a1c6f3e5f196ba6d1b400f2e29a004242daab2d80865131190774676",
+    "bytes": 816039
+  },
+  "validation": {
+    "checksPassed": 9,
+    "checkCount": 9,
+    "compositionProfile": "showcase",
+    "compositionStatus": "pass",
+    "errors": 0,
+    "warnings": 0
+  },
+  "evidence": {
+    "verified": true,
+    "repository": "https://github.com/nightBaker/fleans",
+    "revision": "293856681ccd1f4861ea0832d453b7622d474cd9",
+    "references": 16
+  }
+}

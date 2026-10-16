@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "deliver",
+  "type": "sequence",
+  "input": "/Users/yerassylshalabayev/RiderProjects/fleans/docs/architecture/workflow-runtime.sequence.json",
+  "output": "/Users/yerassylshalabayev/RiderProjects/fleans/docs/architecture/workflow-runtime.html",
+  "specification": {
+    "sha256": "f53ed87640b6fc88d844c11d87cfbc9c7e1e7aab2a42989e0e28f96e1bea8212",
+    "bytes": 3454
+  },
+  "artifact": {
+    "sha256": "6fb09c8c0ef13785a92c51e02d41317f64c108d8cfb5e516820602ad6b162c9c",
+    "bytes": 810521
+  },
+  "validation": {
+    "checksPassed": 9,
+    "checkCount": 9,
+    "compositionProfile": "showcase",
+    "compositionStatus": "pass",
+    "errors": 0,
+    "warnings": 0
+  }
+}

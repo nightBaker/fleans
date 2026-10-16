@@ -1,0 +1,14 @@
+{
+  "diagram_type": "sequence",
+  "output": "/Users/yerassylshalabayev/RiderProjects/fleans/docs/architecture/workflow-runtime.html",
+  "specification_sha256": "f53ed87640b6fc88d844c11d87cfbc9c7e1e7aab2a42989e0e28f96e1bea8212",
+  "artifact_sha256": "6fb09c8c0ef13785a92c51e02d41317f64c108d8cfb5e516820602ad6b162c9c",
+  "validation": "9/9 showcase, 0 errors, 0 warnings",
+  "browser_evidence": "passed",
+  "visual_review": "passed",
+  "correction_rounds": 2,
+  "reviewed_images": [
+    "workflow-runtime.visual-check.2048x1320.light.png",
+    "workflow-runtime.visual-check.1440x900.dark.png"
+  ]
+}
