@@ -142,6 +142,16 @@ Correct. Script-task failure rolls back the in-flight scope mutations for that a
 
 If a complex value enters the workflow via `POST /Execution/start` `Variables`, it deserializes through `Newtonsoft.Json` and may surface as `JObject` / `JArray` rather than nested `ExpandoObject`. Cast or convert when reading deeply nested fields. Top-level fields work transparently.
 
+## Size limit
+
+Each operation that passes variables to an instance is capped at `Fleans:Variables:MaxSizeBytes` (default 1 MiB, measured as JSON). The cap applies to start variables, activity completion variables, user-task completions and message deliveries. The engine rejects a larger document before it changes anything:
+
+- A REST call (`POST /Execution/start`, `complete-activity`, user-task completion, sending a message) returns `400 Bad Request`.
+- A script task or custom task whose result is too large fails its activity, so an error boundary event can catch it.
+- A custom task that fails with oversized variables still fails its activity, but the variables are dropped.
+
+A script task hands back its whole scope, so for scripts the cap effectively limits the scope size. Keep large payloads (documents, files) outside the workflow and pass a reference such as a URL or an id. See [Configuration](/fleans/reference/configuration/#workflow-variables).
+
 ## Worked examples
 
 The canonical fixture for variable-scope behaviour is `tests/manual/12-variable-scoping/parallel-variable-isolation.bpmn`:

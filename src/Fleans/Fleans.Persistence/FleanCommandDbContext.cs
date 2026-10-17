@@ -23,7 +23,7 @@ public class FleanCommandDbContext : DbContext
     public DbSet<SignalStartEventListenerState> SignalStartEventListeners => Set<SignalStartEventListenerState>();
     public DbSet<MessageStartEventRegistration> MessageStartEventRegistrations => Set<MessageStartEventRegistration>();
     public DbSet<SignalStartEventRegistration> SignalStartEventRegistrations => Set<SignalStartEventRegistration>();
-    public DbSet<WorkflowEventEntity> WorkflowEvents => Set<WorkflowEventEntity>();
+    public DbSet<WorkflowEventBatchEntity> WorkflowEventBatches => Set<WorkflowEventBatchEntity>();
     public DbSet<WorkflowSnapshotEntity> WorkflowSnapshots => Set<WorkflowSnapshotEntity>();
     public DbSet<UserTaskState> UserTasks => Set<UserTaskState>();
     public DbSet<ConditionalStartEventListenerState> ConditionalStartEventListeners => Set<ConditionalStartEventListenerState>();

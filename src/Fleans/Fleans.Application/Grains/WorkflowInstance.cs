@@ -10,6 +10,8 @@ using Fleans.Application.Logging;
 using Fleans.Application.Placement;
 using Fleans.Application.QueryModels;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Newtonsoft.Json;
 using Orleans;
 using Orleans.EventSourcing;
 using Orleans.EventSourcing.CustomStorage;
@@ -61,6 +63,7 @@ public partial class WorkflowInstance :
     private readonly IEventStore _eventStore;
     private readonly IWorkflowStateProjection _projection;
     private readonly EffectDispatcher _effectDispatcher;
+    private readonly int _maxVariablesSizeBytes;
 
     private readonly ConcurrentQueue<(PendingExternalEvent Event, TaskCompletionSource Completion)> _pendingExternalEvents = new();
     private IGrainTimer? _pendingEventsTimer;
@@ -128,13 +131,15 @@ public partial class WorkflowInstance :
         ILogger<WorkflowInstance> logger,
         IEventStore eventStore,
         IWorkflowStateProjection projection,
-        EffectDispatcher effectDispatcher)
+        EffectDispatcher effectDispatcher,
+        IOptions<WorkflowVariablesOptions> variablesOptions)
     {
         _grainFactory = grainFactory;
         _logger = logger;
         _eventStore = eventStore;
         _projection = projection;
         _effectDispatcher = effectDispatcher;
+        _maxVariablesSizeBytes = variablesOptions.Value.MaxSizeBytes;
     }
 
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
@@ -210,7 +215,8 @@ public partial class WorkflowInstance :
 
     public async Task<KeyValuePair<int, WorkflowInstanceState>> ReadStateFromStorage()
     {
-        var grainId = this.GetPrimaryKey().ToString();
+        var instanceId = this.GetPrimaryKey();
+        var grainId = instanceId.ToString();
         // Independent of the state reads below, so it runs alongside them.
         var projectedVersionTask = ReadProjectedVersion(grainId);
 
@@ -218,9 +224,9 @@ public partial class WorkflowInstance :
         // (database error, or a snapshot from an older build — pre-1.0 needs a fresh database)
         // propagates: Orleans' CustomStorage adaptor retries ReadStateFromStorage with backoff,
         // so the activation waits rather than degrading to a full replay.
-        var (snapshot, snapshotVersion) = await _eventStore.ReadSnapshotAsync(grainId);
+        var (snapshot, snapshotVersion) = await _eventStore.ReadSnapshotAsync(instanceId);
         var state = snapshot ?? new WorkflowInstanceState();
-        var events = await _eventStore.ReadEventsAsync(grainId, snapshotVersion);
+        var events = await _eventStore.ReadEventsAsync(instanceId, snapshotVersion);
         if (events.Count > 0)
         {
             // Apply handlers read only the event (ids and OccurredAt included), so this rebuilds
@@ -336,9 +342,10 @@ public partial class WorkflowInstance :
     public async Task<bool> ApplyUpdatesToStorage(
         IReadOnlyList<WorkflowEvent> updates, int expectedVersion)
     {
-        var grainId = this.GetPrimaryKey().ToString();
+        var instanceId = this.GetPrimaryKey();
+        var grainId = instanceId.ToString();
         // expectedVersion is the confirmed event count BEFORE these updates.
-        var success = await _eventStore.AppendEventsAsync(grainId, updates, expectedVersion);
+        var success = await _eventStore.AppendEventsAsync(instanceId, updates, expectedVersion);
         if (!success) return false;
 
         // The append is the commit. Everything below derives from the journal and must not
@@ -366,7 +373,7 @@ public partial class WorkflowInstance :
         {
             try
             {
-                await _eventStore.WriteSnapshotAsync(grainId, version, State);
+                await _eventStore.WriteSnapshotAsync(instanceId, version, State);
                 _snapshotVersion = version;
             }
             catch (Exception ex)
@@ -428,6 +435,31 @@ public partial class WorkflowInstance :
         _workflowDefinition = await grain.GetDefinitionById(processDefId);
     }
 
+    /// <summary>
+    /// Rejects a variables document larger than <see cref="WorkflowVariablesOptions.MaxSizeBytes"/>
+    /// (measured as JSON) before the operation applies anything. Called first by every entry point
+    /// that takes variables from outside the engine.
+    /// </summary>
+    private void EnsureVariablesWithinLimit(ExpandoObject? variables)
+    {
+        if (IsWithinVariablesLimit(variables, out var size))
+            return;
+
+        throw new ArgumentException(
+            $"Variables are {size} bytes as JSON; the limit is {_maxVariablesSizeBytes} " +
+            $"({WorkflowVariablesOptions.SectionName}:MaxSizeBytes).");
+    }
+
+    private bool IsWithinVariablesLimit(ExpandoObject? variables, out int size)
+    {
+        size = variables is null ? 0 : System.Text.Encoding.UTF8.GetByteCount(JsonConvert.SerializeObject(variables));
+        if (size <= _maxVariablesSizeBytes)
+            return true;
+
+        LogVariablesTooLarge(size, _maxVariablesSizeBytes);
+        return false;
+    }
+
     private void SetWorkflowRequestContext()
     {
         if (_workflowDefinition is null) return;
@@ -473,6 +505,7 @@ public partial class WorkflowInstance :
 
     public async Task CompleteActivity(string activityId, ExpandoObject variables)
     {
+        EnsureVariablesWithinLimit(variables);
         await EnsureExecution();
         SetWorkflowRequestContext();
         using var scope = BeginWorkflowScope();
@@ -487,6 +520,7 @@ public partial class WorkflowInstance :
 
     public async Task CompleteActivity(string activityId, Guid activityInstanceId, ExpandoObject variables)
     {
+        EnsureVariablesWithinLimit(variables);
         await EnsureExecution();
 
         // Stale callback guard
@@ -526,6 +560,10 @@ public partial class WorkflowInstance :
 
     public async Task FailActivity(string activityId, Guid activityInstanceId, Exception exception, ExpandoObject? variables)
     {
+        // The failure must land even when its variables are too large — rejecting it would leave
+        // the activity running forever — so oversized failure variables are dropped (1140).
+        if (!IsWithinVariablesLimit(variables, out _))
+            variables = null;
         await EnsureExecution();
 
         // Stale callback guard
@@ -598,6 +636,7 @@ public partial class WorkflowInstance :
 
     public async Task SetInitialVariables(ExpandoObject variables)
     {
+        EnsureVariablesWithinLimit(variables);
         await EnsureExecution();
 
         _execution!.MergeVariables(State.GetRootVariablesId(), variables);
@@ -741,6 +780,7 @@ public partial class WorkflowInstance :
 
     public async Task HandleMessageDelivery(string activityId, Guid hostActivityInstanceId, ExpandoObject variables)
     {
+        EnsureVariablesWithinLimit(variables);
         await EnsureExecution();
         SetWorkflowRequestContext();
         using var scope = BeginWorkflowScope();
@@ -828,6 +868,7 @@ public partial class WorkflowInstance :
 
     public async Task CompleteUserTask(Guid activityInstanceId, string userId, ExpandoObject variables)
     {
+        EnsureVariablesWithinLimit(variables);
         await EnsureExecution();
         SetWorkflowRequestContext();
         using var scope = BeginWorkflowScope();

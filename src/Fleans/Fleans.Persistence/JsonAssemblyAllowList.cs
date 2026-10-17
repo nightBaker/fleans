@@ -4,11 +4,9 @@ namespace Fleans.Persistence;
 
 /// <summary>
 /// Allowlist of BCL assemblies whose types are permitted through Newtonsoft.Json's
-/// <c>TypeNameHandling.Auto</c> path. Used by both serialization binders in this
-/// project (<see cref="Events.EventStoreSerializationBinder"/> and
-/// <see cref="DomainAssemblySerializationBinder"/>) to keep the allow check in one
-/// place and to avoid the historical "any assembly whose simple name starts with
-/// 'System'" pattern — which would let <c>System.Diagnostics.Process</c> and other
+/// <c>TypeNameHandling.Auto</c> path. Used by <see cref="DomainAssemblySerializationBinder"/>
+/// to keep the allow check in one place and to avoid the historical "any assembly whose
+/// simple name starts with 'System'" pattern — which would let <c>System.Diagnostics.Process</c> and other
 /// classic Newtonsoft-gadget types through.
 ///
 /// The list is intentionally narrow: only the BCL assemblies that are actually

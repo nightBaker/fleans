@@ -1,12 +1,12 @@
 using System.Dynamic;
-using Fleans.Persistence.Events;
 using Newtonsoft.Json;
 
 namespace Fleans.Persistence.Tests;
 
 /// <summary>
-/// Security tests for the TypeNameHandling binder used by EfCoreEventStore (and
-/// the parallel binder in FleanModelConfiguration). The contract: only types
+/// Security tests for the TypeNameHandling binder used for the ProcessDefinitions.Workflow
+/// column and WorkflowQueryService (<see cref="DomainAssemblySerializationBinder"/>). The
+/// journal no longer goes through Newtonsoft (#867). The contract: only types
 /// from Fleans.Domain and the curated BCL allowlist may flow through
 /// $type-discriminated deserialization. Known Newtonsoft gadget types — even
 /// though they ship in BCL assemblies whose names "start with System" — MUST
@@ -15,7 +15,12 @@ namespace Fleans.Persistence.Tests;
 [TestClass]
 public class SerializationBinderSecurityTests
 {
-    private static readonly JsonSerializerSettings JsonSettings = EfCoreEventStore.JsonSettings;
+    private static readonly JsonSerializerSettings JsonSettings = new()
+    {
+        TypeNameHandling = TypeNameHandling.Auto,
+        PreserveReferencesHandling = PreserveReferencesHandling.Objects,
+        SerializationBinder = new DomainAssemblySerializationBinder()
+    };
 
     [TestMethod]
     public void Binder_RejectsProcessGadget()

@@ -360,22 +360,18 @@ internal static class FleanModelConfiguration
             // default text type (TEXT on SQLite, text on PostgreSQL) handles the size.
         });
 
-        modelBuilder.Entity<WorkflowEventEntity>(entity =>
+        modelBuilder.Entity<WorkflowEventBatchEntity>(entity =>
         {
-            entity.ToTable("WorkflowEvents");
-            entity.HasKey(e => e.Id);
-
-            entity.Property(e => e.GrainId).HasMaxLength(256).IsRequired();
-            entity.Property(e => e.EventType).HasMaxLength(128).IsRequired();
-
-            entity.HasIndex(e => new { e.GrainId, e.Version }).IsUnique();
+            entity.ToTable("WorkflowEventBatches");
+            // The key is the append's concurrency check — see WorkflowEventBatchEntity.
+            entity.HasKey(e => new { e.InstanceId, e.FirstVersion });
+            entity.Property(e => e.Payload).IsRequired();
         });
 
         modelBuilder.Entity<WorkflowSnapshotEntity>(entity =>
         {
             entity.ToTable("WorkflowSnapshots");
-            entity.HasKey(e => e.GrainId);
-            entity.Property(e => e.GrainId).HasMaxLength(256);
+            entity.HasKey(e => e.InstanceId);
             entity.Property(e => e.Payload).IsRequired();
         });
     }

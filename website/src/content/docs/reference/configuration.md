@@ -52,6 +52,14 @@ Allowed values: `Core`, `Worker`, `Combined` (case-insensitive). Invalid values 
 
 The provider toggle. `Postgres` runs `MigrateAsync()` at startup; `Sqlite` runs `EnsureCreated()`. SQLite is dev-only and ignored in container/k8s deployments. Any other value (typo like `PostgreSQL`, empty string, whitespace) throws `ArgumentException` at silo startup so misconfigured deployments fail fast instead of silently falling back to an in-pod SQLite file.
 
+### Workflow variables
+
+| Env var | Config key | Read at | Default |
+| --- | --- | --- | --- |
+| `Fleans__Variables__MaxSizeBytes` | `Fleans:Variables:MaxSizeBytes` | `Fleans.Application` | `1048576` (1 MiB) |
+
+The largest variables document, measured as JSON bytes, that one operation may pass to a workflow instance: start variables, activity completion variables (script tasks, custom tasks, REST), a user-task completion and a message delivery. The engine rejects a larger document before it applies anything. REST callers get `400 Bad Request`, and a script or custom task fails its activity. An activity failure that carries oversized variables still fails the activity, without those variables. Must be greater than `0`; the silo fails at startup otherwise. See [Variables and scope](/fleans/guides/variables-and-scope/#size-limit).
+
 ### Streaming
 
 | Env var | Config key | Read at | Default |

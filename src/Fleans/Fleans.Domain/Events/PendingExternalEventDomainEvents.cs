@@ -17,13 +17,13 @@ namespace Fleans.Domain.Events;
 // reactivation; retried callers short-circuit via the AppliedOperations ledger.
 
 /// <summary>An external event was enqueued for later draining. Persisted so the queue survives deactivation.</summary>
-[GenerateSerializer]
+[GenerateSerializer, Alias("ev.PendingEventEnqueued")]
 public record PendingEventEnqueued(
     [property: Id(0)] string OpKey,
     [property: Id(1)] PendingExternalEventPayload Payload) : WorkflowEvent;
 
 /// <summary>A previously-enqueued external event was drained (processed + applied). Removes it from PendingOperations.</summary>
-[GenerateSerializer]
+[GenerateSerializer, Alias("ev.PendingEventDrained")]
 public record PendingEventDrained(
     [property: Id(0)] string OpKey) : WorkflowEvent;
 
@@ -31,7 +31,7 @@ public record PendingEventDrained(
 /// Records the durable outcome of a caller-retried operation in the dedup ledger
 /// (AppliedOperations). Result is non-null only for value-returning ops (escalation).
 /// </summary>
-[GenerateSerializer]
+[GenerateSerializer, Alias("ev.PendingEventApplied")]
 public record PendingEventApplied(
     [property: Id(0)] string OpKey,
     [property: Id(1)] PendingEventResult? Result) : WorkflowEvent;

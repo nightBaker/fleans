@@ -13,20 +13,20 @@ public class EventStoreDurabilityTests : WorkflowTestBase
 {
     /// <summary>
     /// #652 — proves the load-bearing durability invariant: every confirmed
-    /// batch of domain events round-trips to the WorkflowEvents journal
+    /// batch of domain events round-trips to the WorkflowEventBatches journal
     /// before the grain method returns. If any confirm were buffered in
     /// memory and not persisted, an ungraceful kill would lose those events
     /// and reactivation would replay an incomplete journal.
     ///
     /// Approach: drive the grain through several public methods. After each
-    /// call, count rows in WorkflowEvents by grain id via a separate
+    /// call, read the journaled event count by instance id via a separate
     /// IDbContextFactory&lt;FleanCommandDbContext&gt; (same shared in-memory
     /// SQLite the grain writes to). Three layered assertions cover three
     /// bug classes:
     ///   • strict monotonicity → catches "ConfirmEvents skipped the append"
-    ///   • contiguous 1..N version sequence → catches "ConfirmEvents skipped
+    ///   • contiguous 1..N batch sequence → catches "ConfirmEvents skipped
     ///     a version" (pure count comparisons would miss)
-    ///   • max-version == row-count → catches duplicate-version bugs
+    ///   • batches cover exactly N events → catches duplicate-version bugs
     ///
     /// Why this and not a silo-restart test: cycles 69 and 73 documented two
     /// orthogonal failures in the silo-restart framing
@@ -57,22 +57,14 @@ public class EventStoreDurabilityTests : WorkflowTestBase
 
         var instanceId = Guid.NewGuid();
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
-        // grainKey format matches WorkflowInstance.cs:119/146/171:
-        //     var grainId = this.GetPrimaryKey().ToString();
-        var grainKey = instanceId.ToString();
         var dbContextFactory = GetSiloService<IDbContextFactory<FleanCommandDbContext>>();
 
+        // A journal row holds one append; the instance's event count is its highest LastVersion.
         async Task<int> EventCount()
         {
             await using var db = await dbContextFactory.CreateDbContextAsync();
-            return await db.WorkflowEvents.CountAsync(e => e.GrainId == grainKey);
-        }
-
-        async Task<int> MaxVersion()
-        {
-            await using var db = await dbContextFactory.CreateDbContextAsync();
-            var query = db.WorkflowEvents.Where(e => e.GrainId == grainKey);
-            return await query.AnyAsync() ? await query.MaxAsync(e => e.Version) : 0;
+            var query = db.WorkflowEventBatches.Where(b => b.InstanceId == instanceId);
+            return await query.AnyAsync() ? await query.MaxAsync(b => b.LastVersion) : 0;
         }
 
         // Act + Assert — every grain method call that confirms events must
@@ -115,25 +107,21 @@ public class EventStoreDurabilityTests : WorkflowTestBase
         // replay would later reconstruct an incomplete state.
         await using (var db = await dbContextFactory.CreateDbContextAsync())
         {
-            var versions = await db.WorkflowEvents
-                .Where(e => e.GrainId == grainKey)
-                .OrderBy(e => e.Version)
-                .Select(e => e.Version)
+            var batches = await db.WorkflowEventBatches
+                .Where(b => b.InstanceId == instanceId)
+                .OrderBy(b => b.FirstVersion)
+                .Select(b => new { b.FirstVersion, b.LastVersion })
                 .ToListAsync();
-            Assert.AreEqual(afterTask2, versions.Count,
-                "row count must match version count");
-            for (int i = 0; i < versions.Count; i++)
+            var expectedFirst = 1;
+            foreach (var batch in batches)
             {
-                Assert.AreEqual(i + 1, versions[i],
-                    $"versions must form a contiguous 1..N sequence; " +
-                    $"gap at index {i}: expected {i + 1}, got {versions[i]}");
+                Assert.AreEqual(expectedFirst, batch.FirstVersion,
+                    $"batches must form a contiguous 1..N sequence; expected a batch starting at " +
+                    $"{expectedFirst}, got {batch.FirstVersion}");
+                Assert.IsTrue(batch.LastVersion >= batch.FirstVersion);
+                expectedFirst = batch.LastVersion + 1;
             }
+            Assert.AreEqual(afterTask2, expectedFirst - 1, "the batches must cover every event");
         }
-
-        // Max version equals the row count for 1-based versions —
-        // catches duplicate-version bugs that would slip past the
-        // contiguous-sequence assertion (e.g., the grain confirms a version
-        // twice and the second insert silently overwrites or duplicates).
-        Assert.AreEqual(afterTask2, await MaxVersion());
     }
 }

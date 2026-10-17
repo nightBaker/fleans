@@ -12,19 +12,19 @@ namespace Fleans.Application.Tests;
 /// </summary>
 internal class InMemoryEventStore(DeepCopier copier) : IEventStore
 {
-    private readonly ConcurrentDictionary<string, List<WorkflowEvent>> _events = new();
-    private readonly ConcurrentDictionary<string, (WorkflowInstanceState State, int Version)> _snapshots = new();
+    private readonly ConcurrentDictionary<Guid, List<WorkflowEvent>> _events = new();
+    private readonly ConcurrentDictionary<Guid, (WorkflowInstanceState State, int Version)> _snapshots = new();
 
     public int SnapshotInterval => 1;
 
-    public Task<(WorkflowInstanceState? State, int Version)> ReadSnapshotAsync(string grainId)
+    public Task<(WorkflowInstanceState? State, int Version)> ReadSnapshotAsync(Guid grainId)
     {
         if (_snapshots.TryGetValue(grainId, out var snapshot))
             return Task.FromResult<(WorkflowInstanceState?, int)>((copier.Copy(snapshot.State), snapshot.Version));
         return Task.FromResult<(WorkflowInstanceState?, int)>((null, 0));
     }
 
-    public Task<IReadOnlyList<WorkflowEvent>> ReadEventsAsync(string grainId, int afterVersion)
+    public Task<IReadOnlyList<WorkflowEvent>> ReadEventsAsync(Guid grainId, int afterVersion)
     {
         if (!_events.TryGetValue(grainId, out var events))
             return Task.FromResult<IReadOnlyList<WorkflowEvent>>([]);
@@ -33,7 +33,7 @@ internal class InMemoryEventStore(DeepCopier copier) : IEventStore
             return Task.FromResult<IReadOnlyList<WorkflowEvent>>(events.Skip(afterVersion).ToList());
     }
 
-    public Task<bool> AppendEventsAsync(string grainId, IReadOnlyList<WorkflowEvent> events, int expectedVersion)
+    public Task<bool> AppendEventsAsync(Guid grainId, IReadOnlyList<WorkflowEvent> events, int expectedVersion)
     {
         var list = _events.GetOrAdd(grainId, _ => []);
         lock (list)
@@ -45,7 +45,7 @@ internal class InMemoryEventStore(DeepCopier copier) : IEventStore
         return Task.FromResult(true);
     }
 
-    public Task WriteSnapshotAsync(string grainId, int version, WorkflowInstanceState state)
+    public Task WriteSnapshotAsync(Guid grainId, int version, WorkflowInstanceState state)
     {
         _snapshots[grainId] = (copier.Copy(state), version);
         return Task.CompletedTask;

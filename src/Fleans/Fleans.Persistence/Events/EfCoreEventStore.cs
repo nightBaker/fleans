@@ -1,35 +1,23 @@
-using System.Reflection;
-using Fleans.Domain;
 using Fleans.Domain.Events;
 using Fleans.Domain.States;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Serialization;
 using Orleans.Serialization;
 
 namespace Fleans.Persistence.Events;
 
 /// <summary>
-/// The WorkflowInstance journal (WorkflowEvents, JSON) and its snapshots (WorkflowSnapshots, the full
-/// grain state in Orleans binary form). Used by the grain's ICustomStorageInterface implementation.
-/// The read model is a separate projection (<see cref="IWorkflowStateProjection"/>).
+/// The WorkflowInstance journal (WorkflowEventBatches) and its snapshots (WorkflowSnapshots), both in
+/// Orleans binary form — the serializer that already carries the same events and state across grain
+/// calls. A journal row holds one append (see <see cref="WorkflowEventBatchEntity"/>). Used by the
+/// grain's ICustomStorageInterface implementation. The read model is a separate projection
+/// (<see cref="IWorkflowStateProjection"/>).
 /// </summary>
 public class EfCoreEventStore : IEventStore
 {
     private readonly IDbContextFactory<FleanCommandDbContext> _dbContextFactory;
     private readonly Serializer _serializer;
     private readonly int _maxEventsPerLoad;
-
-    internal static readonly JsonSerializerSettings JsonSettings = new()
-    {
-        TypeNameHandling = TypeNameHandling.Auto,
-        PreserveReferencesHandling = PreserveReferencesHandling.Objects,
-        SerializationBinder = new EventStoreSerializationBinder(),
-        ContractResolver = new PrivateSetterContractResolver(),
-        NullValueHandling = NullValueHandling.Include,
-        MissingMemberHandling = MissingMemberHandling.Ignore
-    };
 
     public EfCoreEventStore(
         IDbContextFactory<FleanCommandDbContext> dbContextFactory,
@@ -48,12 +36,12 @@ public class EfCoreEventStore : IEventStore
     /// The latest snapshot and the version it covers, or <c>(null, 0)</c> when there is none.
     /// Throws when the payload cannot be deserialized (e.g. the state shape changed).
     /// </summary>
-    public async Task<(WorkflowInstanceState? State, int Version)> ReadSnapshotAsync(string grainId)
+    public async Task<(WorkflowInstanceState? State, int Version)> ReadSnapshotAsync(Guid instanceId)
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync();
         var snapshot = await db.WorkflowSnapshots
             .AsNoTracking()
-            .FirstOrDefaultAsync(s => s.GrainId == grainId);
+            .FirstOrDefaultAsync(s => s.InstanceId == instanceId);
         if (snapshot is null)
             return (null, 0);
 
@@ -61,59 +49,73 @@ public class EfCoreEventStore : IEventStore
     }
 
     /// <summary>
-    /// Loads all events for a grain after the given version, ordered by version.
+    /// Loads all events after <paramref name="afterVersion"/> (an append boundary), in order.
+    /// Throws when the batches are not contiguous from there, or hold more than
+    /// <see cref="FleansPersistenceOptions.MaxEventsPerLoad"/> events.
     /// </summary>
-    public async Task<IReadOnlyList<WorkflowEvent>> ReadEventsAsync(
-        string grainId, int afterVersion)
+    public async Task<IReadOnlyList<WorkflowEvent>> ReadEventsAsync(Guid instanceId, int afterVersion)
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync();
 
-        // Take one extra row so we can detect "would exceed cap" without reading all rows.
+        // Every batch holds at least one event, so one row past the cap is enough to detect it.
         var limit = _maxEventsPerLoad < int.MaxValue ? _maxEventsPerLoad + 1 : int.MaxValue;
-        var eventEntities = await db.WorkflowEvents
+        var batches = await db.WorkflowEventBatches
             .AsNoTracking()
-            .Where(e => e.GrainId == grainId && e.Version > afterVersion)
-            .OrderBy(e => e.Version)
+            .Where(b => b.InstanceId == instanceId && b.FirstVersion > afterVersion)
+            .OrderBy(b => b.FirstVersion)
             .Take(limit)
             .ToListAsync();
 
-        if (eventEntities.Count > _maxEventsPerLoad)
-            throw new InvalidOperationException(
-                $"Refusing to load more than {_maxEventsPerLoad} events for grain '{grainId}' " +
-                $"(afterVersion={afterVersion}). This indicates snapshotting is broken — " +
-                $"investigate WorkflowInstance.ApplyUpdatesToStorage / WriteSnapshotAsync. " +
-                $"Increase Persistence:MaxEventsPerLoad if this is intentional.");
+        var events = new List<WorkflowEvent>();
+        var nextVersion = afterVersion + 1;
+        foreach (var batch in batches)
+        {
+            if (batch.FirstVersion != nextVersion)
+                throw new InvalidOperationException(
+                    $"Journal of workflow instance '{instanceId}' has a gap: expected version {nextVersion}, " +
+                    $"found a batch starting at {batch.FirstVersion} (afterVersion={afterVersion}).");
 
-        return eventEntities
-            .Select(e => EventTypeRegistry.Deserialize(e.EventType, e.Payload, JsonSettings))
-            .ToList();
+            var batchEvents = _serializer.Deserialize<List<WorkflowEvent>>(batch.Payload);
+            if (batchEvents.Count != batch.LastVersion - batch.FirstVersion + 1)
+                throw new InvalidOperationException(
+                    $"Journal batch {batch.FirstVersion}..{batch.LastVersion} of workflow instance '{instanceId}' " +
+                    $"holds {batchEvents.Count} events.");
+
+            events.AddRange(batchEvents);
+            nextVersion = batch.LastVersion + 1;
+
+            if (events.Count > _maxEventsPerLoad)
+                throw new InvalidOperationException(
+                    $"Refusing to load more than {_maxEventsPerLoad} events for workflow instance '{instanceId}' " +
+                    $"(afterVersion={afterVersion}). This indicates snapshotting is broken — " +
+                    $"investigate WorkflowInstance.ApplyUpdatesToStorage / WriteSnapshotAsync. " +
+                    $"Increase Persistence:MaxEventsPerLoad if this is intentional.");
+        }
+
+        return events;
     }
 
     /// <summary>
     /// Appends events as versions <c>expectedVersion + 1</c>, … (1-based; the store does the
-    /// numbering so callers pass the grain's event count). Returns false if a version conflict
-    /// occurs (unique constraint violation).
+    /// numbering so callers pass the grain's event count) in a single row. Returns false if a
+    /// version conflict occurs: another writer already appended after <paramref name="expectedVersion"/>
+    /// (primary-key violation on <c>(InstanceId, FirstVersion)</c>).
     /// </summary>
     public async Task<bool> AppendEventsAsync(
-        string grainId,
+        Guid instanceId,
         IReadOnlyList<WorkflowEvent> events,
         int expectedVersion)
     {
         if (events.Count == 0) return true;
 
         await using var db = await _dbContextFactory.CreateDbContextAsync();
-
-        for (int i = 0; i < events.Count; i++)
+        db.WorkflowEventBatches.Add(new WorkflowEventBatchEntity
         {
-            db.WorkflowEvents.Add(new WorkflowEventEntity
-            {
-                GrainId = grainId,
-                Version = expectedVersion + 1 + i,
-                EventType = EventTypeRegistry.GetEventType(events[i]),
-                Payload = JsonConvert.SerializeObject(events[i], JsonSettings),
-                Timestamp = events[i].OccurredAt
-            });
-        }
+            InstanceId = instanceId,
+            FirstVersion = expectedVersion + 1,
+            LastVersion = expectedVersion + events.Count,
+            Payload = _serializer.SerializeToArray(events.ToList())
+        });
 
         try
         {
@@ -130,14 +132,14 @@ public class EfCoreEventStore : IEventStore
     /// Upserts the grain's single snapshot row — an UPDATE first, so the previous payload is never
     /// read back; an INSERT only for the grain's first snapshot.
     /// </summary>
-    public async Task WriteSnapshotAsync(string grainId, int version, WorkflowInstanceState state)
+    public async Task WriteSnapshotAsync(Guid instanceId, int version, WorkflowInstanceState state)
     {
         var payload = _serializer.SerializeToArray(state);
         var now = DateTimeOffset.UtcNow;
 
         await using var db = await _dbContextFactory.CreateDbContextAsync();
         var updated = await db.WorkflowSnapshots
-            .Where(s => s.GrainId == grainId)
+            .Where(s => s.InstanceId == instanceId)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(x => x.Version, version)
                 .SetProperty(x => x.Payload, payload)
@@ -147,7 +149,7 @@ public class EfCoreEventStore : IEventStore
 
         db.WorkflowSnapshots.Add(new WorkflowSnapshotEntity
         {
-            GrainId = grainId,
+            InstanceId = instanceId,
             Version = version,
             Payload = payload,
             Timestamp = now
@@ -168,47 +170,5 @@ public class EfCoreEventStore : IEventStore
         if (message.Contains("duplicate key value violates unique constraint", StringComparison.OrdinalIgnoreCase))
             return true;
         return false;
-    }
-}
-
-/// <summary>
-/// Serialization binder for the event store. Allows types from
-/// <see cref="Fleans.Domain"/> and the BCL assemblies enumerated in
-/// <see cref="JsonAssemblyAllowList"/>. Anything else — including BCL
-/// assemblies that ship classic Newtonsoft gadget chains
-/// (<c>System.Diagnostics.Process</c>, <c>System.Configuration.Install.AssemblyInstaller</c>,
-/// etc.) — is rejected with <see cref="JsonSerializationException"/>.
-/// </summary>
-internal sealed class EventStoreSerializationBinder : DefaultSerializationBinder
-{
-    private static readonly Assembly DomainAssembly = typeof(WorkflowDefinition).Assembly;
-
-    public override Type BindToType(string? assemblyName, string typeName)
-    {
-        var type = base.BindToType(assemblyName, typeName);
-        if (type.Assembly != DomainAssembly && !JsonAssemblyAllowList.IsAllowedBclAssembly(type.Assembly))
-            throw new JsonSerializationException(
-                $"Deserialization of type '{type.FullName}' from assembly '{type.Assembly.FullName}' is not allowed. " +
-                $"Only types from '{DomainAssembly.GetName().Name}' and a curated BCL allowlist are permitted.");
-        return type;
-    }
-}
-
-/// <summary>
-/// Contract resolver that allows deserialization of properties with private setters.
-/// Required for WorkflowInstanceState snapshot deserialization (e.g. Id has private set).
-/// </summary>
-internal sealed class PrivateSetterContractResolver : DefaultContractResolver
-{
-    protected override JsonProperty CreateProperty(
-        System.Reflection.MemberInfo member,
-        MemberSerialization memberSerialization)
-    {
-        var prop = base.CreateProperty(member, memberSerialization);
-        if (!prop.Writable && member is System.Reflection.PropertyInfo propertyInfo)
-        {
-            prop.Writable = propertyInfo.GetSetMethod(nonPublic: true) is not null;
-        }
-        return prop;
     }
 }

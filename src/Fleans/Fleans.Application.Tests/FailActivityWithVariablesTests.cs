@@ -52,6 +52,23 @@ public class FailActivityWithVariablesTests : WorkflowTestBase
     }
 
     [TestMethod]
+    public async Task Failure_with_variables_over_the_size_limit_still_fails_the_activity_without_them()
+    {
+        // Arrange — no boundary.
+        var instance = await StartWorkflow(withBoundary: false);
+        var task = await ActiveEntry(instance, "task1");
+
+        // Act — rejecting the failure would leave task1 running forever, so only the variables go
+        await instance.FailActivity("task1", task.ActivityInstanceId, new Exception("boom"),
+            Variables(("blob", new string('x', TestMaxVariablesSizeBytes))));
+
+        // Assert
+        var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted);
+        Assert.IsTrue(snapshot.IsFailed);
+        Assert.IsFalse(AllVariables(snapshot).ContainsKey("blob"));
+    }
+
+    [TestMethod]
     public async Task Redelivered_failure_with_variables_is_ignored()
     {
         // Arrange — the activity already failed into its boundary path.
