@@ -36,4 +36,22 @@ public class WorkflowVariablesState
             target[kvp.Key] = kvp.Value;
         }
     }
+
+    /// <summary>
+    /// The entries of <paramref name="variables"/> that <see cref="Merge"/> would change: keys this
+    /// scope lacks, or holds a different value for (<see cref="VariableValues.AreEqual"/>). Merging
+    /// the result leaves the same state as merging all of <paramref name="variables"/>.
+    /// </summary>
+    internal ExpandoObject ChangesFrom(ExpandoObject variables)
+    {
+        var current = (IDictionary<string, object?>)Variables;
+        var changes = new ExpandoObject();
+        var target = (IDictionary<string, object?>)changes;
+        foreach (var (key, value) in (IDictionary<string, object?>)variables)
+        {
+            if (!current.TryGetValue(key, out var existing) || !VariableValues.AreEqual(existing, value))
+                target[key] = value;
+        }
+        return changes;
+    }
 }

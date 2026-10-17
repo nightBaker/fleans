@@ -75,7 +75,7 @@ This means Fleans inherits Orleans' distributed systems guarantees without build
 
 **NoTracking reads by default.** The query `DbContext` skips EF Core change-tracking overhead on every read.
 
-**Event batching.** All events from a single grain call persist in one transaction via `ConfirmEvents()`. A workflow step that emits 5 domain events makes 1 database write, not 5.
+**Event batching.** All events from a single grain call persist in one transaction via `ConfirmEvents()`. A workflow step that emits 5 domain events makes 1 database write, not 5. The batch is stored as a single compact binary row, and variables are recorded as the values that changed, not as the whole scope.
 
 **Binary intra-cluster protocol.** Orleans silos communicate via a binary protocol, not HTTP. Grain-to-grain calls within the cluster have minimal serialization overhead.
 

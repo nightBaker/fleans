@@ -161,7 +161,7 @@ public class WorkflowExecution
     public void RemoveVariableScopes(IReadOnlyList<Guid> scopeIds)
     {
         if (scopeIds.Count > 0)
-            Emit(new VariableScopesRemoved(scopeIds));
+            Emit(new VariableScopesRemoved(scopeIds.ToList()));
     }
 
     // ── Transaction Sub-Process outcome domain methods ───────────────────────
@@ -687,14 +687,14 @@ public class WorkflowExecution
                 case RegisterUserTaskCommand regUserTask:
                     Emit(new UserTaskRegistered(
                         activityInstanceId, regUserTask.Assignee,
-                        regUserTask.CandidateGroups, regUserTask.CandidateUsers,
-                        regUserTask.ExpectedOutputVariables));
+                        regUserTask.CandidateGroups.ToList(), regUserTask.CandidateUsers.ToList(),
+                        regUserTask.ExpectedOutputVariables?.ToList()));
                     var currentEntry = _state.GetActiveEntry(activityInstanceId);
                     effects.Add(new RegisterUserTaskEffect(
                         _state.Id, activityInstanceId,
                         currentEntry.ActivityId, regUserTask.Assignee,
-                        regUserTask.CandidateGroups, regUserTask.CandidateUsers,
-                        regUserTask.ExpectedOutputVariables));
+                        regUserTask.CandidateGroups.ToList(), regUserTask.CandidateUsers.ToList(),
+                        regUserTask.ExpectedOutputVariables?.ToList()));
                     break;
 
                 case ThrowSignalCommand throwSignal:
@@ -3338,11 +3338,12 @@ public class WorkflowExecution
 
     private void Emit(WorkflowEvent @event)
     {
-        // Snapshot mutable ExpandoObject data to preserve event immutability
+        // Copy mutable ExpandoObject data to preserve event immutability, keeping only the
+        // variables the merge changes so the journal stores a delta, not the whole scope (#867).
         var snapshotted = @event switch
         {
-            ActivityCompleted e => e with { Variables = SnapshotExpandoObject(e.Variables) },
-            VariablesMerged e => e with { Variables = SnapshotExpandoObject(e.Variables) },
+            ActivityCompleted e => e with { Variables = ChangedVariables(e.VariablesId, e.Variables) },
+            VariablesMerged e => e with { Variables = ChangedVariables(e.VariablesId, e.Variables) },
             _ => @event
         };
 
@@ -3357,6 +3358,18 @@ public class WorkflowExecution
     /// <see cref="Emit"/> and by the grain's durable enqueue, which raises its event directly.
     /// </summary>
     public static WorkflowEvent Stamp(WorkflowEvent @event) => @event with { OccurredAt = DateTimeOffset.UtcNow };
+
+    /// <summary>
+    /// The variables merging <paramref name="variables"/> into scope <paramref name="variablesId"/>
+    /// would change. Apply merges key by key, so leaving out values the scope already holds yields
+    /// the same state, live and on replay. An unknown scope keeps everything — Apply then throws
+    /// exactly as before.
+    /// </summary>
+    private ExpandoObject ChangedVariables(Guid variablesId, ExpandoObject variables)
+    {
+        var scope = _state.VariableStates.FirstOrDefault(v => v.Id == variablesId);
+        return scope is null ? SnapshotExpandoObject(variables) : scope.ChangesFrom(variables);
+    }
 
     private static ExpandoObject SnapshotExpandoObject(ExpandoObject source)
     {

@@ -7,6 +7,11 @@ namespace Fleans.Application
     {
         public static void AddApplication(this IServiceCollection services)
         {
+            services.AddOptions<WorkflowVariablesOptions>()
+                .BindConfiguration(WorkflowVariablesOptions.SectionName)
+                .Validate(o => o.MaxSizeBytes > 0, "Fleans:Variables:MaxSizeBytes must be greater than 0.")
+                .ValidateOnStart();
+
             services.AddSingleton<IWorkflowCommandService, WorkflowCommandService>();
             services.AddSingleton<ICompensationLogService, CompensationLogService>();
 

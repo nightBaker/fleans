@@ -28,7 +28,7 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         await grain.SetWorkflow(CreateSimpleWorkflow("es-started-instance-id"));
 
         // Assert
-        var events = await GetSiloService<IEventStore>().ReadEventsAsync(instanceId.ToString(), afterVersion: 0);
+        var events = await GetSiloService<IEventStore>().ReadEventsAsync(instanceId, afterVersion: 0);
         var started = events.OfType<WorkflowStarted>().Single();
         Assert.AreEqual(instanceId, started.InstanceId);
     }
@@ -50,10 +50,9 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         await ForceAllGrainDeactivation(instanceId);
 
         var dbFactory = GetSiloService<IDbContextFactory<FleanCommandDbContext>>();
-        var grainIdStr = instanceId.ToString();
         await using (var db = await dbFactory.CreateDbContextAsync())
         {
-            await db.WorkflowSnapshots.Where(s => s.GrainId == grainIdStr).ExecuteDeleteAsync();
+            await db.WorkflowSnapshots.Where(s => s.InstanceId == instanceId).ExecuteDeleteAsync();
             await db.WorkflowInstances.Where(s => s.Id == instanceId).ExecuteDeleteAsync();
         }
 
@@ -68,8 +67,7 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
 
         await using (var db = await dbFactory.CreateDbContextAsync())
         {
-            var versions = await db.WorkflowEvents.Where(e => e.GrainId == grainIdStr)
-                .OrderBy(e => e.Version).Select(e => e.Version).ToListAsync();
+            var versions = await JournalVersions(db, instanceId);
             CollectionAssert.AreEqual(Enumerable.Range(1, versions.Count).ToList(), versions,
                 "the replayed grain must continue at the right version — no skipped or duplicated events");
             var projectedVersion = await db.WorkflowInstances
@@ -324,12 +322,11 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         var instanceId = Guid.NewGuid();
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
         var dbFactory = GetSiloService<IDbContextFactory<FleanCommandDbContext>>();
-        var grainIdStr = instanceId.ToString();
 
         async Task AssertProjectedAtEventCount(string step)
         {
             await using var db = await dbFactory.CreateDbContextAsync();
-            var eventCount = await db.WorkflowEvents.CountAsync(e => e.GrainId == grainIdStr);
+            var eventCount = (await JournalVersions(db, instanceId)).Count;
             var projectedVersion = await db.WorkflowInstances
                 .Where(s => s.Id == instanceId)
                 .Select(s => (int?)EF.Property<int>(s, "ProjectedVersion")).SingleOrDefaultAsync();
@@ -354,7 +351,6 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         var instanceId = Guid.NewGuid();
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
         var dbFactory = GetSiloService<IDbContextFactory<FleanCommandDbContext>>();
-        var grainIdStr = instanceId.ToString();
 
         // Act
         await grain.SetWorkflow(CreateSequentialWorkflow());
@@ -364,9 +360,9 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
 
         // Assert — a snapshot exists, covers a stored version, and lags by less than one interval
         await using var db = await dbFactory.CreateDbContextAsync();
-        var eventCount = await db.WorkflowEvents.CountAsync(e => e.GrainId == grainIdStr);
+        var eventCount = (await JournalVersions(db, instanceId)).Count;
         Assert.IsGreaterThanOrEqualTo(TestSnapshotInterval, eventCount, "the workflow must cross one interval");
-        var snapshot = await db.WorkflowSnapshots.AsNoTracking().SingleAsync(s => s.GrainId == grainIdStr);
+        var snapshot = await db.WorkflowSnapshots.AsNoTracking().SingleAsync(s => s.InstanceId == instanceId);
         Assert.IsLessThanOrEqualTo(eventCount, snapshot.Version);
         Assert.IsLessThan(TestSnapshotInterval, eventCount - snapshot.Version);
     }
@@ -382,7 +378,6 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         var grain = await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId)
             .CreateInstance();
         var instanceId = grain.GetPrimaryKey();
-        var grainIdStr = instanceId.ToString();
         await grain.StartWorkflow();
         await grain.CompleteActivity("task1", new ExpandoObject());
         await ForceAllGrainDeactivation(instanceId);
@@ -390,11 +385,11 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         var dbFactory = GetSiloService<IDbContextFactory<FleanCommandDbContext>>();
         await using (var db = await dbFactory.CreateDbContextAsync())
         {
-            var eventCount = await db.WorkflowEvents.CountAsync(e => e.GrainId == grainIdStr);
-            await db.WorkflowSnapshots.Where(s => s.GrainId == grainIdStr).ExecuteDeleteAsync();
+            var eventCount = (await JournalVersions(db, instanceId)).Count;
+            await db.WorkflowSnapshots.Where(s => s.InstanceId == instanceId).ExecuteDeleteAsync();
             db.WorkflowSnapshots.Add(new WorkflowSnapshotEntity
             {
-                GrainId = grainIdStr, Version = eventCount, Payload = [0xFF, 0x00, 0x13], Timestamp = DateTimeOffset.UtcNow
+                InstanceId = instanceId, Version = eventCount, Payload = [0xFF, 0x00, 0x13], Timestamp = DateTimeOffset.UtcNow
             });
             await db.SaveChangesAsync();
         }
@@ -413,7 +408,7 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         // Once the snapshot is readable (here: removed), the retried read succeeds and the call
         // goes through
         await using (var db = await dbFactory.CreateDbContextAsync())
-            await db.WorkflowSnapshots.Where(s => s.GrainId == grainIdStr).ExecuteDeleteAsync();
+            await db.WorkflowSnapshots.Where(s => s.InstanceId == instanceId).ExecuteDeleteAsync();
         await call;
         var state = await QueryService.GetStateSnapshot(instanceId);
         Assert.IsNotNull(state);
@@ -427,7 +422,6 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         // no further append will come to carry it.
         var instanceId = Guid.NewGuid();
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
-        var grainIdStr = instanceId.ToString();
         await grain.SetWorkflow(CreateSequentialWorkflow());
         await grain.StartWorkflow();
         await grain.CompleteActivity("task1", new ExpandoObject());
@@ -449,10 +443,9 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         // ...and no batch was appended twice
         var dbFactory = GetSiloService<IDbContextFactory<FleanCommandDbContext>>();
         await using var db = await dbFactory.CreateDbContextAsync();
-        var versions = await db.WorkflowEvents.Where(e => e.GrainId == grainIdStr)
-            .OrderBy(e => e.Version).Select(e => e.Version).ToListAsync();
+        var versions = await JournalVersions(db, instanceId);
         CollectionAssert.AreEqual(Enumerable.Range(1, versions.Count).ToList(), versions);
-        var journal = await GetSiloService<IEventStore>().ReadEventsAsync(grainIdStr, afterVersion: 0);
+        var journal = await GetSiloService<IEventStore>().ReadEventsAsync(instanceId, afterVersion: 0);
         Assert.AreEqual(1, journal.OfType<WorkflowCompleted>().Count(), "the completing batch was stored once");
     }
 
@@ -492,7 +485,6 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         var workflow = CreateSimpleWorkflow("es-simple-workflow");
         var instanceId = Guid.NewGuid();
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
-        var grainIdStr = instanceId.ToString();
 
         var dbFactory = GetSiloService<IDbContextFactory<FleanCommandDbContext>>();
 
@@ -502,9 +494,7 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
 
         await using (var db = await dbFactory.CreateDbContextAsync())
         {
-            var countAfterStart = await db.WorkflowEvents
-                .AsNoTracking()
-                .CountAsync(e => e.GrainId == grainIdStr);
+            var countAfterStart = (await JournalVersions(db, instanceId)).Count;
             Assert.IsTrue(countAfterStart > 0, "Events should be emitted after SetWorkflow + StartWorkflow");
         }
 
@@ -513,18 +503,11 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
 
         await using (var db = await dbFactory.CreateDbContextAsync())
         {
-            var countAfterComplete = await db.WorkflowEvents
-                .AsNoTracking()
-                .CountAsync(e => e.GrainId == grainIdStr);
+            var countAfterComplete = (await JournalVersions(db, instanceId)).Count;
             Assert.IsTrue(countAfterComplete > 0, "Events should exist after activity completion");
 
             // Verify events are ordered by version
-            var versions = await db.WorkflowEvents
-                .AsNoTracking()
-                .Where(e => e.GrainId == grainIdStr)
-                .OrderBy(e => e.Version)
-                .Select(e => e.Version)
-                .ToListAsync();
+            var versions = await JournalVersions(db, instanceId);
 
             // Versions should be contiguous starting from 1 (#833)
             for (int i = 0; i < versions.Count; i++)
@@ -623,5 +606,16 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
                 new SequenceFlow("seq6", join, end)
             ]
         };
+    }
+
+    /// <summary>The journaled event versions of an instance, in order, expanded from its batches.</summary>
+    private static async Task<List<int>> JournalVersions(FleanCommandDbContext db, Guid instanceId)
+    {
+        var batches = await db.WorkflowEventBatches.AsNoTracking()
+            .Where(b => b.InstanceId == instanceId)
+            .OrderBy(b => b.FirstVersion)
+            .Select(b => new { b.FirstVersion, b.LastVersion })
+            .ToListAsync();
+        return batches.SelectMany(b => Enumerable.Range(b.FirstVersion, b.LastVersion - b.FirstVersion + 1)).ToList();
     }
 }

@@ -479,4 +479,8 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1136, Level = LogLevel.Warning,
         Message = "Reading the read-model projection version failed; rebuilding the projection")]
     private partial void LogProjectionVersionReadFailed(Exception exception);
+
+    [LoggerMessage(EventId = 1140, Level = LogLevel.Warning,
+        Message = "Variables of {Size} bytes exceed the {Limit}-byte limit (Fleans:Variables:MaxSizeBytes): rejected, or dropped from an activity failure")]
+    private partial void LogVariablesTooLarge(int size, int limit);
 }

@@ -42,6 +42,9 @@ public abstract class WorkflowTestBase
     /// <summary>Persistence:SnapshotInterval of the test silo.</summary>
     protected const int TestSnapshotInterval = 5;
 
+    /// <summary>Fleans:Variables:MaxSizeBytes of the test silo — small, so a test can exceed it cheaply.</summary>
+    protected const int TestMaxVariablesSizeBytes = 16 * 1024;
+
     [TestInitialize]
     public void BaseSetup()
     {
@@ -298,6 +301,7 @@ public abstract class WorkflowTestBase
                     services.AddSingleton<EfCoreEventStore>();
                     services.AddSingleton<IEventStore>(sp => sp.GetRequiredService<EfCoreEventStore>());
                     services.AddApplication();
+                    services.Configure<WorkflowVariablesOptions>(o => o.MaxSizeBytes = TestMaxVariablesSizeBytes);
 
                     services.AddSerializer(serializerBuilder =>
                     {

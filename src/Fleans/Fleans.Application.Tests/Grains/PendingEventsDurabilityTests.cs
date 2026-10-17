@@ -69,7 +69,7 @@ public class PendingEventsDurabilityTests : WorkflowTestBase
         // The durability mechanism is journal-backed: the PendingEventEnqueued/Drained/Applied events
         // for this op-id must be in the event store. (The in-memory queue alone was the lost-on-deactivation bug.)
         var eventStore = GetSiloService<IEventStore>();
-        var events = await eventStore.ReadEventsAsync(grain.GetPrimaryKey().ToString(), 0);
+        var events = await eventStore.ReadEventsAsync(grain.GetPrimaryKey(), 0);
         Assert.IsTrue(events.OfType<PendingEventEnqueued>().Any(e => e.OpKey == opId),
             "PendingEventEnqueued must be persisted to the journal");
         Assert.IsTrue(events.OfType<PendingEventApplied>().Any(e => e.OpKey == opId),

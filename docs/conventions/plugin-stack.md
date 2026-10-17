@@ -45,7 +45,7 @@ The cycle/leak invariants are guarded post-refactor. If you find yourself adding
 
 Code that scans `typeof(IDomainEvent).Assembly.GetTypes()` (or any other anchor type in `*.Abstractions`) now sees only the few types that live in `Fleans.Domain.Abstractions.dll`, not the dozens that stayed in `Fleans.Domain.dll`.
 
-`Fleans.Persistence.Events.EventTypeRegistry` was the one caller affected and now scans both assemblies, anchoring `Fleans.Domain` via `typeof(WorkflowStarted).Assembly`.
+The journal's former `EventTypeRegistry` was the one caller affected (it was removed in #867, when the journal moved to Orleans `[Alias]`es). `JournalEventSerializationTests` now anchors its scan on `typeof(WorkflowEvent).Assembly` — `WorkflowEvent` lives in `Fleans.Domain`.
 
 **When adding new reflective scans over `IDomainEvent` implementations** (or any other marker interface that lives in an abstractions package), scan **both** the abstractions assembly and the concrete-types assembly, anchored by a stable type in each.
 

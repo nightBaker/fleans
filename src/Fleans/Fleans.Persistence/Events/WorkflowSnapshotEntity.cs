@@ -6,7 +6,7 @@ namespace Fleans.Persistence.Events;
 /// </summary>
 public class WorkflowSnapshotEntity
 {
-    public string GrainId { get; set; } = "";
+    public Guid InstanceId { get; set; }
     public int Version { get; set; }
     public byte[] Payload { get; set; } = [];
     public DateTimeOffset Timestamp { get; set; }

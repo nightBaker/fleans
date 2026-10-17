@@ -615,47 +615,31 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                     b.ToTable("WorkflowVariableStates", (string)null);
                 });
 
-            modelBuilder.Entity("Fleans.Persistence.Events.WorkflowEventEntity", b =>
+            modelBuilder.Entity("Fleans.Persistence.Events.WorkflowEventBatchEntity", b =>
                 {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
+                    b.Property<Guid>("InstanceId")
+                        .HasColumnType("uuid");
 
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<string>("EventType")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
-
-                    b.Property<string>("GrainId")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
-
-                    b.Property<string>("Payload")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTimeOffset>("Timestamp")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("Version")
+                    b.Property<int>("FirstVersion")
                         .HasColumnType("integer");
 
-                    b.HasKey("Id");
+                    b.Property<int>("LastVersion")
+                        .HasColumnType("integer");
 
-                    b.HasIndex("GrainId", "Version")
-                        .IsUnique();
+                    b.Property<byte[]>("Payload")
+                        .IsRequired()
+                        .HasColumnType("bytea");
 
-                    b.ToTable("WorkflowEvents", (string)null);
+                    b.HasKey("InstanceId", "FirstVersion");
+
+                    b.ToTable("WorkflowEventBatches", (string)null);
                 });
 
             modelBuilder.Entity("Fleans.Persistence.Events.WorkflowSnapshotEntity", b =>
                 {
-                    b.Property<string>("GrainId")
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                    b.Property<Guid>("InstanceId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
 
                     b.Property<byte[]>("Payload")
                         .IsRequired()
@@ -667,7 +651,7 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                     b.Property<int>("Version")
                         .HasColumnType("integer");
 
-                    b.HasKey("GrainId");
+                    b.HasKey("InstanceId");
 
                     b.ToTable("WorkflowSnapshots", (string)null);
                 });
