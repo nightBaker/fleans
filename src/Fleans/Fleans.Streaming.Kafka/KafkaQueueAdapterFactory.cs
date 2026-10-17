@@ -84,13 +84,13 @@ public sealed partial class KafkaQueueAdapterFactory : IQueueAdapterFactory
     {
         if (!_options.EnableDeadLetterQueue)
             return Task.FromResult<IStreamFailureHandler>(new NoOpStreamDeliveryFailureHandler(false));
-        if (Adapter is null)
+        if (Adapter?.DeadLetters is not { } deadLetters)
         {
             LogDlqWithoutAdapter(queueId.ToString());
             return Task.FromResult<IStreamFailureHandler>(new NoOpStreamDeliveryFailureHandler(false));
         }
         return Task.FromResult<IStreamFailureHandler>(new KafkaDlqFailureHandler(
-            KafkaTopicNaming.TopicForQueue(_options, queueId), _options, Adapter, _loggerFactory));
+            KafkaTopicNaming.TopicForQueue(_options, queueId), _options, deadLetters, _loggerFactory));
     }
 
     /// <summary>

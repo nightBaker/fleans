@@ -3,7 +3,7 @@
 Leaf NuGet for Fleans plugin authors. Holds the minimum Domain surface a custom-task plugin may need:
 
 - **Marker interfaces** — `IDomainEvent`
-- **Event records carried on Orleans streams** — `ExecuteCustomTaskEvent`
+- **Event records carried on Orleans streams** — `ExecuteCustomTaskEvent`; also the engine-internal `ExecuteScriptEvent`, `EvaluateConditionEvent`, `EvaluateActivationConditionEvent` and `EvaluateCompletionConditionEvent`. Plugins don't handle these, but a plugin host owns some stream queues and must be able to deserialize every event on them.
 - **Value records those events reference** — `InputMapping`, `OutputMapping`
 - **Exception hierarchy plugins may throw** — `ActivityException`, `CustomTaskFailedActivityException`, `BadRequestActivityException`, `ActivityErrorState`
 
