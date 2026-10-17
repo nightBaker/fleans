@@ -175,7 +175,7 @@ the regular ones.
 
 | Setting | Default | What it does |
 |---|---|---|
-| `Fleans__Streaming__Kafka__EnableDeadLetterQueue` | `false` | Route records whose subscriber keeps failing to the dead-letter topic instead of dropping them. |
+| `Fleans__Streaming__Kafka__EnableDeadLetterQueue` | `false` | Route records whose subscriber keeps failing, and records a silo cannot deserialize, to the dead-letter topic instead of dropping them. |
 | `Fleans__Streaming__Kafka__DeadLetterTopicSuffix` | `-dlq` | Suffix appended to each source topic. The silo refuses to start if the suffix would make a dead-letter topic name equal a regular topic (for example `0`: `fleans-1` + `0` = `fleans-10`). |
 | `Fleans__Streaming__Kafka__DeliveryRetryWindow` | `00:01:00` | How long to keep retrying a failing record before giving up (`hh:mm:ss`). The stream stays blocked for that subscriber while it retries, so keep it short. |
 
@@ -184,15 +184,19 @@ Each dead-letter record carries these headers:
 | Header | Value |
 |---|---|
 | `x-fleans-original-topic` / `-partition` / `-offset` | Where the record came from. |
-| `x-fleans-failure-reason` | `delivery-failed` (a subscriber kept throwing). |
+| `x-fleans-failure-reason` | `delivery-failed` (a subscriber kept throwing) or `deserialization-failed` (the silo reading the queue could not decode the record). |
 | `x-fleans-failure-time-utc` | ISO-8601 timestamp. |
-| `x-fleans-stream-id` | Orleans stream ID. |
-| `x-fleans-subscription-id` | The subscription whose handler kept failing. |
+| `x-fleans-stream-id` | Orleans stream ID (`delivery-failed` only). |
+| `x-fleans-subscription-id` | The subscription whose handler kept failing (`delivery-failed` only). |
+| `x-fleans-exception` | Exception type and message (`deserialization-failed` only). |
 
-A record whose bytes cannot be deserialized is **never** dead-lettered, even with the DLQ on: it
-is skipped right away and logged at Error with EventId `11107`. Such a record can only come from
-something other than the engine writing to the topic; find it with the topic, partition and
-offset in the log line.
+A record whose bytes cannot be deserialized is not retried: it is skipped right away and logged at
+Error — EventId `11113` when it goes to the dead-letter topic, `11107` when the DLQ is off and it
+is dropped. Two causes are known: something other than the engine wrote to the topic, or a silo
+reading the queue runs an older Fleans version than the silo that wrote the record (for example a
+custom-task plugin host built against an older `Fleans.Worker` package). Every silo that registers
+the stream provider, plugin hosts included, reads a share of the queues — keep plugin hosts on the
+engine's Fleans version.
 
 Delivery to the dead-letter topic is at-least-once: a record that fails for several subscribers
 is published once per subscriber, each copy with its own `x-fleans-subscription-id`. Deduplicate

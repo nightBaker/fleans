@@ -129,11 +129,18 @@ jobs:
 
   # Split-role topology (#770): FLEANS_SPLIT_ROLES=true makes the AppHost run fleans-core as
   # Core plus a dedicated fleans-worker (Worker) silo, and AspireFixture attaches the test-only
-  # Plugin-role host (Fleans.E2E.PluginHost). Runs only the E2E-SplitRoles specs.
+  # Plugin-role host (Fleans.E2E.PluginHost). Runs only the E2E-SplitRoles specs, once per
+  # stream provider the plugin host supports: the plugin host owns a slice of the stream queues,
+  # and on Kafka it must forward engine events it reads there (#866).
   e2e-split-roles:
     runs-on: ubuntu-latest
     needs: build
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        streaming: [Redis, Kafka]
+    name: e2e-split-roles (${{ matrix.streaming }})
     steps:
     - uses: actions/checkout@v4
     - name: Setup .NET
@@ -147,6 +154,7 @@ jobs:
     - name: Run E2E-SplitRoles specs
       env:
         FLEANS_SPLIT_ROLES: "true"
+        FLEANS_STREAMING_PROVIDER: ${{ matrix.streaming }}
       run: dotnet test Fleans.E2E.Tests/Fleans.E2E.Tests.csproj --no-build --filter "TestCategory=E2E-SplitRoles" --logger "trx;LogFileName=e2e-split-roles.trx" --results-directory TestResults
     # Silent-green guard: specs report Inconclusive (not failed) when the split topology isn't
     # up, and a filter that matches nothing exits 0 — require at least one passed test.
@@ -165,7 +173,7 @@ jobs:
         print(c.get("passed", "0") if c is not None else "0")
         PY
         )
-        echo "E2E-SplitRoles: passed=${passed}"
+        echo "E2E-SplitRoles (${{ matrix.streaming }}): passed=${passed}"
         if [ "${passed:-0}" -eq 0 ]; then
           echo "::error::Zero E2E-SplitRoles tests passed — is FLEANS_SPLIT_ROLES reaching AspireFixture?"
           exit 1
@@ -174,7 +182,7 @@ jobs:
       if: failure()
       uses: actions/upload-artifact@v4
       with:
-        name: e2e-split-roles-failure-artifacts
+        name: e2e-split-roles-${{ matrix.streaming }}-failure-artifacts
         path: |
           src/Fleans/TestResults/**/*.trx
           src/Fleans/Fleans.E2E.Tests/bin/Debug/net10.0/resource-logs/

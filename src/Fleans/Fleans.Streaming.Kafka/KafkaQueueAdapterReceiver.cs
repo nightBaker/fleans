@@ -13,6 +13,7 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
     private readonly Serializer<KafkaBatchContainer> _serializer;
     private readonly ILogger<KafkaQueueAdapterReceiver> _logger;
     private readonly string _topic;
+    private readonly KafkaDeadLetterPublisher? _deadLetters;
 
     private IConsumer<byte[], byte[]>? _consumer;
     private long _lastDeliveredOffset = -1;
@@ -21,13 +22,15 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
         QueueId queueId,
         KafkaStreamingOptions options,
         Serializer<KafkaBatchContainer> serializer,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        KafkaDeadLetterPublisher? deadLetters)
     {
         _queueId = queueId;
         _options = options;
         _serializer = serializer;
         _logger = loggerFactory.CreateLogger<KafkaQueueAdapterReceiver>();
         _topic = KafkaTopicNaming.TopicForQueue(options, queueId);
+        _deadLetters = deadLetters;
     }
 
     public Task Initialize(TimeSpan timeout)
@@ -54,8 +57,12 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
     private partial void LogSslNoPathsOsTrustStore(KafkaSecurityProtocol securityProtocol);
 
     [LoggerMessage(EventId = 11107, Level = LogLevel.Error,
-        Message = "Kafka receiver: failed to deserialize record {Topic}[{Partition}]@{Offset}; the record is skipped and not dead-lettered")]
+        Message = "Kafka receiver: failed to deserialize record {Topic}[{Partition}]@{Offset}; the record is skipped and not dead-lettered (EnableDeadLetterQueue is off)")]
     private partial void LogDeserializationFailed(Exception ex, string topic, int partition, long offset);
+
+    [LoggerMessage(EventId = 11113, Level = LogLevel.Error,
+        Message = "Kafka receiver: failed to deserialize record {Topic}[{Partition}]@{Offset}; routing it to the dead-letter topic")]
+    private partial void LogDeserializationFailedDeadLettering(Exception ex, string topic, int partition, long offset);
 
     [LoggerMessage(EventId = 11108, Level = LogLevel.Warning,
         Message = "Kafka consumer error on topic {Topic}: {Reason}")]
@@ -73,12 +80,12 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
         Message = "Kafka consumer close failed on topic {Topic}")]
     private partial void LogCloseFailed(Exception ex, string topic);
 
-    public Task<IList<IBatchContainer>> GetQueueMessagesAsync(int maxCount)
+    public async Task<IList<IBatchContainer>> GetQueueMessagesAsync(int maxCount)
     {
         IList<IBatchContainer> batches = new List<IBatchContainer>();
         if (_consumer is null)
         {
-            return Task.FromResult(batches);
+            return batches;
         }
 
         var deadline = DateTime.UtcNow + _options.PollTimeout;
@@ -111,13 +118,23 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
             }
             catch (Exception ex)
             {
-                // Log-only, never dead-lettered. Skipped now; its offset is committed only with a later
-                // delivered batch, so a trailing bad record is re-read (and re-logged) after a restart.
-                LogDeserializationFailed(ex, _topic, result.Partition.Value, result.Offset.Value);
+                // Typically a type this silo does not have (#866). Skipped either way; its offset is
+                // committed only with a later delivered batch, so a trailing bad record is re-read (and
+                // re-logged / dead-lettered again) after a restart.
+                if (_deadLetters is null)
+                {
+                    LogDeserializationFailed(ex, _topic, result.Partition.Value, result.Offset.Value);
+                    continue;
+                }
+                LogDeserializationFailedDeadLettering(ex, _topic, result.Partition.Value, result.Offset.Value);
+                // No ConfigureAwait(false): the rest of the poll loop must stay on the pulling agent's scheduler.
+                await _deadLetters.PublishAsync(_topic, result.Partition.Value, result.Offset.Value, result.Message,
+                    KafkaDeadLetterPublisher.ReasonDeserializationFailed,
+                    [new("x-fleans-exception", $"{ex.GetType().FullName}: {ex.Message}")]);
             }
         }
 
-        return Task.FromResult(batches);
+        return batches;
     }
 
     public Task MessagesDeliveredAsync(IList<IBatchContainer> messages)

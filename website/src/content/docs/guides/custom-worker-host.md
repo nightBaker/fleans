@@ -95,6 +95,12 @@ You should see only `Fleans.*.Abstractions`, `Fleans.Worker`, and your plugin pa
 > every plugin's NuGet version even when the plugin source is bit-identical (same precedent
 > as `Aspire.Hosting.*` / `Microsoft.Orleans.*`). Pin to a major+minor that matches the
 > engine you're deploying alongside.
+>
+> Upgrade the host together with the engine. A plugin host reads a share of the engine's
+> stream queues and must deserialize every event on them, not just its own custom-task events.
+> If an engine release adds a stream event type, a host on an older `Fleans.Worker` cannot read
+> it. On Kafka that event is then dropped (or dead-lettered) and the workflow instance waiting
+> for it hangs.
 
 ## Cross-references
 

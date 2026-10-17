@@ -1,5 +1,3 @@
-using System.Globalization;
-using System.Text;
 using Confluent.Kafka;
 using Microsoft.Extensions.Logging;
 using Orleans.Runtime;
@@ -13,22 +11,18 @@ namespace Fleans.Streaming.Kafka;
 /// itself until <c>StreamPullingAgentOptions.MaxEventDeliveryTime</c> (see
 /// <see cref="KafkaStreamingOptions.DeliveryRetryWindow"/>), then calls <see cref="OnDeliveryFailure"/>
 /// once per failing subscription and moves the cursor past the record — so this handler only has to
-/// capture it: re-read the raw record with a short-lived consumer and publish it with the adapter's
-/// producer. Failures are rare, so it owns no long-lived Kafka clients and needs no shutdown logic.
+/// capture it: re-read the raw record with a short-lived consumer and publish it with
+/// <see cref="KafkaDeadLetterPublisher"/>. Failures are rare, so it owns no long-lived Kafka clients and
+/// needs no shutdown logic.
 /// </summary>
 internal sealed partial class KafkaDlqFailureHandler : IStreamFailureHandler
 {
     // Covers a cold client: connect, TLS, SASL/OAuth token fetch and metadata, then the fetch itself.
     internal static readonly TimeSpan ConsumeTimeout = TimeSpan.FromSeconds(30);
 
-    // Bounds how long the pulling agent awaiting OnDeliveryFailure waits for the DLQ ack. Cancelling
-    // only stops the wait: the shared producer keeps the message (up to its message.timeout.ms) and
-    // may still deliver it.
-    internal static readonly TimeSpan PublishTimeout = TimeSpan.FromSeconds(30);
-
     private readonly string _topic;
     private readonly KafkaStreamingOptions _options;
-    private readonly KafkaQueueAdapter _adapter;
+    private readonly KafkaDeadLetterPublisher _publisher;
     private readonly ILogger<KafkaDlqFailureHandler> _logger;
 
     public bool ShouldFaultSubsriptionOnError => false;
@@ -38,7 +32,7 @@ internal sealed partial class KafkaDlqFailureHandler : IStreamFailureHandler
     {
         _topic = topic;
         _options = options;
-        _adapter = adapter;
+        _publisher = new KafkaDeadLetterPublisher(options, adapter, loggerFactory);
         _logger = loggerFactory.CreateLogger<KafkaDlqFailureHandler>();
     }
 
@@ -82,7 +76,12 @@ internal sealed partial class KafkaDlqFailureHandler : IStreamFailureHandler
             return;
         }
 
-        await PublishAsync(kt, record.Message, streamIdentity.ToString(), subscriptionId.ToString()).ConfigureAwait(false);
+        await _publisher.PublishAsync(_topic, kt.Partition, kt.Offset, record.Message,
+            KafkaDeadLetterPublisher.ReasonDeliveryFailed,
+            [
+                new("x-fleans-stream-id", streamIdentity.ToString()),
+                new("x-fleans-subscription-id", subscriptionId.ToString()),
+            ]).ConfigureAwait(false);
     }
 
     public Task OnSubscriptionFailure(GuidId subscriptionId, string streamProviderName,
@@ -110,47 +109,6 @@ internal sealed partial class KafkaDlqFailureHandler : IStreamFailureHandler
         consumer.Assign(new TopicPartitionOffset(_topic, partition, offset));
         return consumer.Consume(ConsumeTimeout);
     }
-
-    private async Task PublishAsync(KafkaSequenceToken kt, Message<byte[], byte[]> record, string streamId, string subscriptionId)
-    {
-        var dlqTopic = KafkaTopicNaming.DeadLetterTopicForSource(_options, _topic);
-        var message = new Message<byte[], byte[]>
-        {
-            Key = record.Key,
-            Value = record.Value,
-            Headers = new Headers
-            {
-                { "x-fleans-original-topic", Utf8(_topic) },
-                { "x-fleans-original-partition", Utf8(kt.Partition.ToString(CultureInfo.InvariantCulture)) },
-                { "x-fleans-original-offset", Utf8(kt.Offset.ToString(CultureInfo.InvariantCulture)) },
-                { "x-fleans-failure-reason", Utf8("delivery-failed") },
-                { "x-fleans-failure-time-utc", Utf8(DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture)) },
-                { "x-fleans-stream-id", Utf8(streamId) },
-                { "x-fleans-subscription-id", Utf8(subscriptionId) },
-            },
-        };
-
-        try
-        {
-            using var cts = new CancellationTokenSource(PublishTimeout);
-            var dr = await _adapter.ProduceRawAsync(dlqTopic, message, cts.Token).ConfigureAwait(false);
-            LogPublished(_topic, kt.Partition, kt.Offset, dlqTopic, dr.Offset.Value);
-        }
-        catch (Exception ex)
-        {
-            LogPublishFailed(ex, _topic, kt.Partition, kt.Offset, dlqTopic, PublishTimeout.TotalSeconds);
-        }
-    }
-
-    private static byte[] Utf8(string value) => Encoding.UTF8.GetBytes(value);
-
-    [LoggerMessage(EventId = 12000, Level = LogLevel.Warning,
-        Message = "Kafka DLQ: routed record {Topic}[{Partition}]@{Offset} to {DlqTopic} at offset {DlqOffset}")]
-    private partial void LogPublished(string topic, int partition, long offset, string dlqTopic, long dlqOffset);
-
-    [LoggerMessage(EventId = 12001, Level = LogLevel.Error,
-        Message = "Kafka DLQ: publish of record {Topic}[{Partition}]@{Offset} to {DlqTopic} failed or was not acknowledged within {TimeoutSeconds}s; the producer may still deliver it, otherwise the record is lost")]
-    private partial void LogPublishFailed(Exception ex, string topic, int partition, long offset, string dlqTopic, double timeoutSeconds);
 
     [LoggerMessage(EventId = 12002, Level = LogLevel.Warning,
         Message = "Kafka DLQ: subscription {SubscriptionId} on stream {StreamId} failed to initialise; not a poison record, nothing dead-lettered")]

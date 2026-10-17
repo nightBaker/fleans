@@ -8,7 +8,7 @@ namespace Fleans.Streaming.Kafka.Tests;
 
 /// <summary>
 /// Broker-free checks for the DLQ handler and its options. The end-to-end routing (subscriber failure →
-/// <c>-dlq</c> topic; deserialization failure → skipped, not dead-lettered) is covered by
+/// <c>-dlq</c> topic; deserialization failure → <c>-dlq</c> topic too) is covered by
 /// <c>Fleans.Application.Tests.KafkaDlqIntegrationTests</c>.
 /// </summary>
 [TestClass]

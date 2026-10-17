@@ -68,6 +68,26 @@ public class SplitRoleTopologyTests : WorkflowE2ETestBase
         state.AssertVariableEquals("probeRole", "Plugin");
     }
 
+    // #866: the plugin host owns a slice of the stream queues, so engine events (script tasks,
+    // gateway conditions) of some instances are read there first. It must forward them to the
+    // engine silos rather than drop them for lack of the event type. Each instance publishes on
+    // per-instance streams, so a batch spreads across all queues, the plugin host's included.
+    [TestMethod]
+    public async Task EngineEvents_OnPluginHostOwnedQueues_AreDelivered()
+    {
+        const int instances = 24;
+        var xml = BpmnFixtureLoader.Load("03-exclusive-gateway", "conditional-branching.bpmn");
+        var deployed = await ApiClient.DeployAsync(xml);
+
+        var started = await Task.WhenAll(Enumerable.Range(0, instances)
+            .Select(_ => ApiClient.StartAsync(deployed.ProcessDefinitionKey)));
+        var states = await Task.WhenAll(started.Select(s =>
+            ApiClient.WaitForCompletionAsync(s.WorkflowInstanceId, timeout: TimeSpan.FromSeconds(60))));
+
+        foreach (var state in states)
+            state.AssertCompletedActivities("start", "setX", "highTask", "highEnd");
+    }
+
     // Plan 58 (boundary-timer variant): an interrupting boundary timer on a long-running plugin
     // task hosted on another silo takes the timeout path, and the plugin's eventual completion
     // is dropped by the stale-activity guard instead of resurrecting the normal path.

@@ -116,7 +116,8 @@ internal sealed partial class KafkaQueueAdapter : IQueueAdapter, IDisposable
     };
 
     public IQueueAdapterReceiver CreateReceiver(QueueId queueId) =>
-        new KafkaQueueAdapterReceiver(queueId, _options, _serializer, _loggerFactory);
+        new KafkaQueueAdapterReceiver(queueId, _options, _serializer, _loggerFactory,
+            _options.EnableDeadLetterQueue ? new KafkaDeadLetterPublisher(_options, this, _loggerFactory) : null);
 
     [LoggerMessage(EventId = 11100, Level = LogLevel.Warning,
         Message = "SecurityProtocol={SecurityProtocol} configured without explicit SSL paths — broker certificate will be validated against the OS trust store.")]
