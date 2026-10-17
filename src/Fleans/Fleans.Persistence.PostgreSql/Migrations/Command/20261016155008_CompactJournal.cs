@@ -12,11 +12,6 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            // #867: the journal moves to Orleans-binary batches. Pre-1.0 there is no upgrade path,
-            // so the old JSON journal is dropped and the snapshots (a cache over it) are cleared —
-            // otherwise the new InstanceId key would collide on its default value.
-            migrationBuilder.Sql("DELETE FROM \"WorkflowSnapshots\";");
-
             migrationBuilder.DropTable(
                 name: "WorkflowEvents");
 
