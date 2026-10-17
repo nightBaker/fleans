@@ -18,6 +18,9 @@ internal sealed partial class KafkaQueueAdapter : IQueueAdapter, IDisposable
 
     public string Name { get; }
 
+    /// <summary>The DLQ publisher both capture points share; <c>null</c> when the DLQ is off.</summary>
+    internal KafkaDeadLetterPublisher? DeadLetters { get; }
+
     public bool IsRewindable => false;
 
     public StreamProviderDirection Direction => StreamProviderDirection.ReadWrite;
@@ -46,6 +49,7 @@ internal sealed partial class KafkaQueueAdapter : IQueueAdapter, IDisposable
         if (_options.OAuthBearerTokenProvider is not null)
             producerBuilder.SetOAuthBearerTokenRefreshHandler(_options.OAuthBearerTokenProvider);
         _producer = producerBuilder.Build();
+        DeadLetters = _options.EnableDeadLetterQueue ? new KafkaDeadLetterPublisher(_options, this, loggerFactory) : null;
     }
 
     public async Task QueueMessageBatchAsync<T>(
@@ -116,8 +120,7 @@ internal sealed partial class KafkaQueueAdapter : IQueueAdapter, IDisposable
     };
 
     public IQueueAdapterReceiver CreateReceiver(QueueId queueId) =>
-        new KafkaQueueAdapterReceiver(queueId, _options, _serializer, _loggerFactory,
-            _options.EnableDeadLetterQueue ? new KafkaDeadLetterPublisher(_options, this, _loggerFactory) : null);
+        new KafkaQueueAdapterReceiver(queueId, _options, _serializer, _loggerFactory, DeadLetters);
 
     [LoggerMessage(EventId = 11100, Level = LogLevel.Warning,
         Message = "SecurityProtocol={SecurityProtocol} configured without explicit SSL paths — broker certificate will be validated against the OS trust store.")]

@@ -111,7 +111,11 @@ public class KafkaDlqIntegrationTests
             var garbage = Encoding.UTF8.GetBytes("not an Orleans-serialized batch");
             using (var producer = new ProducerBuilder<Null, byte[]>(new ProducerConfig { BootstrapServers = DlqSiloConfigurator.Brokers }).Build())
             {
-                await producer.ProduceAsync(sourceTopic, new Message<Null, byte[]> { Value = garbage });
+                await producer.ProduceAsync(sourceTopic, new Message<Null, byte[]>
+                {
+                    Value = garbage,
+                    Headers = new Headers { { "x-test-origin", Encoding.UTF8.GetBytes("external-writer") } },
+                });
             }
             await stream.OnNextAsync(NewEvent("healthy"));
             await WaitUntilAsync(() => { lock (healthy) { return healthy.Count > 0; } }, TimeSpan.FromSeconds(30));
@@ -125,6 +129,7 @@ public class KafkaDlqIntegrationTests
             Assert.AreEqual(sourceTopic, Header(dlqMessage, "x-fleans-original-topic"));
             Assert.AreEqual("0", Header(dlqMessage, "x-fleans-original-offset"));
             Assert.IsNotNull(Header(dlqMessage, "x-fleans-exception"));
+            Assert.AreEqual("external-writer", Header(dlqMessage, "x-test-origin"), "the source record's own headers must be kept");
 
             await sub.UnsubscribeAsync();
         }

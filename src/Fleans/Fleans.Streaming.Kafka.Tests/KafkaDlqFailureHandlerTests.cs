@@ -150,5 +150,5 @@ public class KafkaDlqFailureHandlerTests
         new("provider", Options, null!, null!, NullLoggerFactory.Instance);
 
     private static KafkaDlqFailureHandler CreateHandler(KafkaQueueAdapter adapter) =>
-        new("fleans-test-0", Options, adapter, NullLoggerFactory.Instance);
+        new("fleans-test-0", Options, adapter.DeadLetters!, NullLoggerFactory.Instance);
 }

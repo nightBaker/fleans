@@ -36,14 +36,15 @@ internal sealed partial class KafkaDeadLetterPublisher
         IEnumerable<KeyValuePair<string, string>>? extraHeaders = null)
     {
         var dlqTopic = KafkaTopicNaming.DeadLetterTopicForSource(_options, topic);
-        var headers = new Headers
-        {
-            { "x-fleans-original-topic", Utf8(topic) },
-            { "x-fleans-original-partition", Utf8(partition.ToString(CultureInfo.InvariantCulture)) },
-            { "x-fleans-original-offset", Utf8(offset.ToString(CultureInfo.InvariantCulture)) },
-            { "x-fleans-failure-reason", Utf8(reason) },
-            { "x-fleans-failure-time-utc", Utf8(DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture)) },
-        };
+        // Keep the source record's own headers (trace context, an external writer's metadata) for triage.
+        var headers = new Headers();
+        foreach (var header in record.Headers ?? [])
+            headers.Add(header.Key, header.GetValueBytes());
+        headers.Add("x-fleans-original-topic", Utf8(topic));
+        headers.Add("x-fleans-original-partition", Utf8(partition.ToString(CultureInfo.InvariantCulture)));
+        headers.Add("x-fleans-original-offset", Utf8(offset.ToString(CultureInfo.InvariantCulture)));
+        headers.Add("x-fleans-failure-reason", Utf8(reason));
+        headers.Add("x-fleans-failure-time-utc", Utf8(DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture)));
         foreach (var (key, value) in extraHeaders ?? [])
             headers.Add(key, Utf8(value));
 

@@ -28,11 +28,11 @@ internal sealed partial class KafkaDlqFailureHandler : IStreamFailureHandler
     public bool ShouldFaultSubsriptionOnError => false;
 
     internal KafkaDlqFailureHandler(
-        string topic, KafkaStreamingOptions options, KafkaQueueAdapter adapter, ILoggerFactory loggerFactory)
+        string topic, KafkaStreamingOptions options, KafkaDeadLetterPublisher publisher, ILoggerFactory loggerFactory)
     {
         _topic = topic;
         _options = options;
-        _publisher = new KafkaDeadLetterPublisher(options, adapter, loggerFactory);
+        _publisher = publisher;
         _logger = loggerFactory.CreateLogger<KafkaDlqFailureHandler>();
     }
 

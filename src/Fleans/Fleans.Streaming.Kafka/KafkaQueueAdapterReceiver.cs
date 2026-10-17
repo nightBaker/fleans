@@ -118,19 +118,21 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
             }
             catch (Exception ex)
             {
-                // Typically a type this silo does not have (#866). Skipped either way; its offset is
-                // committed only with a later delivered batch, so a trailing bad record is re-read (and
-                // re-logged / dead-lettered again) after a restart.
+                // Typically a type this silo does not have (#866). Skipped either way. The next Commit()
+                // moves past it; if the silo restarts before one, it is read (and logged / dead-lettered) again.
                 if (_deadLetters is null)
                 {
                     LogDeserializationFailed(ex, _topic, result.Partition.Value, result.Offset.Value);
                     continue;
                 }
                 LogDeserializationFailedDeadLettering(ex, _topic, result.Partition.Value, result.Offset.Value);
-                // No ConfigureAwait(false): the rest of the poll loop must stay on the pulling agent's scheduler.
+                // No ConfigureAwait(false): stay on the pulling agent's scheduler.
                 await _deadLetters.PublishAsync(_topic, result.Partition.Value, result.Offset.Value, result.Message,
                     KafkaDeadLetterPublisher.ReasonDeserializationFailed,
                     [new("x-fleans-exception", $"{ex.GetType().FullName}: {ex.Message}")]);
+                // Return what we have: Shutdown may have run during the await and disposed the consumer, and
+                // the records already read must not wait behind more publishes. One DLQ publish per poll.
+                break;
             }
         }
 
