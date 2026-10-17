@@ -70,8 +70,7 @@ EXPECTED_REPLICA_COUNT=3 bash verify-cluster.sh
 `FLEANS_STREAMING_PROVIDER=Redis docker compose up -d --wait` runs the same topology on Redis streams.
 `FLEANS_PLUGIN_IMAGE=<image>` swaps the plugin-host image.
 
-> **Known issues:** on Kafka, the stock plugin host owns stream queues but cannot deserialize engine events,
-> so instances hang (#866). Under load, ~4 % of `long-diverse` instances hang on either stream provider (#869).
+> **Known issue:** under load, ~4 % of `long-diverse` instances hang on either stream provider (#869).
 
 ### Teardown
 
