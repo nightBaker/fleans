@@ -227,11 +227,6 @@ namespace Fleans.Application.Tests
             public Task<List<ProcessDefinition>> GetAllAsync() =>
                 Task.FromResult(_store.Values.ToList());
 
-            public Task<List<string>> GetAllDistinctKeysAsync() =>
-                Task.FromResult(_store.Values
-                    .Select(d => d.ProcessDefinitionKey)
-                    .Distinct().OrderBy(k => k).ToList());
-
             public Task SaveAsync(ProcessDefinition definition)
             {
                 _store[definition.ProcessDefinitionId] = definition;

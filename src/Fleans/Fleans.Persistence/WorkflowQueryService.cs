@@ -501,10 +501,11 @@ public class WorkflowQueryService : IWorkflowQueryService
         // MessageName is the row key — the "name/escaped-key" composite — so show its name part.
         var activeMessageSubscriptions = (await db.MessageSubscriptions
                 .AsNoTracking()
+                .Select(s => new MessageSubscriptionRow(
+                    s.MessageName, s.CorrelationKey, s.WorkflowInstanceId,
+                    s.ActivityId, s.HostActivityInstanceId))
                 .ToListAsync(ct))
-            .Select(s => new MessageSubscriptionRow(
-                MessageCorrelationKey.Parse(s.MessageName).MessageName, s.CorrelationKey, s.WorkflowInstanceId,
-                s.ActivityId, s.HostActivityInstanceId))
+            .Select(row => row with { MessageName = MessageCorrelationKey.MessageNameOf(row.MessageName) })
             .ToList();
 
         var activeSignalSubscriptions = await db.SignalSubscriptions

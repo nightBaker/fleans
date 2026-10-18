@@ -52,6 +52,14 @@ public class MessageCorrelationKeyTests
     }
 
     [TestMethod]
+    public void TryBuild_CompositeOverMaxLength_ReturnsNull()
+    {
+        var correlationKey = new string('k', MessageCorrelationKey.MaxLength);
+
+        Assert.IsNull(MessageCorrelationKey.TryBuild("msg", correlationKey));
+    }
+
+    [TestMethod]
     public void Parse_ReturnsMessageNameAndUnescapedCorrelationKey()
     {
         var key = MessageCorrelationKey.Build("orders/payment", "region/order 123");
@@ -60,5 +68,12 @@ public class MessageCorrelationKeyTests
 
         Assert.AreEqual("orders/payment", messageName);
         Assert.AreEqual("region/order 123", correlationKey);
+    }
+
+    [TestMethod]
+    public void MessageNameOf_ReturnsNamePart_OrTheInputWhenThereIsNoSeparator()
+    {
+        Assert.AreEqual("orders/payment", MessageCorrelationKey.MessageNameOf("orders/payment/order%201"));
+        Assert.AreEqual("malformed", MessageCorrelationKey.MessageNameOf("malformed"));
     }
 }

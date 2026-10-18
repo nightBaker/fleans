@@ -10,15 +10,29 @@ public static class MessageCorrelationKey
     public const int MaxLength = 1024;
 
     public static string Build(string messageName, string correlationKey)
+        => TryBuild(messageName, correlationKey) ?? throw new ArgumentException(
+            $"The message name plus the escaped correlation key is longer than {MaxLength} characters.");
+
+    /// <summary>
+    /// Like <see cref="Build"/>, but returns <c>null</c> when the composite is over
+    /// <see cref="MaxLength"/> — no subscription can exist under such a key.
+    /// </summary>
+    public static string? TryBuild(string messageName, string correlationKey)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(messageName);
         ArgumentException.ThrowIfNullOrWhiteSpace(correlationKey);
         var key = $"{messageName}/{Uri.EscapeDataString(correlationKey)}";
-        if (key.Length > MaxLength)
-            throw new ArgumentException(
-                $"Message name plus escaped correlation key is {key.Length} characters; the limit is {MaxLength}.",
-                nameof(correlationKey));
-        return key;
+        return key.Length <= MaxLength ? key : null;
+    }
+
+    /// <summary>
+    /// The message-name part of a key produced by <see cref="Build"/>, for display. Returns the
+    /// input unchanged when it has no separator, so one malformed row cannot break a listing.
+    /// </summary>
+    public static string MessageNameOf(string key)
+    {
+        var separator = key.LastIndexOf('/');
+        return separator < 0 ? key : key[..separator];
     }
 
     /// <summary>

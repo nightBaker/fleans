@@ -21,20 +21,16 @@ public interface IWorkflowInstanceInspector : IGrainExtension
 
 internal sealed class WorkflowInstanceInspector(IGrainContext context) : IWorkflowInstanceInspector
 {
-    private WorkflowInstanceState State => ((WorkflowInstance)context.GrainInstance!).InspectionState;
+    private WorkflowInstance Grain => (WorkflowInstance)context.GrainInstance!;
 
     public ValueTask<IReadOnlyDictionary<Guid, TransactionOutcomeRecord>> GetTransactionOutcomes()
-    {
-        IReadOnlyDictionary<Guid, TransactionOutcomeRecord> result =
-            new Dictionary<Guid, TransactionOutcomeRecord>(State.TransactionOutcomes);
-        return ValueTask.FromResult(result);
-    }
+        => ValueTask.FromResult(Grain.CopyTransactionOutcomes());
 
     public ValueTask<IReadOnlyList<string>> GetPendingOperationKeys()
-        => ValueTask.FromResult<IReadOnlyList<string>>(State.PendingOperations.Keys.ToList());
+        => ValueTask.FromResult(Grain.CopyPendingOperationKeys());
 
     public ValueTask<IReadOnlyList<string>> GetAppliedOperationKeys()
-        => ValueTask.FromResult<IReadOnlyList<string>>(State.AppliedOperations.Keys.ToList());
+        => ValueTask.FromResult(Grain.CopyAppliedOperationKeys());
 }
 
 /// <summary>Keeps test call sites reading like grain calls.</summary>

@@ -106,7 +106,8 @@ Field semantics:
 Responses:
 
 - **200 OK** with `SendMessageResponse(bool Delivered, IList<Guid> WorkflowInstanceIds)` — `WorkflowInstanceIds` lists the affected instances (one for an intermediate catch, possibly multiple for start-event correlations).
-- **400 Bad Request** if `MessageName` is null or whitespace, or if `MessageName` plus the URL-escaped `CorrelationKey` (joined by `/`) is longer than 1024 characters. The same limit applies when a catch or boundary event subscribes: a longer key fails that activity, on every database provider.
+- **400 Bad Request** if `MessageName` is null or whitespace.
+- **Key length limit:** `MessageName` plus the URL-escaped `CorrelationKey` (joined by `/`) may be at most 1024 characters, on every database provider. A catch or boundary event whose key is longer fails at subscribe time. A request with a longer key cannot match any subscription, so it goes straight to message start events (404 if there are none).
 - **404 Not Found** with `ErrorResponse("No subscription or start event found for message '...'")` if no subscriber is waiting on that `(name, key)` pair.
 
 The endpoint is rate-limited under the `workflow-mutation` policy.

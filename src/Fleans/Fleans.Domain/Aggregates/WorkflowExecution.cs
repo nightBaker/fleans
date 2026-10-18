@@ -1273,9 +1273,8 @@ public class WorkflowExecution
         EvaluateActivationConditionCommand cmd, Guid activityInstanceId)
     {
         var entry = _state.GetActiveEntry(activityInstanceId);
-        CreateOrIncrementComplexGatewayJoinToken(entry.ActivityId, activityInstanceId, cmd.Condition, _state.Id);
-        var joinState = _state.GetComplexGatewayJoinState(entry.ActivityId)!;
-        return new PublishDomainEventEffect(new EvaluateActivationConditionEvent(
+        var tokenCount = (_state.GetComplexGatewayJoinState(entry.ActivityId)?.WaitingTokenCount ?? 0) + 1;
+        var effect = new PublishDomainEventEffect(new EvaluateActivationConditionEvent(
             _state.Id,
             _definition.WorkflowId,
             _definition.ProcessDefinitionId,
@@ -1283,7 +1282,12 @@ public class WorkflowExecution
             entry.ActivityId,
             cmd.Condition,
             entry.VariablesId,
-            joinState.WaitingTokenCount));
+            tokenCount));
+
+        // Count the token last: if anything above throws, the caller fails the activity and the
+        // failed token must not be on the join state.
+        CreateOrIncrementComplexGatewayJoinToken(entry.ActivityId, activityInstanceId, cmd.Condition, _state.Id);
+        return effect;
     }
 
     private List<IInfrastructureEffect> ProcessAddConditions(

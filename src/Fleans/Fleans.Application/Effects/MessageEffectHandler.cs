@@ -25,10 +25,11 @@ public partial class MessageEffectHandler : IEffectHandler
                 break;
 
             case UnsubscribeMessageEffect unsubMsg:
-                var unsubMsgKey = MessageCorrelationKey.Build(unsubMsg.MessageName, unsubMsg.CorrelationKey);
-                var unsubMsgGrain = context.GrainFactory.GetGrain<IMessageCorrelationGrain>(unsubMsgKey);
                 try
                 {
+                    // Key building is inside the try too: an invalid key is a cleanup failure.
+                    var unsubMsgKey = MessageCorrelationKey.Build(unsubMsg.MessageName, unsubMsg.CorrelationKey);
+                    var unsubMsgGrain = context.GrainFactory.GetGrain<IMessageCorrelationGrain>(unsubMsgKey);
                     await unsubMsgGrain.Unsubscribe();
                 }
                 catch (Exception ex)

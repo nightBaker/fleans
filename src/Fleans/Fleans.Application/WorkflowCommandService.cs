@@ -80,10 +80,13 @@ public partial class WorkflowCommandService : IWorkflowCommandService
         // Validated here too: a correlated delivery below never reaches a start event.
         BusinessIdRules.Validate(businessId);
 
-        // Try correlation-based delivery first if a correlation key is provided
-        if (!string.IsNullOrWhiteSpace(correlationKey))
+        // Try correlation-based delivery first if a correlation key is provided. A key over the
+        // length limit can have no subscriber, so it goes straight to the start-event path.
+        var grainKey = string.IsNullOrWhiteSpace(correlationKey)
+            ? null
+            : MessageCorrelationKey.TryBuild(messageName, correlationKey);
+        if (grainKey is not null)
         {
-            var grainKey = MessageCorrelationKey.Build(messageName, correlationKey);
             var correlationGrain = _grainFactory.GetGrain<IMessageCorrelationGrain>(grainKey);
             var delivered = await correlationGrain.DeliverMessage(variables);
 

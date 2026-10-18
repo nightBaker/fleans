@@ -16,7 +16,15 @@ public class LoggerEventIdUniquenessTests
         RegexOptions.Singleline | RegexOptions.Compiled);
 
     private static readonly Regex EventIdPattern = new(@"EventId\s*=\s*(?<id>\d+)", RegexOptions.Compiled);
-    private static readonly Regex MessagePattern = new(@"Message\s*=\s*(?<msg>""(?:[^""\\]|\\.)*"")", RegexOptions.Compiled);
+
+    /// <summary>
+    /// EventIds deliberately declared more than once. Each entry must be one event logged from
+    /// several classes — add one only with a note in the EventId catalog.
+    /// </summary>
+    private static readonly Dictionary<int, string> SharedEventIds = new()
+    {
+        [11100] = "SSL without certificate paths — KafkaQueueAdapter, KafkaQueueAdapterReceiver, KafkaQueueAdapterFactory",
+    };
 
     [TestMethod]
     public void EveryLoggerMessageEventId_IsUsedForOneEventOnly()
@@ -28,7 +36,7 @@ public class LoggerEventIdUniquenessTests
                         && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"));
 
         // Act
-        var events = new List<(int Id, string Method, string Message, string Location)>();
+        var events = new List<(int Id, string Method, string Location)>();
         foreach (var file in files)
         {
             var source = File.ReadAllText(file);
@@ -42,16 +50,13 @@ public class LoggerEventIdUniquenessTests
                 events.Add((
                     int.Parse(id.Groups["id"].Value),
                     match.Groups["method"].Value,
-                    MessagePattern.Match(args).Groups["msg"].Value,
                     $"{Path.GetRelativePath(sourceRoot, file)}:{line}"));
             }
         }
 
-        // The same event logged from sibling classes (same method name and message,
-        // e.g. 11100 in the Kafka adapter classes) may share an EventId.
         var collisions = events
             .GroupBy(e => e.Id)
-            .Where(g => g.Select(e => (e.Method, e.Message)).Distinct().Count() > 1)
+            .Where(g => g.Count() > 1 && !SharedEventIds.ContainsKey(g.Key))
             .Select(g => $"{g.Key}: " + string.Join(", ", g.Select(e => $"{e.Method} ({e.Location})")))
             .ToList();
 

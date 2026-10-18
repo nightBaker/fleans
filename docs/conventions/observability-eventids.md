@@ -6,9 +6,9 @@ here when a new class starts emitting structured logs.
 
 **Every EventId names one event.** `LoggerEventIdUniquenessTests` (`Fleans.Application.Tests`)
 scans `src/Fleans/**/*.cs` and fails when two `[LoggerMessage]` declarations share an EventId
-but differ in method name or message — alerts keyed on an EventId must not fire on an
-unrelated event. The only sharing allowed is the same event logged from sibling classes
-(11100).
+— alerts keyed on an EventId must not fire on an unrelated event. The only exceptions are
+listed in the test's `SharedEventIds` (today 11100: one event logged from three sibling Kafka
+classes); add to it only for the same event, and note it here.
 
 For the architectural background (filter pattern, scope-field semantics, RequestContext
 propagation), see [`docs/plans/2026-02-08-structured-workflow-logging.md`](../plans/2026-02-08-structured-workflow-logging.md).

@@ -958,11 +958,15 @@ public partial class WorkflowInstance :
         return ValueTask.FromResult(result);
     }
 
-    /// <summary>
-    /// In-silo read access to the state for the test-only <c>WorkflowInstanceInspector</c> grain
-    /// extension, so test probes stay off the remotely callable grain interface.
-    /// </summary>
-    internal WorkflowInstanceState InspectionState => State;
+    // In-silo reads for the test-only WorkflowInstanceInspector grain extension, so test probes
+    // stay off the remotely callable grain interface. They return copies: no caller gets a
+    // handle on the event-sourced state.
+    internal IReadOnlyDictionary<Guid, TransactionOutcomeRecord> CopyTransactionOutcomes()
+        => new Dictionary<Guid, TransactionOutcomeRecord>(State.TransactionOutcomes);
+
+    internal IReadOnlyList<string> CopyPendingOperationKeys() => State.PendingOperations.Keys.ToList();
+
+    internal IReadOnlyList<string> CopyAppliedOperationKeys() => State.AppliedOperations.Keys.ToList();
 
     public ValueTask<IReadOnlyList<CompensationLogEntrySnapshot>> GetCompensationLog()
     {
