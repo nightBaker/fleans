@@ -299,7 +299,8 @@ public abstract class WorkflowTestBase
                     // journal tail, not only from a full replay.
                     services.Configure<FleansPersistenceOptions>(o => o.SnapshotInterval = TestSnapshotInterval);
                     services.AddSingleton<EfCoreEventStore>();
-                    services.AddSingleton<IEventStore>(sp => sp.GetRequiredService<EfCoreEventStore>());
+                    services.AddSingleton<IEventStore>(sp =>
+                        new FaultInjectingEventStore(sp.GetRequiredService<EfCoreEventStore>()));
                     services.AddApplication();
                     services.Configure<WorkflowVariablesOptions>(o => o.MaxSizeBytes = TestMaxVariablesSizeBytes);
 

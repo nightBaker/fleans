@@ -1,5 +1,6 @@
 using Fleans.Application.Grains;
 using Fleans.Application.Logging;
+using Fleans.Application.Observability;
 using Fleans.Application.Placement;
 using Fleans.Application.Scripts;
 using Fleans.Domain.Events;
@@ -69,6 +70,7 @@ public partial class WorkflowExecuteScriptEventHandler : Grain, IWorkflowExecute
             catch (Exception failEx)
             {
                 LogFailActivityFailed(failEx, item.ActivityId);
+                FleansDiagnostics.OnWorkflowStalled("script");
                 throw; // Let stream provider retry — domain model idempotency guards handle duplicates
             }
         }

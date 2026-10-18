@@ -2,6 +2,7 @@ using Fleans.Application.Conditions;
 using Fleans.Application.Events;
 using Fleans.Application.Grains;
 using Fleans.Application.Logging;
+using Fleans.Application.Observability;
 using Fleans.Application.Placement;
 using Fleans.Domain.Events;
 using Microsoft.Extensions.DependencyInjection;
@@ -72,6 +73,7 @@ public partial class WorkflowEvaluateConditionEventHandler : Grain, IWorkflowEva
             catch (Exception failEx)
             {
                 LogFailActivityFailed(failEx, item.ActivityId);
+                FleansDiagnostics.OnWorkflowStalled("condition");
                 throw; // Let stream provider retry — domain model idempotency guards handle duplicates
             }
         }

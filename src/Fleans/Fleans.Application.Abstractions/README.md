@@ -4,8 +4,9 @@ Abstractions package for Fleans worker plugins. Contains the Orleans grain inter
 span Core ↔ Worker silos (`IScriptExecutorGrain`, `IConditionExpressionEvaluatorGrain`,
 `ICustomTaskCatalogGrain`, narrow `IWorkflowInstanceCallback`), the custom-task schema
 records (`CustomTaskParameterSchema`, `CustomTaskRegistration`, `CustomTaskCatalogEntry`),
-`MappingResolver`, `WorkflowLoggingContext` / `WorkflowContextKeys`, and the stream-namespace
-constants (`WorkflowEventStreams`).
+`MappingResolver`, `WorkflowLoggingContext` / `WorkflowContextKeys`, the stream-namespace
+constants (`WorkflowEventStreams`), and the `Fleans` meter and activity source
+(`FleansDiagnostics`).
 
 Depends only on `Fleans.Domain.Abstractions` (the true leaf) + `Microsoft.Orleans.Sdk` +
 `Microsoft.Extensions.Logging.Abstractions`. No reference to `Fleans.Application`,

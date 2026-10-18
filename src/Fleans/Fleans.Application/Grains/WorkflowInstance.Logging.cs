@@ -480,6 +480,10 @@ public partial class WorkflowInstance
         Message = "Reading the read-model projection version failed; rebuilding the projection")]
     private partial void LogProjectionVersionReadFailed(Exception exception);
 
+    [LoggerMessage(EventId = 1137, Level = LogLevel.Error,
+        Message = "Journal append failed or conflicted; Orleans re-read the state, so this activation rejects calls and deactivates. The next activation replays the journal")]
+    private partial void LogStateReloaded();
+
     [LoggerMessage(EventId = 1140, Level = LogLevel.Warning,
         Message = "Variables of {Size} bytes exceed the {Limit}-byte limit (Fleans:Variables:MaxSizeBytes): rejected, or dropped from an activity failure")]
     private partial void LogVariablesTooLarge(int size, int limit);

@@ -3,6 +3,7 @@ using Fleans.Application.Conditions;
 using Fleans.Application.Events;
 using Fleans.Application.Grains;
 using Fleans.Application.Logging;
+using Fleans.Application.Observability;
 using Fleans.Application.Placement;
 using Fleans.Domain.Events;
 using Microsoft.Extensions.DependencyInjection;
@@ -80,6 +81,7 @@ public partial class WorkflowEvaluateActivationConditionEventHandler : Grain, IW
             catch (Exception failEx)
             {
                 LogFailActivityFailed(failEx, item.ActivityId);
+                FleansDiagnostics.OnWorkflowStalled("activation_condition");
                 throw;
             }
         }

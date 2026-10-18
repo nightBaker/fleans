@@ -434,6 +434,10 @@ public partial class WorkflowInstance
             try
             {
                 await EnsureExecution();
+                // Journal the turn's own events first: ResolveExternalCompletions below transitions
+                // every ActivityCompleted in the uncommitted buffer, so the turn's completions,
+                // already transitioned by RunExecutionLoop, would be transitioned again (#837).
+                await DrainAndRaiseEvents();
                 SetWorkflowRequestContext();
                 using var scope = BeginWorkflowScope();
 
@@ -522,6 +526,9 @@ public partial class WorkflowInstance
             {
                 _inFlightOperations.TryRemove(pending.OperationId, out _);
                 completion.TrySetException(ex);
+                // The escalation caller awaits its own result TCS, not `completion`.
+                if (pending is PendingChildEscalationRaised failedEscalation)
+                    failedEscalation.Tcs.TrySetException(ex);
             }
         }
 
@@ -571,8 +578,8 @@ public partial class WorkflowInstance
     /// Durably persists a pending external event (RaiseEvent(PendingEventEnqueued) + ConfirmEvents)
     /// and enqueues it to the in-memory drain queue with a fresh TCS. Serialized via _enqueueLock so
     /// the [AlwaysInterleave] enqueue methods don't race on the journal. The state mutation is applied
-    /// directly (this event is independent of the _execution aggregate's uncommitted events), then
-    /// raised under the _draining guard so TransitionState does not double-apply. (#657)
+    /// directly (this event is independent of the _execution aggregate's uncommitted events) before
+    /// the event is raised, like every other event (TransitionState applies nothing). (#657)
     /// </summary>
     private async Task EnqueueDurable(
         string opKey,
@@ -583,6 +590,8 @@ public partial class WorkflowInstance
         await _enqueueLock.WaitAsync();
         try
         {
+            ThrowIfStateReloaded();
+
             // Record the in-flight task BEFORE persisting so a concurrent retry sees it.
             _inFlightOperations[opKey] = inMemory is PendingChildEscalationRaised esc
                 ? esc.Tcs.Task
@@ -594,16 +603,9 @@ public partial class WorkflowInstance
             State.AddPendingOperation(opKey, payload);
             LogProcessingPendingEvent(nameof(Fleans.Domain.Events.PendingEventEnqueued));
 
-            _draining = true;
-            try
-            {
-                RaiseEvent(evt);
-                await ConfirmEvents();
-            }
-            finally
-            {
-                _draining = false;
-            }
+            RaiseEvent(evt);
+            await ConfirmEvents();
+            ThrowIfStateReloaded();
 
             _pendingExternalEvents.Enqueue((inMemory, completion));
             EnsurePendingEventsTimerRegistered();
@@ -656,24 +658,32 @@ public partial class WorkflowInstance
     /// </summary>
     private async Task DrainAndRaiseEvents()
     {
+        ThrowIfStateReloaded();
         var events = _execution!.GetUncommittedEvents();
         if (events.Count == 0) return;
 
-        _draining = true;
-        try
+        foreach (var evt in events)
         {
-            foreach (var evt in events)
-            {
-                LogEvent(evt);
-                RaiseEvent(evt);
-            }
-            _execution.ClearUncommittedEvents();
-            await ConfirmEvents();
+            LogEvent(evt);
+            RaiseEvent(evt);
         }
-        finally
-        {
-            _draining = false;
-        }
+        _execution.ClearUncommittedEvents();
+        await ConfirmEvents();
+        ThrowIfStateReloaded();
+    }
+
+    /// <summary>
+    /// Rejects the call once Orleans has swapped State for a re-read copy (#845). The journal is
+    /// intact, so the caller's retry (stream redelivery, callback retry) lands on the next
+    /// activation, which replays it. Thrown before more state is applied to, or read from, the old
+    /// object — and after a confirm, so the turn that hit the swap stops there too.
+    /// </summary>
+    private void ThrowIfStateReloaded()
+    {
+        if (_stateReloaded)
+            throw new InvalidOperationException(
+                $"Workflow instance {this.GetPrimaryKey()} re-read its state after a failed or conflicting " +
+                "journal append; this activation is deactivating. Retry the call.");
     }
 
     private void LogEvent(WorkflowEvent evt)

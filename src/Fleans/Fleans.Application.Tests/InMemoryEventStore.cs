@@ -89,3 +89,59 @@ internal class FaultInjectingWorkflowStateProjection(IWorkflowStateProjection in
         return inner.WriteAsync(grainId, state, version);
     }
 }
+
+/// <summary>
+/// Wraps the real event store so a test can hold or fail a chosen grain's next appends, to drive
+/// the grain's journal writes into a chosen interleaving (#846) or through Orleans' re-read after a
+/// failed append (#845). Other grains and later appends pass straight through.
+/// </summary>
+internal class FaultInjectingEventStore(IEventStore inner) : IEventStore
+{
+    /// <summary>One held append: <see cref="Entered"/> completes when it reaches the store, and it waits for <see cref="Release"/>.</summary>
+    public sealed class Gate
+    {
+        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    private static readonly ConcurrentDictionary<Guid, ConcurrentQueue<Gate>> Gates = new();
+    private static readonly ConcurrentDictionary<Guid, int> FailuresLeft = new();
+
+    /// <summary>Holds the grain's next <paramref name="count"/> appends, one gate each, in order.</summary>
+    public static Gate[] HoldNextAppends(Guid instanceId, int count)
+    {
+        var gates = Enumerable.Range(0, count).Select(_ => new Gate()).ToArray();
+        Gates[instanceId] = new ConcurrentQueue<Gate>(gates);
+        return gates;
+    }
+
+    public static void FailNextAppends(Guid instanceId, int count) => FailuresLeft[instanceId] = count;
+
+    public int SnapshotInterval => inner.SnapshotInterval;
+
+    public Task<(WorkflowInstanceState? State, int Version)> ReadSnapshotAsync(Guid instanceId) =>
+        inner.ReadSnapshotAsync(instanceId);
+
+    public Task<IReadOnlyList<WorkflowEvent>> ReadEventsAsync(Guid instanceId, int afterVersion) =>
+        inner.ReadEventsAsync(instanceId, afterVersion);
+
+    public async Task<bool> AppendEventsAsync(Guid instanceId, IReadOnlyList<WorkflowEvent> events, int expectedVersion)
+    {
+        if (Gates.TryGetValue(instanceId, out var gates) && gates.TryDequeue(out var gate))
+        {
+            gate.Entered.TrySetResult();
+            await gate.Release.Task;
+        }
+
+        if (FailuresLeft.TryGetValue(instanceId, out var left) && left > 0)
+        {
+            FailuresLeft[instanceId] = left - 1;
+            throw new TimeoutException($"Injected append failure for {instanceId}");
+        }
+
+        return await inner.AppendEventsAsync(instanceId, events, expectedVersion);
+    }
+
+    public Task WriteSnapshotAsync(Guid instanceId, int version, WorkflowInstanceState state) =>
+        inner.WriteSnapshotAsync(instanceId, version, state);
+}
