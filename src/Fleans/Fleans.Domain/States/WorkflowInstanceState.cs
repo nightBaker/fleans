@@ -108,23 +108,6 @@ public class WorkflowInstanceState
             .ToHashSet();
     }
 
-    // Dirty-flag constants for collection change tracking. Uses int bitmask
-    // to avoid ORLEANS0004 (code gen requires [GenerateSerializer] on custom
-    // enum types). UserTasks ([Id(14)]) excluded — persisted by IUserTaskGrain.
-    private const int DirtyEntries = 1;
-    private const int DirtyVariableStates = 2;
-    private const int DirtyConditionSequenceStates = 4;
-    private const int DirtyGatewayForks = 8;
-    private const int DirtyTimerCycleTracking = 16;
-
-    // Serialized (Orleans 10 requires [Id()] on all fields) but semantically
-    // transient — cleared after each WriteAsync. Defaults to 0 after snapshot
-    // restore, which is correct since freshly loaded state has no pending changes.
-    [Id(16)]
-    private int _dirtyFlags;
-
-    private const int DirtyComplexGatewayJoinStates = 32;
-
     [Id(17)]
     public List<ComplexGatewayJoinState> ComplexGatewayJoinStates { get; private set; } = [];
 
@@ -133,9 +116,6 @@ public class WorkflowInstanceState
     // rebuilt from TransactionOutcomeSet events on activation.
     [Id(18)]
     public Dictionary<Guid, TransactionOutcomeRecord> TransactionOutcomes { get; private set; } = new();
-
-    private const int DirtyCompensationLog = 64;
-    private const int DirtyConditionalWatchers = 128;
 
     [Id(23)]
     public List<ConditionalEventWatcherState> ConditionalWatchers { get; private set; } = [];
@@ -188,47 +168,26 @@ public class WorkflowInstanceState
     [Id(27)]
     public Dictionary<string, PendingEventResult?> AppliedOperations { get; private set; } = new();
 
-    private const int DirtyPendingOperations = 256;
-
-    /// <summary>
-    /// Returns the dirty flags and clears them in one step. A writer takes them before its first
-    /// await, so a mutation that lands while the write is in flight sets its flag again and is
-    /// written next time instead of being cleared unwritten.
-    /// </summary>
-    internal int TakeDirtyFlags()
-    {
-        var flags = _dirtyFlags;
-        _dirtyFlags = 0;
-        return flags;
-    }
-
-    /// <summary>Puts back flags taken by a write that failed.</summary>
-    internal void RestoreDirtyFlags(int flags) => _dirtyFlags |= flags;
-
     // ── Pending external events (issue #657) ────────────────────────────────────────
 
     public void AddPendingOperation(string opKey, PendingExternalEventPayload payload)
     {
         PendingOperations[opKey] = payload;
-        _dirtyFlags |= DirtyPendingOperations;
     }
 
     public void RemovePendingOperation(string opKey)
     {
         PendingOperations.Remove(opKey);
-        _dirtyFlags |= DirtyPendingOperations;
     }
 
     public void RecordAppliedOperation(string opKey, PendingEventResult? result)
     {
         AppliedOperations[opKey] = result;
-        _dirtyFlags |= DirtyPendingOperations;
     }
 
     public void ClearAppliedOperations()
     {
         AppliedOperations.Clear();
-        _dirtyFlags |= DirtyPendingOperations;
     }
 
     public bool TryGetAppliedOperation(string opKey, out PendingEventResult? result)
@@ -275,7 +234,6 @@ public class WorkflowInstanceState
         var entry = GetActiveEntry(activityInstanceId);
         entry.Complete(at);
         ActiveEntryIds.Remove(activityInstanceId);
-        _dirtyFlags |= DirtyEntries;
     }
 
     public void FailEntry(Guid activityInstanceId, string errorCode, string errorMessage, DateTimeOffset at)
@@ -283,7 +241,6 @@ public class WorkflowInstanceState
         var entry = GetActiveEntry(activityInstanceId);
         entry.Fail(errorCode, errorMessage, at);
         ActiveEntryIds.Remove(activityInstanceId);
-        _dirtyFlags |= DirtyEntries;
     }
 
     public void CancelEntry(Guid activityInstanceId, string reason, DateTimeOffset at)
@@ -291,7 +248,6 @@ public class WorkflowInstanceState
         var entry = GetActiveEntry(activityInstanceId);
         entry.Cancel(reason, at);
         ActiveEntryIds.Remove(activityInstanceId);
-        _dirtyFlags |= DirtyEntries;
     }
 
     public Guid GetRootVariablesId()
@@ -311,7 +267,6 @@ public class WorkflowInstanceState
         BusinessId = businessId;
         CreatedAt = createdAt;
         VariableStates.Add(new WorkflowVariablesState(variablesId, id));
-        _dirtyFlags |= DirtyVariableStates;
     }
 
     public void SetParentInfo(Guid parentWorkflowInstanceId, string parentActivityId)
@@ -337,7 +292,6 @@ public class WorkflowInstanceState
         GatewayForks.Clear();
         ComplexGatewayJoinStates.Clear();
         AppliedOperations.Clear(); // dedup ledger GC: bounded to instance lifetime (#657, Q1')
-        _dirtyFlags |= DirtyGatewayForks | DirtyComplexGatewayJoinStates | DirtyPendingOperations;
         CompletedAt = at;
         IsCompleted = true;
     }
@@ -350,7 +304,6 @@ public class WorkflowInstanceState
         GatewayForks.Clear();
         ComplexGatewayJoinStates.Clear();
         AppliedOperations.Clear(); // dedup ledger GC: bounded to instance lifetime (#657, Q1')
-        _dirtyFlags |= DirtyGatewayForks | DirtyComplexGatewayJoinStates | DirtyPendingOperations;
         CompletedAt = at;
         IsCompleted = true;
         IsCancelled = true;
@@ -369,7 +322,6 @@ public class WorkflowInstanceState
         GatewayForks.Clear();
         ComplexGatewayJoinStates.Clear();
         AppliedOperations.Clear(); // dedup ledger GC: bounded to instance lifetime (#657, Q1')
-        _dirtyFlags |= DirtyGatewayForks | DirtyComplexGatewayJoinStates | DirtyPendingOperations;
         CompletedAt = at;
         IsCompleted = true;
         IsFailed = true;
@@ -382,14 +334,12 @@ public class WorkflowInstanceState
         clonedState.Merge(source.Variables);
 
         VariableStates.Add(clonedState);
-        _dirtyFlags |= DirtyVariableStates;
     }
 
     public void AddChildVariableState(Guid childId, Guid parentVariablesId)
     {
         var childState = new WorkflowVariablesState(childId, Id, parentVariablesId);
         VariableStates.Add(childState);
-        _dirtyFlags |= DirtyVariableStates;
     }
 
     public void AddConditionSequenceStates(Guid activityInstanceId, string[] sequenceFlowIds)
@@ -397,7 +347,6 @@ public class WorkflowInstanceState
         var sequenceStates = sequenceFlowIds.Select(id =>
             new ConditionSequenceState(id, activityInstanceId, Id));
         ConditionSequenceStates.AddRange(sequenceStates);
-        _dirtyFlags |= DirtyConditionSequenceStates;
     }
 
     public void CompleteEntry(Guid activityInstanceId, ExpandoObject variables, Guid variablesId, DateTimeOffset at)
@@ -409,25 +358,21 @@ public class WorkflowInstanceState
     public void ExecuteEntry(Guid activityInstanceId, DateTimeOffset at)
     {
         GetActiveEntry(activityInstanceId).Execute(at);
-        _dirtyFlags |= DirtyEntries;
     }
 
     public void ResetEntryExecuting(Guid activityInstanceId)
     {
         GetActiveEntry(activityInstanceId).ResetExecuting();
-        _dirtyFlags |= DirtyEntries;
     }
 
     public void SetEntryMultiInstanceTotal(Guid activityInstanceId, int total)
     {
         GetActiveEntry(activityInstanceId).SetMultiInstanceTotal(total);
-        _dirtyFlags |= DirtyEntries;
     }
 
     public void SetEntryChildWorkflowInstanceId(Guid activityInstanceId, Guid childWorkflowInstanceId)
     {
         GetActiveEntry(activityInstanceId).SetChildWorkflowInstanceId(childWorkflowInstanceId);
-        _dirtyFlags |= DirtyEntries;
     }
 
     public void AddEntries(IEnumerable<ActivityInstanceEntry> entries)
@@ -446,7 +391,6 @@ public class WorkflowInstanceState
         {
             Entries.AddRange(entries);
         }
-        _dirtyFlags |= DirtyEntries;
     }
 
     public void SetConditionSequenceResult(Guid activityInstanceId, string sequenceId, bool result)
@@ -457,20 +401,17 @@ public class WorkflowInstanceState
             ?? throw new InvalidOperationException("Sequence not found");
 
         sequence.SetResult(result);
-        _dirtyFlags |= DirtyConditionSequenceStates;
     }
 
     public void MergeState(Guid variablesId, ExpandoObject variables)
     {
         GetVariableState(variablesId).Merge(variables);
-        _dirtyFlags |= DirtyVariableStates;
     }
 
     public void RemoveVariableStates(IEnumerable<Guid> variableStateIds)
     {
         var idsToRemove = new HashSet<Guid>(variableStateIds);
         VariableStates.RemoveAll(vs => idsToRemove.Contains(vs.Id));
-        _dirtyFlags |= DirtyVariableStates;
     }
 
     public ExpandoObject GetMergedVariables(Guid variablesStateId)
@@ -516,7 +457,6 @@ public class WorkflowInstanceState
     {
         var fork = new GatewayForkState(forkInstanceId, consumedTokenId, Id);
         GatewayForks.Add(fork);
-        _dirtyFlags |= DirtyGatewayForks;
         return fork;
     }
 
@@ -530,7 +470,6 @@ public class WorkflowInstanceState
     {
         var fork = GetGatewayFork(forkInstanceId);
         fork.CreatedTokenIds.Add(tokenId);
-        _dirtyFlags |= DirtyGatewayForks;
     }
 
     public GatewayForkState? FindForkByToken(Guid tokenId)
@@ -539,7 +478,6 @@ public class WorkflowInstanceState
     public void RemoveGatewayFork(Guid forkInstanceId)
     {
         GatewayForks.RemoveAll(f => f.ForkInstanceId == forkInstanceId);
-        _dirtyFlags |= DirtyGatewayForks;
     }
 
     public TimerDefinition? GetTimerCycleState(Guid hostActivityInstanceId, string timerActivityId)
@@ -557,18 +495,15 @@ public class WorkflowInstanceState
             if (existing is not null)
             {
                 TimerCycleTracking.Remove(existing);
-                _dirtyFlags |= DirtyTimerCycleTracking;
             }
         }
         else if (existing is not null)
         {
             existing.UpdateFrom(definition);
-            _dirtyFlags |= DirtyTimerCycleTracking;
         }
         else
         {
             TimerCycleTracking.Add(new TimerCycleTrackingState(hostActivityInstanceId, timerActivityId, definition, Id));
-            _dirtyFlags |= DirtyTimerCycleTracking;
         }
     }
 
@@ -579,7 +514,6 @@ public class WorkflowInstanceState
     {
         var newState = new ComplexGatewayJoinState(gatewayActivityId, firstActivityInstanceId, activationCondition, workflowInstanceId);
         ComplexGatewayJoinStates.Add(newState);
-        _dirtyFlags |= DirtyComplexGatewayJoinStates;
     }
 
     public void IncrementComplexGatewayTokenCount(string gatewayActivityId)
@@ -587,7 +521,6 @@ public class WorkflowInstanceState
         var state = GetComplexGatewayJoinState(gatewayActivityId)
             ?? throw new InvalidOperationException($"ComplexGatewayJoinState not found for gateway '{gatewayActivityId}'");
         state.IncrementTokenCount();
-        _dirtyFlags |= DirtyComplexGatewayJoinStates;
     }
 
     public void MarkComplexGatewayJoinFired(string gatewayActivityId)
@@ -595,13 +528,11 @@ public class WorkflowInstanceState
         var state = GetComplexGatewayJoinState(gatewayActivityId)
             ?? throw new InvalidOperationException($"ComplexGatewayJoinState not found for gateway '{gatewayActivityId}'");
         state.MarkFired();
-        _dirtyFlags |= DirtyComplexGatewayJoinStates;
     }
 
     public void RemoveComplexGatewayJoinState(string gatewayActivityId)
     {
         ComplexGatewayJoinStates.RemoveAll(s => s.GatewayActivityId == gatewayActivityId);
-        _dirtyFlags |= DirtyComplexGatewayJoinStates;
     }
 
     public void AddConditionalWatcher(Guid activityInstanceId, string activityId,
@@ -615,13 +546,11 @@ public class WorkflowInstanceState
             VariablesId = variablesId,
             LastEvaluatedResult = false
         });
-        _dirtyFlags |= DirtyConditionalWatchers;
     }
 
     public void RemoveConditionalWatcher(Guid activityInstanceId)
     {
         ConditionalWatchers.RemoveAll(w => w.ActivityInstanceId == activityInstanceId);
-        _dirtyFlags |= DirtyConditionalWatchers;
     }
 
     public void UpdateConditionalWatcherResult(Guid activityInstanceId, bool result)
@@ -630,7 +559,6 @@ public class WorkflowInstanceState
         if (watcher != null)
         {
             watcher.LastEvaluatedResult = result;
-            _dirtyFlags |= DirtyConditionalWatchers;
         }
     }
 
@@ -640,7 +568,6 @@ public class WorkflowInstanceState
     {
         CompensationLog.Add(snapshot);
         NextCompensationSequence++;
-        _dirtyFlags |= DirtyCompensationLog;
     }
 
     public void MarkSnapshotCompensated(string activityDefinitionId, Guid? scopeId)
@@ -650,19 +577,16 @@ public class WorkflowInstanceState
                               && s.ScopeId == scopeId
                               && !s.IsCompensated);
         snapshot?.MarkCompensated();
-        _dirtyFlags |= DirtyCompensationLog;
     }
 
     public void StartCompensationWalk(Guid? scopeId, CompensationWalkState walk)
     {
         ActiveCompensationWalks[scopeId ?? Guid.Empty] = walk;
-        _dirtyFlags |= DirtyCompensationLog;
     }
 
     public void ClearCompensationWalk(Guid? scopeId)
     {
         ActiveCompensationWalks.Remove(scopeId ?? Guid.Empty);
-        _dirtyFlags |= DirtyCompensationLog;
     }
 
     public CompensationWalkState? GetCompensationWalk(Guid? scopeId)
@@ -678,14 +602,12 @@ public class WorkflowInstanceState
     public void SetCompensationHandlerInstanceId(Guid? scopeId, Guid handlerInstanceId)
     {
         GetCompensationWalk(scopeId)?.SetCurrentHandler(handlerInstanceId);
-        _dirtyFlags |= DirtyCompensationLog;
     }
 
     public void MarkCurrentHandlerEntry(Guid entryInstanceId)
     {
         var entry = GetActiveEntry(entryInstanceId);
         entry.MarkAsCompensationHandler();
-        _dirtyFlags |= DirtyEntries;
     }
 
     /// <summary>

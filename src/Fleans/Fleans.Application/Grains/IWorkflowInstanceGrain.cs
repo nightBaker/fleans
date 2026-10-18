@@ -85,6 +85,13 @@ public interface IWorkflowInstanceGrain : IWorkflowInstanceCallback, IWorkflowEx
     [ReadOnly]
     ValueTask<IReadOnlyList<CompensationLogEntrySnapshot>> GetCompensationLog();
 
+    /// <summary>
+    /// The instance's activities, variables and condition results, for the admin UI and the REST
+    /// API. The read model holds these only once the instance completes; until then they come from here.
+    /// </summary>
+    [ReadOnly]
+    ValueTask<InstanceStateSnapshot> GetStateSnapshot();
+
     /// <summary>Op-keys currently in the durable pending-events queue (PendingOperations). #657.</summary>
     [ReadOnly]
     ValueTask<IReadOnlyList<string>> GetPendingOperationKeys();

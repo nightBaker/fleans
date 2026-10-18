@@ -247,7 +247,7 @@ public partial class WorkflowInstance :
         if (version > 0 && (projectedVersion is null || projectedVersion < version))
         {
             LogProjectionBehind(projectedVersion ?? -1, version);
-            if (!await TryWriteProjection(grainId, state, version, rebuild: true))
+            if (!await TryWriteProjection(grainId, state, version))
                 ScheduleProjectionRetry();
         }
 
@@ -271,14 +271,14 @@ public partial class WorkflowInstance :
     /// The only way to the read model. Serialized by <see cref="_projectionLock"/>, and never moves
     /// the projected version backwards. Failures are logged and reported, never thrown.
     /// </summary>
-    private async Task<bool> TryWriteProjection(string grainId, WorkflowInstanceState state, int version, bool rebuild)
+    private async Task<bool> TryWriteProjection(string grainId, WorkflowInstanceState state, int version)
     {
         await _projectionLock.WaitAsync();
         try
         {
             if (version < _projectedVersion)
                 return true; // a later write already covered this one
-            await _projection.WriteAsync(grainId, state, version, rebuild);
+            await _projection.WriteAsync(grainId, state, version);
             _projectedVersion = version;
             return true;
         }
@@ -315,7 +315,7 @@ public partial class WorkflowInstance :
         if (!HasUndrainedEvents)
         {
             var version = _journalVersion;
-            if (await TryWriteProjection(this.GetPrimaryKey().ToString(), State, version, rebuild: true))
+            if (await TryWriteProjection(this.GetPrimaryKey().ToString(), State, version))
             {
                 LogProjectionCaughtUp(version);
                 StopProjectionRetry();
@@ -359,7 +359,7 @@ public partial class WorkflowInstance :
         if (HasUndrainedEvents)
             return true;
 
-        if (await TryWriteProjection(grainId, State, version, rebuild: false))
+        if (await TryWriteProjection(grainId, State, version))
             StopProjectionRetry();
         else
             ScheduleProjectionRetry();
@@ -975,6 +975,21 @@ public partial class WorkflowInstance :
     {
         IReadOnlyList<string> result = State.AppliedOperations.Keys.ToList().AsReadOnly();
         return ValueTask.FromResult(result);
+    }
+
+    public async ValueTask<InstanceStateSnapshot> GetStateSnapshot()
+    {
+        // The definition only fills in condition text; the snapshot is served without it, as the
+        // read model does for a completed instance.
+        try
+        {
+            await EnsureWorkflowDefinitionAsync();
+        }
+        catch (Exception ex)
+        {
+            LogStateSnapshotDefinitionUnavailable(ex);
+        }
+        return InstanceStateSnapshots.From(State, _workflowDefinition);
     }
 
     public ValueTask<IReadOnlyList<CompensationLogEntrySnapshot>> GetCompensationLog()

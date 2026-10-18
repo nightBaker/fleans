@@ -483,4 +483,8 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1140, Level = LogLevel.Warning,
         Message = "Variables of {Size} bytes exceed the {Limit}-byte limit (Fleans:Variables:MaxSizeBytes): rejected, or dropped from an activity failure")]
     private partial void LogVariablesTooLarge(int size, int limit);
+
+    [LoggerMessage(EventId = 1141, Level = LogLevel.Warning,
+        Message = "Loading the process definition for a state snapshot failed; condition text is left empty")]
+    private partial void LogStateSnapshotDefinitionUnavailable(Exception exception);
 }

@@ -66,10 +66,10 @@ This means Fleans inherits Orleans' distributed systems guarantees without build
 
 <figure class="arch-diagram" style="--arch-ratio: 1100 / 578">
   <iframe data-arch-src="/fleans/diagrams/event-sourcing-cqrs.html" src="/fleans/diagrams/event-sourcing-cqrs.html?embed=1" title="Event sourcing and CQRS data flow in Fleans" loading="lazy"></iframe>
-  <figcaption>Commands change in-memory grain state, one <code>ConfirmEvents</code> transaction persists the batch, and reads come from a materialized projection instead of event replay. <a href="/fleans/diagrams/event-sourcing-cqrs.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+  <figcaption>Commands change in-memory grain state, one <code>ConfirmEvents</code> transaction persists the batch, and lists and finished instances are read from a materialized projection instead of event replay. A running instance answers from its grain. <a href="/fleans/diagrams/event-sourcing-cqrs.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
 </figure>
 
-**Materialized read-side projection.** The `EfCoreWorkflowStateProjection` writes a denormalized read model after each event batch. UI queries and `GET /instances/{id}/state` never replay events — they read the projection directly. If a projection write fails, the instance retries it for several minutes. If it still fails, or after a silo crash, the instance rebuilds the projection from its events on its next activation.
+**Materialized read-side projection.** The `EfCoreWorkflowStateProjection` writes each instance's row (status, timestamps, business id) after every event batch, so lists and filters never replay events. A finished instance also gets its details — activities, variables, condition results — so `GET /instances/{id}/state` and the admin UI read it straight from the database. For a running instance they ask its grain, which holds the live state. If a projection write fails, the instance retries it for several minutes. If it still fails, or after a silo crash, the instance rebuilds the projection from its events on its next activation.
 
 **Snapshots bound replay.** Every 100 events (`Persistence:SnapshotInterval`) the engine stores the instance's full state. Reactivation loads the latest snapshot and replays only the events after it. The event log stays the source of truth: snapshots and the read model are both derived from it.
 
