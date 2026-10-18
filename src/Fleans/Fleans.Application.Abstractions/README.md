@@ -2,7 +2,8 @@
 
 Abstractions package for Fleans worker plugins. Contains the Orleans grain interfaces that
 span Core ↔ Worker silos (`IScriptExecutorGrain`, `IConditionExpressionEvaluatorGrain`,
-`ICustomTaskCatalogGrain`, narrow `IWorkflowInstanceCallback`), the custom-task schema
+`ICustomTaskCatalogGrain`, narrow `IWorkflowInstanceCallback`, and the transient
+`WorkflowInstanceStaleException` its calls can throw — retry it), the custom-task schema
 records (`CustomTaskParameterSchema`, `CustomTaskRegistration`, `CustomTaskCatalogEntry`),
 `MappingResolver`, `WorkflowLoggingContext` / `WorkflowContextKeys`, the stream-namespace
 constants (`WorkflowEventStreams`), and the `Fleans` meter and activity source

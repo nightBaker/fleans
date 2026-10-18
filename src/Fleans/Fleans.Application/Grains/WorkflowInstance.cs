@@ -87,10 +87,10 @@ public partial class WorkflowInstance :
     private bool _activated;
 
     /// <summary>
-    /// Orleans re-read the state mid-write (a failed or conflicting append) and replaced
-    /// <c>State</c> with a new object, while the aggregate and the in-flight turn still hold the
-    /// old one (#845). Nothing in this activation can be trusted any more: it only rejects calls
-    /// until it deactivates, and the next activation replays the journal.
+    /// A re-read after a failed or conflicting append found the journal ahead of this activation,
+    /// and Orleans replaced <c>State</c> with that journal's state while the aggregate still holds
+    /// the old object (#845). The activation rejects new calls until it deactivates; the next one
+    /// replays the journal.
     /// </summary>
     private bool _stateReloaded;
 
@@ -208,16 +208,27 @@ public partial class WorkflowInstance :
 
     public async Task<KeyValuePair<int, WorkflowInstanceState>> ReadStateFromStorage()
     {
+        var instanceId = this.GetPrimaryKey();
         if (_activated && !_stateReloaded)
         {
-            // Orleans re-reads after a failed or conflicting append and swaps State for the
-            // object returned here; the aggregate keeps the old one (#845). Retire the activation.
+            // Orleans re-reads after a failed or conflicting append, swaps State for the object
+            // returned here, then retries the batch on it (#845). The live State already holds the
+            // batch (the aggregate applies before RaiseEvent): if nothing was stored past what this
+            // activation knows, it is exactly the journal plus that retried batch — keep it.
+            var stored = await _eventStore.ReadEventsAsync(instanceId, _journalVersion);
+            if (stored.Count == 0)
+            {
+                LogAppendRetryKeepsState(_journalVersion);
+                return new(_journalVersion, State);
+            }
+
+            // The journal moved on without this activation (a write that failed but was stored,
+            // or another writer): State becomes the journal's, the aggregate is out of date.
             _stateReloaded = true;
-            LogStateReloaded();
+            LogStateReloaded(_journalVersion, _journalVersion + stored.Count);
             DeactivateOnIdle();
         }
 
-        var instanceId = this.GetPrimaryKey();
         var grainId = instanceId.ToString();
         // Independent of the state reads below, so it runs alongside them.
         var projectedVersionTask = ReadProjectedVersion(grainId);

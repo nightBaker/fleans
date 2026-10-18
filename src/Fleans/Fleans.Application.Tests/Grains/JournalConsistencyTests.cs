@@ -10,15 +10,23 @@ namespace Fleans.Application.Tests.Grains;
 
 /// <summary>
 /// The live <c>State</c> of a <see cref="WorkflowInstance"/> must stay what its journal says when
-/// journal writes interleave or fail (#869). Each test drives one of the three ways it used to
-/// go wrong: a batch applied twice by Orleans after an interleaved enqueue (#846), a queued
-/// callback that re-transitioned the turn's completions (#837), and a re-read after a failed
-/// append that left the aggregate on the old state object (#845).
+/// journal writes interleave or fail (#869). The tests drive the ways it used to go wrong: a batch
+/// applied twice by Orleans after an interleaved enqueue (#846), a queued callback that
+/// re-transitioned the turn's completions (#837), and a re-read after a failed append that left the
+/// aggregate on the old state object (#845). Interleavings are ordered by gates on the event store
+/// and by log entries the grain writes just before <c>RaiseEvent</c>, not by delays.
 /// </summary>
 [TestClass]
+[DoNotParallelize] // CapturedLogEvents.Capture is process-wide
 public class JournalConsistencyTests : WorkflowTestBase
 {
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
+
+    private const int WorkflowCompletedEventId = 3002;
+    private const int ProcessingPendingEventEventId = 1074;
+    private const int StateReloadedEventId = 1137;
+    private const int AppendRetryKeepsStateEventId = 1138;
+    private const int PendingEventQueuedEventId = 1142;
 
     private async Task<IWorkflowInstanceGrain> StartedDeployedInstance()
     {
@@ -42,6 +50,17 @@ public class JournalConsistencyTests : WorkflowTestBase
     private async Task<IReadOnlyList<WorkflowEvent>> Journal(Guid instanceId) =>
         await GetSiloService<IEventStore>().ReadEventsAsync(instanceId, 0);
 
+    /// <summary>Waits until a captured entry with <paramref name="eventId"/> matches.</summary>
+    private static async Task WaitForLog(int eventId, Func<CapturedLogEvents.Entry, bool> match)
+    {
+        var deadline = DateTime.UtcNow + Timeout;
+        while (!CapturedLogEvents.Entries(eventId).Any(match))
+        {
+            Assert.IsTrue(DateTime.UtcNow < deadline, $"No log entry {eventId} within {Timeout}");
+            await Task.Delay(20);
+        }
+    }
+
     // #846: an [AlwaysInterleave] enqueue confirms while the main turn's batch waits for the next
     // write cycle. When the enqueue's confirm returned first, Orleans applied that batch to State a
     // second time, failed on the already-completed entry, re-read, and left the aggregate behind.
@@ -52,22 +71,23 @@ public class JournalConsistencyTests : WorkflowTestBase
         var grain = await StartedDeployedInstance();
         var instanceId = grain.GetPrimaryKey();
         var opId = GrainFactoryRetryExtensions.ChildCompletedOpId(Guid.NewGuid(), "absent-call");
+        using var capture = CapturedLogEvents.Capture(WorkflowCompletedEventId, PendingEventQueuedEventId);
         var gates = FaultInjectingEventStore.HoldNextAppends(instanceId, 2);
 
         // Act — the enqueue's append (write cycle 1) is held at the store.
         var enqueue = grain.OnChildWorkflowCompleted(opId, "absent-call", new ExpandoObject());
         await gates[0].Entered.Task.WaitAsync(Timeout);
 
-        // The main turn applies its batch and raises it; it waits behind cycle 1 for cycle 2.
+        // The main turn raises its batch (logged just before RaiseEvent) and waits for cycle 2.
         var complete = grain.CompleteActivity("task", new ExpandoObject());
-        await Task.Delay(500);
+        await WaitForLog(WorkflowCompletedEventId, _ => true);
 
-        // Cycle 1 commits, so the enqueue's confirm returns while cycle 2 is still appending.
+        // Cycle 1 commits: the enqueue's confirm returns while cycle 2 is still appending.
         gates[0].Release.SetResult();
-        await gates[1].Entered.Task.WaitAsync(Timeout);
-        await Task.Delay(300);
+        var cycle2 = await gates[1].Entered.Task.WaitAsync(Timeout);
+        Assert.AreEqual(1, cycle2.OfType<WorkflowCompleted>().Count(), "Cycle 2 carries the main turn's batch");
+        await WaitForLog(PendingEventQueuedEventId, e => e.Message.Contains(opId));
         gates[1].Release.SetResult();
-
         await complete.WaitAsync(Timeout);
         await enqueue.WaitAsync(Timeout);
 
@@ -122,19 +142,20 @@ public class JournalConsistencyTests : WorkflowTestBase
         await grain.StartWorkflow();
         var instanceId = grain.GetPrimaryKey();
         var opId = GrainFactoryRetryExtensions.ChildCompletedOpId(Guid.NewGuid(), "absent-call");
+        using var capture = CapturedLogEvents.Capture(ProcessingPendingEventEventId);
         var gates = FaultInjectingEventStore.HoldNextAppends(instanceId, 2);
 
-        // Act — catchA's write is held; a callback arrives meanwhile and its write is next.
+        // Act — catchA's write is held; a callback arrives meanwhile and raises its enqueue.
         var complete = grain.CompleteActivity("task", new ExpandoObject());
         await gates[0].Entered.Task.WaitAsync(Timeout);
         var callback = grain.OnChildWorkflowCompleted(opId, "absent-call", new ExpandoObject());
-        await Task.Delay(300);
-        gates[0].Release.SetResult();
+        await WaitForLog(ProcessingPendingEventEventId, e => e.Message.Contains(nameof(PendingEventEnqueued)));
 
-        // The callback's write is held while catchB's write queues behind it, so the callback is in
-        // the queue before `pass` completes and the turn ends.
-        await gates[1].Entered.Task.WaitAsync(Timeout);
-        await Task.Delay(300);
+        // The callback's write is cycle 2, so catchB's write comes after it and the callback is
+        // queued before `pass` completes and the turn ends.
+        gates[0].Release.SetResult();
+        var cycle2 = await gates[1].Entered.Task.WaitAsync(Timeout);
+        Assert.IsTrue(cycle2.OfType<PendingEventEnqueued>().Any(), "Cycle 2 is the callback's enqueue");
         gates[1].Release.SetResult();
 
         await complete.WaitAsync(Timeout);
@@ -150,32 +171,61 @@ public class JournalConsistencyTests : WorkflowTestBase
     }
 
     // #845: a failed append makes Orleans re-read the state and swap State for the new object; the
-    // aggregate kept the old one, so State silently lacked the batch the retry then appended. The
-    // activation now rejects the call and deactivates; the next one replays the journal.
+    // aggregate kept the old one, so State silently lacked the batch the retry then appended. When
+    // nothing was stored meanwhile, the live State is kept and the call succeeds.
     [TestMethod]
-    public async Task FailedAppend_RetiresActivation_NextActivationReplaysJournal()
+    public async Task FailedAppend_JournalUnchanged_KeepsLiveState()
     {
         // Arrange
         var grain = await StartedDeployedInstance();
         var instanceId = grain.GetPrimaryKey();
+        using var capture = CapturedLogEvents.Capture(StateReloadedEventId, AppendRetryKeepsStateEventId);
         FaultInjectingEventStore.FailNextAppends(instanceId, 1);
 
-        // Act — Orleans retries the append after the re-read, so the batch is stored once.
-        await Assert.ThrowsExactlyAsync<InvalidOperationException>(
-            () => grain.CompleteActivity("task", new ExpandoObject()));
+        // Act — Orleans re-reads, then retries the append.
+        await grain.CompleteActivity("task", new ExpandoObject());
 
-        // Assert
+        // Assert — stored once, and the live state is the journal's.
+        Assert.AreEqual(1, CapturedLogEvents.Entries(AppendRetryKeepsStateEventId).Count);
+        Assert.AreEqual(0, CapturedLogEvents.Entries(StateReloadedEventId).Count);
         var journal = await Journal(instanceId);
         Assert.AreEqual(1, journal.OfType<WorkflowCompleted>().Count(), "The retried append stores the batch once");
+        Assert.AreEqual(0, (await grain.GetActiveActivities()).Count);
+        var snapshot = await WaitForCondition(instanceId, s => s.IsCompleted);
+        Assert.AreEqual(0, snapshot.ActiveActivities.Count);
 
-        // Calls reach the new activation once the old one has deactivated.
+        await ForceAllGrainDeactivation(instanceId);
+        Assert.AreEqual(0, (await grain.GetActiveActivities()).Count);
+    }
+
+    // #845: when the journal moved on during the failed append, the aggregate is out of date. The
+    // batch still lands (Orleans appends it on top); the activation retires, and the next one
+    // replays the journal and catches the read model up.
+    [TestMethod]
+    public async Task FailedAppend_JournalMoved_RetiresActivation()
+    {
+        // Arrange
+        var grain = await StartedDeployedInstance();
+        var instanceId = grain.GetPrimaryKey();
+        using var capture = CapturedLogEvents.Capture(StateReloadedEventId);
+        FaultInjectingEventStore.FailNextAppendAfterForeignWrite(instanceId, new VariableScopesRemoved([]));
+
+        // Act
+        await grain.CompleteActivity("task", new ExpandoObject());
+
+        // Assert
+        Assert.AreEqual(1, CapturedLogEvents.Entries(StateReloadedEventId).Count);
+        var journal = await Journal(instanceId);
+        Assert.AreEqual(1, journal.OfType<VariableScopesRemoved>().Count());
+        Assert.AreEqual(1, journal.OfType<WorkflowCompleted>().Count(), "The batch is appended after the foreign write");
+
+        // Calls reach the next activation once the retired one has deactivated.
         var deadline = DateTime.UtcNow + Timeout;
         while ((await grain.GetActiveActivities()).Count > 0 && DateTime.UtcNow < deadline)
             await Task.Delay(100);
         Assert.AreEqual(0, (await grain.GetActiveActivities()).Count,
             "The next activation replays the journal, where the workflow completed");
 
-        // The read model skipped the write from the stale State and caught up on activation.
         var snapshot = await WaitForCondition(instanceId, s => s.IsCompleted);
         Assert.AreEqual(0, snapshot.ActiveActivities.Count);
     }

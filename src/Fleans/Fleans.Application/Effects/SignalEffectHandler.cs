@@ -73,7 +73,9 @@ public partial class SignalEffectHandler : IEffectHandler
             await signalGrain.Subscribe(subSig.WorkflowInstanceId, subSig.ActivityId, subSig.HostActivityInstanceId);
             LogSignalSubscriptionRegistered(subSig.ActivityId, subSig.SignalName);
         }
-        catch (Exception ex)
+        // The persist found the instance retiring (#845): not a registration failure — the turn
+        // stops and the caller's retry reaches the next activation.
+        catch (Exception ex) when (ex is not WorkflowInstanceStaleException)
         {
             LogSignalSubscriptionFailed(subSig.ActivityId, subSig.SignalName, ex);
             await context.ProcessFailureEffects(subSig.ActivityId, subSig.HostActivityInstanceId, ex);

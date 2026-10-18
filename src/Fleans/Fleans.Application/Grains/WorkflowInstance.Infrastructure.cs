@@ -20,15 +20,16 @@ public partial class WorkflowInstance
     /// Must be called between the aggregate method and RunExecutionLoop so that
     /// newly-spawned successor activities are picked up by the loop.
     /// </summary>
-    private async Task ResolveExternalCompletions()
+    private async Task ResolveExternalCompletions(IReadOnlySet<Guid>? alreadyTransitioned = null)
     {
         var definition = await GetWorkflowDefinition();
 
-        // Collect entry IDs from ActivityCompleted events in uncommitted events.
-        // These are entries completed externally by the aggregate method call.
+        // Collect entry IDs from ActivityCompleted events in uncommitted events, except the ones
+        // already transitioned. These are entries completed externally by the aggregate method call.
         var completedIds = _execution!.GetUncommittedEvents()
             .OfType<ActivityCompleted>()
             .Select(e => e.ActivityInstanceId)
+            .Where(id => alreadyTransitioned is null || !alreadyTransitioned.Contains(id))
             .ToList();
 
         if (completedIds.Count > 0)
@@ -434,10 +435,13 @@ public partial class WorkflowInstance
             try
             {
                 await EnsureExecution();
-                // Journal the turn's own events first: ResolveExternalCompletions below transitions
-                // every ActivityCompleted in the uncommitted buffer, so the turn's completions,
-                // already transitioned by RunExecutionLoop, would be transitioned again (#837).
-                await DrainAndRaiseEvents();
+                // The buffer may still hold the turn's own completions, which RunExecutionLoop has
+                // transitioned already; resolve only the ones this callback emits (#837). By id, not
+                // by position: an effect's PersistStateAsync drains the buffer.
+                var turnCompletions = _execution!.GetUncommittedEvents()
+                    .OfType<ActivityCompleted>()
+                    .Select(e => e.ActivityInstanceId)
+                    .ToHashSet();
                 SetWorkflowRequestContext();
                 using var scope = BeginWorkflowScope();
 
@@ -512,7 +516,7 @@ public partial class WorkflowInstance
                     else
                         _execution!.EmitPendingEventDrained(pending.OperationId);
                 }
-                await ResolveExternalCompletions();
+                await ResolveExternalCompletions(turnCompletions);
                 await RunExecutionLoop();
 
                 // Persist state before signaling success to the caller.
@@ -605,7 +609,7 @@ public partial class WorkflowInstance
 
             RaiseEvent(evt);
             await ConfirmEvents();
-            ThrowIfStateReloaded();
+            LogPendingEventQueued(opKey);
 
             _pendingExternalEvents.Enqueue((inMemory, completion));
             EnsurePendingEventsTimerRegistered();
@@ -669,21 +673,21 @@ public partial class WorkflowInstance
         }
         _execution.ClearUncommittedEvents();
         await ConfirmEvents();
-        ThrowIfStateReloaded();
     }
 
     /// <summary>
-    /// Rejects the call once Orleans has swapped State for a re-read copy (#845). The journal is
-    /// intact, so the caller's retry (stream redelivery, callback retry) lands on the next
-    /// activation, which replays it. Thrown before more state is applied to, or read from, the old
-    /// object — and after a confirm, so the turn that hit the swap stops there too.
+    /// Rejects the call once a re-read found the journal ahead of this activation (#845): the
+    /// aggregate's state is out of date, so nothing more is applied to it or journaled from it.
+    /// Checked before a call changes state and before each drain's <c>RaiseEvent</c>. A drain that
+    /// already confirmed is not undone — its batch is in the journal. The exception is transient:
+    /// the caller's retry (stream redelivery, <c>CallWithRetry</c>) reaches the next activation.
     /// </summary>
     private void ThrowIfStateReloaded()
     {
         if (_stateReloaded)
-            throw new InvalidOperationException(
-                $"Workflow instance {this.GetPrimaryKey()} re-read its state after a failed or conflicting " +
-                "journal append; this activation is deactivating. Retry the call.");
+            throw new WorkflowInstanceStaleException(
+                $"Workflow instance {this.GetPrimaryKey()} found its journal ahead of its state after a failed " +
+                "or conflicting append; this activation is deactivating. Retry the call.");
     }
 
     private void LogEvent(WorkflowEvent evt)

@@ -481,8 +481,16 @@ public partial class WorkflowInstance
     private partial void LogProjectionVersionReadFailed(Exception exception);
 
     [LoggerMessage(EventId = 1137, Level = LogLevel.Error,
-        Message = "Journal append failed or conflicted; Orleans re-read the state, so this activation rejects calls and deactivates. The next activation replays the journal")]
-    private partial void LogStateReloaded();
+        Message = "Journal append failed or conflicted and the journal moved from version {KnownVersion} to {StoredVersion} without this activation; it rejects calls and deactivates, and the next activation replays the journal")]
+    private partial void LogStateReloaded(int knownVersion, int storedVersion);
+
+    [LoggerMessage(EventId = 1138, Level = LogLevel.Warning,
+        Message = "Journal append failed; nothing was stored past version {Version}, so the live state is kept and Orleans retries the append")]
+    private partial void LogAppendRetryKeepsState(int version);
+
+    [LoggerMessage(EventId = 1142, Level = LogLevel.Debug,
+        Message = "Pending event {OperationId} journaled; queued for the next turn")]
+    private partial void LogPendingEventQueued(string operationId);
 
     [LoggerMessage(EventId = 1140, Level = LogLevel.Warning,
         Message = "Variables of {Size} bytes exceed the {Limit}-byte limit (Fleans:Variables:MaxSizeBytes): rejected, or dropped from an activity failure")]

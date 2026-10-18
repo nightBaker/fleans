@@ -265,6 +265,9 @@ public abstract class WorkflowTestBase
                 .ConfigureServices(services =>
                 {
                     services.AddSingleton<ILoggerProvider, CapturedLogEvents.Provider>();
+                    // Fleans' Debug entries reach only the capture, so tests can wait on them as sync points.
+                    services.Configure<LoggerFilterOptions>(o =>
+                        o.AddFilter<CapturedLogEvents.Provider>("Fleans", LogLevel.Debug));
 
                     services.AddDbContextFactory<FleanCommandDbContext>(options =>
                         options.UseFleansSqlite("DataSource=file::memory:?cache=shared"));

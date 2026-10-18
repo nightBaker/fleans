@@ -93,19 +93,24 @@ internal class FaultInjectingWorkflowStateProjection(IWorkflowStateProjection in
 /// <summary>
 /// Wraps the real event store so a test can hold or fail a chosen grain's next appends, to drive
 /// the grain's journal writes into a chosen interleaving (#846) or through Orleans' re-read after a
-/// failed append (#845). Other grains and later appends pass straight through.
+/// failed append (#845), with or without the journal moving on meanwhile. Other grains and later
+/// appends pass straight through.
 /// </summary>
 internal class FaultInjectingEventStore(IEventStore inner) : IEventStore
 {
-    /// <summary>One held append: <see cref="Entered"/> completes when it reaches the store, and it waits for <see cref="Release"/>.</summary>
+    /// <summary>
+    /// One held append: <see cref="Entered"/> completes with the batch when it reaches the store, and
+    /// the append waits for <see cref="Release"/>.
+    /// </summary>
     public sealed class Gate
     {
-        public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<IReadOnlyList<WorkflowEvent>> Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 
     private static readonly ConcurrentDictionary<Guid, ConcurrentQueue<Gate>> Gates = new();
     private static readonly ConcurrentDictionary<Guid, int> FailuresLeft = new();
+    private static readonly ConcurrentDictionary<Guid, WorkflowEvent> ForeignWrites = new();
 
     /// <summary>Holds the grain's next <paramref name="count"/> appends, one gate each, in order.</summary>
     public static Gate[] HoldNextAppends(Guid instanceId, int count)
@@ -116,6 +121,13 @@ internal class FaultInjectingEventStore(IEventStore inner) : IEventStore
     }
 
     public static void FailNextAppends(Guid instanceId, int count) => FailuresLeft[instanceId] = count;
+
+    /// <summary>
+    /// Fails the grain's next append after storing <paramref name="foreign"/> in its place, as if
+    /// another writer got there first: the journal moves on without the grain.
+    /// </summary>
+    public static void FailNextAppendAfterForeignWrite(Guid instanceId, WorkflowEvent foreign) =>
+        ForeignWrites[instanceId] = foreign;
 
     public int SnapshotInterval => inner.SnapshotInterval;
 
@@ -129,8 +141,14 @@ internal class FaultInjectingEventStore(IEventStore inner) : IEventStore
     {
         if (Gates.TryGetValue(instanceId, out var gates) && gates.TryDequeue(out var gate))
         {
-            gate.Entered.TrySetResult();
+            gate.Entered.TrySetResult(events);
             await gate.Release.Task;
+        }
+
+        if (ForeignWrites.TryRemove(instanceId, out var foreign))
+        {
+            await inner.AppendEventsAsync(instanceId, [foreign], expectedVersion);
+            throw new TimeoutException($"Injected append failure after a foreign write for {instanceId}");
         }
 
         if (FailuresLeft.TryGetValue(instanceId, out var left) && left > 0)

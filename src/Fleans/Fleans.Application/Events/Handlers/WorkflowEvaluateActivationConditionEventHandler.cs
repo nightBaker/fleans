@@ -71,7 +71,9 @@ public partial class WorkflowEvaluateActivationConditionEventHandler : Grain, IW
 
             await workflowInstance.CompleteActivationCondition(item.ActivityId, item.ActivityInstanceId, result);
         }
-        catch (Exception ex)
+        // A retiring instance rejected the call (#845): nothing was applied, so let the stream
+        // redeliver to its next activation rather than fail the activity.
+        catch (Exception ex) when (ex is not WorkflowInstanceStaleException)
         {
             LogActivationConditionEvaluationFailed(ex, item.ActivityId, item.ActivityInstanceId);
             try
