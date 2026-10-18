@@ -1,6 +1,7 @@
 using System.Dynamic;
 using Fleans.Application;
 using Fleans.Application.DTOs;
+using Fleans.Application.Grains;
 using Fleans.Application.QueryModels;
 using Fleans.Domain;
 using Fleans.Domain.Sequences;
@@ -21,6 +22,7 @@ public class WorkflowQueryService : IWorkflowQueryService
     private readonly IDbContextFactory<FleanQueryDbContext> _dbContextFactory;
     private readonly ISieveProcessor _sieveProcessor;
     private readonly IUserTaskFilterStrategy _userTaskFilter;
+    private readonly IGrainFactory _grainFactory;
 
     private static readonly JsonSerializerSettings JsonSettings = new()
     {
@@ -32,25 +34,37 @@ public class WorkflowQueryService : IWorkflowQueryService
     public WorkflowQueryService(
         IDbContextFactory<FleanQueryDbContext> dbContextFactory,
         ISieveProcessor sieveProcessor,
-        IUserTaskFilterStrategy userTaskFilter)
+        IUserTaskFilterStrategy userTaskFilter,
+        IGrainFactory grainFactory)
     {
         _dbContextFactory = dbContextFactory;
         _sieveProcessor = sieveProcessor;
         _userTaskFilter = userTaskFilter;
+        _grainFactory = grainFactory;
     }
 
     public async Task<InstanceStateSnapshot?> GetStateSnapshot(Guid workflowInstanceId)
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync();
 
+        // A running instance projects only its row — its details come from the grain. A completed
+        // one has them in the read model, so viewing it does not activate (and replay) the grain.
+        var isCompleted = await db.WorkflowInstances
+            .Where(s => s.Id == workflowInstanceId)
+            .Select(s => (bool?)s.IsCompleted)
+            .FirstOrDefaultAsync();
+
+        if (isCompleted is null)
+            return null;
+        if (isCompleted is false)
+            return await _grainFactory.GetGrain<IWorkflowInstanceGrain>(workflowInstanceId).GetStateSnapshot();
+
         var state = await db.WorkflowInstances
             .Include(s => s.Entries)
             .Include(s => s.VariableStates)
             .Include(s => s.ConditionSequenceStates)
-            .FirstOrDefaultAsync(s => s.Id == workflowInstanceId);
-
-        if (state is null)
-            return null;
+            .AsSplitQuery()
+            .FirstAsync(s => s.Id == workflowInstanceId);
 
         // Load process definition for condition enrichment
         WorkflowDefinition? workflowDef = null;
@@ -61,37 +75,7 @@ public class WorkflowQueryService : IWorkflowQueryService
             workflowDef = processDef?.Workflow;
         }
 
-        var activeEntries = state.Entries.Where(e => !e.IsCompleted).ToList();
-        var completedEntries = state.Entries.Where(e => e.IsCompleted).ToList();
-
-        var activeSnapshots = activeEntries
-            .Select(ToActivitySnapshot)
-            .ToList();
-        var completedSnapshots = completedEntries
-            .Select(ToActivitySnapshot)
-            .ToList();
-
-        var activeIds = activeEntries.Select(e => e.ActivityId).ToList();
-        var completedIds = completedEntries.Select(e => e.ActivityId).ToList();
-
-        var variableStates = state.VariableStates.Select(vs =>
-        {
-            var dict = ((IDictionary<string, object>)vs.Variables)
-                .ToDictionary(e => e.Key, e => FormatVariableValue(e.Value));
-            return new VariableStateSnapshot(vs.Id, dict);
-        }).ToList();
-
-        var conditionSequences = state.ConditionSequenceStates
-            .Select(cs => ToConditionSnapshot(cs, workflowDef))
-            .ToList();
-
-        return new InstanceStateSnapshot(
-            activeIds, completedIds, state.IsStarted, state.IsCompleted, state.IsCancelled, state.IsFailed,
-            activeSnapshots, completedSnapshots,
-            variableStates, conditionSequences,
-            state.ProcessDefinitionId,
-            state.CreatedAt, state.ExecutionStartedAt, state.CompletedAt,
-            state.BusinessId);
+        return InstanceStateSnapshots.From(state, workflowDef);
     }
 
     public async Task<int> GetMaxVersionByKeyAsync(string processDefinitionKey)
@@ -304,45 +288,6 @@ public class WorkflowQueryService : IWorkflowQueryService
             .Where(p => p.ProcessDefinitionKey == key && p.Version == version)
             .Select(p => p.BpmnXml)
             .FirstOrDefaultAsync();
-    }
-
-    private static ActivityInstanceSnapshot ToActivitySnapshot(ActivityInstanceEntry entry)
-    {
-        return new ActivityInstanceSnapshot(
-            entry.ActivityInstanceId, entry.ActivityId, entry.ActivityType ?? "",
-            entry.IsCompleted, entry.IsExecuting, entry.IsCancelled, entry.VariablesId,
-            entry.ErrorState, entry.CancellationReason,
-            entry.CreatedAt, entry.ExecutionStartedAt, entry.CompletedAt,
-            entry.ChildWorkflowInstanceId);
-    }
-
-    private static string FormatVariableValue(object? value)
-        => VariableValueFormatter.Format(value);
-
-    private static ConditionSequenceSnapshot ToConditionSnapshot(
-        ConditionSequenceState cs,
-        WorkflowDefinition? workflowDef)
-    {
-        var condition = "";
-        var sourceId = "";
-        var targetId = "";
-
-        if (workflowDef is not null)
-        {
-            var flow = workflowDef.SequenceFlows
-                .OfType<ConditionalSequenceFlow>()
-                .FirstOrDefault(sf => sf.SequenceFlowId == cs.ConditionalSequenceFlowId);
-
-            if (flow is not null)
-            {
-                condition = flow.Condition;
-                sourceId = flow.Source.ActivityId;
-                targetId = flow.Target.ActivityId;
-            }
-        }
-
-        return new ConditionSequenceSnapshot(
-            cs.ConditionalSequenceFlowId, condition, sourceId, targetId, cs.Result);
     }
 
     public async Task<IReadOnlyList<UserTaskResponse>> GetPendingUserTasks(

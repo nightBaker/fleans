@@ -60,7 +60,7 @@ internal class InMemoryWorkflowStateProjection : IWorkflowStateProjection
     public Task<int> ReadVersionAsync(string grainId) =>
         Task.FromResult(_versions.GetValueOrDefault(grainId));
 
-    public Task WriteAsync(string grainId, WorkflowInstanceState state, int version, bool rebuild = false)
+    public Task WriteAsync(string grainId, WorkflowInstanceState state, int version)
     {
         _versions[grainId] = version;
         return Task.CompletedTask;
@@ -79,15 +79,13 @@ internal class FaultInjectingWorkflowStateProjection(IWorkflowStateProjection in
 
     public Task<int> ReadVersionAsync(string grainId) => inner.ReadVersionAsync(grainId);
 
-    public Task WriteAsync(string grainId, WorkflowInstanceState state, int version, bool rebuild = false)
+    public Task WriteAsync(string grainId, WorkflowInstanceState state, int version)
     {
         if (FailuresLeft.TryGetValue(grainId, out var left) && left > 0)
         {
             FailuresLeft[grainId] = left - 1;
-            // Thrown before the inner write takes the dirty flags — like a real failed write,
-            // which restores them.
             throw new TimeoutException($"Injected projection failure for {grainId}");
         }
-        return inner.WriteAsync(grainId, state, version, rebuild);
+        return inner.WriteAsync(grainId, state, version);
     }
 }

@@ -383,9 +383,10 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         await ForceAllGrainDeactivation(instanceId);
 
         var dbFactory = GetSiloService<IDbContextFactory<FleanCommandDbContext>>();
+        int eventCount;
         await using (var db = await dbFactory.CreateDbContextAsync())
         {
-            var eventCount = (await JournalVersions(db, instanceId)).Count;
+            eventCount = (await JournalVersions(db, instanceId)).Count;
             await db.WorkflowSnapshots.Where(s => s.InstanceId == instanceId).ExecuteDeleteAsync();
             db.WorkflowSnapshots.Add(new WorkflowSnapshotEntity
             {
@@ -401,9 +402,8 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         // waits, and nothing is appended
         Assert.AreNotSame(call, await Task.WhenAny(call, Task.Delay(TimeSpan.FromSeconds(3))),
             "activation must not succeed on an unreadable snapshot");
-        var stateWhileBlocked = await QueryService.GetStateSnapshot(instanceId);
-        Assert.IsNotNull(stateWhileBlocked);
-        Assert.IsFalse(stateWhileBlocked.IsCompleted);
+        await using (var db = await dbFactory.CreateDbContextAsync())
+            Assert.HasCount(eventCount, await JournalVersions(db, instanceId));
 
         // Once the snapshot is readable (here: removed), the retried read succeeds and the call
         // goes through

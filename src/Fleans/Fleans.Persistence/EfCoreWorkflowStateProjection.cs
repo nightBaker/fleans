@@ -12,12 +12,13 @@ namespace Fleans.Persistence;
 /// (<see cref="FleanModelConfiguration.ProjectedVersion"/>) so a grain can tell, on activation,
 /// that a projection write was missed and rebuild it.
 /// </summary>
+/// <remarks>
+/// A running instance writes only its row; its details are read from the grain. A completed one
+/// also writes its details — entries, variable scopes, condition results and the rest — in the
+/// same <c>SaveChanges</c> as <c>IsCompleted</c>, so a reader that sees the flag sees the details.
+/// </remarks>
 public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
 {
-    // Every projected collection, derived from the enum so a new member is rebuilt too.
-    private static readonly DirtyCollections AllCollections =
-        Enum.GetValues<DirtyCollections>().Aggregate(DirtyCollections.None, (all, c) => all | c);
-
     private readonly IDbContextFactory<FleanCommandDbContext> _dbContextFactory;
 
     public EfCoreWorkflowStateProjection(IDbContextFactory<FleanCommandDbContext> dbContextFactory)
@@ -36,87 +37,49 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
             .SingleOrDefaultAsync() ?? 0;
     }
 
-    public async Task WriteAsync(string grainId, WorkflowInstanceState state, int version, bool rebuild = false)
-    {
-        // Taken before the first await: a mutation that interleaves while this write is in
-        // flight sets its flag again and is projected next time, instead of being cleared unwritten.
-        var takenFlags = state.TakeDirtyFlags();
-        try
-        {
-            var dirty = rebuild ? AllCollections : (DirtyCollections)takenFlags;
-            await WriteCoreAsync(grainId, state, version, dirty);
-        }
-        catch
-        {
-            state.RestoreDirtyFlags(takenFlags);
-            throw;
-        }
-    }
-
-    private async Task WriteCoreAsync(string grainId, WorkflowInstanceState state, int version, DirtyCollections dirty)
+    public async Task WriteAsync(string grainId, WorkflowInstanceState state, int version)
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync();
         var id = Guid.Parse(grainId);
+        var withDetails = state.IsCompleted;
 
-        // On the update path, only Include/Diff collections that were modified since
-        // the last write. On the insert path, all collections are written unconditionally.
         var query = db.WorkflowInstances.AsQueryable();
-        if (dirty.HasFlag(DirtyCollections.Entries))
-            query = query.Include(e => e.Entries);
-        if (dirty.HasFlag(DirtyCollections.VariableStates))
-            query = query.Include(e => e.VariableStates);
-        if (dirty.HasFlag(DirtyCollections.ConditionSequenceStates))
-            query = query.Include(e => e.ConditionSequenceStates);
-        if (dirty.HasFlag(DirtyCollections.GatewayForks))
-            query = query.Include(e => e.GatewayForks);
-        if (dirty.HasFlag(DirtyCollections.ComplexGatewayJoinStates))
-            query = query.Include(e => e.ComplexGatewayJoinStates);
-        if (dirty.HasFlag(DirtyCollections.TimerCycleTracking))
-            query = query.Include(e => e.TimerCycleTracking);
+        if (withDetails)
+            query = query
+                .Include(e => e.Entries)
+                .Include(e => e.VariableStates)
+                .Include(e => e.ConditionSequenceStates)
+                .Include(e => e.GatewayForks)
+                .Include(e => e.ComplexGatewayJoinStates)
+                .Include(e => e.TimerCycleTracking)
+                .AsSplitQuery();
 
-        var existing = await query.FirstOrDefaultAsync(e => e.Id == id);
-
-        if (existing is null)
+        // The row is its own entity, never the grain's state: tracking that would make EF add
+        // every collection of a running instance too.
+        var row = await query.FirstOrDefaultAsync(e => e.Id == id);
+        if (row is null)
         {
-            // Insert path: write all collections unconditionally
-            db.WorkflowInstances.Add(state);
-            db.Entry(state).Property(s => s.Id).CurrentValue = id;
-            db.Entry(state).Property(s => s.ETag).CurrentValue = Guid.NewGuid().ToString("N");
-            db.Entry(state).Property(FleanModelConfiguration.ProjectedVersion).CurrentValue = version;
-
-            foreach (var entry in state.Entries)
-                db.Entry(entry).Property(e => e.WorkflowInstanceId).CurrentValue = id;
-            foreach (var vs in state.VariableStates)
-                db.Entry(vs).Property(v => v.WorkflowInstanceId).CurrentValue = id;
-            foreach (var cs in state.ConditionSequenceStates)
-                db.Entry(cs).Property(c => c.WorkflowInstanceId).CurrentValue = id;
-            foreach (var gf in state.GatewayForks)
-                db.Entry(gf).Property(g => g.WorkflowInstanceId).CurrentValue = id;
-            foreach (var cg in state.ComplexGatewayJoinStates)
-                db.Entry(cg).Property(c => c.WorkflowInstanceId).CurrentValue = id;
-            foreach (var tc in state.TimerCycleTracking)
-                db.Entry(tc).Property(t => t.WorkflowInstanceId).CurrentValue = id;
+            row = new WorkflowInstanceState();
+            db.WorkflowInstances.Add(row);
+            db.Entry(row).CurrentValues.SetValues(state);
+            db.Entry(row).Property(s => s.Id).CurrentValue = id;
         }
         else
         {
-            // Update path: only diff dirty collections
-            db.Entry(existing).CurrentValues.SetValues(state);
-            db.Entry(existing).Property(s => s.Id).IsModified = false;
-            db.Entry(existing).Property(s => s.ETag).CurrentValue = Guid.NewGuid().ToString("N");
-            db.Entry(existing).Property(FleanModelConfiguration.ProjectedVersion).CurrentValue = version;
+            db.Entry(row).CurrentValues.SetValues(state);
+            db.Entry(row).Property(s => s.Id).IsModified = false;
+        }
+        db.Entry(row).Property(s => s.ETag).CurrentValue = Guid.NewGuid().ToString("N");
+        db.Entry(row).Property(FleanModelConfiguration.ProjectedVersion).CurrentValue = version;
 
-            if (dirty.HasFlag(DirtyCollections.Entries))
-                DiffEntries(db, existing, state, id);
-            if (dirty.HasFlag(DirtyCollections.VariableStates))
-                DiffVariableStates(db, existing, state, id);
-            if (dirty.HasFlag(DirtyCollections.ConditionSequenceStates))
-                DiffConditionSequenceStates(db, existing, state, id);
-            if (dirty.HasFlag(DirtyCollections.GatewayForks))
-                DiffGatewayForks(db, existing, state, id);
-            if (dirty.HasFlag(DirtyCollections.ComplexGatewayJoinStates))
-                DiffComplexGatewayJoinStates(db, existing, state, id);
-            if (dirty.HasFlag(DirtyCollections.TimerCycleTracking))
-                DiffTimerCycleTracking(db, existing, state, id);
+        if (withDetails)
+        {
+            DiffEntries(db, row, state, id);
+            DiffVariableStates(db, row, state, id);
+            DiffConditionSequenceStates(db, row, state, id);
+            DiffGatewayForks(db, row, state, id);
+            DiffComplexGatewayJoinStates(db, row, state, id);
+            DiffTimerCycleTracking(db, row, state, id);
         }
 
         await db.SaveChangesAsync();
