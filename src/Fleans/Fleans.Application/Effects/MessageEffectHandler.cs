@@ -68,15 +68,15 @@ public partial class MessageEffectHandler : IEffectHandler
         }
     }
 
-    [LoggerMessage(EventId = 1021, Level = LogLevel.Information,
+    [LoggerMessage(EventId = 1220, Level = LogLevel.Information,
         Message = "Message subscription registered for activity {ActivityId}: messageName={MessageName}, correlationKey={CorrelationKey}")]
     private partial void LogMessageSubscriptionRegistered(string activityId, string messageName, string correlationKey);
 
-    [LoggerMessage(EventId = 1023, Level = LogLevel.Warning,
+    [LoggerMessage(EventId = 1221, Level = LogLevel.Warning,
         Message = "Message subscription failed for activity {ActivityId}: messageName={MessageName}, correlationKey={CorrelationKey}")]
     private partial void LogMessageSubscriptionFailed(string activityId, string messageName, string correlationKey, Exception exception);
 
-    [LoggerMessage(EventId = 1025, Level = LogLevel.Warning,
+    [LoggerMessage(EventId = 1222, Level = LogLevel.Warning,
         Message = "Message unsubscribe failed for messageName={MessageName}, correlationKey={CorrelationKey} (cleanup-path; not failing workflow)")]
     private partial void LogMessageUnsubscribeFailed(string messageName, string correlationKey, Exception exception);
 }

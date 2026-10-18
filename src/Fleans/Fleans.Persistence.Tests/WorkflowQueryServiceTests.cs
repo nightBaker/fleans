@@ -1420,11 +1420,12 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
                 ConditionExpression = "= amount > 1000",
                 IsRegistered = true
             });
-            db.MessageCorrelations.Add(new MessageCorrelationState { Key = "payment-received" });
+            // Row key is the "name/escaped-key" composite the correlation grain writes.
+            db.MessageCorrelations.Add(new MessageCorrelationState { Key = "payment-received/orders%2F123" });
             db.SignalCorrelations.Add(new SignalCorrelationState { Key = "cancel" });
             db.MessageSubscriptions.Add(new MessageSubscription(
-                workflowId, "wait-payment", hostActivityId, "order-123")
-            { MessageName = "payment-received" });
+                workflowId, "wait-payment", hostActivityId, "orders/123")
+            { MessageName = "payment-received/orders%2F123" });
             db.SignalSubscriptions.Add(new SignalSubscription(
                 workflowId, "wait-cancel", hostActivityId)
             { SignalName = "cancel" });
@@ -1446,7 +1447,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
         Assert.AreEqual(1, snap.ActiveMessageSubscriptions.Count);
         var msgSub = snap.ActiveMessageSubscriptions[0];
         Assert.AreEqual("payment-received", msgSub.MessageName);
-        Assert.AreEqual("order-123", msgSub.CorrelationKey);
+        Assert.AreEqual("orders/123", msgSub.CorrelationKey);
         Assert.AreEqual(workflowId, msgSub.WorkflowInstanceId);
         Assert.AreEqual("wait-payment", msgSub.ActivityId);
         Assert.AreEqual(hostActivityId, msgSub.ActivityInstanceId);
@@ -1504,10 +1505,10 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
         // Insert → snapshot includes it
         await using (var db = await commandFactory.CreateDbContextAsync())
         {
-            db.MessageCorrelations.Add(new MessageCorrelationState { Key = "ephemeral" });
+            db.MessageCorrelations.Add(new MessageCorrelationState { Key = "ephemeral/k1" });
             db.MessageSubscriptions.Add(new MessageSubscription(
                 Guid.NewGuid(), "wait", Guid.NewGuid(), "k1")
-            { MessageName = "ephemeral" });
+            { MessageName = "ephemeral/k1" });
             await db.SaveChangesAsync();
         }
         var afterInsert = await service.GetRegisteredEventsAsync();
@@ -1516,7 +1517,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
         // Delete → snapshot excludes it (proves delete-on-completion semantic surfaces with no row-level filter)
         await using (var db = await commandFactory.CreateDbContextAsync())
         {
-            var row = await db.MessageSubscriptions.FirstAsync(s => s.MessageName == "ephemeral");
+            var row = await db.MessageSubscriptions.FirstAsync(s => s.MessageName == "ephemeral/k1");
             db.MessageSubscriptions.Remove(row);
             await db.SaveChangesAsync();
         }

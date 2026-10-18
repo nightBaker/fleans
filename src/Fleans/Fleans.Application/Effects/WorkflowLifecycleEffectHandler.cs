@@ -101,11 +101,11 @@ public partial class WorkflowLifecycleEffectHandler : IEffectHandler
         }
     }
 
-    [LoggerMessage(EventId = 1013, Level = LogLevel.Information,
+    [LoggerMessage(EventId = 1200, Level = LogLevel.Information,
         Message = "Starting child workflow: CalledProcessKey={CalledProcessKey}, ChildId={ChildId}")]
     private partial void LogStartingChildWorkflow(string calledProcessKey, Guid childId);
 
-    [LoggerMessage(EventId = 4070, Level = LogLevel.Error,
+    [LoggerMessage(EventId = 1201, Level = LogLevel.Error,
         Message = "Child workflow start failed (parent={ParentInstanceId}, child={ChildInstanceId}, definition={DefinitionKey}): {Reason}")]
     private partial void LogChildStartFailed(Guid parentInstanceId, Guid childInstanceId, string definitionKey, string reason);
 }

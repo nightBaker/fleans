@@ -67,7 +67,7 @@ public sealed partial class WorkerPlacementDirector : IPlacementDirector
             || siloName.StartsWith(CombinedPrefix, StringComparison.Ordinal);
     }
 
-    [LoggerMessage(EventId = 11101, Level = LogLevel.Warning,
+    [LoggerMessage(EventId = 11301, Level = LogLevel.Warning,
         Message = "WorkerPlacementDirector: no silo with 'worker-' or 'combined-' prefix available for grain {grainType}; falling back to any compatible silo.")]
     private partial void LogNoWorkerSilo(string grainType);
 }

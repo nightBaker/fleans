@@ -225,6 +225,8 @@ public partial class WorkflowCommandService : IWorkflowCommandService
         Message = "Cancelling user task: WorkflowInstanceId={WorkflowInstanceId}, ActivityInstanceId={ActivityInstanceId}")]
     private partial void LogCancellingUserTask(Guid workflowInstanceId, Guid activityInstanceId);
 
+    private const int ConditionalStartBatchSize = 20;
+
     public async Task<EvaluateConditionsResult> EvaluateConditions(string? workflowId, ExpandoObject variables)
     {
         LogEvaluatingConditions(workflowId);
@@ -240,21 +242,26 @@ public partial class WorkflowCommandService : IWorkflowCommandService
         var startedIds = new List<Guid>();
         var errors = new List<string>();
 
-        foreach (var entry in entries)
+        // Evaluate listeners concurrently in bounded batches, like message/signal starts (#159).
+        foreach (var batch in entries.Chunk(ConditionalStartBatchSize))
         {
-            var grainKey = $"{entry.ProcessDefinitionKey}:{entry.ActivityId}";
-            var listener = _grainFactory.GetGrain<IConditionalStartEventListenerGrain>(grainKey);
-            try
+            var results = await Task.WhenAll(batch.Select(async entry =>
             {
-                var instanceId = await listener.EvaluateAndStart(variables);
-                if (instanceId.HasValue)
-                    startedIds.Add(instanceId.Value);
-            }
-            catch (Exception ex)
-            {
-                LogConditionalEvaluationFailed(entry.ProcessDefinitionKey, entry.ActivityId, ex);
-                errors.Add($"{entry.ProcessDefinitionKey}:{entry.ActivityId}: {ex.Message}");
-            }
+                var grainKey = $"{entry.ProcessDefinitionKey}:{entry.ActivityId}";
+                var listener = _grainFactory.GetGrain<IConditionalStartEventListenerGrain>(grainKey);
+                try
+                {
+                    return (InstanceId: await listener.EvaluateAndStart(variables), Error: (string?)null);
+                }
+                catch (Exception ex)
+                {
+                    LogConditionalEvaluationFailed(entry.ProcessDefinitionKey, entry.ActivityId, ex);
+                    return (InstanceId: (Guid?)null, Error: $"{entry.ProcessDefinitionKey}:{entry.ActivityId}: {ex.Message}");
+                }
+            }));
+
+            startedIds.AddRange(results.Where(r => r.InstanceId.HasValue).Select(r => r.InstanceId!.Value));
+            errors.AddRange(results.Where(r => r.Error is not null).Select(r => r.Error!));
         }
 
         return new EvaluateConditionsResult(startedIds, errors.Count > 0 ? errors : null);

@@ -70,13 +70,6 @@ public interface IWorkflowInstanceGrain : IWorkflowInstanceCallback, IWorkflowEx
     Task HandleBoundarySignalFired(string boundaryActivityId, Guid hostActivityInstanceId);
 
     /// <summary>
-    /// Returns the current Transaction Sub-Process outcomes for this workflow instance.
-    /// Keyed by the activity instance ID of each Transaction host entry.
-    /// </summary>
-    [ReadOnly]
-    ValueTask<IReadOnlyDictionary<Guid, TransactionOutcomeRecord>> GetTransactionOutcomes();
-
-    /// <summary>
     /// Returns the compensation log — one entry per completed compensable activity,
     /// ordered ascending by <see cref="CompensationLogEntrySnapshot.CompletedAtSequence"/>.
     /// Each entry is annotated with its handler activity ID (resolved from the BPMN model)
@@ -84,12 +77,4 @@ public interface IWorkflowInstanceGrain : IWorkflowInstanceCallback, IWorkflowEx
     /// </summary>
     [ReadOnly]
     ValueTask<IReadOnlyList<CompensationLogEntrySnapshot>> GetCompensationLog();
-
-    /// <summary>Op-keys currently in the durable pending-events queue (PendingOperations). #657.</summary>
-    [ReadOnly]
-    ValueTask<IReadOnlyList<string>> GetPendingOperationKeys();
-
-    /// <summary>Op-keys recorded in the dedup ledger (AppliedOperations). #657.</summary>
-    [ReadOnly]
-    ValueTask<IReadOnlyList<string>> GetAppliedOperationKeys();
 }

@@ -214,9 +214,9 @@ public class ComplexGatewayActivityTests
     // ── Join with activation condition tests ────────────────────────────────
 
     [TestMethod]
-    public async Task Join_WithCondition_ShouldCreateJoinState_AndEmitEvaluateCommand_OnFirstToken()
+    public async Task Join_WithCondition_ShouldEmitEvaluateCommand_OnFirstToken()
     {
-        // Arrange
+        // Arrange — token counting happens in the aggregate when it processes the command
         var gateway = new ComplexGateway("cg-join", IsFork: false, ActivationCondition: "_context._nroftoken >= 2");
         var end = new EndEvent("end");
         var definition = ActivityTestHelper.CreateWorkflowDefinition(
@@ -224,14 +224,9 @@ public class ComplexGatewayActivityTests
             [new SequenceFlow("s1", gateway, end)]);
 
         var activityInstanceId = Guid.NewGuid();
-        var joinState = new ComplexGatewayJoinState("cg-join", activityInstanceId, "_context._nroftoken >= 2", Guid.NewGuid());
-
         var workflowContext = ActivityTestHelper.CreateWorkflowContext(definition);
         workflowContext.GetComplexGatewayJoinState("cg-join")
-            .Returns(ValueTask.FromResult<ComplexGatewayJoinState?>(null),
-                     ValueTask.FromResult<ComplexGatewayJoinState?>(joinState));
-        workflowContext.When(x => x.IncrementComplexGatewayJoinToken("cg-join", activityInstanceId, "_context._nroftoken >= 2"))
-            .Do(_ => joinState.IncrementTokenCount());
+            .Returns(ValueTask.FromResult<ComplexGatewayJoinState?>(null));
 
         var (activityContext, _) = ActivityTestHelper.CreateActivityContext("cg-join", activityInstanceId);
 
@@ -242,7 +237,7 @@ public class ComplexGatewayActivityTests
         var evalCmd = commands.OfType<EvaluateActivationConditionCommand>().FirstOrDefault();
         Assert.IsNotNull(evalCmd, "Should emit EvaluateActivationConditionCommand");
         Assert.AreEqual("_context._nroftoken >= 2", evalCmd.Condition);
-        Assert.AreEqual(1, evalCmd.NrOfToken); // Increment was called once
+        await activityContext.DidNotReceive().Complete();
     }
 
     [TestMethod]
@@ -274,8 +269,6 @@ public class ComplexGatewayActivityTests
         Assert.IsTrue(commands.OfType<DiscardLateTokenCommand>().Any(), "Should emit DiscardLateTokenCommand");
         Assert.IsFalse(commands.OfType<EvaluateActivationConditionCommand>().Any());
         await activityContext.DidNotReceive().Complete();
-        await workflowContext.DidNotReceive().IncrementComplexGatewayJoinToken(
-            Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>());
     }
 
     [TestMethod]

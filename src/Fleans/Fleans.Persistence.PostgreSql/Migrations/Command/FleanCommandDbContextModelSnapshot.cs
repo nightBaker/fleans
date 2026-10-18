@@ -348,8 +348,8 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
 
                     b.Property<string>("CorrelationKey")
                         .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
 
                     b.Property<Guid>("HostActivityInstanceId")
                         .HasColumnType("uuid");

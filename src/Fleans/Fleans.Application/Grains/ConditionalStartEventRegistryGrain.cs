@@ -2,7 +2,6 @@ using Fleans.Application.Placement;
 using Fleans.Domain;
 using Fleans.Domain.States;
 using Microsoft.Extensions.Logging;
-using Orleans.Concurrency;
 using Orleans.Runtime;
 
 namespace Fleans.Application.Grains;
@@ -49,7 +48,6 @@ public partial class ConditionalStartEventRegistryGrain : Grain, IConditionalSta
         }
     }
 
-    [ReadOnly]
     public ValueTask<List<ConditionalStartEntry>> GetAll()
     {
         var entries = _state.State.Entries
@@ -58,7 +56,6 @@ public partial class ConditionalStartEventRegistryGrain : Grain, IConditionalSta
         return ValueTask.FromResult(entries);
     }
 
-    [ReadOnly]
     public ValueTask<List<ConditionalStartEntry>> GetByProcess(string processDefinitionKey)
     {
         var entries = _state.State.Entries

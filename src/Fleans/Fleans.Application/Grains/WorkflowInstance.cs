@@ -958,24 +958,11 @@ public partial class WorkflowInstance :
         return ValueTask.FromResult(result);
     }
 
-    public ValueTask<IReadOnlyDictionary<Guid, TransactionOutcomeRecord>> GetTransactionOutcomes()
-    {
-        IReadOnlyDictionary<Guid, TransactionOutcomeRecord> result =
-            State.TransactionOutcomes.AsReadOnly();
-        return ValueTask.FromResult(result);
-    }
-
-    public ValueTask<IReadOnlyList<string>> GetPendingOperationKeys()
-    {
-        IReadOnlyList<string> result = State.PendingOperations.Keys.ToList().AsReadOnly();
-        return ValueTask.FromResult(result);
-    }
-
-    public ValueTask<IReadOnlyList<string>> GetAppliedOperationKeys()
-    {
-        IReadOnlyList<string> result = State.AppliedOperations.Keys.ToList().AsReadOnly();
-        return ValueTask.FromResult(result);
-    }
+    /// <summary>
+    /// In-silo read access to the state for the test-only <c>WorkflowInstanceInspector</c> grain
+    /// extension, so test probes stay off the remotely callable grain interface.
+    /// </summary>
+    internal WorkflowInstanceState InspectionState => State;
 
     public ValueTask<IReadOnlyList<CompensationLogEntrySnapshot>> GetCompensationLog()
     {
@@ -1021,12 +1008,6 @@ public partial class WorkflowInstance :
 
     public ValueTask<ComplexGatewayJoinState?> GetComplexGatewayJoinState(string gatewayActivityId)
         => ValueTask.FromResult(State.GetComplexGatewayJoinState(gatewayActivityId));
-
-    public ValueTask IncrementComplexGatewayJoinToken(string gatewayActivityId, Guid activityInstanceId, string activationCondition)
-    {
-        _execution!.CreateOrIncrementComplexGatewayJoinToken(gatewayActivityId, activityInstanceId, activationCondition, State.Id);
-        return ValueTask.CompletedTask;
-    }
 
     private sealed class WorkflowInstanceEffectContext : IEffectContext
     {

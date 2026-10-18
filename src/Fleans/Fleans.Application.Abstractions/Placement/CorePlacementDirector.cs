@@ -59,7 +59,7 @@ public sealed partial class CorePlacementDirector : IPlacementDirector
             || siloName.StartsWith(CombinedPrefix, StringComparison.Ordinal);
     }
 
-    [LoggerMessage(EventId = 11001, Level = LogLevel.Warning,
+    [LoggerMessage(EventId = 11300, Level = LogLevel.Warning,
         Message = "CorePlacementDirector: no silo with 'core-' or 'combined-' prefix available for grain {grainType}; falling back to any compatible silo.")]
     private partial void LogNoCoreSilo(string grainType);
 }

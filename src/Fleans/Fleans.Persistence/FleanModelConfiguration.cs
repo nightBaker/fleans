@@ -1,6 +1,7 @@
 using System.Dynamic;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using Fleans.Application.Grains;
 using Fleans.Domain;
 using Fleans.Domain.States;
 using Fleans.Persistence.Events;
@@ -175,7 +176,7 @@ internal static class FleanModelConfiguration
             entity.ToTable("MessageCorrelations");
             entity.HasKey(e => e.Key);
 
-            entity.Property(e => e.Key).HasMaxLength(1024);
+            entity.Property(e => e.Key).HasMaxLength(MessageCorrelationKey.MaxLength);
             entity.Property(e => e.ETag).HasMaxLength(64);
 
             entity.Ignore(e => e.Status);
@@ -191,8 +192,9 @@ internal static class FleanModelConfiguration
         {
             sub.ToTable("MessageSubscriptions");
             sub.HasKey(s => s.MessageName);
-            sub.Property(s => s.MessageName).HasMaxLength(1024);
-            sub.Property(s => s.CorrelationKey).HasMaxLength(512);
+            sub.Property(s => s.MessageName).HasMaxLength(MessageCorrelationKey.MaxLength);
+            // Unescaped key part of MessageName, so never longer than it.
+            sub.Property(s => s.CorrelationKey).HasMaxLength(MessageCorrelationKey.MaxLength);
             sub.Property(s => s.ActivityId).HasMaxLength(256);
         });
 

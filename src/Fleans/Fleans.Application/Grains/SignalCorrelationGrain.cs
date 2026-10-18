@@ -139,35 +139,35 @@ public partial class SignalCorrelationGrain : Grain, ISignalCorrelationGrain
         return deliveredCount;
     }
 
-    [LoggerMessage(EventId = 9100, Level = LogLevel.Information,
+    [LoggerMessage(EventId = 9110, Level = LogLevel.Information,
         Message = "Signal '{SignalName}' subscription registered: workflowInstanceId={WorkflowInstanceId}, activityId={ActivityId}")]
     private partial void LogSubscribed(string signalName, Guid workflowInstanceId, string activityId);
 
-    [LoggerMessage(EventId = 9101, Level = LogLevel.Information,
+    [LoggerMessage(EventId = 9111, Level = LogLevel.Information,
         Message = "Signal '{SignalName}' subscription removed: workflowInstanceId={WorkflowInstanceId}, activityId={ActivityId}")]
     private partial void LogUnsubscribed(string signalName, Guid workflowInstanceId, string activityId);
 
-    [LoggerMessage(EventId = 9102, Level = LogLevel.Debug,
+    [LoggerMessage(EventId = 9112, Level = LogLevel.Debug,
         Message = "Signal '{SignalName}' broadcast started: {SubscriberCount} subscribers")]
     private partial void LogBroadcastStarted(string signalName, int subscriberCount);
 
-    [LoggerMessage(EventId = 9103, Level = LogLevel.Information,
+    [LoggerMessage(EventId = 9113, Level = LogLevel.Information,
         Message = "Signal '{SignalName}' broadcast completed: {DeliveredCount}/{TotalCount} delivered")]
     private partial void LogBroadcastCompleted(string signalName, int deliveredCount, int totalCount);
 
-    [LoggerMessage(EventId = 9104, Level = LogLevel.Debug,
+    [LoggerMessage(EventId = 9114, Level = LogLevel.Debug,
         Message = "Signal '{SignalName}' broadcast — no subscribers")]
     private partial void LogBroadcastNoSubscribers(string signalName);
 
-    [LoggerMessage(EventId = 9105, Level = LogLevel.Warning,
+    [LoggerMessage(EventId = 9115, Level = LogLevel.Warning,
         Message = "Signal '{SignalName}' delivery failed to workflowInstanceId={WorkflowInstanceId}, activityId={ActivityId}")]
     private partial void LogDeliveryFailed(string signalName, Guid workflowInstanceId, string activityId, Exception exception);
 
-    [LoggerMessage(EventId = 9106, Level = LogLevel.Debug,
+    [LoggerMessage(EventId = 9116, Level = LogLevel.Debug,
         Message = "Signal '{SignalName}' duplicate subscription ignored: workflowInstanceId={WorkflowInstanceId}, activityId={ActivityId}")]
     private partial void LogDuplicateSubscription(string signalName, Guid workflowInstanceId, string activityId);
 
-    [LoggerMessage(EventId = 9107, Level = LogLevel.Warning,
+    [LoggerMessage(EventId = 9117, Level = LogLevel.Warning,
         Message = "Signal '{SignalName}' broadcast has {SubscriberCount} subscribers (threshold: {Threshold}) — delivering in batches")]
     private partial void LogBroadcastHighSubscriberCount(string signalName, int subscriberCount, int threshold);
 }

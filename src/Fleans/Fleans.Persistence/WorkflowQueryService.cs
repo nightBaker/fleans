@@ -1,6 +1,7 @@
 using System.Dynamic;
 using Fleans.Application;
 using Fleans.Application.DTOs;
+using Fleans.Application.Grains;
 using Fleans.Application.QueryModels;
 using Fleans.Domain;
 using Fleans.Domain.Sequences;
@@ -497,12 +498,14 @@ public class WorkflowQueryService : IWorkflowQueryService
 
         // Subscription tables are delete-on-completion: every row present is
         // an active subscription. No row-level filter is applied.
-        var activeMessageSubscriptions = await db.MessageSubscriptions
-            .AsNoTracking()
+        // MessageName is the row key — the "name/escaped-key" composite — so show its name part.
+        var activeMessageSubscriptions = (await db.MessageSubscriptions
+                .AsNoTracking()
+                .ToListAsync(ct))
             .Select(s => new MessageSubscriptionRow(
-                s.MessageName, s.CorrelationKey, s.WorkflowInstanceId,
+                MessageCorrelationKey.Parse(s.MessageName).MessageName, s.CorrelationKey, s.WorkflowInstanceId,
                 s.ActivityId, s.HostActivityInstanceId))
-            .ToListAsync(ct);
+            .ToList();
 
         var activeSignalSubscriptions = await db.SignalSubscriptions
             .AsNoTracking()

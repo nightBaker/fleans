@@ -1273,6 +1273,8 @@ public class WorkflowExecution
         EvaluateActivationConditionCommand cmd, Guid activityInstanceId)
     {
         var entry = _state.GetActiveEntry(activityInstanceId);
+        CreateOrIncrementComplexGatewayJoinToken(entry.ActivityId, activityInstanceId, cmd.Condition, _state.Id);
+        var joinState = _state.GetComplexGatewayJoinState(entry.ActivityId)!;
         return new PublishDomainEventEffect(new EvaluateActivationConditionEvent(
             _state.Id,
             _definition.WorkflowId,
@@ -1281,7 +1283,7 @@ public class WorkflowExecution
             entry.ActivityId,
             cmd.Condition,
             entry.VariablesId,
-            cmd.NrOfToken));
+            joinState.WaitingTokenCount));
     }
 
     private List<IInfrastructureEffect> ProcessAddConditions(
@@ -2006,7 +2008,7 @@ public class WorkflowExecution
         Emit(new ConditionSequenceEvaluated(activityInstanceId, sequenceId, result));
     }
 
-    public void CreateOrIncrementComplexGatewayJoinToken(string gatewayActivityId, Guid activityInstanceId, string activationCondition, Guid workflowInstanceId)
+    private void CreateOrIncrementComplexGatewayJoinToken(string gatewayActivityId, Guid activityInstanceId, string activationCondition, Guid workflowInstanceId)
     {
         var existing = _state.GetComplexGatewayJoinState(gatewayActivityId);
         if (existing is null)

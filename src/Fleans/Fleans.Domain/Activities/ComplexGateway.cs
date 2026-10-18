@@ -57,13 +57,9 @@ public record ComplexGateway(
                 return commands;
             }
 
-            // Create join state (if needed) and increment token count via event sourcing.
-            // The first token's activityInstanceId is stored so the gateway can complete
-            // the correct activity instance when the activation condition fires.
-            await workflowContext.IncrementComplexGatewayJoinToken(activityId, activityInstanceId, ActivationCondition);
-            var joinState = (await workflowContext.GetComplexGatewayJoinState(activityId))!;
-
-            commands.Add(new EvaluateActivationConditionCommand(ActivationCondition, joinState.WaitingTokenCount));
+            // The aggregate creates the join state (if needed) and counts this token when it
+            // processes the command, then evaluates the condition against the new count.
+            commands.Add(new EvaluateActivationConditionCommand(ActivationCondition));
 
             // Mark as executing so the execution loop doesn't re-process this entry.
             // The async activation condition callback will complete or discard this entry.

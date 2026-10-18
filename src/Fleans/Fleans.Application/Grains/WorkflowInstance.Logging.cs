@@ -368,7 +368,7 @@ public partial class WorkflowInstance
     private partial void LogAbortingDescendantWalks(int count, Guid txInstanceId);
 
     // Complex gateway lifecycle (EventId 1080-1089)
-    [LoggerMessage(EventId = 1080, Level = LogLevel.Debug,
+    [LoggerMessage(EventId = 1084, Level = LogLevel.Debug,
         Message = "Complex gateway activation condition late callback — join instance {ActivityInstanceId} has already fired or was removed")]
     private partial void LogComplexGatewayActivationConditionLateCallback(Guid activityInstanceId);
 
@@ -385,19 +385,19 @@ public partial class WorkflowInstance
     private partial void LogCompleteActivationCondition(string activityId, Guid activityInstanceId, bool result);
 
     // Multiple event (EventId 1090-1093)
-    [LoggerMessage(EventId = 1090, Level = LogLevel.Information,
+    [LoggerMessage(EventId = 1150, Level = LogLevel.Information,
         Message = "Multiple catch event registered: activity {ActivityId}, {DefinitionCount} watchers")]
     private partial void LogMultipleCatchRegistered(string activityId, int definitionCount);
 
-    [LoggerMessage(EventId = 1091, Level = LogLevel.Information,
+    [LoggerMessage(EventId = 1151, Level = LogLevel.Information,
         Message = "Multiple catch event fired: activity {ActivityId}, trigger type {TriggerType}")]
     private partial void LogMultipleCatchFired(string activityId, string triggerType);
 
-    [LoggerMessage(EventId = 1092, Level = LogLevel.Information,
+    [LoggerMessage(EventId = 1152, Level = LogLevel.Information,
         Message = "Multiple throw event fired: activity {ActivityId}, {DefinitionCount} definitions thrown")]
     private partial void LogMultipleThrowFired(string activityId, int definitionCount);
 
-    [LoggerMessage(EventId = 1093, Level = LogLevel.Information,
+    [LoggerMessage(EventId = 1153, Level = LogLevel.Information,
         Message = "Multiple boundary event fired: activity {ActivityId}, trigger type {TriggerType}, interrupting={IsInterrupting}")]
     private partial void LogMultipleBoundaryFired(string activityId, string triggerType, bool isInterrupting);
 

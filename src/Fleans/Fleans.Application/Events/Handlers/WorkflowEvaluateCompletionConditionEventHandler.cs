@@ -88,27 +88,27 @@ public partial class WorkflowEvaluateCompletionConditionEventHandler : Grain, IA
         return Task.CompletedTask;
     }
 
-    [LoggerMessage(EventId = 4036, Level = LogLevel.Information,
+    [LoggerMessage(EventId = 4066, Level = LogLevel.Information,
         Message = "Completion-condition handler activated on silo {SiloName} for stream key {StreamKey}")]
     private partial void LogActivated(string siloName, string streamKey);
 
-    [LoggerMessage(EventId = 4030, Level = LogLevel.Information,
+    [LoggerMessage(EventId = 4060, Level = LogLevel.Information,
         Message = "Evaluating completion condition for host {HostActivityId}, instance {HostActivityInstanceId}: total={NrOfInstances} active={NrOfActiveInstances} completed={NrOfCompletedInstances}")]
     private partial void LogEvaluatingCompletionCondition(string hostActivityId, Guid hostActivityInstanceId, int nrOfInstances, int nrOfActiveInstances, int nrOfCompletedInstances);
 
-    [LoggerMessage(EventId = 4031, Level = LogLevel.Debug,
+    [LoggerMessage(EventId = 4061, Level = LogLevel.Debug,
         Message = "Completion condition result for host {HostActivityId}, instance {HostActivityInstanceId}: {Result}")]
     private partial void LogCompletionConditionResult(string hostActivityId, Guid hostActivityInstanceId, bool result);
 
-    [LoggerMessage(EventId = 4032, Level = LogLevel.Error,
+    [LoggerMessage(EventId = 4062, Level = LogLevel.Error,
         Message = "Completion condition evaluation failed for host {HostActivityId}, instance {HostActivityInstanceId}")]
     private partial void LogCompletionConditionEvaluationFailed(Exception ex, string hostActivityId, Guid hostActivityInstanceId);
 
-    [LoggerMessage(EventId = 4033, Level = LogLevel.Information,
+    [LoggerMessage(EventId = 4063, Level = LogLevel.Information,
         Message = "Completion condition event stream completed")]
     private partial void LogStreamCompleted();
 
-    [LoggerMessage(EventId = 4034, Level = LogLevel.Error,
+    [LoggerMessage(EventId = 4064, Level = LogLevel.Error,
         Message = "Completion condition event stream error")]
     private partial void LogStreamError(Exception ex);
 }

@@ -4,6 +4,12 @@ Contributor-facing reference for the structured-logging EventId allocation. Allo
 `[LoggerMessage]` EventIds from the appropriate range below. New ranges must be added
 here when a new class starts emitting structured logs.
 
+**Every EventId names one event.** `LoggerEventIdUniquenessTests` (`Fleans.Application.Tests`)
+scans `src/Fleans/**/*.cs` and fails when two `[LoggerMessage]` declarations share an EventId
+but differ in method name or message — alerts keyed on an EventId must not fire on an
+unrelated event. The only sharing allowed is the same event logged from sibling classes
+(11100).
+
 For the architectural background (filter pattern, scope-field semantics, RequestContext
 propagation), see [`docs/plans/2026-02-08-structured-workflow-logging.md`](../plans/2026-02-08-structured-workflow-logging.md).
 
@@ -11,22 +17,30 @@ propagation), see [`docs/plans/2026-02-08-structured-workflow-logging.md`](../pl
 
 | Range | Class | Notes |
 |-------|-------|-------|
-| 1000–1199 | `WorkflowInstance` | Sub-ranges: 1066 UserTaskClaim rejection (Warning); 1070–1079 pending events / event sub-processes; 1078 root-scope listeners; 1080–1089 complex gateway; 1090–1099 escalation; 1100–1109 transaction sub-process; 1110–1119 compensation; 1120 workflow failed by unhandled activity failure (Error, #762); 1131–1139 event store (1131 snapshot write failed (Error), 1132 projection write failed — retrying, 1133 projection behind on activation, 1134 projection caught up after retry, 1135 projection retries gave up (Error), 1136 projection version read failed); 1140 variables over `Fleans:Variables:MaxSizeBytes` rejected (Warning) |
+| 1000–1199 | `WorkflowInstance` | Sub-ranges: 1066 UserTaskClaim rejection (Warning); 1070–1079 pending events / event sub-processes; 1078 root-scope listeners; 1080–1089 complex gateway; 1090–1099 escalation; 1100–1109 transaction sub-process; 1110–1119 compensation; 1150–1153 multiple events (1150 multiple catch registered, 1151 multiple catch fired, 1152 multiple throw fired, 1153 multiple boundary fired); 1120 workflow failed by unhandled activity failure (Error, #762); 1131–1139 event store (1131 snapshot write failed (Error), 1132 projection write failed — retrying, 1133 projection behind on activation, 1134 projection caught up after retry, 1135 projection retries gave up (Error), 1136 projection version read failed); 1140 variables over `Fleans:Variables:MaxSizeBytes` rejected (Warning) |
+| 1200–1299 | Effect handlers (`Fleans.Application/Effects/*`) | 1200–1209 `WorkflowLifecycleEffectHandler` (1200 starting child workflow, 1201 child start failed ERROR); 1210–1219 `TimerEffectHandler` (1210 reminder registered, 1211 reminder registration failed WARNING, 1212 reminder unregistered, 1213 unregister failed WARNING); 1220–1229 `MessageEffectHandler` (1220 subscribed, 1221 subscribe failed WARNING, 1222 unsubscribe failed WARNING); 1230–1239 `SignalEffectHandler` (1230 subscribed, 1231 subscribe failed WARNING, 1232 signal thrown, 1233 unsubscribe failed WARNING, 1234 throw failed WARNING); 1240–1249 `UserTaskEffectHandler` (1240 registration failed, 1241 completion persistence failed, 1242 claim update failed — all WARNING) |
 | 2000–2099 | `ActivityInstance` | |
 | 3000–3099 | `WorkflowInstanceState` | Includes 3030–3032 escalation warnings |
-| 4000–4099 | Event handlers | `Fleans.Application/Events/Handlers/*`; `CustomTaskHandlerBase` (`Fleans.Worker`) uses 4030–4035, 4037–4039, 4050: 4030 handling INFO, 4031 execute failed ERROR, 4032 stream completed INFO, 4033 stream error ERROR, 4034 FailActivity failed CRITICAL, 4035 activated INFO, 4037 task-type mismatch WARNING, 4038 skipped finished activity INFO, 4039 transient grain-call failure rethrown WARNING, 4050 cancelled on deactivation INFO. **Known collision:** 4030–4034 are also used by `WorkflowEvaluateCompletionConditionEventHandler` — filter by logger category; pick new custom-task ids from 4040+ only after checking both classes. |
+| 4000–4099 | Event handlers | `Fleans.Application/Events/Handlers/*`; `CustomTaskHandlerBase` (`Fleans.Worker`) uses 4030–4035, 4037–4039, 4050: 4030 handling INFO, 4031 execute failed ERROR, 4032 stream completed INFO, 4033 stream error ERROR, 4034 FailActivity failed CRITICAL, 4035 activated INFO, 4037 task-type mismatch WARNING, 4038 skipped finished activity INFO, 4039 transient grain-call failure rethrown WARNING, 4050 cancelled on deactivation INFO. Per handler: 4000–4009 `WorkflowEvaluateConditionEventHandler`, 4010–4019 `WorkflowExecuteScriptEventHandler`, 4020–4029 `WorkflowEvaluateActivationConditionEventHandler`, 4060–4066 `WorkflowEvaluateCompletionConditionEventHandler`. |
+| 4100–4199 | `UserTaskGrain` | |
 | 5000–5099 | `WorkflowEventsPublisher` | |
-| 6000–6099 | `WorkflowInstanceFactoryGrain` | |
-| 7000–7099 | `WorkflowEngine` | |
-| 8000–8099 | `TimerStartEventSchedulerGrain` (8000–8003), `UserTasksController` (8004–8010) | 8009 body-UserId/token mismatch rejection (Warning); 8010 token without user-id claim (Warning) |
-| 9000–9099 | `BpmnConverter` | |
+| 6000–6099 | `ProcessDefinitionGrain` | |
+| 7000–7099 | `WorkflowCommandService` | |
+| 8000–8099 | `TimerStartEventSchedulerGrain` (8000–8003, 8011 cycle re-armed), `UserTasksController` (8004–8010) | 8009 body-UserId/token mismatch rejection (Warning); 8010 token without user-id claim (Warning) |
+| 8100–8199 | `GlobalExceptionHandler` (`Fleans.Api`) | |
+| 9000–9099 | `MessageCorrelationGrain` (9000–9009), `BpmnConverter` (9010–9019), `ScriptExecutorGrain` (`Fleans.Worker`, 9020–9029) | 9010 activation condition ignored on a fork (Warning) |
+| 9100–9199 | `MessageStartEventListenerGrain` (9100–9109), `SignalCorrelationGrain` (9110–9119) | |
+| 9200–9299 | `SignalStartEventListenerGrain` | |
+| 9300–9339 | `ConditionalStartEventListenerGrain` (9300–9309), `ConditionalStartEventRegistryGrain` (9310–9319), `CustomTaskCatalogGrain` (9320–9329), `CustomTaskPluginRegistrar` (`Fleans.Worker`, 9330–9339) | |
 | 9340–9349 | `RestCallerHandler` (`Fleans.Plugins.RestCaller`) | 9340 sending, 9341 received, 9342 timeout, 9343 network error, 9344 non-success status, 9345 idempotency key, 9346 JSON parse failed, 9347 response body over limit (Warning) |
 | 9350–9369 | *Reserved:* external [fleans-camunda-external-task](https://github.com/nightBaker/fleans-camunda-external-task) plugin | Allocated in that repository; don't reuse here so its logs stay unambiguous in a shared cluster. |
 | 10000–10099 | `TimerCallbackGrain` | |
 | 11000–11099 | `KafkaProductionPresetExtensions` | 11000 preset-applied INFO |
 | 11100–11199 | `KafkaQueueAdapter`, `KafkaQueueAdapterReceiver`, `KafkaQueueAdapterFactory` | 11100 SSL-no-paths OS-trust-store WARNING (shared EventId across all three sibling classes); 11101 acks-not-all WARNING; 11102 single-broker RF fallback INFO; 11103 RF>brokers fallback WARNING; 11104 GetMetadata error ERROR; 11105 topics created INFO; 11106 topics already existed INFO; 11107 record deserialization failed, skipped (DLQ off) ERROR; 11108 consumer error WARNING; 11109 consume failed WARNING; 11110 offset commit failed WARNING; 11111 consumer close failed WARNING; 11112 DLQ enabled but adapter not created yet, handler falls back to no-op WARNING; 11113 record deserialization failed, routing to DLQ ERROR |
 | 11200–11299 | `MskIamTokenRefresher` | 11200 token-refresh-failed ERROR, 11201 set-token-failure-threw WARNING |
+| 11300–11399 | Placement: `CorePlacementDirector` (`Fleans.Application.Abstractions`), `WorkerPlacementDirector`, `PlacementRoleAssertion` (`Fleans.Worker`) | 11300 no core silo WARNING; 11301 no worker silo WARNING; 11310 placement-role assertion ran INFO; 11311 placement-role violation ERROR |
 | 12000–12099 | Kafka DLQ: `KafkaDlqFailureHandler`, `KafkaDeadLetterPublisher` | 12000 record dead-lettered (with failure reason) WARN; 12001 DLQ publish failed or not acknowledged within 30 s (may still be delivered) ERROR; 12002 subscription-init failure WARN; 12003 non-Kafka sequence token WARN; 12004 offset no longer retained WARN; 12005 re-consume failed ERROR; 12006 re-consume timed out WARN; 12007 re-consume client error (auth/SSL/connectivity) WARN |
+| 13000–13099 | `Fleans.Web` | 13000–13004 Workflows page (13000 load failed ERROR, 13001 process started INFO, 13002 start failed WARNING, 13003 start error ERROR, 13004 enable/disable failed ERROR) |
 | 99000–99099 | `ProbeHandler` (test-only, `Fleans.E2E.PluginHost`) | 99000 started, 99001 completed, 99002 cancelled, 99003 callback failed. Never shipped. |
 
 ## Adding a new range

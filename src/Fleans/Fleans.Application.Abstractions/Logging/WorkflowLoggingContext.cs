@@ -13,7 +13,9 @@ public static class WorkflowLoggingContext
     /// <summary>
     /// Points <see cref="RequestContext"/> at one workflow instance. The business id belongs to
     /// that instance, so it is removed when the instance has none — otherwise a caller's id (e.g.
-    /// a call-activity parent's) would leak into the new instance's downstream calls.
+    /// a call-activity parent's) would leak into the new instance's downstream calls. The activity
+    /// id is always removed: a stream handler sets it for its own call, and it must not flow into
+    /// the instance's calls to timer, correlation and child grains.
     /// </summary>
     public static void SetInstance(
         string workflowId, string? processDefinitionId, Guid workflowInstanceId, string? businessId)
@@ -26,6 +28,7 @@ public static class WorkflowLoggingContext
             RequestContext.Set(WorkflowContextKeys.BusinessId, businessId);
         else
             RequestContext.Remove(WorkflowContextKeys.BusinessId);
+        RequestContext.Remove(WorkflowContextKeys.ActivityId);
     }
 
     public static IDisposable? BeginScope(
