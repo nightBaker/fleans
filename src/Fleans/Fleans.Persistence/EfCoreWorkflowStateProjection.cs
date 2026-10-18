@@ -14,8 +14,10 @@ namespace Fleans.Persistence;
 /// </summary>
 /// <remarks>
 /// A running instance writes only its row; its details are read from the grain. A completed one
-/// also writes its details — entries, variable scopes, condition results and the rest — in the
-/// same <c>SaveChanges</c> as <c>IsCompleted</c>, so a reader that sees the flag sees the details.
+/// also writes the details the read side serves — entries, variable scopes and condition results —
+/// in the same <c>SaveChanges</c> as <c>IsCompleted</c>, so a reader that sees the flag sees them.
+/// Gateway forks and complex-join states are cleared on completion and timer cycles are never
+/// read, so those stay with the grain.
 /// </remarks>
 public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
 {
@@ -43,20 +45,10 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
         var id = Guid.Parse(grainId);
         var withDetails = state.IsCompleted;
 
-        var query = db.WorkflowInstances.AsQueryable();
-        if (withDetails)
-            query = query
-                .Include(e => e.Entries)
-                .Include(e => e.VariableStates)
-                .Include(e => e.ConditionSequenceStates)
-                .Include(e => e.GatewayForks)
-                .Include(e => e.ComplexGatewayJoinStates)
-                .Include(e => e.TimerCycleTracking)
-                .AsSplitQuery();
-
         // The row is its own entity, never the grain's state: tracking that would make EF add
-        // every collection of a running instance too.
-        var row = await query.FirstOrDefaultAsync(e => e.Id == id);
+        // every collection of a running instance too. A completed instance's details are added
+        // below as the grain's own objects; the context is gone once the write returns.
+        var row = await db.WorkflowInstances.FirstOrDefaultAsync(e => e.Id == id);
         if (row is null)
         {
             row = new WorkflowInstanceState();
@@ -74,12 +66,17 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
 
         if (withDetails)
         {
+            var tracked = db.Entry(row);
+            if (tracked.State != EntityState.Added)
+            {
+                await tracked.Collection(e => e.Entries).LoadAsync();
+                await tracked.Collection(e => e.VariableStates).LoadAsync();
+                await tracked.Collection(e => e.ConditionSequenceStates).LoadAsync();
+            }
+
             DiffEntries(db, row, state, id);
             DiffVariableStates(db, row, state, id);
             DiffConditionSequenceStates(db, row, state, id);
-            DiffGatewayForks(db, row, state, id);
-            DiffComplexGatewayJoinStates(db, row, state, id);
-            DiffTimerCycleTracking(db, row, state, id);
         }
 
         await db.SaveChangesAsync();
@@ -160,77 +157,6 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
             {
                 db.Entry(cs).Property(c => c.WorkflowInstanceId).CurrentValue = instanceId;
                 db.Add(cs);
-            }
-        }
-    }
-
-    private static void DiffGatewayForks(FleanCommandDbContext db, WorkflowInstanceState existing, WorkflowInstanceState incoming, Guid instanceId)
-    {
-        var existingDict = existing.GatewayForks.ToDictionary(g => g.ForkInstanceId);
-        var incomingDict = incoming.GatewayForks.ToDictionary(g => g.ForkInstanceId);
-
-        foreach (var old in existing.GatewayForks.Where(g => !incomingDict.ContainsKey(g.ForkInstanceId)))
-            db.Remove(old);
-
-        foreach (var gf in incoming.GatewayForks)
-        {
-            if (existingDict.TryGetValue(gf.ForkInstanceId, out var tracked))
-            {
-                db.Entry(tracked).CurrentValues.SetValues(gf);
-            }
-            else
-            {
-                db.Entry(gf).Property(g => g.WorkflowInstanceId).CurrentValue = instanceId;
-                db.Add(gf);
-            }
-        }
-    }
-
-    private static void DiffComplexGatewayJoinStates(FleanCommandDbContext db, WorkflowInstanceState existing, WorkflowInstanceState incoming, Guid instanceId)
-    {
-        var existingDict = existing.ComplexGatewayJoinStates.ToDictionary(c => c.GatewayActivityId);
-        var incomingDict = incoming.ComplexGatewayJoinStates.ToDictionary(c => c.GatewayActivityId);
-
-        foreach (var old in existing.ComplexGatewayJoinStates.Where(c => !incomingDict.ContainsKey(c.GatewayActivityId)))
-            db.Remove(old);
-
-        foreach (var cg in incoming.ComplexGatewayJoinStates)
-        {
-            if (existingDict.TryGetValue(cg.GatewayActivityId, out var tracked))
-            {
-                db.Entry(tracked).CurrentValues.SetValues(cg);
-            }
-            else
-            {
-                db.Entry(cg).Property(c => c.WorkflowInstanceId).CurrentValue = instanceId;
-                db.Add(cg);
-            }
-        }
-    }
-
-    private static void DiffTimerCycleTracking(FleanCommandDbContext db, WorkflowInstanceState existing, WorkflowInstanceState incoming, Guid instanceId)
-    {
-        var existingByKey = existing.TimerCycleTracking
-            .ToDictionary(t => (t.HostActivityInstanceId, t.TimerActivityId));
-        var incomingKeys = incoming.TimerCycleTracking
-            .Select(t => (t.HostActivityInstanceId, t.TimerActivityId))
-            .ToHashSet();
-
-        foreach (var old in existing.TimerCycleTracking
-            .Where(t => !incomingKeys.Contains((t.HostActivityInstanceId, t.TimerActivityId))))
-            db.Remove(old);
-
-        foreach (var tc in incoming.TimerCycleTracking)
-        {
-            var key = (tc.HostActivityInstanceId, tc.TimerActivityId);
-            if (existingByKey.TryGetValue(key, out var tracked))
-            {
-                db.Entry(tracked).CurrentValues.SetValues(tc);
-            }
-            else
-            {
-                db.Entry(tc).Property(t => t.WorkflowInstanceId).CurrentValue = instanceId;
-                db.Add(tc);
             }
         }
     }

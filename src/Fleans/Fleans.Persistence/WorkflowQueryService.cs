@@ -49,22 +49,17 @@ public class WorkflowQueryService : IWorkflowQueryService
 
         // A running instance projects only its row — its details come from the grain. A completed
         // one has them in the read model, so viewing it does not activate (and replay) the grain.
-        var isCompleted = await db.WorkflowInstances
-            .Where(s => s.Id == workflowInstanceId)
-            .Select(s => (bool?)s.IsCompleted)
-            .FirstOrDefaultAsync();
-
-        if (isCompleted is null)
+        // Tracked, so a completed instance's details can be loaded onto it below.
+        var state = await db.WorkflowInstances.AsTracking().FirstOrDefaultAsync(s => s.Id == workflowInstanceId);
+        if (state is null)
             return null;
-        if (isCompleted is false)
+        if (!state.IsCompleted)
             return await _grainFactory.GetGrain<IWorkflowInstanceGrain>(workflowInstanceId).GetStateSnapshot();
 
-        var state = await db.WorkflowInstances
-            .Include(s => s.Entries)
-            .Include(s => s.VariableStates)
-            .Include(s => s.ConditionSequenceStates)
-            .AsSplitQuery()
-            .FirstAsync(s => s.Id == workflowInstanceId);
+        var entry = db.Entry(state);
+        await entry.Collection(s => s.Entries).LoadAsync();
+        await entry.Collection(s => s.VariableStates).LoadAsync();
+        await entry.Collection(s => s.ConditionSequenceStates).LoadAsync();
 
         // Load process definition for condition enrichment
         WorkflowDefinition? workflowDef = null;

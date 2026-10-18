@@ -1,6 +1,8 @@
+using System.Dynamic;
 using Fleans.Domain;
 using Fleans.Domain.Sequences;
 using Fleans.Domain.States;
+using Newtonsoft.Json;
 
 namespace Fleans.Application.QueryModels;
 
@@ -18,7 +20,11 @@ public static class InstanceStateSnapshots
 
         var variableStates = state.VariableStates.Select(vs =>
         {
-            var dict = ((IDictionary<string, object?>)vs.Variables)
+            // The read model stores variables as JSON; a running instance's live values take the
+            // same round trip, so a value reads the same before and after the instance completes.
+            var stored = JsonConvert.DeserializeObject<ExpandoObject>(JsonConvert.SerializeObject(vs.Variables))
+                ?? new ExpandoObject();
+            var dict = ((IDictionary<string, object?>)stored)
                 .ToDictionary(e => e.Key, e => VariableValueFormatter.Format(e.Value));
             return new VariableStateSnapshot(vs.Id, dict);
         }).ToList();

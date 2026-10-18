@@ -979,7 +979,16 @@ public partial class WorkflowInstance :
 
     public async ValueTask<InstanceStateSnapshot> GetStateSnapshot()
     {
-        await EnsureWorkflowDefinitionAsync();
+        // The definition only fills in condition text; the snapshot is served without it, as the
+        // read model does for a completed instance.
+        try
+        {
+            await EnsureWorkflowDefinitionAsync();
+        }
+        catch (Exception ex)
+        {
+            LogStateSnapshotDefinitionUnavailable(ex);
+        }
         return InstanceStateSnapshots.From(State, _workflowDefinition);
     }
 
