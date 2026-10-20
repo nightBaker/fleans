@@ -126,6 +126,30 @@ namespace Fleans.Application.Tests
             Assert.IsNull(retrieved.Messages[1].CorrelationKeyExpression);
         }
 
+        [TestMethod]
+        public async Task DeployVersion_ShouldPreserveEveryDefinitionMember_AndStampProcessDefinitionId()
+        {
+            // Arrange
+            var processKey = "esc-workflow";
+            var processGrain = _cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(processKey);
+            var workflow = CreateSimpleWorkflow(processKey) with
+            {
+                Signals = [new SignalDefinition("sig1", "orderShipped")],
+                Escalations = [new EscalationDefinition("esc1", "LATE", "Late delivery")]
+            };
+
+            // Act
+            var summary = await processGrain.DeployVersion(workflow, "<bpmn/>");
+            var retrieved = await processGrain.GetLatestDefinition();
+
+            // Assert
+            Assert.AreEqual(summary.ProcessDefinitionId, retrieved.ProcessDefinitionId);
+            Assert.AreEqual("sig1", retrieved.Signals.Single().Id);
+            var escalation = retrieved.Escalations.Single();
+            Assert.AreEqual("esc1", escalation.Id);
+            Assert.AreEqual("LATE", escalation.EscalationCode);
+        }
+
         private static WorkflowDefinition CreateSimpleWorkflow(string workflowId)
         {
             var start = new StartEvent("start");
@@ -202,11 +226,6 @@ namespace Fleans.Application.Tests
 
             public Task<List<ProcessDefinition>> GetAllAsync() =>
                 Task.FromResult(_store.Values.ToList());
-
-            public Task<List<string>> GetAllDistinctKeysAsync() =>
-                Task.FromResult(_store.Values
-                    .Select(d => d.ProcessDefinitionKey)
-                    .Distinct().OrderBy(k => k).ToList());
 
             public Task SaveAsync(ProcessDefinition definition)
             {

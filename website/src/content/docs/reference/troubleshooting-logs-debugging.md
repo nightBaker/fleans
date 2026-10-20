@@ -33,16 +33,21 @@ If you author a custom-task plugin, follow the same pattern (see the [adding a B
 | 1120 | `WorkflowInstance` — workflow failed: an unhandled activity failure left no active activities (Error) |
 | 1131–1136 | `WorkflowInstance` — event store: 1131 snapshot write failed (Error; if it keeps failing the instance eventually cannot activate); 1132 read-model write failed, retrying (Warning); 1133 read model behind the event log on activation, rebuilding (Information); 1134 read model caught up after a failed write (Information); 1135 read-model retries gave up, rebuilt on the next activation (Error); 1136 reading the read-model version failed (Warning) |
 | 1140 | `WorkflowInstance` — variables over `Fleans:Variables:MaxSizeBytes` rejected (Warning) |
+| 1150–1153 | `WorkflowInstance` — multiple (catch / throw / boundary) events |
+| 1200–1299 | Effect handlers — child-workflow start (1200–1209), timer reminders (1210–1219), message subscriptions (1220–1229), signal subscriptions and throws (1230–1239), user-task persistence (1240–1249) |
 | 1066 | `UserTaskClaim` rejection (Warning) |
 | 2000–2099 | `ActivityInstance` |
 | 3000–3099 | `WorkflowInstanceState` |
 | 3030–3032 | `WorkflowInstance` — escalation warnings |
-| 4000–4099 | Event handlers |
+| 4000–4099 | Event handlers, including custom-task handlers (4030–4039, 4050) |
 | 5000–5099 | `WorkflowEventsPublisher` |
-| 9000–9099 | `BpmnConverter` |
+| 9000–9099 | `MessageCorrelationGrain` (9000–9009), `BpmnConverter` (9010–9019), `ScriptExecutorGrain` (9020–9029) |
+| 9100–9199 | `MessageStartEventListenerGrain` (9100–9109), `SignalCorrelationGrain` (9110–9119) |
 | 10000–10099 | `TimerCallbackGrain` |
 | 11200 | `Fleans.Streaming.Kafka.AwsMsk` — MSK IAM token refresh failed (Error); check IAM policy for `kafka-cluster:Connect` / `WriteData` / `ReadData` |
 | 11201 | `Fleans.Streaming.Kafka.AwsMsk` — `OAuthBearerSetTokenFailure` threw after token-refresh failure (Warning); typically a shutdown race, not actionable |
+| 11300–11399 | Grain placement — 11300 no core silo, 11301 no worker silo (Warning); 11311 placement-role violation (Error) |
+| 13000–13099 | `Fleans.Web` admin UI |
 
 For the full per-EventId deep dive and reserved bands, see [`docs/plans/2026-02-08-structured-workflow-logging.md`](https://github.com/nightBaker/fleans/blob/main/docs/plans/2026-02-08-structured-workflow-logging.md).
 

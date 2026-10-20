@@ -31,7 +31,7 @@ public partial class ScriptExecutorGrain : Grain, IScriptExecutorGrain
         return _scriptExpressionExecutor.Execute(script, variables, scriptFormat);
     }
 
-    [LoggerMessage(EventId = 9001, Level = LogLevel.Debug,
+    [LoggerMessage(EventId = 9020, Level = LogLevel.Debug,
         Message = "ScriptExecutorGrain executing on silo={silo} format={scriptFormat}")]
     private partial void LogScriptExecuting(string silo, string scriptFormat);
 }

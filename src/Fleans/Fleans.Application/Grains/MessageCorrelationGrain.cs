@@ -56,6 +56,8 @@ public partial class MessageCorrelationGrain : Grain, IMessageCorrelationGrain
     public async ValueTask Subscribe(Guid workflowInstanceId, string activityId, Guid hostActivityInstanceId)
     {
         var grainKey = this.GetPrimaryKeyString();
+        // The grain key stays the row key (MessageName); CorrelationKey holds the caller's raw key.
+        var correlationKey = MessageCorrelationKey.Parse(grainKey).CorrelationKey;
 
         await _mutex.WaitAsync();
         try
@@ -64,7 +66,7 @@ public partial class MessageCorrelationGrain : Grain, IMessageCorrelationGrain
             {
                 case MessageSubscriptionStatus.Empty:
                     _state.State.Subscription = new MessageSubscription(
-                        workflowInstanceId, activityId, hostActivityInstanceId, grainKey)
+                        workflowInstanceId, activityId, hostActivityInstanceId, correlationKey)
                         { MessageName = grainKey };
                     _state.State.Status = MessageSubscriptionStatus.Subscribed;
                     await _state.WriteStateAsync();
@@ -77,7 +79,7 @@ public partial class MessageCorrelationGrain : Grain, IMessageCorrelationGrain
 
                 case MessageSubscriptionStatus.Delivering:
                     var pendingSub = new MessageSubscription(
-                        workflowInstanceId, activityId, hostActivityInstanceId, grainKey)
+                        workflowInstanceId, activityId, hostActivityInstanceId, correlationKey)
                         { MessageName = grainKey };
                     _state.State.Pending = new PendingMessageIntent(pendingSub);
                     await _state.WriteStateAsync();

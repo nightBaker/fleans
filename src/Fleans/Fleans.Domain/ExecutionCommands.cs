@@ -74,10 +74,14 @@ public record RegisterUserTaskCommand(
 [GenerateSerializer]
 public record CompleteWorkflowCommand() : IExecutionCommand;
 
+/// <summary>
+/// Emitted by a complex gateway join with an activation condition. The aggregate counts the
+/// arriving token on the gateway's join state (the first token's activity instance is the one
+/// completed when the condition fires), then publishes the evaluation.
+/// </summary>
 [GenerateSerializer]
 public record EvaluateActivationConditionCommand(
-    [property: Id(0)] string Condition,
-    [property: Id(1)] int NrOfToken) : IExecutionCommand;
+    [property: Id(0)] string Condition) : IExecutionCommand;
 
 /// <summary>
 /// Emitted by a complex gateway join when a late-arriving token finds the gateway

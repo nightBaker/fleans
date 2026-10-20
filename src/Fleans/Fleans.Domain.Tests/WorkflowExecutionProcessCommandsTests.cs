@@ -447,12 +447,33 @@ public class WorkflowExecutionProcessCommandsTests
     }
 
     [TestMethod]
+    public void ProcessCommands_EvaluateActivationConditionCommand_CountsEachTokenOnTheJoinState()
+    {
+        // Arrange
+        var (execution, state, id) = CreateStartedExecution();
+
+        // Act — two tokens arrive at the same join
+        var first = execution.ProcessCommands([new EvaluateActivationConditionCommand("= x > 0")], id);
+        var second = execution.ProcessCommands([new EvaluateActivationConditionCommand("= x > 0")], id);
+
+        // Assert
+        var firstEval = (EvaluateActivationConditionEvent)((PublishDomainEventEffect)first.Single()).Event;
+        var secondEval = (EvaluateActivationConditionEvent)((PublishDomainEventEffect)second.Single()).Event;
+        Assert.AreEqual(1, firstEval.NrOfToken);
+        Assert.AreEqual(2, secondEval.NrOfToken);
+        var joinState = state.GetComplexGatewayJoinState("start1")!;
+        Assert.AreEqual(2, joinState.WaitingTokenCount);
+        Assert.AreEqual(id, joinState.FirstActivityInstanceId);
+        Assert.AreEqual(1, execution.GetUncommittedEvents().OfType<ComplexGatewayJoinStateCreated>().Count());
+    }
+
+    [TestMethod]
     public void ProcessCommands_EvaluateActivationConditionCommand_UnknownActivityInstanceId_DoesNotThrow()
     {
         var (execution, _, _) = CreateStartedExecution();
 
         var effects = execution.ProcessCommands(
-            [new EvaluateActivationConditionCommand("= x > 0", 1)], Guid.NewGuid());
+            [new EvaluateActivationConditionCommand("= x > 0")], Guid.NewGuid());
 
         Assert.AreEqual(0, effects.Count);
     }

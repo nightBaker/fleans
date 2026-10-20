@@ -984,24 +984,15 @@ public partial class WorkflowInstance :
         return ValueTask.FromResult(result);
     }
 
-    public ValueTask<IReadOnlyDictionary<Guid, TransactionOutcomeRecord>> GetTransactionOutcomes()
-    {
-        IReadOnlyDictionary<Guid, TransactionOutcomeRecord> result =
-            State.TransactionOutcomes.AsReadOnly();
-        return ValueTask.FromResult(result);
-    }
+    // In-silo reads for the test-only WorkflowInstanceInspector grain extension, so test probes
+    // stay off the remotely callable grain interface. They return copies: no caller gets a
+    // handle on the event-sourced state.
+    internal IReadOnlyDictionary<Guid, TransactionOutcomeRecord> CopyTransactionOutcomes()
+        => new Dictionary<Guid, TransactionOutcomeRecord>(State.TransactionOutcomes);
 
-    public ValueTask<IReadOnlyList<string>> GetPendingOperationKeys()
-    {
-        IReadOnlyList<string> result = State.PendingOperations.Keys.ToList().AsReadOnly();
-        return ValueTask.FromResult(result);
-    }
+    internal IReadOnlyList<string> CopyPendingOperationKeys() => State.PendingOperations.Keys.ToList();
 
-    public ValueTask<IReadOnlyList<string>> GetAppliedOperationKeys()
-    {
-        IReadOnlyList<string> result = State.AppliedOperations.Keys.ToList().AsReadOnly();
-        return ValueTask.FromResult(result);
-    }
+    internal IReadOnlyList<string> CopyAppliedOperationKeys() => State.AppliedOperations.Keys.ToList();
 
     public async ValueTask<InstanceStateSnapshot> GetStateSnapshot()
     {
@@ -1062,12 +1053,6 @@ public partial class WorkflowInstance :
 
     public ValueTask<ComplexGatewayJoinState?> GetComplexGatewayJoinState(string gatewayActivityId)
         => ValueTask.FromResult(State.GetComplexGatewayJoinState(gatewayActivityId));
-
-    public ValueTask IncrementComplexGatewayJoinToken(string gatewayActivityId, Guid activityInstanceId, string activationCondition)
-    {
-        _execution!.CreateOrIncrementComplexGatewayJoinToken(gatewayActivityId, activityInstanceId, activationCondition, State.Id);
-        return ValueTask.CompletedTask;
-    }
 
     private sealed class WorkflowInstanceEffectContext : IEffectContext
     {

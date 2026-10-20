@@ -44,6 +44,33 @@ public class MessageStartEventTests : WorkflowTestBase
     }
 
     [TestMethod]
+    public async Task SendMessage_WithCorrelationKeyOverLengthLimit_StillFiresStartEvent()
+    {
+        // Arrange — no subscription can exist under an over-long key, so delivery falls
+        // through to the start event instead of rejecting the request.
+        var messageStart = new MessageStartEvent("msgStart1", "msg1");
+        var end = new EndEvent("end");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "message-start-long-key",
+            Activities = [messageStart, end],
+            SequenceFlows = [new SequenceFlow("f1", messageStart, end)],
+            Messages = [new MessageDefinition("msg1", "longKeyOrder", null)]
+        };
+        var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("message-start-long-key");
+        await processGrain.DeployVersion(workflow, "<placeholder/>");
+        var commandService = GetSiloService<IWorkflowCommandService>();
+
+        // Act
+        var result = await commandService.SendMessage(
+            "longKeyOrder", new string('k', MessageCorrelationKey.MaxLength), new ExpandoObject());
+
+        // Assert
+        Assert.IsTrue(result.Delivered);
+        Assert.HasCount(1, result.WorkflowInstanceIds!);
+    }
+
+    [TestMethod]
     public async Task FireMessageStartEvent_ShouldPropagateVariables()
     {
         // Arrange

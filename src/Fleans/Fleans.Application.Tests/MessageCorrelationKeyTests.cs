@@ -34,4 +34,46 @@ public class MessageCorrelationKeyTests
         StringAssert.StartsWith(result, "msg/");
         Assert.AreNotEqual("msg/заказ-123", result);
     }
+
+    [TestMethod]
+    public void Build_CompositeOverMaxLength_Throws()
+    {
+        var correlationKey = new string('k', MessageCorrelationKey.MaxLength - "msg/".Length + 1);
+
+        Assert.ThrowsExactly<ArgumentException>(() => MessageCorrelationKey.Build("msg", correlationKey));
+    }
+
+    [TestMethod]
+    public void Build_CompositeAtMaxLength_Succeeds()
+    {
+        var correlationKey = new string('k', MessageCorrelationKey.MaxLength - "msg/".Length);
+
+        Assert.AreEqual(MessageCorrelationKey.MaxLength, MessageCorrelationKey.Build("msg", correlationKey).Length);
+    }
+
+    [TestMethod]
+    public void TryBuild_CompositeOverMaxLength_ReturnsNull()
+    {
+        var correlationKey = new string('k', MessageCorrelationKey.MaxLength);
+
+        Assert.IsNull(MessageCorrelationKey.TryBuild("msg", correlationKey));
+    }
+
+    [TestMethod]
+    public void Parse_ReturnsMessageNameAndUnescapedCorrelationKey()
+    {
+        var key = MessageCorrelationKey.Build("orders/payment", "region/order 123");
+
+        var (messageName, correlationKey) = MessageCorrelationKey.Parse(key);
+
+        Assert.AreEqual("orders/payment", messageName);
+        Assert.AreEqual("region/order 123", correlationKey);
+    }
+
+    [TestMethod]
+    public void MessageNameOf_ReturnsNamePart_OrTheInputWhenThereIsNoSeparator()
+    {
+        Assert.AreEqual("orders/payment", MessageCorrelationKey.MessageNameOf("orders/payment/order%201"));
+        Assert.AreEqual("malformed", MessageCorrelationKey.MessageNameOf("malformed"));
+    }
 }

@@ -82,23 +82,23 @@ public partial class SignalEffectHandler : IEffectHandler
         }
     }
 
-    [LoggerMessage(EventId = 1028, Level = LogLevel.Information,
+    [LoggerMessage(EventId = 1230, Level = LogLevel.Information,
         Message = "Signal subscription registered for activity {ActivityId}: signalName={SignalName}")]
     private partial void LogSignalSubscriptionRegistered(string activityId, string signalName);
 
-    [LoggerMessage(EventId = 1029, Level = LogLevel.Warning,
+    [LoggerMessage(EventId = 1231, Level = LogLevel.Warning,
         Message = "Signal subscription failed for activity {ActivityId}: signalName={SignalName}")]
     private partial void LogSignalSubscriptionFailed(string activityId, string signalName, Exception exception);
 
-    [LoggerMessage(EventId = 1030, Level = LogLevel.Information,
+    [LoggerMessage(EventId = 1232, Level = LogLevel.Information,
         Message = "Signal thrown: signalName={SignalName}, deliveredTo={DeliveredCount} subscribers")]
     private partial void LogSignalThrown(string signalName, int deliveredCount);
 
-    [LoggerMessage(EventId = 1031, Level = LogLevel.Warning,
+    [LoggerMessage(EventId = 1233, Level = LogLevel.Warning,
         Message = "Signal unsubscribe failed for activity {ActivityId}: signalName={SignalName} (cleanup-path; not failing workflow)")]
     private partial void LogSignalUnsubscribeFailed(string activityId, string signalName, Exception exception);
 
-    [LoggerMessage(EventId = 1032, Level = LogLevel.Warning,
+    [LoggerMessage(EventId = 1234, Level = LogLevel.Warning,
         Message = "Signal throw broadcast failed: signalName={SignalName} (best-effort; not failing workflow)")]
     private partial void LogSignalThrowFailed(string signalName, Exception exception);
 }

@@ -437,12 +437,15 @@ public class WorkflowQueryService : IWorkflowQueryService
 
         // Subscription tables are delete-on-completion: every row present is
         // an active subscription. No row-level filter is applied.
-        var activeMessageSubscriptions = await db.MessageSubscriptions
-            .AsNoTracking()
-            .Select(s => new MessageSubscriptionRow(
-                s.MessageName, s.CorrelationKey, s.WorkflowInstanceId,
-                s.ActivityId, s.HostActivityInstanceId))
-            .ToListAsync(ct);
+        // MessageName is the row key — the "name/escaped-key" composite — so show its name part.
+        var activeMessageSubscriptions = (await db.MessageSubscriptions
+                .AsNoTracking()
+                .Select(s => new MessageSubscriptionRow(
+                    s.MessageName, s.CorrelationKey, s.WorkflowInstanceId,
+                    s.ActivityId, s.HostActivityInstanceId))
+                .ToListAsync(ct))
+            .Select(row => row with { MessageName = MessageCorrelationKey.MessageNameOf(row.MessageName) })
+            .ToList();
 
         var activeSignalSubscriptions = await db.SignalSubscriptions
             .AsNoTracking()

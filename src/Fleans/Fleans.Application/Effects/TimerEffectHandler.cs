@@ -58,19 +58,19 @@ public partial class TimerEffectHandler : IEffectHandler
         }
     }
 
-    [LoggerMessage(EventId = 1017, Level = LogLevel.Information,
+    [LoggerMessage(EventId = 1210, Level = LogLevel.Information,
         Message = "Timer reminder registered for activity {TimerActivityId}, due in {DueTime}")]
     private partial void LogTimerReminderRegistered(string timerActivityId, TimeSpan dueTime);
 
-    [LoggerMessage(EventId = 1018, Level = LogLevel.Warning,
+    [LoggerMessage(EventId = 1211, Level = LogLevel.Warning,
         Message = "Timer reminder registration failed for activity {TimerActivityId}")]
     private partial void LogTimerReminderFailed(string timerActivityId, Exception exception);
 
-    [LoggerMessage(EventId = 1019, Level = LogLevel.Information,
+    [LoggerMessage(EventId = 1212, Level = LogLevel.Information,
         Message = "Timer reminder unregistered for activity {TimerActivityId}")]
     private partial void LogTimerReminderUnregistered(string timerActivityId);
 
-    [LoggerMessage(EventId = 1020, Level = LogLevel.Warning,
+    [LoggerMessage(EventId = 1213, Level = LogLevel.Warning,
         Message = "Timer reminder unregister failed for activity {TimerActivityId} (cleanup-path; not failing workflow)")]
     private partial void LogTimerUnregisterFailed(string timerActivityId, Exception exception);
 }

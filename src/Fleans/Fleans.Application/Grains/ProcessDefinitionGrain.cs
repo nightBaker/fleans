@@ -96,15 +96,8 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
         var nextVersion = _versions.Count == 0 ? 1 : _versions[^1].Version + 1;
         var processDefinitionId = GenerateProcessDefinitionId(processDefinitionKey, nextVersion, deployedAt);
 
-        var workflowWithId = new WorkflowDefinition
-        {
-            WorkflowId = workflow.WorkflowId,
-            Activities = workflow.Activities,
-            SequenceFlows = workflow.SequenceFlows,
-            Messages = workflow.Messages,
-            Signals = workflow.Signals,
-            ProcessDefinitionId = processDefinitionId
-        };
+        // `with` keeps every definition member (a field-by-field copy once dropped Escalations).
+        var workflowWithId = workflow with { ProcessDefinitionId = processDefinitionId };
         IWorkflowDefinition scope = workflowWithId;
 
         var definition = new ProcessDefinition
@@ -128,13 +121,6 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
         _byId[processDefinitionId] = definition;
         _versions.Add(definition);
         await _repository.SaveAsync(definition);
-
-        // Register key in the registry on first deploy (skip for re-deploys)
-        if (_versions.Count == 1)
-        {
-            var registry = _grainFactory.GetGrain<IProcessDefinitionRegistryGrain>(0);
-            await registry.RegisterKey(processDefinitionKey);
-        }
 
         LogDeployedWorkflow(processDefinitionKey, processDefinitionId, nextVersion);
 

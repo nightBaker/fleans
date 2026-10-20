@@ -127,6 +127,6 @@ public partial class TimerStartEventSchedulerGrain : Grain, ITimerStartEventSche
     [LoggerMessage(EventId = 8003, Level = LogLevel.Warning, Message = "Failed to unregister timer-start reminder for process {ProcessKey}")]
     private partial void LogReminderUnregisterFailed(string processKey, Exception ex);
 
-    [LoggerMessage(EventId = 8004, Level = LogLevel.Information, Message = "Timer start cycle re-armed for process {ProcessKey}: next fire in {Interval} (fired {FireCount} so far)")]
+    [LoggerMessage(EventId = 8011, Level = LogLevel.Information, Message = "Timer start cycle re-armed for process {ProcessKey}: next fire in {Interval} (fired {FireCount} so far)")]
     private partial void LogCycleReArmed(string processKey, TimeSpan interval, int fireCount);
 }

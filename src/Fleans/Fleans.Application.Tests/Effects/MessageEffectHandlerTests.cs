@@ -125,4 +125,19 @@ public class MessageEffectHandlerTests
         await context.DidNotReceive().ProcessFailureEffects(
             Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<Exception>());
     }
+
+    [TestMethod]
+    public async Task HandleAsync_UnsubscribeMessageWithOverLongKey_IsLogOnly()
+    {
+        // A key over MessageCorrelationKey.MaxLength makes Build throw; on the cleanup path
+        // that must stay log-only rather than escape the handler.
+        var context = Substitute.For<IEffectContext>();
+        var handler = new MessageEffectHandler(Substitute.For<ILogger<MessageEffectHandler>>());
+        var effect = new UnsubscribeMessageEffect("OrderReceived", new string('k', MessageCorrelationKey.MaxLength));
+
+        await handler.HandleAsync(effect, context);
+
+        await context.DidNotReceive().ProcessFailureEffects(
+            Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<Exception>());
+    }
 }
