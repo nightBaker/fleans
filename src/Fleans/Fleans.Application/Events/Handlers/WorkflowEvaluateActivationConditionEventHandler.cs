@@ -3,6 +3,7 @@ using Fleans.Application.Conditions;
 using Fleans.Application.Events;
 using Fleans.Application.Grains;
 using Fleans.Application.Logging;
+using Fleans.Application.Observability;
 using Fleans.Application.Placement;
 using Fleans.Domain.Events;
 using Microsoft.Extensions.DependencyInjection;
@@ -70,7 +71,9 @@ public partial class WorkflowEvaluateActivationConditionEventHandler : Grain, IW
 
             await workflowInstance.CompleteActivationCondition(item.ActivityId, item.ActivityInstanceId, result);
         }
-        catch (Exception ex)
+        // A retiring instance rejected the call (#845): nothing was applied, so let the stream
+        // redeliver to its next activation rather than fail the activity.
+        catch (Exception ex) when (ex is not WorkflowInstanceStaleException)
         {
             LogActivationConditionEvaluationFailed(ex, item.ActivityId, item.ActivityInstanceId);
             try
@@ -80,6 +83,7 @@ public partial class WorkflowEvaluateActivationConditionEventHandler : Grain, IW
             catch (Exception failEx)
             {
                 LogFailActivityFailed(failEx, item.ActivityId);
+                FleansDiagnostics.OnWorkflowStalled("activation_condition");
                 throw;
             }
         }

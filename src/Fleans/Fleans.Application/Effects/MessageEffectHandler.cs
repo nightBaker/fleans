@@ -62,7 +62,9 @@ public partial class MessageEffectHandler : IEffectHandler
             await corrGrain.Subscribe(subMsg.WorkflowInstanceId, subMsg.ActivityId, subMsg.HostActivityInstanceId);
             LogMessageSubscriptionRegistered(subMsg.ActivityId, subMsg.MessageName, subMsg.CorrelationKey);
         }
-        catch (Exception ex)
+        // The persist found the instance retiring (#845): not a registration failure — the turn
+        // stops and the caller's retry reaches the next activation.
+        catch (Exception ex) when (ex is not WorkflowInstanceStaleException)
         {
             LogMessageSubscriptionFailed(subMsg.ActivityId, subMsg.MessageName, subMsg.CorrelationKey, ex);
             await context.ProcessFailureEffects(subMsg.ActivityId, subMsg.HostActivityInstanceId, ex);

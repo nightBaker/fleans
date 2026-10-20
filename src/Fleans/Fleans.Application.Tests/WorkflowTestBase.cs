@@ -266,6 +266,9 @@ public abstract class WorkflowTestBase
                 .ConfigureServices(services =>
                 {
                     services.AddSingleton<ILoggerProvider, CapturedLogEvents.Provider>();
+                    // Fleans' Debug entries reach only the capture, so tests can wait on them as sync points.
+                    services.Configure<LoggerFilterOptions>(o =>
+                        o.AddFilter<CapturedLogEvents.Provider>("Fleans", LogLevel.Debug));
 
                     services.AddDbContextFactory<FleanCommandDbContext>(options =>
                         options.UseFleansSqlite("DataSource=file::memory:?cache=shared"));
@@ -300,7 +303,8 @@ public abstract class WorkflowTestBase
                     // journal tail, not only from a full replay.
                     services.Configure<FleansPersistenceOptions>(o => o.SnapshotInterval = TestSnapshotInterval);
                     services.AddSingleton<EfCoreEventStore>();
-                    services.AddSingleton<IEventStore>(sp => sp.GetRequiredService<EfCoreEventStore>());
+                    services.AddSingleton<IEventStore>(sp =>
+                        new FaultInjectingEventStore(sp.GetRequiredService<EfCoreEventStore>()));
                     services.AddApplication();
                     services.Configure<WorkflowVariablesOptions>(o => o.MaxSizeBytes = TestMaxVariablesSizeBytes);
 

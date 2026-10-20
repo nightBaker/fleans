@@ -1,5 +1,6 @@
 namespace Fleans.Application.QueryModels;
 
+[GenerateSerializer]
 public sealed record VariableStateSnapshot(
-    Guid VariablesId,
-    Dictionary<string, string> Variables);
+    [property: Id(0)] Guid VariablesId,
+    [property: Id(1)] Dictionary<string, string> Variables);

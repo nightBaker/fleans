@@ -9,6 +9,8 @@ namespace Fleans.Application.Observability;
 /// <c>ConfigureOpenTelemetry</c> by name ("Fleans") — no project reference required.
 ///
 /// See <c>website/src/content/docs/reference/observability.md</c> for the metric catalog.
+/// Lives in Abstractions so worker hosts and plugins (which do not reference Fleans.Application)
+/// emit to the same instruments.
 /// </summary>
 public static class FleansDiagnostics
 {
@@ -28,6 +30,11 @@ public static class FleansDiagnostics
         "fleans.workflow.terminated",
         unit: "{instances}",
         description: "Workflow instances that reached a terminal state. Tag 'result' = completed|cancelled|failed.");
+
+    public static readonly Counter<long> WorkflowsStalled = Meter.CreateCounter<long>(
+        "fleans.workflow.stalled",
+        unit: "{deliveries}",
+        description: "Activity outcome deliveries the workflow instance rejected: FailActivity itself threw, so the activity stays executing until a redelivery succeeds. Tag 'handler' = script|condition|activation_condition|custom_task.");
 
     public static readonly Histogram<double> ActivityDuration = Meter.CreateHistogram<double>(
         "fleans.activity.duration",
@@ -51,6 +58,9 @@ public static class FleansDiagnostics
 
     public static void OnWorkflowFailed() =>
         WorkflowsTerminated.Add(1, new KeyValuePair<string, object?>("result", "failed"));
+
+    public static void OnWorkflowStalled(string handler) =>
+        WorkflowsStalled.Add(1, new KeyValuePair<string, object?>("handler", handler));
 
     public static void RecordActivityDuration(double milliseconds, string activityType) =>
         ActivityDuration.Record(milliseconds, new KeyValuePair<string, object?>("activity.type", activityType));

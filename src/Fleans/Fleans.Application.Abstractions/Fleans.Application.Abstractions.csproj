@@ -8,7 +8,7 @@
     <!-- NuGet packaging: abstractions package consumed by plugin authors.
          Carries grain interfaces (script/condition/custom-task), CustomTask schema
          records, narrow IWorkflowInstanceCallback for Worker→Core calls, stream
-         constants, and logging context helpers. Depends only on Fleans.Domain.Abstractions
+         constants, logging context helpers, and the Fleans meter (FleansDiagnostics). Depends only on Fleans.Domain.Abstractions
          (the leaf) — no reference to Fleans.Domain itself, by design. -->
     <IsPackable>true</IsPackable>
     <PackageId>Fleans.Application.Abstractions</PackageId>

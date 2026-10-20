@@ -1,5 +1,6 @@
 using System.Dynamic;
 using Fleans.Application;
+using Fleans.Application.Grains;
 using Fleans.Application.QueryModels;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
@@ -9,6 +10,7 @@ using Fleans.Persistence;
 using Fleans.Persistence.Tests.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 using Sieve.Models;
 using Sieve.Services;
 
@@ -19,7 +21,7 @@ namespace Fleans.Persistence.Tests;
 public class WorkflowQueryServiceTests : PersistenceTestBase
 {
     private static (IWorkflowQueryService Service, IDbContextFactory<FleanCommandDbContext> CommandFactory)
-        BuildService(IPersistenceTestFixture fixture, PersistenceProvider provider = PersistenceProvider.Sqlite)
+        BuildService(IPersistenceTestFixture fixture, PersistenceProvider provider = PersistenceProvider.Sqlite, IGrainFactory? grainFactory = null)
     {
         var sieveOptions = Options.Create(new SieveOptions
         {
@@ -30,13 +32,38 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
         IUserTaskFilterStrategy filterStrategy = provider == PersistenceProvider.Postgres
             ? new Fleans.Persistence.PostgreSql.PostgresUserTaskFilterStrategy()
             : new InMemoryUserTaskFilterStrategy();
-        var service = new WorkflowQueryService(fixture.QueryFactory, sieveProcessor, filterStrategy);
+        var service = new WorkflowQueryService(fixture.QueryFactory, sieveProcessor, filterStrategy, grainFactory ?? Substitute.For<IGrainFactory>());
         return (service, fixture.CommandFactory);
     }
 
     // ─────────────────────────────────────────────────
-    // GetStateSnapshot
+    // GetStateSnapshot — a completed instance is read from the read model; a running one from its grain
     // ─────────────────────────────────────────────────
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetStateSnapshot_RunningInstance_IsServedByItsGrain(PersistenceProvider provider)
+    {
+        // Arrange — a running instance's row, and a grain that answers for it
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var instanceId = Guid.NewGuid();
+        var fromGrain = new InstanceStateSnapshot(["task1"], [], true, false, false, false,
+            [], [], [], [], null, null, null, null, null);
+        var grain = Substitute.For<IWorkflowInstanceGrain>();
+        grain.GetStateSnapshot().Returns(ValueTask.FromResult(fromGrain));
+        var grainFactory = Substitute.For<IGrainFactory>();
+        grainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId, null).Returns(grain);
+        var (service, commandFactory) = BuildService(fixture, provider, grainFactory);
+        using var db = commandFactory.CreateDbContext();
+        await SeedWorkflowInstance(db, instanceId, isStarted: true);
+
+        // Act
+        var result = await service.GetStateSnapshot(instanceId);
+
+        // Assert
+        Assert.AreSame(fromGrain, result);
+    }
 
     [DataTestMethod]
     [DataRow(PersistenceProvider.Sqlite)]
@@ -64,7 +91,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
         var instanceId = Guid.NewGuid();
         var processDefId = "proc:1:ts";
         await SeedProcessDefinition(db, processDefId, "proc", 1);
-        await SeedWorkflowInstance(db, instanceId, processDefinitionId: processDefId, isStarted: true);
+        await SeedWorkflowInstance(db, instanceId, processDefinitionId: processDefId, isStarted: true, isCompleted: true);
 
         var activeAiId = Guid.NewGuid();
         var completedAiId = Guid.NewGuid();
@@ -110,7 +137,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
         using var db = commandFactory.CreateDbContext();
 
         var instanceId = Guid.NewGuid();
-        await SeedWorkflowInstance(db, instanceId, isStarted: true);
+        await SeedWorkflowInstance(db, instanceId, isStarted: true, isCompleted: true);
 
         var varsId = Guid.NewGuid();
         var vars = new WorkflowVariablesState(varsId, instanceId);
@@ -147,7 +174,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
         var processDefId = "proc:1:ts";
         await SeedProcessDefinition(db, processDefId, "proc", 1, bpmnXml: "<bpmn/>",
             createConditionalFlow: true);
-        await SeedWorkflowInstance(db, instanceId, processDefinitionId: processDefId, isStarted: true);
+        await SeedWorkflowInstance(db, instanceId, processDefinitionId: processDefId, isStarted: true, isCompleted: true);
 
         var gatewayAiId = Guid.NewGuid();
         var cs = new ConditionSequenceState("condFlow1", gatewayAiId, instanceId);
@@ -179,7 +206,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
         var instanceId = Guid.NewGuid();
         var processDefId = "myproc:1:ts";
         await SeedProcessDefinition(db, processDefId, "myproc", 1);
-        await SeedWorkflowInstance(db, instanceId, processDefinitionId: processDefId, isStarted: true);
+        await SeedWorkflowInstance(db, instanceId, processDefinitionId: processDefId, isStarted: true, isCompleted: true);
 
         var result = await service.GetStateSnapshot(instanceId);
 
@@ -227,7 +254,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
         using var db = commandFactory.CreateDbContext();
 
         var instanceId = Guid.NewGuid();
-        await SeedWorkflowInstance(db, instanceId, isStarted: true);
+        await SeedWorkflowInstance(db, instanceId, isStarted: true, isCompleted: true);
 
         var aiId = Guid.NewGuid();
         var entry = new ActivityInstanceEntry(aiId, "task1", instanceId);

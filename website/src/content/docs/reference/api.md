@@ -210,6 +210,7 @@ Content-Type: application/json
 - **400** — `{"error": "WorkflowInstanceId is required"}` / `{"error": "ActivityId is required"}`
 - **404** — no workflow instance with that id (ProblemDetails, `detail`: `Workflow instance '<id>' not found.`)
 - **409** — the activity has no active entry: unknown activity id, or an activity that already completed (ProblemDetails, `detail`: `No active entry found for activity 'review-task'.`). Also returned when the activity is a user task — use the `/UserTasks/{id}/complete` endpoint instead.
+- **503** — the instance is briefly unavailable after a failed journal write (ProblemDetails; log 1137). Nothing of the call was applied: retry it.
 
 ### Read endpoints
 
@@ -524,7 +525,7 @@ curl -k -X POST https://localhost:7140/UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a
 
 `isCompleted` means *terminal*. Tell the outcomes apart with the two flags: `isCancelled: true` → cancelled, `isFailed: true` → an unhandled activity failure ended the instance (see [Unhandled errors fail the instance](/fleans/guides/error-handling/#unhandled-errors-fail-the-instance)); both `false` → completed successfully. The failing activity is listed in `completedActivities` with a non-null `errorState`.
 
-This endpoint is intended for **diagnostics and load-test polling**, not for high-frequency production use. The response reflects the read-side EF projection, which is eventually consistent with the event stream — callers that need realtime certainty should drive via the grain API directly.
+This endpoint is intended for **diagnostics and load-test polling**, not for high-frequency production use. A running instance is answered by its grain (live state; an idle instance is activated for it). A finished one is answered from the read-side EF projection, written when it completed.
 
 ```bash
 curl -k https://localhost:7140/Instances/<guid>/state

@@ -1,8 +1,9 @@
 namespace Fleans.Application.QueryModels;
 
+[GenerateSerializer]
 public sealed record ConditionSequenceSnapshot(
-    string SequenceFlowId,
-    string Condition,
-    string SourceActivityId,
-    string TargetActivityId,
-    bool Result);
+    [property: Id(0)] string SequenceFlowId,
+    [property: Id(1)] string Condition,
+    [property: Id(2)] string SourceActivityId,
+    [property: Id(3)] string TargetActivityId,
+    [property: Id(4)] bool Result);

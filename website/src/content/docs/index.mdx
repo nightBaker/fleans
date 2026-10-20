@@ -74,7 +74,7 @@ import SpecRow from '../../components/SpecRow.astro';
   </SpecRow>
 
   <SpecRow tags={['projection', 'ef']} title="Materialized read projections">
-    Admin UI and state queries read a pre-built EF projection. No event replay to render a list or poll for completion.
+    Lists and finished instances read a pre-built EF projection. No event replay to render a list or open a finished instance.
 
     <Fragment slot="note">Listing instances never replays a journal.</Fragment>
   </SpecRow>

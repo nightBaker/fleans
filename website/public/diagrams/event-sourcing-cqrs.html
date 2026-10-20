@@ -4498,7 +4498,7 @@
         <div class="pulse-dot"></div>
         <h1>Event Sourcing + CQRS</h1>
       </div>
-      <p class="subtitle">Commands mutate in-memory grain state; one ConfirmEvents transaction persists the batch; reads hit a materialized projection, never the event log</p>
+      <p class="subtitle">Commands mutate in-memory grain state; one ConfirmEvents transaction persists the batch; lists and finished instances read a materialized projection, never the event log</p>
     </div>
 
     <script id="archify-guided-views-data" type="application/json">[]</script>
@@ -4546,7 +4546,7 @@
     <div class="diagram-container" data-detail-level="read">
       <svg viewBox="0 0 1100 560" role="img" aria-labelledby="archify-diagram-title archify-diagram-description" data-preset="classic" data-quality-profile="showcase">
         <title id="archify-diagram-title">Event Sourcing + CQRS</title>
-        <desc id="archify-diagram-description">Commands mutate in-memory grain state; one ConfirmEvents transaction persists the batch; reads hit a materialized projection, never the event log</desc>
+        <desc id="archify-diagram-description">Commands mutate in-memory grain state; one ConfirmEvents transaction persists the batch; lists and finished instances read a materialized projection, never the event log</desc>
         <!-- Definitions -->
         <defs>
           <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">

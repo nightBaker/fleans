@@ -60,7 +60,7 @@ internal class InMemoryWorkflowStateProjection : IWorkflowStateProjection
     public Task<int> ReadVersionAsync(string grainId) =>
         Task.FromResult(_versions.GetValueOrDefault(grainId));
 
-    public Task WriteAsync(string grainId, WorkflowInstanceState state, int version, bool rebuild = false)
+    public Task WriteAsync(string grainId, WorkflowInstanceState state, int version)
     {
         _versions[grainId] = version;
         return Task.CompletedTask;
@@ -79,15 +79,87 @@ internal class FaultInjectingWorkflowStateProjection(IWorkflowStateProjection in
 
     public Task<int> ReadVersionAsync(string grainId) => inner.ReadVersionAsync(grainId);
 
-    public Task WriteAsync(string grainId, WorkflowInstanceState state, int version, bool rebuild = false)
+    public Task WriteAsync(string grainId, WorkflowInstanceState state, int version)
     {
         if (FailuresLeft.TryGetValue(grainId, out var left) && left > 0)
         {
             FailuresLeft[grainId] = left - 1;
-            // Thrown before the inner write takes the dirty flags — like a real failed write,
-            // which restores them.
             throw new TimeoutException($"Injected projection failure for {grainId}");
         }
-        return inner.WriteAsync(grainId, state, version, rebuild);
+        return inner.WriteAsync(grainId, state, version);
     }
+}
+
+/// <summary>
+/// Wraps the real event store so a test can hold or fail a chosen grain's next appends, to drive
+/// the grain's journal writes into a chosen interleaving (#846) or through Orleans' re-read after a
+/// failed append (#845), with or without the journal moving on meanwhile. Other grains and later
+/// appends pass straight through.
+/// </summary>
+internal class FaultInjectingEventStore(IEventStore inner) : IEventStore
+{
+    /// <summary>
+    /// One held append: <see cref="Entered"/> completes with the batch when it reaches the store, and
+    /// the append waits for <see cref="Release"/>.
+    /// </summary>
+    public sealed class Gate
+    {
+        public TaskCompletionSource<IReadOnlyList<WorkflowEvent>> Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    private static readonly ConcurrentDictionary<Guid, ConcurrentQueue<Gate>> Gates = new();
+    private static readonly ConcurrentDictionary<Guid, int> FailuresLeft = new();
+    private static readonly ConcurrentDictionary<Guid, WorkflowEvent> ForeignWrites = new();
+
+    /// <summary>Holds the grain's next <paramref name="count"/> appends, one gate each, in order.</summary>
+    public static Gate[] HoldNextAppends(Guid instanceId, int count)
+    {
+        var gates = Enumerable.Range(0, count).Select(_ => new Gate()).ToArray();
+        Gates[instanceId] = new ConcurrentQueue<Gate>(gates);
+        return gates;
+    }
+
+    public static void FailNextAppends(Guid instanceId, int count) => FailuresLeft[instanceId] = count;
+
+    /// <summary>
+    /// Fails the grain's next append after storing <paramref name="foreign"/> in its place, as if
+    /// another writer got there first: the journal moves on without the grain.
+    /// </summary>
+    public static void FailNextAppendAfterForeignWrite(Guid instanceId, WorkflowEvent foreign) =>
+        ForeignWrites[instanceId] = foreign;
+
+    public int SnapshotInterval => inner.SnapshotInterval;
+
+    public Task<(WorkflowInstanceState? State, int Version)> ReadSnapshotAsync(Guid instanceId) =>
+        inner.ReadSnapshotAsync(instanceId);
+
+    public Task<IReadOnlyList<WorkflowEvent>> ReadEventsAsync(Guid instanceId, int afterVersion) =>
+        inner.ReadEventsAsync(instanceId, afterVersion);
+
+    public async Task<bool> AppendEventsAsync(Guid instanceId, IReadOnlyList<WorkflowEvent> events, int expectedVersion)
+    {
+        if (Gates.TryGetValue(instanceId, out var gates) && gates.TryDequeue(out var gate))
+        {
+            gate.Entered.TrySetResult(events);
+            await gate.Release.Task;
+        }
+
+        if (ForeignWrites.TryRemove(instanceId, out var foreign))
+        {
+            await inner.AppendEventsAsync(instanceId, [foreign], expectedVersion);
+            throw new TimeoutException($"Injected append failure after a foreign write for {instanceId}");
+        }
+
+        if (FailuresLeft.TryGetValue(instanceId, out var left) && left > 0)
+        {
+            FailuresLeft[instanceId] = left - 1;
+            throw new TimeoutException($"Injected append failure for {instanceId}");
+        }
+
+        return await inner.AppendEventsAsync(instanceId, events, expectedVersion);
+    }
+
+    public Task WriteSnapshotAsync(Guid instanceId, int version, WorkflowInstanceState state) =>
+        inner.WriteSnapshotAsync(instanceId, version, state);
 }
