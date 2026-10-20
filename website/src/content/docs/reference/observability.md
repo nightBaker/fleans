@@ -25,7 +25,7 @@ Out of the box, every silo exposes:
 - **OpenTelemetry traces** from the `Microsoft.Orleans.Runtime`, `Microsoft.Orleans.Application`, and `Fleans` activity sources, plus ASP.NET Core and HttpClient.
 - **Structured logs** with workflow-aware scopes (workflow id, process definition, instance id) generated via `[LoggerMessage]`.
 
-Wiring lives in [`Fleans.ServiceDefaults/Extensions.cs`](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.ServiceDefaults/Extensions.cs) — `ConfigureOpenTelemetry`, `AddDefaultHealthChecks`, and `MapDefaultEndpoints`. The Fleans-defined `Meter` and `ActivitySource` themselves live in [`Fleans.Application/Observability/FleansDiagnostics.cs`](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Application/Observability/FleansDiagnostics.cs) and are registered by name (no project reference required).
+Wiring lives in [`Fleans.ServiceDefaults/Extensions.cs`](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.ServiceDefaults/Extensions.cs) — `ConfigureOpenTelemetry`, `AddDefaultHealthChecks`, and `MapDefaultEndpoints`. The Fleans-defined `Meter` and `ActivitySource` themselves live in [`Fleans.Application.Abstractions/Observability/FleansDiagnostics.cs`](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Application.Abstractions/Observability/FleansDiagnostics.cs) and are registered by name (no project reference required).
 
 ### Fleans-defined metrics
 
@@ -35,6 +35,7 @@ Meter name: `Fleans` (instrumentation version `1.0.0`).
 |---|---|---|---|---|
 | `fleans.workflow.started`    | Counter   | `{instances}` | Workflow instances started. | none |
 | `fleans.workflow.terminated` | Counter   | `{instances}` | Workflow instances that reached a terminal state. | `result={completed,cancelled,failed}` |
+| `fleans.workflow.stalled`    | Counter   | `{deliveries}` | Activity results the workflow instance rejected: a script, condition or custom-task handler's `FailActivity` call itself threw ("workflow may be stalled"). The activity stays executing until a redelivery succeeds. Counts deliveries, not instances — one stuck instance under stream redelivery counts many times. | `handler={script,condition,activation_condition,custom_task}` |
 | `fleans.activity.duration`   | Histogram | `ms`          | Per-activity wall-clock duration. Explicit buckets: `[10, 50, 100, 250, 500, 1000, 5000, 10000, 30000, 60000, 300000, 600000]` ms — sub-millisecond script tasks through 10-minute REST calls. | `activity.type` |
 
 > **Deferred to a follow-up:** `fleans.workflow.active` (a non-terminal-count gauge) requires engine-side cooperation to seed from persistence at silo startup so the count survives silo restarts. It is intentionally not shipped in this initial Meter to avoid a known-broken metric. Track via the Fleans GitHub project.
@@ -49,6 +50,10 @@ Meter name: `Fleans` (instrumentation version `1.0.0`).
 - alert: FleansWorkflowFailureSpike
   expr: rate(fleans_workflow_terminated_total{result="cancelled"}[5m]) > 0.5
   for: 5m
+
+- alert: FleansWorkflowStalled
+  expr: increase(fleans_workflow_stalled_total[5m]) > 0
+  for: 0m
 
 - alert: FleansActivityP99Slow
   expr: histogram_quantile(0.99, rate(fleans_activity_duration_bucket[5m])) > 30000

@@ -210,6 +210,7 @@ Content-Type: application/json
 - **400** — `{"error": "WorkflowInstanceId is required"}` / `{"error": "ActivityId is required"}`
 - **404** — no workflow instance with that id (ProblemDetails, `detail`: `Workflow instance '<id>' not found.`)
 - **409** — the activity has no active entry: unknown activity id, or an activity that already completed (ProblemDetails, `detail`: `No active entry found for activity 'review-task'.`). Also returned when the activity is a user task — use the `/UserTasks/{id}/complete` endpoint instead.
+- **503** — the instance is briefly unavailable after a failed journal write (ProblemDetails; log 1137). Nothing of the call was applied: retry it.
 
 ### Read endpoints
 

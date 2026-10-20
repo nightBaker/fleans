@@ -83,17 +83,16 @@ public partial class WorkflowInstance :
     /// </summary>
     private readonly ConcurrentDictionary<string, Task> _inFlightOperations = new();
 
-    /// <summary>
-    /// Guards against double-apply: true while draining aggregate events via RaiseEvent.
-    /// When true, TransitionState skips event application (aggregate already applied).
-    /// </summary>
-    private bool _draining;
+    /// <summary>Activation finished loading State; a later <see cref="ReadStateFromStorage"/> is a re-read.</summary>
+    private bool _activated;
 
     /// <summary>
-    /// Temporary aggregate used during JournaledGrain activation replay.
-    /// TransitionState uses this to apply events when not in drain mode.
+    /// A re-read after a failed or conflicting append found the journal ahead of this activation,
+    /// and Orleans replaced <c>State</c> with that journal's state while the aggregate still holds
+    /// the old object (#845). The activation rejects new calls until it deactivates; the next one
+    /// replays the journal.
     /// </summary>
-    private WorkflowExecution? _replayAggregate;
+    private bool _stateReloaded;
 
     /// <summary>The version the stored snapshot covers; a new one is due every <see cref="IEventStore.SnapshotInterval"/> events.</summary>
     private int _snapshotVersion;
@@ -144,13 +143,9 @@ public partial class WorkflowInstance :
 
     public override async Task OnActivateAsync(CancellationToken cancellationToken)
     {
+        // Loads State through ReadStateFromStorage, which replays the journal itself.
         await base.OnActivateAsync(cancellationToken);
-
-        // _replayAggregate lifecycle: base.OnActivateAsync() calls ReadStateFromStorage()
-        // then replays events via TransitionState(), which creates _replayAggregate on first call.
-        // After base returns, we clear it — the real _execution aggregate will be created
-        // by EnsureExecution() with the full workflow definition.
-        _replayAggregate = null;
+        _activated = true;
 
         RebuildPendingExternalEvents();
     }
@@ -198,17 +193,15 @@ public partial class WorkflowInstance :
 
     // ── JournaledGrain: TransitionState ─────────────────────────────────
 
+    /// <summary>
+    /// Always a no-op. <c>State</c> is the adaptor's confirmed view, which the aggregate mutates
+    /// before every <c>RaiseEvent</c>, and <see cref="ReadStateFromStorage"/> replays the journal
+    /// itself — so there is nothing left to apply. Orleans calls this after each append with the
+    /// events just written; applying them would apply them twice (#846).
+    /// </summary>
     protected override void TransitionState(
         WorkflowInstanceState state, WorkflowEvent @event)
     {
-        if (!_draining)
-        {
-            // During activation replay: apply events via a temporary aggregate
-            _replayAggregate ??= new WorkflowExecution(state);
-            _replayAggregate.ReplayEvent(@event);
-        }
-        // During normal operation (_draining == true): no-op.
-        // The aggregate has already applied the event before RaiseEvent was called.
     }
 
     // ── ICustomStorageInterface ─────────────────────────────────────────
@@ -216,6 +209,26 @@ public partial class WorkflowInstance :
     public async Task<KeyValuePair<int, WorkflowInstanceState>> ReadStateFromStorage()
     {
         var instanceId = this.GetPrimaryKey();
+        if (_activated && !_stateReloaded)
+        {
+            // Orleans re-reads after a failed or conflicting append, swaps State for the object
+            // returned here, then retries the batch on it (#845). The live State already holds the
+            // batch (the aggregate applies before RaiseEvent): if nothing was stored past what this
+            // activation knows, it is exactly the journal plus that retried batch — keep it.
+            var stored = await _eventStore.ReadEventsAsync(instanceId, _journalVersion);
+            if (stored.Count == 0)
+            {
+                LogAppendRetryKeepsState(_journalVersion);
+                return new(_journalVersion, State);
+            }
+
+            // The journal moved on without this activation (a write that failed but was stored,
+            // or another writer): State becomes the journal's, the aggregate is out of date.
+            _stateReloaded = true;
+            LogStateReloaded(_journalVersion, _journalVersion + stored.Count);
+            DeactivateOnIdle();
+        }
+
         var grainId = instanceId.ToString();
         // Independent of the state reads below, so it runs alongside them.
         var projectedVersionTask = ReadProjectedVersion(grainId);
@@ -311,6 +324,13 @@ public partial class WorkflowInstance :
 
     private async Task RetryProjection(CancellationToken cancellationToken)
     {
+        // After a re-read State lags _journalVersion; the next activation catches the read model up.
+        if (_stateReloaded)
+        {
+            StopProjectionRetry();
+            return;
+        }
+
         // State ahead of the journal: the drain's own projection write follows and settles the retry.
         if (!HasUndrainedEvents)
         {
@@ -359,6 +379,11 @@ public partial class WorkflowInstance :
         if (HasUndrainedEvents)
             return true;
 
+        // After a re-read, State lacks this batch (the adaptor applies nothing; see
+        // TransitionState). The next activation replays it and catches the read model up.
+        if (_stateReloaded)
+            return true;
+
         if (await TryWriteProjection(grainId, State, version))
             StopProjectionRetry();
         else
@@ -389,6 +414,7 @@ public partial class WorkflowInstance :
 
     private async ValueTask EnsureExecution()
     {
+        ThrowIfStateReloaded();
         await EnsureWorkflowDefinitionAsync();
         _execution ??= new WorkflowExecution(State, _workflowDefinition!);
     }

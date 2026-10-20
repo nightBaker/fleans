@@ -3,6 +3,7 @@ using Fleans.Application.Abstractions.Events;
 using Fleans.Application.CustomTasks;
 using Fleans.Application.Grains;
 using Fleans.Application.Logging;
+using Fleans.Application.Observability;
 using Fleans.Domain.Events;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -214,6 +215,7 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
         catch (Exception failEx)
         {
             LogFailActivityFailed(failEx, item.ActivityId);
+            FleansDiagnostics.OnWorkflowStalled("custom_task");
             // Redelivery duplicates are absorbed by the HasActiveEntry guards in
             // WorkflowInstance.CompleteActivity / FailActivity, backed by the domain-level
             // entry.IsCompleted early-return in WorkflowExecution.

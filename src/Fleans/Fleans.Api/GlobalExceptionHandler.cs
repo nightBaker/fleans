@@ -1,3 +1,4 @@
+using Fleans.Application.Grains;
 using Fleans.Domain.Errors;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
@@ -35,6 +36,7 @@ public partial class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logg
             ArgumentException ex           => (400, "Bad Request", ex.Message),
             KeyNotFoundException ex        => (404, "Not Found", ex.Message),
             InvalidOperationException ex   => (409, "Conflict", ex.Message),
+            WorkflowInstanceStaleException ex => (503, "Service Unavailable", ex.Message),
             _                              => (500, "Internal Server Error",
                                                "An unexpected error occurred. See server logs for details.")
         };
