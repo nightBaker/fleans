@@ -100,7 +100,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
         var activeEntry = new ActivityInstanceEntry(activeAiId, "task1", instanceId);
         activeEntry.SetActivityType("TaskActivity");
         activeEntry.Execute(DateTimeOffset.UtcNow); // sets IsExecuting = true
-        db.WorkflowActivityInstanceEntries.Add(activeEntry);
+        db.Set<ActivityInstanceEntry>().Add(activeEntry);
         await db.SaveChangesAsync();
 
         // Completed entry — set enriched fields directly on the entry
@@ -108,7 +108,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
         completedEntry.SetActivityType("StartEvent");
         completedEntry.Execute(DateTimeOffset.UtcNow);
         completedEntry.Complete(DateTimeOffset.UtcNow); // sets IsCompleted = true
-        db.WorkflowActivityInstanceEntries.Add(completedEntry);
+        db.Set<ActivityInstanceEntry>().Add(completedEntry);
         await db.SaveChangesAsync();
 
         var result = await service.GetStateSnapshot(instanceId);
@@ -141,7 +141,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
 
         var varsId = Guid.NewGuid();
         var vars = new WorkflowVariablesState(varsId, instanceId);
-        db.WorkflowVariableStates.Add(vars);
+        db.Set<WorkflowVariablesState>().Add(vars);
         await db.SaveChangesAsync();
 
         // Set variables via EF property override since Merge is internal
@@ -178,7 +178,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
 
         var gatewayAiId = Guid.NewGuid();
         var cs = new ConditionSequenceState("condFlow1", gatewayAiId, instanceId);
-        db.WorkflowConditionSequenceStates.Add(cs);
+        db.Set<ConditionSequenceState>().Add(cs);
         db.Entry(cs).Property(e => e.Result).CurrentValue = true;
         db.Entry(cs).Property(e => e.IsEvaluated).CurrentValue = true;
         await db.SaveChangesAsync();
@@ -261,7 +261,7 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
         entry.SetActivityType("ScriptTask");
         entry.Execute(DateTimeOffset.UtcNow);
         entry.Fail("500", "Something went wrong", DateTimeOffset.UtcNow);
-        db.WorkflowActivityInstanceEntries.Add(entry);
+        db.Set<ActivityInstanceEntry>().Add(entry);
         await db.SaveChangesAsync();
 
         var result = await service.GetStateSnapshot(instanceId);

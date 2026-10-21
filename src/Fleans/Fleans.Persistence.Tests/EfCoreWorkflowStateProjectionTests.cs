@@ -42,8 +42,8 @@ public class EfCoreWorkflowStateProjectionTests : PersistenceTestBase
         Assert.IsTrue(row.IsStarted);
         Assert.AreEqual("order-1", row.BusinessId);
         Assert.AreEqual(3, await projection.ReadVersionAsync(instanceId.ToString()));
-        Assert.AreEqual(0, await db.WorkflowActivityInstanceEntries.CountAsync(e => e.WorkflowInstanceId == instanceId));
-        Assert.AreEqual(0, await db.WorkflowVariableStates.CountAsync(v => v.WorkflowInstanceId == instanceId));
+        Assert.AreEqual(0, await db.Set<ActivityInstanceEntry>().CountAsync(e => e.WorkflowInstanceId == instanceId));
+        Assert.AreEqual(0, await db.Set<WorkflowVariablesState>().CountAsync(v => v.WorkflowInstanceId == instanceId));
     }
 
     [DataTestMethod]
