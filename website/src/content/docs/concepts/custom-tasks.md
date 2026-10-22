@@ -93,7 +93,7 @@ You can run any number of worker / plugin-host replicas side by side; they proce
 
 ## Catalog & liveness
 
-- Workers announce themselves once at silo startup via `ILifecycleParticipant<ISiloLifecycle>` at stage `Active`, with bounded retry (2 s, 5 s, 15 s) if the catalog grain is briefly unreachable.
+- Workers announce themselves once at silo startup via `ILifecycleParticipant<ISiloLifecycle>` at stage `Active`, with bounded retry (2 s, 5 s, 15 s) if the catalog grain is briefly unreachable — including while no Core silo has joined yet, so a worker or plugin host may start before Core. If every attempt fails, the silo still starts; only the catalog UI misses that plugin until the next restart.
 - The catalog polls `IManagementGrain.GetDetailedHosts()` every 30 s and drops entries whose silo is no longer in `{Joining, Active, ShuttingDown}`. No heartbeats from workers.
 - **Catalog state is persisted via EF Core** (table `CustomTaskCatalogEntries`, composite PK on `(TaskType, SiloName)`, parameter schema serialized as JSON). After a Core silo restart, the catalog reactivates with the persisted rows immediately, then the next reconcile pass drops anything whose silo left the cluster while Core was down. Worker silos that are still alive don't need to re-register — their entry survived.
 - **Note for large fleets**: each `Register` call from a Worker silo persists synchronously. With 100+ Worker silos × multiple plugins each, expect a brief boot-time spike of catalog-blocked time at fleet boot. Single-host Aspire sees this as invisible.
