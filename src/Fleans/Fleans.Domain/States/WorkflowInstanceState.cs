@@ -10,9 +10,6 @@ public class WorkflowInstanceState
     [Id(0)]
     public Guid Id { get; private set; }
 
-    [Id(1)]
-    public string? ETag { get; private set; }
-
     [Id(2)]
     public List<ActivityInstanceEntry> Entries { get; private set; } = new();
 
