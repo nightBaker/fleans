@@ -44,20 +44,20 @@ internal sealed partial class CustomTaskPluginRegistrar : ILifecycleParticipant<
 
     private async Task OnStart(CancellationToken ct)
     {
-        var catalog = _grainFactory.GetGrain<ICustomTaskCatalogGrain>(0);
         foreach (var descriptor in _descriptors)
-            await RegisterWithRetry(catalog, descriptor, ct);
+            await RegisterWithRetry(descriptor, ct);
     }
 
-    private async Task RegisterWithRetry(
-        ICustomTaskCatalogGrain catalog,
-        CustomTaskPluginDescriptor descriptor,
-        CancellationToken ct)
+    private async Task RegisterWithRetry(CustomTaskPluginDescriptor descriptor, CancellationToken ct)
     {
         for (var attempt = 0; attempt <= RetryDelays.Length; attempt++)
         {
             try
             {
+                // Resolved on every attempt: until a Core silo's manifest reaches this silo,
+                // GetGrain itself throws ("Could not find an implementation") — the startup race
+                // the retry exists for. Thrown outside the retry, it aborted the silo's start.
+                var catalog = _grainFactory.GetGrain<ICustomTaskCatalogGrain>(0);
                 await catalog.Register(new CustomTaskRegistration(
                     descriptor.TaskType,
                     descriptor.DisplayName,
