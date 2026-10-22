@@ -32,7 +32,7 @@ jobs:
       run: dotnet test --no-build --verbosity normal --filter "TestCategory!=E2E"
 
   e2e:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # Playwright 1.59 cannot install Chromium on ubuntu-latest (26.04)
     needs: build
     timeout-minutes: 25
     steps:
@@ -65,7 +65,7 @@ jobs:
   # provider. AspireFixture passes FLEANS_* through to the AppHost and fails fast if the
   # requested provider's resource (postgres / fleans-kafka / fleans-azurite) isn't provisioned.
   e2e-providers:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # Playwright 1.59 cannot install Chromium on ubuntu-latest (26.04)
     needs: build
     timeout-minutes: 25
     strategy:
@@ -133,7 +133,7 @@ jobs:
   # stream provider the plugin host supports: the plugin host owns a slice of the stream queues,
   # and on Kafka it must forward engine events it reads there (#866).
   e2e-split-roles:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # Playwright 1.59 cannot install Chromium on ubuntu-latest (26.04)
     needs: build
     timeout-minutes: 25
     strategy:
@@ -192,7 +192,7 @@ jobs:
   # Fleans.Web; AspireFixture fails fast if the keycloak resource is missing. Only E2E-Auth
   # specs run here — the rest of the suite assumes auth is off.
   e2e-auth:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # Playwright 1.59 cannot install Chromium on ubuntu-latest (26.04)
     needs: build
     timeout-minutes: 25
     steps:
