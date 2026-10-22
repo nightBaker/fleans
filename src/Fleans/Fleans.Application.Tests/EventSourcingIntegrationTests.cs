@@ -70,10 +70,8 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
             var versions = await JournalVersions(db, instanceId);
             CollectionAssert.AreEqual(Enumerable.Range(1, versions.Count).ToList(), versions,
                 "the replayed grain must continue at the right version — no skipped or duplicated events");
-            var projectedVersion = await db.WorkflowInstances
-                .Where(s => s.Id == instanceId)
-                .Select(s => EF.Property<int>(s, "ProjectedVersion")).SingleAsync();
-            Assert.AreEqual(versions.Count, projectedVersion);
+            var row = await db.WorkflowInstances.SingleAsync(s => s.Id == instanceId);
+            Assert.IsTrue(row.IsCompleted, "the replayed grain must have rewritten the read-model row");
         }
     }
 
@@ -315,33 +313,145 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
     }
 
     [TestMethod]
-    public async Task Projection_IsWrittenWithEveryAppend_AtTheEventCount()
+    public async Task Projection_RowIsVisibleWhenTheChangingCallReturns()
     {
-        // The read model follows every append, together with the version it reflects; a lagging
-        // version would make every activation rebuild it. No deactivation: queries see each step.
+        // The row is written synchronously with the append that changes it, so a query right
+        // after the call sees it. No deactivation: queries see each step.
         var instanceId = Guid.NewGuid();
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
         var dbFactory = GetSiloService<IDbContextFactory<FleanCommandDbContext>>();
 
-        async Task AssertProjectedAtEventCount(string step)
+        async Task<WorkflowInstanceState> Row(string step)
         {
             await using var db = await dbFactory.CreateDbContextAsync();
-            var eventCount = (await JournalVersions(db, instanceId)).Count;
-            var projectedVersion = await db.WorkflowInstances
-                .Where(s => s.Id == instanceId)
-                .Select(s => (int?)EF.Property<int>(s, "ProjectedVersion")).SingleOrDefaultAsync();
-            Assert.IsNotNull(projectedVersion, $"read model missing after {step}");
-            Assert.AreEqual(eventCount, projectedVersion, $"read model lags the events after {step}");
+            var row = await db.WorkflowInstances.SingleOrDefaultAsync(s => s.Id == instanceId);
+            Assert.IsNotNull(row, $"read model missing after {step}");
+            return row;
         }
 
         await grain.SetWorkflow(CreateSequentialWorkflow());
-        await AssertProjectedAtEventCount("SetWorkflow");
+        Assert.IsNotNull((await Row("SetWorkflow")).CreatedAt);
         await grain.StartWorkflow();
-        await AssertProjectedAtEventCount("StartWorkflow");
+        Assert.IsTrue((await Row("StartWorkflow")).IsStarted);
         await grain.CompleteActivity("task1", new ExpandoObject());
-        await AssertProjectedAtEventCount("task1");
+        Assert.IsFalse((await Row("task1")).IsCompleted);
         await grain.CompleteActivity("task2", new ExpandoObject());
-        await AssertProjectedAtEventCount("task2");
+        Assert.IsTrue((await Row("task2")).IsCompleted);
+        var snapshot = await QueryService.GetStateSnapshot(instanceId); // completed: served by the read model
+        Assert.IsNotNull(snapshot);
+        Assert.IsTrue(snapshot.CompletedActivities.Any(a => a.ActivityId == "task2"),
+            "a completed instance's details are visible when the completing call returns");
+    }
+
+    [TestMethod]
+    public async Task Projection_RunningInstance_WritesItsRowOnlyWhenItChanges()
+    {
+        // Arrange — a sequential script loop: many appends, none of which touch the row (#878)
+        const int iterations = 5;
+        var start = new StartEvent("start");
+        var loop = new MultiInstanceActivity(
+            "loop",
+            new ScriptTask("loop", "_context.result = \"done-\" + _context.loopCounter"),
+            IsSequential: true,
+            LoopCardinality: iterations);
+        var end = new EndEvent("end");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "es-projection-write-on-change",
+            Activities = [start, loop, end],
+            SequenceFlows =
+            [
+                new SequenceFlow("s1", start, loop),
+                new SequenceFlow("s2", loop, end)
+            ]
+        };
+        var instanceId = Guid.NewGuid();
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
+
+        // Act
+        await grain.SetWorkflow(workflow);
+        await grain.StartWorkflow();
+        InstanceStateSnapshot? snapshot = null;
+        for (var i = 0; i < 100 && snapshot?.IsCompleted != true; i++) // scripts run via stream events
+        {
+            await Task.Delay(100);
+            snapshot = await QueryService.GetStateSnapshot(instanceId);
+        }
+
+        // Assert
+        Assert.IsNotNull(snapshot);
+        Assert.IsTrue(snapshot.IsCompleted);
+        Assert.AreEqual(iterations + 1, snapshot.CompletedActivities.Count(a => a.ActivityId == "loop"));
+        var writes = FaultInjectingWorkflowStateProjection.WritesOf(instanceId);
+        var whileRunning = writes.Count(w => !w.IsCompleted);
+        Assert.IsLessThanOrEqualTo(3, whileRunning,
+            $"a running instance writes its row only when it changes, not on each of its appends ({whileRunning} writes)");
+        Assert.AreEqual(1, writes.Count(w => w.IsCompleted), "the completing append writes the row and details once");
+        await using var db = await GetSiloService<IDbContextFactory<FleanCommandDbContext>>().CreateDbContextAsync();
+        Assert.IsGreaterThan(whileRunning + 1, (await JournalVersions(db, instanceId)).Count,
+            "the loop must append more often than the row is written for this test to mean anything");
+    }
+
+    [TestMethod]
+    public async Task StateRecovery_StaleReadModelRow_IsRepairedOnActivation()
+    {
+        // Arrange — the completing write lost (the silo stopped after the append): the stored row
+        // still says running. Content, not a version, tells the next activation.
+        var workflow = (WorkflowDefinition)CreateSequentialWorkflow();
+        await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId)
+            .DeployVersion(workflow, "<placeholder/>");
+        var grain = await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId)
+            .CreateInstance();
+        var instanceId = grain.GetPrimaryKey();
+        await grain.StartWorkflow();
+        await grain.CompleteActivity("task1", new ExpandoObject());
+        await grain.CompleteActivity("task2", new ExpandoObject());
+        await ForceAllGrainDeactivation(instanceId);
+
+        var dbFactory = GetSiloService<IDbContextFactory<FleanCommandDbContext>>();
+        await using (var db = await dbFactory.CreateDbContextAsync())
+        {
+            await db.WorkflowActivityInstanceEntries.Where(e => e.WorkflowInstanceId == instanceId).ExecuteDeleteAsync();
+            await db.WorkflowInstances.Where(s => s.Id == instanceId)
+                .ExecuteUpdateAsync(u => u
+                    .SetProperty(s => s.IsCompleted, false)
+                    .SetProperty(s => s.CompletedAt, (DateTimeOffset?)null));
+        }
+
+        // Act — any call activates the grain; nothing is appended
+        await grain.GetWorkflowInstanceId();
+
+        // Assert
+        await using (var db = await dbFactory.CreateDbContextAsync())
+        {
+            var row = await db.WorkflowInstances.Include(s => s.Entries).SingleAsync(s => s.Id == instanceId);
+            Assert.IsTrue(row.IsCompleted, "activation must rewrite a row that differs from the journal's state");
+            Assert.IsNotNull(row.CompletedAt);
+            Assert.IsTrue(row.Entries.Any(e => e.ActivityId == "task2"), "the completed instance's details are rewritten too");
+        }
+    }
+
+    [TestMethod]
+    public async Task StateRecovery_UpToDateReadModelRow_IsNotRewrittenOnActivation()
+    {
+        // Arrange
+        var workflow = (WorkflowDefinition)CreateSequentialWorkflow();
+        await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId)
+            .DeployVersion(workflow, "<placeholder/>");
+        var grain = await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId)
+            .CreateInstance();
+        var instanceId = grain.GetPrimaryKey();
+        await grain.StartWorkflow();
+        await grain.CompleteActivity("task1", new ExpandoObject());
+        await ForceAllGrainDeactivation(instanceId);
+        var writesBefore = FaultInjectingWorkflowStateProjection.WritesOf(instanceId).Count;
+
+        // Act
+        await grain.GetWorkflowInstanceId();
+
+        // Assert — timestamps compare at stored (microsecond) precision, so the row read back equals
+        // the replayed state's
+        Assert.HasCount(writesBefore, FaultInjectingWorkflowStateProjection.WritesOf(instanceId));
     }
 
     [TestMethod]

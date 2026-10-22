@@ -550,10 +550,6 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                     b.Property<DateTimeOffset?>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("ETag")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
                     b.Property<DateTimeOffset?>("ExecutionStartedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -578,9 +574,6 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                     b.Property<string>("ProcessDefinitionId")
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
-
-                    b.Property<int>("ProjectedVersion")
-                        .HasColumnType("integer");
 
                     b.HasKey("Id");
 

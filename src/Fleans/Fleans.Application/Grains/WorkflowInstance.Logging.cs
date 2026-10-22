@@ -465,8 +465,8 @@ public partial class WorkflowInstance
     private partial void LogProjectionWriteFailed(int version, Exception exception);
 
     [LoggerMessage(EventId = 1133, Level = LogLevel.Information,
-        Message = "Read-model projection at version {ProjectedVersion} (-1: unknown) is behind the journal at {Version}; rebuilding it")]
-    private partial void LogProjectionBehind(int projectedVersion, int version);
+        Message = "Read-model row differs from the journal's state at version {Version} (a write was lost); rebuilding it")]
+    private partial void LogProjectionBehind(int version);
 
     [LoggerMessage(EventId = 1134, Level = LogLevel.Information,
         Message = "Read-model projection caught up to version {Version} after a failed write")]
@@ -477,8 +477,8 @@ public partial class WorkflowInstance
     private partial void LogProjectionRetryGaveUp(int version, int attempts);
 
     [LoggerMessage(EventId = 1136, Level = LogLevel.Warning,
-        Message = "Reading the read-model projection version failed; rebuilding the projection")]
-    private partial void LogProjectionVersionReadFailed(Exception exception);
+        Message = "Reading the read-model row failed; rebuilding the projection")]
+    private partial void LogProjectionRowReadFailed(Exception exception);
 
     [LoggerMessage(EventId = 1137, Level = LogLevel.Error,
         Message = "Journal append failed or conflicted and the journal moved from version {KnownVersion} to {StoredVersion} without this activation; it rejects calls and deactivates, and the next activation replays the journal")]

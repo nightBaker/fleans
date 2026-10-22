@@ -8,16 +8,16 @@ namespace Fleans.Domain.Events;
 /// event store, never from the projection.
 /// </summary>
 /// <remarks>
-/// A running instance projects only its WorkflowInstances row (status, timestamps, business id) —
-/// what cross-instance queries need; its details (activities, variables, conditions) are served by
-/// the grain. Once <see cref="WorkflowInstanceState.IsCompleted"/>, the details are written too, so
-/// a finished instance is read without activating it.
+/// A running instance projects only its WorkflowInstances row (<see cref="WorkflowInstanceRow"/>:
+/// status, timestamps, business id) — what cross-instance queries need; its details (activities,
+/// variables, conditions) are served by the grain. Once <see cref="WorkflowInstanceState.IsCompleted"/>,
+/// the details are written too, so a finished instance is read without activating it.
 /// </remarks>
 public interface IWorkflowStateProjection
 {
-    /// <summary>The number of events the projected row reflects, or <c>0</c> when there is none.</summary>
-    Task<int> ReadVersionAsync(string grainId);
+    /// <summary>The projected row, or <c>null</c> when there is none.</summary>
+    Task<WorkflowInstanceRow?> ReadRowAsync(string grainId);
 
-    /// <summary>Writes <paramref name="state"/>, the state after the first <paramref name="version"/> events.</summary>
-    Task WriteAsync(string grainId, WorkflowInstanceState state, int version);
+    /// <summary>Writes the row of <paramref name="state"/>, and its details once it is completed.</summary>
+    Task WriteAsync(string grainId, WorkflowInstanceState state);
 }

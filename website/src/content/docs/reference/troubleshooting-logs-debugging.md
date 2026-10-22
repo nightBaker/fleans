@@ -31,7 +31,7 @@ If you author a custom-task plugin, follow the same pattern (see the [adding a B
 | 1100–1109 | `WorkflowInstance` — transaction sub-process |
 | 1110–1119 | `WorkflowInstance` — compensation |
 | 1120 | `WorkflowInstance` — workflow failed: an unhandled activity failure left no active activities (Error) |
-| 1131–1136 | `WorkflowInstance` — event store: 1131 snapshot write failed (Error; if it keeps failing the instance eventually cannot activate); 1132 read-model write failed, retrying (Warning); 1133 read model behind the event log on activation, rebuilding (Information); 1134 read model caught up after a failed write (Information); 1135 read-model retries gave up, rebuilt on the next activation (Error); 1136 reading the read-model version failed (Warning) |
+| 1131–1136 | `WorkflowInstance` — event store: 1131 snapshot write failed (Error; if it keeps failing the instance eventually cannot activate); 1132 read-model write failed, retrying (Warning); 1133 read model differs from the event log on activation (a write was lost), rebuilding (Information); 1134 read model caught up after a failed write (Information); 1135 read-model retries gave up, rebuilt on the next activation (Error); 1136 reading the read-model row failed, rebuilding (Warning) |
 | 1140 | `WorkflowInstance` — variables over `Fleans:Variables:MaxSizeBytes` rejected (Warning) |
 | 1150–1153 | `WorkflowInstance` — multiple (catch / throw / boundary) events |
 | 1200–1299 | Effect handlers — child-workflow start (1200–1209), timer reminders (1210–1219), message subscriptions (1220–1229), signal subscriptions and throws (1230–1239), user-task persistence (1240–1249) |

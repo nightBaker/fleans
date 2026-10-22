@@ -15,22 +15,12 @@ namespace Fleans.Persistence;
 
 internal static class FleanModelConfiguration
 {
-    /// <summary>
-    /// Shadow column on WorkflowInstances: the number of journal events the projected row reflects.
-    /// A grain whose journal is ahead of it on activation rebuilds the projection (a write was
-    /// missed). Persistence-only — the domain state does not know about it.
-    /// </summary>
-    public const string ProjectedVersion = "ProjectedVersion";
-
     public static void Configure(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<WorkflowInstanceState>(entity =>
         {
             entity.ToTable("WorkflowInstances");
             entity.HasKey(e => e.Id);
-            entity.Property<int>(ProjectedVersion);
-
-            entity.Property(e => e.ETag).HasMaxLength(64);
 
             entity.HasMany(e => e.Entries)
                 .WithOne()
