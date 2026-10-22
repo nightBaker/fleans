@@ -52,41 +52,62 @@ internal class InMemoryEventStore(DeepCopier copier) : IEventStore
     }
 }
 
-/// <summary>Read-model projection for silos without a query store: records only the projected version.</summary>
+/// <summary>Read-model projection for silos without a query store: records only the row.</summary>
 internal class InMemoryWorkflowStateProjection : IWorkflowStateProjection
 {
-    private readonly ConcurrentDictionary<string, int> _versions = new();
+    private readonly ConcurrentDictionary<Guid, WorkflowInstanceRow> _rows = new();
 
-    public Task<int> ReadVersionAsync(string grainId) =>
-        Task.FromResult(_versions.GetValueOrDefault(grainId));
+    public Task<WorkflowInstanceRow?> ReadRowAsync(Guid instanceId) =>
+        Task.FromResult(_rows.TryGetValue(instanceId, out var row) ? row : null);
 
-    public Task WriteAsync(string grainId, WorkflowInstanceState state, int version)
+    public Task WriteRowAsync(Guid instanceId, WorkflowInstanceRow row)
     {
-        _versions[grainId] = version;
+        _rows[instanceId] = row;
         return Task.CompletedTask;
     }
+
+    public Task WriteCompletedAsync(Guid instanceId, WorkflowInstanceState state) =>
+        WriteRowAsync(instanceId, WorkflowInstanceRow.From(state));
 }
 
 /// <summary>
-/// Wraps the real projection and fails the next N writes for a chosen grain, to exercise the
-/// grain's handling of a read-model write that fails after its append succeeded.
+/// Wraps the real projection: fails the next N writes for a chosen grain, to exercise the grain's
+/// handling of a read-model write that fails after its append succeeded, and counts each grain's
+/// writes, to check which appends write at all.
 /// </summary>
 internal class FaultInjectingWorkflowStateProjection(IWorkflowStateProjection inner) : IWorkflowStateProjection
 {
-    private static readonly ConcurrentDictionary<string, int> FailuresLeft = new();
+    private static readonly ConcurrentDictionary<Guid, int> FailuresLeft = new();
+    private static readonly ConcurrentDictionary<Guid, int> Writes = new();
 
-    public static void FailNextWrites(Guid instanceId, int count) => FailuresLeft[instanceId.ToString()] = count;
+    public static void FailNextWrites(Guid instanceId, int count) => FailuresLeft[instanceId] = count;
 
-    public Task<int> ReadVersionAsync(string grainId) => inner.ReadVersionAsync(grainId);
+    /// <summary>Writes that reached the database for <paramref name="instanceId"/>.</summary>
+    public static int WriteCount(Guid instanceId) => Writes.GetValueOrDefault(instanceId);
 
-    public Task WriteAsync(string grainId, WorkflowInstanceState state, int version)
+    public Task<WorkflowInstanceRow?> ReadRowAsync(Guid instanceId) => inner.ReadRowAsync(instanceId);
+
+    public async Task WriteRowAsync(Guid instanceId, WorkflowInstanceRow row)
     {
-        if (FailuresLeft.TryGetValue(grainId, out var left) && left > 0)
+        ThrowIfFailing(instanceId);
+        await inner.WriteRowAsync(instanceId, row);
+        Writes.AddOrUpdate(instanceId, 1, (_, n) => n + 1);
+    }
+
+    public async Task WriteCompletedAsync(Guid instanceId, WorkflowInstanceState state)
+    {
+        ThrowIfFailing(instanceId);
+        await inner.WriteCompletedAsync(instanceId, state);
+        Writes.AddOrUpdate(instanceId, 1, (_, n) => n + 1);
+    }
+
+    private static void ThrowIfFailing(Guid instanceId)
+    {
+        if (FailuresLeft.TryGetValue(instanceId, out var left) && left > 0)
         {
-            FailuresLeft[grainId] = left - 1;
-            throw new TimeoutException($"Injected projection failure for {grainId}");
+            FailuresLeft[instanceId] = left - 1;
+            throw new TimeoutException($"Injected projection failure for {instanceId}");
         }
-        return inner.WriteAsync(grainId, state, version);
     }
 }
 

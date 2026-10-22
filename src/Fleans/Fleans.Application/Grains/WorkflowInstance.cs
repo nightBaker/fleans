@@ -100,8 +100,11 @@ public partial class WorkflowInstance :
     /// <summary>The number of events in the journal, as of the last read or append.</summary>
     private int _journalVersion;
 
-    /// <summary>The highest version this activation has written to (or read from) the read model.</summary>
-    private int _projectedVersion;
+    /// <summary>
+    /// The read-model row as this activation last wrote or read it; <c>null</c> when there is none
+    /// or it is unknown. A running instance's row is written only when it differs from this.
+    /// </summary>
+    private WorkflowInstanceRow? _projectedRow;
 
     /// <summary>
     /// Serializes read-model writes: an append's write, the retry timer and the activation catch-up
@@ -229,9 +232,8 @@ public partial class WorkflowInstance :
             DeactivateOnIdle();
         }
 
-        var grainId = instanceId.ToString();
         // Independent of the state reads below, so it runs alongside them.
-        var projectedVersionTask = ReadProjectedVersion(grainId);
+        var projectedRowTask = ReadProjectedRow(instanceId);
 
         // The journal is the source of truth; the snapshot only shortens replay. A failed read
         // (database error, or a snapshot from an older build — pre-1.0 needs a fresh database)
@@ -253,46 +255,52 @@ public partial class WorkflowInstance :
         _snapshotVersion = snapshotVersion;
         _journalVersion = version;
 
-        // Catch-up: the read model is behind the journal when a projection write was lost (the
-        // silo stopped after an append, or the retries gave up). Unknown (read failed) counts as behind.
-        var projectedVersion = await projectedVersionTask;
-        _projectedVersion = projectedVersion ?? 0;
-        if (version > 0 && (projectedVersion is null || projectedVersion < version))
+        // Catch-up: the stored row differs from the journal's state when a projection write was
+        // lost (the silo stopped after an append, or the retries gave up). Missing or unreadable
+        // counts as different. A completed instance's details are written with its completed row,
+        // in one SaveChanges, so the row alone tells whether they landed.
+        _projectedRow = await projectedRowTask;
+        if (version > 0 && _projectedRow != WorkflowInstanceRow.From(state))
         {
-            LogProjectionBehind(projectedVersion ?? -1, version);
-            if (!await TryWriteProjection(grainId, state, version))
+            LogProjectionBehind(version);
+            if (!await TryWriteProjection(state, version))
                 ScheduleProjectionRetry();
         }
 
         return new(version, state);
     }
 
-    private async Task<int?> ReadProjectedVersion(string grainId)
+    private async Task<WorkflowInstanceRow?> ReadProjectedRow(Guid instanceId)
     {
         try
         {
-            return await _projection.ReadVersionAsync(grainId);
+            return await _projection.ReadRowAsync(instanceId);
         }
         catch (Exception ex)
         {
-            LogProjectionVersionReadFailed(ex);
+            LogProjectionRowReadFailed(ex);
             return null;
         }
     }
 
     /// <summary>
-    /// The only way to the read model. Serialized by <see cref="_projectionLock"/>, and never moves
-    /// the projected version backwards. Failures are logged and reported, never thrown.
+    /// The only way to the read model, serialized by <see cref="_projectionLock"/>. A running
+    /// instance's row is written only when it differs from <see cref="_projectedRow"/>: most
+    /// appends change no column of it. Once completed, every call writes the row and the details,
+    /// which later appends may still change. Failures are logged and reported, never thrown.
     /// </summary>
-    private async Task<bool> TryWriteProjection(string grainId, WorkflowInstanceState state, int version)
+    private async Task<bool> TryWriteProjection(WorkflowInstanceState state, int version)
     {
+        // Taken before the lock wait, so the row is the one at `version` even if State moves on.
+        var row = WorkflowInstanceRow.From(state);
         await _projectionLock.WaitAsync();
         try
         {
-            if (version < _projectedVersion)
-                return true; // a later write already covered this one
-            await _projection.WriteAsync(grainId, state, version);
-            _projectedVersion = version;
+            if (row.IsCompleted)
+                await _projection.WriteCompletedAsync(this.GetPrimaryKey(), state);
+            else if (row != _projectedRow)
+                await _projection.WriteRowAsync(this.GetPrimaryKey(), row);
+            _projectedRow = row;
             return true;
         }
         catch (Exception ex)
@@ -335,7 +343,7 @@ public partial class WorkflowInstance :
         if (!HasUndrainedEvents)
         {
             var version = _journalVersion;
-            if (await TryWriteProjection(this.GetPrimaryKey().ToString(), State, version))
+            if (await TryWriteProjection(State, version))
             {
                 LogProjectionCaughtUp(version);
                 StopProjectionRetry();
@@ -363,7 +371,6 @@ public partial class WorkflowInstance :
         IReadOnlyList<WorkflowEvent> updates, int expectedVersion)
     {
         var instanceId = this.GetPrimaryKey();
-        var grainId = instanceId.ToString();
         // expectedVersion is the confirmed event count BEFORE these updates.
         var success = await _eventStore.AppendEventsAsync(instanceId, updates, expectedVersion);
         if (!success) return false;
@@ -384,7 +391,7 @@ public partial class WorkflowInstance :
         if (_stateReloaded)
             return true;
 
-        if (await TryWriteProjection(grainId, State, version))
+        if (await TryWriteProjection(State, version))
             StopProjectionRetry();
         else
             ScheduleProjectionRetry();

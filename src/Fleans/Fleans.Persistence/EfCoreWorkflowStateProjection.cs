@@ -5,19 +5,18 @@ using Microsoft.EntityFrameworkCore;
 namespace Fleans.Persistence;
 
 /// <summary>
-/// Projects the current workflow instance state to the WorkflowInstances read model tables.
-/// Called by the WorkflowInstance grain after its events are appended. Uses upsert semantics
-/// without ETag checking: the event store is the source of truth, and this projection is never
-/// read back as grain state. The version it reflects is a column of the same row
-/// (<see cref="FleanModelConfiguration.ProjectedVersion"/>) so a grain can tell, on activation,
-/// that a projection write was missed and rebuild it.
+/// Projects workflow instance state to the WorkflowInstances read model tables. Called by the
+/// WorkflowInstance grain after its events are appended, and only when the row changed (or the
+/// instance is completed): the event store is the source of truth, and this projection is never
+/// read back as grain state. On activation the grain compares the stored row with the journal's
+/// state (<see cref="ReadRowAsync"/>) to repair a write that was lost.
 /// </summary>
 /// <remarks>
-/// A running instance writes only its row; its details are read from the grain. A completed one
-/// also writes the details the read side serves — entries, variable scopes and condition results —
-/// in the same <c>SaveChanges</c> as <c>IsCompleted</c>, so a reader that sees the flag sees them.
-/// Gateway forks and complex-join states are cleared on completion and timer cycles are never
-/// read, so those stay with the grain.
+/// A running instance writes only its row, in one statement; its details are read from the grain.
+/// A completed one also writes the details the read side serves — entries, variable scopes and
+/// condition results — in the same <c>SaveChanges</c> as <c>IsCompleted</c>, so a reader that sees
+/// the flag sees them. Gateway forks and complex-join states are cleared on completion and timer
+/// cycles are never read, so those stay with the grain.
 /// </remarks>
 public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
 {
@@ -28,56 +27,75 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
         _dbContextFactory = dbContextFactory;
     }
 
-    public async Task<int> ReadVersionAsync(string grainId)
+    public async Task<WorkflowInstanceRow?> ReadRowAsync(Guid instanceId)
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync();
-        var id = Guid.Parse(grainId);
-
         return await db.WorkflowInstances
-            .Where(s => s.Id == id)
-            .Select(s => (int?)EF.Property<int>(s, FleanModelConfiguration.ProjectedVersion))
-            .SingleOrDefaultAsync() ?? 0;
+            .Where(s => s.Id == instanceId)
+            .Select(s => new WorkflowInstanceRow(
+                s.IsStarted, s.IsCompleted, s.IsCancelled, s.IsFailed,
+                s.CreatedAt, s.ExecutionStartedAt, s.CompletedAt,
+                s.ProcessDefinitionId, s.ParentWorkflowInstanceId, s.ParentActivityId, s.BusinessId))
+            .SingleOrDefaultAsync();
     }
 
-    public async Task WriteAsync(string grainId, WorkflowInstanceState state, int version)
+    public async Task WriteRowAsync(Guid instanceId, WorkflowInstanceRow row)
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync();
-        var id = Guid.Parse(grainId);
-        var withDetails = state.IsCompleted;
+
+        // An UPDATE first, so the row is never read; an INSERT only for the instance's first write.
+        var updated = await db.WorkflowInstances
+            .Where(s => s.Id == instanceId)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(e => e.IsStarted, row.IsStarted)
+                .SetProperty(e => e.IsCompleted, row.IsCompleted)
+                .SetProperty(e => e.IsCancelled, row.IsCancelled)
+                .SetProperty(e => e.IsFailed, row.IsFailed)
+                .SetProperty(e => e.CreatedAt, row.CreatedAt)
+                .SetProperty(e => e.ExecutionStartedAt, row.ExecutionStartedAt)
+                .SetProperty(e => e.CompletedAt, row.CompletedAt)
+                .SetProperty(e => e.ProcessDefinitionId, row.ProcessDefinitionId)
+                .SetProperty(e => e.ParentWorkflowInstanceId, row.ParentWorkflowInstanceId)
+                .SetProperty(e => e.ParentActivityId, row.ParentActivityId)
+                .SetProperty(e => e.BusinessId, row.BusinessId));
+        if (updated > 0)
+            return;
+
+        var entity = new WorkflowInstanceState();
+        db.WorkflowInstances.Add(entity);
+        db.Entry(entity).CurrentValues.SetValues(row);
+        db.Entry(entity).Property(s => s.Id).CurrentValue = instanceId;
+        await db.SaveChangesAsync();
+    }
+
+    public async Task WriteCompletedAsync(Guid instanceId, WorkflowInstanceState state)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
 
         // The row is its own entity, never the grain's state: tracking that would make EF add
-        // every collection of a running instance too. A completed instance's details are added
-        // below as the grain's own objects; the context is gone once the write returns.
-        var row = await db.WorkflowInstances.FirstOrDefaultAsync(e => e.Id == id);
+        // every collection too. The details are added below as the grain's own objects; the
+        // context is gone once the write returns.
+        // The columns come from the same WorkflowInstanceRow a running instance writes, so the
+        // grain's activation check reads back exactly what was written.
+        var row = await db.WorkflowInstances.FirstOrDefaultAsync(e => e.Id == instanceId);
         if (row is null)
         {
             row = new WorkflowInstanceState();
             db.WorkflowInstances.Add(row);
-            db.Entry(row).CurrentValues.SetValues(state);
-            db.Entry(row).Property(s => s.Id).CurrentValue = id;
+            db.Entry(row).CurrentValues.SetValues(WorkflowInstanceRow.From(state));
+            db.Entry(row).Property(s => s.Id).CurrentValue = instanceId;
         }
         else
         {
-            db.Entry(row).CurrentValues.SetValues(state);
-            db.Entry(row).Property(s => s.Id).IsModified = false;
+            db.Entry(row).CurrentValues.SetValues(WorkflowInstanceRow.From(state));
+            await db.Entry(row).Collection(e => e.Entries).LoadAsync();
+            await db.Entry(row).Collection(e => e.VariableStates).LoadAsync();
+            await db.Entry(row).Collection(e => e.ConditionSequenceStates).LoadAsync();
         }
-        db.Entry(row).Property(s => s.ETag).CurrentValue = Guid.NewGuid().ToString("N");
-        db.Entry(row).Property(FleanModelConfiguration.ProjectedVersion).CurrentValue = version;
 
-        if (withDetails)
-        {
-            var tracked = db.Entry(row);
-            if (tracked.State != EntityState.Added)
-            {
-                await tracked.Collection(e => e.Entries).LoadAsync();
-                await tracked.Collection(e => e.VariableStates).LoadAsync();
-                await tracked.Collection(e => e.ConditionSequenceStates).LoadAsync();
-            }
-
-            DiffEntries(db, row, state, id);
-            DiffVariableStates(db, row, state, id);
-            DiffConditionSequenceStates(db, row, state, id);
-        }
+        DiffEntries(db, row, state, instanceId);
+        DiffVariableStates(db, row, state, instanceId);
+        DiffConditionSequenceStates(db, row, state, instanceId);
 
         await db.SaveChangesAsync();
     }
