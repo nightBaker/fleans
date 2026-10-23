@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="d1" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:message id="Msg_App" name="loan.application.created" />
+  <bpmn:process id="loan-origination" isExecutable="true">
+    <bpmn:startEvent id="Event_ApplicationReceived" name="Application received">
+      <bpmn:outgoing>f1</bpmn:outgoing>
+      <bpmn:messageEventDefinition messageRef="Msg_App" />
+    </bpmn:startEvent>
+    <bpmn:serviceTask id="Task_KycVerify" name="KYC check"><bpmn:incoming>f1</bpmn:incoming><bpmn:outgoing>f2</bpmn:outgoing></bpmn:serviceTask>
+    <bpmn:scriptTask id="Task_Scoring" name="Scoring model" scriptFormat="csharp"><bpmn:incoming>f2</bpmn:incoming><bpmn:outgoing>f3</bpmn:outgoing><bpmn:script>score = 700</bpmn:script></bpmn:scriptTask>
+    <bpmn:exclusiveGateway id="Gateway_RiskLevel" name="Risk level?" default="f5"><bpmn:incoming>f3</bpmn:incoming><bpmn:outgoing>f4</bpmn:outgoing><bpmn:outgoing>f5</bpmn:outgoing><bpmn:outgoing>f9</bpmn:outgoing></bpmn:exclusiveGateway>
+    <bpmn:serviceTask id="Task_AutoApprove" name="Auto approve"><bpmn:incoming>f4</bpmn:incoming><bpmn:outgoing>f6</bpmn:outgoing></bpmn:serviceTask>
+    <bpmn:userTask id="Task_ManualReview" name="Manual review"><bpmn:incoming>f5</bpmn:incoming><bpmn:outgoing>f7</bpmn:outgoing></bpmn:userTask>
+    <bpmn:boundaryEvent id="Timer_Escalation" name="4h" attachedToRef="Task_ManualReview"><bpmn:timerEventDefinition><bpmn:timeDuration>PT4H</bpmn:timeDuration></bpmn:timerEventDefinition></bpmn:boundaryEvent>
+    <bpmn:userTask id="Task_SignContract" name="Sign contract"><bpmn:incoming>f6</bpmn:incoming><bpmn:incoming>f7</bpmn:incoming><bpmn:outgoing>f8</bpmn:outgoing></bpmn:userTask>
+    <bpmn:callActivity id="Call_Fraud" name="Fraud check"><bpmn:incoming>f9</bpmn:incoming></bpmn:callActivity>
+    <bpmn:endEvent id="Event_LoanIssued" name="Loan issued"><bpmn:incoming>f8</bpmn:incoming></bpmn:endEvent>
+    <bpmn:sequenceFlow id="f1" sourceRef="Event_ApplicationReceived" targetRef="Task_KycVerify" />
+    <bpmn:sequenceFlow id="f2" sourceRef="Task_KycVerify" targetRef="Task_Scoring" />
+    <bpmn:sequenceFlow id="f3" sourceRef="Task_Scoring" targetRef="Gateway_RiskLevel" />
+    <bpmn:sequenceFlow id="f4" name="low" sourceRef="Gateway_RiskLevel" targetRef="Task_AutoApprove"><bpmn:conditionExpression>${score &gt;= 720}</bpmn:conditionExpression></bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f5" name="high" sourceRef="Gateway_RiskLevel" targetRef="Task_ManualReview" />
+    <bpmn:sequenceFlow id="f9" name="fraud" sourceRef="Gateway_RiskLevel" targetRef="Call_Fraud" />
+    <bpmn:sequenceFlow id="f6" sourceRef="Task_AutoApprove" targetRef="Task_SignContract" />
+    <bpmn:sequenceFlow id="f7" sourceRef="Task_ManualReview" targetRef="Task_SignContract" />
+    <bpmn:sequenceFlow id="f8" sourceRef="Task_SignContract" targetRef="Event_LoanIssued" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="dg"><bpmndi:BPMNPlane id="pl" bpmnElement="loan-origination">
+    <bpmndi:BPMNShape id="s0" bpmnElement="Event_ApplicationReceived"><dc:Bounds x="80" y="182" width="36" height="36" /></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="s1" bpmnElement="Task_KycVerify"><dc:Bounds x="170" y="160" width="120" height="80" /></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="s2" bpmnElement="Task_Scoring"><dc:Bounds x="340" y="160" width="120" height="80" /></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="s3" bpmnElement="Gateway_RiskLevel" isMarkerVisible="true"><dc:Bounds x="515" y="175" width="50" height="50" /></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="s4" bpmnElement="Task_AutoApprove"><dc:Bounds x="630" y="60" width="120" height="80" /></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="s5" bpmnElement="Task_ManualReview"><dc:Bounds x="630" y="260" width="120" height="80" /></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="s5b" bpmnElement="Timer_Escalation"><dc:Bounds x="682" y="322" width="36" height="36" /></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="s6" bpmnElement="Task_SignContract"><dc:Bounds x="820" y="160" width="120" height="80" /></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="s8" bpmnElement="Call_Fraud"><dc:Bounds x="630" y="400" width="120" height="80" /></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="s7" bpmnElement="Event_LoanIssued"><dc:Bounds x="1000" y="182" width="36" height="36" /></bpmndi:BPMNShape>
+    <bpmndi:BPMNEdge id="e1" bpmnElement="f1"><di:waypoint x="116" y="200" /><di:waypoint x="170" y="200" /></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="e2" bpmnElement="f2"><di:waypoint x="290" y="200" /><di:waypoint x="340" y="200" /></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="e3" bpmnElement="f3"><di:waypoint x="460" y="200" /><di:waypoint x="515" y="200" /></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="e4" bpmnElement="f4"><di:waypoint x="540" y="175" /><di:waypoint x="540" y="100" /><di:waypoint x="630" y="100" /></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="e5" bpmnElement="f5"><di:waypoint x="540" y="225" /><di:waypoint x="540" y="300" /><di:waypoint x="630" y="300" /></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="e9" bpmnElement="f9"><di:waypoint x="540" y="225" /><di:waypoint x="540" y="440" /><di:waypoint x="630" y="440" /></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="e6" bpmnElement="f6"><di:waypoint x="750" y="100" /><di:waypoint x="880" y="100" /><di:waypoint x="880" y="160" /></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="e7" bpmnElement="f7"><di:waypoint x="750" y="300" /><di:waypoint x="880" y="300" /><di:waypoint x="880" y="240" /></bpmndi:BPMNEdge>
+    <bpmndi:BPMNEdge id="e8" bpmnElement="f8"><di:waypoint x="940" y="200" /><di:waypoint x="1000" y="200" /></bpmndi:BPMNEdge>
+  </bpmndi:BPMNPlane></bpmndi:BPMNDiagram>
+</bpmn:definitions>

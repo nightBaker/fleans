@@ -4,7 +4,12 @@
 
 <div class="properties-panel">
     <div class="properties-panel-header">
-        <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">@GetTypeLabel()</FluentLabel>
+        <span class="properties-panel-type">
+            <span class="orbit-dot orbit-dot--lg orbit-dot--@GetKindClass()"></span>
+            @GetTypeLabel()
+        </span>
+        <span class="properties-panel-name">@(string.IsNullOrWhiteSpace(name) ? "Unnamed" : name)</span>
+        <span class="properties-panel-id">@elementId</span>
     </div>
 
     <div class="properties-panel-body">
@@ -138,6 +143,7 @@
                 <div>
                     <FluentLabel Typo="Typography.Body" Weight="FontWeight.Bold">Condition Expression</FluentLabel>
                     <FluentTextArea Value="@conditionExpression" @oninput="OnConditionInput" @onchange="OnConditionChange"
+                                    data-field="condition"
                                     Disabled="@ReadOnly" Rows="3" Resize="TextAreaResize.Vertical"
                                     Placeholder="e.g. ${amount > 100}" Style="width: 100%;" />
                 </div>
@@ -1237,6 +1243,17 @@
         completionCondition = e.Value?.ToString() ?? "";
         await JS.InvokeVoidAsync("bpmnEditor.updateMultiInstanceProperty", Element.Id, "completionCondition", completionCondition);
     }
+
+    // Colour of the header dot, matching the Orbit diagram kinds (css/orbit.css .orbit-dot--*).
+    private string GetKindClass() => Element.Type switch
+    {
+        "bpmn:StartEvent" => "start",
+        "bpmn:EndEvent" => "end",
+        var t when t.EndsWith("Gateway", StringComparison.Ordinal) => "gateway",
+        var t when t.EndsWith("Event", StringComparison.Ordinal) => "event",
+        "bpmn:SequenceFlow" or "bpmn:Process" => "info",
+        _ => "task"
+    };
 
     private string GetTypeLabel()
     {

@@ -42,6 +42,7 @@ propagation), see [`docs/plans/2026-02-08-structured-workflow-logging.md`](../pl
 | 12000–12099 | Kafka DLQ: `KafkaDlqFailureHandler`, `KafkaDeadLetterPublisher` | 12000 record dead-lettered (with failure reason) WARN; 12001 DLQ publish failed or not acknowledged within 30 s (may still be delivered) ERROR; 12002 subscription-init failure WARN; 12003 non-Kafka sequence token WARN; 12004 offset no longer retained WARN; 12005 re-consume failed ERROR; 12006 re-consume timed out WARN; 12007 re-consume client error (auth/SSL/connectivity) WARN |
 | 13000–13099 | `Fleans.Web` | 13000–13004 Workflows page (13000 load failed ERROR, 13001 process started INFO, 13002 start failed WARNING, 13003 start error ERROR, 13004 enable/disable failed ERROR) |
 | 14100–14199 | `EfCoreWorkflowInstancePurgeService` (`Fleans.Persistence`) | Retention purge (#862): 14100 purge started, 14101 batch purged, 14102 purge finished (all Information) |
+| 14200–14299 | `EditorPresenceGrain` (`Fleans.Application/Editor`) | Admin-UI editor presence: 14200 session joined, 14201 session left, 14202 session expired (all Debug) |
 | 99000–99099 | `ProbeHandler` (test-only, `Fleans.E2E.PluginHost`) | 99000 started, 99001 completed, 99002 cancelled, 99003 callback failed. Never shipped. |
 
 ## Adding a new range

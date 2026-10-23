@@ -114,10 +114,10 @@ This page is the canonical coverage matrix for BPMN 2.0 elements in Fleans. Ever
 
 | Element | BPMN XML | Status | Source pin | Tested by | Notes |
 |---|---|---|---|---|---|
-| Pool | `<bpmn:participant>` | ❌ | — | — | Multi-pool processes not supported. |
-| Lane | `<bpmn:lane>` | ❌ | — | — | Lane partitioning not parsed. |
-| Data Object | `<bpmn:dataObject>` | ❌ | — | — | Variables use `_context` instead. |
-| Data Store | `<bpmn:dataStoreReference>` | ❌ | — | — | External data stores not modeled. |
+| Pool | `<bpmn:participant>` | ⚠️ | `BpmnConverter.SelectProcess` | `CollaborationParsingTests` | A collaboration deploys its executable process (`isExecutable="true"`, else the pool with a start event); the other pools are documentation. No cross-pool execution. |
+| Lane | `<bpmn:lane>` | ⚠️ | — | `CollaborationParsingTests` | Accepted and kept in the BPMN; no lane-based assignment at runtime. |
+| Data Object | `<bpmn:dataObject>` | ⚠️ | — | `CollaborationParsingTests` | Accepted (with data associations) and kept in the BPMN; no runtime semantics — variables use `_context`. |
+| Data Store | `<bpmn:dataStoreReference>` | ⚠️ | — | `CollaborationParsingTests` | Accepted and kept in the BPMN; external data stores are not modeled at runtime. |
 | Group | `<bpmn:group>` | ❌ | — | — | Visual-only; no semantic meaning needed. |
 | Annotation | `<bpmn:textAnnotation>` | ❌ | — | — | Visual-only; preserved on round-trip but ignored at runtime. |
 

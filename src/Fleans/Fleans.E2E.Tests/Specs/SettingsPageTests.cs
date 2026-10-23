@@ -29,7 +29,7 @@ public class SettingsPageTests : WorkflowE2ETestBase
             options: new PageWaitForFunctionOptions { PollingInterval = 100, Timeout = 10_000 });
 
         // In-app navigation (same circuit) keeps the selection.
-        await Page.Locator(".fluent-appbar-item a[href='/workflows']").ClickAsync();
+        await Page.GetByTestId("nav-workflows").ClickAsync();
         await Microsoft.Playwright.Assertions.Expect(Page)
             .ToHaveURLAsync(new System.Text.RegularExpressions.Regex("/workflows$"));
         await page.OpenViaHeaderLinkAsync();
@@ -44,10 +44,10 @@ public class SettingsPageTests : WorkflowE2ETestBase
         StringAssert.Contains(persisted?.ToLowerInvariant() ?? string.Empty, "dark");
     }
 
-    // Diagram Style (js/bpmnTheme.js): classic by default, archify opt-in. The theme is applied when
-    // the editor builds its bpmn-js modeler, as a container class plus per-shape category classes.
+    // Diagram Style (js/bpmnTheme.js): orbit by default, classic and archify opt-in. The theme is applied
+    // when the editor builds its bpmn-js modeler, as a container class plus per-shape kind/category classes.
     [TestMethod]
-    public async Task DiagramStyle_DefaultsToClassic_AndArchifyAppliesToEditor()
+    public async Task DiagramStyle_DefaultsToOrbit_AndArchifyAppliesToEditor()
     {
         const string bpmn = """
             <?xml version="1.0" encoding="UTF-8"?>
@@ -70,12 +70,16 @@ public class SettingsPageTests : WorkflowE2ETestBase
 
         var settings = new SettingsPage(Page);
         await settings.OpenAsync();
-        await Microsoft.Playwright.Assertions.Expect(settings.DiagramThemeSelect).ToHaveJSPropertyAsync("value", "classic");
+        await Microsoft.Playwright.Assertions.Expect(settings.DiagramThemeSelect).ToHaveJSPropertyAsync("value", "orbit");
 
         var editor = new EditorPage(Page);
         await editor.OpenAsync();
-        await Microsoft.Playwright.Assertions.Expect(Page.Locator(".djs-container.fl-diagram-classic")).ToHaveCountAsync(1);
+        await editor.LoadXmlAsync(bpmn);
+        await Microsoft.Playwright.Assertions.Expect(Page.Locator(".djs-container.fl-diagram-orbit")).ToHaveCountAsync(1);
         await Microsoft.Playwright.Assertions.Expect(Page.Locator(".fl-diagram-archify")).ToHaveCountAsync(0);
+        // Orbit kind classes + the mono caption its renderer draws on tasks.
+        await Microsoft.Playwright.Assertions.Expect(Page.Locator("[data-element-id='review'].o-kind-task .o-kind-label")).ToHaveTextAsync("USER");
+        await Microsoft.Playwright.Assertions.Expect(Page.Locator("[data-element-id='calc'].o-kind-task .o-kind-label")).ToHaveTextAsync("SCRIPT");
 
         await settings.OpenAsync();
         await settings.SelectDiagramThemeAsync("Archify", "archify");

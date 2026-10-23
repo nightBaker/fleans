@@ -50,9 +50,8 @@ window.bpmnEditor = {
                 window.fleansModdleExtension ? { fleans: window.fleansModdleExtension } : {},
                 window.zeebeModdleExtension ? { zeebe: window.zeebeModdleExtension } : {}
             ),
-            additionalModules: window.boundaryEventContextPadModule
-                ? [window.boundaryEventContextPadModule]
-                : []
+            additionalModules: [window.boundaryEventContextPadModule, window.orbitContextMenuModule]
+                .filter(function (m) { return !!m; })
         });
 
         if (dotNetRef) {
@@ -69,7 +68,825 @@ window.bpmnEditor = {
                     dotNetRef.invokeMethodAsync('OnElementDeselected');
                 }
             });
+
+            // Context-menu actions that change the selected element's properties outside the panel
+            // (e.g. "Make default flow") re-send its data so the panel doesn't show stale values.
+            eventBus.on('orbit.elementChanged', function (e) {
+                dotNetRef.invokeMethodAsync('OnElementSelected', self._extractElementData(e.element));
+            });
+
+            eventBus.on('orbit.showXml', function () {
+                dotNetRef.invokeMethodAsync('OnShowXmlRequested');
+            });
+
+            eventBus.on('orbit.openProperties', function (e) {
+                self._focusProperties(e.field);
+            });
+
+            eventBus.on(['import.done', 'commandStack.changed'], function () {
+                self._scheduleSummary();
+            });
+
+            eventBus.on('orbit.simulateFrom', function (e) {
+                dotNetRef.invokeMethodAsync('OnSimulateFromRequested', e.element.id);
+            });
         }
+
+        this._installReadOnlyGuards();
+    },
+
+    // ---- Read-only (Simulation / History modes) ----------------------------------------------
+    // bpmn-js has no read-only switch. Every interactive edit (move, create, connect, resize, paste,
+    // delete) asks rules.allowed first, so this modeler's rules instance answers "no" while read-only.
+    // (A 'commandStack.canExecute' listener wouldn't do: the command-specific rule listener answers
+    // first and stops the bubble.) Label editing, undo/redo and the context menu/pad are blocked
+    // separately. Markers are not commands, so simulation and diff highlights still work.
+    _installReadOnlyGuards: function () {
+        var self = this;
+        var modeler = this._modeler;
+        var eventBus = modeler.get('eventBus');
+        var rules = modeler.get('rules');
+        var allowed = rules.allowed.bind(rules);
+        rules.allowed = function (action, context) {
+            return self._readOnly ? false : allowed(action, context);
+        };
+        eventBus.on('element.dblclick', 3000, function () {
+            if (self._readOnly) return false;
+        });
+        eventBus.on('contextPad.open', 3000, function () {
+            if (self._readOnly) return false;
+        });
+        var keyboard = modeler.get('keyboard');
+        keyboard.addListener(3000, function (context) {
+            if (!self._readOnly) return;
+            var e = context.keyEvent;
+            // Swallow every editing key; navigation (arrows, +/-, Shift F10 → disabled menu) passes.
+            if (keyboard.isCmd(e) || e.key === 'Delete' || e.key === 'Backspace' || e.key === 'F2' ||
+                /^[a-zA-Z]$/.test(e.key)) {
+                return true;
+            }
+        });
+    },
+
+    setReadOnly: function (readOnly) {
+        if (!this._modeler) return;
+        this._readOnly = !!readOnly;
+        var container = this._modeler.get('canvas').getContainer();
+        container.classList.toggle('orbit-readonly', this._readOnly);
+        if (this._readOnly) {
+            this._modeler.get('contextPad').close();
+            this._modeler.get('directEditing').cancel();
+            this._modeler.get('popupMenu').close();
+        }
+        var menu = this._modeler.get('orbitContextMenu', false);
+        if (menu) menu.setEnabled(!this._readOnly);
+    },
+
+    // ---- Simulation mode (js/orbitSimulation.js) --------------------------------------------
+
+    simulation: function (command, arg, arg2) {
+        if (!this._modeler) return;
+        var self = this;
+        if (command === 'start') {
+            if (this._simulation) this._simulation.destroy();
+            this._simulation = new window.OrbitSimulation(this._modeler, function (snapshot) {
+                if (self._dotNetRef) self._dotNetRef.invokeMethodAsync('OnSimulationUpdate', snapshot);
+            });
+            if (arg) this._simulation.startFrom(arg); else this._simulation.start();
+            return;
+        }
+        var sim = this._simulation;
+        if (!sim) return;
+        switch (command) {
+            case 'pause': sim.pause(); break;
+            case 'resume': sim.resume(); break;
+            case 'step': sim.step(); break;
+            case 'reset': sim.reset(); break;
+            case 'speed': sim.setSpeed(arg); break;
+            case 'choose': sim.choose(arg, arg2); break;
+            case 'stop':
+                sim.destroy();
+                this._simulation = null;
+                break;
+        }
+    },
+
+    // ---- History mode: compare the open diagram with a deployed version ----------------------
+
+    // Diffs flow elements (and pools) by id. Returns a capped list for the inspector — the full
+    // XML stays here — and marks the canvas: added = green "+", changed = amber "~". Removed
+    // elements no longer exist on the canvas, so they are only listed.
+    compareWith: async function (baseXml) {
+        this.clearComparison();
+        if (!this._modeler) return null;
+        var moddle = this._modeler.get('moddle');
+        var parsed = await moddle.fromXML(baseXml, 'bpmn:Definitions');
+        var base = this._collectElements(parsed.rootElement);
+        var current = this._collectElements(this._modeler.getDefinitions());
+        var items = [];
+        var counts = { added: 0, changed: 0, removed: 0 };
+
+        Object.keys(current).forEach(function (id) {
+            var now = current[id], before = base[id];
+            if (!before) {
+                counts.added++;
+                items.push({ id: id, kind: 'added', name: now.name, type: now.type, fields: [] });
+                return;
+            }
+            var fields = [];
+            if (before.type !== now.type) fields.push({ field: 'type', oldValue: before.type, newValue: now.type });
+            if (before.name !== now.name) fields.push({ field: 'name', oldValue: before.name.slice(0, 60), newValue: now.name.slice(0, 60) });
+            Object.keys(Object.assign({}, before.props, now.props)).forEach(function (key) {
+                var a = before.props[key] || '', b = now.props[key] || '';
+                if (a !== b) fields.push({ field: key, oldValue: a.slice(0, 60), newValue: b.slice(0, 60) });
+            });
+            if (fields.length) {
+                counts.changed++;
+                items.push({ id: id, kind: 'changed', name: now.name, type: now.type, fields: fields.slice(0, 4) });
+            }
+        });
+        Object.keys(base).forEach(function (id) {
+            if (current[id]) return;
+            counts.removed++;
+            items.push({ id: id, kind: 'removed', name: base[id].name, type: base[id].type, fields: [] });
+        });
+
+        var canvas = this._modeler.get('canvas');
+        var overlays = this._modeler.get('overlays');
+        var registry = this._modeler.get('elementRegistry');
+        var marked = [];
+        items.forEach(function (item) {
+            if (item.kind === 'removed' || !registry.get(item.id)) return;
+            var marker = 'orbit-diff-' + item.kind;
+            canvas.addMarker(item.id, marker);
+            marked.push({ id: item.id, marker: marker });
+            var badge = document.createElement('span');
+            badge.className = 'orbit-badge orbit-badge--' + (item.kind === 'added' ? 'done' : 'warning');
+            badge.textContent = item.kind === 'added' ? '+' : '~';
+            var el = registry.get(item.id);
+            overlays.add(item.id, 'orbit-diff', { position: el.waypoints ? { top: -8, left: -8 } : { top: -8, right: 8 }, html: badge });
+        });
+        this._diffMarked = marked;
+
+        var order = { removed: 0, changed: 1, added: 2 };
+        items.sort(function (a, b) { return order[a.kind] - order[b.kind]; });
+        items.forEach(function (i) { i.name = (i.name || '').slice(0, 60); });
+        // Capped (40 items × 4 fields × 60 chars) to stay under the SignalR receive limit.
+        return { added: counts.added, changed: counts.changed, removed: counts.removed, items: items.slice(0, 40) };
+    },
+
+    clearComparison: function () {
+        if (!this._modeler) return;
+        var canvas = this._modeler.get('canvas');
+        var registry = this._modeler.get('elementRegistry');
+        (this._diffMarked || []).forEach(function (m) {
+            if (registry.get(m.id)) canvas.removeMarker(m.id, m.marker);
+        });
+        this._diffMarked = null;
+        this._modeler.get('overlays').remove({ type: 'orbit-diff' });
+    },
+
+    _collectElements: function (definitions) {
+        var map = {};
+        function text(expr) { return expr && (expr.body || expr.value) ? String(expr.body || expr.value) : ''; }
+        function summarize(el) {
+            var props = {};
+            if (el.conditionExpression) props.condition = text(el.conditionExpression);
+            if (el.script) props.script = el.script;
+            if (el.calledElement) props.calledElement = el.calledElement;
+            if (el['default']) props['default flow'] = el['default'].id;
+            if (el.sourceRef && el.sourceRef.id) props.source = el.sourceRef.id;
+            if (el.targetRef && el.targetRef.id) props.target = el.targetRef.id;
+            if (el.attachedToRef) props.attachedTo = el.attachedToRef.id;
+            var def = el.eventDefinitions && el.eventDefinitions[0];
+            if (def) {
+                props.event = def.$type.replace(/^bpmn:|EventDefinition$/g, '');
+                var timer = text(def.timeDuration) || text(def.timeDate) || text(def.timeCycle);
+                if (timer) props.timer = timer;
+                if (def.messageRef) props.message = def.messageRef.name || def.messageRef.id;
+                if (def.signalRef) props.signal = def.signalRef.name || def.signalRef.id;
+                if (def.errorRef) props.error = def.errorRef.errorCode || def.errorRef.id;
+            }
+            if (el.loopCharacteristics) props.multiInstance = el.loopCharacteristics.isSequential ? 'sequential' : 'parallel';
+            return { type: el.$type, name: el.name || '', props: props };
+        }
+        function walk(container) {
+            (container.flowElements || []).forEach(function (el) {
+                map[el.id] = summarize(el);
+                if (el.flowElements) walk(el);
+            });
+        }
+        (definitions.rootElements || []).forEach(function (root) {
+            if (root.$type === 'bpmn:Process') walk(root);
+            if (root.$type === 'bpmn:Collaboration') {
+                (root.participants || []).forEach(function (p) { map[p.id] = { type: p.$type, name: p.name || '', props: {} }; });
+            }
+        });
+        return map;
+    },
+
+    // Empty-state "Add start event": places a catalog element in the middle of the view.
+    addElementAtCenter: function (key) {
+        if (!this._modeler) return;
+        var canvas = this._modeler.get('canvas');
+        var shape = window.orbitElementCatalog.createShape(this._modeler.get('elementFactory'), key);
+        if (!shape) return;
+        var vb = canvas.viewbox();
+        var created = this._modeler.get('modeling').createShape(shape,
+            { x: Math.round(vb.x + vb.width / 2), y: Math.round(vb.y + vb.height / 2) }, canvas.getRootElement());
+        this._modeler.get('selection').select(created);
+    },
+
+    // ---- Orbit editor chrome (Editor.razor) -------------------------------------------------
+    // The left-rail palette, the floating tool/zoom bars and the status bar are Razor markup; this
+    // wires them to bpmn-js by data attributes, because palette drags and tool activation need the
+    // native DOM event (bpmn-js starts its drag session from it) which a Blazor @onclick can't pass.
+    //   [data-bpmn-create="<catalog key>"]  click or drag → create that element (orbitContextMenu.js catalog)
+    //   [data-bpmn-tool="<name>"]            select | hand | lasso | space | connect | undo | redo |
+    //                                        zoom-in | zoom-out | fit
+    //   [data-orbit-zoom] / [data-orbit-cursor]  text kept current from the viewbox / pointer
+    bindChrome: function (rootId) {
+        var root = document.getElementById(rootId);
+        if (!root || !this._modeler || root._orbitBound) return;
+        root._orbitBound = true;
+
+        var self = this;
+        var modeler = this._modeler;
+        var eventBus = modeler.get('eventBus');
+        var canvas = modeler.get('canvas');
+
+        function startCreate(target, event) {
+            var shape = window.orbitElementCatalog.createShape(modeler.get('elementFactory'), target.getAttribute('data-bpmn-create'));
+            if (shape) modeler.get('create').start(event, shape);
+        }
+
+        root.addEventListener('dragstart', function (event) {
+            var target = event.target.closest && event.target.closest('[data-bpmn-create]');
+            if (!target) return;
+            // Cancel the native HTML drag; bpmn-js' own drag session follows the pointer instead.
+            event.preventDefault();
+            startCreate(target, event);
+        });
+
+        root.addEventListener('click', function (event) {
+            var create = event.target.closest('[data-bpmn-create]');
+            if (create) {
+                startCreate(create, event);
+                return;
+            }
+            var tool = event.target.closest('[data-bpmn-tool]');
+            if (tool) self._runTool(tool.getAttribute('data-bpmn-tool'), event);
+        });
+
+        function setPressed(name) {
+            root.querySelectorAll('[data-bpmn-tool][aria-pressed]').forEach(function (b) {
+                b.setAttribute('aria-pressed', b.getAttribute('data-bpmn-tool') === name ? 'true' : 'false');
+            });
+        }
+
+        var TOOL_NAMES = { 'hand': 'hand', 'lasso': 'lasso', 'space': 'space', 'global-connect': 'connect' };
+        eventBus.on('tool-manager.update', function (e) {
+            setPressed(TOOL_NAMES[e.tool] || 'select');
+        });
+
+        function updateHistory() {
+            var stack = modeler.get('commandStack');
+            var undo = root.querySelector('[data-bpmn-tool="undo"]');
+            var redo = root.querySelector('[data-bpmn-tool="redo"]');
+            if (undo) undo.disabled = !stack.canUndo();
+            if (redo) redo.disabled = !stack.canRedo();
+        }
+
+        function updateZoom() {
+            var zoom = Math.round(canvas.zoom() * 100) + '%';
+            root.querySelectorAll('[data-orbit-zoom]').forEach(function (label) { label.textContent = zoom; });
+        }
+
+        eventBus.on(['commandStack.changed', 'import.done'], updateHistory);
+        eventBus.on(['canvas.viewbox.changed', 'import.done', 'canvas.resized'], updateZoom);
+        updateHistory();
+        updateZoom();
+
+        var container = canvas.getContainer();
+        container.addEventListener('mousemove', function (event) {
+            var label = root.querySelector('[data-orbit-cursor]');
+            if (!label) return;
+            var rect = container.getBoundingClientRect();
+            var viewbox = canvas.viewbox();
+            var x = Math.round(viewbox.x + (event.clientX - rect.left) / viewbox.scale);
+            var y = Math.round(viewbox.y + (event.clientY - rect.top) / viewbox.scale);
+            label.textContent = 'X ' + x + ' · Y ' + y;
+        });
+
+        this._bindMinimap(root);
+    },
+
+    // Minimap (design: bottom-right card): shapes and flows drawn at diagram scale into an SVG whose
+    // viewBox is the diagram's bounds, plus the current viewport. Click or drag to move the view.
+    _bindMinimap: function (root) {
+        var host = root.querySelector('[data-orbit-minimap]');
+        if (!host) return;
+        var modeler = this._modeler;
+        var canvas = modeler.get('canvas');
+        var registry = modeler.get('elementRegistry');
+        var eventBus = modeler.get('eventBus');
+        var SVG = 'http://www.w3.org/2000/svg';
+        var svg = document.createElementNS(SVG, 'svg');
+        svg.setAttribute('class', 'orbit-minimap__svg');
+        svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+        svg.setAttribute('aria-hidden', 'true');
+        host.appendChild(svg);
+        var viewport = null;
+        var drawTimer = null;
+
+        function el(name, attrs) {
+            var node = document.createElementNS(SVG, name);
+            Object.keys(attrs).forEach(function (k) { node.setAttribute(k, attrs[k]); });
+            return node;
+        }
+
+        function draw() {
+            while (svg.firstChild) svg.removeChild(svg.firstChild);
+            var rootEl = canvas.getRootElement();
+            var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            var shapes = [], flows = [];
+            registry.forEach(function (e) {
+                if (e === rootEl || e.labelTarget || !e.businessObject) return;
+                if (e.waypoints) { flows.push(e); return; }
+                shapes.push(e);
+                minX = Math.min(minX, e.x); minY = Math.min(minY, e.y);
+                maxX = Math.max(maxX, e.x + e.width); maxY = Math.max(maxY, e.y + e.height);
+            });
+            if (!shapes.length) { minX = 0; minY = 0; maxX = 400; maxY = 200; }
+            var pad = 40;
+            svg.setAttribute('viewBox', [minX - pad, minY - pad, maxX - minX + 2 * pad, maxY - minY + 2 * pad].join(' '));
+            flows.forEach(function (f) {
+                svg.appendChild(el('polyline', {
+                    points: f.waypoints.map(function (p) { return p.x + ',' + p.y; }).join(' '),
+                    'class': 'orbit-minimap__flow'
+                }));
+            });
+            shapes.forEach(function (s) {
+                var t = s.businessObject.$type;
+                var kind = t === 'bpmn:StartEvent' ? 'start' : t === 'bpmn:EndEvent' ? 'end'
+                    : /Gateway$/.test(t) ? 'gateway' : /Event$/.test(t) ? 'event'
+                    : (t === 'bpmn:Participant' || t === 'bpmn:Lane' || (t === 'bpmn:SubProcess' && !s.collapsed)) ? 'container' : 'task';
+                if (kind === 'start' || kind === 'end' || kind === 'event') {
+                    svg.appendChild(el('circle', { cx: s.x + s.width / 2, cy: s.y + s.height / 2, r: s.width / 2, 'class': 'orbit-minimap__shape orbit-minimap__shape--' + kind }));
+                } else if (kind === 'gateway') {
+                    var cx = s.x + s.width / 2, cy = s.y + s.height / 2;
+                    svg.appendChild(el('polygon', { points: [cx, s.y, s.x + s.width, cy, cx, s.y + s.height, s.x, cy].join(' '), 'class': 'orbit-minimap__shape orbit-minimap__shape--gateway' }));
+                } else {
+                    svg.appendChild(el('rect', { x: s.x, y: s.y, width: s.width, height: s.height, rx: 8, 'class': 'orbit-minimap__shape orbit-minimap__shape--' + kind }));
+                }
+            });
+            viewport = el('rect', { 'class': 'orbit-minimap__viewport', rx: 6 });
+            svg.appendChild(viewport);
+            moveViewport();
+        }
+
+        function moveViewport() {
+            if (!viewport) return;
+            var vb = canvas.viewbox();
+            viewport.setAttribute('x', vb.x);
+            viewport.setAttribute('y', vb.y);
+            viewport.setAttribute('width', Math.max(vb.width, 1));
+            viewport.setAttribute('height', Math.max(vb.height, 1));
+        }
+
+        function scheduleDraw() {
+            clearTimeout(drawTimer);
+            drawTimer = setTimeout(draw, 120);
+        }
+
+        function centerOn(event) {
+            var ctm = svg.getScreenCTM();
+            if (!ctm) return;
+            var pt = svg.createSVGPoint();
+            pt.x = event.clientX; pt.y = event.clientY;
+            var p = pt.matrixTransform(ctm.inverse());
+            var vb = canvas.viewbox();
+            canvas.viewbox({ x: p.x - vb.width / 2, y: p.y - vb.height / 2, width: vb.width, height: vb.height });
+        }
+
+        var dragging = false;
+        svg.addEventListener('pointerdown', function (e) { dragging = true; svg.setPointerCapture(e.pointerId); centerOn(e); });
+        svg.addEventListener('pointermove', function (e) { if (dragging) centerOn(e); });
+        svg.addEventListener('pointerup', function () { dragging = false; });
+
+        eventBus.on(['import.done', 'elements.changed'], scheduleDraw);
+        eventBus.on(['canvas.viewbox.changed', 'canvas.resized'], moveViewport);
+        draw();
+    },
+
+    _runTool: function (name, event) {
+        var modeler = this._modeler;
+        if (!modeler) return;
+        var canvas = modeler.get('canvas');
+        switch (name) {
+            case 'select': modeler.get('dragging').cancel(); break;
+            case 'hand': modeler.get('handTool').activateHand(event); break;
+            case 'lasso': modeler.get('lassoTool').activateSelection(event); break;
+            case 'space': modeler.get('spaceTool').activateSelection(event); break;
+            case 'connect': modeler.get('globalConnect').start(event); break;
+            case 'undo': modeler.get('commandStack').undo(); break;
+            case 'redo': modeler.get('commandStack').redo(); break;
+            case 'zoom-in': modeler.get('zoomScroll').stepZoom(1); break;
+            case 'zoom-out': modeler.get('zoomScroll').stepZoom(-1); break;
+            case 'fit': canvas.zoom('fit-viewport', 'auto'); break;
+        }
+    },
+
+    // Called by the editor after it shows the canvas again (XML mode hides it).
+    refreshCanvas: function () {
+        if (!this._modeler) return;
+        var canvas = this._modeler.get('canvas');
+        canvas.resized();
+        if (this._fitPending) {
+            this._fitPending = false;
+            canvas.zoom('fit-viewport');
+        }
+    },
+
+    // Selects an element and scrolls it into view (outline, problems list).
+    focusElement: function (elementId) {
+        if (!this._modeler) return false;
+        var element = this._modeler.get('elementRegistry').get(elementId);
+        if (!element) return false;
+        var canvas = this._modeler.get('canvas');
+        if (element !== canvas.getRootElement()) {
+            this._modeler.get('selection').select(element);
+            canvas.scrollToElement(element, { top: 120, bottom: 120, left: 160, right: 160 });
+        }
+        // Keyboard bindings listen on the canvas container: move focus there so Delete, F2, … apply.
+        var binding = this._modeler.get('keyboard').getBinding();
+        if (binding) binding.focus({ preventScroll: true });
+        return true;
+    },
+
+    // "Open properties" / "Set condition…": focus the first field of the inspector, or the one tagged
+    // data-field="<field>". Blazor renders the panel after the selection round-trip, hence the retries.
+    _focusProperties: function (field) {
+        var attempts = 0;
+        (function tryFocus() {
+            var panel = document.querySelector('.properties-panel');
+            var target = panel && (field
+                ? panel.querySelector('[data-field="' + field + '"]')
+                : panel.querySelector('fluent-text-field, fluent-text-area, input, textarea'));
+            if (target) {
+                target.scrollIntoView({ block: 'nearest' });
+                target.focus();
+            } else if (attempts++ < 10) {
+                setTimeout(tryFocus, 50);
+            }
+        })();
+    },
+
+    // ---- XML mode -----------------------------------------------------------------------------
+    // The XML text lives only in the browser (the <textarea> Editor.razor renders without a bound value):
+    // a diagram's XML can exceed the SignalR message limit, so it never round-trips through .NET here.
+    // .NET only hears that the text was edited (OnXmlEdited) and whether applying it worked.
+
+    enterXmlMode: async function (textareaId) {
+        var area = document.getElementById(textareaId);
+        if (!area || !this._modeler) return;
+        var result = await this._modeler.saveXML({ format: true });
+        area.value = result.xml;
+        this._xmlBaseline = result.xml;
+        this._xmlEdited = false;
+        if (!area._orbitBound) {
+            area._orbitBound = true;
+            var self = this;
+            area.addEventListener('input', function () {
+                var edited = area.value !== self._xmlBaseline;
+                if (edited !== self._xmlEdited) {
+                    self._xmlEdited = edited;
+                    if (self._dotNetRef) self._dotNetRef.invokeMethodAsync('OnXmlEdited', edited);
+                }
+            });
+        }
+        area.focus();
+    },
+
+    // Imports the edited XML. Call it with the canvas visible (loadXml fits the viewport).
+    applyXmlFromEditor: async function (textareaId) {
+        var area = document.getElementById(textareaId);
+        if (!area) return { ok: false, error: 'XML editor not found.' };
+        try {
+            await this.loadXml(area.value);
+            this._xmlBaseline = area.value;
+            this._xmlEdited = false;
+            return { ok: true, error: null };
+        } catch (err) {
+            return { ok: false, error: (err && err.message) || String(err) };
+        }
+    },
+
+    copyXmlFromEditor: function (textareaId) {
+        var area = document.getElementById(textareaId);
+        return area ? window.fleansOrbit.copyText(area.value) : false;
+    },
+
+    downloadXmlFromEditor: function (textareaId, filename) {
+        var area = document.getElementById(textareaId);
+        if (!area) return;
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([area.value], { type: 'application/xml' }));
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 0);
+    },
+
+    // ---- Diagram summary: outline + lint (left rail, status bar, deploy checklist) --------------
+
+    _scheduleSummary: function () {
+        var self = this;
+        clearTimeout(this._summaryTimer);
+        this._summaryTimer = setTimeout(function () {
+            if (!self._modeler || !self._dotNetRef) return;
+            var summary = self.getSummary();
+            self._dotNetRef.invokeMethodAsync('OnDiagramSummary', summary);
+        }, 200);
+    },
+
+    getSummary: function () {
+        if (!this._modeler) return null;
+        var registry = this._modeler.get('elementRegistry');
+        var canvas = this._modeler.get('canvas');
+        var elements = 0, flows = 0;
+        registry.forEach(function (e) {
+            if (e.labelTarget || !e.businessObject || e === canvas.getRootElement()) return;
+            var type = e.businessObject.$type;
+            if (type === 'bpmn:SequenceFlow') flows++;
+            else if (e.businessObject.$instanceOf('bpmn:FlowNode')) elements++;
+        });
+        var problems = this._lint();
+        this._markProblems(problems);
+        var suggestions = this._suggest(problems);
+        // Capped so the payload stays well under the SignalR message limit (32 KB by default).
+        return {
+            elements: elements,
+            flows: flows,
+            outline: this._outline().slice(0, 120),
+            problems: problems.slice(0, 60),
+            suggestions: suggestions.slice(0, 5),
+            problemCounts: {
+                errors: problems.filter(function (p) { return p.severity === 'error'; }).length,
+                warnings: problems.filter(function (p) { return p.severity === 'warning'; }).length,
+                infos: problems.filter(function (p) { return p.severity === 'info'; }).length
+            }
+        };
+    },
+
+    _outline: function () {
+        var canvas = this._modeler.get('canvas');
+        var items = [];
+        function kind(bo) {
+            var t = bo.$type;
+            if (t === 'bpmn:StartEvent') return 'start';
+            if (t === 'bpmn:EndEvent') return 'end';
+            if (/Gateway$/.test(t)) return 'gateway';
+            if (/Event$/.test(t)) return 'event';
+            return 'task';
+        }
+        function walk(container, depth) {
+            var children = (container.children || []).filter(function (c) {
+                return !c.labelTarget && !c.waypoints && c.businessObject;
+            });
+            children.sort(function (a, b) { return (a.x - b.x) || (a.y - b.y); });
+            children.forEach(function (child) {
+                var bo = child.businessObject;
+                if (bo.$instanceOf('bpmn:FlowNode') && items.length < 120) {
+                    items.push({ id: bo.id, name: (bo.name || '').slice(0, 60), type: bo.$type, kind: kind(bo), depth: depth });
+                    if (child.children && child.children.length) walk(child, depth + 1);
+                } else if (bo.$type === 'bpmn:Participant' || bo.$type === 'bpmn:Lane') {
+                    walk(child, depth);
+                }
+            });
+        }
+        walk(canvas.getRootElement(), 0);
+        return items;
+    },
+
+    // Modelling hints, not the engine's validation (deploy still runs the real BPMN conversion):
+    // errors = the engine can't run it as drawn, warnings = it probably won't do what you meant.
+    _lint: function () {
+        var registry = this._modeler.get('elementRegistry');
+        var canvas = this._modeler.get('canvas');
+        var root = canvas.getRootElement();
+        var problems = [];
+        function add(bo, severity, message, fix) {
+            problems.push({
+                id: bo.id, name: (bo.name || '').slice(0, 60), type: bo.$type, severity: severity, message: message,
+                fixKind: fix ? fix.kind : null, fixLabel: fix ? fix.label : null
+            });
+        }
+        function definition(bo) {
+            return (bo.eventDefinitions && bo.eventDefinitions[0]) || null;
+        }
+        // The diagram's connections, not bo.incoming/outgoing: those are only filled when the XML
+        // carries <bpmn:incoming>/<bpmn:outgoing> refs, which many exporters omit.
+        function sequenceFlows(connections) {
+            return (connections || [])
+                .map(function (c) { return c.businessObject; })
+                .filter(function (f) { return f && f.$type === 'bpmn:SequenceFlow'; });
+        }
+
+        var hasStart = false, hasEnd = false;
+        registry.forEach(function (e) {
+            if (e.labelTarget || e === root || !e.businessObject) return;
+            var bo = e.businessObject;
+            if (!bo.$instanceOf('bpmn:FlowNode')) return;
+            var type = bo.$type;
+            var parentBo = bo.$parent;
+            var inEventSubProcess = parentBo && parentBo.triggeredByEvent;
+            var topLevel = parentBo && parentBo.$type === 'bpmn:Process';
+            if (topLevel && type === 'bpmn:StartEvent') hasStart = true;
+            if (topLevel && type === 'bpmn:EndEvent') hasEnd = true;
+
+            var incoming = sequenceFlows(e.incoming);
+            var outgoing = sequenceFlows(e.outgoing);
+            var exempt = bo.isForCompensation || bo.triggeredByEvent;
+            var def = definition(bo);
+
+            if (!exempt && incoming.length === 0 && type !== 'bpmn:StartEvent' && type !== 'bpmn:BoundaryEvent') {
+                add(bo, 'warning', 'No incoming flow: this step is never reached.');
+            }
+            var compensateBoundary = type === 'bpmn:BoundaryEvent' && def && def.$type === 'bpmn:CompensateEventDefinition';
+            if (!exempt && !compensateBoundary && outgoing.length === 0 && type !== 'bpmn:EndEvent' && !inEventSubProcess) {
+                add(bo, 'warning', 'No outgoing flow: the path stops here without an end event.', { kind: 'end', label: 'Add end event' });
+            }
+
+            if ((type === 'bpmn:ExclusiveGateway' || type === 'bpmn:InclusiveGateway') && outgoing.length > 1) {
+                outgoing.forEach(function (flow) {
+                    if (flow !== bo['default'] && !flow.conditionExpression) {
+                        add(flow, 'error', 'Branch of "' + (bo.name || bo.id).slice(0, 40) + '" has no condition and is not the default flow.',
+                            bo['default'] ? null : { kind: 'default', label: 'Make it the default flow' });
+                    }
+                });
+            }
+
+            if (def) {
+                if (def.$type === 'bpmn:TimerEventDefinition' && !def.timeDuration && !def.timeDate && !def.timeCycle) {
+                    add(bo, 'error', 'Timer has no date, duration or cycle.');
+                }
+                if (def.$type === 'bpmn:MessageEventDefinition' && !def.messageRef) {
+                    add(bo, 'error', 'Message event has no message name.');
+                }
+                if (def.$type === 'bpmn:SignalEventDefinition' && !def.signalRef) {
+                    add(bo, 'error', 'Signal event has no signal name.');
+                }
+            }
+
+            if (type === 'bpmn:CallActivity' && !bo.calledElement) {
+                add(bo, 'error', 'Call activity has no called process key.');
+            }
+            if (type === 'bpmn:ScriptTask' && !bo.script) {
+                add(bo, 'warning', 'Script task has an empty script.');
+            }
+            if (/Task$|^bpmn:CallActivity$/.test(type) && !bo.name) {
+                add(bo, 'info', 'Task has no name.');
+            }
+        });
+
+        var pools = 0;
+        registry.forEach(function (e) {
+            if (e.labelTarget || !e.businessObject) return;
+            var bo = e.businessObject;
+            if (bo.$type === 'bpmn:Participant') pools++;
+            if (bo.$type === 'bpmn:DataObjectReference' || bo.$type === 'bpmn:DataStoreReference') {
+                add(bo, 'info', 'Data objects and stores are documentation only: the engine ignores them.');
+            }
+        });
+        if (pools > 1) {
+            add(root.businessObject, 'warning', 'Several pools: only the executable process is deployed, the other pools are documentation.');
+        }
+
+        var rootBo = root.businessObject;
+        if (rootBo && (rootBo.$type === 'bpmn:Process' || rootBo.$type === 'bpmn:Collaboration')) {
+            if (!hasStart) add(rootBo, 'error', 'Process has no start event.');
+            if (!hasEnd) add(rootBo, 'warning', 'Process has no end event.');
+        }
+
+        var order = { error: 0, warning: 1, info: 2 };
+        problems.sort(function (a, b) { return order[a.severity] - order[b.severity]; });
+        return problems;
+    },
+
+    // "Process assistant" (design: the violet card under the canvas): rule-based suggestions with a
+    // one-click fix — no model, no network. Dismissed ones stay hidden for this diagram session.
+    _suggest: function (problems) {
+        var registry = this._modeler.get('elementRegistry');
+        var dismissed = this._dismissedSuggestions || (this._dismissedSuggestions = {});
+        var out = [];
+        function push(s) { if (!dismissed[s.kind + ':' + s.id]) out.push(s); }
+        registry.forEach(function (e) {
+            var bo = e.businessObject;
+            if (!bo || e.labelTarget || bo.$type !== 'bpmn:UserTask') return;
+            var hasTimer = (e.attachers || []).some(function (b) {
+                var d = b.businessObject.eventDefinitions && b.businessObject.eventDefinitions[0];
+                return d && d.$type === 'bpmn:TimerEventDefinition';
+            });
+            if (!hasTimer && (e.outgoing || []).length) {
+                push({ id: bo.id, kind: 'escalation', name: (bo.name || bo.id).slice(0, 60),
+                    text: '"' + (bo.name || bo.id).slice(0, 40) + '" has no escalation. Add a 4 h boundary timer to route overdue work?',
+                    actionLabel: 'Add timer' });
+            }
+        });
+        problems.forEach(function (p) {
+            if (!p.fixKind) return;
+            push({ id: p.id, kind: p.fixKind, name: p.name || p.id, text: p.message, actionLabel: p.fixLabel });
+        });
+        return out;
+    },
+
+    dismissSuggestion: function (kind, elementId) {
+        (this._dismissedSuggestions || (this._dismissedSuggestions = {}))[kind + ':' + elementId] = true;
+        this._scheduleSummary();
+    },
+
+    // Quick fixes for problems and assistant suggestions. Each is one modeling command, so Undo reverts it.
+    applyFix: function (kind, elementId) {
+        if (!this._modeler) return false;
+        var m = this._modeler;
+        var registry = m.get('elementRegistry');
+        var modeling = m.get('modeling');
+        var element = registry.get(elementId);
+        if (!element) return false;
+        if (kind === 'end') {
+            var end = m.get('elementFactory').createShape({ type: 'bpmn:EndEvent' });
+            m.get('autoPlace').append(element, end);
+            return true;
+        }
+        if (kind === 'default' && element.waypoints) {
+            modeling.updateProperties(element.source, { 'default': element.businessObject });
+            return true;
+        }
+        if (kind === 'escalation') {
+            var bpmnFactory = m.get('bpmnFactory');
+            var timer = bpmnFactory.create('bpmn:TimerEventDefinition', {
+                timeDuration: bpmnFactory.create('bpmn:FormalExpression', { body: 'PT4H' })
+            });
+            var boundaryBo = bpmnFactory.create('bpmn:BoundaryEvent', {
+                attachedToRef: element.businessObject, cancelActivity: true, eventDefinitions: [timer], name: 'Escalation 4 h'
+            });
+            timer.$parent = boundaryBo;
+            var shape = m.get('elementFactory').createShape({ type: 'bpmn:BoundaryEvent', businessObject: boundaryBo });
+            var created = modeling.createShape(shape, { x: element.x + element.width - 20, y: element.y + element.height }, element, { attach: true });
+            m.get('selection').select(created);
+            return true;
+        }
+        return false;
+    },
+
+    // Collaboration: other editors' selections, as a chip on the element ("Ann is editing").
+    setPresence: function (marks) {
+        if (!this._modeler) return;
+        var overlays = this._modeler.get('overlays');
+        var registry = this._modeler.get('elementRegistry');
+        overlays.remove({ type: 'orbit-presence' });
+        (marks || []).forEach(function (mark) {
+            var element = registry.get(mark.elementId);
+            if (!element) return;
+            var chip = document.createElement('span');
+            chip.className = 'orbit-presence-chip';
+            chip.textContent = mark.label;
+            overlays.add(mark.elementId, 'orbit-presence', { position: { top: -24, left: 0 }, html: chip });
+        });
+    },
+
+    _markProblems: function (problems) {
+        var canvas = this._modeler.get('canvas');
+        var overlays = this._modeler.get('overlays');
+        var registry = this._modeler.get('elementRegistry');
+        (this._markedProblems || []).forEach(function (m) {
+            if (registry.get(m.id)) canvas.removeMarker(m.id, m.marker);
+        });
+        overlays.remove({ type: 'orbit-problem' });
+
+        var worst = {};
+        problems.forEach(function (p) {
+            if (p.severity === 'info') return;
+            if (!worst[p.id] || p.severity === 'error') worst[p.id] = p.severity;
+        });
+
+        var marked = [];
+        var root = canvas.getRootElement();
+        Object.keys(worst).forEach(function (id) {
+            var element = registry.get(id);
+            if (!element || element === root) return;
+            var marker = 'orbit-problem-' + worst[id];
+            canvas.addMarker(id, marker);
+            marked.push({ id: id, marker: marker });
+            var badge = document.createElement('span');
+            badge.className = 'orbit-badge orbit-badge--' + worst[id];
+            badge.textContent = worst[id] === 'error' ? '!' : '?';
+            var position = element.waypoints ? { top: -8, left: -8 } : { top: -8, right: 8 };
+            overlays.add(id, 'orbit-problem', { position: position, html: badge });
+        });
+        this._markedProblems = marked;
     },
 
     _extractElementData: function (element) {
@@ -1159,7 +1976,13 @@ window.bpmnEditor = {
         try {
             await this._modeler.importXML(bpmnXml);
             var canvas = this._modeler.get('canvas');
-            canvas.zoom('fit-viewport');
+            var container = canvas.getContainer();
+            // XML mode hides the canvas; fitting a 0×0 viewport breaks the viewbox, so defer it.
+            if (container.offsetWidth && container.offsetHeight) {
+                canvas.zoom('fit-viewport');
+            } else {
+                this._fitPending = true;
+            }
         } catch (err) {
             console.error('Failed to load BPMN XML', err);
             throw err;
@@ -1216,6 +2039,13 @@ window.bpmnEditor = {
             this._modeler.destroy();
             this._modeler = null;
         }
+        clearTimeout(this._summaryTimer);
+        if (this._simulation) this._simulation.destroy();
+        this._simulation = null;
+        this._readOnly = false;
+        this._diffMarked = null;
+        this._dismissedSuggestions = null;
+        this._markedProblems = null;
         this._dotNetRef = null;
         this._dirtyListenerAttached = false;
         this._suppressDirty = false;

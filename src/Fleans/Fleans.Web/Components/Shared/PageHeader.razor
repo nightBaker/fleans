@@ -1,8 +1,8 @@
 @using Microsoft.FluentUI.AspNetCore.Components
 
-<FluentStack Orientation="Orientation.Horizontal" HorizontalAlignment="HorizontalAlignment.SpaceBetween" VerticalAlignment="VerticalAlignment.Center">
-
-    <FluentStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="8px">
+@* Orbit page header: mono eyebrow over the page title, page actions on the right. *@
+<div class="orbit-page-header">
+    <div class="orbit-page-header__title">
         @if (ShowBackButton)
         {
             <FluentButton Appearance="Appearance.Stealth"
@@ -10,24 +10,29 @@
                           Title="Go back"
                           @onclick="HandleGoBack" />
         }
-        <FluentLabel Typo="Typography.PaneHeader">@Title</FluentLabel>
-    </FluentStack>
+        <div class="orbit-page-header__text">
+            <span class="orbit-eyebrow">@Eyebrow</span>
+            <h1 tabindex="-1">@Title</h1>
+        </div>
+    </div>
 
     @if (Actions is not null)
     {
-        <FluentStack Orientation="Orientation.Horizontal" HorizontalAlignment="HorizontalAlignment.End" Gap="8px" Style="padding-right: 10px">
+        <div class="orbit-page-header__actions">
             @Actions
-        </FluentStack>
+        </div>
     }
-
-</FluentStack>
-<FluentDivider Style="width: 100%;" Role="DividerRole.Presentation"></FluentDivider>
+</div>
 
 @inject NavigationManager Navigation
 
 @code {
     [Parameter, EditorRequired]
     public string Title { get; set; } = string.Empty;
+
+    /// <summary>Mono line above the title; defaults to "Fleans".</summary>
+    [Parameter]
+    public string Eyebrow { get; set; } = "Fleans";
 
     [Parameter]
     public string? GoBackUrl { get; set; }

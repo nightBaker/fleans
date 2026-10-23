@@ -1,31 +1,43 @@
-﻿<script type="module" src="@Assets["Components/Layout/ReconnectModal.razor.js"]"></script>
+<script type="module" src="@Assets["Components/Layout/ReconnectModal.razor.js"]"></script>
 
-<dialog id="components-reconnect-modal" data-nosnippet>
+@* Orbit "No connection" state (design board "System states"). Ids and the components-* classes are
+   the Blazor reconnect contract used by ReconnectModal.razor.js — keep them. *@
+<dialog id="components-reconnect-modal" data-nosnippet aria-labelledby="components-reconnect-title">
     <div class="components-reconnect-container">
-        <div class="components-rejoining-animation" aria-hidden="true">
-            <div></div>
-            <div></div>
+        <div class="components-reconnect-head">
+            <div class="components-rejoining-animation" aria-hidden="true">
+                <div></div>
+                <div></div>
+            </div>
+            <span class="components-reconnect-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 8.8a15 15 0 0 1 20 0M5 12.9a10 10 0 0 1 14 0M8.5 16.4a5 5 0 0 1 7 0"/><path d="M3 3l18 18"/></svg>
+            </span>
+            <div>
+                <span class="components-reconnect-label">Connection</span>
+                <h2 id="components-reconnect-title">No connection to the server</h2>
+            </div>
         </div>
+        <p class="components-reconnect-note">Open editor tabs are kept in this browser; deploy and other server actions wait until you're back.</p>
         <p class="components-reconnect-first-attempt-visible">
-            Rejoining the server...
+            Reconnecting…
         </p>
         <p class="components-reconnect-repeated-attempt-visible">
-            Rejoin failed... trying again in <span id="components-seconds-to-next-attempt"></span> seconds.
+            Retrying in <span id="components-seconds-to-next-attempt"></span> s.
         </p>
         <p class="components-reconnect-failed-visible">
-            Failed to rejoin.<br/>Please retry or reload the page.
+            Couldn't reconnect. Retry, or reload the page.
         </p>
         <button id="components-reconnect-button" class="components-reconnect-failed-visible">
-            Retry
+            Retry now
         </button>
         <p class="components-pause-visible">
-            The session has been paused by the server.
+            The server paused this session.
         </p>
         <button id="components-resume-button" class="components-pause-visible">
             Resume
         </button>
         <p class="components-resume-failed-visible">
-            Failed to resume the session.<br/>Please reload the page.
+            Couldn't resume the session. Please reload the page.
         </p>
     </div>
 </dialog>

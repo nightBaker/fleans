@@ -35,7 +35,7 @@ public partial class BpmnConverter : IBpmnConverter
     private WorkflowDefinition ConvertFromXml(string bpmnXml)
     {
         var doc = XDocument.Parse(bpmnXml);
-        var process = doc.Descendants(Bpmn + "process").FirstOrDefault()
+        var process = SelectProcess(doc)
             ?? throw new InvalidOperationException("BPMN file must contain a process element");
 
         var workflowId = process.Attribute("id")?.Value
@@ -883,9 +883,20 @@ public partial class BpmnConverter : IBpmnConverter
         }
     }
 
+    // A collaboration (pools) holds one <process> per pool; a definition deploys one of them: the first
+    // marked isExecutable="true", else the first with a start event, else the first. Pools, lanes,
+    // message flows and data objects/stores carry no execution semantics here and are skipped.
+    private static XElement? SelectProcess(XDocument doc)
+    {
+        var processes = doc.Descendants(Bpmn + "process").ToList();
+        return processes.FirstOrDefault(p => string.Equals((string?)p.Attribute("isExecutable"), "true", StringComparison.OrdinalIgnoreCase))
+            ?? processes.FirstOrDefault(p => p.Elements(Bpmn + "startEvent").Any())
+            ?? processes.FirstOrDefault();
+    }
+
     private List<MessageDefinition> ParseMessages(XDocument doc)
     {
-        var process = doc.Descendants(Bpmn + "process").FirstOrDefault();
+        var process = SelectProcess(doc);
         var messages = new List<MessageDefinition>();
         foreach (var msgEl in doc.Root!.Elements(Bpmn + "message"))
         {

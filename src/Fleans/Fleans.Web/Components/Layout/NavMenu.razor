@@ -1,33 +1,19 @@
-@using Microsoft.AspNetCore.Components.Forms
-
-<div class="navmenu">
-    <FluentAppBar>
-        <FluentAppBarItem Href="/workflows"
-                          Text="Workflows"
-                          IconRest="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size24.Flow())"
-                          IconActive="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Filled.Size24.Flow())"/>
-        <FluentAppBarItem Href="/editor"
-                          Text="Editor"
-                          IconRest="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size24.DrawShape())"
-                          IconActive="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Filled.Size24.DrawShape())" />
-        <FluentAppBarItem Href="/admin/custom-tasks"
-                          Text="Custom Tasks"
-                          IconRest="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size24.Box())"
-                          IconActive="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Filled.Size24.Box())" />
-        <FluentAppBarItem Href="/events"
-                          Text="Events"
-                          IconRest="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size24.Flash())"
-                          IconActive="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Filled.Size24.Flash())" />
-    </FluentAppBar>
-    <AuthorizeView>
-        <Authorized>
-            <div class="nav-user">
-                <span class="nav-user-name">Signed in as @context.User.Identity?.Name</span>
-                <form action="/Account/Logout" method="post" class="nav-user-logout">
-                    <AntiforgeryToken />
-                    <FluentButton Type="ButtonType.Submit" Appearance="Appearance.Stealth">Sign out</FluentButton>
-                </form>
-            </div>
-        </Authorized>
-    </AuthorizeView>
-</div>
+@* Section navigation, rendered as the Orbit segmented pill bar in the top bar (MainLayout). *@
+<nav class="orbit-nav" aria-label="Sections">
+    <NavLink href="/workflows" Match="NavLinkMatch.Prefix" data-testid="nav-workflows">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="7" height="6" rx="1.5"/><rect x="14" y="14" width="7" height="6" rx="1.5"/><path d="M6.5 10v4a2 2 0 0 0 2 2H14"/></svg>
+        Workflows
+    </NavLink>
+    <NavLink href="/editor" Match="NavLinkMatch.Prefix" data-testid="nav-editor">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2 22 12 12 22 2 12Z"/></svg>
+        Editor
+    </NavLink>
+    <NavLink href="/admin/custom-tasks" Match="NavLinkMatch.Prefix" data-testid="nav-custom-tasks">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 8 12 3 3 8v8l9 5 9-5Z"/><path d="m3 8 9 5 9-5M12 13v8"/></svg>
+        Custom Tasks
+    </NavLink>
+    <NavLink href="/events" Match="NavLinkMatch.Prefix" data-testid="nav-events">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7Z"/></svg>
+        Events
+    </NavLink>
+</nav>
