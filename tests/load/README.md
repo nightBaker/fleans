@@ -48,11 +48,11 @@ k6 load test suite for the Fleans workflow engine.
 | `fleans-worker` | 2 | `Fleans.WorkerHost`, `Fleans:Role=Worker` — script / condition grains |
 | `fleans-plugin` | 1 | `Fleans.E2E.PluginHost`, `Fleans:Role=Plugin` — external worker hosting the `e2e-probe` custom task |
 | `kafka` | 1 | Orleans streams (single broker, KRaft) |
-| `redis` | 1 | Orleans clustering, PubSubStore |
+| `redis` | 1 | Orleans clustering (default provider), PubSubStore |
 | `postgres` | 1 | Persistence (`max_connections=300` — 6 silos × 2 Npgsql pools) |
 | `postgres-reminders` | 1 | Orleans reminders (`Fleans:Reminders:Provider=Postgres`, `ConnectionStrings:fleans-reminders`) — the production layout; `FLEANS_REMINDERS_PROVIDER=Redis` moves them back to Redis |
 
-Outside Aspire the silos are wired by `FLEANS_LOAD_TEST_MODE=true` (explicit Redis clustering + PubSubStore).
+Outside Aspire the silos join the membership table chosen by `Fleans:Clustering:Provider` (Redis by default; `FLEANS_CLUSTERING_PROVIDER=Postgres` puts it in the `fleans` database, #885), and `FLEANS_LOAD_TEST_MODE=true` adds the Redis PubSubStore.
 
 ### Build images
 

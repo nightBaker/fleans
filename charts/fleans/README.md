@@ -6,11 +6,12 @@ Deploy the [Fleans](https://nightbaker.github.io/fleans/) BPMN workflow engine o
 
 | Component | Image | Purpose |
 | --------- | ----- | ------- |
-| `core` Deployment | `ghcr.io/nightbaker/fleans-api:<tag>` | Orleans silo (`Fleans__Role=Core`). Hosts coordinator grains. |
-| `worker` Deployment (optional) | `ghcr.io/nightbaker/fleans-api:<tag>` | Orleans silo (`Fleans__Role=Worker`). Hosts `[StatelessWorker]` script/condition grains. Same image as `core` — different role env var. |
+| `core-<fullname>` Deployment | `ghcr.io/nightbaker/fleans-api:<tag>` | Orleans silo (`Fleans__Role=Core`). Hosts coordinator grains. |
+| `worker-<fullname>` Deployment (optional) | `ghcr.io/nightbaker/fleans-api:<tag>` | Orleans silo (`Fleans__Role=Worker`). Hosts `[StatelessWorker]` script/condition grains. Same image as `core` — different role env var. |
 | `web` Deployment (optional, default on) | `ghcr.io/nightbaker/fleans-web:<tag>` | Blazor Server admin UI. |
 | `mcp` Deployment (optional, default on) | `ghcr.io/nightbaker/fleans-mcp:<tag>` | MCP server (port 5200) for AI-agent integration. |
-| `redis` StatefulSet | `redis:7-alpine` | Orleans clustering + grain storage. Required. |
+| `redis` StatefulSet | `redis:7-alpine` | Orleans clustering (default provider) + PubSubStore + streams. Required. |
+| `<fullname>-silo` ServiceAccount + Role + RoleBinding | — | Orleans Kubernetes hosting (`clustering.kubernetes.enabled`, default on): pods `get`/`list`/`watch`/`patch`. |
 | `postgres` StatefulSet (optional) | `postgres:16` | Workflow persistence when `persistence.provider=Postgres`. |
 
 > **Note on the worker.** `Fleans.Worker` is a class library hosted by `Fleans.Api`, not a separate executable. Both Core and Worker silos run the same `fleans-api` image and differ only by the `Fleans__Role` env var. There is no separate `fleans-worker` image.
@@ -139,6 +140,26 @@ reminders:
 
 Custom worker hosts must be built with the same reminder provider — every silo serves a slice of the reminder ring. Tune Orleans `ReminderOptions` with `extraEnv`, e.g. `Fleans__Reminders__ReminderLoadingWindow=00:30:00`.
 
+### Clustering provider and Kubernetes hosting
+
+The Orleans membership table decides which silo is alive. Set `clustering.provider` to `Redis` (default — reuses the chart-bundled Redis) or `Postgres` (case-insensitive). **Postgres is the recommended production provider**: Redis replication is asynchronous, so a Redis failover can drop an acknowledged membership write, while Postgres commits it durably (run it highly available, e.g. Patroni). `Postgres` requires `persistence.provider=Postgres`; other values abort `helm template`. The value is set on the silos *and* on `web`/`mcp`, whose gateway list is the same table.
+
+```yaml
+clustering:
+  provider: Postgres
+  postgres:
+    existingSecret: fleans-cluster-db   # optional: own database (ConnectionStrings__fleans-cluster)
+    existingSecretKey: connection-string
+```
+
+`clustering.kubernetes.enabled` (default `true`) turns on Orleans Kubernetes hosting: a silo whose pod is deleted leaves the membership table straight away instead of after the probe window. The chart then
+
+- creates the `<fullname>-silo` ServiceAccount with a Role on `pods` (`get`, `list`, `watch`, `patch`);
+- labels silo pods `orleans/serviceId` / `orleans/clusterId` (`clustering.serviceId`, `clustering.clusterId` — default the release fullname) and passes `POD_NAME` / `POD_NAMESPACE` / `POD_IP` through the downward API;
+- names silo Deployments `<role>-<fullname>` (`core-…`, `worker-…`, `worker-…-custom`): Kubernetes hosting makes the pod name the silo name, and Fleans placement reads the role from its prefix.
+
+Silo pods get `terminationGracePeriodSeconds: 60` (`clustering.terminationGracePeriodSeconds`, minimum 15); the silo's graceful stop gets 10 s less. Custom worker hosts must use the same clustering provider.
+
 ### Worker silos on dedicated nodes
 
 ```yaml
@@ -154,6 +175,8 @@ worker:
 ```
 
 ## Upgrade notes
+
+- **Silo Deployments were renamed (#885).** `<fullname>-core` / `-worker` / `-custom-worker` are now `core-<fullname>` / `worker-<fullname>` / `worker-<fullname>-custom`; `helm upgrade` replaces them (a full silo restart).
 
 - **Postgres password is sticky.** First install generates a random password into a `Secret` (or uses `postgres.password` if you supply one). Subsequent `helm upgrade` calls reuse the existing Secret via the `lookup` function so you don't get locked out.
 - **Persistent volumes are kept on uninstall.** The Postgres Secret carries `helm.sh/resource-policy: keep`. Delete the PVC and Secret manually for a clean reinstall.
