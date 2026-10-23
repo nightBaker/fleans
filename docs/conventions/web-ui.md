@@ -6,9 +6,9 @@ Read before editing any `.razor` file or anything under `src/Fleans/Fleans.Web/`
 
 The admin UI calls Orleans grains directly via the `WorkflowEngine` service, not through HTTP. Back new admin-UI features with grain calls; the REST API is for external callers only.
 
-The one exception is **promotion to another environment** (#900, `Services/PromotionClient.cs`): another cluster is reachable only through its REST API, so the Admin UI `POST`s the version's BPMN to the target's `/Deployments/requests`. It never calls its own cluster's API.
+The one exception is **other environments** (#900, `Services/EnvironmentClient.cs`): another cluster is reachable only through its REST API, so the Admin UI `POST`s a version's BPMN to the target's `/Deployments/requests` (promotion, `Components/Shared/PromoteDialog.razor`) and reads its `/Definitions/latest` and pending `/Deployments/requests` (the environments board, `Pages/EnvironmentsBoard.razor`). It never calls its own cluster's API.
 
-**Acting user** (`Services/ActingUser.cs`, scoped per circuit): who requests or reviews a deployment — the signed-in user with auth on, a name typed once per session with auth off. Reuse it for any other feature that records a user.
+**Acting user** (`Services/ActingUser.cs`, scoped per circuit): who requests or reviews a deployment and their groups — the signed-in user and its `Authentication:GroupsClaim` claims with auth on, a name and groups typed once per session with auth off. Reuse it for any other feature that records a user.
 
 ## Orbit look (`wwwroot/css/orbit.css`)
 

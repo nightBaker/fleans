@@ -138,8 +138,8 @@ builder.Services.AddOptions<EnvironmentOptions>()
             !t.UsesClientCredentials || Uri.TryCreate(t.TokenUrl, UriKind.Absolute, out _)),
         "A Fleans:Environment:PromotionTargets entry with a ClientId needs an absolute TokenUrl.")
     .ValidateOnStart();
-builder.Services.AddHttpClient(PromotionClient.HttpClientName);
-builder.Services.AddSingleton<PromotionClient>();
+builder.Services.AddHttpClient(EnvironmentClient.HttpClientName);
+builder.Services.AddSingleton<EnvironmentClient>();
 
 var app = builder.Build();
 

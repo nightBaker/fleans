@@ -11,7 +11,10 @@ the request approved), `DeploymentRequestGrainTests` (deploy at once with 0 requ
 the last approval, self-approval refused, reject, deploy disabled, invalid BPMN, failed deploy + retry,
 listing and reactivation), `WorkflowCommandServiceTests` (direct deploy refused when approvals are
 required), `DeploymentsControllerTests` (JWT / body identity, 400/403/404, `/Definitions/deploy` → 409),
-`EfCoreDeploymentRequestGrainStorageTests` (SQLite + Postgres round trip, ETag). Everything below is
+`EfCoreDeploymentRequestGrainStorageTests` (SQLite + Postgres round trip, ETag), reviewer groups in
+`DeploymentRequestStateTests` / `DeploymentRequestGrainTests` / `DeploymentsControllerTests` (token groups,
+body groups ignored under JWT), `VersionFingerprintTests` and `WorkflowQueryServiceTests`
+(`GetVersionFingerprints`, SQLite + Postgres). Everything below is
 Admin UI interaction and stays manual.
 
 ## Prerequisites
@@ -87,3 +90,25 @@ Admin UI interaction and stays manual.
 1. Remove the settings, restart. **Expected:** the editor's **Deploy** deploys at once as before
    (`Deploy · dev` label, no review line); Workflows shows no **Promote** button without targets; the
    **Deployments** nav entry is present and its policy line says the cluster deploys immediately.
+
+### 7. Reviewer groups
+
+1. Add `"ReviewerGroups": ["release-managers"]` under `Fleans:Deployments` on both hosts, restart, and
+   request a deployment as `alice`. **Expected:** the Deployments policy line ends with *who is a member of
+   release-managers*; the request shows *Reviewers: members of release-managers*; a *Your groups* field
+   appears next to *Reviewing as*.
+2. As `bob` with groups `developers`. **Expected:** Approve/Reject disabled, *Only members of
+   release-managers review this request.*
+3. As `bob` with groups `developers, release-managers`, **Approve**. **Expected:** the approval counts.
+
+### 8. Environments board
+
+1. With the `self` target configured, open Deployments → **Environments**. **Expected:** one row per
+   deployed process; the *dev (this cluster)* column shows the latest version; the `self` column shows
+   *vN · in sync* (it is the same cluster), plus *N pending* where scenario 5 left a request open.
+2. Point the target at an unreachable URL (`https://localhost:1`), restart. **Expected:** the `self`
+   header shows *unreachable* (hover: the error), its cells show `?`, the page still renders.
+3. Against a second Fleans stack as the target (any cluster you can reach), deploy an older version there by
+   promoting v1, then deploy v2 here. **Expected:** the target's cell reads *v1 · runs v1*; editing the
+   diagram directly on the target makes it *differs*; **Promote** on the row preselects that target.
+

@@ -124,6 +124,30 @@ public class DeploymentsControllerTests
         StringAssert.Contains(error.Error, "/Deployments/requests");
     }
 
+    [TestMethod]
+    public async Task ListLatestVersions_PassesDistinctKeys_LatestOnly()
+    {
+        _queries.GetVersionFingerprints(default!, default).ReturnsForAnyArgs(
+            [new ProcessVersionFingerprint("order-process", 3, true, DateTimeOffset.UtcNow, "abc")]);
+        var controller = new DefinitionsController(_commands, _queries, Substitute.For<IBpmnConverter>());
+
+        var result = await controller.ListLatestVersions(["order-process", "order-process"]);
+
+        Assert.IsInstanceOfType<OkObjectResult>(result);
+        await _queries.Received(1).GetVersionFingerprints(
+            Arg.Is<IReadOnlyCollection<string>>(k => k.SequenceEqual(new[] { "order-process" })), true);
+    }
+
+    [TestMethod]
+    public async Task ListLatestVersions_TooManyKeys_Returns400()
+    {
+        var controller = new DefinitionsController(_commands, _queries, Substitute.For<IBpmnConverter>());
+
+        var result = await controller.ListLatestVersions(Enumerable.Range(0, 101).Select(i => $"p{i}").ToArray());
+
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result);
+    }
+
     private static DeploymentRequestState Request(string requestedBy = "alice")
     {
         var request = new DeploymentRequestState();

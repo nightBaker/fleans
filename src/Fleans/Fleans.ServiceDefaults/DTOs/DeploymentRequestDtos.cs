@@ -42,3 +42,6 @@ public record DeploymentRequestDto(
     List<string> ReviewerGroups);
 
 public record DeploymentApprovalDto(string UserId, DateTimeOffset ApprovedAt, string? Comment);
+
+/// <summary>A row of <c>GET /Definitions/latest</c>: a process's latest version and a SHA-256 of its BPMN.</summary>
+public record ProcessVersionDto(string ProcessDefinitionKey, int Version, bool IsActive, DateTimeOffset DeployedAt, string BpmnSha256);

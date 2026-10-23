@@ -433,6 +433,33 @@ public class WorkflowQueryService : IWorkflowQueryService
             .ToListAsync();
     }
 
+    public async Task<IReadOnlyList<ProcessVersionFingerprint>> GetVersionFingerprints(
+        IReadOnlyCollection<string> processDefinitionKeys, bool latestOnly)
+    {
+        if (processDefinitionKeys.Count == 0)
+            return [];
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+
+        var query = db.ProcessDefinitions.Where(d => processDefinitionKeys.Contains(d.ProcessDefinitionKey));
+        if (latestOnly)
+            query = query.Where(d => d.Version == db.ProcessDefinitions
+                .Where(o => o.ProcessDefinitionKey == d.ProcessDefinitionKey)
+                .Max(o => o.Version));
+
+        // Only the columns needed: the serialized definition column is large.
+        var rows = await query
+            .Select(d => new { d.ProcessDefinitionKey, d.Version, d.IsActive, d.DeployedAt, d.BpmnXml })
+            .ToListAsync();
+
+        return rows
+            .OrderBy(r => r.ProcessDefinitionKey, StringComparer.Ordinal)
+            .ThenByDescending(r => r.Version)
+            .Select(r => new ProcessVersionFingerprint(r.ProcessDefinitionKey, r.Version, r.IsActive, r.DeployedAt,
+                Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(
+                    System.Text.Encoding.UTF8.GetBytes(r.BpmnXml ?? "")))))
+            .ToList();
+    }
+
     public async Task<DeploymentRequestState?> GetDeploymentRequest(Guid requestId)
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync();

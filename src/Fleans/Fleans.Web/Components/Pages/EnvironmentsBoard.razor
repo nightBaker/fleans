@@ -1,0 +1,229 @@
+@page "/deployments/environments"
+@rendermode InteractiveServer
+@using Fleans.Application
+@using Fleans.Application.QueryModels
+@using Fleans.ServiceDefaults.DTOs
+@using Fleans.Web.Services
+@using Microsoft.Extensions.Options
+@using Microsoft.FluentUI.AspNetCore.Components
+@inject IWorkflowQueryService QueryService
+@inject EnvironmentClient Environments
+@inject IOptions<EnvironmentOptions> EnvironmentConfig
+@inject NavigationManager Navigation
+
+<PageTitle>Environments</PageTitle>
+
+@* Environments board (#900 follow-up): what each environment runs for this cluster's processes.
+   Version numbers are per cluster, so cells compare the BPMN's SHA-256 with this cluster's
+   versions: "in sync" = the target runs this cluster's latest diagram, "runs vK" = an older one,
+   "differs" = a diagram this cluster never deployed. Targets are read over their REST API. *@
+<FluentStack Orientation="Orientation.Vertical" Gap="20px">
+    <PageHeader Title="Environments" Eyebrow="@($"Fleans · {EnvironmentConfig.Value.DisplayName} · Promotion")">
+        <Actions>
+            <FluentButton Appearance="Appearance.Neutral" @onclick="@(() => Navigation.NavigateTo("/deployments"))" data-testid="environments-requests">
+                Deployment requests
+            </FluentButton>
+            <FluentButton Appearance="Appearance.Neutral"
+                          IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowSync())"
+                          @onclick="RefreshAsync"
+                          Loading="@isLoading"
+                          data-testid="environments-refresh">
+                Refresh
+            </FluentButton>
+        </Actions>
+    </PageHeader>
+
+    @if (Environments.Targets.Count == 0)
+    {
+        <div class="orbit-empty" data-testid="environments-no-targets">
+            <span>No promotion targets are configured for <strong>@EnvironmentConfig.Value.DisplayName</strong>. Add them under <code>Fleans:Environment:PromotionTargets</code> to compare environments here.</span>
+        </div>
+    }
+    else
+    {
+        @if (loadError is not null)
+        {
+            <FluentMessageBar Intent="MessageIntent.Error" Dismissible="true" OnDismissed="@(() => loadError = null)">@loadError</FluentMessageBar>
+        }
+        <FluentTextField @bind-Value="search" @bind-Value:after="RefreshAsync" Placeholder="Search by process key"
+                         Style="max-width: 320px;" data-testid="environments-search" />
+
+        <div class="environments-board" data-testid="environments-board">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Process</th>
+                        <th>@EnvironmentConfig.Value.DisplayName <span class="orbit-problem__meta">(this cluster)</span></th>
+                        @foreach (var t in Environments.Targets)
+                        {
+                            <th data-testid="environments-target-@t.Name">
+                                @t.Name
+                                @if (targetErrors.TryGetValue(t.Name, out var targetError))
+                                {
+                                    <span class="orbit-pill orbit-pill--danger" title="@targetError">unreachable</span>
+                                }
+                            </th>
+                        }
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (rows.Count == 0 && !isLoading)
+                    {
+                        <tr><td colspan="@(Environments.Targets.Count + 3)" class="orbit-problem__meta">No deployed processes@(string.IsNullOrWhiteSpace(search) ? "" : $" matching '{search}'").</td></tr>
+                    }
+                    @foreach (var row in rows)
+                    {
+                        <tr data-testid="environments-row-@row.Latest.ProcessDefinitionKey">
+                            <td class="orbit-mono">@row.Latest.ProcessDefinitionKey</td>
+                            <td>
+                                <span class="orbit-pill">v@(row.Latest.Version)</span>
+                                @if (!row.Latest.IsActive)
+                                {
+                                    <span class="orbit-pill orbit-pill--draft">disabled</span>
+                                }
+                            </td>
+                            @foreach (var t in Environments.Targets)
+                            {
+                                <td data-testid="environments-cell-@row.Latest.ProcessDefinitionKey-@t.Name">
+                                    @if (targetErrors.ContainsKey(t.Name))
+                                    {
+                                        <span class="orbit-problem__meta">?</span>
+                                    }
+                                    else if (row.Targets.GetValueOrDefault(t.Name) is not { } remote)
+                                    {
+                                        <span class="orbit-problem__meta">not deployed</span>
+                                    }
+                                    else
+                                    {
+                                        var (text, css) = Compare(row, remote);
+                                        <span class="orbit-pill @css" title="@t.Name v@(remote.Version), deployed @remote.DeployedAt.ToString("yyyy-MM-dd HH:mm") UTC">v@(remote.Version) · @text</span>
+                                        @if (!remote.IsActive)
+                                        {
+                                            <span class="orbit-pill orbit-pill--draft">disabled</span>
+                                        }
+                                    }
+                                    @if (row.Pending.GetValueOrDefault(t.Name) is > 0 and var pending)
+                                    {
+                                        <span class="orbit-pill orbit-pill--accent" title="Pending deployment requests on @t.Name">@pending pending</span>
+                                    }
+                                </td>
+                            }
+                            <td>
+                                <FluentButton Appearance="Appearance.Stealth"
+                                              IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowUpload())"
+                                              @onclick="() => promoteRow = row"
+                                              data-testid="environments-promote">
+                                    Promote
+                                </FluentButton>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (hasMore)
+        {
+            <p class="orbit-problem__meta">Showing the first @PageSize processes — search to narrow down.</p>
+        }
+    }
+</FluentStack>
+
+@if (promoteRow is { } promoting)
+{
+    <PromoteDialog Version="promoting.Latest" InitialTarget="@FirstOutOfSyncTarget(promoting)"
+                   OnClose="@(() => promoteRow = null)" OnPromoted="@(_ => RefreshAsync())" />
+}
+
+@code {
+    private const int PageSize = 50;
+
+    private sealed record BoardRow(
+        ProcessDefinitionSummary Latest,
+        string? LatestSha256,
+        IReadOnlyDictionary<string, int> LocalVersionBySha256,
+        Dictionary<string, ProcessVersionDto> Targets,
+        Dictionary<string, int> Pending);
+
+    private List<BoardRow> rows = new();
+    private Dictionary<string, string> targetErrors = new();
+    private BoardRow? promoteRow;
+    private string? search;
+    private bool isLoading;
+    private bool hasMore;
+    private string? loadError;
+
+    protected override Task OnInitializedAsync() =>
+        Environments.Targets.Count == 0 ? Task.CompletedTask : RefreshAsync();
+
+    private async Task RefreshAsync()
+    {
+        try
+        {
+            isLoading = true;
+            loadError = null;
+            var filters = string.IsNullOrWhiteSpace(search) ? null : $"ProcessDefinitionKey@={search.Trim()}";
+            var groups = await QueryService.GetProcessDefinitionGroups(new PageRequest(1, PageSize, "ProcessDefinitionKey", filters));
+            hasMore = groups.TotalCount > groups.Items.Count;
+            var keys = groups.Items.Select(g => g.ProcessDefinitionKey).ToList();
+            var local = (await QueryService.GetVersionFingerprints(keys, latestOnly: false))
+                .ToLookup(f => f.ProcessDefinitionKey);
+
+            // Each target in parallel; one that can't be reached marks its column, not the page.
+            var errors = new Dictionary<string, string>();
+            var remote = await Task.WhenAll(Environments.Targets.Select(async t =>
+            {
+                try
+                {
+                    var latest = keys.Count == 0 ? [] : await Environments.GetLatestVersionsAsync(t.Name, keys);
+                    var pending = await Environments.GetPendingRequestsAsync(t.Name);
+                    return (t.Name, Latest: latest, Pending: pending);
+                }
+                catch (Exception ex)
+                {
+                    lock (errors) errors[t.Name] = ex.Message;
+                    return (t.Name, Latest: new List<ProcessVersionDto>(), Pending: new List<DeploymentRequestDto>());
+                }
+            }));
+            targetErrors = errors;
+
+            rows = groups.Items.Select(g =>
+            {
+                var versions = local[g.ProcessDefinitionKey].ToList();
+                // Newest first, so a diagram deployed twice maps to its latest version.
+                var bySha = new Dictionary<string, int>();
+                foreach (var v in versions)
+                    bySha.TryAdd(v.BpmnSha256, v.Version);
+                return new BoardRow(
+                    g.Versions[0],
+                    versions.FirstOrDefault(v => v.Version == g.Versions[0].Version)?.BpmnSha256,
+                    bySha,
+                    remote.Select(r => (r.Name, Version: r.Latest.FirstOrDefault(v => v.ProcessDefinitionKey == g.ProcessDefinitionKey)))
+                        .Where(r => r.Version is not null)
+                        .ToDictionary(r => r.Name, r => r.Version!),
+                    remote.ToDictionary(r => r.Name, r => r.Pending.Count(p => p.ProcessDefinitionKey == g.ProcessDefinitionKey)));
+            }).ToList();
+        }
+        catch (Exception ex)
+        {
+            loadError = $"Failed to load the environments board: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private (string Text, string Css) Compare(BoardRow row, ProcessVersionDto remote)
+    {
+        if (remote.BpmnSha256 == row.LatestSha256)
+            return ("in sync", "orbit-pill--success");
+        if (row.LocalVersionBySha256.TryGetValue(remote.BpmnSha256, out var localVersion))
+            return ($"runs v{localVersion}", "orbit-pill--draft");
+        return ("differs", "orbit-pill--danger");
+    }
+
+    private string? FirstOutOfSyncTarget(BoardRow row) =>
+        Environments.Targets.FirstOrDefault(t =>
+            row.Targets.GetValueOrDefault(t.Name) is not { } remote || remote.BpmnSha256 != row.LatestSha256)?.Name;
+}

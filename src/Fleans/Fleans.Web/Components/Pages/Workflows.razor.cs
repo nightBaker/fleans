@@ -22,7 +22,4 @@ public partial class Workflows
 
     [LoggerMessage(EventId = 13004, Level = LogLevel.Error, Message = "Error toggling process {ProcessDefinitionKey}")]
     private partial void LogToggleProcessError(string processDefinitionKey, Exception ex);
-
-    [LoggerMessage(EventId = 13005, Level = LogLevel.Error, Message = "Error promoting process {ProcessDefinitionKey} to environment {Target}")]
-    private partial void LogPromoteError(string processDefinitionKey, string target, Exception ex);
 }

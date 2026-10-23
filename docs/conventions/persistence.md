@@ -40,7 +40,7 @@ Test clusters must register memory grain storage for this name in `WorkflowTestB
 
 ## Deployment requests (#900)
 
-`DeploymentRequestGrain` uses `IPersistentState<DeploymentRequestState>` keyed by `GrainStorageNames.DeploymentRequests`, backed by `EfCoreDeploymentRequestGrainStorage` and the `DeploymentRequests` table (one row per request, ETag-checked like `UserTasks`; `Approvals` is a JSON text column; index on `(Status, RequestedAt)` for the review queue). The same table is the query side: `IWorkflowQueryService.GetDeploymentRequests` / `GetDeploymentRequest` read it through `FleanQueryDbContext`. `WorkflowTestBase` registers the production storage.
+`DeploymentRequestGrain` uses `IPersistentState<DeploymentRequestState>` keyed by `GrainStorageNames.DeploymentRequests`, backed by `EfCoreDeploymentRequestGrainStorage` and the `DeploymentRequests` table (one row per request, ETag-checked like `UserTasks`; `Approvals` and `ReviewerGroups` are JSON text columns; index on `(Status, RequestedAt)` for the review queue). The same table is the query side: `IWorkflowQueryService.GetDeploymentRequests` / `GetDeploymentRequest` read it through `FleanQueryDbContext`. `WorkflowTestBase` registers the production storage.
 
 ## Signal subscriptions: per-row writes (#859)
 

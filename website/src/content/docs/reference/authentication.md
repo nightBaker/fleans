@@ -43,7 +43,7 @@ Authentication__RequireHttpsMetadata=false
 | `Audience` | No | `fleans-api` | Expected `aud` claim in the JWT. |
 | `RequireHttpsMetadata` | No | `true` | Set to `false` only for local dev with an HTTP-only IdP (e.g., Keycloak dev mode). |
 | `UserIdClaim` | No | `preferred_username` | JWT claim holding the acting user id for user-task claim/complete. Its values must match what your BPMN `camunda:assignee` / `camunda:candidateUsers` contain. `sub` is also accepted. |
-| `GroupsClaim` | No | `groups` | JWT claim holding the caller's groups for `candidateGroups` checks (one claim entry per group). |
+| `GroupsClaim` | No | `groups` | JWT claim holding the caller's groups for `candidateGroups` checks and [deploy reviewer groups](/fleans/guides/deployments/#who-may-approve) (one claim entry per group). Also read by the Admin UI from the sign-in (ID token or UserInfo). Set it to `roles` to use roles instead. |
 
 ## Behavior when enabled
 

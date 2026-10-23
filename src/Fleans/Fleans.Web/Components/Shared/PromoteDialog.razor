@@ -1,0 +1,112 @@
+@using Fleans.Application
+@using Fleans.Application.QueryModels
+@using Fleans.ServiceDefaults.DTOs
+@using Fleans.Web.Services
+@using Microsoft.Extensions.Options
+@inject IWorkflowQueryService QueryService
+@inject EnvironmentClient Environments
+@inject ActingUser ActingUser
+@inject IOptions<EnvironmentOptions> EnvironmentConfig
+
+@* Promotion (#900): submit this version's BPMN to another environment's API; the target deploys it
+   or opens a request its reviewers approve, by its own Fleans:Deployments:RequiredApprovals.
+   Used by the Workflows page and the environments board. *@
+<div class="deploy-overlay" @onclick="Close"></div>
+<div class="deploy-dialog" role="dialog" aria-modal="true" aria-labelledby="promote-title" data-testid="promote-dialog">
+    <span class="orbit-label">Promote · from @EnvironmentConfig.Value.DisplayName</span>
+    @if (result is { } done)
+    {
+        <h2 id="promote-title">@(done.Status == "Deployed" ? $"Deployed to {target} as v{done.DeployedVersion}" : $"Requested on {target}")</h2>
+        <ul class="orbit-checklist">
+            <li data-testid="promote-result">
+                <span class="orbit-check orbit-check--@(done.Status == "Deployed" ? "ok" : "warn")" aria-hidden="true">@(done.Status == "Deployed" ? "✓" : "○")</span>
+                @(done.Status == "Deployed"
+                    ? $"{done.ProcessDefinitionKey} is live on {target}{(done.DeployDisabled ? " (disabled)" : "")}."
+                    : $"Review: {done.Approvals.Count} of {done.RequiredApprovals} — reviewers approve it on {target}'s Deployments page.")
+            </li>
+        </ul>
+        <div class="deploy-dialog__actions">
+            <FluentButton Appearance="Appearance.Accent" @onclick="Close">Done</FluentButton>
+        </div>
+    }
+    else
+    {
+        <h2 id="promote-title">Promote @Version.ProcessDefinitionKey v@(Version.Version)</h2>
+        <div class="orbit-segmented" role="group" aria-label="Target environment">
+            @foreach (var t in Environments.Targets)
+            {
+                <button type="button" aria-pressed="@(target == t.Name ? "true" : "false")"
+                        @onclick="() => target = t.Name" data-testid="promote-target-@t.Name">@t.Name</button>
+            }
+        </div>
+        @if (!ActingUser.IsSignedIn)
+        {
+            <FluentTextField @bind-Value="ActingUser.DeclaredName" Immediate="true" Label="Your name (requester)" data-testid="promote-requester" />
+        }
+        <FluentTextArea @bind-Value="comment" Rows="3" Style="width: 100%;" Label="Note for the target's reviewers" data-testid="promote-comment" />
+        <FluentCheckbox @bind-Value="deployDisabled" Label="Deploy disabled on the target" />
+        @if (error is not null)
+        {
+            <p class="orbit-problem__meta" role="alert" data-testid="promote-error">@error</p>
+        }
+        <p>The target applies its own approval rules: it deploys at once, or opens a request for its reviewers.</p>
+        <div class="deploy-dialog__actions">
+            <FluentButton Appearance="Appearance.Neutral" @onclick="Close">Cancel</FluentButton>
+            <FluentButton Appearance="Appearance.Accent" Loading="@isPromoting"
+                          Disabled="@(target is null || (!ActingUser.IsSignedIn && string.IsNullOrWhiteSpace(ActingUser.DeclaredName)))"
+                          @onclick="Promote" data-testid="promote-confirm">
+                Promote to @(target ?? "…")
+            </FluentButton>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ProcessDefinitionSummary Version { get; set; } = default!;
+    /// <summary>The target selected when the dialog opens; the first configured one otherwise.</summary>
+    [Parameter] public string? InitialTarget { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    /// <summary>Raised after the target accepted the version (deployed or requested).</summary>
+    [Parameter] public EventCallback<DeploymentRequestDto> OnPromoted { get; set; }
+
+    private string? target;
+    private string? comment;
+    private bool deployDisabled;
+    private bool isPromoting;
+    private string? error;
+    private DeploymentRequestDto? result;
+
+    protected override void OnInitialized() =>
+        target = InitialTarget ?? Environments.Targets.FirstOrDefault()?.Name;
+
+    private Task Close() => OnClose.InvokeAsync();
+
+    private async Task Promote()
+    {
+        if (target is null) return;
+        var promotedBy = await ActingUser.GetUserIdAsync();
+        if (promotedBy is null) return;
+
+        try
+        {
+            isPromoting = true;
+            error = null;
+            var bpmnXml = await QueryService.GetBpmnXmlByKeyAndVersion(Version.ProcessDefinitionKey, Version.Version)
+                ?? throw new KeyNotFoundException($"No BPMN stored for {Version.ProcessDefinitionKey} v{Version.Version}.");
+            // The target's requester may be a service account, so the comment records who promoted what.
+            var note = $"Promoted from {EnvironmentConfig.Value.DisplayName} {Version.ProcessDefinitionKey} v{Version.Version} by {promotedBy}."
+                + (string.IsNullOrWhiteSpace(comment) ? "" : $"\n{comment}");
+            result = await Environments.PromoteAsync(target, bpmnXml, promotedBy, note, deployDisabled);
+            await OnPromoted.InvokeAsync(result);
+        }
+        catch (Exception ex)
+        {
+            LogPromoteError(Version.ProcessDefinitionKey, target, ex);
+            error = $"Promotion to {target} failed: {ex.Message}";
+        }
+        finally
+        {
+            isPromoting = false;
+        }
+    }
+}

@@ -13,6 +13,7 @@
 @inject IOptions<DeploymentApprovalOptions> DeployApprovals
 @inject IOptions<EnvironmentOptions> EnvironmentConfig
 @inject ActingUser ActingUser
+@inject EnvironmentClient Environments
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 @inject ILogger<Deployments> Logger
@@ -28,6 +29,12 @@
                 <button type="button" aria-pressed="@(showAll ? "false" : "true")" @onclick="() => SetFilter(false)" data-testid="deployments-filter-open">Open</button>
                 <button type="button" aria-pressed="@(showAll ? "true" : "false")" @onclick="() => SetFilter(true)" data-testid="deployments-filter-all">All</button>
             </div>
+            @if (Environments.Targets.Count > 0)
+            {
+                <FluentButton Appearance="Appearance.Neutral" @onclick="@(() => Navigation.NavigateTo("/deployments/environments"))" data-testid="deployments-environments">
+                    Environments
+                </FluentButton>
+            }
             <FluentButton Appearance="Appearance.Neutral"
                           IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowSync())"
                           @onclick="RefreshAsync"
