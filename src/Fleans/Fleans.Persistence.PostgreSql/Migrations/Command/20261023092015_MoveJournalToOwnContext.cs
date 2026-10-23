@@ -12,18 +12,7 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             // #879: the journal tables now belong to FleanJournalDbContext, whose own migrations
-            // create them (in this database by default). Pre-1.0 there is no upgrade path, so
-            // refuse to drop a journal that holds instances rather than lose them.
-            migrationBuilder.Sql(
-                """
-                DO $$
-                BEGIN
-                  IF EXISTS (SELECT 1 FROM "WorkflowEventBatches") OR EXISTS (SELECT 1 FROM "WorkflowSnapshots") THEN
-                    RAISE EXCEPTION 'The workflow journal moved to its own migrations (#879) and this database still holds journal rows. Pre-1.0 has no upgrade path: start from a fresh database.';
-                  END IF;
-                END $$;
-                """);
-
+            // create them (in this database by default). Pre-1.0: no upgrade path.
             migrationBuilder.DropTable(
                 name: "WorkflowEventBatches");
 

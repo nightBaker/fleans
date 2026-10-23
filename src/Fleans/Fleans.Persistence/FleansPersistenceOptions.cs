@@ -39,14 +39,35 @@ public sealed class FleansPersistenceOptions
 
 /// <summary>
 /// Where the WorkflowInstance journal and snapshots live (<see cref="FleanJournalDbContext"/>).
-/// Unset, the journal shares the main database. See <c>docs/conventions/persistence.md</c>.
+/// Without <c>ConnectionStrings:fleans-journal</c> the journal shares the main database.
+/// See <c>docs/conventions/persistence.md</c>.
 /// </summary>
 public sealed class JournalPersistenceOptions
 {
     /// <summary>
-    /// <c>Sqlite</c> | <c>Postgres</c> | <c>Citus</c> (case-insensitive). Empty means
-    /// <see cref="FleansPersistenceOptions.Provider"/>. <c>Citus</c> is PostgreSQL with the
-    /// journal tables distributed by <c>InstanceId</c> when the schema is applied.
+    /// <c>Postgres</c> | <c>Citus</c> | <c>Sqlite</c> (case-insensitive). Empty means <c>Postgres</c>,
+    /// except on a SQLite main database with no <c>ConnectionStrings:fleans-journal</c>: there the
+    /// journal stays in the SQLite file (local dev). <c>Citus</c> is PostgreSQL with the journal
+    /// tables distributed by <c>InstanceId</c> when the schema is applied. Holds the resolved value
+    /// once options are built.
     /// </summary>
     public string? Provider { get; set; }
+
+    /// <summary>Citus settings (<c>Persistence:Journal:Citus</c>), used when <see cref="Provider"/> is <c>Citus</c>.</summary>
+    public CitusJournalOptions Citus { get; set; } = new();
+}
+
+/// <summary>How the journal tables are distributed on Citus.</summary>
+public sealed class CitusJournalOptions
+{
+    /// <summary>Citus's upper bound for a table's shard count.</summary>
+    public const int MaxShardCount = 64000;
+
+    /// <summary>
+    /// Shards of each journal table (<c>Persistence:Journal:Citus:ShardCount</c>, default 128, 1..64000).
+    /// Applied when the tables are distributed — on a fresh journal database; changing it later
+    /// does not reshard tables that are already distributed. Pick it with headroom: shards move
+    /// between nodes freely, while changing their count means redistributing the table.
+    /// </summary>
+    public int ShardCount { get; set; } = 128;
 }

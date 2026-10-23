@@ -219,6 +219,38 @@ public class FleansPersistenceExtensionsTests
     }
 
     [TestMethod]
+    public void Empty_journal_provider_with_a_journal_connection_means_postgres_even_next_to_sqlite()
+    {
+        var (provider, _, journal) = Resolve(new Dictionary<string, string?>
+        {
+            ["Persistence:Provider"] = "Sqlite",
+            ["FLEANS_SQLITE_CONNECTION"] = "DataSource=main.db",
+            ["ConnectionStrings:fleans-journal"] = JournalPg,
+        });
+
+        Assert.AreEqual("Postgres", provider);
+        Assert.AreEqual("tcp://journal:5432|Npgsql.EntityFrameworkCore.PostgreSQL", journal);
+    }
+
+    [TestMethod]
+    public void Citus_shard_count_is_bound_from_configuration()
+    {
+        var builder = NewBuilder(new Dictionary<string, string?>
+        {
+            ["Persistence:Provider"] = "Postgres",
+            ["Persistence:Journal:Provider"] = "Citus",
+            ["Persistence:Journal:Citus:ShardCount"] = "256",
+            ["ConnectionStrings:fleans"] = MainPg,
+        });
+        builder.AddFleansPersistence();
+        using var host = builder.Build();
+
+        var options = host.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<FleansPersistenceOptions>>().Value;
+
+        Assert.AreEqual(256, options.Journal.Citus.ShardCount);
+    }
+
+    [TestMethod]
     public void Unknown_journal_provider_throws_argumentException()
     {
         var builder = NewBuilder(new Dictionary<string, string?>

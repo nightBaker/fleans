@@ -60,6 +60,9 @@ public abstract class PostgresJournalContractTestsBase : EventStoreContractTests
 {
     private static readonly Dictionary<Type, (string Image, string Database, NpgsqlDataSource DataSource)> s_databases = new();
 
+    /// <summary>Not the default 128: the configured count is the one applied.</summary>
+    protected const int CitusShardCount = 32;
+
     protected static async Task CreateDatabaseAsync(Type testClass, string image, bool citus)
     {
         if (!PostgresContainerFixture.IsEnabled) return;
@@ -83,7 +86,7 @@ public abstract class PostgresJournalContractTestsBase : EventStoreContractTests
         {
             await db.Database.MigrateAsync();
             if (citus)
-                await CitusJournal.DistributeAsync(db);
+                await CitusJournal.DistributeAsync(db, CitusShardCount);
         }
 
         s_databases[testClass] = (image, database, dataSource);
@@ -145,6 +148,11 @@ public class EfCoreCitusEventStoreContractTests : PostgresJournalContractTestsBa
         if (!PostgresContainerFixture.IsEnabled)
             Assert.Inconclusive("FLEANS_PG_TESTS != 1 — skipping the Citus journal run.");
 
+        // Applying the schema again (every silo does at startup) leaves distributed tables as they
+        // are — a changed shard count does not reshard them.
+        await using (var db = new FleanJournalDbContext(PersistenceTestBase.BuildJournalOptions(DataSource)))
+            await CitusJournal.DistributeAsync(db, CitusShardCount * 2);
+
         await using var cmd = DataSource.CreateCommand(
             """
             SELECT table_name::text, distribution_column, shard_count, colocation_id
@@ -161,12 +169,8 @@ public class EfCoreCitusEventStoreContractTests : PostgresJournalContractTestsBa
         }
 
         Assert.HasCount(2, rows);
-        Assert.IsTrue(rows.All(r => r.Column == "InstanceId" && r.Shards == CitusJournal.ShardCount),
+        Assert.IsTrue(rows.All(r => r.Column == "InstanceId" && r.Shards == CitusShardCount),
             string.Join("; ", rows));
         Assert.AreEqual(rows[0].Colocation, rows[1].Colocation, "snapshots must be colocated with their journal");
-
-        // Applying the schema again (every silo does at startup) leaves the tables as they are.
-        await using var db = new FleanJournalDbContext(PersistenceTestBase.BuildJournalOptions(DataSource));
-        await CitusJournal.DistributeAsync(db);
     }
 }

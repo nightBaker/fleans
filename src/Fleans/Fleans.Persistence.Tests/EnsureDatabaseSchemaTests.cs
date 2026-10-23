@@ -57,6 +57,7 @@ public class EnsureDatabaseSchemaTests
             {
                 ["Persistence:Provider"] = "Postgres",
                 ["Persistence:Journal:Provider"] = "Citus",
+                ["Persistence:Journal:Citus:ShardCount"] = "16",
                 ["ConnectionStrings:fleans"] = main,
                 ["ConnectionStrings:fleans-journal"] = journal,
             };
@@ -75,7 +76,7 @@ public class EnsureDatabaseSchemaTests
             await using var conn = new NpgsqlConnection(journal);
             await conn.OpenAsync();
             var distributed = Convert.ToInt32(await new NpgsqlCommand(
-                "SELECT count(*) FROM citus_tables WHERE distribution_column = 'InstanceId'", conn).ExecuteScalarAsync());
+                "SELECT count(*) FROM citus_tables WHERE distribution_column = 'InstanceId' AND shard_count = 16", conn).ExecuteScalarAsync());
             Assert.AreEqual(2, distributed);
         }
         finally

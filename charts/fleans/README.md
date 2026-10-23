@@ -87,6 +87,8 @@ The workflow journal (event batches + snapshots) uses the `fleans` database unle
 extraEnv:
   - name: Persistence__Journal__Provider
     value: Citus            # or Postgres for a plain separate database
+  - name: Persistence__Journal__Citus__ShardCount
+    value: "128"            # optional; fixed once the journal tables are distributed
   - name: ConnectionStrings__fleans-journal
     valueFrom:
       secretKeyRef:

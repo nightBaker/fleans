@@ -23,7 +23,14 @@ public static class FleansPersistenceExtensions
     {
         var provider = builder.Configuration["Persistence:Provider"] ?? "Sqlite";
         var journalProvider = builder.Configuration["Persistence:Journal:Provider"];
-        if (string.IsNullOrWhiteSpace(journalProvider)) journalProvider = provider;
+        if (string.IsNullOrWhiteSpace(journalProvider))
+        {
+            // Empty = Postgres. The one exception keeps local dev zero-config: a SQLite main
+            // database with no journal connection keeps the journal in its SQLite file.
+            var sqliteDev = provider.Equals("Sqlite", StringComparison.OrdinalIgnoreCase)
+                && string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("fleans-journal"));
+            journalProvider = sqliteDev ? "Sqlite" : "Postgres";
+        }
 
         builder.Services.Configure<FleansPersistenceOptions>(opts =>
         {
@@ -143,7 +150,7 @@ public static class FleansPersistenceExtensions
         {
             await EnsureSchemaAsync(journal, journalProvider,
                 journalProvider.Equals("Citus", StringComparison.OrdinalIgnoreCase)
-                    ? db => CitusJournal.DistributeAsync((FleanJournalDbContext)db)
+                    ? db => CitusJournal.DistributeAsync((FleanJournalDbContext)db, options.Journal.Citus.ShardCount)
                     : null);
         }
     }

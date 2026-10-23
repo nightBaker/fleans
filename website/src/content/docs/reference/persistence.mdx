@@ -151,7 +151,8 @@ Every workflow instance is event-sourced: its **journal** (the `WorkflowEventBat
 
 | Configuration Key | Description | Default |
 |---|---|---|
-| `Persistence:Journal:Provider` | `Sqlite`, `Postgres` or `Citus` | Same as `Persistence:Provider` |
+| `Persistence:Journal:Provider` | `Postgres`, `Citus` or `Sqlite` | `Postgres`; on a SQLite main database without `fleans-journal`, `Sqlite` (local dev) |
+| `Persistence:Journal:Citus:ShardCount` | Shards per journal table on Citus (1–64000) | `128` |
 | `ConnectionStrings:fleans-journal` | The journal's database | The `fleans` database |
 
 With neither set, nothing changes: the journal tables live in the main database. The journal has its own EF Core migrations (history table `__EFJournalMigrationsHistory`), applied at startup to whichever database it uses, so a journal database holds only the two journal tables.
@@ -167,7 +168,7 @@ Both tables are read and written **by workflow instance id only** — no joins, 
 
 ### Citus
 
-With `Persistence:Journal:Provider=Citus`, startup applies the journal migrations and then distributes both tables by `InstanceId` with 128 shards, snapshots colocated with their journal (`create_distributed_table`). Every journal command then goes to a single shard with plain PostgreSQL semantics. Tables that are already distributed are left alone, so every silo can run it.
+With `Persistence:Journal:Provider=Citus`, startup applies the journal migrations and then distributes both tables by `InstanceId` into `Persistence:Journal:Citus:ShardCount` shards (default 128), snapshots colocated with their journal (`create_distributed_table`). Every journal command then goes to a single shard with plain PostgreSQL semantics. Tables that are already distributed are left alone, so every silo can run it — and a changed shard count does not reshard them: choose it with headroom before the first start.
 
 ```bash
 Persistence__Provider=Postgres
