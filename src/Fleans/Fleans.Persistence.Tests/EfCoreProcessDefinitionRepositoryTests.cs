@@ -137,6 +137,35 @@ public class EfCoreProcessDefinitionRepositoryTests : PersistenceTestBase
     [DataTestMethod]
     [DataRow(PersistenceProvider.Sqlite)]
     [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetByKey_SkipsBpmnXml_KeepsEverythingElse(PersistenceProvider provider)
+    {
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var repository = new EfCoreProcessDefinitionRepository(fixture.CommandFactory, fixture.QueryContextFactory);
+
+        var deployedAt = DateTimeOffset.UtcNow;
+        var definition = CreateDefinition("key1:1:ts", "key1", 1, deployedAt);
+        definition.Disable();
+        await repository.SaveAsync(definition);
+
+        var result = (await repository.GetByKeyAsync("key1")).Single();
+
+        Assert.AreEqual(string.Empty, result.BpmnXml, "the process-definition grain never reads the XML");
+        Assert.AreEqual("key1:1:ts", result.ProcessDefinitionId);
+        Assert.AreEqual("key1", result.ProcessDefinitionKey);
+        Assert.AreEqual(1, result.Version);
+        Assert.AreEqual(TruncateToMicroseconds(deployedAt), TruncateToMicroseconds(result.DeployedAt));
+        Assert.AreEqual(definition.ETag, result.ETag);
+        Assert.IsFalse(result.IsActive);
+        Assert.AreEqual(2, result.Workflow.Activities.Count);
+        Assert.IsTrue(ReferenceEquals(result.Workflow.SequenceFlows[0].Source, result.Workflow.Activities[0]));
+
+        // The XML is still stored and served to the editor.
+        Assert.AreEqual("<bpmn/>", (await repository.GetByIdAsync("key1:1:ts"))!.BpmnXml);
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
     public async Task GetAll_ReturnsAllDefinitionsOrderedByKeyThenVersion(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);

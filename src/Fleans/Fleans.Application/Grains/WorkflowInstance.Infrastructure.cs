@@ -539,6 +539,7 @@ public partial class WorkflowInstance
         await DrainAndRaiseEvents();
 
         DisposePendingEventsTimerIfTerminal();
+        DeactivateIfTerminal();
     }
 
     /// <summary>
@@ -576,6 +577,30 @@ public partial class WorkflowInstance
             _pendingEventsTimer.Dispose();
             _pendingEventsTimer = null;
         }
+    }
+
+    /// <summary>
+    /// A terminal instance is done: release it (state, definition reference, timers) as soon as it
+    /// is idle instead of keeping it resident for the collection age (#860). Only once nothing is
+    /// left to finish in memory — queued or journaled pending events, undrained events, or a
+    /// projection retry. A later call reactivates it from the journal. An instance started from a
+    /// definition that was never deployed (no ProcessDefinitionId — only tests do this) could not
+    /// reload it, so it stays until collection as before.
+    /// </summary>
+    private void DeactivateIfTerminal()
+    {
+        if (_terminalDeactivationRequested
+            || !State.IsCompleted
+            || State.ProcessDefinitionId is null
+            || !_pendingExternalEvents.IsEmpty
+            || State.PendingOperations.Count > 0
+            || HasUndrainedEvents
+            || _projectionRetryTimer is not null)
+            return;
+
+        _terminalDeactivationRequested = true;
+        LogTerminalDeactivation();
+        DeactivateOnIdle();
     }
 
     /// <summary>
