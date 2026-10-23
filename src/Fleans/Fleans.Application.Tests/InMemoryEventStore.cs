@@ -55,14 +55,15 @@ internal class InMemoryEventStore(DeepCopier copier) : IEventStore
 /// <summary>Read-model projection for silos without a query store: records only the projected row.</summary>
 internal class InMemoryWorkflowStateProjection : IWorkflowStateProjection
 {
-    private readonly ConcurrentDictionary<string, WorkflowInstanceRow> _rows = new();
+    private readonly ConcurrentDictionary<string, (WorkflowInstanceRow Row, int Version)> _rows = new();
 
     public Task<WorkflowInstanceRow?> ReadRowAsync(string grainId) =>
-        Task.FromResult(_rows.GetValueOrDefault(grainId));
+        Task.FromResult(_rows.TryGetValue(grainId, out var stored) ? stored.Row : null);
 
-    public Task WriteAsync(string grainId, WorkflowInstanceState state)
+    public Task WriteAsync(string grainId, WorkflowInstanceState state, int version)
     {
-        _rows[grainId] = WorkflowInstanceRow.From(state);
+        var row = WorkflowInstanceRow.From(state);
+        _rows.AddOrUpdate(grainId, (row, version), (_, stored) => stored.Version < version ? (row, version) : stored);
         return Task.CompletedTask;
     }
 }
@@ -85,7 +86,7 @@ internal class FaultInjectingWorkflowStateProjection(IWorkflowStateProjection in
 
     public Task<WorkflowInstanceRow?> ReadRowAsync(string grainId) => inner.ReadRowAsync(grainId);
 
-    public Task WriteAsync(string grainId, WorkflowInstanceState state)
+    public Task WriteAsync(string grainId, WorkflowInstanceState state, int version)
     {
         Writes.GetOrAdd(grainId, _ => new()).Enqueue(WorkflowInstanceRow.From(state));
         if (FailuresLeft.TryGetValue(grainId, out var left) && left > 0)
@@ -93,7 +94,7 @@ internal class FaultInjectingWorkflowStateProjection(IWorkflowStateProjection in
             FailuresLeft[grainId] = left - 1;
             throw new TimeoutException($"Injected projection failure for {grainId}");
         }
-        return inner.WriteAsync(grainId, state);
+        return inner.WriteAsync(grainId, state, version);
     }
 }
 

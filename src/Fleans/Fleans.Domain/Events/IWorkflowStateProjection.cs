@@ -4,8 +4,8 @@ namespace Fleans.Domain.Events;
 
 /// <summary>
 /// Projects workflow instance state to the read model (the WorkflowInstances tables) queried by
-/// IWorkflowQueryService. Write-only from the grain's point of view: state is rebuilt from the
-/// event store, never from the projection.
+/// IWorkflowQueryService. Written only by the read-model projector, from state it rebuilt from the
+/// journal (#861); never loaded back as grain state.
 /// </summary>
 /// <remarks>
 /// A running instance projects only its WorkflowInstances row (<see cref="WorkflowInstanceRow"/>:
@@ -18,6 +18,11 @@ public interface IWorkflowStateProjection
     /// <summary>The projected row, or <c>null</c> when there is none.</summary>
     Task<WorkflowInstanceRow?> ReadRowAsync(string grainId);
 
-    /// <summary>Writes the row of <paramref name="state"/>, and its details once it is completed.</summary>
-    Task WriteAsync(string grainId, WorkflowInstanceState state);
+    /// <summary>
+    /// Writes the row of <paramref name="state"/> — the state after the first
+    /// <paramref name="version"/> journal events — and its details once it is completed. The row
+    /// stores the version it reflects; a write whose version is not newer than the stored one
+    /// changes nothing, so a repeated or late write is harmless.
+    /// </summary>
+    Task WriteAsync(string grainId, WorkflowInstanceState state, int version);
 }

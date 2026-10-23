@@ -86,7 +86,10 @@ public class WorkflowsPageTests : WorkflowE2ETestBase
 
         var state = await ApiClient.WaitForCompletionAsync(instanceId);
         state.AssertCompletedActivities("work");
-        var instances = await ApiClient.ListInstancesAsync(key);
+        // The listing is projected asynchronously (#861).
+        var instances = await ApiClient.WaitForInstancesPageAsync(
+            t => ApiClient.ListInstancesAsync(key, ct: t),
+            p => p.TotalCount == 1 && p.Items[0].IsCompleted, "the instance, completed");
         Assert.AreEqual(1, instances.TotalCount);
         Assert.AreEqual(instanceId, instances.Items[0].InstanceId);
 
@@ -116,7 +119,9 @@ public class WorkflowsPageTests : WorkflowE2ETestBase
 
         // The id tags one instance only: the field is cleared so the next Start doesn't reuse it.
         await Expect(page.StartBusinessIdInput).ToHaveValueAsync("");
-        var instances = await ApiClient.ListInstancesByBusinessIdAsync(key, businessId);
+        var instances = await ApiClient.WaitForInstancesPageAsync(
+            t => ApiClient.ListInstancesByBusinessIdAsync(key, businessId, t), p => p.TotalCount >= 1,
+            "the instance with the business id");
         Assert.AreEqual(1, instances.TotalCount);
     }
 }

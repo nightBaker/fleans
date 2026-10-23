@@ -461,23 +461,23 @@ public partial class WorkflowInstance
     private partial void LogSnapshotWriteFailed(int version, int tailLength, Exception exception);
 
     [LoggerMessage(EventId = 1132, Level = LogLevel.Warning,
-        Message = "Read-model projection write at version {Version} failed; retrying")]
+        Message = "Publishing InstanceAdvanced for version {Version} to the read-model projector failed; retrying")]
     private partial void LogProjectionWriteFailed(int version, Exception exception);
 
     [LoggerMessage(EventId = 1133, Level = LogLevel.Information,
-        Message = "Read-model row differs from the journal's state at version {Version} (a write was lost); rebuilding it")]
+        Message = "Read-model row differs from the journal's state at version {Version} (a notification was lost or is still on its way); asking the projector to catch up")]
     private partial void LogProjectionBehind(int version);
 
     [LoggerMessage(EventId = 1134, Level = LogLevel.Information,
-        Message = "Read-model projection caught up to version {Version} after a failed write")]
+        Message = "InstanceAdvanced for version {Version} published after a failed attempt")]
     private partial void LogProjectionCaughtUp(int version);
 
     [LoggerMessage(EventId = 1135, Level = LogLevel.Error,
-        Message = "Read-model projection still failing at version {Version} after {Attempts} retries; giving up until the next activation")]
+        Message = "Publishing InstanceAdvanced for version {Version} still failing after {Attempts} retries; giving up until the next activation")]
     private partial void LogProjectionRetryGaveUp(int version, int attempts);
 
     [LoggerMessage(EventId = 1136, Level = LogLevel.Warning,
-        Message = "Reading the read-model row failed; rebuilding the projection")]
+        Message = "Reading the read-model row failed; asking the projector to catch up")]
     private partial void LogProjectionRowReadFailed(Exception exception);
 
     [LoggerMessage(EventId = 1137, Level = LogLevel.Error,

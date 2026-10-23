@@ -15,12 +15,21 @@ namespace Fleans.Persistence;
 
 internal static class FleanModelConfiguration
 {
+    /// <summary>
+    /// Shadow column on WorkflowInstances: the journal version the projected row (and, once
+    /// completed, its details) reflects. The projector writes only past it, so a repeated or late
+    /// notification never rolls the row back (#861). Persistence-only — the domain state does not
+    /// know about it.
+    /// </summary>
+    public const string ProjectedVersion = "ProjectedVersion";
+
     public static void Configure(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<WorkflowInstanceState>(entity =>
         {
             entity.ToTable("WorkflowInstances");
             entity.HasKey(e => e.Id);
+            entity.Property<int>(ProjectedVersion);
 
             entity.HasMany(e => e.Entries)
                 .WithOne()
@@ -92,11 +101,18 @@ internal static class FleanModelConfiguration
             entity.ToTable("WorkflowVariableStates");
             entity.HasKey(e => e.Id);
 
+            // Compared as JSON: without a comparer EF compares the ExpandoObject by reference and
+            // rewrites every scope's JSON on each write of a completed instance (#861).
             entity.Property(e => e.Variables)
                 .HasColumnName("Variables")
                 .HasConversion(
                     v => JsonConvert.SerializeObject(v),
-                    v => JsonConvert.DeserializeObject<ExpandoObject>(v) ?? new ExpandoObject());
+                    v => JsonConvert.DeserializeObject<ExpandoObject>(v) ?? new ExpandoObject())
+                .Metadata.SetValueComparer(
+                    new ValueComparer<ExpandoObject>(
+                        (a, b) => JsonConvert.SerializeObject(a) == JsonConvert.SerializeObject(b),
+                        v => JsonConvert.SerializeObject(v).GetHashCode(),
+                        v => JsonConvert.DeserializeObject<ExpandoObject>(JsonConvert.SerializeObject(v)) ?? new ExpandoObject()));
         });
 
         modelBuilder.Entity<ConditionSequenceState>(entity =>

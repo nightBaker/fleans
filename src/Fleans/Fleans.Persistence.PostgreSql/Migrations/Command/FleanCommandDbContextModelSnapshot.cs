@@ -575,6 +575,9 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
 
+                    b.Property<int>("ProjectedVersion")
+                        .HasColumnType("integer");
+
                     b.HasKey("Id");
 
                     b.HasIndex("BusinessId");

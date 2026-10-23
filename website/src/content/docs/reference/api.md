@@ -525,7 +525,7 @@ curl -k -X POST https://localhost:7140/UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a
 
 `isCompleted` means *terminal*. Tell the outcomes apart with the two flags: `isCancelled: true` → cancelled, `isFailed: true` → an unhandled activity failure ended the instance (see [Unhandled errors fail the instance](/fleans/guides/error-handling/#unhandled-errors-fail-the-instance)); both `false` → completed successfully. The failing activity is listed in `completedActivities` with a non-null `errorState`.
 
-This endpoint is intended for **diagnostics and load-test polling**, not for high-frequency production use. A running instance is answered by its grain (live state; an idle instance is activated for it). A finished one is answered from the read-side EF projection, written when it completed.
+This endpoint is intended for **diagnostics and load-test polling**, not for high-frequency production use. A running instance is answered by its grain (live state; an idle instance is activated for it). A finished one is answered from the read-side EF projection, which the projector writes shortly after it completes; until then the grain answers, so the response always reflects your own last call. Instance lists (`GET /Definitions/{key}/instances`) read only the projection and can lag a just-started or just-finished instance by a moment.
 
 ```bash
 curl -k https://localhost:7140/Instances/<guid>/state
@@ -533,7 +533,7 @@ curl -k https://localhost:7140/Instances/<guid>/state
 
 > `-k` (or `--insecure`) skips dev-cert validation. In production behind a proper TLS cert, drop the flag.
 
-Returns 404 with `{"error":"Instance {id} not found"}` if the instance ID does not exist in the projection.
+Returns 404 with `{"error":"Instance {id} not found"}` if no instance with that ID was ever started.
 
 Rate limiting: uses the `polling` policy. See [Rate Limiting](#rate-limiting) below for opt-in semantics.
 

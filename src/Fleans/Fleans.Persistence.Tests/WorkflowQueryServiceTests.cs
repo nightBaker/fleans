@@ -48,13 +48,8 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
         // Arrange — a running instance's row, and a grain that answers for it
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
         var instanceId = Guid.NewGuid();
-        var fromGrain = new InstanceStateSnapshot(["task1"], [], true, false, false, false,
-            [], [], [], [], null, null, null, null, null);
-        var grain = Substitute.For<IWorkflowInstanceGrain>();
-        grain.GetStateSnapshot().Returns(ValueTask.FromResult(fromGrain));
-        var grainFactory = Substitute.For<IGrainFactory>();
-        grainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId, null).Returns(grain);
-        var (service, commandFactory) = BuildService(fixture, provider, grainFactory);
+        var fromGrain = GrainSnapshot(started: true);
+        var (service, commandFactory) = BuildService(fixture, provider, GrainFactoryAnswering(instanceId, fromGrain));
         using var db = commandFactory.CreateDbContext();
         await SeedWorkflowInstance(db, instanceId, isStarted: true);
 
@@ -68,14 +63,49 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
     [DataTestMethod]
     [DataRow(PersistenceProvider.Sqlite)]
     [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetStateSnapshot_NotProjectedYet_IsServedByItsGrain(PersistenceProvider provider)
+    {
+        // Arrange — the projector runs behind the journal (#861): no row yet
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var instanceId = Guid.NewGuid();
+        var fromGrain = GrainSnapshot(started: true);
+        var (service, _) = BuildService(fixture, provider, GrainFactoryAnswering(instanceId, fromGrain));
+
+        // Act
+        var result = await service.GetStateSnapshot(instanceId);
+
+        // Assert
+        Assert.AreSame(fromGrain, result);
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
     public async Task GetStateSnapshot_ReturnsNull_WhenInstanceDoesNotExist(PersistenceProvider provider)
     {
+        // Arrange — no row, and the grain was never started
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);
-        var (service, commandFactory) = BuildService(fixture, provider);
+        var instanceId = Guid.NewGuid();
+        var (service, _) = BuildService(fixture, provider, GrainFactoryAnswering(instanceId, GrainSnapshot(started: false)));
 
-        var result = await service.GetStateSnapshot(Guid.NewGuid());
+        // Act
+        var result = await service.GetStateSnapshot(instanceId);
 
+        // Assert
         Assert.IsNull(result);
+    }
+
+    private static InstanceStateSnapshot GrainSnapshot(bool started) =>
+        new(started ? ["task1"] : [], [], started, false, false, false,
+            [], [], [], [], null, started ? DateTimeOffset.UtcNow : null, null, null, null);
+
+    private static IGrainFactory GrainFactoryAnswering(Guid instanceId, InstanceStateSnapshot snapshot)
+    {
+        var grain = Substitute.For<IWorkflowInstanceGrain>();
+        grain.GetStateSnapshot().Returns(ValueTask.FromResult(snapshot));
+        var grainFactory = Substitute.For<IGrainFactory>();
+        grainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId, null).Returns(grain);
+        return grainFactory;
     }
 
     [DataTestMethod]

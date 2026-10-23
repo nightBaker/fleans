@@ -88,6 +88,28 @@ public abstract class WorkflowTestBase
     }
 
     /// <summary>
+    /// Waits until the read model reflects the instance's current state. The projector runs behind
+    /// the journal (#861), so a test that reads the read model directly — instance lists, the
+    /// WorkflowInstances tables — waits here first instead of sleeping. <c>GetStateSnapshot</c>
+    /// does not need it: until the row says completed, the grain answers.
+    /// </summary>
+    protected async Task WaitForProjection(params Guid[] instanceIds)
+    {
+        // Generous: a failed projection is redelivered by the stream with back-off.
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        foreach (var instanceId in instanceIds)
+        {
+            var inspector = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId)
+                .AsReference<IWorkflowInstanceInspector>();
+            while (!await inspector.IsProjectionCaughtUp())
+            {
+                Assert.IsTrue(DateTime.UtcNow < deadline, $"The read model of {instanceId} did not catch up");
+                await Task.Delay(25);
+            }
+        }
+    }
+
+    /// <summary>
     /// Deactivates idle grains and polls until no workflow instance is active, for at most 3s (an
     /// instance woken by a timer may come straight back). Instances in <paramref name="mustDeactivate"/>
     /// must be gone — the call fails after 30s otherwise — so a test that relies on reactivation

@@ -1,4 +1,5 @@
 using Fleans.Application;
+using Fleans.Application.Events;
 using Fleans.Application.Grains;
 using Fleans.Application.Placement;
 using Fleans.Application.QueryModels;
@@ -177,6 +178,9 @@ namespace Fleans.Application.Tests
                     .AddPlacementDirector<CorePlacementStrategy, CorePlacementDirector>()
                     .AddPlacementDirector<WorkerPlacementStrategy, WorkerPlacementDirector>()
                     .AddCustomStorageBasedLogConsistencyProviderAsDefault()
+                    // Instances publish InstanceAdvanced to the read-model projector (#861).
+                    .AddMemoryStreams(WorkflowEventsPublisher.StreamProvider)
+                    .AddMemoryGrainStorage("PubSubStore")
                     .AddMemoryGrainStorage(GrainStorageNames.ProcessDefinitions)
                     .AddMemoryGrainStorage(GrainStorageNames.UserTasks)
                     .ConfigureServices(services =>
