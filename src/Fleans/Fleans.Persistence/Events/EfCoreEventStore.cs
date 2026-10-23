@@ -157,6 +157,19 @@ public class EfCoreEventStore : IEventStore
         await db.SaveChangesAsync();
     }
 
+    /// <summary>
+    /// Deletes the instance's journal batches and snapshot by <c>InstanceId</c> — the journal's only
+    /// access path — in one transaction.
+    /// </summary>
+    public async Task DeleteInstanceAsync(Guid instanceId)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        await using var tx = await db.Database.BeginTransactionAsync();
+        await db.WorkflowEventBatches.Where(b => b.InstanceId == instanceId).ExecuteDeleteAsync();
+        await db.WorkflowSnapshots.Where(s => s.InstanceId == instanceId).ExecuteDeleteAsync();
+        await tx.CommitAsync();
+    }
+
     private static bool IsUniqueConstraintViolation(DbUpdateException ex)
     {
         var message = ex.InnerException?.Message ?? ex.Message;

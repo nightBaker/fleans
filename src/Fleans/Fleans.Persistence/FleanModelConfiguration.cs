@@ -66,6 +66,8 @@ internal static class FleanModelConfiguration
                 .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasIndex(e => e.ProcessDefinitionId);
+            // Retention purge (#862) selects finished instances by CompletedAt, oldest first.
+            entity.HasIndex(e => e.CompletedAt);
 
             entity.HasOne<ProcessDefinition>()
                 .WithMany()

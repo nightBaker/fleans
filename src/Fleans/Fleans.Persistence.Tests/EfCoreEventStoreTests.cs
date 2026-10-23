@@ -172,6 +172,34 @@ public class EfCoreEventStoreTests : PersistenceTestBase
     [DataTestMethod]
     [DataRow(PersistenceProvider.Sqlite)]
     [DataRow(PersistenceProvider.Postgres)]
+    public async Task DeleteInstance_RemovesOnlyThatInstancesJournalAndSnapshot_Idempotently(PersistenceProvider provider)
+    {
+        // Arrange
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var store = CreateStore(fixture);
+        var purged = Guid.NewGuid();
+        var other = Guid.NewGuid();
+        foreach (var id in new[] { purged, other })
+        {
+            await store.AppendEventsAsync(id, [new WorkflowStarted(Guid.NewGuid(), "p1", Guid.NewGuid())], expectedVersion: 0);
+            await store.AppendEventsAsync(id, [new WorkflowCompleted()], expectedVersion: 1);
+            await store.WriteSnapshotAsync(id, 2, CreateTestState(id));
+        }
+
+        // Act — twice: a purge interrupted after this step runs it again
+        await store.DeleteInstanceAsync(purged);
+        await store.DeleteInstanceAsync(purged);
+
+        // Assert — the id reads like one that never existed; the other instance is untouched
+        Assert.AreEqual(0, (await store.ReadEventsAsync(purged, afterVersion: 0)).Count);
+        Assert.AreEqual((null, 0), await store.ReadSnapshotAsync(purged));
+        Assert.AreEqual(2, (await store.ReadEventsAsync(other, afterVersion: 0)).Count);
+        Assert.AreEqual(2, (await store.ReadSnapshotAsync(other)).Version);
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
     public async Task ReadSnapshot_EmptyGrain_ReturnsNullAndZero(PersistenceProvider provider)
     {
         await using var fixture = await TestFixtureFactory.CreateAsync(provider);

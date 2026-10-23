@@ -50,6 +50,13 @@ internal class InMemoryEventStore(DeepCopier copier) : IEventStore
         _snapshots[grainId] = (copier.Copy(state), version);
         return Task.CompletedTask;
     }
+
+    public Task DeleteInstanceAsync(Guid grainId)
+    {
+        _events.TryRemove(grainId, out _);
+        _snapshots.TryRemove(grainId, out _);
+        return Task.CompletedTask;
+    }
 }
 
 /// <summary>Read-model projection for silos without a query store: records only the projected row.</summary>
@@ -169,4 +176,6 @@ internal class FaultInjectingEventStore(IEventStore inner) : IEventStore
 
     public Task WriteSnapshotAsync(Guid instanceId, int version, WorkflowInstanceState state) =>
         inner.WriteSnapshotAsync(instanceId, version, state);
+
+    public Task DeleteInstanceAsync(Guid instanceId) => inner.DeleteInstanceAsync(instanceId);
 }

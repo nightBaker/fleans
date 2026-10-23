@@ -10,10 +10,12 @@ namespace Fleans.Api.Controllers
     public class InstancesController : ControllerBase
     {
         private readonly IWorkflowQueryService _workflowQueryService;
+        private readonly IWorkflowInstancePurgeService _purgeService;
 
-        public InstancesController(IWorkflowQueryService workflowQueryService)
+        public InstancesController(IWorkflowQueryService workflowQueryService, IWorkflowInstancePurgeService purgeService)
         {
             _workflowQueryService = workflowQueryService;
+            _purgeService = purgeService;
         }
 
         [EnableRateLimiting("polling")]
@@ -24,6 +26,27 @@ namespace Fleans.Api.Controllers
             if (snapshot is null)
                 return NotFound(new ErrorResponse($"Instance {instanceId} not found"));
             return Ok(snapshot);
+        }
+
+        /// <summary>
+        /// Retention (#862): deletes the journal, snapshot and read-model rows of instances that
+        /// finished (completed, cancelled or failed) before <c>CompletedBefore</c>. Bounded per call;
+        /// repeat while <c>HasMore</c>. Runbook: <c>docs/runbooks/instance-retention.md</c>.
+        /// </summary>
+        [EnableRateLimiting("admin")]
+        [HttpPost("purge", Name = "PurgeInstances")]
+        public async Task<IActionResult> PurgeInstances([FromBody] PurgeInstancesRequest request, CancellationToken cancellationToken)
+        {
+            if (request?.CompletedBefore is not { } completedBefore)
+                return BadRequest(new ErrorResponse("CompletedBefore is required"));
+
+            // Out-of-range values throw ArgumentOutOfRangeException → 400 (GlobalExceptionHandler).
+            var result = await _purgeService.PurgeCompletedAsync(
+                completedBefore,
+                request.BatchSize ?? IWorkflowInstancePurgeService.DefaultBatchSize,
+                request.MaxInstances ?? IWorkflowInstancePurgeService.DefaultMaxInstances,
+                cancellationToken);
+            return Ok(new PurgeInstancesResponse(result.PurgedCount, result.HasMore));
         }
     }
 }
