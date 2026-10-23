@@ -56,11 +56,15 @@ public abstract class WorkflowTestBase
 
         var builder = new TestClusterBuilder();
         builder.AddSiloBuilderConfigurator<EfCoreSiloConfigurator>();
+        ConfigureCluster(builder);
         Cluster = builder.Build();
         Cluster.Deploy();
 
         QueryService = ((InProcessSiloHandle)Cluster.Primary).SiloHost.Services.GetRequiredService<IWorkflowQueryService>();
     }
+
+    /// <summary>Lets a test class add silo configurators (e.g. a grain call filter) to its cluster.</summary>
+    protected virtual void ConfigureCluster(TestClusterBuilder builder) { }
 
     /// <summary>
     /// Forces deactivation of all grain activations in the test cluster

@@ -69,6 +69,8 @@ public abstract class StartEventListenerGrainBase<TState> : Grain
             return [];
         }
 
+        // Fire methods are [AlwaysInterleave] (#858): read State only here, before the first await, and
+        // never write it — a RegisterProcess/UnregisterProcess may run while the starts below are in flight.
         var processKeys = State.ProcessDefinitionKeys.ToList();
 
         if (processKeys.Count > HighProcessCountThreshold)
