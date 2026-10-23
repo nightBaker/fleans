@@ -48,6 +48,7 @@ If you author a custom-task plugin, follow the same pattern (see the [adding a B
 | 11201 | `Fleans.Streaming.Kafka.AwsMsk` — `OAuthBearerSetTokenFailure` threw after token-refresh failure (Warning); typically a shutdown race, not actionable |
 | 11300–11399 | Grain placement — 11300 no core silo, 11301 no worker silo (Warning); 11311 placement-role violation (Error) |
 | 13000–13099 | `Fleans.Web` admin UI |
+| 14100–14102 | Retention purge (`POST /Instances/purge`) — 14100 purge started, 14101 batch purged, 14102 purge finished (all Information) |
 
 For the full per-EventId deep dive and reserved bands, see [`docs/plans/2026-02-08-structured-workflow-logging.md`](https://github.com/nightBaker/fleans/blob/main/docs/plans/2026-02-08-structured-workflow-logging.md).
 

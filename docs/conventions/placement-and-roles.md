@@ -29,7 +29,7 @@ It is registered with Aspire **in publish mode** (`builder.ExecutionContext.IsPu
 Observed in that leg — know before relying on the contract:
 
 - Engine-bundled plugins are registered on **both** engine silos (`Fleans.Api` and `Fleans.WorkerHost` call `AddRestCallerPlugin()`), so with a `Core` + `Worker` split `RestCallerHandler` is compatible with — and may activate on — the `core-` silo. Only a plugin compiled solely into one host (e.g. an external `plugin-` host) has deterministic placement.
-- A plugin host owns a slice of the reminder-service hash ring, so it MUST run the engine's reminder provider (Redis table on `orleans-redis`, as `AddFleansReminders` does). Without one, BPMN timers hashed onto it fail to register (`TypeLoadException: Orleans.IReminderService`); with an in-memory one they lose durability (#788). `Fleans.E2E.PluginHost` wires `UseRedisReminderService`.
+- A plugin host owns a slice of the reminder-service hash ring, so it MUST run the engine's reminder provider (`Fleans:Reminders:Provider`: the Redis table on `orleans-redis`, or the Postgres table on `fleans-reminders` / `fleans`, as `AddFleansReminders` does). Without one, BPMN timers hashed onto it fail to register (`TypeLoadException: Orleans.IReminderService`); with an in-memory one they lose durability (#788). `Fleans.E2E.PluginHost` wires `UseRedisReminderService` or `UseAdoNetReminderService` from the same key (#886).
 - `PlacementRoleAssertion` is currently never registered (#787); role mismatches are caught only by the explicit `Fleans:Role` checks in `Fleans.Api` / `Fleans.WorkerHost` / `AddFleansPluginHost`.
 
 Container image name: `fleans-worker` via `<ContainerRepository>` in `Fleans.WorkerHost.csproj`.

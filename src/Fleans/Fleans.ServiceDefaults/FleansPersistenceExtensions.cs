@@ -1,11 +1,14 @@
+using System.Data.Common;
 using Fleans.Persistence;
 using Fleans.Persistence.PostgreSql;
 using Fleans.Persistence.Sqlite;
+using Fleans.ServiceDefaults.Reminders;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace Fleans.ServiceDefaults;
 
@@ -70,10 +73,19 @@ public static class FleansPersistenceExtensions
     /// is acquired only while writing __EFMigrationsHistory, not while running migration
     /// SQL. Two silos that both observe a migration as pending can therefore both try to
     /// CREATE TABLE, and the loser fails with `relation "X" already exists`.
+    ///
+    /// With <c>Fleans:Reminders:Provider=Postgres</c> it also creates the Orleans reminders
+    /// schema — in the application database, or in <c>ConnectionStrings:fleans-reminders</c>
+    /// when that dedicated database is configured (#886).
     /// </summary>
     public static async Task EnsureDatabaseSchemaAsync(this IHost app)
     {
         var options = app.Services.GetRequiredService<IOptions<FleansPersistenceOptions>>().Value;
+
+        ResolvedRemindersConfiguration? postgresReminders = null;
+        if (options.RemindersProvider.Equals("Postgres", StringComparison.OrdinalIgnoreCase))
+            postgresReminders = FleansRemindersExtensions.ResolveRemindersConfiguration(
+                app.Services.GetRequiredService<IConfiguration>());
 
         using var scope = app.Services.CreateScope();
         var dbFactory = scope.ServiceProvider
@@ -84,48 +96,45 @@ public static class FleansPersistenceExtensions
             await using var db = dbFactory.CreateDbContext();
 
             // Pin the connection so the session-level advisory lock survives across
-            // MigrateAsync's internal transactions. The key is arbitrary but must be the
-            // same across all silos in the cluster.
-            const long migrationLockKey = 8723547283L;
+            // MigrateAsync's internal transactions.
             await db.Database.OpenConnectionAsync();
             try
             {
                 await db.Database.ExecuteSqlRawAsync(
-                    $"SELECT pg_advisory_lock({migrationLockKey})");
+                    $"SELECT pg_advisory_lock({MigrationLockKey})");
                 await db.Database.MigrateAsync();
 
-                if (options.RemindersProvider.Equals("Postgres", StringComparison.OrdinalIgnoreCase))
-                {
-                    // Idempotent guard. ExecuteSqlRawAsync returns -1 for SELECT in Npgsql
-                    // (rows-affected is undefined for queries) so we use raw ADO.NET
-                    // ExecuteScalarAsync. The OrleansQuery table (created by Main.sql) is
-                    // the sentinel: present → already initialised → skip; absent → run both.
-                    bool alreadyInitialised;
-                    await using (var cmd = db.Database.GetDbConnection().CreateCommand())
-                    {
-                        cmd.CommandText = "SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = 'orleansquery')";
-                        alreadyInitialised = (bool)(await cmd.ExecuteScalarAsync() ?? false);
-                    }
-
-                    if (!alreadyInitialised)
-                    {
-                        await ExecuteEmbeddedScriptAsync(db, "Fleans.ServiceDefaults.Resources.PostgreSQL_Main.sql");
-                        await ExecuteEmbeddedScriptAsync(db, "Fleans.ServiceDefaults.Resources.PostgreSQL_Reminders.sql");
-                    }
-                }
+                if (postgresReminders is { DedicatedDatabase: false })
+                    await EnsureOrleansRemindersSchemaAsync(db.Database.GetDbConnection());
             }
             finally
             {
                 try
                 {
                     await db.Database.ExecuteSqlRawAsync(
-                        $"SELECT pg_advisory_unlock({migrationLockKey})");
+                        $"SELECT pg_advisory_unlock({MigrationLockKey})");
                 }
                 catch
                 {
                     // Lock will be released on connection close anyway.
                 }
                 await db.Database.CloseConnectionAsync();
+            }
+
+            if (postgresReminders is { DedicatedDatabase: true } dedicated)
+            {
+                // Own database (#886): same advisory-lock dance on its own session.
+                await using var conn = new NpgsqlConnection(dedicated.ConnectionString);
+                await conn.OpenAsync();
+                await ExecuteAsync(conn, $"SELECT pg_advisory_lock({MigrationLockKey})");
+                try
+                {
+                    await EnsureOrleansRemindersSchemaAsync(conn);
+                }
+                finally
+                {
+                    await ExecuteAsync(conn, $"SELECT pg_advisory_unlock({MigrationLockKey})");
+                }
             }
         }
         else
@@ -135,14 +144,44 @@ public static class FleansPersistenceExtensions
         }
     }
 
-    private static async Task ExecuteEmbeddedScriptAsync(Microsoft.EntityFrameworkCore.DbContext db, string resourceName)
+    // Arbitrary, but must be the same across all silos in the cluster.
+    private const long MigrationLockKey = 8723547283L;
+
+    /// <summary>
+    /// Runs the vendored Orleans Postgres reminders scripts once. Caller holds the advisory lock.
+    /// The OrleansQuery table (created by Main.sql) is the sentinel: present → already
+    /// initialised → skip; absent → run both.
+    /// </summary>
+    private static async Task EnsureOrleansRemindersSchemaAsync(DbConnection conn)
+    {
+        bool alreadyInitialised;
+        await using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = 'orleansquery')";
+            alreadyInitialised = (bool)(await cmd.ExecuteScalarAsync() ?? false);
+        }
+
+        if (alreadyInitialised)
+            return;
+
+        await ExecuteAsync(conn, await ReadEmbeddedScriptAsync("Fleans.ServiceDefaults.Resources.PostgreSQL_Main.sql"));
+        await ExecuteAsync(conn, await ReadEmbeddedScriptAsync("Fleans.ServiceDefaults.Resources.PostgreSQL_Reminders.sql"));
+    }
+
+    private static async Task ExecuteAsync(DbConnection conn, string sql)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<string> ReadEmbeddedScriptAsync(string resourceName)
     {
         var assembly = typeof(FleansPersistenceExtensions).Assembly;
         await using var stream = assembly.GetManifestResourceStream(resourceName)
             ?? throw new InvalidOperationException(
                 $"Embedded SQL resource '{resourceName}' not found — check Fleans.ServiceDefaults.csproj <EmbeddedResource> entries.");
         using var reader = new StreamReader(stream);
-        var sql = await reader.ReadToEndAsync();
-        await db.Database.ExecuteSqlRawAsync(sql);
+        return await reader.ReadToEndAsync();
     }
 }

@@ -32,6 +32,12 @@ Four scenario scripts live in parallel under `tests/load/scripts/` (k6) and `tes
 | `events`   | Three-phase event-driven loop: start → poll for `waitMessage` → POST `/Execution/message`.          | `load-events`   |
 | `mixed`    | 40 / 30 / 30 weighted blend of the above three.                                                    | (composite)     |
 
+`timers-1m` (k6 only, `tests/load/scripts/timers-1m.js`) arms 1 million durable timers that all
+fall due within one minute and reports timer lag (fire − due) p50 / p99 from the read model, with
+reminders on their own PostgreSQL. Pass: lag p99 under 2 s and no timer lost. It decides whether
+Orleans reminders carry production timer counts or the [roadmap's sharded timer scheduler](/fleans/roadmap/v1/#timers)
+is needed. No published numbers yet.
+
 The suite is documented in detail in `tests/load/README.md`.
 
 ## Recent baselines

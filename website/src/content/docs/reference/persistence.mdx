@@ -145,6 +145,35 @@ Example `appsettings.json`:
 
 **Read replica:** When `ConnectionStrings:fleans-query` is provided, the query `DbContext` connects to the replica. The replica must be provisioned separately (e.g. a PostgreSQL standby). The chart provisions only the primary `fleans` database; read-replica wiring is tracked in issue [#170](https://github.com/nightBaker/fleans/issues/170).
 
+## Retention: purging finished instances
+
+Fleans keeps every finished instance until you delete it: its event journal, its snapshot, and its rows in the read model. A typical 10-step instance stores about 15 KB, so a million finished instances is about 15 GB, and list queries scan ever-larger tables.
+
+To delete old instances, call [`POST /Instances/purge`](/fleans/reference/api/#purge-endpoint) with a cutoff. It deletes instances that finished (completed, cancelled or failed) before `CompletedBefore`. Running instances are never deleted. A call-activity child is kept while its parent is still running.
+
+Fleans does not run the purge on a schedule. Run it from a cron job, a Kubernetes `CronJob`, or by hand. Repeat each run until the response says `"hasMore": false`:
+
+```bash
+CUTOFF=$(date -u -d '90 days ago' +%Y-%m-%dT%H:%M:%SZ)
+while :; do
+  RESP=$(curl -sf -X POST "$FLEANS_API/Instances/purge" \
+    -H 'Content-Type: application/json' \
+    -H "Authorization: Bearer $TOKEN" \
+    -d "{\"CompletedBefore\":\"$CUTOFF\"}") || exit 1
+  echo "$RESP"
+  echo "$RESP" | grep -q '"hasMore":true' || break
+done
+```
+
+Things to know:
+
+- **It cannot be undone.** Back up the database first if you need the history, for example for audits.
+- **The cutoff must be at least 1 hour old.** A recently finished instance may still be loaded in a silo's memory. Purging it would let that copy write again later.
+- **A purged id reads as "not found".** `GET /Instances/{id}/state` returns `404`.
+- **Disk space.** PostgreSQL reuses the freed space after `VACUUM` (autovacuum does this). An SQLite file does not shrink until you run `VACUUM`.
+- **The first purge of a large database** is best run off-peak, with a smaller `BatchSize` such as `200`.
+- **Logs:** EventIds 14100 (purge started), 14101 (batch purged) and 14102 (purge finished).
+
 ## See also
 
 - [Configuration](/fleans/reference/configuration/#persistence) — runtime configuration keys for `Persistence__Provider` and `ConnectionStrings__fleans`

@@ -137,6 +137,9 @@ on the install command line via `--set` or pass a `-f my-values.yaml` overlay.
 | `streaming.redis.totalQueueCount` | `8` | Orleans pulling-agent count for Redis streaming. |
 | `streaming.kafka.brokers` | `""` | Comma-separated Kafka brokers, e.g. `kafka.kafka.svc:9092`. |
 | `streaming.kafka.queueCount` | `8` | Orleans pulling-agent count for Kafka streaming. |
+| `reminders.provider` | `Redis` | Where BPMN timers (Orleans reminders) live: `Redis` (chart-bundled Redis) or `Postgres` (recommended in production; needs `persistence.provider=Postgres`). See §4. |
+| `reminders.postgres.existingSecret` | `""` | `Secret` with the connection string of a dedicated reminders database (`ConnectionStrings__fleans-reminders`). Empty = share the `fleans` database. |
+| `reminders.postgres.existingSecretKey` | `connection-string` | Key inside that `Secret`. |
 | `extraEnv` | `[]` | Extra env vars on every Fleans workload (`api`, `web`, `mcp`). Use for `ConnectionStrings__fleans` overrides. |
 
 To tune Orleans consumer parallelism (pulling-agent count per cluster) for higher throughput, set `Fleans__Streaming__Redis__TotalQueueCount` (Redis), `Fleans__Streaming__Kafka__QueueCount` (Kafka), or supply an explicit `Fleans__Streaming__AzureQueue__QueueNames__0..N` list — see [Tuning throughput](/fleans/reference/streaming/#tuning-throughput) for the sizing heuristic, rehash caveat, and Kafka-side `NumPartitions` tuning.
@@ -179,6 +182,33 @@ kubectl create secret generic fleans-pg \
 
 The Postgres user needs `CREATE TABLE` on first boot (for migrations), then
 only `INSERT/UPDATE/SELECT/DELETE` thereafter.
+
+### Timers (reminders) on their own Postgres database
+
+Every pending BPMN timer is one Orleans reminder. The default `Redis` provider keeps all of
+them in one Redis key; once pending timers reach the millions (e.g. boundary timers on
+long-running user tasks), move them to PostgreSQL in their own database:
+
+```yaml
+reminders:
+  provider: Postgres
+  postgres:
+    existingSecret: fleans-reminders-pg
+```
+
+```bash
+kubectl create secret generic fleans-reminders-pg \
+  -n fleans \
+  --from-literal=connection-string='Host=my-pg.example.com;Port=5432;Database=fleans_reminders;Username=fleans;Password=...;Ssl Mode=Require'
+```
+
+Create the database first; Fleans creates its tables on first boot. Every silo re-reads its
+share of the reminders every 5 minutes, so a separate database (on the same server or its own)
+keeps those reads off the workflow journal and read model. Without `existingSecret` the
+reminders share the `fleans` database. Custom worker hosts must use the same provider — see
+[Hosting your own custom-task plugins](/fleans/guides/custom-worker-host/#configure-the-shared-reminder-service).
+Switching providers starts with an empty reminder table: pending timers from the old provider
+do not move over.
 
 ### OIDC for the admin UI
 

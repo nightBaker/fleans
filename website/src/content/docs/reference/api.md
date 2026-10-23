@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-All paths below are relative to the API base URL (`https://localhost:7140` in the Aspire dev stack). Endpoints are grouped by controller: `/Definitions/*` (deploy, disable, enable, list), `/Execution/*` (start, message, signal, complete-activity, evaluate-conditions), `/Instances/*` (state) and `/UserTasks/*`. The old `/Workflow/*` prefix was removed when the controller was split (see [PR #614](https://github.com/nightBaker/fleans/pull/614)) and now returns `404`.
+All paths below are relative to the API base URL (`https://localhost:7140` in the Aspire dev stack). Endpoints are grouped by controller: `/Definitions/*` (deploy, disable, enable, list), `/Execution/*` (start, message, signal, complete-activity, evaluate-conditions), `/Instances/*` (state, purge) and `/UserTasks/*`. The old `/Workflow/*` prefix was removed when the controller was split (see [PR #614](https://github.com/nightBaker/fleans/pull/614)) and now returns `404`.
 
 | Endpoint | Method | Body |
 |---|---|---|
@@ -16,6 +16,7 @@ All paths below are relative to the API base URL (`https://localhost:7140` in th
 | `/Execution/complete-activity` | POST | `{"WorkflowInstanceId":"guid", "ActivityId":"activity-id", "Variables":{}}` |
 | `/Execution/evaluate-conditions` | POST | `{"WorkflowId":"process-id", "Variables":{"key":"value"}}` — Evaluates all conditional start events (or only those for the given `WorkflowId` if provided) against the supplied variables. Returns `{"StartedInstanceIds":["guid",...], "Errors":["..."]}`. `Errors` is present only when one or more listeners failed during evaluation. |
 | `/Instances/{instanceId}/state` | GET | *(none)* — Returns the current state snapshot for a specific workflow instance |
+| `/Instances/purge` | POST | `{"CompletedBefore":"2026-07-01T00:00:00Z", "BatchSize":500, "MaxInstances":10000}` — Deletes instances that finished before the cutoff. Only `CompletedBefore` is required. See [Purge endpoint](#purge-endpoint). |
 | `/UserTasks` | GET | *(query string)* — Paginated list of pending user tasks. See [User Task endpoints](#user-task-endpoints). |
 | `/UserTasks/{activityInstanceId}` | GET | *(none)* — Single user-task lookup. |
 | `/UserTasks/{activityInstanceId}/claim` | POST | `{"UserId":"alice"}` |
@@ -210,7 +211,7 @@ Content-Type: application/json
 - **400** — `{"error": "WorkflowInstanceId is required"}` / `{"error": "ActivityId is required"}`
 - **404** — no workflow instance with that id (ProblemDetails, `detail`: `Workflow instance '<id>' not found.`)
 - **409** — the activity has no active entry: unknown activity id, or an activity that already completed (ProblemDetails, `detail`: `No active entry found for activity 'review-task'.`). Also returned when the activity is a user task — use the `/UserTasks/{id}/complete` endpoint instead.
-- **503** — the instance is briefly unavailable after a failed journal write (ProblemDetails; log 1137). Nothing of the call was applied: retry it.
+- **503** — the instance is briefly unavailable after its journal write conflicted with another writer (ProblemDetails; log 1137). Nothing of the call was applied: retry it.
 
 ### Read endpoints
 
@@ -537,6 +538,29 @@ Returns 404 with `{"error":"Instance {id} not found"}` if no instance with that 
 
 Rate limiting: uses the `polling` policy. See [Rate Limiting](#rate-limiting) below for opt-in semantics.
 
+### Purge endpoint
+
+`POST /Instances/purge` deletes everything stored for workflow instances that **finished** (completed, cancelled or failed) before `CompletedBefore`: their event journal, snapshot, read-model rows and user tasks. Running instances are never touched. A child instance is kept while its parent is still running. Fleans does not run this on a schedule; call it from your own scheduled job. When and why to run it: [Retention](/fleans/reference/persistence/#retention-purging-finished-instances).
+
+| Field | Required | Default | Notes |
+|---|---|---|---|
+| `CompletedBefore` | yes | — | ISO-8601 timestamp. Must be at least 1 hour in the past. |
+| `BatchSize` | no | `500` | Instances deleted per batch, `1`–`5000`. |
+| `MaxInstances` | no | `10000` | Instances deleted per call. |
+
+```bash
+curl -k -X POST https://localhost:7140/Instances/purge \
+  -H 'Content-Type: application/json' \
+  -d '{"CompletedBefore":"2026-07-01T00:00:00Z"}'
+# {"purgedCount":10000,"hasMore":true}
+```
+
+Each call deletes at most `MaxInstances` instances, oldest first. Call it again until `hasMore` is `false`. Returns `400` when `CompletedBefore` is missing or less than an hour ago, or when a size is out of range.
+
+Purged data cannot be restored. Back up first if you need to keep it.
+
+Rate limiting: uses the `admin` policy.
+
 ### Rate limiting
 
 All API endpoints have rate-limiting attributes (`workflow-mutation`, `task-operation`, `read`, `admin`, `polling`), but rate limiting is **opt-in**: it only activates when the `RateLimiting` configuration section is present. Default `appsettings.json` has no such section, so the middleware is off by default. When activating rate limiting, populate **all five** policies together — partially populating the section causes unregistered-policy endpoints to return HTTP 500.
@@ -572,7 +596,7 @@ Paths are relative to the API base URL.
 | `WorkflowMutation` | `POST /Execution/start`, `/Execution/message`, `/Execution/signal`, `/Execution/evaluate-conditions`, `/Definitions/deploy` | Workflow lifecycle write operations (start instance, deliver event, evaluate conditions, deploy BPMN) |
 | `TaskOperation` | `POST /Execution/complete-activity`, `/UserTasks/{activityInstanceId}/claim`, `/UserTasks/{activityInstanceId}/unclaim`, `/UserTasks/{activityInstanceId}/complete`, `/UserTasks/{activityInstanceId}/fail`, `/UserTasks/{activityInstanceId}/cancel` | Activity-completion + user-task operations — see [User Tasks guide](/fleans/guides/user-tasks/) |
 | `Read` | `GET /Definitions`, `/Definitions/{key}/instances`, `/Definitions/{key}/{version}/instances`, `/UserTasks`, `/UserTasks/{activityInstanceId}` | Read-only queries |
-| `Admin` | `POST /Definitions/disable`, `/Definitions/enable` | Admin operations on process definitions |
+| `Admin` | `POST /Definitions/disable`, `/Definitions/enable`, `/Instances/purge` | Admin operations on process definitions and instance retention |
 | `Polling` | `GET /Instances/{instanceId}/state` | High-frequency state polling |
 
 #### Environment variable overrides

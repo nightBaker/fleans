@@ -18,6 +18,8 @@ k6 load test suite for the Fleans workflow engine.
 | `scripts/events.js` | Scenario 3 — event-driven with message correlation | `k6 run scripts/events.js` |
 | `scripts/mixed.js` | Mixed workload combining all scenarios | `k6 run scripts/mixed.js` |
 | `scripts/long-diverse.js` | Scenario 5: long, diverse process with 4 client interactions + external task | `k6 run scripts/long-diverse.js` |
+| `scripts/timers-1m.js` | Scenario `timers-1m`: 1 M durable timers due within one minute (deploys its own fixtures) | [§ timers-1m](#5-timers-1m-a-million-timers-due-in-one-minute) |
+| `scripts/timers-1m-lag.sql` | Armed / fired counts and timer lag p50 / p99 for a `timers-1m` run | `psql … < scripts/timers-1m-lag.sql` |
 | `scripts/metrics.js` | Shared metric definitions | Imported by scenario scripts |
 
 **`setup.js`** (from #239) is a standalone file you run once via `k6 run setup.js` to deploy fixtures and verify the cluster is ready.
@@ -33,6 +35,7 @@ k6 load test suite for the Fleans workflow engine.
 | `fixtures/events-workflow.bpmn` | `load-events` | Timer + message events |
 | `fixtures/long-diverse-workflow.bpmn` | `load-long-diverse` | ~45 nodes: exclusive / parallel / inclusive / event-based gateways, embedded sub-process, parallel + sequential multi-instance, call activity, error + timer boundaries, timer + message catches, external `task`, `e2e-probe` custom task |
 | `fixtures/long-diverse-child.bpmn` | `load-long-child` | Called by `load-long-diverse` (script → 1 s timer → script) |
+| `fixtures/timers-workflow.bpmn` | `load-timers-00` … `load-timers-59` | Template for `timers-1m.js`: start → `timeDate` timer → end; the script fills in the process id and due time |
 
 ## Docker Compose Setup
 
@@ -45,8 +48,9 @@ k6 load test suite for the Fleans workflow engine.
 | `fleans-worker` | 2 | `Fleans.WorkerHost`, `Fleans:Role=Worker` — script / condition grains |
 | `fleans-plugin` | 1 | `Fleans.E2E.PluginHost`, `Fleans:Role=Plugin` — external worker hosting the `e2e-probe` custom task |
 | `kafka` | 1 | Orleans streams (single broker, KRaft) |
-| `redis` | 1 | Orleans clustering, reminders, PubSubStore |
+| `redis` | 1 | Orleans clustering, PubSubStore |
 | `postgres` | 1 | Persistence (`max_connections=300` — 6 silos × 2 Npgsql pools) |
+| `postgres-reminders` | 1 | Orleans reminders (`Fleans:Reminders:Provider=Postgres`, `ConnectionStrings:fleans-reminders`) — the production layout; `FLEANS_REMINDERS_PROVIDER=Redis` moves them back to Redis |
 
 Outside Aspire the silos are wired by `FLEANS_LOAD_TEST_MODE=true` (explicit Redis clustering + PubSubStore).
 
@@ -145,6 +149,53 @@ k6 run --vus 5 --iterations 20 --insecure-skip-tls-verify tests/load/scripts/par
 
 `parallel.js` shares the same VU profile and `workflow_start_duration` metric as `linear.js`, so the two scripts can be compared directly. The fixture is a 3-branch fork/join (`branchA`/`branchB`/`branchC`); fork/join completion timing is asynchronous in Orleans and is **not** captured by `workflow_start_duration` — that metric records `POST /Execution/start` HTTP latency only. End-to-end fork/join latency is covered by issue #244.
 
+### 5. `timers-1m`: a million timers due in one minute
+
+Decides whether Orleans reminders on PostgreSQL carry a million pending BPMN timers, or whether
+Fleans needs the sharded timer scheduler (roadmap "Timers", step 2; issue #886). **Pass:** timer
+lag p99 < 2 s and no timer lost. A fail → open a follow-up issue for the scheduler shards.
+
+The script picks a due minute `T0 … T0+59 s` in the future, deploys 60 copies of
+`fixtures/timers-workflow.bpmn` (`load-timers-00` … `-59`, one per second of that minute), then
+arms `K6_TIMERS_COUNT` instances at `K6_TIMERS_RATE` starts/s, round-robin over the keys. Each
+instance parks on one durable timer — one `TimerCallbackGrain` with one Orleans reminder. k6 exits
+after arming; the timers fire `K6_TIMERS_SLACK_S` later.
+
+```bash
+cd tests/load
+docker compose down -v && docker compose up -d --wait     # FRESH stack: the lag query reads every load-timers-* instance
+docker compose exec nginx nginx -s reload
+K6_TARGET_URL=http://localhost:80 K6_TIMERS_COUNT=10000 K6_TIMERS_RATE=200 k6 run scripts/timers-1m.js   # smoke first
+docker compose down -v && docker compose up -d --wait && docker compose exec nginx nginx -s reload
+K6_TARGET_URL=http://localhost:80 k6 run scripts/timers-1m.js                                            # 1 M at 2 000/s ≈ 8.5 min
+```
+
+While the due minute runs, sample the reminders database's CPU (it is its own container):
+
+```bash
+while sleep 5; do docker stats --no-stream --format '{{.Name}} {{.CPUPerc}} {{.MemUsage}}' | grep postgres; done
+```
+
+About a minute after the teardown line's "due until" time, read the result:
+
+```bash
+docker compose exec -T postgres psql -U postgres -d fleans < scripts/timers-1m-lag.sql
+# armed | fired | failed | not_fired | lag_p50_s | lag_p99_s | lag_max_s
+docker compose exec -T postgres-reminders psql -U postgres -d reminders -c \
+  "SELECT idx_scan, idx_tup_read FROM pg_stat_user_indexes WHERE indexrelname = 'ix_reminderstable_serviceid_grainhash'"
+```
+
+`lag_s` is `CompletedAt − due time` from the read model, so it also contains one start → end
+transition (milliseconds). `idx_scan` growing every `RefreshReminderListPeriod` (5 min) confirms
+the range reads use the `(ServiceId, GrainHash)` index. Knobs: `K6_TIMERS_COUNT` (default
+1 000 000), `K6_TIMERS_RATE` (starts/s, default 2 000 — lower it if `http_req_failed` climbs),
+`K6_TIMERS_SLACK_S` (default 120 s between arming end and `T0`; `timers_armed_late` counts starts
+that missed it), `K6_TIMERS_MAX_VUS` (default 1 000). Compare against Redis reminders with
+`FLEANS_REMINDERS_PROVIDER=Redis docker compose up -d --wait`.
+
+Publish the numbers (hardware, counts, lag p50/p99/max, reminders-Postgres CPU) under `results/`
+and on the website's load-testing page.
+
 ## Environment Variables
 
 | Variable | Default | Description |
@@ -210,3 +261,4 @@ When running against Aspire locally (without docker-compose), rate limiting is o
 - Issue #242 — Mixed workload scenario
 - Issue #244 — Cloud validation run
 - Issues #866, #867, #868, #869 (and #846, #857) — findings from the `long-diverse` run on the split-roles Kafka stack
+- Issue #886 — `timers-1m`, reminders on their own Postgres

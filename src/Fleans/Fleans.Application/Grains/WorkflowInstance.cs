@@ -104,6 +104,17 @@ public partial class WorkflowInstance :
     private int _journalVersion;
 
     /// <summary>
+    /// The tries of the append Orleans is retrying, in order from <see cref="_unconfirmedFromVersion"/>
+    /// (#877): each one's first event, its length, and the batch id it was stored with. A failed try
+    /// may have been stored after all, so a retry resends it with the same id and the store confirms
+    /// it instead of appending it twice. Cleared once the append succeeds or conflicts.
+    /// </summary>
+    private readonly List<(WorkflowEvent First, int Count, Guid BatchId)> _unconfirmedBatches = [];
+
+    /// <summary>The version the first of <see cref="_unconfirmedBatches"/> was tried at.</summary>
+    private int _unconfirmedFromVersion;
+
+    /// <summary>
     /// The read-model row as this activation last asked the projector for (or read on activation);
     /// <c>null</c> when unknown. An append publishes <see cref="InstanceAdvanced"/> only when the
     /// state's row differs from it (#878, #861).
@@ -224,8 +235,18 @@ public partial class WorkflowInstance :
                 return new(_journalVersion, State);
             }
 
-            // The journal moved on without this activation (a write that failed but was stored,
-            // or another writer): State becomes the journal's, the aggregate is out of date.
+            // The failed try may have been stored after all (the error came after the commit). The
+            // retry, at this same version, resends it with its batch id and the store confirms it
+            // rather than appending it twice (#877). If the batch there is another writer's, that
+            // retry conflicts, the tries are dropped, and the next re-read takes the path below.
+            if (_unconfirmedBatches.Count > 0)
+            {
+                LogAppendRetryByBatchId(_journalVersion, _journalVersion + stored.Count);
+                return new(_journalVersion, State);
+            }
+
+            // The journal moved on without this activation (another writer): State becomes the
+            // journal's, the aggregate is out of date.
             _stateReloaded = true;
             LogStateReloaded(_journalVersion, _journalVersion + stored.Count);
             DeactivateOnIdle();
@@ -358,8 +379,8 @@ public partial class WorkflowInstance :
     {
         var instanceId = this.GetPrimaryKey();
         // expectedVersion is the confirmed event count BEFORE these updates.
-        var success = await _eventStore.AppendEventsAsync(instanceId, updates, expectedVersion);
-        if (!success) return false;
+        if (!await AppendIdempotently(instanceId, updates, expectedVersion))
+            return false;
 
         // The append is the commit. Everything below derives from the journal and must not
         // throw: Orleans would retry a batch that is already stored and append it twice.
@@ -404,6 +425,59 @@ public partial class WorkflowInstance :
             }
         }
 
+        return true;
+    }
+
+    /// <summary>
+    /// Appends Orleans' batch so that a retry never stores an event twice (#877). Orleans retries a
+    /// failed append with every pending event — the failed try's own event objects, followed by any
+    /// raised since — at the version <see cref="ReadStateFromStorage"/> returned, which stays at the
+    /// failed try's version. Each earlier try is resent as it was, with its batch id, so the store
+    /// confirms one that was stored after all; the events past them form a new batch with a new id.
+    /// </summary>
+    private async Task<bool> AppendIdempotently(Guid instanceId, IReadOnlyList<WorkflowEvent> updates, int expectedVersion)
+    {
+        if (!IsRetryOfUnconfirmedBatches(updates, expectedVersion))
+            _unconfirmedBatches.Clear();
+        _unconfirmedFromVersion = expectedVersion;
+
+        var tried = _unconfirmedBatches.Sum(b => b.Count);
+        if (tried < updates.Count)
+            _unconfirmedBatches.Add((updates[tried], updates.Count - tried, Guid.NewGuid()));
+
+        var offset = 0;
+        foreach (var batch in _unconfirmedBatches)
+        {
+            var events = batch.Count == updates.Count ? updates : updates.Skip(offset).Take(batch.Count).ToList();
+            // A throw keeps the tries for the retry: any of them may have been stored.
+            if (!await _eventStore.AppendEventsAsync(instanceId, events, expectedVersion + offset, batch.BatchId))
+            {
+                // Another writer's batch is there. Orleans re-reads, and the activation retires.
+                _unconfirmedBatches.Clear();
+                return false;
+            }
+            offset += batch.Count;
+        }
+
+        _unconfirmedBatches.Clear();
+        return true;
+    }
+
+    /// <summary>
+    /// <paramref name="updates"/> starts with the unconfirmed tries, in order, at their version. Always
+    /// true for an Orleans retry: its pending queue only grows at the end until a write succeeds.
+    /// </summary>
+    private bool IsRetryOfUnconfirmedBatches(IReadOnlyList<WorkflowEvent> updates, int expectedVersion)
+    {
+        if (_unconfirmedBatches.Count == 0 || expectedVersion != _unconfirmedFromVersion)
+            return false;
+        var offset = 0;
+        foreach (var batch in _unconfirmedBatches)
+        {
+            if (offset + batch.Count > updates.Count || !ReferenceEquals(updates[offset], batch.First))
+                return false;
+            offset += batch.Count;
+        }
         return true;
     }
 
