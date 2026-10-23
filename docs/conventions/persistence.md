@@ -37,6 +37,17 @@ EF Core's per-migration lock is acquired only during `__EFMigrationsHistory` wri
 
 Test clusters must register memory grain storage for this name in `WorkflowTestBase` alongside the other registries.
 
+## Signal subscriptions: per-row writes (#859)
+
+`SignalCorrelationGrain` (one per signal name) keeps every subscription in memory, but `EfCoreSignalCorrelationGrainStorage.WriteStateAsync` writes only what changed, so a subscribe or unsubscribe costs the same at 10 or 100,000 subscribers:
+
+- **Change set on the state.** `SignalCorrelationState` is mutated only through `AddSubscription` / `RemoveSubscription` / `TakeAllSubscriptions` (`Subscriptions` is read-only). They record added subscriptions, removed keys and a "cleared" flag — fields that are `[NonSerialized]` and `Ignore`d in `FleanModelConfiguration`. The grain calls `AcceptChanges()` only after a successful `WriteStateAsync`; a failed write keeps the set, so the next write retries it.
+- **One transaction per write.** Load the parent `SignalCorrelations` row alone (no `Include`) for the ETag check, then: the broadcast clear as one `ExecuteDelete` by signal name, each removed key as one `ExecuteDelete` by key, the added rows as inserts, and the new ETag. Deletes run before inserts, so a key removed and re-added in one change set is replaced.
+- **First write** (no parent row) inserts the parent and every subscription in the state.
+- Activation (`ReadStateAsync`) still loads all rows — once per activation, not per change.
+
+Any new mutation of the state must go through a domain method that records the change; a write the storage cannot see is silently lost. Sharding a signal name into buckets (roadmap Phase 3) is not done yet.
+
 ## Test parity (Sqlite ↔ PostgreSQL)
 
 Every EF/grain-storage class in `Fleans.Persistence.Tests` is parametrised via `[DataTestMethod] [DataRow(PersistenceProvider.Sqlite)] [DataRow(PersistenceProvider.Postgres)]` against the `Infrastructure/PersistenceTestBase` fixture.

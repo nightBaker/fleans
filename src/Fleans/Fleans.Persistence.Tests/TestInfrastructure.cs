@@ -19,6 +19,8 @@ internal class TestDbContextFactory : IDbContextFactory<FleanCommandDbContext>
         _options = options;
     }
 
+    public DbContextOptions<FleanCommandDbContext> Options => _options;
+
     public FleanCommandDbContext CreateDbContext() => new(_options);
 
     public Task<FleanCommandDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
