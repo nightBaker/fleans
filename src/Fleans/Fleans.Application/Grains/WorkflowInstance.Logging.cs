@@ -488,6 +488,10 @@ public partial class WorkflowInstance
         Message = "Journal append failed; nothing was stored past version {Version}, so the live state is kept and Orleans retries the append")]
     private partial void LogAppendRetryKeepsState(int version);
 
+    [LoggerMessage(EventId = 1139, Level = LogLevel.Warning,
+        Message = "Journal append failed, but the journal moved from version {Version} to {StoredVersion}; the failed try may have been stored, so Orleans retries it with the same batch id, which the store confirms instead of appending it again")]
+    private partial void LogAppendRetryByBatchId(int version, int storedVersion);
+
     [LoggerMessage(EventId = 1142, Level = LogLevel.Debug,
         Message = "Pending event {OperationId} journaled; queued for the next turn")]
     private partial void LogPendingEventQueued(string operationId);

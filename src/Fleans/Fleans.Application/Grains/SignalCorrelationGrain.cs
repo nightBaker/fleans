@@ -40,16 +40,15 @@ public partial class SignalCorrelationGrain : Grain, ISignalCorrelationGrain
         await _mutex.WaitAsync();
         try
         {
-            if (_state.State.Subscriptions.Any(s =>
-                s.WorkflowInstanceId == workflowInstanceId && s.ActivityId == activityId))
+            if (!_state.State.AddSubscription(
+                    new SignalSubscription(workflowInstanceId, activityId, hostActivityInstanceId)
+                        { SignalName = signalName }))
             {
                 LogDuplicateSubscription(signalName, workflowInstanceId, activityId);
                 return;
             }
 
-            _state.State.Subscriptions.Add(new SignalSubscription(workflowInstanceId, activityId, hostActivityInstanceId)
-                { SignalName = signalName });
-            await _state.WriteStateAsync();
+            await WriteStateAsync();
             LogSubscribed(signalName, workflowInstanceId, activityId);
         }
         finally
@@ -65,12 +64,9 @@ public partial class SignalCorrelationGrain : Grain, ISignalCorrelationGrain
         await _mutex.WaitAsync();
         try
         {
-            var removed = _state.State.Subscriptions.RemoveAll(s =>
-                s.WorkflowInstanceId == workflowInstanceId && s.ActivityId == activityId);
-
-            if (removed > 0)
+            if (_state.State.RemoveSubscription(workflowInstanceId, activityId))
             {
-                await _state.WriteStateAsync();
+                await WriteStateAsync();
                 LogUnsubscribed(signalName, workflowInstanceId, activityId);
             }
         }
@@ -78,6 +74,14 @@ public partial class SignalCorrelationGrain : Grain, ISignalCorrelationGrain
         {
             _mutex.Release();
         }
+    }
+
+    // Storage writes only the change set the state recorded; once it has, the set is forgotten.
+    // On failure the set is kept, so the next write retries it.
+    private async Task WriteStateAsync()
+    {
+        await _state.WriteStateAsync();
+        _state.State.AcceptChanges();
     }
 
     private const int DeliveryBatchSize = 20;
@@ -97,9 +101,8 @@ public partial class SignalCorrelationGrain : Grain, ISignalCorrelationGrain
                 return 0;
             }
 
-            subscribers = _state.State.Subscriptions.ToList();
-            _state.State.Subscriptions.Clear();
-            await _state.WriteStateAsync();
+            subscribers = _state.State.TakeAllSubscriptions();
+            await WriteStateAsync();
         }
         finally
         {
