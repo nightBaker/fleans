@@ -1228,6 +1228,29 @@ body[data-theme$="dark"] {
         width: 100%;
         overflow-x: auto;
     }
+
+    /* < 768: view only (design board 7) — diagram, simulation, XML and history stay; editing chrome goes. */
+    .editor-actions > :not(.editor-action--view),
+    .editor-tab-bar .editor-tab__close,
+    .orbit-float--tools,
+    .editor-status [data-orbit-cursor] {
+        display: none !important;
+    }
+
+    .editor-mobile-note {
+        display: block !important;
+    }
+}
+
+.editor-mobile-note {
+    display: none;
+    margin: 8px 16px 0;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--o-line2);
+    background: var(--o-card);
+    color: var(--o-muted);
+    font-size: 12px;
 }
 
 /* ---- Context menu (js/orbitContextMenu.js) ------------------------------------------------------ */
@@ -1554,4 +1577,411 @@ body[data-theme$="dark"] {
     margin-inline: 24px;
     max-width: calc(100% - 48px);
     box-sizing: border-box;
+}
+
+/* ---- Editor system states (design board 5): loading, empty process -------------------------- */
+
+.orbit-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 15;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+
+.orbit-overlay__card {
+    pointer-events: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 24px 28px;
+    border-radius: 16px;
+    background: var(--o-float);
+    border: 1px solid var(--o-line2);
+    box-shadow: 0 8px 30px var(--o-shadow);
+    text-align: center;
+    max-width: 320px;
+}
+
+.orbit-overlay__card--wide {
+    max-width: 380px;
+    border-style: dashed;
+    border-color: var(--o-line3);
+}
+
+.orbit-overlay__icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--o-success);
+    background: var(--o-successsoft);
+    border: 1px solid var(--o-successline);
+}
+
+.orbit-overlay__icon svg {
+    width: 24px;
+    height: 24px;
+}
+
+.orbit-overlay__title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--o-text);
+}
+
+.orbit-overlay__meta {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--o-muted);
+}
+
+.orbit-overlay__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+/* ---- Read-only modes (Simulation, History) --------------------------------------------------- */
+
+.editor-center--readonly .orbit-float--tools,
+.orbit-readonly .djs-context-pad,
+.orbit-readonly .djs-bendpoint,
+.orbit-readonly .djs-segment-dragger,
+.orbit-readonly .djs-resizer {
+    display: none !important;
+}
+
+.orbit-segmented--sm {
+    padding: 2px;
+}
+
+.orbit-segmented--sm button {
+    min-height: 28px;
+    padding: 0 10px;
+    font-family: var(--o-mono);
+    font-size: 12px;
+}
+
+/* Simulation bar and history legend: an in-flow strip above the canvas (design: the run's toolbar row),
+   so it never covers the diagram. order:-1 puts it first in the .editor-center column. */
+.orbit-float--sim,
+.orbit-float--legend {
+    position: relative;
+    order: -1;
+    align-self: center;
+    margin: 10px 16px;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px 6px 14px;
+    max-width: calc(100% - 32px);
+    flex-wrap: wrap;
+}
+
+.orbit-float--legend {
+    padding: 8px 12px;
+}
+
+.orbit-sim-pulse {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--o-pending);
+    flex: none;
+}
+
+.orbit-sim-pulse.is-running {
+    background: var(--o-accent);
+    box-shadow: 0 0 10px var(--o-accent);
+    animation: orbit-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes orbit-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+}
+
+.orbit-sim-title {
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+.orbit-sim-meta {
+    font-family: var(--o-mono);
+    font-size: 12px;
+    color: var(--o-muted);
+    white-space: nowrap;
+}
+
+.orbit-tool:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+/* Simulation markers (js/orbitSimulation.js): done = green, flow taken = accent, active = accent glow,
+   waiting for the user = amber; the token is a pulsing dot overlay. */
+.fl-diagram-orbit .orbit-sim-done .djs-visual > :first-child {
+    stroke: var(--o-success) !important;
+}
+
+.fl-diagram-orbit .orbit-sim-done.o-kind-task .djs-visual > :first-child {
+    fill: var(--o-nodedone) !important;
+}
+
+.fl-diagram-orbit .orbit-sim-taken .djs-visual > path {
+    stroke: var(--o-accent) !important;
+    stroke-width: 2px !important;
+    stroke-dasharray: 6 6;
+    animation: orbit-flowdash 1.1s linear infinite;
+}
+
+.fl-diagram-orbit .orbit-sim-active .djs-visual > :first-child {
+    stroke: var(--o-accent) !important;
+    filter: drop-shadow(0 0 10px var(--o-accentglow));
+}
+
+.fl-diagram-orbit .orbit-sim-waiting .djs-visual > :first-child {
+    stroke: var(--o-warn) !important;
+    filter: drop-shadow(0 0 8px var(--o-warnline));
+}
+
+.orbit-sim-token {
+    display: block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--o-accent);
+    box-shadow: 0 0 14px var(--o-accent);
+    animation: orbit-pulse 1.6s ease-in-out infinite;
+    pointer-events: none;
+}
+
+/* Version diff markers (bpmnEditor.compareWith). */
+.fl-diagram-orbit .orbit-diff-added .djs-visual > :first-child {
+    stroke: var(--o-success) !important;
+    stroke-width: 2.5px;
+}
+
+.fl-diagram-orbit .orbit-diff-changed .djs-visual > :first-child {
+    stroke: var(--o-warn) !important;
+    stroke-width: 2.5px;
+}
+
+/* Run / History panels in the inspector column. */
+.orbit-run {
+    overflow-y: auto;
+}
+
+.orbit-decision {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid var(--o-warnline);
+    background: var(--o-warnsoft);
+}
+
+.orbit-decision__name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--o-text);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+}
+
+.orbit-decision__options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.orbit-log {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 12px;
+}
+
+.orbit-log li {
+    display: grid;
+    grid-template-columns: 56px minmax(0, 1fr);
+    gap: 8px;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--o-line);
+}
+
+.orbit-log__time {
+    font-family: var(--o-mono);
+    font-size: 11px;
+    color: var(--o-muted);
+}
+
+.orbit-log__text {
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--o-text2);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+button.orbit-log__text:hover {
+    color: var(--o-accentink);
+}
+
+.orbit-versions {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.orbit-version {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    border-radius: 10px;
+    border: 1px solid var(--o-line);
+    background: var(--o-card);
+}
+
+.orbit-version.is-selected {
+    border-color: var(--o-accentline);
+    background: var(--o-accentsoft);
+}
+
+.orbit-version__main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border: none;
+    background: none;
+    color: var(--o-text);
+    font: inherit;
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.orbit-version__text {
+    min-width: 0;
+}
+
+.orbit-change--added .orbit-problem__icon { background: var(--o-success); }
+.orbit-change--changed .orbit-problem__icon { background: var(--o-warn); }
+.orbit-change--removed .orbit-problem__icon { background: var(--o-danger); }
+
+.orbit-problem:disabled {
+    cursor: default;
+    opacity: 0.85;
+}
+
+.orbit-change__kind {
+    font-family: var(--o-mono);
+    font-size: 10px;
+    color: var(--o-muted);
+    margin-left: 4px;
+}
+
+.orbit-change__field {
+    display: block;
+    font-family: var(--o-mono);
+    font-size: 11px;
+    color: var(--o-text2);
+    margin-top: 2px;
+    word-break: break-word;
+}
+
+.orbit-change__field s {
+    color: var(--o-muted);
+}
+
+/* ---- Minimap (bpmnEditor._bindMinimap) — above the bpmn.io watermark ------------------------ */
+
+.orbit-float--minimap {
+    right: 16px;
+    bottom: 56px;
+    width: 220px;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 10px 10px;
+}
+
+.orbit-minimap__head {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--o-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--o-muted);
+}
+
+.orbit-minimap {
+    height: 110px;
+    border-radius: 6px;
+    background: var(--o-sunk);
+    border: 1px solid var(--o-line);
+    overflow: hidden;
+}
+
+.orbit-minimap__svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+    cursor: pointer;
+    touch-action: none;
+}
+
+.orbit-minimap__flow {
+    fill: none;
+    stroke: var(--o-pending);
+    stroke-width: 4;
+}
+
+.orbit-minimap__shape { fill: var(--o-pending); stroke: none; }
+.orbit-minimap__shape--task { fill: var(--o-accent); opacity: 0.8; }
+.orbit-minimap__shape--start { fill: var(--o-success); }
+.orbit-minimap__shape--end { fill: var(--o-danger); }
+.orbit-minimap__shape--gateway { fill: var(--o-warn); }
+.orbit-minimap__shape--event { fill: var(--o-violet); }
+.orbit-minimap__shape--container { fill: none; stroke: var(--o-line3); stroke-width: 4; }
+
+.orbit-minimap__viewport {
+    fill: var(--o-accentsoft);
+    stroke: var(--o-accentink);
+    stroke-width: 1.5;
+    vector-effect: non-scaling-stroke;
+}
+
+.editor-center--xml .orbit-overlay,
+.editor-center--xml .orbit-float--minimap {
+    display: none;
+}
+
+@media (max-width: 1280px) {
+    .orbit-float--minimap {
+        display: none;
+    }
 }

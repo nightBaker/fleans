@@ -21,13 +21,16 @@
 
 
 #components-reconnect-modal {
-    background-color: white;
-    width: 20rem;
+    background-color: var(--o-panel, white);
+    color: var(--o-text, #0C1628);
+    font-family: var(--o-font, system-ui, sans-serif);
+    width: min(26rem, calc(100vw - 32px));
+    box-sizing: border-box;
     margin: 20vh auto;
-    padding: 2rem;
-    border: 0;
-    border-radius: 0.5rem;
-    box-shadow: 0 3px 6px 2px rgba(0, 0, 0, 0.3);
+    padding: 24px;
+    border: 1px solid var(--o-warnline, #ccc);
+    border-radius: 16px;
+    box-shadow: var(--o-menushadow, 0 3px 6px 2px rgba(0, 0, 0, 0.3));
     opacity: 0;
     transition: display 0.5s allow-discrete, overlay 0.5s allow-discrete;
     animation: components-reconnect-modal-fadeOutOpacity 0.5s both;
@@ -41,7 +44,7 @@
 }
 
 #components-reconnect-modal::backdrop {
-    background-color: rgba(0, 0, 0, 0.4);
+    background-color: rgba(2, 6, 14, 0.55);
     animation: components-reconnect-modal-fadeInOpacity 0.5s ease-in-out;
     opacity: 1;
 }
@@ -79,40 +82,93 @@
 .components-reconnect-container {
     display: flex;
     flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+}
+
+.components-reconnect-head {
+    position: relative;
+    display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: 14px;
+}
+
+.components-reconnect-icon {
+    width: 40px;
+    height: 40px;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    color: var(--o-warn, #B45309);
+    background: var(--o-warnsoft, #FFF7E0);
+    border: 1px solid var(--o-warnline, #ccc);
+}
+
+.components-reconnect-icon svg {
+    width: 20px;
+    height: 20px;
+}
+
+.components-reconnect-label {
+    font-family: var(--o-mono, monospace);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--o-muted, #55657F);
+}
+
+#components-reconnect-modal h2 {
+    margin: 2px 0 0;
+    font-size: 18px;
+    font-weight: 600;
 }
 
 #components-reconnect-modal p {
     margin: 0;
-    text-align: center;
+    color: var(--o-text2, #2B3A55);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+#components-reconnect-modal .components-reconnect-first-attempt-visible,
+#components-reconnect-modal .components-reconnect-repeated-attempt-visible {
+    font-family: var(--o-mono, monospace);
+    font-size: 12px;
+    color: var(--o-muted, #55657F);
 }
 
 #components-reconnect-modal button {
+    align-self: flex-end;
+    min-height: 36px;
     border: 0;
-    background-color: #6b9ed2;
-    color: white;
-    padding: 4px 24px;
-    border-radius: 4px;
+    background-color: var(--o-accent, #0E7490);
+    color: var(--o-ontext, white);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 0 16px;
+    border-radius: 8px;
+    cursor: pointer;
 }
 
     #components-reconnect-modal button:hover {
-        background-color: #3b6ea2;
+        filter: brightness(1.1);
     }
 
-    #components-reconnect-modal button:active {
-        background-color: #6b9ed2;
-    }
-
+/* The pulse sits behind the icon (it used to be the whole dialog's centrepiece). */
 .components-rejoining-animation {
-    position: relative;
-    width: 80px;
-    height: 80px;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 40px;
+    height: 40px;
 }
 
     .components-rejoining-animation div {
         position: absolute;
-        border: 3px solid #0087ff;
+        border: 2px solid var(--o-warn, #0087ff);
         opacity: 1;
         border-radius: 50%;
         animation: components-rejoining-animation 1.5s cubic-bezier(0, 0.2, 0.8, 1) infinite;
@@ -124,34 +180,34 @@
 
 @keyframes components-rejoining-animation {
     0% {
-        top: 40px;
-        left: 40px;
+        top: 20px;
+        left: 20px;
         width: 0;
         height: 0;
         opacity: 0;
     }
 
     4.9% {
-        top: 40px;
-        left: 40px;
+        top: 20px;
+        left: 20px;
         width: 0;
         height: 0;
         opacity: 0;
     }
 
     5% {
-        top: 40px;
-        left: 40px;
+        top: 20px;
+        left: 20px;
         width: 0;
         height: 0;
         opacity: 1;
     }
 
     100% {
-        top: 0px;
-        left: 0px;
-        width: 80px;
-        height: 80px;
+        top: -10px;
+        left: -10px;
+        width: 60px;
+        height: 60px;
         opacity: 0;
     }
 }

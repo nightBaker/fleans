@@ -29,6 +29,10 @@ public partial class Editor
             """<svg viewBox="0 0 24 24" fill="none" style="stroke: var(--o-violet)" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="9"/><rect x="7" y="8.5" width="10" height="7" rx="1"/><path d="m7 9 5 3.5L17 9"/></svg>"""),
         new("subprocess", "Sub-process", "Expanded sub-process",
             """<svg viewBox="0 0 26 22" fill="none" style="stroke: var(--o-muted)" stroke-width="1.6" aria-hidden="true"><rect x="2" y="3" width="22" height="16" rx="3"/><rect x="10" y="13" width="6" height="5" rx="1"/><path d="M13 14.2v2.6M11.7 15.5h2.6"/></svg>"""),
+        new("pool", "Pool", "Pool (drawn only: the first pool's process is what gets deployed)",
+            """<svg viewBox="0 0 26 22" fill="none" style="stroke: var(--o-muted)" stroke-width="1.6" aria-hidden="true"><rect x="2" y="3" width="22" height="16" rx="1"/><path d="M7 3v16"/></svg>"""),
+        new("data-object", "Data", "Data object (documentation only: the engine ignores it)",
+            """<svg viewBox="0 0 24 24" fill="none" style="stroke: var(--o-muted)" stroke-width="1.6" aria-hidden="true"><path d="M6 3h8l4 4v14H6Z"/><path d="M14 3v4h4"/></svg>"""),
         new("annotation", "Comment", "Text annotation",
             """<svg viewBox="0 0 24 24" fill="none" style="stroke: var(--o-muted)" stroke-width="1.6" aria-hidden="true"><path d="M9 4H5v16h4"/><path d="M12 9h7M12 13h5"/></svg>""")
     ];

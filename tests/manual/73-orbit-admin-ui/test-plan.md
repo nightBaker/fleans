@@ -1,13 +1,16 @@
 # 73 — Orbit Admin UI and BPMN editor
 
 **Feature:** the Orbit redesign of the Admin UI: top-bar shell, the Orbit diagram style (now the
-default), the editor's left rail (palette, structure, validation), canvas tools, XML mode, inspector
+default), the editor's left rail (palette, structure, validation), canvas tools and minimap, the
+Modeling / Simulation / XML / History modes, system states (loading, empty, draft, offline), inspector
 empty state, status bar, and right-click context menus.
 
 **Automated coverage (not repeated here):** `SettingsPageTests` (Orbit is the default diagram style,
 the editor container gets `fl-diagram-orbit`, tasks get the `USER` / `SCRIPT` caption, archify still
 applies), `EventsPageTests.NavEntry_NavigatesToEventsPage` and the Settings round-trip (top-bar
-navigation), `EditorPropertiesTests` (properties panel round-trips). Everything below is
+navigation), `EditorPropertiesTests` (properties panel round-trips), `EditorModesTests` (Simulation waits
+at a gateway, finishes after a choice, blocks Delete and leaves the XML unchanged; History compares the
+tab with the version it was opened from and marks the changed task). Everything below is
 pointer/keyboard interaction or visual and stays manual.
 
 ## Prerequisites
@@ -89,8 +92,43 @@ pointer/keyboard interaction or visual and stays manual.
 5. **Discard changes** restores the diagram's XML; **Copy** puts the text on the clipboard;
    **Download XML** in XML mode downloads the text as shown.
 
-### 6. Responsive
+### 6. Simulation
+
+1. Open `03-exclusive-gateway/conditional-branching.bpmn`, click **Simulation**. **Expected:** palette and
+   canvas tools disappear, the simulation bar appears top-centre, a token runs Start → Script → gateway,
+   finished steps turn green, the flows taken animate; the gateway glows amber and the panel shows
+   *Waiting for you* with one button per outgoing flow.
+2. Pick a branch. **Expected:** the token continues to the end event; *Run finished*; the log lists every
+   step with its time. Pause / Step / Restart and 1× / 2× / 5× change the run accordingly.
+3. Try to move or delete an element, double-click a label, or right-click. **Expected:** nothing changes.
+4. **Stop**: markers disappear, editing works again, the tab is not marked dirty by the run.
+5. Right-click the gateway → **Simulate from here**: the run starts with one token on the gateway.
+6. On `18-user-task/user-task-approval.bpmn` the user task waits with a **Complete** button; a task with
+   a boundary timer also offers **Fire …**.
+
+### 7. History
+
+1. Deploy a diagram (v1), rename a task and add one. Click **History**. **Expected:** the versions list
+   shows v1; the comparison legend reads `+ added 1 · ~ changed 1 · − removed 0`; the canvas shows `+` and
+   `~` badges; the panel lists *name: old → new* for the renamed task.
+2. Delete an element that exists in v1 → it is listed as *removed* (not clickable).
+3. **Open** on a version opens it in a new tab in Modeling mode.
+
+### 8. System states
+
+1. Delete every element: the *Empty process* card appears; **Add start event** places one in the middle;
+   **Import .bpmn** opens the file picker.
+2. Reload `/editor`: a *Loading diagram* card shows until the tabs are restored.
+3. Status bar: *Draft · kept in this browser, not deployed* after an edit; *In sync with vN* after a
+   deploy.
+4. Stop the Web app (or block the SignalR connection in DevTools): the *No connection to the server*
+   dialog shows the retry countdown, then **Retry now**.
+5. Minimap: shows the diagram and the viewport; click / drag in it moves the canvas; hidden below 1280px.
+
+### 9. Responsive
 
 1. Narrow the window to ~1280px: palette 196px, inspector 300px.
 2. ~1024px: the inspector floats over the canvas only while something is selected.
-3. < 768px: the left rail is hidden, the inspector stacks under the canvas, the nav scrolls horizontally.
+3. < 768px: the left rail is hidden, the inspector stacks under the canvas, the nav scrolls horizontally;
+   view-only note, no New/Import/Deploy, no canvas tools; Download, the mode switch and Simulation work.
+4. No width shows a horizontal page scrollbar.

@@ -12,12 +12,17 @@ and deploy any open diagram as a new process version.
 | Area | What it does |
 |---|---|
 | **Toolbar** | Process ID (click to rename) with a version pill — `v3` when the tab matches a deployed version, `v3 · draft` once edited, `draft` before the first deploy. The **Modeling / XML** switch, then New Diagram, Import BPMN, Download XML and Deploy. |
-| **Elements** (left) | Start, end, user/service/script task, call activity, exclusive and parallel gateway, timer and message event, sub-process and comment. Click a tile and then the canvas, or drag the tile onto the canvas. Every other BPMN element is one *Change type* away (right-click menu). |
+| **Elements** (left) | Start, end, user/service/script task, call activity, exclusive and parallel gateway, timer and message event, sub-process, pool, data object and comment. Click a tile and then the canvas, or drag the tile onto the canvas. Every other BPMN element is one *Change type* away (right-click menu). Pools and data objects are drawn for documentation: the engine runs the first pool's process and ignores data objects. |
 | **Structure** (left) | Every flow node, left to right, indented inside sub-processes. Click a row to select and scroll to it. |
 | **Validation** (left) | Modelling hints counted as errors and warnings; **Show problems** lists them, and the elements get a `!` / `?` badge on the canvas. |
-| **Canvas tools** | Select, pan, connect, lasso, make space, undo/redo; a zoom bar (−, %, +, fit) bottom-left. |
+| **Canvas tools** | Select, pan, connect, lasso, make space, undo/redo; a zoom bar (−, %, +, fit) bottom-left and a minimap bottom-right (click or drag it to move the view). |
 | **Inspector** (right) | The selected element's properties. With nothing selected: element/flow/problem counts and the keyboard shortcuts. |
-| **Status bar** | Saved / unsaved, element and flow counts, pointer coordinates, zoom. |
+| **Status bar** | *Draft · kept in this browser* (changed since opened or deployed), *In sync with vN*, element and flow counts, pointer coordinates, zoom. |
+
+An empty diagram shows an *Empty process* card with **Add start event** and **Import .bpmn**. If the
+connection to the server drops, a *No connection to the server* dialog shows the retry countdown; your
+open tabs are kept in the browser. On screens narrower than 768px the editor is view-only (browse,
+simulate, compare); edit on a wider screen.
 
 The validation hints catch common modelling mistakes while you draw — a process without a start event, a
 gateway branch with no condition that isn't the default flow, a timer/message/signal without a definition,
@@ -31,7 +36,7 @@ Right-click anything on the canvas:
 
 - **An element** — Cut, Copy, Duplicate · **Change type** (searchable list of every BPMN type the element
   can become) · **Attach boundary event** (tasks, call activities, sub-processes) · **Align** (several
-  elements selected) · Add comment, Edit label, Open properties · Delete.
+  elements selected) · Add comment, Edit label, Open properties, **Simulate from here** · Delete.
 - **Empty canvas** — Paste, **Paste here** (at the click point) · **Add element** at the click point ·
   Select all · Fit to screen, Zoom to 100% · **Export** as `.bpmn` or `.svg` · Show XML.
 - **A sequence flow** — Set condition…, Make/unset default flow · Re-route, Edit label · Reverse direction
@@ -51,6 +56,25 @@ The canvas is a single tab stop; once it has focus:
 | `H` / `L` / `S` / `C` | Pan / lasso / make space / connect (bpmn-js defaults) |
 
 On macOS use `⌘` for `Ctrl`.
+
+## Simulation
+
+**Simulation** (mode switch, or *Simulate from here* in an element's right-click menu) does a dry run of
+the open diagram in your browser: a token walks the sequence flows, finished steps turn green, the flows
+it took animate, and steps waiting for input glow amber. Nothing is deployed and scripts and conditions
+are not evaluated, so where the process branches or waits, **you** decide in the right-hand panel: pick a
+gateway branch, complete a user task, trigger a catch event, or fire a boundary event. Parallel gateways
+wait for all their branches; expanded sub-processes run their contents. Play / pause, step, restart and
+1× / 2× / 5× speed are in the bar above the canvas; the log lists every step. The diagram is read-only
+while simulating — **Stop** or **Modeling** returns to editing.
+
+## History
+
+**History** lists the deployed versions of the tab's process and compares the tab with one of them
+(by default the version the tab was opened from). Added elements get a green `+`, changed ones an amber
+`~`, and the panel lists every change with old → new values (name, condition, script, timer, message,
+called process, default flow, …); removed elements are listed too. **Open** opens a version in a new tab.
+The diagram is read-only in this mode.
 
 ## XML mode
 

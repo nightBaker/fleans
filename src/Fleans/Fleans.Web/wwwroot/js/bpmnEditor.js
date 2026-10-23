@@ -86,7 +86,215 @@ window.bpmnEditor = {
             eventBus.on(['import.done', 'commandStack.changed'], function () {
                 self._scheduleSummary();
             });
+
+            eventBus.on('orbit.simulateFrom', function (e) {
+                dotNetRef.invokeMethodAsync('OnSimulateFromRequested', e.element.id);
+            });
         }
+
+        this._installReadOnlyGuards();
+    },
+
+    // ---- Read-only (Simulation / History modes) ----------------------------------------------
+    // bpmn-js has no read-only switch. Every interactive edit (move, create, connect, resize, paste,
+    // delete) asks rules.allowed first, so this modeler's rules instance answers "no" while read-only.
+    // (A 'commandStack.canExecute' listener wouldn't do: the command-specific rule listener answers
+    // first and stops the bubble.) Label editing, undo/redo and the context menu/pad are blocked
+    // separately. Markers are not commands, so simulation and diff highlights still work.
+    _installReadOnlyGuards: function () {
+        var self = this;
+        var modeler = this._modeler;
+        var eventBus = modeler.get('eventBus');
+        var rules = modeler.get('rules');
+        var allowed = rules.allowed.bind(rules);
+        rules.allowed = function (action, context) {
+            return self._readOnly ? false : allowed(action, context);
+        };
+        eventBus.on('element.dblclick', 3000, function () {
+            if (self._readOnly) return false;
+        });
+        eventBus.on('contextPad.open', 3000, function () {
+            if (self._readOnly) return false;
+        });
+        var keyboard = modeler.get('keyboard');
+        keyboard.addListener(3000, function (context) {
+            if (!self._readOnly) return;
+            var e = context.keyEvent;
+            // Swallow every editing key; navigation (arrows, +/-, Shift F10 → disabled menu) passes.
+            if (keyboard.isCmd(e) || e.key === 'Delete' || e.key === 'Backspace' || e.key === 'F2' ||
+                /^[a-zA-Z]$/.test(e.key)) {
+                return true;
+            }
+        });
+    },
+
+    setReadOnly: function (readOnly) {
+        if (!this._modeler) return;
+        this._readOnly = !!readOnly;
+        var container = this._modeler.get('canvas').getContainer();
+        container.classList.toggle('orbit-readonly', this._readOnly);
+        if (this._readOnly) {
+            this._modeler.get('contextPad').close();
+            this._modeler.get('directEditing').cancel();
+            this._modeler.get('popupMenu').close();
+        }
+        var menu = this._modeler.get('orbitContextMenu', false);
+        if (menu) menu.setEnabled(!this._readOnly);
+    },
+
+    // ---- Simulation mode (js/orbitSimulation.js) --------------------------------------------
+
+    simulation: function (command, arg, arg2) {
+        if (!this._modeler) return;
+        var self = this;
+        if (command === 'start') {
+            if (this._simulation) this._simulation.destroy();
+            this._simulation = new window.OrbitSimulation(this._modeler, function (snapshot) {
+                if (self._dotNetRef) self._dotNetRef.invokeMethodAsync('OnSimulationUpdate', snapshot);
+            });
+            if (arg) this._simulation.startFrom(arg); else this._simulation.start();
+            return;
+        }
+        var sim = this._simulation;
+        if (!sim) return;
+        switch (command) {
+            case 'pause': sim.pause(); break;
+            case 'resume': sim.resume(); break;
+            case 'step': sim.step(); break;
+            case 'reset': sim.reset(); break;
+            case 'speed': sim.setSpeed(arg); break;
+            case 'choose': sim.choose(arg, arg2); break;
+            case 'stop':
+                sim.destroy();
+                this._simulation = null;
+                break;
+        }
+    },
+
+    // ---- History mode: compare the open diagram with a deployed version ----------------------
+
+    // Diffs flow elements (and pools) by id. Returns a capped list for the inspector — the full
+    // XML stays here — and marks the canvas: added = green "+", changed = amber "~". Removed
+    // elements no longer exist on the canvas, so they are only listed.
+    compareWith: async function (baseXml) {
+        this.clearComparison();
+        if (!this._modeler) return null;
+        var moddle = this._modeler.get('moddle');
+        var parsed = await moddle.fromXML(baseXml, 'bpmn:Definitions');
+        var base = this._collectElements(parsed.rootElement);
+        var current = this._collectElements(this._modeler.getDefinitions());
+        var items = [];
+        var counts = { added: 0, changed: 0, removed: 0 };
+
+        Object.keys(current).forEach(function (id) {
+            var now = current[id], before = base[id];
+            if (!before) {
+                counts.added++;
+                items.push({ id: id, kind: 'added', name: now.name, type: now.type, fields: [] });
+                return;
+            }
+            var fields = [];
+            if (before.type !== now.type) fields.push({ field: 'type', oldValue: before.type, newValue: now.type });
+            if (before.name !== now.name) fields.push({ field: 'name', oldValue: before.name.slice(0, 60), newValue: now.name.slice(0, 60) });
+            Object.keys(Object.assign({}, before.props, now.props)).forEach(function (key) {
+                var a = before.props[key] || '', b = now.props[key] || '';
+                if (a !== b) fields.push({ field: key, oldValue: a.slice(0, 60), newValue: b.slice(0, 60) });
+            });
+            if (fields.length) {
+                counts.changed++;
+                items.push({ id: id, kind: 'changed', name: now.name, type: now.type, fields: fields.slice(0, 4) });
+            }
+        });
+        Object.keys(base).forEach(function (id) {
+            if (current[id]) return;
+            counts.removed++;
+            items.push({ id: id, kind: 'removed', name: base[id].name, type: base[id].type, fields: [] });
+        });
+
+        var canvas = this._modeler.get('canvas');
+        var overlays = this._modeler.get('overlays');
+        var registry = this._modeler.get('elementRegistry');
+        var marked = [];
+        items.forEach(function (item) {
+            if (item.kind === 'removed' || !registry.get(item.id)) return;
+            var marker = 'orbit-diff-' + item.kind;
+            canvas.addMarker(item.id, marker);
+            marked.push({ id: item.id, marker: marker });
+            var badge = document.createElement('span');
+            badge.className = 'orbit-badge orbit-badge--' + (item.kind === 'added' ? 'done' : 'warning');
+            badge.textContent = item.kind === 'added' ? '+' : '~';
+            var el = registry.get(item.id);
+            overlays.add(item.id, 'orbit-diff', { position: el.waypoints ? { top: -8, left: -8 } : { top: -8, right: 8 }, html: badge });
+        });
+        this._diffMarked = marked;
+
+        var order = { removed: 0, changed: 1, added: 2 };
+        items.sort(function (a, b) { return order[a.kind] - order[b.kind]; });
+        items.forEach(function (i) { i.name = (i.name || '').slice(0, 60); });
+        // Capped (40 items × 4 fields × 60 chars) to stay under the SignalR receive limit.
+        return { added: counts.added, changed: counts.changed, removed: counts.removed, items: items.slice(0, 40) };
+    },
+
+    clearComparison: function () {
+        if (!this._modeler) return;
+        var canvas = this._modeler.get('canvas');
+        var registry = this._modeler.get('elementRegistry');
+        (this._diffMarked || []).forEach(function (m) {
+            if (registry.get(m.id)) canvas.removeMarker(m.id, m.marker);
+        });
+        this._diffMarked = null;
+        this._modeler.get('overlays').remove({ type: 'orbit-diff' });
+    },
+
+    _collectElements: function (definitions) {
+        var map = {};
+        function text(expr) { return expr && (expr.body || expr.value) ? String(expr.body || expr.value) : ''; }
+        function summarize(el) {
+            var props = {};
+            if (el.conditionExpression) props.condition = text(el.conditionExpression);
+            if (el.script) props.script = el.script;
+            if (el.calledElement) props.calledElement = el.calledElement;
+            if (el['default']) props['default flow'] = el['default'].id;
+            if (el.sourceRef && el.sourceRef.id) props.source = el.sourceRef.id;
+            if (el.targetRef && el.targetRef.id) props.target = el.targetRef.id;
+            if (el.attachedToRef) props.attachedTo = el.attachedToRef.id;
+            var def = el.eventDefinitions && el.eventDefinitions[0];
+            if (def) {
+                props.event = def.$type.replace(/^bpmn:|EventDefinition$/g, '');
+                var timer = text(def.timeDuration) || text(def.timeDate) || text(def.timeCycle);
+                if (timer) props.timer = timer;
+                if (def.messageRef) props.message = def.messageRef.name || def.messageRef.id;
+                if (def.signalRef) props.signal = def.signalRef.name || def.signalRef.id;
+                if (def.errorRef) props.error = def.errorRef.errorCode || def.errorRef.id;
+            }
+            if (el.loopCharacteristics) props.multiInstance = el.loopCharacteristics.isSequential ? 'sequential' : 'parallel';
+            return { type: el.$type, name: el.name || '', props: props };
+        }
+        function walk(container) {
+            (container.flowElements || []).forEach(function (el) {
+                map[el.id] = summarize(el);
+                if (el.flowElements) walk(el);
+            });
+        }
+        (definitions.rootElements || []).forEach(function (root) {
+            if (root.$type === 'bpmn:Process') walk(root);
+            if (root.$type === 'bpmn:Collaboration') {
+                (root.participants || []).forEach(function (p) { map[p.id] = { type: p.$type, name: p.name || '', props: {} }; });
+            }
+        });
+        return map;
+    },
+
+    // Empty-state "Add start event": places a catalog element in the middle of the view.
+    addElementAtCenter: function (key) {
+        if (!this._modeler) return;
+        var canvas = this._modeler.get('canvas');
+        var shape = window.orbitElementCatalog.createShape(this._modeler.get('elementFactory'), key);
+        if (!shape) return;
+        var vb = canvas.viewbox();
+        var created = this._modeler.get('modeling').createShape(shape,
+            { x: Math.round(vb.x + vb.width / 2), y: Math.round(vb.y + vb.height / 2) }, canvas.getRootElement());
+        this._modeler.get('selection').select(created);
     },
 
     // ---- Orbit editor chrome (Editor.razor) -------------------------------------------------
@@ -169,6 +377,106 @@ window.bpmnEditor = {
             var y = Math.round(viewbox.y + (event.clientY - rect.top) / viewbox.scale);
             label.textContent = 'X ' + x + ' · Y ' + y;
         });
+
+        this._bindMinimap(root);
+    },
+
+    // Minimap (design: bottom-right card): shapes and flows drawn at diagram scale into an SVG whose
+    // viewBox is the diagram's bounds, plus the current viewport. Click or drag to move the view.
+    _bindMinimap: function (root) {
+        var host = root.querySelector('[data-orbit-minimap]');
+        if (!host) return;
+        var modeler = this._modeler;
+        var canvas = modeler.get('canvas');
+        var registry = modeler.get('elementRegistry');
+        var eventBus = modeler.get('eventBus');
+        var SVG = 'http://www.w3.org/2000/svg';
+        var svg = document.createElementNS(SVG, 'svg');
+        svg.setAttribute('class', 'orbit-minimap__svg');
+        svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+        svg.setAttribute('aria-hidden', 'true');
+        host.appendChild(svg);
+        var viewport = null;
+        var drawTimer = null;
+
+        function el(name, attrs) {
+            var node = document.createElementNS(SVG, name);
+            Object.keys(attrs).forEach(function (k) { node.setAttribute(k, attrs[k]); });
+            return node;
+        }
+
+        function draw() {
+            while (svg.firstChild) svg.removeChild(svg.firstChild);
+            var rootEl = canvas.getRootElement();
+            var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            var shapes = [], flows = [];
+            registry.forEach(function (e) {
+                if (e === rootEl || e.labelTarget || !e.businessObject) return;
+                if (e.waypoints) { flows.push(e); return; }
+                shapes.push(e);
+                minX = Math.min(minX, e.x); minY = Math.min(minY, e.y);
+                maxX = Math.max(maxX, e.x + e.width); maxY = Math.max(maxY, e.y + e.height);
+            });
+            if (!shapes.length) { minX = 0; minY = 0; maxX = 400; maxY = 200; }
+            var pad = 40;
+            svg.setAttribute('viewBox', [minX - pad, minY - pad, maxX - minX + 2 * pad, maxY - minY + 2 * pad].join(' '));
+            flows.forEach(function (f) {
+                svg.appendChild(el('polyline', {
+                    points: f.waypoints.map(function (p) { return p.x + ',' + p.y; }).join(' '),
+                    'class': 'orbit-minimap__flow'
+                }));
+            });
+            shapes.forEach(function (s) {
+                var t = s.businessObject.$type;
+                var kind = t === 'bpmn:StartEvent' ? 'start' : t === 'bpmn:EndEvent' ? 'end'
+                    : /Gateway$/.test(t) ? 'gateway' : /Event$/.test(t) ? 'event'
+                    : (t === 'bpmn:Participant' || t === 'bpmn:Lane' || (t === 'bpmn:SubProcess' && !s.collapsed)) ? 'container' : 'task';
+                if (kind === 'start' || kind === 'end' || kind === 'event') {
+                    svg.appendChild(el('circle', { cx: s.x + s.width / 2, cy: s.y + s.height / 2, r: s.width / 2, 'class': 'orbit-minimap__shape orbit-minimap__shape--' + kind }));
+                } else if (kind === 'gateway') {
+                    var cx = s.x + s.width / 2, cy = s.y + s.height / 2;
+                    svg.appendChild(el('polygon', { points: [cx, s.y, s.x + s.width, cy, cx, s.y + s.height, s.x, cy].join(' '), 'class': 'orbit-minimap__shape orbit-minimap__shape--gateway' }));
+                } else {
+                    svg.appendChild(el('rect', { x: s.x, y: s.y, width: s.width, height: s.height, rx: 8, 'class': 'orbit-minimap__shape orbit-minimap__shape--' + kind }));
+                }
+            });
+            viewport = el('rect', { 'class': 'orbit-minimap__viewport', rx: 6 });
+            svg.appendChild(viewport);
+            moveViewport();
+        }
+
+        function moveViewport() {
+            if (!viewport) return;
+            var vb = canvas.viewbox();
+            viewport.setAttribute('x', vb.x);
+            viewport.setAttribute('y', vb.y);
+            viewport.setAttribute('width', Math.max(vb.width, 1));
+            viewport.setAttribute('height', Math.max(vb.height, 1));
+        }
+
+        function scheduleDraw() {
+            clearTimeout(drawTimer);
+            drawTimer = setTimeout(draw, 120);
+        }
+
+        function centerOn(event) {
+            var ctm = svg.getScreenCTM();
+            if (!ctm) return;
+            var pt = svg.createSVGPoint();
+            pt.x = event.clientX; pt.y = event.clientY;
+            var p = pt.matrixTransform(ctm.inverse());
+            var vb = canvas.viewbox();
+            canvas.viewbox({ x: p.x - vb.width / 2, y: p.y - vb.height / 2, width: vb.width, height: vb.height });
+        }
+
+        var dragging = false;
+        svg.addEventListener('pointerdown', function (e) { dragging = true; svg.setPointerCapture(e.pointerId); centerOn(e); });
+        svg.addEventListener('pointermove', function (e) { if (dragging) centerOn(e); });
+        svg.addEventListener('pointerup', function () { dragging = false; });
+
+        eventBus.on(['import.done', 'elements.changed'], scheduleDraw);
+        eventBus.on(['canvas.viewbox.changed', 'canvas.resized'], moveViewport);
+        draw();
     },
 
     _runTool: function (name, event) {
@@ -389,7 +697,7 @@ window.bpmnEditor = {
             var type = bo.$type;
             var parentBo = bo.$parent;
             var inEventSubProcess = parentBo && parentBo.triggeredByEvent;
-            var topLevel = parentBo && (parentBo.$type === 'bpmn:Process');
+            var topLevel = parentBo && parentBo.$type === 'bpmn:Process';
             if (topLevel && type === 'bpmn:StartEvent') hasStart = true;
             if (topLevel && type === 'bpmn:EndEvent') hasEnd = true;
 
@@ -437,8 +745,21 @@ window.bpmnEditor = {
             }
         });
 
+        var pools = 0;
+        registry.forEach(function (e) {
+            if (e.labelTarget || !e.businessObject) return;
+            var bo = e.businessObject;
+            if (bo.$type === 'bpmn:Participant') pools++;
+            if (bo.$type === 'bpmn:DataObjectReference' || bo.$type === 'bpmn:DataStoreReference') {
+                add(bo, 'info', 'Data objects and stores are documentation only: the engine ignores them.');
+            }
+        });
+        if (pools > 1) {
+            add(root.businessObject, 'warning', 'Only the first pool\'s process is deployed; the other pools are ignored.');
+        }
+
         var rootBo = root.businessObject;
-        if (rootBo && rootBo.$type === 'bpmn:Process') {
+        if (rootBo && (rootBo.$type === 'bpmn:Process' || rootBo.$type === 'bpmn:Collaboration')) {
             if (!hasStart) add(rootBo, 'error', 'Process has no start event.');
             if (!hasEnd) add(rootBo, 'warning', 'Process has no end event.');
         }
@@ -1631,6 +1952,10 @@ window.bpmnEditor = {
             this._modeler = null;
         }
         clearTimeout(this._summaryTimer);
+        if (this._simulation) this._simulation.destroy();
+        this._simulation = null;
+        this._readOnly = false;
+        this._diffMarked = null;
         this._markedProblems = null;
         this._dotNetRef = null;
         this._dirtyListenerAttached = false;

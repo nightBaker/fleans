@@ -21,7 +21,11 @@
         { key: 'message', label: 'Message event', type: 'bpmn:IntermediateCatchEvent', eventDefinitionType: 'bpmn:MessageEventDefinition' },
         { key: 'signal', label: 'Signal event', type: 'bpmn:IntermediateCatchEvent', eventDefinitionType: 'bpmn:SignalEventDefinition' },
         { key: 'subprocess', label: 'Sub-process', type: 'bpmn:SubProcess', isExpanded: true },
-        { key: 'annotation', label: 'Comment', type: 'bpmn:TextAnnotation' }
+        { key: 'annotation', label: 'Comment', type: 'bpmn:TextAnnotation' },
+        // Drawn only: the engine deploys the first pool's process and ignores data (the lint says so).
+        { key: 'pool', label: 'Pool', type: 'bpmn:Participant', participant: true },
+        { key: 'data-object', label: 'Data object', type: 'bpmn:DataObjectReference' },
+        { key: 'data-store', label: 'Data store', type: 'bpmn:DataStoreReference' }
     ];
 
     function findEntry(key) {
@@ -37,6 +41,7 @@
         createShape: function (elementFactory, key) {
             var entry = findEntry(key);
             if (!entry) return null;
+            if (entry.participant) return elementFactory.createParticipantShape();
             var attrs = { type: entry.type };
             if (entry.eventDefinitionType) attrs.eventDefinitionType = entry.eventDefinitionType;
             if (entry.isExpanded) attrs.isExpanded = true;
@@ -68,6 +73,7 @@
         this._injector = injector;
         this._menu = null;
         this._sub = null;
+        this._enabled = true;
 
         var self = this;
 
@@ -294,6 +300,9 @@
             }
             items.push(item('Edit label', function () { self.editLabel(element); }, { key: 'F2' }));
             items.push(item('Open properties', function () { self.openProperties(element); }, { key: 'Ctrl I' }));
+            if (bo.$instanceOf && bo.$instanceOf('bpmn:FlowNode')) {
+                items.push(item('Simulate from here', function () { self._eventBus.fire('orbit.simulateFrom', { element: element }); }));
+            }
             items.push(SEP);
         }
         items.push(item('Delete', function () { self.remove(targets); }, { key: 'Del', danger: true }));
@@ -379,8 +388,15 @@
 
     // ---- DOM ----------------------------------------------------------------------------------
 
+    // Off in the editor's read-only modes (Simulation, History).
+    OrbitContextMenu.prototype.setEnabled = function (enabled) {
+        this._enabled = !!enabled;
+        if (!this._enabled) this.close();
+    };
+
     OrbitContextMenu.prototype.open = function (element, clientPoint) {
         this.close();
+        if (!this._enabled) return;
         var spec = this._menuFor(element, clientPoint);
         this._menu = this._render(spec, false);
         document.body.appendChild(this._menu);

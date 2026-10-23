@@ -24,6 +24,12 @@ window.fleansOrbit = {
         return (document.body.dataset.theme || '').endsWith('dark');
     },
 
+    // Clicks an element by id (e.g. a FluentInputFile anchor, so a second button can open its picker).
+    click: function (id) {
+        var el = document.getElementById(id);
+        if (el) el.click();
+    },
+
     // Returns false when the Clipboard API is unavailable or denied (non-secure origin, permissions).
     copyText: async function (text) {
         try {

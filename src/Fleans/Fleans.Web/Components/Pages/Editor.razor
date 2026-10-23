@@ -60,8 +60,10 @@
         </div>
 
         <div class="orbit-segmented" role="group" aria-label="Editor mode">
-            <button type="button" aria-pressed="@(xmlMode ? "false" : "true")" @onclick="ShowModel">Modeling</button>
-            <button type="button" aria-pressed="@(xmlMode ? "true" : "false")" @onclick="ShowXml" data-testid="editor-mode-xml">XML</button>
+            <button type="button" aria-pressed="@Pressed(EditorMode.Modeling)" @onclick="() => SwitchMode(EditorMode.Modeling)" data-testid="editor-mode-modeling">Modeling</button>
+            <button type="button" aria-pressed="@Pressed(EditorMode.Simulation)" @onclick="() => SwitchMode(EditorMode.Simulation)" data-testid="editor-mode-simulation">Simulation</button>
+            <button type="button" aria-pressed="@Pressed(EditorMode.Xml)" @onclick="() => SwitchMode(EditorMode.Xml)" data-testid="editor-mode-xml">XML</button>
+            <button type="button" aria-pressed="@Pressed(EditorMode.History)" @onclick="() => SwitchMode(EditorMode.History)" data-testid="editor-mode-history">History</button>
         </div>
 
         <div class="toolbar-spacer"></div>
@@ -91,6 +93,7 @@
             </FluentButton>
 
             <FluentButton Appearance="Appearance.Neutral"
+                          Class="editor-action--view"
                           IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowDownload())"
                           @onclick="DownloadXml">
                 Download XML
@@ -130,6 +133,8 @@
         }
     </div>
 
+    <p class="editor-mobile-note">View only on small screens: browse, simulate and compare here, edit on a wider screen.</p>
+
     <div class="editor-messages">
         @if (errorMessage != null)
         {
@@ -148,19 +153,22 @@
 
     <div class="editor-content">
         <aside class="editor-left" aria-label="Elements and structure">
-            <section class="editor-section" aria-label="Elements">
-                <span class="orbit-label">Elements</span>
-                <div class="orbit-palette">
-                    @foreach (var tile in PaletteTiles)
-                    {
-                        <button type="button" class="orbit-tile" draggable="true" data-bpmn-create="@tile.Key"
-                                title="@($"{tile.Title} — click, then click the canvas, or drag it there")">
-                            @((MarkupString)tile.Icon)
-                            @tile.Label
-                        </button>
-                    }
-                </div>
-            </section>
+            @if (!ReadOnlyMode)
+            {
+                <section class="editor-section" aria-label="Elements">
+                    <span class="orbit-label">Elements</span>
+                    <div class="orbit-palette">
+                        @foreach (var tile in PaletteTiles)
+                        {
+                            <button type="button" class="orbit-tile" draggable="true" data-bpmn-create="@tile.Key"
+                                    title="@($"{tile.Title} — click, then click the canvas, or drag it there")">
+                                @((MarkupString)tile.Icon)
+                                @tile.Label
+                            </button>
+                        }
+                    </div>
+                </section>
+            }
 
             <section class="editor-section" aria-label="Structure">
                 <span class="orbit-label">Structure</span>
@@ -219,11 +227,91 @@
             </section>
         </aside>
 
-        <div class="editor-center @(xmlMode ? "editor-center--xml" : "")">
+        <div class="editor-center @(xmlMode ? "editor-center--xml" : "") @(ReadOnlyMode ? "editor-center--readonly" : "")">
             @* Focusable so bpmn-js keyboard bindings (bound to this element) receive keys: one tab stop,
                then arrows / shortcuts — design board 7. *@
             <div id="editor-canvas" class="editor-canvas" tabindex="0" role="application"
                  aria-label="BPMN diagram canvas. Shift F10 opens the context menu."></div>
+
+            @if (!editorReady)
+            {
+                <div class="orbit-overlay" role="status" aria-live="polite">
+                    <div class="orbit-overlay__card">
+                        <FluentProgressRing Width="28px" />
+                        <span class="orbit-overlay__title">Loading diagram</span>
+                        <span class="orbit-overlay__meta">Restoring tabs and importing BPMN…</span>
+                    </div>
+                </div>
+            }
+            else if (mode == EditorMode.Modeling && summary.Elements == 0)
+            {
+                <div class="orbit-overlay" data-testid="editor-empty-state">
+                    <div class="orbit-overlay__card orbit-overlay__card--wide">
+                        <span class="orbit-overlay__icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8"/></svg>
+                        </span>
+                        <span class="orbit-overlay__title">Empty process</span>
+                        <span class="orbit-overlay__meta">Start with a start event, drop elements from the palette, or import a ready-made diagram.</span>
+                        <div class="orbit-overlay__actions">
+                            <FluentButton Appearance="Appearance.Accent" @onclick="AddStartEvent">Add start event</FluentButton>
+                            <FluentButton Appearance="Appearance.Neutral" @onclick="OpenImportPicker">Import .bpmn</FluentButton>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            @if (mode == EditorMode.Simulation)
+            {
+                <div class="orbit-float orbit-float--sim" role="toolbar" aria-label="Simulation controls" data-testid="editor-sim-bar">
+                    <span class="orbit-sim-pulse @(simulation?.Running == true ? "is-running" : "")" aria-hidden="true"></span>
+                    <span class="orbit-sim-title">Simulation</span>
+                    <span class="orbit-sim-meta">
+                        step @(simulation?.Step ?? 0) · @(simulation?.ActiveTokens ?? 0) token(s) · @FormatElapsed(simulation?.ElapsedMs ?? 0)
+                    </span>
+                    <span class="orbit-float__sep" aria-hidden="true"></span>
+                    <button type="button" class="orbit-tool" @onclick="ToggleSimulation" disabled="@(simulation?.Finished ?? false)"
+                            aria-label="@(simulation?.Running == true ? "Pause" : "Play")" title="@(simulation?.Running == true ? "Pause" : "Play")">
+                        @if (simulation?.Running == true)
+                        {
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg>
+                        }
+                        else
+                        {
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="7 4 20 12 7 20 7 4"/></svg>
+                        }
+                    </button>
+                    <button type="button" class="orbit-tool" @onclick="@(() => SimCommand("step"))" disabled="@(simulation?.Finished ?? false)" aria-label="Step" title="Step">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="5 4 15 12 5 20 5 4"/><path d="M19 5v14"/></svg>
+                    </button>
+                    <button type="button" class="orbit-tool" @onclick="RestartSimulation" aria-label="Restart" title="Restart">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v6h6"/></svg>
+                    </button>
+                    <div class="orbit-segmented orbit-segmented--sm" role="group" aria-label="Speed">
+                        @foreach (var speed in new[] { 1, 2, 5 })
+                        {
+                            var sp = speed;
+                            <button type="button" aria-pressed="@(((int)(simulation?.Speed ?? 1)) == sp ? "true" : "false")" @onclick="@(() => SimCommand("speed", sp))">@(sp)×</button>
+                        }
+                    </div>
+                    <FluentButton Appearance="Appearance.Neutral" @onclick="() => SwitchMode(EditorMode.Modeling)">Stop</FluentButton>
+                </div>
+            }
+
+            @if (mode == EditorMode.History && comparison != null)
+            {
+                <div class="orbit-float orbit-float--legend" aria-label="Comparison legend">
+                    <span class="orbit-sim-title">v@(compareVersion) → this tab</span>
+                    <span class="orbit-pill orbit-pill--success">+ added @comparison.Added</span>
+                    <span class="orbit-pill orbit-pill--draft">~ changed @comparison.Changed</span>
+                    <span class="orbit-pill orbit-pill--danger">− removed @comparison.Removed</span>
+                </div>
+            }
+
+            <div class="orbit-float orbit-float--minimap" aria-label="Minimap">
+                <span class="orbit-minimap__head"><span>Minimap</span><span data-orbit-zoom></span></span>
+                @* JS-owned SVG (bpmnEditor._bindMinimap) — no Blazor children. *@
+                <div class="orbit-minimap" data-orbit-minimap></div>
+            </div>
 
             <div class="orbit-float orbit-float--tools" role="toolbar" aria-label="Canvas tools">
                 <button type="button" class="orbit-tool" data-bpmn-tool="select" aria-pressed="true" aria-label="Select" title="Select">
@@ -298,8 +386,122 @@
             </div>
         </div>
 
-        <aside class="editor-inspector @(selectedElement == null ? "editor-inspector--empty" : "")" aria-label="Properties">
-            @if (selectedElement != null)
+        <aside class="editor-inspector @(selectedElement == null && !ReadOnlyMode ? "editor-inspector--empty" : "")" aria-label="@(ReadOnlyMode ? mode.ToString() : "Properties")">
+            @if (mode == EditorMode.Simulation)
+            {
+                <div class="orbit-empty orbit-run" data-testid="editor-sim-panel">
+                    <span class="orbit-label">Simulation · dry run</span>
+                    <h2>@SimulationHeadline</h2>
+                    <p>Runs in your browser: nothing is deployed and scripts or conditions aren't evaluated — where the process branches or waits, you decide.</p>
+                    <div class="orbit-stats">
+                        <div class="orbit-stat"><span>Step</span><span>@(simulation?.Step ?? 0)</span></div>
+                        <div class="orbit-stat"><span>Visited</span><span>@(simulation?.Visited ?? 0)</span></div>
+                    </div>
+                    @foreach (var waiting in simulation?.Pending ?? [])
+                    {
+                        var w = waiting;
+                        <div class="orbit-decision">
+                            <button type="button" class="orbit-decision__name" @onclick="() => FocusElement(w.ElementId)">
+                                <span class="orbit-dot orbit-dot--lg orbit-dot--warning"></span>@w.ElementName
+                            </button>
+                            <span class="orbit-problem__meta">@TypeCaption(w.ElementType) · waiting</span>
+                            <div class="orbit-decision__options">
+                                @foreach (var option in w.Options)
+                                {
+                                    var o = option;
+                                    <FluentButton Appearance="@(o.Primary ? Appearance.Accent : Appearance.Neutral)"
+                                                  @onclick="() => ChooseSimulationOption(w.TokenId, o.Id)">@o.Label</FluentButton>
+                                }
+                            </div>
+                        </div>
+                    }
+                    <span class="orbit-label">Log</span>
+                    <ol class="orbit-log" reversed>
+                        @foreach (var entry in Enumerable.Reverse(simulation?.Log ?? []))
+                        {
+                            var e = entry;
+                            <li>
+                                <span class="orbit-log__time">@FormatElapsed(e.AtMs)</span>
+                                @if (e.ElementId != null)
+                                {
+                                    <button type="button" class="orbit-log__text" @onclick="() => FocusElement(e.ElementId)">@e.Text</button>
+                                }
+                                else
+                                {
+                                    <span class="orbit-log__text">@e.Text</span>
+                                }
+                            </li>
+                        }
+                    </ol>
+                </div>
+            }
+            else if (mode == EditorMode.History)
+            {
+                <div class="orbit-empty orbit-run" data-testid="editor-history-panel">
+                    <span class="orbit-label">History</span>
+                    <h2>@(string.IsNullOrEmpty(ActiveTab?.ProcessKey) ? "No process" : ActiveTab.ProcessKey)</h2>
+                    @if (historyLoading)
+                    {
+                        <FluentProgressRing Width="24px" />
+                    }
+                    else if (historyVersions is { Count: 0 })
+                    {
+                        <p>No deployed versions yet. Deploy this diagram to start its history.</p>
+                    }
+                    @if (historyError != null)
+                    {
+                        <FluentMessageBar Intent="MessageIntent.Error">@historyError</FluentMessageBar>
+                    }
+                    @if (historyVersions is { Count: > 0 })
+                    {
+                        <span class="orbit-label">Versions · compare with this tab</span>
+                        <div class="orbit-versions">
+                            @foreach (var version in historyVersions)
+                            {
+                                var v = version;
+                                <div class="orbit-version @(compareVersion == v.Version ? "is-selected" : "")">
+                                    <button type="button" class="orbit-version__main" aria-pressed="@(compareVersion == v.Version ? "true" : "false")"
+                                            @onclick="() => CompareWithVersionAsync(v.Version)">
+                                        <span class="orbit-pill @(v.IsActive ? "orbit-pill--accent" : "")">v@(v.Version)</span>
+                                        <span class="orbit-version__text">
+                                            @v.ActivitiesCount activities · @v.SequenceFlowsCount flows@(v.IsActive ? "" : " · disabled")
+                                            <span class="orbit-problem__meta">deployed @v.DeployedAt.ToString("yyyy-MM-dd HH:mm") UTC@(ActiveTab?.Version == v.Version ? " · this tab" : "")</span>
+                                        </span>
+                                    </button>
+                                    <button type="button" class="orbit-text-btn" @onclick="() => OpenVersionInTab(v.Version)" title="Open v@(v.Version) in a tab">Open</button>
+                                </div>
+                            }
+                        </div>
+                    }
+                    @if (comparison != null)
+                    {
+                        <span class="orbit-label">Changes · v@(compareVersion) → this tab</span>
+                        @if (comparison.Items.Count == 0)
+                        {
+                            <p>No differences: this tab matches v@(compareVersion).</p>
+                        }
+                        <div class="orbit-problems">
+                            @foreach (var change in comparison.Items)
+                            {
+                                var c = change;
+                                <button type="button" class="orbit-problem orbit-change--@c.Kind" disabled="@(c.Kind == "removed")"
+                                        @onclick="() => FocusElement(c.Id)">
+                                    <span class="orbit-problem__icon" aria-hidden="true">@ChangeSymbol(c.Kind)</span>
+                                    <span>
+                                        @(string.IsNullOrWhiteSpace(c.Name) ? TypeCaption(c.Type) : c.Name) <span class="orbit-change__kind">@c.Kind</span>
+                                        <span class="orbit-problem__meta">@c.Id</span>
+                                        @foreach (var f in c.Fields)
+                                        {
+                                            <span class="orbit-change__field">@f.Field: <s>@(string.IsNullOrEmpty(f.OldValue) ? "—" : f.OldValue)</s> → @(string.IsNullOrEmpty(f.NewValue) ? "—" : f.NewValue)</span>
+                                        }
+                                    </span>
+                                </button>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+            else if (selectedElement != null)
             {
                 <ElementPropertiesPanel Element="@selectedElement" OnElementReplaced="OnElementReplaced" />
             }
@@ -330,9 +532,9 @@
     </div>
 
     <footer class="editor-status" aria-label="Status">
-        <span class="editor-status__item">
-            <span class="orbit-dot orbit-dot--@(ActiveTab?.Dirty == true ? "warning" : "ok")"></span>
-            @(ActiveTab?.Dirty == true ? "Unsaved changes" : "Saved")
+        <span class="editor-status__item" data-testid="editor-save-state">
+            <span class="orbit-dot orbit-dot--@SaveStateKind"></span>
+            @SaveStateText
         </span>
         <span>Fleans · bpmn-js</span>
         <span>@summary.Elements elements · @summary.Flows flows</span>
@@ -411,7 +613,6 @@
     // XML mode: the text itself stays in the browser (bpmnEditor.enterXmlMode); .NET tracks only
     // whether it was edited, and applies it once the canvas is visible again (OnAfterRenderAsync).
     private const string XmlPendingHint = "Apply or discard the XML changes first";
-    private bool xmlMode;
     private bool xmlEdited;
     private string? xmlError;
     private bool pendingXmlApply;
@@ -486,7 +687,7 @@
     }
 
     [JSInvokable]
-    public Task OnShowXmlRequested() => InvokeAsync(ShowXml);
+    public Task OnShowXmlRequested() => InvokeAsync(() => SwitchMode(EditorMode.Xml));
 
     [JSInvokable]
     public Task OnXmlEdited(bool edited)
@@ -501,7 +702,7 @@
     {
         if (xmlMode || !editorInitialized) return;
         await JS.InvokeVoidAsync("bpmnEditor.enterXmlMode", "editor-xml");
-        xmlMode = true;
+        mode = EditorMode.Xml;
         xmlEdited = false;
         xmlError = null;
         StateHasChanged();
@@ -510,7 +711,7 @@
     private void ShowModel()
     {
         if (!xmlMode) return;
-        xmlMode = false;
+        mode = EditorMode.Modeling;
         // The canvas is display:none in XML mode; the import (which fits the viewport) and the
         // resize both have to wait until it is laid out again — see CompleteXmlModeExitAsync.
         pendingXmlApply = xmlEdited;
@@ -539,7 +740,7 @@
         if (!result.Ok)
         {
             // Back to the text so the user can fix it; the diagram keeps its last good state.
-            xmlMode = true;
+            mode = EditorMode.Xml;
             xmlError = result.Error ?? "Unknown error";
             StateHasChanged();
             return;
@@ -675,7 +876,7 @@
 
     private async Task NewDiagramTab()
     {
-        if (!editorInitialized || !TryLeaveXmlMode()) return;
+        if (!editorInitialized || !await TryReturnToModelingAsync()) return;
         if (!EnsureCapacity()) return;
 
         // Snapshot the outgoing tab's modeler XML before AddBlankTab replaces
@@ -707,7 +908,7 @@
                 return;
             }
 
-            if (!EnsureCapacity() || !TryLeaveXmlMode()) return;
+            if (!EnsureCapacity() || !await TryReturnToModelingAsync()) return;
 
             errorMessage = null;
             successMessage = null;
@@ -770,7 +971,7 @@
 
     private async Task ShowDeployDialog()
     {
-        if (!editorInitialized || ActiveTab == null || !TryLeaveXmlMode()) return;
+        if (!editorInitialized || ActiveTab == null || !await TryReturnToModelingAsync()) return;
 
         try
         {
@@ -931,7 +1132,7 @@
 
     private async Task SwitchTab(string tabId)
     {
-        if (tabId == activeTabId || !TryLeaveXmlMode()) return;
+        if (tabId == activeTabId || !await TryReturnToModelingAsync()) return;
         await ActivateTab(tabId, saveOutgoing: true);
         await PersistTabs();
     }
@@ -995,10 +1196,10 @@
         }
     }
 
-    private void RequestCloseTab(string tabId)
+    private async Task RequestCloseTab(string tabId)
     {
         var tab = tabs.FirstOrDefault(t => t.Id == tabId);
-        if (tab == null || (tab.Id == activeTabId && !TryLeaveXmlMode())) return;
+        if (tab == null || (tab.Id == activeTabId && !await TryReturnToModelingAsync())) return;
         if (tab.Dirty)
         {
             tabPendingClose = tab;
@@ -1006,7 +1207,7 @@
         }
         else
         {
-            _ = PerformCloseTab(tab);
+            await PerformCloseTab(tab);
         }
     }
 
@@ -1074,6 +1275,7 @@
             };
             var json = JsonSerializer.Serialize(payload);
             var ok = await JS.InvokeAsync<bool>("bpmnEditor.writeStorage", StorageKey, json);
+            persistFailed = !ok;
             if (!ok)
             {
                 Logger.LogDebug("localStorage write for editor tabs was rejected (quota?)");
@@ -1154,6 +1356,31 @@
     }
 
     // ---- View helpers ----------------------------------------------------------
+
+    private string Pressed(EditorMode m) => mode == m ? "true" : "false";
+
+    private string SimulationHeadline => simulation switch
+    {
+        null => "Starting…",
+        { Finished: true } => "Run finished",
+        { Pending.Count: > 0 } => "Waiting for you",
+        { Running: true } => "Running",
+        _ => "Paused"
+    };
+
+    // "Draft" = changed since it was opened or deployed; tabs are always kept in localStorage.
+    private string SaveStateKind => persistFailed ? "error" : ActiveTab?.Dirty == true ? "warning" : "ok";
+
+    private string SaveStateText => persistFailed
+        ? "Couldn't save tabs in this browser (storage full?)"
+        : ActiveTab?.Dirty == true
+            ? "Draft · kept in this browser, not deployed"
+            : ActiveTab?.Version is { } v ? $"In sync with v{v}" : "Saved";
+
+    private Task AddStartEvent() => JS.InvokeVoidAsync("bpmnEditor.addElementAtCenter", "start").AsTask();
+
+    // FluentInputFile opens its picker when its anchor (the toolbar's Import button) is clicked.
+    private Task OpenImportPicker() => JS.InvokeVoidAsync("fleansOrbit.click", "ImportBpmnButton").AsTask();
 
     private string XmlFileName =>
         (string.IsNullOrEmpty(ActiveTab?.ProcessKey) ? "diagram" : ActiveTab.ProcessKey) + ".bpmn";
