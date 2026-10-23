@@ -117,6 +117,32 @@ public class WorkflowExecution
         return BuildRootScopeEntryEffects();
     }
 
+    /// <summary>
+    /// Creates and starts the instance in one transition (#863): <see cref="Start"/>'s
+    /// <c>WorkflowStarted</c> and start activity, the parent link of a child instance, the input
+    /// variables, then <c>ExecutionStarted</c>. The grain journals them as one batch, so an instance
+    /// is either absent or started — never created and left unstarted. Validation runs before
+    /// the first emit, so a rejected start leaves no state behind. Returns the root-scope entry
+    /// effects, as <see cref="MarkExecutionStarted"/> does.
+    /// </summary>
+    public IReadOnlyList<IInfrastructureEffect> CreateAndStart(
+        Guid instanceId,
+        string? startActivityId = null,
+        string? businessId = null,
+        ExpandoObject? variables = null,
+        ParentInfo? parent = null)
+    {
+        Start(startActivityId, businessId, instanceId);
+
+        if (parent is not null)
+            Emit(new ParentInfoSet(parent.InstanceId, parent.ActivityId));
+
+        if (variables is not null && ((IDictionary<string, object?>)variables).Count > 0)
+            MergeVariables(_state.GetRootVariablesId(), variables);
+
+        return MarkExecutionStarted();
+    }
+
     public List<PendingActivity> GetPendingActivities()
     {
         return _state.GetActiveActivities()
@@ -2271,13 +2297,6 @@ public class WorkflowExecution
         }
 
         Emit(new WorkflowCancelled("Escalation: child scope cancelled by parent interrupting boundary"));
-    }
-
-    // --- Parent Info ---
-
-    public void SetParentInfo(Guid parentInstanceId, string parentActivityId)
-    {
-        Emit(new ParentInfoSet(parentInstanceId, parentActivityId));
     }
 
     public void MergeVariables(Guid variablesId, ExpandoObject variables)

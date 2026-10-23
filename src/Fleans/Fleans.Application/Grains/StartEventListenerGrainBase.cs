@@ -84,28 +84,21 @@ public abstract class StartEventListenerGrainBase<TState> : Grain
                 {
                     var processGrain = _grainFactory.GetGrain<IProcessDefinitionGrain>(processDefinitionKey);
 
-                    if (!await processGrain.IsActive())
+                    var definition = await processGrain.GetStartableDefinition();
+                    if (definition is null)
                     {
                         OnProcessDisabledSkipped(eventName, processDefinitionKey);
                         return (Guid?)null;
                     }
-
-                    var instanceId = Guid.NewGuid();
-                    var instance = _grainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
-
-                    var definition = await processGrain.GetLatestDefinition();
 
                     var startActivityId = FindStartActivityId(definition, eventName)
                         ?? throw new InvalidOperationException(
                             $"Start activity for '{eventName}' not found in process '{processDefinitionKey}'. " +
                             "The definition may have been removed during a redeployment.");
 
-                    await instance.SetWorkflow(definition, startActivityId, businessId);
-
-                    if (variables is not null)
-                        await instance.SetInitialVariables(variables);
-
-                    await instance.StartWorkflow();
+                    var instanceId = Guid.NewGuid();
+                    await _grainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId)
+                        .StartWorkflow(definition, startActivityId, businessId, variables);
 
                     OnStartEventFired(eventName, processDefinitionKey, instanceId);
                     return (Guid?)instanceId;

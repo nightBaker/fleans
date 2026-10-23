@@ -33,8 +33,7 @@ public class SignalIntermediateCatchEventTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Complete task
         await workflowInstance.CompleteActivity("task1", new ExpandoObject());
@@ -85,14 +84,12 @@ public class SignalIntermediateCatchEventTests : WorkflowTestBase
 
         // Instance 1
         var instance1 = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await instance1.SetWorkflow(CreateWorkflow("signal-multi-1"));
-        await instance1.StartWorkflow();
+        await instance1.StartWorkflow(CreateWorkflow("signal-multi-1"));
         await instance1.CompleteActivity("task1", new ExpandoObject());
 
         // Instance 2
         var instance2 = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await instance2.SetWorkflow(CreateWorkflow("signal-multi-2"));
-        await instance2.StartWorkflow();
+        await instance2.StartWorkflow(CreateWorkflow("signal-multi-2"));
         await instance2.CompleteActivity("task1", new ExpandoObject());
 
         // Verify both are suspended at signal catch
@@ -156,8 +153,7 @@ public class SignalIntermediateCatchEventTests : WorkflowTestBase
         for (var i = 0; i < subscriberCount; i++)
         {
             var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-            await instance.SetWorkflow(CreateWorkflow($"batch-signal-{i}"));
-            await instance.StartWorkflow();
+            await instance.StartWorkflow(CreateWorkflow($"batch-signal-{i}"));
             await instance.CompleteActivity("task1", new ExpandoObject());
             instances.Add(instance);
         }

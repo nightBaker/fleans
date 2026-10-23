@@ -95,8 +95,7 @@ public class CompensationEventTests : WorkflowTestBase
         };
 
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await grain.SetWorkflow(workflow);
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(workflow);
 
         // Act & Assert: workflow should complete with handler executed
         var snapshot = await WaitForCondition(
@@ -120,8 +119,7 @@ public class CompensationEventTests : WorkflowTestBase
         // Compensation walk should run handler_b first (task_b completed last), then handler_a
         var workflow = BuildTwoTaskWorkflow();
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await grain.SetWorkflow(workflow);
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(workflow);
 
         // Assert: both handlers ran and workflow completed
         var snapshot = await WaitForCondition(
@@ -150,8 +148,7 @@ public class CompensationEventTests : WorkflowTestBase
         // Arrange: throw targets only "task_a" — handler_b should NOT run
         var workflow = BuildTwoTaskWorkflow(throwTargetRef: "task_a");
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await grain.SetWorkflow(workflow);
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(workflow);
 
         var snapshot = await WaitForCondition(
             grain.GetPrimaryKey(),
@@ -191,8 +188,7 @@ public class CompensationEventTests : WorkflowTestBase
         };
 
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await grain.SetWorkflow(workflow);
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(workflow);
 
         var snapshot = await WaitForCondition(
             grain.GetPrimaryKey(),
@@ -211,8 +207,7 @@ public class CompensationEventTests : WorkflowTestBase
         // Arrange: start → task_a → comp_end (no outgoing flow)
         var workflow = BuildTwoTaskWorkflow(useCompensationEndEvent: true);
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await grain.SetWorkflow(workflow);
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(workflow);
 
         var snapshot = await WaitForCondition(
             grain.GetPrimaryKey(),
@@ -248,8 +243,7 @@ public class CompensationEventTests : WorkflowTestBase
         };
 
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await grain.SetWorkflow(workflow);
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(workflow);
 
         var snapshot = await WaitForCondition(
             grain.GetPrimaryKey(),
@@ -289,8 +283,7 @@ public class CompensationEventTests : WorkflowTestBase
         };
 
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await grain.SetWorkflow(workflow);
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(workflow);
 
         // Act & Assert: workflow should complete (terminal) with handler_b error
         var snapshot = await WaitForCondition(
@@ -340,8 +333,7 @@ public class CompensationEventTests : WorkflowTestBase
         };
 
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await grain.SetWorkflow(workflow);
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(workflow);
 
         var snapshot = await WaitForCondition(
             grain.GetPrimaryKey(),
@@ -382,8 +374,7 @@ public class CompensationEventTests : WorkflowTestBase
         };
 
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await grain.SetWorkflow(workflow);
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(workflow);
 
         var instanceId = grain.GetPrimaryKey();
 
@@ -457,8 +448,7 @@ public class CompensationEventTests : WorkflowTestBase
         };
 
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await grain.SetWorkflow(workflow);
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(workflow);
         var instanceId = grain.GetPrimaryKey();
 
         // Complete task_a with hotelStatus="reserved"

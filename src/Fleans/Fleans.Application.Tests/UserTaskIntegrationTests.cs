@@ -41,8 +41,7 @@ public class UserTaskIntegrationTests : WorkflowTestBase
     {
         var workflow = CreateUserTaskWorkflow(assignee, candidateGroups, candidateUsers, expectedOutputs);
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await grain.SetWorkflow(workflow);
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(workflow);
         return grain;
     }
 

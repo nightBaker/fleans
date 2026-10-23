@@ -46,8 +46,7 @@ public class EventSubProcessErrorTests : WorkflowTestBase
 
         // Act
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         var instanceId = workflowInstance.GetPrimaryKey();
         var snapshot = await PollForNoActiveActivities(instanceId);

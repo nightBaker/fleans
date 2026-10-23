@@ -25,8 +25,7 @@ public class PendingEventsDurabilityTests : WorkflowTestBase
     private async Task<IWorkflowInstanceGrain> StartedSimpleInstance()
     {
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await grain.SetWorkflow(CreateSimpleWorkflow($"pend-{Guid.NewGuid():N}"));
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(CreateSimpleWorkflow($"pend-{Guid.NewGuid():N}"));
         return grain;
     }
 
@@ -48,8 +47,8 @@ public class PendingEventsDurabilityTests : WorkflowTestBase
 
         var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId);
         await processGrain.DeployVersion(workflow, "<xml/>");
-        var grain = await processGrain.CreateInstance();
-        await grain.StartWorkflow();
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await grain.StartWorkflow(await processGrain.GetLatestDefinition());
         return grain;
     }
 
@@ -188,8 +187,7 @@ public class PendingEventsDurabilityTests : WorkflowTestBase
         };
 
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await grain.SetWorkflow(workflow);
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(workflow);
 
         var instanceId = grain.GetPrimaryKey();
         var snapshot = await QueryService.GetStateSnapshot(instanceId);

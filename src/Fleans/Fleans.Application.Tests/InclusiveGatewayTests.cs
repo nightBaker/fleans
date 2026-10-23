@@ -18,8 +18,7 @@ public class InclusiveGatewayTests : WorkflowTestBase
         var workflow = CreateInclusiveWorkflow(
             task1Condition: "true", task2Condition: "true", task3Condition: "false");
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Wait for the condition evaluator handler to process all conditions
         var instanceId = workflowInstance.GetPrimaryKey();
@@ -53,8 +52,7 @@ public class InclusiveGatewayTests : WorkflowTestBase
         var workflow = CreateInclusiveWorkflow(
             task1Condition: "true", task2Condition: "false", task3Condition: "false");
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Wait for fork to complete and task to become active
         var instanceId = workflowInstance.GetPrimaryKey();
@@ -85,8 +83,7 @@ public class InclusiveGatewayTests : WorkflowTestBase
         var workflow = CreateInclusiveWorkflow(
             task1Condition: "true", task2Condition: "true", task3Condition: "false");
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Wait for tasks to become active
         var instanceId = workflowInstance.GetPrimaryKey();
@@ -113,8 +110,7 @@ public class InclusiveGatewayTests : WorkflowTestBase
         var workflow = CreateInclusiveWithDefaultFlow(
             task1Condition: "false", task2Condition: "false");
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Wait for workflow completion via default path
         var instanceId = workflowInstance.GetPrimaryKey();
@@ -162,8 +158,7 @@ public class InclusiveGatewayTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         var instanceId = workflowInstance.GetPrimaryKey();
 
@@ -202,8 +197,7 @@ public class InclusiveGatewayTests : WorkflowTestBase
         var workflow = CreateInclusiveWorkflow(
             task1Condition: "true", task2Condition: "true", task3Condition: "false");
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         var instanceId = workflowInstance.GetPrimaryKey();
         await WaitForCondition(instanceId,
@@ -239,8 +233,7 @@ public class InclusiveGatewayTests : WorkflowTestBase
         var workflow = CreateInclusiveWorkflow(
             task1Condition: "true", task2Condition: "false", task3Condition: "false");
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         var instanceId = workflowInstance.GetPrimaryKey();
         await WaitForCondition(instanceId,

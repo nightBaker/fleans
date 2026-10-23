@@ -42,8 +42,8 @@ public class JournalConsistencyTests : WorkflowTestBase
 
         var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId);
         await processGrain.DeployVersion(workflow, "<xml/>");
-        var grain = await processGrain.CreateInstance();
-        await grain.StartWorkflow();
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await grain.StartWorkflow(await processGrain.GetLatestDefinition());
         return grain;
     }
 
@@ -138,8 +138,7 @@ public class JournalConsistencyTests : WorkflowTestBase
             Signals = [new SignalDefinition("sigA", "journal-signal-a"), new SignalDefinition("sigB", "journal-signal-b")]
         };
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await grain.SetWorkflow(workflow);
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(workflow);
         var instanceId = grain.GetPrimaryKey();
         var opId = GrainFactoryRetryExtensions.ChildCompletedOpId(Guid.NewGuid(), "absent-call");
         using var capture = CapturedLogEvents.Capture(ProcessingPendingEventEventId);
