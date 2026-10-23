@@ -22,6 +22,7 @@ public interface IFleanQueryContext : IAsyncDisposable
     IQueryable<WorkflowInstanceState> WorkflowInstances { get; }
     IQueryable<ProcessDefinition> ProcessDefinitions { get; }
     IQueryable<UserTaskState> UserTasks { get; }
+    IQueryable<DeploymentRequestState> DeploymentRequests { get; }
     IQueryable<MessageStartEventRegistration> MessageStartEventRegistrations { get; }
     IQueryable<SignalStartEventRegistration> SignalStartEventRegistrations { get; }
     IQueryable<ConditionalStartEventListenerState> ConditionalStartEventListeners { get; }

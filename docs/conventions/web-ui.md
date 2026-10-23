@@ -6,6 +6,10 @@ Read before editing any `.razor` file or anything under `src/Fleans/Fleans.Web/`
 
 The admin UI calls Orleans grains directly via the `WorkflowEngine` service, not through HTTP. Back new admin-UI features with grain calls; the REST API is for external callers only.
 
+The one exception is **promotion to another environment** (#900, `Services/PromotionClient.cs`): another cluster is reachable only through its REST API, so the Admin UI `POST`s the version's BPMN to the target's `/Deployments/requests`. It never calls its own cluster's API.
+
+**Acting user** (`Services/ActingUser.cs`, scoped per circuit): who requests or reviews a deployment — the signed-in user with auth on, a name typed once per session with auth off. Reuse it for any other feature that records a user.
+
 ## Orbit look (`wwwroot/css/orbit.css`)
 
 The shell (`MainLayout` top bar, `NavMenu` pill nav, `PageHeader` eyebrow + title), the editor chrome and the default diagram style all come from one token set:

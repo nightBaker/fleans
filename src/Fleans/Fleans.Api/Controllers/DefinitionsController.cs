@@ -1,7 +1,8 @@
 using System.Text;
 using Fleans.Application;
 using Fleans.Application.QueryModels;
-using Fleans.Infrastructure.Bpmn;
+using Fleans.Application.Bpmn;
+using Fleans.Application.Deployments;
 using Fleans.ServiceDefaults.DTOs;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -39,6 +40,10 @@ namespace Fleans.Api.Controllers
                 var workflow = await _bpmnConverter.ConvertFromXmlAsync(stream);
                 var summary = await _commandService.DeployWorkflow(workflow, request.BpmnXml);
                 return Ok(new DeployBpmnResponse(summary.ProcessDefinitionKey, summary.Version));
+            }
+            catch (DeploymentApprovalRequiredException ex)
+            {
+                return Conflict(new ErrorResponse(ex.Message));
             }
             catch (Exception ex)
             {

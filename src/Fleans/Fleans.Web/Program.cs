@@ -120,6 +120,23 @@ if (authEnabled)
 
 builder.Services.AddCascadingAuthenticationState();
 
+// Deploy approvals + promotion to other environments (#900). The approval policy
+// (Fleans:Deployments) is bound by AddApplication; Fleans:Environment is Admin-UI-only.
+builder.Services.AddScoped<ActingUser>();
+builder.Services.AddOptions<EnvironmentOptions>()
+    .BindConfiguration(EnvironmentOptions.SectionName)
+    .Validate(o => o.PromotionTargets.All(t =>
+            !string.IsNullOrWhiteSpace(t.Name) && Uri.TryCreate(t.ApiUrl, UriKind.Absolute, out _)),
+        "Every Fleans:Environment:PromotionTargets entry needs a Name and an absolute ApiUrl.")
+    .Validate(o => o.PromotionTargets.Select(t => t.Name).Distinct().Count() == o.PromotionTargets.Count,
+        "Fleans:Environment:PromotionTargets names must be unique.")
+    .Validate(o => o.PromotionTargets.All(t =>
+            !t.UsesClientCredentials || Uri.TryCreate(t.TokenUrl, UriKind.Absolute, out _)),
+        "A Fleans:Environment:PromotionTargets entry with a ClientId needs an absolute TokenUrl.")
+    .ValidateOnStart();
+builder.Services.AddHttpClient(PromotionClient.HttpClientName);
+builder.Services.AddSingleton<PromotionClient>();
+
 var app = builder.Build();
 
 await app.EnsureDatabaseSchemaAsync();

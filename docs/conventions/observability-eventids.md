@@ -25,9 +25,10 @@ propagation), see [`docs/plans/2026-02-08-structured-workflow-logging.md`](../pl
 | 4100–4199 | `UserTaskGrain` | |
 | 5000–5099 | `WorkflowEventsPublisher` | |
 | 6000–6099 | `ProcessDefinitionGrain` (6000–6049), `WorkflowDefinitionCache` (6050–6059) | 6050 definition loaded into the silo cache (Debug) |
-| 7000–7099 | `WorkflowCommandService` | |
+| 7000–7099 | `WorkflowCommandService` | 7020 deployment request submitted (#900) |
 | 8000–8099 | `TimerStartEventSchedulerGrain` (8000–8003, 8011 cycle re-armed, 8012 fire skipped — process disabled), `UserTasksController` (8004–8010) | 8009 body-UserId/token mismatch rejection (Warning); 8010 token without user-id claim (Warning) |
 | 8100–8199 | `GlobalExceptionHandler` (`Fleans.Api`) | |
+| 8200–8299 | `DeploymentsController` (`Fleans.Api`) | 8200 body-UserId/token mismatch rejection, 8201 token without user-id claim (both Warning) |
 | 9000–9099 | `MessageCorrelationGrain` (9000–9009), `BpmnConverter` (9010–9019), `ScriptExecutorGrain` (`Fleans.Worker`, 9020–9029) | 9010 activation condition ignored on a fork (Warning) |
 | 9100–9199 | `MessageStartEventListenerGrain` (9100–9109), `SignalCorrelationGrain` (9110–9119) | |
 | 9200–9299 | `SignalStartEventListenerGrain` | |
@@ -40,9 +41,10 @@ propagation), see [`docs/plans/2026-02-08-structured-workflow-logging.md`](../pl
 | 11200–11299 | `MskIamTokenRefresher` | 11200 token-refresh-failed ERROR, 11201 set-token-failure-threw WARNING |
 | 11300–11399 | Placement: `CorePlacementDirector` (`Fleans.Application.Abstractions`), `WorkerPlacementFilterDirector`, `PlacementRoleAssertion` (`Fleans.Worker`) | 11300 no core silo WARNING; 11301 no worker silo WARNING; 11310 placement-role assertion ran INFO; 11311 placement-role violation ERROR |
 | 12000–12099 | Kafka DLQ: `KafkaDlqFailureHandler`, `KafkaDeadLetterPublisher` | 12000 record dead-lettered (with failure reason) WARN; 12001 DLQ publish failed or not acknowledged within 30 s (may still be delivered) ERROR; 12002 subscription-init failure WARN; 12003 non-Kafka sequence token WARN; 12004 offset no longer retained WARN; 12005 re-consume failed ERROR; 12006 re-consume timed out WARN; 12007 re-consume client error (auth/SSL/connectivity) WARN |
-| 13000–13099 | `Fleans.Web` | 13000–13004 Workflows page (13000 load failed ERROR, 13001 process started INFO, 13002 start failed WARNING, 13003 start error ERROR, 13004 enable/disable failed ERROR) |
+| 13000–13099 | `Fleans.Web` | 13000–13005 Workflows page (13000 load failed ERROR, 13001 process started INFO, 13002 start failed WARNING, 13003 start error ERROR, 13004 enable/disable failed ERROR, 13005 promotion failed ERROR); 13010–13019 `PromotionClient` (13010 promoting INFO, 13011 target answered non-success WARNING) |
 | 14100–14199 | `EfCoreWorkflowInstancePurgeService` (`Fleans.Persistence`) | Retention purge (#862): 14100 purge started, 14101 batch purged, 14102 purge finished (all Information) |
 | 14200–14299 | `EditorPresenceGrain` (`Fleans.Application/Editor`) | Admin-UI editor presence: 14200 session joined, 14201 session left, 14202 session expired (all Debug) |
+| 14300–14399 | `DeploymentRequestGrain` (`Fleans.Application/Deployments`) | Deploy approvals (#900): 14300 submitted, 14301 approved, 14302 rejected, 14303 withdrawn, 14304 deployed (Information); 14305 approved but the deploy failed — retry possible (Warning) |
 | 99000–99099 | `ProbeHandler` (test-only, `Fleans.E2E.PluginHost`) | 99000 started, 99001 completed, 99002 cancelled, 99003 callback failed. Never shipped. |
 
 ## Adding a new range

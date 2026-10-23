@@ -24,4 +24,9 @@ public interface IWorkflowQueryService
     Task<bool> UserTaskExists(Guid activityInstanceId);
     Task<IReadOnlyList<UserTaskState>> GetActiveUserTasksForWorkflow(Guid workflowInstanceId);
     Task<RegisteredEventsSnapshot> GetRegisteredEventsAsync(CancellationToken ct = default);
+
+    /// <summary>Deployment requests (#900), newest first; all statuses when <paramref name="status"/> is null.</summary>
+    Task<IReadOnlyList<DeploymentRequestSummary>> GetDeploymentRequests(DeploymentRequestStatus? status = null, int limit = 100);
+    /// <summary>One deployment request with its BPMN XML, or <c>null</c>.</summary>
+    Task<DeploymentRequestState?> GetDeploymentRequest(Guid requestId);
 }

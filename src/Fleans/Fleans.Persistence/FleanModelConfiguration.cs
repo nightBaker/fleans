@@ -304,6 +304,34 @@ internal static class FleanModelConfiguration
             entity.HasIndex(e => e.WorkflowInstanceId);
         });
 
+        modelBuilder.Entity<DeploymentRequestState>(entity =>
+        {
+            entity.ToTable("DeploymentRequests");
+            entity.HasKey(e => e.Id);
+
+            entity.Property(e => e.ProcessDefinitionKey).HasMaxLength(256);
+            entity.Property(e => e.BpmnXml);
+            entity.Property(e => e.RequestedBy).HasMaxLength(256);
+            entity.Property(e => e.ClosedBy).HasMaxLength(256);
+            entity.Property(e => e.DeployedProcessDefinitionId).HasMaxLength(512);
+            entity.Property(e => e.ETag).HasMaxLength(64);
+
+            entity.Property(e => e.Approvals)
+                .HasConversion(
+                    v => JsonConvert.SerializeObject(v),
+                    v => JsonConvert.DeserializeObject<List<DeploymentApproval>>(v) ?? new List<DeploymentApproval>(),
+                    new ValueComparer<List<DeploymentApproval>>(
+                        (a, b) => a!.SequenceEqual(b!),
+                        v => v.Aggregate(0, (h, x) => HashCode.Combine(h, x.GetHashCode())),
+                        v => v.ToList()));
+
+            // Timestamps are stored natively; SQLite provider package overrides them with a
+            // string converter (see SqliteModelCustomizer).
+
+            // The review queue lists open requests newest first.
+            entity.HasIndex(e => new { e.Status, e.RequestedAt });
+        });
+
         modelBuilder.Entity<ProcessDefinition>(entity =>
         {
             entity.ToTable("ProcessDefinitions");

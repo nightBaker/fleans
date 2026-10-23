@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-All paths below are relative to the API base URL (`https://localhost:7140` in the Aspire dev stack). Endpoints are grouped by controller: `/Definitions/*` (deploy, disable, enable, list), `/Execution/*` (start, message, signal, complete-activity, evaluate-conditions), `/Instances/*` (state, purge) and `/UserTasks/*`. The old `/Workflow/*` prefix was removed when the controller was split (see [PR #614](https://github.com/nightBaker/fleans/pull/614)) and now returns `404`.
+All paths below are relative to the API base URL (`https://localhost:7140` in the Aspire dev stack). Endpoints are grouped by controller: `/Definitions/*` (deploy, disable, enable, list), `/Execution/*` (start, message, signal, complete-activity, evaluate-conditions), `/Instances/*` (state, purge), `/UserTasks/*` and `/Deployments/*` (deployment requests). The old `/Workflow/*` prefix was removed when the controller was split (see [PR #614](https://github.com/nightBaker/fleans/pull/614)) and now returns `404`.
 
 | Endpoint | Method | Body |
 |---|---|---|
@@ -24,6 +24,13 @@ All paths below are relative to the API base URL (`https://localhost:7140` in th
 | `/UserTasks/{activityInstanceId}/complete` | POST | `{"UserId":"alice", "Variables":{"approved":true}}` |
 | `/UserTasks/{activityInstanceId}/fail` | POST | `{"errorMessage":"reason", "errorCode":"400"}` — fails the task; routes via Error Boundary Event if one matches. |
 | `/UserTasks/{activityInstanceId}/cancel` | POST | `{"reason":"optional"}` — cancels the task; no error propagation. Idempotent. |
+| `/Deployments/requests` | POST | `{"BpmnXml":"...", "Comment":"...", "DeployDisabled":false, "RequestedBy":"alice"}` — a deploy that needs approvals. See [Deployment request endpoints](#deployment-request-endpoints). |
+| `/Deployments/requests` | GET | `?status=Pending` *(optional)* — newest first, without the BPMN. |
+| `/Deployments/requests/{id}` | GET | *(none)* — one request. `…/{id}/bpmn` returns its BPMN XML. |
+| `/Deployments/requests/{id}/approve` | POST | `{"UserId":"bob", "Comment":"optional"}` |
+| `/Deployments/requests/{id}/reject` | POST | `{"UserId":"bob", "Reason":"required"}` |
+| `/Deployments/requests/{id}/withdraw` | POST | `{"UserId":"alice"}` — requester only. |
+| `/Deployments/requests/{id}/retry` | POST | *(empty body)* — deploys an approved request whose deploy failed. |
 
 ## Endpoint details
 
@@ -77,6 +84,57 @@ curl -s -X POST https://localhost:7140/Definitions/deploy \
 ```
 
 This reads the `.bpmn` file, JSON-escapes it with `jq -Rs`, and sends it to the deploy endpoint. The response contains the `ProcessDefinitionKey` you pass to `/start` to create instances.
+
+**Conflict (409)** — returned when the cluster requires deploy approvals (`Fleans__Deployments__RequiredApprovals` above `0`). Submit a [deployment request](#deployment-request-endpoints) instead.
+
+### Deployment request endpoints
+
+A deployment request is a deploy that waits for `Fleans__Deployments__RequiredApprovals` approvals from distinct users other than the requester, then deploys itself as the next version. With `0` required, `POST /Deployments/requests` deploys at once — that is how another environment's Admin UI [promotes](/fleans/guides/deployments/#environments-and-promotion) a version here. See the [Deploy approvals guide](/fleans/guides/deployments/) for the workflow.
+
+**Identity.** `RequestedBy` / `UserId` follow the user-task rule: required when authentication is off; under JWT auth the user comes from the token, and a body value that differs from it is rejected with `403`.
+
+**Submit**
+
+```json
+POST /Deployments/requests
+Content-Type: application/json
+
+{
+  "BpmnXml": "<?xml version=\"1.0\"?><definitions ...>...</definitions>",
+  "Comment": "Adds an escalation timer to the review task",
+  "DeployDisabled": false,
+  "RequestedBy": "alice"
+}
+```
+
+**Response (201)** — the request, also returned by every action below:
+
+```json
+{
+  "id": "3f0c…",
+  "processDefinitionKey": "order-process",
+  "requestedBy": "alice",
+  "requestedAt": "2026-10-23T12:00:00+00:00",
+  "comment": "Adds an escalation timer to the review task",
+  "requiredApprovals": 2,
+  "approvals": [],
+  "status": "Pending",
+  "deployDisabled": false,
+  "closedBy": null,
+  "closeReason": null,
+  "deployedVersion": null,
+  "deployError": null
+}
+```
+
+`status` is `Pending`, `Approved` (approved; the deploy failed and `deployError` says why — `POST …/retry`), `Deployed` (`deployedVersion` set), `Rejected` or `Withdrawn`.
+
+| Status | When |
+|---|---|
+| `400` | Empty or invalid BPMN, missing `UserId` (auth off), reject without `Reason`. |
+| `403` | Body `UserId` differs from the token user. |
+| `404` | Unknown request id. |
+| `409` | The transition isn't allowed: the requester approving or rejecting their own request, a second approval by the same user, or acting on a request that is no longer pending. |
 
 ### `POST /Execution/start`
 
@@ -604,10 +662,10 @@ Paths are relative to the API base URL.
 
 | Policy | Endpoints | Description |
 |--------|-----------|-------------|
-| `WorkflowMutation` | `POST /Execution/start`, `/Execution/message`, `/Execution/signal`, `/Execution/evaluate-conditions`, `/Definitions/deploy` | Workflow lifecycle write operations (start instance, deliver event, evaluate conditions, deploy BPMN) |
+| `WorkflowMutation` | `POST /Execution/start`, `/Execution/message`, `/Execution/signal`, `/Execution/evaluate-conditions`, `/Definitions/deploy`, `/Deployments/requests` | Workflow lifecycle write operations (start instance, deliver event, evaluate conditions, deploy BPMN) |
 | `TaskOperation` | `POST /Execution/complete-activity`, `/UserTasks/{activityInstanceId}/claim`, `/UserTasks/{activityInstanceId}/unclaim`, `/UserTasks/{activityInstanceId}/complete`, `/UserTasks/{activityInstanceId}/fail`, `/UserTasks/{activityInstanceId}/cancel` | Activity-completion + user-task operations — see [User Tasks guide](/fleans/guides/user-tasks/) |
-| `Read` | `GET /Definitions`, `/Definitions/{key}/instances`, `/Definitions/{key}/{version}/instances`, `/UserTasks`, `/UserTasks/{activityInstanceId}` | Read-only queries |
-| `Admin` | `POST /Definitions/disable`, `/Definitions/enable`, `/Instances/purge` | Admin operations on process definitions and instance retention |
+| `Read` | `GET /Definitions`, `/Definitions/{key}/instances`, `/Definitions/{key}/{version}/instances`, `/UserTasks`, `/UserTasks/{activityInstanceId}`, `/Deployments/requests`, `/Deployments/requests/{id}`, `/Deployments/requests/{id}/bpmn` | Read-only queries |
+| `Admin` | `POST /Definitions/disable`, `/Definitions/enable`, `/Instances/purge`, `/Deployments/requests/{id}/approve`, `…/reject`, `…/withdraw`, `…/retry` | Admin operations on process definitions, deployment reviews and instance retention |
 | `Polling` | `GET /Instances/{instanceId}/state` | High-frequency state polling |
 
 #### Environment variable overrides

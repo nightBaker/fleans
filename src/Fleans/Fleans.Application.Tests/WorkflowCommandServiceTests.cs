@@ -1,9 +1,11 @@
 using Fleans.Application;
+using Fleans.Application.Deployments;
 using Fleans.Application.Grains;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NSubstitute;
 using Orleans;
@@ -23,7 +25,8 @@ namespace Fleans.Application.Tests
         {
             _grainFactory = Substitute.For<IGrainFactory>();
             _processGrain = Substitute.For<IProcessDefinitionGrain>();
-            _commandService = new WorkflowCommandService(_grainFactory, NullLogger<WorkflowCommandService>.Instance);
+            _commandService = new WorkflowCommandService(_grainFactory, NullLogger<WorkflowCommandService>.Instance,
+                Options.Create(new DeploymentApprovalOptions()));
         }
 
         [TestMethod]
@@ -130,6 +133,36 @@ namespace Fleans.Application.Tests
 
             // Assert
             _grainFactory.Received(1).GetGrain<IWorkflowInstanceGrain>(workflowInstanceId);
+        }
+
+        [TestMethod]
+        public async Task DeployWorkflow_WhenApprovalsAreRequired_ThrowsAndDeploysNothing()
+        {
+            // Arrange
+            var service = new WorkflowCommandService(_grainFactory, NullLogger<WorkflowCommandService>.Instance,
+                Options.Create(new DeploymentApprovalOptions { RequiredApprovals = 2 }));
+            var workflow = new WorkflowDefinition { WorkflowId = "guarded", Activities = [], SequenceFlows = [] };
+
+            // Act & Assert — an InvalidOperationException: the API answers 409
+            await Assert.ThrowsExactlyAsync<DeploymentApprovalRequiredException>(
+                () => service.DeployWorkflow(workflow, "<bpmn/>"));
+            _grainFactory.DidNotReceive().GetGrain<IProcessDefinitionGrain>(Arg.Any<string>(), Arg.Any<string?>());
+        }
+
+        [TestMethod]
+        public async Task SubmitDeployment_PassesThisClustersRequiredApprovals()
+        {
+            // Arrange
+            var service = new WorkflowCommandService(_grainFactory, NullLogger<WorkflowCommandService>.Instance,
+                Options.Create(new DeploymentApprovalOptions { RequiredApprovals = 2 }));
+            var requestGrain = Substitute.For<IDeploymentRequestGrain>();
+            _grainFactory.GetGrain<IDeploymentRequestGrain>(Arg.Any<Guid>(), Arg.Any<string?>()).Returns(requestGrain);
+
+            // Act
+            await service.SubmitDeployment("<bpmn/>", "alice", "note", deployDisabled: true);
+
+            // Assert
+            await requestGrain.Received(1).Submit("<bpmn/>", "alice", "note", 2, true);
         }
     }
 }

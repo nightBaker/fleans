@@ -267,6 +267,80 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                     b.ToTable("CustomTaskCatalogEntries", (string)null);
                 });
 
+            modelBuilder.Entity("Fleans.Domain.States.DeploymentRequestState", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Approvals")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("BpmnXml")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("CloseReason")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("ClosedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ClosedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("Comment")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("DeployDisabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("DeployError")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("DeployedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DeployedProcessDefinitionId")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<int?>("DeployedVersion")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ETag")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ProcessDefinitionKey")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<DateTimeOffset>("RequestedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RequestedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<int>("RequiredApprovals")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Status", "RequestedAt");
+
+                    b.ToTable("DeploymentRequests", (string)null);
+                });
+
             modelBuilder.Entity("Fleans.Domain.States.GatewayForkState", b =>
                 {
                     b.Property<Guid>("ForkInstanceId")

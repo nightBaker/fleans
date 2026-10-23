@@ -319,6 +319,10 @@ public abstract class WorkflowTestBase
                         (sp, _) => new EfCoreProcessDefinitionGrainStorage(
                             sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
 
+                    services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.DeploymentRequests,
+                        (sp, _) => new EfCoreDeploymentRequestGrainStorage(
+                            sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
+
                     services.AddSingleton<IFleanQueryContextFactory, FleanQueryContextFactory>();
                     services.AddSingleton<IProcessDefinitionRepository, EfCoreProcessDefinitionRepository>();
                     services.AddSingleton<ISieveProcessor, ApplicationSieveProcessor>();
