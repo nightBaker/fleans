@@ -715,15 +715,6 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("Fleans.Domain.States.UserTaskState", b =>
-                {
-                    b.HasOne("Fleans.Domain.States.WorkflowInstanceState", null)
-                        .WithMany()
-                        .HasForeignKey("WorkflowInstanceId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
             modelBuilder.Entity("Fleans.Domain.States.WorkflowInstanceState", b =>
                 {
                     b.HasOne("Fleans.Domain.ProcessDefinition", null)

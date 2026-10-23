@@ -291,11 +291,9 @@ internal static class FleanModelConfiguration
             // CreatedAt is stored natively; SQLite provider package overrides this with a
             // string converter (see SqliteModelCustomizer).
 
-            entity.HasOne<WorkflowInstanceState>()
-                .WithMany()
-                .HasForeignKey(e => e.WorkflowInstanceId)
-                .OnDelete(DeleteBehavior.Cascade);
-
+            // No foreign key to WorkflowInstances: that row is a read model the projector writes
+            // asynchronously (#861), and a user task registers in the turn that starts its
+            // instance — before the row exists. Grain storage must not depend on the read model.
             entity.HasIndex(e => e.WorkflowInstanceId);
         });
 
