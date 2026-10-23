@@ -41,7 +41,7 @@
     <p class="deployments-policy" data-testid="deployments-policy">
         @if (RequiredApprovals > 0)
         {
-            <span>Every deployment to <strong>@EnvironmentConfig.Value.DisplayName</strong> needs <strong>@RequiredApprovals</strong> approval@(RequiredApprovals == 1 ? "" : "s") from someone other than the requester, then deploys itself.</span>
+            <span>Every deployment to <strong>@EnvironmentConfig.Value.DisplayName</strong> needs <strong>@RequiredApprovals</strong> approval@(RequiredApprovals == 1 ? "" : "s") from someone other than the requester@(ReviewerGroups.Count > 0 ? $" who is a member of {string.Join(" or ", ReviewerGroups)}" : ""), then deploys itself.</span>
         }
         else
         {
@@ -60,7 +60,13 @@
 
     @if (!ActingUser.IsSignedIn)
     {
-        <FluentTextField @bind-Value="ActingUser.DeclaredName" Immediate="true" Label="Reviewing as (authentication is off — names are self-declared)" data-testid="deployments-acting-user" />
+        <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="12">
+            <FluentTextField @bind-Value="ActingUser.DeclaredName" Immediate="true" Label="Reviewing as (authentication is off — names are self-declared)" data-testid="deployments-acting-user" />
+            @if (ReviewerGroups.Count > 0 || selected?.ReviewerGroups.Count > 0)
+            {
+                <FluentTextField @bind-Value="ActingUser.DeclaredGroups" Immediate="true" Label="Your groups (comma-separated)" data-testid="deployments-acting-groups" />
+            }
+        </FluentStack>
     }
 
     <div class="deployments-layout">
@@ -103,6 +109,13 @@
                         <span class="orbit-check orbit-check--@(r.Approvals.Count >= r.RequiredApprovals ? "ok" : "warn")" aria-hidden="true">@(r.Approvals.Count >= r.RequiredApprovals ? "✓" : "○")</span>
                         Review: @r.Approvals.Count of @r.RequiredApprovals@(r.Approvals.Count > 0 ? " — " + string.Join(", ", r.Approvals.Select(a => a.UserId)) : "")
                     </li>
+                    @if (r.ReviewerGroups.Count > 0)
+                    {
+                        <li data-testid="deployment-reviewer-groups">
+                            <span class="orbit-check orbit-check--ok" aria-hidden="true">✓</span>
+                            Reviewers: members of @string.Join(" or ", r.ReviewerGroups)
+                        </li>
+                    }
                     @if (r.Status == DeploymentRequestStatus.Deployed)
                     {
                         <li>
@@ -176,11 +189,13 @@
     private bool isActing;
     private bool renderDiagram;
     private string? actingUserId;
+    private IReadOnlyList<string> actingGroups = [];
     private string? decisionNote;
     private string? errorMessage;
     private string? successMessage;
 
     private int RequiredApprovals => DeployApprovals.Value.RequiredApprovals;
+    private List<string> ReviewerGroups => DeployApprovals.Value.ReviewerGroups;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -211,6 +226,7 @@
         {
             isLoading = true;
             actingUserId = await ActingUser.GetUserIdAsync();
+            actingGroups = await ActingUser.GetGroupsAsync();
             requests = (await QueryService.GetDeploymentRequests(showAll ? null : DeploymentRequestStatus.Pending)).ToList();
             if (!showAll)
             {
@@ -238,7 +254,7 @@
 
     private Task ApproveAsync() => ActAsync(async (id, user) =>
     {
-        var result = await CommandService.ApproveDeployment(id, user, decisionNote);
+        var result = await CommandService.ApproveDeployment(id, user, await ActingUser.GetGroupsAsync(), decisionNote);
         successMessage = result.Status switch
         {
             DeploymentRequestStatus.Deployed => $"Approved — {result.ProcessDefinitionKey} deployed as v{result.DeployedVersion}.",
@@ -249,7 +265,7 @@
 
     private Task RejectAsync() => ActAsync(async (id, user) =>
     {
-        await CommandService.RejectDeployment(id, user, decisionNote!);
+        await CommandService.RejectDeployment(id, user, await ActingUser.GetGroupsAsync(), decisionNote!);
         successMessage = "Request rejected.";
     });
 
@@ -309,6 +325,8 @@
             return "You requested this deployment, so someone else reviews it.";
         if (r.Approvals.Any(a => a.UserId == user))
             return "You've approved this request; it needs another reviewer.";
+        if (!r.IsReviewerGroupMember(ActingUser.IsSignedIn ? actingGroups : ActingUser.DeclaredGroupList))
+            return $"Only members of {string.Join(" or ", r.ReviewerGroups)} review this request.";
         return null;
     }
 

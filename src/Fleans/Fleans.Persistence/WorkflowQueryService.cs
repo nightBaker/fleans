@@ -429,7 +429,7 @@ public class WorkflowQueryService : IWorkflowQueryService
             .Select(r => new DeploymentRequestSummary(
                 r.Id, r.ProcessDefinitionKey, r.RequestedBy, r.RequestedAt, r.Comment,
                 r.RequiredApprovals, r.Approvals, r.Status, r.DeployDisabled,
-                r.ClosedBy, r.CloseReason, r.DeployedVersion, r.DeployError))
+                r.ClosedBy, r.CloseReason, r.DeployedVersion, r.DeployError, r.ReviewerGroups))
             .ToListAsync();
     }
 

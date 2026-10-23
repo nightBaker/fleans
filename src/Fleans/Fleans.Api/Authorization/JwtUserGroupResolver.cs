@@ -23,7 +23,7 @@ public sealed class JwtUserGroupResolver : IUserGroupResolver
         _claimName = configuration["Authentication:GroupsClaim"] ?? "groups";
     }
 
-    public IReadOnlyList<string> Resolve(HttpContext httpContext, ClaimTaskRequest request)
+    public IReadOnlyList<string> Resolve(HttpContext httpContext, IReadOnlyList<string>? bodyUserGroups)
     {
         // Body-supplied UserGroups is ignored when auth is enabled — the bearer token
         // is the authoritative source. Unauthenticated callers reach this branch only

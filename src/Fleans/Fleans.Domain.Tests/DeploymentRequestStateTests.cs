@@ -58,7 +58,7 @@ public class DeploymentRequestStateTests
     {
         var request = Submitted(requiredApprovals: 2);
 
-        request.Approve("bob", "looks good", Now);
+        request.Approve("bob", [], "looks good", Now);
 
         Assert.AreEqual(DeploymentRequestStatus.Pending, request.Status);
         Assert.AreEqual(1, request.Approvals.Count);
@@ -71,8 +71,8 @@ public class DeploymentRequestStateTests
     {
         var request = Submitted(requiredApprovals: 2);
 
-        request.Approve("bob", null, Now);
-        request.Approve("carol", null, Now);
+        request.Approve("bob", [], null, Now);
+        request.Approve("carol", [], null, Now);
 
         Assert.AreEqual(DeploymentRequestStatus.Approved, request.Status);
     }
@@ -82,7 +82,7 @@ public class DeploymentRequestStateTests
     {
         var request = Submitted(requestedBy: "alice");
 
-        var ex = Assert.Throws<InvalidOperationException>(() => request.Approve("alice", null, Now));
+        var ex = Assert.Throws<InvalidOperationException>(() => request.Approve("alice", [], null, Now));
 
         StringAssert.Contains(ex.Message, "requester");
         Assert.AreEqual(0, request.Approvals.Count);
@@ -92,9 +92,9 @@ public class DeploymentRequestStateTests
     public void Approve_TwiceBySameUser_CountsOnce()
     {
         var request = Submitted(requiredApprovals: 2);
-        request.Approve("bob", null, Now);
+        request.Approve("bob", [], null, Now);
 
-        Assert.Throws<InvalidOperationException>(() => request.Approve("bob", null, Now));
+        Assert.Throws<InvalidOperationException>(() => request.Approve("bob", [], null, Now));
 
         Assert.AreEqual(1, request.Approvals.Count);
         Assert.AreEqual(DeploymentRequestStatus.Pending, request.Status);
@@ -105,22 +105,22 @@ public class DeploymentRequestStateTests
     {
         var request = Submitted();
 
-        Assert.Throws<ArgumentException>(() => request.Approve("", null, Now));
+        Assert.Throws<ArgumentException>(() => request.Approve("", [], null, Now));
     }
 
     [TestMethod]
     public void Approve_ARejectedRequest_Throws()
     {
         var request = Submitted();
-        request.Reject("bob", "missing error handling", Now);
+        request.Reject("bob", [], "missing error handling", Now);
 
-        Assert.Throws<InvalidOperationException>(() => request.Approve("carol", null, Now));
+        Assert.Throws<InvalidOperationException>(() => request.Approve("carol", [], null, Now));
     }
 
     [TestMethod]
     public void Approve_BeforeSubmit_ThrowsNotFound()
     {
-        Assert.Throws<KeyNotFoundException>(() => new DeploymentRequestState().Approve("bob", null, Now));
+        Assert.Throws<KeyNotFoundException>(() => new DeploymentRequestState().Approve("bob", [], null, Now));
     }
 
     [TestMethod]
@@ -128,7 +128,7 @@ public class DeploymentRequestStateTests
     {
         var request = Submitted();
 
-        request.Reject("bob", "missing error handling", Now);
+        request.Reject("bob", [], "missing error handling", Now);
 
         Assert.AreEqual(DeploymentRequestStatus.Rejected, request.Status);
         Assert.AreEqual("bob", request.ClosedBy);
@@ -141,7 +141,7 @@ public class DeploymentRequestStateTests
     {
         var request = Submitted();
 
-        Assert.Throws<ArgumentException>(() => request.Reject("bob", " ", Now));
+        Assert.Throws<ArgumentException>(() => request.Reject("bob", [], " ", Now));
         Assert.AreEqual(DeploymentRequestStatus.Pending, request.Status);
     }
 
@@ -150,7 +150,7 @@ public class DeploymentRequestStateTests
     {
         var request = Submitted(requestedBy: "alice");
 
-        Assert.Throws<InvalidOperationException>(() => request.Reject("alice", "never mind", Now));
+        Assert.Throws<InvalidOperationException>(() => request.Reject("alice", [], "never mind", Now));
     }
 
     [TestMethod]
@@ -213,5 +213,60 @@ public class DeploymentRequestStateTests
         Assert.AreEqual(DeploymentRequestStatus.Approved, request.Status);
         Assert.AreEqual("storage down", request.DeployError);
         Assert.IsTrue(request.IsOpen);
+    }
+
+    private static DeploymentRequestState SubmittedForGroups(params string[] reviewerGroups)
+    {
+        var request = new DeploymentRequestState();
+        request.Submit(Guid.NewGuid(), "order-process", "<bpmn/>", "alice", null, 1, false, Now, reviewerGroups);
+        return request;
+    }
+
+    [TestMethod]
+    public void Submit_KeepsDistinctNonBlankReviewerGroups()
+    {
+        var request = SubmittedForGroups("release-managers", " ", "release-managers", "sre");
+
+        CollectionAssert.AreEqual(new[] { "release-managers", "sre" }, request.ReviewerGroups);
+    }
+
+    [TestMethod]
+    public void Approve_ByANonMember_WhenReviewerGroupsAreSet_Throws()
+    {
+        var request = SubmittedForGroups("release-managers");
+
+        var ex = Assert.Throws<InvalidOperationException>(() => request.Approve("bob", ["developers"], null, Now));
+
+        StringAssert.Contains(ex.Message, "release-managers");
+        Assert.IsEmpty(request.Approvals);
+    }
+
+    [TestMethod]
+    public void Approve_ByAMemberOfAnyReviewerGroup_Counts()
+    {
+        var request = SubmittedForGroups("release-managers", "sre");
+
+        request.Approve("bob", ["developers", "sre"], null, Now);
+
+        Assert.AreEqual(DeploymentRequestStatus.Approved, request.Status);
+    }
+
+    [TestMethod]
+    public void Reject_ByANonMember_WhenReviewerGroupsAreSet_Throws()
+    {
+        var request = SubmittedForGroups("release-managers");
+
+        Assert.Throws<InvalidOperationException>(() => request.Reject("bob", [], "no", Now));
+        Assert.AreEqual(DeploymentRequestStatus.Pending, request.Status);
+    }
+
+    [TestMethod]
+    public void Approve_WithoutReviewerGroups_IgnoresTheReviewersGroups()
+    {
+        var request = Submitted(requiredApprovals: 1);
+
+        request.Approve("bob", [], null, Now);
+
+        Assert.AreEqual(DeploymentRequestStatus.Approved, request.Status);
     }
 }

@@ -325,6 +325,15 @@ internal static class FleanModelConfiguration
                         v => v.Aggregate(0, (h, x) => HashCode.Combine(h, x.GetHashCode())),
                         v => v.ToList()));
 
+            entity.Property(e => e.ReviewerGroups)
+                .HasConversion(
+                    v => JsonConvert.SerializeObject(v),
+                    v => JsonConvert.DeserializeObject<List<string>>(v) ?? new List<string>(),
+                    new ValueComparer<List<string>>(
+                        (a, b) => a!.SequenceEqual(b!),
+                        v => v.Aggregate(0, (h, x) => HashCode.Combine(h, x.GetHashCode())),
+                        v => v.ToList()));
+
             // Timestamps are stored natively; SQLite provider package overrides them with a
             // string converter (see SqliteModelCustomizer).
 

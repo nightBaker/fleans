@@ -32,8 +32,9 @@ public interface IWorkflowCommandService
     // Deployment requests (#900): the request needs Fleans:Deployments:RequiredApprovals approvals
     // from distinct non-requesters, then deploys itself. With 0 required it deploys on submit.
     Task<DeploymentRequestState> SubmitDeployment(string bpmnXml, string requestedBy, string? comment, bool deployDisabled);
-    Task<DeploymentRequestState> ApproveDeployment(Guid requestId, string userId, string? comment);
-    Task<DeploymentRequestState> RejectDeployment(Guid requestId, string userId, string reason);
+    // userGroups: the reviewer's groups, checked against Fleans:Deployments:ReviewerGroups.
+    Task<DeploymentRequestState> ApproveDeployment(Guid requestId, string userId, IReadOnlyList<string> userGroups, string? comment);
+    Task<DeploymentRequestState> RejectDeployment(Guid requestId, string userId, IReadOnlyList<string> userGroups, string reason);
     Task<DeploymentRequestState> WithdrawDeployment(Guid requestId, string userId);
     Task<DeploymentRequestState> RetryDeployment(Guid requestId);
 }

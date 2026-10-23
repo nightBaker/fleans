@@ -72,7 +72,7 @@ namespace Fleans.Api.Controllers
 
             try
             {
-                var userGroups = _userGroupResolver.Resolve(HttpContext, request);
+                var userGroups = _userGroupResolver.Resolve(HttpContext, request.UserGroups);
                 LogUserTaskClaim(activityInstanceId, userId);
                 await _commandService.ClaimUserTask(task.WorkflowInstanceId, activityInstanceId, userId, userGroups);
                 return Ok();

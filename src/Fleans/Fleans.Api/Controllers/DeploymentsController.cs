@@ -24,17 +24,20 @@ namespace Fleans.Api.Controllers
         private readonly IWorkflowCommandService _commandService;
         private readonly IWorkflowQueryService _queryService;
         private readonly IUserIdResolver _userIdResolver;
+        private readonly IUserGroupResolver _userGroupResolver;
 
         public DeploymentsController(
             ILogger<DeploymentsController> logger,
             IWorkflowCommandService commandService,
             IWorkflowQueryService queryService,
-            IUserIdResolver userIdResolver)
+            IUserIdResolver userIdResolver,
+            IUserGroupResolver userGroupResolver)
         {
             _logger = logger;
             _commandService = commandService;
             _queryService = queryService;
             _userIdResolver = userIdResolver;
+            _userGroupResolver = userGroupResolver;
         }
 
         [EnableRateLimiting("workflow-mutation")]
@@ -87,7 +90,8 @@ namespace Fleans.Api.Controllers
             if (!TryResolveUserId(request?.UserId, out var userId, out var rejection))
                 return rejection;
 
-            var approved = await _commandService.ApproveDeployment(requestId, userId, request?.Comment);
+            var userGroups = _userGroupResolver.Resolve(HttpContext, request?.UserGroups);
+            var approved = await _commandService.ApproveDeployment(requestId, userId, userGroups, request?.Comment);
             return Ok(ToDto(approved));
         }
 
@@ -100,7 +104,8 @@ namespace Fleans.Api.Controllers
             if (!TryResolveUserId(request.UserId, out var userId, out var rejection))
                 return rejection;
 
-            var rejected = await _commandService.RejectDeployment(requestId, userId, request.Reason);
+            var userGroups = _userGroupResolver.Resolve(HttpContext, request.UserGroups);
+            var rejected = await _commandService.RejectDeployment(requestId, userId, userGroups, request.Reason);
             return Ok(ToDto(rejected));
         }
 
@@ -153,12 +158,12 @@ namespace Fleans.Api.Controllers
         private static DeploymentRequestDto ToDto(DeploymentRequestState r) => new(
             r.Id, r.ProcessDefinitionKey, r.RequestedBy, r.RequestedAt, r.Comment, r.RequiredApprovals,
             ToDto(r.Approvals), r.Status.ToString(), r.DeployDisabled, r.ClosedBy, r.CloseReason,
-            r.DeployedVersion, r.DeployError);
+            r.DeployedVersion, r.DeployError, r.ReviewerGroups);
 
         private static DeploymentRequestDto ToDto(DeploymentRequestSummary r) => new(
             r.Id, r.ProcessDefinitionKey, r.RequestedBy, r.RequestedAt, r.Comment, r.RequiredApprovals,
             ToDto(r.Approvals), r.Status.ToString(), r.DeployDisabled, r.ClosedBy, r.CloseReason,
-            r.DeployedVersion, r.DeployError);
+            r.DeployedVersion, r.DeployError, r.ReviewerGroups);
 
         private static List<DeploymentApprovalDto> ToDto(List<DeploymentApproval> approvals) =>
             approvals.Select(a => new DeploymentApprovalDto(a.UserId, a.ApprovedAt, a.Comment)).ToList();

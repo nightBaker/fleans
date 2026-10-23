@@ -96,6 +96,10 @@ if (authEnabled)
             o.TokenValidationParameters.NameClaimType = "preferred_username";
             // Prepares the deferred role-policy slice — claim is harmless when absent.
             o.TokenValidationParameters.RoleClaimType = "roles";
+            // Deploy reviewer groups (#900): keep the groups claim when it only arrives from UserInfo
+            // (array values become one claim each). Same claim name as the API's group resolver.
+            var groupsClaim = builder.Configuration["Authentication:GroupsClaim"] ?? "groups";
+            o.ClaimActions.MapJsonKey(groupsClaim, groupsClaim);
         });
 
     builder.Services.AddAuthorizationBuilder()
