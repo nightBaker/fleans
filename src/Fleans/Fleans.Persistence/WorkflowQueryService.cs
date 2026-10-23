@@ -49,12 +49,16 @@ public class WorkflowQueryService : IWorkflowQueryService
 
         // A running instance projects only its row — its details come from the grain. A completed
         // one has them in the read model, so viewing it does not activate (and replay) the grain.
+        // The projector runs behind the journal (#861): no row yet, or a row that does not say
+        // completed yet, is answered by the grain too, so a caller sees its own writes.
         // Tracked, so a completed instance's details can be loaded onto it below.
         var state = await db.WorkflowInstances.AsTracking().FirstOrDefaultAsync(s => s.Id == workflowInstanceId);
-        if (state is null)
-            return null;
-        if (!state.IsCompleted)
-            return await _grainFactory.GetGrain<IWorkflowInstanceGrain>(workflowInstanceId).GetStateSnapshot();
+        if (state is null || !state.IsCompleted)
+        {
+            var live = await _grainFactory.GetGrain<IWorkflowInstanceGrain>(workflowInstanceId).GetStateSnapshot();
+            // An id that was never started has no creation time: not found.
+            return live?.CreatedAt is null ? null : live;
+        }
 
         var entry = db.Entry(state);
         await entry.Collection(s => s.Entries).LoadAsync();
@@ -250,10 +254,12 @@ public class WorkflowQueryService : IWorkflowQueryService
     {
         await using var db = await _dbContextFactory.CreateDbContextAsync();
 
+        // The row may not be projected yet (#861); the grain knows its definition.
         var processDefinitionId = await db.WorkflowInstances
             .Where(w => w.Id == instanceId)
             .Select(w => w.ProcessDefinitionId)
-            .FirstOrDefaultAsync();
+            .FirstOrDefaultAsync()
+            ?? (await _grainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId).GetStateSnapshot())?.ProcessDefinitionId;
 
         if (processDefinitionId is null)
             return null;

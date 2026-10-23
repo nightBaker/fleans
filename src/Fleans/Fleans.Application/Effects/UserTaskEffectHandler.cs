@@ -21,9 +21,8 @@ public partial class UserTaskEffectHandler : IEffectHandler
         switch (effect)
         {
             case RegisterUserTaskEffect regTask:
-                // The UserTasks row references the instance's row: on a start that reaches the
-                // user task in its first turn, write the instance first (#863).
-                await context.EnsureInstancePersistedAsync();
+                // No need to persist the instance first: UserTasks has no foreign key to the
+                // asynchronously projected WorkflowInstances row (#861).
                 try
                 {
                     var taskGrain = context.GrainFactory.GetGrain<IUserTaskGrain>(regTask.ActivityInstanceId);

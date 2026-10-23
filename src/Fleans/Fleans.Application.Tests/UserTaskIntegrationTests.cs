@@ -62,9 +62,9 @@ public class UserTaskIntegrationTests : WorkflowTestBase
     [TestMethod]
     public async Task StartWorkflow_UserTaskRightAfterStart_IsRegisteredInTheReadModel()
     {
-        // Regression (#863): the start is one turn, so the user task registers before the
-        // instance's first append. The UserTasks row references the instance row, which must
-        // therefore be written first.
+        // Regression (#863, #861): the start is one turn, so the user task registers before the
+        // instance's first append — and long before the projector writes the instance's row.
+        // The UserTasks row must not depend on it; no wait for the projector is needed.
         var grain = await StartUserTaskWorkflow(assignee: "john");
         var snapshot = await QueryService.GetStateSnapshot(grain.GetPrimaryKey());
         Assert.IsNotNull(snapshot);

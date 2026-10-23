@@ -118,6 +118,8 @@ Applied values:
 
 Per-instance FIFO ordering is preserved (Orleans guarantees FIFO per stream); cross-instance traffic distributes across `TotalQueueCount` Redis queues and across silos. Scaling `fleans-worker` replicas now provides real parallelism across distinct workflow instances for `CustomTaskHandlerBase` plugin handlers. Each handler grain is keyed by workflow instance id (Orleans single-activation → one silo at a time), each queue is pulled by exactly one silo, and the `GetVariablesIfActive` pre-execution check skips at-least-once redeliveries of an activity that already finished (see [`invariants.md`](invariants.md#stream-redelivery-idempotency) guard 8). A run interrupted mid-`ExecuteAsync` (worker crash, activation deactivation) is redelivered and runs again, so plugins still need idempotent external calls.
 
+`InstanceAdvanced` (#861) is keyed the same way (`events.InstanceAdvanced` / instance id) but is published by `WorkflowInstance` itself, straight to the stream, after a journal append — not through `WorkflowEventsPublisher`: it is not an `IDomainEvent` of the workflow, and a grain hop per append is pure overhead. Its subscriber is `WorkflowInstanceProjector` (`[CorePlacement]`, it needs the event store and the read model); see [`persistence.md`](persistence.md#event-store-journal-snapshots-read-model). Like every stream event it lives in `Fleans.Domain.Abstractions`.
+
 The default `IDomainEvent` switch branch in `Publish` logs at warning level (`LogUnknownEventType`, EventId 5001) and drops — **adding a new engine event type requires a new `switch` case** — and that event type must live in `Fleans.Domain.Abstractions` (next paragraph), even if its subscriber is not an `IAsyncObserver<T>` grain the guard test can see.
 
 **Stream event types live in `Fleans.Domain.Abstractions` (#866).** Every silo that registers the stream provider owns a slice of the queues — external plugin hosts included — and must deserialize every record on them before forwarding it to the subscriber's silo. A plugin host carries only `Fleans.Worker`'s dependency closure, so an event type left in `Fleans.Domain` cannot be read there: the Kafka receiver drops it (or dead-letters it) and the instance hangs with the activity still executing. Keep the namespace `Fleans.Domain.Events` when adding one. `StreamEventAssemblyTests` fails if a stream subscriber (`IAsyncObserver<T>` grain in `Fleans.Application` / `Fleans.Worker`) observes a type from any other assembly. The Redis provider happens to be immune (it keeps payloads opaque until `GetEvents<T>` on the consumer), Kafka is not; the `e2e-split-roles` CI job runs on both.
@@ -133,6 +135,7 @@ Handlers that follow this pattern (replicate it for any new `[ImplicitStreamSubs
 - `WorkflowEvaluateActivationConditionEventHandler`
 - `WorkflowEvaluateConditionEventHandler`
 - `WorkflowEvaluateCompletionConditionEventHandler`
+- `WorkflowInstanceProjector` (`Fleans.Application/Projections/`)
 
 The fallback `else { stream.SubscribeAsync(...) }` branch is intentionally absent — implicit-subscription dispatch always materialises a handle. Regressions surface in the broader script/condition/custom-task integration tests, all of which flow through these handlers.
 

@@ -54,7 +54,7 @@ public class EfCoreWorkflowInstancePurgeServiceTests : PersistenceTestBase
             case Outcome.Failed: state.Fail(finishedAt); break;
         }
 
-        await new EfCoreWorkflowStateProjection(fixture.CommandFactory).WriteAsync(id.ToString(), state);
+        await new EfCoreWorkflowStateProjection(fixture.CommandFactory).WriteAsync(id.ToString(), state, version: 3);
         var store = CreateStore(fixture);
         await store.AppendEventsAsync(id, [new WorkflowStarted(Guid.NewGuid(), "p1", Guid.NewGuid()), new ExecutionStarted()], 0, Guid.NewGuid());
         await store.AppendEventsAsync(id, [new WorkflowCompleted()], 2, Guid.NewGuid());

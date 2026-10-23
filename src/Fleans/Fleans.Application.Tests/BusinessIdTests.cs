@@ -32,6 +32,7 @@ public class BusinessIdTests : WorkflowTestBase
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
         Assert.AreEqual("ORDER-1", await grain.GetBusinessId());
 
+        await WaitForProjection(instanceId);
         var filtered = await QueryService.GetInstancesByKey(
             "biz-simple", new PageRequest(Filters: "BusinessId==ORDER-1"));
         Assert.HasCount(1, filtered.Items);
@@ -207,7 +208,8 @@ public class BusinessIdTests : WorkflowTestBase
         // Arrange — `,` and `|` would split a Sieve `filters` term
         await DeployAsync(CreateSimpleWorkflow("biz-meta"));
         var match = await CommandService.StartWorkflow("biz-meta", businessId: "ACME, Inc|42");
-        await CommandService.StartWorkflow("biz-meta", businessId: "ACME");
+        var other = await CommandService.StartWorkflow("biz-meta", businessId: "ACME");
+        await WaitForProjection(match, other);
 
         // Act
         var byKey = await QueryService.GetInstancesByKey("biz-meta", new PageRequest(), "ACME, Inc|42");
@@ -243,6 +245,7 @@ public class BusinessIdTests : WorkflowTestBase
 
         // Assert
         Assert.AreNotEqual(first, second);
+        await WaitForProjection(first, second);
         var page = await QueryService.GetInstancesByKey("biz-dup", new PageRequest(Filters: "BusinessId==ORDER-DUP"));
         Assert.AreEqual(2, page.TotalCount);
     }

@@ -36,7 +36,7 @@ public class EfCoreWorkflowStateProjectionTests : PersistenceTestBase
         var state = RunningInstance(instanceId);
 
         // Act
-        await projection.WriteAsync(instanceId.ToString(), state);
+        await projection.WriteAsync(instanceId.ToString(), state, version: 1);
 
         // Assert
         await using var db = await fixture.CommandFactory.CreateDbContextAsync();
@@ -58,12 +58,12 @@ public class EfCoreWorkflowStateProjectionTests : PersistenceTestBase
         var instanceId = Guid.NewGuid();
         var state = new WorkflowInstanceState();
         state.Initialize(instanceId, null, Guid.NewGuid(), At, businessId: "order-1");
-        await projection.WriteAsync(instanceId.ToString(), state);
+        await projection.WriteAsync(instanceId.ToString(), state, version: 1);
         state.SetParentInfo(Guid.NewGuid(), "callActivity");
         state.Start(At);
 
         // Act
-        await projection.WriteAsync(instanceId.ToString(), state);
+        await projection.WriteAsync(instanceId.ToString(), state, version: 2);
         var row = await projection.ReadRowAsync(instanceId.ToString());
 
         // Assert — the activation repair compares exactly these: equal means no rewrite
@@ -98,14 +98,14 @@ public class EfCoreWorkflowStateProjectionTests : PersistenceTestBase
         var projection = new EfCoreWorkflowStateProjection(fixture.CommandFactory);
         var instanceId = Guid.NewGuid();
         var state = RunningInstance(instanceId);
-        await projection.WriteAsync(instanceId.ToString(), state);
+        await projection.WriteAsync(instanceId.ToString(), state, version: 2);
         var task = state.Entries.Single();
         state.CompleteEntry(task.ActivityInstanceId, At);
         state.Complete(At);
 
-        // Act — the completing write, and a later one (activation repair)
-        await projection.WriteAsync(instanceId.ToString(), state);
-        await projection.WriteAsync(instanceId.ToString(), state);
+        // Act — the completing write, and the same version again (a redelivered notification)
+        await projection.WriteAsync(instanceId.ToString(), state, version: 5);
+        await projection.WriteAsync(instanceId.ToString(), state, version: 5);
 
         // Assert
         await using var db = await fixture.CommandFactory.CreateDbContextAsync();
@@ -123,6 +123,77 @@ public class EfCoreWorkflowStateProjectionTests : PersistenceTestBase
     [DataTestMethod]
     [DataRow(PersistenceProvider.Sqlite)]
     [DataRow(PersistenceProvider.Postgres)]
+    public async Task Write_OlderVersion_DoesNotRollTheRowBack(PersistenceProvider provider)
+    {
+        // Arrange — the row already reflects version 5 (started, completed)
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var projection = new EfCoreWorkflowStateProjection(fixture.CommandFactory);
+        var instanceId = Guid.NewGuid();
+        var completed = RunningInstance(instanceId);
+        completed.CompleteEntry(completed.Entries.Single().ActivityInstanceId, At);
+        completed.Complete(At);
+        await projection.WriteAsync(instanceId.ToString(), completed, version: 5);
+        var older = new WorkflowInstanceState();
+        older.Initialize(instanceId, null, Guid.NewGuid(), At, businessId: "order-1");
+
+        // Act — a late write of an older state (a stale projector activation), running and completed
+        await projection.WriteAsync(instanceId.ToString(), older, version: 1);
+        await projection.WriteAsync(instanceId.ToString(), completed, version: 4);
+
+        // Assert
+        Assert.AreEqual(WorkflowInstanceRow.From(completed), await projection.ReadRowAsync(instanceId.ToString()));
+        await using var db = await fixture.CommandFactory.CreateDbContextAsync();
+        var stored = await db.WorkflowInstances.SingleAsync(s => s.Id == instanceId);
+        Assert.AreEqual(5, db.Entry(stored).Property<int>(FleanModelConfiguration.ProjectedVersion).CurrentValue);
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task Write_CompletedInstance_NewerVersionUpdatesVariablesAndConditions(PersistenceProvider provider)
+    {
+        // Arrange — a completed instance with a variable and two condition results
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var projection = new EfCoreWorkflowStateProjection(fixture.CommandFactory);
+        var instanceId = Guid.NewGuid();
+        var state = RunningInstance(instanceId);
+        var gateway = Guid.NewGuid();
+        state.AddConditionSequenceStates(gateway, ["flowA", "flowB"]);
+        state.SetConditionSequenceResult(gateway, "flowA", true);
+        var scope = state.GetRootVariablesId();
+        state.MergeState(scope, Variables(("x", 1)));
+        state.CompleteEntry(state.Entries.Single().ActivityInstanceId, At);
+        state.Complete(At);
+        await projection.WriteAsync(instanceId.ToString(), state, version: 5);
+
+        // Act — a post-completion append changed a variable and a condition result
+        state.MergeState(scope, Variables(("x", 2)));
+        state.SetConditionSequenceResult(gateway, "flowB", true);
+        await projection.WriteAsync(instanceId.ToString(), state, version: 6);
+
+        // Assert
+        await using var db = await fixture.CommandFactory.CreateDbContextAsync();
+        var row = await db.WorkflowInstances
+            .Include(s => s.VariableStates)
+            .Include(s => s.ConditionSequenceStates)
+            .SingleAsync(s => s.Id == instanceId);
+        Assert.AreEqual(2L, Convert.ToInt64(((IDictionary<string, object?>)row.VariableStates.Single().Variables)["x"]));
+        Assert.HasCount(2, row.ConditionSequenceStates);
+        Assert.IsTrue(row.ConditionSequenceStates.All(c => c.Result));
+    }
+
+    private static System.Dynamic.ExpandoObject Variables(params (string Key, object Value)[] values)
+    {
+        var expando = new System.Dynamic.ExpandoObject();
+        var dict = (IDictionary<string, object?>)expando;
+        foreach (var (key, value) in values)
+            dict[key] = value;
+        return expando;
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
     public async Task WorkflowInstanceRow_CoversEveryMappedScalarColumn(PersistenceProvider provider)
     {
         // A column mapped on the state but missing from the row would never be written for a
@@ -132,7 +203,7 @@ public class EfCoreWorkflowStateProjectionTests : PersistenceTestBase
         var entityType = db.Model.FindEntityType(typeof(WorkflowInstanceState))!;
 
         var mapped = entityType.GetProperties()
-            .Where(p => !p.IsPrimaryKey())
+            .Where(p => !p.IsPrimaryKey() && p.Name != FleanModelConfiguration.ProjectedVersion)
             .Select(p => p.Name)
             .Order()
             .ToList();
