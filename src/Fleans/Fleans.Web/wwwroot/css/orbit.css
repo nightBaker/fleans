@@ -1,0 +1,1551 @@
+/* Orbit — the Admin UI look (shell, editor chrome, context menus, the default "orbit" diagram style).
+   Tokens are --o-* on body: light by default, dark when Fluent sets body[data-theme$="dark"]. The
+   accent follows the Fluent accent (Settings → Accent Color), so every Orbit surface and every Fluent
+   component share one accent. Fluent's own neutral tokens are re-pointed at the Orbit palette on the
+   .orbit-app wrapper (not on body: FAST may write its root tokens inline on documentElement/body, and
+   the nearest ancestor wins for inherited custom properties). */
+
+body {
+    --o-font: 'Space Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --o-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+    --o-bg: #F3F6FB;
+    --o-surface: #FFFFFF;
+    --o-panel: #FFFFFF;
+    --o-card: #F5F8FC;
+    --o-card2: #FAFBFD;
+    --o-sunk: #EEF2F8;
+    --o-line: #E1E7F0;
+    --o-line2: #D6DEEA;
+    --o-line3: #C3CFE0;
+    --o-text: #0C1628;
+    --o-text2: #2B3A55;
+    --o-muted: #55657F;
+    --o-canvas: #EDF1F7;
+    --o-dot: rgba(60, 90, 140, 0.2);
+    --o-node: #FFFFFF;
+    --o-nodedone: #ECF8F0;
+    --o-nodestroke: #B8C5D8;
+    --o-gwbg: #FFF7E0;
+    --o-float: rgba(255, 255, 255, 0.96);
+    --o-menu: #FFFFFF;
+    --o-menuline: #D3DCEA;
+    --o-menushadow: 0 18px 44px rgba(20, 40, 80, 0.18);
+    --o-shadow: rgba(20, 40, 80, 0.12);
+    --o-kbd: #EEF2F8;
+    --o-pending: #94A3BB;
+    --o-success: #15803D;
+    --o-successsoft: rgba(21, 128, 61, 0.1);
+    --o-successline: rgba(21, 128, 61, 0.55);
+    --o-warn: #B45309;
+    --o-warnsoft: rgba(245, 158, 11, 0.12);
+    --o-warnline: rgba(180, 83, 9, 0.4);
+    --o-danger: #DC2626;
+    --o-dangersoft: rgba(220, 38, 38, 0.08);
+    --o-violet: #6D28D9;
+    --o-violetsoft: rgba(109, 40, 217, 0.08);
+
+    --o-accent: var(--accent-fill-rest, #0E7490);
+    --o-accentink: var(--accent-foreground-rest, #0E7490);
+    --o-accentsoft: color-mix(in srgb, var(--o-accent) 14%, transparent);
+    --o-accentline: color-mix(in srgb, var(--o-accent) 60%, transparent);
+    --o-accentglow: color-mix(in srgb, var(--o-accent) 30%, transparent);
+    --o-ontext: var(--foreground-on-accent-rest, #FFFFFF);
+}
+
+body[data-theme$="dark"] {
+    --o-bg: #05080F;
+    --o-surface: #070C16;
+    --o-panel: #080E1A;
+    --o-card: #0B1220;
+    --o-card2: #0A1120;
+    --o-sunk: #060A12;
+    --o-line: #16233A;
+    --o-line2: #1A2840;
+    --o-line3: #22344F;
+    --o-text: #E6F1FF;
+    --o-text2: #C9D6EA;
+    --o-muted: #8DA2BF;
+    --o-canvas: #070C16;
+    --o-dot: rgba(120, 170, 230, 0.16);
+    --o-node: #0B1424;
+    --o-nodedone: #0A1A1A;
+    --o-nodestroke: #2A3B58;
+    --o-gwbg: #14110A;
+    --o-float: rgba(11, 18, 32, 0.92);
+    --o-menu: #0C1424;
+    --o-menuline: #24375A;
+    --o-menushadow: 0 18px 50px rgba(0, 0, 0, 0.6);
+    --o-shadow: rgba(0, 0, 0, 0.45);
+    --o-kbd: #121D31;
+    --o-pending: #4A5D7E;
+    --o-success: #4ADE80;
+    --o-successsoft: rgba(74, 222, 128, 0.12);
+    --o-successline: rgba(74, 222, 128, 0.55);
+    --o-warn: #FBBF24;
+    --o-warnsoft: rgba(251, 191, 36, 0.1);
+    --o-warnline: rgba(251, 191, 36, 0.4);
+    --o-danger: #F87171;
+    --o-dangersoft: rgba(248, 113, 113, 0.1);
+    --o-violet: #A78BFA;
+    --o-violetsoft: rgba(167, 139, 250, 0.14);
+    --o-accentsoft: color-mix(in srgb, var(--o-accent) 12%, transparent);
+    --o-accentline: color-mix(in srgb, var(--o-accent) 50%, transparent);
+    --o-accentglow: color-mix(in srgb, var(--o-accent) 45%, transparent);
+}
+
+/* ---- Fluent tokens → Orbit palette ------------------------------------------------------------ */
+
+.orbit-app {
+    --body-font: var(--o-font);
+    --control-corner-radius: 8;
+    --layer-corner-radius: 12;
+    --neutral-layer-1: var(--o-panel);
+    --neutral-layer-2: var(--o-surface);
+    --neutral-layer-3: var(--o-card);
+    --neutral-layer-4: var(--o-sunk);
+    --neutral-layer-card-container: var(--o-panel);
+    --neutral-layer-floating: var(--o-card);
+    --neutral-fill-layer-rest: var(--o-bg);
+    --neutral-fill-input-rest: var(--o-card);
+    --neutral-fill-input-hover: var(--o-sunk);
+    --neutral-fill-input-active: var(--o-card);
+    --neutral-fill-input-focus: var(--o-card);
+    --neutral-fill-secondary-rest: var(--o-card);
+    --neutral-fill-secondary-hover: var(--o-sunk);
+    --neutral-fill-rest: var(--o-card);
+    --neutral-fill-hover: var(--o-sunk);
+    --neutral-fill-active: var(--o-card);
+    --neutral-fill-stealth-rest: transparent;
+    --neutral-fill-stealth-hover: var(--o-accentsoft);
+    --neutral-fill-stealth-active: var(--o-accentsoft);
+    --neutral-stroke-rest: var(--o-line3);
+    --neutral-stroke-hover: var(--o-muted);
+    --neutral-stroke-divider-rest: var(--o-line);
+    --neutral-stroke-layer-rest: var(--o-line);
+    --neutral-stroke-input-rest: var(--o-line3);
+    --neutral-foreground-rest: var(--o-text);
+    --neutral-foreground-hover: var(--o-text);
+    --neutral-foreground-hint: var(--o-muted);
+    --fill-color: var(--o-panel);
+
+    min-height: 100vh;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--o-bg);
+    color: var(--o-text);
+    font-family: var(--o-font);
+    font-size: 14px;
+}
+
+.orbit-app .mono,
+.orbit-mono {
+    font-family: var(--o-mono);
+}
+
+.orbit-app button:focus-visible,
+.orbit-app a:focus-visible {
+    outline: 2px solid var(--o-accentink);
+    outline-offset: 2px;
+}
+
+/* ---- Top bar --------------------------------------------------------------------------------- */
+
+.orbit-topbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 16px;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--o-line);
+    background: var(--o-surface);
+    flex-shrink: 0;
+}
+
+.orbit-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--o-text);
+    text-decoration: none;
+}
+
+.orbit-brand svg {
+    width: 28px;
+    height: 28px;
+    color: var(--o-accentink);
+}
+
+.orbit-brand__name {
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    font-size: 15px;
+}
+
+.orbit-chip {
+    font-family: var(--o-mono);
+    font-size: 11px;
+    color: var(--o-muted);
+    padding: 2px 6px;
+    border: 1px solid var(--o-line3);
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+.orbit-nav,
+.orbit-segmented {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    border-radius: 10px;
+    background: var(--o-card);
+    border: 1px solid var(--o-line);
+}
+
+.orbit-nav a,
+.orbit-segmented button {
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 14px;
+    border-radius: 7px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--o-muted);
+    font-family: inherit;
+    font-size: 13px;
+    text-decoration: none;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.orbit-nav a:hover,
+.orbit-segmented button:hover {
+    color: var(--o-text);
+}
+
+.orbit-nav a.active,
+.orbit-segmented button[aria-pressed="true"] {
+    border-color: var(--o-accentline);
+    background: var(--o-accentsoft);
+    color: var(--o-text);
+}
+
+.orbit-nav svg {
+    width: 16px;
+    height: 16px;
+}
+
+.orbit-topbar__end {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.orbit-icon-btn {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    border: 1px solid var(--o-line3);
+    background: var(--o-card);
+    color: var(--o-text);
+    cursor: pointer;
+    padding: 0;
+    text-decoration: none;
+}
+
+.orbit-icon-btn:hover {
+    border-color: var(--o-accentline);
+}
+
+.orbit-icon-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+.orbit-user {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--o-muted);
+}
+
+.orbit-avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 600;
+    background: var(--o-violetsoft);
+    border: 2px solid var(--o-violet);
+    color: var(--o-text);
+    flex: none;
+}
+
+.orbit-user form {
+    margin: 0;
+}
+
+.orbit-main {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ---- Page header (every page but the editor) ----------------------------------------------- */
+
+.orbit-page-header {
+    /* FluentStack (vertical) doesn't stretch its children: span the page so actions sit on the right. */
+    align-self: stretch;
+    width: 100%;
+    box-sizing: border-box;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 24px 24px 16px;
+    border-bottom: 1px solid var(--o-line);
+}
+
+.orbit-page-header__title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.orbit-page-header__text {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.orbit-eyebrow {
+    font-family: var(--o-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    color: var(--o-accentink);
+    text-transform: uppercase;
+}
+
+.orbit-page-header h1 {
+    margin: 0;
+    font-size: 28px;
+    font-weight: 600;
+    line-height: 1.15;
+}
+
+.orbit-page-header__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.orbit-label {
+    font-family: var(--o-mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    color: var(--o-muted);
+    text-transform: uppercase;
+}
+
+/* Fluent surfaces that read as Orbit panels. */
+.orbit-app fluent-data-grid {
+    --fill-color: var(--o-panel);
+}
+
+.orbit-app fluent-card {
+    --fill-color: var(--o-panel);
+    border-radius: 16px;
+}
+
+.orbit-app fluent-badge {
+    font-family: var(--o-mono);
+}
+
+/* ---- Editor layout --------------------------------------------------------------------------- */
+
+.editor-page {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    background: var(--o-bg);
+}
+
+.editor-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--o-line);
+    background: var(--o-surface);
+    flex-shrink: 0;
+}
+
+.editor-crumbs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--o-muted);
+    font-size: 13px;
+    min-width: 0;
+}
+
+.process-id-toolbar {
+    color: var(--o-text);
+    font-weight: 500;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    background: transparent;
+    font: inherit;
+}
+
+.process-id-toolbar:hover {
+    border-color: var(--o-line3);
+    background: var(--o-card);
+}
+
+.orbit-pill {
+    font-family: var(--o-mono);
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+    border: 1px solid var(--o-line3);
+    color: var(--o-muted);
+    background: var(--o-card);
+}
+
+.orbit-pill--draft {
+    color: var(--o-warn);
+    background: var(--o-warnsoft);
+    border-color: var(--o-warnline);
+}
+
+.orbit-pill--accent {
+    color: var(--o-accentink);
+    background: var(--o-accentsoft);
+    border-color: var(--o-accentline);
+}
+
+.orbit-pill--success {
+    color: var(--o-success);
+    background: var(--o-successsoft);
+    border-color: var(--o-successline);
+}
+
+.orbit-pill--danger {
+    color: var(--o-danger);
+    background: var(--o-dangersoft);
+    border-color: var(--o-danger);
+}
+
+.toolbar-spacer {
+    flex: 1;
+}
+
+.editor-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.orbit-deploy::part(control) {
+    box-shadow: 0 0 20px var(--o-accentglow);
+    font-weight: 600;
+}
+
+.editor-tab-bar {
+    display: flex;
+    align-items: stretch;
+    gap: 4px;
+    padding: 6px 12px 0;
+    border-bottom: 1px solid var(--o-line);
+    background: var(--o-surface);
+    flex-shrink: 0;
+    overflow-x: auto;
+}
+
+.editor-tab {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 6px 0 12px;
+    min-height: 32px;
+    max-width: 220px;
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-radius: 8px 8px 0 0;
+    color: var(--o-muted);
+    font-size: 12px;
+    font-family: var(--o-mono);
+    cursor: pointer;
+    user-select: none;
+}
+
+.editor-tab:hover {
+    color: var(--o-text);
+    background: var(--o-card);
+}
+
+.editor-tab--active {
+    color: var(--o-text);
+    background: var(--o-bg);
+    border-color: var(--o-line);
+    box-shadow: inset 0 2px 0 var(--o-accent);
+}
+
+.editor-tab__label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.editor-tab__dirty {
+    color: var(--o-warn);
+    font-size: 10px;
+}
+
+.editor-tab__close {
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    border: none;
+    background: transparent;
+    color: var(--o-muted);
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+}
+
+.editor-tab__close:hover {
+    background: var(--o-dangersoft);
+    color: var(--o-danger);
+}
+
+.editor-messages {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px 20px 0;
+}
+
+.editor-messages:empty {
+    display: none;
+}
+
+.editor-content {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+}
+
+/* Left rail: palette, outline, validation. */
+.editor-left {
+    flex: 0 0 220px;
+    width: 220px;
+    box-sizing: border-box;
+    border-right: 1px solid var(--o-line);
+    background: var(--o-panel);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    overflow-y: auto;
+}
+
+.editor-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.orbit-palette {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.orbit-tile {
+    min-height: 58px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border-radius: 10px;
+    border: 1px solid var(--o-line2);
+    background: var(--o-card);
+    color: var(--o-text2);
+    font-family: inherit;
+    font-size: 11px;
+    cursor: grab;
+    padding: 4px;
+    text-align: center;
+}
+
+.orbit-tile:hover {
+    border-color: var(--o-accentline);
+    background: var(--o-accentsoft);
+    color: var(--o-text);
+}
+
+.orbit-tile svg {
+    width: 22px;
+    height: 22px;
+}
+
+.orbit-outline {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.orbit-outline button {
+    min-height: 30px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-right: 8px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--o-text2);
+    font-family: inherit;
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.orbit-outline button:hover {
+    background: var(--o-card);
+}
+
+.orbit-outline button[aria-current="true"] {
+    background: var(--o-accentsoft);
+    border-color: var(--o-accentline);
+    color: var(--o-text);
+}
+
+.orbit-outline__name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.orbit-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--o-pending);
+    flex: none;
+}
+
+.orbit-dot--lg {
+    width: 8px;
+    height: 8px;
+}
+
+.orbit-dot--start { background: var(--o-success); }
+.orbit-dot--end { background: var(--o-danger); }
+.orbit-dot--gateway { background: var(--o-warn); }
+.orbit-dot--event { background: var(--o-violet); }
+.orbit-dot--task { background: var(--o-accent); }
+.orbit-dot--error { background: var(--o-danger); }
+.orbit-dot--warning { background: var(--o-warn); }
+.orbit-dot--info { background: var(--o-accent); }
+.orbit-dot--ok { background: var(--o-success); }
+
+.orbit-validation {
+    margin-top: auto;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid var(--o-line2);
+    background: var(--o-card);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.orbit-validation__row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+}
+
+.orbit-text-btn {
+    align-self: flex-start;
+    min-height: 28px;
+    padding: 0 8px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--o-accentink);
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.orbit-text-btn:hover {
+    background: var(--o-accentsoft);
+}
+
+.orbit-problems {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.orbit-problem {
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr);
+    gap: 8px;
+    padding: 8px;
+    border-radius: 8px;
+    border: 1px solid var(--o-line);
+    background: var(--o-panel);
+    font-size: 12px;
+    text-align: left;
+    color: var(--o-text);
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.orbit-problem:hover {
+    border-color: var(--o-accentline);
+}
+
+.orbit-problem__icon {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--o-bg);
+}
+
+.orbit-problem--error .orbit-problem__icon { background: var(--o-danger); }
+.orbit-problem--warning .orbit-problem__icon { background: var(--o-warn); }
+.orbit-problem--info .orbit-problem__icon { background: var(--o-accent); }
+
+.orbit-problem__meta {
+    display: block;
+    font-family: var(--o-mono);
+    font-size: 10px;
+    color: var(--o-muted);
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Canvas column. */
+.editor-center {
+    flex: 1;
+    min-width: 0;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+.editor-canvas {
+    flex: 1;
+    min-height: 0;
+    background-color: var(--o-canvas);
+    background-image: radial-gradient(var(--o-dot) 1px, transparent 1.2px);
+    background-size: 20px 20px;
+}
+
+.editor-canvas:focus {
+    outline: none;
+}
+
+.editor-canvas:focus-visible {
+    outline: 2px solid var(--o-accentline);
+    outline-offset: -2px;
+}
+
+.editor-center--xml .editor-canvas,
+.editor-center--xml .orbit-float {
+    display: none;
+}
+
+.orbit-float {
+    position: absolute;
+    z-index: 10;
+    display: flex;
+    gap: 2px;
+    padding: 4px;
+    border-radius: 12px;
+    background: var(--o-float);
+    border: 1px solid var(--o-line2);
+    box-shadow: 0 8px 30px var(--o-shadow);
+}
+
+.orbit-float--tools {
+    left: 16px;
+    top: 16px;
+}
+
+/* Bottom-left: the bottom-right corner belongs to the bpmn.io watermark, which must stay visible. */
+.orbit-float--zoom {
+    left: 16px;
+    bottom: 16px;
+    align-items: center;
+}
+
+.orbit-float__sep {
+    width: 1px;
+    background: var(--o-line2);
+    margin: 6px 4px;
+}
+
+.orbit-tool {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--o-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+}
+
+.orbit-tool:hover {
+    color: var(--o-text);
+    background: var(--o-card);
+}
+
+.orbit-tool[aria-pressed="true"] {
+    border-color: var(--o-accentline);
+    background: var(--o-accentsoft);
+    color: var(--o-accentink);
+}
+
+.orbit-tool svg {
+    width: 16px;
+    height: 16px;
+}
+
+.orbit-zoom-value {
+    min-width: 48px;
+    text-align: center;
+    font-family: var(--o-mono);
+    font-size: 11px;
+    color: var(--o-muted);
+}
+
+/* XML mode. */
+.orbit-xml {
+    flex: 1;
+    min-height: 0;
+    display: none;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px 20px;
+}
+
+.editor-center--xml .orbit-xml {
+    display: flex;
+}
+
+.orbit-xml__bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.orbit-xml__code {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    box-sizing: border-box;
+    resize: none;
+    padding: 14px 16px;
+    border-radius: 14px;
+    border: 1px solid var(--o-line);
+    background: var(--o-sunk);
+    color: var(--o-text2);
+    font-family: var(--o-mono);
+    font-size: 12.5px;
+    line-height: 1.6;
+    tab-size: 2;
+    white-space: pre;
+    overflow: auto;
+}
+
+.orbit-xml__code:focus {
+    outline: none;
+    border-color: var(--o-accentline);
+    box-shadow: 0 0 0 3px var(--o-accentsoft);
+}
+
+/* Right inspector. */
+.editor-inspector {
+    flex: 0 0 320px;
+    width: 320px;
+    min-width: 0;
+    box-sizing: border-box;
+    border-left: 1px solid var(--o-line);
+    background: var(--o-panel);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.editor-inspector .properties-panel {
+    width: auto;
+    flex: 1;
+    border-left: none;
+}
+
+.orbit-empty {
+    padding: 20px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    color: var(--o-text2);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.orbit-empty h2 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--o-text);
+}
+
+.orbit-stats {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.orbit-stat {
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--o-card);
+    border: 1px solid var(--o-line);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.orbit-stat span:first-child {
+    font-size: 11px;
+    color: var(--o-muted);
+}
+
+.orbit-stat span:last-child {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--o-text);
+}
+
+.orbit-keys {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--o-muted);
+}
+
+.orbit-keys div {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.orbit-kbd {
+    font-family: var(--o-mono);
+    font-size: 10px;
+    color: var(--o-text);
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--o-kbd);
+    border: 1px solid var(--o-line3);
+    white-space: nowrap;
+}
+
+/* Status bar. */
+.editor-status {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 20px;
+    padding: 0 20px;
+    min-height: 32px;
+    border-top: 1px solid var(--o-line);
+    background: var(--o-surface);
+    font-family: var(--o-mono);
+    font-size: 11px;
+    color: var(--o-muted);
+    flex-shrink: 0;
+}
+
+.editor-status__item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.editor-status__end {
+    margin-left: auto;
+}
+
+/* Properties panel (shared by the editor inspector and the instance viewer). */
+.properties-panel {
+    width: 300px;
+    flex-shrink: 0;
+    border-left: 1px solid var(--o-line);
+    background: var(--o-panel);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.properties-panel-header {
+    padding: 16px 16px 12px;
+    border-bottom: 1px solid var(--o-line);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.properties-panel-type {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--o-mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    color: var(--o-muted);
+    text-transform: uppercase;
+}
+
+.properties-panel-type .orbit-dot {
+    box-shadow: 0 0 10px currentColor;
+}
+
+.properties-panel-name {
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--o-text);
+    word-break: break-word;
+}
+
+.properties-panel-id {
+    font-family: var(--o-mono);
+    font-size: 12px;
+    color: var(--o-accentink);
+    word-break: break-all;
+}
+
+.properties-panel-body {
+    padding: 16px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+/* Fluent inputs default to a fixed width; in the inspector they span the panel. */
+.properties-panel-body :is(fluent-text-field, fluent-text-area, fluent-select, fluent-combobox, fluent-number-field) {
+    width: 100%;
+    min-width: 0;
+}
+
+/* Dialogs (deploy, discard). */
+.deploy-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(2, 6, 14, 0.55);
+    backdrop-filter: blur(2px);
+    z-index: 1000;
+}
+
+.deploy-dialog {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(440px, calc(100vw - 32px));
+    box-sizing: border-box;
+    background: var(--o-panel);
+    color: var(--o-text);
+    border: 1px solid var(--o-line2);
+    border-radius: 16px;
+    padding: 24px;
+    z-index: 1001;
+    box-shadow: var(--o-menushadow);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.deploy-dialog h2 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 600;
+}
+
+.deploy-dialog p {
+    margin: 0;
+    color: var(--o-text2);
+    line-height: 1.5;
+}
+
+.orbit-checklist {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 12px;
+    list-style: none;
+    border-radius: 10px;
+    background: var(--o-card);
+    border: 1px solid var(--o-line);
+    font-size: 13px;
+}
+
+.orbit-checklist li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.orbit-check {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    flex: none;
+}
+
+.orbit-check--ok { color: var(--o-success); background: var(--o-successsoft); border: 1px solid var(--o-success); }
+.orbit-check--warn { color: var(--o-warn); background: var(--o-warnsoft); border: 1px solid var(--o-warn); }
+.orbit-check--error { color: var(--o-danger); background: var(--o-dangersoft); border: 1px solid var(--o-danger); }
+
+.deploy-dialog__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+/* Breakpoints (design board 7): ≥1440 full; 1280 compact palette; 1024 inspector over canvas; <768 view-only. */
+@media (max-width: 1280px) {
+    .editor-left {
+        flex-basis: 196px;
+        width: 196px;
+    }
+
+    .editor-inspector {
+        flex-basis: 300px;
+        width: 300px;
+    }
+}
+
+@media (max-width: 1024px) {
+    .editor-content {
+        position: relative;
+    }
+
+    .editor-inspector {
+        position: absolute;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        z-index: 20;
+        box-shadow: var(--o-menushadow);
+    }
+
+    .editor-inspector--empty {
+        display: none;
+    }
+}
+
+@media (max-width: 768px) {
+    .editor-left {
+        display: none;
+    }
+
+    .editor-inspector {
+        position: static;
+        width: 100%;
+        flex-basis: auto;
+        max-height: 45vh;
+        border-left: none;
+        border-top: 1px solid var(--o-line);
+    }
+
+    .editor-content {
+        flex-direction: column;
+    }
+
+    .orbit-topbar {
+        padding: 10px 16px;
+    }
+
+    .orbit-nav {
+        order: 3;
+        width: 100%;
+        overflow-x: auto;
+    }
+}
+
+/* ---- Context menu (js/orbitContextMenu.js) ------------------------------------------------------ */
+
+.orbit-menu {
+    position: fixed;
+    z-index: 2000;
+    min-width: 220px;
+    max-width: 300px;
+    box-sizing: border-box;
+    padding: 6px;
+    border-radius: 12px;
+    background: var(--o-menu);
+    border: 1px solid var(--o-menuline);
+    box-shadow: var(--o-menushadow);
+    display: flex;
+    flex-direction: column;
+    font-family: var(--o-font);
+    font-size: 13px;
+    color: var(--o-text);
+    backdrop-filter: blur(8px);
+}
+
+.orbit-menu--sub {
+    border-color: var(--o-accentline);
+}
+
+.orbit-menu__title {
+    padding: 6px 10px 8px;
+    font-family: var(--o-mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    color: var(--o-muted);
+    text-transform: uppercase;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.orbit-menu__sep {
+    height: 1px;
+    margin: 4px 6px;
+    background: var(--o-line2);
+}
+
+.orbit-menu__item {
+    min-height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 0 10px;
+    border-radius: 7px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--o-text);
+    font-family: inherit;
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.orbit-menu__item:hover,
+.orbit-menu__item:focus,
+.orbit-menu__item[aria-expanded="true"] {
+    outline: none;
+    background: var(--o-accentsoft);
+    border-color: var(--o-accentline);
+}
+
+.orbit-menu__item[aria-disabled="true"] {
+    color: var(--o-muted);
+    cursor: default;
+    opacity: 0.6;
+}
+
+.orbit-menu__item--danger {
+    color: var(--o-danger);
+}
+
+.orbit-menu__item--danger:hover,
+.orbit-menu__item--danger:focus {
+    background: var(--o-dangersoft);
+    border-color: var(--o-danger);
+}
+
+.orbit-menu__item svg {
+    width: 12px;
+    height: 12px;
+    flex: none;
+}
+
+.orbit-menu__key {
+    font-family: var(--o-mono);
+    font-size: 10px;
+    color: var(--o-muted);
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--o-kbd);
+    border: 1px solid var(--o-line3);
+    white-space: nowrap;
+}
+
+/* ---- Diagram style: orbit (default; js/bpmnTheme.js adds .fl-diagram-orbit) ------------------
+   bpmn-js renders fill/stroke as inline var(--o-node-*); each shape's o-kind-* / fl-cat-* class picks
+   the pair, so light/dark follow the page live and DI colours from other modelers still win. */
+
+.djs-container.fl-diagram-orbit {
+    --canvas-fill-color: var(--o-canvas);
+    --element-hover-outline-fill-color: var(--o-accentline);
+    --element-selected-outline-stroke-color: var(--o-accent);
+    --element-selected-outline-secondary-stroke-color: var(--o-accentline);
+    --lasso-fill-color: var(--o-accentsoft);
+    --lasso-stroke-color: var(--o-accent);
+    --bendpoint-fill-color: var(--o-accent);
+    --bendpoint-stroke-color: var(--o-canvas);
+    --resizer-fill-color: var(--o-accent);
+    --shape-connect-allowed-fill-color: var(--o-successsoft);
+    --shape-drop-allowed-fill-color: var(--o-successsoft);
+    --shape-drop-not-allowed-fill-color: var(--o-dangersoft);
+    --shape-attach-allowed-stroke-color: var(--o-success);
+    --context-pad-entry-background-color: var(--o-menu);
+    --context-pad-entry-hover-background-color: var(--o-accentsoft);
+    --palette-background-color: var(--o-panel);
+    --palette-border-color: var(--o-line2);
+    --palette-entry-color: var(--o-text2);
+    --palette-entry-hover-color: var(--o-accentink);
+    --palette-entry-selected-color: var(--o-accentink);
+    --popup-font-family: var(--o-font);
+    --popup-font-size: 13px;
+    --popup-background-color: var(--o-menu);
+    --popup-border-color: var(--o-accentline);
+    --popup-entry-title-color: var(--o-muted);
+    --popup-description-color: var(--o-muted);
+    --popup-no-results-color: var(--o-muted);
+    --popup-entry-hover-color: var(--o-accentsoft);
+    --popup-header-entry-selected-color: var(--o-accentink);
+    --popup-header-entry-selected-background-color: var(--o-accentsoft);
+    --popup-header-group-divider-color: var(--o-line2);
+    --popup-search-border-color: var(--o-line3);
+    --popup-search-focus-border-color: var(--o-accent);
+    --popup-search-focus-background-color: var(--o-card);
+    --text-color: var(--o-text);
+    --o-node-stroke: var(--o-nodestroke);
+    --o-node-fill: var(--o-node);
+    background-color: var(--o-canvas) !important;
+    background-image: radial-gradient(var(--o-dot) 1px, transparent 1.2px) !important;
+    background-size: 20px 20px !important;
+}
+
+/* The editor draws its own palette in the left rail. The viewer has none. */
+.editor-canvas .djs-palette {
+    display: none;
+}
+
+.fl-diagram-orbit .djs-connection {
+    --o-node-stroke: var(--o-muted);
+    --o-node-fill: var(--o-canvas);
+}
+
+.fl-diagram-orbit .djs-connection .djs-visual > path {
+    stroke-width: 1.6px;
+}
+
+.fl-diagram-orbit .djs-label text,
+.fl-diagram-orbit .djs-visual text {
+    fill: var(--o-text2);
+}
+
+.fl-diagram-orbit .o-kind-task .djs-visual > text:not(.o-kind-label) {
+    fill: var(--o-text);
+}
+
+.fl-diagram-orbit .o-kind-start { --o-node-stroke: var(--o-success); }
+.fl-diagram-orbit .o-kind-end { --o-node-stroke: var(--o-danger); }
+.fl-diagram-orbit .o-kind-gateway { --o-node-stroke: var(--o-warn); --o-node-fill: var(--o-gwbg); }
+.fl-diagram-orbit .o-kind-event { --o-node-stroke: var(--o-text2); }
+.fl-diagram-orbit .o-kind-event.fl-cat-timer,
+.fl-diagram-orbit .o-kind-event.fl-cat-message,
+.fl-diagram-orbit .o-kind-start.fl-cat-timer,
+.fl-diagram-orbit .o-kind-start.fl-cat-message { --o-node-stroke: var(--o-violet); }
+.fl-diagram-orbit .o-kind-event.fl-cat-error,
+.fl-diagram-orbit .o-kind-start.fl-cat-error { --o-node-stroke: var(--o-danger); }
+.fl-diagram-orbit .o-kind-container { --o-node-fill: color-mix(in srgb, var(--o-node) 70%, transparent); }
+.fl-diagram-orbit .o-kind-annotation { --o-node-stroke: var(--o-muted); }
+.fl-diagram-orbit .o-kind-pool { --o-node-fill: var(--o-canvas); --o-node-stroke: var(--o-line3); }
+
+/* Tasks are 12px cards (containers keep bpmn-js geometry — a transaction's inset inner border). */
+.fl-diagram-orbit .o-kind-task .djs-visual > rect:first-child {
+    rx: 12px;
+    ry: 12px;
+}
+
+.fl-diagram-orbit .o-kind-label {
+    font-family: var(--o-mono);
+    font-size: 8.5px;
+    letter-spacing: 0.08em;
+    fill: var(--o-muted) !important;
+    pointer-events: none;
+}
+
+.fl-diagram-orbit .djs-element.selected .djs-visual > :first-child,
+.fl-diagram-orbit .djs-element.selected .djs-visual > path:first-child {
+    stroke: var(--o-accent) !important;
+    filter: drop-shadow(0 0 8px var(--o-accentglow));
+}
+
+.fl-diagram-orbit .djs-element.selected .djs-outline {
+    stroke: var(--o-accentline) !important;
+}
+
+.fl-diagram-orbit .djs-direct-editing-parent,
+.fl-diagram-orbit .djs-direct-editing-content {
+    background: var(--o-panel) !important;
+    color: var(--o-text) !important;
+    border-color: var(--o-accent) !important;
+    border-radius: 8px;
+    font-family: var(--o-font) !important;
+}
+
+.fl-diagram-orbit .djs-context-pad .entry {
+    border-radius: 8px;
+    border: 1px solid var(--o-menuline);
+    box-shadow: 0 6px 18px var(--o-shadow);
+    color: var(--o-text2);
+}
+
+.fl-diagram-orbit .djs-context-pad .entry:hover {
+    border-color: var(--o-accentline);
+    color: var(--o-accentink);
+}
+
+.djs-popup.fl-diagram-orbit,
+.fl-diagram-orbit .djs-popup {
+    border-radius: 12px;
+    box-shadow: var(--o-menushadow);
+    color: var(--o-text);
+}
+
+/* Validation markers (js/bpmnEditor.js lint). */
+.fl-diagram-orbit .orbit-problem-error .djs-visual > :first-child {
+    stroke: var(--o-danger) !important;
+    stroke-dasharray: 5 3;
+}
+
+.fl-diagram-orbit .orbit-problem-warning .djs-visual > :first-child {
+    stroke: var(--o-warn) !important;
+    stroke-dasharray: 5 3;
+}
+
+.orbit-badge {
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    box-sizing: border-box;
+    border-radius: 8px;
+    font-family: var(--o-mono);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 16px;
+    text-align: center;
+    color: #05080F;
+    pointer-events: none;
+}
+
+.orbit-badge--error { background: var(--o-danger); }
+.orbit-badge--warning { background: var(--o-warn); }
+.orbit-badge--done { background: var(--o-success); }
+
+/* Instance viewer run states (js/bpmnViewer.js markers), design board 6: done = green, active = accent
+   glow, failed = red, cancelled = muted dashes, picked = accent ring. */
+.fl-diagram-orbit .bpmn-completed .djs-visual > :nth-child(1) {
+    stroke: var(--o-success) !important;
+    fill: var(--o-nodedone) !important;
+}
+
+.fl-diagram-orbit .bpmn-active .djs-visual > :nth-child(1) {
+    stroke: var(--o-accent) !important;
+    filter: drop-shadow(0 0 9px var(--o-accentglow));
+}
+
+.fl-diagram-orbit :is(.bpmn-error, .bpmn-error-pulse) .djs-visual > :nth-child(1) {
+    stroke: var(--o-danger) !important;
+    fill: var(--o-dangersoft) !important;
+}
+
+.fl-diagram-orbit .bpmn-cancelled .djs-visual > :nth-child(1) {
+    stroke: var(--o-pending) !important;
+}
+
+.fl-diagram-orbit .bpmn-selected .djs-visual > :nth-child(1) {
+    stroke: var(--o-accentink) !important;
+    filter: drop-shadow(0 0 0 4px var(--o-accentsoft)) drop-shadow(0 0 10px var(--o-accentglow));
+}
+
+.fl-diagram-orbit .execution-path-line {
+    stroke: var(--o-accent);
+    stroke-dasharray: 6 6;
+    animation: orbit-flowdash 1.1s linear infinite;
+}
+
+.fl-diagram-orbit .execution-arrow-fill {
+    fill: var(--o-accent);
+}
+
+@keyframes orbit-flowdash {
+    to { stroke-dashoffset: -24; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .fl-diagram-orbit .execution-path-line,
+    .bpmn-active .djs-visual > :nth-child(1) {
+        animation: none !important;
+    }
+}
+
+/* Page bodies sit under the full-width header with the Orbit 24px gutter. */
+.orbit-main > .stack-vertical {
+    padding-bottom: 24px;
+    box-sizing: border-box;
+}
+
+.orbit-main > .stack-vertical > :not(.orbit-page-header) {
+    margin-inline: 24px;
+    max-width: calc(100% - 48px);
+    box-sizing: border-box;
+}

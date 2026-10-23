@@ -7,7 +7,7 @@
 <PageTitle>Settings</PageTitle>
 
 <FluentStack Orientation="Orientation.Vertical" Gap="20px">
-    <PageHeader Title="Settings" />
+    <PageHeader Title="Settings" Eyebrow="Fleans · Preferences" />
 
     <FluentStack Orientation="Orientation.Vertical" Gap="16px" Style="max-width: 400px; padding: 0 16px;">
         <FluentLabel Typo="Typography.Subject">Appearance</FluentLabel>
@@ -54,6 +54,7 @@
 
     private static readonly List<DiagramThemeOption> _diagramThemeOptions =
     [
+        new("Orbit", "orbit"),
         new("Classic", "classic"),
         new("Archify", "archify")
     ];

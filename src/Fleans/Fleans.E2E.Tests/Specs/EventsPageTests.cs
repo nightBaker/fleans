@@ -14,11 +14,11 @@ namespace Fleans.E2E.Tests.Specs;
 public class EventsPageTests : WorkflowE2ETestBase
 {
     [TestMethod]
-    public async Task SidebarEntry_NavigatesToEventsPage()
+    public async Task NavEntry_NavigatesToEventsPage()
     {
         await BlazorPage.GotoInteractiveAsync(Page, "/workflows");
 
-        await Page.Locator(".fluent-appbar-item a[href='/events']").ClickAsync();
+        await Page.GetByTestId("nav-events").ClickAsync();
 
         await Expect(Page).ToHaveURLAsync(new System.Text.RegularExpressions.Regex("/events$"));
         await Expect(new EventsPage(Page).Header).ToBeVisibleAsync();

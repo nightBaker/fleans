@@ -7,18 +7,25 @@
     <base href="/"/>
     <link rel="icon" type="image/svg+xml" href="favicon.svg"/>
     <ResourcePreloader/>
+    <link rel="preconnect" href="https://fonts.googleapis.com"/>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"/>
     <link rel="stylesheet" href="@Assets["app.css"]"/>
     <link rel="stylesheet" href="@Assets["Fleans.Web.styles.css"]"/>
     <ImportMap/>
     <link rel="stylesheet" href="https://unpkg.com/bpmn-js@17.11.1/dist/assets/diagram-js.css"/>
     <link rel="stylesheet" href="https://unpkg.com/bpmn-js@17.11.1/dist/assets/bpmn-js.css"/>
     <link rel="stylesheet" href="https://unpkg.com/bpmn-js@17.11.1/dist/assets/bpmn-font/css/bpmn.css"/>
+    @* After the bpmn-js sheets: the Orbit diagram style overrides their variables. *@
+    <link rel="stylesheet" href="@Assets["css/orbit.css"]"/>
     <script src="_content/Microsoft.FluentUI.AspNetCore.Components/js/loading-theme.js"></script>
     <loading-theme storage-name="theme"></loading-theme>
     <HeadOutlet />
 </head>
 
 <body>
+@* First in <body>: settles body[data-theme] before the page paints (see js/orbit.js). *@
+<script src="@Assets["js/orbit.js"]"></script>
 <Routes @rendermode="InteractiveServer" />
 <ReconnectModal/>
 <script src="@Assets["_framework/blazor.web.js"]"></script>
@@ -31,6 +38,7 @@
 <script src="@Assets["js/fleansModdleExtension.js"]"></script>
 <script src="@Assets["js/zeebeModdleExtension.js"]"></script>
 <script src="@Assets["js/boundaryEventContextPad.js"]"></script>
+<script src="@Assets["js/orbitContextMenu.js"]"></script>
 <script src="@Assets["js/bpmnEditor.js"]"></script>
 <script src="@Assets["js/dragResize.js"]"></script>
 </body>

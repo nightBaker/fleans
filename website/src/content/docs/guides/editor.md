@@ -1,11 +1,64 @@
 ---
 title: BPMN Editor
-description: Multi-tab BPMN editor in the Admin UI — open, edit, and deploy multiple diagrams side-by-side.
+description: Multi-tab BPMN editor in the Admin UI — palette, structure, validation hints, context menus, XML mode, and deploy.
 ---
 
 The Admin UI ships with an embedded BPMN editor (powered by [bpmn-js](https://bpmn.io/toolkit/bpmn-js/))
 that lets you open several diagrams at once, switch between them without losing work,
 and deploy any open diagram as a new process version.
+
+## Layout
+
+| Area | What it does |
+|---|---|
+| **Toolbar** | Process ID (click to rename) with a version pill — `v3` when the tab matches a deployed version, `v3 · draft` once edited, `draft` before the first deploy. The **Modeling / XML** switch, then New Diagram, Import BPMN, Download XML and Deploy. |
+| **Elements** (left) | Start, end, user/service/script task, call activity, exclusive and parallel gateway, timer and message event, sub-process and comment. Click a tile and then the canvas, or drag the tile onto the canvas. Every other BPMN element is one *Change type* away (right-click menu). |
+| **Structure** (left) | Every flow node, left to right, indented inside sub-processes. Click a row to select and scroll to it. |
+| **Validation** (left) | Modelling hints counted as errors and warnings; **Show problems** lists them, and the elements get a `!` / `?` badge on the canvas. |
+| **Canvas tools** | Select, pan, connect, lasso, make space, undo/redo; a zoom bar (−, %, +, fit) bottom-left. |
+| **Inspector** (right) | The selected element's properties. With nothing selected: element/flow/problem counts and the keyboard shortcuts. |
+| **Status bar** | Saved / unsaved, element and flow counts, pointer coordinates, zoom. |
+
+The validation hints catch common modelling mistakes while you draw — a process without a start event, a
+gateway branch with no condition that isn't the default flow, a timer/message/signal without a definition,
+a call activity without a process key (errors); unreachable steps, dead ends, empty scripts (warnings).
+They don't block a deploy: the engine still validates the BPMN when you click **Deploy**, and the deploy
+dialog shows the hint counts so you can double-check first.
+
+## Context menus and shortcuts
+
+Right-click anything on the canvas:
+
+- **An element** — Cut, Copy, Duplicate · **Change type** (searchable list of every BPMN type the element
+  can become) · **Attach boundary event** (tasks, call activities, sub-processes) · **Align** (several
+  elements selected) · Add comment, Edit label, Open properties · Delete.
+- **Empty canvas** — Paste, **Paste here** (at the click point) · **Add element** at the click point ·
+  Select all · Fit to screen, Zoom to 100% · **Export** as `.bpmn` or `.svg` · Show XML.
+- **A sequence flow** — Set condition…, Make/unset default flow · Re-route, Edit label · Reverse direction
+  (greyed out when BPMN rules forbid it, e.g. into a start event) · Delete.
+
+The canvas is a single tab stop; once it has focus:
+
+| Keys | Action |
+|---|---|
+| `Shift F10` / Menu key | Open the context menu for the selection — `↑ ↓` move, `→ ←` open/close a submenu, `Enter` runs, `Esc` closes |
+| `Ctrl D` | Duplicate |
+| `Ctrl X` / `Ctrl C` / `Ctrl V` | Cut / copy / paste |
+| `Ctrl I` | Focus the inspector |
+| `F2` | Edit the label |
+| `Ctrl E` | XML mode |
+| `Shift 1` | Fit to screen |
+| `H` / `L` / `S` / `C` | Pan / lasso / make space / connect (bpmn-js defaults) |
+
+On macOS use `⌘` for `Ctrl`.
+
+## XML mode
+
+**XML** in the mode switch shows the diagram's BPMN XML. Edit it and click **Apply to diagram** (or switch
+back to **Modeling**) to import your changes; **Discard changes** reverts the text. While the XML has
+unapplied edits, switching tabs, New Diagram, Import and Deploy are disabled so nothing gets lost. If the
+XML doesn't parse, the editor stays in XML mode with the parser's error and the diagram keeps its last
+good state. **Download XML** in XML mode downloads the text exactly as shown.
 
 ## Why tabs?
 
@@ -71,7 +124,12 @@ but each live in-memory tab also carries its most recent XML snapshot.
 
 **Settings → Diagram Style** switches how the editor and the instance viewer draw diagrams:
 
-- **Classic** (default) — the standard bpmn-js look, tinted to match the Admin UI theme.
+- **Orbit** (default) — a dotted canvas with rounded task cards labelled by kind (`USER`, `SERVICE`,
+  `SCRIPT`, `CALL`, …): start events green, end events red, gateways amber, timer and message events
+  violet, error events red. It follows the Admin UI's light/dark setting and accent colour. In the
+  instance viewer, completed steps turn green, the active step glows in the accent colour, failed steps
+  are red and the execution path animates.
+- **Classic** — the standard bpmn-js look, tinted to match the Admin UI theme.
 - **Archify** — a gridded canvas, monospace labels, and nodes coloured by kind. It follows the
   Admin UI's light/dark setting: dark slate in dark mode, near-white in light mode.
 

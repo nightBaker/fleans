@@ -21,8 +21,12 @@
    boot sequence (init → restore tabs → load active/blank tab → persist). Anything that drives
    window.bpmnEditor externally (E2E page objects) MUST wait on it: the modeler object exists
    long before the boot sequence's own loadXml lands, and an import issued in that window is
-   silently overwritten by the blank/restored tab (#773). *@
-<div class="editor-page" data-editor-ready="@(editorReady ? "true" : "false")">
+   silently overwritten by the blank/restored tab (#773).
+
+   Orbit layout (css/orbit.css): toolbar → tabs → [palette + structure + validation | canvas or XML |
+   inspector] → status bar. The palette tiles, canvas tools and zoom/cursor read-outs are wired to
+   bpmn-js by data attributes in bpmnEditor.bindChrome; right-click menus live in orbitContextMenu.js. *@
+<div id="editor-root" class="editor-page" data-editor-ready="@(editorReady ? "true" : "false")">
     <div class="editor-toolbar">
         <FluentButton Appearance="Appearance.Stealth"
                       IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowLeft())"
@@ -30,73 +34,87 @@
             Back
         </FluentButton>
 
-        @if (isEditingProcessId)
-        {
-            <FluentTextField @bind-Value="processIdEdit"
-                             Autofocus="true"
-                             @onkeydown="OnProcessIdKeyDown"
-                             @onblur="ConfirmProcessIdEdit"
-                             Placeholder="Process ID"
-                             Style="width: 200px;" />
-            @if (processIdError != null)
+        <div class="editor-crumbs">
+            <span>Process</span>
+            <span aria-hidden="true">/</span>
+            @if (isEditingProcessId)
             {
-                <FluentBadge Color="Color.Error">@processIdError</FluentBadge>
+                <FluentTextField @bind-Value="processIdEdit"
+                                 Autofocus="true"
+                                 @onkeydown="OnProcessIdKeyDown"
+                                 @onblur="ConfirmProcessIdEdit"
+                                 Placeholder="Process ID"
+                                 Style="width: 200px;" />
+                @if (processIdError != null)
+                {
+                    <FluentBadge Color="Color.Error">@processIdError</FluentBadge>
+                }
             }
-        }
-        else if (ActiveTab != null && !string.IsNullOrEmpty(ActiveTab.ProcessKey))
-        {
-            <span class="process-id-toolbar" @onclick="StartProcessIdEdit" title="Click to edit process ID">
-                @ActiveTab.ProcessKey
-            </span>
-            @if (ActiveTab.Version.HasValue)
+            else if (ActiveTab != null && !string.IsNullOrEmpty(ActiveTab.ProcessKey))
             {
-                <FluentBadge Color="Color.Accent">v@(ActiveTab.Version)</FluentBadge>
+                <button type="button" class="process-id-toolbar" @onclick="StartProcessIdEdit" title="Click to edit process ID">
+                    @ActiveTab.ProcessKey
+                </button>
+                <span class="orbit-pill @VersionPillClass" data-testid="editor-version">@VersionPillText</span>
             }
-        }
+        </div>
+
+        <div class="orbit-segmented" role="group" aria-label="Editor mode">
+            <button type="button" aria-pressed="@(xmlMode ? "false" : "true")" @onclick="ShowModel">Modeling</button>
+            <button type="button" aria-pressed="@(xmlMode ? "true" : "false")" @onclick="ShowXml" data-testid="editor-mode-xml">XML</button>
+        </div>
 
         <div class="toolbar-spacer"></div>
 
-        <FluentButton Appearance="Appearance.Stealth"
-                      IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Add())"
-                      @onclick="NewDiagramTab">
-            New Diagram
-        </FluentButton>
+        <div class="editor-actions">
+            <FluentButton Appearance="Appearance.Stealth"
+                          IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Add())"
+                          Disabled="@xmlEdited"
+                          @onclick="NewDiagramTab">
+                New Diagram
+            </FluentButton>
 
-        <FluentInputFile @ref="fileUploader"
-                         DragDropZoneVisible="false"
-                         Mode="InputFileMode.SaveToTemporaryFolder"
-                         Multiple="false"
-                         AnchorId="ImportBpmnButton"
-                         MaximumFileSize="@(10 * 1024 * 1024)"
-                         Accept=".bpmn,.xml"
-                         OnCompleted="@OnImportFileSelected" />
+            <FluentInputFile @ref="fileUploader"
+                             DragDropZoneVisible="false"
+                             Mode="InputFileMode.SaveToTemporaryFolder"
+                             Multiple="false"
+                             AnchorId="ImportBpmnButton"
+                             MaximumFileSize="@(10 * 1024 * 1024)"
+                             Accept=".bpmn,.xml"
+                             OnCompleted="@OnImportFileSelected" />
 
-        <FluentButton Id="ImportBpmnButton"
-                      Appearance="Appearance.Neutral"
-                      IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowUpload())">
-            Import BPMN
-        </FluentButton>
+            <FluentButton Id="ImportBpmnButton"
+                          Appearance="Appearance.Neutral"
+                          Disabled="@xmlEdited"
+                          IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowUpload())">
+                Import BPMN
+            </FluentButton>
 
-        <FluentButton Appearance="Appearance.Neutral"
-                      IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowDownload())"
-                      @onclick="DownloadXml">
-            Download XML
-        </FluentButton>
+            <FluentButton Appearance="Appearance.Neutral"
+                          IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowDownload())"
+                          @onclick="DownloadXml">
+                Download XML
+            </FluentButton>
 
-        <FluentButton Appearance="Appearance.Accent"
-                      IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Rocket())"
-                      Loading="@isDeploying"
-                      @onclick="ShowDeployDialog">
-            Deploy
-        </FluentButton>
+            <FluentButton Appearance="Appearance.Accent"
+                          Class="orbit-deploy"
+                          IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Rocket())"
+                          Loading="@isDeploying"
+                          Disabled="@xmlEdited"
+                          Title="@(xmlEdited ? XmlPendingHint : null)"
+                          @onclick="ShowDeployDialog">
+                Deploy
+            </FluentButton>
+        </div>
     </div>
 
-    <div class="editor-tab-bar">
+    <div class="editor-tab-bar" role="tablist" aria-label="Open diagrams">
         @foreach (var tab in tabs)
         {
             var t = tab;
             var classes = "editor-tab" + (t.Id == activeTabId ? " editor-tab--active" : "");
-            <div class="@classes" @onclick="() => SwitchTab(t.Id)" title="@t.Label">
+            <div class="@classes" role="tab" aria-selected="@(t.Id == activeTabId ? "true" : "false")"
+                 @onclick="() => SwitchTab(t.Id)" title="@(xmlEdited ? XmlPendingHint : t.Label)">
                 <span class="editor-tab__label">@t.Label</span>
                 @if (t.Dirty)
                 {
@@ -105,67 +123,257 @@
                 <button type="button"
                         class="editor-tab__close"
                         title="Close tab"
+                        aria-label="Close @t.Label"
                         @onclick="() => RequestCloseTab(t.Id)"
                         @onclick:stopPropagation="true">×</button>
             </div>
         }
     </div>
 
-    @if (errorMessage != null)
-    {
-        <FluentMessageBar Intent="MessageIntent.Error" Dismissible="true" OnDismissed="@(() => errorMessage = null)"
-                          Style="margin: 8px 16px 0;">
-            @errorMessage
-        </FluentMessageBar>
-    }
-
-    @if (successMessage != null)
-    {
-        <FluentMessageBar Intent="MessageIntent.Success" Dismissible="true" OnDismissed="@(() => successMessage = null)"
-                          Style="margin: 8px 16px 0;">
-            @successMessage
-        </FluentMessageBar>
-    }
-
-    <div class="editor-content">
-        <div id="editor-canvas" class="editor-canvas"></div>
-
-        @if (selectedElement != null)
+    <div class="editor-messages">
+        @if (errorMessage != null)
         {
-            <ElementPropertiesPanel Element="@selectedElement" OnElementReplaced="OnElementReplaced" />
+            <FluentMessageBar Intent="MessageIntent.Error" Dismissible="true" OnDismissed="@(() => errorMessage = null)">
+                @errorMessage
+            </FluentMessageBar>
+        }
+
+        @if (successMessage != null)
+        {
+            <FluentMessageBar Intent="MessageIntent.Success" Dismissible="true" OnDismissed="@(() => successMessage = null)">
+                @successMessage
+            </FluentMessageBar>
         }
     </div>
+
+    <div class="editor-content">
+        <aside class="editor-left" aria-label="Elements and structure">
+            <section class="editor-section" aria-label="Elements">
+                <span class="orbit-label">Elements</span>
+                <div class="orbit-palette">
+                    @foreach (var tile in PaletteTiles)
+                    {
+                        <button type="button" class="orbit-tile" draggable="true" data-bpmn-create="@tile.Key"
+                                title="@($"{tile.Title} — click, then click the canvas, or drag it there")">
+                            @((MarkupString)tile.Icon)
+                            @tile.Label
+                        </button>
+                    }
+                </div>
+            </section>
+
+            <section class="editor-section" aria-label="Structure">
+                <span class="orbit-label">Structure</span>
+                <div class="orbit-outline" data-testid="editor-outline">
+                    @if (summary.Outline.Count == 0)
+                    {
+                        <span class="orbit-problem__meta">No elements yet</span>
+                    }
+                    @foreach (var node in summary.Outline)
+                    {
+                        var n = node;
+                        <button type="button" style="padding-left: @(8 + n.Depth * 12)px"
+                                aria-current="@(selectedElement?.Id == n.Id ? "true" : "false")"
+                                title="@n.Id"
+                                @onclick="() => FocusElement(n.Id)">
+                            <span class="orbit-dot orbit-dot--@n.Kind"></span>
+                            <span class="orbit-outline__name">@(string.IsNullOrWhiteSpace(n.Name) ? TypeCaption(n.Type) : n.Name)</span>
+                        </button>
+                    }
+                </div>
+            </section>
+
+            <section class="orbit-validation" aria-label="Validation" data-testid="editor-validation">
+                <span class="orbit-label">Validation</span>
+                <span class="orbit-validation__row">
+                    <span class="orbit-dot orbit-dot--lg orbit-dot--@(summary.ProblemCounts.Errors > 0 ? "error" : "ok")"></span>
+                    @Plural(summary.ProblemCounts.Errors, "error")
+                </span>
+                <span class="orbit-validation__row">
+                    <span class="orbit-dot orbit-dot--lg orbit-dot--@(summary.ProblemCounts.Warnings > 0 ? "warning" : "ok")"></span>
+                    @Plural(summary.ProblemCounts.Warnings, "warning")
+                </span>
+                @if (summary.Problems.Count > 0)
+                {
+                    <button type="button" class="orbit-text-btn" aria-expanded="@(showProblems ? "true" : "false")"
+                            @onclick="() => showProblems = !showProblems">
+                        @(showProblems ? "Hide problems" : $"Show problems ({summary.Problems.Count})")
+                    </button>
+                }
+                @if (showProblems)
+                {
+                    <div class="orbit-problems">
+                        @foreach (var problem in summary.Problems)
+                        {
+                            var p = problem;
+                            <button type="button" class="orbit-problem orbit-problem--@p.Severity" @onclick="() => FocusElement(p.Id)">
+                                <span class="orbit-problem__icon" aria-hidden="true">@(p.Severity == "error" ? "!" : p.Severity == "warning" ? "?" : "i")</span>
+                                <span>
+                                    @p.Message
+                                    <span class="orbit-problem__meta">@(string.IsNullOrWhiteSpace(p.Name) ? p.Id : $"{p.Name} · {p.Id}")</span>
+                                </span>
+                            </button>
+                        }
+                    </div>
+                }
+            </section>
+        </aside>
+
+        <div class="editor-center @(xmlMode ? "editor-center--xml" : "")">
+            @* Focusable so bpmn-js keyboard bindings (bound to this element) receive keys: one tab stop,
+               then arrows / shortcuts — design board 7. *@
+            <div id="editor-canvas" class="editor-canvas" tabindex="0" role="application"
+                 aria-label="BPMN diagram canvas. Shift F10 opens the context menu."></div>
+
+            <div class="orbit-float orbit-float--tools" role="toolbar" aria-label="Canvas tools">
+                <button type="button" class="orbit-tool" data-bpmn-tool="select" aria-pressed="true" aria-label="Select" title="Select">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 3l14 8-6 2-2 6Z"/></svg>
+                </button>
+                <button type="button" class="orbit-tool" data-bpmn-tool="hand" aria-pressed="false" aria-label="Pan (H)" title="Pan (H)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2v20M2 12h20M12 2l-3 3M12 2l3 3M12 22l-3-3M12 22l3-3M2 12l3-3M2 12l3 3M22 12l-3-3M22 12l-3 3"/></svg>
+                </button>
+                <button type="button" class="orbit-tool" data-bpmn-tool="connect" aria-pressed="false" aria-label="Connect (C)" title="Connect (C)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 20 20 4M14 4h6v6"/></svg>
+                </button>
+                <button type="button" class="orbit-tool" data-bpmn-tool="lasso" aria-pressed="false" aria-label="Lasso select (L)" title="Lasso select (L)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 3" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/></svg>
+                </button>
+                <button type="button" class="orbit-tool" data-bpmn-tool="space" aria-pressed="false" aria-label="Make space (S)" title="Make space (S)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v18M3 12h6M15 12h6M6 9l-3 3 3 3M18 9l3 3-3 3"/></svg>
+                </button>
+                <span class="orbit-float__sep" aria-hidden="true"></span>
+                <button type="button" class="orbit-tool" data-bpmn-tool="undo" aria-label="Undo (Ctrl Z)" title="Undo (Ctrl Z)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg>
+                </button>
+                <button type="button" class="orbit-tool" data-bpmn-tool="redo" aria-label="Redo (Ctrl Y)" title="Redo (Ctrl Y)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></svg>
+                </button>
+            </div>
+
+            <div class="orbit-float orbit-float--zoom" role="toolbar" aria-label="Zoom">
+                <button type="button" class="orbit-tool" data-bpmn-tool="zoom-out" aria-label="Zoom out" title="Zoom out">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14"/></svg>
+                </button>
+                <span class="orbit-zoom-value" data-orbit-zoom aria-live="polite"></span>
+                <button type="button" class="orbit-tool" data-bpmn-tool="zoom-in" aria-label="Zoom in" title="Zoom in">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                </button>
+                <button type="button" class="orbit-tool" data-bpmn-tool="fit" aria-label="Fit to screen (Shift 1)" title="Fit to screen (Shift 1)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+                </button>
+            </div>
+
+            <div class="orbit-xml" aria-label="XML">
+                <div class="orbit-xml__bar">
+                    <span class="orbit-label">@XmlFileName</span>
+                    @if (xmlError != null)
+                    {
+                        <span class="orbit-pill orbit-pill--danger" title="@xmlError">Invalid XML</span>
+                    }
+                    else if (xmlEdited)
+                    {
+                        <span class="orbit-pill orbit-pill--draft">Edited · not applied</span>
+                    }
+                    else
+                    {
+                        <span class="orbit-pill orbit-pill--success">In sync with the diagram</span>
+                    }
+                    <div class="toolbar-spacer"></div>
+                    <FluentButton Appearance="Appearance.Accent" Disabled="@(!xmlEdited)" @onclick="ShowModel">Apply to diagram</FluentButton>
+                    <FluentButton Appearance="Appearance.Neutral" Disabled="@(!xmlEdited)" @onclick="DiscardXmlEdits">Discard changes</FluentButton>
+                    <FluentButton Appearance="Appearance.Neutral"
+                                  IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Copy())"
+                                  @onclick="CopyXml">
+                        Copy
+                    </FluentButton>
+                </div>
+                @if (xmlError != null)
+                {
+                    <FluentMessageBar Intent="MessageIntent.Error" Dismissible="true" OnDismissed="@(() => xmlError = null)">
+                        The XML could not be applied: @xmlError
+                    </FluentMessageBar>
+                }
+                @* Value is owned by bpmnEditor.enterXmlMode — never bind it from .NET (see bpmnEditor.js). *@
+                <textarea id="editor-xml" class="orbit-xml__code" spellcheck="false" aria-label="BPMN XML"></textarea>
+            </div>
+        </div>
+
+        <aside class="editor-inspector @(selectedElement == null ? "editor-inspector--empty" : "")" aria-label="Properties">
+            @if (selectedElement != null)
+            {
+                <ElementPropertiesPanel Element="@selectedElement" OnElementReplaced="OnElementReplaced" />
+            }
+            else
+            {
+                <div class="orbit-empty">
+                    <span class="orbit-label">Inspector</span>
+                    <h2>Nothing selected</h2>
+                    <p>Pick an element on the canvas or in Structure to edit its properties. Right-click anything for more actions.</p>
+                    <div class="orbit-stats">
+                        <div class="orbit-stat"><span>Elements</span><span>@summary.Elements</span></div>
+                        <div class="orbit-stat"><span>Flows</span><span>@summary.Flows</span></div>
+                        <div class="orbit-stat"><span>Errors</span><span>@summary.ProblemCounts.Errors</span></div>
+                        <div class="orbit-stat"><span>Warnings</span><span>@summary.ProblemCounts.Warnings</span></div>
+                    </div>
+                    <span class="orbit-label">Keyboard</span>
+                    <div class="orbit-keys">
+                        <div><span>Context menu</span><span class="orbit-kbd">Shift F10</span></div>
+                        <div><span>Edit label</span><span class="orbit-kbd">F2</span></div>
+                        <div><span>Duplicate</span><span class="orbit-kbd">Ctrl D</span></div>
+                        <div><span>Open properties</span><span class="orbit-kbd">Ctrl I</span></div>
+                        <div><span>Show XML</span><span class="orbit-kbd">Ctrl E</span></div>
+                        <div><span>Fit to screen</span><span class="orbit-kbd">Shift 1</span></div>
+                    </div>
+                </div>
+            }
+        </aside>
+    </div>
+
+    <footer class="editor-status" aria-label="Status">
+        <span class="editor-status__item">
+            <span class="orbit-dot orbit-dot--@(ActiveTab?.Dirty == true ? "warning" : "ok")"></span>
+            @(ActiveTab?.Dirty == true ? "Unsaved changes" : "Saved")
+        </span>
+        <span>Fleans · bpmn-js</span>
+        <span>@summary.Elements elements · @summary.Flows flows</span>
+        <span class="editor-status__end" data-orbit-cursor></span>
+        <span>Zoom <span data-orbit-zoom></span></span>
+    </footer>
 </div>
 
 @if (showDeployDialog)
 {
     <div class="deploy-overlay" @onclick="CancelDeploy"></div>
-    <div class="deploy-dialog">
-        <FluentStack Orientation="Orientation.Vertical" Gap="16px">
-            <FluentLabel Typo="Typography.PaneHeader">Confirm Deployment</FluentLabel>
-            <p><strong>Process Key:</strong> @deployProcessKey</p>
-            <p><strong>Version:</strong> @deployNextVersion</p>
-            <p>This will deploy a new version of the workflow definition.</p>
-            <FluentStack Orientation="Orientation.Horizontal" Gap="8px" Justify="JustifyContent.FlexEnd">
-                <FluentButton Appearance="Appearance.Neutral" @onclick="CancelDeploy">Cancel</FluentButton>
-                <FluentButton Appearance="Appearance.Accent" @onclick="ConfirmDeploy">Deploy</FluentButton>
-            </FluentStack>
-        </FluentStack>
+    <div class="deploy-dialog" role="dialog" aria-modal="true" aria-labelledby="deploy-title">
+        <span class="orbit-label">Deploy</span>
+        <h2 id="deploy-title">Deploy @deployProcessKey @deployNextVersion</h2>
+        <ul class="orbit-checklist">
+            <li><span class="orbit-check orbit-check--ok" aria-hidden="true">✓</span>BPMN converted for the engine</li>
+            <li>
+                <span class="orbit-check orbit-check--@(summary.ProblemCounts.Errors > 0 ? "error" : summary.ProblemCounts.Warnings > 0 ? "warn" : "ok")" aria-hidden="true">@(summary.ProblemCounts.Errors + summary.ProblemCounts.Warnings > 0 ? "!" : "✓")</span>
+                Modelling hints: @Plural(summary.ProblemCounts.Errors, "error"), @Plural(summary.ProblemCounts.Warnings, "warning")
+            </li>
+        </ul>
+        <p><strong>Process Key:</strong> @deployProcessKey</p>
+        <p><strong>Version:</strong> @deployNextVersion</p>
+        <p>This will deploy a new version of the workflow definition.</p>
+        <div class="deploy-dialog__actions">
+            <FluentButton Appearance="Appearance.Neutral" @onclick="CancelDeploy">Cancel</FluentButton>
+            <FluentButton Appearance="Appearance.Accent" @onclick="ConfirmDeploy">Deploy</FluentButton>
+        </div>
     </div>
 }
 
 @if (tabPendingClose != null)
 {
     <div class="deploy-overlay" @onclick="CancelCloseTab"></div>
-    <div class="deploy-dialog">
-        <FluentStack Orientation="Orientation.Vertical" Gap="16px">
-            <FluentLabel Typo="Typography.PaneHeader">Discard unsaved changes?</FluentLabel>
-            <p>Tab "<strong>@tabPendingClose.Label</strong>" has unsaved changes. Discarding will close the tab and lose those changes.</p>
-            <FluentStack Orientation="Orientation.Horizontal" Gap="8px" Justify="JustifyContent.FlexEnd">
-                <FluentButton Appearance="Appearance.Neutral" @onclick="CancelCloseTab">Cancel</FluentButton>
-                <FluentButton Appearance="Appearance.Accent" @onclick="ConfirmCloseTab">Discard</FluentButton>
-            </FluentStack>
-        </FluentStack>
+    <div class="deploy-dialog" role="dialog" aria-modal="true" aria-labelledby="discard-title">
+        <h2 id="discard-title">Discard unsaved changes?</h2>
+        <p>Tab "<strong>@tabPendingClose.Label</strong>" has unsaved changes. Discarding will close the tab and lose those changes.</p>
+        <div class="deploy-dialog__actions">
+            <FluentButton Appearance="Appearance.Neutral" @onclick="CancelCloseTab">Cancel</FluentButton>
+            <FluentButton Appearance="Appearance.Accent" @onclick="ConfirmCloseTab">Discard</FluentButton>
+        </div>
     </div>
 }
 
@@ -200,15 +408,32 @@
     private string? activeTabId;
     private TabSession? tabPendingClose;
 
+    // XML mode: the text itself stays in the browser (bpmnEditor.enterXmlMode); .NET tracks only
+    // whether it was edited, and applies it once the canvas is visible again (OnAfterRenderAsync).
+    private const string XmlPendingHint = "Apply or discard the XML changes first";
+    private bool xmlMode;
+    private bool xmlEdited;
+    private string? xmlError;
+    private bool pendingXmlApply;
+    private bool pendingCanvasRefresh;
+
+    private bool showProblems;
+    private DiagramSummary summary = new();
+
     private TabSession? ActiveTab =>
         activeTabId == null ? null : tabs.FirstOrDefault(t => t.Id == activeTabId);
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender) return;
+        if (!firstRender)
+        {
+            await CompleteXmlModeExitAsync();
+            return;
+        }
 
         dotNetRef = DotNetObjectReference.Create(this);
         await JS.InvokeVoidAsync("bpmnEditor.init", "editor-canvas", dotNetRef);
+        await JS.InvokeVoidAsync("bpmnEditor.bindChrome", "editor-root");
         await JS.InvokeVoidAsync("bpmnEditor.registerDirtyCallback", dotNetRef);
         await JS.InvokeVoidAsync("bpmnEditor.registerBeforeUnloadWarning", dotNetRef);
         editorInitialized = true;
@@ -249,6 +474,113 @@
             return InvokeAsync(StateHasChanged);
         }
         return Task.CompletedTask;
+    }
+
+    [JSInvokable]
+    public Task OnDiagramSummary(DiagramSummary diagramSummary)
+    {
+        summary = diagramSummary;
+        if (summary.Problems.Count == 0) showProblems = false;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task OnShowXmlRequested() => InvokeAsync(ShowXml);
+
+    [JSInvokable]
+    public Task OnXmlEdited(bool edited)
+    {
+        xmlEdited = edited;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    // ---- Modes: Modeling | XML -------------------------------------------------------------
+
+    private async Task ShowXml()
+    {
+        if (xmlMode || !editorInitialized) return;
+        await JS.InvokeVoidAsync("bpmnEditor.enterXmlMode", "editor-xml");
+        xmlMode = true;
+        xmlEdited = false;
+        xmlError = null;
+        StateHasChanged();
+    }
+
+    private void ShowModel()
+    {
+        if (!xmlMode) return;
+        xmlMode = false;
+        // The canvas is display:none in XML mode; the import (which fits the viewport) and the
+        // resize both have to wait until it is laid out again — see CompleteXmlModeExitAsync.
+        pendingXmlApply = xmlEdited;
+        pendingCanvasRefresh = true;
+    }
+
+    private async Task CompleteXmlModeExitAsync()
+    {
+        if (pendingCanvasRefresh)
+        {
+            pendingCanvasRefresh = false;
+            await JS.InvokeVoidAsync("bpmnEditor.refreshCanvas");
+        }
+
+        if (!pendingXmlApply) return;
+        pendingXmlApply = false;
+
+        var result = await JS.InvokeAsync<XmlApplyResult>("bpmnEditor.applyXmlFromEditor", "editor-xml");
+        if (!result.Ok)
+        {
+            // Back to the text so the user can fix it; the diagram keeps its last good state.
+            xmlMode = true;
+            xmlError = result.Error ?? "Unknown error";
+            StateHasChanged();
+            return;
+        }
+
+        xmlEdited = false;
+        xmlError = null;
+        selectedElement = null;
+        if (ActiveTab != null)
+        {
+            ActiveTab.Dirty = true;
+            await RefreshActiveProcessId();
+        }
+        await UpdateDirtyFlagAndPersist();
+        StateHasChanged();
+    }
+
+    private async Task DiscardXmlEdits()
+    {
+        await JS.InvokeVoidAsync("bpmnEditor.enterXmlMode", "editor-xml");
+        xmlEdited = false;
+        xmlError = null;
+    }
+
+    private async Task CopyXml()
+    {
+        var copied = await JS.InvokeAsync<bool>("bpmnEditor.copyXmlFromEditor", "editor-xml");
+        successMessage = copied ? "XML copied to the clipboard." : null;
+        errorMessage = copied ? null : "Couldn't copy: the browser blocked clipboard access.";
+    }
+
+    // Tab and file actions replace the diagram, so they leave XML mode — unless it holds
+    // unapplied edits, which would be lost (their buttons are disabled meanwhile).
+    private bool TryLeaveXmlMode()
+    {
+        if (!xmlMode) return true;
+        if (xmlEdited)
+        {
+            errorMessage = XmlPendingHint + ".";
+            return false;
+        }
+        ShowModel();
+        return true;
+    }
+
+    private async Task FocusElement(string elementId)
+    {
+        if (xmlMode && !TryLeaveXmlMode()) return;
+        await JS.InvokeAsync<bool>("bpmnEditor.focusElement", elementId);
     }
 
     [JSInvokable]
@@ -330,7 +662,7 @@
 
     private async Task NewDiagramTab()
     {
-        if (!editorInitialized) return;
+        if (!editorInitialized || !TryLeaveXmlMode()) return;
         if (!EnsureCapacity()) return;
 
         // Snapshot the outgoing tab's modeler XML before AddBlankTab replaces
@@ -362,7 +694,7 @@
                 return;
             }
 
-            if (!EnsureCapacity()) return;
+            if (!EnsureCapacity() || !TryLeaveXmlMode()) return;
 
             errorMessage = null;
             successMessage = null;
@@ -401,6 +733,13 @@
 
         try
         {
+            if (xmlMode)
+            {
+                // The text may hold edits the diagram doesn't have yet: download what the user sees.
+                await JS.InvokeVoidAsync("bpmnEditor.downloadXmlFromEditor", "editor-xml", XmlFileName);
+                return;
+            }
+
             var xml = await JS.InvokeAsync<string>("bpmnEditor.getXml");
             if (string.IsNullOrEmpty(xml)) return;
 
@@ -418,7 +757,7 @@
 
     private async Task ShowDeployDialog()
     {
-        if (!editorInitialized || ActiveTab == null) return;
+        if (!editorInitialized || ActiveTab == null || !TryLeaveXmlMode()) return;
 
         try
         {
@@ -579,7 +918,7 @@
 
     private async Task SwitchTab(string tabId)
     {
-        if (tabId == activeTabId) return;
+        if (tabId == activeTabId || !TryLeaveXmlMode()) return;
         await ActivateTab(tabId, saveOutgoing: true);
         await PersistTabs();
     }
@@ -646,7 +985,7 @@
     private void RequestCloseTab(string tabId)
     {
         var tab = tabs.FirstOrDefault(t => t.Id == tabId);
-        if (tab == null) return;
+        if (tab == null || (tab.Id == activeTabId && !TryLeaveXmlMode())) return;
         if (tab.Dirty)
         {
             tabPendingClose = tab;
@@ -801,7 +1140,71 @@
         dotNetRef?.Dispose();
     }
 
+    // ---- View helpers ----------------------------------------------------------
+
+    private string XmlFileName =>
+        (string.IsNullOrEmpty(ActiveTab?.ProcessKey) ? "diagram" : ActiveTab.ProcessKey) + ".bpmn";
+
+    // "v3" when the tab matches a deployed version, "v3 · draft" once edited, "draft" before a first deploy.
+    private string VersionPillText => ActiveTab switch
+    {
+        { Version: { } v, Dirty: true } => $"v{v} · draft",
+        { Version: { } v } => $"v{v}",
+        _ => "draft"
+    };
+
+    private string VersionPillClass => ActiveTab is { Version: not null, Dirty: false }
+        ? "orbit-pill--accent"
+        : "orbit-pill--draft";
+
+    private static string Plural(int count, string noun) => count == 1 ? $"1 {noun}" : $"{count} {noun}s";
+
+    private static string TypeCaption(string bpmnType) =>
+        System.Text.RegularExpressions.Regex.Replace(bpmnType.Replace("bpmn:", ""), "([a-z])([A-Z])", "$1 $2");
+
     // ---- Types -----------------------------------------------------------
+
+    // Payload of bpmnEditor.getSummary (js/bpmnEditor.js), pushed after every import/command.
+    public sealed class DiagramSummary
+    {
+        public int Elements { get; set; }
+        public int Flows { get; set; }
+        public List<OutlineNode> Outline { get; set; } = new();
+        public List<DiagramProblem> Problems { get; set; } = new();
+        public ProblemTotals ProblemCounts { get; set; } = new();
+    }
+
+    public sealed class OutlineNode
+    {
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string Type { get; set; } = "";
+        public string Kind { get; set; } = "";
+        public int Depth { get; set; }
+    }
+
+    public sealed class DiagramProblem
+    {
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string Type { get; set; } = "";
+        public string Severity { get; set; } = "";
+        public string Message { get; set; } = "";
+    }
+
+    public sealed class ProblemTotals
+    {
+        public int Errors { get; set; }
+        public int Warnings { get; set; }
+        public int Infos { get; set; }
+    }
+
+    private sealed class XmlApplyResult
+    {
+        public bool Ok { get; set; }
+        public string? Error { get; set; }
+    }
+
 
     private sealed class TabSession
     {
