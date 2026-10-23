@@ -56,8 +56,8 @@ public class EfCoreWorkflowInstancePurgeServiceTests : PersistenceTestBase
 
         await new EfCoreWorkflowStateProjection(fixture.CommandFactory).WriteAsync(id.ToString(), state);
         var store = CreateStore(fixture);
-        await store.AppendEventsAsync(id, [new WorkflowStarted(Guid.NewGuid(), "p1", Guid.NewGuid()), new ExecutionStarted()], 0);
-        await store.AppendEventsAsync(id, [new WorkflowCompleted()], 2);
+        await store.AppendEventsAsync(id, [new WorkflowStarted(Guid.NewGuid(), "p1", Guid.NewGuid()), new ExecutionStarted()], 0, Guid.NewGuid());
+        await store.AppendEventsAsync(id, [new WorkflowCompleted()], 2, Guid.NewGuid());
         await store.WriteSnapshotAsync(id, 3, state);
 
         await using var db = await fixture.CommandFactory.CreateDbContextAsync();

@@ -181,8 +181,8 @@ public class EfCoreEventStoreTests : PersistenceTestBase
         var other = Guid.NewGuid();
         foreach (var id in new[] { purged, other })
         {
-            await store.AppendEventsAsync(id, [new WorkflowStarted(Guid.NewGuid(), "p1", Guid.NewGuid())], expectedVersion: 0);
-            await store.AppendEventsAsync(id, [new WorkflowCompleted()], expectedVersion: 1);
+            await store.AppendEventsAsync(id, [new WorkflowStarted(Guid.NewGuid(), "p1", Guid.NewGuid())], expectedVersion: 0, batchId: Guid.NewGuid());
+            await store.AppendEventsAsync(id, [new WorkflowCompleted()], expectedVersion: 1, batchId: Guid.NewGuid());
             await store.WriteSnapshotAsync(id, 2, CreateTestState(id));
         }
 
