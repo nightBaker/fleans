@@ -14,6 +14,8 @@ internal class InMemoryEventStore(DeepCopier copier) : IEventStore
 {
     private readonly ConcurrentDictionary<Guid, List<WorkflowEvent>> _events = new();
     private readonly ConcurrentDictionary<Guid, (WorkflowInstanceState State, int Version)> _snapshots = new();
+    /// <summary>Per grain: each batch's id by its first version. Guarded by that grain's events-list lock.</summary>
+    private readonly ConcurrentDictionary<Guid, Dictionary<int, Guid>> _batchIds = new();
 
     public int SnapshotInterval => 1;
 
@@ -33,13 +35,18 @@ internal class InMemoryEventStore(DeepCopier copier) : IEventStore
             return Task.FromResult<IReadOnlyList<WorkflowEvent>>(events.Skip(afterVersion).ToList());
     }
 
-    public Task<bool> AppendEventsAsync(Guid grainId, IReadOnlyList<WorkflowEvent> events, int expectedVersion)
+    public Task<bool> AppendEventsAsync(Guid grainId, IReadOnlyList<WorkflowEvent> events, int expectedVersion, Guid batchId)
     {
         var list = _events.GetOrAdd(grainId, _ => []);
+        var batchIds = _batchIds.GetOrAdd(grainId, _ => []);
         lock (list)
         {
             if (list.Count != expectedVersion)
-                return Task.FromResult(false);
+                // A retry of a batch already stored at this version succeeds without appending.
+                return Task.FromResult(batchIds.TryGetValue(expectedVersion + 1, out var stored) && stored == batchId);
+            if (events.Count == 0)
+                return Task.FromResult(true);
+            batchIds[expectedVersion + 1] = batchId;
             list.AddRange(events);
         }
         return Task.FromResult(true);
@@ -107,7 +114,7 @@ internal class FaultInjectingWorkflowStateProjection(IWorkflowStateProjection in
 /// <summary>
 /// Wraps the real event store so a test can hold or fail a chosen grain's next appends, to drive
 /// the grain's journal writes into a chosen interleaving (#846) or through Orleans' re-read after a
-/// failed append (#845), with or without the journal moving on meanwhile. Other grains and later
+/// failed append (#845), with or without the journal moving on meanwhile, or after storing the batch (#877). Other grains and later
 /// appends pass straight through.
 /// </summary>
 internal class FaultInjectingEventStore(IEventStore inner) : IEventStore
@@ -125,6 +132,7 @@ internal class FaultInjectingEventStore(IEventStore inner) : IEventStore
     private static readonly ConcurrentDictionary<Guid, ConcurrentQueue<Gate>> Gates = new();
     private static readonly ConcurrentDictionary<Guid, int> FailuresLeft = new();
     private static readonly ConcurrentDictionary<Guid, WorkflowEvent> ForeignWrites = new();
+    private static readonly ConcurrentDictionary<Guid, bool> StoreThenFail = new();
 
     /// <summary>Holds the grain's next <paramref name="count"/> appends, one gate each, in order.</summary>
     public static Gate[] HoldNextAppends(Guid instanceId, int count)
@@ -135,6 +143,12 @@ internal class FaultInjectingEventStore(IEventStore inner) : IEventStore
     }
 
     public static void FailNextAppends(Guid instanceId, int count) => FailuresLeft[instanceId] = count;
+
+    /// <summary>
+    /// Stores the grain's next append, then throws, as if the reply reporting the commit was lost (a
+    /// timeout after the commit): Orleans retries a batch that is already stored (#877).
+    /// </summary>
+    public static void FailNextAppendAfterStoring(Guid instanceId) => StoreThenFail[instanceId] = true;
 
     /// <summary>
     /// Fails the grain's next append after storing <paramref name="foreign"/> in its place, as if
@@ -151,7 +165,7 @@ internal class FaultInjectingEventStore(IEventStore inner) : IEventStore
     public Task<IReadOnlyList<WorkflowEvent>> ReadEventsAsync(Guid instanceId, int afterVersion) =>
         inner.ReadEventsAsync(instanceId, afterVersion);
 
-    public async Task<bool> AppendEventsAsync(Guid instanceId, IReadOnlyList<WorkflowEvent> events, int expectedVersion)
+    public async Task<bool> AppendEventsAsync(Guid instanceId, IReadOnlyList<WorkflowEvent> events, int expectedVersion, Guid batchId)
     {
         if (Gates.TryGetValue(instanceId, out var gates) && gates.TryDequeue(out var gate))
         {
@@ -161,8 +175,15 @@ internal class FaultInjectingEventStore(IEventStore inner) : IEventStore
 
         if (ForeignWrites.TryRemove(instanceId, out var foreign))
         {
-            await inner.AppendEventsAsync(instanceId, [foreign], expectedVersion);
+            await inner.AppendEventsAsync(instanceId, [foreign], expectedVersion, Guid.NewGuid());
             throw new TimeoutException($"Injected append failure after a foreign write for {instanceId}");
+        }
+
+        if (StoreThenFail.TryRemove(instanceId, out _))
+        {
+            if (!await inner.AppendEventsAsync(instanceId, events, expectedVersion, batchId))
+                throw new InvalidOperationException($"Store-then-fail append for {instanceId} conflicted");
+            throw new TimeoutException($"Injected append failure after storing the batch for {instanceId}");
         }
 
         if (FailuresLeft.TryGetValue(instanceId, out var left) && left > 0)
@@ -171,7 +192,7 @@ internal class FaultInjectingEventStore(IEventStore inner) : IEventStore
             throw new TimeoutException($"Injected append failure for {instanceId}");
         }
 
-        return await inner.AppendEventsAsync(instanceId, events, expectedVersion);
+        return await inner.AppendEventsAsync(instanceId, events, expectedVersion, batchId);
     }
 
     public Task WriteSnapshotAsync(Guid instanceId, int version, WorkflowInstanceState state) =>
