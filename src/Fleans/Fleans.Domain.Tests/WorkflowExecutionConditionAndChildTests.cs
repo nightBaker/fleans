@@ -374,38 +374,83 @@ public class WorkflowExecutionConditionAndChildTests
         Assert.IsFalse(condB.IsEvaluated);
     }
 
-    // ===== Apply: ParentInfoSet =====
+    // ===== CreateAndStart (#863) =====
 
-    [TestMethod]
-    public void SetParentInfo_ShouldEmitParentInfoSetAndUpdateState()
+    private static WorkflowDefinition CreateStartEndDefinition()
     {
         var start = new StartEvent("start1");
         var end = new EndEvent("end1");
-
-        var definition = new WorkflowDefinition
+        return new WorkflowDefinition
         {
             WorkflowId = "child-wf",
             Activities = [start, end],
             SequenceFlows = [new("seq1", start, end)],
             ProcessDefinitionId = "child-pd"
         };
+    }
+
+    [TestMethod]
+    public void CreateAndStart_ShouldEmitCreatedParentVariablesAndStartedInOneBatch()
+    {
+        // Arrange
         var state = new WorkflowInstanceState();
-        var execution = new WorkflowExecution(state, definition);
-        execution.Start();
-        execution.ClearUncommittedEvents();
-
+        var execution = new WorkflowExecution(state, CreateStartEndDefinition());
+        var instanceId = Guid.NewGuid();
         var parentId = Guid.NewGuid();
-        execution.SetParentInfo(parentId, "callActivity1");
+        dynamic variables = new ExpandoObject();
+        variables.amount = 42;
 
-        // Verify event emitted
+        // Act
+        execution.CreateAndStart(instanceId, businessId: "ORDER-1",
+            variables: (ExpandoObject)variables, parent: new ParentInfo(parentId, "callActivity1"));
+
+        // Assert — the whole start is one uncommitted batch, in order
         var events = execution.GetUncommittedEvents();
-        var parentInfoSet = events.OfType<ParentInfoSet>().Single();
-        Assert.AreEqual(parentId, parentInfoSet.ParentInstanceId);
-        Assert.AreEqual("callActivity1", parentInfoSet.ParentActivityId);
-
-        // Verify state updated
+        CollectionAssert.AreEqual(
+            new[] { typeof(WorkflowStarted), typeof(ActivitySpawned), typeof(ParentInfoSet), typeof(VariablesMerged), typeof(ExecutionStarted) },
+            events.Select(e => e.GetType()).ToArray());
+        Assert.AreEqual(instanceId, state.Id);
+        Assert.AreEqual("ORDER-1", state.BusinessId);
+        Assert.IsTrue(state.IsStarted);
         Assert.AreEqual(parentId, state.ParentWorkflowInstanceId);
         Assert.AreEqual("callActivity1", state.ParentActivityId);
+        var merged = events.OfType<VariablesMerged>().Single();
+        Assert.AreEqual(state.GetRootVariablesId(), merged.VariablesId);
+    }
+
+    [TestMethod]
+    public void CreateAndStart_WithoutParentOrVariables_ShouldEmitOnlyCreatedAndStarted()
+    {
+        // Arrange
+        var state = new WorkflowInstanceState();
+        var execution = new WorkflowExecution(state, CreateStartEndDefinition());
+
+        // Act — empty variables are not journaled
+        execution.CreateAndStart(Guid.NewGuid(), variables: new ExpandoObject());
+
+        // Assert
+        CollectionAssert.AreEqual(
+            new[] { typeof(WorkflowStarted), typeof(ActivitySpawned), typeof(ExecutionStarted) },
+            execution.GetUncommittedEvents().Select(e => e.GetType()).ToArray());
+        Assert.IsNull(state.ParentWorkflowInstanceId);
+    }
+
+    [TestMethod]
+    public void CreateAndStart_RejectedStart_ShouldEmitNothing()
+    {
+        // Arrange
+        var state = new WorkflowInstanceState();
+        var execution = new WorkflowExecution(state, CreateStartEndDefinition());
+
+        // Act
+        Assert.ThrowsExactly<InvalidOperationException>(() =>
+            execution.CreateAndStart(Guid.NewGuid(), startActivityId: "no-such-activity",
+                parent: new ParentInfo(Guid.NewGuid(), "callActivity1")));
+
+        // Assert
+        Assert.IsEmpty(execution.GetUncommittedEvents());
+        Assert.IsFalse(state.IsStarted);
+        Assert.IsNull(state.ParentWorkflowInstanceId);
     }
 
     // ===== OnChildWorkflowCompleted Tests =====

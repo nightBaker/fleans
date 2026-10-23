@@ -21,6 +21,9 @@ public partial class UserTaskEffectHandler : IEffectHandler
         switch (effect)
         {
             case RegisterUserTaskEffect regTask:
+                // The UserTasks row references the instance's row: on a start that reaches the
+                // user task in its first turn, write the instance first (#863).
+                await context.EnsureInstancePersistedAsync();
                 try
                 {
                     var taskGrain = context.GrainFactory.GetGrain<IUserTaskGrain>(regTask.ActivityInstanceId);

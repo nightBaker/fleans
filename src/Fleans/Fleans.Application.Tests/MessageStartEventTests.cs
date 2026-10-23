@@ -250,9 +250,8 @@ public class MessageStartEventTests : WorkflowTestBase
         await processGrain.DeployVersion(correlationWorkflow, "<placeholder/>");
 
         // Start an instance with the correlation variable set
-        var instance = await processGrain.CreateInstance();
-        await instance.SetInitialVariables((ExpandoObject)initVars);
-        await instance.StartWorkflow();
+        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await instance.StartWorkflow(await processGrain.GetLatestDefinition(), variables: (ExpandoObject)initVars);
 
         // Act — deliver via correlation once the catch-event subscription is registered
         var delivered = await DeliverMessageWhenSubscribed("priorityMsg", "ORD-999");

@@ -19,10 +19,9 @@ namespace Fleans.Application.Tests
             // Arrange
             var workflow = CreateForkJoinWorkflow();
             var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-            await workflowInstance.SetWorkflow(workflow);
 
             // Act - Complete the fork gateway
-            await workflowInstance.StartWorkflow();
+            await workflowInstance.StartWorkflow(workflow);
 
             // Assert - Should have multiple parallel paths active
             var instanceId = workflowInstance.GetPrimaryKey();
@@ -41,8 +40,7 @@ namespace Fleans.Application.Tests
             // Arrange
             var workflow = CreateForkJoinWorkflow();
             var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-            await workflowInstance.SetWorkflow(workflow);
-            await workflowInstance.StartWorkflow();
+            await workflowInstance.StartWorkflow(workflow);
 
             // Act — complete only task1
             await workflowInstance.CompleteActivity("task1", new ExpandoObject());
@@ -64,8 +62,7 @@ namespace Fleans.Application.Tests
             // Arrange
             var workflow = CreateForkJoinWorkflow();
             var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-            await workflowInstance.SetWorkflow(workflow);
-            await workflowInstance.StartWorkflow();
+            await workflowInstance.StartWorkflow(workflow);
 
             // Act — complete both tasks
             await workflowInstance.CompleteActivity("task1", new ExpandoObject());
@@ -104,10 +101,9 @@ namespace Fleans.Application.Tests
             };
 
             var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-            await workflowInstance.SetWorkflow(workflow);
 
             // Act — start the workflow; start event auto-transitions to fork, fork fans out
-            await workflowInstance.StartWorkflow();
+            await workflowInstance.StartWorkflow(workflow);
 
             // Assert — all 3 tasks should be active after the fork
             var instanceId = workflowInstance.GetPrimaryKey();
@@ -127,8 +123,7 @@ namespace Fleans.Application.Tests
             // Arrange — fork into two branches, complete each with different values for the same variable
             var workflow = CreateForkJoinWorkflow();
             var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-            await workflowInstance.SetWorkflow(workflow);
-            await workflowInstance.StartWorkflow();
+            await workflowInstance.StartWorkflow(workflow);
 
             var instanceId = workflowInstance.GetPrimaryKey();
             var snapshot = await QueryService.GetStateSnapshot(instanceId);
@@ -183,8 +178,7 @@ namespace Fleans.Application.Tests
             // Arrange
             var workflow = CreateForkJoinWorkflow();
             var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-            await workflowInstance.SetWorkflow(workflow);
-            await workflowInstance.StartWorkflow();
+            await workflowInstance.StartWorkflow(workflow);
 
             // Act — complete each branch with a different variable name
             dynamic vars1 = new ExpandoObject();
@@ -218,8 +212,7 @@ namespace Fleans.Application.Tests
             // Arrange
             var workflow = CreateForkJoinWorkflow();
             var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-            await workflowInstance.SetWorkflow(workflow);
-            await workflowInstance.StartWorkflow();
+            await workflowInstance.StartWorkflow(workflow);
 
             // Act — both branches set the same variable
             dynamic vars1 = new ExpandoObject();

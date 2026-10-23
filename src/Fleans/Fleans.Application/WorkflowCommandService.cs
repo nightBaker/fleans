@@ -24,14 +24,10 @@ public partial class WorkflowCommandService : IWorkflowCommandService
         BusinessIdRules.Validate(businessId);
 
         var processGrain = _grainFactory.GetGrain<IProcessDefinitionGrain>(workflowId);
-        var workflowInstance = await processGrain.CreateInstance(businessId);
+        var definition = await processGrain.GetStartableDefinition()
+            ?? throw new ProcessDisabledException(workflowId);
 
-        if (initialVariables != null)
-            await workflowInstance.SetInitialVariables(initialVariables);
-
-        await workflowInstance.StartWorkflow();
-
-        return await workflowInstance.GetWorkflowInstanceId();
+        return await StartInstance(definition, initialVariables, businessId);
     }
 
     public async Task<Guid> StartWorkflowByProcessDefinitionId(string processDefinitionId, string? businessId = null)
@@ -42,11 +38,19 @@ public partial class WorkflowCommandService : IWorkflowCommandService
 
         var key = ProcessDefinition.ExtractKeyFromId(processDefinitionId);
         var processGrain = _grainFactory.GetGrain<IProcessDefinitionGrain>(key);
-        var workflowInstance = await processGrain.CreateInstanceByDefinitionId(processDefinitionId, businessId);
+        var definition = await processGrain.GetStartableDefinition(processDefinitionId)
+            ?? throw new ProcessDisabledException(key);
 
-        await workflowInstance.StartWorkflow();
+        return await StartInstance(definition, initialVariables: null, businessId);
+    }
 
-        return await workflowInstance.GetWorkflowInstanceId();
+    /// <summary>One grain call and one journal append per start (#863).</summary>
+    private async Task<Guid> StartInstance(IWorkflowDefinition definition, ExpandoObject? initialVariables, string? businessId)
+    {
+        var instanceId = Guid.NewGuid();
+        await _grainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId)
+            .StartWorkflow(definition, businessId: businessId, variables: initialVariables);
+        return instanceId;
     }
 
     public async Task CompleteActivity(Guid workflowInstanceId, string activityId, ExpandoObject variables)

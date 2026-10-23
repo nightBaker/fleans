@@ -138,7 +138,7 @@ public class BusinessIdTests : WorkflowTestBase
     }
 
     [TestMethod]
-    public async Task SetWorkflow_WithInvalidBusinessId_LeavesTheGrainUnset()
+    public async Task StartWorkflow_WithInvalidBusinessId_LeavesTheGrainUnset()
     {
         // Arrange — call the grain directly, bypassing the command service's validation
         await DeployAsync(CreateSimpleWorkflow("biz-direct"));
@@ -146,15 +146,15 @@ public class BusinessIdTests : WorkflowTestBase
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
 
         // Act
-        await Assert.ThrowsAsync<ArgumentException>(() => grain.SetWorkflow(definition, businessId: "  "));
-        await grain.SetWorkflow(definition, businessId: "ORDER-RETRY");
+        await Assert.ThrowsAsync<ArgumentException>(() => grain.StartWorkflow(definition, businessId: "  "));
+        await grain.StartWorkflow(definition, businessId: "ORDER-RETRY");
 
         // Assert
         Assert.AreEqual("ORDER-RETRY", await grain.GetBusinessId());
     }
 
     [TestMethod]
-    public async Task SetWorkflow_WithUnknownStartActivity_LeavesTheGrainRetryable()
+    public async Task StartWorkflow_WithUnknownStartActivity_LeavesTheGrainRetryable()
     {
         // Arrange
         await DeployAsync(CreateSimpleWorkflow("biz-bad-start"));
@@ -163,9 +163,8 @@ public class BusinessIdTests : WorkflowTestBase
 
         // Act — the first start fails after validation passed; nothing may be left behind
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => grain.SetWorkflow(definition, startActivityId: "no-such-activity", businessId: "ORDER-1"));
-        await grain.SetWorkflow(definition, businessId: "ORDER-2");
-        await grain.StartWorkflow();
+            () => grain.StartWorkflow(definition, startActivityId: "no-such-activity", businessId: "ORDER-1"));
+        await grain.StartWorkflow(definition, businessId: "ORDER-2");
 
         // Assert
         Assert.AreEqual("ORDER-2", await grain.GetBusinessId());

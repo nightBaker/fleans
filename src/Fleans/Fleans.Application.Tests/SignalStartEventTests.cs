@@ -187,8 +187,8 @@ public class SignalStartEventTests : WorkflowTestBase
         await processGrainA.DeployVersion(workflowA, "<placeholder/>");
 
         // Start an instance of Workflow A and wait for it to reach the catch event
-        var instanceA = await processGrainA.CreateInstance();
-        await instanceA.StartWorkflow();
+        var instanceA = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await instanceA.StartWorkflow(await processGrainA.GetLatestDefinition());
 
         // Workflow B: SignalStartEvent -> ScriptTask -> EndEvent
         // (this one gets created by signal)

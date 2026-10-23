@@ -26,10 +26,10 @@ namespace Fleans.Application.Grains;
 //   * WorkflowInstance.cs               — fields, constructor, lifecycle overrides (OnActivateAsync,
 //                                         OnDeactivateAsync, TransitionState), ICustomStorageInterface
 //                                         (ReadStateFromStorage, ApplyUpdatesToStorage), and all public
-//                                         entry points: workflow lifecycle (SetWorkflow, StartWorkflow);
+//                                         entry points: workflow lifecycle (StartWorkflow);
 //                                         activity completion/failure (CompleteActivity, FailActivity,
 //                                         CompleteConditionSequence); child-workflow coordination
-//                                         (SetParentInfo, SetInitialVariables, OnChildWorkflowCompleted,
+//                                         (OnChildWorkflowCompleted,
 //                                         OnChildWorkflowFailed); external events (HandleTimerFired,
 //                                         HandleMessageDelivery, HandleBoundaryMessageFired,
 //                                         HandleSignalDelivery, HandleBoundarySignalFired); user tasks
@@ -509,23 +509,52 @@ public partial class WorkflowInstance :
         _execution ??= new WorkflowExecution(State, _workflowDefinition!);
     }
 
-    public async Task SetWorkflow(IWorkflowDefinition workflow, string? startActivityId = null, string? businessId = null)
+    /// <summary>
+    /// The one start path (#863): creates and starts the instance in a single call and a single
+    /// journal append — <c>WorkflowStarted</c>, the start activity, the parent link, the input
+    /// variables and <c>ExecutionStarted</c> — then runs it until it waits. A retried start of an
+    /// instance already started from the same process definition is a no-op (1147), so a caller
+    /// that lost the reply can call again.
+    /// </summary>
+    public async Task StartWorkflow(
+        IWorkflowDefinition workflow,
+        string? startActivityId = null,
+        string? businessId = null,
+        ExpandoObject? variables = null,
+        ParentInfo? parent = null)
     {
-        if (_workflowDefinition is not null) throw new ArgumentException("Workflow already set");
         ArgumentNullException.ThrowIfNull(workflow);
+        ThrowIfStateReloaded();
+        if (State.IsStarted)
+        {
+            if (State.ProcessDefinitionId != workflow.ProcessDefinitionId)
+                throw new InvalidOperationException(
+                    $"Workflow instance '{this.GetPrimaryKey()}' is already started from '{State.ProcessDefinitionId}'.");
+            LogDuplicateStartIgnored(workflow.ProcessDefinitionId);
+            return;
+        }
+        EnsureVariablesWithinLimit(variables);
 
-        // Start validates (business id, start activity) before emitting anything. Assign the
-        // fields only after it succeeds, so a rejected start leaves the grain unset and a retry
-        // with valid input works. (A storage failure in ProcessPendingEvents is not covered.)
+        // CreateAndStart validates (business id, start activity) before emitting anything. Assign
+        // the fields only after it succeeds, so a rejected start leaves the grain unset and a retry
+        // with valid input works.
         var execution = new WorkflowExecution(State, workflow);
-        execution.Start(startActivityId, businessId, this.GetPrimaryKey());
+        var scopeEntryEffects = execution.CreateAndStart(this.GetPrimaryKey(), startActivityId, businessId, variables, parent);
         _workflowDefinition = workflow;
         _execution = execution;
 
         SetWorkflowRequestContext();
         using var scope = BeginWorkflowScope();
-        LogWorkflowDefinitionSet();
+        LogWorkflowStarted();
 
+        // Root-scope entry effects: event sub-process timer/message listener registrations.
+        if (scopeEntryEffects.Count > 0)
+        {
+            LogRootScopeListenersArmed(scopeEntryEffects.Count);
+            await PerformEffects(scopeEntryEffects);
+        }
+
+        await RunExecutionLoop();
         await ProcessPendingEvents();
     }
 
@@ -590,30 +619,6 @@ public partial class WorkflowInstance :
         return WorkflowLoggingContext.BeginScope(
             _logger, _workflowDefinition.WorkflowId, _workflowDefinition.ProcessDefinitionId, this.GetPrimaryKey(),
             State.BusinessId);
-    }
-
-    // ── StartWorkflow (from Execution) ──────────────────────────────────
-
-    public async Task StartWorkflow()
-    {
-        await EnsureExecution();
-        SetWorkflowRequestContext();
-        using var scope = BeginWorkflowScope();
-
-        // MarkExecutionStarted emits ExecutionStarted AND returns the root-scope
-        // entry effects (event sub-process timer/message listener registrations).
-        // The grain never reaches into the aggregate to assemble these itself.
-        var scopeEntryEffects = _execution!.MarkExecutionStarted();
-        LogWorkflowStarted();
-
-        if (scopeEntryEffects.Count > 0)
-        {
-            LogRootScopeListenersArmed(scopeEntryEffects.Count);
-            await PerformEffects(scopeEntryEffects);
-        }
-
-        await RunExecutionLoop();
-        await ProcessPendingEvents();
     }
 
     // ── Activity Lifecycle ──────────────────────────────────────────────
@@ -738,24 +743,6 @@ public partial class WorkflowInstance :
         _execution!.CompleteComplexGatewayJoin(activityId);
         await ResolveExternalCompletions();
         await RunExecutionLoop();
-        await ProcessPendingEvents();
-    }
-
-    public async Task SetParentInfo(Guid parentWorkflowInstanceId, string parentActivityId)
-    {
-        await EnsureExecution();
-        _execution!.SetParentInfo(parentWorkflowInstanceId, parentActivityId);
-        LogParentInfoSet(parentWorkflowInstanceId, parentActivityId);
-        await ProcessPendingEvents();
-    }
-
-    public async Task SetInitialVariables(ExpandoObject variables)
-    {
-        EnsureVariablesWithinLimit(variables);
-        await EnsureExecution();
-
-        _execution!.MergeVariables(State.GetRootVariablesId(), variables);
-        LogInitialVariablesSet();
         await ProcessPendingEvents();
     }
 
@@ -1154,6 +1141,9 @@ public partial class WorkflowInstance :
         public Guid WorkflowInstanceId => _grain.GetPrimaryKey();
 
         public Task PersistStateAsync() => _grain.DrainAndRaiseEvents();
+
+        public Task EnsureInstancePersistedAsync() =>
+            _grain._journalVersion == 0 ? _grain.DrainAndRaiseEvents() : Task.CompletedTask;
 
         public async Task ProcessFailureEffects(
             string activityId, Guid hostActivityInstanceId, Exception ex)

@@ -39,8 +39,7 @@ public class TimerLateFireTests : WorkflowTestBase
             ],
         };
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         var instanceId = workflowInstance.GetPrimaryKey();
         var preSnap = await QueryService.GetStateSnapshot(instanceId);

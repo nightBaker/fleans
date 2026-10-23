@@ -25,7 +25,7 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
 
         // Act
-        await grain.SetWorkflow(CreateSimpleWorkflow("es-started-instance-id"));
+        await grain.StartWorkflow(CreateSimpleWorkflow("es-started-instance-id"));
 
         // Assert
         var events = await GetSiloService<IEventStore>().ReadEventsAsync(instanceId, afterVersion: 0);
@@ -42,10 +42,9 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         var workflow = (WorkflowDefinition)CreateSequentialWorkflow();
         await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId)
             .DeployVersion(workflow, "<placeholder/>");
-        var grain = await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId)
-            .CreateInstance();
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         var instanceId = grain.GetPrimaryKey();
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId).GetLatestDefinition());
         await grain.CompleteActivity("task1", new ExpandoObject());
         await ForceAllGrainDeactivation(instanceId);
 
@@ -109,10 +108,9 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         };
         await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId)
             .DeployVersion(workflow, "<placeholder/>");
-        var grain = await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId)
-            .CreateInstance();
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         var instanceId = grain.GetPrimaryKey();
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId).GetLatestDefinition());
         await grain.CompleteActivity("tx_task", new ExpandoObject());
         Assert.AreEqual(1, (await grain.GetTransactionOutcomes()).Count);
 
@@ -143,9 +141,8 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         var workflow = (WorkflowDefinition)CreateSequentialWorkflow();
         await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId)
             .DeployVersion(workflow, "<placeholder/>");
-        var grain = await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId)
-            .CreateInstance();
-        await grain.StartWorkflow();
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await grain.StartWorkflow(await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId).GetLatestDefinition());
         await ForceAllGrainDeactivation(grain.GetPrimaryKey());
         await Task.Delay(TimeSpan.FromMilliseconds(400));
         measurements.Clear();
@@ -165,8 +162,7 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         var workflow = CreateSequentialWorkflow();
         var instanceId = Guid.NewGuid();
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
-        await grain.SetWorkflow(workflow);
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(workflow);
 
         dynamic vars = new ExpandoObject();
         vars.result = "done";
@@ -210,8 +206,7 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         var workflow = CreateForkJoinWorkflow();
         var instanceId = Guid.NewGuid();
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
-        await grain.SetWorkflow(workflow);
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(workflow);
 
         dynamic vars1 = new ExpandoObject();
         vars1.fromBranch1 = "value1";
@@ -274,10 +269,10 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         // Deploy via ProcessDefinitionGrain so ProcessDefinitionId is persisted
         var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("mid-exec-recovery");
         await processGrain.DeployVersion(workflow, "<bpmn/>");
-        var grain = await processGrain.CreateInstance();
-        var instanceId = await grain.GetWorkflowInstanceId();
+        var instanceId = Guid.NewGuid();
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
 
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(await processGrain.GetLatestDefinition());
 
         // Complete task1 with orderId for message correlation
         dynamic vars = new ExpandoObject();
@@ -329,10 +324,10 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
             return row;
         }
 
-        await grain.SetWorkflow(CreateSequentialWorkflow());
-        Assert.IsNotNull((await Row("SetWorkflow")).CreatedAt);
-        await grain.StartWorkflow();
-        Assert.IsTrue((await Row("StartWorkflow")).IsStarted);
+        await grain.StartWorkflow(CreateSequentialWorkflow());
+        var started = await Row("StartWorkflow");
+        Assert.IsNotNull(started.CreatedAt);
+        Assert.IsTrue(started.IsStarted);
         await grain.CompleteActivity("task1", new ExpandoObject());
         Assert.IsFalse((await Row("task1")).IsCompleted);
         await grain.CompleteActivity("task2", new ExpandoObject());
@@ -369,8 +364,7 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
 
         // Act
-        await grain.SetWorkflow(workflow);
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(workflow);
         InstanceStateSnapshot? snapshot = null;
         for (var i = 0; i < 100 && snapshot?.IsCompleted != true; i++) // scripts run via stream events
         {
@@ -400,10 +394,9 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         var workflow = (WorkflowDefinition)CreateSequentialWorkflow();
         await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId)
             .DeployVersion(workflow, "<placeholder/>");
-        var grain = await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId)
-            .CreateInstance();
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         var instanceId = grain.GetPrimaryKey();
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId).GetLatestDefinition());
         await grain.CompleteActivity("task1", new ExpandoObject());
         await grain.CompleteActivity("task2", new ExpandoObject());
         await ForceAllGrainDeactivation(instanceId);
@@ -438,10 +431,9 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         var workflow = (WorkflowDefinition)CreateSequentialWorkflow();
         await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId)
             .DeployVersion(workflow, "<placeholder/>");
-        var grain = await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId)
-            .CreateInstance();
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         var instanceId = grain.GetPrimaryKey();
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId).GetLatestDefinition());
         await grain.CompleteActivity("task1", new ExpandoObject());
         await ForceAllGrainDeactivation(instanceId);
         var writesBefore = FaultInjectingWorkflowStateProjection.WritesOf(instanceId).Count;
@@ -463,8 +455,7 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         var dbFactory = GetSiloService<IDbContextFactory<FleanCommandDbContext>>();
 
         // Act
-        await grain.SetWorkflow(CreateSequentialWorkflow());
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(CreateSequentialWorkflow());
         await grain.CompleteActivity("task1", new ExpandoObject());
         await grain.CompleteActivity("task2", new ExpandoObject());
 
@@ -485,10 +476,9 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         var workflow = (WorkflowDefinition)CreateSequentialWorkflow();
         await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId)
             .DeployVersion(workflow, "<placeholder/>");
-        var grain = await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId)
-            .CreateInstance();
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         var instanceId = grain.GetPrimaryKey();
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId).GetLatestDefinition());
         await grain.CompleteActivity("task1", new ExpandoObject());
         await ForceAllGrainDeactivation(instanceId);
 
@@ -532,8 +522,7 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         // no further append will come to carry it.
         var instanceId = Guid.NewGuid();
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
-        await grain.SetWorkflow(CreateSequentialWorkflow());
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(CreateSequentialWorkflow());
         await grain.CompleteActivity("task1", new ExpandoObject());
         FaultInjectingWorkflowStateProjection.FailNextWrites(instanceId, 2);
 
@@ -566,10 +555,9 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         var workflow = (WorkflowDefinition)CreateSequentialWorkflow();
         await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId)
             .DeployVersion(workflow, "<placeholder/>");
-        var grain = await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId)
-            .CreateInstance();
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         var instanceId = grain.GetPrimaryKey();
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId).GetLatestDefinition());
         await grain.CompleteActivity("task1", new ExpandoObject());
         await ForceAllGrainDeactivation(instanceId);
 
@@ -599,8 +587,7 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         var dbFactory = GetSiloService<IDbContextFactory<FleanCommandDbContext>>();
 
         // Act — SetWorkflow + StartWorkflow
-        await grain.SetWorkflow(workflow);
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(workflow);
 
         await using (var db = await dbFactory.CreateDbContextAsync())
         {
@@ -635,8 +622,7 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         var workflow = CreateSimpleWorkflow("es-simple-workflow");
         var instanceId = Guid.NewGuid();
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
-        await grain.SetWorkflow(workflow);
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(workflow);
 
         // Complete task with various types
         dynamic vars = new ExpandoObject();

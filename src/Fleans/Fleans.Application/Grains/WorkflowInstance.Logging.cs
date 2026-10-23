@@ -4,9 +4,6 @@ namespace Fleans.Application.Grains;
 
 public partial class WorkflowInstance
 {
-    [LoggerMessage(EventId = 1000, Level = LogLevel.Debug, Message = "Workflow definition set")]
-    private partial void LogWorkflowDefinitionSet();
-
     [LoggerMessage(EventId = 1001, Level = LogLevel.Debug, Message = "Workflow execution started")]
     private partial void LogWorkflowStarted();
 
@@ -54,9 +51,6 @@ public partial class WorkflowInstance
 
     [LoggerMessage(EventId = 1011, Level = LogLevel.Information, Message = "Parent info set: ParentWorkflowInstanceId={ParentWorkflowInstanceId}, ParentActivityId={ParentActivityId}")]
     private partial void LogParentInfoSet(Guid parentWorkflowInstanceId, string parentActivityId);
-
-    [LoggerMessage(EventId = 1012, Level = LogLevel.Debug, Message = "Initial variables set")]
-    private partial void LogInitialVariablesSet();
 
     [LoggerMessage(EventId = 1014, Level = LogLevel.Information, Message = "Child workflow completed for CallActivity {ParentActivityId}")]
     private partial void LogChildWorkflowCompleted(string parentActivityId);
@@ -503,6 +497,10 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1141, Level = LogLevel.Warning,
         Message = "Loading the process definition for a state snapshot failed; condition text is left empty")]
     private partial void LogStateSnapshotDefinitionUnavailable(Exception exception);
+
+    [LoggerMessage(EventId = 1147, Level = LogLevel.Information,
+        Message = "Start ignored: the instance is already started from process definition {ProcessDefinitionId}")]
+    private partial void LogDuplicateStartIgnored(string? processDefinitionId);
 
     [LoggerMessage(EventId = 1148, Level = LogLevel.Debug,
         Message = "Workflow instance is terminal with nothing pending; deactivating once idle")]

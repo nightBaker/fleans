@@ -132,6 +132,11 @@ internal class FaultInjectingEventStore(IEventStore inner) : IEventStore
     private static readonly ConcurrentDictionary<Guid, ConcurrentQueue<Gate>> Gates = new();
     private static readonly ConcurrentDictionary<Guid, int> FailuresLeft = new();
     private static readonly ConcurrentDictionary<Guid, WorkflowEvent> ForeignWrites = new();
+    private static readonly ConcurrentDictionary<Guid, ConcurrentQueue<IReadOnlyList<WorkflowEvent>>> Appended = new();
+
+    /// <summary>Every batch the grain appended so far, in order: one entry per stored append.</summary>
+    public static IReadOnlyList<IReadOnlyList<WorkflowEvent>> AppendsOf(Guid instanceId) =>
+        Appended.TryGetValue(instanceId, out var appends) ? appends.ToList() : [];
     private static readonly ConcurrentDictionary<Guid, bool> StoreThenFail = new();
 
     /// <summary>Holds the grain's next <paramref name="count"/> appends, one gate each, in order.</summary>
@@ -192,7 +197,10 @@ internal class FaultInjectingEventStore(IEventStore inner) : IEventStore
             throw new TimeoutException($"Injected append failure for {instanceId}");
         }
 
-        return await inner.AppendEventsAsync(instanceId, events, expectedVersion, batchId);
+        var stored = await inner.AppendEventsAsync(instanceId, events, expectedVersion, batchId);
+        if (stored)
+            Appended.GetOrAdd(instanceId, _ => new()).Enqueue(events.ToList());
+        return stored;
     }
 
     public Task WriteSnapshotAsync(Guid instanceId, int version, WorkflowInstanceState state) =>

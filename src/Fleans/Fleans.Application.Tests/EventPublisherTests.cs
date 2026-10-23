@@ -73,11 +73,10 @@ public class EventPublisherTests
         // Arrange
         var workflow = CreateWorkflowWithExclusiveGateway();
         var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
         var instanceId = workflowInstance.GetPrimaryKey();
 
         // Act
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Assert — stream handler evaluates "true" condition and completes the workflow
         var snapshot = await PollForCompletion(instanceId);
@@ -95,11 +94,10 @@ public class EventPublisherTests
         // Arrange
         var workflow = CreateWorkflowWithScriptTask();
         var workflowInstance = _cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
         var instanceId = workflowInstance.GetPrimaryKey();
 
         // Act
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Assert — stream handler executes script and completes the workflow
         var snapshot = await PollForCompletion(instanceId);

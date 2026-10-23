@@ -27,8 +27,8 @@ public class DefinitionCacheActivationTests : WorkflowTestBase
         var instances = new List<IWorkflowInstanceGrain>();
         for (var i = 0; i < 6; i++)
         {
-            var instance = await processGrain.CreateInstance();
-            await instance.StartWorkflow();
+            var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+            await instance.StartWorkflow((await processGrain.GetStartableDefinition())!);
             instances.Add(instance);
         }
         var ids = new List<Guid>();
@@ -65,8 +65,8 @@ public class DefinitionCacheActivationTests : WorkflowTestBase
         // Arrange
         var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("cache-completed");
         await processGrain.DeployVersion(CreateWaitingWorkflow("cache-completed"), "<bpmn/>");
-        var instance = await processGrain.CreateInstance();
-        await instance.StartWorkflow();
+        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        await instance.StartWorkflow((await processGrain.GetStartableDefinition())!);
         var id = await instance.GetWorkflowInstanceId();
 
         // Act
@@ -86,11 +86,12 @@ public class DefinitionCacheActivationTests : WorkflowTestBase
         // Arrange
         var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("cache-running");
         await processGrain.DeployVersion(CreateWaitingWorkflow("cache-running"), "<bpmn/>");
-        var instance = await processGrain.CreateInstance();
+        var definition = (await processGrain.GetStartableDefinition())!;
+        var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         var id = await instance.GetWorkflowInstanceId();
 
         // Act
-        await instance.StartWorkflow();
+        await instance.StartWorkflow(definition);
         await Task.Delay(500);
 
         // Assert

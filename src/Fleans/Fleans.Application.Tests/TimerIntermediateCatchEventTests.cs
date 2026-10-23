@@ -30,10 +30,9 @@ public class TimerIntermediateCatchEventTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
 
         // Act
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Assert — workflow should be suspended at timer (timer is active, not completed)
         var instanceId = workflowInstance.GetPrimaryKey();
@@ -65,8 +64,7 @@ public class TimerIntermediateCatchEventTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Act — simulate reminder firing by calling CompleteActivity
         await workflowInstance.CompleteActivity("timer1", new ExpandoObject());
@@ -101,8 +99,7 @@ public class TimerIntermediateCatchEventTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Complete task with variables
         dynamic vars = new ExpandoObject();
@@ -141,8 +138,7 @@ public class TimerIntermediateCatchEventTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Act — simulate timer callback via HandleTimerFired
         var instanceId = workflowInstance.GetPrimaryKey();

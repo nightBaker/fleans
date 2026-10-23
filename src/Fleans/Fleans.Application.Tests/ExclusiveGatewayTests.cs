@@ -17,8 +17,7 @@ public class ExclusiveGatewayTests : WorkflowTestBase
         // Arrange
         var workflow = CreateWorkflowWithTwoBranches();
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Act — first condition true, gateway should auto-complete
         await workflowInstance.CompleteConditionSequence("if", "seq2", true);
@@ -39,8 +38,7 @@ public class ExclusiveGatewayTests : WorkflowTestBase
         // Arrange — gateway with two conditional flows, first returns true
         var workflow = CreateWorkflowWithTwoBranches();
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Act — first condition is true -> should complete immediately
         // Second condition is never evaluated
@@ -61,8 +59,7 @@ public class ExclusiveGatewayTests : WorkflowTestBase
         // Arrange
         var workflow = CreateWorkflowWithTwoBranches();
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Act — first condition false, second true
         await workflowInstance.CompleteConditionSequence("if", "seq2", false);
@@ -84,8 +81,7 @@ public class ExclusiveGatewayTests : WorkflowTestBase
         // Arrange
         var workflow = CreateWorkflowWithDefaultFlow();
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Act — all conditions false
         await workflowInstance.CompleteConditionSequence("if", "seq2", false);
@@ -108,8 +104,7 @@ public class ExclusiveGatewayTests : WorkflowTestBase
         // Arrange
         var workflow = CreateWorkflowWithTwoBranches(); // no default flow
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Act — first condition false
         await workflowInstance.CompleteConditionSequence("if", "seq2", false);
@@ -139,10 +134,9 @@ public class ExclusiveGatewayTests : WorkflowTestBase
         // Arrange — gateway with no conditional flows, only a default flow
         var workflow = CreateWorkflowWithOnlyDefaultFlow();
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
 
         // Act — start workflow, gateway should auto-complete immediately
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Assert — workflow completed via endDefault
         var instanceId = workflowInstance.GetPrimaryKey();
@@ -163,8 +157,7 @@ public class ExclusiveGatewayTests : WorkflowTestBase
         // Arrange
         var workflow = CreateWorkflowWithTwoBranches();
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Act — first condition false, second not yet evaluated
         await workflowInstance.CompleteConditionSequence("if", "seq2", false);

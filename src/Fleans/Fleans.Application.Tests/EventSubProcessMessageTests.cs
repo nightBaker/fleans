@@ -49,12 +49,10 @@ public class EventSubProcessMessageTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
 
         dynamic initVars = new ExpandoObject();
         initVars.orderId = "ORD-123";
-        await workflowInstance.SetInitialVariables((ExpandoObject)initVars);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow, variables: (ExpandoObject)initVars);
 
         var instanceId = workflowInstance.GetPrimaryKey();
 

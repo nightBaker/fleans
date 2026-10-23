@@ -51,8 +51,7 @@ public class EscalationEventTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Act: complete task → triggers escalation throw → interrupting boundary fires
         await workflowInstance.CompleteActivity("task", new ExpandoObject());
@@ -123,8 +122,7 @@ public class EscalationEventTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Act: complete task → triggers escalation throw → non-interrupting boundary fires
         await workflowInstance.CompleteActivity("task", new ExpandoObject());
@@ -191,8 +189,7 @@ public class EscalationEventTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Act: complete task → triggers uncaught escalation → continues normally
         await workflowInstance.CompleteActivity("task", new ExpandoObject());
@@ -249,8 +246,7 @@ public class EscalationEventTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         await workflowInstance.CompleteActivity("task", new ExpandoObject());
 
@@ -304,8 +300,7 @@ public class EscalationEventTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Complete task with a variable — should be available in boundary scope
         dynamic vars = new ExpandoObject();
@@ -364,8 +359,7 @@ public class EscalationEventTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         await workflowInstance.CompleteActivity("task", new ExpandoObject());
 
@@ -415,8 +409,7 @@ public class EscalationEventTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         await workflowInstance.CompleteActivity("task", new ExpandoObject());
 
@@ -478,8 +471,7 @@ public class EscalationEventTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Fail the task instead of completing it → no escalation thrown, error state set
         await workflowInstance.FailActivity("task", new Exception("Task failed before escalation"));
@@ -529,8 +521,7 @@ public class EscalationEventTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         await workflowInstance.FailActivity("task",
             new Fleans.Domain.Errors.BadRequestActivityException("Invalid input"));
@@ -583,8 +574,7 @@ public class EscalationEventTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Complete task → EscalationEndEvent fires → uncaught, subprocess completes → after_sub becomes active
         await workflowInstance.CompleteActivity("task", new ExpandoObject());
@@ -662,11 +652,11 @@ public class EscalationEventTests : WorkflowTestBase
         var parentProcessGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("parentEscProcess");
         await parentProcessGrain.DeployVersion(parentWorkflow, "<xml/>");
 
-        var parentInstance = await parentProcessGrain.CreateInstance();
+        var parentInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         var parentInstanceId = parentInstance.GetPrimaryKey();
 
         // Act — start parent (spawns child), then complete childTask → triggers escalation throw
-        await parentInstance.StartWorkflow();
+        await parentInstance.StartWorkflow(await parentProcessGrain.GetLatestDefinition());
 
         // Get child instance id from parent's active call activity
         var parentSnapshot = await QueryService.GetStateSnapshot(parentInstanceId);
@@ -740,8 +730,7 @@ public class EscalationEventTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         await workflowInstance.CompleteActivity("task", new ExpandoObject());
 

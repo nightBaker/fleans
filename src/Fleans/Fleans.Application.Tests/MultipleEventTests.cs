@@ -39,8 +39,7 @@ public class MultipleEventTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Complete task with orderId (for message correlation)
         dynamic vars = new ExpandoObject();
@@ -97,8 +96,7 @@ public class MultipleEventTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Complete task with orderId
         dynamic vars = new ExpandoObject();
@@ -192,13 +190,11 @@ public class MultipleEventTests : WorkflowTestBase
 
         // Start subscribers
         var instanceB = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await instanceB.SetWorkflow(subBWorkflow);
-        await instanceB.StartWorkflow();
+        await instanceB.StartWorkflow(subBWorkflow);
         await instanceB.CompleteActivity("task1", new ExpandoObject());
 
         var instanceC = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await instanceC.SetWorkflow(subCWorkflow);
-        await instanceC.StartWorkflow();
+        await instanceC.StartWorkflow(subCWorkflow);
         await instanceC.CompleteActivity("task1", new ExpandoObject());
 
         // Verify subscribers are suspended
@@ -211,8 +207,7 @@ public class MultipleEventTests : WorkflowTestBase
 
         // Act — run thrower workflow
         var thrower = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await thrower.SetWorkflow(throwWorkflow);
-        await thrower.StartWorkflow();
+        await thrower.StartWorkflow(throwWorkflow);
 
         // Assert — thrower completed
         var throwerSnap = await QueryService.GetStateSnapshot(thrower.GetPrimaryKey());
@@ -255,8 +250,7 @@ public class MultipleEventTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Complete task with correlation variable
         dynamic taskVars = new ExpandoObject();
