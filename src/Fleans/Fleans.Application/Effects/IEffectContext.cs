@@ -15,6 +15,14 @@ public interface IEffectContext
     Task PersistStateAsync();
 
     /// <summary>
+    /// Persists the instance only if nothing of it is journaled yet — a start still in its first
+    /// turn (#863). Call before an effect writes a row that references the instance's read-model
+    /// row (the <c>UserTasks</c> foreign key): that row is written with the first append. A no-op
+    /// once the instance has an append, so later turns pay no extra append.
+    /// </summary>
+    Task EnsureInstancePersistedAsync();
+
+    /// <summary>
     /// Fails the activity and dispatches any resulting effects. This causes recursive dispatch:
     /// Handler → FailActivity → new effects → DispatchAsync. This is intentional — failure
     /// handling may produce follow-up effects (e.g., timer unregistration) that must execute

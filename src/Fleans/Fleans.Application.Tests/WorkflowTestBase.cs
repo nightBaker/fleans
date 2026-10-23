@@ -256,7 +256,6 @@ public abstract class WorkflowTestBase
                 .AddMemoryGrainStorage(GrainStorageNames.SignalCorrelations)
                 .AddMemoryGrainStorage(GrainStorageNames.MessageStartEventListeners)
                 .AddMemoryGrainStorage(GrainStorageNames.SignalStartEventListeners)
-                .AddMemoryGrainStorage(GrainStorageNames.UserTasks)
                 .AddMemoryGrainStorage(GrainStorageNames.ConditionalStartEventListeners)
                 .AddMemoryGrainStorage(GrainStorageNames.ConditionalStartEventRegistry)
                 .AddMemoryGrainStorage(GrainStorageNames.CustomTaskCatalog)
@@ -278,6 +277,12 @@ public abstract class WorkflowTestBase
 
                     services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.TimerSchedulers,
                         (sp, _) => new EfCoreTimerSchedulerGrainStorage(
+                            sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
+
+                    // The production storage: the UserTasks row has a foreign key to its instance's
+                    // read-model row, so a registration before the instance's first append fails (#863).
+                    services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.UserTasks,
+                        (sp, _) => new EfCoreUserTaskGrainStorage(
                             sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
 
                     services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.ProcessDefinitions,

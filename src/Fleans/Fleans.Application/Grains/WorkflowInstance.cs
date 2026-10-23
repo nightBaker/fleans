@@ -1061,6 +1061,9 @@ public partial class WorkflowInstance :
 
         public Task PersistStateAsync() => _grain.DrainAndRaiseEvents();
 
+        public Task EnsureInstancePersistedAsync() =>
+            _grain._journalVersion == 0 ? _grain.DrainAndRaiseEvents() : Task.CompletedTask;
+
         public async Task ProcessFailureEffects(
             string activityId, Guid hostActivityInstanceId, Exception ex)
         {

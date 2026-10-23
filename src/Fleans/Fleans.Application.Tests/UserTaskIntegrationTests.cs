@@ -59,6 +59,23 @@ public class UserTaskIntegrationTests : WorkflowTestBase
         Assert.AreEqual("UserTask", snapshot.ActiveActivities[0].ActivityType);
     }
 
+    [TestMethod]
+    public async Task StartWorkflow_UserTaskRightAfterStart_IsRegisteredInTheReadModel()
+    {
+        // Regression (#863): the start is one turn, so the user task registers before the
+        // instance's first append. The UserTasks row references the instance row, which must
+        // therefore be written first.
+        var grain = await StartUserTaskWorkflow(assignee: "john");
+        var snapshot = await QueryService.GetStateSnapshot(grain.GetPrimaryKey());
+        Assert.IsNotNull(snapshot);
+        var userTaskId = snapshot.ActiveActivities.Single().ActivityInstanceId;
+
+        var task = await QueryService.GetUserTask(userTaskId);
+
+        Assert.IsNotNull(task, "the user task must be in the read model");
+        Assert.AreEqual("john", task.Assignee);
+    }
+
     // --- Claim lifecycle ---
 
     [TestMethod]
