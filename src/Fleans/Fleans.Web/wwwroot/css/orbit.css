@@ -1076,7 +1076,13 @@ body[data-theme$="dark"] {
     flex: 1;
 }
 
-/* Fluent inputs default to a fixed width; in the inspector they span the panel. */
+/* The panel's vertical FluentStack doesn't stretch its field rows, and Fluent inputs size to their row:
+   stretch both so every field spans the inspector. */
+.properties-panel-body .stack-vertical > * {
+    align-self: stretch;
+    min-width: 0;
+}
+
 .properties-panel-body :is(fluent-text-field, fluent-text-area, fluent-select, fluent-combobox, fluent-number-field) {
     width: 100%;
     min-width: 0;

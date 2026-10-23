@@ -54,7 +54,7 @@ For **production deployments** (Docker Compose, Kubernetes/Helm, bare VM), follo
 | **Aspire-first dev loop** | One command boots Api + Web + Redis with the Aspire dashboard, live logs, distributed tracing, and the Orleans Dashboard. No docker-compose juggling during development. |
 | **Multi-silo streaming** | Memory streams for dev; Kafka and Azure Queue Storage for production. Workflow event subscribers run on any silo — placement is Orleans-native, not pinned. |
 | **CQRS persistence** | EF Core split into `FleanCommandDbContext` (writes) and `FleanQueryDbContext` (no-tracking reads). SQLite for dev, PostgreSQL for production — same code path. The workflow journal (`FleanJournalDbContext`) can move to its own database, sharded on Citus. |
-| **Visual editor + admin UI** | Multi-tab `bpmn-js` editor, live deployment, instance state inspector, manual message/signal correlation. Blazor Server — no separate frontend deploy. |
+| **Visual editor + admin UI** | Multi-tab `bpmn-js` editor with an element palette, structure outline, live modelling hints, right-click context menus and an XML mode; live deployment, instance state inspector, manual message/signal correlation. Light and dark themes. Blazor Server — no separate frontend deploy. |
 
 ## Deploy a workflow in 10 lines
 
@@ -98,7 +98,7 @@ The authoritative element coverage matrix lives on the docs site:
 ## Documentation
 
 - [Quick start](https://nightbaker.github.io/fleans/guides/quick-start/) — first workflow in five minutes
-- [BPMN editor](https://nightbaker.github.io/fleans/guides/editor/) — multi-tab editing, live deploy
+- [BPMN editor](https://nightbaker.github.io/fleans/guides/editor/) — multi-tab editing, context menus, XML mode, live deploy
 - [Writing custom tasks](https://nightbaker.github.io/fleans/guides/writing-custom-tasks/) — your own task plugins
 - [Custom worker host](https://nightbaker.github.io/fleans/guides/custom-worker-host/) — ship plugins as a separate deployable
 - [Migrating Camunda 7 external tasks](https://nightbaker.github.io/fleans/guides/camunda-external-tasks/) — keep existing Camunda external-task workers via the separate [fleans-camunda-external-task](https://github.com/nightBaker/fleans-camunda-external-task) plugin

@@ -416,6 +416,7 @@
     private string? xmlError;
     private bool pendingXmlApply;
     private bool pendingCanvasRefresh;
+    private string? pendingFocusId;
 
     private bool showProblems;
     private DiagramSummary summary = new();
@@ -524,6 +525,13 @@
             await JS.InvokeVoidAsync("bpmnEditor.refreshCanvas");
         }
 
+        if (pendingFocusId != null)
+        {
+            var focusId = pendingFocusId;
+            pendingFocusId = null;
+            await JS.InvokeAsync<bool>("bpmnEditor.focusElement", focusId);
+        }
+
         if (!pendingXmlApply) return;
         pendingXmlApply = false;
 
@@ -579,7 +587,12 @@
 
     private async Task FocusElement(string elementId)
     {
-        if (xmlMode && !TryLeaveXmlMode()) return;
+        if (xmlMode)
+        {
+            // Scrolling needs a laid-out canvas: focus once XML mode has been left.
+            if (TryLeaveXmlMode()) pendingFocusId = elementId;
+            return;
+        }
         await JS.InvokeAsync<bool>("bpmnEditor.focusElement", elementId);
     }
 

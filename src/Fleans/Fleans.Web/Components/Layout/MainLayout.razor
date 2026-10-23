@@ -1,5 +1,6 @@
 @inherits LayoutComponentBase
 @inject Fleans.Web.Services.ThemeService ThemeService
+@inject IJSRuntime JS
 @implements IDisposable
 
 <FluentDesignTheme @bind-Mode="@_mode"
@@ -90,8 +91,6 @@
 </div>
 
 @code {
-    [Inject] private IJSRuntime JS { get; set; } = default!;
-
     private DesignThemeModes _mode;
     private OfficeColor? _officeColor;
     private bool _isDark;
