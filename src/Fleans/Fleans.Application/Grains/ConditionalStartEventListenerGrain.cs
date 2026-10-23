@@ -51,6 +51,8 @@ public partial class ConditionalStartEventListenerGrain : Grain, IConditionalSta
             return null;
         }
 
+        // [AlwaysInterleave] (#858): read the state only here, before the first await, and never write
+        // it — a Register/Unregister may run while this start is in flight.
         var processKey = _state.State.ProcessDefinitionKey;
         var activityId = _state.State.ActivityId;
         var expression = _state.State.ConditionExpression;
