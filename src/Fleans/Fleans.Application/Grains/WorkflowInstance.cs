@@ -128,9 +128,6 @@ public partial class WorkflowInstance :
     /// <summary>The instance is terminal and asked to be deactivated once idle (#860).</summary>
     private bool _terminalDeactivationRequested;
 
-    /// <summary>The instance is terminal and asked to be deactivated once idle (#860).</summary>
-    private bool _terminalDeactivationRequested;
-
     private IGrainTimer? _projectionRetryTimer;
     private int _projectionRetryAttempt;
     private static readonly TimeSpan ProjectionRetryFirstDelay = TimeSpan.FromSeconds(2);
