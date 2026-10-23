@@ -13,6 +13,9 @@ public interface IPersistenceTestFixture : IAsyncDisposable
     IDbContextFactory<FleanCommandDbContext> CommandFactory { get; }
     IDbContextFactory<FleanQueryDbContext> QueryFactory { get; }
 
+    /// <summary>The journal store's context, in the same database (the default layout, #879).</summary>
+    IDbContextFactory<FleanJournalDbContext> JournalFactory { get; }
+
     /// <summary>
     /// CQRS-restricted query-context factory wrapping <see cref="QueryFactory"/>.
     /// Pass this when constructing components that depend on

@@ -16,11 +16,13 @@ internal sealed class SqliteRowFixture : IPersistenceTestFixture
     private SqliteRowFixture(
         SqliteConnection connection,
         IDbContextFactory<FleanCommandDbContext> commandFactory,
-        IDbContextFactory<FleanQueryDbContext> queryFactory)
+        IDbContextFactory<FleanQueryDbContext> queryFactory,
+        IDbContextFactory<FleanJournalDbContext> journalFactory)
     {
         _connection = connection;
         CommandFactory = commandFactory;
         QueryFactory = queryFactory;
+        JournalFactory = journalFactory;
     }
 
     public PersistenceProvider Provider => PersistenceProvider.Sqlite;
@@ -28,6 +30,8 @@ internal sealed class SqliteRowFixture : IPersistenceTestFixture
     public IDbContextFactory<FleanCommandDbContext> CommandFactory { get; }
 
     public IDbContextFactory<FleanQueryDbContext> QueryFactory { get; }
+
+    public IDbContextFactory<FleanJournalDbContext> JournalFactory { get; }
 
     public static async Task<IPersistenceTestFixture> CreateAsync()
     {
@@ -41,15 +45,26 @@ internal sealed class SqliteRowFixture : IPersistenceTestFixture
             .UseFleansSqlite(connection)
             .Options;
 
+        var journalOptions = new DbContextOptionsBuilder<FleanJournalDbContext>()
+            .UseFleansSqlite(connection)
+            .Options;
+
         var commandFactory = new TestDbContextFactory(commandOptions);
         var queryFactory = new TestQueryDbContextFactory(queryOptions);
+        var journalFactory = new TestJournalDbContextFactory(journalOptions);
 
         await using (var ctx = await commandFactory.CreateDbContextAsync())
         {
             await ctx.Database.EnsureCreatedAsync();
         }
 
-        return new SqliteRowFixture(connection, commandFactory, queryFactory);
+        // The journal shares the database, as by default: its tables join the command context's.
+        await using (var ctx = await journalFactory.CreateDbContextAsync())
+        {
+            SqliteSchemaInitializer.EnsureCreatedIgnoreRaces(ctx.Database);
+        }
+
+        return new SqliteRowFixture(connection, commandFactory, queryFactory, journalFactory);
     }
 
     public ValueTask DisposeAsync()

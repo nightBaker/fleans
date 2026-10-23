@@ -3,10 +3,10 @@ using Testcontainers.PostgreSql;
 namespace Fleans.Persistence.Tests.Infrastructure;
 
 /// <summary>
-/// Owns a single <see cref="PostgreSqlContainer"/> for the assembly. The container starts
-/// lazily on first PG fixture request — Docker-less developers running only SQLite rows
-/// pay zero startup cost. Disposed via <see cref="AssemblyInit"/>'s
-/// <c>[AssemblyCleanup]</c>.
+/// Owns the assembly's <see cref="PostgreSqlContainer"/>s: plain PostgreSQL, and a single-node
+/// Citus for the distributed-journal contract run (#879). Each starts lazily on first request —
+/// Docker-less developers running only SQLite rows pay zero startup cost. Disposed via
+/// <see cref="AssemblyInit"/>'s <c>[AssemblyCleanup]</c>.
 /// </summary>
 internal static class PostgresContainerFixture
 {
@@ -17,10 +17,13 @@ internal static class PostgresContainerFixture
     /// </summary>
     public const string PostgresImage = "postgres:16-alpine";
 
+    /// <summary>Citus on the same PostgreSQL major as <see cref="PostgresImage"/>.</summary>
+    public const string CitusImage = "citusdata/citus:12.1";
+
     private const string BootstrapDatabaseName = "fleans_bootstrap";
 
     private static readonly SemaphoreSlim s_lock = new(1, 1);
-    private static PostgreSqlContainer? s_container;
+    private static readonly Dictionary<string, PostgreSqlContainer> s_containers = new();
 
     /// <summary>
     /// True when <c>FLEANS_PG_TESTS=1</c> — gates container startup and PG row execution.
@@ -32,21 +35,30 @@ internal static class PostgresContainerFixture
             StringComparison.Ordinal);
 
     /// <summary>
-    /// Connection string pointed at the container's bootstrap database. Use this only for
-    /// administrative operations (CREATE/DROP DATABASE); per-test work uses
-    /// <see cref="BuildConnectionString"/>.
+    /// Connection string pointed at the PostgreSQL container's bootstrap database. Use this only
+    /// for administrative operations (CREATE/DROP DATABASE); per-test work uses
+    /// <see cref="BuildConnectionString(string)"/>.
     /// </summary>
-    public static string ContainerConnectionString => EnsureStarted().GetConnectionString();
+    public static string ContainerConnectionString => EnsureStarted(PostgresImage).GetConnectionString();
 
     /// <summary>
     /// Builds a connection string targeting the named per-class database on the running
-    /// container.
+    /// PostgreSQL container.
     /// </summary>
-    public static string BuildConnectionString(string databaseName)
+    public static string BuildConnectionString(string databaseName) =>
+        BuildConnectionString(PostgresImage, databaseName);
+
+    /// <summary>
+    /// The bootstrap connection string of <paramref name="image"/>'s container (started on demand).
+    /// </summary>
+    public static string AdminConnectionString(string image) => EnsureStarted(image).GetConnectionString();
+
+    /// <summary>
+    /// Builds a connection string targeting the named database on <paramref name="image"/>'s container.
+    /// </summary>
+    public static string BuildConnectionString(string image, string databaseName)
     {
-        var container = EnsureStarted();
-        var template = container.GetConnectionString();
-        var builder = new Npgsql.NpgsqlConnectionStringBuilder(template)
+        var builder = new Npgsql.NpgsqlConnectionStringBuilder(EnsureStarted(image).GetConnectionString())
         {
             Database = databaseName,
         };
@@ -54,30 +66,30 @@ internal static class PostgresContainerFixture
     }
 
     /// <summary>
-    /// Stops the container if it was started. Called by <see cref="AssemblyInit"/>'s
+    /// Stops the containers that were started. Called by <see cref="AssemblyInit"/>'s
     /// <c>[AssemblyCleanup]</c>.
     /// </summary>
     public static async Task DisposeAsync()
     {
-        PostgreSqlContainer? container;
+        List<PostgreSqlContainer> containers;
         await s_lock.WaitAsync();
         try
         {
-            container = s_container;
-            s_container = null;
+            containers = s_containers.Values.ToList();
+            s_containers.Clear();
         }
         finally
         {
             s_lock.Release();
         }
 
-        if (container is not null)
+        foreach (var container in containers)
         {
             await container.DisposeAsync();
         }
     }
 
-    private static PostgreSqlContainer EnsureStarted()
+    private static PostgreSqlContainer EnsureStarted(string image)
     {
         if (!IsEnabled)
         {
@@ -85,24 +97,18 @@ internal static class PostgresContainerFixture
                 "PostgresContainerFixture accessed without FLEANS_PG_TESTS=1.");
         }
 
-        if (s_container is { } existing)
-        {
-            return existing;
-        }
-
         s_lock.Wait();
         try
         {
-            if (s_container is null)
+            if (!s_containers.TryGetValue(image, out var container))
             {
-                var container = new PostgreSqlBuilder()
-                    .WithImage(PostgresImage)
+                container = new PostgreSqlBuilder(image)
                     .WithDatabase(BootstrapDatabaseName)
                     .Build();
                 container.StartAsync().GetAwaiter().GetResult();
-                s_container = container;
+                s_containers[image] = container;
             }
-            return s_container;
+            return container;
         }
         finally
         {

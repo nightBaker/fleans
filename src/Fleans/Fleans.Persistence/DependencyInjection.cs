@@ -13,13 +13,22 @@ namespace Fleans.Persistence;
 
 public static class EfCorePersistenceDependencyInjection
 {
+    /// <param name="services">Service collection.</param>
+    /// <param name="configureCommandDb">The main database: grain state and the read model.</param>
+    /// <param name="configureQueryDb">Reads of the read model; defaults to <paramref name="configureCommandDb"/>.</param>
+    /// <param name="configureJournalDb">
+    /// The WorkflowInstance journal and snapshots (<see cref="FleanJournalDbContext"/>); defaults to
+    /// <paramref name="configureCommandDb"/> — the same database (#879).
+    /// </param>
     public static void AddEfCorePersistence(
         this IServiceCollection services,
         Action<DbContextOptionsBuilder> configureCommandDb,
-        Action<DbContextOptionsBuilder>? configureQueryDb = null)
+        Action<DbContextOptionsBuilder>? configureQueryDb = null,
+        Action<DbContextOptionsBuilder>? configureJournalDb = null)
     {
         services.AddDbContextFactory<FleanCommandDbContext>(configureCommandDb);
         services.AddDbContextFactory<FleanQueryDbContext>(configureQueryDb ?? configureCommandDb);
+        services.AddDbContextFactory<FleanJournalDbContext>(configureJournalDb ?? configureCommandDb);
 
         // CQRS read-side wrapper (see #661): wraps the EF Core factory in an
         // IFleanQueryContextFactory that returns IQueryable<T>-only views. Singleton lifetime
@@ -83,6 +92,7 @@ public static class EfCorePersistenceDependencyInjection
         services.AddSingleton<IEventStore>(sp => sp.GetRequiredService<EfCoreEventStore>());
 
         services.AddHealthChecks()
-            .AddDbContextCheck<FleanCommandDbContext>("database");
+            .AddDbContextCheck<FleanCommandDbContext>("database")
+            .AddDbContextCheck<FleanJournalDbContext>("journal");
     }
 }

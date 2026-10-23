@@ -41,6 +41,37 @@ public class SqliteSchemaInitializerTests
     }
 
     [TestMethod]
+    public void EnsureCreatedIgnoreRaces_CreatesTheJournalTables_InAFileThatHasTheCommandTables()
+    {
+        // #879: by default the journal context shares the main SQLite file. EnsureCreated alone
+        // creates nothing in a file that already has tables, so the journal would have none.
+        var dbPath = Path.GetTempFileName();
+        try
+        {
+            using (var ctx = new FleanCommandDbContext(new DbContextOptionsBuilder<FleanCommandDbContext>()
+                       .UseFleansSqlite($"DataSource={dbPath}").Options))
+                SqliteSchemaInitializer.EnsureCreatedIgnoreRaces(ctx.Database);
+
+            var journalOptions = new DbContextOptionsBuilder<FleanJournalDbContext>()
+                .UseFleansSqlite($"DataSource={dbPath}").Options;
+            using (var journal = new FleanJournalDbContext(journalOptions))
+                SqliteSchemaInitializer.EnsureCreatedIgnoreRaces(journal.Database);
+            // A second silo starting on the same file finds everything in place.
+            using (var journal = new FleanJournalDbContext(journalOptions))
+                SqliteSchemaInitializer.EnsureCreatedIgnoreRaces(journal.Database);
+
+            using var check = new FleanJournalDbContext(journalOptions);
+            Assert.AreEqual(0, check.WorkflowEventBatches.Count());
+            Assert.AreEqual(0, check.WorkflowSnapshots.Count());
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            File.Delete(dbPath);
+        }
+    }
+
+    [TestMethod]
     public void EnsureCreatedIgnoreRaces_AddsMissingAdditiveColumns_OnExistingDb()
     {
         // Arrange — #762: an existing dev DB created before WorkflowInstances.IsFailed existed.

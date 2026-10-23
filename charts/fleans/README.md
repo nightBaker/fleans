@@ -79,6 +79,23 @@ extraEnv:
         key: connection-string
 ```
 
+### Separate journal database
+
+The workflow journal (event batches + snapshots) uses the `fleans` database unless you point it elsewhere — for example at a Citus cluster that shards it by instance id. Add the journal's connection string (and, for Citus, the provider) via `extraEnv`:
+
+```yaml
+extraEnv:
+  - name: Persistence__Journal__Provider
+    value: Citus            # or Postgres for a plain separate database
+  - name: ConnectionStrings__fleans-journal
+    valueFrom:
+      secretKeyRef:
+        name: my-journal-db-secret
+        key: connection-string
+```
+
+The silos apply the journal's migrations to that database at startup. See the [persistence reference](https://nightbaker.github.io/fleans/reference/persistence/#separate-journal-database).
+
 ### OIDC for the admin UI
 
 ```yaml

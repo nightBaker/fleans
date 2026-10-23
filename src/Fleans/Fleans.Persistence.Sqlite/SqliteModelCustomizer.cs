@@ -36,6 +36,10 @@ internal sealed class SqliteModelCustomizer : RelationalModelCustomizer
     {
         base.Customize(modelBuilder, context);
 
+        // The journal model has none of the entities below; configuring them would add them.
+        if (context is FleanJournalDbContext)
+            return;
+
         // WorkflowInstanceState — three nullable DateTimeOffset columns
         modelBuilder.Entity<WorkflowInstanceState>()
             .Property(e => e.CreatedAt)

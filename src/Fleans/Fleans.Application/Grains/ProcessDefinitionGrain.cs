@@ -51,6 +51,8 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
         var key = this.GetPrimaryKeyString();
         var definition = GetLatestDefinitionOrThrow(key);
 
+        // A random (v4) id on purpose: it is the journal's shard key, and a time-ordered id would
+        // put every new instance on the same shard (docs/conventions/invariants.md, #879).
         var guid = Guid.NewGuid();
         LogCreatingInstance(key, definition.ProcessDefinitionId, guid);
 

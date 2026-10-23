@@ -58,6 +58,7 @@ One line each; **before touching the area, read the full rule in [`docs/conventi
 - **Compensation handlers run in isolated child scopes** and merge variables back into the enclosing scope before the next handler spawns.
 - **Registration failures → `FailActivity`; cleanup failures → log-only** (effect handlers in `Fleans.Application/Effects/`).
 - **User-task claim = three-rule OR** (assignee / candidate user / candidate group). Extend by adding a branch; rejections stay identifier-free.
+- **Journal tables are accessed by `InstanceId` only** (shard key) and `InstanceId` stays a random Guid v4.
 - **Stream-redelivery idempotency** — every state-mutating method reachable from a stream handler or `IWorkflowInstanceCallback` must survive at-least-once delivery; new methods extend the guard set.
 
 ## How-to guides & deep dives

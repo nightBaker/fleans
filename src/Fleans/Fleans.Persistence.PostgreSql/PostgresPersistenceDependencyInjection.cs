@@ -23,10 +23,16 @@ public static class PostgresPersistenceDependencyInjection
     /// Optional connection string for a read-only replica. When null the primary
     /// connection string is reused for both command and query contexts.
     /// </param>
+    /// <param name="configureJournalDb">
+    /// Optional journal store (<see cref="FleanJournalDbContext"/>, #879), e.g. a PostgreSQL
+    /// database of its own via <see cref="PostgresDbContextOptionsExtensions.UseFleansPostgresJournal"/>.
+    /// When null the journal shares the primary database.
+    /// </param>
     public static IServiceCollection AddPostgresPersistence(
         this IServiceCollection services,
         string connectionString,
-        string? queryConnectionString = null)
+        string? queryConnectionString = null,
+        Action<DbContextOptionsBuilder>? configureJournalDb = null)
     {
         // Build NpgsqlDataSource singletons (owned by DI — disposed on host shutdown).
         // Using NpgsqlDataSource is the recommended pattern for Npgsql 8+.
@@ -49,7 +55,8 @@ public static class PostgresPersistenceDependencyInjection
             options => options.UseFleansPostgres(commandDataSource),
             queryConnectionString is not null
                 ? options => options.UseFleansPostgres(effectiveQueryDataSource)
-                : null);
+                : null,
+            configureJournalDb ?? (options => options.UseFleansPostgresJournal(commandDataSource)));
 
         // Override the default in-memory strategy with the SQL-pushdown impl. See #415.
         services.AddSingleton<IUserTaskFilterStrategy, PostgresUserTaskFilterStrategy>();
@@ -80,6 +87,26 @@ public static class PostgresDbContextOptionsExtensions
             npgsqlOptions?.Invoke(npg);
         });
         builder.ReplaceService<IModelCustomizer, PostgresModelCustomizer>();
+        return builder;
+    }
+
+    /// <summary>
+    /// <see cref="UseFleansPostgres(DbContextOptionsBuilder, NpgsqlDataSource, Action{Npgsql.EntityFrameworkCore.PostgreSQL.Infrastructure.NpgsqlDbContextOptionsBuilder}?)"/>
+    /// for <see cref="FleanJournalDbContext"/>: its migrations keep their own history table, so
+    /// they can run in the main database as well as in one of their own.
+    /// </summary>
+    public static DbContextOptionsBuilder UseFleansPostgresJournal(
+        this DbContextOptionsBuilder builder,
+        NpgsqlDataSource dataSource) =>
+        builder.UseFleansPostgres(dataSource,
+            npg => npg.MigrationsHistoryTable(FleanJournalDbContext.MigrationsHistoryTable));
+
+    /// <inheritdoc cref="UseFleansPostgresJournal(DbContextOptionsBuilder, NpgsqlDataSource)"/>
+    public static DbContextOptionsBuilder<FleanJournalDbContext> UseFleansPostgresJournal(
+        this DbContextOptionsBuilder<FleanJournalDbContext> builder,
+        NpgsqlDataSource dataSource)
+    {
+        UseFleansPostgresJournal((DbContextOptionsBuilder)builder, dataSource);
         return builder;
     }
 

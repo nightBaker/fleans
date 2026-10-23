@@ -25,6 +25,7 @@ public abstract class PersistenceTestBase
     protected internal static NpgsqlDataSource? PgCommandDataSource;
     protected internal static IReadOnlyList<string> CommandModelTables = Array.Empty<string>();
     protected internal static IReadOnlyList<string> QueryModelTables = Array.Empty<string>();
+    protected internal static IReadOnlyList<string> JournalModelTables = Array.Empty<string>();
 
     protected static bool PgEnabled => PostgresContainerFixture.IsEnabled;
 
@@ -61,6 +62,18 @@ public abstract class PersistenceTestBase
                 .Distinct()
                 .ToList()!;
         }
+
+        // The journal's own migrations, after the command context's, in the same database —
+        // the default layout (#879), as EnsureDatabaseSchemaAsync applies it.
+        await using (var journalCtx = new FleanJournalDbContext(BuildJournalOptions(PgCommandDataSource)))
+        {
+            await journalCtx.Database.MigrateAsync();
+            JournalModelTables = journalCtx.Model.GetEntityTypes()
+                .Select(t => t.GetTableName())
+                .Where(n => !string.IsNullOrEmpty(n))
+                .Distinct()
+                .ToList()!;
+        }
     }
 
     [ClassCleanup(InheritanceBehavior.BeforeEachDerivedClass)]
@@ -84,6 +97,7 @@ public abstract class PersistenceTestBase
         PgConnectionString = string.Empty;
         CommandModelTables = Array.Empty<string>();
         QueryModelTables = Array.Empty<string>();
+        JournalModelTables = Array.Empty<string>();
     }
 
     /// <summary>
@@ -98,6 +112,7 @@ public abstract class PersistenceTestBase
 
         var allTables = CommandModelTables
             .Concat(QueryModelTables)
+            .Concat(JournalModelTables)
             .Distinct()
             .Select(n => $"\"{n}\"");
         var tables = string.Join(", ", allTables);
@@ -121,4 +136,8 @@ public abstract class PersistenceTestBase
 
     protected internal static DbContextOptions<FleanQueryDbContext> BuildQueryOptions(NpgsqlDataSource ds) =>
         new DbContextOptionsBuilder<FleanQueryDbContext>().UseFleansPostgres(ds).Options;
+
+    /// <summary>Journal-context options with the production journal migrations history table.</summary>
+    protected internal static DbContextOptions<FleanJournalDbContext> BuildJournalOptions(NpgsqlDataSource ds) =>
+        new DbContextOptionsBuilder<FleanJournalDbContext>().UseFleansPostgresJournal(ds).Options;
 }

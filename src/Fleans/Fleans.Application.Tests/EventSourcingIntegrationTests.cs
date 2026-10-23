@@ -50,11 +50,10 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         await ForceAllGrainDeactivation(instanceId);
 
         var dbFactory = GetSiloService<IDbContextFactory<FleanCommandDbContext>>();
+        await using (var journal = await JournalDb())
+            await journal.WorkflowSnapshots.Where(s => s.InstanceId == instanceId).ExecuteDeleteAsync();
         await using (var db = await dbFactory.CreateDbContextAsync())
-        {
-            await db.WorkflowSnapshots.Where(s => s.InstanceId == instanceId).ExecuteDeleteAsync();
             await db.WorkflowInstances.Where(s => s.Id == instanceId).ExecuteDeleteAsync();
-        }
 
         // Act — the grain is inactive and has no snapshot, so this activation replays every event
         await grain.CompleteActivity("task2", new ExpandoObject());
@@ -67,7 +66,7 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
 
         await using (var db = await dbFactory.CreateDbContextAsync())
         {
-            var versions = await JournalVersions(db, instanceId);
+            var versions = await JournalVersions(instanceId);
             CollectionAssert.AreEqual(Enumerable.Range(1, versions.Count).ToList(), versions,
                 "the replayed grain must continue at the right version — no skipped or duplicated events");
             var row = await db.WorkflowInstances.SingleAsync(s => s.Id == instanceId);
@@ -387,8 +386,7 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         Assert.IsLessThanOrEqualTo(3, whileRunning,
             $"a running instance writes its row only when it changes, not on each of its appends ({whileRunning} writes)");
         Assert.AreEqual(1, writes.Count(w => w.IsCompleted), "the completing append writes the row and details once");
-        await using var db = await GetSiloService<IDbContextFactory<FleanCommandDbContext>>().CreateDbContextAsync();
-        Assert.IsGreaterThan(whileRunning + 1, (await JournalVersions(db, instanceId)).Count,
+        Assert.IsGreaterThan(whileRunning + 1, (await JournalVersions(instanceId)).Count,
             "the loop must append more often than the row is written for this test to mean anything");
     }
 
@@ -460,7 +458,7 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         // Arrange
         var instanceId = Guid.NewGuid();
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
-        var dbFactory = GetSiloService<IDbContextFactory<FleanCommandDbContext>>();
+        var dbFactory = GetSiloService<IDbContextFactory<FleanJournalDbContext>>();
 
         // Act
         await grain.SetWorkflow(CreateSequentialWorkflow());
@@ -470,7 +468,7 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
 
         // Assert — a snapshot exists, covers a stored version, and lags by less than one interval
         await using var db = await dbFactory.CreateDbContextAsync();
-        var eventCount = (await JournalVersions(db, instanceId)).Count;
+        var eventCount = (await JournalVersions(instanceId)).Count;
         Assert.IsGreaterThanOrEqualTo(TestSnapshotInterval, eventCount, "the workflow must cross one interval");
         var snapshot = await db.WorkflowSnapshots.AsNoTracking().SingleAsync(s => s.InstanceId == instanceId);
         Assert.IsLessThanOrEqualTo(eventCount, snapshot.Version);
@@ -492,11 +490,11 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         await grain.CompleteActivity("task1", new ExpandoObject());
         await ForceAllGrainDeactivation(instanceId);
 
-        var dbFactory = GetSiloService<IDbContextFactory<FleanCommandDbContext>>();
+        var dbFactory = GetSiloService<IDbContextFactory<FleanJournalDbContext>>();
         int eventCount;
         await using (var db = await dbFactory.CreateDbContextAsync())
         {
-            eventCount = (await JournalVersions(db, instanceId)).Count;
+            eventCount = (await JournalVersions(instanceId)).Count;
             await db.WorkflowSnapshots.Where(s => s.InstanceId == instanceId).ExecuteDeleteAsync();
             db.WorkflowSnapshots.Add(new WorkflowSnapshotEntity
             {
@@ -513,7 +511,7 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         Assert.AreNotSame(call, await Task.WhenAny(call, Task.Delay(TimeSpan.FromSeconds(3))),
             "activation must not succeed on an unreadable snapshot");
         await using (var db = await dbFactory.CreateDbContextAsync())
-            Assert.HasCount(eventCount, await JournalVersions(db, instanceId));
+            Assert.HasCount(eventCount, await JournalVersions(instanceId));
 
         // Once the snapshot is readable (here: removed), the retried read succeeds and the call
         // goes through
@@ -551,9 +549,7 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         Assert.IsTrue(state.IsCompleted, "the failed projection write must be retried");
 
         // ...and no batch was appended twice
-        var dbFactory = GetSiloService<IDbContextFactory<FleanCommandDbContext>>();
-        await using var db = await dbFactory.CreateDbContextAsync();
-        var versions = await JournalVersions(db, instanceId);
+        var versions = await JournalVersions(instanceId);
         CollectionAssert.AreEqual(Enumerable.Range(1, versions.Count).ToList(), versions);
         var journal = await GetSiloService<IEventStore>().ReadEventsAsync(instanceId, afterVersion: 0);
         Assert.AreEqual(1, journal.OfType<WorkflowCompleted>().Count(), "the completing batch was stored once");
@@ -596,28 +592,24 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         var instanceId = Guid.NewGuid();
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
 
-        var dbFactory = GetSiloService<IDbContextFactory<FleanCommandDbContext>>();
-
         // Act — SetWorkflow + StartWorkflow
         await grain.SetWorkflow(workflow);
         await grain.StartWorkflow();
 
-        await using (var db = await dbFactory.CreateDbContextAsync())
         {
-            var countAfterStart = (await JournalVersions(db, instanceId)).Count;
+            var countAfterStart = (await JournalVersions(instanceId)).Count;
             Assert.IsTrue(countAfterStart > 0, "Events should be emitted after SetWorkflow + StartWorkflow");
         }
 
         // Act — Complete task
         await grain.CompleteActivity("task", new ExpandoObject());
 
-        await using (var db = await dbFactory.CreateDbContextAsync())
         {
-            var countAfterComplete = (await JournalVersions(db, instanceId)).Count;
+            var countAfterComplete = (await JournalVersions(instanceId)).Count;
             Assert.IsTrue(countAfterComplete > 0, "Events should exist after activity completion");
 
             // Verify events are ordered by version
-            var versions = await JournalVersions(db, instanceId);
+            var versions = await JournalVersions(instanceId);
 
             // Versions should be contiguous starting from 1 (#833)
             for (int i = 0; i < versions.Count; i++)
@@ -719,8 +711,9 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
     }
 
     /// <summary>The journaled event versions of an instance, in order, expanded from its batches.</summary>
-    private static async Task<List<int>> JournalVersions(FleanCommandDbContext db, Guid instanceId)
+    private async Task<List<int>> JournalVersions(Guid instanceId)
     {
+        await using var db = await JournalDb();
         var batches = await db.WorkflowEventBatches.AsNoTracking()
             .Where(b => b.InstanceId == instanceId)
             .OrderBy(b => b.FirstVersion)
@@ -728,4 +721,8 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
             .ToListAsync();
         return batches.SelectMany(b => Enumerable.Range(b.FirstVersion, b.LastVersion - b.FirstVersion + 1)).ToList();
     }
+
+    /// <summary>The journal store (batches and snapshots) — its own context since #879.</summary>
+    private Task<FleanJournalDbContext> JournalDb() =>
+        GetSiloService<IDbContextFactory<FleanJournalDbContext>>().CreateDbContextAsync();
 }

@@ -49,8 +49,11 @@ Allowed values: `Core`, `Worker`, `Combined` (case-insensitive). Invalid values 
 | `Persistence__Provider` | `Persistence:Provider` | `Fleans.ServiceDefaults` | `"Sqlite"` (case-insensitive; accepts `Sqlite` or `Postgres`) |
 | `Persistence__MaxEventsPerLoad` | `Persistence:MaxEventsPerLoad` | `Fleans.Persistence` | `1000` |
 | `Persistence__SnapshotInterval` | `Persistence:SnapshotInterval` | `Fleans.Persistence` | `100` |
+| `Persistence__Journal__Provider` | `Persistence:Journal:Provider` | `Fleans.ServiceDefaults` | Empty = same as `Persistence:Provider` (case-insensitive; accepts `Sqlite`, `Postgres` or `Citus`) |
 
 The provider toggle. `Postgres` runs `MigrateAsync()` at startup; `Sqlite` runs `EnsureCreated()`. SQLite is dev-only and ignored in container/k8s deployments. Any other value (typo like `PostgreSQL`, empty string, whitespace) throws `ArgumentException` at silo startup so misconfigured deployments fail fast instead of silently falling back to an in-pod SQLite file.
+
+`Persistence:Journal:Provider` picks the store for the workflow journal (event batches + snapshots), which can live in a different database from everything else — see [Separate journal database](/fleans/reference/persistence/#separate-journal-database). `Citus` is PostgreSQL with the journal tables distributed by instance id at startup. Unknown values throw `ArgumentException` at startup.
 
 ### Workflow variables
 
@@ -91,8 +94,9 @@ See [Authentication](/fleans/reference/authentication/) for the full role-claim 
 
 | Env var | Config key | Read at | Notes |
 | --- | --- | --- | --- |
-| `ConnectionStrings__fleans` | `ConnectionStrings:fleans` | `Fleans.ServiceDefaults` | **Required when `Persistence:Provider=Postgres`.** Workflow command-side database (event store + write model). Throws at startup if missing. |
+| `ConnectionStrings__fleans` | `ConnectionStrings:fleans` | `Fleans.ServiceDefaults` | **Required when `Persistence:Provider=Postgres`.** Workflow command-side database (grain state + read model, and the journal unless `fleans-journal` is set). Throws at startup if missing. |
 | `ConnectionStrings__fleans-query` | `ConnectionStrings:fleans-query` | `Fleans.ServiceDefaults` | Optional read-replica for the query-side projection. Falls back to the `fleans` write connection when unset. |
+| `ConnectionStrings__fleans-journal` | `ConnectionStrings:fleans-journal` | `Fleans.ServiceDefaults` | Optional database for the workflow journal (event batches + snapshots). Falls back to the `fleans` database when unset; required when `Persistence:Journal:Provider` is not of the main provider's family (e.g. a PostgreSQL journal next to SQLite). |
 | `ConnectionStrings__orleans-redis` | `ConnectionStrings:orleans-redis` | `Fleans.Api`, `Fleans.WorkerHost`, `Fleans.CustomWorkerHost` | **Required for multi-silo clustering.** Drives `UseRedisClustering(...)` and `AddRedisGrainStorage("PubSubStore", ...)`. Note the name — it's `orleans-redis`, not bare `redis`. |
 
 ### .NET runtime

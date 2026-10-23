@@ -356,7 +356,15 @@ internal static class FleanModelConfiguration
             // ParameterSchemaJson is the JSON-serialized CustomTaskParameterSchema; provider
             // default text type (TEXT on SQLite, text on PostgreSQL) handles the size.
         });
+    }
 
+    /// <summary>
+    /// The journal store's model (<see cref="FleanJournalDbContext"/>): the event batches and the
+    /// snapshots, nothing else. Both are keyed by <c>InstanceId</c> first — the shard key of a
+    /// distributed journal (Citus) — and every query on them filters by it.
+    /// </summary>
+    public static void ConfigureJournal(ModelBuilder modelBuilder)
+    {
         modelBuilder.Entity<WorkflowEventBatchEntity>(entity =>
         {
             entity.ToTable("WorkflowEventBatches");

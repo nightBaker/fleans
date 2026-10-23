@@ -9,6 +9,11 @@ public sealed class FleansPersistenceOptions
     public string Provider { get; set; } = "Sqlite";
 
     /// <summary>
+    /// The WorkflowInstance journal store (bound from <c>Persistence:Journal</c>, #879).
+    /// </summary>
+    public JournalPersistenceOptions Journal { get; set; } = new();
+
+    /// <summary>
     /// Maximum number of events the event store will materialise in a single
     /// ReadEventsAsync call. Throws <see cref="InvalidOperationException"/> when exceeded.
     /// Default 1000 — 10× the default <see cref="SnapshotInterval"/>, so it only trips when
@@ -30,4 +35,18 @@ public sealed class FleansPersistenceOptions
     /// rejected at startup (see #669).
     /// </summary>
     public string RemindersProvider { get; set; } = "Redis";
+}
+
+/// <summary>
+/// Where the WorkflowInstance journal and snapshots live (<see cref="FleanJournalDbContext"/>).
+/// Unset, the journal shares the main database. See <c>docs/conventions/persistence.md</c>.
+/// </summary>
+public sealed class JournalPersistenceOptions
+{
+    /// <summary>
+    /// <c>Sqlite</c> | <c>Postgres</c> | <c>Citus</c> (case-insensitive). Empty means
+    /// <see cref="FleansPersistenceOptions.Provider"/>. <c>Citus</c> is PostgreSQL with the
+    /// journal tables distributed by <c>InstanceId</c> when the schema is applied.
+    /// </summary>
+    public string? Provider { get; set; }
 }

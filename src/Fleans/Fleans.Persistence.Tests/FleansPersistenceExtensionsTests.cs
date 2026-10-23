@@ -118,4 +118,118 @@ public class FleansPersistenceExtensionsTests
         StringAssert.Contains(ex.Message, "''");
         StringAssert.Contains(ex.Message, "Sqlite, Postgres");
     }
+
+    // ── Journal store (#879) ─────────────────────────────────────────────────
+
+    private const string MainPg = "Host=main;Database=fleans;Username=fleans;Password=stub";
+    private const string JournalPg = "Host=journal;Database=fleans_journal;Username=fleans;Password=stub";
+
+    private static (string? Provider, string Connection, string Journal) Resolve(IDictionary<string, string?> config)
+    {
+        var builder = NewBuilder(config);
+        builder.AddFleansPersistence();
+        using var host = builder.Build();
+        using var scope = host.Services.CreateScope();
+        using var main = scope.ServiceProvider.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>().CreateDbContext();
+        using var journal = scope.ServiceProvider.GetRequiredService<IDbContextFactory<FleanJournalDbContext>>().CreateDbContext();
+        var options = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<FleansPersistenceOptions>>().Value;
+        return (options.Journal.Provider, Host(main), Host(journal) + "|" + journal.Database.ProviderName);
+
+        static string Host(DbContext db) => db.Database.GetDbConnection().DataSource;
+    }
+
+    [TestMethod]
+    public void Journal_unconfigured_shares_the_main_postgres_database()
+    {
+        var (provider, main, journal) = Resolve(new Dictionary<string, string?>
+        {
+            ["Persistence:Provider"] = "Postgres",
+            ["ConnectionStrings:fleans"] = MainPg,
+        });
+
+        Assert.AreEqual("Postgres", provider);
+        Assert.AreEqual($"{main}|Npgsql.EntityFrameworkCore.PostgreSQL", journal);
+    }
+
+    [TestMethod]
+    public void Journal_unconfigured_shares_the_main_sqlite_file()
+    {
+        var (provider, main, journal) = Resolve(new Dictionary<string, string?>
+        {
+            ["Persistence:Provider"] = "Sqlite",
+            ["FLEANS_SQLITE_CONNECTION"] = "DataSource=main.db",
+        });
+
+        Assert.AreEqual("Sqlite", provider);
+        Assert.AreEqual($"{main}|Microsoft.EntityFrameworkCore.Sqlite", journal);
+    }
+
+    [TestMethod]
+    public void Journal_connection_string_points_the_journal_at_its_own_database()
+    {
+        var (_, main, journal) = Resolve(new Dictionary<string, string?>
+        {
+            ["Persistence:Provider"] = "Postgres",
+            ["ConnectionStrings:fleans"] = MainPg,
+            ["ConnectionStrings:fleans-journal"] = JournalPg,
+        });
+
+        Assert.AreEqual("tcp://main:5432", main);
+        Assert.AreEqual("tcp://journal:5432|Npgsql.EntityFrameworkCore.PostgreSQL", journal);
+    }
+
+    [TestMethod]
+    public void Citus_journal_without_its_own_connection_uses_the_main_postgres_database()
+    {
+        var (provider, main, journal) = Resolve(new Dictionary<string, string?>
+        {
+            ["Persistence:Provider"] = "Postgres",
+            ["Persistence:Journal:Provider"] = "Citus",
+            ["ConnectionStrings:fleans"] = MainPg,
+        });
+
+        Assert.AreEqual("Citus", provider);
+        Assert.AreEqual($"{main}|Npgsql.EntityFrameworkCore.PostgreSQL", journal);
+    }
+
+    [TestMethod]
+    public void Postgres_journal_for_a_sqlite_main_database_needs_its_connection_string()
+    {
+        var builder = NewBuilder(new Dictionary<string, string?>
+        {
+            ["Persistence:Provider"] = "Sqlite",
+            ["Persistence:Journal:Provider"] = "Postgres",
+        });
+
+        var ex = Assert.ThrowsExactly<InvalidOperationException>(() => builder.AddFleansPersistence());
+        StringAssert.Contains(ex.Message, "'fleans-journal' is required");
+    }
+
+    [TestMethod]
+    public void Postgres_journal_for_a_sqlite_main_database_uses_its_connection_string()
+    {
+        var (_, _, journal) = Resolve(new Dictionary<string, string?>
+        {
+            ["Persistence:Provider"] = "Sqlite",
+            ["Persistence:Journal:Provider"] = "Postgres",
+            ["ConnectionStrings:fleans-journal"] = JournalPg,
+        });
+
+        Assert.AreEqual("tcp://journal:5432|Npgsql.EntityFrameworkCore.PostgreSQL", journal);
+    }
+
+    [TestMethod]
+    public void Unknown_journal_provider_throws_argumentException()
+    {
+        var builder = NewBuilder(new Dictionary<string, string?>
+        {
+            ["Persistence:Provider"] = "Postgres",
+            ["Persistence:Journal:Provider"] = "Cassandra",
+            ["ConnectionStrings:fleans"] = MainPg,
+        });
+
+        var ex = Assert.ThrowsExactly<ArgumentException>(() => builder.AddFleansPersistence());
+        StringAssert.Contains(ex.Message, "'Cassandra'");
+        StringAssert.Contains(ex.Message, "Sqlite, Postgres, Citus");
+    }
 }
