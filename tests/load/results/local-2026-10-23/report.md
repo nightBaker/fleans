@@ -41,8 +41,9 @@ Successful starts per second, by stage (VUs):
 | before | 57 332 | 14.3 % | 96 | 231 | 298 | 97 | 2 | 4 | 6 | 15 | 42 | 76 | 52 | 71 |
 | after | 75 438 | 6.1 % | 81 | 93 | 139 | 74 | 108 | 106 | 114 | 99 | 71 | 59 | 96 | 147 |
 
-`after` no longer collapses past saturation (+32 % successful starts over the run, fewer errors), but its
-throughput at moderate load is 2–3× lower — see #903.
+`after` no longer collapses past saturation (+32 % successful starts over the run, fewer errors). Its lower
+numbers at 50–75 VUs did not reproduce in a follow-up with replicates (#903): single runs on this host swing
+widely because Postgres randomly tips into WAL-flush contention, on both commits.
 
 ## `timers` — fresh stack, arming at up to 1 000 starts/s for 100 s
 
@@ -62,8 +63,10 @@ within the arming window, so this is not the 1 M run from #886.
    `RegisterReminder` and 81 `RemoveReminder` "not in my responsibility range" warnings, EventId 102910, on all
    six silos); such reminders wait for the owner's next `RefreshReminderListPeriod` (5 min). Both reminder
    providers are affected.
-2. **Start throughput at moderate load is 2–3× lower (#903)** — `linear-saturation` and the timers' arming rate
-   (~340 → ~120 starts/s) agree. Not yet bisected.
+2. **Higher per-start cost since the async projection (#903).** The 2–3× gap at 50–75 VUs above is single-run
+   noise: a follow-up with replicates measured 229 vs 232 starts/s at a fixed 50 VUs. What is systematic is
+   #897's extra work per start: +50 % DB transactions, an awaited Kafka produce and a projector activation. It
+   brings Postgres to WAL-flush contention sooner; timer-start latency is p50 21 → 132 ms at 400 starts/s.
 3. **The load-test nginx dropped connections above ~250 VUs** — fixed by `nginx.conf` in this PR.
 
 ## Raw data
