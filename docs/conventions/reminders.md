@@ -126,6 +126,15 @@ The wiring lives in `Fleans.ServiceDefaults/Reminders/`:
 - `TimerCallbackGrain` is `[CorePlacement]` — reminders are persisted by
   any silo but the callback fires on a Core silo. Validated in manual
   regression #65 (Core-only restart while Worker stays up).
+- **A registration that lands on a non-owner silo fires late.** Since Orleans 10.4 a silo that
+  receives `RegisterOrUpdateReminder` for a grain outside its ring range only stores the row (warning
+  "I shouldn't have received request 'RegisterReminder'…", EventId 102910). The owner loads it at
+  its next `RefreshReminderListPeriod`, up to 5 minutes later. In a steady cluster this should not
+  happen. If the warning keeps appearing, the callers' ring is wrong. The known cause, a silo of a
+  fresh cluster excluding itself from the ring, is worked around in `AddFleansClustering`
+  ([clustering.md § Ring guard](clustering.md#ring-guard-a-joining-silo-reported-dead-to-itself-902)).
+  Lowering `RefreshReminderListPeriod` is not a fix: every silo then re-reads its whole slice of
+  the reminder table that often.
 
 ## Migration note
 

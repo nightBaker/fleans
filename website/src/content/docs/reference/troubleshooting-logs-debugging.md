@@ -47,6 +47,7 @@ If you author a custom-task plugin, follow the same pattern (see the [adding a B
 | 11200 | `Fleans.Streaming.Kafka.AwsMsk` — MSK IAM token refresh failed (Error); check IAM policy for `kafka-cluster:Connect` / `WriteData` / `ReadData` |
 | 11201 | `Fleans.Streaming.Kafka.AwsMsk` — `OAuthBearerSetTokenFailure` threw after token-refresh failure (Warning); typically a shutdown race, not actionable |
 | 11300–11399 | Grain placement — 11300 no core silo, 11301 no worker silo (Warning); 11311 placement-role violation (Error) |
+| 11400 | Cluster ring — a silo that joined a brand-new cluster was told by Orleans that it is dead itself, and Fleans ignored that so the silo keeps routing reminders to itself (Warning). Expected once per silo on the first start of a fresh cluster; not actionable |
 | 13000–13099 | `Fleans.Web` admin UI |
 | 14100–14102 | Retention purge (`POST /Instances/purge`) — 14100 purge started, 14101 batch purged, 14102 purge finished (all Information) |
 
