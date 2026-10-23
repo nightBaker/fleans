@@ -1,8 +1,11 @@
--- Vendored unmodified from Microsoft.Orleans.Reminders.AdoNet v10.0.1
--- Source: https://github.com/dotnet/orleans/blob/v10.0.1/src/AdoNet/Orleans.Reminders.AdoNet/PostgreSQL-Reminders.sql
+-- Vendored from Microsoft.Orleans.Reminders.AdoNet v10.4.0
+-- Source: https://github.com/dotnet/orleans/blob/v10.4.0/src/AdoNet/Orleans.Reminders.AdoNet/PostgreSQL-Reminders.sql
 -- Copyright (c) .NET Foundation and Contributors, Apache-2.0 licensed.
 -- See LICENSE-orleans-vendor at the repo root for the full license text.
 -- Re-vendor whenever Microsoft.Orleans.Reminders.AdoNet is bumped.
+-- Fleans modification (#886): adds IX_RemindersTable_ServiceId_GrainHash after the table,
+-- so the ReadRangeRows1Key / ReadRangeRows2Key range reads use an index instead of
+-- scanning every reminder of the service. Keep it when re-vendoring.
 
 -- Orleans Reminders table - https://learn.microsoft.com/dotnet/orleans/grains/timers-and-reminders
 CREATE TABLE OrleansRemindersTable
@@ -17,6 +20,9 @@ CREATE TABLE OrleansRemindersTable
 
     CONSTRAINT PK_RemindersTable_ServiceId_GrainId_ReminderName PRIMARY KEY(ServiceId, GrainId, ReminderName)
 );
+
+-- Fleans addition (#886): index for the range reads by grain hash.
+CREATE INDEX IX_RemindersTable_ServiceId_GrainHash ON OrleansRemindersTable (ServiceId, GrainHash);
 
 CREATE FUNCTION upsert_reminder_row(
     ServiceIdArg    OrleansRemindersTable.ServiceId%TYPE,

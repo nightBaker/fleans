@@ -26,6 +26,7 @@ public class JournalConsistencyTests : WorkflowTestBase
     private const int ProcessingPendingEventEventId = 1074;
     private const int StateReloadedEventId = 1137;
     private const int AppendRetryKeepsStateEventId = 1138;
+    private const int AppendRetryByBatchIdEventId = 1139;
     private const int PendingEventQueuedEventId = 1142;
 
     private async Task<IWorkflowInstanceGrain> StartedDeployedInstance()
@@ -195,6 +196,77 @@ public class JournalConsistencyTests : WorkflowTestBase
 
         await ForceAllGrainDeactivation(instanceId);
         Assert.AreEqual(0, (await grain.GetActiveActivities()).Count);
+    }
+
+    // #877: the append was stored, but the call reporting it failed (a timeout after the commit).
+    // Orleans retries the same batch; its batch id makes the store confirm it instead of storing it
+    // twice, and the activation carries on with its live state.
+    [TestMethod]
+    public async Task FailedAppend_StoredAnyway_IsJournaledOnce()
+    {
+        // Arrange
+        var grain = await StartedDeployedInstance();
+        var instanceId = grain.GetPrimaryKey();
+        using var capture = CapturedLogEvents.Capture(StateReloadedEventId, AppendRetryByBatchIdEventId);
+        FaultInjectingEventStore.FailNextAppendAfterStoring(instanceId);
+
+        // Act — Orleans re-reads, then retries the stored batch.
+        await grain.CompleteActivity("task", new ExpandoObject());
+
+        // Assert — one copy in the journal, and this activation keeps serving calls.
+        Assert.AreEqual(1, CapturedLogEvents.Entries(AppendRetryByBatchIdEventId).Count);
+        Assert.AreEqual(0, CapturedLogEvents.Entries(StateReloadedEventId).Count, "Its own batch must not retire the activation");
+        var journal = await Journal(instanceId);
+        var completed = journal.OfType<ActivityCompleted>().Select(e => e.ActivityInstanceId).ToList();
+        Assert.HasCount(completed.Distinct().Count(), completed, "Each activity instance completes once in the journal");
+        Assert.AreEqual(1, journal.OfType<ActivitySpawned>().Count(e => e.ActivityId == "end"));
+        Assert.AreEqual(1, journal.OfType<WorkflowCompleted>().Count(), "The retried batch is stored once");
+        Assert.AreEqual(0, (await grain.GetActiveActivities()).Count);
+        var snapshot = await WaitForCondition(instanceId, s => s.IsCompleted);
+        Assert.AreEqual(0, snapshot.ActiveActivities.Count);
+
+        await ForceAllGrainDeactivation(instanceId);
+        Assert.AreEqual(0, (await grain.GetActiveActivities()).Count);
+    }
+
+    // #877: events raised while the stored-but-failed append was in flight join Orleans' retry. The
+    // retry resends the stored part with its own batch id (confirmed, not appended) and appends only
+    // the new events after it.
+    [TestMethod]
+    public async Task FailedAppend_StoredAnyway_EventsRaisedMeanwhile_AppendsOnlyThose()
+    {
+        // Arrange
+        var grain = await StartedDeployedInstance();
+        var instanceId = grain.GetPrimaryKey();
+        var opId = GrainFactoryRetryExtensions.ChildCompletedOpId(Guid.NewGuid(), "absent-call");
+        using var capture = CapturedLogEvents.Capture(
+            StateReloadedEventId, AppendRetryByBatchIdEventId, ProcessingPendingEventEventId);
+        var gates = FaultInjectingEventStore.HoldNextAppends(instanceId, 1);
+        FaultInjectingEventStore.FailNextAppendAfterStoring(instanceId);
+
+        // Act — the main turn's append is held; an enqueue raises its event meanwhile.
+        var complete = grain.CompleteActivity("task", new ExpandoObject());
+        var held = await gates[0].Entered.Task.WaitAsync(Timeout);
+        var enqueue = grain.OnChildWorkflowCompleted(opId, "absent-call", new ExpandoObject());
+        await WaitForLog(ProcessingPendingEventEventId, e => e.Message.Contains(nameof(PendingEventEnqueued)));
+
+        // The held append is stored, then fails; the retry carries both batches.
+        gates[0].Release.SetResult();
+        await complete.WaitAsync(Timeout);
+        await enqueue.WaitAsync(Timeout);
+
+        // Assert — each event once, the journal contiguous (Journal() throws on a gap).
+        Assert.IsFalse(held.OfType<PendingEventEnqueued>().Any(), "The enqueue's event was raised after the held try");
+        Assert.AreEqual(1, CapturedLogEvents.Entries(AppendRetryByBatchIdEventId).Count);
+        Assert.AreEqual(0, CapturedLogEvents.Entries(StateReloadedEventId).Count);
+        var journal = await Journal(instanceId);
+        Assert.AreEqual(1, journal.OfType<WorkflowCompleted>().Count());
+        Assert.AreEqual(1, journal.OfType<PendingEventEnqueued>().Count(e => e.OpKey == opId));
+        Assert.AreEqual(0, (await grain.GetActiveActivities()).Count);
+
+        await ForceAllGrainDeactivation(instanceId);
+        Assert.AreEqual(0, (await grain.GetActiveActivities()).Count);
+        CollectionAssert.Contains((await grain.GetAppliedOperationKeys()).ToList(), opId);
     }
 
     // #845: when the journal moved on during the failed append, the aggregate is out of date. The

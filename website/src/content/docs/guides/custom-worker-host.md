@@ -50,6 +50,22 @@ reminder ring and serves some of the engine's BPMN-timer reminders. Configure it
 lands on your host fail to register and their activities fail; with an in-memory one
 (`UseInMemoryReminderService()`), those timers are lost whenever your host restarts.
 
+If the engine runs `Fleans__Reminders__Provider=Postgres` (recommended in production), add the
+`Microsoft.Orleans.Reminders.AdoNet` and `Npgsql` packages and point your host at the same
+database as the engine — `ConnectionStrings__fleans-reminders`, or `ConnectionStrings__fleans`
+when the engine has no dedicated reminders database:
+
+```csharp
+siloBuilder.UseAdoNetReminderService(o =>
+{
+    o.Invariant = "Npgsql";
+    o.ConnectionString = builder.Configuration.GetConnectionString("fleans-reminders")
+        ?? builder.Configuration.GetConnectionString("fleans");
+});
+```
+
+The engine silos create the reminders tables; your host only reads and writes them.
+
 ## Plugin-author NuGet stack
 
 Three NuGet packages compose the plugin-author surface, layered strictly:

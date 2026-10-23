@@ -74,6 +74,20 @@ The largest variables document, measured as JSON bytes, that one operation may p
 
 `memory` is single-silo only — it silently drops cross-silo events. Use `kafka` or `azurequeue` for any deployment with more than one silo. See [Streaming](/fleans/reference/streaming/) for at-least-once semantics.
 
+### Reminders (timers)
+
+Every pending BPMN timer is one Orleans reminder. Every silo — engine and custom worker hosts — must use the same provider.
+
+| Env var | Config key | Read at | Default |
+| --- | --- | --- | --- |
+| `Fleans__Reminders__Provider` | `Fleans:Reminders:Provider` | `Fleans.ServiceDefaults` | `"Redis"` (case-insensitive; accepts `Redis` or `Postgres`) |
+| `Fleans__Reminders__ReminderLoadingWindow` | `Fleans:Reminders:ReminderLoadingWindow` | `Fleans.ServiceDefaults` (bound onto Orleans `ReminderOptions`) | `00:10:00` |
+| `Fleans__Reminders__RefreshReminderListPeriod` | `Fleans:Reminders:RefreshReminderListPeriod` | (binding) | `00:05:00` |
+
+`Redis` keeps the reminders on the `orleans-redis` connection — no extra infrastructure, but every reminder of the cluster lives in one Redis key. **`Postgres` is the recommended production provider** once pending timers reach the millions; it requires `Persistence:Provider=Postgres` (the silo refuses to start otherwise) and uses `ConnectionStrings:fleans-reminders`, falling back to `ConnectionStrings:fleans`. Give the reminders their own database: every silo re-reads its slice of the reminder ring every `RefreshReminderListPeriod`, and those reads should not compete with the journal and read model. The reminders tables are created at startup; the database must exist.
+
+`ReminderLoadingWindow` keeps only reminders due within the window in memory (it must be at least `RefreshReminderListPeriod`). A longer window rides out a longer reminder-store outage without late timers, at the cost of silo memory.
+
 ### Authentication
 
 Auth keys are **per-host** — the API and the Web admin UI use different OIDC flows (JWT-bearer vs OIDC code-flow), so the keys split cleanly between hosts. Setting an API-only key on the Web silo (or vice-versa) has no effect.
@@ -93,6 +107,7 @@ See [Authentication](/fleans/reference/authentication/) for the full role-claim 
 | --- | --- | --- | --- |
 | `ConnectionStrings__fleans` | `ConnectionStrings:fleans` | `Fleans.ServiceDefaults` | **Required when `Persistence:Provider=Postgres`.** Workflow command-side database (event store + write model). Throws at startup if missing. |
 | `ConnectionStrings__fleans-query` | `ConnectionStrings:fleans-query` | `Fleans.ServiceDefaults` | Optional read-replica for the query-side projection. Falls back to the `fleans` write connection when unset. |
+| `ConnectionStrings__fleans-reminders` | `ConnectionStrings:fleans-reminders` | `Fleans.ServiceDefaults` | Optional dedicated database for the Orleans reminders when `Fleans:Reminders:Provider=Postgres` (recommended in production). Falls back to `fleans` when unset. See [Reminders](#reminders-timers). |
 | `ConnectionStrings__orleans-redis` | `ConnectionStrings:orleans-redis` | `Fleans.Api`, `Fleans.WorkerHost`, `Fleans.CustomWorkerHost` | **Required for multi-silo clustering.** Drives `UseRedisClustering(...)` and `AddRedisGrainStorage("PubSubStore", ...)`. Note the name — it's `orleans-redis`, not bare `redis`. |
 
 ### .NET runtime

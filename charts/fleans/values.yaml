@@ -167,6 +167,24 @@ postgres:
       memory: 1Gi
 
 # -----------------------------------------------------------------------------
+# Reminders — every pending BPMN timer is one Orleans reminder.
+# -----------------------------------------------------------------------------
+reminders:
+  # Redis | Postgres (case-insensitive).
+  # Redis (default) reuses the chart-bundled Redis: fine for small and medium timer counts, but
+  # it keeps every reminder of the cluster in one Redis key.
+  # Postgres is the recommended production provider at scale (millions of pending timers);
+  # requires persistence.provider=Postgres. Custom worker hosts (customWorker.*) must be built
+  # with the same provider — every silo serves a slice of the reminder ring.
+  provider: Redis
+  postgres:
+    # Existing Secret holding the connection string of a DEDICATED reminders database
+    # (ConnectionStrings__fleans-reminders), so the reminders' periodic range reads do not
+    # compete with the journal and read model. Empty = share the `fleans` database.
+    existingSecret: ""
+    existingSecretKey: connection-string
+
+# -----------------------------------------------------------------------------
 # Redis dependency (Orleans clustering + grain storage; always required).
 # -----------------------------------------------------------------------------
 redis:

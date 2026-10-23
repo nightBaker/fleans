@@ -97,23 +97,28 @@ public class EfCoreEventStore : IEventStore
 
     /// <summary>
     /// Appends events as versions <c>expectedVersion + 1</c>, … (1-based; the store does the
-    /// numbering so callers pass the grain's event count) in a single row. Returns false if a
-    /// version conflict occurs: another writer already appended after <paramref name="expectedVersion"/>
-    /// (primary-key violation on <c>(InstanceId, FirstVersion)</c>).
+    /// numbering so callers pass the grain's event count) in a single row tagged
+    /// <paramref name="batchId"/>. A primary-key violation on <c>(InstanceId, FirstVersion)</c> means
+    /// a row is already stored there: with the same batch id it is this batch, stored by an earlier
+    /// try whose success was lost (#877) — true, nothing appended; otherwise another writer got
+    /// there first — false. The row is read back only on that conflict, never on the common path.
     /// </summary>
     public async Task<bool> AppendEventsAsync(
         Guid instanceId,
         IReadOnlyList<WorkflowEvent> events,
-        int expectedVersion)
+        int expectedVersion,
+        Guid batchId)
     {
         if (events.Count == 0) return true;
 
+        var firstVersion = expectedVersion + 1;
         await using var db = await _dbContextFactory.CreateDbContextAsync();
         db.WorkflowEventBatches.Add(new WorkflowEventBatchEntity
         {
             InstanceId = instanceId,
-            FirstVersion = expectedVersion + 1,
+            FirstVersion = firstVersion,
             LastVersion = expectedVersion + events.Count,
+            BatchId = batchId,
             Payload = _serializer.SerializeToArray(events.ToList())
         });
 
@@ -124,7 +129,19 @@ public class EfCoreEventStore : IEventStore
         }
         catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
         {
-            return false;
+            var stored = await db.WorkflowEventBatches
+                .AsNoTracking()
+                .Where(b => b.InstanceId == instanceId && b.FirstVersion == firstVersion)
+                .Select(b => new { b.BatchId, b.LastVersion })
+                .FirstOrDefaultAsync();
+            if (stored is null || stored.BatchId != batchId)
+                return false;
+
+            if (stored.LastVersion != expectedVersion + events.Count)
+                throw new InvalidOperationException(
+                    $"Journal batch {batchId} of workflow instance '{instanceId}' is stored as versions " +
+                    $"{firstVersion}..{stored.LastVersion}, but its retry holds {events.Count} events.");
+            return true;
         }
     }
 
@@ -155,6 +172,19 @@ public class EfCoreEventStore : IEventStore
             Timestamp = now
         });
         await db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Deletes the instance's journal batches and snapshot by <c>InstanceId</c> — the journal's only
+    /// access path — in one transaction.
+    /// </summary>
+    public async Task DeleteInstanceAsync(Guid instanceId)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        await using var tx = await db.Database.BeginTransactionAsync();
+        await db.WorkflowEventBatches.Where(b => b.InstanceId == instanceId).ExecuteDeleteAsync();
+        await db.WorkflowSnapshots.Where(s => s.InstanceId == instanceId).ExecuteDeleteAsync();
+        await tx.CommitAsync();
     }
 
     private static bool IsUniqueConstraintViolation(DbUpdateException ex)
