@@ -21,13 +21,16 @@
 
   <ItemGroup>
     <PackageReference Include="Aspire.StackExchange.Redis" Version="13.1.1" />
-    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.5" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.1" />
-    <PackageReference Include="Microsoft.Orleans.Server" Version="10.0.1" />
-    <PackageReference Include="Microsoft.Orleans.Clustering.Redis" Version="10.0.1" />
-    <PackageReference Include="Microsoft.Orleans.Persistence.Redis" Version="10.0.1" />
-    <PackageReference Include="Microsoft.Orleans.Reminders.Redis" Version="10.0.1" />
-    <PackageReference Include="Microsoft.Orleans.Streaming" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Orleans.Server" Version="10.4.0" />
+    <PackageReference Include="Microsoft.Orleans.Clustering.Redis" Version="10.4.0" />
+    <PackageReference Include="Microsoft.Orleans.Persistence.Redis" Version="10.4.0" />
+    <PackageReference Include="Microsoft.Orleans.Reminders.Redis" Version="10.4.0" />
+    <!-- Fleans:Reminders:Provider=Postgres (tests/load timers-1m, #886): same AdoNet table as the engine. -->
+    <PackageReference Include="Microsoft.Orleans.Reminders.AdoNet" Version="10.4.0" />
+    <PackageReference Include="Npgsql" Version="10.0.2" />
+    <PackageReference Include="Microsoft.Orleans.Streaming" Version="10.4.0" />
     <PackageReference Include="Universley.OrleansContrib.StreamsProvider.Redis" Version="2026.4.19" />
   </ItemGroup>
 

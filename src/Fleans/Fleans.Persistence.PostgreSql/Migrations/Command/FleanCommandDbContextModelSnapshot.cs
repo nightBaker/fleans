@@ -579,6 +579,8 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
 
                     b.HasIndex("BusinessId");
 
+                    b.HasIndex("CompletedAt");
+
                     b.HasIndex("ProcessDefinitionId");
 
                     b.ToTable("WorkflowInstances", (string)null);

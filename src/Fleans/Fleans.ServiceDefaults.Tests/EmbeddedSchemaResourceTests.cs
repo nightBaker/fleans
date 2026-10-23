@@ -33,7 +33,21 @@ public class EmbeddedSchemaResourceTests
         using var reader = new StreamReader(stream);
         var content = await reader.ReadToEndAsync();
 
-        StringAssert.Contains(content, "Microsoft.Orleans.Reminders.AdoNet v10.0.1",
+        StringAssert.Contains(content, "Microsoft.Orleans.Reminders.AdoNet v10.4.0",
             $"{resourceName} is missing the version-pin comment — re-vendor against the matching SDK version (see LICENSE-orleans-vendor).");
+    }
+
+    [TestMethod]
+    public async Task RemindersScript_IndexesRangeReads()
+    {
+        // #886: Orleans' ReadRangeRows queries filter on (ServiceId, GrainHash); without this
+        // index every 5-minute range re-read scans all of the service's reminders.
+        var asm = typeof(FleansPersistenceExtensions).Assembly;
+        await using var stream = asm.GetManifestResourceStream("Fleans.ServiceDefaults.Resources.PostgreSQL_Reminders.sql")!;
+        using var reader = new StreamReader(stream);
+        var content = await reader.ReadToEndAsync();
+
+        StringAssert.Contains(content,
+            "CREATE INDEX IX_RemindersTable_ServiceId_GrainHash ON OrleansRemindersTable (ServiceId, GrainHash);");
     }
 }

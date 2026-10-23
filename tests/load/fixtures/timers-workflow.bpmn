@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             id="Definitions_load_timers" targetNamespace="http://bpmn.io/schema/bpmn">
+  <!-- timers-1m template (#886). scripts/timers-1m.js deploys 60 copies before arming:
+       process id load-timers-00 … load-timers-59, each with its timeDate set to
+       T0 + NN seconds, so the armed timers fall due evenly over one minute.
+       start → one durable timer (an Orleans reminder) → end: CompletedAt − timeDate
+       in the read model is the timer lag (see scripts/timers-1m-lag.sql). -->
+  <process id="__PROCESS_ID__" isExecutable="true">
+    <startEvent id="start" />
+    <intermediateCatchEvent id="waitTimer">
+      <timerEventDefinition>
+        <timeDate>__DUE_AT__</timeDate>
+      </timerEventDefinition>
+    </intermediateCatchEvent>
+    <endEvent id="end" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="waitTimer" />
+    <sequenceFlow id="f2" sourceRef="waitTimer" targetRef="end" />
+  </process>
+</definitions>
