@@ -11,7 +11,8 @@ public abstract class BoundaryEventTestBase : WorkflowTestBase
     protected abstract Activity CreateBoundaryEvent(string boundaryId, string attachedToId, bool isInterrupting = true);
     protected virtual List<MessageDefinition> GetMessageDefinitions() => [];
     protected virtual List<SignalDefinition> GetSignalDefinitions() => [];
-    protected virtual Task SetupInitialState(IWorkflowInstanceGrain instance) => Task.CompletedTask;
+    /// <summary>The variables the instance starts with.</summary>
+    protected virtual ExpandoObject? InitialVariables() => null;
     protected abstract Task TriggerBoundaryEvent(IWorkflowInstanceGrain instance, Guid hostInstanceId);
 
     [TestMethod]
@@ -40,9 +41,7 @@ public abstract class BoundaryEventTestBase : WorkflowTestBase
         };
 
         var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await instance.SetWorkflow(workflow);
-        await SetupInitialState(instance);
-        await instance.StartWorkflow();
+        await instance.StartWorkflow(workflow, variables: InitialVariables());
 
         var instanceId = instance.GetPrimaryKey();
         var preSnapshot = await QueryService.GetStateSnapshot(instanceId);
@@ -95,9 +94,7 @@ public abstract class BoundaryEventTestBase : WorkflowTestBase
         };
 
         var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await instance.SetWorkflow(workflow);
-        await SetupInitialState(instance);
-        await instance.StartWorkflow();
+        await instance.StartWorkflow(workflow, variables: InitialVariables());
 
         await instance.CompleteActivity("task1", new ExpandoObject());
 
@@ -136,9 +133,7 @@ public abstract class BoundaryEventTestBase : WorkflowTestBase
         };
 
         var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await instance.SetWorkflow(workflow);
-        await SetupInitialState(instance);
-        await instance.StartWorkflow();
+        await instance.StartWorkflow(workflow, variables: InitialVariables());
 
         var instanceId = instance.GetPrimaryKey();
         var preSnapshot = await QueryService.GetStateSnapshot(instanceId);
@@ -202,9 +197,7 @@ public abstract class BoundaryEventTestBase : WorkflowTestBase
         };
 
         var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await instance.SetWorkflow(workflow);
-        await SetupInitialState(instance);
-        await instance.StartWorkflow();
+        await instance.StartWorkflow(workflow, variables: InitialVariables());
 
         var instanceId = instance.GetPrimaryKey();
         var preSnapshot = await QueryService.GetStateSnapshot(instanceId);
@@ -258,9 +251,7 @@ public abstract class BoundaryEventTestBase : WorkflowTestBase
         };
 
         var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await instance.SetWorkflow(workflow);
-        await SetupInitialState(instance);
-        await instance.StartWorkflow();
+        await instance.StartWorkflow(workflow, variables: InitialVariables());
 
         var instanceId = instance.GetPrimaryKey();
         var preSnapshot = await QueryService.GetStateSnapshot(instanceId);

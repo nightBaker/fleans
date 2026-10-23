@@ -88,13 +88,11 @@ public class EventSubProcessNestedInSubProcessTests : WorkflowTestBase
             messages: [new MessageDefinition("cancelMsgDef", "cancelOrder", "= orderId")]);
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
 
         // Correlation key must be in the parent scope before the ESP registers.
         dynamic initVars = new ExpandoObject();
         initVars.orderId = "ORD-284";
-        await workflowInstance.SetInitialVariables((ExpandoObject)initVars);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow, variables: (ExpandoObject)initVars);
 
         var instanceId = workflowInstance.GetPrimaryKey();
 
@@ -134,8 +132,7 @@ public class EventSubProcessNestedInSubProcessTests : WorkflowTestBase
             signals: [signalDef]);
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         var instanceId = workflowInstance.GetPrimaryKey();
 
@@ -204,8 +201,7 @@ public class EventSubProcessNestedInSubProcessTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         var instanceId = workflowInstance.GetPrimaryKey();
         var snapshot = await PollForNoActiveActivities(instanceId);
@@ -257,8 +253,7 @@ public class EventSubProcessNestedInSubProcessTests : WorkflowTestBase
         var workflow = BuildWorkflow("non-interrupting-timer-esp-nested", outerSub);
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         var instanceId = workflowInstance.GetPrimaryKey();
         var running = await WaitForCondition(instanceId,
@@ -346,8 +341,7 @@ public class EventSubProcessNestedInSubProcessTests : WorkflowTestBase
         var workflow = BuildWorkflow("esp-in-esp-in-subprocess", outerSub);
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         var instanceId = workflowInstance.GetPrimaryKey();
         var running = await WaitForCondition(instanceId,
@@ -418,8 +412,7 @@ public class EventSubProcessNestedInSubProcessTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         var instanceId = workflowInstance.GetPrimaryKey();
         var running = await WaitForCondition(instanceId,

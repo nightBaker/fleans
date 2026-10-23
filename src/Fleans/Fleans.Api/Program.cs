@@ -9,6 +9,7 @@ using Fleans.Infrastructure;
 using Fleans.Persistence.PostgreSql;
 using Fleans.Persistence.Sqlite;
 using Fleans.ServiceDefaults;
+using Fleans.ServiceDefaults.Clustering;
 using Fleans.ServiceDefaults.Reminders;
 using Fleans.Worker.Hosting;
 using Fleans.Worker.Placement;
@@ -80,12 +81,14 @@ if (role != "core" && role != "worker" && role != "combined")
     throw new InvalidOperationException(
         $"Fleans:Role must be one of 'Core', 'Worker', 'Combined' (case-insensitive) — got '{roleRaw}'.");
 }
-var siloName = $"{role}-{Environment.MachineName}-{Guid.NewGuid():N}".ToLowerInvariant();
+// With Fleans:Kubernetes:Enabled the silo name is the pod name (which must then start with the role).
+var siloName = FleansClusteringExtensions.ResolveSiloName(builder.Configuration, role);
 
 // Orleans silo configuration
-// Infrastructure (clustering, storage, streaming, reminders) is managed by Aspire AppHost.
-// When running outside Aspire (e.g., Docker Compose load testing), FLEANS_LOAD_TEST_MODE=true
-// activates explicit Redis clustering wiring. Aspire never sets this variable — safe as a guard.
+// Under Aspire the AppHost injects clustering + PubSubStore through Orleans' own configuration.
+// Elsewhere AddFleansClustering wires the membership table from Fleans:Clustering:Provider (#885).
+// When running outside Aspire for load testing, FLEANS_LOAD_TEST_MODE=true also registers the
+// Redis PubSubStore. Aspire never sets this variable — safe as a guard.
 var orleansRedisConnection = builder.Configuration.GetConnectionString("orleans-redis");
 var isLoadTestMode = builder.Configuration["FLEANS_LOAD_TEST_MODE"] == "true";
 
@@ -94,10 +97,11 @@ builder.UseOrleans(siloBuilder =>
     // Stamp the role into the silo name so membership gossip exposes it cluster-wide.
     siloBuilder.Configure<Orleans.Configuration.SiloOptions>(o => o.SiloName = siloName);
 
+    // Membership table (Redis default | Postgres) + opt-in Kubernetes hosting. Fails fast on bad config.
+    siloBuilder.AddFleansClustering(builder.Configuration);
+
     if (isLoadTestMode && !string.IsNullOrEmpty(orleansRedisConnection))
     {
-        // Non-Aspire startup path: wire Redis clustering, PubSubStore, and reminders explicitly.
-        siloBuilder.UseRedisClustering(orleansRedisConnection);
         siloBuilder.AddRedisGrainStorage("PubSubStore",
             options => options.ConfigurationOptions =
                 ConfigurationOptions.Parse(orleansRedisConnection));

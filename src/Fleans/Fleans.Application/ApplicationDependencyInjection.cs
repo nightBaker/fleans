@@ -19,6 +19,7 @@ namespace Fleans.Application
 
             services.AddSingleton<IWorkflowCommandService, WorkflowCommandService>();
             services.AddSingleton<ICompensationLogService, CompensationLogService>();
+            services.AddSingleton<WorkflowDefinitionCache>();
 
             services.AddSingleton<EffectDispatcher>();
             services.AddSingleton<IEffectHandler, TimerEffectHandler>();

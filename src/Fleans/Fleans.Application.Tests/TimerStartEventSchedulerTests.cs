@@ -38,13 +38,37 @@ public class TimerStartEventSchedulerTests : WorkflowTestBase
         var createdInstanceId = await scheduler.FireTimerStartEvent();
 
         // Assert — a workflow instance should have been created and started
-        Assert.AreNotEqual(Guid.Empty, createdInstanceId);
-        var snapshot = await QueryService.GetStateSnapshot(createdInstanceId);
+        Assert.IsNotNull(createdInstanceId);
+        var snapshot = await QueryService.GetStateSnapshot(createdInstanceId.Value);
         Assert.IsNotNull(snapshot);
         Assert.IsTrue(snapshot.IsStarted);
         // The workflow should have the TimerStartEvent completed and task1 active
         Assert.IsTrue(snapshot.ActiveActivities.Any(a => a.ActivityId == "task1"),
             "Task1 should be active after timer start event completes");
+    }
+
+    [TestMethod]
+    public async Task FireTimerStartEvent_WhenTheProcessIsDisabled_StartsNothing()
+    {
+        // Arrange — a reminder that fires after Disable (a race, or a failed unregister) (#863)
+        var timerStart = new TimerStartEvent("timerStart1", new TimerDefinition(TimerType.Cycle, "R3/PT10M"));
+        var end = new EndEvent("end");
+        var workflow = new WorkflowDefinition
+        {
+            WorkflowId = "scheduled-disabled",
+            Activities = [timerStart, end],
+            SequenceFlows = [new SequenceFlow("f1", timerStart, end)],
+        };
+        var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("scheduled-disabled");
+        await processGrain.DeployVersion(workflow, "<placeholder/>");
+        await processGrain.Disable();
+
+        // Act
+        var createdInstanceId = await Cluster.GrainFactory
+            .GetGrain<ITimerStartEventSchedulerGrain>("scheduled-disabled").FireTimerStartEvent();
+
+        // Assert
+        Assert.IsNull(createdInstanceId);
     }
 
     [TestMethod]

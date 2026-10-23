@@ -48,6 +48,12 @@ public static class WorkflowEventStreams
     public const string EvaluateCompletionConditionStreamNamespace = "events.EvaluateCompletionConditionEvent";
 
     /// <summary>
+    /// Dedicated namespace for <c>InstanceAdvanced</c>: one stream per workflow instance, keyed by
+    /// its id, consumed by the read-model projector (#861).
+    /// </summary>
+    public const string InstanceAdvancedStreamNamespace = "events.InstanceAdvanced";
+
+    /// <summary>
     /// Builds the per-<c>TaskType</c> stream namespace for custom-task events:
     /// <c>events.ExecuteCustomTaskEvent.{taskType}</c>. The publisher routes through this
     /// helper so each plugin's subscriber grain only sees its own traffic.

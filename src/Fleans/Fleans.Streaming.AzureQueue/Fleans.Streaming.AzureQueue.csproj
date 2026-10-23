@@ -8,9 +8,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Azure.Identity" Version="1.17.0" />
-    <PackageReference Include="Microsoft.Orleans.Streaming.AzureStorage" Version="10.0.1" />
-    <PackageReference Include="Microsoft.Orleans.Sdk" Version="10.0.1" />
+    <PackageReference Include="Azure.Identity" Version="1.18.0" />
+    <PackageReference Include="Microsoft.Orleans.Streaming.AzureStorage" Version="10.4.0" />
+    <PackageReference Include="Microsoft.Orleans.Sdk" Version="10.4.0" />
   </ItemGroup>
 
 </Project>

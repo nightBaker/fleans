@@ -15,11 +15,11 @@ public class MessageBoundaryEventTests : BoundaryEventTestBase
     protected override List<MessageDefinition> GetMessageDefinitions()
         => [new MessageDefinition("msg1", "cancelOrder", "orderId")];
 
-    protected override async Task SetupInitialState(IWorkflowInstanceGrain instance)
+    protected override ExpandoObject? InitialVariables()
     {
         dynamic initVars = new ExpandoObject();
         initVars.orderId = "order-456";
-        await instance.SetInitialVariables(initVars);
+        return initVars;
     }
 
     protected override async Task TriggerBoundaryEvent(IWorkflowInstanceGrain instance, Guid hostInstanceId)
@@ -57,11 +57,9 @@ public class MessageBoundaryEventTests : BoundaryEventTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
         dynamic initVars = new ExpandoObject();
         initVars.orderId = "order-ni-msg";
-        await workflowInstance.SetInitialVariables(initVars);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow, variables: (ExpandoObject)initVars);
 
         // Verify task is active
         var instanceId = workflowInstance.GetPrimaryKey();
@@ -125,11 +123,9 @@ public class MessageBoundaryEventTests : BoundaryEventTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
         dynamic initVars = new ExpandoObject();
         initVars.orderId = "order-stale";
-        await workflowInstance.SetInitialVariables(initVars);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow, variables: (ExpandoObject)initVars);
 
         var instanceId = workflowInstance.GetPrimaryKey();
         var preSnapshot = await QueryService.GetStateSnapshot(instanceId);

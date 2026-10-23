@@ -1,5 +1,9 @@
 using Fleans.ServiceDefaults.Reminders;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+using Orleans.Hosting;
 
 namespace Fleans.ServiceDefaults.Tests;
 
@@ -87,6 +91,78 @@ public class FleansRemindersExtensionsTests
 
         Assert.AreEqual(RemindersProvider.Postgres, resolved.Provider);
         StringAssert.Contains(resolved.ConnectionString, "Host=localhost");
+    }
+
+    [TestMethod]
+    public void Postgres_provider_prefers_dedicated_fleans_reminders_connection()
+    {
+        // #886: the reminders' 5-minute range re-reads should not compete with the read model,
+        // so production points them at their own database.
+        var cfg = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Fleans:Reminders:Provider"] = "Postgres",
+                ["Persistence:Provider"] = "Postgres",
+                ["ConnectionStrings:fleans"] = "Host=app-db;Database=fleans;Username=u;Password=p",
+                ["ConnectionStrings:fleans-reminders"] = "Host=reminders-db;Database=reminders;Username=u;Password=p",
+            }).Build();
+
+        var resolved = FleansRemindersExtensions.ResolveRemindersConfiguration(cfg);
+
+        Assert.AreEqual(RemindersProvider.Postgres, resolved.Provider);
+        StringAssert.Contains(resolved.ConnectionString, "Host=reminders-db");
+        Assert.IsTrue(resolved.DedicatedDatabase);
+    }
+
+    [TestMethod]
+    public void Postgres_provider_without_dedicated_connection_shares_fleans_database()
+    {
+        var cfg = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Fleans:Reminders:Provider"] = "Postgres",
+                ["Persistence:Provider"] = "Postgres",
+                ["ConnectionStrings:fleans"] = "Host=app-db;Database=fleans;Username=u;Password=p",
+            }).Build();
+
+        var resolved = FleansRemindersExtensions.ResolveRemindersConfiguration(cfg);
+
+        StringAssert.Contains(resolved.ConnectionString, "Host=app-db");
+        Assert.IsFalse(resolved.DedicatedDatabase);
+    }
+
+    [TestMethod]
+    public void ReminderOptions_keep_Orleans_defaults_when_unset()
+    {
+        var options = BuildReminderOptions(new Dictionary<string, string?>());
+
+        Assert.AreEqual(TimeSpan.FromMinutes(10), options.ReminderLoadingWindow);
+        Assert.AreEqual(TimeSpan.FromMinutes(5), options.RefreshReminderListPeriod);
+    }
+
+    [TestMethod]
+    public void ReminderOptions_bind_from_Fleans_Reminders_section()
+    {
+        var options = BuildReminderOptions(new Dictionary<string, string?>
+        {
+            ["Fleans:Reminders:ReminderLoadingWindow"] = "00:30:00",
+            ["Fleans:Reminders:RefreshReminderListPeriod"] = "00:02:00",
+        });
+
+        Assert.AreEqual(TimeSpan.FromMinutes(30), options.ReminderLoadingWindow);
+        Assert.AreEqual(TimeSpan.FromMinutes(2), options.RefreshReminderListPeriod);
+    }
+
+    private static ReminderOptions BuildReminderOptions(Dictionary<string, string?> values)
+    {
+        values["ConnectionStrings:orleans-redis"] = "localhost:6379";
+        var builder = Host.CreateApplicationBuilder();
+        builder.Configuration.AddInMemoryCollection(values);
+        builder.UseOrleans(silo => silo.AddFleansReminders(builder.Configuration));
+
+        // Resolving options neither starts the silo nor connects to Redis.
+        using var host = builder.Build();
+        return host.Services.GetRequiredService<IOptions<ReminderOptions>>().Value;
     }
 
     [TestMethod]

@@ -56,11 +56,15 @@ public abstract class WorkflowTestBase
 
         var builder = new TestClusterBuilder();
         builder.AddSiloBuilderConfigurator<EfCoreSiloConfigurator>();
+        ConfigureCluster(builder);
         Cluster = builder.Build();
         Cluster.Deploy();
 
         QueryService = ((InProcessSiloHandle)Cluster.Primary).SiloHost.Services.GetRequiredService<IWorkflowQueryService>();
     }
+
+    /// <summary>Lets a test class add silo configurators (e.g. a grain call filter) to its cluster.</summary>
+    protected virtual void ConfigureCluster(TestClusterBuilder builder) { }
 
     /// <summary>
     /// Forces deactivation of all grain activations in the test cluster
@@ -85,6 +89,28 @@ public abstract class WorkflowTestBase
             await Task.Delay(100);
         }
         return await QueryService.GetStateSnapshot(instanceId);
+    }
+
+    /// <summary>
+    /// Waits until the read model reflects the instance's current state. The projector runs behind
+    /// the journal (#861), so a test that reads the read model directly — instance lists, the
+    /// WorkflowInstances tables — waits here first instead of sleeping. <c>GetStateSnapshot</c>
+    /// does not need it: until the row says completed, the grain answers.
+    /// </summary>
+    protected async Task WaitForProjection(params Guid[] instanceIds)
+    {
+        // Generous: a failed projection is redelivered by the stream with back-off.
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        foreach (var instanceId in instanceIds)
+        {
+            var inspector = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId)
+                .AsReference<IWorkflowInstanceInspector>();
+            while (!await inspector.IsProjectionCaughtUp())
+            {
+                Assert.IsTrue(DateTime.UtcNow < deadline, $"The read model of {instanceId} did not catch up");
+                await Task.Delay(25);
+            }
+        }
     }
 
     /// <summary>
@@ -256,7 +282,6 @@ public abstract class WorkflowTestBase
                 .AddMemoryGrainStorage(GrainStorageNames.SignalCorrelations)
                 .AddMemoryGrainStorage(GrainStorageNames.MessageStartEventListeners)
                 .AddMemoryGrainStorage(GrainStorageNames.SignalStartEventListeners)
-                .AddMemoryGrainStorage(GrainStorageNames.UserTasks)
                 .AddMemoryGrainStorage(GrainStorageNames.ConditionalStartEventListeners)
                 .AddMemoryGrainStorage(GrainStorageNames.ConditionalStartEventRegistry)
                 .AddMemoryGrainStorage(GrainStorageNames.CustomTaskCatalog)
@@ -278,6 +303,13 @@ public abstract class WorkflowTestBase
 
                     services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.TimerSchedulers,
                         (sp, _) => new EfCoreTimerSchedulerGrainStorage(
+                            sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
+
+                    // The production storage, so tests see that a user task registers before its
+                    // instance's read-model row is projected (#863, #861): UserTasks must not
+                    // depend on that row.
+                    services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.UserTasks,
+                        (sp, _) => new EfCoreUserTaskGrainStorage(
                             sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
 
                     services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.ProcessDefinitions,

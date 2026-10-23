@@ -65,7 +65,10 @@ public class ExecutionApiTests : WorkflowE2ETestBase
             var final = await ApiClient.WaitForCompletionAsync(started.WorkflowInstanceId);
             final.AssertCompletedActivities("start", "end");
 
-            var after = await ApiClient.ListInstancesByKeyAsync(DisableKey, pageSize: 100);
+            // The listing is projected asynchronously (#861): wait for the started instance.
+            var after = await ApiClient.WaitForInstancesPageAsync(
+                t => ApiClient.ListInstancesByKeyAsync(DisableKey, pageSize: 100, ct: t),
+                p => p.Items.Any(i => i.InstanceId == started.WorkflowInstanceId), "the post-enable instance");
             Assert.AreEqual(before + 1, after.TotalCount, "Only the post-enable start creates an instance.");
         }
         finally
@@ -87,8 +90,9 @@ public class ExecutionApiTests : WorkflowE2ETestBase
             s => s.ActiveActivityIds.Contains(DefinitionsApiTests.WaitActivity));
         Assert.AreEqual(businessId, state.BusinessId);
 
-        var page = await ApiClient.ListInstancesByKeyAsync(
-            DefinitionsApiTests.ReadKey, filters: $"BusinessId=={businessId}");
+        var page = await ApiClient.WaitForInstancesPageAsync(
+            t => ApiClient.ListInstancesByKeyAsync(DefinitionsApiTests.ReadKey, filters: $"BusinessId=={businessId}", ct: t),
+            p => p.TotalCount >= 1, "the instance with the business id");
         Assert.AreEqual(1, page.TotalCount);
         Assert.AreEqual(started.WorkflowInstanceId, page.Items[0].InstanceId);
         Assert.AreEqual(businessId, page.Items[0].BusinessId);
@@ -106,7 +110,9 @@ public class ExecutionApiTests : WorkflowE2ETestBase
         var businessId = $"ACME, Inc|{Guid.NewGuid():N}";
         var started = await ApiClient.StartAsync(DefinitionsApiTests.ReadKey, businessId: businessId);
 
-        var page = await ApiClient.ListInstancesByBusinessIdAsync(DefinitionsApiTests.ReadKey, businessId);
+        var page = await ApiClient.WaitForInstancesPageAsync(
+            t => ApiClient.ListInstancesByBusinessIdAsync(DefinitionsApiTests.ReadKey, businessId, t),
+            p => p.TotalCount >= 1, "the instance with the business id");
         Assert.AreEqual(started.WorkflowInstanceId, page.Items.Single().InstanceId);
 
         // A whitespace-only value binds to null (no filter); a padded one reaches validation.

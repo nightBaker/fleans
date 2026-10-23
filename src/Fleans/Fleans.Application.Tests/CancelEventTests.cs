@@ -75,8 +75,7 @@ public class CancelEventTests : WorkflowTestBase
     {
         var workflow = BuildCancelWorkflow("cancel-outcome-test");
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await grain.SetWorkflow(workflow);
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(workflow);
         var instanceId = grain.GetPrimaryKey();
 
         await grain.CompleteActivity("tx_task_a", new ExpandoObject());
@@ -99,8 +98,7 @@ public class CancelEventTests : WorkflowTestBase
     {
         var workflow = BuildCancelWorkflow("cancel-boundary-path-test");
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await grain.SetWorkflow(workflow);
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(workflow);
         var instanceId = grain.GetPrimaryKey();
 
         await grain.CompleteActivity("tx_task_a", new ExpandoObject());
@@ -124,8 +122,7 @@ public class CancelEventTests : WorkflowTestBase
     {
         var workflow = BuildCancelWorkflow("cancel-one-handler-test", withCompensation: true);
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await grain.SetWorkflow(workflow);
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(workflow);
         var instanceId = grain.GetPrimaryKey();
 
         await grain.CompleteActivity("tx_task_a", new ExpandoObject());
@@ -193,8 +190,7 @@ public class CancelEventTests : WorkflowTestBase
         };
 
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await grain.SetWorkflow(workflow);
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(workflow);
         var instanceId = grain.GetPrimaryKey();
 
         await grain.CompleteActivity("tx_task_a", new ExpandoObject());
@@ -230,8 +226,7 @@ public class CancelEventTests : WorkflowTestBase
         // after the cancel flow has already set it to Cancelled.
         var workflow = BuildCancelWorkflow("cancel-no-complete-override", withCompensation: true);
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await grain.SetWorkflow(workflow);
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(workflow);
         var instanceId = grain.GetPrimaryKey();
 
         await grain.CompleteActivity("tx_task_a", new ExpandoObject());
@@ -256,8 +251,7 @@ public class CancelEventTests : WorkflowTestBase
         // but still fires the CancelBoundaryEvent.
         var workflow = BuildCancelWorkflow("cancel-no-handlers-test", withCompensation: false);
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await grain.SetWorkflow(workflow);
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(workflow);
         var instanceId = grain.GetPrimaryKey();
 
         await grain.CompleteActivity("tx_task_a", new ExpandoObject());
@@ -286,8 +280,7 @@ public class CancelEventTests : WorkflowTestBase
         // remain in completed activities without IsCancelled=true.
         var workflow = BuildCancelWorkflow("cancel-no-spurious-cancel", withCompensation: false);
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await grain.SetWorkflow(workflow);
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(workflow);
         var instanceId = grain.GetPrimaryKey();
 
         await grain.CompleteActivity("tx_task_a", new ExpandoObject());

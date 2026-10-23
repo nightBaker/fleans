@@ -12,8 +12,6 @@ namespace Fleans.Application.Grains;
 /// </summary>
 public interface IProcessDefinitionGrain : IGrainWithStringKey
 {
-    Task<IWorkflowInstanceGrain> CreateInstance(string? businessId = null);
-    Task<IWorkflowInstanceGrain> CreateInstanceByDefinitionId(string processDefinitionId, string? businessId = null);
     Task<ProcessDefinitionSummary> DeployVersion(WorkflowDefinition workflow, string bpmnXml);
 
     [ReadOnly]
@@ -21,6 +19,18 @@ public interface IProcessDefinitionGrain : IGrainWithStringKey
 
     [ReadOnly]
     Task<WorkflowDefinition> GetDefinitionById(string processDefinitionId);
+
+    /// <summary>
+    /// The definition a new instance starts from: the latest version, or the version
+    /// <paramref name="processDefinitionId"/> names. Returns <c>null</c> when the process is
+    /// disabled. This is the one process-disabled check, and every start path calls it before
+    /// <see cref="IWorkflowInstanceGrain.StartWorkflow"/> (#863): a disabled process starts no new
+    /// instance, whether the start comes from the API, a message, signal, conditional or timer
+    /// start event, or a call activity. Throws <see cref="KeyNotFoundException"/> when nothing is
+    /// deployed under this key or the version is unknown.
+    /// </summary>
+    [ReadOnly]
+    Task<IWorkflowDefinition?> GetStartableDefinition(string? processDefinitionId = null);
 
     [ReadOnly]
     Task<bool> IsActive();

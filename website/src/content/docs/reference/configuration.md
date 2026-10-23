@@ -82,6 +82,35 @@ How many grain keys the engine spreads script and condition evaluations over. Th
 
 `memory` is single-silo only — it silently drops cross-silo events. Use `kafka` or `azurequeue` for any deployment with more than one silo. See [Streaming](/fleans/reference/streaming/) for at-least-once semantics.
 
+### Reminders (timers)
+
+Every pending BPMN timer is one Orleans reminder. Every silo — engine and custom worker hosts — must use the same provider.
+
+| Env var | Config key | Read at | Default |
+| --- | --- | --- | --- |
+| `Fleans__Reminders__Provider` | `Fleans:Reminders:Provider` | `Fleans.ServiceDefaults` | `"Redis"` (case-insensitive; accepts `Redis` or `Postgres`) |
+| `Fleans__Reminders__ReminderLoadingWindow` | `Fleans:Reminders:ReminderLoadingWindow` | `Fleans.ServiceDefaults` (bound onto Orleans `ReminderOptions`) | `00:10:00` |
+| `Fleans__Reminders__RefreshReminderListPeriod` | `Fleans:Reminders:RefreshReminderListPeriod` | (binding) | `00:05:00` |
+
+`Redis` keeps the reminders on the `orleans-redis` connection — no extra infrastructure, but every reminder of the cluster lives in one Redis key. **`Postgres` is the recommended production provider** once pending timers reach the millions; it requires `Persistence:Provider=Postgres` (the silo refuses to start otherwise) and uses `ConnectionStrings:fleans-reminders`, falling back to `ConnectionStrings:fleans`. Give the reminders their own database: every silo re-reads its slice of the reminder ring every `RefreshReminderListPeriod`, and those reads should not compete with the journal and read model. The reminders tables are created at startup; the database must exist.
+
+`ReminderLoadingWindow` keeps only reminders due within the window in memory (it must be at least `RefreshReminderListPeriod`). A longer window rides out a longer reminder-store outage without late timers, at the cost of silo memory.
+
+### Clustering (Orleans membership)
+
+The membership table decides which silo is alive. Every silo **and** every Orleans client (Web, MCP, custom worker hosts) of one cluster must use the same provider — the table is also the clients' gateway list.
+
+| Env var | Config key | Read at | Default |
+| --- | --- | --- | --- |
+| `Fleans__Clustering__Provider` | `Fleans:Clustering:Provider` | `Fleans.ServiceDefaults` (Api, Worker, Web, MCP) | `"Redis"` (case-insensitive; accepts `Redis` or `Postgres`) |
+| `Fleans__Kubernetes__Enabled` | `Fleans:Kubernetes:Enabled` | `Fleans.ServiceDefaults` (silos) | `false` (the Helm chart sets `true`) |
+| `POD_NAME`, `POD_NAMESPACE`, `POD_IP` | — | Orleans Kubernetes hosting | From the Kubernetes downward API. |
+| `shutdownTimeoutSeconds` | `shutdownTimeoutSeconds` | .NET host (`HostOptions.ShutdownTimeout`) | `30`; the Helm chart sets `terminationGracePeriodSeconds − 10`. |
+
+`Redis` keeps membership on the `orleans-redis` connection. Redis replication is asynchronous, so a Redis failover can drop an acknowledged membership write. **`Postgres` is the recommended production provider**: it requires `Persistence:Provider=Postgres` (the silo refuses to start otherwise), uses `ConnectionStrings:fleans-cluster`, falling back to `ConnectionStrings:fleans`, and creates its tables at startup (the database must exist). Run that Postgres highly available (e.g. Patroni) — while the table is unreachable no silo can join or be declared dead. Unknown provider values fail startup.
+
+`Fleans:Kubernetes:Enabled=true` turns on Orleans Kubernetes hosting: a silo whose pod is gone is declared dead immediately instead of after the probe window. The pod name becomes the silo name and **must start with the silo's role** (`core-…`, `worker-…`, `combined-…`), because Fleans placement reads the role from that prefix; the silo refuses to start otherwise. The pod's service account needs `get`, `list`, `watch` and `patch` on `pods`, and the pods need the labels `orleans/serviceId` / `orleans/clusterId` matching `Orleans__ServiceId` / `Orleans__ClusterId`. The [Helm chart](/fleans/guides/self-host-helm/#clustering-and-kubernetes-hosting) sets all of this up.
+
 ### Authentication
 
 Auth keys are **per-host** — the API and the Web admin UI use different OIDC flows (JWT-bearer vs OIDC code-flow), so the keys split cleanly between hosts. Setting an API-only key on the Web silo (or vice-versa) has no effect.
@@ -101,7 +130,9 @@ See [Authentication](/fleans/reference/authentication/) for the full role-claim 
 | --- | --- | --- | --- |
 | `ConnectionStrings__fleans` | `ConnectionStrings:fleans` | `Fleans.ServiceDefaults` | **Required when `Persistence:Provider=Postgres`.** Workflow command-side database (event store + write model). Throws at startup if missing. |
 | `ConnectionStrings__fleans-query` | `ConnectionStrings:fleans-query` | `Fleans.ServiceDefaults` | Optional read-replica for the query-side projection. Falls back to the `fleans` write connection when unset. |
-| `ConnectionStrings__orleans-redis` | `ConnectionStrings:orleans-redis` | `Fleans.Api`, `Fleans.WorkerHost`, `Fleans.CustomWorkerHost` | **Required for multi-silo clustering.** Drives `UseRedisClustering(...)` and `AddRedisGrainStorage("PubSubStore", ...)`. Note the name — it's `orleans-redis`, not bare `redis`. |
+| `ConnectionStrings__fleans-reminders` | `ConnectionStrings:fleans-reminders` | `Fleans.ServiceDefaults` | Optional dedicated database for the Orleans reminders when `Fleans:Reminders:Provider=Postgres` (recommended in production). Falls back to `fleans` when unset. See [Reminders](#reminders-timers). |
+| `ConnectionStrings__fleans-cluster` | `ConnectionStrings:fleans-cluster` | `Fleans.ServiceDefaults` | Optional dedicated database for the Orleans membership table when `Fleans:Clustering:Provider=Postgres`. Falls back to `fleans` when unset. See [Clustering](#clustering-orleans-membership). |
+| `ConnectionStrings__orleans-redis` | `ConnectionStrings:orleans-redis` | `Fleans.Api`, `Fleans.WorkerHost`, `Fleans.Web`, `Fleans.Mcp`, custom worker hosts | **Required** — Redis membership (the default `Fleans:Clustering:Provider`), `PubSubStore`, Redis streams and Redis reminders. Note the name — it's `orleans-redis`, not bare `redis`. |
 
 ### .NET runtime
 

@@ -99,11 +99,11 @@ public class MultiInstanceScriptIntegrationTests
         var processGrain = _cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("mi-script-cardinality");
         await processGrain.DeployVersion(workflow, "<xml/>");
 
-        var instance = await processGrain.CreateInstance();
+        var instance = _cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         var instanceId = instance.GetPrimaryKey();
 
         // Act
-        await instance.StartWorkflow();
+        await instance.StartWorkflow(await processGrain.GetLatestDefinition());
 
         // Assert
         var snapshot = await PollForCompletion(instanceId);
@@ -156,15 +156,14 @@ public class MultiInstanceScriptIntegrationTests
         var processGrain = _cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("mi-script-collection");
         await processGrain.DeployVersion(workflow, "<xml/>");
 
-        var instance = await processGrain.CreateInstance();
+        var instance = _cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         var instanceId = instance.GetPrimaryKey();
 
         dynamic initVars = new ExpandoObject();
         initVars.items = new List<object> { "A", "B", "C" };
-        await instance.SetInitialVariables(initVars);
 
         // Act
-        await instance.StartWorkflow();
+        await instance.StartWorkflow(await processGrain.GetLatestDefinition(), variables: (ExpandoObject)initVars);
 
         // Assert
         var snapshot = await PollForCompletion(instanceId);
@@ -214,15 +213,14 @@ public class MultiInstanceScriptIntegrationTests
         var processGrain = _cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("mi-script-seq-collection");
         await processGrain.DeployVersion(workflow, "<xml/>");
 
-        var instance = await processGrain.CreateInstance();
+        var instance = _cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         var instanceId = instance.GetPrimaryKey();
 
         dynamic initVars = new ExpandoObject();
         initVars.items = new List<object> { "X", "Y", "Z" };
-        await instance.SetInitialVariables(initVars);
 
         // Act
-        await instance.StartWorkflow();
+        await instance.StartWorkflow(await processGrain.GetLatestDefinition(), variables: (ExpandoObject)initVars);
 
         // Assert
         var snapshot = await PollForCompletion(instanceId);
@@ -272,11 +270,11 @@ public class MultiInstanceScriptIntegrationTests
         var processGrain = _cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("mi-script-fail");
         await processGrain.DeployVersion(workflow, "<xml/>");
 
-        var instance = await processGrain.CreateInstance();
+        var instance = _cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         var instanceId = instance.GetPrimaryKey();
 
         // Act
-        await instance.StartWorkflow();
+        await instance.StartWorkflow(await processGrain.GetLatestDefinition());
 
         // Assert — poll until no active activities remain
         var snapshot = await PollForNoActiveActivities(instanceId);

@@ -4,9 +4,6 @@ namespace Fleans.Application.Grains;
 
 public partial class WorkflowInstance
 {
-    [LoggerMessage(EventId = 1000, Level = LogLevel.Debug, Message = "Workflow definition set")]
-    private partial void LogWorkflowDefinitionSet();
-
     [LoggerMessage(EventId = 1001, Level = LogLevel.Debug, Message = "Workflow execution started")]
     private partial void LogWorkflowStarted();
 
@@ -54,9 +51,6 @@ public partial class WorkflowInstance
 
     [LoggerMessage(EventId = 1011, Level = LogLevel.Information, Message = "Parent info set: ParentWorkflowInstanceId={ParentWorkflowInstanceId}, ParentActivityId={ParentActivityId}")]
     private partial void LogParentInfoSet(Guid parentWorkflowInstanceId, string parentActivityId);
-
-    [LoggerMessage(EventId = 1012, Level = LogLevel.Debug, Message = "Initial variables set")]
-    private partial void LogInitialVariablesSet();
 
     [LoggerMessage(EventId = 1014, Level = LogLevel.Information, Message = "Child workflow completed for CallActivity {ParentActivityId}")]
     private partial void LogChildWorkflowCompleted(string parentActivityId);
@@ -461,23 +455,23 @@ public partial class WorkflowInstance
     private partial void LogSnapshotWriteFailed(int version, int tailLength, Exception exception);
 
     [LoggerMessage(EventId = 1132, Level = LogLevel.Warning,
-        Message = "Read-model projection write at version {Version} failed; retrying")]
+        Message = "Publishing InstanceAdvanced for version {Version} to the read-model projector failed; retrying")]
     private partial void LogProjectionWriteFailed(int version, Exception exception);
 
     [LoggerMessage(EventId = 1133, Level = LogLevel.Information,
-        Message = "Read-model row differs from the journal's state at version {Version} (a write was lost); rebuilding it")]
+        Message = "Read-model row differs from the journal's state at version {Version} (a notification was lost or is still on its way); asking the projector to catch up")]
     private partial void LogProjectionBehind(int version);
 
     [LoggerMessage(EventId = 1134, Level = LogLevel.Information,
-        Message = "Read-model projection caught up to version {Version} after a failed write")]
+        Message = "InstanceAdvanced for version {Version} published after a failed attempt")]
     private partial void LogProjectionCaughtUp(int version);
 
     [LoggerMessage(EventId = 1135, Level = LogLevel.Error,
-        Message = "Read-model projection still failing at version {Version} after {Attempts} retries; giving up until the next activation")]
+        Message = "Publishing InstanceAdvanced for version {Version} still failing after {Attempts} retries; giving up until the next activation")]
     private partial void LogProjectionRetryGaveUp(int version, int attempts);
 
     [LoggerMessage(EventId = 1136, Level = LogLevel.Warning,
-        Message = "Reading the read-model row failed; rebuilding the projection")]
+        Message = "Reading the read-model row failed; asking the projector to catch up")]
     private partial void LogProjectionRowReadFailed(Exception exception);
 
     [LoggerMessage(EventId = 1137, Level = LogLevel.Error,
@@ -487,6 +481,10 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1138, Level = LogLevel.Warning,
         Message = "Journal append failed; nothing was stored past version {Version}, so the live state is kept and Orleans retries the append")]
     private partial void LogAppendRetryKeepsState(int version);
+
+    [LoggerMessage(EventId = 1139, Level = LogLevel.Warning,
+        Message = "Journal append failed, but the journal moved from version {Version} to {StoredVersion}; the failed try may have been stored, so Orleans retries it with the same batch id, which the store confirms instead of appending it again")]
+    private partial void LogAppendRetryByBatchId(int version, int storedVersion);
 
     [LoggerMessage(EventId = 1142, Level = LogLevel.Debug,
         Message = "Pending event {OperationId} journaled; queued for the next turn")]
@@ -499,4 +497,12 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1141, Level = LogLevel.Warning,
         Message = "Loading the process definition for a state snapshot failed; condition text is left empty")]
     private partial void LogStateSnapshotDefinitionUnavailable(Exception exception);
+
+    [LoggerMessage(EventId = 1147, Level = LogLevel.Information,
+        Message = "Start ignored: the instance is already started from process definition {ProcessDefinitionId}")]
+    private partial void LogDuplicateStartIgnored(string? processDefinitionId);
+
+    [LoggerMessage(EventId = 1148, Level = LogLevel.Debug,
+        Message = "Workflow instance is terminal with nothing pending; deactivating once idle")]
+    private partial void LogTerminalDeactivation();
 }

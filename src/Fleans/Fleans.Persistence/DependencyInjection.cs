@@ -81,6 +81,7 @@ public static class EfCorePersistenceDependencyInjection
         services.AddSingleton<IWorkflowStateProjection, EfCoreWorkflowStateProjection>();
         services.AddSingleton<EfCoreEventStore>();
         services.AddSingleton<IEventStore>(sp => sp.GetRequiredService<EfCoreEventStore>());
+        services.AddSingleton<IWorkflowInstancePurgeService, EfCoreWorkflowInstancePurgeService>();
 
         services.AddHealthChecks()
             .AddDbContextCheck<FleanCommandDbContext>("database");

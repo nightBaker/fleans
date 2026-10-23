@@ -40,8 +40,7 @@ public class EventBasedGatewayTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Complete task with orderId variable (needed for message correlation)
         dynamic vars = new ExpandoObject();
@@ -115,8 +114,7 @@ public class EventBasedGatewayTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Assert — workflow suspended at catch events
         var instanceId = workflowInstance.GetPrimaryKey();
@@ -184,8 +182,7 @@ public class EventBasedGatewayTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         dynamic vars = new ExpandoObject();
         vars.orderId = "order-3way";

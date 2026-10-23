@@ -32,6 +32,12 @@ Four scenario scripts live in parallel under `tests/load/scripts/` (k6) and `tes
 | `events`   | Three-phase event-driven loop: start → poll for `waitMessage` → POST `/Execution/message`.          | `load-events`   |
 | `mixed`    | 40 / 30 / 30 weighted blend of the above three.                                                    | (composite)     |
 
+`timers-1m` (k6 only, `tests/load/scripts/timers-1m.js`) arms 1 million durable timers that all
+fall due within one minute and reports timer lag (fire − due) p50 / p99 from the read model, with
+reminders on their own PostgreSQL. Pass: lag p99 under 2 s and no timer lost. It decides whether
+Orleans reminders carry production timer counts or the [roadmap's sharded timer scheduler](/fleans/roadmap/v1/#timers)
+is needed. No published numbers yet.
+
 The suite is documented in detail in `tests/load/README.md`.
 
 ## Recent baselines
@@ -117,6 +123,14 @@ new starts complete but their script tasks hang. The mitigation is graceful-shut
 that explicitly tombstones the silo's row in Orleans's membership table; the fast workaround
 is to force a new revision (any env-var change triggers it) which causes a clean cluster
 re-election.
+
+**On Kubernetes this window is closed.** The Helm chart enables Orleans Kubernetes hosting by
+default (`clustering.kubernetes.enabled`): silos watch the pods, so a deleted pod's silo is
+declared dead as soon as Kubernetes removes the pod, and a SIGTERM'd silo leaves membership
+during its graceful stop (`clustering.terminationGracePeriodSeconds`). For production also move
+the membership table off Redis with `clustering.provider=Postgres` — see
+[Clustering](/fleans/reference/configuration/#clustering-orleans-membership). Container Apps
+and plain Docker hosts have no pod API, so the probe window above still applies there.
 
 ### 2. Default `Fleans:Streaming:Provider=memory` is unsafe for more than 1 silo
 

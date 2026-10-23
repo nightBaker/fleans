@@ -1,0 +1,42 @@
+{{- if .Values.clustering.kubernetes.enabled }}
+{{- /*
+Orleans Kubernetes hosting (Fleans:Kubernetes:Enabled, #885): at startup a silo
+lists the pods labelled with its serviceId/clusterId and declares silos without a
+pod dead; at runtime two silos watch the pods so a deleted pod leaves the
+membership table at once. It also patches its own pod's orleans/* labels.
+`delete` is not granted: Orleans only deletes pods with DeleteDefunctSiloPods=true,
+which Fleans does not set.
+*/}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "fleans.siloServiceAccountName" . }}
+  labels:
+    {{- include "fleans.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "fleans.siloServiceAccountName" . }}
+  labels:
+    {{- include "fleans.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "fleans.siloServiceAccountName" . }}
+  labels:
+    {{- include "fleans.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "fleans.siloServiceAccountName" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "fleans.siloServiceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

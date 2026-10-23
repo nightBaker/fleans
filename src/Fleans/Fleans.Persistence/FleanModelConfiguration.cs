@@ -15,12 +15,21 @@ namespace Fleans.Persistence;
 
 internal static class FleanModelConfiguration
 {
+    /// <summary>
+    /// Shadow column on WorkflowInstances: the journal version the projected row (and, once
+    /// completed, its details) reflects. The projector writes only past it, so a repeated or late
+    /// notification never rolls the row back (#861). Persistence-only — the domain state does not
+    /// know about it.
+    /// </summary>
+    public const string ProjectedVersion = "ProjectedVersion";
+
     public static void Configure(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<WorkflowInstanceState>(entity =>
         {
             entity.ToTable("WorkflowInstances");
             entity.HasKey(e => e.Id);
+            entity.Property<int>(ProjectedVersion);
 
             entity.HasMany(e => e.Entries)
                 .WithOne()
@@ -66,6 +75,8 @@ internal static class FleanModelConfiguration
                 .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasIndex(e => e.ProcessDefinitionId);
+            // Retention purge (#862) selects finished instances by CompletedAt, oldest first.
+            entity.HasIndex(e => e.CompletedAt);
 
             entity.HasOne<ProcessDefinition>()
                 .WithMany()
@@ -92,11 +103,18 @@ internal static class FleanModelConfiguration
             entity.ToTable("WorkflowVariableStates");
             entity.HasKey(e => e.Id);
 
+            // Compared as JSON: without a comparer EF compares the ExpandoObject by reference and
+            // rewrites every scope's JSON on each write of a completed instance (#861).
             entity.Property(e => e.Variables)
                 .HasColumnName("Variables")
                 .HasConversion(
                     v => JsonConvert.SerializeObject(v),
-                    v => JsonConvert.DeserializeObject<ExpandoObject>(v) ?? new ExpandoObject());
+                    v => JsonConvert.DeserializeObject<ExpandoObject>(v) ?? new ExpandoObject())
+                .Metadata.SetValueComparer(
+                    new ValueComparer<ExpandoObject>(
+                        (a, b) => JsonConvert.SerializeObject(a) == JsonConvert.SerializeObject(b),
+                        v => JsonConvert.SerializeObject(v).GetHashCode(),
+                        v => JsonConvert.DeserializeObject<ExpandoObject>(JsonConvert.SerializeObject(v)) ?? new ExpandoObject()));
         });
 
         modelBuilder.Entity<ConditionSequenceState>(entity =>
@@ -195,6 +213,11 @@ internal static class FleanModelConfiguration
             entity.Property(e => e.Key).HasMaxLength(512);
             entity.Property(e => e.ETag).HasMaxLength(64);
 
+            // In-memory change set the storage reads to write only the affected rows (#859).
+            entity.Ignore(e => e.AddedSubscriptions);
+            entity.Ignore(e => e.RemovedSubscriptionKeys);
+            entity.Ignore(e => e.SubscriptionsCleared);
+
             entity.HasMany(e => e.Subscriptions)
                 .WithOne()
                 .HasForeignKey(s => s.SignalName)
@@ -275,11 +298,9 @@ internal static class FleanModelConfiguration
             // CreatedAt is stored natively; SQLite provider package overrides this with a
             // string converter (see SqliteModelCustomizer).
 
-            entity.HasOne<WorkflowInstanceState>()
-                .WithMany()
-                .HasForeignKey(e => e.WorkflowInstanceId)
-                .OnDelete(DeleteBehavior.Cascade);
-
+            // No foreign key to WorkflowInstances: that row is a read model the projector writes
+            // asynchronously (#861), and a user task registers in the turn that starts its
+            // instance — before the row exists. Grain storage must not depend on the read model.
             entity.HasIndex(e => e.WorkflowInstanceId);
         });
 

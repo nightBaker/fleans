@@ -35,11 +35,9 @@ public class BoundaryOnCatchEventTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
         dynamic initVars = new ExpandoObject();
         initVars.corrKey = "never-match";
-        await workflowInstance.SetInitialVariables(initVars);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow, variables: (ExpandoObject)initVars);
 
         // Verify message catch is active
         var instanceId = workflowInstance.GetPrimaryKey();
@@ -89,11 +87,9 @@ public class BoundaryOnCatchEventTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
         dynamic initVars = new ExpandoObject();
         initVars.requestId = "req-789";
-        await workflowInstance.SetInitialVariables(initVars);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow, variables: (ExpandoObject)initVars);
 
         // Verify timer catch is active
         var instanceId = workflowInstance.GetPrimaryKey();
@@ -145,8 +141,7 @@ public class BoundaryOnCatchEventTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Verify timer catch is active
         var instanceId = workflowInstance.GetPrimaryKey();
@@ -206,11 +201,9 @@ public class BoundaryOnCatchEventTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
         dynamic initVars = new ExpandoObject();
         initVars.corrKey = "never-match";
-        await workflowInstance.SetInitialVariables(initVars);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow, variables: (ExpandoObject)initVars);
 
         // Act — wait for the reminder to fire on its own.
         var instanceId = workflowInstance.GetPrimaryKey();
@@ -262,11 +255,9 @@ public class BoundaryOnCatchEventTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
         dynamic initVars = new ExpandoObject();
         initVars.corrKey = "req-100";
-        await workflowInstance.SetInitialVariables(initVars);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow, variables: (ExpandoObject)initVars);
 
         // Act — deliver the message (catch event's own trigger fires first)
         var grainKey = MessageCorrelationKey.Build("approval", "req-100");
@@ -309,11 +300,9 @@ public class BoundaryOnCatchEventTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
         dynamic initVars = new ExpandoObject();
         initVars.requestId = "req-normal";
-        await workflowInstance.SetInitialVariables(initVars);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow, variables: (ExpandoObject)initVars);
 
         // Verify timer catch is active
         var instanceId = workflowInstance.GetPrimaryKey();
@@ -363,8 +352,7 @@ public class BoundaryOnCatchEventTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Verify timer catch is active
         var instanceId = workflowInstance.GetPrimaryKey();

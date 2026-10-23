@@ -50,8 +50,7 @@ public class EventSubProcessNonInterruptingTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         var instanceId = workflowInstance.GetPrimaryKey();
 
@@ -137,8 +136,7 @@ public class EventSubProcessNonInterruptingTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
         var instanceId = workflowInstance.GetPrimaryKey();
 
         // Deliver directly to bypass the correlation grain (same path the
@@ -216,8 +214,7 @@ public class EventSubProcessNonInterruptingTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
         var instanceId = workflowInstance.GetPrimaryKey();
 
         // Fire the timer externally (simulates the timer firing inside the ESP scope).

@@ -5,11 +5,10 @@ using Microsoft.EntityFrameworkCore;
 namespace Fleans.Persistence;
 
 /// <summary>
-/// Projects the current workflow instance state to the WorkflowInstances read model tables.
-/// Called by the WorkflowInstance grain when an append changed the row (<see cref="WorkflowInstanceRow"/>),
-/// and on activation when the stored row differs from the replayed state (a write was lost).
-/// Uses upsert semantics without concurrency checks: the event store is the source of truth, the
-/// grain is the only writer, and this projection is never read back as grain state.
+/// Projects workflow instance state to the WorkflowInstances read model tables. Called by the
+/// read-model projector (<c>WorkflowInstanceProjector</c>) with state it rebuilt from the journal
+/// (#861). Each row stores the journal version it reflects (<see cref="FleanModelConfiguration.ProjectedVersion"/>),
+/// and a write only lands past it: a repeated or late write never rolls the row back.
 /// </summary>
 /// <remarks>
 /// A running instance writes only its row, in one statement and without reading it first; its
@@ -20,6 +19,8 @@ namespace Fleans.Persistence;
 /// </remarks>
 public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
 {
+    private const string ProjectedVersion = FleanModelConfiguration.ProjectedVersion;
+
     private readonly IDbContextFactory<FleanCommandDbContext> _dbContextFactory;
 
     public EfCoreWorkflowStateProjection(IDbContextFactory<FleanCommandDbContext> dbContextFactory)
@@ -49,34 +50,36 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
             .SingleOrDefaultAsync();
     }
 
-    public async Task WriteAsync(string grainId, WorkflowInstanceState state)
+    public async Task WriteAsync(string grainId, WorkflowInstanceState state, int version)
     {
-        // Taken before the first await: the grain compares the same values to decide the write.
         var row = WorkflowInstanceRow.From(state);
         await using var db = await _dbContextFactory.CreateDbContextAsync();
         var id = Guid.Parse(grainId);
 
         if (!state.IsCompleted)
         {
-            await UpsertRowAsync(db, id, row);
+            await UpsertRowAsync(db, id, row, version);
             return;
         }
 
-        // The row is its own entity, never the grain's state: tracking that would make EF add
-        // every collection too. The details are added below as the grain's own objects; the
+        // The row is its own entity, never the projected state: tracking that would make EF add
+        // every collection too. The details are added below as the state's own objects; the
         // context is gone once the write returns.
         var existing = await db.WorkflowInstances.FirstOrDefaultAsync(e => e.Id == id);
         if (existing is null)
         {
-            existing = AddRow(db, id, row);
+            existing = AddRow(db, id, row, version);
         }
         else
         {
-            db.Entry(existing).CurrentValues.SetValues(row);
-            var tracked = db.Entry(existing);
-            await tracked.Collection(e => e.Entries).LoadAsync();
-            await tracked.Collection(e => e.VariableStates).LoadAsync();
-            await tracked.Collection(e => e.ConditionSequenceStates).LoadAsync();
+            var stored = db.Entry(existing);
+            if (stored.Property<int>(ProjectedVersion).CurrentValue >= version)
+                return;
+            stored.CurrentValues.SetValues(row);
+            stored.Property<int>(ProjectedVersion).CurrentValue = version;
+            await stored.Collection(e => e.Entries).LoadAsync();
+            await stored.Collection(e => e.VariableStates).LoadAsync();
+            await stored.Collection(e => e.ConditionSequenceStates).LoadAsync();
         }
 
         DiffEntries(db, existing, state, id);
@@ -87,13 +90,14 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
     }
 
     /// <summary>
-    /// One <c>UPDATE</c> by key; only an instance's first write (no row yet) inserts. Value
-    /// converters apply to <c>ExecuteUpdate</c>, so SQLite's DateTimeOffset-as-string mapping holds.
+    /// One <c>UPDATE</c> by key, guarded by the stored version; only an instance's first write (no
+    /// row yet) inserts. Value converters apply to <c>ExecuteUpdate</c>, so SQLite's
+    /// DateTimeOffset-as-string mapping holds.
     /// </summary>
-    private static async Task UpsertRowAsync(FleanCommandDbContext db, Guid id, WorkflowInstanceRow row)
+    private static async Task UpsertRowAsync(FleanCommandDbContext db, Guid id, WorkflowInstanceRow row, int version)
     {
         var updated = await db.WorkflowInstances
-            .Where(e => e.Id == id)
+            .Where(e => e.Id == id && EF.Property<int>(e, ProjectedVersion) < version)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(e => e.ProcessDefinitionId, row.ProcessDefinitionId)
                 .SetProperty(e => e.BusinessId, row.BusinessId)
@@ -105,20 +109,28 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
                 .SetProperty(e => e.IsCompleted, row.IsCompleted)
                 .SetProperty(e => e.IsCancelled, row.IsCancelled)
                 .SetProperty(e => e.IsFailed, row.IsFailed)
-                .SetProperty(e => e.CompletedAt, row.CompletedAt));
+                .SetProperty(e => e.CompletedAt, row.CompletedAt)
+                .SetProperty(e => EF.Property<int>(e, ProjectedVersion), version));
         if (updated > 0)
             return;
 
-        AddRow(db, id, row);
+        // Nothing updated: either there is no row yet, or it already reflects this version or a
+        // later one.
+        if (await db.WorkflowInstances.AnyAsync(e => e.Id == id))
+            return;
+
+        AddRow(db, id, row, version);
         await db.SaveChangesAsync();
     }
 
-    private static WorkflowInstanceState AddRow(FleanCommandDbContext db, Guid id, WorkflowInstanceRow row)
+    private static WorkflowInstanceState AddRow(FleanCommandDbContext db, Guid id, WorkflowInstanceRow row, int version)
     {
         var entity = new WorkflowInstanceState();
         db.WorkflowInstances.Add(entity);
-        db.Entry(entity).CurrentValues.SetValues(row);
-        db.Entry(entity).Property(s => s.Id).CurrentValue = id;
+        var entry = db.Entry(entity);
+        entry.CurrentValues.SetValues(row);
+        entry.Property(s => s.Id).CurrentValue = id;
+        entry.Property<int>(ProjectedVersion).CurrentValue = version;
         return entity;
     }
 
@@ -168,28 +180,20 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
         }
     }
 
+    /// <summary>Keyed by the table's primary key, like the other diffs — linear, not O(C²).</summary>
     private static void DiffConditionSequenceStates(FleanCommandDbContext db, WorkflowInstanceState existing, WorkflowInstanceState incoming, Guid instanceId)
     {
-        var existingSet = existing.ConditionSequenceStates.ToHashSet();
-        var incomingSet = incoming.ConditionSequenceStates.ToHashSet();
+        static (Guid, string) Key(ConditionSequenceState c) => (c.GatewayActivityInstanceId, c.ConditionalSequenceFlowId);
 
-        foreach (var old in existing.ConditionSequenceStates)
-        {
-            if (!incoming.ConditionSequenceStates.Any(c =>
-                c.GatewayActivityInstanceId == old.GatewayActivityInstanceId &&
-                c.ConditionalSequenceFlowId == old.ConditionalSequenceFlowId))
-            {
-                db.Remove(old);
-            }
-        }
+        var existingDict = existing.ConditionSequenceStates.ToDictionary(Key);
+        var incomingKeys = incoming.ConditionSequenceStates.Select(Key).ToHashSet();
+
+        foreach (var old in existing.ConditionSequenceStates.Where(c => !incomingKeys.Contains(Key(c))))
+            db.Remove(old);
 
         foreach (var cs in incoming.ConditionSequenceStates)
         {
-            var tracked = existing.ConditionSequenceStates.FirstOrDefault(c =>
-                c.GatewayActivityInstanceId == cs.GatewayActivityInstanceId &&
-                c.ConditionalSequenceFlowId == cs.ConditionalSequenceFlowId);
-
-            if (tracked is not null)
+            if (existingDict.TryGetValue(Key(cs), out var tracked))
             {
                 db.Entry(tracked).CurrentValues.SetValues(cs);
             }

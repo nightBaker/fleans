@@ -17,8 +17,7 @@ public class ComplexGatewayTests : WorkflowTestBase
         var workflow = CreateComplexForkWorkflow(
             task1Condition: "true", task2Condition: "true", task3Condition: "false");
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Wait for condition evaluator to process fork conditions (need both true branches)
         var instanceId = workflowInstance.GetPrimaryKey();
@@ -41,8 +40,7 @@ public class ComplexGatewayTests : WorkflowTestBase
         var workflow = CreateComplexForkWithDefault(
             task1Condition: "false", task2Condition: "false");
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         var instanceId = workflowInstance.GetPrimaryKey();
         var snapshot = await WaitForCondition(instanceId,
@@ -62,8 +60,7 @@ public class ComplexGatewayTests : WorkflowTestBase
         // on the very first token (simulating an _nroftoken >= 1 scenario).
         var workflow = CreateParallelForkComplexJoinWorkflow(activationCondition: "true");
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         var instanceId = workflowInstance.GetPrimaryKey();
         await WaitForCondition(instanceId,
@@ -96,8 +93,7 @@ public class ComplexGatewayTests : WorkflowTestBase
         // The gateway should never fire because the condition is always false
         var workflow = CreateParallelForkComplexJoinWorkflow(activationCondition: "false");
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         var instanceId = workflowInstance.GetPrimaryKey();
         await WaitForCondition(instanceId,
@@ -129,8 +125,7 @@ public class ComplexGatewayTests : WorkflowTestBase
         // Should mirror ParallelGateway join: wait for all tokens
         var workflow = CreateParallelForkComplexJoinWorkflow(activationCondition: null);
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         var instanceId = workflowInstance.GetPrimaryKey();
         await WaitForCondition(instanceId,

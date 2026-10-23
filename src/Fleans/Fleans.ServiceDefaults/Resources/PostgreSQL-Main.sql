@@ -1,8 +1,9 @@
--- Vendored unmodified from Microsoft.Orleans.Reminders.AdoNet v10.0.1
--- Source: https://github.com/dotnet/orleans/blob/v10.0.1/src/AdoNet/Shared/PostgreSQL-Main.sql
+-- Vendored unmodified from Microsoft.Orleans.Reminders.AdoNet v10.4.0
+-- Source: https://github.com/dotnet/orleans/blob/v10.4.0/src/AdoNet/Shared/PostgreSQL-Main.sql
 -- Copyright (c) .NET Foundation and Contributors, Apache-2.0 licensed.
 -- See LICENSE-orleans-vendor at the repo root for the full license text.
--- Re-vendor whenever Microsoft.Orleans.Reminders.AdoNet is bumped.
+-- Re-vendor whenever Microsoft.Orleans.Reminders.AdoNet / Microsoft.Orleans.Clustering.AdoNet is bumped
+-- (shared by the reminders and clustering scripts, #885).
 
 -- requires Postgres 9.5 (or perhaps higher)
 

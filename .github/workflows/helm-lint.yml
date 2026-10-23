@@ -37,10 +37,44 @@ jobs:
             --set worker.enabled=true \
             --set streaming.provider=Kafka \
             --set streaming.kafka.brokers=kafka:9092 \
+            --set reminders.provider=Postgres \
+            --set reminders.postgres.existingSecret=fleans-reminders-db \
+            --set clustering.provider=Postgres \
+            --set clustering.postgres.existingSecret=fleans-cluster-db \
+            --set customWorker.enabled=true \
             > /tmp/render-full.yaml
-      - name: Confirm both renders are non-empty
+      - name: helm template (Kubernetes hosting off)
+        run: helm template fleans charts/fleans/ --set clustering.kubernetes.enabled=false > /tmp/render-nok8s.yaml
+      - name: Confirm renders are non-empty
         run: |
           test -s /tmp/render-default.yaml
           test -s /tmp/render-full.yaml
+          test -s /tmp/render-nok8s.yaml
           echo "default render: $(wc -l < /tmp/render-default.yaml) lines"
           echo "full render:    $(wc -l < /tmp/render-full.yaml) lines"
+      - name: Clustering wiring (#885)
+        run: |
+          set -e
+          # Kubernetes hosting (default on): RBAC, role-prefixed silo Deployments, Orleans pod labels, downward API.
+          grep -q '^kind: Role$' /tmp/render-default.yaml
+          grep -q '^kind: RoleBinding$' /tmp/render-default.yaml
+          grep -q 'name: core-fleans$' /tmp/render-default.yaml
+          grep -q 'orleans/clusterId: "fleans"' /tmp/render-default.yaml
+          grep -q 'serviceAccountName: fleans-silo' /tmp/render-default.yaml
+          grep -q 'fieldPath: metadata.name' /tmp/render-default.yaml
+          grep -q 'terminationGracePeriodSeconds: 60' /tmp/render-default.yaml
+          # Every silo Deployment's pod name must start with its role (placement reads the prefix).
+          grep -q 'name: worker-fleans$' /tmp/render-full.yaml
+          grep -q 'name: worker-fleans-custom$' /tmp/render-full.yaml
+          grep -q 'name: ConnectionStrings__fleans-cluster' /tmp/render-full.yaml
+          # Opt-out removes RBAC and the pod-name wiring. (`set -e` ignores `! cmd`, hence the ifs.)
+          if grep -qE '^kind: Role$|serviceAccountName:' /tmp/render-nok8s.yaml; then
+            echo "clustering.kubernetes.enabled=false still renders RBAC / serviceAccountName"; exit 1
+          fi
+          # Fail-guards.
+          if helm template fleans charts/fleans/ --set clustering.provider=Consul > /dev/null 2>&1; then
+            echo "unknown clustering.provider must fail the render"; exit 1
+          fi
+          if helm template fleans charts/fleans/ --set clustering.provider=Postgres --set persistence.provider=Sqlite > /dev/null 2>&1; then
+            echo "clustering.provider=Postgres with persistence.provider=Sqlite must fail the render"; exit 1
+          fi

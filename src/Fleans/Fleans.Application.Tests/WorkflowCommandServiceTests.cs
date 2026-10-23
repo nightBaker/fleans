@@ -27,30 +27,67 @@ namespace Fleans.Application.Tests
         }
 
         [TestMethod]
-        public async Task StartWorkflow_ShouldCreateWorkflowInstance_AndStartIt()
+        public async Task StartWorkflow_ShouldStartTheNewInstance_InOneGrainCall()
         {
             // Arrange
             var workflowId = "test-workflow-1";
-            var workflowInstanceId = Guid.NewGuid();
+            var definition = Substitute.For<IWorkflowDefinition>();
+            var variables = new ExpandoObject();
             var workflowInstance = Substitute.For<IWorkflowInstanceGrain>();
+            Guid? instanceKey = null;
 
             _grainFactory.GetGrain<IProcessDefinitionGrain>(workflowId)
                 .Returns(_processGrain);
-
-            _processGrain.CreateInstance()
+            _processGrain.GetStartableDefinition()
+                .Returns(Task.FromResult<IWorkflowDefinition?>(definition));
+            _grainFactory.GetGrain<IWorkflowInstanceGrain>(Arg.Do<Guid>(key => instanceKey = key), Arg.Any<string?>())
                 .Returns(workflowInstance);
 
-            workflowInstance.GetWorkflowInstanceId()
-                .Returns(ValueTask.FromResult(workflowInstanceId));
-            workflowInstance.StartWorkflow().Returns(Task.CompletedTask);
+            // Act
+            var result = await _commandService.StartWorkflow(workflowId, variables, businessId: "ORDER-1");
+
+            // Assert — the id returned is the grain started; one call carries everything (#863)
+            Assert.AreEqual(instanceKey, result);
+            await workflowInstance.Received(1).StartWorkflow(definition, null, "ORDER-1", variables, null);
+            Assert.HasCount(1, workflowInstance.ReceivedCalls());
+        }
+
+        [TestMethod]
+        public async Task StartWorkflow_WhenTheProcessIsDisabled_ThrowsAndStartsNothing()
+        {
+            // Arrange
+            _grainFactory.GetGrain<IProcessDefinitionGrain>("disabled-process")
+                .Returns(_processGrain);
+            _processGrain.GetStartableDefinition()
+                .Returns(Task.FromResult<IWorkflowDefinition?>(null));
+
+            // Act & Assert — an InvalidOperationException: the API answers 409
+            await Assert.ThrowsExactlyAsync<ProcessDisabledException>(
+                () => _commandService.StartWorkflow("disabled-process"));
+            _grainFactory.DidNotReceive().GetGrain<IWorkflowInstanceGrain>(Arg.Any<Guid>(), Arg.Any<string?>());
+        }
+
+        [TestMethod]
+        public async Task StartWorkflowByProcessDefinitionId_ShouldStartThatVersion_UnlessTheProcessIsDisabled()
+        {
+            // Arrange
+            const string processDefinitionId = "versioned-process:2:20260101T000000.0000000Z";
+            var definition = Substitute.For<IWorkflowDefinition>();
+            var workflowInstance = Substitute.For<IWorkflowInstanceGrain>();
+            _grainFactory.GetGrain<IProcessDefinitionGrain>("versioned-process")
+                .Returns(_processGrain);
+            _processGrain.GetStartableDefinition(processDefinitionId)
+                .Returns(Task.FromResult<IWorkflowDefinition?>(definition), Task.FromResult<IWorkflowDefinition?>(null));
+            _grainFactory.GetGrain<IWorkflowInstanceGrain>(Arg.Any<Guid>(), Arg.Any<string?>())
+                .Returns(workflowInstance);
 
             // Act
-            var result = await _commandService.StartWorkflow(workflowId);
+            await _commandService.StartWorkflowByProcessDefinitionId(processDefinitionId);
 
             // Assert
-            Assert.AreEqual(workflowInstanceId, result);
-            await _processGrain.Received(1).CreateInstance();
-            await workflowInstance.Received(1).StartWorkflow();
+            await workflowInstance.Received(1).StartWorkflow(definition, null, null, null, null);
+            await Assert.ThrowsExactlyAsync<ProcessDisabledException>(
+                () => _commandService.StartWorkflowByProcessDefinitionId(processDefinitionId));
         }
 
         [TestMethod]

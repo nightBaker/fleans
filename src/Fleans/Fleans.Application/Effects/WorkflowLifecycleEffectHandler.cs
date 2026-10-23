@@ -73,19 +73,17 @@ public partial class WorkflowLifecycleEffectHandler : IEffectHandler
         try
         {
             var processGrain = context.GrainFactory.GetGrain<IProcessDefinitionGrain>(startChild.ProcessDefinitionKey);
-            var childDefinition = await processGrain.GetLatestDefinition();
-
-            var child = context.GrainFactory.GetGrain<IWorkflowInstanceGrain>(startChild.ChildInstanceId);
+            // A disabled called process fails the call activity, like any other child start failure
+            // (catchable by an error boundary): a disabled process starts no new instance (#863).
+            var childDefinition = await processGrain.GetStartableDefinition()
+                ?? throw new ProcessDisabledException(startChild.ProcessDefinitionKey);
 
             LogStartingChildWorkflow(startChild.ProcessDefinitionKey, startChild.ChildInstanceId);
 
-            await child.SetWorkflow(childDefinition);
-            await child.SetParentInfo(context.WorkflowInstanceId, startChild.ParentActivityId);
-
-            if (((IDictionary<string, object?>)startChild.InputVariables).Count > 0)
-                await child.SetInitialVariables(startChild.InputVariables);
-
-            await child.StartWorkflow();
+            await context.GrainFactory.GetGrain<IWorkflowInstanceGrain>(startChild.ChildInstanceId)
+                .StartWorkflow(childDefinition,
+                    variables: startChild.InputVariables,
+                    parent: new ParentInfo(context.WorkflowInstanceId, startChild.ParentActivityId));
         }
         catch (Exception ex)
         {
