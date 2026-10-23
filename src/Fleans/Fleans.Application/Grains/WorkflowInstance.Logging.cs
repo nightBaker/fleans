@@ -499,4 +499,8 @@ public partial class WorkflowInstance
     [LoggerMessage(EventId = 1141, Level = LogLevel.Warning,
         Message = "Loading the process definition for a state snapshot failed; condition text is left empty")]
     private partial void LogStateSnapshotDefinitionUnavailable(Exception exception);
+
+    [LoggerMessage(EventId = 1148, Level = LogLevel.Debug,
+        Message = "Workflow instance is terminal with nothing pending; deactivating once idle")]
+    private partial void LogTerminalDeactivation();
 }

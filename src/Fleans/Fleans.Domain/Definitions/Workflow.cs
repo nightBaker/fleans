@@ -418,8 +418,15 @@ namespace Fleans.Domain
                 .ToHashSet();
         }
     }
-   
+
+    /// <summary>
+    /// A parsed BPMN process. Never mutated after parsing: a deployed version is shared by every
+    /// instance of it — one object per silo from <c>WorkflowDefinitionCache</c> — and
+    /// <see cref="ImmutableAttribute"/> stops Orleans from deep-copying the graph on in-silo grain
+    /// calls (#860). Build a changed definition with <c>with</c>, never by editing its lists.
+    /// </summary>
     [GenerateSerializer]
+    [Immutable]
     public record WorkflowDefinition : IWorkflowDefinition
     {
         [Id(0)]

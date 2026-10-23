@@ -44,6 +44,7 @@ namespace Fleans.Application.Grains;
 //                                         PerformSignalSubscribe, PerformStartChildWorkflow,
 //                                         PublishDomainEvent, ProcessPendingEvents,
 //                                         ProcessPendingEventsTimer, DisposePendingEventsTimerIfTerminal,
+//                                         DeactivateIfTerminal,
 //                                         EnsurePendingEventsTimerRegistered, DrainAndRaiseEvents,
 //                                         LogEvent).
 //   * WorkflowInstance.Logging.cs       — all [LoggerMessage] partial method declarations.
@@ -59,6 +60,7 @@ public partial class WorkflowInstance :
     private WorkflowExecution? _execution;
 
     private readonly IGrainFactory _grainFactory;
+    private readonly WorkflowDefinitionCache _definitions;
     private readonly ILogger<WorkflowInstance> _logger;
     private readonly IEventStore _eventStore;
     private readonly IWorkflowStateProjection _projection;
@@ -113,6 +115,9 @@ public partial class WorkflowInstance :
     /// </summary>
     private readonly SemaphoreSlim _projectionLock = new(1, 1);
 
+    /// <summary>The instance is terminal and asked to be deactivated once idle (#860).</summary>
+    private bool _terminalDeactivationRequested;
+
     private IGrainTimer? _projectionRetryTimer;
     private int _projectionRetryAttempt;
     private static readonly TimeSpan ProjectionRetryFirstDelay = TimeSpan.FromSeconds(2);
@@ -130,6 +135,7 @@ public partial class WorkflowInstance :
 
     public WorkflowInstance(
         IGrainFactory grainFactory,
+        WorkflowDefinitionCache definitions,
         ILogger<WorkflowInstance> logger,
         IEventStore eventStore,
         IWorkflowStateProjection projection,
@@ -137,6 +143,7 @@ public partial class WorkflowInstance :
         IOptions<WorkflowVariablesOptions> variablesOptions)
     {
         _grainFactory = grainFactory;
+        _definitions = definitions;
         _logger = logger;
         _eventStore = eventStore;
         _projection = projection;
@@ -347,6 +354,7 @@ public partial class WorkflowInstance :
             {
                 LogProjectionCaughtUp(version);
                 StopProjectionRetry();
+                DeactivateIfTerminal();
                 return;
             }
 
@@ -464,9 +472,8 @@ public partial class WorkflowInstance :
         var processDefId = State.ProcessDefinitionId
             ?? throw new KeyNotFoundException($"Workflow instance '{this.GetPrimaryKey()}' not found.");
 
-        var key = ProcessDefinition.ExtractKeyFromId(processDefId);
-        var grain = _grainFactory.GetGrain<IProcessDefinitionGrain>(key);
-        _workflowDefinition = await grain.GetDefinitionById(processDefId);
+        // The silo's shared copy: no grain call and no copy per activation (#860).
+        _workflowDefinition = await _definitions.GetAsync(processDefId);
     }
 
     /// <summary>

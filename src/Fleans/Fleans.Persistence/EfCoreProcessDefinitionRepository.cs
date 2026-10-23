@@ -27,10 +27,33 @@ public class EfCoreProcessDefinitionRepository : IProcessDefinitionRepository
     public async Task<List<ProcessDefinition>> GetByKeyAsync(string processDefinitionKey)
     {
         await using var db = await _queryDbFactory.CreateAsync();
-        return await db.ProcessDefinitions
+        // Every column but BpmnXml: the grain that loads this never reads the XML (#860).
+        var rows = await db.ProcessDefinitions
             .Where(d => d.ProcessDefinitionKey == processDefinitionKey)
             .OrderBy(d => d.Version)
+            .Select(d => new
+            {
+                d.ProcessDefinitionId, d.ProcessDefinitionKey, d.Version, d.DeployedAt,
+                d.Workflow, d.ETag, d.IsActive
+            })
             .ToListAsync();
+
+        return rows.Select(r =>
+        {
+            var definition = new ProcessDefinition
+            {
+                ProcessDefinitionId = r.ProcessDefinitionId,
+                ProcessDefinitionKey = r.ProcessDefinitionKey,
+                Version = r.Version,
+                DeployedAt = r.DeployedAt,
+                Workflow = r.Workflow,
+                BpmnXml = string.Empty,
+                ETag = r.ETag
+            };
+            if (!r.IsActive)
+                definition.Disable();
+            return definition;
+        }).ToList();
     }
 
     public async Task<List<ProcessDefinition>> GetAllAsync()
