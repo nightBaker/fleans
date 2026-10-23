@@ -3,6 +3,7 @@ using Fleans.Infrastructure;
 using Fleans.Persistence.PostgreSql;
 using Fleans.Persistence.Sqlite;
 using Fleans.ServiceDefaults;
+using Fleans.ServiceDefaults.Clustering;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 
@@ -45,8 +46,9 @@ builder.AddFleansPersistence();
 // Redis for Aspire-managed Orleans
 builder.AddKeyedRedisClient("orleans-redis");
 
-// Orleans client
-builder.UseOrleansClient();
+// Orleans client — gateway list from the silos' membership table (Fleans:Clustering:Provider, #885);
+// under Aspire, Orleans' own config wires it instead.
+builder.UseOrleansClient(clientBuilder => clientBuilder.AddFleansClustering(builder.Configuration));
 
 // MCP server with Streamable HTTP transport
 builder.Services.AddMcpServer()

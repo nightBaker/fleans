@@ -575,9 +575,14 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
 
+                    b.Property<int>("ProjectedVersion")
+                        .HasColumnType("integer");
+
                     b.HasKey("Id");
 
                     b.HasIndex("BusinessId");
+
+                    b.HasIndex("CompletedAt");
 
                     b.HasIndex("ProcessDefinitionId");
 
@@ -666,15 +671,6 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                 {
                     b.HasOne("Fleans.Domain.States.WorkflowInstanceState", null)
                         .WithMany("TimerCycleTracking")
-                        .HasForeignKey("WorkflowInstanceId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Fleans.Domain.States.UserTaskState", b =>
-                {
-                    b.HasOne("Fleans.Domain.States.WorkflowInstanceState", null)
-                        .WithMany()
                         .HasForeignKey("WorkflowInstanceId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();

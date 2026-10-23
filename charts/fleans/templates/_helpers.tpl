@@ -90,13 +90,114 @@ the chart-managed Secret name.
 {{- end -}}
 
 {{/*
+Orleans ClusterId — clustering.clusterId, or the release's full name.
+*/}}
+{{- define "fleans.clusterId" -}}
+{{- default (include "fleans.fullname" .) .Values.clustering.clusterId -}}
+{{- end -}}
+
+{{/*
+Silo Deployment name: "<role>-<fullname>". With Kubernetes hosting the pod name
+becomes the Orleans silo name, and Fleans placement reads the silo role from
+its prefix (core- / worker-), so the pod name — derived from the Deployment
+name — must start with the role.
+Usage: include "fleans.siloDeploymentName" (dict "ctx" . "role" "core" "suffix" "")
+*/}}
+{{- define "fleans.siloDeploymentName" -}}
+{{- printf "%s-%s%s" .role (include "fleans.fullname" .ctx) .suffix | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{/*
+ServiceAccount the silo pods run as (Kubernetes hosting needs pod read/watch/patch).
+*/}}
+{{- define "fleans.siloServiceAccountName" -}}
+{{- printf "%s-silo" (include "fleans.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{/*
+Pod labels Orleans Kubernetes hosting selects silo pods by. Applied to every
+silo pod template (core, worker, custom-worker) — not to the selector.
+*/}}
+{{- define "fleans.siloPodLabels" -}}
+orleans/serviceId: {{ .Values.clustering.serviceId | quote }}
+orleans/clusterId: {{ include "fleans.clusterId" . | quote }}
+{{- end -}}
+
+{{/*
+Pod-spec fields shared by every silo pod: the ServiceAccount (Kubernetes
+hosting) and a termination grace period long enough for graceful silo
+shutdown (leave membership, hand off grains and the reminder ring).
+*/}}
+{{- define "fleans.siloPodSpec" -}}
+terminationGracePeriodSeconds: {{ .Values.clustering.terminationGracePeriodSeconds }}
+{{- if .Values.clustering.kubernetes.enabled }}
+serviceAccountName: {{ include "fleans.siloServiceAccountName" . }}
+{{- end }}
+{{- end -}}
+
+{{/*
+Env vars only Orleans silos need (core, worker, custom-worker): Kubernetes
+hosting + downward API, the host shutdown timeout, and the PubSubStore that
+Orleans streams require (Aspire injects the same keys under `dotnet run`).
+*/}}
+{{- define "fleans.siloEnv" -}}
+- name: Fleans__Kubernetes__Enabled
+  value: {{ .Values.clustering.kubernetes.enabled | quote }}
+{{- if .Values.clustering.kubernetes.enabled }}
+- name: POD_NAME
+  valueFrom:
+    fieldRef:
+      fieldPath: metadata.name
+- name: POD_NAMESPACE
+  valueFrom:
+    fieldRef:
+      fieldPath: metadata.namespace
+- name: POD_IP
+  valueFrom:
+    fieldRef:
+      fieldPath: status.podIP
+{{- end }}
+{{- $grace := int .Values.clustering.terminationGracePeriodSeconds }}
+{{- if lt $grace 15 }}
+{{- fail "clustering.terminationGracePeriodSeconds must be at least 15 (the silo needs time to leave the cluster gracefully)." }}
+{{- end }}
+{{- /* .NET HostOptions.ShutdownTimeout: finish the graceful silo stop 10 s before SIGKILL. */}}
+- name: shutdownTimeoutSeconds
+  value: {{ sub $grace 10 | quote }}
+- name: Orleans__GrainStorage__PubSubStore__ProviderType
+  value: "Redis"
+- name: Orleans__GrainStorage__PubSubStore__ConnectionName
+  value: "orleans-redis"
+{{- end -}}
+
+{{/*
 Common env vars wired onto every fleans-* workload (api Core, api Worker, web,
-mcp). Includes Redis, persistence, streaming, and any user-supplied extraEnv.
-ASPNETCORE_URLS is intentionally excluded — each workload sets its own port.
+mcp). Includes Redis, persistence, clustering, streaming, and any user-supplied
+extraEnv. ASPNETCORE_URLS is intentionally excluded — each workload sets its own port.
 */}}
 {{- define "fleans.commonEnv" -}}
 - name: ConnectionStrings__orleans-redis
   value: "{{ include "fleans.fullname" . }}-redis:{{ .Values.redis.service.port }}"
+- name: Orleans__ServiceId
+  value: {{ .Values.clustering.serviceId | quote }}
+- name: Orleans__ClusterId
+  value: {{ include "fleans.clusterId" . | quote }}
+{{- $clustering := lower .Values.clustering.provider }}
+{{- if not (has $clustering (list "redis" "postgres")) }}
+{{- fail (printf "Unsupported clustering.provider %q. Valid: Redis, Postgres (case-insensitive)." .Values.clustering.provider) }}
+{{- end }}
+{{- if and (eq $clustering "postgres") (ne (lower .Values.persistence.provider) "postgres") }}
+{{- fail "clustering.provider=Postgres requires persistence.provider=Postgres." }}
+{{- end }}
+- name: Fleans__Clustering__Provider
+  value: {{ ternary "Postgres" "Redis" (eq $clustering "postgres") | quote }}
+{{- if and (eq $clustering "postgres") .Values.clustering.postgres.existingSecret }}
+- name: ConnectionStrings__fleans-cluster
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.clustering.postgres.existingSecret | quote }}
+      key: {{ .Values.clustering.postgres.existingSecretKey | quote }}
+{{- end }}
 - name: Persistence__Provider
   value: {{ .Values.persistence.provider | quote }}
 {{- if and (eq (lower .Values.persistence.provider) "postgres") .Values.postgres.enabled }}
@@ -105,6 +206,22 @@ ASPNETCORE_URLS is intentionally excluded — each workload sets its own port.
     secretKeyRef:
       name: {{ include "fleans.postgres.secretName" . }}
       key: connection-string
+{{- end }}
+{{- $reminders := lower .Values.reminders.provider }}
+{{- if not (has $reminders (list "redis" "postgres")) }}
+{{- fail (printf "Unsupported reminders.provider %q. Valid: Redis, Postgres (case-insensitive)." .Values.reminders.provider) }}
+{{- end }}
+{{- if and (eq $reminders "postgres") (ne (lower .Values.persistence.provider) "postgres") }}
+{{- fail "reminders.provider=Postgres requires persistence.provider=Postgres." }}
+{{- end }}
+- name: Fleans__Reminders__Provider
+  value: {{ ternary "Postgres" "Redis" (eq $reminders "postgres") | quote }}
+{{- if and (eq $reminders "postgres") .Values.reminders.postgres.existingSecret }}
+- name: ConnectionStrings__fleans-reminders
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.reminders.postgres.existingSecret | quote }}
+      key: {{ .Values.reminders.postgres.existingSecretKey | quote }}
 {{- end }}
 {{- $provider := lower .Values.streaming.provider }}
 {{- if not (has $provider (list "memory" "redis" "kafka" "azurequeue")) }}

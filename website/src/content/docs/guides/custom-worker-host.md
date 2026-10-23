@@ -50,6 +50,47 @@ reminder ring and serves some of the engine's BPMN-timer reminders. Configure it
 lands on your host fail to register and their activities fail; with an in-memory one
 (`UseInMemoryReminderService()`), those timers are lost whenever your host restarts.
 
+If the engine runs `Fleans__Reminders__Provider=Postgres` (recommended in production), add the
+`Microsoft.Orleans.Reminders.AdoNet` and `Npgsql` packages and point your host at the same
+database as the engine — `ConnectionStrings__fleans-reminders`, or `ConnectionStrings__fleans`
+when the engine has no dedicated reminders database:
+
+```csharp
+siloBuilder.UseAdoNetReminderService(o =>
+{
+    o.Invariant = "Npgsql";
+    o.ConnectionString = builder.Configuration.GetConnectionString("fleans-reminders")
+        ?? builder.Configuration.GetConnectionString("fleans");
+});
+```
+
+The engine silos create the reminders tables; your host only reads and writes them.
+
+## Join the engine's membership table
+
+Your host must use the **same Orleans membership table as the engine** (`Fleans__Clustering__Provider`);
+on another table it forms a cluster of its own and never receives a task. The default is the Redis
+table on `orleans-redis` (`Microsoft.Orleans.Clustering.Redis`, `siloBuilder.UseRedisClustering(...)`).
+If the engine runs `Fleans__Clustering__Provider=Postgres`, add `Microsoft.Orleans.Clustering.AdoNet`
+and point your host at the engine's membership database:
+
+```csharp
+siloBuilder.UseAdoNetClustering(o =>
+{
+    o.Invariant = "Npgsql";
+    o.ConnectionString = builder.Configuration.GetConnectionString("fleans-cluster")
+        ?? builder.Configuration.GetConnectionString("fleans");
+});
+```
+
+The engine silos create the membership tables. Set `Orleans__ServiceId` / `Orleans__ClusterId` to
+the engine's values. If you also enable Orleans Kubernetes hosting (`siloBuilder.UseKubernetesHosting()`,
+package `Microsoft.Orleans.Hosting.Kubernetes`, called *after* `AddFleansPluginHost` so its silo name
+wins), the pod name becomes the silo name — name your
+Deployment `plugin-…` so the silo keeps the `plugin-` prefix Fleans placement relies on, label the
+pods `orleans/serviceId` / `orleans/clusterId`, and grant the pod's ServiceAccount `get`, `list`,
+`watch` and `patch` on `pods`.
+
 ## Plugin-author NuGet stack
 
 Three NuGet packages compose the plugin-author surface, layered strictly:

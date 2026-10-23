@@ -1,5 +1,7 @@
 using Fleans.Application.Grains;
+using Fleans.Domain.Events;
 using Fleans.Domain.States;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Fleans.Application.Tests;
 
@@ -17,11 +19,24 @@ public interface IWorkflowInstanceInspector : IGrainExtension
 
     /// <summary>Op-keys recorded in the dedup ledger (AppliedOperations). #657.</summary>
     ValueTask<IReadOnlyList<string>> GetAppliedOperationKeys();
+
+    /// <summary>
+    /// The read-model row equals the row of the grain's current state: the asynchronous projector
+    /// has caught up (#861). A completed instance's details are written with its row.
+    /// </summary>
+    ValueTask<bool> IsProjectionCaughtUp();
 }
 
 internal sealed class WorkflowInstanceInspector(IGrainContext context) : IWorkflowInstanceInspector
 {
     private WorkflowInstance Grain => (WorkflowInstance)context.GrainInstance!;
+
+    public async ValueTask<bool> IsProjectionCaughtUp()
+    {
+        var projection = context.ActivationServices.GetRequiredService<IWorkflowStateProjection>();
+        var stored = await projection.ReadRowAsync(context.GrainId.GetGuidKey().ToString());
+        return stored == Grain.CopyReadModelRow();
+    }
 
     public ValueTask<IReadOnlyDictionary<Guid, TransactionOutcomeRecord>> GetTransactionOutcomes()
         => ValueTask.FromResult(Grain.CopyTransactionOutcomes());

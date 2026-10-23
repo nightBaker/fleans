@@ -72,7 +72,12 @@ public class DefinitionsApiTests : WorkflowE2ETestBase
         await ApiClient.WaitForStateAsync(onV1.WorkflowInstanceId, s => s.ActiveActivityIds.Contains(WaitActivity));
         await ApiClient.WaitForStateAsync(onV2.WorkflowInstanceId, s => s.ActiveActivityIds.Contains(WaitActivity));
 
-        var byKey = await ApiClient.ListInstancesByKeyAsync(ReadKey, pageSize: 100);
+        // The listings are projected asynchronously (#861): wait until both instances are in.
+        var byKey = await ApiClient.WaitForInstancesPageAsync(
+            t => ApiClient.ListInstancesByKeyAsync(ReadKey, pageSize: 100, ct: t),
+            p => p.Items.Any(i => i.InstanceId == onV1.WorkflowInstanceId && i.IsStarted)
+                 && p.Items.Any(i => i.InstanceId == onV2.WorkflowInstanceId && i.IsStarted),
+            "both started instances");
         var byKeyIds = byKey.Items.Select(i => i.InstanceId).ToList();
         Assert.Contains(onV1.WorkflowInstanceId, byKeyIds);
         Assert.Contains(onV2.WorkflowInstanceId, byKeyIds);
@@ -102,7 +107,9 @@ public class DefinitionsApiTests : WorkflowE2ETestBase
             Assert.AreEqual(HttpStatusCode.OK, complete.StatusCode);
         }
         await ApiClient.WaitForCompletionAsync(onV1.WorkflowInstanceId);
-        var completed = (await ApiClient.ListInstancesByKeyAsync(ReadKey, pageSize: 100, filters: "IsCompleted==true"))
+        var completed = (await ApiClient.WaitForInstancesPageAsync(
+                t => ApiClient.ListInstancesByKeyAsync(ReadKey, pageSize: 100, filters: "IsCompleted==true", ct: t),
+                p => p.Items.Any(i => i.InstanceId == onV1.WorkflowInstanceId), "the completed v1 instance"))
             .Items.Select(i => i.InstanceId).ToList();
         Assert.Contains(onV1.WorkflowInstanceId, completed);
         Assert.DoesNotContain(onV2.WorkflowInstanceId, completed);

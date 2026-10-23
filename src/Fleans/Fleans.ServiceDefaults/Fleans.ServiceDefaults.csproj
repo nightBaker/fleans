@@ -23,15 +23,21 @@
 
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="10.1.0" />
     <PackageReference Include="Microsoft.Extensions.ServiceDiscovery" Version="10.1.0" />
-    <PackageReference Include="Microsoft.Orleans.Sdk" Version="10.0.1" />
-    <PackageReference Include="Microsoft.Orleans.Streaming" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Orleans.Sdk" Version="10.4.0" />
+    <PackageReference Include="Microsoft.Orleans.Streaming" Version="10.4.0" />
     <!-- Persistent reminder service backed by Redis (shares the `orleans-redis` connection used
          for clustering + streaming). BPMN timer durability across silo restarts. See #650 +
          docs/conventions/reminders.md. -->
-    <PackageReference Include="Microsoft.Orleans.Reminders.Redis" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Orleans.Reminders.Redis" Version="10.4.0" />
     <!-- Postgres-backed reminder service (opt-in via Fleans:Reminders:Provider=Postgres).
-         Pin to 10.0.1 to match the Microsoft.Orleans.* sibling versions. See #669. -->
-    <PackageReference Include="Microsoft.Orleans.Reminders.AdoNet" Version="10.0.1" />
+         Pin to the same version as the Microsoft.Orleans.* siblings (#669, #886). -->
+    <PackageReference Include="Microsoft.Orleans.Reminders.AdoNet" Version="10.4.0" />
+    <!-- Membership (Fleans:Clustering:Provider, #885): Redis (default) or Postgres via the ADO.NET
+         provider, plus opt-in Kubernetes hosting (Fleans:Kubernetes:Enabled). Same version as the
+         Microsoft.Orleans.* siblings. See docs/conventions/clustering.md. -->
+    <PackageReference Include="Microsoft.Orleans.Clustering.Redis" Version="10.4.0" />
+    <PackageReference Include="Microsoft.Orleans.Clustering.AdoNet" Version="10.4.0" />
+    <PackageReference Include="Microsoft.Orleans.Hosting.Kubernetes" Version="10.4.0" />
     <!-- Third-party Redis stream provider (MIT, Orleans 10.x compatible). Date-versioned;
          bump deliberately and re-run manual test #45. See CLAUDE.md for swap-out path. -->
     <PackageReference Include="Universley.OrleansContrib.StreamsProvider.Redis" Version="2026.4.19" />
@@ -43,13 +49,16 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Vendored Orleans Postgres-reminders schema scripts. Run by EnsureDatabaseSchemaAsync
-         on first startup when Fleans:Reminders:Provider=Postgres. Re-vendor when the
-         AdoNet package version is bumped. See #669 + LICENSE-orleans-vendor. -->
+    <!-- Vendored Orleans Postgres schema scripts (reminders #669, clustering #885). Run by
+         EnsureDatabaseSchemaAsync on first startup when Fleans:Reminders:Provider=Postgres or
+         Fleans:Clustering:Provider=Postgres. Re-vendor when the AdoNet package versions are
+         bumped. See LICENSE-orleans-vendor. -->
     <EmbeddedResource Include="Resources/PostgreSQL-Main.sql"
                       LogicalName="Fleans.ServiceDefaults.Resources.PostgreSQL_Main.sql" />
     <EmbeddedResource Include="Resources/PostgreSQL-Reminders.sql"
                       LogicalName="Fleans.ServiceDefaults.Resources.PostgreSQL_Reminders.sql" />
+    <EmbeddedResource Include="Resources/PostgreSQL-Clustering.sql"
+                      LogicalName="Fleans.ServiceDefaults.Resources.PostgreSQL_Clustering.sql" />
   </ItemGroup>
 
 </Project>

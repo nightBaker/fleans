@@ -39,8 +39,7 @@ public class SubProcessTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         var instanceId = workflowInstance.GetPrimaryKey();
         var snapshot = await QueryService.GetStateSnapshot(instanceId);
@@ -89,8 +88,7 @@ public class SubProcessTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         dynamic vars = new ExpandoObject();
         vars.color = "red";
@@ -145,8 +143,7 @@ public class SubProcessTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         dynamic parentVars = new ExpandoObject();
         parentVars.color = "red";
@@ -217,8 +214,7 @@ public class SubProcessTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         await workflowInstance.CompleteActivity("inner_task", new ExpandoObject());
 
@@ -262,8 +258,7 @@ public class SubProcessTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         var instanceId = workflowInstance.GetPrimaryKey();
         var snapshot = await QueryService.GetStateSnapshot(instanceId);
@@ -317,8 +312,7 @@ public class SubProcessTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         await workflowInstance.FailActivity("sub_task", new Exception("Something went wrong"));
 
@@ -375,8 +369,7 @@ public class SubProcessTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Act: complete task1 with a variable
         dynamic vars = new ExpandoObject();
@@ -425,8 +418,7 @@ public class SubProcessTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         await workflowInstance.CompleteActivity("sub_task", new ExpandoObject());
 
@@ -472,8 +464,7 @@ public class SubProcessTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         await workflowInstance.FailActivity("sub_task", new Exception("failure"));
 
@@ -516,8 +507,7 @@ public class SubProcessTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Before completion: root scope + child scope for sub-process
         var instanceId = workflowInstance.GetPrimaryKey();
@@ -567,8 +557,7 @@ public class SubProcessTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         var instanceId = workflowInstance.GetPrimaryKey();
         var snapshot = await QueryService.GetStateSnapshot(instanceId);
@@ -617,8 +606,7 @@ public class SubProcessTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         await workflowInstance.CompleteActivity("parentTask", new ExpandoObject());
 
@@ -685,8 +673,7 @@ public class SubProcessTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Complete both parallel branches with different variables
         dynamic branch1Vars = new ExpandoObject();
@@ -755,8 +742,7 @@ public class SubProcessTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Complete parentTask with a known variable
         dynamic parentVars = new ExpandoObject();

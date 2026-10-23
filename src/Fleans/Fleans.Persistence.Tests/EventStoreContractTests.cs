@@ -393,6 +393,32 @@ public abstract class EventStoreContractTests
         Assert.AreEqual((b, 7), (loadedB!.Id, versionB));
     }
 
+    // ── Purge (#862) ─────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task DeleteInstance_RemovesOnlyThatInstancesJournalAndSnapshot_Idempotently()
+    {
+        var store = await CreateStoreAsync();
+        var purged = Guid.NewGuid();
+        var other = Guid.NewGuid();
+        foreach (var id in new[] { purged, other })
+        {
+            await store.AppendEventsAsync(id, [new WorkflowStarted(Guid.NewGuid(), "p1", Guid.NewGuid())], expectedVersion: 0, batchId: Guid.NewGuid());
+            await store.AppendEventsAsync(id, [new WorkflowCompleted()], expectedVersion: 1, batchId: Guid.NewGuid());
+            await store.WriteSnapshotAsync(id, 2, CreateTestState(id));
+        }
+
+        // Twice: a purge interrupted after this step runs it again.
+        await store.DeleteInstanceAsync(purged);
+        await store.DeleteInstanceAsync(purged);
+
+        // The id reads like one that never existed; the other instance is untouched.
+        Assert.HasCount(0, await store.ReadEventsAsync(purged, afterVersion: 0));
+        Assert.AreEqual((null, 0), await store.ReadSnapshotAsync(purged));
+        Assert.HasCount(2, await store.ReadEventsAsync(other, afterVersion: 0));
+        Assert.AreEqual(2, (await store.ReadSnapshotAsync(other)).Version);
+    }
+
     // ── MaxEventsPerLoad guard ───────────────────────────────────────────────
 
     [TestMethod]

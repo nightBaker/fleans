@@ -6,7 +6,7 @@ Three NuGet packages compose the plugin-author surface. The dependency closure i
 
 - **`Fleans.Domain.Abstractions`** is the true leaf — depends only on `Microsoft.Orleans.Sdk`. Holds:
   - the marker interface (`IDomainEvent`),
-  - event records carried on Orleans streams (`ExecuteCustomTaskEvent`, and the engine-internal `ExecuteScriptEvent` / `Evaluate*ConditionEvent` — plugin hosts own stream queues and must deserialize them, #866),
+  - event records carried on Orleans streams (`ExecuteCustomTaskEvent`, and the engine-internal `ExecuteScriptEvent` / `Evaluate*ConditionEvent` / `InstanceAdvanced` — plugin hosts own stream queues and must deserialize them, #866),
   - the value records those events reference (`InputMapping`, `OutputMapping`),
   - the exception hierarchy plugins may throw (`ActivityException`, `CustomTaskFailedActivityException`, `BadRequestActivityException`, `ActivityErrorState`),
   - the `ExpandoObject` Orleans surrogate (`Fleans.Domain.Surrogates.ExpandoObjectSurrogateConverter` + `ExpandoObjectSurrogate`) so plugin hosts get codec coverage for `ExpandoObject`-typed `IWorkflowInstanceCallback` parameters without referencing engine-internal projects.

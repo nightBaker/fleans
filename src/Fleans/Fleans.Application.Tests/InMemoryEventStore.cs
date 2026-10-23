@@ -57,19 +57,27 @@ internal class InMemoryEventStore(DeepCopier copier) : IEventStore
         _snapshots[grainId] = (copier.Copy(state), version);
         return Task.CompletedTask;
     }
+
+    public Task DeleteInstanceAsync(Guid grainId)
+    {
+        _events.TryRemove(grainId, out _);
+        _snapshots.TryRemove(grainId, out _);
+        return Task.CompletedTask;
+    }
 }
 
 /// <summary>Read-model projection for silos without a query store: records only the projected row.</summary>
 internal class InMemoryWorkflowStateProjection : IWorkflowStateProjection
 {
-    private readonly ConcurrentDictionary<string, WorkflowInstanceRow> _rows = new();
+    private readonly ConcurrentDictionary<string, (WorkflowInstanceRow Row, int Version)> _rows = new();
 
     public Task<WorkflowInstanceRow?> ReadRowAsync(string grainId) =>
-        Task.FromResult(_rows.GetValueOrDefault(grainId));
+        Task.FromResult(_rows.TryGetValue(grainId, out var stored) ? stored.Row : null);
 
-    public Task WriteAsync(string grainId, WorkflowInstanceState state)
+    public Task WriteAsync(string grainId, WorkflowInstanceState state, int version)
     {
-        _rows[grainId] = WorkflowInstanceRow.From(state);
+        var row = WorkflowInstanceRow.From(state);
+        _rows.AddOrUpdate(grainId, (row, version), (_, stored) => stored.Version < version ? (row, version) : stored);
         return Task.CompletedTask;
     }
 }
@@ -92,7 +100,7 @@ internal class FaultInjectingWorkflowStateProjection(IWorkflowStateProjection in
 
     public Task<WorkflowInstanceRow?> ReadRowAsync(string grainId) => inner.ReadRowAsync(grainId);
 
-    public Task WriteAsync(string grainId, WorkflowInstanceState state)
+    public Task WriteAsync(string grainId, WorkflowInstanceState state, int version)
     {
         Writes.GetOrAdd(grainId, _ => new()).Enqueue(WorkflowInstanceRow.From(state));
         if (FailuresLeft.TryGetValue(grainId, out var left) && left > 0)
@@ -100,7 +108,7 @@ internal class FaultInjectingWorkflowStateProjection(IWorkflowStateProjection in
             FailuresLeft[grainId] = left - 1;
             throw new TimeoutException($"Injected projection failure for {grainId}");
         }
-        return inner.WriteAsync(grainId, state);
+        return inner.WriteAsync(grainId, state, version);
     }
 }
 
@@ -125,6 +133,11 @@ internal class FaultInjectingEventStore(IEventStore inner) : IEventStore
     private static readonly ConcurrentDictionary<Guid, ConcurrentQueue<Gate>> Gates = new();
     private static readonly ConcurrentDictionary<Guid, int> FailuresLeft = new();
     private static readonly ConcurrentDictionary<Guid, WorkflowEvent> ForeignWrites = new();
+    private static readonly ConcurrentDictionary<Guid, ConcurrentQueue<IReadOnlyList<WorkflowEvent>>> Appended = new();
+
+    /// <summary>Every batch the grain appended so far, in order: one entry per stored append.</summary>
+    public static IReadOnlyList<IReadOnlyList<WorkflowEvent>> AppendsOf(Guid instanceId) =>
+        Appended.TryGetValue(instanceId, out var appends) ? appends.ToList() : [];
     private static readonly ConcurrentDictionary<Guid, bool> StoreThenFail = new();
 
     /// <summary>Holds the grain's next <paramref name="count"/> appends, one gate each, in order.</summary>
@@ -185,9 +198,14 @@ internal class FaultInjectingEventStore(IEventStore inner) : IEventStore
             throw new TimeoutException($"Injected append failure for {instanceId}");
         }
 
-        return await inner.AppendEventsAsync(instanceId, events, expectedVersion, batchId);
+        var stored = await inner.AppendEventsAsync(instanceId, events, expectedVersion, batchId);
+        if (stored)
+            Appended.GetOrAdd(instanceId, _ => new()).Enqueue(events.ToList());
+        return stored;
     }
 
     public Task WriteSnapshotAsync(Guid instanceId, int version, WorkflowInstanceState state) =>
         inner.WriteSnapshotAsync(instanceId, version, state);
+
+    public Task DeleteInstanceAsync(Guid instanceId) => inner.DeleteInstanceAsync(instanceId);
 }

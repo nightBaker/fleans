@@ -3,7 +3,8 @@
 #   nginx → 3 × fleans-core (Fleans:Role=Core, REST API)
 #           2 × fleans-worker (Fleans.WorkerHost, Fleans:Role=Worker — scripts/conditions)
 #           1 × fleans-plugin (Fleans.E2E.PluginHost, Fleans:Role=Plugin — external `e2e-probe` task)
-#   + PostgreSQL 16 (persistence) + Redis 7 (clustering, reminders, PubSubStore) + Kafka (streams)
+#   + PostgreSQL 16 (persistence) + PostgreSQL 16 `postgres-reminders` (Orleans reminders, own server)
+#   + Redis 7 (clustering, PubSubStore) + Kafka (streams)
 #
 # Build images:  bash build-images.sh
 # Start:         docker compose up -d --wait            (replica counts come from deploy.replicas)
@@ -11,6 +12,8 @@
 # Stop:          docker compose down -v
 #
 # FLEANS_STREAMING_PROVIDER=Redis runs the same topology on Redis streams (Kafka stays up, unused).
+# FLEANS_REMINDERS_PROVIDER=Redis moves the reminders back to Redis (postgres-reminders stays up, unused).
+# FLEANS_CLUSTERING_PROVIDER=Postgres moves the Orleans membership table to the 'fleans' database.
 
 name: fleans-load
 
@@ -22,8 +25,14 @@ x-silo-env: &silo-env
   Persistence__Provider: Postgres
   ConnectionStrings__fleans: "Host=postgres;Database=fleans;Username=postgres;Password=fleans"
   ConnectionStrings__fleans-query: "Host=postgres;Database=fleans;Username=postgres;Password=fleans"
+  # Production layout (#886): reminders on Postgres, in their own database (here: own server, so
+  # timers-1m can read the reminders' CPU apart from the journal / read model).
+  Fleans__Reminders__Provider: ${FLEANS_REMINDERS_PROVIDER:-Postgres}
+  ConnectionStrings__fleans-reminders: "Host=postgres-reminders;Database=reminders;Username=postgres;Password=fleans"
   Fleans__Streaming__Provider: ${FLEANS_STREAMING_PROVIDER:-Kafka}
   Fleans__Streaming__Kafka__Brokers: "kafka:9092"
+  # Orleans membership table (#885): Redis (default) or Postgres (in the 'fleans' database).
+  Fleans__Clustering__Provider: ${FLEANS_CLUSTERING_PROVIDER:-Redis}
 
 x-http-health: &http-health
   # The aspnet base image has bash but no curl/wget.
@@ -51,6 +60,20 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: fleans
       POSTGRES_DB: fleans
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  postgres-reminders:
+    image: postgres:16-alpine
+    # 6 silos × one AdoNet reminders pool.
+    command: ["postgres", "-c", "max_connections=300"]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: fleans
+      POSTGRES_DB: reminders
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -88,6 +111,7 @@ services:
     depends_on:
       redis: { condition: service_healthy }
       postgres: { condition: service_healthy }
+      postgres-reminders: { condition: service_healthy }
       kafka: { condition: service_healthy }
     healthcheck: *http-health
 
@@ -112,6 +136,12 @@ services:
       ConnectionStrings__orleans-redis: "redis:6379"
       Fleans__Streaming__Provider: ${FLEANS_STREAMING_PROVIDER:-Kafka}
       Fleans__Streaming__Kafka__Brokers: "kafka:9092"
+      # A plugin silo serves its slice of the reminder ring: same provider as the engine (#788, #886).
+      Fleans__Reminders__Provider: ${FLEANS_REMINDERS_PROVIDER:-Postgres}
+      ConnectionStrings__fleans-reminders: "Host=postgres-reminders;Database=reminders;Username=postgres;Password=fleans"
+      # Same membership table as the engine silos (#885).
+      Fleans__Clustering__Provider: ${FLEANS_CLUSTERING_PROVIDER:-Redis}
+      ConnectionStrings__fleans: "Host=postgres;Database=fleans;Username=postgres;Password=fleans"
     restart: on-failure
     depends_on:
       fleans-core: { condition: service_healthy }

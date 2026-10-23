@@ -7,7 +7,9 @@ using Fleans.Domain.States;
 using Fleans.Application.Adapters;
 using Fleans.Application.Effects;
 using Fleans.Application.Logging;
+using Fleans.Application.Abstractions.Events;
 using Fleans.Application.Placement;
+using Fleans.Application.Projections;
 using Fleans.Application.QueryModels;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -16,6 +18,7 @@ using Orleans;
 using Orleans.EventSourcing;
 using Orleans.EventSourcing.CustomStorage;
 using Orleans.Runtime;
+using Orleans.Streams;
 using System.Collections.Concurrent;
 using System.Dynamic;
 
@@ -26,10 +29,10 @@ namespace Fleans.Application.Grains;
 //   * WorkflowInstance.cs               — fields, constructor, lifecycle overrides (OnActivateAsync,
 //                                         OnDeactivateAsync, TransitionState), ICustomStorageInterface
 //                                         (ReadStateFromStorage, ApplyUpdatesToStorage), and all public
-//                                         entry points: workflow lifecycle (SetWorkflow, StartWorkflow);
+//                                         entry points: workflow lifecycle (StartWorkflow);
 //                                         activity completion/failure (CompleteActivity, FailActivity,
 //                                         CompleteConditionSequence); child-workflow coordination
-//                                         (SetParentInfo, SetInitialVariables, OnChildWorkflowCompleted,
+//                                         (OnChildWorkflowCompleted,
 //                                         OnChildWorkflowFailed); external events (HandleTimerFired,
 //                                         HandleMessageDelivery, HandleBoundaryMessageFired,
 //                                         HandleSignalDelivery, HandleBoundarySignalFired); user tasks
@@ -44,6 +47,7 @@ namespace Fleans.Application.Grains;
 //                                         PerformSignalSubscribe, PerformStartChildWorkflow,
 //                                         PublishDomainEvent, ProcessPendingEvents,
 //                                         ProcessPendingEventsTimer, DisposePendingEventsTimerIfTerminal,
+//                                         DeactivateIfTerminal,
 //                                         EnsurePendingEventsTimerRegistered, DrainAndRaiseEvents,
 //                                         LogEvent).
 //   * WorkflowInstance.Logging.cs       — all [LoggerMessage] partial method declarations.
@@ -59,6 +63,7 @@ public partial class WorkflowInstance :
     private WorkflowExecution? _execution;
 
     private readonly IGrainFactory _grainFactory;
+    private readonly WorkflowDefinitionCache _definitions;
     private readonly ILogger<WorkflowInstance> _logger;
     private readonly IEventStore _eventStore;
     private readonly IWorkflowStateProjection _projection;
@@ -112,17 +117,16 @@ public partial class WorkflowInstance :
     private int _unconfirmedFromVersion;
 
     /// <summary>
-    /// The read-model row as this activation last wrote (or read) it; <c>null</c> when unknown. An
-    /// append writes only when the state's row differs from it (#878).
+    /// The read-model row as this activation last asked the projector for (or read on activation);
+    /// <c>null</c> when unknown. An append publishes <see cref="InstanceAdvanced"/> only when the
+    /// state's row differs from it (#878, #861).
     /// </summary>
-    private WorkflowInstanceRow? _projectedRow;
+    private WorkflowInstanceRow? _publishedRow;
 
-    /// <summary>
-    /// Serializes read-model writes: an append's write, the retry timer and the activation catch-up
-    /// would otherwise interleave (an [AlwaysInterleave] enqueue confirms while a retry awaits) on
-    /// the same rows.
-    /// </summary>
-    private readonly SemaphoreSlim _projectionLock = new(1, 1);
+    private IAsyncStream<InstanceAdvanced>? _instanceAdvancedStream;
+
+    /// <summary>The instance is terminal and asked to be deactivated once idle (#860).</summary>
+    private bool _terminalDeactivationRequested;
 
     private IGrainTimer? _projectionRetryTimer;
     private int _projectionRetryAttempt;
@@ -141,6 +145,7 @@ public partial class WorkflowInstance :
 
     public WorkflowInstance(
         IGrainFactory grainFactory,
+        WorkflowDefinitionCache definitions,
         ILogger<WorkflowInstance> logger,
         IEventStore eventStore,
         IWorkflowStateProjection projection,
@@ -148,6 +153,7 @@ public partial class WorkflowInstance :
         IOptions<WorkflowVariablesOptions> variablesOptions)
     {
         _grainFactory = grainFactory;
+        _definitions = definitions;
         _logger = logger;
         _eventStore = eventStore;
         _projection = projection;
@@ -258,34 +264,22 @@ public partial class WorkflowInstance :
         var projectedRowTask = ReadProjectedRow(grainId);
 
         // The journal is the source of truth; the snapshot only shortens replay. A failed read
-        // (database error, or a snapshot from an older build — pre-1.0 needs a fresh database)
         // propagates: Orleans' CustomStorage adaptor retries ReadStateFromStorage with backoff,
         // so the activation waits rather than degrading to a full replay.
-        var (snapshot, snapshotVersion) = await _eventStore.ReadSnapshotAsync(instanceId);
-        var state = snapshot ?? new WorkflowInstanceState();
-        var events = await _eventStore.ReadEventsAsync(instanceId, snapshotVersion);
-        if (events.Count > 0)
-        {
-            // Apply handlers read only the event (ids and OccurredAt included), so this rebuilds
-            // exactly the state the live run had.
-            var replay = new WorkflowExecution(state);
-            foreach (var evt in events)
-                replay.ReplayEvent(evt);
-        }
-
-        var version = snapshotVersion + events.Count;
+        var (state, version, snapshotVersion) = await JournalReplay.LoadAsync(_eventStore, instanceId);
         _snapshotVersion = snapshotVersion;
         _journalVersion = version;
 
-        // Repair: the stored row differs from the journal's state when a projection write was lost
-        // (the silo stopped after an append, or the retries gave up). Unknown (read failed) counts
-        // as different. Comparing content, not versions, is what lets appends skip unchanged rows.
+        // Safety net: the stored row differs from the journal's state when a notification was lost
+        // (the silo stopped between the append and the publish, the retries gave up, or the
+        // projector dropped it) — or is simply still on its way. Unknown (read failed) counts as
+        // different. Asking the projector again is harmless: it projects only past what it wrote.
         var (rowRead, projectedRow) = await projectedRowTask;
-        _projectedRow = projectedRow;
+        _publishedRow = projectedRow;
         if (version > 0 && (!rowRead || projectedRow != WorkflowInstanceRow.From(state)))
         {
             LogProjectionBehind(version);
-            if (!await TryWriteProjection(grainId, state, version))
+            if (!await TryPublishAdvanced(state, version))
                 ScheduleProjectionRetry();
         }
 
@@ -306,22 +300,26 @@ public partial class WorkflowInstance :
     }
 
     /// <summary>
-    /// The only way to the read model. Serialized by <see cref="_projectionLock"/>. Writes only when
-    /// <paramref name="state"/>'s row differs from <see cref="_projectedRow"/> — a running instance's
-    /// row changes on a handful of events, not on every append. A completed instance always writes:
-    /// its details are projected too, and appends after completion are rare. Failures are logged
-    /// and reported, never thrown.
+    /// The grain's only way to the read model: it never writes it, it tells the projector
+    /// (<see cref="Projections.WorkflowInstanceProjector"/>) that the journal reached
+    /// <paramref name="version"/>. Publishes only when <paramref name="state"/>'s row differs from
+    /// <see cref="_publishedRow"/> — a running instance projects only its row, which changes on a
+    /// handful of events, not on every append. A completed instance always publishes: its details
+    /// are projected too, and appends after completion are rare. Two interleaved calls may both
+    /// publish; the projector coalesces them. Failures are logged and reported, never thrown.
     /// </summary>
-    private async Task<bool> TryWriteProjection(string grainId, WorkflowInstanceState state, int version)
+    private async Task<bool> TryPublishAdvanced(WorkflowInstanceState state, int version)
     {
-        await _projectionLock.WaitAsync();
+        var row = WorkflowInstanceRow.From(state);
+        if (row == _publishedRow && !state.IsCompleted)
+            return true;
         try
         {
-            var row = WorkflowInstanceRow.From(state);
-            if (row == _projectedRow && !state.IsCompleted)
-                return true;
-            await _projection.WriteAsync(grainId, state);
-            _projectedRow = row;
+            _instanceAdvancedStream ??= this.GetStreamProvider(WorkflowEventStreams.StreamProvider)
+                .GetStream<InstanceAdvanced>(StreamId.Create(
+                    WorkflowEventStreams.InstanceAdvancedStreamNamespace, this.GetPrimaryKey().ToString("D")));
+            await _instanceAdvancedStream.OnNextAsync(new InstanceAdvanced(this.GetPrimaryKey(), version));
+            _publishedRow = row;
             return true;
         }
         catch (Exception ex)
@@ -329,18 +327,13 @@ public partial class WorkflowInstance :
             LogProjectionWriteFailed(version, ex);
             return false;
         }
-        finally
-        {
-            _projectionLock.Release();
-        }
     }
 
     /// <summary>
-    /// A failed read-model write must not wait for the next append — the failed one may be the
-    /// instance's last (e.g. WorkflowCompleted). A keep-alive timer rewrites it with doubling delays;
-    /// after <see cref="ProjectionRetryLimit"/> attempts it gives up (Error 1135) and lets the grain
-    /// deactivate, leaving the catch-up to the next activation instead of pinning the grain and
-    /// rewriting a write that keeps failing forever.
+    /// A failed publish must not wait for the next append — the failed one may be the instance's
+    /// last (e.g. WorkflowCompleted). A keep-alive timer republishes with doubling delays; after
+    /// <see cref="ProjectionRetryLimit"/> attempts it gives up (Error 1135) and lets the grain
+    /// deactivate, leaving the catch-up to the next activation instead of pinning the grain.
     /// </summary>
     private void ScheduleProjectionRetry()
     {
@@ -364,10 +357,11 @@ public partial class WorkflowInstance :
         if (!HasUndrainedEvents)
         {
             var version = _journalVersion;
-            if (await TryWriteProjection(this.GetPrimaryKey().ToString(), State, version))
+            if (await TryPublishAdvanced(State, version))
             {
                 LogProjectionCaughtUp(version);
                 StopProjectionRetry();
+                DeactivateIfTerminal();
                 return;
             }
 
@@ -392,7 +386,6 @@ public partial class WorkflowInstance :
         IReadOnlyList<WorkflowEvent> updates, int expectedVersion)
     {
         var instanceId = this.GetPrimaryKey();
-        var grainId = instanceId.ToString();
         // expectedVersion is the confirmed event count BEFORE these updates.
         if (!await AppendIdempotently(instanceId, updates, expectedVersion))
             return false;
@@ -404,7 +397,7 @@ public partial class WorkflowInstance :
 
         // A durable enqueue can confirm while the main turn has applied events to State but not
         // drained them; State then holds mutations the journal lacks. Skip — the drain's own
-        // append writes both.
+        // append publishes and snapshots.
         if (HasUndrainedEvents)
             return true;
 
@@ -413,7 +406,9 @@ public partial class WorkflowInstance :
         if (_stateReloaded)
             return true;
 
-        if (await TryWriteProjection(grainId, State, version))
+        // The read model is projected asynchronously from the journal (#861): only a notification
+        // leaves the grain here.
+        if (await TryPublishAdvanced(State, version))
             StopProjectionRetry();
         else
             ScheduleProjectionRetry();
@@ -501,23 +496,52 @@ public partial class WorkflowInstance :
         _execution ??= new WorkflowExecution(State, _workflowDefinition!);
     }
 
-    public async Task SetWorkflow(IWorkflowDefinition workflow, string? startActivityId = null, string? businessId = null)
+    /// <summary>
+    /// The one start path (#863): creates and starts the instance in a single call and a single
+    /// journal append — <c>WorkflowStarted</c>, the start activity, the parent link, the input
+    /// variables and <c>ExecutionStarted</c> — then runs it until it waits. A retried start of an
+    /// instance already started from the same process definition is a no-op (1147), so a caller
+    /// that lost the reply can call again.
+    /// </summary>
+    public async Task StartWorkflow(
+        IWorkflowDefinition workflow,
+        string? startActivityId = null,
+        string? businessId = null,
+        ExpandoObject? variables = null,
+        ParentInfo? parent = null)
     {
-        if (_workflowDefinition is not null) throw new ArgumentException("Workflow already set");
         ArgumentNullException.ThrowIfNull(workflow);
+        ThrowIfStateReloaded();
+        if (State.IsStarted)
+        {
+            if (State.ProcessDefinitionId != workflow.ProcessDefinitionId)
+                throw new InvalidOperationException(
+                    $"Workflow instance '{this.GetPrimaryKey()}' is already started from '{State.ProcessDefinitionId}'.");
+            LogDuplicateStartIgnored(workflow.ProcessDefinitionId);
+            return;
+        }
+        EnsureVariablesWithinLimit(variables);
 
-        // Start validates (business id, start activity) before emitting anything. Assign the
-        // fields only after it succeeds, so a rejected start leaves the grain unset and a retry
-        // with valid input works. (A storage failure in ProcessPendingEvents is not covered.)
+        // CreateAndStart validates (business id, start activity) before emitting anything. Assign
+        // the fields only after it succeeds, so a rejected start leaves the grain unset and a retry
+        // with valid input works.
         var execution = new WorkflowExecution(State, workflow);
-        execution.Start(startActivityId, businessId, this.GetPrimaryKey());
+        var scopeEntryEffects = execution.CreateAndStart(this.GetPrimaryKey(), startActivityId, businessId, variables, parent);
         _workflowDefinition = workflow;
         _execution = execution;
 
         SetWorkflowRequestContext();
         using var scope = BeginWorkflowScope();
-        LogWorkflowDefinitionSet();
+        LogWorkflowStarted();
 
+        // Root-scope entry effects: event sub-process timer/message listener registrations.
+        if (scopeEntryEffects.Count > 0)
+        {
+            LogRootScopeListenersArmed(scopeEntryEffects.Count);
+            await PerformEffects(scopeEntryEffects);
+        }
+
+        await RunExecutionLoop();
         await ProcessPendingEvents();
     }
 
@@ -538,9 +562,8 @@ public partial class WorkflowInstance :
         var processDefId = State.ProcessDefinitionId
             ?? throw new KeyNotFoundException($"Workflow instance '{this.GetPrimaryKey()}' not found.");
 
-        var key = ProcessDefinition.ExtractKeyFromId(processDefId);
-        var grain = _grainFactory.GetGrain<IProcessDefinitionGrain>(key);
-        _workflowDefinition = await grain.GetDefinitionById(processDefId);
+        // The silo's shared copy: no grain call and no copy per activation (#860).
+        _workflowDefinition = await _definitions.GetAsync(processDefId);
     }
 
     /// <summary>
@@ -583,30 +606,6 @@ public partial class WorkflowInstance :
         return WorkflowLoggingContext.BeginScope(
             _logger, _workflowDefinition.WorkflowId, _workflowDefinition.ProcessDefinitionId, this.GetPrimaryKey(),
             State.BusinessId);
-    }
-
-    // ── StartWorkflow (from Execution) ──────────────────────────────────
-
-    public async Task StartWorkflow()
-    {
-        await EnsureExecution();
-        SetWorkflowRequestContext();
-        using var scope = BeginWorkflowScope();
-
-        // MarkExecutionStarted emits ExecutionStarted AND returns the root-scope
-        // entry effects (event sub-process timer/message listener registrations).
-        // The grain never reaches into the aggregate to assemble these itself.
-        var scopeEntryEffects = _execution!.MarkExecutionStarted();
-        LogWorkflowStarted();
-
-        if (scopeEntryEffects.Count > 0)
-        {
-            LogRootScopeListenersArmed(scopeEntryEffects.Count);
-            await PerformEffects(scopeEntryEffects);
-        }
-
-        await RunExecutionLoop();
-        await ProcessPendingEvents();
     }
 
     // ── Activity Lifecycle ──────────────────────────────────────────────
@@ -731,24 +730,6 @@ public partial class WorkflowInstance :
         _execution!.CompleteComplexGatewayJoin(activityId);
         await ResolveExternalCompletions();
         await RunExecutionLoop();
-        await ProcessPendingEvents();
-    }
-
-    public async Task SetParentInfo(Guid parentWorkflowInstanceId, string parentActivityId)
-    {
-        await EnsureExecution();
-        _execution!.SetParentInfo(parentWorkflowInstanceId, parentActivityId);
-        LogParentInfoSet(parentWorkflowInstanceId, parentActivityId);
-        await ProcessPendingEvents();
-    }
-
-    public async Task SetInitialVariables(ExpandoObject variables)
-    {
-        EnsureVariablesWithinLimit(variables);
-        await EnsureExecution();
-
-        _execution!.MergeVariables(State.GetRootVariablesId(), variables);
-        LogInitialVariablesSet();
         await ProcessPendingEvents();
     }
 
@@ -1076,17 +1057,22 @@ public partial class WorkflowInstance :
 
     internal IReadOnlyList<string> CopyAppliedOperationKeys() => State.AppliedOperations.Keys.ToList();
 
+    internal WorkflowInstanceRow CopyReadModelRow() => WorkflowInstanceRow.From(State);
+
     public async ValueTask<InstanceStateSnapshot> GetStateSnapshot()
     {
         // The definition only fills in condition text; the snapshot is served without it, as the
-        // read model does for a completed instance.
-        try
+        // read model does for a completed instance. An id that was never started has none.
+        if (State.ProcessDefinitionId is not null)
         {
-            await EnsureWorkflowDefinitionAsync();
-        }
-        catch (Exception ex)
-        {
-            LogStateSnapshotDefinitionUnavailable(ex);
+            try
+            {
+                await EnsureWorkflowDefinitionAsync();
+            }
+            catch (Exception ex)
+            {
+                LogStateSnapshotDefinitionUnavailable(ex);
+            }
         }
         return InstanceStateSnapshots.From(State, _workflowDefinition);
     }
@@ -1147,6 +1133,9 @@ public partial class WorkflowInstance :
         public Guid WorkflowInstanceId => _grain.GetPrimaryKey();
 
         public Task PersistStateAsync() => _grain.DrainAndRaiseEvents();
+
+        public Task EnsureInstancePersistedAsync() =>
+            _grain._journalVersion == 0 ? _grain.DrainAndRaiseEvents() : Task.CompletedTask;
 
         public async Task ProcessFailureEffects(
             string activityId, Guid hostActivityInstanceId, Exception ex)

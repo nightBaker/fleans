@@ -109,7 +109,7 @@ public class FailActivityWithVariablesTests : WorkflowTestBase
             IsInterrupting = true,
         };
         var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await instance.SetWorkflow(new WorkflowDefinition
+        await instance.StartWorkflow(new WorkflowDefinition
         {
             WorkflowId = "fail-with-variables-esp",
             Activities = [start, fork, taskA, taskB, endA, endB, esp],
@@ -122,7 +122,6 @@ public class FailActivityWithVariablesTests : WorkflowTestBase
                 new SequenceFlow("f5", taskB, endB),
             ],
         });
-        await instance.StartWorkflow();
         var task = await ActiveEntry(instance, "taskA");
 
         // Act
@@ -163,13 +162,12 @@ public class FailActivityWithVariablesTests : WorkflowTestBase
         }
 
         var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await instance.SetWorkflow(new WorkflowDefinition
+        await instance.StartWorkflow(new WorkflowDefinition
         {
             WorkflowId = "fail-with-variables",
             Activities = activities,
             SequenceFlows = flows,
         });
-        await instance.StartWorkflow();
         return instance;
     }
 

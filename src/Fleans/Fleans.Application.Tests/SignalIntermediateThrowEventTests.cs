@@ -31,10 +31,9 @@ public class SignalIntermediateThrowEventTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
 
         // Act
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Assert — workflow should auto-complete (throw event broadcasts signal and completes itself)
         var instanceId = workflowInstance.GetPrimaryKey();
@@ -90,8 +89,7 @@ public class SignalIntermediateThrowEventTests : WorkflowTestBase
 
         // Start Workflow B first — it suspends at catch
         var instanceB = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await instanceB.SetWorkflow(workflowB);
-        await instanceB.StartWorkflow();
+        await instanceB.StartWorkflow(workflowB);
         await instanceB.CompleteActivity("task1", new ExpandoObject());
 
         // Verify B is suspended at signal catch
@@ -102,8 +100,7 @@ public class SignalIntermediateThrowEventTests : WorkflowTestBase
 
         // Act — Start Workflow A (it throws signal and completes)
         var instanceA = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await instanceA.SetWorkflow(workflowA);
-        await instanceA.StartWorkflow();
+        await instanceA.StartWorkflow(workflowA);
 
         // Assert — both workflows should be completed
         var finalSnapA = await QueryService.GetStateSnapshot(instanceA.GetPrimaryKey());

@@ -50,11 +50,11 @@ public class CallActivityTests : WorkflowTestBase
         var parentProcessGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("parentProcess");
         await parentProcessGrain.DeployVersion(parentWorkflow, "<xml/>");
 
-        var parentInstance = await parentProcessGrain.CreateInstance();
+        var parentInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         var parentInstanceId = parentInstance.GetPrimaryKey();
 
         // Act — start parent, which spawns the child
-        await parentInstance.StartWorkflow();
+        await parentInstance.StartWorkflow(await parentProcessGrain.GetLatestDefinition());
 
         // Get the child workflow instance id from the parent's active call activity
         var parentSnapshot = await QueryService.GetStateSnapshot(parentInstanceId);
@@ -125,11 +125,11 @@ public class CallActivityTests : WorkflowTestBase
         var parentProcessGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("parentProcess2");
         await parentProcessGrain.DeployVersion(parentWorkflow, "<xml/>");
 
-        var parentInstance = await parentProcessGrain.CreateInstance();
+        var parentInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         var parentInstanceId = parentInstance.GetPrimaryKey();
 
         // Act — start parent and complete parentTask with variables
-        await parentInstance.StartWorkflow();
+        await parentInstance.StartWorkflow(await parentProcessGrain.GetLatestDefinition());
 
         dynamic variables = new ExpandoObject();
         variables.orderId = 42;
@@ -205,11 +205,11 @@ public class CallActivityTests : WorkflowTestBase
         var parentProcessGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("parentProcess3");
         await parentProcessGrain.DeployVersion(parentWorkflow, "<xml/>");
 
-        var parentInstance = await parentProcessGrain.CreateInstance();
+        var parentInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         var parentInstanceId = parentInstance.GetPrimaryKey();
 
         // Act — start parent (call activity spawns child)
-        await parentInstance.StartWorkflow();
+        await parentInstance.StartWorkflow(await parentProcessGrain.GetLatestDefinition());
 
         // Get child instance id
         var parentSnapshot = await QueryService.GetStateSnapshot(parentInstanceId);
@@ -288,11 +288,11 @@ public class CallActivityTests : WorkflowTestBase
         var parentProcessGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("parentProcess4");
         await parentProcessGrain.DeployVersion(parentWorkflow, "<xml/>");
 
-        var parentInstance = await parentProcessGrain.CreateInstance();
+        var parentInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         var parentInstanceId = parentInstance.GetPrimaryKey();
 
         // Act — start parent, then fail the call activity
-        await parentInstance.StartWorkflow();
+        await parentInstance.StartWorkflow(await parentProcessGrain.GetLatestDefinition());
 
         await parentInstance.FailActivity("call1", new Exception("child failed"));
 
@@ -358,11 +358,11 @@ public class CallActivityTests : WorkflowTestBase
         var parentProcessGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("errorBoundaryTest");
         await parentProcessGrain.DeployVersion(parentWorkflow, "<xml/>");
 
-        var parentInstance = await parentProcessGrain.CreateInstance();
+        var parentInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         var parentInstanceId = parentInstance.GetPrimaryKey();
 
         // Act — start parent (spawns child), then fail the child's task
-        await parentInstance.StartWorkflow();
+        await parentInstance.StartWorkflow(await parentProcessGrain.GetLatestDefinition());
 
         var parentSnapshot = await QueryService.GetStateSnapshot(parentInstanceId);
         Assert.IsNotNull(parentSnapshot);
@@ -443,11 +443,11 @@ public class CallActivityTests : WorkflowTestBase
         var parentProcessGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("parentProcess5");
         await parentProcessGrain.DeployVersion(parentWorkflow, "<xml/>");
 
-        var parentInstance = await parentProcessGrain.CreateInstance();
+        var parentInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         var parentInstanceId = parentInstance.GetPrimaryKey();
 
         // Act — start parent and complete parentTask with a variable
-        await parentInstance.StartWorkflow();
+        await parentInstance.StartWorkflow(await parentProcessGrain.GetLatestDefinition());
 
         dynamic parentVars = new ExpandoObject();
         parentVars.secret = "parent-only";
@@ -526,11 +526,11 @@ public class CallActivityTests : WorkflowTestBase
         var parentProcessGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("parentProcess6");
         await parentProcessGrain.DeployVersion(parentWorkflow, "<xml/>");
 
-        var parentInstance = await parentProcessGrain.CreateInstance();
+        var parentInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
         var parentInstanceId = parentInstance.GetPrimaryKey();
 
         // Act — start parent and complete parentTask with a variable
-        await parentInstance.StartWorkflow();
+        await parentInstance.StartWorkflow(await parentProcessGrain.GetLatestDefinition());
 
         dynamic parentVars = new ExpandoObject();
         parentVars.parentVar = "hello";

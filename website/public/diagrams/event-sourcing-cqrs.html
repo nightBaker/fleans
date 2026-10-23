@@ -4588,7 +4588,7 @@
         <!-- Flow paths -->
         <path data-edge-from="commands" data-edge-to="grain" data-edge-label="command" data-edge-key="0" data-composition-points="156,157;259,157" d="M 156 157 L 259 157" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         <path data-edge-from="grain" data-edge-to="eventlog" data-edge-label="ConfirmEvents" data-edge-key="1" data-composition-points="371,157;474,157" d="M 371 157 L 474 157" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="grain" data-edge-to="projection" data-edge-label="confirmed state" data-edge-key="2" data-composition-points="315,186;382.5,186;382.5,271;450,271" d="M 315 186 L 382.5 186 L 382.5 271 L 450 271" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="grain" data-edge-to="projection" data-edge-label="InstanceAdvanced" data-edge-key="2" data-composition-points="315,186;382.5,186;382.5,271;450,271" d="M 315 186 L 382.5 186 L 382.5 271 L 450 271" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
         <path data-edge-from="projection" data-edge-to="readmodel" data-edge-label="upsert" data-edge-key="3" data-composition-points="610,271;689,271" d="M 610 271 L 689 271" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
         <path data-edge-from="readmodel" data-edge-to="querydb" data-edge-label="read" data-edge-key="4" data-composition-points="745,300;745,300;745,356;745,356" d="M 745 300 L 745 300 L 745 356 L 745 356" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
         <path data-edge-from="querydb" data-edge-to="readers" data-edge-label="query" data-edge-key="5" data-composition-points="820,385;885,385" d="M 820 385 L 885 385" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
@@ -4634,16 +4634,16 @@
         <text data-detail="fine" x="530" y="175" class="t-database" font-size="7" text-anchor="middle">append-only</text>
         </g>
 
-        <g id="node-projection" data-node-id="projection" data-node-label="State projection" tabindex="0" role="button" aria-label="Focus State projection, EfCoreWorkflowStateProjection, 03 / Persist" aria-pressed="false" data-node-kind="backend" data-node-sublabel="EfCoreWorkflowStateProjection" data-node-tag="after each batch" data-node-context="03 / Persist">
-          <title>State projection · EfCoreWorkflowStateProjection · 03 / Persist · after each batch</title>
+        <g id="node-projection" data-node-id="projection" data-node-label="State projection" tabindex="0" role="button" aria-label="Focus State projection, WorkflowInstanceProjector, 03 / Persist" aria-pressed="false" data-node-kind="backend" data-node-sublabel="WorkflowInstanceProjector" data-node-tag="async, from the journal" data-node-context="03 / Persist">
+          <title>State projection · WorkflowInstanceProjector · 03 / Persist · async, from the journal</title>
           <rect x="450" y="242" width="160" height="58" rx="6" class="c-mask"/>
           <rect x="450" y="242" width="160" height="58" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(456 248) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
           <text data-detail-anchor x="530" y="263" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">State projection</text>
-          <text data-detail="context" x="530" y="279" class="t-muted" font-size="7" text-anchor="middle">EfCoreWorkflowStateProjection</text>
-        <text data-detail="fine" x="530" y="289" class="t-backend" font-size="7" text-anchor="middle">after each batch</text>
+          <text data-detail="context" x="530" y="279" class="t-muted" font-size="7" text-anchor="middle">WorkflowInstanceProjector</text>
+        <text data-detail="fine" x="530" y="289" class="t-backend" font-size="7" text-anchor="middle">async, from the journal</text>
         </g>
 
         <g id="node-readmodel" data-node-id="readmodel" data-node-label="Read model" tabindex="0" role="button" aria-label="Focus Read model, denormalized snapshot, 04 / Read model" aria-pressed="false" data-node-kind="database" data-node-sublabel="denormalized snapshot" data-node-tag="materialized" data-node-context="04 / Read model">
@@ -4697,9 +4697,9 @@
           <text x="422.5" y="147" class="t-backend" font-size="8" text-anchor="middle">ConfirmEvents</text>
         <text data-detail="fine" x="422.5" y="158" class="t-dim" font-size="7" text-anchor="middle">1 transaction</text>
         </g>
-        <g data-detail="context" data-edge-from="grain" data-edge-to="projection" data-edge-label="confirmed state" data-edge-key="2">
+        <g data-detail="context" data-edge-from="grain" data-edge-to="projection" data-edge-label="InstanceAdvanced" data-edge-key="2">
           <rect x="339.75" y="207.5" width="85.5" height="16" rx="4" class="c-mask"/>
-          <text x="382.5" y="218.5" class="t-muted" font-size="8" text-anchor="middle">confirmed state</text>
+          <text x="382.5" y="218.5" class="t-muted" font-size="8" text-anchor="middle">InstanceAdvanced</text>
         </g>
         <g data-detail="context" data-edge-from="projection" data-edge-to="readmodel" data-edge-label="upsert" data-edge-key="3">
           <rect x="628.8" y="250" width="41.4" height="16" rx="4" class="c-mask"/>

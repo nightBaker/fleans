@@ -51,4 +51,11 @@ public interface IEventStore
     /// after the first <paramref name="version"/> events.
     /// </summary>
     Task WriteSnapshotAsync(Guid instanceId, int version, WorkflowInstanceState state);
+
+    /// <summary>
+    /// Deletes the instance's whole journal and its snapshot (retention purge, #862). Idempotent:
+    /// deleting an instance with nothing stored is a no-op. Only for terminal instances — a later
+    /// activation of the id starts from an empty journal, like an id that never existed.
+    /// </summary>
+    Task DeleteInstanceAsync(Guid instanceId);
 }

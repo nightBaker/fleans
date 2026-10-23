@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-All paths below are relative to the API base URL (`https://localhost:7140` in the Aspire dev stack). Endpoints are grouped by controller: `/Definitions/*` (deploy, disable, enable, list), `/Execution/*` (start, message, signal, complete-activity, evaluate-conditions), `/Instances/*` (state) and `/UserTasks/*`. The old `/Workflow/*` prefix was removed when the controller was split (see [PR #614](https://github.com/nightBaker/fleans/pull/614)) and now returns `404`.
+All paths below are relative to the API base URL (`https://localhost:7140` in the Aspire dev stack). Endpoints are grouped by controller: `/Definitions/*` (deploy, disable, enable, list), `/Execution/*` (start, message, signal, complete-activity, evaluate-conditions), `/Instances/*` (state, purge) and `/UserTasks/*`. The old `/Workflow/*` prefix was removed when the controller was split (see [PR #614](https://github.com/nightBaker/fleans/pull/614)) and now returns `404`.
 
 | Endpoint | Method | Body |
 |---|---|---|
@@ -16,6 +16,7 @@ All paths below are relative to the API base URL (`https://localhost:7140` in th
 | `/Execution/complete-activity` | POST | `{"WorkflowInstanceId":"guid", "ActivityId":"activity-id", "Variables":{}}` |
 | `/Execution/evaluate-conditions` | POST | `{"WorkflowId":"process-id", "Variables":{"key":"value"}}` — Evaluates all conditional start events (or only those for the given `WorkflowId` if provided) against the supplied variables. Returns `{"StartedInstanceIds":["guid",...], "Errors":["..."]}`. `Errors` is present only when one or more listeners failed during evaluation. |
 | `/Instances/{instanceId}/state` | GET | *(none)* — Returns the current state snapshot for a specific workflow instance |
+| `/Instances/purge` | POST | `{"CompletedBefore":"2026-07-01T00:00:00Z", "BatchSize":500, "MaxInstances":10000}` — Deletes instances that finished before the cutoff. Only `CompletedBefore` is required. See [Purge endpoint](#purge-endpoint). |
 | `/UserTasks` | GET | *(query string)* — Paginated list of pending user tasks. See [User Task endpoints](#user-task-endpoints). |
 | `/UserTasks/{activityInstanceId}` | GET | *(none)* — Single user-task lookup. |
 | `/UserTasks/{activityInstanceId}/claim` | POST | `{"UserId":"alice"}` |
@@ -111,6 +112,17 @@ Content-Type: application/json
 - **400** — `{"error": "WorkflowId is required"}`, or an invalid `BusinessId` (ProblemDetails; empty or whitespace, leading or trailing whitespace, control characters such as CR/LF or tab, or longer than 256 characters)
 - **404** — the process key was never deployed (ProblemDetails, `detail`: `Workflow with id 'my-process' is not registered. …`)
 - **409** — the process key is disabled (ProblemDetails, `detail`: `Process 'my-process' is disabled. Enable it before creating new instances.`)
+
+#### Disabled processes
+
+`POST /Definitions/disable` stops a process key from starting new instances, whatever would start them:
+
+- `POST /Execution/start` returns **409**. The admin UI's start of a specific version is refused the same way.
+- Message, signal and conditional start events start nothing for that process. The other processes listening for the same message or signal still start.
+- A timer start event's scheduler is deactivated. If its reminder fires anyway, it starts nothing.
+- A call activity that calls the disabled process fails, like any other child-start failure. An error boundary on the call activity catches it.
+
+Instances that are already running keep running. `POST /Definitions/enable` re-registers the start events.
 
 #### Business id
 
@@ -525,7 +537,7 @@ curl -k -X POST https://localhost:7140/UserTasks/8b2e1a7c-9d3f-4e5b-a1c2-d3e4f5a
 
 `isCompleted` means *terminal*. Tell the outcomes apart with the two flags: `isCancelled: true` → cancelled, `isFailed: true` → an unhandled activity failure ended the instance (see [Unhandled errors fail the instance](/fleans/guides/error-handling/#unhandled-errors-fail-the-instance)); both `false` → completed successfully. The failing activity is listed in `completedActivities` with a non-null `errorState`.
 
-This endpoint is intended for **diagnostics and load-test polling**, not for high-frequency production use. A running instance is answered by its grain (live state; an idle instance is activated for it). A finished one is answered from the read-side EF projection, written when it completed.
+This endpoint is intended for **diagnostics and load-test polling**, not for high-frequency production use. A running instance is answered by its grain (live state; an idle instance is activated for it). A finished one is answered from the read-side EF projection, which the projector writes shortly after it completes; until then the grain answers, so the response always reflects your own last call. Instance lists (`GET /Definitions/{key}/instances`) read only the projection and can lag a just-started or just-finished instance by a moment.
 
 ```bash
 curl -k https://localhost:7140/Instances/<guid>/state
@@ -533,9 +545,32 @@ curl -k https://localhost:7140/Instances/<guid>/state
 
 > `-k` (or `--insecure`) skips dev-cert validation. In production behind a proper TLS cert, drop the flag.
 
-Returns 404 with `{"error":"Instance {id} not found"}` if the instance ID does not exist in the projection.
+Returns 404 with `{"error":"Instance {id} not found"}` if no instance with that ID was ever started.
 
 Rate limiting: uses the `polling` policy. See [Rate Limiting](#rate-limiting) below for opt-in semantics.
+
+### Purge endpoint
+
+`POST /Instances/purge` deletes everything stored for workflow instances that **finished** (completed, cancelled or failed) before `CompletedBefore`: their event journal, snapshot, read-model rows and user tasks. Running instances are never touched. A child instance is kept while its parent is still running. Fleans does not run this on a schedule; call it from your own scheduled job. When and why to run it: [Retention](/fleans/reference/persistence/#retention-purging-finished-instances).
+
+| Field | Required | Default | Notes |
+|---|---|---|---|
+| `CompletedBefore` | yes | — | ISO-8601 timestamp. Must be at least 1 hour in the past. |
+| `BatchSize` | no | `500` | Instances deleted per batch, `1`–`5000`. |
+| `MaxInstances` | no | `10000` | Instances deleted per call. |
+
+```bash
+curl -k -X POST https://localhost:7140/Instances/purge \
+  -H 'Content-Type: application/json' \
+  -d '{"CompletedBefore":"2026-07-01T00:00:00Z"}'
+# {"purgedCount":10000,"hasMore":true}
+```
+
+Each call deletes at most `MaxInstances` instances, oldest first. Call it again until `hasMore` is `false`. Returns `400` when `CompletedBefore` is missing or less than an hour ago, or when a size is out of range.
+
+Purged data cannot be restored. Back up first if you need to keep it.
+
+Rate limiting: uses the `admin` policy.
 
 ### Rate limiting
 
@@ -572,7 +607,7 @@ Paths are relative to the API base URL.
 | `WorkflowMutation` | `POST /Execution/start`, `/Execution/message`, `/Execution/signal`, `/Execution/evaluate-conditions`, `/Definitions/deploy` | Workflow lifecycle write operations (start instance, deliver event, evaluate conditions, deploy BPMN) |
 | `TaskOperation` | `POST /Execution/complete-activity`, `/UserTasks/{activityInstanceId}/claim`, `/UserTasks/{activityInstanceId}/unclaim`, `/UserTasks/{activityInstanceId}/complete`, `/UserTasks/{activityInstanceId}/fail`, `/UserTasks/{activityInstanceId}/cancel` | Activity-completion + user-task operations — see [User Tasks guide](/fleans/guides/user-tasks/) |
 | `Read` | `GET /Definitions`, `/Definitions/{key}/instances`, `/Definitions/{key}/{version}/instances`, `/UserTasks`, `/UserTasks/{activityInstanceId}` | Read-only queries |
-| `Admin` | `POST /Definitions/disable`, `/Definitions/enable` | Admin operations on process definitions |
+| `Admin` | `POST /Definitions/disable`, `/Definitions/enable`, `/Instances/purge` | Admin operations on process definitions and instance retention |
 | `Polling` | `GET /Instances/{instanceId}/state` | High-frequency state polling |
 
 #### Environment variable overrides

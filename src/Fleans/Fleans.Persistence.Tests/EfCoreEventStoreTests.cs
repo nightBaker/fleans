@@ -129,8 +129,9 @@ public class EfCoreEventStoreTests : PersistenceTestBase
         await store.WriteSnapshotAsync(id, 1, state); // insert
         await store.WriteSnapshotAsync(id, 1, state); // update
         await store.ReadSnapshotAsync(id);
+        await store.DeleteInstanceAsync(id); // purge
 
-        Assert.IsGreaterThanOrEqualTo(7, recorder.Commands.Count);
+        Assert.IsGreaterThanOrEqualTo(9, recorder.Commands.Count);
         foreach (var sql in recorder.Commands)
         {
             var isInsert = sql.TrimStart().StartsWith("INSERT", StringComparison.OrdinalIgnoreCase);

@@ -70,7 +70,7 @@ One line each; **before touching the area, read the full rule in [`docs/conventi
 | Add a REST endpoint | [`docs/conventions/adding-an-api-endpoint.md`](docs/conventions/adding-an-api-endpoint.md) |
 | Persistence (SQLite default / Postgres, new providers) | [`docs/conventions/persistence.md`](docs/conventions/persistence.md) |
 | Streaming (Redis default, providers, tuning, subscriber traps) | [`docs/conventions/streaming.md`](docs/conventions/streaming.md) |
-| Reminders (Redis, fail-fast) | [`docs/conventions/reminders.md`](docs/conventions/reminders.md) |
+| Reminders / cluster membership + Kubernetes hosting (Redis or Postgres, fail-fast) | [`docs/conventions/reminders.md`](docs/conventions/reminders.md), [`docs/conventions/clustering.md`](docs/conventions/clustering.md) |
 | Plugin NuGet stack (leaf packages, reflection trap) | [`docs/conventions/plugin-stack.md`](docs/conventions/plugin-stack.md) |
 | Core / Worker / Plugin placement, `WorkerHost` | [`docs/conventions/placement-and-roles.md`](docs/conventions/placement-and-roles.md) |
 | BPMN editor UI invariants | [`docs/conventions/bpmn-editor.md`](docs/conventions/bpmn-editor.md) |

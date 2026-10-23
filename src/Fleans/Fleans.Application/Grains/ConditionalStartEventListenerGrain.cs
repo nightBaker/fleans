@@ -51,6 +51,8 @@ public partial class ConditionalStartEventListenerGrain : Grain, IConditionalSta
             return null;
         }
 
+        // [AlwaysInterleave] (#858): read the state only here, before the first await, and never write
+        // it — a Register/Unregister may run while this start is in flight.
         var processKey = _state.State.ProcessDefinitionKey;
         var activityId = _state.State.ActivityId;
         var expression = _state.State.ConditionExpression;
@@ -65,14 +67,13 @@ public partial class ConditionalStartEventListenerGrain : Grain, IConditionalSta
         }
 
         var processGrain = _grainFactory.GetGrain<IProcessDefinitionGrain>(processKey);
-        var isActive = await processGrain.IsActive();
-        if (!isActive)
+        var definition = await processGrain.GetStartableDefinition();
+        if (definition is null)
         {
             LogProcessDisabledSkipped(processKey, activityId);
             return null;
         }
 
-        var definition = await processGrain.GetLatestDefinition();
         var startActivityId = FindConditionalStartActivityId(definition, activityId);
         if (startActivityId == null)
         {
@@ -81,10 +82,8 @@ public partial class ConditionalStartEventListenerGrain : Grain, IConditionalSta
         }
 
         var instanceId = Guid.NewGuid();
-        var instance = _grainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
-        await instance.SetWorkflow(definition, startActivityId);
-        await instance.SetInitialVariables(variables);
-        await instance.StartWorkflow();
+        await _grainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId)
+            .StartWorkflow(definition, startActivityId, variables: variables);
 
         LogConditionalStartEventFired(processKey, activityId, instanceId);
         return instanceId;

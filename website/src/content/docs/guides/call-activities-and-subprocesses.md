@@ -163,12 +163,13 @@ evolve.
 
 Call activities always resolve to the **latest deployed version** of the
 called process. The single resolution point lives at
-[WorkflowLifecycleEffectHandler.cs#L76](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Application/Effects/WorkflowLifecycleEffectHandler.cs#L76):
+[WorkflowLifecycleEffectHandler.cs#L78](https://github.com/nightBaker/fleans/blob/main/src/Fleans/Fleans.Application/Effects/WorkflowLifecycleEffectHandler.cs#L78):
 
 ```csharp
 var processGrain = context.GrainFactory.GetGrain<IProcessDefinitionGrain>(
     startChild.ProcessDefinitionKey);
-var childDefinition = await processGrain.GetLatestDefinition();
+var childDefinition = await processGrain.GetStartableDefinition()
+    ?? throw new ProcessDisabledException(startChild.ProcessDefinitionKey);
 ```
 
 Practical implications:
@@ -181,6 +182,12 @@ Practical implications:
 - **Already-running child instances keep their version.** A child that
   started under version 3 stays on version 3 until it terminates, even if
   version 4 is deployed mid-flight.
+- **A disabled called process fails the call activity.** A disabled process
+  starts no new instances, a call activity's child included: the call
+  activity fails with `Process '…' is disabled. Enable it before creating new
+  instances.`, like any other child-start failure. An error boundary on the
+  call activity catches it; without one, it is an
+  [unhandled error](/fleans/guides/error-handling/#unhandled-errors-fail-the-instance).
 - **No `<calledElement-version>` attribute.** Per-call version pinning is a
   future feature; if you need it today, the workaround is to use distinct
   `calledElement` keys for distinct versions (e.g. `payment-charge-v3`).

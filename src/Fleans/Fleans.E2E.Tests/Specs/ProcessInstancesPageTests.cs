@@ -34,10 +34,16 @@ public class ProcessInstancesPageTests : WorkflowE2ETestBase
         var runningV2 = await ApiClient.StartAsync(key, new() { ["requestId"] = $"v2-{suffix}" }, businessId: businessId);
         await ApiClient.WaitForStateAsync(runningV2.WorkflowInstanceId, s => s.ActiveActivityIds.Contains("waitMessage"));
 
-        // API state is the source of truth the page must mirror.
-        var apiAll = await ApiClient.ListInstancesAsync(key);
-        var apiV1 = await ApiClient.ListInstancesAsync(key, v1.Version);
-        var apiV2 = await ApiClient.ListInstancesAsync(key, v2.Version);
+        // API state is the source of truth the page must mirror. The listing is projected
+        // asynchronously (#861), so wait for it to catch up first.
+        var apiAll = await ApiClient.WaitForInstancesPageAsync(
+            t => ApiClient.ListInstancesAsync(key, ct: t),
+            p => p.TotalCount == 3 && p.Items.Any(i => i.InstanceId == completed.WorkflowInstanceId && i.IsCompleted),
+            "all three instances, the first completed");
+        var apiV1 = await ApiClient.WaitForInstancesPageAsync(
+            t => ApiClient.ListInstancesAsync(key, v1.Version, t), p => p.TotalCount == 2, "two v1 instances");
+        var apiV2 = await ApiClient.WaitForInstancesPageAsync(
+            t => ApiClient.ListInstancesAsync(key, v2.Version, t), p => p.TotalCount == 1, "one v2 instance");
         Assert.AreEqual(3, apiAll.TotalCount);
         Assert.AreEqual(2, apiV1.TotalCount);
         Assert.AreEqual(1, apiV2.TotalCount);

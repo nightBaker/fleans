@@ -46,44 +46,6 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
         LogActivated(key, _versions.Count);
     }
 
-    public async Task<IWorkflowInstanceGrain> CreateInstance(string? businessId = null)
-    {
-        var key = this.GetPrimaryKeyString();
-        var definition = GetLatestDefinitionOrThrow(key);
-
-        // A random (v4) id on purpose: it is the journal's shard key, and a time-ordered id would
-        // put every new instance on the same shard (docs/conventions/invariants.md, #879).
-        var guid = Guid.NewGuid();
-        LogCreatingInstance(key, definition.ProcessDefinitionId, guid);
-
-        WorkflowLoggingContext.SetInstance(key, definition.ProcessDefinitionId, guid, businessId);
-
-        var workflowInstanceGrain = _grainFactory.GetGrain<IWorkflowInstanceGrain>(guid);
-        await workflowInstanceGrain.SetWorkflow(definition.Workflow, businessId: businessId);
-
-        return workflowInstanceGrain;
-    }
-
-    public async Task<IWorkflowInstanceGrain> CreateInstanceByDefinitionId(string processDefinitionId, string? businessId = null)
-    {
-        if (string.IsNullOrWhiteSpace(processDefinitionId))
-            throw new ArgumentException("ProcessDefinitionId cannot be null or empty.", nameof(processDefinitionId));
-
-        if (!_byId.TryGetValue(processDefinitionId, out var definition))
-            throw new KeyNotFoundException($"Process definition with id '{processDefinitionId}' is not registered.");
-
-        var key = this.GetPrimaryKeyString();
-        var guid = Guid.NewGuid();
-        LogCreatingInstance(key, processDefinitionId, guid);
-
-        WorkflowLoggingContext.SetInstance(key, processDefinitionId, guid, businessId);
-
-        var workflowInstanceGrain = _grainFactory.GetGrain<IWorkflowInstanceGrain>(guid);
-        await workflowInstanceGrain.SetWorkflow(definition.Workflow, businessId: businessId);
-
-        return workflowInstanceGrain;
-    }
-
     public async Task<ProcessDefinitionSummary> DeployVersion(WorkflowDefinition workflow, string bpmnXml)
     {
         if (workflow == null)
@@ -176,6 +138,22 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
         return Task.FromResult(definition.Workflow);
     }
 
+    public Task<IWorkflowDefinition?> GetStartableDefinition(string? processDefinitionId = null)
+    {
+        var key = this.GetPrimaryKeyString();
+        var latest = GetLatestDefinitionOrThrow(key);
+
+        var definition = latest;
+        if (processDefinitionId is not null && !_byId.TryGetValue(processDefinitionId, out definition))
+            throw new KeyNotFoundException($"Process definition with id '{processDefinitionId}' is not registered.");
+
+        // Enabled/disabled is a property of the process key, held on its latest version.
+        if (!latest.IsActive)
+            return Task.FromResult<IWorkflowDefinition?>(null);
+
+        return Task.FromResult<IWorkflowDefinition?>(definition.Workflow);
+    }
+
     public Task<bool> IsActive()
     {
         if (_versions.Count == 0)
@@ -187,7 +165,7 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
     public async Task<ProcessDefinitionSummary> Disable()
     {
         var key = this.GetPrimaryKeyString();
-        var definition = GetLatestDefinitionOrThrow(key, allowDisabled: true);
+        var definition = GetLatestDefinitionOrThrow(key);
 
         if (!definition.IsActive)
             return ToSummary(definition);
@@ -204,7 +182,7 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
     public async Task<ProcessDefinitionSummary> Enable()
     {
         var key = this.GetPrimaryKeyString();
-        var definition = GetLatestDefinitionOrThrow(key, allowDisabled: true);
+        var definition = GetLatestDefinitionOrThrow(key);
 
         if (definition.IsActive)
             return ToSummary(definition);
@@ -218,17 +196,12 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
         return ToSummary(definition);
     }
 
-    private ProcessDefinition GetLatestDefinitionOrThrow(string processDefinitionKey, bool allowDisabled = false)
+    private ProcessDefinition GetLatestDefinitionOrThrow(string processDefinitionKey)
     {
         if (_versions.Count == 0)
             throw new KeyNotFoundException($"Workflow with id '{processDefinitionKey}' is not registered. Ensure the workflow is deployed before creating instances.");
 
-        var definition = _versions[^1];
-
-        if (!allowDisabled && !definition.IsActive)
-            throw new InvalidOperationException($"Process '{processDefinitionKey}' is disabled. Enable it before creating new instances.");
-
-        return definition;
+        return _versions[^1];
     }
 
     private static ProcessDefinitionSummary ToSummary(ProcessDefinition definition) =>
@@ -342,9 +315,6 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
 
     [LoggerMessage(EventId = 6000, Level = LogLevel.Information, Message = "Deployed workflow {WorkflowKey} as {ProcessDefinitionId} version {Version}")]
     private partial void LogDeployedWorkflow(string workflowKey, string processDefinitionId, int version);
-
-    [LoggerMessage(EventId = 6001, Level = LogLevel.Information, Message = "Creating workflow instance for {WorkflowKey} definition {ProcessDefinitionId}, instance {InstanceId}")]
-    private partial void LogCreatingInstance(string workflowKey, string processDefinitionId, Guid instanceId);
 
     [LoggerMessage(EventId = 6002, Level = LogLevel.Information, Message = "Process {ProcessDefinitionKey} disabled")]
     private partial void LogProcessDisabled(string processDefinitionKey);

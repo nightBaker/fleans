@@ -32,6 +32,7 @@ public class BusinessIdTests : WorkflowTestBase
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
         Assert.AreEqual("ORDER-1", await grain.GetBusinessId());
 
+        await WaitForProjection(instanceId);
         var filtered = await QueryService.GetInstancesByKey(
             "biz-simple", new PageRequest(Filters: "BusinessId==ORDER-1"));
         Assert.HasCount(1, filtered.Items);
@@ -138,7 +139,7 @@ public class BusinessIdTests : WorkflowTestBase
     }
 
     [TestMethod]
-    public async Task SetWorkflow_WithInvalidBusinessId_LeavesTheGrainUnset()
+    public async Task StartWorkflow_WithInvalidBusinessId_LeavesTheGrainUnset()
     {
         // Arrange — call the grain directly, bypassing the command service's validation
         await DeployAsync(CreateSimpleWorkflow("biz-direct"));
@@ -146,15 +147,15 @@ public class BusinessIdTests : WorkflowTestBase
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
 
         // Act
-        await Assert.ThrowsAsync<ArgumentException>(() => grain.SetWorkflow(definition, businessId: "  "));
-        await grain.SetWorkflow(definition, businessId: "ORDER-RETRY");
+        await Assert.ThrowsAsync<ArgumentException>(() => grain.StartWorkflow(definition, businessId: "  "));
+        await grain.StartWorkflow(definition, businessId: "ORDER-RETRY");
 
         // Assert
         Assert.AreEqual("ORDER-RETRY", await grain.GetBusinessId());
     }
 
     [TestMethod]
-    public async Task SetWorkflow_WithUnknownStartActivity_LeavesTheGrainRetryable()
+    public async Task StartWorkflow_WithUnknownStartActivity_LeavesTheGrainRetryable()
     {
         // Arrange
         await DeployAsync(CreateSimpleWorkflow("biz-bad-start"));
@@ -163,9 +164,8 @@ public class BusinessIdTests : WorkflowTestBase
 
         // Act — the first start fails after validation passed; nothing may be left behind
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => grain.SetWorkflow(definition, startActivityId: "no-such-activity", businessId: "ORDER-1"));
-        await grain.SetWorkflow(definition, businessId: "ORDER-2");
-        await grain.StartWorkflow();
+            () => grain.StartWorkflow(definition, startActivityId: "no-such-activity", businessId: "ORDER-1"));
+        await grain.StartWorkflow(definition, businessId: "ORDER-2");
 
         // Assert
         Assert.AreEqual("ORDER-2", await grain.GetBusinessId());
@@ -208,7 +208,8 @@ public class BusinessIdTests : WorkflowTestBase
         // Arrange — `,` and `|` would split a Sieve `filters` term
         await DeployAsync(CreateSimpleWorkflow("biz-meta"));
         var match = await CommandService.StartWorkflow("biz-meta", businessId: "ACME, Inc|42");
-        await CommandService.StartWorkflow("biz-meta", businessId: "ACME");
+        var other = await CommandService.StartWorkflow("biz-meta", businessId: "ACME");
+        await WaitForProjection(match, other);
 
         // Act
         var byKey = await QueryService.GetInstancesByKey("biz-meta", new PageRequest(), "ACME, Inc|42");
@@ -244,6 +245,7 @@ public class BusinessIdTests : WorkflowTestBase
 
         // Assert
         Assert.AreNotEqual(first, second);
+        await WaitForProjection(first, second);
         var page = await QueryService.GetInstancesByKey("biz-dup", new PageRequest(Filters: "BusinessId==ORDER-DUP"));
         Assert.AreEqual(2, page.TotalCount);
     }

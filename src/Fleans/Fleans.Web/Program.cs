@@ -4,6 +4,7 @@ using Fleans.Infrastructure;
 using Fleans.Persistence.PostgreSql;
 using Fleans.Persistence.Sqlite;
 using Fleans.ServiceDefaults;
+using Fleans.ServiceDefaults.Clustering;
 using Fleans.Web.Components;
 using Fleans.Web.Security;
 using Fleans.Web.Services;
@@ -43,9 +44,11 @@ builder.AddFleansPersistence();
 // Register Redis client for Aspire-managed Orleans
 builder.AddKeyedRedisClient("orleans-redis");
 
-// Orleans client with Dashboard UI
+// Orleans client with Dashboard UI. The gateway list comes from the same membership table as the
+// silos (Fleans:Clustering:Provider, #885); under Aspire, Orleans' own config wires it instead.
 builder.UseOrleansClient(clientBuilder =>
 {
+    clientBuilder.AddFleansClustering(builder.Configuration);
     clientBuilder.AddDashboard();
 });
 

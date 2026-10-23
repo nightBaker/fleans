@@ -184,6 +184,36 @@ ConnectionStrings__fleans-journal="Host=citus-coordinator;Database=fleans_journa
 
 **YugabyteDB** (YSQL speaks the PostgreSQL protocol) is the alternative when built-in Raft failover matters more than the smallest change. It is not a supported provider yet: it needs retries on snapshot-isolation conflicts and squashed migrations.
 
+## Retention: purging finished instances
+
+Fleans keeps every finished instance until you delete it: its event journal, its snapshot, and its rows in the read model. A typical 10-step instance stores about 15 KB, so a million finished instances is about 15 GB, and list queries scan ever-larger tables.
+
+To delete old instances, call [`POST /Instances/purge`](/fleans/reference/api/#purge-endpoint) with a cutoff. It deletes instances that finished (completed, cancelled or failed) before `CompletedBefore`. Running instances are never deleted. A call-activity child is kept while its parent is still running.
+
+Fleans does not run the purge on a schedule. Run it from a cron job, a Kubernetes `CronJob`, or by hand. Repeat each run until the response says `"hasMore": false`:
+
+```bash
+CUTOFF=$(date -u -d '90 days ago' +%Y-%m-%dT%H:%M:%SZ)
+while :; do
+  RESP=$(curl -sf -X POST "$FLEANS_API/Instances/purge" \
+    -H 'Content-Type: application/json' \
+    -H "Authorization: Bearer $TOKEN" \
+    -d "{\"CompletedBefore\":\"$CUTOFF\"}") || exit 1
+  echo "$RESP"
+  echo "$RESP" | grep -q '"hasMore":true' || break
+done
+```
+
+Things to know:
+
+- **It cannot be undone.** Back up the database first if you need the history, for example for audits.
+- **The cutoff must be at least 1 hour old.** A recently finished instance may still be loaded in a silo's memory. Purging it would let that copy write again later.
+- **A purged id reads as "not found".** `GET /Instances/{id}/state` returns `404`.
+- **Disk space.** PostgreSQL reuses the freed space after `VACUUM` (autovacuum does this). An SQLite file does not shrink until you run `VACUUM`.
+- **The first purge of a large database** is best run off-peak, with a smaller `BatchSize` such as `200`.
+- **Logs:** EventIds 14100 (purge started), 14101 (batch purged) and 14102 (purge finished).
+- **Separate journal database:** the purge deletes the journal and snapshots by instance id in the journal's database, and the read-model rows in `fleans`.
+
 ## See also
 
 - [Configuration](/fleans/reference/configuration/#persistence) — runtime configuration keys for `Persistence__Provider` and `ConnectionStrings__fleans`
