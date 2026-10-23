@@ -8,8 +8,12 @@ namespace Fleans.Infrastructure.Scripts;
 public class DynamicExpressoScriptExpressionExecutor : IScriptExpressionExecutor
 {
     private readonly TimeSpan _scriptTimeout;
-    private readonly ConcurrentBag<Interpreter> _interpreterPool = new();
-    private const int MaxPoolSize = 16;
+
+    // Compiled statements, keyed by statement text — like the condition evaluator's cache.
+    // A Lambda is immutable and thread-safe, so concurrent executions share it; the variables
+    // are passed per call as the "_context" parameter. Unbounded: statements come from
+    // deployed process definitions, not from per-instance data.
+    private readonly ConcurrentDictionary<string, Lambda> _statementCache = new();
 
     private static readonly HashSet<string> SupportedFormats = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -40,19 +44,9 @@ public class DynamicExpressoScriptExpressionExecutor : IScriptExpressionExecutor
         // would require running scripts in a separate process.
         var task = Task.Run(() =>
         {
-            var interpreter = RentInterpreter();
-            try
+            foreach (var statement in SplitStatements(script))
             {
-                interpreter.SetVariable("_context", variables);
-
-                foreach (var statement in SplitStatements(script))
-                {
-                    interpreter.Eval(statement);
-                }
-            }
-            finally
-            {
-                ReturnInterpreter(interpreter);
+                _statementCache.GetOrAdd(statement, Compile).Invoke(variables);
             }
         });
 
@@ -61,20 +55,13 @@ public class DynamicExpressoScriptExpressionExecutor : IScriptExpressionExecutor
         return variables;
     }
 
-    private Interpreter RentInterpreter()
-    {
-        if (_interpreterPool.TryTake(out var interpreter))
-            return interpreter;
+    internal int CachedStatementCount => _statementCache.Count;
 
-        var newInterpreter = new Interpreter();
-        newInterpreter.Reference(typeof(List<>));
-        return newInterpreter;
-    }
-
-    private void ReturnInterpreter(Interpreter interpreter)
+    private static Lambda Compile(string statement)
     {
-        if (_interpreterPool.Count < MaxPoolSize)
-            _interpreterPool.Add(interpreter);
+        var interpreter = new Interpreter();
+        interpreter.Reference(typeof(List<>));
+        return interpreter.Parse(statement, new Parameter("_context", typeof(ExpandoObject)));
     }
 
     internal static IEnumerable<string> SplitStatements(string script)

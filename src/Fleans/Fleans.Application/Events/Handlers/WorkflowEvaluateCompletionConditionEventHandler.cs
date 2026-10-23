@@ -7,6 +7,7 @@ using Fleans.Application.Placement;
 using Fleans.Domain.Events;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Orleans.Runtime;
 using Orleans.Streams;
 
@@ -18,11 +19,14 @@ public partial class WorkflowEvaluateCompletionConditionEventHandler : Grain, IA
 {
     private readonly ILogger<WorkflowEvaluateCompletionConditionEventHandler> _logger;
     private readonly IGrainFactory _grainFactory;
+    private readonly WorkerEvaluatorOptions _evaluatorOptions;
 
     public WorkflowEvaluateCompletionConditionEventHandler(
         ILogger<WorkflowEvaluateCompletionConditionEventHandler> logger,
-        IGrainFactory grainFactory)
+        IGrainFactory grainFactory,
+        IOptions<WorkerEvaluatorOptions> evaluatorOptions)
     {
+        _evaluatorOptions = evaluatorOptions.Value;
         _logger = logger;
         _grainFactory = grainFactory;
     }
@@ -59,7 +63,7 @@ public partial class WorkflowEvaluateCompletionConditionEventHandler : Grain, IA
             variables["nrOfActiveInstances"] = (object)item.NrOfActiveInstances;
             variables["nrOfCompletedInstances"] = (object)item.NrOfCompletedInstances;
 
-            var evaluator = _grainFactory.GetGrain<IConditionExpressionEvaluatorGrain>(0);
+            var evaluator = _grainFactory.GetGrain<IConditionExpressionEvaluatorGrain>(_evaluatorOptions.NextKey());
             var result = await evaluator.Evaluate(item.Condition, (ExpandoObject)variables);
 
             LogCompletionConditionResult(item.HostActivityId, item.HostActivityInstanceId, result);

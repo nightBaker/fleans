@@ -5,6 +5,7 @@ using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.States;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Orleans.Runtime;
 
 namespace Fleans.Application.Grains;
@@ -14,13 +15,16 @@ public partial class ConditionalStartEventListenerGrain : Grain, IConditionalSta
 {
     private readonly IPersistentState<ConditionalStartEventListenerState> _state;
     private readonly IGrainFactory _grainFactory;
+    private readonly WorkerEvaluatorOptions _evaluatorOptions;
     private readonly ILogger<ConditionalStartEventListenerGrain> _logger;
 
     public ConditionalStartEventListenerGrain(
         [PersistentState("state", GrainStorageNames.ConditionalStartEventListeners)] IPersistentState<ConditionalStartEventListenerState> state,
         IGrainFactory grainFactory,
-        ILogger<ConditionalStartEventListenerGrain> logger)
+        ILogger<ConditionalStartEventListenerGrain> logger,
+        IOptions<WorkerEvaluatorOptions> evaluatorOptions)
     {
+        _evaluatorOptions = evaluatorOptions.Value;
         _state = state;
         _grainFactory = grainFactory;
         _logger = logger;
@@ -57,7 +61,7 @@ public partial class ConditionalStartEventListenerGrain : Grain, IConditionalSta
         var activityId = _state.State.ActivityId;
         var expression = _state.State.ConditionExpression;
 
-        var evaluator = _grainFactory.GetGrain<IConditionExpressionEvaluatorGrain>(0);
+        var evaluator = _grainFactory.GetGrain<IConditionExpressionEvaluatorGrain>(_evaluatorOptions.NextKey());
         var result = await evaluator.Evaluate(expression, variables);
 
         if (!result)

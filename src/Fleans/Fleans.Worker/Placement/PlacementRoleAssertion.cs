@@ -61,7 +61,7 @@ public sealed partial class PlacementRoleAssertion : ILifecycleParticipant<ISilo
         foreach (var (type, kind) in grains)
         {
             checkedCount++;
-            if (kind == PlacementKind.Worker && !WorkerPlacementDirector.HasWorkerRole(siloName))
+            if (kind == PlacementKind.Worker && !WorkerPlacementFilterDirector.HasWorkerRole(siloName))
             {
                 onViolation?.Invoke(type.FullName ?? type.Name, "[WorkerPlacement]", role, "Worker or Combined");
                 throw new InvalidOperationException(

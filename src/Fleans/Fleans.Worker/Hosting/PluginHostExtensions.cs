@@ -22,7 +22,7 @@ public static class PluginHostExtensions
         // throws "Unable to load type" at the gateway. See #703.
         siloBuilder.Configure<Orleans.Configuration.EndpointOptions>(o => o.GatewayPort = 0);
         siloBuilder.AddPlacementDirector<CorePlacementStrategy, CorePlacementDirector>();
-        siloBuilder.AddPlacementDirector<WorkerPlacementStrategy, WorkerPlacementDirector>();
+        siloBuilder.AddWorkerPlacementFilter();
         siloBuilder.AddFleansPlacementAssertion(configuration);
         return siloBuilder;
     }

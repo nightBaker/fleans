@@ -2,8 +2,8 @@
 
 Orleans worker-side primitives for Fleans plugin authors. Use this package when you want to
 implement a custom BPMN service-task plugin: it provides `CustomTaskHandlerBase`, the
-`[WorkerPlacement]` attribute, and the placement directors that route worker grains onto
-silos with `Fleans:Role=Worker` (or `Combined`).
+`[WorkerPlacement]` placement filter that keeps worker grains on silos with
+`Fleans:Role=Worker` (or `Combined`), and the placement directors.
 
 ## Dependency closure
 

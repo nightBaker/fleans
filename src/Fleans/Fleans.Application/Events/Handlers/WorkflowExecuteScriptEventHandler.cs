@@ -6,6 +6,7 @@ using Fleans.Application.Scripts;
 using Fleans.Domain.Events;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Orleans.Runtime;
 using Orleans.Streams;
 
@@ -17,9 +18,14 @@ public partial class WorkflowExecuteScriptEventHandler : Grain, IWorkflowExecute
 {
     private readonly ILogger<WorkflowExecuteScriptEventHandler> _logger;
     private readonly IGrainFactory _grainFactory;
+    private readonly WorkerEvaluatorOptions _evaluatorOptions;
 
-    public WorkflowExecuteScriptEventHandler(ILogger<WorkflowExecuteScriptEventHandler> logger, IGrainFactory grainFactory)
+    public WorkflowExecuteScriptEventHandler(
+        ILogger<WorkflowExecuteScriptEventHandler> logger,
+        IGrainFactory grainFactory,
+        IOptions<WorkerEvaluatorOptions> evaluatorOptions)
     {
+        _evaluatorOptions = evaluatorOptions.Value;
         _logger = logger;
         _grainFactory = grainFactory;
     }
@@ -52,7 +58,7 @@ public partial class WorkflowExecuteScriptEventHandler : Grain, IWorkflowExecute
 
         try
         {
-            var scriptExecutor = _grainFactory.GetGrain<IScriptExecutorGrain>(0);
+            var scriptExecutor = _grainFactory.GetGrain<IScriptExecutorGrain>(_evaluatorOptions.NextKey());
 
             var variables = await workflowInstance.GetVariables(item.VariablesId);
 

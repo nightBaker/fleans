@@ -336,7 +336,7 @@ public class MultiInstanceScriptIntegrationTests
                 .Configure<Orleans.Configuration.SiloOptions>(o =>
                     o.SiloName = "combined-test-" + Guid.NewGuid().ToString("N"))
                 .AddPlacementDirector<CorePlacementStrategy, CorePlacementDirector>()
-                .AddPlacementDirector<WorkerPlacementStrategy, WorkerPlacementDirector>()
+                .AddWorkerPlacementFilter()
                 .AddMemoryStreams(WorkflowEventsPublisher.StreamProvider)
                 .AddMemoryGrainStorage("PubSubStore")
                 .AddMemoryGrainStorage(GrainStorageNames.MessageCorrelations)

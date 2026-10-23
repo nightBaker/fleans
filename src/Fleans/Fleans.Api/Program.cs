@@ -123,12 +123,12 @@ builder.UseOrleans(siloBuilder =>
     // JournaledGrain event sourcing: use CustomStorage backed by EfCoreEventStore
     siloBuilder.AddCustomStorageBasedLogConsistencyProviderAsDefault();
 
-    // Role-aware placement directors. Every silo registers both so a Core-only
-    // silo can still route worker grains to its Worker siblings (and vice versa).
-    // The director's fallback keeps test silos and Combined silos working even
-    // when only a single silo exists.
+    // Role-aware placement: the [CorePlacement] director and the [WorkerPlacement] filter.
+    // Every silo registers both so a Core-only silo can still route worker grains to its
+    // Worker siblings (and vice versa). Their fallback keeps test silos and Combined silos
+    // working even when only a single silo exists.
     siloBuilder.AddPlacementDirector<CorePlacementStrategy, CorePlacementDirector>();
-    siloBuilder.AddPlacementDirector<WorkerPlacementStrategy, WorkerPlacementDirector>();
+    siloBuilder.AddWorkerPlacementFilter();
 
     // Fail fast on Fleans:Role / placement-attribute mismatch (#457).
     siloBuilder.AddFleansPlacementAssertion(builder.Configuration);

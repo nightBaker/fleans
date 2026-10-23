@@ -110,12 +110,47 @@ public class DynamicExpressoScriptExpressionExecutorTests
         variables.x = 0;
 
         // Act & Assert — a script that takes too long should throw TimeoutException
-        // We use a script that calls a slow expression repeatedly
-        // DynamicExpresso doesn't have loops, but we can chain many expensive operations
+        // DynamicExpresso doesn't have loops, so chain many distinct statements: each one is a
+        // statement-cache miss that must be parsed and compiled, which far exceeds 50 ms.
         await Assert.ThrowsAsync<TimeoutException>(
             () => shortTimeoutExecutor.Execute(
-                string.Join("; ", Enumerable.Range(0, 100_000).Select(i => $"_context.x = _context.x + 1")),
+                string.Join("; ", Enumerable.Range(0, 100_000).Select(i => $"_context.x = _context.x + {i}")),
                 variables, "csharp"));
+    }
+
+    [TestMethod]
+    public async Task Execute_SameScriptTwice_CompilesEachStatementOnce()
+    {
+        // Arrange — #857: statements are compiled once and reused across executions.
+        const string script = "_context.y = _context.x * 2; _context.z = _context.y + 1";
+        dynamic first = new ExpandoObject();
+        first.x = 1;
+        dynamic second = new ExpandoObject();
+        second.x = 10;
+
+        // Act
+        await _executor.Execute(script, first, "csharp");
+        var result = await _executor.Execute(script, second, "csharp");
+
+        // Assert — the second run reused both compiled statements and saw its own variables
+        Assert.AreEqual(2, _executor.CachedStatementCount);
+        var dict = (IDictionary<string, object>)result;
+        Assert.AreEqual(20, dict["y"]);
+        Assert.AreEqual(21, dict["z"]);
+        Assert.AreEqual(3, ((IDictionary<string, object>)first)["z"]);
+    }
+
+    [TestMethod]
+    public async Task Execute_InvalidStatement_ThrowsAndIsNotCached()
+    {
+        // Arrange
+        dynamic variables = new ExpandoObject();
+        variables.x = 1;
+
+        // Act & Assert — a parse error surfaces to the caller and leaves nothing in the cache
+        await Assert.ThrowsAsync<DynamicExpresso.Exceptions.ParseException>(
+            () => _executor.Execute("_context.y = (", variables, "csharp"));
+        Assert.AreEqual(0, _executor.CachedStatementCount);
     }
 
     [TestMethod]
@@ -174,7 +209,7 @@ public class DynamicExpressoScriptExpressionExecutorTests
     public async Task Execute_SequentialScripts_NoStateLeak()
     {
         // Arrange — run script A that sets _context.x, then script B with fresh variables
-        // that does NOT set _context.x. Pooled Interpreter must not leak _context.x.
+        // that does NOT set _context.x. Shared compiled statements must not leak _context.x.
         dynamic varsA = new ExpandoObject();
         varsA.x = 1;
         await _executor.Execute("_context.x = _context.x + 100", varsA, "csharp");
@@ -188,7 +223,7 @@ public class DynamicExpressoScriptExpressionExecutorTests
         // Assert — varsB should only have 'y', not 'x' from the previous execution
         var dict = (IDictionary<string, object>)result;
         Assert.AreEqual(84, dict["y"]);
-        Assert.IsFalse(dict.ContainsKey("x"), "Pooled interpreter leaked variable 'x' from previous execution");
+        Assert.IsFalse(dict.ContainsKey("x"), "Compiled statement leaked variable 'x' from previous execution");
     }
 
     [TestMethod]

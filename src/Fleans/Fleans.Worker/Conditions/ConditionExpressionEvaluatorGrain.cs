@@ -5,6 +5,8 @@ using Orleans.Concurrency;
 
 namespace Fleans.Worker.Conditions;
 
+// [StatelessWorker] is the placement strategy (many local activations); [WorkerPlacement] is a
+// placement filter that keeps it on worker-/combined- silos. Callers spread keys via WorkerEvaluatorOptions.NextKey().
 [StatelessWorker]
 [WorkerPlacement]
 public class ConditionExpressionEvaluatorGrain : Grain, IConditionExpressionEvaluatorGrain

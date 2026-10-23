@@ -69,6 +69,7 @@ public partial class WorkflowInstance :
     private readonly IWorkflowStateProjection _projection;
     private readonly EffectDispatcher _effectDispatcher;
     private readonly int _maxVariablesSizeBytes;
+    private readonly WorkerEvaluatorOptions _evaluatorOptions;
 
     private readonly ConcurrentQueue<(PendingExternalEvent Event, TaskCompletionSource Completion)> _pendingExternalEvents = new();
     private IGrainTimer? _pendingEventsTimer;
@@ -150,8 +151,10 @@ public partial class WorkflowInstance :
         IEventStore eventStore,
         IWorkflowStateProjection projection,
         EffectDispatcher effectDispatcher,
-        IOptions<WorkflowVariablesOptions> variablesOptions)
+        IOptions<WorkflowVariablesOptions> variablesOptions,
+        IOptions<WorkerEvaluatorOptions> evaluatorOptions)
     {
+        _evaluatorOptions = evaluatorOptions.Value;
         _grainFactory = grainFactory;
         _definitions = definitions;
         _logger = logger;

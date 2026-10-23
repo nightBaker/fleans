@@ -29,16 +29,16 @@ public class PluginHostPlacementTests
     }
 
     [TestMethod]
-    public void WorkerPlacementDirector_HasWorkerRole_ShouldRejectPluginPrefix()
+    public void WorkerPlacementFilterDirector_HasWorkerRole_ShouldRejectPluginPrefix()
     {
-        var method = typeof(Fleans.Worker.Placement.WorkerPlacementDirector).GetMethod(
+        var method = typeof(Fleans.Worker.Placement.WorkerPlacementFilterDirector).GetMethod(
             "HasWorkerRole",
             BindingFlags.NonPublic | BindingFlags.Static);
 
         if (method is null)
         {
             Assert.Inconclusive(
-                "HasWorkerRole is not a private static method on WorkerPlacementDirector. " +
+                "HasWorkerRole is not a private static method on WorkerPlacementFilterDirector. " +
                 "Skipping characterization assertion — covered by PluginHostIsolationIntegrationTests in Task 5.");
             return;
         }
@@ -50,8 +50,8 @@ public class PluginHostPlacementTests
 
         Assert.IsTrue(worker, "worker- prefix must be accepted");
         Assert.IsTrue(combined, "combined- prefix must be accepted");
-        Assert.IsFalse(plugin, "plugin- prefix must be rejected by WorkerPlacementDirector");
-        Assert.IsFalse(core, "core- prefix must be rejected by WorkerPlacementDirector");
+        Assert.IsFalse(plugin, "plugin- prefix must be rejected by WorkerPlacementFilterDirector");
+        Assert.IsFalse(core, "core- prefix must be rejected by WorkerPlacementFilterDirector");
     }
 
     [TestMethod]
@@ -105,13 +105,15 @@ public class PluginHostPlacementTests
     }
 
     [TestMethod]
-    public void AddFleansPluginHost_RegistersBothPlacementDirectors()
+    public void AddFleansPluginHost_RegistersCoreDirectorAndWorkerFilter()
     {
-        // #627 regression guard. Removing either AddPlacementDirector<> line from
-        // AddFleansPluginHost MUST make this test fail. Without the Core registration
+        // #627 regression guard. Removing the Core director or the Worker filter registration
+        // from AddFleansPluginHost MUST make this test fail. Without the Core registration
         // external plugin hosts hit "KeyNotFoundException: Could not resolve placement
         // strategy CorePlacementStrategy" when their plugins route to
-        // CustomTaskCatalogGrain ([CorePlacement]) for catalog registration.
+        // CustomTaskCatalogGrain ([CorePlacement]) for catalog registration; without the
+        // Worker filter Orleans throws KeyNotFoundException when the plugin silo resolves
+        // placement for a [WorkerPlacement] grain (#857).
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Fleans:Role"] = "Plugin" })
             .Build();
@@ -120,27 +122,34 @@ public class PluginHostPlacementTests
         builder.AddFleansPluginHost(configuration);
 
         // Orleans 10's AddPlacementDirector<TStrategy, TDirector> registers IPlacementDirector
-        // as a native .NET keyed service keyed by typeof(TStrategy), with KeyedImplementationType
-        // set to typeof(TDirector). Inspect the ServiceCollection directly so the test does not
-        // need to materialize the directors (which require IGrainFactory + ILogger<T>).
+        // as a native .NET keyed service keyed by typeof(TStrategy); AddPlacementFilter does the
+        // same for IPlacementFilterDirector (keyed by the filter type) and also registers the
+        // filter strategy keyed by its type name. Inspect the ServiceCollection directly so the
+        // test does not need to materialize the directors.
         var coreDirector = builder.Services.FirstOrDefault(d =>
             d.ServiceType == typeof(IPlacementDirector)
             && d.IsKeyedService
             && Equals(d.ServiceKey, typeof(CorePlacementStrategy)));
-        var workerDirector = builder.Services.FirstOrDefault(d =>
-            d.ServiceType == typeof(IPlacementDirector)
+        var workerFilterDirector = builder.Services.FirstOrDefault(d =>
+            d.ServiceType == typeof(IPlacementFilterDirector)
             && d.IsKeyedService
-            && Equals(d.ServiceKey, typeof(WorkerPlacementStrategy)));
+            && Equals(d.ServiceKey, typeof(WorkerPlacementFilterStrategy)));
+        var workerFilterStrategy = builder.Services.FirstOrDefault(d =>
+            d.ServiceType == typeof(PlacementFilterStrategy)
+            && d.IsKeyedService
+            && Equals(d.ServiceKey, nameof(WorkerPlacementFilterStrategy)));
 
         Assert.IsNotNull(coreDirector,
             "AddFleansPluginHost must register CorePlacementDirector so external plugin hosts " +
             "can route to [CorePlacement] grains like CustomTaskCatalogGrain (#627).");
         Assert.AreEqual(typeof(CorePlacementDirector), coreDirector.KeyedImplementationType,
             "CorePlacementStrategy must resolve to CorePlacementDirector.");
-        Assert.IsNotNull(workerDirector,
-            "AddFleansPluginHost must register WorkerPlacementDirector for engine worker grains.");
-        Assert.AreEqual(typeof(WorkerPlacementDirector), workerDirector.KeyedImplementationType,
-            "WorkerPlacementStrategy must resolve to WorkerPlacementDirector.");
+        Assert.IsNotNull(workerFilterDirector,
+            "AddFleansPluginHost must register WorkerPlacementFilterDirector for engine worker grains.");
+        Assert.AreEqual(typeof(WorkerPlacementFilterDirector), workerFilterDirector.KeyedImplementationType,
+            "WorkerPlacementFilterStrategy must resolve to WorkerPlacementFilterDirector.");
+        Assert.IsNotNull(workerFilterStrategy,
+            "AddFleansPluginHost must register WorkerPlacementFilterStrategy by name so Orleans can resolve it.");
     }
 
     private sealed class FakeSiloBuilder : ISiloBuilder

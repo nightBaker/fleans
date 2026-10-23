@@ -186,7 +186,7 @@ Plugin authors should also know that an `OperationCanceledException` whose `Canc
 ## Limitations
 
 - Plugins are .NET assemblies referenced from the Worker silo's host project. Hot-loading is out of scope.
-- Per-plugin placement filters (route `rest-call` only to silos with that plugin) are out of scope; today the Worker placement director routes any `[WorkerPlacement]` grain to any worker silo. Operators choose topology by DI-registering only the plugins they want on each worker.
+- Per-plugin placement filters (route `rest-call` only to silos with that plugin) are out of scope; today the `[WorkerPlacement]` placement filter allows any `[WorkerPlacement]` grain on any worker silo. Operators choose topology by DI-registering only the plugins they want on each worker.
 
 ## Upgrade note: upgrade the engine before workers
 

@@ -83,8 +83,9 @@ app.Run();
   with `InvalidOperationException`.
 - Stamps the silo name as `plugin-<machine>-<guid>` so other silos see the prefix via Orleans
   membership.
-- Registers `WorkerPlacementDirector` so the plugin silo participates correctly in cluster-wide
-  placement decisions for `[WorkerPlacement]` grains it doesn't host.
+- Registers the `[WorkerPlacement]` placement filter (`WorkerPlacementFilterDirector`) so the
+  plugin silo participates correctly in cluster-wide placement decisions for `[WorkerPlacement]`
+  grains it doesn't host.
 
 Everything else — Redis clustering, `PubSubStore`, stream provider, `Fleans.ServiceDefaults` —
 is wired separately. The minimal `Program.cs` above (`AddKeyedRedisClient`, `UseRedisClustering`,
@@ -98,17 +99,18 @@ The isolation falls out of two Orleans mechanisms:
 
 <figure class="arch-diagram" style="--arch-ratio: 870 / 570">
   <iframe data-arch-src="/fleans/diagrams/plugin-placement.html" src="/fleans/diagrams/plugin-placement.html?embed=1" title="Plugin grain placement across silo roles" loading="lazy"></iframe>
-  <figcaption>Engine grains reach only <code>worker-</code>/<code>combined-</code> silos through <code>WorkerPlacementDirector</code>; plugin handlers use default placement, so each lands only on a silo that has its assembly loaded. <a href="/fleans/diagrams/plugin-placement.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
+  <figcaption>Engine grains reach only <code>worker-</code>/<code>combined-</code> silos through the <code>[WorkerPlacement]</code> placement filter; plugin handlers use default placement, so each lands only on a silo that has its assembly loaded. <a href="/fleans/diagrams/plugin-placement.html" target="_blank" rel="noopener">Open interactive diagram ↗</a></figcaption>
 </figure>
 
 1. **Grain class discovery.** Orleans' `IPlacementContext.GetCompatibleSilos` automatically
    excludes silos that don't have the concrete grain type loaded. A `plugin-*` host that
    doesn't reference `Fleans.Plugins.RestCaller` is not a candidate for `RestCallerHandler`
    activations — Orleans never even considers it.
-2. **`WorkerPlacementDirector` rejects `plugin-` prefix.** Engine-internal grains marked with
-   `[WorkerPlacement]` (`ScriptExecutorGrain`, `ConditionExpressionEvaluatorGrain`) route only
+2. **The `[WorkerPlacement]` filter rejects the `plugin-` prefix.** Engine-internal grains marked
+   with `[WorkerPlacement]` (`ScriptExecutorGrain`, `ConditionExpressionEvaluatorGrain`) route only
    to silos whose name starts with `worker-` or `combined-`. The `plugin-` prefix is
-   explicitly excluded.
+   explicitly excluded. Because it is a placement *filter*, it composes with `[StatelessWorker]`:
+   these grains run as many local activations on every worker silo.
 
 The net effect: a `plugin-*` silo carrying only an `EmailHandler` plugin grain will host
 exactly that, nothing else. Engine workers continue to host Script / Condition grains plus

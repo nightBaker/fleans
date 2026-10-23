@@ -12,6 +12,11 @@ namespace Fleans.Application
                 .Validate(o => o.MaxSizeBytes > 0, "Fleans:Variables:MaxSizeBytes must be greater than 0.")
                 .ValidateOnStart();
 
+            services.AddOptions<WorkerEvaluatorOptions>()
+                .BindConfiguration(WorkerEvaluatorOptions.SectionName)
+                .Validate(o => o.EvaluatorKeyCount > 0, "Fleans:Worker:EvaluatorKeyCount must be greater than 0.")
+                .ValidateOnStart();
+
             services.AddSingleton<IWorkflowCommandService, WorkflowCommandService>();
             services.AddSingleton<ICompensationLogService, CompensationLogService>();
             services.AddSingleton<WorkflowDefinitionCache>();

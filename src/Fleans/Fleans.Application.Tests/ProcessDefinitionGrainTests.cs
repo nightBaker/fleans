@@ -188,7 +188,7 @@ namespace Fleans.Application.Tests
                     .Configure<Orleans.Configuration.SiloOptions>(o =>
                         o.SiloName = "combined-test-" + Guid.NewGuid().ToString("N"))
                     .AddPlacementDirector<CorePlacementStrategy, CorePlacementDirector>()
-                    .AddPlacementDirector<WorkerPlacementStrategy, WorkerPlacementDirector>()
+                    .AddWorkerPlacementFilter()
                     .AddCustomStorageBasedLogConsistencyProviderAsDefault()
                     // Instances publish InstanceAdvanced to the read-model projector (#861).
                     .AddMemoryStreams(WorkflowEventsPublisher.StreamProvider)
