@@ -53,7 +53,7 @@ public partial class WorkflowEvaluateConditionEventHandler : Grain, IWorkflowEva
 
         try
         {
-            var expressionEvaluator = _grainFactory.GetGrain<IConditionExpressionEvaluatorGrain>(0);
+            var expressionEvaluator = _grainFactory.GetGrain<IConditionExpressionEvaluatorGrain>(WorkerGrainKey.Next());
 
             var variables = await workflowInstance.GetVariables(item.VariablesId);
 

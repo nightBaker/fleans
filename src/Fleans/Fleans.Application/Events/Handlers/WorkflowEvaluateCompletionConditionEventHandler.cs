@@ -59,7 +59,7 @@ public partial class WorkflowEvaluateCompletionConditionEventHandler : Grain, IA
             variables["nrOfActiveInstances"] = (object)item.NrOfActiveInstances;
             variables["nrOfCompletedInstances"] = (object)item.NrOfCompletedInstances;
 
-            var evaluator = _grainFactory.GetGrain<IConditionExpressionEvaluatorGrain>(0);
+            var evaluator = _grainFactory.GetGrain<IConditionExpressionEvaluatorGrain>(WorkerGrainKey.Next());
             var result = await evaluator.Evaluate(item.Condition, (ExpandoObject)variables);
 
             LogCompletionConditionResult(item.HostActivityId, item.HostActivityInstanceId, result);

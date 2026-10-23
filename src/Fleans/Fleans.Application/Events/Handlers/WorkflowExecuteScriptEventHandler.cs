@@ -52,7 +52,7 @@ public partial class WorkflowExecuteScriptEventHandler : Grain, IWorkflowExecute
 
         try
         {
-            var scriptExecutor = _grainFactory.GetGrain<IScriptExecutorGrain>(0);
+            var scriptExecutor = _grainFactory.GetGrain<IScriptExecutorGrain>(WorkerGrainKey.Next());
 
             var variables = await workflowInstance.GetVariables(item.VariablesId);
 

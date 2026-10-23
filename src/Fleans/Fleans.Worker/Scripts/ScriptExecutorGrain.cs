@@ -7,6 +7,8 @@ using Orleans.Runtime;
 
 namespace Fleans.Worker.Scripts;
 
+// [StatelessWorker] is the placement strategy (many local activations); [WorkerPlacement] is a
+// placement filter that keeps it on worker-/combined- silos. Callers spread keys via WorkerGrainKey.
 [StatelessWorker]
 [WorkerPlacement]
 public partial class ScriptExecutorGrain : Grain, IScriptExecutorGrain

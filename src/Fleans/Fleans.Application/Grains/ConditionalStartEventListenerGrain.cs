@@ -55,7 +55,7 @@ public partial class ConditionalStartEventListenerGrain : Grain, IConditionalSta
         var activityId = _state.State.ActivityId;
         var expression = _state.State.ConditionExpression;
 
-        var evaluator = _grainFactory.GetGrain<IConditionExpressionEvaluatorGrain>(0);
+        var evaluator = _grainFactory.GetGrain<IConditionExpressionEvaluatorGrain>(WorkerGrainKey.Next());
         var result = await evaluator.Evaluate(expression, variables);
 
         if (!result)

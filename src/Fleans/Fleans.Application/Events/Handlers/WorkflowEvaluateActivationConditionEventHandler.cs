@@ -64,7 +64,7 @@ public partial class WorkflowEvaluateActivationConditionEventHandler : Grain, IW
             // because DynamicExpresso resolves variables through the _context parameter.
             ((IDictionary<string, object?>)variables)["_nroftoken"] = (object)item.NrOfToken;
 
-            var expressionEvaluator = _grainFactory.GetGrain<IConditionExpressionEvaluatorGrain>(0);
+            var expressionEvaluator = _grainFactory.GetGrain<IConditionExpressionEvaluatorGrain>(WorkerGrainKey.Next());
             var result = await expressionEvaluator.Evaluate(item.Condition, variables);
 
             LogActivationConditionResult(item.ActivityId, item.ActivityInstanceId, result, item.NrOfToken);

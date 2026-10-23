@@ -352,7 +352,7 @@ public partial class WorkflowInstance
         var watchers = State.ConditionalWatchers.ToList();
         if (watchers.Count == 0) return completedEntryIds;
 
-        var evaluator = _grainFactory.GetGrain<Conditions.IConditionExpressionEvaluatorGrain>(0);
+        var evaluator = _grainFactory.GetGrain<Conditions.IConditionExpressionEvaluatorGrain>(Placement.WorkerGrainKey.Next());
         var definition = await GetWorkflowDefinition();
 
         foreach (var watcher in watchers)

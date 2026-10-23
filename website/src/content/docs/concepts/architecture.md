@@ -99,7 +99,7 @@ Fleans ships as a single binary (`Fleans.Api`) that can run in three roles, sele
 |------|--------------------|
 | `Combined` *(default)* | Everything — WorkflowInstance, ProcessDefinition, timers, correlations, user tasks, **and** the StatelessWorker script/condition evaluators. Right choice for single-node deployments. |
 | `Core` | Workflow coordination grains and event-sourcing storage. Delegates script/condition evaluation to a Worker silo. |
-| `Worker` | The StatelessWorker evaluators (`ScriptExecutorGrain`, `ConditionExpressionEvaluatorGrain`) and nothing else. Isolates CPU-bound script execution from workflow state. |
+| `Worker` | The StatelessWorker evaluators (`ScriptExecutorGrain`, `ConditionExpressionEvaluatorGrain`) and nothing else. Isolates CPU-bound script execution from workflow state. Each Worker silo runs many evaluations in parallel, and calls are spread across all Worker silos, so adding Worker silos adds script and condition capacity. |
 
 The role is stamped onto the silo name as `{role}-{machine}-{guid}`, so the Orleans Dashboard (and other silos via membership gossip) can see which role each silo is running. Set the role via the [`Fleans__Role` environment variable](/fleans/reference/configuration/#silo-role), an `appsettings.json` entry, or a command-line argument.
 
