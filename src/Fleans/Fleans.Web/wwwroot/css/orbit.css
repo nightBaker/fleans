@@ -2109,3 +2109,59 @@ button.orbit-log__text:hover {
         display: none;
     }
 }
+
+/* Deployments review page (#900): request list on the left, the selected request on the right. */
+.deployments-policy {
+    margin: 0;
+    color: var(--o-text2);
+    font-size: 13px;
+}
+
+.deployments-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 20px;
+    align-items: start;
+}
+
+@media (max-width: 1100px) {
+    .deployments-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.deployments-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 18px;
+    border-radius: 12px;
+    border: 1px solid var(--o-line);
+    background: var(--o-card);
+}
+
+.deployments-detail__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.deployments-detail__head h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.deployments-comment {
+    margin: 0;
+    padding: 8px 12px;
+    border-left: 3px solid var(--o-accentline);
+    color: var(--o-text2);
+    font-size: 13px;
+    white-space: pre-wrap;
+}
+
+.deployments-canvas {
+    height: 320px;
+}

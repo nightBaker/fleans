@@ -1,3 +1,4 @@
+using Fleans.Application.Deployments;
 using Fleans.Application.Effects;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -15,6 +16,11 @@ namespace Fleans.Application
             services.AddOptions<WorkerEvaluatorOptions>()
                 .BindConfiguration(WorkerEvaluatorOptions.SectionName)
                 .Validate(o => o.EvaluatorKeyCount > 0, "Fleans:Worker:EvaluatorKeyCount must be greater than 0.")
+                .ValidateOnStart();
+
+            services.AddOptions<DeploymentApprovalOptions>()
+                .BindConfiguration(DeploymentApprovalOptions.SectionName)
+                .Validate(o => o.RequiredApprovals >= 0, "Fleans:Deployments:RequiredApprovals can't be negative.")
                 .ValidateOnStart();
 
             services.AddSingleton<IWorkflowCommandService, WorkflowCommandService>();

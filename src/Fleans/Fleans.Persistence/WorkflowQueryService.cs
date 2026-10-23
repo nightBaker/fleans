@@ -414,6 +414,31 @@ public class WorkflowQueryService : IWorkflowQueryService
             t.ClaimedBy, t.TaskState.ToString(), t.CreatedAt,
             t.ExpectedOutputVariables);
 
+    public async Task<IReadOnlyList<DeploymentRequestSummary>> GetDeploymentRequests(
+        DeploymentRequestStatus? status = null, int limit = 100)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+
+        var query = db.DeploymentRequests.AsQueryable();
+        if (status is { } s)
+            query = query.Where(r => r.Status == s);
+
+        return await query
+            .OrderByDescending(r => r.RequestedAt)
+            .Take(limit)
+            .Select(r => new DeploymentRequestSummary(
+                r.Id, r.ProcessDefinitionKey, r.RequestedBy, r.RequestedAt, r.Comment,
+                r.RequiredApprovals, r.Approvals, r.Status, r.DeployDisabled,
+                r.ClosedBy, r.CloseReason, r.DeployedVersion, r.DeployError))
+            .ToListAsync();
+    }
+
+    public async Task<DeploymentRequestState?> GetDeploymentRequest(Guid requestId)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        return await db.DeploymentRequests.FirstOrDefaultAsync(r => r.Id == requestId);
+    }
+
     public async Task<RegisteredEventsSnapshot> GetRegisteredEventsAsync(CancellationToken ct = default)
     {
         // CQRS: query-side methods read from the query context. The

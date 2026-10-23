@@ -1,7 +1,10 @@
+using Fleans.Application.Deployments;
 using Fleans.Application.Grains;
 using Fleans.Application.QueryModels;
 using Fleans.Domain;
+using Fleans.Domain.States;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using System.Dynamic;
 
 namespace Fleans.Application;
@@ -10,11 +13,14 @@ public partial class WorkflowCommandService : IWorkflowCommandService
 {
     private readonly IGrainFactory _grainFactory;
     private readonly ILogger<WorkflowCommandService> _logger;
+    private readonly DeploymentApprovalOptions _deploymentApprovals;
 
-    public WorkflowCommandService(IGrainFactory grainFactory, ILogger<WorkflowCommandService> logger)
+    public WorkflowCommandService(IGrainFactory grainFactory, ILogger<WorkflowCommandService> logger,
+        IOptions<DeploymentApprovalOptions> deploymentApprovals)
     {
         _grainFactory = grainFactory;
         _logger = logger;
+        _deploymentApprovals = deploymentApprovals.Value;
     }
 
     public async Task<Guid> StartWorkflow(string workflowId, ExpandoObject? initialVariables = null, string? businessId = null)
@@ -65,6 +71,9 @@ public partial class WorkflowCommandService : IWorkflowCommandService
 
     public async Task<ProcessDefinitionSummary> DeployWorkflow(WorkflowDefinition workflow, string bpmnXml)
     {
+        if (_deploymentApprovals.RequiredApprovals > 0)
+            throw new DeploymentApprovalRequiredException(_deploymentApprovals.RequiredApprovals);
+
         LogDeployingWorkflow(workflow.WorkflowId);
 
         var processGrain = _grainFactory.GetGrain<IProcessDefinitionGrain>(workflow.WorkflowId);
@@ -282,9 +291,32 @@ public partial class WorkflowCommandService : IWorkflowCommandService
     [LoggerMessage(EventId = 7014, Level = LogLevel.Error, Message = "Conditional evaluation failed for process {ProcessDefinitionKey}, activity {ActivityId}")]
     private partial void LogConditionalEvaluationFailed(string processDefinitionKey, string activityId, Exception ex);
 
+    public async Task<DeploymentRequestState> SubmitDeployment(string bpmnXml, string requestedBy, string? comment, bool deployDisabled)
+    {
+        var requestId = Guid.NewGuid();
+        LogSubmittingDeployment(requestId, requestedBy);
+        return await _grainFactory.GetGrain<IDeploymentRequestGrain>(requestId)
+            .Submit(bpmnXml, requestedBy, comment, _deploymentApprovals.RequiredApprovals, deployDisabled);
+    }
+
+    public Task<DeploymentRequestState> ApproveDeployment(Guid requestId, string userId, string? comment) =>
+        _grainFactory.GetGrain<IDeploymentRequestGrain>(requestId).Approve(userId, comment);
+
+    public Task<DeploymentRequestState> RejectDeployment(Guid requestId, string userId, string reason) =>
+        _grainFactory.GetGrain<IDeploymentRequestGrain>(requestId).Reject(userId, reason);
+
+    public Task<DeploymentRequestState> WithdrawDeployment(Guid requestId, string userId) =>
+        _grainFactory.GetGrain<IDeploymentRequestGrain>(requestId).Withdraw(userId);
+
+    public Task<DeploymentRequestState> RetryDeployment(Guid requestId) =>
+        _grainFactory.GetGrain<IDeploymentRequestGrain>(requestId).RetryDeployment();
+
     [LoggerMessage(EventId = 7011, Level = LogLevel.Information, Message = "Disabling process {ProcessDefinitionKey}")]
     private partial void LogDisablingProcess(string processDefinitionKey);
 
     [LoggerMessage(EventId = 7012, Level = LogLevel.Information, Message = "Enabling process {ProcessDefinitionKey}")]
     private partial void LogEnablingProcess(string processDefinitionKey);
+
+    [LoggerMessage(EventId = 7020, Level = LogLevel.Information, Message = "Submitting deployment request {RequestId} by {RequestedBy}")]
+    private partial void LogSubmittingDeployment(Guid requestId, string requestedBy);
 }

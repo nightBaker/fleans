@@ -54,7 +54,7 @@ For **production deployments** (Docker Compose, Kubernetes/Helm, bare VM), follo
 | **Aspire-first dev loop** | One command boots Api + Web + Redis with the Aspire dashboard, live logs, distributed tracing, and the Orleans Dashboard. No docker-compose juggling during development. |
 | **Multi-silo streaming** | Memory streams for dev; Kafka and Azure Queue Storage for production. Workflow event subscribers run on any silo — placement is Orleans-native, not pinned. |
 | **CQRS persistence** | EF Core split into `FleanCommandDbContext` (writes) and `FleanQueryDbContext` (no-tracking reads). SQLite for dev, PostgreSQL for production — same code path. The workflow journal (`FleanJournalDbContext`) can move to its own database, sharded on Citus. |
-| **Visual editor + admin UI** | Multi-tab `bpmn-js` editor with an element palette, structure outline, live modelling hints, right-click context menus and an XML mode; live deployment, instance state inspector, manual message/signal correlation. Light and dark themes. Blazor Server — no separate frontend deploy. |
+| **Visual editor + admin UI** | Multi-tab `bpmn-js` editor with an element palette, structure outline, live modelling hints, right-click context menus and an XML mode; live deployment with optional multi-reviewer approvals and promotion between environments (dev → test → prod), instance state inspector, manual message/signal correlation. Light and dark themes. Blazor Server — no separate frontend deploy. |
 
 ## Deploy a workflow in 10 lines
 

@@ -3,7 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Fleans.Application;
 using Fleans.Application.QueryModels;
-using Fleans.Infrastructure.Bpmn;
+using Fleans.Application.Bpmn;
 using ModelContextProtocol;
 using ModelContextProtocol.Server;
 

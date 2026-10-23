@@ -1,0 +1,326 @@
+@page "/deployments"
+@page "/deployments/{RequestId:guid}"
+@rendermode InteractiveServer
+@using Fleans.Application
+@using Fleans.Application.Deployments
+@using Fleans.Application.QueryModels
+@using Fleans.Domain.States
+@using Fleans.Web.Services
+@using Microsoft.Extensions.Options
+@using Microsoft.FluentUI.AspNetCore.Components
+@inject IWorkflowQueryService QueryService
+@inject IWorkflowCommandService CommandService
+@inject IOptions<DeploymentApprovalOptions> DeployApprovals
+@inject IOptions<EnvironmentOptions> EnvironmentConfig
+@inject ActingUser ActingUser
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject ILogger<Deployments> Logger
+
+<PageTitle>Deployments</PageTitle>
+
+@* Deploy approvals (#900): the review queue of this cluster. A request deploys itself once
+   RequiredApprovals distinct reviewers (never the requester) approve it. *@
+<FluentStack Orientation="Orientation.Vertical" Gap="20px">
+    <PageHeader Title="Deployment requests" Eyebrow="@($"Fleans · {EnvironmentConfig.Value.DisplayName} · Review")">
+        <Actions>
+            <div class="orbit-segmented" role="group" aria-label="Filter">
+                <button type="button" aria-pressed="@(showAll ? "false" : "true")" @onclick="() => SetFilter(false)" data-testid="deployments-filter-open">Open</button>
+                <button type="button" aria-pressed="@(showAll ? "true" : "false")" @onclick="() => SetFilter(true)" data-testid="deployments-filter-all">All</button>
+            </div>
+            <FluentButton Appearance="Appearance.Neutral"
+                          IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.ArrowSync())"
+                          @onclick="RefreshAsync"
+                          Loading="@isLoading"
+                          data-testid="deployments-refresh">
+                Refresh
+            </FluentButton>
+        </Actions>
+    </PageHeader>
+
+    <p class="deployments-policy" data-testid="deployments-policy">
+        @if (RequiredApprovals > 0)
+        {
+            <span>Every deployment to <strong>@EnvironmentConfig.Value.DisplayName</strong> needs <strong>@RequiredApprovals</strong> approval@(RequiredApprovals == 1 ? "" : "s") from someone other than the requester, then deploys itself.</span>
+        }
+        else
+        {
+            <span><strong>@EnvironmentConfig.Value.DisplayName</strong> deploys immediately — no approvals required. Requests promoted here from another environment deploy on arrival.</span>
+        }
+    </p>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <FluentMessageBar Intent="MessageIntent.Error" Dismissible="true" OnDismissed="@(() => errorMessage = null)">@errorMessage</FluentMessageBar>
+    }
+    @if (!string.IsNullOrWhiteSpace(successMessage))
+    {
+        <FluentMessageBar Intent="MessageIntent.Success" Dismissible="true" OnDismissed="@(() => successMessage = null)">@successMessage</FluentMessageBar>
+    }
+
+    @if (!ActingUser.IsSignedIn)
+    {
+        <FluentTextField @bind-Value="ActingUser.DeclaredName" Immediate="true" Label="Reviewing as (authentication is off — names are self-declared)" data-testid="deployments-acting-user" />
+    }
+
+    <div class="deployments-layout">
+        <div class="deployments-list">
+            @if (requests.Count == 0)
+            {
+                <div class="orbit-empty" data-testid="deployments-empty">
+                    <span>@(showAll ? "No deployment requests yet." : "No open deployment requests.")</span>
+                </div>
+            }
+            else
+            {
+                <FluentDataGrid Items="@requests.AsQueryable()" GridTemplateColumns="1.4fr 1fr 1fr 90px 110px" data-testid="deployments-grid">
+                    <TemplateColumn Title="Process">
+                        <a href="/deployments/@context.Id" class="orbit-mono" data-testid="deployment-link">@context.ProcessDefinitionKey</a>
+                    </TemplateColumn>
+                    <PropertyColumn Title="Requested by" Property="@(r => r.RequestedBy)" />
+                    <TemplateColumn Title="When">@context.RequestedAt.ToString("yyyy-MM-dd HH:mm") UTC</TemplateColumn>
+                    <TemplateColumn Title="Review">@context.Approvals.Count of @context.RequiredApprovals</TemplateColumn>
+                    <TemplateColumn Title="Status">
+                        <span class="orbit-pill @StatusPillClass(context.Status, context.DeployError)">@StatusText(context.Status, context.DeployError)</span>
+                    </TemplateColumn>
+                </FluentDataGrid>
+            }
+        </div>
+
+        @if (selected is { } r)
+        {
+            <section class="deployments-detail" data-testid="deployment-detail" aria-labelledby="deployment-title">
+                <div class="deployments-detail__head">
+                    <h2 id="deployment-title" class="orbit-mono">@r.ProcessDefinitionKey</h2>
+                    <span class="orbit-pill @StatusPillClass(r.Status, r.DeployError)" data-testid="deployment-status">@StatusText(r.Status, r.DeployError)</span>
+                </div>
+                <ul class="orbit-checklist">
+                    <li>
+                        <span class="orbit-check orbit-check--ok" aria-hidden="true">✓</span>
+                        Requested by <strong>@r.RequestedBy</strong> · @r.RequestedAt.ToString("yyyy-MM-dd HH:mm") UTC@(r.DeployDisabled ? " · deploys disabled" : "")
+                    </li>
+                    <li data-testid="deployment-review">
+                        <span class="orbit-check orbit-check--@(r.Approvals.Count >= r.RequiredApprovals ? "ok" : "warn")" aria-hidden="true">@(r.Approvals.Count >= r.RequiredApprovals ? "✓" : "○")</span>
+                        Review: @r.Approvals.Count of @r.RequiredApprovals@(r.Approvals.Count > 0 ? " — " + string.Join(", ", r.Approvals.Select(a => a.UserId)) : "")
+                    </li>
+                    @if (r.Status == DeploymentRequestStatus.Deployed)
+                    {
+                        <li>
+                            <span class="orbit-check orbit-check--ok" aria-hidden="true">✓</span>
+                            Deployed as <a href="/process-instances/@r.ProcessDefinitionKey/@r.DeployedVersion">v@(r.DeployedVersion)</a> · @r.DeployedAt?.ToString("yyyy-MM-dd HH:mm") UTC
+                        </li>
+                    }
+                    @if (r.DeployError is { } deployError)
+                    {
+                        <li>
+                            <span class="orbit-check orbit-check--error" aria-hidden="true">!</span>
+                            Approved, but the deploy failed: @deployError
+                        </li>
+                    }
+                    @if (r.Status is DeploymentRequestStatus.Rejected or DeploymentRequestStatus.Withdrawn)
+                    {
+                        <li>
+                            <span class="orbit-check orbit-check--error" aria-hidden="true">✕</span>
+                            @(r.Status == DeploymentRequestStatus.Rejected ? "Rejected" : "Withdrawn") by @r.ClosedBy@(r.CloseReason is { } reason ? $": {reason}" : "")
+                        </li>
+                    }
+                </ul>
+
+                @if (r.Comment is { } comment)
+                {
+                    <blockquote class="deployments-comment">@comment</blockquote>
+                }
+                @foreach (var approval in r.Approvals.Where(a => a.Comment is not null))
+                {
+                    <blockquote class="deployments-comment"><strong>@approval.UserId:</strong> @approval.Comment</blockquote>
+                }
+
+                <div id="deployment-canvas" class="bpmn-container deployments-canvas"></div>
+
+                @if (r.Status == DeploymentRequestStatus.Pending)
+                {
+                    <FluentTextArea @bind-Value="decisionNote" Immediate="true" Rows="2" Style="width: 100%;"
+                                    Label="Note — optional for an approval, required to reject" data-testid="deployment-note" />
+                }
+                <div class="deploy-dialog__actions deploy-dialog__actions--start">
+                    @if (r.Status == DeploymentRequestStatus.Pending)
+                    {
+                        <FluentButton Appearance="Appearance.Accent" Loading="@isActing" Disabled="@(!CanReview(r))" @onclick="ApproveAsync" data-testid="deployment-approve">Approve</FluentButton>
+                        <FluentButton Appearance="Appearance.Neutral" Disabled="@(isActing || !CanReview(r) || string.IsNullOrWhiteSpace(decisionNote))" @onclick="RejectAsync" data-testid="deployment-reject">Reject</FluentButton>
+                    }
+                    @if (r.Status == DeploymentRequestStatus.Approved)
+                    {
+                        <FluentButton Appearance="Appearance.Accent" Loading="@isActing" @onclick="RetryAsync" data-testid="deployment-retry">Retry deployment</FluentButton>
+                    }
+                    @if (r.IsOpen && actingUserId == r.RequestedBy)
+                    {
+                        <FluentButton Appearance="Appearance.Stealth" Disabled="@isActing" @onclick="WithdrawAsync" data-testid="deployment-withdraw">Withdraw</FluentButton>
+                    }
+                </div>
+                @if (r.Status == DeploymentRequestStatus.Pending && ReviewBlockedReason(r) is { } blocked)
+                {
+                    <p class="orbit-problem__meta" data-testid="deployment-review-blocked">@blocked</p>
+                }
+            </section>
+        }
+    </div>
+</FluentStack>
+
+@code {
+    [Parameter] public Guid? RequestId { get; set; }
+
+    private List<DeploymentRequestSummary> requests = new();
+    private DeploymentRequestState? selected;
+    private bool showAll;
+    private bool isLoading;
+    private bool isActing;
+    private bool renderDiagram;
+    private string? actingUserId;
+    private string? decisionNote;
+    private string? errorMessage;
+    private string? successMessage;
+
+    private int RequiredApprovals => DeployApprovals.Value.RequiredApprovals;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // A link to one request shows it whatever its status.
+        if (RequestId is not null && selected?.Id != RequestId)
+            showAll = true;
+        await RefreshAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (renderDiagram && selected is not null)
+        {
+            renderDiagram = false;
+            await JS.InvokeVoidAsync("bpmnViewer.init", "deployment-canvas", selected.BpmnXml);
+        }
+    }
+
+    private async Task SetFilter(bool all)
+    {
+        showAll = all;
+        await RefreshAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        try
+        {
+            isLoading = true;
+            actingUserId = await ActingUser.GetUserIdAsync();
+            requests = (await QueryService.GetDeploymentRequests(showAll ? null : DeploymentRequestStatus.Pending)).ToList();
+            if (!showAll)
+            {
+                // "Open" also lists approved requests whose deploy failed and waits for a retry.
+                requests.AddRange(await QueryService.GetDeploymentRequests(DeploymentRequestStatus.Approved));
+                requests = requests.OrderByDescending(r => r.RequestedAt).ToList();
+            }
+
+            var previous = selected?.Id;
+            selected = RequestId is { } id ? await QueryService.GetDeploymentRequest(id) : null;
+            if (RequestId is not null && selected is null)
+                errorMessage = $"Deployment request {RequestId} not found.";
+            renderDiagram = selected is not null && selected.Id != previous;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load deployment requests");
+            errorMessage = $"Failed to load deployment requests: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private Task ApproveAsync() => ActAsync(async (id, user) =>
+    {
+        var result = await CommandService.ApproveDeployment(id, user, decisionNote);
+        successMessage = result.Status switch
+        {
+            DeploymentRequestStatus.Deployed => $"Approved — {result.ProcessDefinitionKey} deployed as v{result.DeployedVersion}.",
+            DeploymentRequestStatus.Approved => $"Approved, but the deploy failed: {result.DeployError}",
+            _ => $"Approved — {result.Approvals.Count} of {result.RequiredApprovals}.",
+        };
+    });
+
+    private Task RejectAsync() => ActAsync(async (id, user) =>
+    {
+        await CommandService.RejectDeployment(id, user, decisionNote!);
+        successMessage = "Request rejected.";
+    });
+
+    private Task WithdrawAsync() => ActAsync(async (id, user) =>
+    {
+        await CommandService.WithdrawDeployment(id, user);
+        successMessage = "Request withdrawn.";
+    });
+
+    private Task RetryAsync() => ActAsync(async (id, _) =>
+    {
+        var result = await CommandService.RetryDeployment(id);
+        successMessage = result.Status == DeploymentRequestStatus.Deployed
+            ? $"{result.ProcessDefinitionKey} deployed as v{result.DeployedVersion}."
+            : $"The deploy failed again: {result.DeployError}";
+    });
+
+    private async Task ActAsync(Func<Guid, string, Task> action)
+    {
+        if (selected is null) return;
+        var user = await ActingUser.GetUserIdAsync();
+        if (user is null)
+        {
+            errorMessage = "Enter your name first.";
+            return;
+        }
+
+        try
+        {
+            isActing = true;
+            errorMessage = null;
+            successMessage = null;
+            await action(selected.Id, user);
+            decisionNote = null;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Deployment request action failed");
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isActing = false;
+        }
+        await RefreshAsync();
+    }
+
+    private bool CanReview(DeploymentRequestState r) => ReviewBlockedReason(r) is null;
+
+    // Mirrors DeploymentRequestState's rules so the buttons explain themselves; the grain enforces them.
+    private string? ReviewBlockedReason(DeploymentRequestState r)
+    {
+        var user = ActingUser.IsSignedIn ? actingUserId : ActingUser.DeclaredName?.Trim();
+        if (string.IsNullOrWhiteSpace(user))
+            return "Enter your name to review.";
+        if (user == r.RequestedBy)
+            return "You requested this deployment, so someone else reviews it.";
+        if (r.Approvals.Any(a => a.UserId == user))
+            return "You've approved this request; it needs another reviewer.";
+        return null;
+    }
+
+    private static string StatusText(DeploymentRequestStatus status, string? deployError) =>
+        status == DeploymentRequestStatus.Approved && deployError is not null ? "Deploy failed" : status.ToString();
+
+    private static string StatusPillClass(DeploymentRequestStatus status, string? deployError) => status switch
+    {
+        DeploymentRequestStatus.Pending => "orbit-pill--draft",
+        DeploymentRequestStatus.Approved => deployError is null ? "orbit-pill--accent" : "orbit-pill--danger",
+        DeploymentRequestStatus.Deployed => "orbit-pill--success",
+        DeploymentRequestStatus.Rejected => "orbit-pill--danger",
+        _ => "",
+    };
+}

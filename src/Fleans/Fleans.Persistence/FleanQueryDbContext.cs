@@ -10,6 +10,7 @@ public class FleanQueryDbContext : DbContext, IFleanQueryContext
     public DbSet<WorkflowInstanceState> WorkflowInstances => Set<WorkflowInstanceState>();
     public DbSet<ProcessDefinition> ProcessDefinitions => Set<ProcessDefinition>();
     public DbSet<UserTaskState> UserTasks => Set<UserTaskState>();
+    public DbSet<DeploymentRequestState> DeploymentRequests => Set<DeploymentRequestState>();
 
     // Read-side projections of event-registration / subscription tables.
     // The /events admin page reads from these via WorkflowQueryService —
@@ -36,6 +37,7 @@ public class FleanQueryDbContext : DbContext, IFleanQueryContext
     IQueryable<WorkflowInstanceState> IFleanQueryContext.WorkflowInstances => WorkflowInstances;
     IQueryable<ProcessDefinition> IFleanQueryContext.ProcessDefinitions => ProcessDefinitions;
     IQueryable<UserTaskState> IFleanQueryContext.UserTasks => UserTasks;
+    IQueryable<DeploymentRequestState> IFleanQueryContext.DeploymentRequests => DeploymentRequests;
     IQueryable<MessageStartEventRegistration> IFleanQueryContext.MessageStartEventRegistrations => MessageStartEventRegistrations;
     IQueryable<SignalStartEventRegistration> IFleanQueryContext.SignalStartEventRegistrations => SignalStartEventRegistrations;
     IQueryable<ConditionalStartEventListenerState> IFleanQueryContext.ConditionalStartEventListeners => ConditionalStartEventListeners;
