@@ -195,6 +195,9 @@ public class EventPublisherTests
                     services.AddDbContextFactory<FleanQueryDbContext>(options =>
                         options.UseFleansSqlite("DataSource=file::memory:?cache=shared"));
 
+                    services.AddDbContextFactory<FleanJournalDbContext>(options =>
+                        options.UseFleansSqlite("DataSource=file::memory:?cache=shared"));
+
                     services.AddSingleton<IWorkflowStateProjection, EfCoreWorkflowStateProjection>();
                     services.AddSingleton<EfCoreEventStore>();
                     services.AddSingleton<IEventStore>(sp => sp.GetRequiredService<EfCoreEventStore>());
@@ -226,6 +229,8 @@ public class EventPublisherTests
                     var sp = services.BuildServiceProvider();
                     using var db = sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>().CreateDbContext();
                     db.Database.EnsureCreated();
+                    using var journal = sp.GetRequiredService<IDbContextFactory<FleanJournalDbContext>>().CreateDbContext();
+                    SqliteSchemaInitializer.EnsureCreatedIgnoreRaces(journal.Database);
                 });
     }
 

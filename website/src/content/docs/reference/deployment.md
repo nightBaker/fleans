@@ -98,7 +98,7 @@ services:
   # repeat for fleans-management, fleans-mcp
 ```
 
-The connection-string keys are the canonical names the silos expect: `fleans` (write), `fleans-query` (optional read replica — falls back to `fleans` when absent), and `orleans-redis` (clustering + grain storage). `ConnectionStrings__` (double underscore) is the standard .NET environment-variable form of `ConnectionStrings:fleans`.
+The connection-string keys are the canonical names the silos expect: `fleans` (write), `fleans-query` (optional read replica — falls back to `fleans` when absent), `fleans-journal` (optional database for the workflow journal — falls back to `fleans`; see [Separate journal database](/fleans/reference/persistence/#separate-journal-database)), and `orleans-redis` (clustering + grain storage). `ConnectionStrings__` (double underscore) is the standard .NET environment-variable form of `ConnectionStrings:fleans`.
 
 ### Scale workers
 
@@ -252,6 +252,7 @@ The full canonical list of every configuration key — what it does, where it's 
 | --- | --- | --- | --- |
 | `ConnectionStrings:fleans` | yes (Postgres mode) | All silos | Workflow command-side database (event store + write model). |
 | `ConnectionStrings:fleans-query` | no | All silos | Read-replica for the query-side projection. Falls back to `fleans` when unset. |
+| `ConnectionStrings:fleans-journal` | no | All silos | Workflow journal (event batches + snapshots). Falls back to `fleans` when unset. Pair with `Persistence:Journal:Provider=Citus` to shard it. |
 | `ConnectionStrings:orleans-redis` | yes (multi-silo) | All silos | Orleans clustering, grain storage, PubSubStore. **Note the name — it's `orleans-redis`, not bare `redis`.** |
 
 ### Persistence

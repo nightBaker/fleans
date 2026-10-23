@@ -4,7 +4,9 @@ namespace Fleans.Domain.Events;
 
 /// <summary>
 /// The journal of the event-sourced WorkflowInstance grain, plus its snapshots.
-/// Implemented by EfCoreEventStore in the Persistence layer.
+/// Implemented by EfCoreEventStore in the Persistence layer; a provider must pass
+/// <c>EventStoreContractTests</c> (Fleans.Persistence.Tests). Every call is keyed by one instance
+/// id — the journal's shard key — and must stay that way (#879).
 /// <para>
 /// Versions: a grain's version is its event count. Stored events are numbered 1..N; the store
 /// assigns the numbers, callers only pass the count they expect to be stored already. Each append

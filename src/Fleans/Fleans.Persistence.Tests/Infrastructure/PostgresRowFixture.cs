@@ -14,10 +14,12 @@ internal sealed class PostgresRowFixture : IPersistenceTestFixture
 {
     private PostgresRowFixture(
         IDbContextFactory<FleanCommandDbContext> commandFactory,
-        IDbContextFactory<FleanQueryDbContext> queryFactory)
+        IDbContextFactory<FleanQueryDbContext> queryFactory,
+        IDbContextFactory<FleanJournalDbContext> journalFactory)
     {
         CommandFactory = commandFactory;
         QueryFactory = queryFactory;
+        JournalFactory = journalFactory;
     }
 
     public PersistenceProvider Provider => PersistenceProvider.Postgres;
@@ -25,6 +27,8 @@ internal sealed class PostgresRowFixture : IPersistenceTestFixture
     public IDbContextFactory<FleanCommandDbContext> CommandFactory { get; }
 
     public IDbContextFactory<FleanQueryDbContext> QueryFactory { get; }
+
+    public IDbContextFactory<FleanJournalDbContext> JournalFactory { get; }
 
     public static Task<IPersistenceTestFixture> CreateAsync()
     {
@@ -37,9 +41,11 @@ internal sealed class PostgresRowFixture : IPersistenceTestFixture
 
         var commandOptions = PersistenceTestBase.BuildCommandOptions(PersistenceTestBase.PgCommandDataSource);
         var queryOptions = PersistenceTestBase.BuildQueryOptions(PersistenceTestBase.PgCommandDataSource);
+        var journalOptions = PersistenceTestBase.BuildJournalOptions(PersistenceTestBase.PgCommandDataSource);
         var commandFactory = new TestDbContextFactory(commandOptions);
         var queryFactory = new TestQueryDbContextFactory(queryOptions);
-        IPersistenceTestFixture fixture = new PostgresRowFixture(commandFactory, queryFactory);
+        var journalFactory = new TestJournalDbContextFactory(journalOptions);
+        IPersistenceTestFixture fixture = new PostgresRowFixture(commandFactory, queryFactory, journalFactory);
         return Task.FromResult(fixture);
     }
 

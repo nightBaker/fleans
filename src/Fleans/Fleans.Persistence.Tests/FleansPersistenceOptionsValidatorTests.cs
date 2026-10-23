@@ -12,6 +12,38 @@ public class FleansPersistenceOptionsValidatorTests
     }
 
     [TestMethod]
+    public void Default_CitusShardCount_Is128()
+    {
+        Assert.AreEqual(128, new FleansPersistenceOptions().Journal.Citus.ShardCount);
+    }
+
+    [TestMethod]
+    [DataRow(0)]
+    [DataRow(-1)]
+    [DataRow(64001)]
+    public void CitusShardCount_OutOfRange_Fails(int shardCount)
+    {
+        var options = new FleansPersistenceOptions();
+        options.Journal.Citus.ShardCount = shardCount;
+
+        var result = Validator.Validate(null, options);
+
+        Assert.IsTrue(result.Failed);
+        StringAssert.Contains(result.FailureMessage, "Persistence:Journal:Citus:ShardCount");
+    }
+
+    [TestMethod]
+    [DataRow(1)]
+    [DataRow(64000)]
+    public void CitusShardCount_InRange_IsValid(int shardCount)
+    {
+        var options = new FleansPersistenceOptions();
+        options.Journal.Citus.ShardCount = shardCount;
+
+        Assert.IsTrue(Validator.Validate(null, options).Succeeded);
+    }
+
+    [TestMethod]
     [DataRow(0)]
     [DataRow(-1)]
     public void SnapshotInterval_BelowOne_Fails(int interval)

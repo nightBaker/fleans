@@ -26,7 +26,7 @@ public class EfCoreWorkflowInstancePurgeServiceTests : PersistenceTestBase
     private static readonly DateTimeOffset LongAgo = Cutoff.AddDays(-3);
 
     private static EfCoreEventStore CreateStore(IPersistenceTestFixture fixture) =>
-        new(fixture.CommandFactory, Serializer, Options.Create(new FleansPersistenceOptions()));
+        new(fixture.JournalFactory, Serializer, Options.Create(new FleansPersistenceOptions()));
 
     private static EfCoreWorkflowInstancePurgeService CreateService(IPersistenceTestFixture fixture) =>
         new(fixture.CommandFactory, CreateStore(fixture), NullLogger<EfCoreWorkflowInstancePurgeService>.Instance);
@@ -77,14 +77,15 @@ public class EfCoreWorkflowInstancePurgeServiceTests : PersistenceTestBase
     private static async Task<int[]> StoredRowsAsync(IPersistenceTestFixture fixture, Guid id)
     {
         await using var db = await fixture.CommandFactory.CreateDbContextAsync();
+        await using var journal = await fixture.JournalFactory.CreateDbContextAsync();
         return
         [
             await db.WorkflowInstances.CountAsync(i => i.Id == id),
             await db.WorkflowActivityInstanceEntries.CountAsync(e => e.WorkflowInstanceId == id),
             await db.WorkflowVariableStates.CountAsync(v => v.WorkflowInstanceId == id),
             await db.UserTasks.CountAsync(t => t.WorkflowInstanceId == id),
-            await db.WorkflowEventBatches.CountAsync(b => b.InstanceId == id),
-            await db.WorkflowSnapshots.CountAsync(s => s.InstanceId == id),
+            await journal.WorkflowEventBatches.CountAsync(b => b.InstanceId == id),
+            await journal.WorkflowSnapshots.CountAsync(s => s.InstanceId == id),
         ];
     }
 

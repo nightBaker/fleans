@@ -176,6 +176,7 @@ In priority order, based on what we measured:
 | P0 | **Bigger silo CPU.** 0.5 vCPU is too small. Move to 1 vCPU / 2 GiB minimum, ideally 2 vCPU. | Silo CPU is the first thing that pegs on Azure. |
 | P1 | **Add PgBouncer** between silos and Postgres. EF Core opens a connection per `DbContext`; under burst this exhausts `max_connections`. | The local Docker run failed at this exact wall (97 % errors). |
 | P2 | **Bigger Postgres SKU.** Burstable B2s is fine for the events case at low VU; for sustained 500 VU+ pick General Purpose D2ds_v5 or larger. | Removes the secondary cliff that follows P0. |
+| P2b | **Move the workflow journal to its own database** (`ConnectionStrings__fleans-journal`, optionally `Persistence__Journal__Provider=Citus` to shard it by instance id). See [Separate journal database](/fleans/reference/persistence/#separate-journal-database). | The journal takes most writes; once one Postgres primary is saturated, a separate or sharded journal keeps adding write capacity. |
 | P3 | **Switch to a non-memory stream provider.** `Fleans__Streaming__Provider=Kafka` or `Fleans__Streaming__Provider=AzureQueue` once you're past 1 silo. | The memory default silently drops cross-silo events. |
 | P4 | **Pre-warm before measurement.** The first 30 s of each run mixes engine ramp-up with cold-start grain activation. | Cleaner reported tails. |
 

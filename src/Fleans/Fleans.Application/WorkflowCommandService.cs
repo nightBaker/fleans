@@ -47,6 +47,8 @@ public partial class WorkflowCommandService : IWorkflowCommandService
     /// <summary>One grain call and one journal append per start (#863).</summary>
     private async Task<Guid> StartInstance(IWorkflowDefinition definition, ExpandoObject? initialVariables, string? businessId)
     {
+        // A random (v4) id on purpose: it is the journal's shard key, and a time-ordered id would
+        // put every new instance on the same shard (docs/conventions/invariants.md, #879).
         var instanceId = Guid.NewGuid();
         await _grainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId)
             .StartWorkflow(definition, businessId: businessId, variables: initialVariables);

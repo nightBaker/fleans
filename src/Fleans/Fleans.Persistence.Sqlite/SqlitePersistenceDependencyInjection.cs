@@ -19,16 +19,22 @@ public static class SqlitePersistenceDependencyInjection
     /// Optional connection string for the query DbContext. When null the command connection
     /// string is reused (the existing behavior of <see cref="EfCorePersistenceDependencyInjection.AddEfCorePersistence"/>).
     /// </param>
+    /// <param name="configureJournalDb">
+    /// Optional journal store (<see cref="FleanJournalDbContext"/>, #879). When null the journal
+    /// shares the command database.
+    /// </param>
     public static IServiceCollection AddSqlitePersistence(
         this IServiceCollection services,
         string commandConnectionString,
-        string? queryConnectionString = null)
+        string? queryConnectionString = null,
+        Action<DbContextOptionsBuilder>? configureJournalDb = null)
     {
         services.AddEfCorePersistence(
             options => options.UseFleansSqlite(commandConnectionString),
             queryConnectionString is not null
                 ? options => options.UseFleansSqlite(queryConnectionString)
-                : null);
+                : null,
+            configureJournalDb);
 
         return services;
     }

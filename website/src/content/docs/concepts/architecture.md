@@ -38,7 +38,7 @@ This means Fleans inherits Orleans' distributed systems guarantees without build
 
 **Lazy activation.** Grains activate on first access and deactivate after idle timeout. Cluster memory scales with *active* workflows, not total historical instances. A cluster with 10 million completed workflows and 100 active ones uses memory for ~100 grains.
 
-**CQRS database split.** Writes go through `FleanCommandDbContext`; reads go through `FleanQueryDbContext` (with `NoTracking` by default). PostgreSQL deployments can route reads to a replica via `ConnectionStrings:fleans-query` — no code changes, just configuration.
+**CQRS database split.** Writes go through `FleanCommandDbContext`; reads go through `FleanQueryDbContext` (with `NoTracking` by default). PostgreSQL deployments can route reads to a replica via `ConnectionStrings:fleans-query` — no code changes, just configuration. The workflow journal and snapshots have a context of their own (`FleanJournalDbContext`), so they can move to a separate or sharded database (`ConnectionStrings:fleans-journal`, `Persistence:Journal:Provider=Citus`); they are only ever accessed by instance id.
 
 **Fan-out via child grains.** Embedded sub-processes and call activities spawn their own `WorkflowInstance` grains. A parent workflow fans work across the cluster automatically.
 

@@ -25,12 +25,22 @@ public static class FleansPersistenceExtensions
     public static IHostApplicationBuilder AddFleansPersistence(this IHostApplicationBuilder builder)
     {
         var provider = builder.Configuration["Persistence:Provider"] ?? "Sqlite";
+        var journalProvider = builder.Configuration["Persistence:Journal:Provider"];
+        if (string.IsNullOrWhiteSpace(journalProvider))
+        {
+            // Empty = Postgres. The one exception keeps local dev zero-config: a SQLite main
+            // database with no journal connection keeps the journal in its SQLite file.
+            var sqliteDev = provider.Equals("Sqlite", StringComparison.OrdinalIgnoreCase)
+                && string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("fleans-journal"));
+            journalProvider = sqliteDev ? "Sqlite" : "Postgres";
+        }
 
         builder.Services.Configure<FleansPersistenceOptions>(opts =>
         {
             opts.Provider = provider;
             builder.Configuration.GetSection("Persistence").Bind(opts);
             if (string.IsNullOrWhiteSpace(opts.Provider)) opts.Provider = provider;
+            opts.Journal.Provider = journalProvider;
 
             // Bind Fleans:Reminders:Provider here so EnsureDatabaseSchemaAsync can
             // see it via IOptions without re-reading IConfiguration after Build().
@@ -46,13 +56,15 @@ public static class FleansPersistenceExtensions
                 ?? throw new InvalidOperationException(
                     "Connection string 'fleans' is required when Persistence:Provider=Postgres");
             var queryConnStr = builder.Configuration.GetConnectionString("fleans-query");
-            builder.Services.AddPostgresPersistence(connStr, queryConnStr);
+            builder.Services.AddPostgresPersistence(connStr, queryConnStr,
+                ConfigureJournal(builder, provider, connStr, journalProvider));
         }
         else if (provider.Equals("Sqlite", StringComparison.OrdinalIgnoreCase))
         {
             var connStr = builder.Configuration["FLEANS_SQLITE_CONNECTION"] ?? "DataSource=fleans-dev.db";
             var queryConnStr = builder.Configuration["FLEANS_QUERY_CONNECTION"];
-            builder.Services.AddSqlitePersistence(connStr, queryConnStr);
+            builder.Services.AddSqlitePersistence(connStr, queryConnStr,
+                ConfigureJournal(builder, provider, connStr, journalProvider));
         }
         else
         {
@@ -63,6 +75,44 @@ public static class FleansPersistenceExtensions
 
         return builder;
     }
+
+    /// <summary>
+    /// The journal store's options (#879), or <c>null</c> when the journal shares the main
+    /// database: no <c>ConnectionStrings:fleans-journal</c> and a journal provider of the main
+    /// provider's family (Citus is PostgreSQL). Any other combination needs
+    /// <c>ConnectionStrings:fleans-journal</c>.
+    /// </summary>
+    private static Action<DbContextOptionsBuilder>? ConfigureJournal(
+        IHostApplicationBuilder builder, string provider, string mainConnectionString, string journalProvider)
+    {
+        var isPostgres = IsPostgresFamily(journalProvider);
+        if (!isPostgres && !journalProvider.Equals("Sqlite", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException(
+                $"Unknown journal provider '{journalProvider}'. Supported: Sqlite, Postgres, Citus. " +
+                "Set Persistence:Journal:Provider in configuration, or leave it empty for Persistence:Provider.");
+
+        var journalConnStr = builder.Configuration.GetConnectionString("fleans-journal");
+        if (string.IsNullOrWhiteSpace(journalConnStr) || journalConnStr == mainConnectionString)
+        {
+            if (isPostgres != IsPostgresFamily(provider))
+                throw new InvalidOperationException(
+                    $"Connection string 'fleans-journal' is required when Persistence:Journal:Provider={journalProvider} " +
+                    $"and Persistence:Provider={provider}.");
+            return null; // the main database, through its own data source
+        }
+
+        if (!isPostgres)
+            return options => options.UseFleansSqlite(journalConnStr);
+
+        var journalDataSource = NpgsqlDataSource.Create(journalConnStr);
+        // Owned by DI so it is disposed on host shutdown; keyed so it never shadows the main one.
+        builder.Services.AddKeyedSingleton("fleans-journal", journalDataSource);
+        return options => options.UseFleansPostgresJournal(journalDataSource);
+    }
+
+    private static bool IsPostgresFamily(string provider) =>
+        provider.Equals("Postgres", StringComparison.OrdinalIgnoreCase)
+        || provider.Equals("Citus", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Ensures the database schema is ready. Call after builder.Build().
@@ -80,6 +130,11 @@ public static class FleansPersistenceExtensions
     /// or in <c>ConnectionStrings:fleans-reminders</c> / <c>ConnectionStrings:fleans-cluster</c>
     /// when such a dedicated database is configured (#886, #885). It runs before the silo
     /// starts, so the membership table exists by the time the silo joins.
+    ///
+    /// The journal context (#879) follows, in its own database or the main one: its own
+    /// migrations (own history table) under the same lock, then — for Citus — the
+    /// distribution of its tables. Main first: on a shared database the main migrations drop
+    /// the journal tables they created before the journal moved to its own context.
     /// </summary>
     public static async Task EnsureDatabaseSchemaAsync(this IHost app)
     {
@@ -114,35 +169,14 @@ public static class FleansPersistenceExtensions
         var dbFactory = scope.ServiceProvider
             .GetRequiredService<IDbContextFactory<FleanCommandDbContext>>();
 
+        await using (var db = await dbFactory.CreateDbContextAsync())
+        {
+            await EnsureSchemaAsync(db, options.Provider,
+                db => EnsureOrleansSchemaAsync(db.Database.GetDbConnection(), appDbSchema));
+        }
+
         if (options.Provider.Equals("Postgres", StringComparison.OrdinalIgnoreCase))
         {
-            await using var db = dbFactory.CreateDbContext();
-
-            // Pin the connection so the session-level advisory lock survives across
-            // MigrateAsync's internal transactions.
-            await db.Database.OpenConnectionAsync();
-            try
-            {
-                await db.Database.ExecuteSqlRawAsync(
-                    $"SELECT pg_advisory_lock({MigrationLockKey})");
-                await db.Database.MigrateAsync();
-
-                await EnsureOrleansSchemaAsync(db.Database.GetDbConnection(), appDbSchema);
-            }
-            finally
-            {
-                try
-                {
-                    await db.Database.ExecuteSqlRawAsync(
-                        $"SELECT pg_advisory_unlock({MigrationLockKey})");
-                }
-                catch
-                {
-                    // Lock will be released on connection close anyway.
-                }
-                await db.Database.CloseConnectionAsync();
-            }
-
             foreach (var (connectionString, schema) in dedicatedSchemas)
             {
                 // Own database (#886, #885): same advisory-lock dance on its own session.
@@ -159,9 +193,55 @@ public static class FleansPersistenceExtensions
                 }
             }
         }
+
+        var journalProvider = options.Journal.Provider ?? options.Provider;
+        var journalFactory = scope.ServiceProvider
+            .GetRequiredService<IDbContextFactory<FleanJournalDbContext>>();
+        await using (var journal = await journalFactory.CreateDbContextAsync())
+        {
+            await EnsureSchemaAsync(journal, journalProvider,
+                journalProvider.Equals("Citus", StringComparison.OrdinalIgnoreCase)
+                    ? db => CitusJournal.DistributeAsync((FleanJournalDbContext)db, options.Journal.Citus.ShardCount)
+                    : null);
+        }
+    }
+
+    /// <summary>
+    /// SQLite: EnsureCreated. PostgreSQL / Citus: MigrateAsync, then
+    /// <paramref name="afterMigrate"/>, under the migration advisory lock.
+    /// </summary>
+    private static async Task EnsureSchemaAsync(
+        Microsoft.EntityFrameworkCore.DbContext db, string provider, Func<Microsoft.EntityFrameworkCore.DbContext, Task>? afterMigrate)
+    {
+        if (IsPostgresFamily(provider))
+        {
+            // Pin the connection so the session-level advisory lock survives across
+            // MigrateAsync's internal transactions.
+            await db.Database.OpenConnectionAsync();
+            try
+            {
+                await db.Database.ExecuteSqlRawAsync(
+                    $"SELECT pg_advisory_lock({MigrationLockKey})");
+                await db.Database.MigrateAsync();
+                if (afterMigrate is not null)
+                    await afterMigrate(db);
+            }
+            finally
+            {
+                try
+                {
+                    await db.Database.ExecuteSqlRawAsync(
+                        $"SELECT pg_advisory_unlock({MigrationLockKey})");
+                }
+                catch
+                {
+                    // Lock will be released on connection close anyway.
+                }
+                await db.Database.CloseConnectionAsync();
+            }
+        }
         else
         {
-            using var db = dbFactory.CreateDbContext();
             SqliteSchemaInitializer.EnsureCreatedIgnoreRaces(db.Database);
         }
     }

@@ -12,15 +12,20 @@ namespace Fleans.Persistence.Events;
 /// calls. A journal row holds one append (see <see cref="WorkflowEventBatchEntity"/>). Used by the
 /// grain's ICustomStorageInterface implementation. The read model is a separate projection
 /// (<see cref="IWorkflowStateProjection"/>).
+/// <para>
+/// It works through <see cref="FleanJournalDbContext"/>, which can point at its own database
+/// (#879). Every command it sends filters or keys by <c>InstanceId</c>, so on a store sharded by
+/// it (Citus) each one is a single-shard command — keep it that way.
+/// </para>
 /// </summary>
 public class EfCoreEventStore : IEventStore
 {
-    private readonly IDbContextFactory<FleanCommandDbContext> _dbContextFactory;
+    private readonly IDbContextFactory<FleanJournalDbContext> _dbContextFactory;
     private readonly Serializer _serializer;
     private readonly int _maxEventsPerLoad;
 
     public EfCoreEventStore(
-        IDbContextFactory<FleanCommandDbContext> dbContextFactory,
+        IDbContextFactory<FleanJournalDbContext> dbContextFactory,
         Serializer serializer,
         IOptions<FleansPersistenceOptions> options)
     {

@@ -613,50 +613,6 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                     b.ToTable("WorkflowVariableStates", (string)null);
                 });
 
-            modelBuilder.Entity("Fleans.Persistence.Events.WorkflowEventBatchEntity", b =>
-                {
-                    b.Property<Guid>("InstanceId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("FirstVersion")
-                        .HasColumnType("integer");
-
-                    b.Property<Guid>("BatchId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("LastVersion")
-                        .HasColumnType("integer");
-
-                    b.Property<byte[]>("Payload")
-                        .IsRequired()
-                        .HasColumnType("bytea");
-
-                    b.HasKey("InstanceId", "FirstVersion");
-
-                    b.ToTable("WorkflowEventBatches", (string)null);
-                });
-
-            modelBuilder.Entity("Fleans.Persistence.Events.WorkflowSnapshotEntity", b =>
-                {
-                    b.Property<Guid>("InstanceId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<byte[]>("Payload")
-                        .IsRequired()
-                        .HasColumnType("bytea");
-
-                    b.Property<DateTimeOffset>("Timestamp")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("Version")
-                        .HasColumnType("integer");
-
-                    b.HasKey("InstanceId");
-
-                    b.ToTable("WorkflowSnapshots", (string)null);
-                });
-
             modelBuilder.Entity("Fleans.Domain.States.ActivityInstanceEntry", b =>
                 {
                     b.HasOne("Fleans.Domain.States.WorkflowInstanceState", null)

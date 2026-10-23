@@ -301,6 +301,9 @@ public abstract class WorkflowTestBase
                     services.AddDbContextFactory<FleanQueryDbContext>(options =>
                         options.UseFleansSqlite("DataSource=file::memory:?cache=shared"));
 
+                    services.AddDbContextFactory<FleanJournalDbContext>(options =>
+                        options.UseFleansSqlite("DataSource=file::memory:?cache=shared"));
+
                     services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.TimerSchedulers,
                         (sp, _) => new EfCoreTimerSchedulerGrainStorage(
                             sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
@@ -354,6 +357,9 @@ public abstract class WorkflowTestBase
                     var sp = services.BuildServiceProvider();
                     using var db = sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>().CreateDbContext();
                     db.Database.EnsureCreated();
+                    // The journal shares the database, as by default (#879).
+                    using var journal = sp.GetRequiredService<IDbContextFactory<FleanJournalDbContext>>().CreateDbContext();
+                    SqliteSchemaInitializer.EnsureCreatedIgnoreRaces(journal.Database);
                 });
     }
 }

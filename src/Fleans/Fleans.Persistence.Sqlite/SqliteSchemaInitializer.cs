@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage;
 using SQLitePCL;
 
 namespace Fleans.Persistence.Sqlite;
@@ -32,7 +33,11 @@ public static class SqliteSchemaInitializer
     {
         try
         {
-            database.EnsureCreated();
+            // EnsureCreated creates nothing in a file that already has tables — such as the
+            // command context's, when the journal context (#879) shares the file. Then create this
+            // context's tables if they are missing.
+            if (!database.EnsureCreated() && !AllTablesExist(database))
+                database.GetService<IRelationalDatabaseCreator>().CreateTables();
         }
         catch (SqliteException ex) when (
             ex.SqliteErrorCode == raw.SQLITE_ERROR
@@ -119,6 +124,26 @@ public static class SqliteSchemaInitializer
                     // A sibling silo sharing the same .db file added the column first.
                 }
             }
+        }
+        finally
+        {
+            if (wasClosed && conn.State == System.Data.ConnectionState.Open) conn.Close();
+        }
+    }
+
+    private static bool AllTablesExist(DatabaseFacade database)
+    {
+        var tables = database.GetService<ICurrentDbContext>().Context.Model.GetEntityTypes()
+            .Select(t => t.GetTableName())
+            .OfType<string>()
+            .Distinct()
+            .ToList();
+        var conn = (SqliteConnection)database.GetDbConnection();
+        var wasClosed = conn.State != System.Data.ConnectionState.Open;
+        try
+        {
+            if (wasClosed) conn.Open();
+            return tables.All(table => TableExists(conn, table));
         }
         finally
         {

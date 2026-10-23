@@ -53,7 +53,7 @@ For **production deployments** (Docker Compose, Kubernetes/Helm, bare VM), follo
 | **Plugin model for custom tasks** | Write a class deriving from `CustomTaskHandlerBase`, register it in DI, deploy a Worker silo. No engine recompile. The REST caller plugin ships as a worked example. |
 | **Aspire-first dev loop** | One command boots Api + Web + Redis with the Aspire dashboard, live logs, distributed tracing, and the Orleans Dashboard. No docker-compose juggling during development. |
 | **Multi-silo streaming** | Memory streams for dev; Kafka and Azure Queue Storage for production. Workflow event subscribers run on any silo — placement is Orleans-native, not pinned. |
-| **CQRS persistence** | EF Core split into `FleanCommandDbContext` (writes) and `FleanQueryDbContext` (no-tracking reads). SQLite for dev, PostgreSQL for production — same code path. |
+| **CQRS persistence** | EF Core split into `FleanCommandDbContext` (writes) and `FleanQueryDbContext` (no-tracking reads). SQLite for dev, PostgreSQL for production — same code path. The workflow journal (`FleanJournalDbContext`) can move to its own database, sharded on Citus. |
 | **Visual editor + admin UI** | Multi-tab `bpmn-js` editor, live deployment, instance state inspector, manual message/signal correlation. Blazor Server — no separate frontend deploy. |
 
 ## Deploy a workflow in 10 lines

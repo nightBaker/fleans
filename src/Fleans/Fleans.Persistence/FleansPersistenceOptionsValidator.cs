@@ -26,6 +26,11 @@ public sealed class FleansPersistenceOptionsValidator : IValidateOptions<FleansP
                 $"Persistence:SnapshotInterval ({options.SnapshotInterval}); otherwise even an instance " +
                 "whose snapshots are written on time cannot be loaded between two of them.");
 
+        var shardCount = options.Journal.Citus.ShardCount;
+        if (shardCount < 1 || shardCount > CitusJournalOptions.MaxShardCount)
+            return ValidateOptionsResult.Fail(
+                $"Persistence:Journal:Citus:ShardCount must be between 1 and {CitusJournalOptions.MaxShardCount} (was {shardCount}).");
+
         return ValidateOptionsResult.Success;
     }
 }

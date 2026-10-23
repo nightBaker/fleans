@@ -145,6 +145,45 @@ Example `appsettings.json`:
 
 **Read replica:** When `ConnectionStrings:fleans-query` is provided, the query `DbContext` connects to the replica. The replica must be provisioned separately (e.g. a PostgreSQL standby). The chart provisions only the primary `fleans` database; read-replica wiring is tracked in issue [#170](https://github.com/nightBaker/fleans/issues/170).
 
+## Separate journal database
+
+Every workflow instance is event-sourced: its **journal** (the `WorkflowEventBatches` table) is the source of truth, and its **snapshots** (`WorkflowSnapshots`) are a cache over it. Under load the journal takes most of the writes. It can run on a database of its own — for example a sharded one — while the read model, the admin UI's queries and the other grain state stay on `fleans`.
+
+| Configuration Key | Description | Default |
+|---|---|---|
+| `Persistence:Journal:Provider` | `Postgres`, `Citus` or `Sqlite` | `Postgres`; on a SQLite main database without `fleans-journal`, `Sqlite` (local dev) |
+| `Persistence:Journal:Citus:ShardCount` | Shards per journal table on Citus (1–64000) | `128` |
+| `ConnectionStrings:fleans-journal` | The journal's database | The `fleans` database |
+
+With neither set, nothing changes: the journal tables live in the main database. The journal has its own EF Core migrations (history table `__EFJournalMigrationsHistory`), applied at startup to whichever database it uses, so a journal database holds only the two journal tables.
+
+```bash
+# The journal on its own PostgreSQL server
+Persistence__Provider=Postgres
+ConnectionStrings__fleans="Host=postgres;Database=fleans;Username=fleans;Password=secret"
+ConnectionStrings__fleans-journal="Host=journal-db;Database=fleans_journal;Username=fleans;Password=secret"
+```
+
+Both tables are read and written **by workflow instance id only** — no joins, no queries across instances — and instance ids are random (Guid v4). That is what lets a distributed database shard them.
+
+### Citus
+
+With `Persistence:Journal:Provider=Citus`, startup applies the journal migrations and then distributes both tables by `InstanceId` into `Persistence:Journal:Citus:ShardCount` shards (default 128), snapshots colocated with their journal (`create_distributed_table`). Every journal command then goes to a single shard with plain PostgreSQL semantics. Tables that are already distributed are left alone, so every silo can run it — and a changed shard count does not reshard them: choose it with headroom before the first start.
+
+```bash
+Persistence__Provider=Postgres
+Persistence__Journal__Provider=Citus
+ConnectionStrings__fleans="Host=postgres;Database=fleans;Username=fleans;Password=secret"
+ConnectionStrings__fleans-journal="Host=citus-coordinator;Database=fleans_journal;Username=fleans;Password=secret"
+```
+
+- Install the extension in the journal database first (`CREATE EXTENSION citus;`) and add your worker nodes; startup fails with a clear message otherwise.
+- Start from a fresh journal database: the tables are distributed right after they are created, while still empty.
+- Without `ConnectionStrings:fleans-journal`, `Citus` distributes the journal tables inside the `fleans` database, which then has to be a Citus coordinator; the other tables stay local to it.
+- Citus is AGPL-3.0. Running it unmodified is fine; review the licence before you modify or redistribute it.
+
+**YugabyteDB** (YSQL speaks the PostgreSQL protocol) is the alternative when built-in Raft failover matters more than the smallest change. It is not a supported provider yet: it needs retries on snapshot-isolation conflicts and squashed migrations.
+
 ## Retention: purging finished instances
 
 Fleans keeps every finished instance until you delete it: its event journal, its snapshot, and its rows in the read model. A typical 10-step instance stores about 15 KB, so a million finished instances is about 15 GB, and list queries scan ever-larger tables.
@@ -173,6 +212,7 @@ Things to know:
 - **Disk space.** PostgreSQL reuses the freed space after `VACUUM` (autovacuum does this). An SQLite file does not shrink until you run `VACUUM`.
 - **The first purge of a large database** is best run off-peak, with a smaller `BatchSize` such as `200`.
 - **Logs:** EventIds 14100 (purge started), 14101 (batch purged) and 14102 (purge finished).
+- **Separate journal database:** the purge deletes the journal and snapshots by instance id in the journal's database, and the read-model rows in `fleans`.
 
 ## See also
 

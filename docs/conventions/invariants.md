@@ -34,6 +34,15 @@ Rejection messages MUST stay identifier-free; structured audit lives in `LogUser
 
 **When extending (e.g., role-based claims): add a 4th branch, keeping the existing three.**
 
+## Journal tables are accessed by `InstanceId` only
+
+The journal (`WorkflowEventBatches`) and snapshots (`WorkflowSnapshots`) may live in a database of their own, and on Citus they are distributed by `InstanceId` (#879). Two rules keep that possible:
+
+- **Every command on them filters or keys by `InstanceId`** — no joins, no query across instances (no scans by date, status or definition). Only `EfCoreEventStore` touches `FleanJournalDbContext`; `EfCoreEventStoreTests.EveryJournalCommand_IsKeyedByInstanceId` fails on a command that is not keyed. Anything that needs to find instances (lists, retention, cleanup) selects them from the read model, then reaches the journal by id.
+- **`InstanceId` stays a random Guid v4** (`Guid.NewGuid()`), never a time-ordered id (v7, sequential): a monotonic key would put every new instance on the last shard under range sharding. People find instances by `BusinessId`.
+
+**When adding journal access: key it by `InstanceId`, or it does not belong on the journal.**
+
 ## Stream-redelivery idempotency
 
 Every state-mutating grain method reachable from an `[ImplicitStreamSubscription]` handler MUST be idempotent under at-least-once delivery. Silent doubling under redelivery is a production correctness bug, not a test flake.

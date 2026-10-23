@@ -57,7 +57,7 @@ public class EventStoreDurabilityTests : WorkflowTestBase
 
         var instanceId = Guid.NewGuid();
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
-        var dbContextFactory = GetSiloService<IDbContextFactory<FleanCommandDbContext>>();
+        var dbContextFactory = GetSiloService<IDbContextFactory<FleanJournalDbContext>>();
 
         // A journal row holds one append; the instance's event count is its highest LastVersion.
         async Task<int> EventCount()
