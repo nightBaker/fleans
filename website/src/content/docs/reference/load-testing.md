@@ -124,6 +124,14 @@ that explicitly tombstones the silo's row in Orleans's membership table; the fas
 is to force a new revision (any env-var change triggers it) which causes a clean cluster
 re-election.
 
+**On Kubernetes this window is closed.** The Helm chart enables Orleans Kubernetes hosting by
+default (`clustering.kubernetes.enabled`): silos watch the pods, so a deleted pod's silo is
+declared dead as soon as Kubernetes removes the pod, and a SIGTERM'd silo leaves membership
+during its graceful stop (`clustering.terminationGracePeriodSeconds`). For production also move
+the membership table off Redis with `clustering.provider=Postgres` — see
+[Clustering](/fleans/reference/configuration/#clustering-orleans-membership). Container Apps
+and plain Docker hosts have no pod API, so the probe window above still applies there.
+
 ### 2. Default `Fleans:Streaming:Provider=memory` is unsafe for more than 1 silo
 
 In-memory Orleans streams are per-silo only. When the publisher and the consumer activation

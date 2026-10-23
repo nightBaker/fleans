@@ -6,15 +6,17 @@ Vendored files (copied from upstream tag v10.4.0):
   - src/Fleans/Fleans.ServiceDefaults/Resources/PostgreSQL-Reminders.sql (modified: Fleans
     adds the IX_RemindersTable_ServiceId_GrainHash index; the change is marked in the
     file's header and inline)
+  - src/Fleans/Fleans.ServiceDefaults/Resources/PostgreSQL-Clustering.sql (unmodified)
 
 These scripts are embedded as resources and executed during
-EnsureDatabaseSchemaAsync when Postgres reminders are enabled, because
-Microsoft.Orleans.Reminders.AdoNet does not ship its schema as an embedded
+EnsureDatabaseSchemaAsync when Postgres reminders or Postgres clustering are
+enabled, because Microsoft.Orleans.Reminders.AdoNet / Microsoft.Orleans.Clustering.AdoNet
+do not ship their schema as an embedded
 resource. Section 4 of the Apache-2.0 license requires the original notice
 and a copy of the license to accompany any distribution containing the
 licensed material — that is what this file provides.
 
-When Microsoft.Orleans.Reminders.AdoNet is bumped, re-fetch both .sql files
+When Microsoft.Orleans.Reminders.AdoNet / Clustering.AdoNet is bumped, re-fetch the .sql files
 from the matching upstream tag, update their version-pin header comment, and re-apply
 the Fleans index in PostgreSQL-Reminders.sql.
 

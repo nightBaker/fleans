@@ -2,7 +2,7 @@ namespace Fleans.ServiceDefaults.Tests;
 
 /// <summary>
 /// Verifies the embedded-resource layout for the vendored Orleans Postgres-reminder
-/// schema scripts (#669). The schema-init in <c>EnsureDatabaseSchemaAsync</c> loads
+/// schema scripts (#669) and the clustering script (#885). The schema-init in <c>EnsureDatabaseSchemaAsync</c> loads
 /// these by manifest name — a missing or renamed resource would only blow up at
 /// silo startup against a Postgres-reminders deployment. These tests catch the
 /// drift at build time instead.
@@ -13,6 +13,7 @@ public class EmbeddedSchemaResourceTests
     [DataTestMethod]
     [DataRow("Fleans.ServiceDefaults.Resources.PostgreSQL_Main.sql")]
     [DataRow("Fleans.ServiceDefaults.Resources.PostgreSQL_Reminders.sql")]
+    [DataRow("Fleans.ServiceDefaults.Resources.PostgreSQL_Clustering.sql")]
     public void EmbeddedResource_IsPresent(string resourceName)
     {
         var asm = typeof(FleansPersistenceExtensions).Assembly;
@@ -22,9 +23,10 @@ public class EmbeddedSchemaResourceTests
     }
 
     [DataTestMethod]
-    [DataRow("Fleans.ServiceDefaults.Resources.PostgreSQL_Main.sql")]
-    [DataRow("Fleans.ServiceDefaults.Resources.PostgreSQL_Reminders.sql")]
-    public async Task EmbeddedResource_ContainsVersionPin(string resourceName)
+    [DataRow("Fleans.ServiceDefaults.Resources.PostgreSQL_Main.sql", "Microsoft.Orleans.Reminders.AdoNet v10.4.0")]
+    [DataRow("Fleans.ServiceDefaults.Resources.PostgreSQL_Reminders.sql", "Microsoft.Orleans.Reminders.AdoNet v10.4.0")]
+    [DataRow("Fleans.ServiceDefaults.Resources.PostgreSQL_Clustering.sql", "Microsoft.Orleans.Clustering.AdoNet v10.4.0")]
+    public async Task EmbeddedResource_ContainsVersionPin(string resourceName, string versionPin)
     {
         // Drift guard. A silent SDK bump that forgets to re-vendor would skip
         // the version-pin comment we add in the Apache-2.0 attribution header.
@@ -33,7 +35,7 @@ public class EmbeddedSchemaResourceTests
         using var reader = new StreamReader(stream);
         var content = await reader.ReadToEndAsync();
 
-        StringAssert.Contains(content, "Microsoft.Orleans.Reminders.AdoNet v10.4.0",
+        StringAssert.Contains(content, versionPin,
             $"{resourceName} is missing the version-pin comment — re-vendor against the matching SDK version (see LICENSE-orleans-vendor).");
     }
 
