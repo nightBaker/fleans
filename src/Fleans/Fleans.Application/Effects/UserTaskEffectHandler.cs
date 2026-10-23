@@ -21,6 +21,8 @@ public partial class UserTaskEffectHandler : IEffectHandler
         switch (effect)
         {
             case RegisterUserTaskEffect regTask:
+                // No need to persist the instance first: UserTasks has no foreign key to the
+                // asynchronously projected WorkflowInstances row (#861).
                 try
                 {
                     var taskGrain = context.GrainFactory.GetGrain<IUserTaskGrain>(regTask.ActivityInstanceId);

@@ -72,6 +72,14 @@ public partial class WorkflowInstanceProjector : Grain, IWorkflowInstanceProject
         try
         {
             var (state, version, _) = await JournalReplay.LoadAsync(_eventStore, item.InstanceId);
+            if (version == 0)
+            {
+                // No journal: the instance was purged (#862) after this notification was sent.
+                // Writing would resurrect an empty read-model row.
+                LogJournalGone(item.InstanceId, item.Version);
+                return;
+            }
+
             await _projection.WriteAsync(item.InstanceId.ToString(), state, version);
             _projectedVersion = version;
             LogProjected(item.InstanceId, item.Version, version);
@@ -110,4 +118,8 @@ public partial class WorkflowInstanceProjector : Grain, IWorkflowInstanceProject
 
     [LoggerMessage(EventId = 4073, Level = LogLevel.Error, Message = "InstanceAdvanced stream error")]
     private partial void LogStreamError(Exception exception);
+
+    [LoggerMessage(EventId = 4074, Level = LogLevel.Information,
+        Message = "InstanceAdvanced {NotifiedVersion} of instance {InstanceId} skipped: its journal is gone (purged)")]
+    private partial void LogJournalGone(Guid instanceId, int notifiedVersion);
 }

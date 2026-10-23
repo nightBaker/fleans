@@ -39,7 +39,7 @@ If you author a custom-task plugin, follow the same pattern (see the [adding a B
 | 2000–2099 | `ActivityInstance` |
 | 3000–3099 | `WorkflowInstanceState` |
 | 3030–3032 | `WorkflowInstance` — escalation warnings |
-| 4000–4099 | Event handlers, including custom-task handlers (4030–4039, 4050) and the read-model projector (4070 projected, 4071 notification skipped — already projected (both Debug); 4072 projection failed, the stream redelivers (Warning); 4073 stream error (Error)) |
+| 4000–4099 | Event handlers, including custom-task handlers (4030–4039, 4050) and the read-model projector (4070 projected, 4071 notification skipped — already projected (both Debug); 4072 projection failed, the stream redelivers (Warning); 4073 stream error (Error); 4074 notification for a purged instance skipped (Information)) |
 | 5000–5099 | `WorkflowEventsPublisher` |
 | 9000–9099 | `MessageCorrelationGrain` (9000–9009), `BpmnConverter` (9010–9019), `ScriptExecutorGrain` (9020–9029) |
 | 9100–9199 | `MessageStartEventListenerGrain` (9100–9109), `SignalCorrelationGrain` (9110–9119) |

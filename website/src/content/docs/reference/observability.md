@@ -170,7 +170,7 @@ Every workflow log message has a stable `EventId` in a documented range. This le
 | 3000-3099 | `WorkflowInstanceState` (3030-3032 escalation warnings) |
 | 4000-4099 | Event handlers |
 | 5000-5099 | `WorkflowEventsPublisher` |
-| 6000-6099 | `WorkflowInstanceFactoryGrain` |
+| 6000-6099 | `ProcessDefinitionGrain`; 6050 `WorkflowDefinitionCache` (definition loaded into a silo's cache) |
 | 7000-7099 | `WorkflowEngine` |
 | 8000-8099 | `TimerStartEventSchedulerGrain` |
 | 9000-9099 | `BpmnConverter` |

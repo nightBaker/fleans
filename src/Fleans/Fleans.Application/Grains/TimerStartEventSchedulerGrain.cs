@@ -66,17 +66,23 @@ public partial class TimerStartEventSchedulerGrain : Grain, ITimerStartEventSche
         LogSchedulerDeactivated(this.GetPrimaryKeyString());
     }
 
-    public async Task<Guid> FireTimerStartEvent()
+    public async Task<Guid?> FireTimerStartEvent()
     {
         var processKey = this.GetPrimaryKeyString();
         var processGrain = _grainFactory.GetGrain<IProcessDefinitionGrain>(processKey);
-        var definition = await processGrain.GetLatestDefinition();
+        var definition = await processGrain.GetStartableDefinition();
+        if (definition is null)
+        {
+            // Disable deactivates this scheduler; a reminder that fires anyway (a race with
+            // Disable, or a failed unregister) starts nothing (#863).
+            LogProcessDisabledSkipped(processKey);
+            return null;
+        }
 
         var timerStart = definition.Activities.OfType<TimerStartEvent>().FirstOrDefault();
         var childId = Guid.NewGuid();
-        var child = _grainFactory.GetGrain<IWorkflowInstanceGrain>(childId);
-        await child.SetWorkflow(definition, timerStart?.ActivityId);
-        await child.StartWorkflow();
+        await _grainFactory.GetGrain<IWorkflowInstanceGrain>(childId)
+            .StartWorkflow(definition, timerStart?.ActivityId);
 
         State.IncrementFireCount();
         await _state.WriteStateAsync();
@@ -90,7 +96,12 @@ public partial class TimerStartEventSchedulerGrain : Grain, ITimerStartEventSche
         if (reminderName != "timer-start")
             return;
 
-        await FireTimerStartEvent();
+        if (await FireTimerStartEvent() is null)
+        {
+            // Disabled: stop the reminder. Enable re-activates the scheduler.
+            await DeactivateScheduler();
+            return;
+        }
 
         if (State.MaxFireCount.HasValue && State.FireCount >= State.MaxFireCount.Value)
         {
@@ -126,6 +137,9 @@ public partial class TimerStartEventSchedulerGrain : Grain, ITimerStartEventSche
 
     [LoggerMessage(EventId = 8003, Level = LogLevel.Warning, Message = "Failed to unregister timer-start reminder for process {ProcessKey}")]
     private partial void LogReminderUnregisterFailed(string processKey, Exception ex);
+
+    [LoggerMessage(EventId = 8012, Level = LogLevel.Information, Message = "Timer start event skipped for process {ProcessKey}: the process is disabled; deactivating the scheduler")]
+    private partial void LogProcessDisabledSkipped(string processKey);
 
     [LoggerMessage(EventId = 8011, Level = LogLevel.Information, Message = "Timer start cycle re-armed for process {ProcessKey}: next fire in {Interval} (fired {FireCount} so far)")]
     private partial void LogCycleReArmed(string processKey, TimeSpan interval, int fireCount);

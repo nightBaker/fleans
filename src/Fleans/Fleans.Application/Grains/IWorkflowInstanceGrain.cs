@@ -33,13 +33,23 @@ public interface IWorkflowInstanceGrain : IWorkflowInstanceCallback, IWorkflowEx
     Task CompleteActivationCondition(string activityId, Guid activityInstanceId, bool result);
     Task FailActivity(string activityId, Exception exception);
     // FailActivity(activityId, activityInstanceId, exception) inherited from IWorkflowInstanceCallback
-    Task StartWorkflow();
-    Task SetWorkflow(IWorkflowDefinition workflow, string? startActivityId = null, string? businessId = null);
+
+    /// <summary>
+    /// Creates and starts this instance in one call and one journal append (#863): the definition,
+    /// start activity (default: the process's start event), business id, input variables and — for
+    /// a call-activity child — the parent link. Every start path calls this once, after the
+    /// process-disabled check (<see cref="IProcessDefinitionGrain.GetStartableDefinition"/>).
+    /// A repeated call for an instance already started from the same definition is a no-op.
+    /// </summary>
+    Task StartWorkflow(
+        IWorkflowDefinition workflow,
+        string? startActivityId = null,
+        string? businessId = null,
+        ExpandoObject? variables = null,
+        ParentInfo? parent = null);
 
     // GetVariables(variablesStateId) inherited from IWorkflowInstanceCallback
 
-    Task SetParentInfo(Guid parentWorkflowInstanceId, string parentActivityId);
-    Task SetInitialVariables(ExpandoObject variables);
     // operationId (#657): caller-derived deterministic op-id for at-least-once dedup.
     // The grain consults AppliedOperations/PendingOperations to avoid double-applying retries.
     [AlwaysInterleave]

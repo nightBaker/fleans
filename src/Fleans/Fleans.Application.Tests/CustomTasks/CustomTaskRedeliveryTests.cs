@@ -38,8 +38,7 @@ public class CustomTaskRedeliveryTests : WorkflowTestBase
             ]
         };
         var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await instance.SetWorkflow(workflow);
-        await instance.StartWorkflow();
+        await instance.StartWorkflow(workflow);
 
         var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted);
         Assert.IsFalse(snapshot.IsFailed);
@@ -101,8 +100,7 @@ public class CustomTaskRedeliveryTests : WorkflowTestBase
             .ToList();
         await Task.WhenAll(instances.Select(async i =>
         {
-            await i.SetWorkflow(workflow);
-            await i.StartWorkflow();
+            await i.StartWorkflow(workflow);
         }));
 
         try
@@ -165,8 +163,7 @@ public class CustomTaskRedeliveryTests : WorkflowTestBase
         Interlocked.Exchange(ref TestThrowingCustomTaskHandler.InvocationCount, 0);
         var workflow = SingleCustomTaskWorkflow("custom-task-redelivery-failed", "test-throwing");
         var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await instance.SetWorkflow(workflow);
-        await instance.StartWorkflow();
+        await instance.StartWorkflow(workflow);
         var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsFailed);
         Assert.AreEqual(1, Volatile.Read(ref TestThrowingCustomTaskHandler.InvocationCount));
         var ct1Entry = snapshot.CompletedActivities.Single(a => a.ActivityId == "ct1");
@@ -192,8 +189,7 @@ public class CustomTaskRedeliveryTests : WorkflowTestBase
         Interlocked.Exchange(ref TestNoOpCustomTaskHandlerA.InvocationCount, 0);
         var workflow = SingleCustomTaskWorkflow("custom-task-bad-variables", "unhandled-type");
         var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await instance.SetWorkflow(workflow);
-        await instance.StartWorkflow();
+        await instance.StartWorkflow(workflow);
         var snapshot = await WaitForCondition(instance.GetPrimaryKey(),
             s => s.ActiveActivities.Any(a => a.ActivityId == "ct1"));
         var ct1Entry = snapshot.ActiveActivities.Single(a => a.ActivityId == "ct1");

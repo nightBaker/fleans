@@ -88,11 +88,9 @@ public class NestedTransactionScenarioTests : WorkflowTestBase
     private async Task<(IWorkflowInstanceGrain Grain, Guid InstanceId)> Start(WorkflowDefinition workflow)
     {
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await grain.SetWorkflow(workflow);
         dynamic vars = new ExpandoObject();
         vars.txKey = CorrelationKey;
-        await grain.SetInitialVariables(vars);
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(workflow, variables: (ExpandoObject)vars);
         return (grain, grain.GetPrimaryKey());
     }
 

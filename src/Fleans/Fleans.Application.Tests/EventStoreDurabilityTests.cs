@@ -74,18 +74,10 @@ public class EventStoreDurabilityTests : WorkflowTestBase
 
         Assert.AreEqual(0, await EventCount(), "no events before any grain method");
 
-        // SetWorkflow may or may not emit events (pure-setter is plausible);
-        // tolerate both. The load-bearing assertions come next.
-        await grain.SetWorkflow(workflow);
-        int afterSet = await EventCount();
-        Assert.IsTrue(afterSet >= 0,
-            $"row count never negative (got {afterSet})");
-
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(workflow);
         int afterStart = await EventCount();
-        Assert.IsTrue(afterStart > afterSet,
-            $"StartWorkflow must append events to the journal " +
-            $"(afterSet={afterSet}, afterStart={afterStart})");
+        Assert.IsTrue(afterStart > 0,
+            $"StartWorkflow must append events to the journal (afterStart={afterStart})");
 
         await grain.CompleteActivity("task1", new ExpandoObject());
         int afterTask1 = await EventCount();

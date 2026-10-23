@@ -37,54 +37,66 @@ namespace Fleans.Application.Tests
         }
 
         [TestMethod]
-        public async Task CreateInstance_ShouldCreateNewInstance_WithDeployedWorkflow()
+        public async Task GetStartableDefinition_ShouldReturnTheLatestVersion_WhenTheProcessIsActive()
         {
             // Arrange
             var workflowId = "test-workflow-1";
             var processGrain = _cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflowId);
-            var workflow = CreateSimpleWorkflow(workflowId);
-
-            await processGrain.DeployVersion(workflow, "<bpmn/>");
+            await processGrain.DeployVersion(CreateSimpleWorkflow(workflowId), "<bpmn/>");
+            var latest = await processGrain.DeployVersion(CreateSimpleWorkflow(workflowId), "<bpmn/>");
 
             // Act
-            var instance = await processGrain.CreateInstance();
+            var definition = await processGrain.GetStartableDefinition();
 
             // Assert
-            Assert.IsNotNull(instance);
-            var instanceId = await instance.GetWorkflowInstanceId();
-            Assert.AreNotEqual(Guid.Empty, instanceId);
+            Assert.IsNotNull(definition);
+            Assert.AreEqual(latest.ProcessDefinitionId, definition.ProcessDefinitionId);
         }
 
         [TestMethod]
-        public async Task CreateInstance_ShouldReturnWorkflowInstance_WithCorrectWorkflow()
+        public async Task GetStartableDefinition_ShouldReturnTheNamedVersion()
         {
             // Arrange
-            var workflowId = "test-workflow-1";
+            var workflowId = "test-workflow-versions";
             var processGrain = _cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflowId);
-            var workflow = CreateSimpleWorkflow(workflowId);
-
-            await processGrain.DeployVersion(workflow, "<bpmn/>");
+            var v1 = await processGrain.DeployVersion(CreateSimpleWorkflow(workflowId), "<bpmn/>");
+            await processGrain.DeployVersion(CreateSimpleWorkflow(workflowId), "<bpmn/>");
 
             // Act
-            var instance = await processGrain.CreateInstance();
+            var definition = await processGrain.GetStartableDefinition(v1.ProcessDefinitionId);
 
-            // Assert — workflow was set correctly: instance has an active start activity
-            var activeActivities = await instance.GetActiveActivities();
-            Assert.HasCount(1, activeActivities);
+            // Assert
+            Assert.IsNotNull(definition);
+            Assert.AreEqual(v1.ProcessDefinitionId, definition.ProcessDefinitionId);
+            await Assert.ThrowsAsync<KeyNotFoundException>(
+                () => processGrain.GetStartableDefinition($"{workflowId}:9:20260101T000000.0000000Z"));
         }
 
         [TestMethod]
-        public async Task CreateInstance_ShouldThrowException_WhenWorkflowNotRegistered()
+        public async Task GetStartableDefinition_ShouldReturnNull_WhenTheProcessIsDisabled()
+        {
+            // Arrange — the one process-disabled check every start path uses (#863)
+            var workflowId = "test-workflow-disabled";
+            var processGrain = _cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflowId);
+            var v1 = await processGrain.DeployVersion(CreateSimpleWorkflow(workflowId), "<bpmn/>");
+            await processGrain.Disable();
+
+            // Act & Assert — the latest version and any named version alike
+            Assert.IsNull(await processGrain.GetStartableDefinition());
+            Assert.IsNull(await processGrain.GetStartableDefinition(v1.ProcessDefinitionId));
+
+            await processGrain.Enable();
+            Assert.IsNotNull(await processGrain.GetStartableDefinition());
+        }
+
+        [TestMethod]
+        public async Task GetStartableDefinition_ShouldThrow_WhenWorkflowNotRegistered()
         {
             // Arrange
-            var workflowId = "non-existent-workflow";
-            var processGrain = _cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>(workflowId);
+            var processGrain = _cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("non-existent-workflow");
 
             // Act & Assert
-            await Assert.ThrowsAsync<KeyNotFoundException>(async () =>
-            {
-                await processGrain.CreateInstance();
-            });
+            await Assert.ThrowsAsync<KeyNotFoundException>(() => processGrain.GetStartableDefinition());
         }
 
         [TestMethod]

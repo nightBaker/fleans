@@ -113,6 +113,17 @@ Content-Type: application/json
 - **404** — the process key was never deployed (ProblemDetails, `detail`: `Workflow with id 'my-process' is not registered. …`)
 - **409** — the process key is disabled (ProblemDetails, `detail`: `Process 'my-process' is disabled. Enable it before creating new instances.`)
 
+#### Disabled processes
+
+`POST /Definitions/disable` stops a process key from starting new instances, whatever would start them:
+
+- `POST /Execution/start` returns **409**. The admin UI's start of a specific version is refused the same way.
+- Message, signal and conditional start events start nothing for that process. The other processes listening for the same message or signal still start.
+- A timer start event's scheduler is deactivated. If its reminder fires anyway, it starts nothing.
+- A call activity that calls the disabled process fails, like any other child-start failure. An error boundary on the call activity catches it.
+
+Instances that are already running keep running. `POST /Definitions/enable` re-registers the start events.
+
 #### Business id
 
 A process instance can have a business id: a value your systems already know, such as an order number. Use it to find "the process for order 123" without storing the generated instance GUID. It follows Camunda 8.9+'s [`businessId`](https://docs.camunda.io/docs/next/components/concepts/process-instance-creation/):

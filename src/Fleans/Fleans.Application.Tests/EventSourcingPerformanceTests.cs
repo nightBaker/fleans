@@ -28,8 +28,7 @@ public class EventSourcingPerformanceTests : WorkflowTestBase
         // Scenario 2: Short workflow (~10-15 events)
         var shortId = Guid.NewGuid();
         var shortGrain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(shortId);
-        await shortGrain.SetWorkflow(CreateSimpleWorkflow("perf-simple"));
-        await shortGrain.StartWorkflow();
+        await shortGrain.StartWorkflow(CreateSimpleWorkflow("perf-simple"));
         await shortGrain.CompleteActivity("task", new ExpandoObject());
         await ForceAllGrainDeactivation();
 
@@ -42,8 +41,7 @@ public class EventSourcingPerformanceTests : WorkflowTestBase
         // Scenario 3: Medium workflow with sequential tasks (~30-50 events)
         var medId = Guid.NewGuid();
         var medGrain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(medId);
-        await medGrain.SetWorkflow(CreateLongSequentialWorkflow(10));
-        await medGrain.StartWorkflow();
+        await medGrain.StartWorkflow(CreateLongSequentialWorkflow(10));
         for (int i = 1; i <= 10; i++)
             await medGrain.CompleteActivity($"task{i}", new ExpandoObject());
         await ForceAllGrainDeactivation();
@@ -57,8 +55,7 @@ public class EventSourcingPerformanceTests : WorkflowTestBase
         // Scenario 4: Longer workflow (~60-100 events)
         var longId = Guid.NewGuid();
         var longGrain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(longId);
-        await longGrain.SetWorkflow(CreateLongSequentialWorkflow(25));
-        await longGrain.StartWorkflow();
+        await longGrain.StartWorkflow(CreateLongSequentialWorkflow(25));
         for (int i = 1; i <= 25; i++)
             await longGrain.CompleteActivity($"task{i}", new ExpandoObject());
         await ForceAllGrainDeactivation();

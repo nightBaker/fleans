@@ -39,8 +39,7 @@ public class CompensationLogServiceTests : WorkflowTestBase
 
         var instanceId = Guid.NewGuid();
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
-        await grain.SetWorkflow(workflow);
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(workflow);
         await WaitForCondition(instanceId, s => s.IsCompleted, timeoutMs: 5000);
 
         // Act
@@ -83,8 +82,7 @@ public class CompensationLogServiceTests : WorkflowTestBase
 
         var instanceId = Guid.NewGuid();
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
-        await grain.SetWorkflow(workflow);
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(workflow);
         await WaitForCondition(instanceId, s => s.IsCompleted, timeoutMs: 10000);
 
         // Act
@@ -154,8 +152,7 @@ public class CompensationLogServiceTests : WorkflowTestBase
 
         var instanceId = Guid.NewGuid();
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
-        await grain.SetWorkflow(workflow);
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(workflow);
         await WaitForCondition(instanceId, s => s.IsCompleted, timeoutMs: 10000);
 
         // Act

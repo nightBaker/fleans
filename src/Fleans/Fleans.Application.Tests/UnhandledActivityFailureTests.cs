@@ -39,10 +39,9 @@ public class UnhandledActivityFailureTests : WorkflowTestBase
         };
 
         var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await instance.SetWorkflow(workflow);
 
         // Act
-        await instance.StartWorkflow();
+        await instance.StartWorkflow(workflow);
 
         // Assert — the instance reaches a terminal, failed state.
         var snapshot = await WaitForCondition(instance.GetPrimaryKey(), s => s.IsCompleted);
@@ -131,8 +130,7 @@ public class UnhandledActivityFailureTests : WorkflowTestBase
             ]
         };
         var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await instance.SetWorkflow(workflow);
-        await instance.StartWorkflow();
+        await instance.StartWorkflow(workflow);
 
         // Act
         await instance.FailActivity("task1", new Exception("handled"));
@@ -169,8 +167,7 @@ public class UnhandledActivityFailureTests : WorkflowTestBase
             ]
         };
         var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await instance.SetWorkflow(workflow);
-        await instance.StartWorkflow();
+        await instance.StartWorkflow(workflow);
 
         // Act
         await instance.FailActivity("taskA", new Exception("branch A failed"));
@@ -201,8 +198,7 @@ public class UnhandledActivityFailureTests : WorkflowTestBase
         };
 
         var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await instance.SetWorkflow(workflow);
-        await instance.StartWorkflow();
+        await instance.StartWorkflow(workflow);
 
         var waiting = await QueryService.GetStateSnapshot(instance.GetPrimaryKey());
         CollectionAssert.Contains(waiting!.ActiveActivityIds, "ct1");

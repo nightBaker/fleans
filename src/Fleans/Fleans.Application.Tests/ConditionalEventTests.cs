@@ -60,8 +60,7 @@ public class ConditionalBoundaryEventTests : WorkflowTestBase
         };
 
         var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await instance.SetWorkflow(workflow);
-        await instance.StartWorkflow();
+        await instance.StartWorkflow(workflow);
 
         var instanceId = instance.GetPrimaryKey();
 
@@ -117,8 +116,7 @@ public class ConditionalBoundaryEventTests : WorkflowTestBase
         };
 
         var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await instance.SetWorkflow(workflow);
-        await instance.StartWorkflow();
+        await instance.StartWorkflow(workflow);
 
         // Complete task normally
         await instance.CompleteActivity("task1", new ExpandoObject());
@@ -165,8 +163,7 @@ public class ConditionalBoundaryEventTests : WorkflowTestBase
         };
 
         var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await instance.SetWorkflow(workflow);
-        await instance.StartWorkflow();
+        await instance.StartWorkflow(workflow);
 
         var instanceId = instance.GetPrimaryKey();
 
@@ -229,8 +226,7 @@ public class ConditionalBoundaryEventTests : WorkflowTestBase
         };
 
         var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await instance.SetWorkflow(workflow);
-        await instance.StartWorkflow();
+        await instance.StartWorkflow(workflow);
 
         var instanceId = instance.GetPrimaryKey();
 
@@ -279,8 +275,7 @@ public class ConditionalBoundaryEventTests : WorkflowTestBase
         };
 
         var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await instance.SetWorkflow(workflow);
-        await instance.StartWorkflow();
+        await instance.StartWorkflow(workflow);
 
         await instance.FailActivity("task1", new Exception("Something went wrong"));
 
@@ -320,8 +315,7 @@ public class ConditionalBoundaryEventTests : WorkflowTestBase
         };
 
         var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await instance.SetWorkflow(workflow);
-        await instance.StartWorkflow();
+        await instance.StartWorkflow(workflow);
 
         await instance.FailActivity("task1", new BadRequestActivityException("Invalid input"));
 
@@ -371,8 +365,7 @@ public class ConditionalIntermediateCatchEventTests : WorkflowTestBase
         };
 
         var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await instance.SetWorkflow(workflow);
-        await instance.StartWorkflow();
+        await instance.StartWorkflow(workflow);
 
         var instanceId = instance.GetPrimaryKey();
 
@@ -415,8 +408,7 @@ public class ConditionalIntermediateCatchEventTests : WorkflowTestBase
         };
 
         var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await instance.SetWorkflow(workflow);
-        await instance.StartWorkflow();
+        await instance.StartWorkflow(workflow);
 
         var instanceId = instance.GetPrimaryKey();
         await WaitForCondition(instanceId, s => s.ActiveActivities.Any(a => a.ActivityId == "condCatch"));
@@ -460,8 +452,7 @@ public class ConditionalIntermediateCatchEventTests : WorkflowTestBase
         };
 
         var instance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await instance.SetWorkflow(workflow);
-        await instance.StartWorkflow();
+        await instance.StartWorkflow(workflow);
 
         var instanceId = instance.GetPrimaryKey();
 

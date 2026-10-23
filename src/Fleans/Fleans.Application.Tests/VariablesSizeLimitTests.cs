@@ -1,5 +1,6 @@
 using System.Dynamic;
 using Fleans.Application.Grains;
+using Fleans.Domain.Events;
 
 namespace Fleans.Application.Tests;
 
@@ -24,8 +25,7 @@ public class VariablesSizeLimitTests : WorkflowTestBase
         // Arrange
         var instanceId = Guid.NewGuid();
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
-        await grain.SetWorkflow(CreateSimpleWorkflow("variables-size-limit"));
-        await grain.StartWorkflow();
+        await grain.StartWorkflow(CreateSimpleWorkflow("variables-size-limit"));
 
         // Act
         var ex = await Assert.ThrowsExactlyAsync<ArgumentException>(
@@ -45,20 +45,23 @@ public class VariablesSizeLimitTests : WorkflowTestBase
     }
 
     [TestMethod]
-    public async Task SetInitialVariables_OverTheLimit_IsRejected()
+    public async Task StartWorkflow_WithVariablesOverTheLimit_IsRejectedAndStartsNothing()
     {
         // Arrange
         var instanceId = Guid.NewGuid();
         var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId);
-        await grain.SetWorkflow(CreateSimpleWorkflow("variables-size-limit"));
+        var workflow = CreateSimpleWorkflow("variables-size-limit");
 
         // Act
         await Assert.ThrowsExactlyAsync<ArgumentException>(
-            () => grain.SetInitialVariables(VariablesOfSize(TestMaxVariablesSizeBytes + 1)));
+            () => grain.StartWorkflow(workflow, variables: VariablesOfSize(TestMaxVariablesSizeBytes + 1)));
 
-        // Assert
+        // Assert — nothing journaled, and a start within the limit still works
+        Assert.IsEmpty(await GetSiloService<IEventStore>().ReadEventsAsync(instanceId, afterVersion: 0));
+        await grain.StartWorkflow(workflow);
         var state = await QueryService.GetStateSnapshot(instanceId);
         Assert.IsNotNull(state);
+        Assert.IsTrue(state.IsStarted);
         Assert.IsFalse(state.VariableStates.Any(v => v.Variables.ContainsKey("blob")));
     }
 }

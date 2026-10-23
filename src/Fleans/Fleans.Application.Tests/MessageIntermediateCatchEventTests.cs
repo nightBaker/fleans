@@ -33,8 +33,7 @@ public class MessageIntermediateCatchEventTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Complete task with orderId variable
         dynamic vars = new ExpandoObject();
@@ -88,8 +87,7 @@ public class MessageIntermediateCatchEventTests : WorkflowTestBase
 
         // Instance 1 — subscribes first
         var instance1 = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await instance1.SetWorkflow(CreateWorkflow("dup-msg-1"));
-        await instance1.StartWorkflow();
+        await instance1.StartWorkflow(CreateWorkflow("dup-msg-1"));
         dynamic vars1 = new ExpandoObject();
         vars1.orderId = "order-same";
         await instance1.CompleteActivity("task1", vars1);
@@ -101,8 +99,7 @@ public class MessageIntermediateCatchEventTests : WorkflowTestBase
 
         // Instance 2 — subscribes with same correlation key, should fail
         var instance2 = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await instance2.SetWorkflow(CreateWorkflow("dup-msg-2"));
-        await instance2.StartWorkflow();
+        await instance2.StartWorkflow(CreateWorkflow("dup-msg-2"));
         dynamic vars2 = new ExpandoObject();
         vars2.orderId = "order-same";
         await instance2.CompleteActivity("task1", vars2);
@@ -152,8 +149,7 @@ public class MessageIntermediateCatchEventTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         // Complete task WITHOUT setting orderId — the catch event's correlation
         // variable reference will fail to resolve at build time.
@@ -209,8 +205,7 @@ public class MessageIntermediateCatchEventTests : WorkflowTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         dynamic vars = new ExpandoObject();
         vars.orderId = "order-123";

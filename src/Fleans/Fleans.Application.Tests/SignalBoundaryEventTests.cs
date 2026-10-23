@@ -46,8 +46,7 @@ public class SignalBoundaryEventTests : BoundaryEventTestBase
         };
 
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.SetWorkflow(workflow);
-        await workflowInstance.StartWorkflow();
+        await workflowInstance.StartWorkflow(workflow);
 
         var instanceId = workflowInstance.GetPrimaryKey();
         var preSnapshot = await QueryService.GetStateSnapshot(instanceId);
