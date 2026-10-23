@@ -10,7 +10,9 @@ the editor container gets `fl-diagram-orbit`, tasks get the `USER` / `SCRIPT` ca
 applies), `EventsPageTests.NavEntry_NavigatesToEventsPage` and the Settings round-trip (top-bar
 navigation), `EditorPropertiesTests` (properties panel round-trips), `EditorModesTests` (Simulation waits
 at a gateway, finishes after a choice, blocks Delete and leaves the XML unchanged; History compares the
-tab with the version it was opened from and marks the changed task). Everything below is
+tab with the version it was opened from and marks the changed task), `EditorCollaborationTests` (presence
+across two sessions, deploy conflict, deploy disabled), `EditorPresenceGrainTests`, `CollaborationParsingTests`.
+Everything below is
 pointer/keyboard interaction or visual and stays manual.
 
 ## Prerequisites
@@ -125,7 +127,22 @@ pointer/keyboard interaction or visual and stays manual.
    dialog shows the retry countdown, then **Retry now**.
 5. Minimap: shows the diagram and the viewport; click / drag in it moves the canvas; hidden below 1280px.
 
-### 9. Responsive
+### 9. Collaboration, deploy and assistant
+
+1. Open the same deployed process (`/editor/<key>/1`) in two browsers (or a private window). **Expected:**
+   within ~10 s each shows the other's avatar; selecting an element in one shows an "XY editing" chip on
+   it in the other; closing one makes the avatar disappear within ~30 s.
+2. Deploy a new version from the second browser, then click **Deploy** in the first. **Expected:** the
+   checklist shows *Conflict: vN was deployed after you opened v1* with **Compare with vN** (History mode
+   with that version) and **Take theirs** (opens vN in a tab); the button reads *Deploy mine anyway*.
+3. Tick **Deploy disabled** and deploy. **Expected:** *Deployed <key> vN+1* with *Deployed disabled*; the
+   Workflows page shows the process *Disabled*; **View instances** opens that version's instances.
+4. Simulate the diagram to the end, then open Deploy: *Simulation: a dry run … reached the end*. Edit
+   anything: it goes back to *not run on this version yet*.
+5. A user task without a boundary timer shows the **Process assistant** card; **Add timer** attaches a
+   4 h timer (Undo removes it); **Later** hides the suggestion. A dead end's problem has **Add end event**.
+
+### 10. Responsive
 
 1. Narrow the window to ~1280px: palette 196px, inspector 300px.
 2. ~1024px: the inspector floats over the canvas only while something is selected.

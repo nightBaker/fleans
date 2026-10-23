@@ -624,12 +624,14 @@ window.bpmnEditor = {
         });
         var problems = this._lint();
         this._markProblems(problems);
+        var suggestions = this._suggest(problems);
         // Capped so the payload stays well under the SignalR message limit (32 KB by default).
         return {
             elements: elements,
             flows: flows,
             outline: this._outline().slice(0, 120),
             problems: problems.slice(0, 60),
+            suggestions: suggestions.slice(0, 5),
             problemCounts: {
                 errors: problems.filter(function (p) { return p.severity === 'error'; }).length,
                 warnings: problems.filter(function (p) { return p.severity === 'warning'; }).length,
@@ -675,8 +677,11 @@ window.bpmnEditor = {
         var canvas = this._modeler.get('canvas');
         var root = canvas.getRootElement();
         var problems = [];
-        function add(bo, severity, message) {
-            problems.push({ id: bo.id, name: (bo.name || '').slice(0, 60), type: bo.$type, severity: severity, message: message });
+        function add(bo, severity, message, fix) {
+            problems.push({
+                id: bo.id, name: (bo.name || '').slice(0, 60), type: bo.$type, severity: severity, message: message,
+                fixKind: fix ? fix.kind : null, fixLabel: fix ? fix.label : null
+            });
         }
         function definition(bo) {
             return (bo.eventDefinitions && bo.eventDefinitions[0]) || null;
@@ -711,13 +716,14 @@ window.bpmnEditor = {
             }
             var compensateBoundary = type === 'bpmn:BoundaryEvent' && def && def.$type === 'bpmn:CompensateEventDefinition';
             if (!exempt && !compensateBoundary && outgoing.length === 0 && type !== 'bpmn:EndEvent' && !inEventSubProcess) {
-                add(bo, 'warning', 'No outgoing flow: the path stops here without an end event.');
+                add(bo, 'warning', 'No outgoing flow: the path stops here without an end event.', { kind: 'end', label: 'Add end event' });
             }
 
             if ((type === 'bpmn:ExclusiveGateway' || type === 'bpmn:InclusiveGateway') && outgoing.length > 1) {
                 outgoing.forEach(function (flow) {
                     if (flow !== bo['default'] && !flow.conditionExpression) {
-                        add(flow, 'error', 'Branch of "' + (bo.name || bo.id) + '" has no condition and is not the default flow.');
+                        add(flow, 'error', 'Branch of "' + (bo.name || bo.id).slice(0, 40) + '" has no condition and is not the default flow.',
+                            bo['default'] ? null : { kind: 'default', label: 'Make it the default flow' });
                     }
                 });
             }
@@ -755,7 +761,7 @@ window.bpmnEditor = {
             }
         });
         if (pools > 1) {
-            add(root.businessObject, 'warning', 'Only the first pool\'s process is deployed; the other pools are ignored.');
+            add(root.businessObject, 'warning', 'Several pools: only the executable process is deployed, the other pools are documentation.');
         }
 
         var rootBo = root.businessObject;
@@ -767,6 +773,88 @@ window.bpmnEditor = {
         var order = { error: 0, warning: 1, info: 2 };
         problems.sort(function (a, b) { return order[a.severity] - order[b.severity]; });
         return problems;
+    },
+
+    // "Process assistant" (design: the violet card under the canvas): rule-based suggestions with a
+    // one-click fix — no model, no network. Dismissed ones stay hidden for this diagram session.
+    _suggest: function (problems) {
+        var registry = this._modeler.get('elementRegistry');
+        var dismissed = this._dismissedSuggestions || (this._dismissedSuggestions = {});
+        var out = [];
+        function push(s) { if (!dismissed[s.kind + ':' + s.id]) out.push(s); }
+        registry.forEach(function (e) {
+            var bo = e.businessObject;
+            if (!bo || e.labelTarget || bo.$type !== 'bpmn:UserTask') return;
+            var hasTimer = (e.attachers || []).some(function (b) {
+                var d = b.businessObject.eventDefinitions && b.businessObject.eventDefinitions[0];
+                return d && d.$type === 'bpmn:TimerEventDefinition';
+            });
+            if (!hasTimer && (e.outgoing || []).length) {
+                push({ id: bo.id, kind: 'escalation', name: (bo.name || bo.id).slice(0, 60),
+                    text: '"' + (bo.name || bo.id).slice(0, 40) + '" has no escalation. Add a 4 h boundary timer to route overdue work?',
+                    actionLabel: 'Add timer' });
+            }
+        });
+        problems.forEach(function (p) {
+            if (!p.fixKind) return;
+            push({ id: p.id, kind: p.fixKind, name: p.name || p.id, text: p.message, actionLabel: p.fixLabel });
+        });
+        return out;
+    },
+
+    dismissSuggestion: function (kind, elementId) {
+        (this._dismissedSuggestions || (this._dismissedSuggestions = {}))[kind + ':' + elementId] = true;
+        this._scheduleSummary();
+    },
+
+    // Quick fixes for problems and assistant suggestions. Each is one modeling command, so Undo reverts it.
+    applyFix: function (kind, elementId) {
+        if (!this._modeler) return false;
+        var m = this._modeler;
+        var registry = m.get('elementRegistry');
+        var modeling = m.get('modeling');
+        var element = registry.get(elementId);
+        if (!element) return false;
+        if (kind === 'end') {
+            var end = m.get('elementFactory').createShape({ type: 'bpmn:EndEvent' });
+            m.get('autoPlace').append(element, end);
+            return true;
+        }
+        if (kind === 'default' && element.waypoints) {
+            modeling.updateProperties(element.source, { 'default': element.businessObject });
+            return true;
+        }
+        if (kind === 'escalation') {
+            var bpmnFactory = m.get('bpmnFactory');
+            var timer = bpmnFactory.create('bpmn:TimerEventDefinition', {
+                timeDuration: bpmnFactory.create('bpmn:FormalExpression', { body: 'PT4H' })
+            });
+            var boundaryBo = bpmnFactory.create('bpmn:BoundaryEvent', {
+                attachedToRef: element.businessObject, cancelActivity: true, eventDefinitions: [timer], name: 'Escalation 4 h'
+            });
+            timer.$parent = boundaryBo;
+            var shape = m.get('elementFactory').createShape({ type: 'bpmn:BoundaryEvent', businessObject: boundaryBo });
+            var created = modeling.createShape(shape, { x: element.x + element.width - 20, y: element.y + element.height }, element, { attach: true });
+            m.get('selection').select(created);
+            return true;
+        }
+        return false;
+    },
+
+    // Collaboration: other editors' selections, as a chip on the element ("Ann is editing").
+    setPresence: function (marks) {
+        if (!this._modeler) return;
+        var overlays = this._modeler.get('overlays');
+        var registry = this._modeler.get('elementRegistry');
+        overlays.remove({ type: 'orbit-presence' });
+        (marks || []).forEach(function (mark) {
+            var element = registry.get(mark.elementId);
+            if (!element) return;
+            var chip = document.createElement('span');
+            chip.className = 'orbit-presence-chip';
+            chip.textContent = mark.label;
+            overlays.add(mark.elementId, 'orbit-presence', { position: { top: -24, left: 0 }, html: chip });
+        });
     },
 
     _markProblems: function (problems) {
@@ -1956,6 +2044,7 @@ window.bpmnEditor = {
         this._simulation = null;
         this._readOnly = false;
         this._diffMarked = null;
+        this._dismissedSuggestions = null;
         this._markedProblems = null;
         this._dotNetRef = null;
         this._dirtyListenerAttached = false;

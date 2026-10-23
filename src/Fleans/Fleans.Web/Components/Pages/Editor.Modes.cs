@@ -17,6 +17,14 @@ public partial class Editor
 
     private SimulationSnapshot? simulation;
 
+    // Deploy checklist: did a dry run of exactly this diagram finish? Every summary push (import or
+    // command) bumps the revision; simulations issue no commands, so they don't.
+    private int diagramRevision;
+    private (string TabId, int Revision)? simulatedAt;
+
+    private bool SimulatedThisTab =>
+        simulatedAt is { } at && at.TabId == activeTabId && at.Revision == diagramRevision;
+
     private List<ProcessDefinitionSummary>? historyVersions;
     private int? compareVersion;
     private ComparisonResult? comparison;
@@ -104,6 +112,8 @@ public partial class Editor
     {
         if (mode != EditorMode.Simulation) return Task.CompletedTask;
         simulation = snapshot;
+        if (snapshot.Finished && snapshot.Visited > 0 && activeTabId != null)
+            simulatedAt = (activeTabId, diagramRevision);
         return InvokeAsync(StateHasChanged);
     }
 

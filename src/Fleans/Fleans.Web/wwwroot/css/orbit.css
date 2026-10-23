@@ -1985,3 +1985,127 @@ button.orbit-log__text:hover {
         display: none;
     }
 }
+
+/* ---- Collaboration (Editor.Collaboration.cs) ------------------------------------------------- */
+
+.orbit-presence {
+    display: flex;
+    align-items: center;
+}
+
+.orbit-presence .orbit-avatar + .orbit-avatar {
+    margin-left: -8px;
+}
+
+.orbit-presence .orbit-avatar:nth-child(2n) {
+    background: var(--o-accentsoft);
+    border-color: var(--o-accentink);
+}
+
+.orbit-avatar--more {
+    background: var(--o-card);
+    border-color: var(--o-line3);
+    color: var(--o-muted);
+}
+
+.orbit-presence-chip {
+    display: block;
+    white-space: nowrap;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-family: var(--o-mono);
+    font-size: 10px;
+    color: var(--o-text);
+    background: var(--o-violetsoft);
+    border: 1px solid var(--o-violet);
+    pointer-events: none;
+}
+
+.deploy-dialog__actions--start {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+}
+
+/* ---- Process assistant (rule-based quick fixes) ---------------------------------------------- */
+
+/* Top-right: the top-left holds the tools, the bottom corners the zoom bar, minimap and watermark. */
+.orbit-assistant {
+    right: 16px;
+    top: 16px;
+    width: min(360px, calc(100% - 420px));
+    min-width: 240px;
+    box-sizing: border-box;
+    gap: 12px;
+    padding: 12px 14px;
+    align-items: flex-start;
+    border-color: var(--o-violet);
+}
+
+.orbit-assistant__icon {
+    width: 32px;
+    height: 32px;
+    flex: none;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--o-violet);
+    background: var(--o-violetsoft);
+    border: 1px solid var(--o-violet);
+}
+
+.orbit-assistant__icon svg {
+    width: 16px;
+    height: 16px;
+}
+
+.orbit-assistant__body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.orbit-assistant__title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--o-violet);
+}
+
+.orbit-assistant__text {
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--o-text2);
+}
+
+.orbit-assistant__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.orbit-problem-row {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.orbit-problem-row .orbit-text-btn {
+    align-self: flex-end;
+}
+
+@media (max-width: 1024px) {
+    .orbit-assistant {
+        top: auto;
+        bottom: 76px;
+        left: 16px;
+        right: auto;
+        width: calc(100% - 32px);
+    }
+}
+
+@media (max-width: 768px) {
+    .orbit-assistant {
+        display: none;
+    }
+}

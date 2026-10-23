@@ -12,7 +12,7 @@ and deploy any open diagram as a new process version.
 | Area | What it does |
 |---|---|
 | **Toolbar** | Process ID (click to rename) with a version pill — `v3` when the tab matches a deployed version, `v3 · draft` once edited, `draft` before the first deploy. The **Modeling / XML** switch, then New Diagram, Import BPMN, Download XML and Deploy. |
-| **Elements** (left) | Start, end, user/service/script task, call activity, exclusive and parallel gateway, timer and message event, sub-process, pool, data object and comment. Click a tile and then the canvas, or drag the tile onto the canvas. Every other BPMN element is one *Change type* away (right-click menu). Pools and data objects are drawn for documentation: the engine runs the first pool's process and ignores data objects. |
+| **Elements** (left) | Start, end, user/service/script task, call activity, exclusive and parallel gateway, timer and message event, sub-process, pool, data object and comment. Click a tile and then the canvas, or drag the tile onto the canvas. Every other BPMN element is one *Change type* away (right-click menu). In a diagram with pools the engine runs the executable pool's process; lanes, message flows and data objects are kept in the BPMN but don't affect execution. |
 | **Structure** (left) | Every flow node, left to right, indented inside sub-processes. Click a row to select and scroll to it. |
 | **Validation** (left) | Modelling hints counted as errors and warnings; **Show problems** lists them, and the elements get a `!` / `?` badge on the canvas. |
 | **Canvas tools** | Select, pan, connect, lasso, make space, undo/redo; a zoom bar (−, %, +, fit) bottom-left and a minimap bottom-right (click or drag it to move the view). |
@@ -75,6 +75,20 @@ while simulating — **Stop** or **Modeling** returns to editing.
 `~`, and the panel lists every change with old → new values (name, condition, script, timer, message,
 called process, default flow, …); removed elements are listed too. **Open** opens a version in a new tab.
 The diagram is read-only in this mode.
+
+## Working together and deploying
+
+When someone else has the same process open in the editor, their avatar appears next to the version pill,
+and the element they have selected carries an "XY editing" chip. **Deploy** opens a checklist: the
+BPMN converts, modelling hints, whether you simulated this exact diagram, and whether a **newer version was
+deployed** since you opened yours. In that case you can **Compare** with it (History mode), **Take theirs**
+(open it in a tab) or **Deploy mine anyway**. Tick **Deploy disabled** to deploy without letting new
+instances start — enable the process on the Workflows page once it has been reviewed. After deploying,
+the dialog links to the new version's instances.
+
+The **Process assistant** card (top-right of the canvas) suggests fixes for common gaps — a user task
+without an escalation timer, a path without an end event, a gateway branch without a condition or default
+— and applies them in one click (Undo reverts them). It works from rules, not an AI service.
 
 ## XML mode
 
