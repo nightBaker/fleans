@@ -117,6 +117,12 @@ export default defineConfig({
           label: 'Reference',
           autogenerate: { directory: 'reference' },
         },
+        {
+          label: 'Roadmap',
+          items: [
+            { label: 'Road to 1.0.0', slug: 'roadmap/v1' },
+          ],
+        },
       ],
       components: {
         Footer: './src/components/Footer.astro',
