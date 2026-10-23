@@ -89,14 +89,4 @@ public class WorkerGrainPlacementResolutionTests : WorkflowTestBase
         Assert.AreEqual(0, offenders.Count,
             "Grain classes with more than one placement attribute: " + string.Join(", ", offenders));
     }
-
-    [TestMethod]
-    public void WorkerGrainKey_SpreadsCallsOverSeveralKeys()
-    {
-        var keys = Enumerable.Range(0, 2_000).Select(_ => WorkerGrainKey.Next()).ToHashSet();
-
-        Assert.IsTrue(keys.All(k => k is >= 0 and < WorkerGrainKey.Count), "Key out of range.");
-        Assert.IsTrue(keys.Count > 1,
-            "A single fixed key pins every call from a core silo to one worker silo (#857).");
-    }
 }

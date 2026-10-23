@@ -8,6 +8,7 @@ using Fleans.Application.Placement;
 using Fleans.Domain.Events;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Orleans.Runtime;
 using Orleans.Streams;
 
@@ -19,11 +20,14 @@ public partial class WorkflowEvaluateActivationConditionEventHandler : Grain, IW
 {
     private readonly ILogger<WorkflowEvaluateActivationConditionEventHandler> _logger;
     private readonly IGrainFactory _grainFactory;
+    private readonly WorkerEvaluatorOptions _evaluatorOptions;
 
     public WorkflowEvaluateActivationConditionEventHandler(
         ILogger<WorkflowEvaluateActivationConditionEventHandler> logger,
-        IGrainFactory grainFactory)
+        IGrainFactory grainFactory,
+        IOptions<WorkerEvaluatorOptions> evaluatorOptions)
     {
+        _evaluatorOptions = evaluatorOptions.Value;
         _logger = logger;
         _grainFactory = grainFactory;
     }
@@ -64,7 +68,7 @@ public partial class WorkflowEvaluateActivationConditionEventHandler : Grain, IW
             // because DynamicExpresso resolves variables through the _context parameter.
             ((IDictionary<string, object?>)variables)["_nroftoken"] = (object)item.NrOfToken;
 
-            var expressionEvaluator = _grainFactory.GetGrain<IConditionExpressionEvaluatorGrain>(WorkerGrainKey.Next());
+            var expressionEvaluator = _grainFactory.GetGrain<IConditionExpressionEvaluatorGrain>(_evaluatorOptions.NextKey());
             var result = await expressionEvaluator.Evaluate(item.Condition, variables);
 
             LogActivationConditionResult(item.ActivityId, item.ActivityInstanceId, result, item.NrOfToken);

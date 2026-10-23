@@ -7,6 +7,7 @@ using Fleans.Application.Placement;
 using Fleans.Domain.Events;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Orleans.Runtime;
 using Orleans.Streams;
 
@@ -18,9 +19,14 @@ public partial class WorkflowEvaluateConditionEventHandler : Grain, IWorkflowEva
 {
     private readonly ILogger<WorkflowEvaluateConditionEventHandler> _logger;
     private readonly IGrainFactory _grainFactory;
+    private readonly WorkerEvaluatorOptions _evaluatorOptions;
 
-    public WorkflowEvaluateConditionEventHandler(ILogger<WorkflowEvaluateConditionEventHandler> logger, IGrainFactory grainFactory)
+    public WorkflowEvaluateConditionEventHandler(
+        ILogger<WorkflowEvaluateConditionEventHandler> logger,
+        IGrainFactory grainFactory,
+        IOptions<WorkerEvaluatorOptions> evaluatorOptions)
     {
+        _evaluatorOptions = evaluatorOptions.Value;
         _logger = logger;
         _grainFactory = grainFactory;
     }
@@ -53,7 +59,7 @@ public partial class WorkflowEvaluateConditionEventHandler : Grain, IWorkflowEva
 
         try
         {
-            var expressionEvaluator = _grainFactory.GetGrain<IConditionExpressionEvaluatorGrain>(WorkerGrainKey.Next());
+            var expressionEvaluator = _grainFactory.GetGrain<IConditionExpressionEvaluatorGrain>(_evaluatorOptions.NextKey());
 
             var variables = await workflowInstance.GetVariables(item.VariablesId);
 
