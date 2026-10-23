@@ -237,8 +237,24 @@ namespace Fleans.Application.Tests
         [TestMethod]
         public async Task GetCreatedAt_ShouldNotChange_AfterLaterActivity()
         {
-            // Arrange
-            var workflow = CreateSimpleWorkflow();
+            // Arrange — two tasks, so the instance is still running after the first: both snapshots
+            // come from the grain. (A completed instance's snapshot comes from the read model,
+            // which stores timestamps at microsecond precision.)
+            var start = new StartEvent("start");
+            var task1 = new TaskActivity("task1");
+            var task2 = new TaskActivity("task2");
+            var end = new EndEvent("end");
+            var workflow = new WorkflowDefinition
+            {
+                WorkflowId = "created-at-stable",
+                Activities = [start, task1, task2, end],
+                SequenceFlows =
+                [
+                    new SequenceFlow("f1", start, task1),
+                    new SequenceFlow("f2", task1, task2),
+                    new SequenceFlow("f3", task2, end)
+                ]
+            };
             var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
             await workflowInstance.StartWorkflow(workflow);
 
@@ -249,7 +265,7 @@ namespace Fleans.Application.Tests
             Assert.IsNotNull(createdAtBefore);
 
             // Act
-            await workflowInstance.CompleteActivity("task", new ExpandoObject());
+            await workflowInstance.CompleteActivity("task1", new ExpandoObject());
 
             // Assert
             var snapshotAfter = await QueryService.GetStateSnapshot(instanceId);
