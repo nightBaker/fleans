@@ -106,6 +106,22 @@ ASPNETCORE_URLS is intentionally excluded — each workload sets its own port.
       name: {{ include "fleans.postgres.secretName" . }}
       key: connection-string
 {{- end }}
+{{- $reminders := lower .Values.reminders.provider }}
+{{- if not (has $reminders (list "redis" "postgres")) }}
+{{- fail (printf "Unsupported reminders.provider %q. Valid: Redis, Postgres (case-insensitive)." .Values.reminders.provider) }}
+{{- end }}
+{{- if and (eq $reminders "postgres") (ne (lower .Values.persistence.provider) "postgres") }}
+{{- fail "reminders.provider=Postgres requires persistence.provider=Postgres." }}
+{{- end }}
+- name: Fleans__Reminders__Provider
+  value: {{ ternary "Postgres" "Redis" (eq $reminders "postgres") | quote }}
+{{- if and (eq $reminders "postgres") .Values.reminders.postgres.existingSecret }}
+- name: ConnectionStrings__fleans-reminders
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.reminders.postgres.existingSecret | quote }}
+      key: {{ .Values.reminders.postgres.existingSecretKey | quote }}
+{{- end }}
 {{- $provider := lower .Values.streaming.provider }}
 {{- if not (has $provider (list "memory" "redis" "kafka" "azurequeue")) }}
 {{- fail (printf "Unsupported streaming.provider %q. Valid: Memory, Redis, Kafka, AzureQueue (case-insensitive)." .Values.streaming.provider) }}

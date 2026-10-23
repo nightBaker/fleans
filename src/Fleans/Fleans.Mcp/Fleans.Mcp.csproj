@@ -19,9 +19,9 @@
   <ItemGroup>
     <PackageReference Include="Aspire.StackExchange.Redis" Version="13.1.1" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.1" />
-    <PackageReference Include="Microsoft.Orleans.Client" Version="10.0.1" />
-    <PackageReference Include="Microsoft.Orleans.Clustering.Redis" Version="10.0.1" />
-    <PackageReference Include="Microsoft.Orleans.Sdk" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Orleans.Client" Version="10.4.0" />
+    <PackageReference Include="Microsoft.Orleans.Clustering.Redis" Version="10.4.0" />
+    <PackageReference Include="Microsoft.Orleans.Sdk" Version="10.4.0" />
     <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.0.0" />
   </ItemGroup>
 

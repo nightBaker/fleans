@@ -12,10 +12,15 @@ public static class FleansRemindersExtensions
     /// supported: <c>Redis</c>, <c>Postgres</c>).
     ///
     /// <c>Redis</c> shares the <c>orleans-redis</c> connection used for clustering and
-    /// streaming; <c>Postgres</c> shares the <c>fleans</c> connection used by
-    /// <c>Persistence:Provider=Postgres</c> and is only allowed when persistence is
+    /// streaming; <c>Postgres</c> uses <c>ConnectionStrings:fleans-reminders</c> (its own
+    /// database, recommended for production) or else the <c>fleans</c> connection used by
+    /// <c>Persistence:Provider=Postgres</c>, and is only allowed when persistence is
     /// also Postgres (mixed-storage is rejected at startup). See
     /// <c>docs/conventions/reminders.md</c>.
+    ///
+    /// The <c>Fleans:Reminders</c> section is also bound onto Orleans'
+    /// <see cref="ReminderOptions"/> (<c>ReminderLoadingWindow</c>,
+    /// <c>RefreshReminderListPeriod</c>, …); unset keys keep the Orleans defaults.
     ///
     /// Fails fast (throws <see cref="InvalidOperationException"/>) if the chosen
     /// provider's connection string is missing, per CLAUDE.md's "Registration-vs-
@@ -25,6 +30,7 @@ public static class FleansRemindersExtensions
     public static ISiloBuilder AddFleansReminders(this ISiloBuilder siloBuilder, IConfiguration configuration)
     {
         var resolved = ResolveRemindersConfiguration(configuration);
+        siloBuilder.Configure<ReminderOptions>(configuration.GetSection(FleansReminderOptions.SectionName));
 
         switch (resolved.Provider)
         {
@@ -74,10 +80,16 @@ public static class FleansRemindersExtensions
                             $"Fleans:Reminders:Provider=Postgres requires Persistence:Provider=Postgres (got '{persistenceProvider}'). " +
                             "Mixed-storage (SQLite app + Postgres reminders) is unsupported — see #669.");
 
+                    // #886: a dedicated reminders database keeps the 5-minute range re-reads
+                    // away from the read model; without one the reminders share 'fleans'.
+                    var dedicated = configuration.GetConnectionString(FleansReminderOptions.PostgresConnectionName);
+                    if (!string.IsNullOrWhiteSpace(dedicated))
+                        return new ResolvedRemindersConfiguration(RemindersProvider.Postgres, dedicated, DedicatedDatabase: true);
+
                     var connString = configuration.GetConnectionString("fleans")
                         ?? throw new InvalidOperationException(
-                            "Connection string 'fleans' is required when Fleans:Reminders:Provider=Postgres " +
-                            "(reuses the Persistence:Provider=Postgres connection — see docs/conventions/reminders.md).");
+                            "Connection string 'fleans-reminders' or 'fleans' is required when Fleans:Reminders:Provider=Postgres " +
+                            "(see docs/conventions/reminders.md).");
                     return new ResolvedRemindersConfiguration(RemindersProvider.Postgres, connString);
                 }
             default:
@@ -94,4 +106,11 @@ public enum RemindersProvider
     Postgres,
 }
 
-public readonly record struct ResolvedRemindersConfiguration(RemindersProvider Provider, string ConnectionString);
+/// <param name="DedicatedDatabase">
+/// True when <c>Postgres</c> reminders use <c>ConnectionStrings:fleans-reminders</c> (their own
+/// database) instead of the application's <c>fleans</c> connection.
+/// </param>
+public readonly record struct ResolvedRemindersConfiguration(
+    RemindersProvider Provider,
+    string ConnectionString,
+    bool DedicatedDatabase = false);

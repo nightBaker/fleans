@@ -123,6 +123,22 @@ streaming:
     connectionString: "DefaultEndpointsProtocol=https;AccountName=...;AccountKey=..."
 ```
 
+### Reminders provider
+
+Every pending BPMN timer is one Orleans reminder. Set `reminders.provider` to `Redis` (default — reuses the chart-bundled Redis) or `Postgres` (case-insensitive). **Postgres is the recommended production provider** once pending timers reach the millions: the Redis provider keeps every reminder of the cluster in one Redis key. `Postgres` requires `persistence.provider=Postgres`; other values abort `helm template`.
+
+Point the reminders at their own database so their periodic range reads (every silo re-reads its slice of the reminder ring every 5 minutes) do not compete with the journal and read model. Without `existingSecret` they share the `fleans` database.
+
+```yaml
+reminders:
+  provider: Postgres
+  postgres:
+    existingSecret: fleans-reminders-db   # Secret with the connection string of the reminders database
+    existingSecretKey: connection-string
+```
+
+Custom worker hosts must be built with the same reminder provider — every silo serves a slice of the reminder ring. Tune Orleans `ReminderOptions` with `extraEnv`, e.g. `Fleans__Reminders__ReminderLoadingWindow=00:30:00`.
+
 ### Worker silos on dedicated nodes
 
 ```yaml
