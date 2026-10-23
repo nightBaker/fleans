@@ -128,6 +128,9 @@ public partial class WorkflowInstance :
     /// <summary>The instance is terminal and asked to be deactivated once idle (#860).</summary>
     private bool _terminalDeactivationRequested;
 
+    /// <summary>The instance is terminal and asked to be deactivated once idle (#860).</summary>
+    private bool _terminalDeactivationRequested;
+
     private IGrainTimer? _projectionRetryTimer;
     private int _projectionRetryAttempt;
     private static readonly TimeSpan ProjectionRetryFirstDelay = TimeSpan.FromSeconds(2);
@@ -1133,6 +1136,9 @@ public partial class WorkflowInstance :
         public Guid WorkflowInstanceId => _grain.GetPrimaryKey();
 
         public Task PersistStateAsync() => _grain.DrainAndRaiseEvents();
+
+        public Task EnsureInstancePersistedAsync() =>
+            _grain._journalVersion == 0 ? _grain.DrainAndRaiseEvents() : Task.CompletedTask;
 
         public async Task ProcessFailureEffects(
             string activityId, Guid hostActivityInstanceId, Exception ex)

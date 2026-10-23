@@ -2,6 +2,7 @@ using System.Data.Common;
 using Fleans.Persistence;
 using Fleans.Persistence.PostgreSql;
 using Fleans.Persistence.Sqlite;
+using Fleans.ServiceDefaults.Clustering;
 using Fleans.ServiceDefaults.Reminders;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -74,18 +75,40 @@ public static class FleansPersistenceExtensions
     /// SQL. Two silos that both observe a migration as pending can therefore both try to
     /// CREATE TABLE, and the loser fails with `relation "X" already exists`.
     ///
-    /// With <c>Fleans:Reminders:Provider=Postgres</c> it also creates the Orleans reminders
-    /// schema — in the application database, or in <c>ConnectionStrings:fleans-reminders</c>
-    /// when that dedicated database is configured (#886).
+    /// With <c>Fleans:Reminders:Provider=Postgres</c> / <c>Fleans:Clustering:Provider=Postgres</c>
+    /// it also creates the Orleans reminders / membership schema — in the application database,
+    /// or in <c>ConnectionStrings:fleans-reminders</c> / <c>ConnectionStrings:fleans-cluster</c>
+    /// when such a dedicated database is configured (#886, #885). It runs before the silo
+    /// starts, so the membership table exists by the time the silo joins.
     /// </summary>
     public static async Task EnsureDatabaseSchemaAsync(this IHost app)
     {
         var options = app.Services.GetRequiredService<IOptions<FleansPersistenceOptions>>().Value;
+        var configuration = app.Services.GetRequiredService<IConfiguration>();
 
-        ResolvedRemindersConfiguration? postgresReminders = null;
+        // Which Orleans scripts go where: the application database (null key) or a dedicated
+        // database per connection string — reminders and membership may share one.
+        var appDbSchema = OrleansSchema.None;
+        var dedicatedSchemas = new Dictionary<string, OrleansSchema>(StringComparer.Ordinal);
+        void Require(OrleansSchema part, string connectionString, bool dedicated)
+        {
+            if (!dedicated)
+                appDbSchema |= part;
+            else
+                dedicatedSchemas[connectionString] = dedicatedSchemas.GetValueOrDefault(connectionString) | part;
+        }
+
         if (options.RemindersProvider.Equals("Postgres", StringComparison.OrdinalIgnoreCase))
-            postgresReminders = FleansRemindersExtensions.ResolveRemindersConfiguration(
-                app.Services.GetRequiredService<IConfiguration>());
+        {
+            var reminders = FleansRemindersExtensions.ResolveRemindersConfiguration(configuration);
+            Require(OrleansSchema.Reminders, reminders.ConnectionString, reminders.DedicatedDatabase);
+        }
+
+        if (string.Equals(configuration[FleansClusteringOptions.ProviderKey], "Postgres", StringComparison.OrdinalIgnoreCase))
+        {
+            var clustering = FleansClusteringExtensions.ResolveClusteringConfiguration(configuration);
+            Require(OrleansSchema.Clustering, clustering.ConnectionString, clustering.DedicatedDatabase);
+        }
 
         using var scope = app.Services.CreateScope();
         var dbFactory = scope.ServiceProvider
@@ -104,8 +127,7 @@ public static class FleansPersistenceExtensions
                     $"SELECT pg_advisory_lock({MigrationLockKey})");
                 await db.Database.MigrateAsync();
 
-                if (postgresReminders is { DedicatedDatabase: false })
-                    await EnsureOrleansRemindersSchemaAsync(db.Database.GetDbConnection());
+                await EnsureOrleansSchemaAsync(db.Database.GetDbConnection(), appDbSchema);
             }
             finally
             {
@@ -121,15 +143,15 @@ public static class FleansPersistenceExtensions
                 await db.Database.CloseConnectionAsync();
             }
 
-            if (postgresReminders is { DedicatedDatabase: true } dedicated)
+            foreach (var (connectionString, schema) in dedicatedSchemas)
             {
-                // Own database (#886): same advisory-lock dance on its own session.
-                await using var conn = new NpgsqlConnection(dedicated.ConnectionString);
+                // Own database (#886, #885): same advisory-lock dance on its own session.
+                await using var conn = new NpgsqlConnection(connectionString);
                 await conn.OpenAsync();
                 await ExecuteAsync(conn, $"SELECT pg_advisory_lock({MigrationLockKey})");
                 try
                 {
-                    await EnsureOrleansRemindersSchemaAsync(conn);
+                    await EnsureOrleansSchemaAsync(conn, schema);
                 }
                 finally
                 {
@@ -147,25 +169,40 @@ public static class FleansPersistenceExtensions
     // Arbitrary, but must be the same across all silos in the cluster.
     private const long MigrationLockKey = 8723547283L;
 
-    /// <summary>
-    /// Runs the vendored Orleans Postgres reminders scripts once. Caller holds the advisory lock.
-    /// The OrleansQuery table (created by Main.sql) is the sentinel: present → already
-    /// initialised → skip; absent → run both.
-    /// </summary>
-    private static async Task EnsureOrleansRemindersSchemaAsync(DbConnection conn)
+    [Flags]
+    private enum OrleansSchema
     {
-        bool alreadyInitialised;
-        await using (var cmd = conn.CreateCommand())
-        {
-            cmd.CommandText = "SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = 'orleansquery')";
-            alreadyInitialised = (bool)(await cmd.ExecuteScalarAsync() ?? false);
-        }
+        None = 0,
+        Reminders = 1,
+        Clustering = 2,
+    }
 
-        if (alreadyInitialised)
+    /// <summary>
+    /// Runs the vendored Orleans Postgres scripts that are still missing. Caller holds the
+    /// advisory lock. Each script's main table is its sentinel: present → already initialised →
+    /// skip. Main.sql (the OrleansQuery table both provider scripts insert into) runs first, once.
+    /// </summary>
+    private static async Task EnsureOrleansSchemaAsync(DbConnection conn, OrleansSchema schema)
+    {
+        if (schema == OrleansSchema.None)
             return;
 
-        await ExecuteAsync(conn, await ReadEmbeddedScriptAsync("Fleans.ServiceDefaults.Resources.PostgreSQL_Main.sql"));
-        await ExecuteAsync(conn, await ReadEmbeddedScriptAsync("Fleans.ServiceDefaults.Resources.PostgreSQL_Reminders.sql"));
+        if (!await TableExistsAsync(conn, "orleansquery"))
+            await ExecuteAsync(conn, await ReadEmbeddedScriptAsync("Fleans.ServiceDefaults.Resources.PostgreSQL_Main.sql"));
+
+        if (schema.HasFlag(OrleansSchema.Reminders) && !await TableExistsAsync(conn, "orleansreminderstable"))
+            await ExecuteAsync(conn, await ReadEmbeddedScriptAsync("Fleans.ServiceDefaults.Resources.PostgreSQL_Reminders.sql"));
+
+        if (schema.HasFlag(OrleansSchema.Clustering) && !await TableExistsAsync(conn, "orleansmembershiptable"))
+            await ExecuteAsync(conn, await ReadEmbeddedScriptAsync("Fleans.ServiceDefaults.Resources.PostgreSQL_Clustering.sql"));
+    }
+
+    /// <param name="relationName">Lower-case: the vendored scripts use unquoted identifiers.</param>
+    private static async Task<bool> TableExistsAsync(DbConnection conn, string relationName)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"SELECT EXISTS (SELECT 1 FROM pg_class WHERE relname = '{relationName}')";
+        return (bool)(await cmd.ExecuteScalarAsync() ?? false);
     }
 
     private static async Task ExecuteAsync(DbConnection conn, string sql)

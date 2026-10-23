@@ -17,7 +17,8 @@ using Universley.OrleansContrib.StreamsProvider.Redis;
 //   - the only plugin grain is ProbeHandler (`e2e-probe`), so Orleans' GetCompatibleSilos
 //     can place it nowhere but here.
 // Clustering + PubSubStore come from the Aspire-injected Orleans__* configuration
-// (WithReference(orleans) in Fleans.Aspire), or from FLEANS_LOAD_TEST_MODE outside Aspire.
+// (WithReference(orleans) in Fleans.Aspire). Outside Aspire, clustering follows
+// Fleans:Clustering:Provider and PubSubStore comes from FLEANS_LOAD_TEST_MODE.
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -60,11 +61,39 @@ builder.UseOrleans(siloBuilder =>
     var orleansRedis = builder.Configuration.GetConnectionString("orleans-redis")
         ?? throw new InvalidOperationException("ConnectionStrings:orleans-redis is required.");
 
-    // Outside Aspire (tests/load docker-compose) there is no Orleans__* clustering config;
-    // mirror Fleans.Api's FLEANS_LOAD_TEST_MODE wiring.
+    // Membership: under Aspire the Orleans:Clustering section wires it. Elsewhere (tests/load
+    // docker-compose) use the engine's table, chosen by Fleans:Clustering:Provider (#885) — a plugin
+    // silo on a different membership table would form a cluster of its own.
+    if (!builder.Configuration.GetSection("Orleans:Clustering").Exists())
+    {
+        var clusteringProvider = builder.Configuration["Fleans:Clustering:Provider"] ?? "Redis";
+        if (clusteringProvider.Equals("Postgres", StringComparison.OrdinalIgnoreCase))
+        {
+            var clusterDb = builder.Configuration.GetConnectionString("fleans-cluster")
+                ?? builder.Configuration.GetConnectionString("fleans")
+                ?? throw new InvalidOperationException(
+                    "Fleans:Clustering:Provider=Postgres needs ConnectionStrings:fleans-cluster or ConnectionStrings:fleans.");
+            siloBuilder.UseAdoNetClustering(o =>
+            {
+                o.Invariant = "Npgsql";
+                o.ConnectionString = clusterDb;
+            });
+        }
+        else if (clusteringProvider.Equals("Redis", StringComparison.OrdinalIgnoreCase))
+        {
+            siloBuilder.UseRedisClustering(orleansRedis);
+        }
+        else
+        {
+            throw new InvalidOperationException(
+                $"Fleans.E2E.PluginHost supports only the Redis and Postgres clustering providers (got '{clusteringProvider}').");
+        }
+    }
+
+    // Outside Aspire there is no Orleans__* PubSubStore config; mirror Fleans.Api's
+    // FLEANS_LOAD_TEST_MODE wiring.
     if (builder.Configuration["FLEANS_LOAD_TEST_MODE"] == "true")
     {
-        siloBuilder.UseRedisClustering(orleansRedis);
         siloBuilder.AddRedisGrainStorage("PubSubStore",
             options => options.ConfigurationOptions = ConfigurationOptions.Parse(orleansRedis));
     }

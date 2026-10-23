@@ -140,6 +140,11 @@ on the install command line via `--set` or pass a `-f my-values.yaml` overlay.
 | `reminders.provider` | `Redis` | Where BPMN timers (Orleans reminders) live: `Redis` (chart-bundled Redis) or `Postgres` (recommended in production; needs `persistence.provider=Postgres`). See §4. |
 | `reminders.postgres.existingSecret` | `""` | `Secret` with the connection string of a dedicated reminders database (`ConnectionStrings__fleans-reminders`). Empty = share the `fleans` database. |
 | `reminders.postgres.existingSecretKey` | `connection-string` | Key inside that `Secret`. |
+| `clustering.provider` | `Redis` | Orleans membership table: `Redis` (chart-bundled Redis) or `Postgres` (recommended in production; needs `persistence.provider=Postgres`). Set on silos, `web` and `mcp`. See §4. |
+| `clustering.postgres.existingSecret` | `""` | `Secret` with the connection string of a dedicated membership database (`ConnectionStrings__fleans-cluster`). Empty = share the `fleans` database. |
+| `clustering.kubernetes.enabled` | `true` | Orleans Kubernetes hosting: a deleted silo pod leaves the cluster at once. Creates a ServiceAccount + Role (`pods`: `get`, `list`, `watch`, `patch`). |
+| `clustering.serviceId` / `clustering.clusterId` | `fleans` / release fullname | `Orleans__ServiceId` / `Orleans__ClusterId`, and the `orleans/*` labels on silo pods. |
+| `clustering.terminationGracePeriodSeconds` | `60` | SIGTERM → SIGKILL window for silo pods; the graceful silo stop gets 10 s less. Minimum 15. |
 | `extraEnv` | `[]` | Extra env vars on every Fleans workload (`api`, `web`, `mcp`). Use for `ConnectionStrings__fleans` overrides. |
 
 To tune Orleans consumer parallelism (pulling-agent count per cluster) for higher throughput, set `Fleans__Streaming__Redis__TotalQueueCount` (Redis), `Fleans__Streaming__Kafka__QueueCount` (Kafka), or supply an explicit `Fleans__Streaming__AzureQueue__QueueNames__0..N` list — see [Tuning throughput](/fleans/reference/streaming/#tuning-throughput) for the sizing heuristic, rehash caveat, and Kafka-side `NumPartitions` tuning.
@@ -209,6 +214,35 @@ reminders share the `fleans` database. Custom worker hosts must use the same pro
 [Hosting your own custom-task plugins](/fleans/guides/custom-worker-host/#configure-the-shared-reminder-service).
 Switching providers starts with an empty reminder table: pending timers from the old provider
 do not move over.
+
+### Clustering and Kubernetes hosting
+
+The Orleans membership table decides which silo is alive. The default `Redis` provider uses the
+chart-bundled Redis, whose replication is asynchronous: a Redis failover can drop a membership
+write. In production put membership on a highly-available PostgreSQL (e.g. Patroni):
+
+```yaml
+clustering:
+  provider: Postgres
+  postgres:
+    existingSecret: fleans-cluster-pg   # optional: own database; empty = share `fleans`
+```
+
+Create the database first; Fleans creates its tables on first boot. While the membership
+database is unreachable no silo can join and none can be declared dead, so give it the same
+availability as the workflow database. Custom worker hosts must use the same provider.
+
+`clustering.kubernetes.enabled` (on by default) turns on Orleans Kubernetes hosting: when a silo
+pod is deleted — scale-down, eviction, node loss — the silo is removed from membership at once,
+and grain calls stop routing to it. The chart grants the silo pods' ServiceAccount `get`, `list`,
+`watch` and `patch` on `pods` in the release namespace, labels them `orleans/serviceId` /
+`orleans/clusterId`, and names the silo Deployments `core-<release>` / `worker-<release>`: with
+Kubernetes hosting the pod name is the silo name, and Fleans reads the silo's role from its
+prefix. Turn it off (`false`) if your cluster forbids that Role; membership then falls back to
+Orleans' probe-based failure detection.
+
+Silo pods get `terminationGracePeriodSeconds: 60` so a silo can leave the cluster and hand off its
+grains and timers before Kubernetes kills it.
 
 ### OIDC for the admin UI
 
@@ -305,6 +339,12 @@ within the documented per-release migration window.
 - **Live-edit drift after `kubectl edit`.** Helm tracks the rendered manifest;
   in-cluster edits get reverted on the next `helm upgrade`. Inspect
   effective values with `helm get values fleans -n fleans`.
+- **Silo pod `CrashLoopBackOff` with "pod … must start with 'core-'".**
+  Kubernetes hosting is on and the pod was not created by the chart's role-prefixed
+  Deployment (e.g. a hand-written manifest). Name the Deployment `core-…` / `worker-…`, or set
+  `clustering.kubernetes.enabled=false`.
+- **Kubernetes hosting logs `Forbidden` / insufficient permissions.** The silo ServiceAccount
+  lacks the pod Role — check `kubectl auth can-i watch pods --as=system:serviceaccount:<ns>:<release>-silo`.
 - **HPA fights Orleans placement.** Orleans grains stick to silos; an HPA
   scaling Core or Worker silos in/out can churn placement. Set
   `core.replicas` / `worker.replicas` explicitly for stable workloads.

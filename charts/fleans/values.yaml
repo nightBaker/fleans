@@ -185,6 +185,34 @@ reminders:
     existingSecretKey: connection-string
 
 # -----------------------------------------------------------------------------
+# Clustering — the Orleans membership table that decides which silo is alive.
+# -----------------------------------------------------------------------------
+clustering:
+  # Redis | Postgres (case-insensitive) — Fleans:Clustering:Provider, set on every silo AND on
+  # web/mcp (their gateway list is the same table). Redis (default) reuses the chart-bundled
+  # Redis; its replication is asynchronous, so a failover can drop a membership write.
+  # Postgres is the recommended production provider; requires persistence.provider=Postgres.
+  # Custom worker hosts (customWorker.*) must be built with the same provider.
+  provider: Redis
+  postgres:
+    # Existing Secret holding the connection string of a DEDICATED membership database
+    # (ConnectionStrings__fleans-cluster). Empty = share the `fleans` database.
+    existingSecret: ""
+    existingSecretKey: connection-string
+  # Orleans ServiceId / ClusterId (Orleans__ServiceId / Orleans__ClusterId on every workload, and
+  # the orleans/serviceId + orleans/clusterId labels on silo pods). clusterId empty = release fullname.
+  serviceId: fleans
+  clusterId: ""
+  kubernetes:
+    # Orleans Kubernetes hosting (Fleans:Kubernetes:Enabled): the pod name becomes the silo name
+    # and a silo whose pod is deleted leaves the membership table at once instead of after the
+    # probe window. Creates a ServiceAccount + Role (pods: get, list, watch, patch) + RoleBinding.
+    enabled: true
+  # Seconds between SIGTERM and SIGKILL for silo pods. The silo's graceful stop (leave the
+  # cluster, hand off grains and its reminder range) gets this minus 10 s. Minimum 15.
+  terminationGracePeriodSeconds: 60
+
+# -----------------------------------------------------------------------------
 # Redis dependency (Orleans clustering + grain storage; always required).
 # -----------------------------------------------------------------------------
 redis:
