@@ -46,7 +46,7 @@ This means Fleans inherits Orleans' distributed systems guarantees without build
 
 ## Reliability
 
-**Event-sourced workflow state.** `WorkflowInstance` extends `JournaledGrain` with an append-only event log. State is reconstructed deterministically from events. After a silo crash, Orleans reactivates the grain on a surviving silo and replays the log — no workflow state is lost.
+**Event-sourced workflow state.** `WorkflowInstance` extends `JournaledGrain` with an append-only event log. State is reconstructed deterministically from events. After a silo crash, Orleans reactivates the grain on a surviving silo and replays the log — no workflow state is lost. Appends are idempotent: each one carries a batch id, so when a write is stored but its reply is lost (a timeout after the commit), the retry finds its own batch and does not store the events twice.
 
 **Atomic state transitions.** Events drain via `DrainAndRaiseEvents()` + `ConfirmEvents()` in a single transaction. A crash mid-execution never leaves a workflow half-advanced — either the full batch of events persists, or none do.
 

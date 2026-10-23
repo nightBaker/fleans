@@ -616,6 +616,9 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                     b.Property<int>("FirstVersion")
                         .HasColumnType("integer");
 
+                    b.Property<Guid>("BatchId")
+                        .HasColumnType("uuid");
+
                     b.Property<int>("LastVersion")
                         .HasColumnType("integer");
 
