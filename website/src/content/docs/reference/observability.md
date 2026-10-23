@@ -250,7 +250,7 @@ Spans propagate W3C `traceparent` automatically — if your upstream sets a trac
 ### Orleans Dashboard
 
 
-The Orleans Dashboard ships with Fleans's Web app at `/dashboard`. It's a real-time operational view of the cluster (silo membership, grain activations, call latencies, reminder schedules) backed by `Microsoft.Orleans.Dashboard` 10.0.1.
+The Orleans Dashboard ships with Fleans's Web app at `/dashboard`. It's a real-time operational view of the cluster (silo membership, grain activations, call latencies, reminder schedules) backed by `Microsoft.Orleans.Dashboard` 10.4.0.
 
 #### What it shows
 

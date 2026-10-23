@@ -23,15 +23,15 @@
 
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="10.1.0" />
     <PackageReference Include="Microsoft.Extensions.ServiceDiscovery" Version="10.1.0" />
-    <PackageReference Include="Microsoft.Orleans.Sdk" Version="10.0.1" />
-    <PackageReference Include="Microsoft.Orleans.Streaming" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Orleans.Sdk" Version="10.4.0" />
+    <PackageReference Include="Microsoft.Orleans.Streaming" Version="10.4.0" />
     <!-- Persistent reminder service backed by Redis (shares the `orleans-redis` connection used
          for clustering + streaming). BPMN timer durability across silo restarts. See #650 +
          docs/conventions/reminders.md. -->
-    <PackageReference Include="Microsoft.Orleans.Reminders.Redis" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Orleans.Reminders.Redis" Version="10.4.0" />
     <!-- Postgres-backed reminder service (opt-in via Fleans:Reminders:Provider=Postgres).
-         Pin to 10.0.1 to match the Microsoft.Orleans.* sibling versions. See #669. -->
-    <PackageReference Include="Microsoft.Orleans.Reminders.AdoNet" Version="10.0.1" />
+         Pin to the same version as the Microsoft.Orleans.* siblings (#669, #886). -->
+    <PackageReference Include="Microsoft.Orleans.Reminders.AdoNet" Version="10.4.0" />
     <!-- Third-party Redis stream provider (MIT, Orleans 10.x compatible). Date-versioned;
          bump deliberately and re-run manual test #45. See CLAUDE.md for swap-out path. -->
     <PackageReference Include="Universley.OrleansContrib.StreamsProvider.Redis" Version="2026.4.19" />

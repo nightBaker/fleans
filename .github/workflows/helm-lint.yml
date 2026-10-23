@@ -37,6 +37,8 @@ jobs:
             --set worker.enabled=true \
             --set streaming.provider=Kafka \
             --set streaming.kafka.brokers=kafka:9092 \
+            --set reminders.provider=Postgres \
+            --set reminders.postgres.existingSecret=fleans-reminders-db \
             > /tmp/render-full.yaml
       - name: Confirm both renders are non-empty
         run: |

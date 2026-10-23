@@ -73,8 +73,31 @@ builder.UseOrleans(siloBuilder =>
     // timers via TimerCallbackGrain) whose range lands here are served by THIS silo. Without a
     // reminder service the engine's RegisterOrUpdateReminder fails with a TypeLoadException
     // (Orleans.IReminderService) and the timer's activity fails; with an in-memory one those
-    // timers lose durability (#788). Use the same Redis table as the engine (AddFleansReminders).
-    siloBuilder.UseRedisReminderService(o => o.ConfigurationOptions = ConfigurationOptions.Parse(orleansRedis));
+    // timers lose durability (#788). Use the same reminder table as the engine (AddFleansReminders):
+    // Redis by default, or Postgres (own database first, then 'fleans') — #886.
+    var remindersProvider = builder.Configuration["Fleans:Reminders:Provider"] ?? "Redis";
+    if (remindersProvider.Equals("Postgres", StringComparison.OrdinalIgnoreCase))
+    {
+        var remindersDb = builder.Configuration.GetConnectionString("fleans-reminders")
+            ?? builder.Configuration.GetConnectionString("fleans")
+            ?? throw new InvalidOperationException(
+                "Fleans:Reminders:Provider=Postgres needs ConnectionStrings:fleans-reminders or ConnectionStrings:fleans.");
+        siloBuilder.UseAdoNetReminderService(o =>
+        {
+            o.Invariant = "Npgsql";
+            o.ConnectionString = remindersDb;
+        });
+    }
+    else if (remindersProvider.Equals("Redis", StringComparison.OrdinalIgnoreCase))
+    {
+        siloBuilder.UseRedisReminderService(o => o.ConfigurationOptions = ConfigurationOptions.Parse(orleansRedis));
+    }
+    else
+    {
+        throw new InvalidOperationException(
+            $"Fleans.E2E.PluginHost supports only the Redis and Postgres reminder providers (got '{remindersProvider}').");
+    }
+    siloBuilder.Configure<ReminderOptions>(builder.Configuration.GetSection("Fleans:Reminders"));
 
     if (useKafka)
         siloBuilder.AddKafkaStreams(StreamProviderName, builder.Configuration.GetSection("Fleans:Streaming:Kafka"));
