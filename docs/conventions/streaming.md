@@ -20,7 +20,7 @@ Every provider registers with `StreamPubSubType.ImplicitOnly` (`FleanStreamingEx
 **Traps:**
 
 - **An explicit `SubscribeAsync` receives nothing** on a production silo. Add a new subscriber as an `[ImplicitStreamSubscription]` grain. Tests that observe a stream from the client keep explicit pub-sub on their own test silos with a memory `PubSubStore`: `WorkflowTestBase` (used by `CustomTaskRoutingTests`) registers plain `AddMemoryStreams`, and the Kafka integration tests set `ExplicitGrainBasedAndImplicit` back after `AddKafkaStreams` / `AddFleanStreaming`.
-- **Every silo of a cluster must use the same pub-sub type**, plugin hosts included. A host that still uses the Orleans default (`ExplicitGrainBasedAndImplicit`) activates rendezvous grains that need a `PubSubStore` the engine silos no longer register. Plugin hosts that call `AddFleanStreaming` get the right type from the Fleans package version.
+- **Every silo of a cluster must use the same pub-sub type**, plugin hosts included. A host that still uses the Orleans default (`ExplicitGrainBasedAndImplicit`) activates rendezvous grains that need a `PubSubStore` the engine silos no longer register. Plugin hosts that call `AddFleanStreaming` get the right type from the Fleans package version; hosts that register the provider by hand (`fleans-custom-worker-example`, `fleans-camunda-external-task`: `AddPersistentStreams(…, RedisStreamFactory.Create, null)`) must pass `b => b.ConfigureStreamPubSub(StreamPubSubType.ImplicitOnly)` and drop their own `AddRedisGrainStorage("PubSubStore", …)`. A mixed cluster breaks in both directions, so engine and plugin hosts upgrade together.
 
 ## Kafka integration tests
 
