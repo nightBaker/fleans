@@ -295,10 +295,10 @@ public class BusinessIdTests : WorkflowTestBase
     }
 
     // WorkflowInstance "Workflow started" (3007), the worker's "Handling custom-task event" (4030)
-    // and "Handling script event" (4010) — CapturedLogEvents keeps their message and scope fields.
+    // and the script executor's "executing" (9020) — CapturedLogEvents keeps their message and scope fields.
     private const int WorkflowStartedEventId = 3007;
     private const int CustomTaskHandlingEventId = 4030;
-    private const int ScriptHandlingEventId = 4010;
+    private const int ScriptHandlingEventId = 9020;
 
     [TestMethod]
     [DoNotParallelize]
@@ -354,9 +354,9 @@ public class BusinessIdTests : WorkflowTestBase
 
     [TestMethod]
     [DoNotParallelize]
-    public async Task ScriptHandlerLog_KeepsBusinessIdArrivingWithTheStream()
+    public async Task ScriptExecutorLog_KeepsBusinessIdArrivingWithTheDispatch()
     {
-        // Arrange — ExecuteScriptEvent does not carry the business id; it arrives in RequestContext
+        // Arrange — the script dispatch does not carry the business id; it arrives in RequestContext
         var start = new StartEvent("start");
         var script = new ScriptTask("script1", "noop", "csharp");
         var end = new EndEvent("end");

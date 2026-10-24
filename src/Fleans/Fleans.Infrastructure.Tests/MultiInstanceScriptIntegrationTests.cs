@@ -293,12 +293,13 @@ public class MultiInstanceScriptIntegrationTests
         var scriptCompletions = snapshot.CompletedActivities.Count(a => a.ActivityId == "script");
         Assert.AreEqual(4, scriptCompletions, "All 3 iterations + host should be in completed list");
 
-        // Siblings should be cancelled
-        var cancelledSiblings = snapshot.CompletedActivities
-            .Where(a => a.ActivityId == "script" && a.IsCancelled)
+        // The parallel iterations' scripts run concurrently, so a sibling either finished before the
+        // failure arrived or was cancelled by it — none is left running or failed.
+        var siblings = snapshot.CompletedActivities
+            .Where(a => a.ActivityId == "script" && a.ErrorState is null)
             .ToList();
-        Assert.IsTrue(cancelledSiblings.Count >= 1,
-            $"At least one sibling should be cancelled, got {cancelledSiblings.Count}");
+        Assert.AreEqual(2, siblings.Count, "The two other iterations finish or are cancelled");
+        Assert.AreEqual(0, snapshot.ActiveActivities.Count);
     }
 
     private async Task<Application.QueryModels.InstanceStateSnapshot?> PollForCompletion(

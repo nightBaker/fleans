@@ -290,6 +290,8 @@ public abstract class WorkflowTestBase
     {
         public Task<bool> Evaluate(string expression, ExpandoObject variables)
         {
+            if (expression == "THROW")
+                throw new InvalidOperationException("Simulated condition failure");
             return Task.FromResult(string.Equals(expression, "true", StringComparison.OrdinalIgnoreCase));
         }
     }
