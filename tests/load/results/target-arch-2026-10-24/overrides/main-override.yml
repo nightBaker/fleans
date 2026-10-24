@@ -1,0 +1,25 @@
+# Baseline: main images on the same topology. main needs Redis (health check) and serves REST
+# from the Core silos; it has no Api / Projector roles.
+services:
+  redis:
+    image: redis:7-alpine
+    healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 5s, timeout: 3s, retries: 10 }
+  fleans-core:
+    image: fleans-api:main
+    environment: { ConnectionStrings__orleans-redis: "redis:6379" }
+    depends_on: { redis: { condition: service_healthy } }
+  fleans-worker:
+    image: fleans-worker:main
+    environment: { ConnectionStrings__orleans-redis: "redis:6379" }
+  fleans-plugin:
+    image: fleans-plugin:main
+    environment: { ConnectionStrings__orleans-redis: "redis:6379" }
+  fleans-api:
+    deploy: { replicas: 0 }
+  fleans-projector:
+    deploy: { replicas: 0 }
+  nginx:
+    volumes: !override
+      - ./results/target-arch-2026-10-24/overrides/nginx-core.conf:/etc/nginx/nginx.conf:ro
+    depends_on: !override
+      fleans-core: { condition: service_healthy }

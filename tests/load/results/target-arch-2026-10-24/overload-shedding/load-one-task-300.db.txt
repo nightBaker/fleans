@@ -1,0 +1,1 @@
+server          xact/inst  WAL KB/inst

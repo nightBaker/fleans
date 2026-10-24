@@ -1,21 +1,24 @@
-# Fleans load-testing stack — split roles on Kafka streaming.
+# Fleans load-testing stack — the Road to 1.0.0 target architecture, scaled down to one laptop
+# (10 CPU / 12 GB Docker VM). https://nightbaker.github.io/fleans/roadmap/v1/#target-architecture
 #
-#   nginx → 3 × fleans-core (Fleans:Role=Core, REST API)
-#           2 × fleans-worker (Fleans.WorkerHost, Fleans:Role=Worker — scripts/conditions)
+#   nginx → 2 × fleans-api (Fleans.Api, Fleans:Role=Api — REST only, an Orleans client with no grains)
+#   Orleans cluster:
+#           3 × fleans-core (Fleans:Role=Core — workflow grains)
+#           1 × fleans-worker (Fleans.WorkerHost, Fleans:Role=Worker — scripts/conditions)
+#           1 × fleans-projector (Fleans:Role=Projector — builds the read model from the journal, #861)
 #           1 × fleans-plugin (Fleans.E2E.PluginHost, Fleans:Role=Plugin — external `e2e-probe` task)
-#   + PostgreSQL 16 `postgres` (read model, grain state, Orleans membership)
-#   + PostgreSQL 16 `postgres-journal` (workflow journal + snapshots, own server — #879)
-#   + PostgreSQL 16 `postgres-reminders` (Orleans reminders, own server — #886)
-#   + Kafka (streams) + Redis 7 (holds no data in this layout; see the redis service)
+#   Journal store: Citus — citus-coord + citus-w1 + citus-w2, journal tables sharded by InstanceId (#879)
+#   Read model:    postgres (primary, written by the projector) → postgres-replica (streaming, serves
+#                  ConnectionStrings:fleans-query — every list / state read)
+#   Ops store:     postgres-ops — Orleans membership (#885) and reminders (#886), own server
+#   Streams:       Kafka (implicit subscriptions only, #911). No Redis: nothing in this layout uses it.
 #
 # Build images:  bash build-images.sh
 # Start:         docker compose up -d --wait            (replica counts come from deploy.replicas)
 #                docker compose exec nginx nginx -s reload
 # Stop:          docker compose down -v
 #
-# FLEANS_STREAMING_PROVIDER=Redis runs the same topology on Redis streams (Kafka stays up, unused).
-# FLEANS_REMINDERS_PROVIDER=Redis moves the reminders back to Redis (postgres-reminders stays up, unused).
-# FLEANS_CLUSTERING_PROVIDER=Redis moves the Orleans membership table back to Redis.
+# FLEANS_JOURNAL_SHARDS changes the Citus shard count (default 32 here; 128 in production).
 
 name: fleans-load
 
@@ -23,24 +26,28 @@ x-silo-env: &silo-env
   ASPNETCORE_ENVIRONMENT: Production
   ASPNETCORE_HTTP_PORTS: "8080"
   FLEANS_LOAD_TEST_MODE: "true"
-  ConnectionStrings__orleans-redis: "redis:6379"
   Persistence__Provider: Postgres
-  # Each engine silo opens one Npgsql data source per connection string below, each pooling up
-  # to 100 connections by default (#910). At 400 VUs that ended in "53300: too many clients".
-  # Capped pools queue instead: Core 30, Worker 10 per data source —
-  # postgres 3 × 2 × 30 + 2 × 2 × 10 = 220 of 300, postgres-journal 3 × 30 + 2 × 10 = 110 of 200.
-  ConnectionStrings__fleans: "Host=postgres;Database=fleans;Username=postgres;Password=fleans;Maximum Pool Size=30"
-  ConnectionStrings__fleans-query: "Host=postgres;Database=fleans;Username=postgres;Password=fleans;Maximum Pool Size=30"
-  # Production layout (#879): the journal and snapshots on their own server, apart from the read model.
-  ConnectionStrings__fleans-journal: "Host=postgres-journal;Database=journal;Username=postgres;Password=fleans;Maximum Pool Size=30"
-  # Production layout (#886): reminders on Postgres, in their own database (here: own server, so
-  # timers-1m can read the reminders' CPU apart from the journal / read model).
-  Fleans__Reminders__Provider: ${FLEANS_REMINDERS_PROVIDER:-Postgres}
-  ConnectionStrings__fleans-reminders: "Host=postgres-reminders;Database=reminders;Username=postgres;Password=fleans"
-  Fleans__Streaming__Provider: ${FLEANS_STREAMING_PROVIDER:-Kafka}
+  # Each process opens one Npgsql data source per connection string, each pooling up to 100
+  # connections by default (#910); the caps below keep every server under its max_connections
+  # (5 engine processes × 30 at most = 150 of 300 on each server).
+  # No Reset On Close: Npgsql otherwise sends DISCARD ALL whenever a pooled connection is reused —
+  # ~7 per instance, each one a server transaction (scripts/top-statements.sql). Fleans keeps no
+  # session state on pooled connections (the migration lock uses its own, unpooled connection).
+  ConnectionStrings__fleans: "Host=postgres;Database=fleans;Username=postgres;Password=fleans;Maximum Pool Size=30;No Reset On Close=true"
+  # Reads go to the streaming replica (roadmap "Read model", point 5); the read model lags by the
+  # projector plus replication — under a second here.
+  ConnectionStrings__fleans-query: "Host=postgres-replica;Database=fleans;Username=postgres;Password=fleans;Maximum Pool Size=30;No Reset On Close=true"
+  # Journal + snapshots on Citus (#879): hash-distributed by InstanceId, every command single-shard.
+  Persistence__Journal__Provider: Citus
+  Persistence__Journal__Citus__ShardCount: ${FLEANS_JOURNAL_SHARDS:-32}
+  ConnectionStrings__fleans-journal: "Host=citus-coord;Database=journal;Username=postgres;Password=fleans;Maximum Pool Size=30;No Reset On Close=true"
+  # Membership and reminders: small tables where atomicity matters, on their own server (#885, #886).
+  Fleans__Clustering__Provider: Postgres
+  ConnectionStrings__fleans-cluster: "Host=postgres-ops;Database=ops;Username=postgres;Password=fleans"
+  Fleans__Reminders__Provider: Postgres
+  ConnectionStrings__fleans-reminders: "Host=postgres-ops;Database=ops;Username=postgres;Password=fleans"
+  Fleans__Streaming__Provider: Kafka
   Fleans__Streaming__Kafka__Brokers: "kafka:9092"
-  # Production layout (#885): the Orleans membership table in the 'fleans' database; Redis optional.
-  Fleans__Clustering__Provider: ${FLEANS_CLUSTERING_PROVIDER:-Postgres}
 
 x-http-health: &http-health
   # The aspnet base image has bash but no curl/wget.
@@ -50,73 +57,127 @@ x-http-health: &http-health
   retries: 15
   start_period: 45s
 
+x-pg-health: &pg-health
+  test: ["CMD-SHELL", "pg_isready -U postgres"]
+  interval: 5s
+  timeout: 3s
+  retries: 20
+
+x-citus: &citus
+  # Built by build-images.sh from citus/Dockerfile: citusdata/citus is amd64-only, and emulated on an
+  # arm64 laptop it is several times slower. FLEANS_CITUS_IMAGE=citusdata/citus:12.1 on amd64 hosts.
+  image: ${FLEANS_CITUS_IMAGE:-fleans-citus:12.1}
+  # Laptop only: trust between the Citus nodes (the coordinator connects to the workers as postgres).
+  environment:
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: fleans
+    POSTGRES_DB: journal
+    POSTGRES_HOST_AUTH_METHOD: trust
+  cpu_shares: 2048
+  shm_size: 256m
+  healthcheck: *pg-health
+
 services:
 
-  redis:
-    image: redis:7-alpine
-    # Holds no data in this layout: membership, reminders and streams are elsewhere and streams
-    # are implicit-only (#911). Still needed because every silo registers the `orleans-redis`
-    # client, whose health check gates /health.
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
+  # ── Journal store: Citus ────────────────────────────────────────────────────────────────────
+  citus-coord:
+    <<: *citus
+    # Routes every journal command to its shard; holds no shards itself. In production the
+    # workers serve queries too (Citus 11+ "query from any node") so the coordinator is not a choke point.
+    # Every journal command opens a coordinator backend plus a connection to the shard's worker,
+    # so its memory grows with the silos' journal pools (768 MB was OOM-killed at 50 starts/s).
+    command: ["postgres", "-c", "max_connections=300", "-c", "shared_buffers=128MB",
+              "-c", "citus.max_shared_pool_size=200"]
+    deploy: { resources: { limits: { memory: 1280M } } }
 
+  citus-w1:
+    <<: *citus
+    # One half of the shards — the append path.
+    command: ["postgres", "-c", "max_connections=300", "-c", "shared_buffers=384MB",
+              "-c", "effective_cache_size=768MB", "-c", "wal_buffers=16MB", "-c", "max_wal_size=2GB"]
+    deploy: { resources: { limits: { memory: 1280M } } }
+
+  citus-w2:
+    <<: *citus
+    command: ["postgres", "-c", "max_connections=300", "-c", "shared_buffers=384MB",
+              "-c", "effective_cache_size=768MB", "-c", "wal_buffers=16MB", "-c", "max_wal_size=2GB"]
+    deploy: { resources: { limits: { memory: 1280M } } }
+
+  citus-setup:
+    # One-shot: registers the coordinator and the two workers. The silos' schema bootstrap then
+    # distributes the journal tables (CitusJournal.DistributeAsync) over the workers.
+    image: ${FLEANS_CITUS_IMAGE:-fleans-citus:12.1}
+    environment: { PGPASSWORD: fleans }
+    entrypoint: ["bash", "-c"]
+    command:
+      - >-
+        psql -h citus-coord -U postgres -d journal -v ON_ERROR_STOP=1
+        -c "SELECT citus_set_coordinator_host('citus-coord', 5432)"
+        -c "SELECT citus_add_node('citus-w1', 5432)"
+        -c "SELECT citus_add_node('citus-w2', 5432)"
+        -c "SELECT nodename, shouldhaveshards FROM pg_dist_node ORDER BY nodeid"
+    restart: "no"
+    depends_on:
+      citus-coord: { condition: service_healthy }
+      citus-w1: { condition: service_healthy }
+      citus-w2: { condition: service_healthy }
+
+  # ── Read model: primary + streaming replica ─────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
-    # Read model (rewritten by the projector), grain state, membership. The capped silo pools
-    # (x-silo-env) need 220 connections; the default max_connections is 100.
-    command: ["postgres", "-c", "max_connections=300",
-              "-c", "shared_buffers=384MB", "-c", "effective_cache_size=1GB",
+    # Read model (written by the projector) and the other grain state.
+    # pg_stat_statements: where the per-instance transactions go (scripts/top-statements.sql).
+    command: ["postgres", "-c", "max_connections=300", "-c", "shared_preload_libraries=pg_stat_statements",
+              "-c", "shared_buffers=320MB", "-c", "effective_cache_size=896MB",
               "-c", "wal_buffers=16MB", "-c", "max_wal_size=2GB"]
-    # CPU is a weight, not a cap (see fleans-core): 4× worker/plugin when the host is contended.
+    # CPU is a weight, not a cap (see fleans-core).
     cpu_shares: 2048
-    deploy: { resources: { limits: { memory: 1536M } } }
-    shm_size: 512m
+    deploy: { resources: { limits: { memory: 1280M } } }
+    shm_size: 256m
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: fleans
       POSTGRES_DB: fleans
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 3s
-      retries: 15
+    volumes:
+      - ./postgres/primary-init.sh:/docker-entrypoint-initdb.d/primary-init.sh:ro
+    healthcheck: *pg-health
 
-  postgres-journal:
+  postgres-replica:
     image: postgres:16-alpine
-    # The hot write path: one append per process step. Memory sized to the 2 GB limit, and a
-    # larger max_wal_size so the append-heavy journal doesn't force checkpoints.
-    command: ["postgres", "-c", "max_connections=200",
-              "-c", "shared_buffers=512MB", "-c", "effective_cache_size=1536MB",
-              "-c", "wal_buffers=16MB", "-c", "max_wal_size=4GB"]
-    cpu_shares: 2048
-    deploy: { resources: { limits: { memory: 2G } } }
-    shm_size: 512m
+    # Hot standby of `postgres`: clones it with pg_basebackup on first start, then streams WAL.
+    # max_connections must be at least the primary's.
+    user: postgres
+    environment: { PGPASSWORD: fleans }
+    entrypoint: ["bash", "-c"]
+    command:
+      - >-
+        set -e;
+        if [ ! -s "$$PGDATA/PG_VERSION" ]; then
+          until pg_basebackup -h postgres -U postgres -D "$$PGDATA" -R -X stream; do sleep 1; done;
+          chmod 0700 "$$PGDATA";
+        fi;
+        exec postgres -c max_connections=300 -c hot_standby=on -c hot_standby_feedback=on
+        -c shared_buffers=192MB -c effective_cache_size=512MB
+    cpu_shares: 1024
+    deploy: { resources: { limits: { memory: 768M } } }
+    shm_size: 256m
+    healthcheck: *pg-health
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  # ── Ops store: membership + reminders ───────────────────────────────────────────────────────
+  postgres-ops:
+    image: postgres:16-alpine
+    # 5 silos × (membership + reminders pools); tiny tables.
+    command: ["postgres", "-c", "max_connections=300", "-c", "shared_buffers=64MB",
+              "-c", "shared_preload_libraries=pg_stat_statements"]
+    cpu_shares: 1024
+    deploy: { resources: { limits: { memory: 384M } } }
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: fleans
-      POSTGRES_DB: journal
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 3s
-      retries: 15
-
-  postgres-reminders:
-    image: postgres:16-alpine
-    # 6 silos × one AdoNet reminders pool.
-    command: ["postgres", "-c", "max_connections=300"]
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: fleans
-      POSTGRES_DB: reminders
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 3s
-      retries: 15
+      POSTGRES_DB: ops
+    healthcheck: *pg-health
 
   kafka:
     image: confluentinc/cp-kafka:7.9.0
@@ -133,29 +194,47 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_HEAP_OPTS: "-Xms512m -Xmx768m"
+    deploy: { resources: { limits: { memory: 1280M } } }
     healthcheck:
       test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 >/dev/null 2>&1"]
       interval: 5s
       timeout: 10s
       retries: 30
 
+  # ── Orleans cluster ─────────────────────────────────────────────────────────────────────────
   fleans-core:
     image: fleans-api:loadtest
     environment:
       <<: *silo-env
       Fleans__Role: Core
-    # Core runs the workflow grains and the REST API — the CPU-bound role. CPU is a weight
+    # Core runs the workflow grains — the CPU-bound role. CPU is a weight
     # (cpu_shares), not a `cpus` cap: a cap also lowers .NET's Environment.ProcessorCount
     # (Orleans scheduler, thread pool, server-GC heaps), and `cpus: 2` measured slower than none.
+    # Measured peak ~450 MB each at 400 VUs of long-diverse.
     cpu_shares: 2048
-    deploy: { replicas: 3, resources: { limits: { memory: 1536M } } }
+    deploy: { replicas: 3, resources: { limits: { memory: 1G } } }
     restart: on-failure
     depends_on:
-      redis: { condition: service_healthy }
       postgres: { condition: service_healthy }
-      postgres-journal: { condition: service_healthy }
-      postgres-reminders: { condition: service_healthy }
+      postgres-replica: { condition: service_healthy }
+      postgres-ops: { condition: service_healthy }
+      citus-setup: { condition: service_completed_successfully }
       kafka: { condition: service_healthy }
+    healthcheck: *http-health
+
+  fleans-projector:
+    image: fleans-api:loadtest
+    environment:
+      <<: *silo-env
+      # Hosts only the read-model projector (#861): InstanceAdvanced → journal tail → read-model upsert,
+      # so read-model writes no longer take CPU from the workflow grains.
+      Fleans__Role: Projector
+    cpu_shares: 1024
+    deploy: { replicas: 1, resources: { limits: { memory: 768M } } }
+    restart: on-failure
+    depends_on:
+      fleans-core: { condition: service_healthy }
     healthcheck: *http-health
 
   fleans-worker:
@@ -164,12 +243,12 @@ services:
       <<: *silo-env
       Fleans__Role: Worker
       # Workers barely touch the database (stateless script / condition grains).
-      ConnectionStrings__fleans: "Host=postgres;Database=fleans;Username=postgres;Password=fleans;Maximum Pool Size=10"
-      ConnectionStrings__fleans-query: "Host=postgres;Database=fleans;Username=postgres;Password=fleans;Maximum Pool Size=10"
-      ConnectionStrings__fleans-journal: "Host=postgres-journal;Database=journal;Username=postgres;Password=fleans;Maximum Pool Size=10"
+      ConnectionStrings__fleans: "Host=postgres;Database=fleans;Username=postgres;Password=fleans;Maximum Pool Size=10;No Reset On Close=true"
+      ConnectionStrings__fleans-query: "Host=postgres-replica;Database=fleans;Username=postgres;Password=fleans;Maximum Pool Size=10;No Reset On Close=true"
+      ConnectionStrings__fleans-journal: "Host=citus-coord;Database=journal;Username=postgres;Password=fleans;Maximum Pool Size=10;No Reset On Close=true"
     # Scripts/conditions only: ~16 % CPU on average (peaks ~55 %) and ~350 MB at 100 VUs of long-diverse.
     cpu_shares: 512
-    deploy: { replicas: 2, resources: { limits: { memory: 512M } } }
+    deploy: { replicas: 1, resources: { limits: { memory: 512M } } }
     restart: on-failure
     depends_on:
       # Core silos create the schema first; workers start once they are up.
@@ -182,15 +261,14 @@ services:
     environment:
       FLEANS_LOAD_TEST_MODE: "true"
       Fleans__Role: Plugin
-      ConnectionStrings__orleans-redis: "redis:6379"
-      Fleans__Streaming__Provider: ${FLEANS_STREAMING_PROVIDER:-Kafka}
+      Fleans__Streaming__Provider: Kafka
       Fleans__Streaming__Kafka__Brokers: "kafka:9092"
-      # A plugin silo serves its slice of the reminder ring: same provider as the engine (#788, #886).
-      Fleans__Reminders__Provider: ${FLEANS_REMINDERS_PROVIDER:-Postgres}
-      ConnectionStrings__fleans-reminders: "Host=postgres-reminders;Database=reminders;Username=postgres;Password=fleans"
-      # Same membership table as the engine silos (#885).
-      Fleans__Clustering__Provider: ${FLEANS_CLUSTERING_PROVIDER:-Postgres}
-      ConnectionStrings__fleans: "Host=postgres;Database=fleans;Username=postgres;Password=fleans"
+      # A plugin silo serves its slice of the reminder ring: same provider as the engine (#788, #886),
+      # and joins the same membership table (#885).
+      Fleans__Reminders__Provider: Postgres
+      ConnectionStrings__fleans-reminders: "Host=postgres-ops;Database=ops;Username=postgres;Password=fleans"
+      Fleans__Clustering__Provider: Postgres
+      ConnectionStrings__fleans-cluster: "Host=postgres-ops;Database=ops;Username=postgres;Password=fleans"
     # One e2e-probe task per instance: ~12 % CPU on average (peaks ~30 %) and ~220 MB at 100 VUs.
     cpu_shares: 512
     deploy: { resources: { limits: { memory: 384M } } }
@@ -198,11 +276,26 @@ services:
     depends_on:
       fleans-core: { condition: service_healthy }
 
+  fleans-api:
+    image: fleans-api:loadtest
+    environment:
+      <<: *silo-env
+      # REST only (#913): an Orleans client through the same membership table; the REST reads go
+      # straight to the query database (the replica).
+      Fleans__Role: Api
+    cpu_shares: 1024
+    deploy: { replicas: 2, resources: { limits: { memory: 512M } } }
+    restart: on-failure
+    depends_on:
+      fleans-core: { condition: service_healthy }
+    healthcheck: *http-health
+
   nginx:
     image: nginx:1.27
     ports:
       - "80:80"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    deploy: { resources: { limits: { memory: 128M } } }
     depends_on:
-      fleans-core: { condition: service_healthy }
+      fleans-api: { condition: service_healthy }

@@ -1,0 +1,27 @@
+
+     ✗ start: 200
+      ↳  75% — ✓ 15189 / ✗ 4808
+
+     checks.........................: 75.95% 15189 out of 19997
+     data_received..................: 5.6 MB 51 kB/s
+     data_sent......................: 3.8 MB 35 kB/s
+   ✓ dropped_iterations.............: 0      0/s
+     http_req_blocked...............: avg=15.55µs   min=1µs      med=6µs     max=20.85ms  p(90)=9µs     p(95)=12µs   
+     http_req_connecting............: avg=6.56µs    min=0s       med=0s      max=3.59ms   p(90)=0s      p(95)=0s     
+     http_req_duration..............: avg=46.77ms   min=399µs    med=19.74ms max=31.03s   p(90)=30.59ms p(95)=39.45ms
+       { expected_response:true }...: avg=24.96ms   min=7.79ms   med=21.09ms max=2.16s    p(90)=33.51ms p(95)=43.75ms
+     http_req_failed................: 24.04% 4808 out of 19997
+     ✗ { phase:measured }...........: 24.05% 3607 out of 14996
+     http_req_receiving.............: avg=51.04µs   min=8µs      med=40µs    max=6.22ms   p(90)=77µs    p(95)=90µs   
+     http_req_sending...............: avg=24.64µs   min=4µs      med=21µs    max=6.21ms   p(90)=34µs    p(95)=39µs   
+     http_req_tls_handshaking.......: avg=0s        min=0s       med=0s      max=0s       p(90)=0s      p(95)=0s     
+     http_req_waiting...............: avg=46.7ms    min=364µs    med=19.66ms max=31.03s   p(90)=30.5ms  p(95)=39.34ms
+     http_reqs......................: 19997  181.782517/s
+     iteration_duration.............: avg=46.97ms   min=500.41µs med=19.91ms max=31.03s   p(90)=30.84ms p(95)=39.71ms
+     iterations.....................: 19997  181.782517/s
+     starts_rejected................: 4808   43.707073/s
+     vus............................: 5      min=0              max=27 
+     vus_max........................: 500    min=500            max=500
+     workflow_start_duration........: avg=46.779663 min=0.399    med=19.741  max=31030.76 p(90)=30.596  p(95)=39.4554
+
+time="2026-10-24T22:37:41+05:00" level=error msg="thresholds on metrics 'http_req_failed{phase:measured}' have been crossed"

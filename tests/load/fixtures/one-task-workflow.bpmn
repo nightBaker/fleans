@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+             id="Definitions_onetask" targetNamespace="http://bpmn.io/schema/bpmn">
+  <!-- Zeebe's reference benchmark process (scripts/throughput.js): start → one service task → end.
+       The task is the external `e2e-probe` custom task on the Plugin-role host, which completes
+       after 50 ms — like the Zeebe benchmark worker's 50 ms completion delay. -->
+  <process id="load-one-task" isExecutable="true">
+    <startEvent id="start" />
+    <serviceTask id="task" type="e2e-probe">
+      <extensionElements>
+        <zeebe:ioMapping>
+          <zeebe:input source="50" target="delayMs" />
+        </zeebe:ioMapping>
+      </extensionElements>
+    </serviceTask>
+    <endEvent id="end" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="task" />
+    <sequenceFlow id="f2" sourceRef="task" targetRef="end" />
+  </process>
+</definitions>

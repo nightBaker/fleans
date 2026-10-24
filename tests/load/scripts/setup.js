@@ -17,6 +17,8 @@ const parallelBpmn = open('../fixtures/parallel-workflow.bpmn');
 const eventsBpmn   = open('../fixtures/events-workflow.bpmn');
 const longChildBpmn = open('../fixtures/long-diverse-child.bpmn');
 const longBpmn      = open('../fixtures/long-diverse-workflow.bpmn');
+const linear10Bpmn  = open('../fixtures/linear-10-workflow.bpmn');
+const oneTaskBpmn   = open('../fixtures/one-task-workflow.bpmn');
 
 const BASE_URL = __ENV.K6_TARGET_URL || 'https://localhost:7140';
 const HEADERS  = { 'Content-Type': 'application/json' };
@@ -28,6 +30,9 @@ const FIXTURES = [
   // Child before parent: load-long-diverse calls load-long-child.
   { name: 'load-long-child',   bpmnXml: longChildBpmn },
   { name: 'load-long-diverse', bpmnXml: longBpmn      },
+  // throughput.js: the roadmap's linear-10 and Zeebe's one-task reference process.
+  { name: 'load-linear-10',    bpmnXml: linear10Bpmn  },
+  { name: 'load-one-task',     bpmnXml: oneTaskBpmn   },
 ];
 
 export const options = {

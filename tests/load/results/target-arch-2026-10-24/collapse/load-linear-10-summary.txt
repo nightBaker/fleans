@@ -1,0 +1,2 @@
+rate   started | completed | failed | not_finished | completed_per_s | p50 | p95 | p99 | max
+200    11943 | 11943 | 0 | 0 | 199.1 | 1.912 | 5.147 | 6.134 | 7.586
