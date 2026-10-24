@@ -343,6 +343,36 @@ internal static class FleanModelConfiguration
             entity.HasIndex(e => new { e.Status, e.RequestedAt });
         });
 
+        // One row per message name + idempotency key (#743), read and written by key only.
+        modelBuilder.Entity<MessageDeduplicationState>(entity =>
+        {
+            entity.ToTable("MessageDeduplications");
+            entity.HasKey(e => e.Key);
+            entity.Property(e => e.Key).HasMaxLength(MessageCorrelationKey.MaxLength);
+            entity.Property(e => e.ETag).HasMaxLength(64);
+
+            entity.Property(e => e.PlannedStarts)
+                .HasConversion(
+                    v => JsonConvert.SerializeObject(v),
+                    v => JsonConvert.DeserializeObject<List<PlannedStart>>(v) ?? new List<PlannedStart>(),
+                    new ValueComparer<List<PlannedStart>>(
+                        (a, b) => a!.SequenceEqual(b!),
+                        v => v.Aggregate(0, (h, x) => HashCode.Combine(h, x.GetHashCode())),
+                        v => v.ToList()));
+
+            entity.Property(e => e.StartedInstanceIds)
+                .HasConversion(
+                    v => JsonConvert.SerializeObject(v),
+                    v => JsonConvert.DeserializeObject<List<Guid>>(v) ?? new List<Guid>(),
+                    new ValueComparer<List<Guid>>(
+                        (a, b) => a!.SequenceEqual(b!),
+                        v => v.Aggregate(0, (h, x) => HashCode.Combine(h, x.GetHashCode())),
+                        v => v.ToList()));
+
+            // ReceivedAt is stored natively; SQLite provider package overrides it with a string
+            // converter (see SqliteModelCustomizer).
+        });
+
         modelBuilder.Entity<ProcessDefinition>(entity =>
         {
             entity.ToTable("ProcessDefinitions");

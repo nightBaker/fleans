@@ -112,7 +112,7 @@ public sealed partial class StartEventSubscriptionCache : IStartEventSubscriptio
 
             try
             {
-                return await entry.Value;
+                return await entry.Value.Value;
             }
             catch
             {
@@ -124,7 +124,7 @@ public sealed partial class StartEventSubscriptionCache : IStartEventSubscriptio
     }
 
     private Entry<T> NewEntry<T>(string key, Func<string, Task<T>> load) =>
-        new(load(key), Interlocked.Read(ref _generation), _time.GetUtcNow() + EntryLifetime);
+        new(new Lazy<Task<T>>(() => load(key)), Interlocked.Read(ref _generation), _time.GetUtcNow() + EntryLifetime);
 
     private bool IsCurrent<T>(Entry<T> entry) =>
         entry.Generation == Interlocked.Read(ref _generation) && _time.GetUtcNow() < entry.ExpiresAt;
@@ -142,7 +142,9 @@ public sealed partial class StartEventSubscriptionCache : IStartEventSubscriptio
             if (now >= _renewDueAt && _renewal is null or { IsCompleted: true })
             {
                 _renewDueAt = now + RenewInterval;
-                _renewal = Renew();
+                // Off the caller's context: the caller can be a grain (MessageDeduplicationGrain,
+                // #743), and Orleans refuses to create an observer reference inside a grain.
+                _renewal = Task.Run(Renew);
             }
             renewal = _renewal;
         }
@@ -168,7 +170,8 @@ public sealed partial class StartEventSubscriptionCache : IStartEventSubscriptio
         }
     }
 
-    private sealed record Entry<T>(Task<T> Value, long Generation, DateTimeOffset ExpiresAt);
+    // Lazy: GetOrAdd may run its factory on several racing threads; only the stored entry loads.
+    private sealed record Entry<T>(Lazy<Task<T>> Value, long Generation, DateTimeOffset ExpiresAt);
 
     [LoggerMessage(EventId = 9385, Level = LogLevel.Debug,
         Message = "Start-event subscription cache cleared; the next starts reload the registrations")]

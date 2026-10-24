@@ -353,6 +353,11 @@ public abstract class WorkflowTestBase
                         (sp, _) => new EfCoreDeploymentRequestGrainStorage(
                             sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
 
+                    // The production storage, so a reactivated dedup grain reads its row back (#743).
+                    services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.MessageDeduplications,
+                        (sp, _) => new EfCoreMessageDeduplicationGrainStorage(
+                            sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
+
                     services.AddSingleton<IFleanQueryContextFactory, FleanQueryContextFactory>();
                     services.AddSingleton<IProcessDefinitionRepository, EfCoreProcessDefinitionRepository>();
                     services.AddSingleton<ISieveProcessor, ApplicationSieveProcessor>();

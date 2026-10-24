@@ -51,6 +51,10 @@ Test clusters must register memory grain storage for this name in `WorkflowTestB
 
 `DeploymentRequestGrain` uses `IPersistentState<DeploymentRequestState>` keyed by `GrainStorageNames.DeploymentRequests`, backed by `EfCoreDeploymentRequestGrainStorage` and the `DeploymentRequests` table (one row per request, ETag-checked like `UserTasks`; `Approvals` and `ReviewerGroups` are JSON text columns; index on `(Status, RequestedAt)` for the review queue). The same table is the query side: `IWorkflowQueryService.GetDeploymentRequests` / `GetDeploymentRequest` read it through `FleanQueryDbContext`. `WorkflowTestBase` registers the production storage.
 
+## Message deduplication (#743)
+
+`MessageDeduplicationGrain` uses `IPersistentState<MessageDeduplicationState>` keyed by `GrainStorageNames.MessageDeduplications`, backed by `EfCoreMessageDeduplicationGrainStorage` and the `MessageDeduplications` table: one row per message name + idempotency key (primary key `Key`, at most 1024 characters, the escaped `MessageCorrelationKey` format), read and written by that key only, ETag-checked. `PlannedStarts` and `StartedInstanceIds` are JSON text columns; `ReceivedAt` is a native timestamp (a string on SQLite). Only sends with an idempotency key create a row — one or two writes each (plan, then outcome; a correlated delivery writes once). Retention: a record answers repeats for 24 h (`MessageDeduplicationState.Window`) and the next send of an expired key overwrites it; nothing deletes expired rows yet (pre-1.0). `WorkflowTestBase` registers the production storage, so reactivation tests read the row back.
+
 ## Signal subscriptions: per-row writes (#859)
 
 `SignalCorrelationGrain` (one per signal name) keeps every subscription in memory, but `EfCoreSignalCorrelationGrainStorage.WriteStateAsync` writes only what changed, so a subscribe or unsubscribe costs the same at 10 or 100,000 subscribers:

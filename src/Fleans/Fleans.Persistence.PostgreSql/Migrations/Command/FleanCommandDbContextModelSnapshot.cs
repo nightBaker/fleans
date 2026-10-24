@@ -383,6 +383,35 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                     b.ToTable("MessageCorrelations", (string)null);
                 });
 
+            modelBuilder.Entity("Fleans.Domain.States.MessageDeduplicationState", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
+
+                    b.Property<string>("ETag")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("PlannedStarts")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("ReceivedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("StartedInstanceIds")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Key");
+
+                    b.ToTable("MessageDeduplications", (string)null);
+                });
+
             modelBuilder.Entity("Fleans.Domain.States.MessageStartEventListenerState", b =>
                 {
                     b.Property<string>("Key")

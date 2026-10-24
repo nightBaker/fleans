@@ -47,6 +47,7 @@ propagation), see [`docs/plans/2026-02-08-structured-workflow-logging.md`](../pl
 | 14100–14199 | `EfCoreWorkflowInstancePurgeService` (`Fleans.Persistence`) | Retention purge (#862): 14100 purge started, 14101 batch purged, 14102 purge finished (all Information) |
 | 14200–14299 | `EditorPresenceGrain` (`Fleans.Application/Editor`) | Admin-UI editor presence: 14200 session joined, 14201 session left, 14202 session expired (all Debug) |
 | 14300–14399 | `DeploymentRequestGrain` (`Fleans.Application/Deployments`) | Deploy approvals (#900): 14300 submitted, 14301 approved, 14302 rejected, 14303 withdrawn, 14304 deployed (Information); 14305 approved but the deploy failed — retry possible (Warning) |
+| 14400–14499 | `MessageDeduplicationGrain` (`Fleans.Application/Grains`) | Message sends with an idempotency key (#743): 14400 repeat answered from the record (Information), 14401 correlated delivery recorded, 14402 starts planned, 14403 starts recorded, 14405 nothing started — record dropped (Debug); 14404 interrupted send resumed with the planned ids (Warning) |
 | 99000–99099 | `ProbeHandler` (test-only, `Fleans.E2E.PluginHost`) | 99000 started, 99001 completed, 99002 cancelled, 99003 callback failed. Never shipped. |
 
 ## Adding a new range

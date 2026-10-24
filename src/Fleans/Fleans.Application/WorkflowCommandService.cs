@@ -95,25 +95,25 @@ public partial class WorkflowCommandService : IWorkflowCommandService
     [LoggerMessage(EventId = 7002, Level = LogLevel.Information, Message = "Completing activity {ActivityId} for workflow instance {WorkflowInstanceId}")]
     private partial void LogCompletingActivity(Guid workflowInstanceId, string activityId);
 
-    public async Task<SendMessageResult> SendMessage(string messageName, string? correlationKey, ExpandoObject variables, string? businessId = null)
+    public async Task<SendMessageResult> SendMessage(string messageName, string? correlationKey, ExpandoObject variables,
+        string? businessId = null, string? idempotencyKey = null)
     {
         LogSendingMessage(messageName, correlationKey);
         // Validated here too: a correlated delivery below never reaches a start event.
         BusinessIdRules.Validate(businessId);
 
-        // Try correlation-based delivery first if a correlation key is provided. A key over the
-        // length limit can have no subscriber, so it goes straight to the start-event path.
-        var grainKey = string.IsNullOrWhiteSpace(correlationKey)
-            ? null
-            : MessageCorrelationKey.TryBuild(messageName, correlationKey);
-        if (grainKey is not null)
+        // With an idempotency key the whole send runs once, in the grain of that key (#743). Without
+        // one no grain per key is on the path.
+        if (idempotencyKey is not null)
         {
-            var correlationGrain = _grainFactory.GetGrain<IMessageCorrelationGrain>(grainKey);
-            var delivered = await correlationGrain.DeliverMessage(variables);
-
-            if (delivered)
-                return new SendMessageResult(Delivered: true);
+            var deduplicationKey = MessageDeduplicationKey.Build(messageName, idempotencyKey);
+            return await _grainFactory.GetGrain<IMessageDeduplicationGrain>(deduplicationKey)
+                .Send(correlationKey, variables, businessId);
         }
+
+        // Correlation-based delivery first, when a correlation key is provided.
+        if (await MessageDelivery.TryCorrelate(_grainFactory, messageName, correlationKey, variables))
+            return new SendMessageResult(Delivered: true);
 
         // Fallthrough: message start events. businessId applies only to instances they create (#824).
         var instanceIds = await _startEvents.StartByMessage(messageName, variables, businessId);

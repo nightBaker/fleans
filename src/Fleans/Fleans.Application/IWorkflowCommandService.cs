@@ -15,7 +15,14 @@ public interface IWorkflowCommandService
     /// <c>Fleans:Deployments:RequiredApprovals</c> is above 0 — use <see cref="SubmitDeployment"/> then.
     /// </summary>
     Task<ProcessDefinitionSummary> DeployWorkflow(WorkflowDefinition workflow, string bpmnXml);
-    Task<SendMessageResult> SendMessage(string messageName, string? correlationKey, ExpandoObject variables, string? businessId = null);
+    /// <summary>
+    /// Delivers a message to the running instance subscribed to <paramref name="correlationKey"/>, or
+    /// else starts every process with a matching message start event. With an
+    /// <paramref name="idempotencyKey"/>, a repeat of the send (same message name and key, within
+    /// <c>MessageDeduplicationState.Window</c>) does nothing and returns the first send's outcome (#743).
+    /// </summary>
+    Task<SendMessageResult> SendMessage(string messageName, string? correlationKey, ExpandoObject variables,
+        string? businessId = null, string? idempotencyKey = null);
     Task<SendSignalResult> SendSignal(string signalName);
 
     // User task lifecycle
@@ -41,5 +48,8 @@ public interface IWorkflowCommandService
 
 public record EvaluateConditionsResult(List<Guid> StartedInstanceIds, List<string>? Errors = null);
 
-public record SendMessageResult(bool Delivered, List<Guid>? WorkflowInstanceIds = null);
+[GenerateSerializer]
+public record SendMessageResult(
+    [property: Id(0)] bool Delivered,
+    [property: Id(1)] List<Guid>? WorkflowInstanceIds = null);
 public record SendSignalResult(int DeliveredCount, List<Guid>? WorkflowInstanceIds = null, List<string>? Errors = null);
