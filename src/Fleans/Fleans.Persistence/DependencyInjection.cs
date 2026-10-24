@@ -80,6 +80,10 @@ public static class EfCorePersistenceDependencyInjection
             (sp, _) => new EfCoreDeploymentRequestGrainStorage(
                 sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
 
+        services.AddKeyedSingleton<IGrainStorage>(GrainStorageNames.MessageDeduplications,
+            (sp, _) => new EfCoreMessageDeduplicationGrainStorage(
+                sp.GetRequiredService<IDbContextFactory<FleanCommandDbContext>>()));
+
         services.AddSingleton<IProcessDefinitionRepository, EfCoreProcessDefinitionRepository>();
         services.AddSingleton<ISieveProcessor, ApplicationSieveProcessor>();
         services.Configure<SieveOptions>(options =>

@@ -11,8 +11,8 @@ All paths below are relative to the API base URL (`https://localhost:7140` in th
 |---|---|---|
 | `/Definitions/deploy` | POST | `{"BpmnXml":"<raw BPMN XML string>"}` |
 | `/Execution/start` | POST | `{"WorkflowId":"process-id"}` or `{"WorkflowId":"process-id","Variables":{"key":"value"},"BusinessId":"order-123"}` — `BusinessId` is optional (see [Business id](#business-id)); `Variables` is optional; when provided, the variables are merged into the root scope **before** the workflow starts (required for message event sub-processes that resolve correlation keys from variables at scope entry) |
-| `/Execution/message` | POST | `{"MessageName":"...", "CorrelationKey":"...", "Variables":{}, "BusinessId":"..."}` — `BusinessId` is optional and applies only to instances a message start event creates; a message delivered to a running instance leaves that instance's business id unchanged |
-| `/Execution/signal` | POST | `{"SignalName":"..."}` |
+| `/Execution/message` | POST | `{"MessageName":"...", "CorrelationKey":"...", "Variables":{}, "BusinessId":"...", "IdempotencyKey":"..."}` — `BusinessId` is optional and applies only to instances a message start event creates; a message delivered to a running instance leaves that instance's business id unchanged. `IdempotencyKey` is optional and makes the request safe to retry — see [Retrying a message](#retrying-a-message) |
+| `/Execution/signal` | POST | `{"SignalName":"..."}` — not deduplicated: a retry starts signal-start processes again |
 | `/Execution/complete-activity` | POST | `{"WorkflowInstanceId":"guid", "ActivityId":"activity-id", "Variables":{}}` |
 | `/Execution/evaluate-conditions` | POST | `{"WorkflowId":"process-id", "Variables":{"key":"value"}}` — Evaluates all conditional start events (or only those for the given `WorkflowId` if provided) against the supplied variables. Returns `{"StartedInstanceIds":["guid",...], "Errors":["..."]}`. `Errors` is present only when one or more listeners failed during evaluation. |
 | `/Instances/{instanceId}/state` | GET | *(none)* — Returns the current state snapshot for a specific workflow instance |
@@ -226,7 +226,31 @@ Content-Type: application/json
 **Error responses**
 
 - **400** — `{"error": "MessageName is required"}`, or an invalid `BusinessId` (ProblemDetails)
+- **400** — a blank `IdempotencyKey`, or one that makes `MessageName` + `/` + the URL-escaped key longer than 1024 characters (ProblemDetails)
 - **404** — `{"error": "No active subscription found for message 'payment-received' with correlation key 'order-123'"}` — no workflow instance is currently waiting for this message/key combination
+
+#### Retrying a message
+
+Without an `IdempotencyKey`, a retried request is a second message: if the first one started instances through a message start event and only its response was lost, the retry starts them again. Send an `IdempotencyKey` — a value unique to this message, such as an event id or a request id — and the request can be retried safely:
+
+```json
+POST /Execution/message
+Content-Type: application/json
+
+{
+  "MessageName": "order-placed",
+  "Variables": { "orderId": "order-123" },
+  "IdempotencyKey": "evt-8f14e45f"
+}
+```
+
+- **A repeat does nothing and returns the first outcome.** A request with the same `MessageName` and `IdempotencyKey` within **24 hours** of the first returns its response: the same `WorkflowInstanceIds` when it started instances, or `"Delivered": true` when it was delivered to a waiting instance. It does not start, correlate or merge variables again. The first request wins: a repeat with other `Variables`, `CorrelationKey` or `BusinessId` still gets the first outcome.
+- **Concurrent repeats are safe.** Requests with one key run one at a time; the others wait and get the first outcome.
+- **An interrupted request resumes.** The instance ids are recorded before the first instance starts, so a retry after a crash or timeout starts the same instances, not new ones.
+- **A request that delivered nothing is not recorded** (404, or every subscribed process disabled): a retry is tried again, for example after you deploy or enable the process.
+- **The key is scoped to the message name.** The same `IdempotencyKey` on another message name is another message.
+- **Only requests with a key pay for it**: one extra grain call and one or two writes to the `MessageDeduplications` table. After 24 hours the key starts afresh. Expired rows are not deleted yet.
+- **Signals are not deduplicated.** A signal is a broadcast with no identity, so `POST /Execution/signal` takes no `IdempotencyKey`. When a start must happen once, use a message start event with a key.
 
 ### `POST /Execution/signal`
 
