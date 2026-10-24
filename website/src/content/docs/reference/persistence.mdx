@@ -143,6 +143,11 @@ Example `appsettings.json`:
 
 **Startup behaviour:** PostgreSQL uses `MigrateAsync()` — EF Core migrations are applied automatically on `Fleans.Api` startup. `Fleans.Web` and `Fleans.Mcp` share the same database but do not run migrations.
 
+**Behind PgBouncer:** Fleans works through PgBouncer in **transaction** pooling mode — the startup migrations serialize with a transaction-scoped advisory lock, which a transaction pooler keeps on one server connection. Two connection-string settings are worth adding there and without a pooler alike:
+
+- `Maximum Pool Size=<n>` — every process opens one Npgsql pool per connection string (`fleans`, `fleans-query`, `fleans-journal`) of up to 100 connections by default. Size *processes × pools × n* below the server's (or pooler's) `max_connections`.
+- `No Reset On Close=true` — Npgsql otherwise sends `DISCARD ALL` whenever a pooled connection is reused; under load that was ~7 extra server transactions per workflow instance on the read model. Fleans keeps no session state on pooled connections, so the reset buys nothing.
+
 **Read replica:** When `ConnectionStrings:fleans-query` is provided, the query `DbContext` connects to the replica. The replica must be provisioned separately (e.g. a PostgreSQL standby). The chart provisions only the primary `fleans` database; read-replica wiring is tracked in issue [#170](https://github.com/nightBaker/fleans/issues/170).
 
 ## Separate journal database
