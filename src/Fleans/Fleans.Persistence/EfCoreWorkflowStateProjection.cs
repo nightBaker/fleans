@@ -1,4 +1,5 @@
 using Fleans.Domain.Events;
+using Fleans.Persistence.Events;
 using Fleans.Domain.States;
 using Microsoft.EntityFrameworkCore;
 
@@ -11,7 +12,8 @@ namespace Fleans.Persistence;
 /// and a write only lands past it: a repeated or late write never rolls the row back.
 /// </summary>
 /// <remarks>
-/// A running instance writes only its row, in one statement and without reading it first; its
+/// A running instance writes only its row, in one statement (an insert, the guarded update when
+/// the row is already there) and without reading it first; its
 /// details are read from the grain. A completed one also writes the details the read side serves —
 /// entries, variable scopes and condition results — in the same <c>SaveChanges</c> as
 /// <c>IsCompleted</c>, so a reader that sees the flag sees them. Gateway forks and complex-join
@@ -62,6 +64,22 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
             return;
         }
 
+        try
+        {
+            await WriteCompletedAsync(db, id, row, state, version, loadDetails: false);
+        }
+        catch (DbUpdateException ex) when (EfCoreEventStore.IsUniqueConstraintViolation(ex))
+        {
+            // Details stored under a row that does not say completed: not something this
+            // projection writes, but diff against them rather than fail on every redelivery.
+            await using var retry = await _dbContextFactory.CreateDbContextAsync();
+            await WriteCompletedAsync(retry, id, row, state, version, loadDetails: true);
+        }
+    }
+
+    private static async Task WriteCompletedAsync(
+        FleanCommandDbContext db, Guid id, WorkflowInstanceRow row, WorkflowInstanceState state, int version, bool loadDetails)
+    {
         // The row is its own entity, never the projected state: tracking that would make EF add
         // every collection too. The details are added below as the state's own objects; the
         // context is gone once the write returns.
@@ -75,11 +93,17 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
             var stored = db.Entry(existing);
             if (stored.Property<int>(ProjectedVersion).CurrentValue >= version)
                 return;
+            // Details are written only together with IsCompleted, so a row that was still running
+            // has none to diff against: skip the three loads (#903).
+            var hasDetails = loadDetails || existing.IsCompleted;
             stored.CurrentValues.SetValues(row);
             stored.Property<int>(ProjectedVersion).CurrentValue = version;
-            await stored.Collection(e => e.Entries).LoadAsync();
-            await stored.Collection(e => e.VariableStates).LoadAsync();
-            await stored.Collection(e => e.ConditionSequenceStates).LoadAsync();
+            if (hasDetails)
+            {
+                await stored.Collection(e => e.Entries).LoadAsync();
+                await stored.Collection(e => e.VariableStates).LoadAsync();
+                await stored.Collection(e => e.ConditionSequenceStates).LoadAsync();
+            }
         }
 
         DiffEntries(db, existing, state, id);
@@ -90,13 +114,28 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
     }
 
     /// <summary>
-    /// One <c>UPDATE</c> by key, guarded by the stored version; only an instance's first write (no
-    /// row yet) inserts. Value converters apply to <c>ExecuteUpdate</c>, so SQLite's
-    /// DateTimeOffset-as-string mapping holds.
+    /// Inserts the row, or — when it is already there — one <c>UPDATE</c> by key guarded by the
+    /// stored version. Insert first: a running instance's row changes on very few events, so a
+    /// running write is almost always the instance's first, and then it costs one statement
+    /// instead of an update that finds nothing, an existence check and the insert (#903). A
+    /// primary-key conflict means the row exists (a reactivated or duplicate projector); the
+    /// guarded update then lands only past its version. Value converters apply to
+    /// <c>ExecuteUpdate</c>, so SQLite's DateTimeOffset-as-string mapping holds.
     /// </summary>
     private static async Task UpsertRowAsync(FleanCommandDbContext db, Guid id, WorkflowInstanceRow row, int version)
     {
-        var updated = await db.WorkflowInstances
+        AddRow(db, id, row, version);
+        try
+        {
+            await db.SaveChangesAsync();
+            return;
+        }
+        catch (DbUpdateException ex) when (EfCoreEventStore.IsUniqueConstraintViolation(ex))
+        {
+            db.ChangeTracker.Clear();
+        }
+
+        await db.WorkflowInstances
             .Where(e => e.Id == id && EF.Property<int>(e, ProjectedVersion) < version)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(e => e.ProcessDefinitionId, row.ProcessDefinitionId)
@@ -111,16 +150,6 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
                 .SetProperty(e => e.IsFailed, row.IsFailed)
                 .SetProperty(e => e.CompletedAt, row.CompletedAt)
                 .SetProperty(e => EF.Property<int>(e, ProjectedVersion), version));
-        if (updated > 0)
-            return;
-
-        // Nothing updated: either there is no row yet, or it already reflects this version or a
-        // later one.
-        if (await db.WorkflowInstances.AnyAsync(e => e.Id == id))
-            return;
-
-        AddRow(db, id, row, version);
-        await db.SaveChangesAsync();
     }
 
     private static WorkflowInstanceState AddRow(FleanCommandDbContext db, Guid id, WorkflowInstanceRow row, int version)

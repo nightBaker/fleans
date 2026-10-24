@@ -50,6 +50,113 @@ public class EfCoreWorkflowStateProjectionTests : PersistenceTestBase
     [DataTestMethod]
     [DataRow(PersistenceProvider.Sqlite)]
     [DataRow(PersistenceProvider.Postgres)]
+    public async Task Write_FirstProjectionOfARunningInstance_IsOneInsert(PersistenceProvider provider)
+    {
+        // Arrange
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var projection = new EfCoreWorkflowStateProjection(fixture.CommandFactory);
+        var instanceId = Guid.NewGuid();
+        var state = RunningInstance(instanceId);
+
+        // Act
+        using var counter = EfCommandCounter.Start();
+        await projection.WriteAsync(instanceId.ToString(), state, version: 1);
+        var commands = counter.Commands;
+
+        // Assert — one round trip per started instance (#903): no update-then-check-then-insert
+        Assert.HasCount(1, commands, string.Join(Environment.NewLine, commands));
+        StringAssert.StartsWith(commands[0].TrimStart(), "INSERT");
+        Assert.AreEqual(WorkflowInstanceRow.From(state), await projection.ReadRowAsync(instanceId.ToString()));
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task Write_RunningRowAlreadyThere_UpdatesItOnlyPastItsVersion(PersistenceProvider provider)
+    {
+        // Arrange — the row was written by an earlier projector activation
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var instanceId = Guid.NewGuid();
+        var created = new WorkflowInstanceState();
+        created.Initialize(instanceId, null, Guid.NewGuid(), At, businessId: "order-1");
+        await new EfCoreWorkflowStateProjection(fixture.CommandFactory).WriteAsync(instanceId.ToString(), created, version: 1);
+        var started = RunningInstance(instanceId);
+
+        // Act — a reactivated projector writes the same version again (its insert conflicts),
+        // then a newer one, then a stale duplicate repeats the older one
+        var projection = new EfCoreWorkflowStateProjection(fixture.CommandFactory);
+        await projection.WriteAsync(instanceId.ToString(), created, version: 1);
+        await projection.WriteAsync(instanceId.ToString(), started, version: 2);
+        await projection.WriteAsync(instanceId.ToString(), created, version: 1);
+
+        // Assert
+        Assert.AreEqual(WorkflowInstanceRow.From(started), await projection.ReadRowAsync(instanceId.ToString()));
+        await using var db = await fixture.CommandFactory.CreateDbContextAsync();
+        var stored = await db.WorkflowInstances.SingleAsync(s => s.Id == instanceId);
+        Assert.AreEqual(2, db.Entry(stored).Property<int>(FleanModelConfiguration.ProjectedVersion).CurrentValue);
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task Write_CompletingARunningRow_DoesNotLoadDetails(PersistenceProvider provider)
+    {
+        // Arrange — projected while running: a running row has no details stored
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var projection = new EfCoreWorkflowStateProjection(fixture.CommandFactory);
+        var instanceId = Guid.NewGuid();
+        var state = RunningInstance(instanceId);
+        await projection.WriteAsync(instanceId.ToString(), state, version: 2);
+        state.CompleteEntry(state.Entries.Single().ActivityInstanceId, At);
+        state.Complete(At);
+
+        // Act
+        using var counter = EfCommandCounter.Start();
+        await projection.WriteAsync(instanceId.ToString(), state, version: 5);
+        var commands = counter.Commands;
+
+        // Assert — the row is read, the details are only written (#903)
+        Assert.IsFalse(
+            commands.Any(c => c.TrimStart().StartsWith("SELECT", StringComparison.OrdinalIgnoreCase)
+                && (c.Contains("WorkflowActivityInstanceEntries") || c.Contains("WorkflowVariableStates") || c.Contains("WorkflowConditionSequenceStates"))),
+            string.Join(Environment.NewLine, commands));
+        await using var db = await fixture.CommandFactory.CreateDbContextAsync();
+        Assert.AreEqual(1, await db.WorkflowActivityInstanceEntries.CountAsync(e => e.WorkflowInstanceId == instanceId));
+        Assert.AreEqual(1, await db.WorkflowVariableStates.CountAsync(v => v.WorkflowInstanceId == instanceId));
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task Write_CompletingARunningRowThatHasDetails_DiffsAgainstThem(PersistenceProvider provider)
+    {
+        // Arrange — details stored, then the row set back to running at an older version (not
+        // something the projection writes, but it must not fail on it forever)
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var projection = new EfCoreWorkflowStateProjection(fixture.CommandFactory);
+        var instanceId = Guid.NewGuid();
+        var state = RunningInstance(instanceId);
+        state.CompleteEntry(state.Entries.Single().ActivityInstanceId, At);
+        state.Complete(At);
+        await projection.WriteAsync(instanceId.ToString(), state, version: 5);
+        await using (var db = await fixture.CommandFactory.CreateDbContextAsync())
+            await db.WorkflowInstances.Where(s => s.Id == instanceId).ExecuteUpdateAsync(u => u
+                .SetProperty(s => s.IsCompleted, false)
+                .SetProperty(s => EF.Property<int>(s, FleanModelConfiguration.ProjectedVersion), 1));
+
+        // Act
+        await projection.WriteAsync(instanceId.ToString(), state, version: 6);
+
+        // Assert
+        Assert.AreEqual(WorkflowInstanceRow.From(state), await projection.ReadRowAsync(instanceId.ToString()));
+        await using var check = await fixture.CommandFactory.CreateDbContextAsync();
+        Assert.AreEqual(1, await check.WorkflowActivityInstanceEntries.CountAsync(e => e.WorkflowInstanceId == instanceId));
+        Assert.AreEqual(1, await check.WorkflowVariableStates.CountAsync(v => v.WorkflowInstanceId == instanceId));
+    }
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
     public async Task ReadRow_ReturnsTheWrittenRow_EqualToTheStates(PersistenceProvider provider)
     {
         // Arrange — inserted, then updated in place
