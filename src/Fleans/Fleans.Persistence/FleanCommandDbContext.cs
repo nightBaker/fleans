@@ -26,6 +26,7 @@ public class FleanCommandDbContext : DbContext
     public DbSet<ConditionalStartEventListenerState> ConditionalStartEventListeners => Set<ConditionalStartEventListenerState>();
     public DbSet<ConditionalStartEntryState> ConditionalStartEventRegistryEntries => Set<ConditionalStartEntryState>();
     public DbSet<CustomTaskCatalogRowState> CustomTaskCatalogEntries => Set<CustomTaskCatalogRowState>();
+    public DbSet<DeploymentRequestState> DeploymentRequests => Set<DeploymentRequestState>();
 
     public FleanCommandDbContext(DbContextOptions<FleanCommandDbContext> options) : base(options) { }
 

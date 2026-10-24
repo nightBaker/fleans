@@ -27,7 +27,7 @@ pointer/keyboard interaction or visual and stays manual.
 ### 1. Shell and themes
 
 1. Open `/workflows`. **Expected:** top bar with the Fleans mark, `FLEANS` wordmark, `BPMN 2.0` chip,
-   the segmented nav (Workflows · Editor · Custom Tasks · Events) with the current section highlighted
+   the segmented nav (Workflows · Editor · Deployments · Custom Tasks · Events) with the current section highlighted
    in the accent colour, a sun/moon toggle and the gear link on the right. No left app bar.
 2. Click the sun/moon toggle. **Expected:** the whole UI switches light ↔ dark (Orbit palettes: near-black
    navy in dark, cool white in light); Fluent grids, buttons and inputs follow. Settings → Theme Mode

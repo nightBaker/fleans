@@ -95,6 +95,35 @@ public class WorkflowQueryServiceTests : PersistenceTestBase
         Assert.IsNull(result);
     }
 
+    // ─────────────────────────────────────────────────
+    // GetVersionFingerprints — the environments board compares environments by BPMN hash (#900)
+    // ─────────────────────────────────────────────────
+
+    [DataTestMethod]
+    [DataRow(PersistenceProvider.Sqlite)]
+    [DataRow(PersistenceProvider.Postgres)]
+    public async Task GetVersionFingerprints_LatestOnly_ReturnsEachKeysLatestVersionAndItsHash(PersistenceProvider provider)
+    {
+        // Arrange
+        await using var fixture = await TestFixtureFactory.CreateAsync(provider);
+        var (service, commandFactory) = BuildService(fixture, provider);
+        using var db = commandFactory.CreateDbContext();
+        await SeedProcessDefinition(db, "fp-a:1", "fp-a", 1, bpmnXml: "<same/>");
+        await SeedProcessDefinition(db, "fp-a:2", "fp-a", 2, bpmnXml: "<changed/>");
+        await SeedProcessDefinition(db, "fp-b:1", "fp-b", 1, bpmnXml: "<same/>");
+
+        // Act
+        var latest = await service.GetVersionFingerprints(["fp-a", "fp-b", "fp-missing"], latestOnly: true);
+        var all = await service.GetVersionFingerprints(["fp-a"], latestOnly: false);
+
+        // Assert
+        CollectionAssert.AreEqual(new[] { ("fp-a", 2), ("fp-b", 1) },
+            latest.Select(f => (f.ProcessDefinitionKey, f.Version)).ToArray());
+        CollectionAssert.AreEqual(new[] { 2, 1 }, all.Select(f => f.Version).ToArray());
+        Assert.AreEqual(all[1].BpmnSha256, latest[1].BpmnSha256, "Same BPMN, same hash, across keys");
+        Assert.AreNotEqual(all[0].BpmnSha256, all[1].BpmnSha256);
+    }
+
     private static InstanceStateSnapshot GrainSnapshot(bool started) =>
         new(started ? ["task1"] : [], [], started, false, false, false,
             [], [], [], [], null, started ? DateTimeOffset.UtcNow : null, null, null, null);

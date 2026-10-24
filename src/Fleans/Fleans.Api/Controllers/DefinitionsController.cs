@@ -1,7 +1,8 @@
 using System.Text;
 using Fleans.Application;
 using Fleans.Application.QueryModels;
-using Fleans.Infrastructure.Bpmn;
+using Fleans.Application.Bpmn;
+using Fleans.Application.Deployments;
 using Fleans.ServiceDefaults.DTOs;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -40,6 +41,10 @@ namespace Fleans.Api.Controllers
                 var summary = await _commandService.DeployWorkflow(workflow, request.BpmnXml);
                 return Ok(new DeployBpmnResponse(summary.ProcessDefinitionKey, summary.Version));
             }
+            catch (DeploymentApprovalRequiredException ex)
+            {
+                return Conflict(new ErrorResponse(ex.Message));
+            }
             catch (Exception ex)
             {
                 return BadRequest(new ErrorResponse($"Invalid BPMN: {ex.Message}"));
@@ -58,6 +63,22 @@ namespace Fleans.Api.Controllers
             var result = await _workflowQueryService.GetAllProcessDefinitions(request);
             return Ok(result);
         }
+
+        /// <summary>
+        /// The latest version of each process in <paramref name="keys"/> with a SHA-256 of its BPMN,
+        /// so another environment's Admin UI can tell whether it runs the same diagram (#900).
+        /// </summary>
+        [EnableRateLimiting("read")]
+        [HttpGet("latest", Name = "ListLatestVersions")]
+        public async Task<IActionResult> ListLatestVersions([FromQuery] string[] keys)
+        {
+            if (keys.Length > MaxLatestKeys)
+                return BadRequest(new ErrorResponse($"At most {MaxLatestKeys} keys per request."));
+            var latest = await _workflowQueryService.GetVersionFingerprints(keys.Distinct().ToList(), latestOnly: true);
+            return Ok(latest);
+        }
+
+        private const int MaxLatestKeys = 100;
 
         [EnableRateLimiting("read")]
         [HttpGet("{key}/instances", Name = "ListInstancesByKey")]

@@ -3,14 +3,15 @@ using Fleans.ServiceDefaults.DTOs;
 namespace Fleans.Api.Authorization;
 
 /// <summary>
-/// Resolves the calling user's group membership for a user-task claim attempt. Two
+/// Resolves the calling user's group membership for a user-task claim attempt or a
+/// deployment review (#900 follow-up). Two
 /// implementations are registered by <c>Program.cs</c> based on whether JWT
 /// authentication is configured (#588 round-2 design, minor #1 option (b')):
 ///
 /// <list type="bullet">
 ///   <item>
-///     <see cref="BodyUserGroupResolver"/> — used when auth is disabled. Reads
-///     <see cref="ClaimTaskRequest.UserGroups"/> from the request body. Trusted on
+///     <see cref="BodyUserGroupResolver"/> — used when auth is disabled. Reads the
+///     body's <c>UserGroups</c> (e.g. <see cref="ClaimTaskRequest.UserGroups"/>). Trusted on
 ///     the wire; appropriate for the default no-auth Fleans deployment.
 ///   </item>
 ///   <item>
@@ -32,5 +33,5 @@ public interface IUserGroupResolver
     /// <c>UserTaskLifecycle.Claim</c> treats an empty list as "no group constraint
     /// satisfied".
     /// </summary>
-    IReadOnlyList<string> Resolve(HttpContext httpContext, ClaimTaskRequest request);
+    IReadOnlyList<string> Resolve(HttpContext httpContext, IReadOnlyList<string>? bodyUserGroups);
 }

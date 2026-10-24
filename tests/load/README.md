@@ -43,7 +43,7 @@ k6 load test suite for the Fleans workflow engine.
 
 | Service | Replicas | What |
 |---|---:|---|
-| `nginx` | 1 | `:80` → `fleans-core` (config: `nginx.conf`) |
+| `nginx` | 1 | `:80` → `fleans-core` (config: `nginx.conf` — sized for 2 000 VUs; nginx's defaults drop connections above ~250 VUs, which k6 reports as `EOF`) |
 | `fleans-core` | 3 | `Fleans.Api`, `Fleans:Role=Core` — REST API, workflow grains |
 | `fleans-worker` | 2 | `Fleans.WorkerHost`, `Fleans:Role=Worker` — script / condition grains |
 | `fleans-plugin` | 1 | `Fleans.E2E.PluginHost`, `Fleans:Role=Plugin` — external worker hosting the `e2e-probe` custom task |
@@ -251,6 +251,11 @@ Target: 200 VU × 5 min sustained.
 
 When running against Aspire locally (without docker-compose), rate limiting is off by default because `appsettings.json` has no `RateLimiting` section. Do **not** partially populate the section — either set all five policies or leave it absent entirely.
 
+## Results
+
+- `results/local-2026-10-23/report.md` — `main` before vs after the first Road-to-1.0 PRs (#888–#898):
+  `long-diverse`, `linear-saturation` and `timers`, with the raw k6 summaries.
+
 ## Related issues
 
 - Issue #237 — Docker Compose infrastructure setup
@@ -262,3 +267,4 @@ When running against Aspire locally (without docker-compose), rate limiting is o
 - Issue #244 — Cloud validation run
 - Issues #866, #867, #868, #869 (and #846, #857) — findings from the `long-diverse` run on the split-roles Kafka stack
 - Issue #886 — `timers-1m`, reminders on their own Postgres
+- Issues #902, #903 — regressions found by the 2026-10-23 run (late timers, lower start throughput)

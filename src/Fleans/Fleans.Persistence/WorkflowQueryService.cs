@@ -414,6 +414,58 @@ public class WorkflowQueryService : IWorkflowQueryService
             t.ClaimedBy, t.TaskState.ToString(), t.CreatedAt,
             t.ExpectedOutputVariables);
 
+    public async Task<IReadOnlyList<DeploymentRequestSummary>> GetDeploymentRequests(
+        DeploymentRequestStatus? status = null, int limit = 100)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+
+        var query = db.DeploymentRequests.AsQueryable();
+        if (status is { } s)
+            query = query.Where(r => r.Status == s);
+
+        return await query
+            .OrderByDescending(r => r.RequestedAt)
+            .Take(limit)
+            .Select(r => new DeploymentRequestSummary(
+                r.Id, r.ProcessDefinitionKey, r.RequestedBy, r.RequestedAt, r.Comment,
+                r.RequiredApprovals, r.Approvals, r.Status, r.DeployDisabled,
+                r.ClosedBy, r.CloseReason, r.DeployedVersion, r.DeployError, r.ReviewerGroups))
+            .ToListAsync();
+    }
+
+    public async Task<IReadOnlyList<ProcessVersionFingerprint>> GetVersionFingerprints(
+        IReadOnlyCollection<string> processDefinitionKeys, bool latestOnly)
+    {
+        if (processDefinitionKeys.Count == 0)
+            return [];
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+
+        var query = db.ProcessDefinitions.Where(d => processDefinitionKeys.Contains(d.ProcessDefinitionKey));
+        if (latestOnly)
+            query = query.Where(d => d.Version == db.ProcessDefinitions
+                .Where(o => o.ProcessDefinitionKey == d.ProcessDefinitionKey)
+                .Max(o => o.Version));
+
+        // Only the columns needed: the serialized definition column is large.
+        var rows = await query
+            .Select(d => new { d.ProcessDefinitionKey, d.Version, d.IsActive, d.DeployedAt, d.BpmnXml })
+            .ToListAsync();
+
+        return rows
+            .OrderBy(r => r.ProcessDefinitionKey, StringComparer.Ordinal)
+            .ThenByDescending(r => r.Version)
+            .Select(r => new ProcessVersionFingerprint(r.ProcessDefinitionKey, r.Version, r.IsActive, r.DeployedAt,
+                Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(
+                    System.Text.Encoding.UTF8.GetBytes(r.BpmnXml ?? "")))))
+            .ToList();
+    }
+
+    public async Task<DeploymentRequestState?> GetDeploymentRequest(Guid requestId)
+    {
+        await using var db = await _dbContextFactory.CreateDbContextAsync();
+        return await db.DeploymentRequests.FirstOrDefaultAsync(r => r.Id == requestId);
+    }
+
     public async Task<RegisteredEventsSnapshot> GetRegisteredEventsAsync(CancellationToken ct = default)
     {
         // CQRS: query-side methods read from the query context. The

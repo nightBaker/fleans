@@ -58,6 +58,19 @@ internal sealed class SqliteModelCustomizer : RelationalModelCustomizer
             .Property(e => e.CreatedAt)
             .HasConversion(DtoToStringConverter);
 
+        // DeploymentRequestState — one non-nullable and two nullable DateTimeOffset columns
+        modelBuilder.Entity<DeploymentRequestState>()
+            .Property(e => e.RequestedAt)
+            .HasConversion(DtoToStringConverter);
+
+        modelBuilder.Entity<DeploymentRequestState>()
+            .Property(e => e.ClosedAt)
+            .HasConversion(NullableDtoToStringConverter);
+
+        modelBuilder.Entity<DeploymentRequestState>()
+            .Property(e => e.DeployedAt)
+            .HasConversion(NullableDtoToStringConverter);
+
         // ProcessDefinition.DeployedAt — non-nullable DateTimeOffset
         modelBuilder.Entity<ProcessDefinition>()
             .Property(e => e.DeployedAt)

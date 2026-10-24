@@ -207,6 +207,9 @@ namespace Fleans.Application.Tests
 
         private class StubWorkflowQueryService : IWorkflowQueryService
         {
+            public Task<IReadOnlyList<DeploymentRequestSummary>> GetDeploymentRequests(Fleans.Domain.States.DeploymentRequestStatus? status = null, int limit = 100) => throw new NotImplementedException();
+            public Task<Fleans.Domain.States.DeploymentRequestState?> GetDeploymentRequest(Guid requestId) => throw new NotImplementedException();
+            public Task<IReadOnlyList<ProcessVersionFingerprint>> GetVersionFingerprints(IReadOnlyCollection<string> processDefinitionKeys, bool latestOnly) => throw new NotImplementedException();
             public Task<InstanceStateSnapshot?> GetStateSnapshot(Guid workflowInstanceId) => Task.FromResult<InstanceStateSnapshot?>(null);
             public Task<int> GetMaxVersionByKeyAsync(string processDefinitionKey) => Task.FromResult(0);
             public Task<PagedResult<ProcessDefinitionSummary>> GetAllProcessDefinitions(PageRequest page) => Task.FromResult(new PagedResult<ProcessDefinitionSummary>([], 0, page.Page, page.PageSize));

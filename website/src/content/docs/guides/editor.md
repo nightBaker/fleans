@@ -86,6 +86,10 @@ deployed** since you opened yours. In that case you can **Compare** with it (His
 instances start — enable the process on the Workflows page once it has been reviewed. After deploying,
 the dialog links to the new version's instances.
 
+When the cluster requires [deploy approvals](/fleans/guides/deployments/), the button reads **Request
+deployment**: add a note for the reviewers and submit. Nothing deploys until enough other people approve
+the request on the **Deployments** page; the dialog links to it.
+
 The **Process assistant** card (top-right of the canvas) suggests fixes for common gaps — a user task
 without an escalation timer, a path without an end event, a gateway branch without a condition or default
 — and applies them in one click (Undo reverts them). It works from rules, not an AI service.

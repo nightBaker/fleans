@@ -5,11 +5,14 @@
 @using System.Text.Json
 @using Fleans.Application
 @using Fleans.Application.QueryModels
-@using Fleans.Infrastructure.Bpmn
+@using Fleans.Application.Bpmn
 @using Microsoft.FluentUI.AspNetCore.Components
 @inject IWorkflowQueryService QueryService
 @inject IWorkflowCommandService CommandService
 @inject IBpmnConverter BpmnConverter
+@inject Microsoft.Extensions.Options.IOptions<Fleans.Application.Deployments.DeploymentApprovalOptions> DeployApprovals
+@inject Microsoft.Extensions.Options.IOptions<Fleans.Web.Services.EnvironmentOptions> EnvironmentConfig
+@inject Fleans.Web.Services.ActingUser ActingUser
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 @inject ILogger<Editor> Logger
@@ -585,8 +588,22 @@
 {
     <div class="deploy-overlay" @onclick="CancelDeploy"></div>
     <div class="deploy-dialog" role="dialog" aria-modal="true" aria-labelledby="deploy-title" data-testid="deploy-dialog">
-        <span class="orbit-label">Deploy · this Fleans cluster</span>
-        @if (deployedResult is { } done)
+        <span class="orbit-label">Deploy · @EnvironmentConfig.Value.DisplayName@(RequiredApprovals > 0 ? $" · needs {RequiredApprovals} approval{(RequiredApprovals == 1 ? "" : "s")}" : "")</span>
+        @if (deployRequest is { } requested)
+        {
+            <h2 id="deploy-title">Deployment of @requested.ProcessDefinitionKey requested</h2>
+            <ul class="orbit-checklist">
+                <li data-testid="deploy-review-progress">
+                    <span class="orbit-check orbit-check--warn" aria-hidden="true">○</span>
+                    Review: @requested.Approvals.Count of @requested.RequiredApprovals — someone other than you approves it on Deployments, then it deploys.
+                </li>
+            </ul>
+            <div class="deploy-dialog__actions">
+                <FluentButton Appearance="Appearance.Neutral" @onclick="@(() => Navigation.NavigateTo($"/deployments/{requested.Id}"))">Open review</FluentButton>
+                <FluentButton Appearance="Appearance.Accent" @onclick="CloseDeployed">Done</FluentButton>
+            </div>
+        }
+        else if (deployedResult is { } done)
         {
             <h2 id="deploy-title">Deployed @done.ProcessDefinitionKey v@(done.Version)</h2>
             <ul class="orbit-checklist">
@@ -603,7 +620,7 @@
         }
         else
         {
-            <h2 id="deploy-title">Deploy @deployProcessKey @deployNextVersion</h2>
+            <h2 id="deploy-title">@(RequiredApprovals > 0 ? "Request" : "Deploy") @deployProcessKey @deployNextVersion</h2>
             <ul class="orbit-checklist">
                 <li><span class="orbit-check orbit-check--ok" aria-hidden="true">✓</span>BPMN converted for the engine</li>
                 <li>
@@ -635,6 +652,13 @@
                         @string.Join(", ", collaborators.Select(c => c.DisplayName)) @(collaborators.Count == 1 ? "has" : "have") this process open
                     </li>
                 }
+                @if (RequiredApprovals > 0)
+                {
+                    <li>
+                        <span class="orbit-check orbit-check--warn" aria-hidden="true">○</span>
+                        Review: 0 of @RequiredApprovals — deploys once @Plural(RequiredApprovals, "other reviewer") approve@(RequiredApprovals == 1 ? "s" : "")
+                    </li>
+                }
             </ul>
             @if (deployConflictVersion is not null)
             {
@@ -644,12 +668,20 @@
                 </div>
             }
             <FluentCheckbox @bind-Value="deployDisabled" Label="Deploy disabled — new instances can't start until someone enables it on Workflows (review step)" />
+            @if (RequiredApprovals > 0)
+            {
+                @if (!ActingUser.IsSignedIn)
+                {
+                    <FluentTextField @bind-Value="ActingUser.DeclaredName" Immediate="true" Label="Your name (requester)" data-testid="deploy-requester" />
+                }
+                <FluentTextArea @bind-Value="deployComment" Label="What changed? (for the reviewers)" Rows="3" Style="width: 100%;" data-testid="deploy-comment" />
+            }
             <p><strong>Process Key:</strong> @deployProcessKey</p>
             <p><strong>Version:</strong> @deployNextVersion</p>
-            <p>This will deploy a new version of the workflow definition.</p>
+            <p>@(RequiredApprovals > 0 ? "This requests a new version; it deploys once approved." : "This will deploy a new version of the workflow definition.")</p>
             <div class="deploy-dialog__actions">
                 <FluentButton Appearance="Appearance.Neutral" @onclick="CancelDeploy">Cancel</FluentButton>
-                <FluentButton Appearance="Appearance.Accent" @onclick="ConfirmDeploy">@(deployConflictVersion is null ? "Deploy" : "Deploy mine anyway")</FluentButton>
+                <FluentButton Appearance="Appearance.Accent" Loading="@isDeploying" Disabled="@NeedsRequesterName" @onclick="ConfirmDeploy" data-testid="deploy-confirm">@DeployButtonText</FluentButton>
             </div>
         }
     </div>
@@ -690,6 +722,15 @@
     private Fleans.Application.QueryModels.ProcessDefinitionSummary? deployedResult;
     private bool deployDisabled;
     private Domain.WorkflowDefinition? pendingWorkflow;
+    // Deploy approvals (#900): with Fleans:Deployments:RequiredApprovals > 0 the dialog submits a request.
+    private string? deployComment;
+    private Domain.States.DeploymentRequestState? deployRequest;
+    private int RequiredApprovals => DeployApprovals.Value.RequiredApprovals;
+    private bool NeedsRequesterName =>
+        RequiredApprovals > 0 && !ActingUser.IsSignedIn && string.IsNullOrWhiteSpace(ActingUser.DeclaredName);
+    private string DeployButtonText => RequiredApprovals > 0
+        ? deployConflictVersion is null ? "Request deployment" : "Request mine anyway"
+        : deployConflictVersion is null ? "Deploy" : "Deploy mine anyway";
 
     private ElementPropertiesPanel.BpmnElementData? selectedElement;
 
@@ -1089,7 +1130,9 @@
             deployNextVersion = $"v{maxVersion + 1}";
             DetectDeployConflict(maxVersion);
             deployedResult = null;
+            deployRequest = null;
             deployDisabled = false;
+            deployComment = null;
 
             showDeployDialog = true;
         }
@@ -1104,12 +1147,14 @@
     {
         showDeployDialog = false;
         deployedResult = null;
+        deployRequest = null;
     }
 
     private void CancelDeploy()
     {
         showDeployDialog = false;
         deployedResult = null;
+        deployRequest = null;
         deployConflictVersion = null;
         pendingBpmnXml = null;
         pendingWorkflow = null;
@@ -1118,6 +1163,11 @@
     private async Task ConfirmDeploy()
     {
         if (pendingWorkflow == null || pendingBpmnXml == null || ActiveTab == null) return;
+        if (RequiredApprovals > 0)
+        {
+            await RequestDeployment();
+            return;
+        }
 
         try
         {
@@ -1149,6 +1199,38 @@
             isDeploying = false;
             pendingBpmnXml = null;
             pendingWorkflow = null;
+        }
+    }
+
+    // The tab stays a draft: nothing is deployed until the request is approved.
+    private async Task RequestDeployment()
+    {
+        var requestedBy = await ActingUser.GetUserIdAsync();
+        if (requestedBy is null)
+        {
+            errorMessage = "Enter your name to request a deployment.";
+            return;
+        }
+
+        try
+        {
+            isDeploying = true;
+            errorMessage = null;
+            deployRequest = await CommandService.SubmitDeployment(pendingBpmnXml!, requestedBy, deployComment, deployDisabled);
+            deployConflictVersion = null;
+            successMessage = $"Deployment of '{deployRequest.ProcessDefinitionKey}' requested — waiting for {deployRequest.RequiredApprovals} approval(s).";
+            pendingBpmnXml = null;
+            pendingWorkflow = null;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to request deployment");
+            errorMessage = $"Deployment request failed: {ex.Message}";
+            showDeployDialog = false;
+        }
+        finally
+        {
+            isDeploying = false;
         }
     }
 
