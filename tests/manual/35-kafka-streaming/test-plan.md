@@ -55,5 +55,5 @@ client-side topic-ensure logic in `Fleans.Streaming.Kafka`.
   named `fleans-0` carries every event in v1.
 - v1 ships **plaintext brokers only** — SASL/TLS is the production-Kafka
   follow-up (see issue tracker for "Production Kafka auth").
-- Subscription state lives in Redis (`PubSubStore`) — switching to Kafka adds
-  *event durability*, not subscription durability.
+- Subscriptions are implicit-only, so there is no subscription state to store (#911);
+  switching to Kafka adds *event durability*.

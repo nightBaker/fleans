@@ -229,4 +229,4 @@ Populate `tests/load/results/cloud/report.md` with the comparison table:
 
 **k6 "dial: too many open files":** Set `ulimit -n 65535` on the k6 runner VM before running k6.
 
-**Orleans silos not clustering:** Verify `ConnectionStrings__orleans-redis: redis:6379` is set and every silo uses the same `Fleans__Clustering__Provider` in `docker-compose.yml` (and `FLEANS_LOAD_TEST_MODE: "true"` for the PubSubStore). Check `docker compose logs api | grep -i cluster`.
+**Orleans silos not clustering:** Verify `ConnectionStrings__orleans-redis: redis:6379` is set and every silo uses the same `Fleans__Clustering__Provider` in `docker-compose.yml`. Check `docker compose logs api | grep -i cluster`.

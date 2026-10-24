@@ -253,7 +253,7 @@ The full canonical list of every configuration key — what it does, where it's 
 | `ConnectionStrings:fleans` | yes (Postgres mode) | All silos | Workflow command-side database (event store + write model). |
 | `ConnectionStrings:fleans-query` | no | All silos | Read-replica for the query-side projection. Falls back to `fleans` when unset. |
 | `ConnectionStrings:fleans-journal` | no | All silos | Workflow journal (event batches + snapshots). Falls back to `fleans` when unset. Pair with `Persistence:Journal:Provider=Citus` to shard it. |
-| `ConnectionStrings:orleans-redis` | yes (multi-silo) | All silos | Orleans clustering, grain storage, PubSubStore. **Note the name — it's `orleans-redis`, not bare `redis`.** |
+| `ConnectionStrings:orleans-redis` | yes (multi-silo) | All silos | Orleans clustering, reminders and streams when their provider is Redis. **Note the name — it's `orleans-redis`, not bare `redis`.** |
 
 ### Persistence
 

@@ -25,7 +25,7 @@ existing `orleans-redis` Aspire-managed Redis container.
 ### 1. Verify Redis streaming is wired
 - Open the Aspire dashboard.
 - [ ] Resources tab shows `orleans-redis` running (the same Redis container the
-      engine already uses for clustering + `PubSubStore`).
+      engine already uses for clustering).
 - [ ] `fleans-core` env tab includes `Fleans__Streaming__Provider=Redis`.
 - [ ] No `fleans-kafka` or `fleans-azurite` resources are running (those are
       opt-in via `FLEANS_STREAMING_PROVIDER=Kafka` / `=AzureQueue`).

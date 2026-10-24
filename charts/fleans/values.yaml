@@ -248,7 +248,7 @@ auth:
 
 # -----------------------------------------------------------------------------
 # Streaming (Orleans Streams; defaults to Redis to match the engine default and
-# reuse the chart-bundled Redis instance for both PubSubStore and streams).
+# reuse the chart-bundled Redis instance).
 # -----------------------------------------------------------------------------
 streaming:
   # Memory | Redis | Kafka | AzureQueue (case-insensitive)

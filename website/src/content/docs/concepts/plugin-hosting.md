@@ -64,12 +64,10 @@ builder.UseOrleans(siloBuilder =>
     if (!string.IsNullOrEmpty(orleansRedis))
     {
         siloBuilder.UseRedisClustering(orleansRedis);
-        siloBuilder.AddRedisGrainStorage("PubSubStore",
-            opt => opt.ConfigurationOptions = ConfigurationOptions.Parse(orleansRedis));
         siloBuilder.UseInMemoryReminderService();
     }
 
-    siloBuilder.AddFleanStreaming(builder.Configuration);   // matches engine stream provider
+    siloBuilder.AddFleanStreaming(builder.Configuration);   // engine's provider, implicit-only subscriptions
 });
 
 builder.Services.AddMyThingPlugin();
@@ -87,7 +85,7 @@ app.Run();
   plugin silo participates correctly in cluster-wide placement decisions for `[WorkerPlacement]`
   grains it doesn't host.
 
-Everything else — Redis clustering, `PubSubStore`, stream provider, `Fleans.ServiceDefaults` —
+Everything else — Redis clustering, stream provider, `Fleans.ServiceDefaults` —
 is wired separately. The minimal `Program.cs` above (`AddKeyedRedisClient`, `UseRedisClustering`,
 `AddFleanStreaming`) is the complete operator-facing setup. Match the engine's Redis connection
 string so plugin grains share the same Orleans cluster.

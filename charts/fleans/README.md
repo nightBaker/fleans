@@ -10,7 +10,7 @@ Deploy the [Fleans](https://nightbaker.github.io/fleans/) BPMN workflow engine o
 | `worker-<fullname>` Deployment (optional) | `ghcr.io/nightbaker/fleans-api:<tag>` | Orleans silo (`Fleans__Role=Worker`). Hosts `[StatelessWorker]` script/condition grains. Same image as `core` — different role env var. |
 | `web` Deployment (optional, default on) | `ghcr.io/nightbaker/fleans-web:<tag>` | Blazor Server admin UI. |
 | `mcp` Deployment (optional, default on) | `ghcr.io/nightbaker/fleans-mcp:<tag>` | MCP server (port 5200) for AI-agent integration. |
-| `redis` StatefulSet | `redis:7-alpine` | Orleans clustering (default provider) + PubSubStore + streams. Required. |
+| `redis` StatefulSet | `redis:7-alpine` | Orleans clustering, reminders and streams when their provider is Redis (the defaults). Required. |
 | `<fullname>-silo` ServiceAccount + Role + RoleBinding | — | Orleans Kubernetes hosting (`clustering.kubernetes.enabled`, default on): pods `get`/`list`/`watch`/`patch`. |
 | `postgres` StatefulSet (optional) | `postgres:16` | Workflow persistence when `persistence.provider=Postgres`. |
 
@@ -112,7 +112,7 @@ Leave `auth.authority` empty to ship without authentication (single-tenant / dev
 
 ### Streaming provider
 
-Set `streaming.provider` to one of `Memory`, `Redis`, `Kafka`, or `AzureQueue` (case-insensitive). Default: `Redis` (reuses the chart-bundled Redis for streams AND `PubSubStore`, no extra infrastructure).
+Set `streaming.provider` to one of `Memory`, `Redis`, `Kafka`, or `AzureQueue` (case-insensitive). Default: `Redis` (reuses the chart-bundled Redis, no extra infrastructure). Streams are implicit-only, so no store holds subscription state.
 
 > **WARNING:** `Memory` is single-silo debug-only. Multi-silo deployments must NOT use Memory — events published on one silo will not reach handlers on others.
 

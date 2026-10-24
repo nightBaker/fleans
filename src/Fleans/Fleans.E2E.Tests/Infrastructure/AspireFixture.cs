@@ -59,7 +59,7 @@ public static class AspireFixture
         // Default to the lightest dev topology so the suite boots on stock CI runners:
         //   - Sqlite persistence (no Postgres container)
         //   - Redis streaming (reuses the Redis the AppHost wires unconditionally for
-        //     clustering + PubSubStore)
+        //     clustering)
         //   - Combined silo role (Api hosts both Core + Worker grains in one process)
         // FLEANS_PERSISTENCE_PROVIDER / FLEANS_STREAMING_PROVIDER, when already set, are
         // passed through to the AppHost unchanged — CI's e2e-providers job uses this to

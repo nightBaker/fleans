@@ -15,7 +15,7 @@ public static class FleansClusteringOptions
     /// </summary>
     public const string KubernetesEnabledKey = "Fleans:Kubernetes:Enabled";
 
-    /// <summary><c>Redis</c> provider: the clustering Redis (shared with PubSubStore and Redis reminders).</summary>
+    /// <summary><c>Redis</c> provider: the clustering Redis (shared with Redis reminders and streams).</summary>
     public const string RedisConnectionName = "orleans-redis";
 
     /// <summary>

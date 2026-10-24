@@ -6,7 +6,7 @@
 #   + PostgreSQL 16 `postgres` (read model, grain state, Orleans membership)
 #   + PostgreSQL 16 `postgres-journal` (workflow journal + snapshots, own server — #879)
 #   + PostgreSQL 16 `postgres-reminders` (Orleans reminders, own server — #886)
-#   + Redis 7 (PubSubStore only) + Kafka (streams)
+#   + Kafka (streams) + Redis 7 (holds no data in this layout; see the redis service)
 #
 # Build images:  bash build-images.sh
 # Start:         docker compose up -d --wait            (replica counts come from deploy.replicas)
@@ -54,7 +54,9 @@ services:
 
   redis:
     image: redis:7-alpine
-    # Only the stream PubSubStore is left here (no Postgres provider for it yet).
+    # Holds no data in this layout: membership, reminders and streams are elsewhere and streams
+    # are implicit-only (#911). Still needed because every silo registers the `orleans-redis`
+    # client, whose health check gates /health.
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s

@@ -88,9 +88,9 @@ if (e2eAuth)
 // Centralized Orleans configuration
 // Reminder provider is configured by the silo itself via Fleans.ServiceDefaults' AddFleansReminders,
 // which binds the persistent Redis reminder service (#650). AppHost stays orchestration-only.
+// Streams use implicit subscriptions only, so there is no PubSubStore grain storage (#911).
 var orleans = builder.AddOrleans("cluster")
-    .WithClustering(redis)
-    .WithGrainStorage("PubSubStore", redis);
+    .WithClustering(redis);
 
 IResourceBuilder<PostgresDatabaseResource>? pg = null;
 string? sqliteConnectionString = null;

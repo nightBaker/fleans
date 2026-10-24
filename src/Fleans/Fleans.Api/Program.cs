@@ -20,7 +20,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Orleans.Dashboard;
 using Orleans.EventSourcing.CustomStorage;
 using Orleans.Runtime.Placement;
-using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -85,12 +84,9 @@ if (role != "core" && role != "worker" && role != "combined")
 var siloName = FleansClusteringExtensions.ResolveSiloName(builder.Configuration, role);
 
 // Orleans silo configuration
-// Under Aspire the AppHost injects clustering + PubSubStore through Orleans' own configuration.
+// Under Aspire the AppHost injects clustering through Orleans' own configuration.
 // Elsewhere AddFleansClustering wires the membership table from Fleans:Clustering:Provider (#885).
-// When running outside Aspire for load testing, FLEANS_LOAD_TEST_MODE=true also registers the
-// Redis PubSubStore. Aspire never sets this variable — safe as a guard.
-var orleansRedisConnection = builder.Configuration.GetConnectionString("orleans-redis");
-var isLoadTestMode = builder.Configuration["FLEANS_LOAD_TEST_MODE"] == "true";
+// Streams use implicit subscriptions only, so no PubSubStore is registered (#911).
 
 builder.UseOrleans(siloBuilder =>
 {
@@ -99,13 +95,6 @@ builder.UseOrleans(siloBuilder =>
 
     // Membership table (Redis default | Postgres) + opt-in Kubernetes hosting. Fails fast on bad config.
     siloBuilder.AddFleansClustering(builder.Configuration);
-
-    if (isLoadTestMode && !string.IsNullOrEmpty(orleansRedisConnection))
-    {
-        siloBuilder.AddRedisGrainStorage("PubSubStore",
-            options => options.ConfigurationOptions =
-                ConfigurationOptions.Parse(orleansRedisConnection));
-    }
 
     // Fleans reminders: Redis-backed for BPMN timer durability across silo restarts (#650).
     // Fails fast at startup if 'orleans-redis' connection string is missing.
