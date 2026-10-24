@@ -37,6 +37,8 @@ Meter name: `Fleans` (instrumentation version `1.0.0`).
 | `fleans.workflow.terminated` | Counter   | `{instances}` | Workflow instances that reached a terminal state. | `result={completed,cancelled,failed}` |
 | `fleans.workflow.stalled`    | Counter   | `{deliveries}` | Activity results the workflow instance rejected: a script, condition or custom-task handler's `FailActivity` call itself threw ("workflow may be stalled"). The activity stays executing until a redelivery succeeds. Counts deliveries, not instances — one stuck instance under stream redelivery counts many times. | `handler={script,condition,activation_condition,custom_task}` |
 | `fleans.activity.duration`   | Histogram | `ms`          | Per-activity wall-clock duration. Explicit buckets: `[10, 50, 100, 250, 500, 1000, 5000, 10000, 30000, 60000, 300000, 600000]` ms — sub-millisecond script tasks through 10-minute REST calls. | `activity.type` |
+| `fleans.admission.limit`    | Gauge     | `{requests}`  | Current adaptive admission limit of one `Fleans.Api` process: how many REST mutations it admits at once ([Admission control](/fleans/reference/configuration/#admission-control)). It drops when the cluster slows down. | none |
+| `fleans.admission.rejected` | Counter   | `{requests}`  | REST mutations answered `429` because the admission limit was reached. | none |
 
 > **Deferred to a follow-up:** `fleans.workflow.active` (a non-terminal-count gauge) requires engine-side cooperation to seed from persistence at silo startup so the count survives silo restarts. It is intentionally not shipped in this initial Meter to avoid a known-broken metric. Track via the Fleans GitHub project.
 
@@ -173,6 +175,7 @@ Every workflow log message has a stable `EventId` in a documented range. This le
 | 6000-6099 | `ProcessDefinitionGrain`; 6050 `WorkflowDefinitionCache` (definition loaded into a silo's cache) |
 | 7000-7099 | `WorkflowEngine` |
 | 8000-8099 | `TimerStartEventSchedulerGrain` |
+| 8300-8399 | Admission control (`Fleans.Api`): 8300 limit lowered (Warning), 8301 limit raised (Debug), 8302 request rejected with 429 (Debug) |
 | 9000-9099 | `BpmnConverter` |
 | 10000-10099 | `TimerCallbackGrain` |
 

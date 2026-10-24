@@ -95,6 +95,18 @@ public abstract partial class CustomTaskHandlerBase : Grain, IGrainWithStringKey
 
     public async Task OnNextAsync(ExecuteCustomTaskEvent item, StreamSequenceToken? token = null)
     {
+        await HandleAsync(item);
+
+        // Handled — completed, failed or skipped: free the activation now (#922). The grain is keyed
+        // by workflow instance, so idle collection would keep one activation per instance for the
+        // whole collection age (15 min); at 200 tasks/s that filled a 384 MB plugin host within
+        // minutes and left it in GC, completing nothing. A later event for the same instance
+        // reactivates it. A rethrown (transient) failure skips this: the redelivery comes back.
+        DeactivateOnIdle();
+    }
+
+    private async Task HandleAsync(ExecuteCustomTaskEvent item)
+    {
         if (!string.Equals(item.TaskType, TaskType, StringComparison.OrdinalIgnoreCase))
         {
             // Unreachable under normal operation now that the namespace is per-TaskType.
