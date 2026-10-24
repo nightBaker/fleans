@@ -174,6 +174,7 @@ Every workflow log message has a stable `EventId` in a documented range. This le
 | 7000-7099 | `WorkflowEngine` |
 | 8000-8099 | `TimerStartEventSchedulerGrain` |
 | 9000-9099 | `BpmnConverter` |
+| 9370-9399 | Message, signal and conditional starts (`StartEventLauncher`, the per-silo start-event cache and its change notifier) |
 | 10000-10099 | `TimerCallbackGrain` |
 
 The authoritative source is [`docs/plans/2026-02-08-structured-workflow-logging.md`](https://github.com/nightBaker/fleans/blob/main/docs/plans/2026-02-08-structured-workflow-logging.md) — when you add a new `[LoggerMessage]` declaration, allocate from the appropriate range and update the table there.

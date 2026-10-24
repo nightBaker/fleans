@@ -1,6 +1,8 @@
 using Fleans.Application.Deployments;
 using Fleans.Application.Effects;
+using Fleans.Application.StartEvents;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Fleans.Application
 {
@@ -26,6 +28,9 @@ namespace Fleans.Application
             services.AddSingleton<IWorkflowCommandService, WorkflowCommandService>();
             services.AddSingleton<ICompensationLogService, CompensationLogService>();
             services.AddSingleton<WorkflowDefinitionCache>();
+            services.TryAddSingleton(TimeProvider.System);
+            services.AddSingleton<StartEventSubscriptionCache>();
+            services.AddSingleton<StartEventLauncher>();
 
             services.AddSingleton<EffectDispatcher>();
             services.AddSingleton<IEffectHandler, TimerEffectHandler>();

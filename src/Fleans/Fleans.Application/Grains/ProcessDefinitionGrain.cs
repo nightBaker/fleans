@@ -1,6 +1,7 @@
 using Fleans.Application.Logging;
 using Fleans.Application.Placement;
 using Fleans.Application.QueryModels;
+using Fleans.Application.StartEvents;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Persistence;
@@ -118,6 +119,9 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
             await UnregisterConditionalListeners(removedConditionals, processDefinitionKey);
         }
 
+        if (HasCachedStartEvents(scope) || (_versions.Count > 1 && HasCachedStartEvents(_versions[^2].Workflow)))
+            await NotifyStartEventSubscriptionsChanged(processDefinitionKey);
+
         return ToSummary(definition);
     }
 
@@ -175,6 +179,8 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
         LogProcessDisabled(key);
 
         await UnregisterAllStartEventListeners(definition.Workflow, key);
+        if (HasCachedStartEvents(definition.Workflow))
+            await NotifyStartEventSubscriptionsChanged(key);
 
         return ToSummary(definition);
     }
@@ -192,6 +198,8 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
         LogProcessEnabled(key);
 
         await RegisterAllStartEventListeners(definition.Workflow, key, definition.ProcessDefinitionId);
+        if (HasCachedStartEvents(definition.Workflow))
+            await NotifyStartEventSubscriptionsChanged(key);
 
         return ToSummary(definition);
     }
@@ -298,6 +306,29 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
         return Task.WhenAll(tasks);
     }
 
+    /// <summary>Whether <paramref name="workflow"/> has a start event every host caches the subscribers of (#858).</summary>
+    private static bool HasCachedStartEvents(IWorkflowDefinition workflow) =>
+        workflow.GetMessageStartEventNames().Count > 0
+        || workflow.GetSignalStartEventNames().Count > 0
+        || workflow.GetConditionalStartEvents().Any();
+
+    /// <summary>
+    /// Refreshes every host's <see cref="StartEventSubscriptionCache"/> before the deployment call
+    /// returns. Log-only on failure: the registrations are already persisted, and a host that misses
+    /// the change reloads within <see cref="StartEventSubscriptionCache.EntryLifetime"/>.
+    /// </summary>
+    private async Task NotifyStartEventSubscriptionsChanged(string processDefinitionKey)
+    {
+        try
+        {
+            await _grainFactory.GetGrain<IStartEventSubscriptionNotifierGrain>(0).NotifyChanged();
+        }
+        catch (Exception ex)
+        {
+            LogStartEventSubscriptionNotifyFailed(processDefinitionKey, ex);
+        }
+    }
+
     private string GenerateProcessDefinitionId(string key, int version, DateTimeOffset deployedAt)
     {
         var ts = deployedAt.ToUniversalTime().ToString("yyyyMMdd'T'HHmmss'.'fffffff'Z'");
@@ -324,6 +355,9 @@ public partial class ProcessDefinitionGrain : Grain, IProcessDefinitionGrain
 
     [LoggerMessage(EventId = 6004, Level = LogLevel.Warning, Message = "Process {ProcessDefinitionKey} redeployed while disabled — new version remains disabled")]
     private partial void LogProcessRedeployedWhileDisabled(string processDefinitionKey);
+
+    [LoggerMessage(EventId = 6006, Level = LogLevel.Warning, Message = "Process {ProcessDefinitionKey}: could not tell the hosts that its start events changed; their caches refresh on expiry")]
+    private partial void LogStartEventSubscriptionNotifyFailed(string processDefinitionKey, Exception ex);
 
     [LoggerMessage(EventId = 6005, Level = LogLevel.Information, Message = "ProcessDefinitionGrain activated for key '{ProcessDefinitionKey}' with {VersionCount} version(s)")]
     private partial void LogActivated(string processDefinitionKey, int versionCount);

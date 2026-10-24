@@ -10,7 +10,7 @@ namespace Fleans.Application.Tests;
 public class MessageStartEventTests : WorkflowTestBase
 {
     [TestMethod]
-    public async Task FireMessageStartEvent_ShouldCreateAndStartWorkflowInstance()
+    public async Task StartByMessage_ShouldCreateAndStartWorkflowInstance()
     {
         // Arrange — deploy a workflow with MessageStartEvent
         var messageStart = new MessageStartEvent("msgStart1", "msg1");
@@ -33,8 +33,7 @@ public class MessageStartEventTests : WorkflowTestBase
         await processGrain.DeployVersion(workflow, "<placeholder/>");
 
         // Act — fire message start event
-        var listener = Cluster.GrainFactory.GetGrain<IMessageStartEventListenerGrain>("orderReceived");
-        var instanceIds = await listener.FireMessageStartEvent(new ExpandoObject());
+        var instanceIds = await StartEvents.StartByMessage("orderReceived", new ExpandoObject());
 
         // Assert
         Assert.HasCount(1, instanceIds);
@@ -71,7 +70,7 @@ public class MessageStartEventTests : WorkflowTestBase
     }
 
     [TestMethod]
-    public async Task FireMessageStartEvent_ShouldPropagateVariables()
+    public async Task StartByMessage_ShouldPropagateVariables()
     {
         // Arrange
         var messageStart = new MessageStartEvent("msgStart1", "msg1");
@@ -98,8 +97,7 @@ public class MessageStartEventTests : WorkflowTestBase
         variables.orderId = "ORD-123";
         variables.amount = 42;
 
-        var listener = Cluster.GrainFactory.GetGrain<IMessageStartEventListenerGrain>("orderWithVars");
-        var instanceIds = await listener.FireMessageStartEvent((ExpandoObject)variables);
+        var instanceIds = await StartEvents.StartByMessage("orderWithVars", (ExpandoObject)variables);
 
         // Assert
         Assert.HasCount(1, instanceIds);
@@ -113,7 +111,7 @@ public class MessageStartEventTests : WorkflowTestBase
     }
 
     [TestMethod]
-    public async Task FireMessageStartEvent_TwoWorkflows_ShouldCreateBothInstances()
+    public async Task StartByMessage_TwoWorkflows_ShouldCreateBothInstances()
     {
         // Arrange — deploy two workflows listening on the same message
         var workflow1 = new WorkflowDefinition
@@ -139,8 +137,7 @@ public class MessageStartEventTests : WorkflowTestBase
         await processGrain2.DeployVersion(workflow2, "<placeholder/>");
 
         // Act
-        var listener = Cluster.GrainFactory.GetGrain<IMessageStartEventListenerGrain>("sharedMessage");
-        var instanceIds = await listener.FireMessageStartEvent(new ExpandoObject());
+        var instanceIds = await StartEvents.StartByMessage("sharedMessage", new ExpandoObject());
 
         // Assert
         Assert.HasCount(2, instanceIds);
@@ -148,11 +145,10 @@ public class MessageStartEventTests : WorkflowTestBase
     }
 
     [TestMethod]
-    public async Task FireMessageStartEvent_NoRegisteredProcesses_ShouldReturnEmpty()
+    public async Task StartByMessage_NoRegisteredProcesses_ShouldReturnEmpty()
     {
         // Act — fire on a message name with no registrations
-        var listener = Cluster.GrainFactory.GetGrain<IMessageStartEventListenerGrain>("nonExistentMessage");
-        var instanceIds = await listener.FireMessageStartEvent(new ExpandoObject());
+        var instanceIds = await StartEvents.StartByMessage("nonExistentMessage", new ExpandoObject());
 
         // Assert
         Assert.HasCount(0, instanceIds);
@@ -177,8 +173,7 @@ public class MessageStartEventTests : WorkflowTestBase
         await processGrain.DeployVersion(workflow, "<placeholder/>");
 
         // Assert — fire should create an instance
-        var listener = Cluster.GrainFactory.GetGrain<IMessageStartEventListenerGrain>("autoRegMsg");
-        var instanceIds = await listener.FireMessageStartEvent(new ExpandoObject());
+        var instanceIds = await StartEvents.StartByMessage("autoRegMsg", new ExpandoObject());
         Assert.HasCount(1, instanceIds);
     }
 
@@ -200,8 +195,7 @@ public class MessageStartEventTests : WorkflowTestBase
         await processGrain.DeployVersion(v1, "<placeholder/>");
 
         // Verify v1 registration works
-        var listener = Cluster.GrainFactory.GetGrain<IMessageStartEventListenerGrain>("redeployMsg");
-        var v1Ids = await listener.FireMessageStartEvent(new ExpandoObject());
+        var v1Ids = await StartEvents.StartByMessage("redeployMsg", new ExpandoObject());
         Assert.HasCount(1, v1Ids);
 
         // Act — deploy v2 without message start event (plain start event instead)
@@ -221,7 +215,7 @@ public class MessageStartEventTests : WorkflowTestBase
         await processGrain.DeployVersion(v2, "<placeholder/>");
 
         // Assert — listener should no longer create instances for this process
-        var v2Ids = await listener.FireMessageStartEvent(new ExpandoObject());
+        var v2Ids = await StartEvents.StartByMessage("redeployMsg", new ExpandoObject());
         Assert.HasCount(0, v2Ids);
     }
 
