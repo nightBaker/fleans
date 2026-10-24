@@ -71,7 +71,7 @@ public partial class WorkflowInstanceProjector : Grain, IWorkflowInstanceProject
 
         try
         {
-            var (state, version, _) = await JournalReplay.LoadAsync(_eventStore, item.InstanceId);
+            var (state, version, _) = await JournalReplay.LoadAsync(_eventStore, item.InstanceId, item.Version);
             if (version == 0)
             {
                 // No journal: the instance was purged (#862) after this notification was sent.
