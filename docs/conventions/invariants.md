@@ -43,6 +43,15 @@ The journal (`WorkflowEventBatches`) and snapshots (`WorkflowSnapshots`) may liv
 
 **When adding journal access: key it by `InstanceId`, or it does not belong on the journal.**
 
+## Start-event subscriber caches are hints; the definition grain decides
+
+Message, signal and conditional starts take the subscribed processes from the host's `StartEventSubscriptionCache` (#858), so no grain per event name is on the start path. The listener and registry grains (`IMessageStartEventListenerGrain`, `ISignalStartEventListenerGrain`, `IConditionalStartEventRegistryGrain`) stay the persisted registrations and are read only on a cache miss. Two rules keep a stale entry harmless:
+
+- **Every start still asks `IProcessDefinitionGrain.GetStartableDefinition`** and resolves the start activity — and, for a conditional start, the condition — from the definition it returns, never from the cache (`StartEventLauncher`). A disabled process or a version that dropped the start event therefore starts nothing even from a stale entry; only a *newly* subscribed process can be missed.
+- **Every registration change notifies the hosts.** `ProcessDefinitionGrain` calls `IStartEventSubscriptionNotifierGrain.NotifyChanged()` after deploy, enable and disable; it returns once every subscribed host has dropped its entries (5 s timeout per host). Staleness when a host misses it: at most `StartEventSubscriptionCache.EntryLifetime` (30 s), after which every entry reloads; a host that the notifier dropped or forgot (reactivation) clears at its next renewal (every minute while in use). A notify failure is log-only (6006): the registrations are already persisted.
+
+**When adding a path that changes start-event registrations, call `NotifyChanged` after it; when adding a start path, take everything but the process keys from `GetStartableDefinition`.**
+
 ## Stream-redelivery idempotency
 
 Every state-mutating grain method reachable from an `[ImplicitStreamSubscription]` handler MUST be idempotent under at-least-once delivery. Silent doubling under redelivery is a production correctness bug, not a test flake.

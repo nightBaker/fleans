@@ -78,8 +78,7 @@ public class InstanceStartTests : WorkflowTestBase
         await Deploy(workflow);
 
         // Act
-        var instanceIds = await Cluster.GrainFactory
-            .GetGrain<ISignalStartEventListenerGrain>("startOneAppendSignal").FireSignalStartEvent();
+        var instanceIds = await StartEvents.StartBySignal("startOneAppendSignal");
 
         // Assert
         AssertSingleStartAppend(instanceIds.Single());
@@ -92,9 +91,7 @@ public class InstanceStartTests : WorkflowTestBase
         await Deploy(Waiting("start-conditional", new ConditionalStartEvent("condStart", "true")));
 
         // Act
-        var instanceId = await Cluster.GrainFactory
-            .GetGrain<IConditionalStartEventListenerGrain>("start-conditional:condStart")
-            .EvaluateAndStart(Variables());
+        var instanceId = await EvaluateConditionalStart("start-conditional", Variables());
 
         // Assert
         Assert.IsNotNull(instanceId);
