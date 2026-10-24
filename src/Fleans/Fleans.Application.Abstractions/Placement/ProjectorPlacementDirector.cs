@@ -18,13 +18,14 @@ public sealed partial class ProjectorPlacementDirector : IPlacementDirector
 {
     internal const string ProjectorPrefix = "projector-";
 
-    private readonly IGrainFactory _grainFactory;
+    private readonly CachedSiloHosts _hosts;
     private readonly ILogger<ProjectorPlacementDirector> _logger;
     private int _roundRobinCounter;
 
     public ProjectorPlacementDirector(IGrainFactory grainFactory, ILogger<ProjectorPlacementDirector> logger)
     {
-        _grainFactory = grainFactory;
+        _hosts = new CachedSiloHosts(
+            () => grainFactory.GetGrain<IManagementGrain>(0).GetDetailedHosts(onlyActive: true));
         _logger = logger;
     }
 
@@ -40,10 +41,10 @@ public sealed partial class ProjectorPlacementDirector : IPlacementDirector
                 $"No compatible silos are available to place grain '{target.GrainIdentity.Type}'.");
         }
 
-        var management = _grainFactory.GetGrain<IManagementGrain>(0);
-        var hosts = await management.GetDetailedHosts(onlyActive: true);
-
-        var candidates = SelectCandidates(compatibleSilos, hosts.Select(h => (h.SiloAddress, (string?)h.SiloName)));
+        var candidates = SelectCandidates(compatibleSilos, Named(await _hosts.GetAsync()));
+        // A cached list may predate the silos that joined since (cluster start-up).
+        if (candidates.Length == 0)
+            candidates = SelectCandidates(compatibleSilos, Named(await _hosts.GetAsync(forceRefresh: true)));
         if (candidates.Length == 0)
         {
             LogNoProjectorOrCoreSilo(target.GrainIdentity.Type.ToString());
@@ -72,6 +73,9 @@ public sealed partial class ProjectorPlacementDirector : IPlacementDirector
 
         return hosts.Where(h => CorePlacementDirector.HasCoreRole(h.Name)).Select(h => h.Address).ToArray();
     }
+
+    private static IEnumerable<(SiloAddress, string?)> Named(MembershipEntry[] hosts) =>
+        hosts.Select(h => (h.SiloAddress, (string?)h.SiloName));
 
     public static bool HasProjectorRole(string? siloName) =>
         !string.IsNullOrEmpty(siloName) && siloName.StartsWith(ProjectorPrefix, StringComparison.Ordinal);
