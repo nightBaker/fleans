@@ -150,6 +150,12 @@ Example `appsettings.json`:
 
 **Read replica:** When `ConnectionStrings:fleans-query` is provided, the query `DbContext` connects to the replica. The replica must be provisioned separately (e.g. a PostgreSQL standby). The chart provisions only the primary `fleans` database; read-replica wiring is tracked in issue [#170](https://github.com/nightBaker/fleans/issues/170).
 
+### Read-model batching
+
+The projector writes the read model of many instances at once. Each silo that runs it collects projections into batches of up to 64 and writes each batch with one statement for the running instances and one transaction for the finished ones. A typical instance is projected three times (created, started, finished). Written one at a time, that is 3 write transactions per instance on the primary. In batches of 64, it is about 0.05. This matters most on PostgreSQL, where commits on the primary are the first limit at high throughput. SQLite uses the same statement.
+
+A projection is acknowledged only after its batch is written, so nothing is lost when a batch fails: every instance in it is retried. Rows never move back to an older version. The batch size, the delay a batch waits to fill (20 ms) and the number of batches in flight are set under `Fleans:Projector` — see [Configuration](/fleans/reference/configuration/#read-model-projector).
+
 ## Separate journal database
 
 Every workflow instance is event-sourced: its **journal** (the `WorkflowEventBatches` table) is the source of truth, and its **snapshots** (`WorkflowSnapshots`) are a cache over it. Under load the journal takes most of the writes. It can run on a database of its own — for example a sharded one — while the read model, the admin UI's queries and the other grain state stay on `fleans`.
