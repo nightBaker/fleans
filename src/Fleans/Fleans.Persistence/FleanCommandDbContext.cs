@@ -27,6 +27,7 @@ public class FleanCommandDbContext : DbContext
     public DbSet<ConditionalStartEntryState> ConditionalStartEventRegistryEntries => Set<ConditionalStartEntryState>();
     public DbSet<CustomTaskCatalogRowState> CustomTaskCatalogEntries => Set<CustomTaskCatalogRowState>();
     public DbSet<DeploymentRequestState> DeploymentRequests => Set<DeploymentRequestState>();
+    public DbSet<MessageDeduplicationState> MessageDeduplications => Set<MessageDeduplicationState>();
 
     public FleanCommandDbContext(DbContextOptions<FleanCommandDbContext> options) : base(options) { }
 

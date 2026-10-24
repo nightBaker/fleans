@@ -71,6 +71,11 @@ internal sealed class SqliteModelCustomizer : RelationalModelCustomizer
             .Property(e => e.DeployedAt)
             .HasConversion(NullableDtoToStringConverter);
 
+        // MessageDeduplicationState.ReceivedAt — non-nullable DateTimeOffset
+        modelBuilder.Entity<MessageDeduplicationState>()
+            .Property(e => e.ReceivedAt)
+            .HasConversion(DtoToStringConverter);
+
         // ProcessDefinition.DeployedAt — non-nullable DateTimeOffset
         modelBuilder.Entity<ProcessDefinition>()
             .Property(e => e.DeployedAt)

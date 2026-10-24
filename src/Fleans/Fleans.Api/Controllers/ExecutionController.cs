@@ -42,7 +42,8 @@ namespace Fleans.Api.Controllers
 
             var variables = VariableConverter.ToExpandoObject(request.Variables);
 
-            var result = await _commandService.SendMessage(request.MessageName, request.CorrelationKey, variables, request.BusinessId);
+            var result = await _commandService.SendMessage(
+                request.MessageName, request.CorrelationKey, variables, request.BusinessId, request.IdempotencyKey);
 
             if (!result.Delivered)
                 return NotFound(new ErrorResponse(

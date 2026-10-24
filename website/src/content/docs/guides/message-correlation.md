@@ -94,7 +94,9 @@ For message **start** events, no correlation key lives on the BPMN definition (f
 The endpoint is `POST /Execution/message`. The DTO is `SendMessageRequest` from `Fleans.ServiceDefaults`:
 
 ```csharp
-public record SendMessageRequest(string MessageName, string? CorrelationKey, ExpandoObject? Variables);
+public record SendMessageRequest(
+    string MessageName, string? CorrelationKey, ExpandoObject? Variables,
+    string? BusinessId = null, string? IdempotencyKey = null);
 ```
 
 Field semantics:
@@ -102,6 +104,8 @@ Field semantics:
 - **`MessageName`** (required, **case-sensitive**) — must match the BPMN `<message name="...">` exactly. Capitalization mismatch returns 404.
 - **`CorrelationKey`** (optional) — the runtime string the subscriber's correlation expression resolved to. May be omitted only for messages whose BPMN definition has no `<fleans:subscription>` (e.g. message start events with no key).
 - **`Variables`** (optional) — extra variables to merge into the receiving workflow's scope before it resumes. Useful for delivering response payloads (e.g. an `approvalDecision` field).
+- **`BusinessId`** (optional) — the business id of instances a message start event creates.
+- **`IdempotencyKey`** (optional) — makes the request safe to retry: a repeat with the same `MessageName` and key within 24 hours returns the first request's outcome and starts nothing. Without it, a retry after a lost response starts the message-start processes again. See [Retrying a message](/fleans/reference/api/#retrying-a-message).
 
 Responses:
 
@@ -188,7 +192,7 @@ The process is created **by** the message, not waiting for one. Each unique corr
 </process>
 ```
 
-`POST /Execution/message` with `MessageName="orderPlaced"`, `CorrelationKey="<orderId>"`, and the order payload in `Variables` creates a new instance and seeds its variables. Note: message start events deliberately have **no** `<extensionElements>` block — the correlation value comes from the API request, not from existing workflow state. See `tests/manual/16-message-start-event/message-start-event.bpmn` for the full fixture.
+`POST /Execution/message` with `MessageName="orderPlaced"`, `CorrelationKey="<orderId>"`, and the order payload in `Variables` creates a new instance and seeds its variables. Every request starts one, so send an `IdempotencyKey` (an event id, for example) when the sender may retry. Note: message start events deliberately have **no** `<extensionElements>` block — the correlation value comes from the API request, not from existing workflow state. See `tests/manual/16-message-start-event/message-start-event.bpmn` for the full fixture.
 
 ### Pattern 3 — Multi-step orchestration (multiple keyed catches)
 
