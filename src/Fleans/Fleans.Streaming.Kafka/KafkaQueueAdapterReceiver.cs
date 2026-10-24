@@ -90,6 +90,7 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
 
         var deadline = DateTime.UtcNow + _options.PollTimeout;
         var limit = maxCount <= 0 ? int.MaxValue : maxCount;
+        Dictionary<TopicPartition, long>? lastRead = null;
         for (var i = 0; i < limit; i++)
         {
             var remaining = deadline - DateTime.UtcNow;
@@ -108,6 +109,8 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
             {
                 break;
             }
+            lastRead ??= new Dictionary<TopicPartition, long>();
+            lastRead[result.TopicPartition] = result.Offset.Value;
 
             try
             {
@@ -136,7 +139,28 @@ internal sealed partial class KafkaQueueAdapterReceiver : IQueueAdapterReceiver
             }
         }
 
+        RecordConsumerLag(lastRead);
         return batches;
+    }
+
+    private void RecordConsumerLag(Dictionary<TopicPartition, long>? lastRead)
+    {
+        // Shutdown may have disposed the consumer during a dead-letter await above.
+        if (lastRead is null || _consumer is not { } consumer)
+        {
+            return;
+        }
+        try
+        {
+            foreach (var (partition, offset) in lastRead)
+            {
+                KafkaConsumerLag.Record(consumer, partition, offset);
+            }
+        }
+        catch (Exception ex) when (ex is KafkaException or ObjectDisposedException)
+        {
+            // A metric never fails a poll; the next poll samples again.
+        }
     }
 
     public Task MessagesDeliveredAsync(IList<IBatchContainer> messages)
