@@ -29,8 +29,6 @@ public interface IWorkflowInstanceGrain : IWorkflowInstanceCallback, IWorkflowEx
 
     Task CompleteActivity(string activityId, ExpandoObject variables);
     // CompleteActivity(activityId, activityInstanceId, variables) inherited from IWorkflowInstanceCallback
-    Task CompleteConditionSequence(string activityId, string conditionSequenceId, bool result);
-    Task CompleteActivationCondition(string activityId, Guid activityInstanceId, bool result);
     Task FailActivity(string activityId, Exception exception);
     // FailActivity(activityId, activityInstanceId, exception) inherited from IWorkflowInstanceCallback
 
@@ -61,8 +59,6 @@ public interface IWorkflowInstanceGrain : IWorkflowInstanceCallback, IWorkflowEx
         string operationId, Guid escalationInstanceId,
         Guid childWorkflowInstanceId, string hostActivityId,
         string escalationCode, ExpandoObject variables);
-
-    Task CompleteMultiInstanceEarly(string hostActivityId, Guid hostActivityInstanceId);
 
     // User task lifecycle
     Task ClaimUserTask(Guid activityInstanceId, string userId, IReadOnlyList<string> userGroups);

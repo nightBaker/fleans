@@ -43,7 +43,7 @@ public class MultiInstanceTests : WorkflowTestBase
         // Act
         await instance.StartWorkflow(await processGrain.GetLatestDefinition());
 
-        // Assert — poll for completion (script execution is async via stream events)
+        // Assert — poll for completion (the script runs on the executor grain, asynchronously)
         var snapshot = await PollForCompletion(instanceId);
         Assert.IsNotNull(snapshot);
         Assert.IsTrue(snapshot.IsCompleted, "Workflow should be completed");

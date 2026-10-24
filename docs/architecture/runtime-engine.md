@@ -10,7 +10,7 @@ Runtime — это цикл внутри Orleans grain `WorkflowInstance`. Од�
 4. **Агрегат изменяет состояние.** `ProcessCommands` обрабатывает команды и возвращает инфраструктурные эффекты. Grain исполняет их через `EffectDispatcher`, публикует события адаптера и отмечает синхронно завершившиеся шаги.
 5. **Вычисляются следующие шаги.** Runtime обрабатывает переходы, шлюзы, завершение областей и условные события. Если появились новые готовые activity, цикл повторяется. Если их нет — цикл прекращается.
 6. **Сохраняются изменения.** В конце обычного вызова `ProcessPendingEvents` обрабатывает очередь внешних событий и вызывает `DrainAndRaiseEvents`: `RaiseEvent` → `ConfirmEvents` → запись в журнал → обновление CQRS-проекции. В длинном цикле есть промежуточная запись каждые 20 итераций; некоторые эффекты также сохраняют состояние перед внешним вызовом.
-7. **Внешний результат снова запускает цикл.** Для `scriptTask`: `ExecuteScriptEvent` → Orleans Streams → `WorkflowExecuteScriptEventHandler` на Core → `ScriptExecutorGrain` на Worker → `CompleteActivity` или `FailActivity` исходного экземпляра. Для пользовательских задач и таймеров входы другие, но идея продолжения того же экземпляра сохраняется.
+7. **Внешний результат снова запускает цикл.** Для `scriptTask`: после записи журнала `ProcessPendingEvents` отправляет `ExecuteScriptEvent` вместе с переменными односторонним вызовом в `ScriptExecutorGrain` (локально на Combined, на Worker — с Core) → `CompleteActivity` или `FailActivity` исходного экземпляра. Stream не участвует. Если результат не пришёл за `Fleans:Worker:ScriptResultTimeout`, экземпляр отправляет скрипт повторно (после трёх попыток задача падает с тайм-аутом); при активации он повторно отправляет все выполняющиеся скрипты. Условия шлюзов, complex gateway, multi-instance и условных событий вычисляются прямо в цикле, внутри grain, без stream и без сетевого вызова. Для пользовательских задач и таймеров входы другие, но идея продолжения того же экземпляра сохраняется.
 
 **Отсутствие готовых шагов не означает завершение процесса.** Он может ждать задачу человека, сообщение, таймер или результат вычисления. Ожидание не является бесконечным циклом опроса activity.
 
@@ -22,8 +22,7 @@ Runtime — это цикл внутри Orleans grain `WorkflowInstance`. Од�
 - [RunExecutionLoop, ProcessPendingEvents и DrainAndRaiseEvents](../../src/Fleans/Fleans.Application/Grains/WorkflowInstance.Infrastructure.cs)
 - [Доменный агрегат WorkflowExecution](../../src/Fleans/Fleans.Domain/Aggregates/WorkflowExecution.cs)
 - [Логика ScriptTask](../../src/Fleans/Fleans.Domain/Activities/ScriptTask.cs)
-- [Core-подписчик события скрипта](../../src/Fleans/Fleans.Application/Events/Handlers/WorkflowExecuteScriptEventHandler.cs)
 - [Worker-исполнитель](../../src/Fleans/Fleans.Worker/Scripts/ScriptExecutorGrain.cs)
 - [EF Core event store](../../src/Fleans/Fleans.Persistence/Events/EfCoreEventStore.cs)
 
-Схема обобщает цикл, а не перечисляет все виды BPMN-эффектов. «Внешняя работа» иллюстрирует путь scriptTask; не каждый эффект проходит через Worker. Встроенные элементы просмотра HTML остаются на английском.
+Схема обобщает цикл, а не перечисляет все виды BPMN-эффектов. HTML-схема ещё показывает прежний путь скрипта через Orleans Streams и Core-подписчика; актуален текст выше. «Внешняя работа» иллюстрирует путь scriptTask; не каждый эффект проходит через Worker. Встроенные элементы просмотра HTML остаются на английском.

@@ -25,7 +25,7 @@ public class KafkaDlqIntegrationTests
         string.Equals(Environment.GetEnvironmentVariable("FLEANS_KAFKA_TESTS"), "1", StringComparison.Ordinal);
 
     private const string ProviderName = "StreamProvider";
-    private const string Namespace = WorkflowEventStreams.ExecuteScriptStreamNamespace;
+    private const string Namespace = "test.events"; // any namespace: the tests subscribe explicitly
 
     [TestMethod]
     public async Task Failing_subscriber_record_is_dead_lettered_and_stream_keeps_flowing()

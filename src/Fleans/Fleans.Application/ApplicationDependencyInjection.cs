@@ -16,6 +16,7 @@ namespace Fleans.Application
             services.AddOptions<WorkerEvaluatorOptions>()
                 .BindConfiguration(WorkerEvaluatorOptions.SectionName)
                 .Validate(o => o.EvaluatorKeyCount > 0, "Fleans:Worker:EvaluatorKeyCount must be greater than 0.")
+                .Validate(o => o.ScriptResultTimeout > TimeSpan.Zero, "Fleans:Worker:ScriptResultTimeout must be greater than 0.")
                 .ValidateOnStart();
 
             services.AddOptions<DeploymentApprovalOptions>()

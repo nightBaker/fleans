@@ -436,7 +436,7 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         // Act
         await grain.StartWorkflow(workflow);
         InstanceStateSnapshot? snapshot = null;
-        for (var i = 0; i < 100 && snapshot?.IsCompleted != true; i++) // scripts run via stream events
+        for (var i = 0; i < 100 && snapshot?.IsCompleted != true; i++) // scripts run on the executor grain
         {
             await Task.Delay(100);
             snapshot = await QueryService.GetStateSnapshot(instanceId);
@@ -451,7 +451,13 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
         var whileRunning = writes.Count(w => !w.IsCompleted);
         Assert.IsLessThanOrEqualTo(3, whileRunning,
             $"a running instance is projected only when its row changes, not on each of its appends ({whileRunning} writes)");
-        Assert.AreEqual(1, writes.Count(w => w.IsCompleted), "the completing append is projected, row and details, once");
+        // Once, or twice when the instance completes before the projector reads its first
+        // notification (scripts no longer wait for a stream poll): the projector then writes the
+        // completed row, retires, and the completing append's own notification reactivates it for
+        // a second write at the same version, which the row's ProjectedVersion guard makes a no-op.
+        Assert.IsLessThanOrEqualTo(2, writes.Count(w => w.IsCompleted),
+            "the completing append is projected, row and details, at most twice");
+        Assert.IsGreaterThanOrEqualTo(1, writes.Count(w => w.IsCompleted), "the completing append is projected");
         Assert.IsGreaterThan(whileRunning + 1, (await JournalVersions(instanceId)).Count,
             "the loop must append more often than the row is written for this test to mean anything");
     }

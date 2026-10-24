@@ -4,12 +4,12 @@
 ## Цикл исполнения
 
 - Показан успешный путь scriptTask после создания экземпляра.
-- RunExecutionLoop публикует событие; ProcessPendingEvents затем сохраняет накопленные изменения.
+- RunExecutionLoop собирает запрос скрипта; ProcessPendingEvents сохраняет накопленные изменения и затем отправляет скрипт в ScriptExecutorGrain односторонним вызовом (без stream).
 
 ## Ожидание и ошибки
 
 - Таймер, сообщение или user task возобновляют тот же экземпляр.
-- Ошибка скрипта → FailActivity; ошибка этого вызова передаётся stream provider для повтора.
+- Ошибка скрипта → FailActivity; временную ошибку обратного вызова исполнитель повторяет, а потерянный результат экземпляр восстанавливает повторной отправкой (тайм-аут результата, активация).
 
 ## Восстановление и завершение
 
@@ -20,7 +20,6 @@
 
 - `src/Fleans/Fleans.Application/Grains/WorkflowInstance.cs`
 - `src/Fleans/Fleans.Application/Grains/WorkflowInstance.Infrastructure.cs`
-- `src/Fleans/Fleans.Application/Events/Handlers/WorkflowExecuteScriptEventHandler.cs`
 - `src/Fleans/Fleans.Worker/Scripts/ScriptExecutorGrain.cs`
 
-Подписчик — WorkflowExecuteScriptEventHandler (CorePlacement); исполнитель — ScriptExecutorGrain (WorkerPlacement). Публикация и ConfirmEvents не показаны как одна транзакция. Доставка подписчику асинхронна; её позиция на схеме не гарантирует порядок относительно записи журнала.
+Исполнитель — ScriptExecutorGrain (StatelessWorker + WorkerPlacement); экземпляр отправляет ему скрипт после ConfirmEvents. HTML-схема и `workflow-runtime.sequence.json` ещё показывают прежний путь через stream и WorkflowExecuteScriptEventHandler — их нужно перегенерировать.
