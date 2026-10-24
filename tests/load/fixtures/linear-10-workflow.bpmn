@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+             id="Definitions_linear10" targetNamespace="http://bpmn.io/schema/bpmn">
+  <!-- Roadmap scenario linear-10 (scripts/throughput.js): 10 script tasks in a row, no waits. -->
+  <process id="load-linear-10" isExecutable="true">
+    <startEvent id="start" />
+    <scriptTask id="step1" scriptFormat="csharp">
+      <script>_context.step1 = 1</script>
+    </scriptTask>
+    <scriptTask id="step2" scriptFormat="csharp">
+      <script>_context.step2 = 2</script>
+    </scriptTask>
+    <scriptTask id="step3" scriptFormat="csharp">
+      <script>_context.step3 = 3</script>
+    </scriptTask>
+    <scriptTask id="step4" scriptFormat="csharp">
+      <script>_context.step4 = 4</script>
+    </scriptTask>
+    <scriptTask id="step5" scriptFormat="csharp">
+      <script>_context.step5 = 5</script>
+    </scriptTask>
+    <scriptTask id="step6" scriptFormat="csharp">
+      <script>_context.step6 = 6</script>
+    </scriptTask>
+    <scriptTask id="step7" scriptFormat="csharp">
+      <script>_context.step7 = 7</script>
+    </scriptTask>
+    <scriptTask id="step8" scriptFormat="csharp">
+      <script>_context.step8 = 8</script>
+    </scriptTask>
+    <scriptTask id="step9" scriptFormat="csharp">
+      <script>_context.step9 = 9</script>
+    </scriptTask>
+    <scriptTask id="step10" scriptFormat="csharp">
+      <script>_context.step10 = 10</script>
+    </scriptTask>
+    <endEvent id="end" />
+    <sequenceFlow id="f1" sourceRef="start" targetRef="step1" />
+    <sequenceFlow id="f2" sourceRef="step1" targetRef="step2" />
+    <sequenceFlow id="f3" sourceRef="step2" targetRef="step3" />
+    <sequenceFlow id="f4" sourceRef="step3" targetRef="step4" />
+    <sequenceFlow id="f5" sourceRef="step4" targetRef="step5" />
+    <sequenceFlow id="f6" sourceRef="step5" targetRef="step6" />
+    <sequenceFlow id="f7" sourceRef="step6" targetRef="step7" />
+    <sequenceFlow id="f8" sourceRef="step7" targetRef="step8" />
+    <sequenceFlow id="f9" sourceRef="step8" targetRef="step9" />
+    <sequenceFlow id="f10" sourceRef="step9" targetRef="step10" />
+    <sequenceFlow id="f11" sourceRef="step10" targetRef="end" />
+  </process>
+</definitions>

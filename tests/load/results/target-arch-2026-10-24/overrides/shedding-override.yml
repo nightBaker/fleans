@@ -1,0 +1,5 @@
+services:
+  fleans-core:
+    environment:
+      Fleans__LoadShedding__Enabled: "true"
+      Fleans__LoadShedding__CpuThreshold: "80"

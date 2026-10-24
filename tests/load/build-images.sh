@@ -5,7 +5,8 @@
 #   TAG=mytag bash tests/load/build-images.sh
 #
 # Images: fleans-api (Fleans.Api, Core silos), fleans-worker (Fleans.WorkerHost, Worker silos),
-# fleans-plugin (Fleans.E2E.PluginHost, Plugin-role external worker hosting the `e2e-probe` task).
+# fleans-plugin (Fleans.E2E.PluginHost, Plugin-role external worker hosting the `e2e-probe` task),
+# fleans-citus (Citus 12.1 on postgres:16, built from source — the journal store).
 #
 # Uses `dotnet publish` + a throwaway Dockerfile on mcr.microsoft.com/dotnet/aspnet:10.0 instead of
 # `/t:PublishContainer`: the SDK container builder always pulls the base image from MCR itself, which
@@ -34,3 +35,7 @@ EOF
 build Fleans.Api            fleans-api
 build Fleans.WorkerHost     fleans-worker
 build Fleans.E2E.PluginHost fleans-plugin
+
+# Citus for the journal (docker-compose.yml): citusdata/citus is amd64-only, so build it natively.
+echo "==> citus/Dockerfile → fleans-citus:12.1"
+docker build -q -t fleans-citus:12.1 "${ROOT}/tests/load/citus"

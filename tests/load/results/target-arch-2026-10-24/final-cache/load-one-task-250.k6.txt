@@ -1,0 +1,27 @@
+
+     ✗ start: 200
+      ↳  96% — ✓ 18562 / ✗ 772
+
+     checks.........................: 96.00% 18562 out of 19334
+     data_received..................: 5.6 MB 70 kB/s
+     data_sent......................: 3.7 MB 46 kB/s
+   ✗ dropped_iterations.............: 664    8.293803/s
+     http_req_blocked...............: avg=28.66µs     min=1µs    med=6µs     max=9.17ms    p(90)=14µs     p(95)=240µs     
+     http_req_connecting............: avg=17.98µs     min=0s     med=0s      max=9.1ms     p(90)=0s       p(95)=199µs     
+     http_req_duration..............: avg=1.76s       min=7.94ms med=20.34ms max=31.04s    p(90)=471.78ms p(95)=20.51s    
+       { expected_response:true }...: avg=574.77ms    min=7.94ms med=20.17ms max=30.07s    p(90)=57.44ms  p(95)=987.16ms  
+     http_req_failed................: 3.99%  772 out of 19334
+     ✗ { phase:measured }...........: 2.73%  396 out of 14477
+     http_req_receiving.............: avg=62.84µs     min=9µs    med=44µs    max=7.77ms    p(90)=85µs     p(95)=113µs     
+     http_req_sending...............: avg=27.02µs     min=4µs    med=21µs    max=5.9ms     p(90)=38µs     p(95)=48µs      
+     http_req_tls_handshaking.......: avg=0s          min=0s     med=0s      max=0s        p(90)=0s       p(95)=0s        
+     http_req_waiting...............: avg=1.76s       min=7.85ms med=20.25ms max=31.04s    p(90)=471.71ms p(95)=20.51s    
+     http_reqs......................: 19334  241.494558/s
+     iteration_duration.............: avg=1.77s       min=8.27ms med=20.54ms max=31.04s    p(90)=472.02ms p(95)=20.51s    
+     iterations.....................: 19334  241.494558/s
+     starts_rejected................: 772    9.642795/s
+     vus............................: 15     min=5              max=720 
+     vus_max........................: 1139   min=500            max=1139
+     workflow_start_duration........: avg=1769.873185 min=7.947  med=20.345  max=31043.095 p(90)=471.7885 p(95)=20514.5536
+
+time="2026-10-24T22:02:09+05:00" level=error msg="thresholds on metrics 'dropped_iterations, http_req_failed{phase:measured}' have been crossed"

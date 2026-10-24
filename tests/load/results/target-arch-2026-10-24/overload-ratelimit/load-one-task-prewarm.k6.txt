@@ -1,0 +1,27 @@
+
+     ✗ start: 200
+      ↳  94% — ✓ 11445 / ✗ 705
+
+     checks.........................: 94.19% 11445 out of 12150
+     data_received..................: 3.4 MB 56 kB/s
+     data_sent......................: 2.3 MB 38 kB/s
+   ✗ dropped_iterations.............: 52     0.852277/s
+     http_req_blocked...............: avg=25.24µs    min=1µs      med=6µs     max=9.16ms   p(90)=10µs     p(95)=20µs    
+     http_req_connecting............: avg=15.57µs    min=0s       med=0s      max=8.84ms   p(90)=0s       p(95)=0s      
+     http_req_duration..............: avg=154.4ms    min=488µs    med=24.07ms max=4.54s    p(90)=325.71ms p(95)=806.95ms
+       { expected_response:true }...: avg=163.77ms   min=9.22ms   med=25.25ms max=4.54s    p(90)=346.66ms p(95)=880.03ms
+     http_req_failed................: 5.80%  705 out of 12150
+     ✗ { phase:measured }...........: 5.89%  705 out of 11950
+     http_req_receiving.............: avg=64.65µs    min=7µs      med=47µs    max=36.13ms  p(90)=90µs     p(95)=104µs   
+     http_req_sending...............: avg=28.84µs    min=3µs      med=25µs    max=3.6ms    p(90)=38µs     p(95)=49µs    
+     http_req_tls_handshaking.......: avg=0s         min=0s       med=0s      max=0s       p(90)=0s       p(95)=0s      
+     http_req_waiting...............: avg=154.3ms    min=443µs    med=23.98ms max=4.54s    p(90)=325.65ms p(95)=806.83ms
+     http_reqs......................: 12150  199.137866/s
+     iteration_duration.............: avg=154.63ms   min=583.25µs med=24.3ms  max=4.54s    p(90)=325.86ms p(95)=808.48ms
+     iterations.....................: 12150  199.137866/s
+     starts_rejected................: 705    11.554913/s
+     vus............................: 2      min=1              max=369
+     vus_max........................: 451    min=400            max=451
+     workflow_start_duration........: avg=154.401441 min=0.488    med=24.0765 max=4544.911 p(90)=325.7105 p(95)=806.9538
+
+time="2026-10-24T22:34:07+05:00" level=error msg="thresholds on metrics 'dropped_iterations, http_req_failed{phase:measured}' have been crossed"
