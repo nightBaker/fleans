@@ -4,6 +4,9 @@ using Fleans.Application.StartEvents;
 using Fleans.Application.Projections;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Fleans.Application.Grains;
+using Microsoft.Extensions.Options;
+using Orleans.Configuration;
 
 namespace Fleans.Application
 {
@@ -39,6 +42,16 @@ namespace Fleans.Application
                 .Validate(o => o.MaxBatchDelayMs >= 0, "Fleans:Projector:MaxBatchDelayMs can't be negative.")
                 .Validate(o => o.MaxConcurrentBatches >= 1, "Fleans:Projector:MaxConcurrentBatches must be at least 1.")
                 .ValidateOnStart();
+
+            services.AddOptions<WorkflowInstanceOptions>()
+                .BindConfiguration(WorkflowInstanceOptions.SectionName)
+                .Validate(o => o.IdleCollectionAge > TimeSpan.FromMinutes(1),
+                    "Fleans:Instances:IdleCollectionAge must be longer than Orleans' collection quantum (1 minute).")
+                .ValidateOnStart();
+            // Waiting instances leave memory after IdleCollectionAge instead of Orleans' 15 minutes.
+            services.AddOptions<GrainCollectionOptions>()
+                .Configure<IOptions<WorkflowInstanceOptions>>((collection, instances) =>
+                    collection.ClassSpecificCollectionAge[typeof(WorkflowInstance).FullName!] = instances.Value.IdleCollectionAge);
 
             services.AddSingleton<IWorkflowCommandService, WorkflowCommandService>();
             services.AddSingleton<ICompensationLogService, CompensationLogService>();
