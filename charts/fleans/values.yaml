@@ -37,6 +37,13 @@ core:
     maxReplicas: 10
     targetCPUUtilizationPercentage: 65
     scaleDownStabilizationSeconds: 300
+    # KEDA instead of a plain HPA: the CPU target above plus Prometheus triggers on Fleans' scale
+    # metrics (README "Autoscaling on Fleans metrics"). Needs KEDA and a Prometheus that scrapes the
+    # silos' OTLP metrics.
+    keda:
+      enabled: false
+      serverAddress: ""            # e.g. http://prometheus-server.monitoring.svc
+      prometheus: []               # [{ name, query, threshold, serverAddress? }]
   resources:
     requests:
       cpu: 250m
@@ -66,6 +73,13 @@ worker:
     maxReplicas: 10
     targetCPUUtilizationPercentage: 65
     scaleDownStabilizationSeconds: 300
+    # KEDA instead of a plain HPA: the CPU target above plus Prometheus triggers on Fleans' scale
+    # metrics (README "Autoscaling on Fleans metrics"). Needs KEDA and a Prometheus that scrapes the
+    # silos' OTLP metrics.
+    keda:
+      enabled: false
+      serverAddress: ""            # e.g. http://prometheus-server.monitoring.svc
+      prometheus: []               # [{ name, query, threshold, serverAddress? }]
   resources:
     requests:
       cpu: 250m
