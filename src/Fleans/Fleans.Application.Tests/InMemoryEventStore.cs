@@ -80,37 +80,82 @@ internal class InMemoryWorkflowStateProjection : IWorkflowStateProjection
         _rows.AddOrUpdate(grainId, (row, version), (_, stored) => stored.Version < version ? (row, version) : stored);
         return Task.CompletedTask;
     }
+
+    public async Task WriteBatchAsync(IReadOnlyList<ProjectionWrite> writes)
+    {
+        foreach (var write in writes)
+            await WriteAsync(write.GrainId, write.State, write.Version);
+    }
 }
 
 /// <summary>
-/// Wraps the real projection, counts each grain's write attempts, and fails the next N writes for
-/// a chosen grain, to exercise the grain's handling of a read-model write that fails after its
-/// append succeeded.
+/// Wraps the real projection, counts each grain's write attempts, and fails the next N batches
+/// that carry a chosen grain (or the first that carries several chosen grains), to exercise the projector's handling of a read-model write that fails
+/// after its append succeeded. A batch fails as a whole, as a real one does, so every other
+/// instance in it fails too.
 /// </summary>
 internal class FaultInjectingWorkflowStateProjection(IWorkflowStateProjection inner) : IWorkflowStateProjection
 {
     private static readonly ConcurrentDictionary<string, int> FailuresLeft = new();
     private static readonly ConcurrentDictionary<string, ConcurrentQueue<WorkflowInstanceRow>> Writes = new();
+    private static readonly ConcurrentQueue<IReadOnlyList<string>> Batches = new();
+    private static readonly ConcurrentQueue<IReadOnlyList<string>> FailedBatches = new();
+
+    private static HashSet<string>? _failBatchOfSeveral;
 
     public static void FailNextWrites(Guid instanceId, int count) => FailuresLeft[instanceId.ToString()] = count;
+
+    /// <summary>Fails the first batch that carries at least two of <paramref name="instanceIds"/>.</summary>
+    public static void FailFirstBatchOfSeveral(IEnumerable<Guid> instanceIds) =>
+        Volatile.Write(ref _failBatchOfSeveral, instanceIds.Select(id => id.ToString()).ToHashSet());
 
     /// <summary>The row of every write attempt for the grain so far, in order.</summary>
     public static IReadOnlyList<WorkflowInstanceRow> WritesOf(Guid instanceId) =>
         Writes.TryGetValue(instanceId.ToString(), out var writes) ? writes.ToList() : [];
 
+    /// <summary>The grain ids of every batch so far, failed ones included, in order.</summary>
+    public static IReadOnlyList<IReadOnlyList<string>> AllBatches => Batches.ToList();
+
+    /// <summary>The grain ids of every injected-failure batch.</summary>
+    public static IReadOnlyList<IReadOnlyList<string>> FailedBatchMembers => FailedBatches.ToList();
+
     public Task<WorkflowInstanceRow?> ReadRowAsync(string grainId) => inner.ReadRowAsync(grainId);
 
-    public Task WriteAsync(string grainId, WorkflowInstanceState state, int version)
+    public Task WriteAsync(string grainId, WorkflowInstanceState state, int version) =>
+        WriteBatchAsync([new ProjectionWrite(grainId, state, version)]);
+
+    public Task WriteBatchAsync(IReadOnlyList<ProjectionWrite> writes)
     {
-        Writes.GetOrAdd(grainId, _ => new()).Enqueue(WorkflowInstanceRow.From(state));
-        if (FailuresLeft.TryGetValue(grainId, out var left) && left > 0)
+        var ids = writes.Select(w => w.GrainId).ToList();
+        Batches.Enqueue(ids);
+        foreach (var write in writes)
+            Writes.GetOrAdd(write.GrainId, _ => new()).Enqueue(WorkflowInstanceRow.From(write.State));
+
+        var failed = false;
+        foreach (var id in ids.Distinct())
         {
-            FailuresLeft[grainId] = left - 1;
-            throw new TimeoutException($"Injected projection failure for {grainId}");
+            if (FailuresLeft.TryGetValue(id, out var left) && left > 0)
+            {
+                FailuresLeft[id] = left - 1;
+                failed = true;
+            }
         }
-        return inner.WriteAsync(grainId, state, version);
+        if (Volatile.Read(ref _failBatchOfSeveral) is { } several
+            && ids.Distinct().Count(several.Contains) >= 2
+            && Interlocked.CompareExchange(ref _failBatchOfSeveral, null, several) == several)
+        {
+            failed = true;
+        }
+
+        if (failed)
+        {
+            FailedBatches.Enqueue(ids);
+            throw new TimeoutException($"Injected failure of a projection batch of {ids.Count}");
+        }
+        return inner.WriteBatchAsync(writes);
     }
 }
+
 
 /// <summary>
 /// Wraps the real event store so a test can hold or fail a chosen grain's next appends, to drive

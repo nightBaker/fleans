@@ -25,4 +25,15 @@ public interface IWorkflowStateProjection
     /// changes nothing, so a repeated or late write is harmless.
     /// </summary>
     Task WriteAsync(string grainId, WorkflowInstanceState state, int version);
+
+    /// <summary>
+    /// Writes many instances' projections as one set-based statement, with the same per-row
+    /// semantics as <see cref="WriteAsync"/>: each row lands only past its stored version. When the
+    /// batch holds several projections of one instance, the newest wins. It either lands or
+    /// throws for the whole batch — a caller must treat a throw as "none of these is durable".
+    /// </summary>
+    Task WriteBatchAsync(IReadOnlyList<ProjectionWrite> writes);
 }
+
+/// <summary>One projection of a batch: <paramref name="State"/> after the first <paramref name="Version"/> journal events.</summary>
+public sealed record ProjectionWrite(string GrainId, WorkflowInstanceState State, int Version);

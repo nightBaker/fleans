@@ -622,6 +622,53 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
     }
 
     [TestMethod]
+    public async Task ReadModel_ManyInstances_AreProjectedThroughSharedBatches()
+    {
+        // Arrange
+        var ids = Enumerable.Range(0, 30).Select(_ => Guid.NewGuid()).ToArray();
+        var keys = ids.Select(id => id.ToString()).ToHashSet();
+
+        // Act — started together, so their projections reach the silo's batcher together
+        await Task.WhenAll(ids.Select(id =>
+            Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(id).StartWorkflow(CreateSequentialWorkflow())));
+
+        // Assert — every row is projected, and batches carried several of these instances at once
+        await WaitForProjection(ids);
+        await using (var db = await GetSiloService<IDbContextFactory<FleanCommandDbContext>>().CreateDbContextAsync())
+            Assert.AreEqual(ids.Length, await db.WorkflowInstances.CountAsync(s => ids.Contains(s.Id) && s.IsStarted));
+        var batches = FaultInjectingWorkflowStateProjection.AllBatches
+            .Select(b => b.Count(keys.Contains))
+            .Where(n => n > 0)
+            .ToList();
+        Assert.IsTrue(batches.Max() > 1, $"no batch held more than one of the instances: {string.Join(", ", batches)}");
+        Assert.IsLessThan(ids.Length, batches.Count, "the projections were written one batch per instance");
+    }
+
+    [TestMethod]
+    public async Task ReadModel_FailedBatch_EveryInstanceInItIsRedeliveredUntilItLands()
+    {
+        // Arrange — the first batch that carries several of these instances fails as a whole
+        var ids = Enumerable.Range(0, 20).Select(_ => Guid.NewGuid()).ToArray();
+        var keys = ids.Select(id => id.ToString()).ToHashSet();
+        FaultInjectingWorkflowStateProjection.FailFirstBatchOfSeveral(ids);
+
+        // Act
+        await Task.WhenAll(ids.Select(id =>
+            Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(id).StartWorkflow(CreateSequentialWorkflow())));
+
+        // Assert — every instance of the failed batch was written again, and every row caught up
+        await WaitForProjection(ids);
+        var failed = FaultInjectingWorkflowStateProjection.FailedBatchMembers
+            .Single(b => b.Count(keys.Contains) >= 2);
+        var members = ids.Where(id => failed.Contains(id.ToString())).ToList();
+        foreach (var member in members)
+            Assert.IsGreaterThanOrEqualTo(2, FaultInjectingWorkflowStateProjection.WritesOf(member).Count,
+                $"instance {member} of the failed batch was not redelivered");
+        await using var db = await GetSiloService<IDbContextFactory<FleanCommandDbContext>>().CreateDbContextAsync();
+        Assert.AreEqual(ids.Length, await db.WorkflowInstances.CountAsync(s => ids.Contains(s.Id)));
+    }
+
+    [TestMethod]
     public async Task StateSnapshot_CarriesTheJournalVersion_FromTheGrainWhileRunning_ThenFromTheReadModel()
     {
         // Arrange
