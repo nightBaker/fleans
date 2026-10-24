@@ -28,6 +28,15 @@ fullnameOverride: ""
 # Orleans Core silo (hosts coordinator grains: WorkflowInstance etc.).
 core:
   replicas: 1
+  # HorizontalPodAutoscaler on CPU (templates/hpa.yaml). When enabled, `replicas` is ignored.
+  # Utilization is relative to resources.requests.cpu — set the request to the CPU one silo really
+  # uses (the load tests put a busy Core silo at 1–1.5 cores), or 250m × 65 % scales out at 0.16 cores.
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 65
+    scaleDownStabilizationSeconds: 300
   resources:
     requests:
       cpu: 250m
@@ -48,6 +57,15 @@ core:
 worker:
   enabled: false
   replicas: 1
+  # HorizontalPodAutoscaler on CPU (templates/hpa.yaml). When enabled, `replicas` is ignored.
+  # Utilization is relative to resources.requests.cpu — set the request to the CPU one silo really
+  # uses (the load tests put a busy Core silo at 1–1.5 cores), or 250m × 65 % scales out at 0.16 cores.
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 65
+    scaleDownStabilizationSeconds: 300
   resources:
     requests:
       cpu: 250m

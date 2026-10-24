@@ -6,7 +6,9 @@ metadata:
     {{- include "fleans.labels" . | nindent 4 }}
     app.kubernetes.io/component: core
 spec:
+  {{- if not (.Values.core.autoscaling | default dict).enabled }}
   replicas: {{ .Values.core.replicas }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "fleans.selectorLabels" (dict "ctx" . "component" "core") | nindent 6 }}

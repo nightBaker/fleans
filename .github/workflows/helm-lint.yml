@@ -43,6 +43,20 @@ jobs:
             --set clustering.postgres.existingSecret=fleans-cluster-db \
             --set customWorker.enabled=true \
             > /tmp/render-full.yaml
+      - name: Autoscaling (HPA on Core / Worker)
+        run: |
+          set -e
+          helm template fleans charts/fleans/ --set core.autoscaling.enabled=true \
+            --set worker.enabled=true --set worker.autoscaling.enabled=true > /tmp/render-hpa.yaml
+          test "$(grep -c '^kind: HorizontalPodAutoscaler$' /tmp/render-hpa.yaml)" = 2
+          # An autoscaled Deployment has no replicas field: helm upgrade must not fight the HPA.
+          python3 - <<'PY'
+          import re
+          for doc in open('/tmp/render-hpa.yaml').read().split('\n---'):
+              if re.search(r'^kind: Deployment$', doc, re.M) and re.search(r'^  name: (core|worker)-fleans$', doc, re.M):
+                  assert not re.search(r'^  replicas:', doc, re.M), 'an autoscaled Deployment still sets replicas'
+          PY
+          test "$(grep -c '^kind: HorizontalPodAutoscaler$' /tmp/render-default.yaml)" = 0
       - name: helm template (Kubernetes hosting off)
         run: helm template fleans charts/fleans/ --set clustering.kubernetes.enabled=false > /tmp/render-nok8s.yaml
       - name: Confirm renders are non-empty
