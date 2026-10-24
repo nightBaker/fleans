@@ -66,8 +66,20 @@ Message, signal and conditional starts take the subscribed processes from the ho
 
 - **Every start still asks `IProcessDefinitionGrain.GetStartableDefinition`** and resolves the start activity — and, for a conditional start, the condition — from the definition it returns, never from the cache (`StartEventLauncher`). A disabled process or a version that dropped the start event therefore starts nothing even from a stale entry; only a *newly* subscribed process can be missed.
 - **Every registration change notifies the hosts.** `ProcessDefinitionGrain` calls `IStartEventSubscriptionNotifierGrain.NotifyChanged()` after deploy, enable and disable — in a `finally`, so registrations written before a failing one still reach the hosts; it returns once every subscribed host has dropped its entries (5 s timeout per host). Staleness when a host misses it: at most `StartEventSubscriptionCache.EntryLifetime` (30 s), after which every entry reloads; a host that the notifier dropped or forgot (reactivation) clears at its next renewal (every minute while in use). A notify failure is log-only (6006): the registrations are already persisted.
+- **The cache subscribes off the caller's context.** Its first lookup can come from inside a grain (`MessageDeduplicationGrain`, #743), and Orleans refuses to create an observer reference there, so the renewal runs under `Task.Run`. A renewal made inside a grain would fail (9386) and leave that host's cache stale for `EntryLifetime`.
 
 **When adding a path that changes start-event registrations, call `NotifyChanged` after it; when adding a start path, take everything but the process keys from `GetStartableDefinition`.**
+
+## A message sent with an idempotency key happens once
+
+`POST /Execution/message` without `IdempotencyKey` is not safe to retry: the start-event fallthrough mints new instance ids on every call. With a key, `WorkflowCommandService.SendMessage` hands the whole send — correlate, else start — to `IMessageDeduplicationGrain`, keyed by message name + the escaped key (`MessageDeduplicationKey`, the `MessageCorrelationKey` format and 1024-character limit) (#743). Rules that keep it exactly-once:
+
+- **The grain is not reentrant.** Sends of one key run one at a time; a repeat finds the record and returns it (14400). Keep it non-reentrant: nothing on the send path calls back into it.
+- **Plan before start.** For a start, the grain asks `StartEventLauncher.PlanMessageStarts` for one random-v4 instance id per subscribed process, persists the plan (`Starting`), then `StartPlanned` starts them and the outcome is persisted (`Started`). A send interrupted between the two writes is resumed by the next repeat with the same plan (14404) — a repeated `StartWorkflow` of a started instance is a no-op (guard 11 below). Never mint an id after the plan is written.
+- **A correlated delivery is recorded too** (`Correlated`), so a retry after the subscription was consumed does not fall through to a message start event. Not covered: a crash between the delivery and that write.
+- **Nothing delivered, nothing recorded.** No subscribed process, or every planned start skipped or failed, leaves no record, so a later retry is a fresh send.
+- **The first send wins and counts for `MessageDeduplicationState.Window` (24 h).** A repeat with other variables gets the first outcome. An expired record is replaced by the next send; rows are not purged yet.
+- **Signals are not deduplicated** — a broadcast has no identity; callers who need a once-only start use a message start event with a key.
 
 ## Stream-redelivery idempotency
 

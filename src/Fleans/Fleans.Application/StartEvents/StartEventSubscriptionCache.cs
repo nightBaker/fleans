@@ -156,7 +156,9 @@ public sealed partial class StartEventSubscriptionCache : IStartEventSubscriptio
             if (now.UtcTicks >= _renewDueAtTicks && _renewal is null or { IsCompleted: true })
             {
                 Interlocked.Exchange(ref _renewDueAtTicks, (now + RenewInterval).UtcTicks);
-                _renewal = Renew();
+                // Off the caller's context: the caller can be a grain (MessageDeduplicationGrain,
+                // #743), and Orleans refuses to create an observer reference inside a grain.
+                _renewal = Task.Run(Renew);
             }
             renewal = _renewal;
         }
@@ -182,6 +184,7 @@ public sealed partial class StartEventSubscriptionCache : IStartEventSubscriptio
         }
     }
 
+    // Lazy: GetOrAdd may run its factory on several racing threads; only the stored entry loads.
     private sealed record Entry<T>(Lazy<Task<T>> Value, long Generation, DateTimeOffset ExpiresAt);
 
     [LoggerMessage(EventId = 9385, Level = LogLevel.Debug,
