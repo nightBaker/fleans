@@ -1,5 +1,6 @@
 using System.Threading.RateLimiting;
 using Fleans.Api;
+using Fleans.Api.Admission;
 using Fleans.Api.Authorization;
 using Fleans.Application;
 using Fleans.Application.Logging;
@@ -196,6 +197,10 @@ static void AddPolicyIfConfigured(RateLimiterOptions options, string policyName,
             }));
 }
 
+// Adaptive admission limit on the mutation endpoints (Fleans:Admission, on by default, #922):
+// an overloaded cluster answers 429 instead of timing out.
+builder.Services.AddFleansAdmission(builder.Configuration);
+
 // EF Core persistence — provider selected by Persistence:Provider config key (default: Sqlite)
 builder.AddFleansPersistence();
 
@@ -221,6 +226,9 @@ if (authEnabled)
     app.UseAuthentication();
     app.UseAuthorization();
 }
+
+// After the fixed rate limits and auth: a request they reject never takes an admission slot.
+app.UseFleansAdmission();
 
 app.MapControllers();
 app.MapDefaultEndpoints();

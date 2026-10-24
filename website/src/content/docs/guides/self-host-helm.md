@@ -296,6 +296,27 @@ Above the threshold a silo's gateway rejects new requests from Orleans clients (
 shed. It pairs with the REST rate limiter, which answers `429` before a request reaches the
 cluster.
 
+### Backpressure and autoscaling
+
+Load shedding alone does not keep an overloaded cluster alive: it rejects only new client
+requests, while the work that saturates a cluster is already inside (stream deliveries,
+activations). What does is admission at the edge. Every `api` pod runs an **adaptive admission
+limit** on the start / message / signal / task endpoints, on by default: when the p95 latency of
+those requests passes 500 ms it admits fewer at once, and the rest get `429` with
+`Retry-After: 1` instead of a timeout. Tune it with `extraEnv`:
+
+```yaml
+extraEnv:
+  - name: Fleans__Admission__TargetLatencyMs   # about 2 × the p99 of a start at normal load
+    value: "500"
+```
+
+All keys: [Configuration → Admission control](/fleans/reference/configuration/#admission-control).
+Clients must retry a `429` with back-off. An autoscaler has time to add silos only while the
+cluster still answers, so scale on CPU or the `Fleans` meter well below saturation. If you add a
+fixed `RateLimiting` limit as well, size it at about 70–75 % of the throughput you measured:
+the rate a cluster sustains under contention is lower than the peak it reaches when idle.
+
 Silo pods get `terminationGracePeriodSeconds: 60` so a silo can leave the cluster and hand off its
 grains and timers before Kubernetes kills it.
 
