@@ -57,6 +57,11 @@
         <PropertyColumn Property="@(i => i.CreatedAt)" Title="Created At" Sortable="true" Format="yyyy-MM-dd HH:mm:ss" />
         <PropertyColumn Property="@(i => i.ExecutionStartedAt)" Title="Started At" Sortable="true" Format="yyyy-MM-dd HH:mm:ss" />
         <PropertyColumn Property="@(i => i.CompletedAt)" Title="Completed At" Sortable="true" Format="yyyy-MM-dd HH:mm:ss" />
+        @* #861: rows come from the read model, which the projector builds seconds behind the journal. *@
+        <TemplateColumn Title="State version">
+            <span title="Journal version this row reflects; the live instance may be ahead of it"
+                  data-testid="instance-state-version">@context.StateVersion</span>
+        </TemplateColumn>
         <TemplateColumn Title="Actions">
             <FluentButton Appearance="Appearance.Stealth"
                           IconStart="@(new Microsoft.FluentUI.AspNetCore.Components.Icons.Regular.Size20.Eye())"

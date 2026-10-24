@@ -99,7 +99,7 @@ public static class AspireFixture
         if (IsSplitRoles)
         {
             using var startup = new CancellationTokenSource(TimeSpan.FromMinutes(3));
-            foreach (var resource in new[] { WorkerResource, PluginHostResource })
+            foreach (var resource in new[] { WorkerResource, ProjectorResource, PluginHostResource })
             {
                 await _application.ResourceNotifications.WaitForResourceAsync(
                     resource, KnownResourceStates.Running, startup.Token);
@@ -165,11 +165,14 @@ public static class AspireFixture
         Require("FLEANS_STREAMING_PROVIDER", "AzureQueue", "fleans-azurite");
         Require("FLEANS_E2E_AUTH", "true", "keycloak");
         Require(SplitRolesEnvVar, "true", WorkerResource);
+        Require(SplitRolesEnvVar, "true", ProjectorResource);
         Require(SplitRolesEnvVar, "true", PluginHostResource);
     }
 
     public const string SplitRolesEnvVar = "FLEANS_SPLIT_ROLES";
     public const string WorkerResource = "fleans-worker";
+    /// <summary>Fleans.Api with <c>Fleans:Role=Projector</c>: the read-model projector's own silo (#861).</summary>
+    public const string ProjectorResource = "fleans-projector";
     public const string PluginHostResource = "fleans-plugin-host";
 
     /// <summary>Fleans.WorkerHost started with <c>Fleans:Role=Plugin</c> (explicit start only).</summary>

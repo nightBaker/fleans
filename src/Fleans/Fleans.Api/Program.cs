@@ -73,10 +73,10 @@ if (role == "plugin")
         "for external custom worker hosts (see docs/concepts/custom-tasks.md). Use Core, " +
         "Worker, or Combined for engine silos, or Api for a REST-only Orleans client.");
 }
-if (role != "core" && role != "worker" && role != "combined" && role != "api")
+if (role != "core" && role != "worker" && role != "combined" && role != "api" && role != "projector")
 {
     throw new InvalidOperationException(
-        $"Fleans:Role must be one of 'Core', 'Worker', 'Combined', 'Api' (case-insensitive) — got '{roleRaw}'.");
+        $"Fleans:Role must be one of 'Core', 'Worker', 'Combined', 'Api', 'Projector' (case-insensitive) — got '{roleRaw}'.");
 }
 var isSilo = role != "api";
 
@@ -131,14 +131,23 @@ else
         // Worker siblings (and vice versa). Their fallback keeps test silos and Combined silos
         // working even when only a single silo exists.
         siloBuilder.AddPlacementDirector<CorePlacementStrategy, CorePlacementDirector>();
+        siloBuilder.AddPlacementDirector<ProjectorPlacementStrategy, ProjectorPlacementDirector>();
         siloBuilder.AddWorkerPlacementFilter();
+
+        // A Projector silo (the fleans-projector deployment, #861) hosts the read-model projector
+        // and no other Fleans grain; the projector prefers it over core silos.
+        if (role == "projector")
+            siloBuilder.Services.PostConfigure<Orleans.Configuration.GrainTypeOptions>(
+                Fleans.Application.Projections.ProjectorSilo.KeepOnlyProjectorGrains);
 
         // Fail fast on Fleans:Role / placement-attribute mismatch (#457).
         siloBuilder.AddFleansPlacementAssertion(builder.Configuration);
     });
 
-    // Engine-bundled custom-task plugin: its handler grain is hosted by silos only.
-    builder.Services.AddRestCallerPlugin();
+    // Engine-bundled custom-task plugin: its handler grain is hosted by silos only — and not by a
+    // Projector silo, which hosts no plugin handler and must not advertise one in the catalog.
+    if (role != "projector")
+        builder.Services.AddRestCallerPlugin();
 }
 
 // Add services to the container.

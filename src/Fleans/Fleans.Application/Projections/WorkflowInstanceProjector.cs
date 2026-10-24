@@ -27,9 +27,14 @@ namespace Fleans.Application.Projections;
 /// rethrown for the stream to redeliver; if delivery gives up, the instance grain's activation
 /// catch-up asks again.
 /// </para>
+/// <para>
+/// <b>Placement.</b> On the <c>Fleans:Role=Projector</c> silos (the <c>fleans-projector</c>
+/// deployment) when the cluster has any, on the core silos otherwise; see
+/// <see cref="ProjectorPlacementAttribute"/> and <see cref="ProjectorSilo"/>.
+/// </para>
 /// </remarks>
 [ImplicitStreamSubscription(WorkflowEventStreams.InstanceAdvancedStreamNamespace)]
-[CorePlacement]
+[ProjectorPlacement]
 public partial class WorkflowInstanceProjector : Grain, IWorkflowInstanceProjector, IAsyncObserver<InstanceAdvanced>
 {
     private readonly IEventStore _eventStore;

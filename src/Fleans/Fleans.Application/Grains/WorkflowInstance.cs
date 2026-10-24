@@ -1099,7 +1099,7 @@ public partial class WorkflowInstance :
                 LogStateSnapshotDefinitionUnavailable(ex);
             }
         }
-        return InstanceStateSnapshots.From(State, _workflowDefinition);
+        return InstanceStateSnapshots.From(State, _workflowDefinition, Version, isFromReadModel: false);
     }
 
     public ValueTask<IReadOnlyList<CompensationLogEntrySnapshot>> GetCompensationLog()

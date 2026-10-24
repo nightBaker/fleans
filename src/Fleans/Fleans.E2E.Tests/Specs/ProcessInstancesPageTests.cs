@@ -63,6 +63,11 @@ public class ProcessInstancesPageTests : WorkflowE2ETestBase
         await Expect(page.BusinessIdCell(runningV2.WorkflowInstanceId)).ToHaveTextAsync(businessId);
         await Expect(page.BusinessIdCell(running.WorkflowInstanceId)).ToHaveTextAsync("-");
 
+        // State version column (#861): the journal version the completed instance's row reflects.
+        var completedRow = apiAll.Items.Single(i => i.InstanceId == completed.WorkflowInstanceId);
+        await Expect(page.StateVersionCell(completed.WorkflowInstanceId))
+            .ToHaveTextAsync(completedRow.StateVersion.ToString());
+
         // Version filter: v1 only.
         await page.OpenAsync(key, v1.Version);
         await Expect(page.Title($"Instances — {key} v{v1.Version}")).ToBeVisibleAsync();
@@ -81,5 +86,8 @@ public class ProcessInstancesPageTests : WorkflowE2ETestBase
         await Expect(Page).ToHaveURLAsync(
             new System.Text.RegularExpressions.Regex($"/process-instance/{runningV2.WorkflowInstanceId:D}$"));
         await Expect(Page.GetByTestId("instance-business-id")).ToHaveTextAsync(businessId, new() { Timeout = 15_000 });
+        // A running instance is read from its grain: the exact state, labelled live (#861).
+        await Expect(Page.GetByTestId("instance-state-version")).ToHaveTextAsync(
+            new System.Text.RegularExpressions.Regex(@"State as of version \d+ · live"));
     }
 }

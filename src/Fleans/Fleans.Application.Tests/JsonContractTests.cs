@@ -52,10 +52,12 @@ public class JsonContractTests
             CreatedAt: null,
             ExecutionStartedAt: null,
             CompletedAt: null,
-            BusinessId: "order-1");
+            BusinessId: "order-1",
+            StateVersion: 7,
+            IsFromReadModel: false);
 
         using var doc = JsonDocument.Parse(JsonSerializer.Serialize(dto, ApiOptions));
-        foreach (var key in new[] { "activeActivityIds", "completedActivityIds", "isStarted", "isCompleted", "businessId" })
+        foreach (var key in new[] { "activeActivityIds", "completedActivityIds", "isStarted", "isCompleted", "businessId", "stateVersion", "isFromReadModel" })
             Assert.IsTrue(doc.RootElement.TryGetProperty(key, out _),
                 $"Expected camelCase '{key}' — the k6 load script reads this exact key.");
     }
