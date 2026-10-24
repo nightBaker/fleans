@@ -144,6 +144,8 @@ Handlers that follow this pattern (replicate it for any new `[ImplicitStreamSubs
 - `CustomTaskHandlerBase`
 - `WorkflowInstanceProjector` (`Fleans.Application/Projections/`)
 
+**A subscriber keyed by workflow instance must free its activation when its work is done.** Idle collection takes 15 minutes, so a grain per instance that waits for it holds one activation per instance started in the last 15 minutes — at 200 instances/s ~180 000, which filled a 384 MB plugin host and left it in GC, completing nothing (#922). `CustomTaskHandlerBase` calls `DeactivateOnIdle()` after every handled event, `WorkflowInstanceProjector` once the instance completed.
+
 The fallback `else { stream.SubscribeAsync(...) }` branch is intentionally absent — implicit-subscription dispatch always materialises a handle. Regressions surface in the custom-task and projection integration tests, which flow through these handlers.
 
 ## Custom-task per-type stream namespace

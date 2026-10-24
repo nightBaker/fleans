@@ -686,6 +686,16 @@ RateLimiting__Polling__PermitLimit=10000
 
 > **Important:** Either configure all five policies or leave the `RateLimiting` section absent entirely. A partial configuration will cause HTTP 500 errors on endpoints whose policy is not registered.
 
+#### Adaptive admission limit
+
+Independently of the fixed policies above, the `WorkflowMutation` and `TaskOperation` endpoints sit behind an adaptive concurrency limit that is **on by default** (`Fleans:Admission`). It shrinks when the p95 latency of those requests passes a target (500 ms by default) and grows back slowly once the cluster keeps up, so an overloaded cluster answers `429 Too Many Requests` with `Retry-After: 1` instead of timing out:
+
+```json
+{ "error": "The cluster is at its admission limit. Retry later." }
+```
+
+Clients should retry a `429` after `Retry-After` seconds, with jitter. Keys and defaults: [Configuration reference](/fleans/reference/configuration/#admission-control).
+
 ### Authentication
 
 The API supports opt-in JWT bearer authentication, **disabled by default**. See [Authentication](/fleans/reference/authentication/) for configuration, provider walkthroughs, and client examples.

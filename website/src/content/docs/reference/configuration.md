@@ -173,6 +173,23 @@ Without Redis the Web admin UI keeps its ASP.NET Core Data Protection keys (sign
 
 Orleans load shedding: while a silo's CPU is above the threshold, its gateway rejects new requests from Orleans clients (Web, MCP, `Fleans.Api` with `Fleans:Role=Api`) instead of queueing them, and stream pulling agents slow down. The REST API answers a rejected call with `503 Service Unavailable`. Calls between silos — and REST calls a `Core` / `Combined` silo serves itself — are not shed, so pair it with `Fleans:Role=Api`. Set it on every silo.
 
+### Admission control
+
+| Env var | Config key | Read at | Default |
+| --- | --- | --- | --- |
+| `Fleans__Admission__Enabled` | `Fleans:Admission:Enabled` | `Fleans.Api` | `true` |
+| `Fleans__Admission__TargetLatencyMs` | `Fleans:Admission:TargetLatencyMs` | `Fleans.Api` | `500` |
+| `Fleans__Admission__InitialLimit` | `Fleans:Admission:InitialLimit` | `Fleans.Api` | `64` |
+| `Fleans__Admission__MinLimit` | `Fleans:Admission:MinLimit` | `Fleans.Api` | `8` |
+| `Fleans__Admission__MaxLimit` | `Fleans:Admission:MaxLimit` | `Fleans.Api` | `1024` |
+| `Fleans__Admission__WindowMs` | `Fleans:Admission:WindowMs` | `Fleans.Api` | `1000` |
+
+An adaptive limit on how many REST mutations one `Fleans.Api` process has in flight: the endpoints with the `workflow-mutation` and `task-operation` policies (start, messages, signals, deploy, user-task and custom-task operations). A request over the limit is answered at once with `429 Too Many Requests` and `Retry-After: 1`; it never reaches the cluster. Reads and admin endpoints are not limited.
+
+The limit follows the cluster. Once a second it looks at the p95 latency of the requests that finished: over `TargetLatencyMs` — or any request failed with a grain-call timeout or an Orleans error such as a shedding gateway — it is cut by a quarter, never below `MinLimit`; under the target with at least half the limit in use, it grows by one, never above `MaxLimit`. Past the CPU ceiling a cluster stops completing work rather than slowing down, and the rate it can sustain under contention is lower than the peak it reaches on an idle start, so a fixed rate limit has to sit well below the ceiling; this limit moves with it.
+
+It is on by default because it only moves when the target is missed — a healthy cluster answers far below 500 ms — and it never limits a process below `MinLimit` concurrent requests, so a single client does not see a `429`. Set `TargetLatencyMs` to about twice the p99 of your start requests at normal load. Every `Fleans.Api` process keeps its own limit, so it scales with the number of API replicas. The fixed `RateLimiting` policies ([REST API reference](/fleans/reference/api/#rate-limiting)) still apply and run first. Limit changes are logged (EventId 8300, Warning, when it shrinks) and exported as `fleans.admission.limit` and `fleans.admission.rejected` ([Observability](/fleans/reference/observability/)). Invalid values fail at startup.
+
 ### Authentication
 
 Auth keys are **per-host** — the API and the Web admin UI use different OIDC flows (JWT-bearer vs OIDC code-flow), so the keys split cleanly between hosts. Setting an API-only key on the Web silo (or vice-versa) has no effect.

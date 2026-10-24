@@ -42,6 +42,8 @@ Meter name: `Fleans` (instrumentation version `1.0.0`).
 | `fleans.projection.lag`      | Histogram | `s`           | Read-model lag: from the instance publishing its `InstanceAdvanced` notification to the projector writing the projection. One sample per projection write; notifications it coalesces are not sampled. Buckets: `[0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60]` s. | none |
 | `fleans.timer.lag`           | Histogram | `s`           | BPMN timer lag (timer events and timer boundary events): the reminder tick that delivered the timer to its instance minus the timer's due time (Orleans `TickStatus.CurrentTickTime − FirstTickTime`). A delivery that failed and was retried a minute later counts that minute. Timer **start** events are not covered. Buckets: `[0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60, 120, 300]` s. | none |
 | `fleans.kafka.consumer.lag`  | Gauge     | `{records}`   | Kafka streaming only: records past the last one this silo's stream receiver read, per topic partition, from the consumer's cached high watermark (no broker round trip). Sampled on each poll that returned records — an idle partition keeps its last value (normally 0), and a partition moved to another silo keeps its last value here until the process restarts. | `topic`, `partition` |
+| `fleans.admission.limit`    | Gauge     | `{requests}`  | Current adaptive admission limit of one `Fleans.Api` process: how many REST mutations it admits at once ([Admission control](/fleans/reference/configuration/#admission-control)). It drops when the cluster slows down. | none |
+| `fleans.admission.rejected` | Counter   | `{requests}`  | REST mutations answered `429` because the admission limit was reached. | none |
 
 > **Deferred to a follow-up:** `fleans.workflow.active` (a non-terminal-count gauge) requires engine-side cooperation to seed from persistence at silo startup so the count survives silo restarts. It is intentionally not shipped in this initial Meter to avoid a known-broken metric. Track via the Fleans GitHub project.
 
@@ -200,6 +202,7 @@ Every workflow log message has a stable `EventId` in a documented range. This le
 | 6000-6099 | `ProcessDefinitionGrain`; 6050 `WorkflowDefinitionCache` (definition loaded into a silo's cache) |
 | 7000-7099 | `WorkflowEngine` |
 | 8000-8099 | `TimerStartEventSchedulerGrain` |
+| 8300-8399 | Admission control (`Fleans.Api`): 8300 limit lowered (Warning), 8301 limit raised (Debug), 8302 request rejected with 429 (Debug) |
 | 9000-9099 | `BpmnConverter` |
 | 9370-9399 | Message, signal and conditional starts (`StartEventLauncher`, the per-silo start-event cache and its change notifier) |
 | 10000-10099 | `TimerCallbackGrain` |
