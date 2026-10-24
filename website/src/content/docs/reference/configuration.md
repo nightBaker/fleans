@@ -40,7 +40,7 @@ These are the keys every production silo reads at startup.
 | --- | --- | --- | --- |
 | `Fleans__Role` | `Fleans:Role` | `Fleans.Api`, `Fleans.WorkerHost`, `Fleans.CustomWorkerHost` | `"Combined"` (Api), `"Worker"` (WorkerHost / CustomWorkerHost — defaulted at startup if absent) |
 
-Allowed values: `Core`, `Worker`, `Combined` (case-insensitive). Invalid values throw at startup. The role is stamped into the Orleans `SiloName` as `{role}-{machine}-{guid}`, visible in the Orleans Dashboard's silo membership page.
+Allowed values: `Core`, `Worker`, `Combined`, and on `Fleans.Api` also `Projector` — a silo that hosts only the read-model projector (the projector falls back to `Core` / `Combined` silos when there is none). Case-insensitive; invalid values throw at startup. The role is stamped into the Orleans `SiloName` as `{role}-{machine}-{guid}`, visible in the Orleans Dashboard's silo membership page.
 
 ### Persistence
 
@@ -113,7 +113,7 @@ The membership table decides which silo is alive. Every silo **and** every Orlea
 
 `Redis` keeps membership on the `orleans-redis` connection. Redis replication is asynchronous, so a Redis failover can drop an acknowledged membership write. **`Postgres` is the recommended production provider**: it requires `Persistence:Provider=Postgres` (the silo refuses to start otherwise), uses `ConnectionStrings:fleans-cluster`, falling back to `ConnectionStrings:fleans`, and creates its tables at startup (the database must exist). Run that Postgres highly available (e.g. Patroni) — while the table is unreachable no silo can join or be declared dead. Unknown provider values fail startup.
 
-`Fleans:Kubernetes:Enabled=true` turns on Orleans Kubernetes hosting: a silo whose pod is gone is declared dead immediately instead of after the probe window. The pod name becomes the silo name and **must start with the silo's role** (`core-…`, `worker-…`, `combined-…`), because Fleans placement reads the role from that prefix; the silo refuses to start otherwise. The pod's service account needs `get`, `list`, `watch` and `patch` on `pods`, and the pods need the labels `orleans/serviceId` / `orleans/clusterId` matching `Orleans__ServiceId` / `Orleans__ClusterId`. The [Helm chart](/fleans/guides/self-host-helm/#clustering-and-kubernetes-hosting) sets all of this up.
+`Fleans:Kubernetes:Enabled=true` turns on Orleans Kubernetes hosting: a silo whose pod is gone is declared dead immediately instead of after the probe window. The pod name becomes the silo name and **must start with the silo's role** (`core-…`, `worker-…`, `combined-…`, `projector-…`), because Fleans placement reads the role from that prefix; the silo refuses to start otherwise. The pod's service account needs `get`, `list`, `watch` and `patch` on `pods`, and the pods need the labels `orleans/serviceId` / `orleans/clusterId` matching `Orleans__ServiceId` / `Orleans__ClusterId`. The [Helm chart](/fleans/guides/self-host-helm/#clustering-and-kubernetes-hosting) sets all of this up.
 
 ### Authentication
 

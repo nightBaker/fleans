@@ -622,6 +622,35 @@ public class EventSourcingIntegrationTests : WorkflowTestBase
     }
 
     [TestMethod]
+    public async Task StateSnapshot_CarriesTheJournalVersion_FromTheGrainWhileRunning_ThenFromTheReadModel()
+    {
+        // Arrange
+        var grain = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+        var instanceId = grain.GetPrimaryKey();
+        await grain.StartWorkflow(CreateSequentialWorkflow());
+
+        // Act — running: the grain answers with its exact state (#861)
+        var live = await QueryService.GetStateSnapshot(instanceId);
+
+        // Assert
+        Assert.IsNotNull(live);
+        Assert.IsFalse(live.IsFromReadModel);
+        Assert.AreEqual((await JournalVersions(instanceId)).Max(), live.StateVersion);
+
+        // Act — completed and projected: the read model answers, with the version it was projected to
+        await grain.CompleteActivity("task1", new ExpandoObject());
+        await grain.CompleteActivity("task2", new ExpandoObject());
+        await WaitForProjection(instanceId);
+        var stored = await QueryService.GetStateSnapshot(instanceId);
+
+        // Assert
+        Assert.IsNotNull(stored);
+        Assert.IsTrue(stored.IsCompleted);
+        Assert.IsTrue(stored.IsFromReadModel);
+        Assert.AreEqual((await JournalVersions(instanceId)).Max(), stored.StateVersion);
+    }
+
+    [TestMethod]
     public async Task StateRecovery_ReadModelBehindJournal_IsRebuiltOnActivation()
     {
         // Arrange — the read-model row lost (a projection write that failed after its append)

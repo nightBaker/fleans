@@ -8,6 +8,7 @@ Deploy the [Fleans](https://nightbaker.github.io/fleans/) BPMN workflow engine o
 | --------- | ----- | ------- |
 | `core-<fullname>` Deployment | `ghcr.io/nightbaker/fleans-api:<tag>` | Orleans silo (`Fleans__Role=Core`). Hosts coordinator grains. |
 | `worker-<fullname>` Deployment (optional) | `ghcr.io/nightbaker/fleans-api:<tag>` | Orleans silo (`Fleans__Role=Worker`). Hosts `[StatelessWorker]` script/condition grains. Same image as `core` — different role env var. |
+| `projector-<fullname>` Deployment (optional) | `ghcr.io/nightbaker/fleans-api:<tag>` | Orleans silo (`Fleans__Role=Projector`). Hosts only the read-model projector, which builds instance lists and completed-instance views from the journal. Off by default: the projector then runs on the core silos. |
 | `web` Deployment (optional, default on) | `ghcr.io/nightbaker/fleans-web:<tag>` | Blazor Server admin UI. |
 | `mcp` Deployment (optional, default on) | `ghcr.io/nightbaker/fleans-mcp:<tag>` | MCP server (port 5200) for AI-agent integration. |
 | `redis` StatefulSet | `redis:7-alpine` | Orleans clustering, reminders and streams when their provider is Redis (the defaults). Required. |
@@ -175,7 +176,7 @@ clustering:
 
 - creates the `<fullname>-silo` ServiceAccount with a Role on `pods` (`get`, `list`, `watch`, `patch`);
 - labels silo pods `orleans/serviceId` / `orleans/clusterId` (`clustering.serviceId`, `clustering.clusterId` — default the release fullname) and passes `POD_NAME` / `POD_NAMESPACE` / `POD_IP` through the downward API;
-- names silo Deployments `<role>-<fullname>` (`core-…`, `worker-…`, `worker-…-custom`): Kubernetes hosting makes the pod name the silo name, and Fleans placement reads the role from its prefix.
+- names silo Deployments `<role>-<fullname>` (`core-…`, `worker-…`, `projector-…`, `worker-…-custom`): Kubernetes hosting makes the pod name the silo name, and Fleans placement reads the role from its prefix.
 
 Silo pods get `terminationGracePeriodSeconds: 60` (`clustering.terminationGracePeriodSeconds`, minimum 15); the silo's graceful stop gets 10 s less. Custom worker hosts must use the same clustering provider.
 
@@ -192,6 +193,16 @@ worker:
       operator: Exists
       effect: NoSchedule
 ```
+
+### Read-model projector on its own silos
+
+```yaml
+projector:
+  enabled: true
+  replicas: 2
+```
+
+The projector builds the read model a few seconds behind each instance's journal. With `projector.enabled` it moves from the core silos to `projector-<fullname>` pods, which host nothing else, so projection writes no longer share CPU with instance execution. To serve reads from a PostgreSQL streaming replica, add `ConnectionStrings__fleans-query` to `extraEnv`: the projector keeps writing the primary, while the admin UI, MCP and the REST listings read the replica (see the website's Persistence reference).
 
 ## Upgrade notes
 

@@ -13,7 +13,10 @@ namespace Fleans.Application.QueryModels;
 public static class InstanceStateSnapshots
 {
     /// <param name="definition">Resolves condition text and endpoints; without it they are empty.</param>
-    public static InstanceStateSnapshot From(WorkflowInstanceState state, IWorkflowDefinition? definition)
+    /// <param name="stateVersion">The journal version <paramref name="state"/> reflects.</param>
+    /// <param name="isFromReadModel">Whether <paramref name="state"/> was read from the read model rather than the grain.</param>
+    public static InstanceStateSnapshot From(
+        WorkflowInstanceState state, IWorkflowDefinition? definition, int stateVersion, bool isFromReadModel)
     {
         var activeEntries = state.Entries.Where(e => !e.IsCompleted).ToList();
         var completedEntries = state.Entries.Where(e => e.IsCompleted).ToList();
@@ -39,7 +42,9 @@ public static class InstanceStateSnapshots
             state.ConditionSequenceStates.Select(cs => ToConditionSnapshot(cs, definition)).ToList(),
             state.ProcessDefinitionId,
             state.CreatedAt, state.ExecutionStartedAt, state.CompletedAt,
-            state.BusinessId);
+            state.BusinessId,
+            stateVersion,
+            isFromReadModel);
     }
 
     private static ActivityInstanceSnapshot ToActivitySnapshot(ActivityInstanceEntry entry)

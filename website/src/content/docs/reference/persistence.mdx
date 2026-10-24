@@ -143,7 +143,15 @@ Example `appsettings.json`:
 
 **Startup behaviour:** PostgreSQL uses `MigrateAsync()` — EF Core migrations are applied automatically on `Fleans.Api` startup. `Fleans.Web` and `Fleans.Mcp` share the same database but do not run migrations.
 
-**Read replica:** When `ConnectionStrings:fleans-query` is provided, the query `DbContext` connects to the replica. The replica must be provisioned separately (e.g. a PostgreSQL standby). The chart provisions only the primary `fleans` database; read-replica wiring is tracked in issue [#170](https://github.com/nightBaker/fleans/issues/170).
+### Read replica
+
+Point `ConnectionStrings:fleans-query` at a read replica of the `fleans` database (for example a PostgreSQL streaming-replication standby) and every read-model query moves there: the admin UI's lists and finished-instance views, the MCP tools, and the REST listings and state endpoint. Writes — grain state, the projector's read-model writes, migrations and health checks — stay on `ConnectionStrings:fleans`, so every process still needs it. Set the same value on every silo and on Fleans.Web and Fleans.Mcp. Unset, reads use the primary.
+
+What to expect:
+
+- **Lists lag a little more.** The read model already trails each instance by a moment (the projector builds it from the event log); replication lag adds to that. Each list row carries the event-log version it reflects (`stateVersion`).
+- **Instance state never goes back in time.** A running instance is answered by its grain. A finished one is answered from the replica only once its row there says finished; until then the grain answers.
+- The chart and the compose bundle provision only the primary; provision the replica yourself and pass the connection string (Helm: `extraEnv`).
 
 ## Separate journal database
 

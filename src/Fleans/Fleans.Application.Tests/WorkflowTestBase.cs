@@ -275,6 +275,7 @@ public abstract class WorkflowTestBase
                 .Configure<Orleans.Configuration.SiloOptions>(o =>
                     o.SiloName = "combined-test-" + Guid.NewGuid().ToString("N"))
                 .AddPlacementDirector<CorePlacementStrategy, CorePlacementDirector>()
+                .AddPlacementDirector<ProjectorPlacementStrategy, ProjectorPlacementDirector>()
                 .AddWorkerPlacementFilter()
                 .AddMemoryStreams(WorkflowEventsPublisher.StreamProvider)
                 .AddMemoryGrainStorage("PubSubStore")

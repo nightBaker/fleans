@@ -21,6 +21,7 @@ Aspire orchestrates the full Fleans stack on a developer laptop, but it is not a
 | --- | --- | --- |
 | `core` Deployment | `ghcr.io/nightbaker/fleans-api:<tag>` | Orleans silo (`Fleans__Role=Core`). Hosts coordinator grains. |
 | `worker` Deployment (off by default) | `ghcr.io/nightbaker/fleans-api:<tag>` | Orleans silo (`Fleans__Role=Worker`). Hosts `[StatelessWorker]` script/condition grains. **Same image as `core`** — distinguished only by the `Fleans__Role` env var. |
+| `projector` Deployment (off by default) | `ghcr.io/nightbaker/fleans-api:<tag>` | Orleans silo (`Fleans__Role=Projector`) that hosts only the read-model projector. Enable with `projector.enabled=true`; otherwise the projector runs on the `core` silos. |
 | `web` Deployment | `ghcr.io/nightbaker/fleans-web:<tag>` | Blazor Server admin UI on port `8080`. |
 | `mcp` Deployment | `ghcr.io/nightbaker/fleans-mcp:<tag>` | MCP server on port `5200` for AI-agent integration. |
 | `redis` StatefulSet | `redis:7-alpine` | Orleans clustering + grain storage. **Required.** |

@@ -1,0 +1,80 @@
+{{- if .Values.projector.enabled }}
+{{- /*
+Read-model projector silos (#861): the fleans-api image with Fleans__Role=Projector.
+They host WorkflowInstanceProjector and no other Fleans grain; the projector prefers
+them over the core silos (and stays on the core silos when this is disabled).
+No Service by design: nothing calls the projector over HTTP.
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fleans.siloDeploymentName" (dict "ctx" . "role" "projector" "suffix" "") }}
+  labels:
+    {{- include "fleans.labels" . | nindent 4 }}
+    app.kubernetes.io/component: projector
+spec:
+  replicas: {{ .Values.projector.replicas }}
+  selector:
+    matchLabels:
+      {{- include "fleans.selectorLabels" (dict "ctx" . "component" "projector") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fleans.selectorLabels" (dict "ctx" . "component" "projector") | nindent 8 }}
+        {{- include "fleans.siloPodLabels" . | nindent 8 }}
+      {{- with .Values.projector.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- include "fleans.siloPodSpec" . | nindent 6 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: fleans-projector
+          image: {{ include "fleans.imageRef" (dict "ctx" . "repo" .Values.image.api.repository) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: ASPNETCORE_URLS
+              value: "http://+:8080"
+            - name: Fleans__Role
+              value: "Projector"
+            {{- include "fleans.siloEnv" . | nindent 12 }}
+            {{- include "fleans.commonEnv" . | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /alive
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.projector.resources | nindent 12 }}
+      {{- with .Values.projector.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.projector.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.projector.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

@@ -74,7 +74,8 @@ public class WorkflowQueryService : IWorkflowQueryService
             workflowDef = processDef?.Workflow;
         }
 
-        return InstanceStateSnapshots.From(state, workflowDef);
+        var projectedVersion = entry.Property<int>(FleanModelConfiguration.ProjectedVersion).CurrentValue;
+        return InstanceStateSnapshots.From(state, workflowDef, projectedVersion, isFromReadModel: true);
     }
 
     public async Task<int> GetMaxVersionByKeyAsync(string processDefinitionKey)
@@ -244,7 +245,8 @@ public class WorkflowQueryService : IWorkflowQueryService
 
         var items = await pagedQuery.Select(w => new WorkflowInstanceInfo(
             w.Id, w.ProcessDefinitionId ?? "", w.IsStarted, w.IsCompleted, w.IsCancelled, w.IsFailed,
-            w.CreatedAt, w.ExecutionStartedAt, w.CompletedAt, w.BusinessId)).ToListAsync();
+            w.CreatedAt, w.ExecutionStartedAt, w.CompletedAt, w.BusinessId,
+            EF.Property<int>(w, FleanModelConfiguration.ProjectedVersion))).ToListAsync();
 
         return new PagedResult<WorkflowInstanceInfo>(
             items, totalCount, page.Page, page.PageSize);

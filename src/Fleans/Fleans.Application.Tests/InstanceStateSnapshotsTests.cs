@@ -36,9 +36,9 @@ public class InstanceStateSnapshotsTests
         var completed = StateWith(stored, out var completedScope);
 
         // Act
-        var runningVars = InstanceStateSnapshots.From(running, null).VariableStates
+        var runningVars = InstanceStateSnapshots.From(running, null, stateVersion: 1, isFromReadModel: false).VariableStates
             .Single(v => v.VariablesId == runningScope).Variables;
-        var completedVars = InstanceStateSnapshots.From(completed, null).VariableStates
+        var completedVars = InstanceStateSnapshots.From(completed, null, stateVersion: 1, isFromReadModel: true).VariableStates
             .Single(v => v.VariablesId == completedScope).Variables;
 
         // Assert

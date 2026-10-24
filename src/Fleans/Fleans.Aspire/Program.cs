@@ -306,6 +306,24 @@ if (builder.ExecutionContext.IsPublishMode || splitRoles)
     WithStreaming(workerHost, useKafka, kafka, useAzureQueue, azureQueues, useRedisStreaming);
 }
 
+// Dev-only (FLEANS_SPLIT_ROLES=true): the read-model projector on a silo of its own (#861) —
+// Fleans.Api with Fleans:Role=Projector, which hosts the projector and no other Fleans grain;
+// the projector prefers it over the core silos. The Helm chart ships it as `projector.enabled`.
+if (splitRoles)
+{
+    // No launch profile: its fixed ports belong to fleans-core. Nothing calls this silo over
+    // HTTP; let Kestrel pick a free port.
+    var projectorSilo = builder.AddProject<Projects.Fleans_Api>("fleans-projector", launchProfileName: null)
+        .WithReference(orleans)
+        .WaitFor(redis)
+        .WithEnvironment("Fleans__Role", "Projector")
+        .WithEnvironment("ASPNETCORE_URLS", "http://127.0.0.1:0")
+        .WithReplicas(1);
+    if (usePostgres) projectorSilo = projectorSilo.WaitFor(pg!);
+    projectorSilo = WithPersistence(projectorSilo, usePostgres, pg, sqliteConnectionString);
+    WithStreaming(projectorSilo, useKafka, kafka, useAzureQueue, azureQueues, useRedisStreaming);
+}
+
 // Dev-only: an external Plugin-role host (a project built from the fleans-custom-worker-example
 // template, or the E2E suite's Fleans.E2E.PluginHost) joined to the dev cluster. Set
 // FLEANS_PLUGIN_HOST_PROJECT=<absolute path to the host's .csproj>. The host must call
