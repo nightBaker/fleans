@@ -1,3 +1,4 @@
+using DotNet.Testcontainers.Builders;
 using Fleans.Persistence.Tests.Infrastructure;
 using Fleans.ServiceDefaults;
 using Microsoft.Extensions.Configuration;
@@ -107,6 +108,65 @@ public class EnsureDatabaseSchemaTests
         {
             await DropDatabaseAsync(PostgresContainerFixture.PostgresImage, main);
         }
+    }
+
+    [TestMethod]
+    public async Task ThroughPgBouncerInTransactionMode_ConcurrentSilosApplyTheSchemaAndLeaveNoLockBehind()
+    {
+        // #923: with a session-level advisory lock, the lock, the migrations and the unlock each go
+        // to whatever server connection the pooler hands out; the unlock misses and the lock stays
+        // held by a pooled server connection, so the next silo waits on it forever.
+        Skip.IfPostgresUnavailable(PersistenceProvider.Postgres);
+        var direct = await CreateDatabaseAsync(PostgresContainerFixture.PostgresImage);
+        var target = new NpgsqlConnectionStringBuilder(direct);
+        await using var bouncer = new ContainerBuilder()
+            .WithImage("edoburu/pgbouncer:v1.24.1-p1")
+            .WithEnvironment("DB_HOST", PostgresContainerFixture.BridgeAddress(PostgresContainerFixture.PostgresImage))
+            .WithEnvironment("DB_PORT", "5432")
+            .WithEnvironment("DB_USER", target.Username)
+            .WithEnvironment("DB_PASSWORD", target.Password)
+            .WithEnvironment("DB_NAME", target.Database)
+            .WithEnvironment("AUTH_TYPE", "scram-sha-256")
+            .WithEnvironment("POOL_MODE", "transaction")
+            .WithEnvironment("DEFAULT_POOL_SIZE", "4")
+            .WithPortBinding(5432, assignRandomHostPort: true)
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilInternalTcpPortIsAvailable(5432))
+            .Build();
+        await bouncer.StartAsync();
+        var viaBouncer = new NpgsqlConnectionStringBuilder(direct)
+        {
+            Host = bouncer.Hostname,
+            Port = bouncer.GetMappedPublicPort(5432),
+            Pooling = true,
+        }.ToString();
+        try
+        {
+            var config = new Dictionary<string, string?>
+            {
+                ["Persistence:Provider"] = "Postgres",
+                ["ConnectionStrings:fleans"] = viaBouncer,
+            };
+
+            var silos = Task.WhenAll(Enumerable.Range(0, 3).Select(_ => EnsureSchemaAsync(config)));
+            var finished = await Task.WhenAny(silos, Task.Delay(TimeSpan.FromSeconds(90)));
+
+            Assert.AreSame(silos, finished, "Schema setup through PgBouncer did not finish: a silo waits on a leaked lock.");
+            await silos;
+            CollectionAssert.IsSubsetOf(new[] { "WorkflowInstances", "WorkflowEventBatches" }, await TablesAsync(direct));
+            Assert.AreEqual(0L, await AdvisoryLocksAsync(direct), "The migration lock outlived the schema setup.");
+        }
+        finally
+        {
+            await DropDatabaseAsync(PostgresContainerFixture.PostgresImage, direct);
+        }
+    }
+
+    private static async Task<long> AdvisoryLocksAsync(string connectionString)
+    {
+        await using var conn = new NpgsqlConnection(connectionString);
+        await conn.OpenAsync();
+        return (long)(await new NpgsqlCommand(
+            "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory'", conn).ExecuteScalarAsync())!;
     }
 
     private static async Task EnsureSchemaAsync(IDictionary<string, string?> config)
