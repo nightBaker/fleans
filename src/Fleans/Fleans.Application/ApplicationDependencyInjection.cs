@@ -20,6 +20,11 @@ namespace Fleans.Application
                 .Validate(o => o.EvaluatorKeyCount > 0, "Fleans:Worker:EvaluatorKeyCount must be greater than 0.")
                 .ValidateOnStart();
 
+            services.AddOptions<SignalCorrelationOptions>()
+                .BindConfiguration(SignalCorrelationOptions.SectionName)
+                .Validate(o => o.BucketCount > 0, "Fleans:Signals:BucketCount must be greater than 0.")
+                .ValidateOnStart();
+
             services.AddOptions<DeploymentApprovalOptions>()
                 .BindConfiguration(DeploymentApprovalOptions.SectionName)
                 .Validate(o => o.RequiredApprovals >= 0, "Fleans:Deployments:RequiredApprovals can't be negative.")

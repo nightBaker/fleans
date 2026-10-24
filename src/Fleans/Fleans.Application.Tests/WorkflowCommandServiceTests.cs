@@ -33,7 +33,7 @@ namespace Fleans.Application.Tests
             _grainFactory = Substitute.For<IGrainFactory>();
             _processGrain = Substitute.For<IProcessDefinitionGrain>();
             _commandService = new WorkflowCommandService(_grainFactory, NullLogger<WorkflowCommandService>.Instance,
-                Options.Create(new DeploymentApprovalOptions()), NewLauncher(_grainFactory));
+                Options.Create(new DeploymentApprovalOptions()), NewLauncher(_grainFactory), Options.Create(new SignalCorrelationOptions()));
         }
 
         [TestMethod]
@@ -147,7 +147,7 @@ namespace Fleans.Application.Tests
         {
             // Arrange
             var service = new WorkflowCommandService(_grainFactory, NullLogger<WorkflowCommandService>.Instance,
-                Options.Create(new DeploymentApprovalOptions { RequiredApprovals = 2 }), NewLauncher(_grainFactory));
+                Options.Create(new DeploymentApprovalOptions { RequiredApprovals = 2 }), NewLauncher(_grainFactory), Options.Create(new SignalCorrelationOptions()));
             var workflow = new WorkflowDefinition { WorkflowId = "guarded", Activities = [], SequenceFlows = [] };
 
             // Act & Assert — an InvalidOperationException: the API answers 409
@@ -161,7 +161,7 @@ namespace Fleans.Application.Tests
         {
             // Arrange
             var service = new WorkflowCommandService(_grainFactory, NullLogger<WorkflowCommandService>.Instance,
-                Options.Create(new DeploymentApprovalOptions { RequiredApprovals = 2, ReviewerGroups = ["release-managers"] }), NewLauncher(_grainFactory));
+                Options.Create(new DeploymentApprovalOptions { RequiredApprovals = 2, ReviewerGroups = ["release-managers"] }), NewLauncher(_grainFactory), Options.Create(new SignalCorrelationOptions()));
             var requestGrain = Substitute.For<IDeploymentRequestGrain>();
             _grainFactory.GetGrain<IDeploymentRequestGrain>(Arg.Any<Guid>(), Arg.Any<string?>()).Returns(requestGrain);
 

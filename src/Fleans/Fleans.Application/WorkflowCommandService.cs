@@ -16,14 +16,17 @@ public partial class WorkflowCommandService : IWorkflowCommandService
     private readonly ILogger<WorkflowCommandService> _logger;
     private readonly DeploymentApprovalOptions _deploymentApprovals;
     private readonly StartEventLauncher _startEvents;
+    private readonly SignalCorrelationOptions _signals;
 
     public WorkflowCommandService(IGrainFactory grainFactory, ILogger<WorkflowCommandService> logger,
-        IOptions<DeploymentApprovalOptions> deploymentApprovals, StartEventLauncher startEvents)
+        IOptions<DeploymentApprovalOptions> deploymentApprovals, StartEventLauncher startEvents,
+        IOptions<SignalCorrelationOptions> signals)
     {
         _grainFactory = grainFactory;
         _logger = logger;
         _deploymentApprovals = deploymentApprovals.Value;
         _startEvents = startEvents;
+        _signals = signals.Value;
     }
 
     public async Task<Guid> StartWorkflow(string workflowId, ExpandoObject? initialVariables = null, string? businessId = null)
@@ -137,16 +140,15 @@ public partial class WorkflowCommandService : IWorkflowCommandService
 
         // Fan-out: broadcast to running instances AND create new instances
         // Both always execute independently
-        try
+        // Fans out to every bucket; the buckets that answered still count when some fail.
+        var broadcast = await _grainFactory.BroadcastSignal(signalName, _signals);
+        deliveredCount = broadcast.DeliveredCount;
+        if (broadcast.Failure is not null)
         {
-            var signalGrain = _grainFactory.GetGrain<ISignalCorrelationGrain>(signalName);
-            deliveredCount = await signalGrain.BroadcastSignal();
-        }
-        catch (Exception ex)
-        {
-            LogSignalBroadcastFailed(signalName, ex);
+            LogSignalBroadcastFailed(signalName, broadcast.Failure);
             errors ??= [];
-            errors.Add($"Broadcast failed: {ex.Message}");
+            errors.Add($"Broadcast failed in {broadcast.FailedBucketCount} of {_signals.BucketCount} buckets: "
+                + broadcast.Failure.InnerExceptions[0].Message);
         }
 
         try
