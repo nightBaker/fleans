@@ -99,10 +99,9 @@ public class MessageCorrelationGrainStateMachineTests : WorkflowTestBase
         var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("sm-test-deliver-workflow");
         await processGrain.DeployVersion(workflow, "<placeholder/>");
 
-        var listener = Cluster.GrainFactory.GetGrain<IMessageStartEventListenerGrain>("sm-test-deliver-msg");
         dynamic variables = new ExpandoObject();
         variables.orderId = "test-1";
-        var instanceIds = await listener.FireMessageStartEvent(variables);
+        var instanceIds = await StartEvents.StartByMessage("sm-test-deliver-msg", variables);
 
         Assert.IsTrue(instanceIds.Count > 0);
 
@@ -201,9 +200,8 @@ public class MessageCorrelationGrainStateMachineTests : WorkflowTestBase
         await processGrain.DeployVersion(workflow, "<placeholder/>");
 
         // Fire the message start event to create a correlation and deliver
-        var listener = Cluster.GrainFactory.GetGrain<IMessageStartEventListenerGrain>("sm-test-resub-msg");
         dynamic variables = new ExpandoObject();
-        var instanceIds = await listener.FireMessageStartEvent(variables);
+        var instanceIds = await StartEvents.StartByMessage("sm-test-resub-msg", variables);
         Assert.IsTrue(instanceIds.Count > 0);
 
         // After delivery completes, the grain transitions to Empty.

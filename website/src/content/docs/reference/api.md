@@ -184,6 +184,8 @@ Content-Type: application/json
 
 Instances that are already running keep running. `POST /Definitions/enable` re-registers the start events.
 
+Every silo and API host keeps its own list of which processes a message, signal or conditional start event starts. A deploy, enable or disable updates every host's list before the call returns, so the next message or signal sent to any host sees the change. A host that could not be reached at that moment catches up within 30 seconds. Disable takes effect at once in every case: each start checks that the process is enabled.
+
 #### Business id
 
 A process instance can have a business id: a value your systems already know, such as an order number. Use it to find "the process for order 123" without storing the generated instance GUID. It follows Camunda 8.9+'s [`businessId`](https://docs.camunda.io/docs/next/components/concepts/process-instance-creation/):

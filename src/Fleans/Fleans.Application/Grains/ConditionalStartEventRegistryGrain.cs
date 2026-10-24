@@ -56,15 +56,6 @@ public partial class ConditionalStartEventRegistryGrain : Grain, IConditionalSta
         return ValueTask.FromResult(entries);
     }
 
-    public ValueTask<List<ConditionalStartEntry>> GetByProcess(string processDefinitionKey)
-    {
-        var entries = _state.State.Entries
-            .Where(e => e.ProcessDefinitionKey == processDefinitionKey)
-            .Select(e => new ConditionalStartEntry(e.ProcessDefinitionKey, e.ActivityId, e.ConditionExpression))
-            .ToList();
-        return ValueTask.FromResult(entries);
-    }
-
     [LoggerMessage(EventId = 9310, Level = LogLevel.Information,
         Message = "Registered conditional start event in registry: process {ProcessDefinitionKey}, activity {ActivityId}")]
     private partial void LogRegistered(string processDefinitionKey, string activityId);

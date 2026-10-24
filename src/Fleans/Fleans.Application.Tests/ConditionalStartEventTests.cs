@@ -47,18 +47,16 @@ public class ConditionalStartEventTests : WorkflowTestBase
     }
 
     [TestMethod]
-    public async Task EvaluateAndStart_MatchingCondition_ShouldCreateInstance()
+    public async Task StartByConditions_MatchingCondition_ShouldCreateInstance()
     {
         // Arrange — deploy a workflow with a conditional start event
         var workflow = CreateConditionalStartWorkflow("cond-start-match", "true");
         var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("cond-start-match");
         await processGrain.DeployVersion(workflow, "<placeholder/>");
 
-        // Act — evaluate via listener grain
-        var listenerKey = "cond-start-match:condStart";
-        var listener = Cluster.GrainFactory.GetGrain<IConditionalStartEventListenerGrain>(listenerKey);
+        // Act — evaluate through the start-event launcher
         var variables = new ExpandoObject();
-        var instanceId = await listener.EvaluateAndStart(variables);
+        var instanceId = await EvaluateConditionalStart("cond-start-match", variables);
 
         // Assert
         Assert.IsNotNull(instanceId, "Should create an instance when condition is true");
@@ -68,7 +66,7 @@ public class ConditionalStartEventTests : WorkflowTestBase
     }
 
     [TestMethod]
-    public async Task EvaluateAndStart_NonMatchingCondition_ShouldReturnNull()
+    public async Task StartByConditions_NonMatchingCondition_ShouldReturnNull()
     {
         // Arrange
         var workflow = CreateConditionalStartWorkflow("cond-start-nomatch", "false");
@@ -76,25 +74,22 @@ public class ConditionalStartEventTests : WorkflowTestBase
         await processGrain.DeployVersion(workflow, "<placeholder/>");
 
         // Act
-        var listenerKey = "cond-start-nomatch:condStart";
-        var listener = Cluster.GrainFactory.GetGrain<IConditionalStartEventListenerGrain>(listenerKey);
         var variables = new ExpandoObject();
-        var instanceId = await listener.EvaluateAndStart(variables);
+        var instanceId = await EvaluateConditionalStart("cond-start-nomatch", variables);
 
         // Assert
         Assert.IsNull(instanceId, "Should NOT create an instance when condition is false");
     }
 
     [TestMethod]
-    public async Task EvaluateAndStart_UnregisteredListener_ShouldReturnNull()
+    public async Task StartByConditions_NothingRegistered_ShouldStartNothing()
     {
-        // Act — call listener without deploying any workflow
-        var listener = Cluster.GrainFactory.GetGrain<IConditionalStartEventListenerGrain>("nonexistent:condStart");
+        // Act — evaluate without deploying any workflow
         var variables = new ExpandoObject();
-        var instanceId = await listener.EvaluateAndStart(variables);
+        var instanceId = await EvaluateConditionalStart("nonexistent", variables);
 
         // Assert
-        Assert.IsNull(instanceId, "Unregistered listener should return null");
+        Assert.IsNull(instanceId, "Nothing registered, so nothing should start");
     }
 
     [TestMethod]
@@ -105,11 +100,9 @@ public class ConditionalStartEventTests : WorkflowTestBase
         var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("cond-start-autoreg");
         await processGrain.DeployVersion(workflow, "<placeholder/>");
 
-        // Assert — listener should be registered and able to start instances
-        var listenerKey = "cond-start-autoreg:condStart";
-        var listener = Cluster.GrainFactory.GetGrain<IConditionalStartEventListenerGrain>(listenerKey);
-        var instanceId = await listener.EvaluateAndStart(new ExpandoObject());
-        Assert.IsNotNull(instanceId, "Auto-registered listener should create instance");
+        // Assert — the deploy registered it, so evaluation starts an instance
+        var instanceId = await EvaluateConditionalStart("cond-start-autoreg", new ExpandoObject());
+        Assert.IsNotNull(instanceId, "The auto-registered conditional start should create an instance");
     }
 
     [TestMethod]
@@ -120,9 +113,7 @@ public class ConditionalStartEventTests : WorkflowTestBase
         var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("cond-start-fail500");
         await processGrain.DeployVersion(workflow, "<placeholder/>");
 
-        var listenerKey = "cond-start-fail500:condStart";
-        var listener = Cluster.GrainFactory.GetGrain<IConditionalStartEventListenerGrain>(listenerKey);
-        var instanceId = await listener.EvaluateAndStart(new ExpandoObject());
+        var instanceId = await EvaluateConditionalStart("cond-start-fail500", new ExpandoObject());
         Assert.IsNotNull(instanceId);
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId.Value);
 
@@ -147,9 +138,7 @@ public class ConditionalStartEventTests : WorkflowTestBase
         var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("cond-start-fail400");
         await processGrain.DeployVersion(workflow, "<placeholder/>");
 
-        var listenerKey = "cond-start-fail400:condStart";
-        var listener = Cluster.GrainFactory.GetGrain<IConditionalStartEventListenerGrain>(listenerKey);
-        var instanceId = await listener.EvaluateAndStart(new ExpandoObject());
+        var instanceId = await EvaluateConditionalStart("cond-start-fail400", new ExpandoObject());
         Assert.IsNotNull(instanceId);
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceId.Value);
 

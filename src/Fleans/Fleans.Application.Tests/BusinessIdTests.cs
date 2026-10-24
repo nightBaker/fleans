@@ -179,11 +179,10 @@ public class BusinessIdTests : WorkflowTestBase
     {
         // Arrange
         await DeployMessageStartWorkflow("biz-message-invalid", "bizInvalidPlaced");
-        var listener = Cluster.GrainFactory.GetGrain<IMessageStartEventListenerGrain>("bizInvalidPlaced");
 
         // Act + Assert
         await Assert.ThrowsAsync<ArgumentException>(
-            async () => await listener.FireMessageStartEvent(new ExpandoObject(), ""));
+            async () => await StartEvents.StartByMessage("bizInvalidPlaced", new ExpandoObject(), ""));
     }
 
     [TestMethod]
