@@ -29,6 +29,7 @@ propagation), see [`docs/plans/2026-02-08-structured-workflow-logging.md`](../pl
 | 8000–8099 | `TimerStartEventSchedulerGrain` (8000–8003, 8011 cycle re-armed, 8012 fire skipped — process disabled), `UserTasksController` (8004–8010) | 8009 body-UserId/token mismatch rejection (Warning); 8010 token without user-id claim (Warning) |
 | 8100–8199 | `GlobalExceptionHandler` (`Fleans.Api`) | |
 | 8200–8299 | `DeploymentsController` (`Fleans.Api`) | 8200 body-UserId/token mismatch rejection, 8201 token without user-id claim (both Warning) |
+| 8300–8399 | `AdaptiveConcurrencyLimiter` (`Fleans.Api/Admission`, #922) | 8300 admission limit lowered (Warning), 8301 limit raised (Debug), 8302 request rejected with 429 (Debug) |
 | 9000–9099 | `MessageCorrelationGrain` (9000–9009), `BpmnConverter` (9010–9019), `ScriptExecutorGrain` (`Fleans.Worker`, 9020–9029) | 9010 activation condition ignored on a fork (Warning) |
 | 9100–9199 | `MessageStartEventListenerGrain` (9100–9109, registrations only), `SignalCorrelationGrain` (9110–9119, one per signal bucket; full — 9118 subscriptions restored after transient delivery failures WARNING, 9119 restore write failed ERROR) | |
 | 9200–9299 | `SignalStartEventListenerGrain` (registrations only) | |

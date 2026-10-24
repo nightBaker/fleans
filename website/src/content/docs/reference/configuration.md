@@ -125,6 +125,23 @@ The membership table decides which silo is alive. Every silo **and** every Orlea
 
 `Fleans:Kubernetes:Enabled=true` turns on Orleans Kubernetes hosting: a silo whose pod is gone is declared dead immediately instead of after the probe window. The pod name becomes the silo name and **must start with the silo's role** (`core-…`, `worker-…`, `combined-…`, `projector-…`), because Fleans placement reads the role from that prefix; the silo refuses to start otherwise. The pod's service account needs `get`, `list`, `watch` and `patch` on `pods`, and the pods need the labels `orleans/serviceId` / `orleans/clusterId` matching `Orleans__ServiceId` / `Orleans__ClusterId`. The [Helm chart](/fleans/guides/self-host-helm/#clustering-and-kubernetes-hosting) sets all of this up.
 
+### Admission control
+
+| Env var | Config key | Read at | Default |
+| --- | --- | --- | --- |
+| `Fleans__Admission__Enabled` | `Fleans:Admission:Enabled` | `Fleans.Api` | `true` |
+| `Fleans__Admission__TargetLatencyMs` | `Fleans:Admission:TargetLatencyMs` | `Fleans.Api` | `500` |
+| `Fleans__Admission__InitialLimit` | `Fleans:Admission:InitialLimit` | `Fleans.Api` | `64` |
+| `Fleans__Admission__MinLimit` | `Fleans:Admission:MinLimit` | `Fleans.Api` | `8` |
+| `Fleans__Admission__MaxLimit` | `Fleans:Admission:MaxLimit` | `Fleans.Api` | `1024` |
+| `Fleans__Admission__WindowMs` | `Fleans:Admission:WindowMs` | `Fleans.Api` | `1000` |
+
+An adaptive limit on how many REST mutations one `Fleans.Api` process has in flight: the endpoints with the `workflow-mutation` and `task-operation` policies (start, messages, signals, deploy, user-task and custom-task operations). A request over the limit is answered at once with `429 Too Many Requests` and `Retry-After: 1`; it never reaches the cluster. Reads and admin endpoints are not limited.
+
+The limit follows the cluster. Once a second it looks at the p95 latency of the requests that finished: over `TargetLatencyMs` — or any request failed with a grain-call timeout or an Orleans error such as a shedding gateway — it is cut by a quarter, never below `MinLimit`; under the target with at least half the limit in use, it grows by one, never above `MaxLimit`. Past the CPU ceiling a cluster stops completing work rather than slowing down, and the rate it can sustain under contention is lower than the peak it reaches on an idle start, so a fixed rate limit has to sit well below the ceiling; this limit moves with it.
+
+It is on by default because it only moves when the target is missed — a healthy cluster answers far below 500 ms — and it never limits a process below `MinLimit` concurrent requests, so a single client does not see a `429`. Set `TargetLatencyMs` to about twice the p99 of your start requests at normal load. Every `Fleans.Api` process keeps its own limit, so it scales with the number of API replicas. The fixed `RateLimiting` policies ([REST API reference](/fleans/reference/api/#rate-limiting)) still apply and run first. Limit changes are logged (EventId 8300, Warning, when it shrinks) and exported as `fleans.admission.limit` and `fleans.admission.rejected` ([Observability](/fleans/reference/observability/)). Invalid values fail at startup.
+
 ### Authentication
 
 Auth keys are **per-host** — the API and the Web admin UI use different OIDC flows (JWT-bearer vs OIDC code-flow), so the keys split cleanly between hosts. Setting an API-only key on the Web silo (or vice-versa) has no effect.

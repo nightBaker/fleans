@@ -98,6 +98,20 @@ public static class FleansDiagnostics
             }
         });
 
+    public static readonly Gauge<int> AdmissionLimit = Meter.CreateGauge<int>(
+        "fleans.admission.limit",
+        unit: "{requests}",
+        description: "Current adaptive admission limit: concurrent REST mutations one Api process admits (Fleans:Admission).");
+
+    public static readonly Counter<long> AdmissionRejected = Meter.CreateCounter<long>(
+        "fleans.admission.rejected",
+        unit: "{requests}",
+        description: "REST mutations answered 429 because the adaptive admission limit was reached.");
+
+    public static void RecordAdmissionLimit(int limit) => AdmissionLimit.Record(limit);
+
+    public static void OnAdmissionRejected() => AdmissionRejected.Add(1);
+
     public static void OnWorkflowStarted() => WorkflowsStarted.Add(1);
 
     /// <summary>
