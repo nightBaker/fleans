@@ -64,6 +64,16 @@ The provider toggle. `Postgres` runs `MigrateAsync()` at startup; `Sqlite` runs 
 
 The largest variables document, measured as JSON bytes, that one operation may pass to a workflow instance: start variables, activity completion variables (script tasks, custom tasks, REST), a user-task completion and a message delivery. The engine rejects a larger document before it applies anything. REST callers get `400 Bad Request`, and a script or custom task fails its activity. An activity failure that carries oversized variables still fails the activity, without those variables. Must be greater than `0`; the silo fails at startup otherwise. See [Variables and scope](/fleans/guides/variables-and-scope/#size-limit).
 
+### Read-model projector
+
+| Env var | Config key | Read at | Default |
+| --- | --- | --- | --- |
+| `Fleans__Projector__MaxBatchSize` | `Fleans:Projector:MaxBatchSize` | `Fleans.Application` | `64` (1–1000) |
+| `Fleans__Projector__MaxBatchDelayMs` | `Fleans:Projector:MaxBatchDelayMs` | `Fleans.Application` | `20` |
+| `Fleans__Projector__MaxConcurrentBatches` | `Fleans:Projector:MaxConcurrentBatches` | `Fleans.Application` | `4` |
+
+The projector writes the read model in batches: each silo that runs it groups the projections of many instances into one database write. One batch holds up to `MaxBatchSize` projections. It waits up to `MaxBatchDelayMs` for more after its first one, so a quiet silo adds at most that much lag; under load a batch fills before the delay runs out. A silo writes up to `MaxConcurrentBatches` batches at the same time. When all of them are in flight, new projections queue (up to `MaxBatchSize` × `MaxConcurrentBatches`), and past that the projector stops taking stream notifications until the database catches up. `MaxBatchSize=1` turns batching off. Invalid values fail the silo at startup. See [Read-model batching](/fleans/reference/persistence/#read-model-batching).
+
 ### Script and condition evaluators
 
 | Env var | Config key | Read at | Default |
