@@ -55,7 +55,15 @@ services:
   postgres:
     image: postgres:16-alpine
     # 6 silos × (command + query) Npgsql pools exceed the default max_connections=100.
-    command: ["postgres", "-c", "max_connections=300"]
+    # Journal + read model are the hottest store: memory settings sized to the 3 GB limit,
+    # and a larger max_wal_size so the append-heavy journal doesn't force checkpoints.
+    command: ["postgres", "-c", "max_connections=300",
+              "-c", "shared_buffers=768MB", "-c", "effective_cache_size=2GB",
+              "-c", "wal_buffers=16MB", "-c", "max_wal_size=4GB"]
+    # CPU is a weight, not a cap (see fleans-core): 4× worker/plugin when the host is contended.
+    cpu_shares: 2048
+    deploy: { resources: { limits: { memory: 3G } } }
+    shm_size: 1g
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: fleans
@@ -106,7 +114,11 @@ services:
     environment:
       <<: *silo-env
       Fleans__Role: Core
-    deploy: { replicas: 3 }
+    # Core runs the workflow grains and the REST API — the CPU-bound role. CPU is a weight
+    # (cpu_shares), not a `cpus` cap: a cap also lowers .NET's Environment.ProcessorCount
+    # (Orleans scheduler, thread pool, server-GC heaps), and `cpus: 2` measured slower than none.
+    cpu_shares: 2048
+    deploy: { replicas: 3, resources: { limits: { memory: 1536M } } }
     restart: on-failure
     depends_on:
       redis: { condition: service_healthy }
@@ -120,7 +132,9 @@ services:
     environment:
       <<: *silo-env
       Fleans__Role: Worker
-    deploy: { replicas: 2 }
+    # Scripts/conditions only: ~16 % CPU on average (peaks ~55 %) and ~350 MB at 100 VUs of long-diverse.
+    cpu_shares: 512
+    deploy: { replicas: 2, resources: { limits: { memory: 512M } } }
     restart: on-failure
     depends_on:
       # Core silos create the schema first; workers start once they are up.
@@ -142,6 +156,9 @@ services:
       # Same membership table as the engine silos (#885).
       Fleans__Clustering__Provider: ${FLEANS_CLUSTERING_PROVIDER:-Redis}
       ConnectionStrings__fleans: "Host=postgres;Database=fleans;Username=postgres;Password=fleans"
+    # One e2e-probe task per instance: ~12 % CPU on average (peaks ~30 %) and ~220 MB at 100 VUs.
+    cpu_shares: 512
+    deploy: { resources: { limits: { memory: 384M } } }
     restart: on-failure
     depends_on:
       fleans-core: { condition: service_healthy }

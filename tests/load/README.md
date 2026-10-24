@@ -41,16 +41,18 @@ k6 load test suite for the Fleans workflow engine.
 
 `docker-compose.yml` is the load-testing stack — split roles on Kafka streaming:
 
-| Service | Replicas | What |
-|---|---:|---|
-| `nginx` | 1 | `:80` → `fleans-core` (config: `nginx.conf` — sized for 2 000 VUs; nginx's defaults drop connections above ~250 VUs, which k6 reports as `EOF`) |
-| `fleans-core` | 3 | `Fleans.Api`, `Fleans:Role=Core` — REST API, workflow grains |
-| `fleans-worker` | 2 | `Fleans.WorkerHost`, `Fleans:Role=Worker` — script / condition grains |
-| `fleans-plugin` | 1 | `Fleans.E2E.PluginHost`, `Fleans:Role=Plugin` — external worker hosting the `e2e-probe` custom task |
-| `kafka` | 1 | Orleans streams (single broker, KRaft) |
-| `redis` | 1 | Orleans clustering (default provider), PubSubStore |
-| `postgres` | 1 | Persistence (`max_connections=300` — 6 silos × 2 Npgsql pools) |
-| `postgres-reminders` | 1 | Orleans reminders (`Fleans:Reminders:Provider=Postgres`, `ConnectionStrings:fleans-reminders`) — the production layout; `FLEANS_REMINDERS_PROVIDER=Redis` moves them back to Redis |
+| Service | Replicas | CPU weight / memory limit (each) | What |
+|---|---:|---|---|
+| `nginx` | 1 | 1024 / — | `:80` → `fleans-core` (config: `nginx.conf` — sized for 2 000 VUs; nginx's defaults drop connections above ~250 VUs, which k6 reports as `EOF`) |
+| `fleans-core` | 3 | **2048** / 1.5 GB | `Fleans.Api`, `Fleans:Role=Core` — REST API, workflow grains |
+| `fleans-worker` | 2 | 512 / 512 MB | `Fleans.WorkerHost`, `Fleans:Role=Worker` — script / condition grains |
+| `fleans-plugin` | 1 | 512 / 384 MB | `Fleans.E2E.PluginHost`, `Fleans:Role=Plugin` — external worker hosting the `e2e-probe` custom task |
+| `kafka` | 1 | 1024 / — | Orleans streams (single broker, KRaft) |
+| `redis` | 1 | 1024 / — | Orleans clustering (default provider), PubSubStore |
+| `postgres` | 1 | **2048** / 3 GB | Persistence (`max_connections=300` — 6 silos × 2 Npgsql pools; `shared_buffers=768MB`, `max_wal_size=4GB` for the append-heavy journal) |
+| `postgres-reminders` | 1 | 1024 / — | Orleans reminders (`Fleans:Reminders:Provider=Postgres`, `ConnectionStrings:fleans-reminders`) — the production layout; `FLEANS_REMINDERS_PROVIDER=Redis` moves them back to Redis |
+
+CPU is split by `cpu_shares` weights, not `cpus` caps: when the host is contended, Core and the journal Postgres get 4× the CPU of Worker and Plugin, and otherwise everyone may use every core. A `cpus` cap also lowers .NET's `Environment.ProcessorCount` (Orleans scheduler, thread pool, server-GC heaps); in `long-diverse` step runs (laptop, 10 CPU / 12 GB Docker VM), `cpus: 2` per Core completed 8.3 instances/s with start p95 174 ms, no limits 9.5/s and 38 ms, these weights 9.6/s and 27 ms (journal Postgres peak 68 % of a core instead of 113 %, from the larger `shared_buffers`). The memory limits add up to ~9 GB, plus ~1.5 GB for Kafka and the unlimited services, so give Docker at least 12 GB.
 
 Outside Aspire the silos join the membership table chosen by `Fleans:Clustering:Provider` (Redis by default; `FLEANS_CLUSTERING_PROVIDER=Postgres` puts it in the `fleans` database, #885), and `FLEANS_LOAD_TEST_MODE=true` adds the Redis PubSubStore.
 
