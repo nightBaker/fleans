@@ -6,6 +6,7 @@ using Fleans.Domain.Events;
 using Fleans.Domain.States;
 using Fleans.Application.Adapters;
 using Fleans.Application.Observability;
+using Fleans.Application.Scripts;
 using Orleans;
 using Orleans.Runtime;
 using System.Dynamic;
@@ -70,7 +71,15 @@ public partial class WorkflowInstance
                 throw new InvalidOperationException(
                     $"Execution loop exceeded {MaxExecutionLoopIterations} iterations — possible infinite loop in workflow definition.");
             var pending = _execution!.GetPendingActivities();
-            if (pending.Count == 0) break;
+            if (pending.Count == 0)
+            {
+                if (_pendingConditionEvaluations.Count == 0) break;
+                // Quiescent: evaluate the queued conditions, then run what their results unblocked.
+                // All of them in one pass, so a wide fan-out of gateways costs one loop iteration.
+                while (_pendingConditionEvaluations.Count > 0)
+                    await EvaluateNextCondition();
+                continue;
+            }
 
             var newlyCompletedEntryIds = new List<Guid>();
             var eventCountBeforeIteration = _execution.GetUncommittedEvents().Count;
@@ -113,9 +122,15 @@ public partial class WorkflowInstance
                     return;
                 }
 
-                // Handle domain events published by activities (e.g., ExecuteScriptEvent)
+                // Handle domain events published by activities. A script goes straight to the
+                // executor grain once this turn is journaled, not through a stream.
                 foreach (var evt in adapter.PublishedEvents)
-                    await PublishDomainEvent(evt);
+                {
+                    if (evt is ExecuteScriptEvent script)
+                        _scriptsToDispatch.Add(script);
+                    else
+                        await PublishDomainEvent(evt);
+                }
 
                 // Route completion through aggregate's Emit/Apply path
                 if (adapter.WasCompleted)
@@ -352,7 +367,6 @@ public partial class WorkflowInstance
         var watchers = State.ConditionalWatchers.ToList();
         if (watchers.Count == 0) return completedEntryIds;
 
-        var evaluator = _grainFactory.GetGrain<Conditions.IConditionExpressionEvaluatorGrain>(_evaluatorOptions.NextKey());
         var definition = await GetWorkflowDefinition();
 
         foreach (var watcher in watchers)
@@ -363,7 +377,7 @@ public partial class WorkflowInstance
             try
             {
                 var variables = State.GetMergedVariables(watcher.VariablesId);
-                var result = await evaluator.Evaluate(watcher.ConditionExpression, variables);
+                var result = await _conditionEvaluator.Evaluate(watcher.ConditionExpression, variables);
 
                 var activity = definition.GetActivityAcrossScopes(watcher.ActivityId);
                 var isNonInterruptingBoundary = activity is ConditionalBoundaryEvent cb && !cb.IsInterrupting;
@@ -411,8 +425,272 @@ public partial class WorkflowInstance
     private async Task<EscalationHandledResult?> PerformEffects(IReadOnlyList<IInfrastructureEffect> effects)
     {
         var context = new WorkflowInstanceEffectContext(this);
-        await _effectDispatcher.DispatchAsync(effects, context);
+        await _effectDispatcher.DispatchAsync(QueueConditionEvaluations(effects), context);
         return context.EscalationParentResult;
+    }
+
+    /// <summary>
+    /// Takes the condition evaluations out of <paramref name="effects"/> and queues them for
+    /// <see cref="EvaluateNextCondition"/>: conditions are evaluated in this grain, not published.
+    /// </summary>
+    private IReadOnlyList<IInfrastructureEffect> QueueConditionEvaluations(IReadOnlyList<IInfrastructureEffect> effects)
+    {
+        if (!effects.Any(IsConditionEvaluation))
+            return effects;
+
+        var rest = new List<IInfrastructureEffect>(effects.Count);
+        foreach (var effect in effects)
+        {
+            if (IsConditionEvaluation(effect))
+                _pendingConditionEvaluations.Enqueue(((PublishDomainEventEffect)effect).Event);
+            else
+                rest.Add(effect);
+        }
+        return rest;
+    }
+
+    private static bool IsConditionEvaluation(IInfrastructureEffect effect) =>
+        effect is PublishDomainEventEffect
+        {
+            Event: EvaluateConditionEvent or EvaluateActivationConditionEvent or EvaluateCompletionConditionEvent
+        };
+
+    /// <summary>
+    /// Evaluates the next queued condition and applies its result in this turn — what the
+    /// condition's stream handler used to do in a later turn. Only a result that changed state is
+    /// resolved (a false activation or completion condition changes nothing), and only the
+    /// completions it caused: the turn's earlier ones are transitioned already (#837).
+    /// </summary>
+    private async Task EvaluateNextCondition()
+    {
+        var evaluation = _pendingConditionEvaluations.Dequeue();
+        var turnCompletions = _execution!.GetUncommittedEvents()
+            .OfType<ActivityCompleted>()
+            .Select(e => e.ActivityInstanceId)
+            .ToHashSet();
+
+        var changed = evaluation switch
+        {
+            EvaluateConditionEvent c => await EvaluateGatewayCondition(c),
+            EvaluateActivationConditionEvent a => await EvaluateActivationCondition(a),
+            EvaluateCompletionConditionEvent m => await EvaluateCompletionCondition(m),
+            _ => throw new InvalidOperationException($"Unknown condition evaluation: {evaluation.GetType().Name}")
+        };
+
+        if (changed)
+            await ResolveExternalCompletions(turnCompletions);
+    }
+
+    private async Task<bool> EvaluateGatewayCondition(EvaluateConditionEvent c)
+    {
+        // An exclusive gateway completes on its first true flow, so the rest are not evaluated; an
+        // interrupting boundary may also have cancelled the gateway meanwhile.
+        if (!State.HasActiveEntry(c.ActivityInstanceId))
+        {
+            LogConditionEvaluationSkipped(c.ActivityId, c.SequenceFlowId);
+            return false;
+        }
+
+        try
+        {
+            var result = await _conditionEvaluator.Evaluate(c.Condition, State.GetMergedVariables(c.VariablesId));
+            LogConditionResult(c.SequenceFlowId, result);
+            _execution!.CompleteConditionSequence(c.ActivityId, c.SequenceFlowId, result);
+        }
+        catch (Exception ex)
+        {
+            // Includes "all conditions false and no default flow".
+            LogConditionEvaluationFailed(ex, c.ActivityId, c.Condition);
+            await FailActivityInTurn(c.ActivityId, c.ActivityInstanceId, ex);
+        }
+        return true;
+    }
+
+    private async Task<bool> EvaluateActivationCondition(EvaluateActivationConditionEvent a)
+    {
+        bool result;
+        try
+        {
+            var variables = State.GetMergedVariables(a.VariablesId);
+            // The condition reads the arrived-token count as _context._nroftoken.
+            ((IDictionary<string, object?>)variables)["_nroftoken"] = a.NrOfToken;
+            result = await _conditionEvaluator.Evaluate(a.Condition, variables);
+        }
+        catch (Exception ex)
+        {
+            LogConditionEvaluationFailed(ex, a.ActivityId, a.Condition);
+            await FailActivityInTurn(a.ActivityId, a.ActivityInstanceId, ex);
+            return true;
+        }
+
+        ApplyActivationConditionResult(a.ActivityId, a.ActivityInstanceId, result);
+        return result;
+    }
+
+    private async Task<bool> EvaluateCompletionCondition(EvaluateCompletionConditionEvent m)
+    {
+        bool result;
+        try
+        {
+            var variables = new ExpandoObject();
+            var dict = (IDictionary<string, object?>)variables;
+            dict["nrOfInstances"] = m.NrOfInstances;
+            dict["nrOfActiveInstances"] = m.NrOfActiveInstances;
+            dict["nrOfCompletedInstances"] = m.NrOfCompletedInstances;
+            result = await _conditionEvaluator.Evaluate(m.Condition, variables);
+        }
+        catch (Exception ex)
+        {
+            // Log-only: the iterations carry on and the activity completes once they all have.
+            LogCompletionConditionEvaluationFailed(ex, m.HostActivityId, m.Condition);
+            return false;
+        }
+
+        LogCompletionConditionResult(m.HostActivityId, m.HostActivityInstanceId, result);
+        if (!result)
+            return false;
+
+        LogMultiInstanceEarlyCompletion(m.HostActivityInstanceId, m.HostActivityId);
+        // Stale guard 4 inside: a host that completed meanwhile is left alone.
+        await PerformEffects(_execution!.CompleteMultiInstanceEarly(m.HostActivityId, m.HostActivityInstanceId));
+        return true;
+    }
+
+    /// <summary>Fails an activity from inside a turn; one no longer active is left alone.</summary>
+    private async Task FailActivityInTurn(string activityId, Guid activityInstanceId, Exception exception)
+    {
+        if (!State.HasActiveEntry(activityInstanceId))
+            return;
+        await PerformEffects(_execution!.FailActivity(activityId, activityInstanceId, exception));
+    }
+
+    /// <summary>A dispatched script awaiting its result: the request, how often it was sent, and when to resend.</summary>
+    private sealed record ScriptDispatch(ExecuteScriptEvent Request, int Attempt, DateTime DueAt);
+
+    /// <summary>
+    /// Sends the script tasks this turn started to the executor grain. Called once the turn's
+    /// events are journaled, so a result never reaches an activation that lost the activity.
+    /// </summary>
+    private void DispatchQueuedScripts()
+    {
+        if (_scriptsToDispatch.Count == 0)
+            return;
+
+        foreach (var request in _scriptsToDispatch)
+        {
+            if (State.HasActiveEntry(request.ActivityInstanceId))
+                DispatchScript(request, attempt: 1);
+        }
+        _scriptsToDispatch.Clear();
+    }
+
+    /// <summary>
+    /// One-way call to a stateless executor — local on a worker/combined silo, on a worker silo
+    /// from a core silo. The executor calls back <c>CompleteActivity</c> / <c>FailActivity</c>;
+    /// until then the dispatch is tracked so <see cref="CheckDispatchedScripts"/> can resend it.
+    /// </summary>
+    private void DispatchScript(ExecuteScriptEvent request, int attempt)
+    {
+        var variables = State.GetMergedVariables(request.VariablesId);
+        _grainFactory.GetGrain<IScriptExecutorGrain>(_evaluatorOptions.NextKey())
+            .Run(request, variables)
+            .Ignore();
+
+        var timeout = _evaluatorOptions.ScriptResultTimeout;
+        _dispatchedScripts[request.ActivityInstanceId] = new ScriptDispatch(request, attempt, DateTime.UtcNow + timeout);
+        _scriptResultTimer ??= this.RegisterGrainTimer(
+            CheckDispatchedScripts,
+            state: new object(),
+            options: new GrainTimerCreationOptions { DueTime = timeout / 2, Period = timeout / 2, Interleave = false });
+
+        LogScriptDispatched(request.ActivityId, request.ActivityInstanceId, attempt);
+    }
+
+    /// <summary>
+    /// The script result timeout: a dispatched script still active past its due time is dispatched
+    /// again (the dispatch or its result may have been lost with a silo); after
+    /// <see cref="WorkerEvaluatorOptions.ScriptDispatchAttempts"/> dispatches it fails. A repeated
+    /// run is harmless — only the first result is applied (the stale guard on CompleteActivity /
+    /// FailActivity). Finished scripts are dropped here.
+    /// </summary>
+    private async Task CheckDispatchedScripts(object state, CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+        foreach (var (activityInstanceId, dispatch) in _dispatchedScripts.ToList())
+        {
+            if (!State.HasActiveEntry(activityInstanceId))
+            {
+                _dispatchedScripts.Remove(activityInstanceId);
+                continue;
+            }
+            if (now < dispatch.DueAt)
+                continue;
+
+            var activityId = dispatch.Request.ActivityId;
+            if (dispatch.Attempt >= WorkerEvaluatorOptions.ScriptDispatchAttempts)
+            {
+                _dispatchedScripts.Remove(activityInstanceId);
+                LogScriptResultTimedOut(activityId, activityInstanceId, dispatch.Attempt);
+                await FailActivity(activityId, activityInstanceId, new TimeoutException(
+                    $"Script task '{activityId}' got no result after {dispatch.Attempt} dispatches " +
+                    $"({_evaluatorOptions.ScriptResultTimeout} each)."));
+                continue;
+            }
+
+            SetWorkflowRequestContext();
+            LogScriptRedispatched(activityId, activityInstanceId, dispatch.Attempt + 1);
+            DispatchScript(dispatch.Request, dispatch.Attempt + 1);
+        }
+
+        if (_dispatchedScripts.Count == 0 && _scriptResultTimer is not null)
+        {
+            _scriptResultTimer.Dispose();
+            _scriptResultTimer = null;
+        }
+    }
+
+    /// <summary>
+    /// On activation, dispatches the script tasks the journal shows as executing: the previous
+    /// activation may have gone away before their results arrived. Never fails the activation.
+    /// </summary>
+    private async Task RedispatchExecutingScripts()
+    {
+        if (State.ProcessDefinitionId is null || State.IsCompleted)
+            return;
+
+        var executing = State.Entries
+            .Where(e => e.IsExecuting && e.ActivityType == nameof(ScriptTask) && State.HasActiveEntry(e.ActivityInstanceId))
+            .ToList();
+        if (executing.Count == 0)
+            return;
+
+        try
+        {
+            var definition = await GetWorkflowDefinition();
+            SetWorkflowRequestContext();
+            foreach (var entry in executing)
+            {
+                var script = definition.GetActivityAcrossScopes(entry.ActivityId) switch
+                {
+                    ScriptTask s => s,
+                    MultiInstanceActivity { InnerActivity: ScriptTask s } => s,
+                    _ => null
+                };
+                if (script is null)
+                    continue;
+
+                DispatchScript(new ExecuteScriptEvent(
+                    this.GetPrimaryKey(), definition.WorkflowId, definition.ProcessDefinitionId,
+                    entry.ActivityInstanceId, entry.ActivityId, script.Script, script.ScriptFormat,
+                    entry.VariablesId), attempt: 1);
+            }
+            LogExecutingScriptsRedispatched(executing.Count);
+        }
+        catch (Exception ex)
+        {
+            // Without a dispatch the result timeout cannot recover them; the next activation retries.
+            LogExecutingScriptsRedispatchFailed(ex, executing.Count);
+        }
     }
 
     private async Task PublishDomainEvent(IDomainEvent domainEvent)
@@ -536,7 +814,13 @@ public partial class WorkflowInstance
             }
         }
 
+        // Every entry point runs the execution loop, which evaluates queued conditions; this only
+        // guards against a path that performed effects without it.
+        if (_pendingConditionEvaluations.Count > 0)
+            await RunExecutionLoop();
+
         await DrainAndRaiseEvents();
+        DispatchQueuedScripts();
 
         DisposePendingEventsTimerIfTerminal();
         DeactivateIfTerminal();
