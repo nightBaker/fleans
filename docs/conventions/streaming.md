@@ -4,14 +4,23 @@
 
 Four stream providers, selected via `FLEANS_STREAMING_PROVIDER`:
 
-- **Redis** (default, multi-silo-safe). Reuses the existing `orleans-redis` container — the engine already provisions Redis for clustering + `PubSubStore`, so durable streaming costs zero extra infrastructure. Uses the third-party [`Universley.OrleansContrib.StreamsProvider.Redis`](https://github.com/MichaelSL/Universley.OrleansContrib.StreamsProvider.Redis) package (MIT, Orleans 10.x-compatible). The version is **pinned** in `Fleans.ServiceDefaults.csproj` — bump deliberately, since the package uses date-based versioning (`YYYY.M.D`) rather than SemVer.
+- **Redis** (default, multi-silo-safe). Reuses the existing `orleans-redis` container — the engine already provisions Redis for clustering, so durable streaming costs zero extra infrastructure. Uses the third-party [`Universley.OrleansContrib.StreamsProvider.Redis`](https://github.com/MichaelSL/Universley.OrleansContrib.StreamsProvider.Redis) package (MIT, Orleans 10.x-compatible). The version is **pinned** in `Fleans.ServiceDefaults.csproj` — bump deliberately, since the package uses date-based versioning (`YYYY.M.D`) rather than SemVer.
 - **Memory** (`FLEANS_STREAMING_PROVIDER=Memory`) — in-process only, single-silo debug-only.
 - **Kafka** (`FLEANS_STREAMING_PROVIDER=Kafka`) — separate Kafka cluster.
 - **AzureQueue** (`FLEANS_STREAMING_PROVIDER=AzureQueue`) — Azurite / Azure Storage.
 
-**Production operational caveat:** Redis streaming requires Redis persistence (AOF or RDB) enabled, otherwise in-flight messages are lost on Redis restart (same concern operators already have for `PubSubStore`).
+**Production operational caveat:** Redis streaming requires Redis persistence (AOF or RDB) enabled, otherwise in-flight messages are lost on Redis restart .
 
 If the third-party Redis-streaming package ever goes unmaintained, the swap-out path is to fork it or build a custom adapter (~530 LoC mirroring `Fleans.Streaming.Kafka`).
+
+## Implicit subscriptions only (no `PubSubStore`)
+
+Every provider registers with `StreamPubSubType.ImplicitOnly` (`FleanStreamingExtensions`, `KafkaSiloBuilderExtensions.AddKafkaStreams`, `AzureQueueSiloBuilderExtensions`, `Fleans.E2E.PluginHost`; #911). All Fleans subscribers are `[ImplicitStreamSubscription]` grains that resume through `GetAllSubscriptionHandles` + `ResumeAsync`, so Orleans needs no `pubsubrendezvous` grain and no `PubSubStore` grain storage. Before #911 the rendezvous state cost one Redis key per stream per instance and was never cleaned up (82 818 keys after 27 606 instances).
+
+**Traps:**
+
+- **An explicit `SubscribeAsync` receives nothing** on a production silo. Add a new subscriber as an `[ImplicitStreamSubscription]` grain. Tests that observe a stream from the client keep explicit pub-sub on their own test silos with a memory `PubSubStore`: `WorkflowTestBase` (used by `CustomTaskRoutingTests`) registers plain `AddMemoryStreams`, and the Kafka integration tests set `ExplicitGrainBasedAndImplicit` back after `AddKafkaStreams` / `AddFleanStreaming`.
+- **Every silo of a cluster must use the same pub-sub type**, plugin hosts included. A host that still uses the Orleans default (`ExplicitGrainBasedAndImplicit`) activates rendezvous grains that need a `PubSubStore` the engine silos no longer register. Plugin hosts that call `AddFleanStreaming` get the right type from the Fleans package version.
 
 ## Kafka integration tests
 

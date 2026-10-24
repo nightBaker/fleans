@@ -149,7 +149,7 @@ See the [Deploy approvals and environments guide](/fleans/guides/deployments/).
 | `ConnectionStrings__fleans-journal` | `ConnectionStrings:fleans-journal` | `Fleans.ServiceDefaults` | Optional database for the workflow journal (event batches + snapshots). Falls back to the `fleans` database when unset; required when `Persistence:Journal:Provider` is not of the main provider's family (e.g. a PostgreSQL journal next to SQLite). |
 | `ConnectionStrings__fleans-reminders` | `ConnectionStrings:fleans-reminders` | `Fleans.ServiceDefaults` | Optional dedicated database for the Orleans reminders when `Fleans:Reminders:Provider=Postgres` (recommended in production). Falls back to `fleans` when unset. See [Reminders](#reminders-timers). |
 | `ConnectionStrings__fleans-cluster` | `ConnectionStrings:fleans-cluster` | `Fleans.ServiceDefaults` | Optional dedicated database for the Orleans membership table when `Fleans:Clustering:Provider=Postgres`. Falls back to `fleans` when unset. See [Clustering](#clustering-orleans-membership). |
-| `ConnectionStrings__orleans-redis` | `ConnectionStrings:orleans-redis` | `Fleans.Api`, `Fleans.WorkerHost`, `Fleans.Web`, `Fleans.Mcp`, custom worker hosts | **Required** — Redis membership (the default `Fleans:Clustering:Provider`), `PubSubStore`, Redis streams and Redis reminders. Note the name — it's `orleans-redis`, not bare `redis`. |
+| `ConnectionStrings__orleans-redis` | `ConnectionStrings:orleans-redis` | `Fleans.Api`, `Fleans.WorkerHost`, `Fleans.Web`, `Fleans.Mcp`, custom worker hosts | **Required** — Redis membership (the default `Fleans:Clustering:Provider`), Redis streams and Redis reminders. Note the name — it's `orleans-redis`, not bare `redis`. |
 
 ### .NET runtime
 

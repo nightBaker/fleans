@@ -12,7 +12,6 @@ using Fleans.Worker.Hosting;
 using Fleans.Worker.Placement;
 using Orleans.Dashboard;
 using Orleans.EventSourcing.CustomStorage;
-using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -44,22 +43,12 @@ if (role != "core" && role != "worker" && role != "combined")
 // With Fleans:Kubernetes:Enabled the silo name is the pod name (which must then start with the role).
 var siloName = FleansClusteringExtensions.ResolveSiloName(builder.Configuration, role);
 
-var orleansRedisConnection = builder.Configuration.GetConnectionString("orleans-redis");
-var isLoadTestMode = builder.Configuration["FLEANS_LOAD_TEST_MODE"] == "true";
-
 builder.UseOrleans(siloBuilder =>
 {
     siloBuilder.Configure<Orleans.Configuration.SiloOptions>(o => o.SiloName = siloName);
 
     // Membership table (Fleans:Clustering:Provider, #885) + opt-in Kubernetes hosting.
     siloBuilder.AddFleansClustering(builder.Configuration);
-
-    if (isLoadTestMode && !string.IsNullOrEmpty(orleansRedisConnection))
-    {
-        siloBuilder.AddRedisGrainStorage("PubSubStore",
-            options => options.ConfigurationOptions =
-                ConfigurationOptions.Parse(orleansRedisConnection));
-    }
 
     // Fleans reminders: Redis-backed for BPMN timer durability across silo restarts (#650).
     // Fails fast at startup if 'orleans-redis' connection string is missing.

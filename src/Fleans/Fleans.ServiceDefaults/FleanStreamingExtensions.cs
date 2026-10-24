@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Orleans.Configuration;
 using Orleans.Hosting;
+using Orleans.Streams;
 using StackExchange.Redis;
 using Universley.OrleansContrib.StreamsProvider.Redis;
 
@@ -18,9 +19,11 @@ public static class FleanStreamingExtensions
     /// <summary>
     /// Configures the Orleans stream provider. Reads <c>Fleans:Streaming:Provider</c> from config
     /// (default: <c>redis</c>; supported: <c>memory</c>, <c>kafka</c>, <c>azurequeue</c>, <c>redis</c>; matched case-insensitively).
-    /// Requires <c>PubSubStore</c> grain storage to be configured by the Aspire AppHost. The
-    /// <c>redis</c> provider also requires a keyed <c>IConnectionMultiplexer</c> named
-    /// <c>orleans-redis</c> in DI (Aspire's <c>AddKeyedRedisClient("orleans-redis")</c>).
+    /// Every provider uses <see cref="StreamPubSubType.ImplicitOnly"/>: all Fleans subscribers are
+    /// <c>[ImplicitStreamSubscription]</c> grains, so no rendezvous grain and no <c>PubSubStore</c>
+    /// grain storage is needed (#911). The <c>redis</c> provider requires a keyed
+    /// <c>IConnectionMultiplexer</c> named <c>orleans-redis</c> in DI (Aspire's
+    /// <c>AddKeyedRedisClient("orleans-redis")</c>).
     /// </summary>
     public static ISiloBuilder AddFleanStreaming(this ISiloBuilder builder, IConfiguration configuration)
     {
@@ -28,7 +31,8 @@ public static class FleanStreamingExtensions
 
         return provider.ToLowerInvariant() switch
         {
-            "memory" => builder.AddMemoryStreams(StreamProviderName),
+            "memory" => builder.AddMemoryStreams(StreamProviderName,
+                b => b.ConfigureStreamPubSub(StreamPubSubType.ImplicitOnly)),
             "kafka" => builder.AddKafkaStreams(
                 StreamProviderName,
                 configuration.GetSection("Fleans:Streaming:Kafka")),
@@ -63,7 +67,8 @@ public static class FleanStreamingExtensions
                 options.TrimTimeMinutes = section.GetValue<int?>("TrimTimeMinutes") ?? 5;
             });
 
-        return builder.AddPersistentStreams(StreamProviderName, RedisStreamFactory.Create, null);
+        return builder.AddPersistentStreams(StreamProviderName, RedisStreamFactory.Create,
+            b => b.ConfigureStreamPubSub(StreamPubSubType.ImplicitOnly));
     }
 
     /// <summary>

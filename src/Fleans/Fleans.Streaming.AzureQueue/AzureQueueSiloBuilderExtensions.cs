@@ -3,6 +3,7 @@ using Azure.Storage.Queues;
 using Microsoft.Extensions.Configuration;
 using Orleans.Hosting;
 using Orleans.Streaming.AzureStorage;
+using Orleans.Streams;
 
 namespace Fleans.Streaming.AzureQueue;
 
@@ -26,18 +27,23 @@ public static class AzureQueueSiloBuilderExtensions
                 "Fleans:Streaming:AzureQueue requires either ConnectionString or AccountName. " +
                 "Set ConnectionString for local dev (Azurite) or AccountName for Managed Identity.");
 
-        return builder.AddAzureQueueStreams(name, ob => ob.Configure(queueOptions =>
+        return builder.AddAzureQueueStreams(name, (SiloAzureQueueStreamConfigurator c) =>
         {
-            queueOptions.QueueServiceClient = string.IsNullOrEmpty(opts.ConnectionString)
-                ? new QueueServiceClient(
-                    new Uri($"https://{opts.AccountName}.queue.core.windows.net"),
-                    new DefaultAzureCredential())
-                : new QueueServiceClient(opts.ConnectionString);
+            // Implicit subscriptions only: no rendezvous grain, no PubSubStore (#911).
+            c.ConfigureStreamPubSub(StreamPubSubType.ImplicitOnly);
+            c.ConfigureAzureQueue(ob => ob.Configure(queueOptions =>
+            {
+                queueOptions.QueueServiceClient = string.IsNullOrEmpty(opts.ConnectionString)
+                    ? new QueueServiceClient(
+                        new Uri($"https://{opts.AccountName}.queue.core.windows.net"),
+                        new DefaultAzureCredential())
+                    : new QueueServiceClient(opts.ConnectionString);
 
-            queueOptions.QueueNames = opts.QueueNames.ToList();
+                queueOptions.QueueNames = opts.QueueNames.ToList();
 
-            if (opts.MessageVisibilityTimeout.HasValue)
-                queueOptions.MessageVisibilityTimeout = opts.MessageVisibilityTimeout.Value;
-        }));
+                if (opts.MessageVisibilityTimeout.HasValue)
+                    queueOptions.MessageVisibilityTimeout = opts.MessageVisibilityTimeout.Value;
+            }));
+        });
     }
 }

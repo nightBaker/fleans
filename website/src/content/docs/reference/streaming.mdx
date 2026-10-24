@@ -59,8 +59,8 @@ For `azurequeue`, exactly one of `ConnectionString` or `AccountName` must be set
 
 ### `memory` — the default
 
-Backed by `AddMemoryStreams`. Zero infrastructure. **Events are lost on silo crash.** Subscription
-state survives because Aspire wires `PubSubStore` to Redis, but in-flight stream messages do not.
+Backed by `AddMemoryStreams`. Zero infrastructure. **Events are lost on silo crash**: in-flight
+stream messages live only in the silo's memory.
 
 Right for: local development, all default tests, and single-silo deployments where you accept the
 event-loss profile of a silo crash.
@@ -311,7 +311,7 @@ helm install fleans nightbaker/fleans \
 
 ### Provider notes
 
-**Redis (default):** Reuses the same Redis instance the engine already runs for clustering and `PubSubStore`, so stream events cost zero extra infrastructure. Uses the third-party [`Universley.OrleansContrib.StreamsProvider.Redis`](https://github.com/MichaelSL/Universley.OrleansContrib.StreamsProvider.Redis) package (MIT, Orleans 10.x-compatible), pinned in `Fleans.ServiceDefaults.csproj`. **Production requirement:** enable Redis persistence (AOF or RDB) — without it, a Redis restart loses in-flight messages (same caveat as `PubSubStore`). The chart's bundled `fleans-redis` enables AOF by default; see [Self-host with Helm](/fleans/guides/self-host-helm/) for the Redis subchart values.
+**Redis (default):** Reuses the same Redis instance the engine already runs for clustering, so stream events cost zero extra infrastructure. Uses the third-party [`Universley.OrleansContrib.StreamsProvider.Redis`](https://github.com/MichaelSL/Universley.OrleansContrib.StreamsProvider.Redis) package (MIT, Orleans 10.x-compatible), pinned in `Fleans.ServiceDefaults.csproj`. **Production requirement:** enable Redis persistence (AOF or RDB) — without it, a Redis restart loses in-flight messages. The chart's bundled `fleans-redis` enables AOF by default; see [Self-host with Helm](/fleans/guides/self-host-helm/) for the Redis subchart values.
 
 **Memory:** No external infrastructure. Drops in-flight events on silo restart — single-silo debug-only. Suitable for local dev and CI smoke tests; never for production.
 
@@ -323,11 +323,14 @@ helm install fleans nightbaker/fleans \
 
 The third-party Redis stream provider resolves a non-keyed `IConnectionMultiplexer` from DI. Aspire registers it as a *keyed* service (`AddKeyedRedisClient("orleans-redis")`). `FleanStreamingExtensions.AddRedisStreams` bridges the two with `TryAddSingleton<IConnectionMultiplexer>(...)` — reusing the same connection pool, no duplicate sockets. If another component needs a different non-keyed multiplexer, register it explicitly before `AddFleanStreaming` runs and `TryAddSingleton` will defer.
 
-## PubSubStore vs. event durability
+## Subscriptions and event durability
 
-`PubSubStore` is the Orleans grain-storage location for **subscription state** (who is
-subscribed to which stream id). Aspire wires it to Redis at `Fleans.Aspire/Program.cs`, so
-subscription state already survives silo restarts under both providers.
+Fleans subscribes to streams only through implicit subscriptions: each handler grain declares the
+stream namespaces it consumes, and Orleans routes events by that declaration. So there is no
+subscription state to store, and no `PubSubStore` grain storage to configure. Every silo in the
+cluster, custom-worker hosts included, uses this mode through `AddFleanStreaming`; a host that
+registers its stream provider by hand must call
+`ConfigureStreamPubSub(StreamPubSubType.ImplicitOnly)` too.
 
 What changes when you opt into Kafka is **event durability** — the bytes flowing between
 `WorkflowEventsPublisher.Publish` and `WorkflowExecuteScriptEventHandler.OnNextAsync`. With the

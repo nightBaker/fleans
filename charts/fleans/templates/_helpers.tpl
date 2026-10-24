@@ -137,8 +137,8 @@ serviceAccountName: {{ include "fleans.siloServiceAccountName" . }}
 
 {{/*
 Env vars only Orleans silos need (core, worker, custom-worker): Kubernetes
-hosting + downward API, the host shutdown timeout, and the PubSubStore that
-Orleans streams require (Aspire injects the same keys under `dotnet run`).
+hosting + downward API and the host shutdown timeout. Streams are implicit-only,
+so there is no PubSubStore grain storage (#911).
 */}}
 {{- define "fleans.siloEnv" -}}
 - name: Fleans__Kubernetes__Enabled
@@ -164,10 +164,6 @@ Orleans streams require (Aspire injects the same keys under `dotnet run`).
 {{- /* .NET HostOptions.ShutdownTimeout: finish the graceful silo stop 10 s before SIGKILL. */}}
 - name: shutdownTimeoutSeconds
   value: {{ sub $grace 10 | quote }}
-- name: Orleans__GrainStorage__PubSubStore__ProviderType
-  value: "Redis"
-- name: Orleans__GrainStorage__PubSubStore__ConnectionName
-  value: "orleans-redis"
 {{- end -}}
 
 {{/*

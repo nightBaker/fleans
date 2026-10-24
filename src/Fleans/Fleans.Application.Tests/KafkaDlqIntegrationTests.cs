@@ -4,6 +4,7 @@ using Fleans.Application.Abstractions.Events;
 using Fleans.Domain.Events;
 using Fleans.Streaming.Kafka;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Orleans.Configuration;
 using Orleans.Hosting;
 using Orleans.Streams;
@@ -212,6 +213,10 @@ public class KafkaDlqIntegrationTests
             };
             var cfg = new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
             siloBuilder.AddKafkaStreams(ProviderName, cfg);
+            // The production provider is implicit-only (#911); these tests observe the stream with
+            // explicit client subscriptions, which need the rendezvous grain and its PubSubStore.
+            siloBuilder.Services.Configure<StreamPubSubOptions>(ProviderName,
+                o => o.PubSubType = StreamPubSubType.ExplicitGrainBasedAndImplicit);
             siloBuilder.AddMemoryGrainStorage("PubSubStore");
         }
     }

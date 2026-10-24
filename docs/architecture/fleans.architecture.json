@@ -144,7 +144,7 @@
       "id": "redis",
       "type": "database",
       "label": "Redis",
-      "sublabel": "Кластер Orleans · PubSubStore",
+      "sublabel": "Кластер Orleans",
       "pos": [
         740,
         65

@@ -27,7 +27,9 @@ public static class KafkaSiloBuilderExtensions
                 b.Configure<KafkaStreamingOptions>(o => o.Configure(opt => configuration.Bind(opt)));
                 b.Configure<SimpleQueueCacheOptions>(_ => { });
                 b.UseConsistentRingQueueBalancer();
-                b.ConfigureStreamPubSub(StreamPubSubType.ExplicitGrainBasedAndImplicit);
+                // Fleans subscribes only through [ImplicitStreamSubscription]: no rendezvous
+                // grain, no PubSubStore (#911). Every silo of the cluster must use the same type.
+                b.ConfigureStreamPubSub(StreamPubSubType.ImplicitOnly);
                 b.ConfigurePullingAgent(ob => ob.Configure<IOptionsMonitor<KafkaStreamingOptions>>((agent, kafka) =>
                 {
                     var opts = kafka.Get(name);

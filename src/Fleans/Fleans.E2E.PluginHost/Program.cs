@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Orleans.Configuration;
+using Orleans.Streams;
 using StackExchange.Redis;
 using Universley.OrleansContrib.StreamsProvider.Redis;
 
@@ -16,9 +17,9 @@ using Universley.OrleansContrib.StreamsProvider.Redis;
 //     and stamps the `plugin-<machine>-<guid>` silo name;
 //   - the only plugin grain is ProbeHandler (`e2e-probe`), so Orleans' GetCompatibleSilos
 //     can place it nowhere but here.
-// Clustering + PubSubStore come from the Aspire-injected Orleans__* configuration
-// (WithReference(orleans) in Fleans.Aspire). Outside Aspire, clustering follows
-// Fleans:Clustering:Provider and PubSubStore comes from FLEANS_LOAD_TEST_MODE.
+// Clustering comes from the Aspire-injected Orleans__* configuration (WithReference(orleans)
+// in Fleans.Aspire). Outside Aspire it follows Fleans:Clustering:Provider. Streams use
+// implicit subscriptions only, like the engine silos, so there is no PubSubStore (#911).
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -90,14 +91,6 @@ builder.UseOrleans(siloBuilder =>
         }
     }
 
-    // Outside Aspire there is no Orleans__* PubSubStore config; mirror Fleans.Api's
-    // FLEANS_LOAD_TEST_MODE wiring.
-    if (builder.Configuration["FLEANS_LOAD_TEST_MODE"] == "true")
-    {
-        siloBuilder.AddRedisGrainStorage("PubSubStore",
-            options => options.ConfigurationOptions = ConfigurationOptions.Parse(orleansRedis));
-    }
-
     // Every silo owns a slice of the reminder-service hash ring, so engine reminders (BPMN
     // timers via TimerCallbackGrain) whose range lands here are served by THIS silo. Without a
     // reminder service the engine's RegisterOrUpdateReminder fails with a TypeLoadException
@@ -131,7 +124,9 @@ builder.UseOrleans(siloBuilder =>
     if (useKafka)
         siloBuilder.AddKafkaStreams(StreamProviderName, builder.Configuration.GetSection("Fleans:Streaming:Kafka"));
     else
-        siloBuilder.AddPersistentStreams(StreamProviderName, RedisStreamFactory.Create, null);
+        // Same pub-sub type as the engine's FleanStreamingExtensions.AddRedisStreams (#911).
+        siloBuilder.AddPersistentStreams(StreamProviderName, RedisStreamFactory.Create,
+            b => b.ConfigureStreamPubSub(StreamPubSubType.ImplicitOnly));
 });
 
 builder.Services.AddHttpClient(ProbeHandler.CallbackClientName);

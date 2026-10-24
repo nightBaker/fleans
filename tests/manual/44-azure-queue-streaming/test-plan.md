@@ -60,7 +60,7 @@ completion after restart. Verifies cross-silo event delivery via Azure Queue Sto
   subscriptions across these queues.
 - In production, set `Fleans:Streaming:AzureQueue:AccountName` instead of
   `ConnectionString` to use Managed Identity. See `reference/streaming.md`.
-- Subscription state lives in Redis (`PubSubStore`) — Azure Queue adds event
-  durability, not subscription durability.
+- Subscriptions are implicit-only, so there is no subscription state to store (#911);
+  Azure Queue adds event durability.
 - `MessageVisibilityTimeout` defaults to the Azure SDK default (30 s). Increase
   if workflows take longer than 30 s between steps under load.

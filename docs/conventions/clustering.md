@@ -93,6 +93,5 @@ The chart sets `terminationGracePeriodSeconds` (default 60) on silo pods and
 
 ## Not covered here
 
-- `PubSubStore` stays on Redis (Aspire injects it; the chart sets the same `Orleans:GrainStorage`
-  keys; `FLEANS_LOAD_TEST_MODE` wires it for the load stack).
+- Stream pub-sub state: there is none, since streams are implicit-only ([streaming.md](streaming.md#implicit-subscriptions-only-no-pubsubstore), #911).
 - Reminders: [reminders.md](reminders.md).
