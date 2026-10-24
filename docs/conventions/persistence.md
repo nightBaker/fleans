@@ -30,7 +30,7 @@ Every silo (Api/Web/Mcp/Worker) calls `EnsureDatabaseSchemaAsync` at startup, wh
 
 EF Core's per-migration lock is acquired only during `__EFMigrationsHistory` writes, not while running the migration SQL — so two silos that both observe a migration as pending can both try to `CREATE TABLE` and the loser fails with `relation "X" already exists`.
 
-`EnsureDatabaseSchemaAsync` wraps `MigrateAsync` in a session-level `pg_advisory_lock(8723547283)` (via a pinned connection from `OpenConnectionAsync`) to serialize concurrent migration attempts cleanly. The lock key is arbitrary but must be the same across all silos. SQLite uses `EnsureCreatedIgnoreRaces` and is unaffected.
+`EnsureDatabaseSchemaAsync` wraps `MigrateAsync` in a **transaction-scoped** `pg_advisory_xact_lock(8723547283)`, held in an open transaction on a connection of its own (`AcquireMigrationLockAsync`: a clone of the context's connection) until the migrations are done, to serialize concurrent migration attempts cleanly. Not a session-level lock (#923): through PgBouncer in transaction mode the lock, the migrations and the unlock each run on whatever server connection the pooler hands out, so the unlock misses and the lock leaks into the pool — the next silo waits forever. An open transaction keeps its server connection, and the lock ends with it even if the process dies. `EnsureDatabaseSchemaTests.ThroughPgBouncerInTransactionMode_…` runs three silos through a real PgBouncer. The lock key is arbitrary but must be the same across all silos. SQLite uses `EnsureCreatedIgnoreRaces` and is unaffected.
 
 ## Custom-task catalog persistence
 
