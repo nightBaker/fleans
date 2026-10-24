@@ -60,6 +60,7 @@ builder.UseOrleans(siloBuilder =>
     siloBuilder.AddCustomStorageBasedLogConsistencyProviderAsDefault();
 
     siloBuilder.AddPlacementDirector<CorePlacementStrategy, CorePlacementDirector>();
+    siloBuilder.AddPlacementDirector<ProjectorPlacementStrategy, ProjectorPlacementDirector>();
     siloBuilder.AddWorkerPlacementFilter();
 
     // Fail fast on Fleans:Role / placement-attribute mismatch (#457).

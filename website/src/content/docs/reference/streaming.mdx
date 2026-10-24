@@ -12,7 +12,8 @@ cross-silo event durability.
 
 The read model rides on the same provider: after an append that changes what lists show, an
 instance publishes `InstanceAdvanced(instanceId, version)` on the `events.InstanceAdvanced`
-namespace, one stream per instance, and a projector grain on a core silo builds the read model
+namespace, one stream per instance, and a projector grain (on a `Projector` silo when there is one,
+otherwise on a core silo) builds the read model
 from the instance's event log. A provider that loses messages (in-memory across a restart, Redis
 without persistence) can leave a list row behind until that instance next activates.
 

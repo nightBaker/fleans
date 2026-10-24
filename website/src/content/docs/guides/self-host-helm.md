@@ -105,6 +105,8 @@ on the install command line via `--set` or pass a `-f my-values.yaml` overlay.
 | `core.resources.limits.memory` | `1Gi` | Hard cap. |
 | `worker.enabled` | `false` | Set `true` to dedicate pods to `[StatelessWorker]` script/condition grains. |
 | `worker.replicas` | `1` | Worker silo count when `worker.enabled=true`. |
+| `projector.enabled` | `false` | Set `true` to run the read-model projector on dedicated `projector-` pods (`Fleans__Role=Projector`) instead of the core silos. |
+| `projector.replicas` | `1` | Projector silo count when `projector.enabled=true`. |
 | `worker.nodeSelector` / `worker.tolerations` | `{}` / `[]` | Pin worker silos to spot/cheaper nodes. |
 | `customWorker.enabled` | `false` | Set `true` to host user-written custom-task plugins on a dedicated silo built from the [`fleans-custom-worker-example`](https://github.com/nightBaker/fleans-custom-worker-example) template. |
 | `customWorker.replicas` | `1` | Custom-worker silo count when `customWorker.enabled=true`. |

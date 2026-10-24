@@ -22,6 +22,7 @@ A production Fleans cluster has these components:
 | --- | --- | --- | --- |
 | **Core silo** (`fleans-api`) | `ghcr.io/nightbaker/fleans-api` with `Fleans__Role=Core` | yes | API endpoints, coordinator grains, workflow state. The same image hosts a `Combined` silo if `Fleans__Role` is unset or `Combined`. |
 | **Worker silo** (`fleans-worker`) | `ghcr.io/nightbaker/fleans-worker` (defaults `Fleans__Role=Worker`) | optional | `[StatelessWorker]` script + condition grains. Skip if a Combined-role API silo handles them. |
+| **Projector silo** (`fleans-projector`) | `ghcr.io/nightbaker/fleans-api` with `Fleans__Role=Projector` | optional | Only the read-model projector (instance lists, finished-instance views). Without it the projector runs on the core silos. Needs the same persistence, streaming, clustering and reminder settings as a core silo; no inbound HTTP. |
 | **Custom-task worker** (your-fork-of-`fleans-custom-worker`) | not published by Fleans — see [Custom Worker Host](/fleans/guides/custom-worker-host/) | optional | Plugin authors fork `Fleans.CustomWorkerHost` and ship their own image. Provides isolation for plugin failures and lets plugin code live outside the engine repo. |
 | **Web admin UI** (`fleans-web`) | `ghcr.io/nightbaker/fleans-web` | optional | Blazor Server admin UI on port `8080`. |
 | **MCP server** (`fleans-mcp`) | `ghcr.io/nightbaker/fleans-mcp` | optional | MCP server on port `5200` for AI-agent integration. |
@@ -40,13 +41,14 @@ All silo and host processes expose two health endpoints, wired through `MapDefau
 
 ### Silo roles
 
-`Fleans:Role` is read once at startup and stamped into the Orleans `SiloName` as `{role}-{machine}-{guid}`. Three values are accepted (case-insensitive):
+`Fleans:Role` is read once at startup and stamped into the Orleans `SiloName` as `{role}-{machine}-{guid}`. Four values are accepted (case-insensitive):
 
 | Value | Default for | Hosts |
 | --- | --- | --- |
 | `Core` | — | Coordinator grains (workflow instances, definitions, correlations). |
 | `Worker` | `fleans-worker`, `fleans-custom-worker` | `[StatelessWorker]` script/condition grains and custom-task plugin grains. |
 | `Combined` | `fleans-api` | Both. Single-binary topology for small deployments and dev. |
+| `Projector` | — | Only the read-model projector (`Fleans.Api` only). The projector prefers these silos and falls back to `Core` / `Combined` ones. |
 
 Invalid values throw at startup. The simplest production topology is one or more `Combined` silos plus Redis + Postgres; split into `Core` + `Worker` only when you need to scale or isolate them.
 
@@ -244,14 +246,14 @@ The full canonical list of every configuration key — what it does, where it's 
 
 | Key | Allowed values | Default | Read by | Notes |
 | --- | --- | --- | --- | --- |
-| `Fleans:Role` | `Core`, `Worker`, `Combined` (case-insensitive) | `Combined` (Api), `Worker` (WorkerHost) | `Fleans.Api`, `Fleans.WorkerHost` | Stamped into `SiloName`. Invalid values throw at startup. |
+| `Fleans:Role` | `Core`, `Worker`, `Combined`, `Projector` (`Fleans.Api` only) (case-insensitive) | `Combined` (Api), `Worker` (WorkerHost) | `Fleans.Api`, `Fleans.WorkerHost` | Stamped into `SiloName`. Invalid values throw at startup. |
 
 ### Connection strings
 
 | Key | Required | Read by | Notes |
 | --- | --- | --- | --- |
 | `ConnectionStrings:fleans` | yes (Postgres mode) | All silos | Workflow command-side database (event store + write model). |
-| `ConnectionStrings:fleans-query` | no | All silos | Read-replica for the query-side projection. Falls back to `fleans` when unset. |
+| `ConnectionStrings:fleans-query` | no | All silos, Web, MCP | Read replica for every read-model query (admin UI, MCP, REST listings). Falls back to `fleans` when unset. See [Persistence → Read replica](/fleans/reference/persistence/#read-replica). |
 | `ConnectionStrings:fleans-journal` | no | All silos | Workflow journal (event batches + snapshots). Falls back to `fleans` when unset. Pair with `Persistence:Journal:Provider=Citus` to shard it. |
 | `ConnectionStrings:orleans-redis` | yes (multi-silo) | All silos | Orleans clustering, reminders and streams when their provider is Redis. **Note the name — it's `orleans-redis`, not bare `redis`.** |
 

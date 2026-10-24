@@ -22,6 +22,8 @@ public static class PluginHostExtensions
         // throws "Unable to load type" at the gateway. See #703.
         siloBuilder.Configure<Orleans.Configuration.EndpointOptions>(o => o.GatewayPort = 0);
         siloBuilder.AddPlacementDirector<CorePlacementStrategy, CorePlacementDirector>();
+        // The host pulls stream queues, so its agents activate the read-model projector (#861).
+        siloBuilder.AddPlacementDirector<ProjectorPlacementStrategy, ProjectorPlacementDirector>();
         siloBuilder.AddWorkerPlacementFilter();
         siloBuilder.AddFleansPlacementAssertion(configuration);
         return siloBuilder;

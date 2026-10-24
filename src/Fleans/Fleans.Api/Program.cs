@@ -75,10 +75,10 @@ if (role == "plugin")
         "for external custom worker hosts (see docs/concepts/custom-tasks.md). Use Core, " +
         "Worker, or Combined for engine silos.");
 }
-if (role != "core" && role != "worker" && role != "combined")
+if (role != "core" && role != "worker" && role != "combined" && role != "projector")
 {
     throw new InvalidOperationException(
-        $"Fleans:Role must be one of 'Core', 'Worker', 'Combined' (case-insensitive) — got '{roleRaw}'.");
+        $"Fleans:Role must be one of 'Core', 'Worker', 'Combined', 'Projector' (case-insensitive) — got '{roleRaw}'.");
 }
 // With Fleans:Kubernetes:Enabled the silo name is the pod name (which must then start with the role).
 var siloName = FleansClusteringExtensions.ResolveSiloName(builder.Configuration, role);
@@ -117,7 +117,14 @@ builder.UseOrleans(siloBuilder =>
     // Worker siblings (and vice versa). Their fallback keeps test silos and Combined silos
     // working even when only a single silo exists.
     siloBuilder.AddPlacementDirector<CorePlacementStrategy, CorePlacementDirector>();
+    siloBuilder.AddPlacementDirector<ProjectorPlacementStrategy, ProjectorPlacementDirector>();
     siloBuilder.AddWorkerPlacementFilter();
+
+    // A Projector silo (the fleans-projector deployment, #861) hosts the read-model projector
+    // and no other Fleans grain; the projector prefers it over core silos.
+    if (role == "projector")
+        siloBuilder.Services.PostConfigure<Orleans.Configuration.GrainTypeOptions>(
+            Fleans.Application.Projections.ProjectorSilo.KeepOnlyProjectorGrains);
 
     // Fail fast on Fleans:Role / placement-attribute mismatch (#457).
     siloBuilder.AddFleansPlacementAssertion(builder.Configuration);
@@ -134,7 +141,9 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure();
-builder.Services.AddRestCallerPlugin();
+// A Projector silo hosts no plugin handler, so it must not advertise one in the catalog.
+if (role != "projector")
+    builder.Services.AddRestCallerPlugin();
 
 // Rate limiting — opt-in: only enabled when RateLimiting section is configured
 var rateLimitSection = builder.Configuration.GetSection("RateLimiting");

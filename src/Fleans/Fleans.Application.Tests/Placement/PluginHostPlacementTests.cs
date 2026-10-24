@@ -150,6 +150,16 @@ public class PluginHostPlacementTests
             "WorkerPlacementFilterStrategy must resolve to WorkerPlacementFilterDirector.");
         Assert.IsNotNull(workerFilterStrategy,
             "AddFleansPluginHost must register WorkerPlacementFilterStrategy by name so Orleans can resolve it.");
+
+        // #861: a plugin host pulls stream queues, so its pulling agents activate the read-model
+        // projector ([ProjectorPlacement]) when they deliver InstanceAdvanced.
+        var projectorDirector = builder.Services.FirstOrDefault(d =>
+            d.ServiceType == typeof(IPlacementDirector)
+            && d.IsKeyedService
+            && Equals(d.ServiceKey, typeof(ProjectorPlacementStrategy)));
+        Assert.IsNotNull(projectorDirector,
+            "AddFleansPluginHost must register ProjectorPlacementDirector — its stream agents place the projector.");
+        Assert.AreEqual(typeof(ProjectorPlacementDirector), projectorDirector.KeyedImplementationType);
     }
 
     private sealed class FakeSiloBuilder : ISiloBuilder

@@ -2,7 +2,7 @@
 
 ## The `Fleans:Role` config knob
 
-`Fleans.Api` reads `Fleans:Role` at startup. Values: `Core`, `Worker`, `Combined` (case-insensitive, default `Combined`; invalid values throw). The role is stamped into `SiloOptions.SiloName` as `{role}-{machine}-{guid}` so other silos see it via Orleans membership. With `Fleans:Kubernetes:Enabled=true` the silo name is the **pod name** instead, which must then start with `{role}-` (startup throws otherwise) — see [clustering.md](clustering.md#kubernetes-hosting-fleanskubernetesenabled).
+`Fleans.Api` reads `Fleans:Role` at startup. Values: `Core`, `Worker`, `Combined`, `Projector` (case-insensitive, default `Combined`; invalid values throw). The role is stamped into `SiloOptions.SiloName` as `{role}-{machine}-{guid}` so other silos see it via Orleans membership. With `Fleans:Kubernetes:Enabled=true` the silo name is the **pod name** instead, which must then start with `{role}-` (startup throws otherwise) — see [clustering.md](clustering.md#kubernetes-hosting-fleanskubernetesenabled).
 
 `Fleans.Worker` hosts the `[StatelessWorker]` script/condition grain **implementations** (`ScriptExecutorGrain`, `ConditionExpressionEvaluatorGrain`); their interfaces live in `Fleans.Application.Abstractions` so callers don't need a Worker reference.
 
@@ -31,7 +31,7 @@ It is registered with Aspire **in publish mode** (`builder.ExecutionContext.IsPu
 
 ### Running the split topology locally
 
-- `FLEANS_SPLIT_ROLES=true` (dev only) mirrors publish: `fleans-core` defaults to `Core` and `fleans-worker` is registered with `Worker` (Kestrel on a dynamic port — WorkerHost has no launch profile). `FLEANS_ROLE` still overrides the core role.
+- `FLEANS_SPLIT_ROLES=true` (dev only) mirrors publish: `fleans-core` defaults to `Core` and `fleans-worker` is registered with `Worker` (Kestrel on a dynamic port — WorkerHost has no launch profile). It also registers `fleans-projector` (`Fleans.Api` with `Projector`, no launch profile, dynamic port; see [Read-model projector silos](#read-model-projector-silos-projector-861)). `FLEANS_ROLE` still overrides the core role.
 - `FLEANS_PLUGIN_HOST_PROJECT=<absolute .csproj path>` (dev only) adds a `fleans-plugin-host` resource with `Fleans__Role=Plugin`, the Orleans cluster reference and the stream-provider env vars — point it at a host built from the custom-worker template to test your plugins against the dev cluster. Never emitted by `aspire publish`.
 - The E2E `e2e-split-roles` leg uses both (with the test-only `Fleans.E2E.PluginHost`); see [`regression-testing.md`](regression-testing.md#split-role-leg-e2e-splitroles).
 
@@ -44,12 +44,23 @@ Observed in that leg — know before relying on the contract:
 
 Container image name: `fleans-worker` via `<ContainerRepository>` in `Fleans.WorkerHost.csproj`.
 
-## Three-role placement contract
+## Read-model projector silos (`Projector`, #861)
 
-`Fleans:Role` accepts three values cluster-wide:
+`Fleans:Role=Projector` turns a `Fleans.Api` process into a `projector-` silo for the read-model projector (`WorkflowInstanceProjector`, see [persistence.md](persistence.md#event-store-journal-snapshots-read-model)). It is the `fleans-projector` deployment: Helm `projector.enabled`, Aspire `FLEANS_SPLIT_ROLES=true`; there is no separate image.
+
+- **Placement: `[ProjectorPlacement]`** (`ProjectorPlacementStrategy` / `ProjectorPlacementDirector` in `Fleans.Application.Abstractions/Placement/`, beside the `Core*` triplet). The director picks an active, compatible `projector-` silo when there is one, else a `core-` / `combined-` silo (the default and dev topologies), else any compatible silo (EventId 11302). It is a placement *strategy* like `[CorePlacement]`, not a filter: it needs active silo names, and Abstractions only has `IManagementGrain`, not `IClusterMembershipService` (Orleans.Runtime), which a synchronous filter would need.
+- **Every silo that pulls stream queues registers the director** (`Fleans.Api`, `Fleans.WorkerHost`, `AddFleansPluginHost`, the test silos). The pulling agent that delivers `InstanceAdvanced` is the caller that activates the projector, and Orleans resolves placement on the caller: a silo without the director throws `KeyNotFoundException`. `PluginHostPlacementTests.AddFleansPluginHost_RegistersCoreDirectorAndWorkerFilter` guards the plugin host. External plugin hosts get it from `AddFleansPluginHost` in the same Fleans version, so engine and plugin hosts upgrade together.
+- **A projector silo hosts only the projector.** `Fleans.Api` post-configures `GrainTypeOptions` with `ProjectorSilo.KeepOnlyProjectorGrains`, which drops every other Fleans grain class. The silo's manifest then lists no other Fleans grain, so `GetCompatibleSilos` never offers it for them — including grains with Orleans' default placement (custom-task handlers), which `[CorePlacement]` / `[WorkerPlacement]` alone would not keep away. It also skips `AddRestCallerPlugin()`, so it never advertises a plugin in the catalog. Orleans' own grains (management, streaming, reminders) stay.
+- **Infrastructure stays.** It still joins the membership table, serves a slice of the reminder ring and the stream queues, and runs the persistence stack (it reads the journal and writes the read model). It remains a client gateway (Fleans.Api's default); nothing routes there on purpose.
+- Tests: `ProjectorPlacementTests` (director and grain-set unit tests) and `ProjectorSiloIntegrationTests` (a `combined-` + `projector-` TestCluster: the projector activates on the projector silo, no other Fleans grain does). The E2E split-roles leg runs `fleans-projector` and checks the listings catch up (`SplitRoleTopologyTests.ReadModel_IsProjected_ByTheProjectorSilo`).
+
+## Placement contract per role
+
+`Fleans:Role` accepts these values cluster-wide:
 
 - **`Core`** (silo prefix `core-`) — engine `Fleans.Api` / `Fleans.Web` / `Fleans.Mcp`; hosts `[CorePlacement]` grains.
 - **`Worker` / `Combined`** (silo prefix `worker-` / `combined-`) — engine workers (`Fleans.WorkerHost` in publish mode, `Fleans.Api` in Combined dev mode); host `[WorkerPlacement]` grains (`ScriptExecutorGrain`, `ConditionExpressionEvaluatorGrain`) and any engine-bundled plugins.
+- **`Projector`** (silo prefix `projector-`) — `Fleans.Api` hosting only the read-model projector (`[ProjectorPlacement]`, section above). Neither `HasCoreRole` nor `HasWorkerRole` accepts the prefix.
 - **`Plugin`** (silo prefix `plugin-`) — **external** custom worker hosts that host ONLY the plugin grains registered via `AddCustomTaskPlugin<T>()`. Engine-internal `[WorkerPlacement]` grains never land here because `WorkerPlacementFilterDirector.HasWorkerRole` rejects the `plugin-` prefix.
 
 `CustomTaskHandlerBase` subclasses MUST NOT carry `[WorkerPlacement]` — they use Orleans default placement, which relies on `GetCompatibleSilos` to pick a silo that has the concrete handler assembly loaded. Per-plugin isolation falls out of grain-class discovery; do not add a custom placement attribute or director for plugin handlers without re-evaluating this invariant.
