@@ -77,6 +77,10 @@ public partial class WorkflowEventsPublisher : Grain, IEventPublisher
                 var completionStream = _streamProvider.GetStream<EvaluateCompletionConditionEvent>(completionStreamId);
                 await completionStream.OnNextAsync(evaluateCompletionConditionEvent);
                 break;
+            case WorkflowActivityExecutedEvent:
+                // Raised for every executed activity and subscribed to by nothing: dropped without a
+                // log line. As a warning it was ~28 log lines per instance on the hot path (#868).
+                break;
             default:
                 // No subscriber exists for the default stream; logging and dropping surfaces
                 // unhandled event types at the publisher rather than fanning them out to a
