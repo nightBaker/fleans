@@ -63,6 +63,27 @@ so **the pod name must start with the role**. `FleansClusteringExtensions.Resolv
 the pod name and throws at startup when the prefix is missing; the chart names silo Deployments
 `<role>-<fullname>`. Without Kubernetes hosting the silo name stays `{role}-{machine}-{guid}`.
 
+## Ring guard: a joining silo reported dead to itself (#902)
+
+`AddFleansClustering` also calls `AddConsistentRingSelfStatusGuard()`, a workaround for an Orleans
+10.4 bug. A silo that starts while the membership table is empty — on a fresh cluster, every silo
+except the first one to write — keeps a synthetic local `Created` entry, because Orleans rejects the
+empty read. When its next read, just before it writes itself as `Joining`, finds another silo but not
+itself, the silo-status listeners get `Dead` for the local silo. The consistent ring takes that as
+"this silo is stopping" and excludes the silo from routing for its whole life. Grain-service calls
+from that silo for keys it owns then go to a neighbour. For reminders this means a `TimerCallbackGrain`
+reminder registered on the neighbour, which since Orleans 10.4 only stores it. The owner loads it at
+its next `RefreshReminderListPeriod`, so the BPMN timer fires up to 5 minutes late. With 3 Core
+replicas starting together, 2 were affected and about 12 % of timers fired late.
+
+The guard swaps the ring's `ISiloStatusOracle` (and only the ring's) for one that drops a terminating
+notification about the local silo while the local silo is not terminating. A real shutdown or
+self-kill updates the local status first, so the ring still sees it. A dropped notification logs
+EventId 11400 (Warning) once per affected silo start. `ConsistentRingSelfStatusGuardTests` reproduces
+the start sequence. Its control test fails once Orleans fixes the bug, which means the guard can go.
+The guard finds the ring registration by its internal type name and fails startup if an Orleans
+upgrade moves it.
+
 ## Graceful shutdown
 
 On SIGTERM the host stops the silo gracefully (leave membership, hand off grains and its reminder

@@ -19,6 +19,8 @@
     <PackageReference Include="MSTest.TestAdapter" Version="4.0.2" />
     <PackageReference Include="MSTest.TestFramework" Version="4.0.2" />
     <PackageReference Include="NSubstitute" Version="5.3.0" />
+    <!-- Code generation for the test grain in ConsistentRingSelfStatusGuardTests (#902). -->
+    <PackageReference Include="Microsoft.Orleans.Sdk" Version="10.4.0" />
   </ItemGroup>
 
   <ItemGroup>

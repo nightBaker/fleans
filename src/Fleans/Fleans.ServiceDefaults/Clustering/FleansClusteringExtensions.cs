@@ -42,6 +42,10 @@ public static class FleansClusteringExtensions
         if (IsKubernetesHostingEnabled(configuration))
             siloBuilder.UseKubernetesHosting();
 
+        // Orleans 10.4 can report a joining silo of a fresh cluster as dead to itself; the ring would
+        // then misroute that silo's reminder registrations for good (#902).
+        siloBuilder.AddConsistentRingSelfStatusGuard();
+
         return siloBuilder;
     }
 
