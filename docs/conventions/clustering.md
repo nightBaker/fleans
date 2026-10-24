@@ -23,7 +23,7 @@ the clients' gateway list.
 | Host | Call |
 |---|---|
 | `Fleans.Api`, `Fleans.WorkerHost` (silos) | `siloBuilder.AddFleansClustering(configuration)` |
-| `Fleans.Web`, `Fleans.Mcp` (clients) | `clientBuilder.AddFleansClustering(configuration)` |
+| `Fleans.Web`, `Fleans.Mcp`, `Fleans.Api` with `Fleans:Role=Api` (clients) | `clientBuilder.AddFleansClustering(configuration)` |
 | `Fleans.E2E.PluginHost` | inline switch on the same key (it must not reference `Fleans.ServiceDefaults`) |
 | External plugin hosts (`AddFleansPluginHost`) | their own `UseRedisClustering` / `UseAdoNetClustering` on the same table — `Fleans.Worker` stays a leaf package |
 
@@ -83,6 +83,24 @@ EventId 11400 (Warning) once per affected silo start. `ConsistentRingSelfStatusG
 the start sequence. Its control test fails once Orleans fixes the bug, which means the guard can go.
 The guard finds the ring registration by its internal type name and fails startup if an Orleans
 upgrade moves it.
+
+## Redis is optional: `AddFleansRedisClient`
+
+Every host registers the keyed `orleans-redis` multiplexer — and with it Aspire's Redis health
+check, which gates `/health` — through `builder.AddFleansRedisClient(FleansHostKind.Silo | Client)`
+(`Fleans.ServiceDefaults/FleansRedisExtensions.cs`). It registers only when
+`FleansRedisExtensions.IsRedisRequired` finds a Redis-backed provider:
+
+- clustering — `Orleans:Clustering:ProviderType` when that section exists (Aspire), else `Fleans:Clustering:Provider`;
+- silos only: `Fleans:Reminders:Provider` and `Fleans:Streaming:Provider`.
+
+Unset counts as Redis (all three default to it). So a host with clustering and reminders on
+Postgres and streams on Kafka / Azure Queue never connects to Redis and its `/health` does not
+depend on it. The helper never throws; each provider's own resolver fails fast on a bad value.
+`Fleans.Web` persists its Data Protection keys to Redis only when the client is registered;
+otherwise they stay in the process (one Web replica with OIDC). `Fleans.E2E.PluginHost` restates
+the rule inline (it must not reference `Fleans.ServiceDefaults`). **Adding a Redis-backed
+provider means extending `IsRedisRequired`** and `FleansRedisExtensionsTests`.
 
 ## Graceful shutdown
 

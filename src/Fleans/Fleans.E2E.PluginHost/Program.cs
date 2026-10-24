@@ -23,8 +23,6 @@ using Universley.OrleansContrib.StreamsProvider.Redis;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-builder.AddKeyedRedisClient("orleans-redis");
-
 // Stream provider must match the engine silos (Fleans:Streaming:Provider). Redis is the
 // split-roles E2E default; Kafka is used by the tests/load multi-silo stack.
 const string StreamProviderName = "StreamProvider";
@@ -35,6 +33,21 @@ if (!useKafka && !streamingProvider.Equals("Redis", StringComparison.OrdinalIgno
     throw new InvalidOperationException(
         $"Fleans.E2E.PluginHost supports only the Redis and Kafka stream providers (got '{streamingProvider}').");
 }
+
+// The orleans-redis client (and its health check) only when a Redis-backed provider is configured.
+// Same rule as the engine's FleansRedisExtensions.IsRedisRequired(Silo), restated here because this
+// host must not reference Fleans.ServiceDefaults (see the .csproj).
+static bool IsRedis(string? provider) => provider is null || provider.Equals("Redis", StringComparison.OrdinalIgnoreCase);
+var orleansClustering = builder.Configuration.GetSection("Orleans:Clustering");
+var usesRedis = !useKafka
+    || IsRedis(builder.Configuration["Fleans:Reminders:Provider"])
+    || (orleansClustering.Exists()
+        ? string.Equals(orleansClustering["ProviderType"], "Redis", StringComparison.OrdinalIgnoreCase)
+        : IsRedis(builder.Configuration["Fleans:Clustering:Provider"]));
+if (usesRedis)
+    builder.AddKeyedRedisClient("orleans-redis");
+string OrleansRedis() => builder.Configuration.GetConnectionString("orleans-redis")
+    ?? throw new InvalidOperationException("ConnectionStrings:orleans-redis is required.");
 
 if (!useKafka)
 {
@@ -59,9 +72,6 @@ builder.UseOrleans(siloBuilder =>
 {
     siloBuilder.AddFleansPluginHost(builder.Configuration);
 
-    var orleansRedis = builder.Configuration.GetConnectionString("orleans-redis")
-        ?? throw new InvalidOperationException("ConnectionStrings:orleans-redis is required.");
-
     // Membership: under Aspire the Orleans:Clustering section wires it. Elsewhere (tests/load
     // docker-compose) use the engine's table, chosen by Fleans:Clustering:Provider (#885) — a plugin
     // silo on a different membership table would form a cluster of its own.
@@ -82,7 +92,7 @@ builder.UseOrleans(siloBuilder =>
         }
         else if (clusteringProvider.Equals("Redis", StringComparison.OrdinalIgnoreCase))
         {
-            siloBuilder.UseRedisClustering(orleansRedis);
+            siloBuilder.UseRedisClustering(OrleansRedis());
         }
         else
         {
@@ -112,7 +122,7 @@ builder.UseOrleans(siloBuilder =>
     }
     else if (remindersProvider.Equals("Redis", StringComparison.OrdinalIgnoreCase))
     {
-        siloBuilder.UseRedisReminderService(o => o.ConfigurationOptions = ConfigurationOptions.Parse(orleansRedis));
+        siloBuilder.UseRedisReminderService(o => o.ConfigurationOptions = ConfigurationOptions.Parse(OrleansRedis()));
     }
     else
     {

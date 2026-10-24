@@ -104,3 +104,5 @@ Fleans ships as a single binary (`Fleans.Api`) that can run in three roles, sele
 The role is stamped onto the silo name as `{role}-{machine}-{guid}`, so the Orleans Dashboard (and other silos via membership gossip) can see which role each silo is running. Set the role via the [`Fleans__Role` environment variable](/fleans/reference/configuration/#silo-role), an `appsettings.json` entry, or a command-line argument.
 
 A small deployment stays on `Combined`. Splitting to `Core` + scaled `Worker` instances is an operational choice you can make later without code changes.
+
+A fourth value, `Api`, runs `Fleans.Api` as an Orleans **client** instead of a silo: it hosts no grains and serves only the REST API, so REST capacity scales separately from the silos that run workflows. It reaches the grains through the cluster's gateways, like the Web admin UI.

@@ -43,8 +43,8 @@ builder.Services.AddInfrastructure();
 // Orleans client, but splitting the registration is a future refactor.
 builder.AddFleansPersistence();
 
-// Redis for Aspire-managed Orleans
-builder.AddKeyedRedisClient("orleans-redis");
+// The orleans-redis client (and its /health check) only when the membership table is on Redis.
+builder.AddFleansRedisClient(FleansHostKind.Client);
 
 // Orleans client — gateway list from the silos' membership table (Fleans:Clustering:Provider, #885);
 // under Aspire, Orleans' own config wires it instead.

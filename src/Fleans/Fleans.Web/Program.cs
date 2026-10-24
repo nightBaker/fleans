@@ -41,8 +41,8 @@ builder.Services.AddInfrastructure();
 // EF Core persistence — provider selected by Persistence:Provider config key (default: Sqlite)
 builder.AddFleansPersistence();
 
-// Register Redis client for Aspire-managed Orleans
-builder.AddKeyedRedisClient("orleans-redis");
+// The orleans-redis client (and its /health check) only when the membership table is on Redis.
+var redisRegistered = builder.AddFleansRedisClient(FleansHostKind.Client);
 
 // Orleans client with Dashboard UI. The gateway list comes from the same membership table as the
 // silos (Fleans:Clustering:Provider, #885); under Aspire, Orleans' own config wires it instead.
@@ -110,16 +110,20 @@ if (authEnabled)
     // Multi-instance support: persist Data Protection keys to the keyed orleans-redis multiplexer
     // so cookies issued by replica A decrypt on replica B (D10). Configured via
     // KeyManagementOptions because PersistKeysToStackExchangeRedis lacks an
-    // IServiceProvider-aware overload for keyed Redis resolution.
+    // IServiceProvider-aware overload for keyed Redis resolution. Without Redis the keys stay
+    // in the pod (ASP.NET Core's default key ring), so run a single Web replica.
     builder.Services.AddDataProtection().SetApplicationName("Fleans.Web");
-    builder.Services.AddOptions<KeyManagementOptions>()
-        .Configure<IServiceProvider>((opts, sp) =>
-        {
-            var multiplexer = sp.GetRequiredKeyedService<IConnectionMultiplexer>("orleans-redis");
-            opts.XmlRepository = new RedisXmlRepository(
-                () => multiplexer.GetDatabase(),
-                "fleans-web-dataprotection-keys");
-        });
+    if (redisRegistered)
+    {
+        builder.Services.AddOptions<KeyManagementOptions>()
+            .Configure<IServiceProvider>((opts, sp) =>
+            {
+                var multiplexer = sp.GetRequiredKeyedService<IConnectionMultiplexer>(FleansRedisExtensions.ConnectionName);
+                opts.XmlRepository = new RedisXmlRepository(
+                    () => multiplexer.GetDatabase(),
+                    "fleans-web-dataprotection-keys");
+            });
+    }
 }
 
 builder.Services.AddCascadingAuthenticationState();
