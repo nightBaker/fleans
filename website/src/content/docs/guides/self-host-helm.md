@@ -371,6 +371,8 @@ worker:
     enabled: true
 ```
 
+With [KEDA](https://keda.sh) and Prometheus in the cluster, `core.autoscaling.keda` (and `worker.autoscaling.keda`) renders a KEDA `ScaledObject` instead: the same CPU target plus Prometheus triggers on Fleans' own metrics, for example the journal append p99 (`fleans_journal_append_duration_seconds`) or the Kafka consumer lag (`fleans_kafka_consumer_lag`) — see the chart README for a full example.
+
 Scale-down is deliberately slow (one silo per 2 minutes after a 5-minute window): each removed silo hands its grains and its reminder range to the others. Keep the target at or below ~70 %: past the CPU ceiling a Fleans cluster stops rather than degrades, so also put a rate limit on the REST entry point (`RateLimiting:WorkflowMutation`) below the measured capacity.
 
 ### Image-pull secrets (private registry mirroring)
