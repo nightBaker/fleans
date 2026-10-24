@@ -49,7 +49,7 @@ If you author a custom-task plugin, follow the same pattern (see the [adding a B
 | 11300–11399 | Grain placement — 11300 no core silo, 11301 no worker silo (Warning); 11311 placement-role violation (Error) |
 | 7020 | Deployment request submitted (Information) |
 | 8200–8201 | `/Deployments/*` — body `UserId` differs from the token (8200), token without a user-id claim (8201) (Warning) |
-| 13000–13099 | `Fleans.Web` admin UI — 13010 promoting a version to another environment (Information), 13011 promotion failed with the target's HTTP status (Warning) |
+| 13000–13099 | `Fleans.Web` admin UI — 13005 promotion failed (Error), 13010 promoting a version to another environment (Information), 13011 a call to another environment (promotion or the environments board) failed with its HTTP status (Warning) |
 | 14300–14305 | Deployment requests — 14300 submitted, 14301 approved, 14302 rejected, 14303 withdrawn, 14304 deployed (Information); 14305 approved but the deploy failed, retry possible (Warning) |
 | 14100–14102 | Retention purge (`POST /Instances/purge`) — 14100 purge started, 14101 batch purged, 14102 purge finished (all Information) |
 

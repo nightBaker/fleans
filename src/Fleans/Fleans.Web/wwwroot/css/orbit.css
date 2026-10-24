@@ -2165,3 +2165,39 @@ button.orbit-log__text:hover {
 .deployments-canvas {
     height: 320px;
 }
+
+/* Environments board (#900 follow-up): one row per process, one column per environment. */
+.environments-board {
+    overflow-x: auto;
+    border: 1px solid var(--o-line);
+    border-radius: 12px;
+    background: var(--o-card);
+}
+
+.environments-board table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.environments-board th,
+.environments-board td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--o-line);
+    white-space: nowrap;
+}
+
+.environments-board th {
+    font-weight: 600;
+    color: var(--o-text2);
+}
+
+.environments-board tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.environments-board td .orbit-pill + .orbit-pill,
+.environments-board th .orbit-pill {
+    margin-left: 6px;
+}

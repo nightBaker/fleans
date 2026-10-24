@@ -39,8 +39,14 @@ Three rules, enforced by the domain (`DeploymentRequestState`):
 With authentication on, the id is the signed-in user (`preferred_username` in the Admin UI,
 `IUserIdResolver` in the API — a body `UserId` that differs from the token is rejected).
 With authentication off, the id is self-declared (the Admin UI asks for a name, the API takes
-the body `UserId`) — the same trust model as user tasks. A group/role restriction for
-reviewers is a possible follow-up, not built now.
+the body `UserId`) — the same trust model as user tasks.
+
+**Reviewer groups** (follow-up): `Fleans:Deployments:ReviewerGroups` adds a fourth rule — the
+reviewer belongs to one of the groups. Captured per request like the count. Groups come from the
+same claim as user-task `candidateGroups` (`Authentication:GroupsClaim`; `roles` restricts by
+role): the API's `IUserGroupResolver` (generalized from the claim DTO to the body's `UserGroups`)
+and the Admin UI's `ActingUser` (the claim is also mapped from UserInfo). Self-declared with auth
+off.
 
 ### Lifecycle
 
@@ -116,8 +122,16 @@ Admin UI makes HTTP calls; it calls *other* clusters, never its own.
 | Admin UI | Editor deploy dialog becomes *Request deployment* when approvals are required; new **Deployments** page (review queue, diagram preview, approve/reject/withdraw/retry); *Promote* on Workflows |
 | Config | `Fleans:Deployments:RequiredApprovals`; `Fleans:Environment:Name`, `Fleans:Environment:PromotionTargets` (Admin UI) |
 
+## Environments board (follow-up)
+
+`/deployments/environments` lists this cluster's processes (first 50, searchable) against every
+promotion target. Version numbers are per cluster, so cells compare a **SHA-256 of the BPMN XML**
+(`IWorkflowQueryService.GetVersionFingerprints`; remote: `GET /Definitions/latest?keys=…`):
+*in sync* (target runs our latest), *runs vK* (an older version of ours), *differs* (a diagram we
+never deployed), *not deployed*, plus the target's pending requests. Promotion keeps the XML exact,
+so a promoted version always matches. Reads use the promotion credentials; an unreachable target
+marks its column only. The promote dialog is the shared `PromoteDialog` component.
+
 ## Not built (follow-ups if asked)
 
-- Reviewer group/role restriction.
-- Reading version state *from* remote environments (a cross-environment board).
 - Auto-promotion on approval.

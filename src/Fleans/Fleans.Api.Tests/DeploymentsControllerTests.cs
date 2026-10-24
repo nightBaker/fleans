@@ -9,6 +9,7 @@ using Fleans.Domain.States;
 using Fleans.ServiceDefaults.DTOs;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -30,7 +31,7 @@ public class DeploymentsControllerTests
         _queries = Substitute.For<IWorkflowQueryService>();
         _commands.SubmitDeployment(default!, default!, default, default)
             .ReturnsForAnyArgs(ci => Request(requestedBy: ci.ArgAt<string>(1)));
-        _commands.ApproveDeployment(default, default!, default)
+        _commands.ApproveDeployment(default, default!, default!, default)
             .ReturnsForAnyArgs(_ => Request());
     }
 
@@ -74,12 +75,15 @@ public class DeploymentsControllerTests
     [TestMethod]
     public async Task Approve_Jwt_ApprovesAsTokenUser()
     {
-        var controller = JwtController(tokenUser: "bob");
+        var controller = JwtController(tokenUser: "bob", ("groups", "release-managers"));
 
-        var result = await controller.Approve(RequestId, new ApproveDeploymentRequest(Comment: "ok"));
+        // Body groups are ignored under JWT: they come from the token's groups claim.
+        var result = await controller.Approve(RequestId,
+            new ApproveDeploymentRequest(Comment: "ok", UserGroups: ["admins"]));
 
         Assert.IsInstanceOfType<OkObjectResult>(result);
-        await _commands.Received(1).ApproveDeployment(RequestId, "bob", "ok");
+        await _commands.Received(1).ApproveDeployment(RequestId, "bob",
+            Arg.Is<IReadOnlyList<string>>(g => g.SequenceEqual(new[] { "release-managers" })), "ok");
     }
 
     [TestMethod]
@@ -90,7 +94,7 @@ public class DeploymentsControllerTests
         var result = await controller.Reject(RequestId, new RejectDeploymentRequest(" ", UserId: "bob"));
 
         Assert.IsInstanceOfType<BadRequestObjectResult>(result);
-        await _commands.DidNotReceiveWithAnyArgs().RejectDeployment(default, default!, default!);
+        await _commands.DidNotReceiveWithAnyArgs().RejectDeployment(default, default!, default!, default!);
     }
 
     [TestMethod]
@@ -120,6 +124,30 @@ public class DeploymentsControllerTests
         StringAssert.Contains(error.Error, "/Deployments/requests");
     }
 
+    [TestMethod]
+    public async Task ListLatestVersions_PassesDistinctKeys_LatestOnly()
+    {
+        _queries.GetVersionFingerprints(default!, default).ReturnsForAnyArgs(
+            [new ProcessVersionFingerprint("order-process", 3, true, DateTimeOffset.UtcNow, "abc")]);
+        var controller = new DefinitionsController(_commands, _queries, Substitute.For<IBpmnConverter>());
+
+        var result = await controller.ListLatestVersions(["order-process", "order-process"]);
+
+        Assert.IsInstanceOfType<OkObjectResult>(result);
+        await _queries.Received(1).GetVersionFingerprints(
+            Arg.Is<IReadOnlyCollection<string>>(k => k.SequenceEqual(new[] { "order-process" })), true);
+    }
+
+    [TestMethod]
+    public async Task ListLatestVersions_TooManyKeys_Returns400()
+    {
+        var controller = new DefinitionsController(_commands, _queries, Substitute.For<IBpmnConverter>());
+
+        var result = await controller.ListLatestVersions(Enumerable.Range(0, 101).Select(i => $"p{i}").ToArray());
+
+        Assert.IsInstanceOfType<BadRequestObjectResult>(result);
+    }
+
     private static DeploymentRequestState Request(string requestedBy = "alice")
     {
         var request = new DeploymentRequestState();
@@ -127,14 +155,17 @@ public class DeploymentsControllerTests
         return request;
     }
 
-    private DeploymentsController JwtController(string tokenUser) =>
-        Controller(UserIdResolverTests.Jwt(), UserIdResolverTests.Authenticated(("preferred_username", tokenUser)));
+    private DeploymentsController JwtController(string tokenUser, params (string Type, string Value)[] extraClaims) =>
+        Controller(UserIdResolverTests.Jwt(),
+            UserIdResolverTests.Authenticated([("preferred_username", tokenUser), .. extraClaims]),
+            new JwtUserGroupResolver(new ConfigurationBuilder().Build()));
 
     private DeploymentsController BodyController() =>
-        Controller(new BodyUserIdResolver(), new DefaultHttpContext());
+        Controller(new BodyUserIdResolver(), new DefaultHttpContext(), new BodyUserGroupResolver());
 
-    private DeploymentsController Controller(IUserIdResolver userIdResolver, HttpContext httpContext) =>
-        new(NullLogger<DeploymentsController>.Instance, _commands, _queries, userIdResolver)
+    private DeploymentsController Controller(IUserIdResolver userIdResolver, HttpContext httpContext,
+        IUserGroupResolver groupResolver) =>
+        new(NullLogger<DeploymentsController>.Instance, _commands, _queries, userIdResolver, groupResolver)
         {
             ControllerContext = new ControllerContext { HttpContext = httpContext },
         };

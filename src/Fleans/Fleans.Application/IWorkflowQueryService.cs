@@ -27,6 +27,13 @@ public interface IWorkflowQueryService
 
     /// <summary>Deployment requests (#900), newest first; all statuses when <paramref name="status"/> is null.</summary>
     Task<IReadOnlyList<DeploymentRequestSummary>> GetDeploymentRequests(DeploymentRequestStatus? status = null, int limit = 100);
+    /// <summary>
+    /// The versions of <paramref name="processDefinitionKeys"/> with a hash of each version's BPMN,
+    /// newest first per key; only each key's latest version when <paramref name="latestOnly"/>.
+    /// Unknown keys are left out.
+    /// </summary>
+    Task<IReadOnlyList<ProcessVersionFingerprint>> GetVersionFingerprints(
+        IReadOnlyCollection<string> processDefinitionKeys, bool latestOnly);
     /// <summary>One deployment request with its BPMN XML, or <c>null</c>.</summary>
     Task<DeploymentRequestState?> GetDeploymentRequest(Guid requestId);
 }

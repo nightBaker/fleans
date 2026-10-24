@@ -296,14 +296,15 @@ public partial class WorkflowCommandService : IWorkflowCommandService
         var requestId = Guid.NewGuid();
         LogSubmittingDeployment(requestId, requestedBy);
         return await _grainFactory.GetGrain<IDeploymentRequestGrain>(requestId)
-            .Submit(bpmnXml, requestedBy, comment, _deploymentApprovals.RequiredApprovals, deployDisabled);
+            .Submit(bpmnXml, requestedBy, comment, _deploymentApprovals.RequiredApprovals, deployDisabled,
+                _deploymentApprovals.ReviewerGroups.ToList());
     }
 
-    public Task<DeploymentRequestState> ApproveDeployment(Guid requestId, string userId, string? comment) =>
-        _grainFactory.GetGrain<IDeploymentRequestGrain>(requestId).Approve(userId, comment);
+    public Task<DeploymentRequestState> ApproveDeployment(Guid requestId, string userId, IReadOnlyList<string> userGroups, string? comment) =>
+        _grainFactory.GetGrain<IDeploymentRequestGrain>(requestId).Approve(userId, userGroups.ToList(), comment);
 
-    public Task<DeploymentRequestState> RejectDeployment(Guid requestId, string userId, string reason) =>
-        _grainFactory.GetGrain<IDeploymentRequestGrain>(requestId).Reject(userId, reason);
+    public Task<DeploymentRequestState> RejectDeployment(Guid requestId, string userId, IReadOnlyList<string> userGroups, string reason) =>
+        _grainFactory.GetGrain<IDeploymentRequestGrain>(requestId).Reject(userId, userGroups.ToList(), reason);
 
     public Task<DeploymentRequestState> WithdrawDeployment(Guid requestId, string userId) =>
         _grainFactory.GetGrain<IDeploymentRequestGrain>(requestId).Withdraw(userId);

@@ -31,7 +31,7 @@ public class DeploymentRequestGrainTests : WorkflowTestBase
         var key = "deploy-at-once";
 
         // Act
-        var request = await NewRequest().Submit(Bpmn(key), "alice", "first version", requiredApprovals: 0, deployDisabled: false);
+        var request = await NewRequest().Submit(Bpmn(key), "alice", "first version", requiredApprovals: 0, deployDisabled: false, reviewerGroups: []);
 
         // Assert
         Assert.AreEqual(DeploymentRequestStatus.Deployed, request.Status);
@@ -46,12 +46,12 @@ public class DeploymentRequestGrainTests : WorkflowTestBase
         // Arrange
         var key = "two-reviewers";
         var grain = NewRequest();
-        await grain.Submit(Bpmn(key), "alice", "adds a timer", requiredApprovals: 2, deployDisabled: false);
+        await grain.Submit(Bpmn(key), "alice", "adds a timer", requiredApprovals: 2, deployDisabled: false, reviewerGroups: []);
 
         // Act
-        var afterFirst = await grain.Approve("bob", "looks right");
+        var afterFirst = await grain.Approve("bob", [], "looks right");
         var versionsAfterFirst = await QueryService.GetMaxVersionByKeyAsync(key);
-        var afterSecond = await grain.Approve("carol", null);
+        var afterSecond = await grain.Approve("carol", [], null);
 
         // Assert
         Assert.AreEqual(DeploymentRequestStatus.Pending, afterFirst.Status);
@@ -67,10 +67,10 @@ public class DeploymentRequestGrainTests : WorkflowTestBase
         // Arrange
         var key = "self-approval";
         var grain = NewRequest();
-        await grain.Submit(Bpmn(key), "alice", null, requiredApprovals: 1, deployDisabled: false);
+        await grain.Submit(Bpmn(key), "alice", null, requiredApprovals: 1, deployDisabled: false, reviewerGroups: []);
 
         // Act
-        await Assert.ThrowsAsync<InvalidOperationException>(() => grain.Approve("alice", null));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => grain.Approve("alice", [], null));
 
         // Assert
         var state = await grain.GetState();
@@ -86,15 +86,15 @@ public class DeploymentRequestGrainTests : WorkflowTestBase
         // Arrange
         var key = "rejected-process";
         var grain = NewRequest();
-        await grain.Submit(Bpmn(key), "alice", null, requiredApprovals: 1, deployDisabled: false);
+        await grain.Submit(Bpmn(key), "alice", null, requiredApprovals: 1, deployDisabled: false, reviewerGroups: []);
 
         // Act
-        var rejected = await grain.Reject("bob", "no error boundary on the payment task");
+        var rejected = await grain.Reject("bob", [], "no error boundary on the payment task");
 
         // Assert
         Assert.AreEqual(DeploymentRequestStatus.Rejected, rejected.Status);
         Assert.AreEqual("no error boundary on the payment task", rejected.CloseReason);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => grain.Approve("carol", null));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => grain.Approve("carol", [], null));
         Assert.AreEqual(0, await QueryService.GetMaxVersionByKeyAsync(key));
     }
 
@@ -105,7 +105,7 @@ public class DeploymentRequestGrainTests : WorkflowTestBase
         var key = "deploy-disabled";
 
         // Act
-        var request = await NewRequest().Submit(Bpmn(key), "alice", null, requiredApprovals: 0, deployDisabled: true);
+        var request = await NewRequest().Submit(Bpmn(key), "alice", null, requiredApprovals: 0, deployDisabled: true, reviewerGroups: []);
 
         // Assert
         Assert.AreEqual(DeploymentRequestStatus.Deployed, request.Status);
@@ -120,7 +120,7 @@ public class DeploymentRequestGrainTests : WorkflowTestBase
 
         // Act
         await Assert.ThrowsAsync<ArgumentException>(() =>
-            grain.Submit("<definitions/>", "alice", null, requiredApprovals: 1, deployDisabled: false));
+            grain.Submit("<definitions/>", "alice", null, requiredApprovals: 1, deployDisabled: false, reviewerGroups: []));
 
         // Assert
         Assert.IsNull(await grain.GetState());
@@ -132,11 +132,11 @@ public class DeploymentRequestGrainTests : WorkflowTestBase
         // Arrange
         var key = "flaky-deploy";
         var grain = NewRequest();
-        await grain.Submit(Bpmn(key), "alice", null, requiredApprovals: 1, deployDisabled: false);
+        await grain.Submit(Bpmn(key), "alice", null, requiredApprovals: 1, deployDisabled: false, reviewerGroups: []);
         StubBpmnConverter.FailNextParses[key] = 1;
 
         // Act
-        var failed = await grain.Approve("bob", null);
+        var failed = await grain.Approve("bob", [], null);
         var retried = await grain.RetryDeployment();
 
         // Assert
@@ -155,8 +155,8 @@ public class DeploymentRequestGrainTests : WorkflowTestBase
         var key = "listed-process";
         var id = Guid.NewGuid();
         var grain = Cluster.GrainFactory.GetGrain<IDeploymentRequestGrain>(id);
-        await grain.Submit(Bpmn(key), "alice", "please review", requiredApprovals: 2, deployDisabled: false);
-        await grain.Approve("bob", null);
+        await grain.Submit(Bpmn(key), "alice", "please review", requiredApprovals: 2, deployDisabled: false, reviewerGroups: []);
+        await grain.Approve("bob", [], null);
 
         // Act
         await Cluster.GrainFactory.GetGrain<IManagementGrain>(0).ForceActivationCollection(TimeSpan.Zero);
@@ -173,6 +173,26 @@ public class DeploymentRequestGrainTests : WorkflowTestBase
         Assert.AreEqual("bob", row.Approvals.Single().UserId);
         Assert.AreEqual(Bpmn(key), stored?.BpmnXml);
         Assert.AreEqual(0, (await QueryService.GetDeploymentRequests(DeploymentRequestStatus.Deployed)).Count(r => r.Id == id));
+    }
+
+    [TestMethod]
+    public async Task Approve_OnlyByAReviewerGroupMember_WhenGroupsAreRequired()
+    {
+        // Arrange
+        var key = "group-reviewed";
+        var grain = NewRequest();
+        await grain.Submit(Bpmn(key), "alice", null, requiredApprovals: 1, deployDisabled: false,
+            reviewerGroups: ["release-managers"]);
+
+        // Act
+        await Assert.ThrowsAsync<InvalidOperationException>(() => grain.Approve("bob", ["developers"], null));
+        var approved = await grain.Approve("carol", ["release-managers"], null);
+
+        // Assert
+        Assert.AreEqual(DeploymentRequestStatus.Deployed, approved.Status);
+        Assert.AreEqual("carol", approved.Approvals.Single().UserId);
+        var listed = (await QueryService.GetDeploymentRequests()).Single(r => r.Id == approved.Id);
+        CollectionAssert.AreEqual(new[] { "release-managers" }, listed.ReviewerGroups);
     }
 
     private class StubConverterConfigurator : ISiloConfigurator

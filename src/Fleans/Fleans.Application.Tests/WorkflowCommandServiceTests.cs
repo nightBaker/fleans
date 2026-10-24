@@ -154,7 +154,7 @@ namespace Fleans.Application.Tests
         {
             // Arrange
             var service = new WorkflowCommandService(_grainFactory, NullLogger<WorkflowCommandService>.Instance,
-                Options.Create(new DeploymentApprovalOptions { RequiredApprovals = 2 }));
+                Options.Create(new DeploymentApprovalOptions { RequiredApprovals = 2, ReviewerGroups = ["release-managers"] }));
             var requestGrain = Substitute.For<IDeploymentRequestGrain>();
             _grainFactory.GetGrain<IDeploymentRequestGrain>(Arg.Any<Guid>(), Arg.Any<string?>()).Returns(requestGrain);
 
@@ -162,7 +162,8 @@ namespace Fleans.Application.Tests
             await service.SubmitDeployment("<bpmn/>", "alice", "note", deployDisabled: true);
 
             // Assert
-            await requestGrain.Received(1).Submit("<bpmn/>", "alice", "note", 2, true);
+            await requestGrain.Received(1).Submit("<bpmn/>", "alice", "note", 2, true,
+                Arg.Is<List<string>>(g => g.SequenceEqual(new[] { "release-managers" })));
         }
     }
 }

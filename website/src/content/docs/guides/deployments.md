@@ -46,7 +46,21 @@ extraEnv:
   user (`preferred_username`); without it, the name the reviewer types on the Deployments page
   (self-declared, as for user tasks over the API);
 - **not the requester**;
-- each reviewer **once** — two approvals need two different people.
+- each reviewer **once** — two approvals need two different people;
+- when **reviewer groups** are set, a member of at least one of them.
+
+| Env var | Default | Meaning |
+|---|---|---|
+| `Fleans__Deployments__ReviewerGroups__0`, `__1`, … | *(none)* | Groups whose members may approve or reject. Empty: anyone but the requester. |
+
+Groups come from the claim named by `Authentication__GroupsClaim` (default `groups`) — the same
+claim user tasks use for `candidateGroups`. To restrict reviewers by **role** instead, set
+`Authentication__GroupsClaim=roles` and list role names. Set the claim on the API and the Admin UI
+alike. Without authentication, reviewers type their groups next to their name on the Deployments
+page (self-declared), and API callers send `UserGroups` in the body.
+
+Like the approval count, the groups are fixed when a request is submitted. The Deployments page
+shows them on each request and explains why the buttons are disabled for someone outside them.
 
 ### When a deploy fails
 
@@ -110,8 +124,22 @@ extraEnv:
 The Admin UI must be able to reach the target's API over the network, and the target's API must
 accept the token (its `Authentication__Audience`).
 
-## Limits
+## Environments board
 
-- Reviewers can't yet be restricted to a group or role — any identified user other than the
-  requester may approve.
-- The Admin UI doesn't read versions *from* other environments; it only pushes to them.
+**Deployments → Environments** shows, for each process deployed here, which version every
+promotion target runs and how it compares:
+
+| Cell | Meaning |
+|---|---|
+| **in sync** | The target runs this cluster's latest diagram. |
+| **runs v*K*** | The target runs this cluster's older version *K* — promote to catch it up. |
+| **differs** | The target runs a diagram this cluster never deployed (edited there directly). |
+| *not deployed* | The target has no version of the process. |
+| ***N* pending** | Deployment requests for the process wait for reviewers on the target. |
+
+Version numbers are per cluster — v3 here and v1 on the target can be the same diagram — so the
+board compares the **BPMN content** (a SHA-256 of the stored XML; promotion keeps the XML exact).
+It reads each target's `GET /Definitions/latest` and `GET /Deployments/requests` with the same
+credentials as promotion; a target that can't be reached is marked *unreachable* without hiding
+the others. **Promote** on a row opens the promote dialog with the first out-of-sync target
+selected. The board lists the first 50 processes; search narrows it down.

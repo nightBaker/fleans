@@ -331,6 +331,10 @@ namespace Fleans.Persistence.PostgreSql.Migrations.Command
                     b.Property<int>("RequiredApprovals")
                         .HasColumnType("integer");
 
+                    b.Property<string>("ReviewerGroups")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 

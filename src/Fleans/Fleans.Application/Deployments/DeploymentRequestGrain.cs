@@ -29,11 +29,11 @@ public partial class DeploymentRequestGrain : Grain, IDeploymentRequestGrain
     private DeploymentRequestState Request => _state.State;
 
     public async Task<DeploymentRequestState> Submit(string bpmnXml, string requestedBy, string? comment,
-        int requiredApprovals, bool deployDisabled)
+        int requiredApprovals, bool deployDisabled, List<string> reviewerGroups)
     {
         var workflow = await Parse(bpmnXml);
         Request.Submit(this.GetPrimaryKey(), workflow.WorkflowId, bpmnXml, requestedBy, comment,
-            requiredApprovals, deployDisabled, DateTimeOffset.UtcNow);
+            requiredApprovals, deployDisabled, DateTimeOffset.UtcNow, reviewerGroups);
         await _state.WriteStateAsync();
         LogSubmitted(Request.Id, Request.ProcessDefinitionKey, requestedBy, requiredApprovals);
 
@@ -42,9 +42,9 @@ public partial class DeploymentRequestGrain : Grain, IDeploymentRequestGrain
         return Request;
     }
 
-    public async Task<DeploymentRequestState> Approve(string userId, string? comment)
+    public async Task<DeploymentRequestState> Approve(string userId, List<string> userGroups, string? comment)
     {
-        Request.Approve(userId, comment, DateTimeOffset.UtcNow);
+        Request.Approve(userId, userGroups, comment, DateTimeOffset.UtcNow);
         // Persisted before the deploy: a failed deploy must not lose the approval.
         await _state.WriteStateAsync();
         LogApproved(Request.Id, userId, Request.Approvals.Count, Request.RequiredApprovals);
@@ -54,9 +54,9 @@ public partial class DeploymentRequestGrain : Grain, IDeploymentRequestGrain
         return Request;
     }
 
-    public async Task<DeploymentRequestState> Reject(string userId, string reason)
+    public async Task<DeploymentRequestState> Reject(string userId, List<string> userGroups, string reason)
     {
-        Request.Reject(userId, reason, DateTimeOffset.UtcNow);
+        Request.Reject(userId, userGroups, reason, DateTimeOffset.UtcNow);
         await _state.WriteStateAsync();
         LogRejected(Request.Id, userId);
         return Request;

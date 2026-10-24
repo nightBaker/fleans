@@ -135,6 +135,7 @@ See the [Deploy approvals and environments guide](/fleans/guides/deployments/).
 | Env var | Config key | Read at | Default | Purpose |
 | --- | --- | --- | --- | --- |
 | `Fleans__Deployments__RequiredApprovals` | `Fleans:Deployments:RequiredApprovals` | `Fleans.Api`, `Fleans.Web`, `Fleans.Mcp` — **set it on all of them** | `0` | Approvals from distinct non-requesters a deploy needs. `0` deploys immediately; above it direct deploys answer 409 and go through deployment requests. |
+| `Fleans__Deployments__ReviewerGroups__N` | `Fleans:Deployments:ReviewerGroups:N` | `Fleans.Api`, `Fleans.Web`, `Fleans.Mcp` | *(none)* | Groups (from `Authentication:GroupsClaim`; `roles` for roles) whose members may approve or reject. Empty: anyone but the requester. |
 | `Fleans__Environment__Name` | `Fleans:Environment:Name` | `Fleans.Web` | *(empty: "this Fleans cluster")* | This cluster's name in the Admin UI. |
 | `Fleans__Environment__PromotionTargets__N__Name`, `…__ApiUrl` | `Fleans:Environment:PromotionTargets:N:Name`, `…:ApiUrl` | `Fleans.Web` | *(none)* | Clusters this Admin UI can promote a version to. Names must be unique, URLs absolute — checked at startup. |
 | `Fleans__Environment__PromotionTargets__N__TokenUrl`, `…__ClientId`, `…__ClientSecret`, `…__Scope` | `…:TokenUrl`, `…:ClientId`, `…:ClientSecret`, `…:Scope` | `Fleans.Web` | *(none)* | OAuth2 client credentials for a target with authentication on. |

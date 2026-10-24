@@ -16,4 +16,5 @@ public sealed record DeploymentRequestSummary(
     string? ClosedBy,
     string? CloseReason,
     int? DeployedVersion,
-    string? DeployError);
+    string? DeployError,
+    List<string> ReviewerGroups);

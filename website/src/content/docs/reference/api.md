@@ -27,8 +27,9 @@ All paths below are relative to the API base URL (`https://localhost:7140` in th
 | `/Deployments/requests` | POST | `{"BpmnXml":"...", "Comment":"...", "DeployDisabled":false, "RequestedBy":"alice"}` — a deploy that needs approvals. See [Deployment request endpoints](#deployment-request-endpoints). |
 | `/Deployments/requests` | GET | `?status=Pending` *(optional)* — newest first, without the BPMN. |
 | `/Deployments/requests/{id}` | GET | *(none)* — one request. `…/{id}/bpmn` returns its BPMN XML. |
-| `/Deployments/requests/{id}/approve` | POST | `{"UserId":"bob", "Comment":"optional"}` |
-| `/Deployments/requests/{id}/reject` | POST | `{"UserId":"bob", "Reason":"required"}` |
+| `/Deployments/requests/{id}/approve` | POST | `{"UserId":"bob", "Comment":"optional", "UserGroups":["release-managers"]}` — `UserGroups` only when auth is off |
+| `/Deployments/requests/{id}/reject` | POST | `{"UserId":"bob", "Reason":"required", "UserGroups":["release-managers"]}` |
+| `/Definitions/latest` | GET | `?keys=order-process&keys=invoice` *(up to 100)* — each process's latest version with `bpmnSha256`, a SHA-256 of its BPMN XML. Used by other environments' [environments board](/fleans/guides/deployments/#environments-board). |
 | `/Deployments/requests/{id}/withdraw` | POST | `{"UserId":"alice"}` — requester only. |
 | `/Deployments/requests/{id}/retry` | POST | *(empty body)* — deploys an approved request whose deploy failed. |
 
@@ -91,7 +92,7 @@ This reads the `.bpmn` file, JSON-escapes it with `jq -Rs`, and sends it to the 
 
 A deployment request is a deploy that waits for `Fleans__Deployments__RequiredApprovals` approvals from distinct users other than the requester, then deploys itself as the next version. With `0` required, `POST /Deployments/requests` deploys at once — that is how another environment's Admin UI [promotes](/fleans/guides/deployments/#environments-and-promotion) a version here. See the [Deploy approvals guide](/fleans/guides/deployments/) for the workflow.
 
-**Identity.** `RequestedBy` / `UserId` follow the user-task rule: required when authentication is off; under JWT auth the user comes from the token, and a body value that differs from it is rejected with `403`.
+**Identity.** `RequestedBy` / `UserId` follow the user-task rule: required when authentication is off; under JWT auth the user comes from the token, and a body value that differs from it is rejected with `403`. `UserGroups` follows the `candidateGroups` rule: read from the body when authentication is off, from the token's `Authentication:GroupsClaim` under JWT (body ignored). They are checked against the request's `reviewerGroups` (`Fleans__Deployments__ReviewerGroups`).
 
 **Submit**
 
@@ -123,7 +124,8 @@ Content-Type: application/json
   "closedBy": null,
   "closeReason": null,
   "deployedVersion": null,
-  "deployError": null
+  "deployError": null,
+  "reviewerGroups": ["release-managers"]
 }
 ```
 
@@ -134,7 +136,7 @@ Content-Type: application/json
 | `400` | Empty or invalid BPMN, missing `UserId` (auth off), reject without `Reason`. |
 | `403` | Body `UserId` differs from the token user. |
 | `404` | Unknown request id. |
-| `409` | The transition isn't allowed: the requester approving or rejecting their own request, a second approval by the same user, or acting on a request that is no longer pending. |
+| `409` | The transition isn't allowed: the requester approving or rejecting their own request, a second approval by the same user, a reviewer outside `reviewerGroups`, or acting on a request that is no longer pending. |
 
 ### `POST /Execution/start`
 
@@ -664,7 +666,7 @@ Paths are relative to the API base URL.
 |--------|-----------|-------------|
 | `WorkflowMutation` | `POST /Execution/start`, `/Execution/message`, `/Execution/signal`, `/Execution/evaluate-conditions`, `/Definitions/deploy`, `/Deployments/requests` | Workflow lifecycle write operations (start instance, deliver event, evaluate conditions, deploy BPMN) |
 | `TaskOperation` | `POST /Execution/complete-activity`, `/UserTasks/{activityInstanceId}/claim`, `/UserTasks/{activityInstanceId}/unclaim`, `/UserTasks/{activityInstanceId}/complete`, `/UserTasks/{activityInstanceId}/fail`, `/UserTasks/{activityInstanceId}/cancel` | Activity-completion + user-task operations — see [User Tasks guide](/fleans/guides/user-tasks/) |
-| `Read` | `GET /Definitions`, `/Definitions/{key}/instances`, `/Definitions/{key}/{version}/instances`, `/UserTasks`, `/UserTasks/{activityInstanceId}`, `/Deployments/requests`, `/Deployments/requests/{id}`, `/Deployments/requests/{id}/bpmn` | Read-only queries |
+| `Read` | `GET /Definitions`, `/Definitions/{key}/instances`, `/Definitions/{key}/{version}/instances`, `/UserTasks`, `/UserTasks/{activityInstanceId}`, `/Deployments/requests`, `/Deployments/requests/{id}`, `/Deployments/requests/{id}/bpmn`, `/Definitions/latest` | Read-only queries |
 | `Admin` | `POST /Definitions/disable`, `/Definitions/enable`, `/Instances/purge`, `/Deployments/requests/{id}/approve`, `…/reject`, `…/withdraw`, `…/retry` | Admin operations on process definitions, deployment reviews and instance retention |
 | `Polling` | `GET /Instances/{instanceId}/state` | High-frequency state polling |
 

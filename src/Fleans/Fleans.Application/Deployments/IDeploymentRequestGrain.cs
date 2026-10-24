@@ -15,11 +15,13 @@ public interface IDeploymentRequestGrain : IGrainWithGuidKey
     /// Validates and stores the request. With <paramref name="requiredApprovals"/> = 0 it deploys
     /// at once. Throws <see cref="ArgumentException"/> for invalid BPMN.
     /// </summary>
+    /// <param name="reviewerGroups">Groups a reviewer must belong to (any one); empty: no restriction.</param>
     Task<DeploymentRequestState> Submit(string bpmnXml, string requestedBy, string? comment,
-        int requiredApprovals, bool deployDisabled);
+        int requiredApprovals, bool deployDisabled, List<string> reviewerGroups);
 
-    Task<DeploymentRequestState> Approve(string userId, string? comment);
-    Task<DeploymentRequestState> Reject(string userId, string reason);
+    /// <param name="userGroups">The reviewer's groups, checked against the request's reviewer groups.</param>
+    Task<DeploymentRequestState> Approve(string userId, List<string> userGroups, string? comment);
+    Task<DeploymentRequestState> Reject(string userId, List<string> userGroups, string reason);
     Task<DeploymentRequestState> Withdraw(string userId);
 
     /// <summary>Deploys an approved request whose last deploy attempt failed.</summary>

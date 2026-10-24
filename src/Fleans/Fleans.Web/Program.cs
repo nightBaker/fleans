@@ -96,6 +96,10 @@ if (authEnabled)
             o.TokenValidationParameters.NameClaimType = "preferred_username";
             // Prepares the deferred role-policy slice — claim is harmless when absent.
             o.TokenValidationParameters.RoleClaimType = "roles";
+            // Deploy reviewer groups (#900): keep the groups claim when it only arrives from UserInfo
+            // (array values become one claim each). Same claim name as the API's group resolver.
+            var groupsClaim = builder.Configuration["Authentication:GroupsClaim"] ?? "groups";
+            o.ClaimActions.MapJsonKey(groupsClaim, groupsClaim);
         });
 
     builder.Services.AddAuthorizationBuilder()
@@ -134,8 +138,8 @@ builder.Services.AddOptions<EnvironmentOptions>()
             !t.UsesClientCredentials || Uri.TryCreate(t.TokenUrl, UriKind.Absolute, out _)),
         "A Fleans:Environment:PromotionTargets entry with a ClientId needs an absolute TokenUrl.")
     .ValidateOnStart();
-builder.Services.AddHttpClient(PromotionClient.HttpClientName);
-builder.Services.AddSingleton<PromotionClient>();
+builder.Services.AddHttpClient(EnvironmentClient.HttpClientName);
+builder.Services.AddSingleton<EnvironmentClient>();
 
 var app = builder.Build();
 

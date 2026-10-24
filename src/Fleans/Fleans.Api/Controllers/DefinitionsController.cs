@@ -64,6 +64,22 @@ namespace Fleans.Api.Controllers
             return Ok(result);
         }
 
+        /// <summary>
+        /// The latest version of each process in <paramref name="keys"/> with a SHA-256 of its BPMN,
+        /// so another environment's Admin UI can tell whether it runs the same diagram (#900).
+        /// </summary>
+        [EnableRateLimiting("read")]
+        [HttpGet("latest", Name = "ListLatestVersions")]
+        public async Task<IActionResult> ListLatestVersions([FromQuery] string[] keys)
+        {
+            if (keys.Length > MaxLatestKeys)
+                return BadRequest(new ErrorResponse($"At most {MaxLatestKeys} keys per request."));
+            var latest = await _workflowQueryService.GetVersionFingerprints(keys.Distinct().ToList(), latestOnly: true);
+            return Ok(latest);
+        }
+
+        private const int MaxLatestKeys = 100;
+
         [EnableRateLimiting("read")]
         [HttpGet("{key}/instances", Name = "ListInstancesByKey")]
         public async Task<IActionResult> ListInstancesByKey(
