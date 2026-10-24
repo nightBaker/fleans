@@ -49,7 +49,7 @@ k6 load test suite for the Fleans workflow engine.
 | `fleans-plugin` | 1 | 512 / 384 MB | `Fleans.E2E.PluginHost`, `Fleans:Role=Plugin` — external worker hosting the `e2e-probe` custom task |
 | `kafka` | 1 | 1024 / — | Orleans streams (single broker, KRaft) |
 | `redis` | 1 | 1024 / — | Orleans clustering (default provider), PubSubStore |
-| `postgres` | 1 | **2048** / 3 GB | Persistence (`max_connections=300` — 6 silos × 2 Npgsql pools; `shared_buffers=768MB`, `max_wal_size=4GB` for the append-heavy journal) |
+| `postgres` | 1 | **2048** / 3 GB | Persistence (`max_connections=300` for the silos' capped Npgsql pools, `Maximum Pool Size` 30 per Core and 10 per Worker data source — the default 100 ran out of connections at 400 VUs; `shared_buffers=768MB`, `max_wal_size=4GB` for the append-heavy journal) |
 | `postgres-reminders` | 1 | 1024 / — | Orleans reminders (`Fleans:Reminders:Provider=Postgres`, `ConnectionStrings:fleans-reminders`) — the production layout; `FLEANS_REMINDERS_PROVIDER=Redis` moves them back to Redis |
 
 CPU is split by `cpu_shares` weights, not `cpus` caps: when the host is contended, Core and the journal Postgres get 4× the CPU of Worker and Plugin, and otherwise everyone may use every core. A `cpus` cap also lowers .NET's `Environment.ProcessorCount` (Orleans scheduler, thread pool, server-GC heaps); in `long-diverse` step runs (laptop, 10 CPU / 12 GB Docker VM), `cpus: 2` per Core completed 8.3 instances/s with start p95 174 ms, no limits 9.5/s and 38 ms, these weights 9.6/s and 27 ms (journal Postgres peak 68 % of a core instead of 113 %, from the larger `shared_buffers`). The memory limits add up to ~9 GB, plus ~1.5 GB for Kafka and the unlimited services, so give Docker at least 12 GB.

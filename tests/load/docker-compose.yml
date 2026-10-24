@@ -23,8 +23,12 @@ x-silo-env: &silo-env
   FLEANS_LOAD_TEST_MODE: "true"
   ConnectionStrings__orleans-redis: "redis:6379"
   Persistence__Provider: Postgres
-  ConnectionStrings__fleans: "Host=postgres;Database=fleans;Username=postgres;Password=fleans"
-  ConnectionStrings__fleans-query: "Host=postgres;Database=fleans;Username=postgres;Password=fleans"
+  # Each engine silo opens two Npgsql data sources (`fleans`, which the journal shares, and
+  # `fleans-query`), each pooling up to 100 connections by default: 5 × 2 × 100 > max_connections.
+  # At 400 VUs that ended in "53300: too many clients". Capped pools queue instead:
+  # Core 3 × 2 × 30 + Worker 2 × 2 × 10 = 220 of postgres' 300.
+  ConnectionStrings__fleans: "Host=postgres;Database=fleans;Username=postgres;Password=fleans;Maximum Pool Size=30"
+  ConnectionStrings__fleans-query: "Host=postgres;Database=fleans;Username=postgres;Password=fleans;Maximum Pool Size=30"
   # Production layout (#886): reminders on Postgres, in their own database (here: own server, so
   # timers-1m can read the reminders' CPU apart from the journal / read model).
   Fleans__Reminders__Provider: ${FLEANS_REMINDERS_PROVIDER:-Postgres}
@@ -54,7 +58,7 @@ services:
 
   postgres:
     image: postgres:16-alpine
-    # 6 silos × (command + query) Npgsql pools exceed the default max_connections=100.
+    # The capped silo pools (x-silo-env) need 220 connections; the default max_connections is 100.
     # Journal + read model are the hottest store: memory settings sized to the 3 GB limit,
     # and a larger max_wal_size so the append-heavy journal doesn't force checkpoints.
     command: ["postgres", "-c", "max_connections=300",
@@ -132,6 +136,9 @@ services:
     environment:
       <<: *silo-env
       Fleans__Role: Worker
+      # Workers barely touch the database (stateless script / condition grains).
+      ConnectionStrings__fleans: "Host=postgres;Database=fleans;Username=postgres;Password=fleans;Maximum Pool Size=10"
+      ConnectionStrings__fleans-query: "Host=postgres;Database=fleans;Username=postgres;Password=fleans;Maximum Pool Size=10"
     # Scripts/conditions only: ~16 % CPU on average (peaks ~55 %) and ~350 MB at 100 VUs of long-diverse.
     cpu_shares: 512
     deploy: { replicas: 2, resources: { limits: { memory: 512M } } }
