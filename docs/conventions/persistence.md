@@ -42,16 +42,19 @@ Test clusters must register memory grain storage for this name in `WorkflowTestB
 
 `DeploymentRequestGrain` uses `IPersistentState<DeploymentRequestState>` keyed by `GrainStorageNames.DeploymentRequests`, backed by `EfCoreDeploymentRequestGrainStorage` and the `DeploymentRequests` table (one row per request, ETag-checked like `UserTasks`; `Approvals` and `ReviewerGroups` are JSON text columns; index on `(Status, RequestedAt)` for the review queue). The same table is the query side: `IWorkflowQueryService.GetDeploymentRequests` / `GetDeploymentRequest` read it through `FleanQueryDbContext`. `WorkflowTestBase` registers the production storage.
 
-## Signal subscriptions: per-row writes (#859)
+## Signal subscriptions: buckets, per-row writes (#859)
 
-`SignalCorrelationGrain` (one per signal name) keeps every subscription in memory, but `EfCoreSignalCorrelationGrainStorage.WriteStateAsync` writes only what changed, so a subscribe or unsubscribe costs the same at 10 or 100,000 subscribers:
+A signal name's subscriptions are spread over **`Fleans:Signals:BucketCount` buckets** (default 64), one `SignalCorrelationGrain` each, keyed `(bucket, signalName)` (`IGrainWithIntegerCompoundKey`: integer key = bucket, key extension = name). A subscription lives in bucket `SignalCorrelationOptions.BucketFor(workflowInstanceId)` — FNV-1a over the Guid's bytes mod B, stable across processes (never `GetHashCode`), pinned by `SignalCorrelationOptionsTests`. Address buckets only through `SignalCorrelationGrainFactoryExtensions`: `GetSignalCorrelationGrain(name, instanceId, options)` for subscribe/unsubscribe, `BroadcastSignal(name, options)` to call all B buckets in parallel (a failed bucket is counted in `SignalBroadcastResult`, it does not stop the others). The bucket count is part of the stored key, so every process (silos, API, Web, MCP) must use the same value and it changes only on an empty cluster.
+
+Tables: `SignalCorrelations` has one row per bucket, key `(SignalName, Bucket)`, holding the ETag; `SignalSubscriptions` rows are keyed `(SignalName, Bucket, WorkflowInstanceId, ActivityId)` and `SignalName` is the plain signal name (the Events page reads it unchanged). Inside a bucket, `EfCoreSignalCorrelationGrainStorage.WriteStateAsync` writes only what changed, so a subscribe or unsubscribe costs the same at 10 or 100,000 subscribers:
 
 - **Change set on the state.** `SignalCorrelationState` is mutated only through `AddSubscription` / `RemoveSubscription` / `TakeAllSubscriptions` (`Subscriptions` is read-only). They record added subscriptions, removed keys and a "cleared" flag — fields that are `[NonSerialized]` and `Ignore`d in `FleanModelConfiguration`. The grain calls `AcceptChanges()` only after a successful `WriteStateAsync`; a failed write keeps the set, so the next write retries it.
-- **One transaction per write.** Load the parent `SignalCorrelations` row alone (no `Include`) for the ETag check, then: the broadcast clear as one `ExecuteDelete` by signal name, each removed key as one `ExecuteDelete` by key, the added rows as inserts, and the new ETag. Deletes run before inserts, so a key removed and re-added in one change set is replaced.
+- **One transaction per write.** Load the bucket's `SignalCorrelations` row alone (no `Include`) for the ETag check, then: the broadcast clear as one `ExecuteDelete` by `(SignalName, Bucket)`, each removed key as one `ExecuteDelete` by key, the added rows as inserts, and the new ETag. Deletes run before inserts, so a key removed and re-added in one change set is replaced.
 - **First write** (no parent row) inserts the parent and every subscription in the state.
-- Activation (`ReadStateAsync`) still loads all rows — once per activation, not per change.
+- Activation (`ReadStateAsync`) still loads all of the bucket's rows — once per activation, not per change.
+- **Delivery failures (#742).** A broadcast takes the bucket's subscriptions (one set-based delete) before delivering. A subscriber whose delivery fails transiently (`TimeoutException`, `OrleansException` — including `WorkflowInstanceStaleException`) is added back afterwards and receives the next broadcast; the missed signal itself is not redelivered. Other failures stay dropped. A subscription re-added meanwhile (non-interrupting re-subscribe) wins. If the clear's write fails, nothing was delivered and the subscriptions go back into memory.
 
-Any new mutation of the state must go through a domain method that records the change; a write the storage cannot see is silently lost. Sharding a signal name into buckets (roadmap Phase 3) is not done yet.
+Any new mutation of the state must go through a domain method that records the change; a write the storage cannot see is silently lost. Pre-1.0 the bucketed schema (`SignalBuckets` migration) needs a fresh database: rows written before it are not moved into their buckets.
 
 ## Test parity (Sqlite ↔ PostgreSQL)
 
