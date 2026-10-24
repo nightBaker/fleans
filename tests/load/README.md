@@ -39,20 +39,25 @@ k6 load test suite for the Fleans workflow engine.
 
 ## Docker Compose Setup
 
-`docker-compose.yml` is the load-testing stack — split roles on Kafka streaming:
+`docker-compose.yml` is the load-testing stack — split roles on Kafka streaming, with the stores where the [1.0 roadmap](https://nightbaker.github.io/fleans/roadmap/v1/) puts them (journal, read model, reminders and membership on PostgreSQL):
 
-| Service | Replicas | What |
-|---|---:|---|
-| `nginx` | 1 | `:80` → `fleans-core` (config: `nginx.conf` — sized for 2 000 VUs; nginx's defaults drop connections above ~250 VUs, which k6 reports as `EOF`) |
-| `fleans-core` | 3 | `Fleans.Api`, `Fleans:Role=Core` — REST API, workflow grains |
-| `fleans-worker` | 2 | `Fleans.WorkerHost`, `Fleans:Role=Worker` — script / condition grains |
-| `fleans-plugin` | 1 | `Fleans.E2E.PluginHost`, `Fleans:Role=Plugin` — external worker hosting the `e2e-probe` custom task |
-| `kafka` | 1 | Orleans streams (single broker, KRaft) |
-| `redis` | 1 | Orleans clustering (default provider), PubSubStore |
-| `postgres` | 1 | Persistence (`max_connections=300` — 6 silos × 2 Npgsql pools) |
-| `postgres-reminders` | 1 | Orleans reminders (`Fleans:Reminders:Provider=Postgres`, `ConnectionStrings:fleans-reminders`) — the production layout; `FLEANS_REMINDERS_PROVIDER=Redis` moves them back to Redis |
+| Service | Replicas | CPU weight / memory limit (each) | What |
+|---|---:|---|---|
+| `nginx` | 1 | 1024 / — | `:80` → `fleans-core` (config: `nginx.conf` — sized for 2 000 VUs; nginx's defaults drop connections above ~250 VUs, which k6 reports as `EOF`) |
+| `fleans-core` | 3 | **2048** / 1.5 GB | `Fleans.Api`, `Fleans:Role=Core` — REST API, workflow grains |
+| `fleans-worker` | 2 | 512 / 512 MB | `Fleans.WorkerHost`, `Fleans:Role=Worker` — script / condition grains |
+| `fleans-plugin` | 1 | 512 / 384 MB | `Fleans.E2E.PluginHost`, `Fleans:Role=Plugin` — external worker hosting the `e2e-probe` custom task |
+| `kafka` | 1 | 1024 / — | Orleans streams (single broker, KRaft) |
+| `redis` | 1 | 1024 / — | Stream PubSubStore only — Fleans has no PostgreSQL provider for it yet (#911) |
+| `postgres` | 1 | **2048** / 1.5 GB | Read model, grain state and the Orleans membership table (`Fleans:Clustering:Provider=Postgres`, #885; `FLEANS_CLUSTERING_PROVIDER=Redis` moves it back). `max_connections=300` for the silos' capped Npgsql pools |
+| `postgres-journal` | 1 | **2048** / 2 GB | Workflow journal + snapshots (`ConnectionStrings:fleans-journal`, #879) — the write path, on its own server; `shared_buffers=512MB`, `max_wal_size=4GB` for the append-heavy journal |
+| `postgres-reminders` | 1 | 1024 / — | Orleans reminders (`Fleans:Reminders:Provider=Postgres`, `ConnectionStrings:fleans-reminders`) — the production layout; `FLEANS_REMINDERS_PROVIDER=Redis` moves them back to Redis |
 
-Outside Aspire the silos join the membership table chosen by `Fleans:Clustering:Provider` (Redis by default; `FLEANS_CLUSTERING_PROVIDER=Postgres` puts it in the `fleans` database, #885), and `FLEANS_LOAD_TEST_MODE=true` adds the Redis PubSubStore.
+Every engine silo opens one Npgsql data source per connection string (`fleans`, `fleans-query`, `fleans-journal`), each pooling up to 100 connections by default; the stack caps them with `Maximum Pool Size` 30 on Core and 10 on Worker (#910) — the default pools ran out of connections at 400 VUs.
+
+CPU is split by `cpu_shares` weights, not `cpus` caps: when the host is contended, Core and the two engine Postgres servers get 4× the CPU of Worker and Plugin, and otherwise everyone may use every core. A `cpus` cap also lowers .NET's `Environment.ProcessorCount` (Orleans scheduler, thread pool, server-GC heaps); in `long-diverse` step runs (laptop, 10 CPU / 12 GB Docker VM), `cpus: 2` per Core completed 8.3 instances/s with start p95 174 ms, no limits 9.5/s and 38 ms, these weights 9.6/s and 27 ms (journal Postgres peak 68 % of a core instead of 113 %, from the larger `shared_buffers`). The memory limits add up to ~9.4 GB, plus ~1.7 GB for Kafka and the unlimited services, so give Docker at least 12 GB.
+
+Outside Aspire `FLEANS_LOAD_TEST_MODE=true` adds the Redis PubSubStore.
 
 ### Build images
 
