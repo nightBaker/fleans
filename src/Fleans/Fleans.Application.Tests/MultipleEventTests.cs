@@ -300,8 +300,7 @@ public class MultipleEventTests : WorkflowTestBase
         // message matching a Multiple Start Event's definition created no instance.
         await DeployMultipleStartWorkflow("multi-start-msg", "multiStartMsg", "multiStartMsgSig");
 
-        var listener = Cluster.GrainFactory.GetGrain<IMessageStartEventListenerGrain>("multiStartMsg");
-        var instanceIds = await listener.FireMessageStartEvent(new ExpandoObject());
+        var instanceIds = await StartEvents.StartByMessage("multiStartMsg", new ExpandoObject());
 
         Assert.HasCount(1, instanceIds);
         var snapshot = await QueryService.GetStateSnapshot(instanceIds[0]);
@@ -316,8 +315,7 @@ public class MultipleEventTests : WorkflowTestBase
         // Regression: same as above for the signal start listener.
         await DeployMultipleStartWorkflow("multi-start-sig", "multiStartSigMsg", "multiStartSig");
 
-        var listener = Cluster.GrainFactory.GetGrain<ISignalStartEventListenerGrain>("multiStartSig");
-        var instanceIds = await listener.FireSignalStartEvent();
+        var instanceIds = await StartEvents.StartBySignal("multiStartSig");
 
         Assert.HasCount(1, instanceIds);
         var snapshot = await QueryService.GetStateSnapshot(instanceIds[0]);

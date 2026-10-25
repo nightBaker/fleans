@@ -4,6 +4,7 @@ using Fleans.Application.Grains;
 using Fleans.Application.Placement;
 using Fleans.Application.QueryModels;
 using Fleans.Application.Scripts;
+using Fleans.Application.StartEvents;
 using Fleans.Application.Conditions;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
@@ -148,6 +149,20 @@ public abstract class WorkflowTestBase
     /// </summary>
     protected T GetSiloService<T>() where T : notnull =>
         ((InProcessSiloHandle)Cluster.Primary).SiloHost.Services.GetRequiredService<T>();
+
+    /// <summary>The primary silo's start-event launcher — the path the API's message, signal and conditional starts take.</summary>
+    protected StartEventLauncher StartEvents => GetSiloService<StartEventLauncher>();
+
+    /// <summary>
+    /// Evaluates the conditional start events of <paramref name="processId"/> on the primary silo and
+    /// returns the instance started, or <c>null</c> when the condition did not hold.
+    /// </summary>
+    protected async Task<Guid?> EvaluateConditionalStart(string processId, ExpandoObject variables)
+    {
+        var result = await StartEvents.StartByConditions(processId, variables);
+        Assert.IsNull(result.Errors, $"Conditional evaluation failed: {string.Join("; ", result.Errors ?? [])}");
+        return result.StartedInstanceIds.Count == 0 ? null : result.StartedInstanceIds.Single();
+    }
 
     [TestCleanup]
     public void BaseCleanup()
