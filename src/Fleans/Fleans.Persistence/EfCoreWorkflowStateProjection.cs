@@ -138,10 +138,18 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
     }
 
     /// <summary>
-    /// The batch's completed instances: their stored rows and details in one split query, the
-    /// diffs, and one <c>SaveChanges</c>.
+    /// The batch's completed instances: their stored rows, the details of the rows that were already
+    /// completed, the diffs, and one <c>SaveChanges</c>.
     /// </summary>
-    private static async Task WriteCompletedAsync(FleanCommandDbContext db, List<(Guid Id, ProjectionWrite Write)> completed)
+    /// <remarks>
+    /// Details are only ever written in the same <c>SaveChanges</c> as <c>IsCompleted</c>, so a stored
+    /// row that is still running has none to load or diff against — the usual case, the instance's
+    /// first completed projection. Only a replayed completion loads them. Should a running row have
+    /// details anyway, the insert hits their keys and the batch is written again with every row's
+    /// details loaded.
+    /// </remarks>
+    private static async Task WriteCompletedAsync(
+        FleanCommandDbContext db, List<(Guid Id, ProjectionWrite Write)> completed, bool loadAllDetails = false)
     {
         var ids = completed.Select(c => c.Id).ToList();
 
@@ -150,11 +158,19 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
         // context is gone once the write returns.
         var stored = await db.WorkflowInstances
             .Where(e => ids.Contains(e.Id))
-            .Include(e => e.Entries)
-            .Include(e => e.VariableStates)
-            .Include(e => e.ConditionSequenceStates)
-            .AsSplitQuery()
             .ToDictionaryAsync(e => e.Id);
+        var withDetails = stored.Values.Where(e => loadAllDetails || e.IsCompleted).Select(e => e.Id).ToList();
+        if (withDetails.Count > 0)
+        {
+            // Same tracked rows: the collections fill in on them.
+            await db.WorkflowInstances
+                .Where(e => withDetails.Contains(e.Id))
+                .Include(e => e.Entries)
+                .Include(e => e.VariableStates)
+                .Include(e => e.ConditionSequenceStates)
+                .AsSplitQuery()
+                .LoadAsync();
+        }
 
         foreach (var (id, write) in completed)
         {
@@ -177,7 +193,15 @@ public class EfCoreWorkflowStateProjection : IWorkflowStateProjection
             DiffConditionSequenceStates(db, existing, write.State, id);
         }
 
-        await db.SaveChangesAsync();
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException) when (!loadAllDetails)
+        {
+            db.ChangeTracker.Clear();
+            await WriteCompletedAsync(db, completed, loadAllDetails: true);
+        }
     }
 
     private static WorkflowInstanceState AddRow(FleanCommandDbContext db, Guid id, WorkflowInstanceRow row, int version)
