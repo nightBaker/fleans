@@ -20,7 +20,10 @@ k6 load test suite for the Fleans workflow engine.
 | `scripts/long-diverse.js` | Scenario 5: long, diverse process with 4 client interactions + external task | `k6 run scripts/long-diverse.js` |
 | `scripts/timers-1m.js` | Scenario `timers-1m`: 1 M durable timers due within one minute (deploys its own fixtures) | [§ timers-1m](#5-timers-1m-a-million-timers-due-in-one-minute) |
 | `scripts/timers-1m-lag.sql` | Armed / fired counts and timer lag p50 / p99 for a `timers-1m` run | `psql … < scripts/timers-1m-lag.sql` |
-| `scripts/throughput.sql` | Completed instances/s and p50 / p99 process duration per process key, from the read model | [§ Completed instances per second](#completed-instances-per-second-and-p99-process-duration) |
+| `scripts/throughput.js` | Roadmap headline metric: a constant start rate of a no-wait process (`load-linear-10` or `load-one-task`) | [§ throughput](#throughput-completed-instances-per-second-and-p99) |
+| `scripts/throughput-ceiling.sh` | `throughput.js` at several rates: completed/s, p50/p95/p99 duration, CPU per service, DB transactions and WAL per instance | [§ throughput](#throughput-completed-instances-per-second-and-p99) |
+| `scripts/throughput-window.sql` | The read-model result of one `throughput.js` window | used by `throughput-ceiling.sh` |
+| `scripts/db-counters.sh`, `scripts/top-statements.sql` | Per-server committed transactions / WAL bytes; the statements behind them (`pg_stat_statements`) | used by `throughput-ceiling.sh` / by hand |
 | `scripts/metrics.js` | Shared metric definitions | Imported by scenario scripts |
 
 **`setup.js`** (from #239) is a standalone file you run once via `k6 run setup.js` to deploy fixtures and verify the cluster is ready.
@@ -36,32 +39,40 @@ k6 load test suite for the Fleans workflow engine.
 | `fixtures/events-workflow.bpmn` | `load-events` | Timer + message events |
 | `fixtures/long-diverse-workflow.bpmn` | `load-long-diverse` | ~45 nodes: exclusive / parallel / inclusive / event-based gateways, embedded sub-process, parallel + sequential multi-instance, call activity, error + timer boundaries, timer + message catches, external `task`, `e2e-probe` custom task |
 | `fixtures/long-diverse-child.bpmn` | `load-long-child` | Called by `load-long-diverse` (script → 1 s timer → script) |
+| `fixtures/linear-10-workflow.bpmn` | `load-linear-10` | Roadmap scenario `linear-10`: 10 script tasks in a row, no waits |
+| `fixtures/one-task-workflow.bpmn` | `load-one-task` | Zeebe's reference benchmark process: start → one external `e2e-probe` task (completes after 50 ms) → end |
 | `fixtures/timers-workflow.bpmn` | `load-timers-00` … `load-timers-59` | Template for `timers-1m.js`: start → `timeDate` timer → end; the script fills in the process id and due time |
 
 ## Docker Compose Setup
 
-`docker-compose.yml` is the load-testing stack — split roles on Kafka streaming, with the stores where the [1.0 roadmap](https://nightbaker.github.io/fleans/roadmap/v1/) puts them (journal, read model, reminders and membership on PostgreSQL):
+`docker-compose.yml` is the load-testing stack: the [Road to 1.0.0 target architecture](https://nightbaker.github.io/fleans/roadmap/v1/#target-architecture) scaled down to one laptop (10 CPU / 12 GB Docker VM) — REST split from the silos, the journal sharded on Citus, the read model on a primary with a streaming replica, membership and reminders on their own server, Kafka streams, no Redis.
 
 | Service | Replicas | CPU weight / memory limit (each) | What |
 |---|---:|---|---|
-| `nginx` | 1 | 1024 / — | `:80` → `fleans-core` (config: `nginx.conf` — sized for 2 000 VUs; nginx's defaults drop connections above ~250 VUs, which k6 reports as `EOF`) |
-| `fleans-core` | 3 | **2048** / 1.5 GB | `Fleans.Api`, `Fleans:Role=Core` — REST API, workflow grains |
-| `fleans-worker` | 2 | 512 / 512 MB | `Fleans.WorkerHost`, `Fleans:Role=Worker` — script / condition grains |
+| `nginx` | 1 | 1024 / 128 MB | `:80` → `fleans-api` (config: `nginx.conf` — sized for 2 000 VUs; nginx's defaults drop connections above ~250 VUs, which k6 reports as `EOF`) |
+| `fleans-api` | 2 | 1024 / 512 MB | `Fleans.Api`, `Fleans:Role=Api` — REST only, an Orleans client with no grains (#913) |
+| `fleans-core` | 3 | **2048** / 1 GB | `Fleans.Api`, `Fleans:Role=Core` — workflow grains |
+| `fleans-projector` | 1 | 1024 / 768 MB | `Fleans.Api`, `Fleans:Role=Projector` — the read-model projector only (#917): `InstanceAdvanced` → journal tail → read-model write |
+| `fleans-worker` | 1 | 512 / 512 MB | `Fleans.WorkerHost`, `Fleans:Role=Worker` — script / condition grains |
 | `fleans-plugin` | 1 | 512 / 384 MB | `Fleans.E2E.PluginHost`, `Fleans:Role=Plugin` — external worker hosting the `e2e-probe` custom task |
-| `kafka` | 1 | 1024 / — | Orleans streams (single broker, KRaft) |
-| `redis` | 1 | 1024 / — | Holds no data in this layout (streams are implicit-only, #911). Still required: every silo registers the `orleans-redis` client and its health check |
-| `postgres` | 1 | **2048** / 1.5 GB | Read model, grain state and the Orleans membership table (`Fleans:Clustering:Provider=Postgres`, #885; `FLEANS_CLUSTERING_PROVIDER=Redis` moves it back). `max_connections=300` for the silos' capped Npgsql pools |
-| `postgres-journal` | 1 | **2048** / 2 GB | Workflow journal + snapshots (`ConnectionStrings:fleans-journal`, #879) — the write path, on its own server; `shared_buffers=512MB`, `max_wal_size=4GB` for the append-heavy journal |
-| `postgres-reminders` | 1 | 1024 / — | Orleans reminders (`Fleans:Reminders:Provider=Postgres`, `ConnectionStrings:fleans-reminders`) — the production layout; `FLEANS_REMINDERS_PROVIDER=Redis` moves them back to Redis |
+| `kafka` | 1 | 1024 / 1.25 GB | Orleans streams (single broker, KRaft) |
+| `citus-coord` | 1 | **2048** / 1.25 GB | Journal store, Citus coordinator (`Persistence:Journal:Provider=Citus`, #879): routes every journal command to its shard, holds none |
+| `citus-w1`, `citus-w2` | 1 + 1 | **2048** / 1.25 GB | Citus workers: the journal and snapshot tables, hash-distributed by `InstanceId` into `FLEANS_JOURNAL_SHARDS` shards (default 32 here, 128 in production) — the write path |
+| `citus-setup` | one-shot | — | Registers the coordinator and the workers; the silos' schema bootstrap then distributes the tables |
+| `postgres` | 1 | **2048** / 1.25 GB | Read-model primary (written by the projector) and the other grain state; `pg_stat_statements` loaded |
+| `postgres-replica` | 1 | 1024 / 768 MB | Streaming hot standby of `postgres`; `ConnectionStrings:fleans-query` points here, so every list / state read is off the primary |
+| `postgres-ops` | 1 | 1024 / 768 MB | Orleans membership (`fleans-cluster`, #885) and reminders (`fleans-reminders`, #886) |
 
-Every engine silo opens one Npgsql data source per connection string (`fleans`, `fleans-query`, `fleans-journal`), each pooling up to 100 connections by default; the stack caps them with `Maximum Pool Size` 30 on Core and 10 on Worker (#910) — the default pools ran out of connections at 400 VUs.
+The Citus image is built from source (`citus/Dockerfile`, Citus 12.1 on `postgres:16`): `citusdata/citus` is published for amd64 only, and emulated on an arm64 laptop its coordinator was several times slower and was OOM-killed at 50 starts/s. On an amd64 host `FLEANS_CITUS_IMAGE=citusdata/citus:12.1` uses the upstream image.
 
-CPU is split by `cpu_shares` weights, not `cpus` caps: when the host is contended, Core and the two engine Postgres servers get 4× the CPU of Worker and Plugin, and otherwise everyone may use every core. A `cpus` cap also lowers .NET's `Environment.ProcessorCount` (Orleans scheduler, thread pool, server-GC heaps); in `long-diverse` step runs (laptop, 10 CPU / 12 GB Docker VM), `cpus: 2` per Core completed 8.3 instances/s with start p95 174 ms, no limits 9.5/s and 38 ms, these weights 9.6/s and 27 ms (journal Postgres peak 68 % of a core instead of 113 %, from the larger `shared_buffers`). The memory limits add up to ~9.4 GB, plus ~1.7 GB for Kafka and the unlimited services, so give Docker at least 12 GB.
+Every process opens one Npgsql data source per connection string (`fleans`, `fleans-query`, `fleans-journal`), each pooling up to 100 connections by default (#910); the stack caps them with `Maximum Pool Size` 30 (10 on Worker) and sets `No Reset On Close=true`, which drops the `DISCARD ALL` Npgsql otherwise sends on every pooled-connection reuse (~7 per instance, each a server transaction). PgBouncer is not in the stack: in transaction mode it would break the session-level advisory lock that serializes the schema migrations at startup (`EnsureDatabaseSchemaAsync`), and the capped pools already bound the server connections at this size.
+
+CPU is split by `cpu_shares` weights, not `cpus` caps: when the host is contended, Core, Citus and the read-model primary get 4× the CPU of Worker and Plugin, and otherwise everyone may use every core. A `cpus` cap also lowers .NET's `Environment.ProcessorCount` (Orleans scheduler, thread pool, server-GC heaps); in `long-diverse` step runs, `cpus: 2` per Core completed 8.3 instances/s with start p95 174 ms, no limits 9.5/s and 38 ms, weights 9.6/s and 27 ms. The memory limits add up to ~12 GB, but the measured peaks are about half (Core ~450 MB each), so a 12 GB Docker VM is enough.
 
 ### Build images
 
 ```bash
-bash tests/load/build-images.sh        # fleans-api / fleans-worker / fleans-plugin, tag :loadtest (TAG=… to override)
+bash tests/load/build-images.sh        # fleans-api / fleans-worker / fleans-plugin (tag :loadtest, TAG=… to override) + fleans-citus:12.1
 ```
 
 The script runs `dotnet publish` and builds each image on `mcr.microsoft.com/dotnet/aspnet:10.0`.
@@ -71,11 +82,10 @@ The script runs `dotnet publish` and builds each image on `mcr.microsoft.com/dot
 ```bash
 cd tests/load
 docker compose up -d --wait
-docker compose exec nginx nginx -s reload     # pick up all fleans-core replicas
-EXPECTED_REPLICA_COUNT=3 bash verify-cluster.sh
+docker compose exec nginx nginx -s reload     # pick up all fleans-api replicas
+EXPECTED_REPLICA_COUNT=2 bash verify-cluster.sh
 ```
 
-`FLEANS_STREAMING_PROVIDER=Redis docker compose up -d --wait` runs the same topology on Redis streams.
 `FLEANS_PLUGIN_IMAGE=<image>` swaps the plugin-host image.
 
 ### Teardown
@@ -123,6 +133,18 @@ The `externalWork` step is an `e2e-probe` custom task, so the target cluster nee
 (`docker-compose.yml` has one). Against a cluster without one set `K6_EXPECT_PLUGIN=false` — the step then
 never completes, so use it only to measure the stages before the parallel join. Extra knobs:
 `K6_STAGE_BUDGET_MS` (poll budget per stage, default 45 000), `K6_SUMMARY_PATH` (write the k6 JSON summary).
+
+### Throughput: completed instances per second and p99
+
+The roadmap's headline metric ("How it is measured"): completed instances per second of a process with no waits, and its p99 duration. `throughput.js` only starts instances, at a constant arrival rate (an open model — a slow cluster does not slow the offered load down), and never polls. The result comes from the read model afterwards: `CompletedAt − CreatedAt` per instance, both the journal events' `OccurredAt`, so the client adds neither load nor polling error.
+
+```bash
+cd tests/load
+RATES="50 75 100 150" PROCESS=load-linear-10 DURATION=1m bash scripts/throughput-ceiling.sh   # → results/throughput-<ts>/
+RATES="50 100 150" PROCESS=load-one-task bash scripts/throughput-ceiling.sh
+```
+
+Per rate it runs a warm-up (`WARMUP`, default 30 s) and the measured window (`DURATION`), waits until the window's instances finished (`WAIT_S`), and writes `<process>-<rate>.{k6,sql,cpu,db}.txt` plus `<process>-summary.txt`; the first rate is preceded by an unmeasured pre-warm (`PREWARM`, default 60 s — the first minute after a cold start is several times slower). Knobs of `throughput.js` are `TP_*`, not `K6_*`: k6 reads `K6_DURATION` itself and would replace the scenarios with one VU. A rate counts as sustained when `completed_per_s` matches it, nothing is `not_finished`, and `http_req_failed` / `dropped_iterations` stay near zero.
 
 ### 3. Run linear throughput scenario
 
@@ -174,7 +196,7 @@ docker compose down -v && docker compose up -d --wait && docker compose exec ngi
 K6_TARGET_URL=http://localhost:80 k6 run scripts/timers-1m.js                                            # 1 M at 2 000/s ≈ 8.5 min
 ```
 
-While the due minute runs, sample the reminders database's CPU (it is its own container):
+While the due minute runs, sample the reminders database's CPU (`postgres-ops`, its own container):
 
 ```bash
 while sleep 5; do docker stats --no-stream --format '{{.Name}} {{.CPUPerc}} {{.MemUsage}}' | grep postgres; done
@@ -185,7 +207,7 @@ About a minute after the teardown line's "due until" time, read the result:
 ```bash
 docker compose exec -T postgres psql -U postgres -d fleans < scripts/timers-1m-lag.sql
 # armed | fired | failed | not_fired | lag_p50_s | lag_p99_s | lag_max_s
-docker compose exec -T postgres-reminders psql -U postgres -d reminders -c \
+docker compose exec -T postgres-ops psql -U postgres -d ops -c \
   "SELECT idx_scan, idx_tup_read FROM pg_stat_user_indexes WHERE indexrelname = 'ix_reminderstable_serviceid_grainhash'"
 ```
 
@@ -194,44 +216,12 @@ transition (milliseconds). `idx_scan` growing every `RefreshReminderListPeriod` 
 the range reads use the `(ServiceId, GrainHash)` index. Knobs: `K6_TIMERS_COUNT` (default
 1 000 000), `K6_TIMERS_RATE` (starts/s, default 2 000 — lower it if `http_req_failed` climbs),
 `K6_TIMERS_SLACK_S` (default 120 s between arming end and `T0`; `timers_armed_late` counts starts
-that missed it), `K6_TIMERS_MAX_VUS` (default 1 000). Compare against Redis reminders with
-`FLEANS_REMINDERS_PROVIDER=Redis docker compose up -d --wait`.
+that missed it), `K6_TIMERS_MAX_VUS` (default 1 000). The stack has no Redis; to compare against Redis
+reminders, add a `redis` service and set `Fleans__Reminders__Provider=Redis` plus
+`ConnectionStrings__orleans-redis` on the silos.
 
 Publish the numbers (hardware, counts, lag p50/p99/max, reminders-Postgres CPU) under `results/`
 and on the website's load-testing page.
-
-## Completed instances per second and p99 process duration
-
-The Road to 1.0.0 reports **completed instances per second** and **p99 process duration**, not
-the HTTP start rate or `/Execution/start` latency that k6 measures (`http_reqs`,
-`workflow_start_duration`). Two ways to read them:
-
-**From the read model — works with this compose stack as is.** On a fresh stack
-(`docker compose down -v` before the run), once the run has drained:
-
-```bash
-docker compose exec -T postgres psql -U postgres -d fleans < scripts/throughput.sql
-# process_key | completed | failed | completed_per_s | peak_10s_per_s | p50_s | p99_s | max_s
-```
-
-`completed_per_s` spans the first to the last completion (ramps included); `peak_10s_per_s` is
-the busiest 10-second window — read it as the sustained rate. Durations are
-`CompletedAt − CreatedAt`, the journaled start and completion times, so projection lag does not
-skew them.
-
-**From the `Fleans` meter — live, during the run.** The compose stack runs no metrics pipeline:
-the silos export OpenTelemetry only over OTLP, when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (add it
-to `x-silo-env` and run a collector — see the website's *Configuring observability* guide; the
-`grafana/` provisioning expects a Prometheus at `http://prometheus:9090`). Then:
-
-```promql
-sum(rate(fleans_workflow_terminated_total{result="completed"}[1m]))                                           # completed/s
-histogram_quantile(0.99, sum by (le) (rate(fleans_workflow_duration_seconds_bucket{result="completed"}[5m]))) # p99 duration, s
-```
-
-The same meter carries the other scale metrics — `fleans.journal.append.duration`,
-`fleans.projection.lag`, `fleans.timer.lag`, `fleans.kafka.consumer.lag` (catalog:
-`website/src/content/docs/reference/observability.md`).
 
 ## Environment Variables
 

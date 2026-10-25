@@ -1,0 +1,25 @@
+
+     ✓ start: 200
+
+     checks.........................: 100.00% 11741 out of 11741
+     data_received..................: 3.3 MB  42 kB/s
+     data_sent......................: 2.3 MB  28 kB/s
+   ✗ dropped_iterations.............: 259     3.230881/s
+     http_req_blocked...............: avg=41.71µs    min=1µs     med=10µs     max=8.21ms   p(90)=37µs     p(95)=254µs   
+     http_req_connecting............: avg=20.9µs     min=0s      med=0s       max=8.17ms   p(90)=0s       p(95)=0s      
+     http_req_duration..............: avg=575.77ms   min=23.78ms med=301.35ms max=5.28s    p(90)=1.45s    p(95)=2.28s   
+       { expected_response:true }...: avg=575.77ms   min=23.78ms med=301.35ms max=5.28s    p(90)=1.45s    p(95)=2.28s   
+     http_req_failed................: 0.00%   0 out of 11741
+     ✓ { phase:measured }...........: 0.00%   0 out of 8741
+     http_req_receiving.............: avg=98.81µs    min=7µs     med=61µs     max=63.97ms  p(90)=126µs    p(95)=179µs   
+     http_req_sending...............: avg=51.29µs    min=4µs     med=37µs     max=7.31ms   p(90)=72µs     p(95)=106µs   
+     http_req_tls_handshaking.......: avg=0s         min=0s      med=0s       max=0s       p(90)=0s       p(95)=0s      
+     http_req_waiting...............: avg=575.62ms   min=23.62ms med=301.2ms  max=5.28s    p(90)=1.45s    p(95)=2.28s   
+     http_reqs......................: 11741   146.462453/s
+     iteration_duration.............: avg=576.15ms   min=24.16ms med=301.6ms  max=5.28s    p(90)=1.45s    p(95)=2.28s   
+     iterations.....................: 11741   146.462453/s
+     vus............................: 21      min=13             max=380
+     vus_max........................: 550     min=300            max=550
+     workflow_start_duration........: avg=575.774712 min=23.789  med=301.354  max=5283.786 p(90)=1450.812 p(95)=2280.811
+
+time="2026-10-24T20:54:15+05:00" level=error msg="thresholds on metrics 'dropped_iterations' have been crossed"

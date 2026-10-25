@@ -38,6 +38,8 @@ reminders on their own PostgreSQL. Pass: lag p99 under 2 s and no timer lost. It
 Orleans reminders carry production timer counts or the [roadmap's sharded timer scheduler](/fleans/roadmap/v1/#timers)
 is needed. No published numbers yet.
 
+`throughput` (k6, `tests/load/scripts/throughput.js` + `throughput-ceiling.sh`) is the roadmap's headline metric: a constant start rate of a no-wait process — `load-linear-10` (10 script tasks) or `load-one-task` (Zeebe's benchmark process: one external task) — with completed instances per second and p50 / p99 process duration taken from the read model, plus CPU per service and database transactions per instance. A pre-release laptop run is summarised on the [roadmap](/fleans/roadmap/v1/#first-run-on-one-laptop-october-2026-pre-release).
+
 The suite is documented in detail in `tests/load/README.md`.
 
 ## Recent baselines
@@ -185,7 +187,7 @@ In priority order, based on what we measured:
 Both report files include a "How to reproduce" section that lists the exact `az`/`docker`
 commands. The Locust scripts under `tests/load/locust/` are uploaded directly to Azure Load
 Testing as the test plan; the k6 scripts under `tests/load/scripts/` are run locally against
-either the Aspire stack or `tests/load/docker-compose.yml` (3 Core + 2 Worker + 1 Plugin silos on Kafka).
+either the Aspire stack or `tests/load/docker-compose.yml` — the [roadmap's target architecture](/fleans/roadmap/v1/#target-architecture) on one host: 2 REST-only `Api` clients, 3 Core + 1 Projector + 1 Worker + 1 Plugin silos, the journal on Citus, the read model on a primary with a streaming replica, Kafka streams, no Redis.
 
 For the Azure run specifically, you'll need:
 
