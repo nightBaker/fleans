@@ -97,13 +97,15 @@ The broker-count fallback applies only to **new** topics created at startup. For
 - **Kafka:** `Fleans:Streaming:Kafka:QueueCount` (default `8` as of PR #567 — was `1`; behavior change for Kafka deployments that never set the value explicitly). Kafka also exposes `NumPartitions` as an **independent per-topic Kafka-topology knob** (default `1`); it does NOT multiply Orleans consumer parallelism because `KafkaQueueAdapterReceiver` uses consumer-group `Subscribe` mode (one consumer per topic regardless of partition count). Forward-only: `kafka-topics --alter --partitions N` can grow but not shrink.
 - **AzureQueue:** `QueueNames` list length (default `8` entries, no scalar count — tuning above OR below 8 requires populating `Fleans__Streaming__AzureQueue__QueueNames__0..N` by hand).
 
+**Same queue count on every silo.** Each silo builds the stream hash ring from its own local config, and Orleans never compares the value across silos. If silos disagree, they map stream IDs to different queues and streams silently misroute — no error, no log. Keep the knob a fixed config value shipped identically to every silo (same env / Helm values); never derive it from host properties such as the core count (#699).
+
 **Bumping the count rehashes Stream IDs across queues.** Consistent with the project's pre-v1 stance, **expect in-flight workflow stalls across the bump window — no formal drain procedure is shipped.**
 
 See `website/src/content/docs/reference/streaming.md#tuning-throughput` for the sizing heuristic and the per-provider operator notes.
 
 ## Kafka production preset
 
-`WithProductionDefaults(name)` is an **opt-in**, chainable extension that ties both Kafka knobs to `Environment.ProcessorCount`:
+`WithProductionDefaults(name)` is an **opt-in**, chainable extension that sizes `NumPartitions` from `Environment.ProcessorCount`:
 
 ```csharp
 builder.AddKafkaStreams("kafka", configuration)
@@ -114,12 +116,11 @@ Applied values:
 
 | Property | Formula |
 |---|---|
-| `QueueCount` | `max(8, Environment.ProcessorCount)` — never drops below the 8-queue Orleans baseline |
 | `NumPartitions` | `max(1, Environment.ProcessorCount)` — scales broker-side write parallelism |
 
 **The `name` argument must match exactly** the name passed to `AddKafkaStreams`. A mismatch silently applies overrides to a different named-options instance and leaves the provider at defaults — the absence of EventId 11000 in startup logs is the observable signal.
 
-**Homogeneity requirement:** `QueueCount` maps to `HashRingStreamQueueMapperOptions.TotalQueueCount`, a cluster-wide hash-ring parameter. All silos must have the same `Environment.ProcessorCount`; a mismatch silently misroutes streams under rebalance. Autoscaling mixed-core or mixed-arch fleets should NOT use this preset unless core counts are pinned uniformly. A cross-silo sanity probe covering Redis, Kafka, and AzureQueue providers is tracked in #699.
+**The preset deliberately leaves `QueueCount` alone.** `QueueCount` maps to `HashRingStreamQueueMapperOptions.TotalQueueCount`, which every silo must agree on (see *Same queue count on every silo* above). Deriving it from the host's core count let a mixed-core autoscaling fleet misroute streams silently, so it stays a plain config value (#699). `NumPartitions` is a per-topic setting fixed by whichever silo creates the topic first, so differing core counts there are harmless.
 
 **`NumPartitions` is forward-only:** `kafka-topics --alter --partitions N` can grow but not shrink. Deploying with the preset and then removing it leaves topics at the preset partition count — this is the safe direction, but plan accordingly.
 

@@ -358,6 +358,8 @@ Throughput across the queue-backed providers is governed by two independent clas
 | Kafka | `Fleans__Streaming__Kafka__QueueCount` | `8` | Was `1` before v0.2.0 (#567) — call out as a behavior change for deployments that left it unset. |
 | AzureQueue | `Fleans__Streaming__AzureQueue__QueueNames__0..N` | 8 entries (`fleans-stream-0..7`) | No scalar count — tuning above OR below 8 requires populating the explicit list by hand. Mid-deployment length changes rehash Stream IDs across queues. |
 
+**Use the same value on every silo.** Every silo must run with the same queue count (and, for AzureQueue, the same `QueueNames` list). Orleans does not check this: silos with different values route the same stream to different queues, and workflows stall with no error in the logs. Set the value explicitly in shared configuration rather than per host.
+
 **Sizing heuristic.** Start with `max(8, 2 × silo_count × cpu_per_silo)` for high-volume deployments and measure with the Orleans dashboard (wired at `Fleans.Api/Program.cs`) before raising further. In a multi-silo deployment, agents distribute across silos via the hash ring — total cluster-wide count = the configured value, per-silo count ≈ `ceil(value / silo_count)`.
 
 **Rehash caveat (all providers).** Bumping the count rehashes Stream IDs across queues. Consistent with the project's pre-v1 stance, **expect in-flight workflow stalls across the bump window — no formal drain procedure is provided**. After the bump, new workflow instances distribute over the new queue count; in-flight instances that straddle the rehash may stall until reactivation picks them up on the new queue assignment.

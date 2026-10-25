@@ -2,7 +2,7 @@
 
 Verifies #457: `PlacementRoleAssertion` fails fast at silo startup when `Fleans:Role` is incompatible with the placement attribute of a registered grain.
 
-> **STATUS: KNOWN BUG (#787).** `PlacementRoleAssertion` is never registered (`TryAddSingleton` is a no-op for `ILifecycleParticipant<ISiloLifecycle>`), so step 1 logs no EventId 11200 and step 2 boots instead of exiting. Role mismatch failing loudly is covered in CI by `SplitRoleTopologyTests.MisroledSilo_RefusesToStart_WithExplicitRoleError` (`E2E-SplitRoles`), which exercises the explicit `Fleans:Role` validation in `Fleans.WorkerHost` and `AddFleansPluginHost`.
+> **STATUS: KNOWN BUG (#787).** `PlacementRoleAssertion` is never registered (`TryAddSingleton` is a no-op for `ILifecycleParticipant<ISiloLifecycle>`), so step 1 logs no EventId 11310 and step 2 boots instead of exiting. Role mismatch failing loudly is covered in CI by `SplitRoleTopologyTests.MisroledSilo_RefusesToStart_WithExplicitRoleError` (`E2E-SplitRoles`), which exercises the explicit `Fleans:Role` validation in `Fleans.WorkerHost` and `AddFleansPluginHost`.
 
 ## Prerequisites
 
@@ -20,7 +20,7 @@ docker compose up -d fleans-worker
 docker logs fleans-worker --tail 50 | grep -E "PlacementRoleAssertion|Fleans:Role"
 ```
 
-**Expected:** A log line at Information level with EventId `11200`:
+**Expected:** A log line at Information level with EventId `11310`:
 ```
 PlacementRoleAssertion: Fleans:Role='Worker' on silo 'worker-...' — checked N placement-attributed grain(s); no violations.
 ```
@@ -57,7 +57,7 @@ docker logs fleans-worker --tail 20
 - `'Worker' or` / `'Combined'`
 - `Fleans:Role=Worker`
 
-A structured log line at Error level with EventId `11201` should appear before the exception, naming the grain type and the mismatch.
+A structured log line at Error level with EventId `11311` should appear before the exception, naming the grain type and the mismatch.
 
 ### 3. Recovery — restore `Fleans:Role=Worker`
 
@@ -75,11 +75,11 @@ sleep 10
 docker compose ps fleans-worker
 ```
 
-**Expected:** Container is `Up`, no exception in logs, baseline EventId 11200 message returns.
+**Expected:** Container is `Up`, no exception in logs, baseline EventId 11310 message returns.
 
 ## Pass criteria
 
-- Step 1 passes (baseline boot, EventId 11200 in logs).
+- Step 1 passes (baseline boot, EventId 11310 in logs).
 - Step 2 fails the container with the verbatim AC2 message naming a `[WorkerPlacement]` grain and the wrong-role `Core`.
 - Step 3 recovers cleanly.
 
