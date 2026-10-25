@@ -57,6 +57,18 @@ jobs:
                   assert not re.search(r'^  replicas:', doc, re.M), 'an autoscaled Deployment still sets replicas'
           PY
           test "$(grep -c '^kind: HorizontalPodAutoscaler$' /tmp/render-default.yaml)" = 0
+      - name: Autoscaling on Fleans metrics (KEDA ScaledObject instead of an HPA)
+        run: |
+          set -e
+          helm template fleans charts/fleans/ --set core.autoscaling.enabled=true \
+            --set core.autoscaling.keda.enabled=true \
+            --set core.autoscaling.keda.serverAddress=http://prometheus:9090 \
+            --set 'core.autoscaling.keda.prometheus[0].name=kafka-lag' \
+            --set 'core.autoscaling.keda.prometheus[0].query=sum(fleans_kafka_consumer_lag)' \
+            --set 'core.autoscaling.keda.prometheus[0].threshold=1000' > /tmp/render-keda.yaml
+          test "$(grep -c '^kind: ScaledObject$' /tmp/render-keda.yaml)" = 1
+          test "$(grep -c '^kind: HorizontalPodAutoscaler$' /tmp/render-keda.yaml)" = 0
+          grep -q 'query: "sum(fleans_kafka_consumer_lag)"' /tmp/render-keda.yaml
       - name: helm template (Kubernetes hosting off)
         run: helm template fleans charts/fleans/ --set clustering.kubernetes.enabled=false > /tmp/render-nok8s.yaml
       - name: Confirm renders are non-empty

@@ -240,7 +240,31 @@ core:
     targetCPUUtilizationPercentage: 65   # p99 stays flat below ~80 % in the load tests
 ```
 
-Scale-down removes one silo per 2 minutes after a 5-minute window (`scaleDownStabilizationSeconds`): each removed silo moves its activations and its reminder range. CPU is the only metric for now; scaling on Fleans' own metrics (journal append p99, projector lag, Kafka consumer lag — `fleans.*` in the `Fleans` meter) needs a metrics adapter such as KEDA or prometheus-adapter.
+Scale-down removes one silo per 2 minutes after a 5-minute window (`scaleDownStabilizationSeconds`): each removed silo moves its activations and its reminder range.
+
+#### Autoscaling on Fleans metrics (KEDA)
+
+With [KEDA](https://keda.sh) installed and a Prometheus that scrapes the silos' metrics (OTLP → collector → Prometheus), `autoscaling.keda.enabled` renders a `ScaledObject` instead of the HPA: the same CPU target plus Prometheus triggers on the `Fleans` meter — scale out on whichever trigger asks for more pods.
+
+```yaml
+core:
+  autoscaling:
+    enabled: true
+    keda:
+      enabled: true
+      serverAddress: http://prometheus-server.monitoring.svc
+      prometheus:
+        # Journal append p99 above 50 ms: the journal or the silos are saturating.
+        - name: journal-append-p99
+          query: histogram_quantile(0.99, sum by (le) (rate(fleans_journal_append_duration_seconds_bucket[2m])))
+          threshold: "0.05"
+        # Stream backlog: records behind the head, summed over partitions.
+        - name: kafka-consumer-lag
+          query: sum(fleans_kafka_consumer_lag)
+          threshold: "1000"
+```
+
+The thresholds are per pod (KEDA divides the query's value by the threshold to get the replica count), so pick queries that grow with the backlog. Projector lag (`fleans_projection_lag_seconds`) belongs on `worker.autoscaling.keda`: the projector runs on the worker pods.
 
 ## Upgrade notes
 
