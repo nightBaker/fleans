@@ -348,9 +348,30 @@ worker:
 ### Resource requests / limits
 
 The chart's defaults assume a small workload. For production load, raise
-`core.replicas` and bump CPU/memory based on observed throughput in the
+`core.replicas` (or enable [autoscaling](#autoscaling)) and bump CPU/memory based on observed throughput in the
 Orleans Dashboard. See [Observability](/fleans/reference/observability/) for
 the dashboard URL and metrics that matter.
+
+### Autoscaling
+
+Core and Worker silos can scale on CPU with a `HorizontalPodAutoscaler`; the Deployment then omits `replicas`. Utilization is relative to the CPU request, so set the request to what one silo really uses:
+
+```yaml
+core:
+  resources:
+    requests: { cpu: "1", memory: 1Gi }
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 12
+    targetCPUUtilizationPercentage: 65
+worker:
+  enabled: true
+  autoscaling:
+    enabled: true
+```
+
+Scale-down is deliberately slow (one silo per 2 minutes after a 5-minute window): each removed silo hands its grains and its reminder range to the others. Keep the target at or below ~70 %: past the CPU ceiling a Fleans cluster stops rather than degrades, so also put a rate limit on the REST entry point (`RateLimiting:WorkflowMutation`) below the measured capacity.
 
 ### Image-pull secrets (private registry mirroring)
 

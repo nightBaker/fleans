@@ -2,7 +2,9 @@ using Fleans.Application.Deployments;
 using Fleans.Application.Effects;
 using Fleans.Application.Grains;
 using Fleans.Application.Projections;
+using Fleans.Application.StartEvents;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Orleans.Configuration;
 
@@ -54,6 +56,9 @@ namespace Fleans.Application
             services.AddSingleton<ICompensationLogService, CompensationLogService>();
             services.AddSingleton<WorkflowDefinitionCache>();
             services.AddSingleton<ProjectionBatcher>();
+            services.TryAddSingleton(TimeProvider.System);
+            services.AddSingleton<StartEventSubscriptionCache>();
+            services.AddSingleton<StartEventLauncher>();
 
             services.AddSingleton<EffectDispatcher>();
             services.AddSingleton<IEffectHandler, TimerEffectHandler>();

@@ -48,7 +48,7 @@ public class SignalStartEventTests : WorkflowTestBase
     }
 
     [TestMethod]
-    public async Task FireSignalStartEvent_ShouldCreateAndStartWorkflowInstance()
+    public async Task StartBySignal_ShouldCreateAndStartWorkflowInstance()
     {
         // Arrange
         var workflow = CreateSignalStartWorkflow("signal-start-workflow", "orderSignal");
@@ -57,8 +57,7 @@ public class SignalStartEventTests : WorkflowTestBase
         await processGrain.DeployVersion(workflow, "<placeholder/>");
 
         // Act
-        var listener = Cluster.GrainFactory.GetGrain<ISignalStartEventListenerGrain>("orderSignal");
-        var instanceIds = await listener.FireSignalStartEvent();
+        var instanceIds = await StartEvents.StartBySignal("orderSignal");
 
         // Assert
         Assert.HasCount(1, instanceIds);
@@ -68,7 +67,7 @@ public class SignalStartEventTests : WorkflowTestBase
     }
 
     [TestMethod]
-    public async Task FireSignalStartEvent_TwoWorkflows_ShouldCreateBothInstances()
+    public async Task StartBySignal_TwoWorkflows_ShouldCreateBothInstances()
     {
         // Arrange
         var start1 = new SignalStartEvent("ss1", "sig1");
@@ -94,8 +93,7 @@ public class SignalStartEventTests : WorkflowTestBase
         await Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("sig-start-wf2").DeployVersion(workflow2, "<placeholder/>");
 
         // Act
-        var listener = Cluster.GrainFactory.GetGrain<ISignalStartEventListenerGrain>("sharedSignal");
-        var instanceIds = await listener.FireSignalStartEvent();
+        var instanceIds = await StartEvents.StartBySignal("sharedSignal");
 
         // Assert
         Assert.HasCount(2, instanceIds);
@@ -103,11 +101,10 @@ public class SignalStartEventTests : WorkflowTestBase
     }
 
     [TestMethod]
-    public async Task FireSignalStartEvent_NoRegisteredProcesses_ShouldReturnEmptyList()
+    public async Task StartBySignal_NoRegisteredProcesses_ShouldReturnEmptyList()
     {
         // Act
-        var listener = Cluster.GrainFactory.GetGrain<ISignalStartEventListenerGrain>("nonExistentSignal");
-        var instanceIds = await listener.FireSignalStartEvent();
+        var instanceIds = await StartEvents.StartBySignal("nonExistentSignal");
 
         // Assert
         Assert.HasCount(0, instanceIds);
@@ -123,8 +120,7 @@ public class SignalStartEventTests : WorkflowTestBase
         await processGrain.DeployVersion(workflow, "<placeholder/>");
 
         // Assert — fire should create an instance without manual registration
-        var listener = Cluster.GrainFactory.GetGrain<ISignalStartEventListenerGrain>("autoRegSignal");
-        var instanceIds = await listener.FireSignalStartEvent();
+        var instanceIds = await StartEvents.StartBySignal("autoRegSignal");
         Assert.HasCount(1, instanceIds);
     }
 
@@ -138,8 +134,7 @@ public class SignalStartEventTests : WorkflowTestBase
         await processGrain.DeployVersion(v1, "<placeholder/>");
 
         // Verify v1 registration works
-        var listener = Cluster.GrainFactory.GetGrain<ISignalStartEventListenerGrain>("redeploySignal");
-        var v1Ids = await listener.FireSignalStartEvent();
+        var v1Ids = await StartEvents.StartBySignal("redeploySignal");
         Assert.HasCount(1, v1Ids);
 
         // Act — deploy v2 without signal start event (plain start event instead)
@@ -159,7 +154,7 @@ public class SignalStartEventTests : WorkflowTestBase
         await processGrain.DeployVersion(v2, "<placeholder/>");
 
         // Assert — listener should no longer create instances for this process
-        var v2Ids = await listener.FireSignalStartEvent();
+        var v2Ids = await StartEvents.StartBySignal("redeploySignal");
         Assert.HasCount(0, v2Ids);
     }
 
@@ -198,8 +193,7 @@ public class SignalStartEventTests : WorkflowTestBase
         // Act — simulate fan-out: broadcast to running instances + fire start event
         var deliveredCount = await BroadcastSignalWhenSubscribed("fanoutSignal");
 
-        var startListener = Cluster.GrainFactory.GetGrain<ISignalStartEventListenerGrain>("fanoutSignal");
-        var newInstanceIds = await startListener.FireSignalStartEvent();
+        var newInstanceIds = await StartEvents.StartBySignal("fanoutSignal");
 
         // Assert — running instance A should have completed
         var instanceAId = await instanceA.GetWorkflowInstanceId();
@@ -223,8 +217,7 @@ public class SignalStartEventTests : WorkflowTestBase
         var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("sig-fail-500-wf");
         await processGrain.DeployVersion(workflow, "<placeholder/>");
 
-        var listener = Cluster.GrainFactory.GetGrain<ISignalStartEventListenerGrain>("fail500Signal");
-        var instanceIds = await listener.FireSignalStartEvent();
+        var instanceIds = await StartEvents.StartBySignal("fail500Signal");
         Assert.HasCount(1, instanceIds);
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceIds[0]);
 
@@ -249,8 +242,7 @@ public class SignalStartEventTests : WorkflowTestBase
         var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("sig-fail-400-wf");
         await processGrain.DeployVersion(workflow, "<placeholder/>");
 
-        var listener = Cluster.GrainFactory.GetGrain<ISignalStartEventListenerGrain>("fail400Signal");
-        var instanceIds = await listener.FireSignalStartEvent();
+        var instanceIds = await StartEvents.StartBySignal("fail400Signal");
         Assert.HasCount(1, instanceIds);
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceIds[0]);
 
@@ -274,8 +266,7 @@ public class SignalStartEventTests : WorkflowTestBase
         var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("sig-fail-transition-wf");
         await processGrain.DeployVersion(workflow, "<placeholder/>");
 
-        var listener = Cluster.GrainFactory.GetGrain<ISignalStartEventListenerGrain>("failTransSignal");
-        var instanceIds = await listener.FireSignalStartEvent();
+        var instanceIds = await StartEvents.StartBySignal("failTransSignal");
         Assert.HasCount(1, instanceIds);
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceIds[0]);
 
@@ -299,8 +290,7 @@ public class SignalStartEventTests : WorkflowTestBase
         var processGrain = Cluster.GrainFactory.GetGrain<IProcessDefinitionGrain>("sig-fail-novar-wf");
         await processGrain.DeployVersion(workflow, "<placeholder/>");
 
-        var listener = Cluster.GrainFactory.GetGrain<ISignalStartEventListenerGrain>("failNoVarSignal");
-        var instanceIds = await listener.FireSignalStartEvent();
+        var instanceIds = await StartEvents.StartBySignal("failNoVarSignal");
         Assert.HasCount(1, instanceIds);
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(instanceIds[0]);
 

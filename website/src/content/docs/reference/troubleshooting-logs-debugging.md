@@ -44,6 +44,7 @@ If you author a custom-task plugin, follow the same pattern (see the [adding a B
 | 5000–5099 | `WorkflowEventsPublisher` |
 | 9000–9099 | `MessageCorrelationGrain` (9000–9009), `BpmnConverter` (9010–9019), `ScriptExecutorGrain` (9020–9029: 9021 script failed (Error); 9022 the instance rejected the script's result, e.g. variables over the size limit — activity failed (Warning); 9023 reporting the result failed transiently, retrying (Warning); 9024 reporting gave up — the instance dispatches the script again after its result timeout (Critical)) |
 | 9100–9199 | `MessageStartEventListenerGrain` (9100–9109), `SignalCorrelationGrain` (9110–9119) |
+| 9370–9399 | Message, signal and conditional starts — 9370 an instance started, 9371 no process subscribed to the message or signal (Warning), 9372 a start failed (Error), 9373 disabled process skipped (Warning), 9376 conditional start fired, 9380 conditional evaluation failed (Error); 9386 a host could not subscribe to deployment changes, its start-event cache refreshes only every 30 s (Warning); 9392 a host did not take a deployment change (Warning) |
 | 10000–10099 | `TimerCallbackGrain` |
 | 11200 | `Fleans.Streaming.Kafka.AwsMsk` — MSK IAM token refresh failed (Error); check IAM policy for `kafka-cluster:Connect` / `WriteData` / `ReadData` |
 | 11201 | `Fleans.Streaming.Kafka.AwsMsk` — `OAuthBearerSetTokenFailure` threw after token-refresh failure (Warning); typically a shutdown race, not actionable |
