@@ -29,6 +29,10 @@ public static class FleanStreamingExtensions
     {
         var provider = configuration.GetValue<string>("Fleans:Streaming:Provider") ?? "redis";
 
+        if (ReadPollPeriod(configuration) is { } pollPeriod)
+            builder.Services.Configure<StreamPullingAgentOptions>(StreamProviderName,
+                o => o.GetQueueMsgsTimerPeriod = pollPeriod);
+
         return provider.ToLowerInvariant() switch
         {
             "memory" => builder.AddMemoryStreams(StreamProviderName,
@@ -69,6 +73,27 @@ public static class FleanStreamingExtensions
 
         return builder.AddPersistentStreams(StreamProviderName, RedisStreamFactory.Create,
             b => b.ConfigureStreamPubSub(StreamPubSubType.ImplicitOnly));
+    }
+
+    /// <summary>
+    /// Reads <c>Fleans:Streaming:PollPeriod</c> — how often each pulling agent reads its queue
+    /// (Orleans' <c>StreamPullingAgentOptions.GetQueueMsgsTimerPeriod</c>), for every provider.
+    /// <c>null</c> when absent: Orleans' default of 100 ms applies. A stream event waits up to one
+    /// period before delivery; a shorter period lowers that wait and polls the backend more often.
+    /// Throws <see cref="ArgumentException"/> when the value is not a positive <c>TimeSpan</c>.
+    /// </summary>
+    public static TimeSpan? ReadPollPeriod(IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        var raw = configuration["Fleans:Streaming:PollPeriod"];
+        if (raw is null) return null;
+        if (!TimeSpan.TryParse(raw, CultureInfo.InvariantCulture, out var period) || period <= TimeSpan.Zero)
+        {
+            throw new ArgumentException(
+                $"Fleans:Streaming:PollPeriod must be a positive TimeSpan such as 00:00:00.020 (got '{raw}'). " +
+                "Set Fleans__Streaming__PollPeriod or remove it for the 100 ms default.");
+        }
+        return period;
     }
 
     /// <summary>

@@ -8,9 +8,10 @@ Deploy the [Fleans](https://nightbaker.github.io/fleans/) BPMN workflow engine o
 | --------- | ----- | ------- |
 | `core-<fullname>` Deployment | `ghcr.io/nightbaker/fleans-api:<tag>` | Orleans silo (`Fleans__Role=Core`). Hosts coordinator grains. |
 | `worker-<fullname>` Deployment (optional) | `ghcr.io/nightbaker/fleans-api:<tag>` | Orleans silo (`Fleans__Role=Worker`). Hosts `[StatelessWorker]` script/condition grains. Same image as `core` — different role env var. |
+| `<fullname>-api` Deployment + Service (optional, `api.enabled`) | `ghcr.io/nightbaker/fleans-api:<tag>` | REST only (`Fleans__Role=Api`): an Orleans client with no grains, scaled apart from the silos. |
 | `web` Deployment (optional, default on) | `ghcr.io/nightbaker/fleans-web:<tag>` | Blazor Server admin UI. |
 | `mcp` Deployment (optional, default on) | `ghcr.io/nightbaker/fleans-mcp:<tag>` | MCP server (port 5200) for AI-agent integration. |
-| `redis` StatefulSet | `redis:7-alpine` | Orleans clustering, reminders and streams when their provider is Redis (the defaults). Required. |
+| `redis` StatefulSet | `redis:7-alpine` | Orleans clustering, reminders and streams when their provider is Redis (the defaults). `redis.enabled=false` once none of them is. |
 | `<fullname>-silo` ServiceAccount + Role + RoleBinding | — | Orleans Kubernetes hosting (`clustering.kubernetes.enabled`, default on): pods `get`/`list`/`watch`/`patch`. |
 | `postgres` StatefulSet (optional) | `postgres:16` | Workflow persistence when `persistence.provider=Postgres`. |
 
@@ -178,6 +179,33 @@ clustering:
 - names silo Deployments `<role>-<fullname>` (`core-…`, `worker-…`, `worker-…-custom`): Kubernetes hosting makes the pod name the silo name, and Fleans placement reads the role from its prefix.
 
 Silo pods get `terminationGracePeriodSeconds: 60` (`clustering.terminationGracePeriodSeconds`, minimum 15); the silo's graceful stop gets 10 s less. Custom worker hosts must use the same clustering provider.
+
+### REST API apart from the silos
+
+`api.enabled=true` adds `<fullname>-api`: the `fleans-api` image with `Fleans__Role=Api`, an Orleans client that hosts no grains and only serves REST. Scale it on requests per second (`api.replicas`, default 2) without adding silos; point REST clients at the `<fullname>-api` Service. The core silo keeps serving REST too.
+
+### Running without Redis
+
+Redis is only needed while one of clustering, reminders or streaming uses it. With all three elsewhere, turn the bundled Redis off; the hosts then register no Redis client and no Redis health check:
+
+```yaml
+redis:
+  enabled: false
+clustering:
+  provider: Postgres
+reminders:
+  provider: Postgres
+streaming:
+  provider: Kafka        # or AzureQueue
+  kafka:
+    brokers: kafka.kafka.svc:9092
+```
+
+Without Redis the admin UI keeps its Data Protection keys (sign-in cookies) in the pod, so with OIDC on run one `web` replica.
+
+### Load shedding
+
+`loadShedding.enabled=true` sets `Fleans__LoadShedding__Enabled` / `__CpuThreshold` (`loadShedding.cpuThreshold`, default 95) on the silos: above that CPU a silo's gateway rejects new client requests, which the REST API answers with 503, instead of queueing them. It acts on requests from Orleans clients (`api`, `web`, `mcp`), not on REST calls a core silo serves itself.
 
 ### Worker silos on dedicated nodes
 

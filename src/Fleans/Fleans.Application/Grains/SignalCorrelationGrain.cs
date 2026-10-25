@@ -8,10 +8,14 @@ using System.Dynamic;
 
 namespace Fleans.Application.Grains;
 
+// One bucket of a signal name (integer key = bucket, key extension = signal name); see
+// ISignalCorrelationGrain. A broadcast reaches all buckets in parallel
+// (SignalCorrelationGrainFactoryExtensions.BroadcastSignal).
+//
 // [Reentrant] is required to avoid deadlocks when a non-interrupting event
-// sub-process re-subscribes during BroadcastSignal delivery. A SemaphoreSlim
-// mutex serialises all state-mutation windows (subscribe, unsubscribe,
-// snapshot+clear in broadcast). The mutex is released before fan-out delivery
+// sub-process re-subscribes during BroadcastSignal delivery (same instance → same bucket).
+// A SemaphoreSlim mutex serialises all state-mutation windows (subscribe, unsubscribe,
+// snapshot+clear and restore in broadcast). The mutex is released before fan-out delivery
 // so reentrancy can proceed without deadlock.
 [Reentrant]
 [CorePlacement]
@@ -35,7 +39,7 @@ public partial class SignalCorrelationGrain : Grain, ISignalCorrelationGrain
 
     public async ValueTask Subscribe(Guid workflowInstanceId, string activityId, Guid hostActivityInstanceId)
     {
-        var signalName = this.GetPrimaryKeyString();
+        var signalName = SignalName;
 
         await _mutex.WaitAsync();
         try
@@ -59,7 +63,7 @@ public partial class SignalCorrelationGrain : Grain, ISignalCorrelationGrain
 
     public async ValueTask Unsubscribe(Guid workflowInstanceId, string activityId)
     {
-        var signalName = this.GetPrimaryKeyString();
+        var signalName = SignalName;
 
         await _mutex.WaitAsync();
         try
@@ -76,6 +80,15 @@ public partial class SignalCorrelationGrain : Grain, ISignalCorrelationGrain
         }
     }
 
+    private string SignalName
+    {
+        get
+        {
+            this.GetPrimaryKeyLong(out var signalName);
+            return signalName!;
+        }
+    }
+
     // Storage writes only the change set the state recorded; once it has, the set is forgotten.
     // On failure the set is kept, so the next write retries it.
     private async Task WriteStateAsync()
@@ -89,7 +102,7 @@ public partial class SignalCorrelationGrain : Grain, ISignalCorrelationGrain
 
     public async ValueTask<int> BroadcastSignal()
     {
-        var signalName = this.GetPrimaryKeyString();
+        var signalName = SignalName;
         List<SignalSubscription> subscribers;
 
         await _mutex.WaitAsync();
@@ -102,7 +115,18 @@ public partial class SignalCorrelationGrain : Grain, ISignalCorrelationGrain
             }
 
             subscribers = _state.State.TakeAllSubscriptions();
-            await WriteStateAsync();
+            try
+            {
+                await WriteStateAsync();
+            }
+            catch
+            {
+                // Nothing was delivered: put the subscriptions back so memory matches storage.
+                // The kept change set (clear + re-add) lands with the next successful write.
+                foreach (var sub in subscribers)
+                    _state.State.AddSubscription(sub);
+                throw;
+            }
         }
         finally
         {
@@ -115,6 +139,7 @@ public partial class SignalCorrelationGrain : Grain, ISignalCorrelationGrain
         LogBroadcastStarted(signalName, subscribers.Count);
 
         var deliveredCount = 0;
+        var toRestore = new List<SignalSubscription>();
 
         foreach (var batch in subscribers.Chunk(DeliveryBatchSize))
         {
@@ -124,23 +149,62 @@ public partial class SignalCorrelationGrain : Grain, ISignalCorrelationGrain
                 {
                     var workflowInstance = _grainFactory.GetGrain<IWorkflowInstanceGrain>(sub.WorkflowInstanceId);
                     await workflowInstance.HandleSignalDelivery(sub.ActivityId, sub.HostActivityInstanceId);
-                    return true;
+                    return (Sub: sub, Delivered: true, Restore: false);
                 }
                 catch (Exception ex)
                 {
                     LogDeliveryFailed(signalName, sub.WorkflowInstanceId, sub.ActivityId, ex);
-                    return false;
+                    return (Sub: sub, Delivered: false, Restore: IsTransient(ex));
                 }
             });
 
             var results = await Task.WhenAll(batchTasks);
-            deliveredCount += results.Count(r => r);
+            deliveredCount += results.Count(r => r.Delivered);
+            toRestore.AddRange(results.Where(r => r.Restore).Select(r => r.Sub));
         }
 
         LogBroadcastCompleted(signalName, deliveredCount, subscribers.Count);
 
+        if (toRestore.Count > 0)
+            await RestoreSubscriptions(signalName, toRestore);
+
         return deliveredCount;
     }
+
+    // #742: a transient delivery failure (timeout, unreachable silo, instance reloading) must not
+    // drop the subscription for good — it goes back into the bucket and receives the next
+    // broadcast. A subscription re-added in the meantime (non-interrupting re-subscribe) wins:
+    // AddSubscription ignores the key. Other failures (the instance is gone or rejects the
+    // delivery) stay dropped, so a dead subscription is not retried on every broadcast.
+    private async Task RestoreSubscriptions(string signalName, List<SignalSubscription> subscriptions)
+    {
+        await _mutex.WaitAsync();
+        try
+        {
+            var restored = subscriptions.Count(sub => _state.State.AddSubscription(sub));
+            if (restored == 0)
+                return;
+
+            try
+            {
+                await WriteStateAsync();
+            }
+            catch (Exception ex)
+            {
+                // The restored rows stay in memory and in the change set; the next write lands them.
+                LogRestoreWriteFailed(signalName, restored, ex);
+                return;
+            }
+
+            LogSubscriptionsRestored(signalName, restored);
+        }
+        finally
+        {
+            _mutex.Release();
+        }
+    }
+
+    private static bool IsTransient(Exception ex) => ex is TimeoutException or OrleansException;
 
     [LoggerMessage(EventId = 9110, Level = LogLevel.Information,
         Message = "Signal '{SignalName}' subscription registered: workflowInstanceId={WorkflowInstanceId}, activityId={ActivityId}")]
@@ -173,4 +237,12 @@ public partial class SignalCorrelationGrain : Grain, ISignalCorrelationGrain
     [LoggerMessage(EventId = 9117, Level = LogLevel.Warning,
         Message = "Signal '{SignalName}' broadcast has {SubscriberCount} subscribers (threshold: {Threshold}) — delivering in batches")]
     private partial void LogBroadcastHighSubscriberCount(string signalName, int subscriberCount, int threshold);
+
+    [LoggerMessage(EventId = 9118, Level = LogLevel.Warning,
+        Message = "Signal '{SignalName}' restored {RestoredCount} subscriptions after transient delivery failures; they receive the next broadcast")]
+    private partial void LogSubscriptionsRestored(string signalName, int restoredCount);
+
+    [LoggerMessage(EventId = 9119, Level = LogLevel.Error,
+        Message = "Signal '{SignalName}' failed to persist {RestoredCount} restored subscriptions; the next write retries")]
+    private partial void LogRestoreWriteFailed(string signalName, int restoredCount, Exception exception);
 }

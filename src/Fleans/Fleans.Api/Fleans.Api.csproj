@@ -10,7 +10,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Aspire.StackExchange.Redis" Version="13.1.1" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.1" />
     <PackageReference Include="Microsoft.Orleans.Clustering.Redis" Version="10.4.0" />
     <PackageReference Include="Microsoft.Orleans.Dashboard" Version="10.4.0" />

@@ -92,3 +92,29 @@ jobs:
           if helm template fleans charts/fleans/ --set clustering.provider=Postgres --set persistence.provider=Sqlite > /dev/null 2>&1; then
             echo "clustering.provider=Postgres with persistence.provider=Sqlite must fail the render"; exit 1
           fi
+      - name: API client role, no-Redis install, load shedding
+        run: |
+          set -e
+          helm template fleans charts/fleans/ \
+            --set api.enabled=true \
+            --set redis.enabled=false \
+            --set persistence.provider=Postgres \
+            --set clustering.provider=Postgres \
+            --set reminders.provider=Postgres \
+            --set streaming.provider=Kafka \
+            --set streaming.kafka.brokers=kafka:9092 \
+            --set loadShedding.enabled=true \
+            --set loadShedding.cpuThreshold=80 \
+            > /tmp/render-api.yaml
+          # Optional REST-only Deployment + Service running Fleans:Role=Api.
+          grep -q 'name: fleans-api$' /tmp/render-api.yaml
+          grep -q 'value: "Api"' /tmp/render-api.yaml
+          grep -q 'name: Fleans__LoadShedding__CpuThreshold' /tmp/render-api.yaml
+          # Without the bundled Redis no workload is pointed at it.
+          if grep -q 'orleans-redis' /tmp/render-api.yaml; then
+            echo "redis.enabled=false still renders ConnectionStrings__orleans-redis"; exit 1
+          fi
+          # Defaults: no api Deployment, no load-shedding env.
+          if grep -qE 'name: fleans-api$|Fleans__LoadShedding' /tmp/render-default.yaml; then
+            echo "api / loadShedding must be off by default"; exit 1
+          fi

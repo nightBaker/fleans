@@ -78,7 +78,7 @@ public class EventPublisherTests
         // Act
         await workflowInstance.StartWorkflow(workflow);
 
-        // Assert — stream handler evaluates "true" condition and completes the workflow
+        // Assert — the instance evaluates the "true" condition and completes the workflow
         var snapshot = await PollForCompletion(instanceId);
         Assert.IsNotNull(snapshot);
         Assert.IsTrue(snapshot.IsCompleted);
@@ -99,7 +99,7 @@ public class EventPublisherTests
         // Act
         await workflowInstance.StartWorkflow(workflow);
 
-        // Assert — stream handler executes script and completes the workflow
+        // Assert — the executor grain runs the script and completes the workflow
         var snapshot = await PollForCompletion(instanceId);
         Assert.IsNotNull(snapshot);
         Assert.IsTrue(snapshot.IsCompleted);

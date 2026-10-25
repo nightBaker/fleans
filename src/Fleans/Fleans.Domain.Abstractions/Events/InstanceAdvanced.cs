@@ -5,8 +5,11 @@ namespace Fleans.Domain.Events;
 /// <paramref name="InstanceId"/> now holds <paramref name="Version"/> events. The read-model
 /// projector consumes it, reads the journal itself and projects up to its head (#861). It carries
 /// no state, so it stays small, and a late or repeated one is harmless.
+/// <paramref name="PublishedAt"/> is when the instance published it; the projector measures its
+/// lag (<c>fleans.projection.lag</c>) from it.
 /// </summary>
 [GenerateSerializer]
 public sealed record InstanceAdvanced(
     [property: Id(0)] Guid InstanceId,
-    [property: Id(1)] int Version);
+    [property: Id(1)] int Version,
+    [property: Id(2)] DateTimeOffset PublishedAt);

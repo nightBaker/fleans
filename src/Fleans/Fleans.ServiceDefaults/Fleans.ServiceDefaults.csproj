@@ -21,6 +21,9 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
 
+    <!-- Keyed `orleans-redis` client, registered by FleansRedisExtensions.AddFleansRedisClient only
+         when a Redis-backed provider is configured. -->
+    <PackageReference Include="Aspire.StackExchange.Redis" Version="13.1.1" />
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="10.1.0" />
     <PackageReference Include="Microsoft.Extensions.ServiceDiscovery" Version="10.1.0" />
     <PackageReference Include="Microsoft.Orleans.Sdk" Version="10.4.0" />
