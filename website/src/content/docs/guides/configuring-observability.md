@@ -132,9 +132,9 @@ execution logs carry a structured `WorkflowId` field you can filter on:
 `{service_name="fleans-silo"} | json | WorkflowId != ""`.
 
 :::note
-**Kafka deployments**: once [#687](https://github.com/nightBaker/fleans/issues/687)
-(consumer-lag metrics) ships, look for additional `fleans_kafka_consumer_lag_*` metrics
-in the Prometheus output. This guide will be updated when that lands.
+**Kafka deployments**: each silo reports its stream receivers' backlog as the
+`fleans_kafka_consumer_lag` gauge (records, per `topic` and `partition`) — see the
+[metric catalog](/fleans/reference/observability/#fleans-defined-metrics).
 :::
 
 ## Note: Direct Prometheus pull

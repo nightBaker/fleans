@@ -179,18 +179,11 @@ public static class FleansPersistenceExtensions
         {
             foreach (var (connectionString, schema) in dedicatedSchemas)
             {
-                // Own database (#886, #885): same advisory-lock dance on its own session.
+                // Own database (#886, #885): same migration lock, on that database.
                 await using var conn = new NpgsqlConnection(connectionString);
                 await conn.OpenAsync();
-                await ExecuteAsync(conn, $"SELECT pg_advisory_lock({MigrationLockKey})");
-                try
-                {
+                await using (await AcquireMigrationLockAsync(conn))
                     await EnsureOrleansSchemaAsync(conn, schema);
-                }
-                finally
-                {
-                    await ExecuteAsync(conn, $"SELECT pg_advisory_unlock({MigrationLockKey})");
-                }
             }
         }
 
@@ -215,28 +208,18 @@ public static class FleansPersistenceExtensions
     {
         if (IsPostgresFamily(provider))
         {
-            // Pin the connection so the session-level advisory lock survives across
-            // MigrateAsync's internal transactions.
             await db.Database.OpenConnectionAsync();
             try
             {
-                await db.Database.ExecuteSqlRawAsync(
-                    $"SELECT pg_advisory_lock({MigrationLockKey})");
-                await db.Database.MigrateAsync();
-                if (afterMigrate is not null)
-                    await afterMigrate(db);
+                await using (await AcquireMigrationLockAsync(db.Database.GetDbConnection()))
+                {
+                    await db.Database.MigrateAsync();
+                    if (afterMigrate is not null)
+                        await afterMigrate(db);
+                }
             }
             finally
             {
-                try
-                {
-                    await db.Database.ExecuteSqlRawAsync(
-                        $"SELECT pg_advisory_unlock({MigrationLockKey})");
-                }
-                catch
-                {
-                    // Lock will be released on connection close anyway.
-                }
                 await db.Database.CloseConnectionAsync();
             }
         }
@@ -248,6 +231,51 @@ public static class FleansPersistenceExtensions
 
     // Arbitrary, but must be the same across all silos in the cluster.
     private const long MigrationLockKey = 8723547283L;
+
+    /// <summary>
+    /// Serializes schema setup across processes: a transaction-scoped advisory lock, held in an open
+    /// transaction on a connection of its own (a clone of <paramref name="like"/>, same server and
+    /// credentials) until the returned handle is disposed. A session-level lock does not work
+    /// through PgBouncer in transaction mode (#923): the lock, the migrations and the unlock can each
+    /// run on a different server connection, so the unlock fails and the lock stays held by a pooled
+    /// server connection forever. An open transaction keeps its server connection for its lifetime,
+    /// and the lock ends with it — also when this process dies.
+    /// </summary>
+    private static async Task<IAsyncDisposable> AcquireMigrationLockAsync(DbConnection like)
+    {
+        var conn = (DbConnection)((ICloneable)like).Clone();
+        await conn.OpenAsync();
+        try
+        {
+            var tx = await conn.BeginTransactionAsync();
+            await using var cmd = conn.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText = $"SELECT pg_advisory_xact_lock({MigrationLockKey})";
+            await cmd.ExecuteNonQueryAsync();
+            return new MigrationLock(conn, tx);
+        }
+        catch
+        {
+            await conn.DisposeAsync();
+            throw;
+        }
+    }
+
+    private sealed class MigrationLock(DbConnection connection, DbTransaction transaction) : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync()
+        {
+            try
+            {
+                await transaction.CommitAsync();
+            }
+            finally
+            {
+                await transaction.DisposeAsync();
+                await connection.DisposeAsync();
+            }
+        }
+    }
 
     [Flags]
     private enum OrleansSchema

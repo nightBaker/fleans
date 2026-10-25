@@ -171,6 +171,94 @@
       ],
       "title": "Per-Container CPU (api replicas)",
       "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "ops" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
+      "id": 9,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "expr": "sum(rate(fleans_workflow_terminated_total{result=\"completed\"}[1m]))",
+          "legendFormat": "Completed/s"
+        },
+        {
+          "expr": "sum(rate(fleans_workflow_started_total[1m]))",
+          "legendFormat": "Started/s"
+        }
+      ],
+      "title": "Completed Instances/s",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "s" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
+      "id": 10,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(fleans_workflow_duration_seconds_bucket{result=\"completed\"}[5m])))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(fleans_workflow_duration_seconds_bucket{result=\"completed\"}[5m])))",
+          "legendFormat": "p99"
+        }
+      ],
+      "title": "Process Duration",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "s" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 40 },
+      "id": 11,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(fleans_journal_append_duration_seconds_bucket{result=\"appended\"}[5m])))",
+          "legendFormat": "Journal append p99"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(fleans_projection_lag_seconds_bucket[5m])))",
+          "legendFormat": "Projector lag p99"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(fleans_timer_lag_seconds_bucket[5m])))",
+          "legendFormat": "Timer lag p99"
+        }
+      ],
+      "title": "Scale Metrics p99",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 40 },
+      "id": 12,
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "expr": "sum by (topic) (fleans_kafka_consumer_lag)",
+          "legendFormat": "{{topic}}"
+        }
+      ],
+      "title": "Kafka Consumer Lag (records)",
+      "type": "timeseries"
     }
   ],
   "refresh": "10s",

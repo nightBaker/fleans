@@ -208,9 +208,10 @@ internal static class FleanModelConfiguration
 
         modelBuilder.Entity<SignalCorrelationState>(entity =>
         {
+            // One row per bucket of a signal name (SignalCorrelationOptions.BucketCount).
             entity.ToTable("SignalCorrelations");
-            entity.HasKey(e => e.Key);
-            entity.Property(e => e.Key).HasMaxLength(512);
+            entity.HasKey(e => new { e.SignalName, e.Bucket });
+            entity.Property(e => e.SignalName).HasMaxLength(512);
             entity.Property(e => e.ETag).HasMaxLength(64);
 
             // In-memory change set the storage reads to write only the affected rows (#859).
@@ -220,14 +221,15 @@ internal static class FleanModelConfiguration
 
             entity.HasMany(e => e.Subscriptions)
                 .WithOne()
-                .HasForeignKey(s => s.SignalName)
+                .HasForeignKey(s => new { s.SignalName, s.Bucket })
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<SignalSubscription>(sub =>
         {
             sub.ToTable("SignalSubscriptions");
-            sub.HasKey(s => new { s.SignalName, s.WorkflowInstanceId, s.ActivityId });
+            // Bucket second: the broadcast clear deletes by (SignalName, Bucket) on the key's prefix.
+            sub.HasKey(s => new { s.SignalName, s.Bucket, s.WorkflowInstanceId, s.ActivityId });
             sub.Property(s => s.SignalName).HasMaxLength(512);
             sub.Property(s => s.ActivityId).HasMaxLength(256);
         });

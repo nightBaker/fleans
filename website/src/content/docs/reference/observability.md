@@ -35,12 +35,39 @@ Meter name: `Fleans` (instrumentation version `1.0.0`).
 |---|---|---|---|---|
 | `fleans.workflow.started`    | Counter   | `{instances}` | Workflow instances started. | none |
 | `fleans.workflow.terminated` | Counter   | `{instances}` | Workflow instances that reached a terminal state. | `result={completed,cancelled,failed}` |
-| `fleans.workflow.stalled`    | Counter   | `{deliveries}` | Activity results the workflow instance rejected: a script, condition or custom-task handler's `FailActivity` call itself threw ("workflow may be stalled"). The activity stays executing until a redelivery succeeds. Counts deliveries, not instances — one stuck instance under stream redelivery counts many times. | `handler={script,condition,activation_condition,custom_task}` |
+| `fleans.workflow.stalled`    | Counter   | `{deliveries}` | Activity results that did not reach the workflow instance: a custom-task handler's `FailActivity` call itself threw ("workflow may be stalled"), or the script executor gave up reporting a script's result after its retries. The activity stays executing until a redelivery succeeds (custom task) or the instance dispatches the script again after `Fleans:Worker:ScriptResultTimeout`. Counts deliveries, not instances — one stuck instance under stream redelivery counts many times. | `handler={script,custom_task}` |
 | `fleans.activity.duration`   | Histogram | `ms`          | Per-activity wall-clock duration. Explicit buckets: `[10, 50, 100, 250, 500, 1000, 5000, 10000, 30000, 60000, 300000, 600000]` ms — sub-millisecond script tasks through 10-minute REST calls. | `activity.type` |
+| `fleans.workflow.duration`   | Histogram | `s`           | Process duration: from the instance's start to its completed, cancelled or failed event. Buckets: `[0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 300, 1800, 3600, 86400]` s. Its count per `result` equals `fleans.workflow.terminated`. | `result={completed,cancelled,failed}`, `process.definition.key` (the BPMN process id — one series per deployed process, never per instance or version) |
+| `fleans.journal.append.duration` | Histogram | `s`       | One workflow-instance journal append — the event-store write behind every `ConfirmEvents`, retries of a failed try included. Buckets: `[0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5]` s. | `result={appended,conflict,failed}` (`conflict`: another writer's batch was there; `failed`: the store threw and Orleans retries) |
+| `fleans.projection.lag`      | Histogram | `s`           | Read-model lag: from the instance publishing its `InstanceAdvanced` notification to the projector writing the projection. One sample per projection write; notifications it coalesces are not sampled. Buckets: `[0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60]` s. | none |
+| `fleans.timer.lag`           | Histogram | `s`           | BPMN timer lag (timer events and timer boundary events): the reminder tick that delivered the timer to its instance minus the timer's due time (Orleans `TickStatus.CurrentTickTime − FirstTickTime`). A delivery that failed and was retried a minute later counts that minute. Timer **start** events are not covered. Buckets: `[0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60, 120, 300]` s. | none |
+| `fleans.kafka.consumer.lag`  | Gauge     | `{records}`   | Kafka streaming only: records past the last one this silo's stream receiver read, per topic partition, from the consumer's cached high watermark (no broker round trip). Sampled on each poll that returned records — an idle partition keeps its last value (normally 0), and a partition moved to another silo keeps its last value here until the process restarts. | `topic`, `partition` |
 
 > **Deferred to a follow-up:** `fleans.workflow.active` (a non-terminal-count gauge) requires engine-side cooperation to seed from persistence at silo startup so the count survives silo restarts. It is intentionally not shipped in this initial Meter to avoid a known-broken metric. Track via the Fleans GitHub project.
 
 > **`fleans.activity.duration` is measured from the event log.** The duration runs from the activity's `ActivitySpawned` event to its completed, failed or cancelled event, using the time recorded on each event. An activity that spans a silo restart or grain reactivation still records its full duration.
+
+> **`fleans.workflow.duration` is measured from the event log, once.** The start is the instance's `WorkflowStarted` event time and the end is its terminal event's, so an instance that spans reactivations or silo restarts records its whole duration. Like the counters, it is recorded when the terminal event is raised, never when a reactivating grain replays its journal. The lag metrics (`fleans.projection.lag`, `fleans.timer.lag`) compare clocks of different silos; a negative difference from clock skew records `0`.
+
+#### Throughput and p99 duration (the 1.0 scale metrics)
+
+The [Road to 1.0.0](/fleans/roadmap/v1/) measures throughput as **completed instances per second** and latency as **p99 process duration**. With the OpenTelemetry Collector's Prometheus exporter (default metric-name suffixes):
+
+```promql
+# completed instances per second, cluster-wide
+sum(rate(fleans_workflow_terminated_total{result="completed"}[1m]))
+
+# p99 process duration in seconds, per process
+histogram_quantile(0.99, sum by (le, process_definition_key) (rate(fleans_workflow_duration_seconds_bucket{result="completed"}[5m])))
+
+# p99 journal append, p99 projector lag, p99 timer lag
+histogram_quantile(0.99, sum by (le) (rate(fleans_journal_append_duration_seconds_bucket{result="appended"}[5m])))
+histogram_quantile(0.99, sum by (le) (rate(fleans_projection_lag_seconds_bucket[5m])))
+histogram_quantile(0.99, sum by (le) (rate(fleans_timer_lag_seconds_bucket[5m])))
+
+# Kafka backlog per stream topic
+sum by (topic) (fleans_kafka_consumer_lag)
+```
 
 > **Activity source `Fleans` (tracing).** Declared and registered today; dedicated per-event spans (timer fired, message correlated, compensation walk advanced, custom task plugin executed) are a follow-up — plugin authors can already attach spans to `FleansDiagnostics.ActivitySource` from their own handlers.
 
