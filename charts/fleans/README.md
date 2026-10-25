@@ -264,7 +264,7 @@ core:
           threshold: "1000"
 ```
 
-The thresholds are per pod (KEDA divides the query's value by the threshold to get the replica count), so pick queries that grow with the backlog. Projector lag (`fleans_projection_lag_seconds`) is the signal for a dedicated projector deployment.
+The thresholds are per pod (KEDA divides the query's value by the threshold to get the replica count), so pick queries that grow with the backlog. Projector lag (`fleans_projection_lag_seconds`) belongs on `worker.autoscaling.keda`: the projector runs on the worker pods.
 
 ## Upgrade notes
 
