@@ -8,6 +8,11 @@ using Orleans.Streams;
 
 namespace Fleans.Application.Events;
 
+/// <summary>
+/// Publishes the domain events that leave the workflow instance through a stream — today the
+/// custom-task requests to plugin handlers. Script tasks are dispatched straight to the script
+/// executor grain and conditions are evaluated in the instance, so neither comes through here.
+/// </summary>
 [StatelessWorker]
 public partial class WorkflowEventsPublisher : Grain, IEventPublisher
 {
@@ -21,9 +26,6 @@ public partial class WorkflowEventsPublisher : Grain, IEventPublisher
     public const string StreamProvider = WorkflowEventStreams.StreamProvider;
     public const string StreamNameSpace = WorkflowEventStreams.StreamNameSpace;
     public const string ExecuteCustomTaskStreamNamespace = WorkflowEventStreams.ExecuteCustomTaskStreamNamespace;
-    public const string ExecuteScriptStreamNamespace = WorkflowEventStreams.ExecuteScriptStreamNamespace;
-    public const string EvaluateConditionStreamNamespace = WorkflowEventStreams.EvaluateConditionStreamNamespace;
-    public const string EvaluateActivationConditionStreamNamespace = WorkflowEventStreams.EvaluateActivationConditionStreamNamespace;
 
     public WorkflowEventsPublisher(ILogger<WorkflowEventsPublisher> logger)
     {
@@ -43,39 +45,20 @@ public partial class WorkflowEventsPublisher : Grain, IEventPublisher
 
         switch (domainEvent)
         {
-            case EvaluateConditionEvent evaluateConditionEvent:
-
-                // Shard the stream by WorkflowInstanceId so cross-instance traffic spreads across
-                // queue partitions and subscriber grain activations. See CLAUDE.md "Things to Know".
-                var streamId = StreamId.Create(WorkflowEventStreams.EvaluateConditionStreamNamespace, evaluateConditionEvent.WorkflowInstanceId.ToString("D"));
-                var stream = _streamProvider.GetStream<EvaluateConditionEvent>(streamId);
-                await stream.OnNextAsync(evaluateConditionEvent);
-                break;
-            case EvaluateActivationConditionEvent evaluateActivationConditionEvent:
-                var activationStreamId = StreamId.Create(WorkflowEventStreams.EvaluateActivationConditionStreamNamespace, evaluateActivationConditionEvent.WorkflowInstanceId.ToString("D"));
-                var activationStream = _streamProvider.GetStream<EvaluateActivationConditionEvent>(activationStreamId);
-                await activationStream.OnNextAsync(evaluateActivationConditionEvent);
-                break;
-            case ExecuteScriptEvent executeScriptEvent:
-
-                var scriptStreamId = StreamId.Create(WorkflowEventStreams.ExecuteScriptStreamNamespace, executeScriptEvent.WorkflowInstanceId.ToString("D"));
-                var scriptStream = _streamProvider.GetStream<ExecuteScriptEvent>(scriptStreamId);
-                await scriptStream.OnNextAsync(executeScriptEvent);
-                break;
             case ExecuteCustomTaskEvent executeCustomTaskEvent:
 
                 // Partition the namespace by TaskType so each plugin's subscriber grain class
-                // only sees its own traffic (eliminates the N×M filter-after-deliver fanout).
-                // See docs/conventions/streaming.md "Custom-task per-type stream namespace".
+                // only sees its own traffic (eliminates the N×M filter-after-deliver fanout), and
+                // shard the stream by WorkflowInstanceId so cross-instance traffic spreads across
+                // queues. See docs/conventions/streaming.md "Custom-task per-type stream namespace".
                 var customTaskNs = WorkflowEventStreams.GetExecuteCustomTaskNamespace(executeCustomTaskEvent.TaskType);
                 var customTaskStreamId = StreamId.Create(customTaskNs, executeCustomTaskEvent.WorkflowInstanceId.ToString("D"));
                 var customTaskStream = _streamProvider.GetStream<ExecuteCustomTaskEvent>(customTaskStreamId);
                 await customTaskStream.OnNextAsync(executeCustomTaskEvent);
                 break;
-            case EvaluateCompletionConditionEvent evaluateCompletionConditionEvent:
-                var completionStreamId = StreamId.Create(WorkflowEventStreams.EvaluateCompletionConditionStreamNamespace, evaluateCompletionConditionEvent.WorkflowInstanceId.ToString("D"));
-                var completionStream = _streamProvider.GetStream<EvaluateCompletionConditionEvent>(completionStreamId);
-                await completionStream.OnNextAsync(evaluateCompletionConditionEvent);
+            case WorkflowActivityExecutedEvent:
+                // Raised for every executed activity and subscribed to by nothing: dropped without a
+                // log line. As a warning it was ~28 log lines per instance on the hot path (#868).
                 break;
             default:
                 // No subscriber exists for the default stream; logging and dropping surfaces

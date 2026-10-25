@@ -64,13 +64,34 @@ The provider toggle. `Postgres` runs `MigrateAsync()` at startup; `Sqlite` runs 
 
 The largest variables document, measured as JSON bytes, that one operation may pass to a workflow instance: start variables, activity completion variables (script tasks, custom tasks, REST), a user-task completion and a message delivery. The engine rejects a larger document before it applies anything. REST callers get `400 Bad Request`, and a script or custom task fails its activity. An activity failure that carries oversized variables still fails the activity, without those variables. Must be greater than `0`; the silo fails at startup otherwise. See [Variables and scope](/fleans/guides/variables-and-scope/#size-limit).
 
-### Script and condition evaluators
+### Workflow instances in memory
+
+| Env var | Config key | Read at | Default |
+| --- | --- | --- | --- |
+| `Fleans__Instances__IdleCollectionAge` | `Fleans:Instances:IdleCollectionAge` | `Fleans.Application` (Core silos) | `00:02:00` |
+
+How long a workflow instance stays activated in a silo's memory while nothing calls it. Orleans' default for every grain is 15 minutes; an instance waiting on a timer, a message or a user task would hold its activation that long (~23 KB each), so many waiting instances fill the silos' memory. A collected instance reactivates from its journal snapshot when its timer fires or its message arrives. Raise it for processes that receive a call every few minutes, to avoid the reactivation. Must be longer than one minute (Orleans' collection quantum); the silo fails at startup otherwise.
+
+### Script tasks and conditions
 
 | Env var | Config key | Read at | Default |
 | --- | --- | --- | --- |
 | `Fleans__Worker__EvaluatorKeyCount` | `Fleans:Worker:EvaluatorKeyCount` | `Fleans.Application` | `16` |
+| `Fleans__Worker__ScriptResultTimeout` | `Fleans:Worker:ScriptResultTimeout` | `Fleans.Application` | `00:00:30` |
 
-How many grain keys the engine spreads script and condition evaluations over. The evaluators are stateless workers that run only on `Worker` / `Combined` silos. A `Core` silo sends each key to one worker silo and keeps that choice, so the key count caps how many worker silos one core silo can use. Keep it well above the number of worker silos; a larger value only adds idle activations. On `Worker` / `Combined` silos every key runs locally. Set the same value on every silo. Must be greater than `0`; the silo fails at startup otherwise.
+Conditions — gateway flows, complex-gateway activation, multi-instance completion and conditional events — are evaluated inside the workflow instance, with no network hop. Script tasks run on the script executor, a stateless worker that runs only on `Worker` / `Combined` silos: the instance dispatches the script to it and the executor reports the result back.
+
+`EvaluatorKeyCount` is how many grain keys the engine spreads script dispatches (and conditional start events' evaluations) over. A `Core` silo sends each key to one worker silo and keeps that choice, so the key count caps how many worker silos one core silo can use. Keep it well above the number of worker silos; a larger value only adds idle activations. On `Worker` / `Combined` silos every key runs locally. Set the same value on every silo. Must be greater than `0`; the silo fails at startup otherwise.
+
+`ScriptResultTimeout` is how long an instance waits for a dispatched script's result before it dispatches the script again — the dispatch or its result may have been lost with a silo. After 3 dispatches without a result the script task fails with a timeout, which an error boundary event can catch. A script may therefore run more than once; only its first result is applied. Keep it above the script timeout (10 s). Must be greater than `0`.
+
+### Signals
+
+| Env var | Config key | Read at | Default |
+| --- | --- | --- | --- |
+| `Fleans__Signals__BucketCount` | `Fleans:Signals:BucketCount` | `Fleans.Application` | `64` |
+
+How many buckets the subscriptions of one signal name are spread over. Each bucket is its own grain and holds the workflow instances whose id hashes to it; a broadcast (`POST /Execution/signal` or a signal throw event) calls every bucket in parallel, so no single grain handles all of a signal's subscribers. Set the same value on every Fleans process (core and worker silos, API, Web, MCP), and change it only on an empty cluster: a subscription stored under one bucket count is not found by a broadcast under another. Must be greater than `0`; the process fails at startup otherwise.
 
 ### Streaming
 
@@ -83,6 +104,9 @@ How many grain keys the engine spreads script and condition evaluations over. Th
 | `Fleans__Streaming__Kafka__EnableDeadLetterQueue` | `Fleans:Streaming:Kafka:EnableDeadLetterQueue` | (binding) | `false` (see [Streaming](/fleans/reference/streaming/#poison-records-and-the-dead-letter-topic)) |
 | `Fleans__Streaming__Kafka__DeadLetterTopicSuffix` | `Fleans:Streaming:Kafka:DeadLetterTopicSuffix` | (binding) | `"-dlq"` |
 | `Fleans__Streaming__Kafka__DeliveryRetryWindow` | `Fleans:Streaming:Kafka:DeliveryRetryWindow` | (binding) | `00:01:00` (Orleans default) |
+| `Fleans__Streaming__PollPeriod` | `Fleans:Streaming:PollPeriod` | `Fleans.ServiceDefaults` | `00:00:00.100` (Orleans default) |
+
+`PollPeriod` is how often every pulling agent reads its queue, for any provider. A stream event (a custom task, a read-model notification) waits up to one period before delivery; a shorter period lowers that wait and polls the backend more often. Must be a positive `TimeSpan`; the silo fails at startup otherwise.
 
 `memory` is single-silo only — it silently drops cross-silo events. Use `kafka` or `azurequeue` for any deployment with more than one silo. See [Streaming](/fleans/reference/streaming/) for at-least-once semantics.
 

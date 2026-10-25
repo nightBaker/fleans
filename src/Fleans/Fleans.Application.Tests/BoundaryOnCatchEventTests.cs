@@ -150,8 +150,7 @@ public class BoundaryOnCatchEventTests : WorkflowTestBase
             "Timer catch should be active");
 
         // Act — broadcast boundary signal
-        var signalGrain = Cluster.GrainFactory.GetGrain<ISignalCorrelationGrain>("emergencyStop");
-        var deliveredCount = await signalGrain.BroadcastSignal();
+        var deliveredCount = await BroadcastSignal("emergencyStop");
 
         // Assert — boundary path taken, timer catch interrupted
         Assert.AreEqual(1, deliveredCount, "Signal should be delivered to 1 subscriber");
@@ -371,8 +370,7 @@ public class BoundaryOnCatchEventTests : WorkflowTestBase
             "Should NOT complete via emergency end");
 
         // Verify boundary signal subscription is gone
-        var signalGrain = Cluster.GrainFactory.GetGrain<ISignalCorrelationGrain>("emergencyStop");
-        var deliveredCount = await signalGrain.BroadcastSignal();
+        var deliveredCount = await BroadcastSignal("emergencyStop");
         Assert.AreEqual(0, deliveredCount, "Boundary signal subscription should have been cleaned up");
     }
 }

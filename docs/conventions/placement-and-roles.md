@@ -6,6 +6,8 @@
 
 `Fleans.Worker` hosts the `[StatelessWorker]` script/condition grain **implementations** (`ScriptExecutorGrain`, `ConditionExpressionEvaluatorGrain`); their interfaces live in `Fleans.Application.Abstractions` so callers don't need a Worker reference.
 
+Who calls them: the workflow instance dispatches each script task to `ScriptExecutorGrain.Run` one-way and the executor calls back `CompleteActivity` / `FailActivity` (no stream; see [invariants](invariants.md#script-dispatch-and-in-process-conditions)). Gateway, activation, completion and conditional-event conditions do **not** go to a worker: the instance evaluates them itself with the silo's `IConditionExpressionEvaluator`, so every silo hosting `WorkflowInstance` registers it (`AddInfrastructure`). `ConditionExpressionEvaluatorGrain` is left serving conditional start events (`ConditionalStartEventListenerGrain`). Keeping scripts on worker silos is the isolation option: a `Core` + `Worker` split runs scripts off the core silos, a `Combined` silo runs them locally — one code path, no switch.
+
 **When adding a new worker-type grain**, put the implementation in `Fleans.Worker` and keep the interface next to the caller. Mark it `[WorkerPlacement]` to keep it on `worker-`/`combined-` silos (see below).
 
 ### Stateless workers on worker silos (#857)
@@ -59,6 +61,8 @@ External plugin hosts call `siloBuilder.AddFleansPluginHost(configuration)` (fro
 ## Placement-types package boundary
 
 `Core*` placement types (`CorePlacementStrategy`, `CorePlacementDirector`, `CorePlacementAttribute`) live in `Fleans.Application.Abstractions/Placement/` (namespace `Fleans.Application.Placement`) so external plugin hosts can register them — `AddFleansPluginHost` in `Fleans.Worker` calls `AddPlacementDirector<CorePlacementStrategy, CorePlacementDirector>()` to route `[CorePlacement]` grain activations (e.g. `CustomTaskCatalogGrain`) from a plugin silo back to a `core-`/`combined-` engine silo.
+
+**Directors read the host list from a 5-second cache (`CachedSiloHosts`), never per activation.** `IManagementGrain.GetDetailedHosts` reads the membership table from its storage and is one grain for the cluster; asked per activation it put a membership-table read and a cluster-wide grain on every instance start (~1.3 reads per started instance in the target-architecture load stack). The cached list is intersected with `IPlacementContext.GetCompatibleSilos` (live membership), so a departed silo is never picked; when it has no candidate the director refreshes once before falling back. A new placement director that needs silo names uses the same cache.
 
 `Worker*` placement types (`WorkerPlacementFilterStrategy`, `WorkerPlacementFilterDirector`, `WorkerPlacementAttribute`, `AddWorkerPlacementFilter`) live in `Fleans.Worker.Placement` — they do NOT need to be in Abstractions today because `AddFleansPluginHost` is itself in `Fleans.Worker`, and the engine project refs (`Fleans.Api`, `Fleans.WorkerHost`) already pull `Fleans.Worker` so their own `AddWorkerPlacementFilter()` calls compile.
 

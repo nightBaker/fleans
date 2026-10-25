@@ -197,7 +197,8 @@ notes — they call out any migration steps Compose itself does not perform
   this is expected. Watch with `docker compose logs -f fleans-core postgres`.
 - **Migration errors like `relation "X" already exists`.** All silos
   (`fleans-core`, `fleans-management`, `fleans-mcp`, `fleans-worker`) call
-  `MigrateAsync` at startup; they serialize via a Postgres advisory lock so
+  `MigrateAsync` at startup; they serialize via a Postgres advisory lock
+  (transaction-scoped, so it also holds through PgBouncer in transaction mode) so
   concurrent migrations are safe. If you ever see a "relation already exists"
   error, the lock acquisition was likely skipped (e.g. running an out-of-tree
   fork without the fix shipped in `Fleans.ServiceDefaults`); upgrade to a

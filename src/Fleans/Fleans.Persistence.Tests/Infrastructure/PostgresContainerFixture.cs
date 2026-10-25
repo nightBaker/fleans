@@ -54,6 +54,12 @@ internal static class PostgresContainerFixture
     public static string AdminConnectionString(string image) => EnsureStarted(image).GetConnectionString();
 
     /// <summary>
+    /// The container's address on the Docker bridge network, for another container (e.g. a
+    /// PgBouncer in front of it) to connect to.
+    /// </summary>
+    public static string BridgeAddress(string image) => EnsureStarted(image).IpAddress;
+
+    /// <summary>
     /// Builds a connection string targeting the named database on <paramref name="image"/>'s container.
     /// </summary>
     public static string BuildConnectionString(string image, string databaseName)
