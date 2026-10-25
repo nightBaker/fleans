@@ -1,4 +1,4 @@
-using Fleans.Application.Events.Handlers;
+using Fleans.Application.Projections;
 using Fleans.Domain.Events;
 using Fleans.Worker.CustomTasks;
 using Orleans.Streams;
@@ -19,7 +19,7 @@ public class StreamEventAssemblyTests
     public void StreamSubscriberEventTypes_LiveInDomainAbstractions()
     {
         // Arrange
-        var subscribers = new[] { typeof(WorkflowExecuteScriptEventHandler).Assembly, typeof(CustomTaskHandlerBase).Assembly }
+        var subscribers = new[] { typeof(WorkflowInstanceProjector).Assembly, typeof(CustomTaskHandlerBase).Assembly }
             .SelectMany(a => a.GetTypes())
             .Where(t => typeof(Grain).IsAssignableFrom(t))
             .SelectMany(t => t.GetInterfaces()
@@ -35,8 +35,7 @@ public class StreamEventAssemblyTests
 
         // Assert
         CollectionAssert.IsSubsetOf(
-            new[] { typeof(ExecuteScriptEvent), typeof(EvaluateConditionEvent), typeof(EvaluateActivationConditionEvent),
-                    typeof(EvaluateCompletionConditionEvent), typeof(ExecuteCustomTaskEvent) },
+            new[] { typeof(InstanceAdvanced), typeof(ExecuteCustomTaskEvent) },
             subscribers.Select(s => s.Event).Distinct().ToList(),
             "The scan must see every stream subscriber; did a handler stop implementing IAsyncObserver<T>?");
         Assert.IsEmpty(misplaced,

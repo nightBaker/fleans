@@ -1,13 +1,16 @@
 using Fleans.Application.Grains;
-using Fleans.Application.QueryModels;
 using Fleans.Domain;
 using Fleans.Domain.Activities;
 using Fleans.Domain.Sequences;
 using Orleans.Runtime;
-using System.Dynamic;
 
 namespace Fleans.Application.Tests;
 
+/// <summary>
+/// The gateway's conditions are evaluated in the instance grain, within the call that reaches the
+/// gateway — so the outcome is visible as soon as <c>StartWorkflow</c> returns. The test silo's
+/// condition evaluator returns <c>true</c> only for the expression <c>"true"</c>.
+/// </summary>
 [TestClass]
 public class ExclusiveGatewayTests : WorkflowTestBase
 {
@@ -15,19 +18,16 @@ public class ExclusiveGatewayTests : WorkflowTestBase
     public async Task ExclusiveGateway_ShouldTakeTrueBranch_WhenFirstConditionIsTrue()
     {
         // Arrange
-        var workflow = CreateWorkflowWithTwoBranches();
+        var workflow = CreateWorkflowWithTwoBranches(seq2: "true", seq3: "false");
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+
+        // Act
         await workflowInstance.StartWorkflow(workflow);
 
-        // Act — first condition true, gateway should auto-complete
-        await workflowInstance.CompleteConditionSequence("if", "seq2", true);
-
-        // Assert — workflow completed via end1 (true branch)
-        var instanceId = workflowInstance.GetPrimaryKey();
-        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        // Assert — completed via end1 (true branch) without waiting for anything
+        var snapshot = await QueryService.GetStateSnapshot(workflowInstance.GetPrimaryKey());
         Assert.IsNotNull(snapshot);
         Assert.IsTrue(snapshot.IsCompleted);
-
         CollectionAssert.Contains(snapshot.CompletedActivityIds, "end1");
         CollectionAssert.DoesNotContain(snapshot.CompletedActivityIds, "end2");
     }
@@ -35,42 +35,38 @@ public class ExclusiveGatewayTests : WorkflowTestBase
     [TestMethod]
     public async Task ExclusiveGateway_ShouldShortCircuit_OnFirstTrueCondition()
     {
-        // Arrange — gateway with two conditional flows, first returns true
-        var workflow = CreateWorkflowWithTwoBranches();
+        // Arrange — both conditions true: only the first is evaluated
+        var workflow = CreateWorkflowWithTwoBranches(seq2: "true", seq3: "true");
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+
+        // Act
         await workflowInstance.StartWorkflow(workflow);
 
-        // Act — first condition is true -> should complete immediately
-        // Second condition is never evaluated
-        await workflowInstance.CompleteConditionSequence("if", "seq2", true);
-
-        // Assert — workflow completed without needing seq3
-        var instanceId = workflowInstance.GetPrimaryKey();
-        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        // Assert — end1 taken, the second flow never evaluated
+        var snapshot = await QueryService.GetStateSnapshot(workflowInstance.GetPrimaryKey());
         Assert.IsNotNull(snapshot);
         Assert.IsTrue(snapshot.IsCompleted);
-
         Assert.AreEqual(0, snapshot.ActiveActivities.Count);
+        CollectionAssert.Contains(snapshot.CompletedActivityIds, "end1");
+        CollectionAssert.DoesNotContain(snapshot.CompletedActivityIds, "end2");
+        var seq3 = snapshot.ConditionSequences.Single(c => c.SequenceFlowId == "seq3");
+        Assert.IsFalse(seq3.Result);
     }
 
     [TestMethod]
     public async Task ExclusiveGateway_ShouldTakeSecondBranch_WhenFirstIsFalseSecondIsTrue()
     {
         // Arrange
-        var workflow = CreateWorkflowWithTwoBranches();
+        var workflow = CreateWorkflowWithTwoBranches(seq2: "false", seq3: "true");
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+
+        // Act
         await workflowInstance.StartWorkflow(workflow);
 
-        // Act — first condition false, second true
-        await workflowInstance.CompleteConditionSequence("if", "seq2", false);
-        await workflowInstance.CompleteConditionSequence("if", "seq3", true);
-
-        // Assert — workflow completed via end2
-        var instanceId = workflowInstance.GetPrimaryKey();
-        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        // Assert — completed via end2
+        var snapshot = await QueryService.GetStateSnapshot(workflowInstance.GetPrimaryKey());
         Assert.IsNotNull(snapshot);
         Assert.IsTrue(snapshot.IsCompleted);
-
         CollectionAssert.Contains(snapshot.CompletedActivityIds, "end2");
         CollectionAssert.DoesNotContain(snapshot.CompletedActivityIds, "end1");
     }
@@ -81,51 +77,59 @@ public class ExclusiveGatewayTests : WorkflowTestBase
         // Arrange
         var workflow = CreateWorkflowWithDefaultFlow();
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+
+        // Act
         await workflowInstance.StartWorkflow(workflow);
 
-        // Act — all conditions false
-        await workflowInstance.CompleteConditionSequence("if", "seq2", false);
-        await workflowInstance.CompleteConditionSequence("if", "seq3", false);
-
-        // Assert — workflow completed via endDefault (default flow)
-        var instanceId = workflowInstance.GetPrimaryKey();
-        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        // Assert — completed via endDefault (default flow)
+        var snapshot = await QueryService.GetStateSnapshot(workflowInstance.GetPrimaryKey());
         Assert.IsNotNull(snapshot);
         Assert.IsTrue(snapshot.IsCompleted);
-
         CollectionAssert.Contains(snapshot.CompletedActivityIds, "endDefault");
         CollectionAssert.DoesNotContain(snapshot.CompletedActivityIds, "end1");
         CollectionAssert.DoesNotContain(snapshot.CompletedActivityIds, "end2");
     }
 
     [TestMethod]
-    public async Task ExclusiveGateway_ShouldThrow_WhenAllConditionsFalse_AndNoDefaultFlow()
+    public async Task ExclusiveGateway_ShouldFailTheGateway_WhenAllConditionsFalse_AndNoDefaultFlow()
     {
         // Arrange
-        var workflow = CreateWorkflowWithTwoBranches(); // no default flow
+        var workflow = CreateWorkflowWithTwoBranches(seq2: "false", seq3: "false"); // no default flow
         var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
+
+        // Act
         await workflowInstance.StartWorkflow(workflow);
 
-        // Act — first condition false
-        await workflowInstance.CompleteConditionSequence("if", "seq2", false);
+        // Assert — the gateway failed (no flow to take), which fails the instance (#762)
+        var snapshot = await QueryService.GetStateSnapshot(workflowInstance.GetPrimaryKey());
+        Assert.IsNotNull(snapshot);
+        Assert.IsTrue(snapshot.IsFailed);
+        var gateway = snapshot.CompletedActivities.Single(a => a.ActivityId == "if");
+        Assert.IsNotNull(gateway.ErrorState);
+        StringAssert.Contains(gateway.ErrorState.Message, "default flow");
+        CollectionAssert.DoesNotContain(snapshot.CompletedActivityIds, "end1");
+        CollectionAssert.DoesNotContain(snapshot.CompletedActivityIds, "end2");
+    }
 
-        // Assert — second condition false should throw
-        // Orleans may wrap the exception, so we catch the broadest type
-        var threw = false;
-        try
-        {
-            await workflowInstance.CompleteConditionSequence("if", "seq3", false);
-        }
-        catch (Exception ex)
-        {
-            threw = true;
-            // The InvalidOperationException may be thrown directly or wrapped by Orleans
-            var innerMost = GetInnermostException(ex);
-            Assert.IsInstanceOfType<InvalidOperationException>(innerMost,
-                $"Expected InvalidOperationException but got {innerMost.GetType().Name}: {innerMost.Message}");
-        }
+    [TestMethod]
+    public async Task ExclusiveGateway_ShouldFailTheGateway_WhenAConditionThrows()
+    {
+        // Arrange — a condition the real evaluator cannot parse
+        var workflow = CreateWorkflowWithTwoBranches(seq2: "THROW", seq3: "true");
+        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
 
-        Assert.IsTrue(threw, "Expected an exception when all conditions are false with no default flow");
+        // Act
+        await workflowInstance.StartWorkflow(workflow);
+
+        // Assert — the gateway failed with the evaluator's error; no branch was taken
+        var snapshot = await QueryService.GetStateSnapshot(workflowInstance.GetPrimaryKey());
+        Assert.IsNotNull(snapshot);
+        Assert.IsTrue(snapshot.IsFailed);
+        var gateway = snapshot.CompletedActivities.Single(a => a.ActivityId == "if");
+        Assert.IsNotNull(gateway.ErrorState);
+        StringAssert.Contains(gateway.ErrorState.Message, "Simulated condition failure");
+        CollectionAssert.DoesNotContain(snapshot.CompletedActivityIds, "end1");
+        CollectionAssert.DoesNotContain(snapshot.CompletedActivityIds, "end2");
     }
 
     [TestMethod]
@@ -139,8 +143,7 @@ public class ExclusiveGatewayTests : WorkflowTestBase
         await workflowInstance.StartWorkflow(workflow);
 
         // Assert — workflow completed via endDefault
-        var instanceId = workflowInstance.GetPrimaryKey();
-        var snapshot = await QueryService.GetStateSnapshot(instanceId);
+        var snapshot = await QueryService.GetStateSnapshot(workflowInstance.GetPrimaryKey());
         Assert.IsNotNull(snapshot);
         Assert.IsTrue(snapshot.IsCompleted);
 
@@ -151,34 +154,7 @@ public class ExclusiveGatewayTests : WorkflowTestBase
         Assert.AreEqual(0, snapshot.ActiveActivities.Count);
     }
 
-    [TestMethod]
-    public async Task ExclusiveGateway_ShouldNotAutoComplete_WhenConditionsStillPending()
-    {
-        // Arrange
-        var workflow = CreateWorkflowWithTwoBranches();
-        var workflowInstance = Cluster.GrainFactory.GetGrain<IWorkflowInstanceGrain>(Guid.NewGuid());
-        await workflowInstance.StartWorkflow(workflow);
-
-        // Act — first condition false, second not yet evaluated
-        await workflowInstance.CompleteConditionSequence("if", "seq2", false);
-
-        // Assert — workflow not completed, gateway still active
-        var instanceId = workflowInstance.GetPrimaryKey();
-        var snapshot = await QueryService.GetStateSnapshot(instanceId);
-        Assert.IsNotNull(snapshot);
-        Assert.IsFalse(snapshot.IsCompleted);
-
-        Assert.IsTrue(snapshot.ActiveActivities.Count > 0);
-    }
-
-    private static Exception GetInnermostException(Exception ex)
-    {
-        while (ex.InnerException is not null)
-            ex = ex.InnerException;
-        return ex;
-    }
-
-    private static IWorkflowDefinition CreateWorkflowWithTwoBranches()
+    private static IWorkflowDefinition CreateWorkflowWithTwoBranches(string seq2, string seq3)
     {
         var start = new StartEvent("start");
         var end1 = new EndEvent("end1");
@@ -192,8 +168,8 @@ public class ExclusiveGatewayTests : WorkflowTestBase
             SequenceFlows =
             [
                 new SequenceFlow("seq1", start, ifActivity),
-                new ConditionalSequenceFlow("seq2", ifActivity, end1, "trueCondition"),
-                new ConditionalSequenceFlow("seq3", ifActivity, end2, "falseCondition")
+                new ConditionalSequenceFlow("seq2", ifActivity, end1, seq2),
+                new ConditionalSequenceFlow("seq3", ifActivity, end2, seq3)
             ]
         };
     }
@@ -231,8 +207,8 @@ public class ExclusiveGatewayTests : WorkflowTestBase
             SequenceFlows =
             [
                 new SequenceFlow("seq1", start, ifActivity),
-                new ConditionalSequenceFlow("seq2", ifActivity, end1, "condition1"),
-                new ConditionalSequenceFlow("seq3", ifActivity, end2, "condition2"),
+                new ConditionalSequenceFlow("seq2", ifActivity, end1, "false"),
+                new ConditionalSequenceFlow("seq3", ifActivity, end2, "false"),
                 new DefaultSequenceFlow("seqDefault", ifActivity, endDefault)
             ]
         };

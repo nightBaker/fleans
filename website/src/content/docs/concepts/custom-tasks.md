@@ -219,5 +219,4 @@ scaffolding template.
 
 - [Issue #357](https://github.com/nightBaker/fleans/issues/357) — design history (v1–v12).
 - [Issue #448](https://github.com/nightBaker/fleans/issues/448) — `Fleans.CustomWorkerHost` worked example + NuGet packaging.
-- The script-task event handler (`Fleans.Application/Events/Handlers/WorkflowExecuteScriptEventHandler.cs`) is the structural model `CustomTaskHandlerBase` follows.
 - Manual test plans: `tests/manual/37-custom-task-framework/test-plan.md`, `tests/manual/40-custom-worker-host/test-plan.md`.
