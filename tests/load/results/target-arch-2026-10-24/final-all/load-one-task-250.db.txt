@@ -1,6 +1,0 @@
-server          xact/inst  WAL KB/inst
-postgres              1.7          2.3
-citus-coord           0.0          0.0
-citus-w1              3.0          0.7
-citus-w2              2.9          0.7
-postgres-ops          0.0          0.0

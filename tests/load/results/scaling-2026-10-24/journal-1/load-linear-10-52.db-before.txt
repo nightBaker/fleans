@@ -1,5 +1,0 @@
-postgres 62356 89162552
-citus-coord 117710 12470314
-citus-w1 222944 118999257
-citus-w2 0 0
-postgres-ops 4610 10141468

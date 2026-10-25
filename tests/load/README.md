@@ -282,6 +282,11 @@ When running against Aspire locally (without docker-compose), rate limiting is o
 
 - `results/local-2026-10-23/report.md` — `main` before vs after the first Road-to-1.0 PRs (#888–#898):
   `long-diverse`, `linear-saturation` and `timers`, with the raw k6 summaries.
+- `results/target-arch-2026-10-24/report.md` — the Road to 1.0.0 target architecture: ceilings,
+  overload, timers and a resource estimate; the scaling matrix in `results/scaling-2026-10-24/`.
+
+Commit `<process>-summary.txt` and the `capacity.py` output (`capacity.md`) of a run, not the per-rate
+`<process>-<rate>.*.txt` files: they add hundreds of files per report and GitHub stops rendering a PR diff past 300.
 
 ## Related issues
 

@@ -296,6 +296,8 @@ K6_TARGET_URL=http://localhost:80 K6_TIMERS_COUNT=10000 K6_TIMERS_RATE=200 K6_TI
 
 Overrides used for the comparison rows are in `overrides/` (run from `tests/load`:
 `docker compose -f docker-compose.yml -f results/target-arch-2026-10-24/overrides/<file>.yml …`).
-Raw files: `main/`, `final/` (`target`), `final-cache/` (`target + #919`), `final-all/` (`target-all`),
-`collapse/`, `overload*/`, `timers*/`; the scaling matrix in `../scaling-2026-10-24/` — per rate
-`<process>-<rate>.{k6,sql,cpu,db}.txt`.
+Per run: `main/`, `final/` (`target`), `final-cache/` (`target + #919`), `final-all/` (`target-all`),
+`collapse/`, `overload*/`, `timers*/`; the scaling matrix in `../scaling-2026-10-24/`. Each throughput
+directory keeps `<process>-summary.txt` (the read-model row per rate) and `capacity.md` (the
+`capacity.py` output: CPU per tier, transactions and WAL per instance); the per-rate
+`<process>-<rate>.{k6,sql,cpu,db}.txt` files are not committed — rerun the commands above to get them.
