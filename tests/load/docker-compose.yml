@@ -107,20 +107,23 @@ services:
     # One-shot: registers the coordinator and the two workers. The silos' schema bootstrap then
     # distributes the journal tables (CitusJournal.DistributeAsync) over the workers.
     image: ${FLEANS_CITUS_IMAGE:-fleans-citus:12.1}
-    environment: { PGPASSWORD: fleans }
+    # CITUS_WORKERS: the scaling matrix runs with one worker (`--scale citus-w2=0`).
+    environment: { PGPASSWORD: fleans, CITUS_WORKERS: "${CITUS_WORKERS:-citus-w1 citus-w2}" }
     entrypoint: ["bash", "-c"]
     command:
       - >-
-        psql -h citus-coord -U postgres -d journal -v ON_ERROR_STOP=1
-        -c "SELECT citus_set_coordinator_host('citus-coord', 5432)"
-        -c "SELECT citus_add_node('citus-w1', 5432)"
-        -c "SELECT citus_add_node('citus-w2', 5432)"
-        -c "SELECT nodename, shouldhaveshards FROM pg_dist_node ORDER BY nodeid"
+        set -e;
+        psql -h citus-coord -U postgres -d journal -v ON_ERROR_STOP=1 -c "SELECT citus_set_coordinator_host('citus-coord', 5432)";
+        for w in $$CITUS_WORKERS; do
+          until pg_isready -q -h $$w -U postgres; do sleep 1; done;
+          psql -h citus-coord -U postgres -d journal -v ON_ERROR_STOP=1 -c "SELECT citus_add_node('$$w', 5432)";
+        done;
+        psql -h citus-coord -U postgres -d journal -c "SELECT nodename, shouldhaveshards FROM pg_dist_node ORDER BY nodeid"
     restart: "no"
     depends_on:
       citus-coord: { condition: service_healthy }
       citus-w1: { condition: service_healthy }
-      citus-w2: { condition: service_healthy }
+      citus-w2: { condition: service_healthy, required: false }
 
   # ── Read model: primary + streaming replica ─────────────────────────────────────────────────
   postgres:
@@ -168,11 +171,12 @@ services:
   # ── Ops store: membership + reminders ───────────────────────────────────────────────────────
   postgres-ops:
     image: postgres:16-alpine
-    # 5 silos × (membership + reminders pools); tiny tables.
+    # Small tables, but every silo opens a membership and a reminders pool, and each backend costs
+    # ~10 MB: at 384 MB the server was OOM-killed while 60 000 timers were armed.
     command: ["postgres", "-c", "max_connections=300", "-c", "shared_buffers=64MB",
               "-c", "shared_preload_libraries=pg_stat_statements"]
     cpu_shares: 1024
-    deploy: { resources: { limits: { memory: 384M } } }
+    deploy: { resources: { limits: { memory: 768M } } }
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: fleans

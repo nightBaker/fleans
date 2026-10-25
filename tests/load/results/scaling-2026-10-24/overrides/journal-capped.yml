@@ -1,0 +1,7 @@
+# Scaling matrix, journal axis: each Citus worker gets 0.5 CPU so the journal is the bottleneck and
+# adding a worker (shards spread over 1 → 2 nodes) is what adds capacity. Core stays uncapped.
+services:
+  citus-w1:
+    deploy: { resources: { limits: { cpus: "0.5", memory: 1280M } } }
+  citus-w2:
+    deploy: { resources: { limits: { cpus: "0.5", memory: 1280M } } }

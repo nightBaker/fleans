@@ -61,7 +61,7 @@ k6 load test suite for the Fleans workflow engine.
 | `citus-setup` | one-shot | — | Registers the coordinator and the workers; the silos' schema bootstrap then distributes the tables |
 | `postgres` | 1 | **2048** / 1.25 GB | Read-model primary (written by the projector) and the other grain state; `pg_stat_statements` loaded |
 | `postgres-replica` | 1 | 1024 / 768 MB | Streaming hot standby of `postgres`; `ConnectionStrings:fleans-query` points here, so every list / state read is off the primary |
-| `postgres-ops` | 1 | 1024 / 384 MB | Orleans membership (`fleans-cluster`, #885) and reminders (`fleans-reminders`, #886) |
+| `postgres-ops` | 1 | 1024 / 768 MB | Orleans membership (`fleans-cluster`, #885) and reminders (`fleans-reminders`, #886) |
 
 The Citus image is built from source (`citus/Dockerfile`, Citus 12.1 on `postgres:16`): `citusdata/citus` is published for amd64 only, and emulated on an arm64 laptop its coordinator was several times slower and was OOM-killed at 50 starts/s. On an amd64 host `FLEANS_CITUS_IMAGE=citusdata/citus:12.1` uses the upstream image.
 

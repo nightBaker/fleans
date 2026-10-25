@@ -1,0 +1,27 @@
+
+     ✗ start: 200
+      ↳  79% — ✓ 8836 / ✗ 2285
+
+     checks.........................: 79.45% 8836 out of 11121
+     data_received..................: 3.2 MB 39 kB/s
+     data_sent......................: 2.1 MB 27 kB/s
+   ✓ dropped_iterations.............: 0      0/s
+     http_req_blocked...............: avg=16.91µs    min=1µs      med=7µs      max=6.35ms   p(90)=11µs     p(95)=18µs    
+     http_req_connecting............: avg=6.85µs     min=0s       med=0s       max=1.54ms   p(90)=0s       p(95)=0s      
+     http_req_duration..............: avg=175.05ms   min=513µs    med=162.5ms  max=972.13ms p(90)=361.41ms p(95)=427.23ms
+       { expected_response:true }...: avg=219.84ms   min=9.71ms   med=199.9ms  max=972.13ms p(90)=382.56ms p(95)=451.5ms 
+     http_req_failed................: 20.54% 2285 out of 11121
+     ✗ { phase:measured }...........: 22.75% 1898 out of 8340
+     http_req_receiving.............: avg=62.96µs    min=7µs      med=48µs     max=10.49ms  p(90)=90µs     p(95)=107µs   
+     http_req_sending...............: avg=32.98µs    min=5µs      med=27µs     max=10.4ms   p(90)=40µs     p(95)=47µs    
+     http_req_tls_handshaking.......: avg=0s         min=0s       med=0s       max=0s       p(90)=0s       p(95)=0s      
+     http_req_waiting...............: avg=174.96ms   min=449µs    med=162.43ms max=972.07ms p(90)=361.33ms p(95)=427.13ms
+     http_reqs......................: 11121  138.476049/s
+     iteration_duration.............: avg=175.29ms   min=581.95µs med=162.86ms max=972.27ms p(90)=361.6ms  p(95)=427.51ms
+     iterations.....................: 11121  138.476049/s
+     starts_rejected................: 2285   28.452277/s
+     vus............................: 21     min=11            max=38 
+     vus_max........................: 278    min=278           max=278
+     workflow_start_duration........: avg=175.058352 min=0.513    med=162.503  max=972.13   p(90)=361.418  p(95)=427.237 
+
+time="2026-10-25T05:26:22+05:00" level=error msg="thresholds on metrics 'http_req_failed{phase:measured}' have been crossed"

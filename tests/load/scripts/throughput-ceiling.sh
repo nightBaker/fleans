@@ -107,6 +107,14 @@ EOF
     | tee "$OUT/$PROCESS-$rate.db.txt"
   row=$(sql -At -F ' | ' -v process="$PROCESS" -v from="$from" -v to="$to" < scripts/throughput-window.sql)
   printf '%-6s %s\n' "$rate" "$row" >> "$OUT/$PROCESS-summary.txt"
+  # STOP_ON_FAIL=1: stop at the first rate that is not sustained (completions below 97 % of the
+  # rate, instances left running, or p99 ≥ P99_MAX seconds, default 1).
+  if [ "${STOP_ON_FAIL:-0}" = "1" ]; then
+    IFS='|' read -r _ _ _ nf ps _ _ p99 _ <<< "$row"
+    if ! python3 -c "import sys; r,nf,ps,p99=$rate,int('$nf'),float('${ps:-0}' or 0),float('${p99:-99}' or 99); sys.exit(0 if ps>=0.97*r and nf==0 and p99<${P99_MAX:-1} else 1)"; then
+      echo "rate $rate not sustained — stopping"; break
+    fi
+  fi
 done
 
 echo; cat "$OUT/$PROCESS-summary.txt"

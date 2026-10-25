@@ -1,0 +1,5 @@
+# Scaling matrix, silo axis: each Core silo gets 0.35 CPU so the Core tier is the bottleneck and
+# adding silos is what adds capacity (3 × 0.35 plus the other tiers stays well under the host).
+services:
+  fleans-core:
+    deploy: { resources: { limits: { cpus: "0.35", memory: 1G } } }

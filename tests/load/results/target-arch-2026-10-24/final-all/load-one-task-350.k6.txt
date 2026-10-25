@@ -1,0 +1,27 @@
+
+     ✗ start: 200
+      ↳  97% — ✓ 27358 / ✗ 644
+
+     checks.........................: 97.70% 27358 out of 28002
+     data_received..................: 8.0 MB 99 kB/s
+     data_sent......................: 5.3 MB 67 kB/s
+   ✓ dropped_iterations.............: 0      0/s
+     http_req_blocked...............: avg=17.99µs   min=1µs    med=7µs     max=11.17ms  p(90)=11µs     p(95)=19µs    
+     http_req_connecting............: avg=8.43µs    min=0s     med=0s      max=11.11ms  p(90)=0s       p(95)=0s      
+     http_req_duration..............: avg=86.77ms   min=1.03ms med=50.54ms max=672.2ms  p(90)=210ms    p(95)=287.82ms
+       { expected_response:true }...: avg=88.52ms   min=9.33ms med=52.15ms max=672.2ms  p(90)=213.07ms p(95)=290.88ms
+     http_req_failed................: 2.29%  644 out of 28002
+     ✗ { phase:measured }...........: 3.06%  644 out of 21001
+     http_req_receiving.............: avg=64.11µs   min=6µs    med=43µs    max=50.53ms  p(90)=84µs     p(95)=104µs   
+     http_req_sending...............: avg=30.23µs   min=3µs    med=26µs    max=5.03ms   p(90)=39µs     p(95)=48µs    
+     http_req_tls_handshaking.......: avg=0s        min=0s     med=0s      max=0s       p(90)=0s       p(95)=0s      
+     http_req_waiting...............: avg=86.68ms   min=949µs  med=50.46ms max=672.17ms p(90)=209.66ms p(95)=287.74ms
+     http_reqs......................: 28002  349.211094/s
+     iteration_duration.............: avg=87ms      min=1.29ms med=50.78ms max=672.31ms p(90)=210.19ms p(95)=288.21ms
+     iterations.....................: 28002  349.211094/s
+     starts_rejected................: 644    8.031281/s
+     vus............................: 58     min=6              max=121
+     vus_max........................: 700    min=700            max=700
+     workflow_start_duration........: avg=86.777454 min=1.031  med=50.543  max=672.205  p(90)=210.0061 p(95)=287.8223
+
+time="2026-10-25T03:19:52+05:00" level=error msg="thresholds on metrics 'http_req_failed{phase:measured}' have been crossed"
